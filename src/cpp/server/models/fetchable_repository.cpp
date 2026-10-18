@@ -1,6 +1,7 @@
 #include <lemon/models/fetchable_repository.h>
 
 #include <map>
+#include <stdexcept>
 #include <utility>
 
 namespace lemon {
@@ -20,6 +21,10 @@ std::vector<RegistryId>& conflicts() {
 }
 
 }  // namespace
+
+RegistrySearchResponse FetchableRepository::search(const std::string&, std::size_t, bool) const {
+    throw std::logic_error("This artifact source does not search; ask supports_search() first");
+}
 
 std::unique_ptr<FetchableRepository> create_repository(const RegistryId& id, const ArtifactRef& ref,
                                                        const SourcePlacement& placement) {

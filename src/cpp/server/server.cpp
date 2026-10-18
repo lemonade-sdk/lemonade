@@ -7,7 +7,7 @@
 #include "lemon/canonical_id.h"
 #include "lemon/collection_orchestrator.h"
 #include "lemon/hf_variants.h"
-#include "lemon/model_registry.h"
+#include <lemon/models/registry_types.h>
 #include "lemon/models/store_snapshot.h"
 #include "lemon/route_decision_response.h"
 #include "lemon/routing_classifier_services.h"
@@ -6009,7 +6009,8 @@ void Server::handle_registry_search(const httplib::Request& req, httplib::Respon
             return;
         }
 
-        const auto search = search_registry_models(source, query, limit, gguf_only);
+        const auto search = model_manager_->search_registry(remote_registry_source_name(source), query, limit,
+                                                                    gguf_only);
         nlohmann::json results = nlohmann::json::array();
         for (const auto& model : search.results) {
             results.push_back({

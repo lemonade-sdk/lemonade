@@ -6,7 +6,7 @@
 #include <lemon/canonical_id.h>
 #include <lemon/models/model_errors.h>
 #include <lemon/models/model_info.h>
-#include <lemon/model_registry.h>
+#include <lemon/models/registry_types.h>
 #include <lemon/model_types.h>
 #include <lemon/models/artifact_store.h>
 #include <lemon/models/artifact_transfer.h>

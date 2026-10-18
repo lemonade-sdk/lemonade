@@ -7,7 +7,7 @@
 #include <lemon_cli/agent_config_file.h>
 #include <lemon/model_types.h>
 #include <lemon/recipe_options.h>
-#include <lemon/model_registry.h>
+#include <lemon/models/registry_types.h>
 #include <lemon/version.h>
 #include <lemon_cli/agent_launcher.h>
 #include <lemon_cli/junie_profile.h>

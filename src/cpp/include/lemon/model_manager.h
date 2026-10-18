@@ -27,6 +27,7 @@
 #include "models/model_info.h"
 #include "models/registry_documents.h"
 #include "models/registry_id.h"
+#include "models/registry_types.h"
 #include "models/recipe_options_store.h"
 #include "models/store.h"
 #include "models/sync_service.h"
@@ -200,6 +201,12 @@ public:
     void download_registered_model(const ModelInfo& info,
                                 bool do_not_upgrade = false,
                                 DownloadProgressCallback progress_callback = nullptr);
+
+    // Search a remote catalog. Throws std::runtime_error for a source that has
+    // no search to give.
+    RegistrySearchResponse search_registry(const std::string& source,
+                                           const std::string& query,
+                                           std::size_t limit, bool gguf_only) const;
 
     // Delete a model
     void delete_model(const std::string& model_name);

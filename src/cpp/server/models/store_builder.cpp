@@ -1,5 +1,5 @@
 #include <lemon/canonical_id.h>
-#include <lemon/model_registry.h>
+#include <lemon/models/registry_types.h>
 #include <lemon/model_types.h>
 #include <lemon/models/host_availability.h>
 #include <lemon/models/store_builder.h>

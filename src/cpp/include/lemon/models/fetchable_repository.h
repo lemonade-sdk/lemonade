@@ -1,7 +1,9 @@
 #pragma once
 
+#include <nlohmann/json.hpp>
+
 #include "artifact_source.h"
-#include "lemon/model_registry.h"
+#include "registry_types.h"
 #include "artifact_layout.h"
 #include "registry_id.h"
 
@@ -27,6 +29,9 @@ struct RepoListing {
     Revision revision;
     std::string download_revision;  // spelling the host's file endpoint wants
     std::vector<RegistryFile> files;
+    // The host's own description of the repository, kept verbatim: variant
+    // readers read fields no Lemonade struct predicts.
+    nlohmann::json raw_metadata;
 };
 
 // Argument to file_url().
@@ -82,6 +87,12 @@ class FetchableRepository : public ArtifactSource {
     virtual std::string cache_dir_name(const std::string& repo_id) const = 0;
 
     virtual bool supports_search() const { return false; }
+
+    // The marketplace question, answered by the host that can. Callers ask
+    // supports_search() first; the default throws for sources that cannot.
+    virtual RegistrySearchResponse search(const std::string& query,
+                                          std::size_t limit,
+                                          bool gguf_only) const;
 
   protected:
     FetchableRepository(ArtifactRef ref, SourcePlacement placement)

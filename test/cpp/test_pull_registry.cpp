@@ -336,6 +336,32 @@ void test_a_cancelled_pull_stops_before_the_first_byte() {
           "a cancelled pull leaves no artifact");
 }
 
+void test_search_is_a_source_answer() {
+    // The real adapters, offline: every built-in host answers the search question.
+    for (const auto& host : {lemon::models::huggingface_descriptor().id,
+                             lemon::models::modelscope_descriptor().id}) {
+        ArtifactRef ref;
+        ref.registry = host;
+        const auto repository =
+            lemon::models::create_repository(host, ref, SourcePlacement{});
+        check(repository->supports_search(), "a built-in source offers search");
+    }
+
+    // A source that cannot search says so, and its search throws rather than lie.
+    Fixture fx;
+    ArtifactRef ref;
+    ref.registry = lemon::models::RegistryId("quiet");
+    ScriptedRepository quiet(ref, fx.script, fx.stage.string(), &fx.trace);
+    check(!quiet.supports_search(), "a plain source declines search");
+    bool threw = false;
+    try {
+        quiet.search("anything", 5, false);
+    } catch (const std::logic_error&) {
+        threw = true;
+    }
+    check(threw, "search on a silent source throws instead of pretending");
+}
+
 }  // namespace
 
 int main() {
@@ -345,6 +371,7 @@ int main() {
     test_a_missing_aux_checkpoint_is_refused_in_words();
     test_a_malformed_aux_checkpoint_never_reaches_the_wire();
     test_a_cancelled_pull_stops_before_the_first_byte();
+    test_search_is_a_source_answer();
 
     if (!g_failures.empty()) {
         std::cerr << g_failures.size() << " failure(s)" << std::endl;

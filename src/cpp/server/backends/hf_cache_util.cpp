@@ -2,7 +2,7 @@
 
 #include <fstream>
 
-#include "lemon/model_registry.h"
+#include <lemon/models/registry_types.h>
 #include "lemon/utils/safe_fs.h"
 
 #ifdef _WIN32

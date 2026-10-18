@@ -5,7 +5,7 @@
 #include <nlohmann/json.hpp>
 #include <lemon/backends/fastflowlm/fastflowlm_models.h>
 #include <lemon/model_manager.h>
-#include <lemon/model_registry.h>
+#include <lemon/models/registry_types.h>
 #include <lemon/runtime_config.h>
 
 using json = nlohmann::json;

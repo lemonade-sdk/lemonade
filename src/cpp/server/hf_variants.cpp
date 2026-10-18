@@ -12,7 +12,8 @@
 #include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/llamacpp_architectures_generated.h"
 #include "lemon/model_types.h"
-#include "lemon/model_registry.h"
+#include <lemon/models/fetchable_repository.h>
+#include <lemon/models/registry_types.h>
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/json_utils.h"
 
@@ -350,16 +351,20 @@ nlohmann::json fetch_pull_variants(const std::string& checkpoint,
     }
 
     const auto source = parse_remote_registry_source(registry_source);
-    const auto& registry = model_registry(source);
-    RegistryRepository repository;
+    models::ArtifactRef probe;
+    probe.registry = source;
+    probe.repo_id = checkpoint;
+    const auto source_repository =
+        models::create_repository(source, probe, models::SourcePlacement{});
+    models::RepoListing repository;
     try {
-        repository = registry.fetch_repository(checkpoint);
+        repository = source_repository->list(checkpoint);
     } catch (const RegistryNotFoundError&) {
         not_found = true;
         return {};
     }
 
-    const auto headers = registry.auth_headers();
+    const auto headers = source_repository->auth_headers();
     std::vector<std::string> repo_files;
     std::vector<std::pair<std::string, uint64_t>> file_sizes;
     for (const auto& file : repository.files) {
@@ -441,8 +446,9 @@ nlohmann::json fetch_pull_variants(const std::string& checkpoint,
             }
         }
 
-        std::string manifest_url = registry.resolve_file_url(
-            checkpoint, repository.revision, manifest_filename);
+        std::string manifest_url = source_repository->file_url(
+            models::RepoRef{checkpoint, models::Revision{repository.download_revision, false},
+                            manifest_filename});
         auto manifest_response = HttpClient::get(manifest_url, headers);
         if (manifest_response.status_code != 200) {
             throw std::runtime_error(
@@ -505,7 +511,7 @@ nlohmann::json fetch_pull_variants(const std::string& checkpoint,
     std::optional<nlohmann::json> expanded_metadata;
     if (source == models::huggingface_descriptor().id) {
         expanded_metadata = fetch_huggingface_compatibility_metadata(
-            checkpoint, repository.snapshot_id);
+            checkpoint, repository.revision.id);
     }
     if (expanded_metadata) {
         for (const char* field : {"gguf", "pipeline_tag"}) {

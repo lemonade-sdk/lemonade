@@ -10,7 +10,7 @@
 
 #include <nlohmann/json.hpp>
 
-#include <lemon/model_registry.h>
+#include <lemon/models/registry_types.h>
 
 namespace lemon_cli {
 

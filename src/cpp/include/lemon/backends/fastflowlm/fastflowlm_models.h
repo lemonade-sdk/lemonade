@@ -5,7 +5,6 @@
 #include <string>
 #include <vector>
 #include "lemon/model_manager.h"  // ModelInfo, DownloadProgressCallback
-#include "lemon/model_registry.h"
 
 namespace lemon {
 

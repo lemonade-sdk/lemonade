@@ -7,7 +7,7 @@
 #include <lemon/canonical_id.h>
 #include <lemon/gguf_shard_utils.h>
 #include <lemon/hf_variants.h>
-#include <lemon/model_registry.h>
+#include <lemon/models/registry_types.h>
 #include <lemon/models/artifact_source.h>
 #include <lemon/models/checkpoint_grammar.h>
 #include <lemon/utils/aixlog.hpp>

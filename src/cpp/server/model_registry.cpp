@@ -1,4 +1,4 @@
-#include "lemon/model_registry.h"
+#include "model_registry.h"
 
 #include "lemon/models/registry_id.h"
 

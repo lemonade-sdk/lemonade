@@ -1,7 +1,7 @@
 #include <lemon/models/fetchable_repository.h>
 
 #include <lemon/backends/hf_cache_util.h>
-#include <lemon/model_registry.h>
+#include "../model_registry.h"
 #include <lemon/models/registry_descriptors.h>
 #include <lemon/registry_files.h>
 #include <lemon/utils/path_utils.h>
@@ -129,6 +129,7 @@ class RegistryBackedRepository : public FetchableRepository {
         listing.revision = Revision{repository.snapshot_id, is_commit_sha(repository.snapshot_id)};
         listing.download_revision = repository.revision;
         listing.files = repository.files;
+        listing.raw_metadata = repository.raw_metadata;
         return listing;
     }
 
@@ -141,6 +142,16 @@ class RegistryBackedRepository : public FetchableRepository {
     }
 
     bool can_go_stale() const override { return true; }
+
+    bool supports_search() const override {
+        const auto* descriptor = models::descriptor_for(host());
+        return descriptor != nullptr && descriptor->supports_search;
+    }
+
+    RegistrySearchResponse search(const std::string& query, std::size_t limit,
+                                  bool gguf_only) const override {
+        return search_registry_models(host(), query, limit, gguf_only);
+    }
 
     Revision active_revision(const LocalRef& local) const override {
         const std::string recorded =

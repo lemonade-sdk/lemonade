@@ -1,5 +1,5 @@
 #include "lemon/model_manager.h"
-#include "lemon/model_registry.h"
+#include <lemon/models/registry_types.h>
 #include "lemon/models/registry_id.h"
 #include "lemon/utils/path_utils.h"
 

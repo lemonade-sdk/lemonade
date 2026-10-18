@@ -1,4 +1,4 @@
-#include <lemon/model_registry.h>
+#include <lemon/models/registry_types.h>
 #include <lemon/models/model_sources.h>
 #include <lemon/models/registry_id.h>
 

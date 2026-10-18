@@ -1,11 +1,12 @@
 #include <lemon/model_manager.h>
 #include <lemon/runtime_config.h>
 #include <lemon/hf_variants.h>
-#include <lemon/model_registry.h>
+#include <lemon/models/registry_types.h>
 #include <lemon/canonical_id.h>
 #include <lemon/directory_watcher.h>
 #include <lemon/models/artifact_resolver.h>
 #include <lemon/models/artifact_store.h>
+#include <lemon/models/fetchable_repository.h>
 #include <lemon/models/artifact_transfer.h>
 #include <lemon/models/catalog.h>
 #include <lemon/models/checkpoint_grammar.h>
@@ -879,6 +880,22 @@ std::optional<std::string> ModelManager::resolve_alias(const std::string& alias_
 }
 
 bool ModelManager::has_alias(const std::string& alias) const { return alias_manager_.has_alias(alias); }
+
+RegistrySearchResponse ModelManager::search_registry(const std::string& source_name,
+                                                             const std::string& query,
+                                                             std::size_t limit,
+                                                             bool gguf_only) const {
+    const auto source = parse_remote_registry_source(source_name);
+    models::ArtifactRef probe;
+    probe.registry = source;
+    const auto repository =
+        models::create_repository(source, probe, models::SourcePlacement{});
+    if (!repository->supports_search()) {
+        throw std::runtime_error(remote_registry_display_name(source) +
+                                 " does not support model search");
+    }
+    return repository->search(query, limit, gguf_only);
+}
 
 void ModelManager::delete_model(const std::string& model_name) {
     auto info = get_model_info(model_name);

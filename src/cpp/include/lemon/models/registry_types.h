@@ -1,22 +1,25 @@
 #pragma once
 
+#include <lemon/models/registry_id.h>
+
+#include <nlohmann/json.hpp>
+
 #include <cstddef>
 #include <cstdint>
-#include <map>
 #include <optional>
 #include <stdexcept>
 #include <string>
 #include <vector>
-
-#include <nlohmann/json.hpp>
-
-#include "models/registry_id.h"
 
 namespace lemon {
 
 // A registry is named by string, not by enum: the string is what user_models.json,
 // .lemonade_registry.json, POST /pull and the desktop app already carry.
 using models::RegistryId;
+
+// The wire facts every registry speaks: file trees, search results, and the
+// names that outlive any one provider. A model of a registry lives here; the
+// class that fetches one lives with the adapters.
 
 class RegistryNotFoundError : public std::runtime_error {
 public:
@@ -58,7 +61,7 @@ private:
 struct RegistrySearchResult {
     std::string repo_id;
     std::string display_name;
-    RegistryId source = models::huggingface_descriptor().id;
+    models::RegistryId source = models::huggingface_descriptor().id;
     std::string repository_type = "model";
     std::string description;
     std::vector<std::string> tags;
@@ -101,13 +104,13 @@ const std::vector<std::string>& local_origin_tokens();
 
 // Normalized registry names persisted in user_models.json and exposed by APIs.
 // Empty input intentionally maps to Hugging Face for backward compatibility.
-RegistryId parse_remote_registry_source(const std::string& source);
-std::string remote_registry_source_name(RegistryId source);
-std::string remote_registry_display_name(RegistryId source);
+models::RegistryId parse_remote_registry_source(const std::string& source);
+std::string remote_registry_source_name(models::RegistryId source);
+std::string remote_registry_display_name(models::RegistryId source);
 
 // Short form used when a registry is spelled as a URL scheme. The accepted
 // short aliases are the same ones parse_remote_registry_source() recognizes.
-std::string remote_registry_scheme_prefix(RegistryId source);
+std::string remote_registry_scheme_prefix(models::RegistryId source);
 bool is_remote_registry_source(const std::string& source);
 
 // Detects a Hugging Face or ModelScope model URL. On a match returns true, sets
@@ -116,7 +119,7 @@ bool is_remote_registry_source(const std::string& source);
 // inputs return false and leave the outputs untouched. Shared by the CLI and
 // the server so both resolve provider URLs the same way.
 bool detect_registry_url(const std::string& value,
-                         RegistryId& out_source,
+                         models::RegistryId& out_source,
                          std::string& out_repo_id);
 
 // True when a checkpoint is an `owner/repo` registry id (optionally with a
@@ -143,13 +146,13 @@ void apply_default_pull_source(nlohmann::json& request_json,
 // Normalize one provider-specific model-list entry into Lemonade's registry contract.
 // Exposed so fixture tests and future clients share the same field mapping.
 RegistrySearchResult normalize_registry_search_result(
-    RegistryId source,
+    models::RegistryId source,
     const nlohmann::json& metadata);
 
 // Normalize and filter a provider response without performing network I/O.
 // This keeps provider field mapping and filtering deterministic and unit-testable.
 RegistrySearchResponse normalize_registry_search_response(
-    RegistryId source,
+    models::RegistryId source,
     const nlohmann::json& body,
     std::size_t limit = 12);
 
@@ -168,18 +171,9 @@ std::optional<nlohmann::json> fetch_huggingface_compatibility_metadata(
     const std::string& repo_id,
     const std::string& revision);
 
-// Search a remote model registry. Provider-side GGUF filters are candidate
-// hints only; callers must use /pull/variants as the authoritative file-level
-// compatibility check before presenting a downloadable marketplace result.
-RegistrySearchResponse search_registry_models(
-    RegistryId source,
-    const std::string& query,
-    std::size_t limit = 12,
-    bool gguf_only = false);
-
 // Deterministic snapshot id for providers whose download revision may remain
 // mutable. Ordering of files does not affect the result.
-std::string registry_tree_snapshot_id(RegistryId source,
+std::string registry_tree_snapshot_id(models::RegistryId source,
                                       const std::string& revision,
                                       const std::vector<RegistryFile>& files);
 
@@ -187,29 +181,6 @@ std::string registry_tree_snapshot_id(RegistryId source,
 // ModelScope receives a distinct namespace so identical owner/repo ids never
 // collide while the snapshot/refs layout below it stays runtime-compatible.
 std::string registry_repo_cache_dir_name(const std::string& repo_id,
-                                         RegistryId source);
-
-class ModelRegistry {
-public:
-    virtual ~ModelRegistry() = default;
-
-    virtual RegistryId source() const = 0;
-    virtual std::string default_revision() const = 0;
-    virtual std::map<std::string, std::string> auth_headers() const = 0;
-
-    // Fetch and normalize a repository file tree. Empty revision means the
-    // provider default. snapshot_id is stable for unchanged content and changes
-    // when the provider reports a new immutable revision/file tree.
-    virtual RegistryRepository fetch_repository(
-        const std::string& repo_id,
-        const std::string& revision = "") const = 0;
-
-    virtual std::string resolve_file_url(const std::string& repo_id,
-                                         const std::string& revision,
-                                         const std::string& file_path) const = 0;
-};
-
-const ModelRegistry& model_registry(RegistryId source);
-const ModelRegistry& model_registry(const std::string& source);
+                                         models::RegistryId source);
 
 }  // namespace lemon
