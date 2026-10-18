@@ -4,6 +4,8 @@
 #include <lemon/model_manager.h>
 #include <lemon/model_registry.h>
 #include <lemon/models/checkpoint_grammar.h>
+#include <lemon/models/store.h>
+#include <lemon/models/store.h>
 #include <lemon/models/store_snapshot.h>
 #include <lemon/registry_files.h>
 #include <lemon/runtime_config.h>
@@ -380,6 +382,50 @@ UpdateScanResult run_update_scan(const UpdateScanDeps& deps,
     }
 
     return result;
+}
+
+
+// Publishing what a pass settled, in the one store write that does it. Membership is
+// untouched, so the published tables still name the models this scan examined.
+void publish_scan_flags(ModelStore& store, const ScanDetermination& settled,
+                        UpdateScanResult& result) {
+    ModelStore::Write store_write(store);
+
+    const auto published = store.read();
+    if (!published) {
+        return;  // Nothing published, so nothing was examined either
+    }
+    const auto wire_name = [&published](const std::string& cache_key) {
+        auto name = published->canonical_public_names.find(cache_key);
+        return name == published->canonical_public_names.end() ? cache_key : name->second;
+    };
+
+    for (auto& [name, info] : store_write.draft()) {
+        if (settled.verified.count(name) == 0) {
+            continue;
+        }
+        if (result.failed_models.find(wire_name(name)) != result.failed_models.end()) {
+            continue;
+        }
+        info.update_available = settled.updated.count(name) != 0;
+    }
+
+    for (const auto& name : settled.updated) {
+        const std::string pub_name = wire_name(name);
+        if (result.failed_models.find(pub_name) == result.failed_models.end()) {
+            result.updated_models.push_back(pub_name);
+        }
+    }
+
+    for (const auto& name : settled.examined) {
+        if (settled.verified.count(name) == 0 || settled.updated.count(name) != 0) {
+            continue;
+        }
+        const std::string pub_name = wire_name(name);
+        if (result.failed_models.find(pub_name) == result.failed_models.end()) {
+            result.up_to_date_models.push_back(pub_name);
+        }
+    }
 }
 
 }  // namespace models

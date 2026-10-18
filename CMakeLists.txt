@@ -1063,6 +1063,7 @@ set(SOURCES_CORE
     src/cpp/server/models/cloud_rows.cpp
     src/cpp/server/models/recipe_option_layers.cpp
     src/cpp/server/models/composition.cpp
+    src/cpp/server/models/store_patches.cpp
     src/cpp/server/models/store.cpp
     src/cpp/server/models/store_builder.cpp
     src/cpp/server/models/sync_service.cpp
@@ -3330,6 +3331,19 @@ if(BUILD_TESTING AND EXISTS "${_MODEL_MANAGER_SHIM_TEST_SRC}")
 
     include(CTest)
     add_cpp_ci_test(ModelManagerShimTest CI ON COMMAND test_model_manager_shim)
+endif()
+
+set(_STORE_PATCHES_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_store_patches.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_STORE_PATCHES_TEST_SRC}")
+    add_executable(test_store_patches
+        test/cpp/test_store_patches.cpp
+    )
+    target_link_libraries(test_store_patches PRIVATE lemonade-server-core)
+
+    include(CTest)
+    add_cpp_ci_test(StorePatchesTest CI ON COMMAND test_store_patches)
 endif()
 
 set(_COMPOSITION_TEST_SRC

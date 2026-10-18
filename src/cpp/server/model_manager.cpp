@@ -20,6 +20,7 @@
 #include <lemon/models/scan_catalog.h>
 #include <lemon/models/store.h>
 #include <lemon/models/store_builder.h>
+#include <lemon/models/store_patches.h>
 #include <lemon/models/store_snapshot.h>
 #include <lemon/models/routing_parse_options.h>
 #include <lemon/models/model_index.h>
@@ -214,6 +215,7 @@ ModelManager::ModelManager(ModelManagerConfig config)
       })),
       ingest_(std::make_unique<models::ModelIngest>(make_ingest_deps())),
       composition_(make_composition()),
+      store_patches_(models::StorePatches::Deps{&store_, artifacts_.get()}),
       sync_(make_sync_deps()),
       cloud_rows_(store_, [this](const std::string& provider) {
           return backends::CloudServer::discover_provider_models(*cloud_registry_, provider);
@@ -385,7 +387,7 @@ void ModelManager::save_model_options(const ModelInfo& info) {
     recipe_options_.replace(id, info.recipe_options.to_json());
 
     StoreWrite store_write(*this);
-    update_model_options_in_cache_locked(store_write, info);
+    models::StorePatches::options(store_write.draft(), info);
 }
 
 json ModelManager::get_saved_model_options(const std::string& model_name) {
@@ -464,7 +466,7 @@ json ModelManager::write_saved_model_options(const std::string& model_name,
         // Same layering as build_cache(), so the two can't drift.
         info.recipe_options = models::build_recipe_options(
             info, registry_recipe_options(cache_key), id, json{{id, saved}});
-        update_model_options_in_cache_locked(store_write, info);
+        models::StorePatches::options(store_write.draft(), info);
     } else {
         invalidate_models_cache();
     }
@@ -515,57 +517,20 @@ ModelManager::UpdateCheckResult ModelManager::run_update_scan(const std::vector<
     deps.phase = sync_phase_callback_;
     deps.publish = [this](const models::ScanDetermination& settled,
                           models::UpdateScanResult& result) {
-        publish_update_scan(settled, result);
+        models::publish_scan_flags(store_, settled, result);
     };
 
     return models::run_update_scan(deps, targets);
 }
 
-void ModelManager::publish_update_scan(const models::ScanDetermination& settled,
-                                       models::UpdateScanResult& result) {
-    StoreWrite store_write(*this);
-
-    const auto published = store_.read();
-    if (!published) {
-        return;  // Nothing published, so nothing was examined either
-    }
-    // Membership is untouched here, so the published tables still name the models
-    // this scan reports on.
-    const auto wire_name = [&published](const std::string& cache_key) {
-        auto name = published->canonical_public_names.find(cache_key);
-        return name == published->canonical_public_names.end() ? cache_key : name->second;
-    };
-
-    for (auto& [name, info] : store_write.draft()) {
-        if (settled.verified.count(name) == 0) {
-            continue;
-        }
-        if (result.failed_models.find(wire_name(name)) != result.failed_models.end()) {
-            continue;
-        }
-        info.update_available = settled.updated.count(name) != 0;
-    }
-
-    for (const auto& name : settled.updated) {
-        const std::string pub_name = wire_name(name);
-        if (result.failed_models.find(pub_name) == result.failed_models.end()) {
-            result.updated_models.push_back(pub_name);
-        }
-    }
-
-    for (const auto& name : settled.examined) {
-        if (settled.verified.count(name) == 0 || settled.updated.count(name) != 0) {
-            continue;
-        }
-        const std::string pub_name = wire_name(name);
-        if (result.failed_models.find(pub_name) == result.failed_models.end()) {
-            result.up_to_date_models.push_back(pub_name);
-        }
-    }
-}
 
 bool ModelManager::should_auto_update(const ModelInfo& info) const {
     return sync_.should_auto_update(info);
+}
+
+json ModelManager::sync_models(const std::vector<std::string>& target_models, bool dry_run,
+                               bool attach_if_running) {
+    return sync_.sync(target_models, dry_run, attach_if_running);
 }
 
 json ModelManager::get_sync_status(uint64_t sync_id) const {
@@ -588,64 +553,6 @@ json ModelManager::wait_for_sync() {
     return sync_.wait_for(sync_.status().value("sync_id", 0));
 }
 
-json ModelManager::sync_models(const std::vector<std::string>& target_models, bool dry_run, bool attach_if_running) {
-    if (dry_run) {
-        LOG(INFO, "ModelManager") << "Checking models for sync/update (dry-run)..." << std::endl;
-        UpdateCheckResult check_res = check_for_model_updates(target_models);
-
-        std::vector<std::string> models_to_update = check_res.updated_models;
-        std::vector<std::string> models_up_to_date = check_res.up_to_date_models;
-        std::map<std::string, std::string> failed_models = check_res.failed_models;
-        int checked_count = check_res.up_to_date_models.size() + check_res.updated_models.size();
-
-        if (!target_models.empty()) {
-            for (const auto& input_name : target_models) {
-                std::string canonical_name = resolve_model_name(input_name);
-                std::string pub_name = get_public_model_name(canonical_name);
-                if (failed_models.count(pub_name) || failed_models.count(input_name)) {
-                    continue;
-                }
-                ModelInfo info;
-                bool found = false;
-                {
-                    auto snapshot = store_.read();
-                    if (const ModelInfo* cached = snapshot->find(canonical_name)) {
-                        info = *cached;
-                        found = true;
-                    }
-                }
-
-                if (!found) {
-                    failed_models[input_name] = "Model not found or registered";
-                    continue;
-                }
-
-                if (!info.downloaded) {
-                    failed_models[input_name] = "Model is not downloaded";
-                    continue;
-                }
-            }
-        }
-
-        json status_info = get_sync_status();
-        bool running = status_info.value("already_in_progress", false);
-        return json{
-            {"status", running ? "in_progress" : (failed_models.empty() ? "success" : "failed")},
-            {"dry_run", true},
-            {"already_in_progress", running},
-            {"sync_id", status_info.value("sync_id", 0)},
-            {"completed_sync_id", status_info.value("completed_sync_id", 0)},
-            {"checked_count", checked_count},
-            {"updated_count", models_to_update.size()},
-            {"models_updated", models_to_update},
-            {"models_up_to_date", models_up_to_date},
-            {"failed_models", failed_models}
-        };
-    }
-
-    SyncEnqueueResult enqueue_res = sync_.enqueue(target_models, attach_if_running);
-    return sync_.wait_for(enqueue_res.sync_id);
-}
 
 void ModelManager::download_from_huggingface_engine(
         const ModelInfo& info, DownloadProgressCallback progress_callback) {
@@ -784,103 +691,15 @@ void ModelManager::build_cache() {
                               << composed.downloaded << " downloaded" << std::endl;
 }
 
-void ModelManager::update_model_options_in_cache_locked(StoreWrite& store_write,
-                                                          const ModelInfo& info) {
-    if (!store_write.cache_valid()) {
-        return; // Will rebuild on next access
-    }
 
-    auto it = store_write.draft().find(info.model_name);
-    if (it != store_write.draft().end()) {
-        it->second.recipe_options = info.recipe_options;
-    } else {
-        LOG(WARNING, "ModelManager") << "'" << info.model_name << "' not found in cache" << std::endl;
-    }
-}
+
 
 void ModelManager::update_model_in_cache(const std::string& model_name, bool downloaded) {
-    // Everything here is filesystem work, so it runs against the published view on
-    // a private copy and only the rows it changed are committed.
-    auto view = store_.read();
-    if (!view || !view->valid) {
-        return;  // Will rebuild on next access
-    }
-    const ModelInfo* found = view->find(model_name);
-    if (!found) {
-        LOG(WARNING, "ModelManager") << "'" << model_name << "' not found in cache" << std::endl;
-        return;
-    }
-
-    ModelInfo patched = *found;
-    patched.downloaded = downloaded;
-    if (downloaded) {
-        // Up to date, and the path resolves now that the files exist.
-        patched.update_available = false;
-        resolve_all_model_paths(patched);
-    } else {
-        patched.max_context_window = 0;
-    }
-    const bool backend_lists_models =
-        downloaded && backends::ops_for(patched.recipe)->invalidates_cache_after_download();
-    if (!backend_lists_models) {
-        models::populate_model_metadata(patched, *artifacts_);
-        models::ModelArtifactStore::refresh_on_disk_size(patched);
-    }
-
-    // Collections carrying this model follow it without a full rebuild.
-    const auto dependents =
-        models::collection_states_after_component(view->models, model_name, downloaded);
-    const std::string resolved = patched.resolved_path();
-
-    StoreWrite store_write(*this);
-    if (!store_write.cache_valid()) {
-        return;  // Something else rebuilt while this ran, and it read the disk again
-    }
-    if (auto it = store_write.draft().find(model_name); it != store_write.draft().end()) {
-        // Options are patched into the live row without invalidating, so a save that
-        // landed while this read the disk keeps its answer.
-        patched.recipe_options = it->second.recipe_options;
-        it->second = std::move(patched);
-    }
-    for (const auto& [name, state] : dependents) {
-        auto it = store_write.draft().find(name);
-        if (it == store_write.draft().end() || it->second.downloaded == state) continue;
-        it->second.downloaded = state;
-        LOG(INFO, "ModelManager") << "Collection '" << name << "' downloaded=" << state
-                                 << " (dependent on " << model_name << ")" << std::endl;
-    }
-    if (backend_lists_models) {
-        store_write.invalidate_cache();
-        LOG(INFO, "ModelManager") << "Invalidated model cache after download for '" << model_name
-                                 << "' (backend rebuilds its model list)" << std::endl;
-        return;
-    }
-    LOG(INFO, "ModelManager") << "Updated '" << model_name << "' downloaded=" << downloaded
-                             << ", resolved_path=" << resolved << std::endl;
+    store_patches_.download_status(model_name, downloaded);
 }
 
 void ModelManager::remove_model_from_cache(const std::string& model_name) {
-    StoreWrite store_write(*this);
-
-    if (!store_write.cache_valid()) {
-        return;
-    }
-
-    auto it = store_write.draft().find(model_name);
-    if (it != store_write.draft().end()) {
-        // User models and local uploads should be removed entirely from cache
-        // (they're not in server_models.json, so keeping them makes no sense)
-        bool is_user_model = is_user_model_name(model_name);
-        if (is_user_model || it->second.source == "local_upload") {
-            store_write.draft().erase(model_name);
-            LOG(INFO, "ModelManager") << "Removed '" << model_name << "' from cache" << std::endl;
-        } else {
-            // Registered model - just mark as not downloaded
-            it->second.downloaded = false;
-            it->second.update_available = false;
-            LOG(INFO, "ModelManager") << "Marked '" << model_name << "' as not downloaded" << std::endl;
-        }
-    }
+    store_patches_.removed(model_name);
 }
 
 std::map<std::string, ModelInfo> ModelManager::get_downloaded_models() {

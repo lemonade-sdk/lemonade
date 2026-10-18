@@ -42,6 +42,59 @@ UpdateScanResult SyncService::scan_for_updates(const std::vector<std::string>& t
     return deps_.scan(targets);
 }
 
+json SyncService::sync(const std::vector<std::string>& target_models, bool dry_run,
+                       bool attach_if_running) {
+    if (dry_run) {
+        LOG(INFO, "ModelManager") << "Checking models for sync/update (dry-run)..." << std::endl;
+        UpdateScanResult check_res = scan_for_updates(target_models);
+
+        std::vector<std::string> models_to_update = check_res.updated_models;
+        std::vector<std::string> models_up_to_date = check_res.up_to_date_models;
+        std::map<std::string, std::string> failed_models = check_res.failed_models;
+        int checked_count = check_res.up_to_date_models.size() + check_res.updated_models.size();
+
+        if (!target_models.empty()) {
+            for (const auto& input_name : target_models) {
+                const std::string canonical_name = deps_.resolve_name(input_name);
+                const std::string pub_name = deps_.public_name(canonical_name);
+                if (failed_models.count(pub_name) || failed_models.count(input_name)) {
+                    continue;
+                }
+                ModelInfo info;
+                try {
+                    info = deps_.model_info(canonical_name);
+                } catch (const std::exception&) {
+                    failed_models[input_name] = "Model not found or registered";
+                    continue;
+                }
+
+                if (!info.downloaded) {
+                    failed_models[input_name] = "Model is not downloaded";
+                    continue;
+                }
+            }
+        }
+
+        json status_info = status();
+        bool running = status_info.value("already_in_progress", false);
+        return json{
+            {"status", running ? "in_progress" : (failed_models.empty() ? "success" : "failed")},
+            {"dry_run", true},
+            {"already_in_progress", running},
+            {"sync_id", status_info.value("sync_id", 0)},
+            {"completed_sync_id", status_info.value("completed_sync_id", 0)},
+            {"checked_count", checked_count},
+            {"updated_count", models_to_update.size()},
+            {"models_updated", models_to_update},
+            {"models_up_to_date", models_up_to_date},
+            {"failed_models", failed_models}
+        };
+    }
+
+    const Enqueued enqueue_res = enqueue(target_models, attach_if_running);
+    return wait_for(enqueue_res.sync_id);
+}
+
 json SyncService::status(uint64_t sync_id) const {
     std::lock_guard<std::mutex> lock(state_.mutex);
     if (sync_id > 0) {

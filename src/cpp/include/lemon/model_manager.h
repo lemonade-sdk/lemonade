@@ -21,6 +21,7 @@
 #include "model_types.h"
 #include "models/alias_manager.h"
 #include "models/backend_availability.h"
+#include "models/store_patches.h"
 #include "models/catalog_descriptor.h"
 #include "models/catalog_fetch_clock.h"
 #include "models/change_notifier.h"
@@ -533,8 +534,6 @@ private:
     // The host reads a catalog set needs; see models::CatalogSetDeps.
     models::CatalogSetDeps make_catalog_deps(std::map<std::string, json>& json_recipe_options);
     std::vector<ModelInfo> scan_extra_models(const models::CatalogAccumulator& claimed);
-    void update_model_options_in_cache_locked(StoreWrite& store_write,
-                                              const ModelInfo& info);
     void update_model_in_cache(const std::string& model_name, bool downloaded);
     void remove_model_from_cache(const std::string& model_name);
 
@@ -582,8 +581,6 @@ private:
     models::ModelIngest::Deps make_ingest_deps();
     std::unique_ptr<models::ModelComposition> make_composition();
 
-    void publish_update_scan(const models::ScanDetermination& settled,
-                             models::UpdateScanResult& result);
 
     // Declared last so it dies first: the worker joins before the store it
     // publishes to does.
@@ -595,6 +592,8 @@ private:
     models::SyncService sync_;
     // A provider's rows in that store, for the moments that cannot wait for a build.
     models::CloudRows cloud_rows_;
+    // One row moved is not worth composing a set over.
+    models::StorePatches store_patches_;
 };
 
 } // namespace lemon

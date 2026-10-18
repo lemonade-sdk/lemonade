@@ -18,6 +18,7 @@ class ModelRegistry;
 namespace models {
 
 struct StoreSnapshot;
+class ModelStore;
 
 struct UpdateScanResult {
     std::vector<std::string> updated_models;
@@ -53,6 +54,12 @@ struct UpdateScanDeps {
 
 UpdateScanResult run_update_scan(const UpdateScanDeps& deps,
                                  const std::vector<std::string>& targets = {});
+
+// Publishing what a pass settled, in the one store write that does it: the flag on each
+// examined row, and the wire names appended to the result. A model whose check failed is
+// reported as failed rather than as either state, and nothing is published for it.
+void publish_scan_flags(ModelStore& store, const ScanDetermination& settled,
+                        UpdateScanResult& result);
 
 }  // namespace models
 }  // namespace lemon
