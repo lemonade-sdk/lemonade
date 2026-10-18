@@ -430,6 +430,28 @@ void ApiRoute::serve(const RouteSpec& spec, const httplib::Request& http,
     handle(req, res);
 }
 
+namespace {
+
+bool is_empty_string(const json& value) {
+    return value.is_string() && value.get_ref<const std::string&>().empty();
+}
+
+// Ollama's Go client sends both model and name and leaves the one it does not use empty.
+void drop_empty_spellings(json& body, const std::vector<std::string>& names) {
+    const bool any_filled =
+        std::any_of(names.begin(), names.end(), [&body](const std::string& name) {
+            auto it = body.find(name);
+            return it != body.end() && !it->is_null() && !is_empty_string(*it);
+        });
+    if (!any_filled) return;
+    for (const auto& name : names) {
+        auto it = body.find(name);
+        if (it != body.end() && is_empty_string(*it)) body.erase(it);
+    }
+}
+
+} // namespace
+
 bool ApiRoute::check_args(RouteRequest& req, httplib::Response& res) const {
     for (const auto& arg : req.spec.args) {
         if (arg.forwarded || arg.in == ArgIn::Path) {
@@ -437,6 +459,9 @@ bool ApiRoute::check_args(RouteRequest& req, httplib::Response& res) const {
         }
         std::vector<std::string> names = {arg.name};
         names.insert(names.end(), arg.aliases.begin(), arg.aliases.end());
+        if (arg.in == ArgIn::JsonBody && names.size() > 1) {
+            drop_empty_spellings(req.body, names);
+        }
         bool present = false;
         for (const auto& name : names) {
             json value;

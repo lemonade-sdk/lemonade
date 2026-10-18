@@ -771,9 +771,9 @@ std::string WebSocketServer::get_request_path(struct lws* wsi) {
 }
 
 WebSocketServer::ConnectionKind WebSocketServer::classify_path(const std::string& path) {
-    // Quad-prefix invariant: endpoints are reachable bare and under
-    // /api/v0, /api/v1, /v0, /v1. OpenAI Realtime SDK clients connect
-    // to /v1/realtime.
+    // Clients built against older releases connect bare or under /api/v0,
+    // /api/v1 or /v0 (see the HTTP server spec's compatibility section).
+    // OpenAI Realtime SDK clients connect to /v1/realtime.
     std::string stripped = path;
     for (const char* prefix : {"/api/v0", "/api/v1", "/v0", "/v1"}) {
         size_t len = std::strlen(prefix);
