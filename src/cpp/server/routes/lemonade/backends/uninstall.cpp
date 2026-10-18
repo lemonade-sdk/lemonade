@@ -20,6 +20,9 @@ using ordered_json = nlohmann::ordered_json;
 
 const RouteError kMissingProvider{400, "", "A cloud uninstall has no `provider`, or an empty one"};
 
+const RouteArg kProvider{"provider", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
+                         "The installed cloud provider to remove."};
+
 
 class UninstallRoute : public ApiRoute {
 public:
@@ -41,7 +44,7 @@ public:
             "Removes the provider record from `config.json`, drops its in-memory API key, if any, "
             "and evicts every discovered model for that provider from the catalog.",
         };
-        s.args = {backend_routes::kRecipe, backend_routes::kBackend, backend_routes::kProvider};
+        s.args = {backend_routes::kRecipe, backend_routes::kBackend, kProvider};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -101,7 +104,7 @@ public:
             Router& router = *ctx_.router;
 
             if (req.value(backend_routes::kBackend, "") == "cloud") {
-                const std::string provider = req.value(backend_routes::kProvider, "");
+                const std::string provider = req.value(kProvider, "");
                 if (provider.empty()) {
                     write_openai_error(res, kMissingProvider, "Cloud uninstall requires 'provider' string field");
                     return;

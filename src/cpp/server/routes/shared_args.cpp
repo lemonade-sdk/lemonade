@@ -101,10 +101,6 @@ const RouteArg kRecipe{"recipe", ArgIn::JsonBody, {{"type", "string"}, {"minLeng
                        "`sd-cpp` or `ryzenai-llm`."};
 const RouteArg kBackend{"backend", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
                         "The backend within the recipe, such as `vulkan`, `rocm`, `cpu` or `default`."};
-const RouteArg kProvider{"provider", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-                         "Cloud providers, which take `backend: \"cloud\"`, required: a short identifier "
-                         "matching `[a-z0-9_-]+`, such as `fireworks`, used as the provider's model-name "
-                         "prefix."};
 const RouteArg kAllowInsecureHttp{"allow_insecure_http", ArgIn::JsonBody, {{"type", "boolean"}}, false,
                                   Support::Available,
                                   "Must be `true` to send an API key to a provider whose base URL is "

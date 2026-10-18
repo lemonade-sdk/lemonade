@@ -472,6 +472,14 @@ DISTINCT_ARGUMENTS = {
             ],
         ),
         (
+            "Install registers a new provider and checks its name; uninstall removes an "
+            "installed one",
+            [
+                "routes/lemonade/backends/install.cpp:kProvider",
+                "routes/lemonade/backends/uninstall.cpp:kProvider",
+            ],
+        ),
+        (
             "Audio's prompt is the style caption, with lyrics separate; images' is the image",
             [
                 "routes/lemonade/inference/audio_generations.cpp:kPrompt",

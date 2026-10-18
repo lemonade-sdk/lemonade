@@ -63,7 +63,6 @@ extern const RouteArg kModel;
 namespace backend_routes {
 extern const RouteArg kRecipe;
 extern const RouteArg kBackend;
-extern const RouteArg kProvider;
 extern const RouteArg kAllowInsecureHttp;
 } // namespace backend_routes
 

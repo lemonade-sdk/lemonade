@@ -97,6 +97,10 @@ ordered_json install_schema() {
 const RouteArg kForce{"force", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
                       "Local backends: if `true`, installs a backend this system does not support anyway. "
                       "Defaults to `false`."};
+const RouteArg kProvider{"provider", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
+                         "Cloud providers, which take `backend: \"cloud\"`, required: a short identifier "
+                         "matching `[a-z0-9_-]+`, such as `fireworks`, used as the provider's model-name "
+                         "prefix."};
 const RouteArg kBaseUrl{"base_url", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
                         "Cloud providers, required: the provider's base URL, such as one ending in `/v1`."};
 const RouteArg kApiKey{"api_key", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
@@ -142,7 +146,7 @@ public:
         };
         s.args = {
             backend_routes::kRecipe, backend_routes::kBackend, common::kStream, kForce,
-            backend_routes::kProvider, kBaseUrl, kApiKey, backend_routes::kAllowInsecureHttp,
+            kProvider, kBaseUrl, kApiKey, backend_routes::kAllowInsecureHttp,
             kAuthHeaderName, kAuthHeaderPrefix, kWireFormat, downloads::kSubscribe
         };
 
@@ -303,7 +307,7 @@ private:
     // apply only when present, so a re-install that omits one keeps the stored value.
     void install_cloud_provider(const RouteRequest& req, httplib::Response& res) {
         CloudProviderRegistry& registry = *ctx_.cloud_registry;
-        const std::string provider = req.value(backend_routes::kProvider, "");
+        const std::string provider = req.value(kProvider, "");
         const std::string base_url = req.value(kBaseUrl, "");
         const std::string api_key = req.value(kApiKey, "");
 
