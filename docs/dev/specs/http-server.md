@@ -266,7 +266,7 @@ This section defines how a route declares the error responses it can answer with
 - **Base classes.** A base class declares the error responses its own steps write, such as `ApiRoute::kArgMissing` for a missing required argument, and a route lists the ones its base class writes for it. A route that overrides `write_exception()` lists what its override writes instead.
 - **Backend errors.** A route that passes a backend's error through lists `kBackendError`, and also the backend error responses a client can act on, such as llama.cpp's 501 for a model that cannot embed.
 
-An error in a response that has already started, such as an error event in a stream, is a shape of the route's `RouteResponse::schema`. The [API reference's Errors section](../../api/README.md#errors) lists the error responses no route class writes: the 401 and 403 answers, the 405 stubs and the 404 for an unknown path. Body shapes differ by route; [Appendix B](#appendix-b-error-format-cleanup) unifies them.
+An error in a response that has already started, such as an error event in a stream, is a shape of the route's `RouteResponse::schema`.
 
 ```cpp
 const RouteError kUnknownJob{404, "", "`id` names no job"};
@@ -556,7 +556,7 @@ These rules apply across the fields:
 4. Identifiers, values and placeholders such as `<PROVIDER>` are in backticks.
 5. A mention of another route links to its section.
 
-A page intro states what the API family is and the facts true of every route on the page, such as Ollama's error shape, and routes do not repeat them. Routes state only whether they need an API key, so the [API reference's Authentication section](../../api/README.md#authentication) states how a client sends `LEMONADE_API_KEY` and `LEMONADE_ADMIN_API_KEY`. A page sets the order of its sections: the generator never moves an existing region, inserts a new route's region after the route registered before it, and orders the summary table to match the sections.
+A page intro states what the API family is and the facts true of every route on the page, such as Ollama's error shape, and routes do not repeat them. Routes state only whether they need an API key, so the top-level API reference states how a client sends `LEMONADE_API_KEY` and `LEMONADE_ADMIN_API_KEY`. A page sets the order of its sections: the generator never moves an existing region, inserts a new route's region after the route registered before it, and orders the summary table to match the sections.
 
 ### Response Cache
 
