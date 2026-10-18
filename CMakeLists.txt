@@ -3172,6 +3172,19 @@ if(BUILD_TESTING AND EXISTS "${_PULL_REGISTRY_TEST_SRC}")
     add_cpp_ci_test(PullRegistryTest CI ON COMMAND test_pull_registry)
 endif()
 
+set(_REGISTRY_PROVENANCE_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_registry_provenance.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_REGISTRY_PROVENANCE_TEST_SRC}")
+    add_executable(test_registry_provenance
+        test/cpp/test_registry_provenance.cpp
+    )
+    target_link_libraries(test_registry_provenance PRIVATE lemonade-server-core)
+
+    include(CTest)
+    add_cpp_ci_test(RegistryProvenanceTest CI ON COMMAND test_registry_provenance)
+endif()
+
 set(_FILTER_HARDWARE_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_filter_hardware.cpp"
 )

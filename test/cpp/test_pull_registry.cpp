@@ -235,8 +235,23 @@ void test_a_pull_lands_exactly_the_selected_files() {
 
     // The manifest served the resume and then left; provenance stayed.
     check(!fs::exists(main_snapshot / ".download_manifest.json"), "manifest is removed after");
-    check(fs::exists(repo_cache(mm, "vendor/repo") / ".lemonade_registry.json"),
-          "provenance records the pull");
+    // Provenance v2: the main file tells the whole v1 sentence, and the
+    // auxiliary file tells only its own checkpoint.
+    const auto read_provenance = [](const fs::path& dir) {
+        std::ifstream in(dir / ".lemonade_registry.json", std::ios::binary);
+        return nlohmann::json::parse(in);
+    };
+    const nlohmann::json main_prov = read_provenance(repo_cache(mm, "vendor/repo"));
+    const auto& main_rec = main_prov["processed_models"]["user.Pull-Char"];
+    check(main_rec.contains("selection") && main_rec.contains("snapshot_id"),
+          "the main provenance still answers a v1 reader");
+    check(main_rec["checkpoints"]["main"]["snapshot_id"] == "snap-main-1",
+          "the main checkpoint slot names the fetched snapshot");
+    const nlohmann::json aux_prov = read_provenance(repo_cache(mm, "vendor/aux"));
+    check(aux_prov.value("version", 0) == 2, "the auxiliary file is a v2 file");
+    const auto& aux_rec = aux_prov["processed_models"]["user.Pull-Char"];
+    check(!aux_rec.contains("selection") && aux_rec["checkpoints"].contains("side"),
+          "the auxiliary file records only the checkpoint it holds");
 
     // The whole wire plan: three main files and one aux, at the listing's snapshot.
     // URLs carry the download ref the listing names, while the snapshot directory

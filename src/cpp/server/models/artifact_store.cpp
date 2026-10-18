@@ -935,6 +935,17 @@ std::string processed_selection(const ModelInfo& info) {
     return selection.str();
 }
 
+namespace {
+
+// The fingerprint of one checkpoint's slot: a re-pull that changed the string
+// changed the bytes it wants.
+std::string processed_checkpoint_selection(const std::string& type,
+                                           const std::string& checkpoint) {
+    return type + '=' + checkpoint;
+}
+
+}  // namespace
+
 std::string ModelArtifactStore::processed_snapshot_id(const fs::path& repo_cache_dir,
                                                       const ModelInfo& info) const {
     const fs::path provenance_path = repo_cache_dir / kProvenanceFile;
@@ -961,16 +972,24 @@ std::string ModelArtifactStore::processed_snapshot_id(const fs::path& repo_cache
     }
 }
 
+// v1 said: "this model's whole selection came from this repository's active
+// snapshot," and only the main repository was allowed to write. v2 keeps that
+// top-level shape for v1 readers forever and adds what the sentence could not
+// say: which checkpoint of the model landed here. An auxiliary repository
+// records only its own checkpoint, so a shared side cache knows every model
+// that filled it without any of them claiming the whole model.
 void ModelArtifactStore::record_processed_model(const fs::path& repo_cache_dir,
                                                 const ModelInfo& info,
-                                                const Provenance& provenance) const {
+                                                const Provenance& provenance,
+                                                const std::string& checkpoint_type) const {
     const fs::path provenance_path = repo_cache_dir / kProvenanceFile;
+    const bool is_main = checkpoint_type.empty() || checkpoint_type == "main";
 
-    // What other models recorded here survives; only this model's entry changes.
+    json previous;
     json processed = json::object();
     if (safe_exists(provenance_path)) {
         try {
-            const json previous = utils::JsonUtils::load_from_file(utils::path_to_utf8(provenance_path));
+            previous = utils::JsonUtils::load_from_file(utils::path_to_utf8(provenance_path));
             if (previous.contains("processed_models") && previous["processed_models"].is_object()) {
                 processed = previous["processed_models"];
             }
@@ -979,21 +998,44 @@ void ModelArtifactStore::record_processed_model(const fs::path& repo_cache_dir,
         }
     }
 
-    // Only the main repository is this model's provenance; an auxiliary repository
-    // would otherwise claim a model it holds part of.
-    if (provenance.repo_id == repo_id_from_checkpoint(info.checkpoint("main"))) {
-        processed[info.model_name] = {
-            {"selection", processed_selection(info)},
-            {"snapshot_id", provenance.processed_snapshot_id}
-        };
+    json entry = json::object();
+    if (is_main) {
+        // The v1 sentence, preserved for readers that stop here. When this pull
+        // moved the model to a new snapshot, the one it leaves behind stays named.
+        const auto last = processed.find(info.model_name);
+        if (last != processed.end() && last->is_object() && last->contains("snapshot_id") &&
+            last->at("snapshot_id").is_string() &&
+            last->at("snapshot_id").get<std::string>() != provenance.active_snapshot_id) {
+            entry["previous_snapshot_id"] = last->at("snapshot_id");
+        }
+        entry["selection"] = processed_selection(info);
+        entry["snapshot_id"] = provenance.processed_snapshot_id;
     }
 
-    utils::JsonUtils::save_to_file(json{{"source", provenance.source},
-                                 {"repo_id", provenance.repo_id},
-                                 {"revision", provenance.revision},
-                                 {"snapshot_id", provenance.active_snapshot_id},
-                                 {"processed_models", std::move(processed)}},
-                            utils::path_to_utf8(provenance_path));
+    // v2: what this model processed from this repository, checkpoint by checkpoint.
+    json checkpoints = json::object();
+    const auto own = processed.find(info.model_name);
+    if (own != processed.end() && own->is_object() && own->contains("checkpoints") &&
+        own->at("checkpoints").is_object()) {
+        checkpoints = own->at("checkpoints");
+    }
+    const std::string checkpoint = info.checkpoint(is_main ? "main" : checkpoint_type);
+    checkpoints[is_main ? "main" : checkpoint_type] = {
+        {"selection", processed_checkpoint_selection(checkpoint_type.empty() ? "main" : checkpoint_type,
+                                                     checkpoint)},
+        {"snapshot_id", provenance.processed_snapshot_id},
+    };
+    entry["checkpoints"] = std::move(checkpoints);
+
+    processed[info.model_name] = std::move(entry);
+
+    json out{{"source", provenance.source},
+             {"repo_id", provenance.repo_id},
+             {"revision", provenance.revision},
+             {"snapshot_id", provenance.active_snapshot_id},
+             {"processed_models", std::move(processed)}};
+    if (!is_main) out["version"] = 2;
+    utils::JsonUtils::save_to_file(out, utils::path_to_utf8(provenance_path));
 }
 
 // Resolve the complete family of a registered sharded GGUF. A first shard

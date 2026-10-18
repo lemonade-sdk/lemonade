@@ -156,9 +156,12 @@ class ModelArtifactStore {
     // Empty when there is none, or when what was processed is not this selection.
     std::string processed_snapshot_id(const std::filesystem::path& repo_cache_dir,
                                       const ModelInfo& info) const;
+    // checkpoint_type names the slot whose bytes landed in this repository;
+    // empty means main.
     void record_processed_model(const std::filesystem::path& repo_cache_dir,
                                 const ModelInfo& info,
-                                const Provenance& provenance) const;
+                                const Provenance& provenance,
+                                const std::string& checkpoint_type = "") const;
 
   private:
     // The checkpoints whose bytes lemond wrote, and any recipe whose backend

@@ -498,13 +498,22 @@ void ModelIngest::download_from_registry(const ModelInfo& info,
         }
 
         const RepoListing& listing = listings.at(repo_id);
+        std::string checkpoint_type = "main";
+        if (repo_id != main_repo_id) {
+            for (const auto& ref : refs) {
+                if (ref.repo_id == repo_id && ref.checkpoint_type != "main") {
+                    checkpoint_type = ref.checkpoint_type;
+                    break;
+                }
+            }
+        }
         artifacts().record_processed_model(cache_path, info, models::Provenance{
             source_name,
             repo_id,
             listing.download_revision,
             active_snapshot_id,
             snapshot_id,
-        });
+        }, checkpoint_type);
     }
 
     if (progress_callback) {
