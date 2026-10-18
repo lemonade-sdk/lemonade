@@ -785,8 +785,7 @@ void ApiRoute::record_usage(const json& response, const RouteRequest& req) const
     }
 
     StreamingProxy::TelemetryData telemetry = StreamingProxy::extract_telemetry(response);
-    std::string model_name = req.body.value("model", "");
-    LOG(INFO, "Telemetry") << "Inference completed: model=" << model_name
+    LOG(INFO, "Telemetry") << "Inference completed: model=" << req.model
                            << ", tokens=" << (telemetry.input_tokens + telemetry.output_tokens)
                            << " (in=" << telemetry.input_tokens
                            << ", out=" << telemetry.output_tokens << ")"
@@ -794,7 +793,7 @@ void ApiRoute::record_usage(const json& response, const RouteRequest& req) const
                            << telemetry.time_to_first_token << "s"
                            << ", tps=" << telemetry.tokens_per_second << std::endl;
 
-    ctx_.router->update_request_telemetry(model_name, telemetry);
+    ctx_.router->update_request_telemetry(req.model, telemetry);
 }
 
 void set_error_response(const json& response, httplib::Response& res, const RouteError& fallback) {

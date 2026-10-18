@@ -164,7 +164,8 @@ protected:
     bool validate(RouteRequest& req, httplib::Response&) override {
         // Router policies call backends here, before run() does.
         auto cancel = cancel_on_disconnect(req);
-        req.route_decision = router_dispatch(ctx_, req);
+        req.route_decision = router_dispatch(ctx_, req.model, req.value(openai::text::kRouteTrace, false),
+                                             req.body);
         return true;
     }
 

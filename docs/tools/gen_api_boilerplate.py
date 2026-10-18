@@ -733,6 +733,23 @@ def literal_argument_reads(
     return sorted(found)
 
 
+def helper_argument_reads(text: str, spellings: set[str]) -> list[tuple[int, str]]:
+    """Each place a helper that takes a RouteRequest names a declared argument by a string
+    literal on it, where its route should pass it the argument's value."""
+    names = "|".join(
+        re.escape(name) for name in sorted(spellings, key=len, reverse=True)
+    )
+    pattern = (
+        r"\breq\.(?:body\s*(?:\.(?:value|contains|find|at|erase|count)\(\s*|\[\s*)"
+        r"|http\.(?:get_param_value|has_param|has_file|get_file_value)\(\s*)"
+        rf'"({names})"'
+    )
+    return [
+        (text.count("\n", 0, match.start()) + 1, match.group(1))
+        for match in re.finditer(pattern, text)
+    ]
+
+
 def lint_sources() -> list[str]:
     """Every error status a route or service writes comes from a RouteError, and every
     RouteError a route file uses is in its route's errors."""
@@ -751,8 +768,11 @@ def lint_sources() -> list[str]:
     # the route files that list them, and route files name them with their namespaces.
     shared_args = {}
     required_model = set()
+    argument_names = set()
     for path in sources:
         text = path.read_text(encoding="utf-8")
+        for decl in ROUTE_ARG_DECL.finditer(text):
+            argument_names |= spellings_of(decl)
         if "RouteSpec spec()" in text:
             continue
         for decl in ROUTE_ARG_DECL.finditer(text):
@@ -776,6 +796,12 @@ def lint_sources() -> list[str]:
                 f"{where}:{line} names another route's argument {match.group(1)} by a string "
                 "literal; write it through that route's RouteArg constant"
             )
+        if "RouteSpec spec()" not in text:
+            for line, name in helper_argument_reads(text, argument_names):
+                problems.append(
+                    f"{where}:{line} names the argument {name} by a string literal on the "
+                    "request; have the route pass this helper its value"
+                )
         if path.parent.name == "services" or "RouteSpec spec()" not in text:
             continue
         lists = " ".join(m.group(0) for m in ERROR_LISTS.finditer(text))

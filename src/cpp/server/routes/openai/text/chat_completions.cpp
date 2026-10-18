@@ -278,7 +278,8 @@ protected:
             run_omni_collection(ctx_, req, res);
             return false;
         }
-        req.route_decision = router_dispatch(ctx_, req);
+        req.route_decision = router_dispatch(ctx_, req.model, req.value(openai::text::kRouteTrace, false),
+                                             req.body);
         return true;
     }
 
