@@ -1044,6 +1044,11 @@ void Router::load_model(const std::string& model_name,
         // Done AFTER eviction so that freed VRAM/RAM is visible to the memory query.
         int64_t auto_ctx = resolve_auto_ctx_size(effective_options, model_info);
         const bool ctx_size_auto = auto_ctx != -2;
+        if (auto_ctx == AUTO_CTX_NO_CAPACITY) {
+            throw std::runtime_error(
+                "Not enough free memory to load " + canonical_model_name +
+                " with automatic context sizing. Free memory or choose a smaller model.");
+        }
         if (auto_ctx > 0) {
             LOG(INFO, "Router") << "Auto-tune ctx_size resolved to " << auto_ctx << std::endl;
             effective_options.set_option("ctx_size", auto_ctx);

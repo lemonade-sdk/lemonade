@@ -20,7 +20,7 @@ on:
         default: false
         type: boolean
       disable_macos_signing:
-        description: 'Force the unsigned macOS path (reproduces a fork PR, which has no Apple secrets). Skips the self-hosted inference rigs.'
+        description: 'Force the unsigned macOS path (reproduces a fork PR, which has no Apple secrets). Skips the self-hosted inference runners.'
         required: false
         default: false
         type: boolean
@@ -1040,7 +1040,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     needs: build-lemonade-server-installer
     # Skip inference tests when signing is enabled (tag pushes or manual workflow_dispatch).
-    # Self-hosted rig capacity is the binding constraint, so the merge queue runs
+    # Self-hosted runner capacity is the binding constraint, so the merge queue runs
     # these instead of PR pushes. Label a PR `ci:backends` to opt it back in.
     if: >-
       !startsWith(github.ref, 'refs/tags/') &&
@@ -1050,93 +1050,47 @@ jobs:
       (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:backends'))
     strategy:
       fail-fast: ${{ github.event_name == 'merge_group' }}
+      # The runner agent can drop a job dispatch (actions/runner#4728), so suites
+      # share one job per runner class to minimize the number of dispatches.
       matrix:
         include:
-          - name: llamacpp
-            script: server_llm.py
-            extra_args: "--wrapped-server llamacpp"
-            backends: "vulkan rocm"
+          # Two entries share these labels so neither part lands on the critical
+          # path; a third would occupy every vulkan+rocm runner, starving stx-halo.
+          - name: vulkan-rocm-1
             runner: [Windows, X64, vulkan, rocm, lemon-prod]
-          - name: omni
-            script: server_omni.py
-            extra_args: "--wrapped-server llamacpp"
-            backends: "vulkan"
+            suites: >-
+              [{"name":"3d-trellis","script":"server_3d.py","extra_args":"--wrapped-server trellis","backends":"vulkan rocm"},
+               {"name":"stable-diffusion","script":"server_sd.py","extra_args":"","backends":"cpu vulkan"},
+               {"name":"audio-gen-thinksound","script":"server_audio_generation.py","extra_args":"--wrapped-server thinksound","backends":"vulkan rocm"}]
+          - name: vulkan-rocm-2
+            runner: [Windows, X64, vulkan, rocm, lemon-prod]
+            suites: >-
+              [{"name":"tts-openmoss","script":"server_tts_openmoss.py","extra_args":"--wrapped-server openmoss","backends":"vulkan"},
+               {"name":"llamacpp","script":"server_llm.py","extra_args":"--wrapped-server llamacpp","backends":"vulkan rocm"},
+               {"name":"audio-gen-acestep","script":"server_audio_generation.py","extra_args":"--wrapped-server acestep","backends":"vulkan rocm"},
+               {"name":"audio-gen-openmoss","script":"server_audio_generation.py","extra_args":"--wrapped-server openmoss","backends":"vulkan"}]
+          - name: xdna2
+            runner: [Windows, X64, xdna2, lemon-prod]
+            suites: >-
+              [{"name":"ryzenai","script":"server_llm.py","extra_args":"--wrapped-server ryzenai","backends":"cpu hybrid npu"},
+               {"name":"flm","script":"server_llm.py","extra_args":"--wrapped-server flm","backends":"npu"},
+               {"name":"flm-whisper","script":"server_whisper.py","extra_args":"--wrapped-server flm","backends":"npu"}]
+          - name: stx-halo
+            runner: [Windows, X64, stx-halo, lemon-prod]
+            suites: >-
+              [{"name":"whisper","script":"server_whisper.py","extra_args":"--wrapped-server whispercpp","backends":"cpu npu rocm"},
+               {"name":"thenoise","script":"server_thenoise.py","extra_args":"--wrapped-server thenoise","backends":"rocm"}]
+          - name: vulkan-stx-halo
             runner: [Windows, X64, vulkan, stx-halo, lemon-prod]
-          - name: ryzenai
-            script: server_llm.py
-            extra_args: "--wrapped-server ryzenai"
-            backends: "cpu hybrid npu"
-            runner: [Windows, X64, xdna2, lemon-prod]
-          - name: flm
-            script: server_llm.py
-            extra_args: "--wrapped-server flm"
-            backends: "npu"
-            runner: [Windows, X64, xdna2, lemon-prod]
-          - name: whisper
-            script: server_whisper.py
-            extra_args: "--wrapped-server whispercpp"
-            backends: "cpu npu rocm"
-            runner: [Windows, X64, stx-halo, lemon-prod]
-          - name: flm-whisper
-            script: server_whisper.py
-            extra_args: "--wrapped-server flm"
-            backends: "npu"
-            runner: [Windows, X64, xdna2, lemon-prod]
-          - name: moonshine
-            script: server_moonshine.py
-            extra_args: "--wrapped-server moonshine"
-            backends: "cpu"
+            suites: >-
+              [{"name":"omni","script":"server_omni.py","extra_args":"--wrapped-server llamacpp","backends":"vulkan"}]
+          - name: generic
             runner: [self-hosted, Windows, X64, lemon-prod]
-          - name: classify-onnxruntime
-            script: server_classify.py
-            extra_args: "--wrapped-server onnxruntime"
-            backends: "cpu"
-            runner: [self-hosted, Windows, X64, lemon-prod]
-          - name: router-onnxruntime
-            script: server_router.py
-            extra_args: "--wrapped-server onnxruntime"
-            backends: "cpu"
-            runner: [self-hosted, Windows, X64, lemon-prod]
-          - name: stable-diffusion
-            script: server_sd.py
-            extra_args: ""
-            backends: "cpu vulkan"
-            runner: [Windows, X64, rocm, vulkan, lemon-prod]
-          - name: thenoise
-            script: server_thenoise.py
-            extra_args: "--wrapped-server thenoise"
-            backends: "rocm"
-            runner: [Windows, X64, stx-halo, lemon-prod]
-          - name: audio-gen-thinksound
-            script: server_audio_generation.py
-            extra_args: "--wrapped-server thinksound"
-            backends: "vulkan rocm"
-            runner: [Windows, X64, rocm, vulkan, lemon-prod]
-          - name: audio-gen-acestep
-            script: server_audio_generation.py
-            extra_args: "--wrapped-server acestep"
-            backends: "vulkan rocm"
-            runner: [Windows, X64, rocm, vulkan, lemon-prod]
-          - name: audio-gen-openmoss
-            script: server_audio_generation.py
-            extra_args: "--wrapped-server openmoss"
-            backends: "vulkan"
-            runner: [Windows, X64, rocm, vulkan, lemon-prod]
-          - name: text-to-speech
-            script: server_tts.py
-            extra_args: ""
-            backends: ""
-            runner: [self-hosted, Windows, X64, lemon-prod]
-          - name: 3d-trellis
-            script: server_3d.py
-            extra_args: "--wrapped-server trellis"
-            backends: "vulkan rocm"
-            runner: [Windows, X64, rocm, vulkan, lemon-prod]
-          - name: tts-openmoss
-            script: server_tts_openmoss.py
-            extra_args: "--wrapped-server openmoss"
-            backends: "vulkan"
-            runner: [Windows, X64, rocm, vulkan, lemon-prod]
+            suites: >-
+              [{"name":"moonshine","script":"server_moonshine.py","extra_args":"--wrapped-server moonshine","backends":"cpu"},
+               {"name":"classify-onnxruntime","script":"server_classify.py","extra_args":"--wrapped-server onnxruntime","backends":"cpu"},
+               {"name":"router-onnxruntime","script":"server_router.py","extra_args":"--wrapped-server onnxruntime","backends":"cpu"},
+               {"name":"text-to-speech","script":"server_tts.py","extra_args":"","backends":""}]
     env:
       LEMONADE_CI_MODE: "True"
       HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
@@ -1227,7 +1181,7 @@ jobs:
           install-path: ${{ env.LEMONADE_INSTALL_PATH }}
 
       - name: Install FLM backend for FLM wrapped-server tests
-        if: ${{ runner.os == 'Windows' && contains(matrix.extra_args, '--wrapped-server flm') }}
+        if: ${{ runner.os == 'Windows' && contains(matrix.suites, '--wrapped-server flm') }}
         shell: PowerShell
         run: |
           $ErrorActionPreference = "Stop"
@@ -1240,22 +1194,39 @@ jobs:
         shell: PowerShell
         env:
           HF_HOME: ${{ env.HF_HOME }}
+          SUITES: ${{ matrix.suites }}
         run: |
           $ErrorActionPreference = "Stop"
           $venvPython = ".\.venv\Scripts\python.exe"
           $serverExe = Join-Path $env:LEMONADE_INSTALL_PATH "bin\lemonade.exe"
-          $extraArgs = "${{ matrix.extra_args }}" -split " " | Where-Object { $_ }
-          $backends = "${{ matrix.backends }}" -split " " | Where-Object { $_ }
+
+          # An unreadable suite list must fail loudly.
+          # An empty list would walk zero suites and report success without testing anything.
+          $suites = $null
+          try { $suites = $env:SUITES | ConvertFrom-Json } catch { }
+          $expected = @($suites).Count
+          if (-not $suites -or $expected -lt 1) {
+            Write-Host "::error title=Suite list unusable::Could not parse matrix.suites into at least one suite"
+            exit 1
+          }
 
           function Invoke-TestBackend {
             param(
+              [object]$Suite,
               [string]$Backend,
               [int]$MaxAttempts = 1
             )
 
+            $extraArgs = $Suite.extra_args -split " " | Where-Object { $_ }
+
             for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
-              Write-Host "Running test/${{ matrix.script }} ${{ matrix.extra_args }} --backend $Backend (attempt $attempt/$MaxAttempts)" -ForegroundColor Cyan
-              & $venvPython test/${{ matrix.script }} @extraArgs --backend $Backend --cli-binary $serverExe
+              if ($Backend) {
+                Write-Host "Running test/$($Suite.script) $($Suite.extra_args) --backend $Backend (attempt $attempt/$MaxAttempts)" -ForegroundColor Cyan
+                & $venvPython test/$($Suite.script) @extraArgs --backend $Backend --cli-binary $serverExe
+              } else {
+                Write-Host "Running test/$($Suite.script) $($Suite.extra_args)" -ForegroundColor Cyan
+                & $venvPython test/$($Suite.script) @extraArgs --cli-binary $serverExe
+              }
               $testExitCode = $LASTEXITCODE
 
               if ($testExitCode -eq 0) {
@@ -1263,7 +1234,7 @@ jobs:
               }
 
               if ($attempt -lt $MaxAttempts) {
-                Write-Host "::warning title=Retrying transient backend test::test/${{ matrix.script }} --backend $Backend failed with exit code $testExitCode; cleaning sd-server state and retrying."
+                Write-Host "::warning title=Retrying transient backend test::test/$($Suite.script) --backend $Backend failed with exit code $testExitCode; cleaning sd-server state and retrying."
 
                 Get-Process sd-server -ErrorAction SilentlyContinue |
                   Stop-Process -Force -ErrorAction SilentlyContinue
@@ -1288,19 +1259,31 @@ jobs:
             }
           }
 
-          if ($backends.Count -eq 0) {
-            Write-Host "Running test/${{ matrix.script }} ${{ matrix.extra_args }}" -ForegroundColor Cyan
-            & $venvPython test/${{ matrix.script }} @extraArgs --cli-binary $serverExe
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          } else {
-            foreach ($backend in $backends) {
-              $maxAttempts = 1
-              if ("${{ matrix.name }}" -eq "stable-diffusion" -and $backend -eq "rocm") {
-                $maxAttempts = 3
-              }
+          $ran = 0
+          foreach ($suite in $suites) {
+            Write-Host "::group::$($suite.name)"
+            $ran++
+            $backends = $suite.backends -split " " | Where-Object { $_ }
 
-              Invoke-TestBackend -Backend $backend -MaxAttempts $maxAttempts
+            if ($backends.Count -eq 0) {
+              Invoke-TestBackend -Suite $suite -Backend ""
+            } else {
+              foreach ($backend in $backends) {
+                $maxAttempts = 1
+                if ($suite.name -eq "stable-diffusion" -and $backend -eq "rocm") {
+                  $maxAttempts = 3
+                }
+
+                Invoke-TestBackend -Suite $suite -Backend $backend -MaxAttempts $maxAttempts
+              }
             }
+            Write-Host "::endgroup::"
+          }
+
+          Write-Host "Ran $ran of $expected suite(s) in this group."
+          if ($ran -ne $expected) {
+            Write-Host "::error title=Suites skipped::Ran $ran of $expected suite(s)"
+            exit 1
           }
 
       - name: Capture and upload server logs
@@ -1319,7 +1302,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     needs: build-lemonade-deb
     # Skip inference tests when signing is enabled (tag pushes or manual workflow_dispatch).
-    # Self-hosted rig capacity is the binding constraint, so the merge queue runs
+    # Self-hosted runner capacity is the binding constraint, so the merge queue runs
     # these instead of PR pushes. Label a PR `ci:backends` to opt it back in.
     if: >-
       !startsWith(github.ref, 'refs/tags/') &&
@@ -1329,78 +1312,41 @@ jobs:
       (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:backends'))
     strategy:
       fail-fast: ${{ github.event_name == 'merge_group' }}
+      # Same reasoning as test-exe-inference; only four X64 runners serve this matrix.
       matrix:
         include:
-          - name: llamacpp
-            script: server_llm.py
-            extra_args: "--wrapped-server llamacpp"
-            backends: "vulkan rocm"
+          - name: vulkan-rocm
             runner: [Linux, X64, vulkan, rocm, lemon-prod]
-          - name: llamacpp-hrx
-            script: server_llm.py
-            extra_args: "--wrapped-server llamacpp-hrx"
-            backends: "hrx"
+            suites: >-
+              [{"name":"llamacpp","script":"server_llm.py","extra_args":"--wrapped-server llamacpp","backends":"vulkan rocm"},
+               {"name":"stable-diffusion","script":"server_sd.py","extra_args":"","backends":"cpu rocm vulkan"},
+               {"name":"audio-gen-thinksound","script":"server_audio_generation.py","extra_args":"--wrapped-server thinksound","backends":"vulkan rocm"},
+               {"name":"audio-gen-acestep","script":"server_audio_generation.py","extra_args":"--wrapped-server acestep","backends":"vulkan rocm"},
+               {"name":"audio-gen-openmoss","script":"server_audio_generation.py","extra_args":"--wrapped-server openmoss","backends":"vulkan"},
+               {"name":"3d-trellis","script":"server_3d.py","extra_args":"--wrapped-server trellis","backends":"vulkan rocm"},
+               {"name":"tts-openmoss","script":"server_tts_openmoss.py","extra_args":"--wrapped-server openmoss","backends":"vulkan"}]
+          - name: rocm-stx-halo
             runner: [Linux, X64, rocm, stx-halo, lemon-prod]
-          - name: omni
-            script: server_omni.py
-            extra_args: "--wrapped-server llamacpp"
-            backends: "vulkan"
+            suites: >-
+              [{"name":"llamacpp-hrx","script":"server_llm.py","extra_args":"--wrapped-server llamacpp-hrx","backends":"hrx"},
+               {"name":"thenoise","script":"server_thenoise.py","extra_args":"--wrapped-server thenoise","backends":"rocm"}]
+          - name: vulkan-stx-halo
             runner: [Linux, X64, vulkan, stx-halo, lemon-prod]
-          - name: stable-diffusion
-            script: server_sd.py
-            extra_args: ""
-            backends: "cpu rocm vulkan"
-            runner: [Linux, X64, vulkan, rocm, lemon-prod]
-          - name: thenoise
-            script: server_thenoise.py
-            extra_args: "--wrapped-server thenoise"
-            backends: "rocm"
-            runner: [Linux, X64, rocm, stx-halo, lemon-prod]
-          - name: audio-gen-thinksound
-            script: server_audio_generation.py
-            extra_args: "--wrapped-server thinksound"
-            backends: "vulkan rocm"
-            runner: [Linux, X64, vulkan, rocm, lemon-prod]
-          - name: audio-gen-acestep
-            script: server_audio_generation.py
-            extra_args: "--wrapped-server acestep"
-            backends: "vulkan rocm"
-            runner: [Linux, X64, vulkan, rocm, lemon-prod]
-          - name: audio-gen-openmoss
-            script: server_audio_generation.py
-            extra_args: "--wrapped-server openmoss"
-            backends: "vulkan"
-            runner: [Linux, X64, vulkan, rocm, lemon-prod]
-          - name: whisper
-            script: server_whisper.py
-            extra_args: "--wrapped-server whispercpp"
-            backends: "cpu vulkan rocm"
+            suites: >-
+              [{"name":"omni","script":"server_omni.py","extra_args":"--wrapped-server llamacpp","backends":"vulkan"}]
+          - name: rocm-xdna2
             runner: [Linux, X64, rocm, xdna2, lemon-prod]
-          - name: moonshine
-            script: server_moonshine.py
-            extra_args: "--wrapped-server moonshine"
-            backends: "cpu"
-            runner: [self-hosted, Linux, X64, lemon-prod]
-          - name: flm
-            script: server_llm.py
-            extra_args: "--wrapped-server flm"
-            backends: "npu"
+            suites: >-
+              [{"name":"whisper","script":"server_whisper.py","extra_args":"--wrapped-server whispercpp","backends":"cpu vulkan rocm"}]
+          - name: xdna2
             runner: [Linux, X64, xdna2, lemon-prod]
-          - name: text-to-speech
-            script: server_tts.py
-            extra_args: ""
-            backends: ""
+            suites: >-
+              [{"name":"flm","script":"server_llm.py","extra_args":"--wrapped-server flm","backends":"npu"}]
+          - name: generic
             runner: [self-hosted, Linux, X64, lemon-prod]
-          - name: 3d-trellis
-            script: server_3d.py
-            extra_args: "--wrapped-server trellis"
-            backends: "vulkan rocm"
-            runner: [Linux, X64, vulkan, rocm, lemon-prod]
-          - name: tts-openmoss
-            script: server_tts_openmoss.py
-            extra_args: "--wrapped-server openmoss"
-            backends: "vulkan"
-            runner: [Linux, X64, vulkan, rocm, lemon-prod]
+            suites: >-
+              [{"name":"moonshine","script":"server_moonshine.py","extra_args":"--wrapped-server moonshine","backends":"cpu"},
+               {"name":"text-to-speech","script":"server_tts.py","extra_args":"","backends":""}]
     env:
       LEMONADE_CI_MODE: "True"
       HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
@@ -1431,7 +1377,7 @@ jobs:
           port: auto
 
       - name: Install FLM backend for FLM wrapped-server tests
-        if: ${{ contains(matrix.extra_args, '--wrapped-server flm') }}
+        if: ${{ contains(matrix.suites, '--wrapped-server flm') }}
         run: |
           set -e
           echo "Installing FLM backend for CI inference tests..."
@@ -1447,16 +1393,47 @@ jobs:
       - name: Run tests
         env:
           HF_HOME: ${{ env.HF_HOME }}
+          SUITES: ${{ matrix.suites }}
         run: |
-          set -e
-          if [ -z "${{ matrix.backends }}" ]; then
-            echo "Running test/${{ matrix.script }} ${{ matrix.extra_args }}"
-            .venv/bin/python test/${{ matrix.script }} ${{ matrix.extra_args }} --cli-binary lemonade
-          else
-            for backend in ${{ matrix.backends }}; do
-              echo "Running test/${{ matrix.script }} ${{ matrix.extra_args }} --backend $backend"
-              .venv/bin/python test/${{ matrix.script }} ${{ matrix.extra_args }} --backend $backend --cli-binary lemonade
-            done
+          set -uo pipefail
+          ran=0
+
+          # An unreadable suite list must fail loudly.
+          # An empty list would walk zero suites and report success without testing anything.
+          expected=$(.venv/bin/python -c "
+          import json, os
+          print(len(json.loads(os.environ['SUITES'])))
+          ") || expected=""
+          if ! printf '%s' "$expected" | grep -qE '^[1-9][0-9]*$'; then
+            echo "::error title=Suite list unusable::Could not parse matrix.suites into at least one suite"
+            exit 1
+          fi
+
+          # Unit separator, not tab: bash collapses runs of IFS whitespace, so a
+          # tab would drop an empty extra_args and shift backends into its place.
+          while IFS=$'\x1f' read -r name script extra_args backends; do
+            echo "::group::$name"
+            ran=$((ran + 1))
+            if [ -z "$backends" ]; then
+              echo "Running test/$script $extra_args"
+              .venv/bin/python "test/$script" $extra_args --cli-binary lemonade
+            else
+              for backend in $backends; do
+                echo "Running test/$script $extra_args --backend $backend"
+                .venv/bin/python "test/$script" $extra_args --backend "$backend" --cli-binary lemonade
+              done
+            fi
+            echo "::endgroup::"
+          done < <(.venv/bin/python -c "
+          import json, os
+          for s in json.loads(os.environ['SUITES']):
+              print('\x1f'.join([s['name'], s['script'], s['extra_args'], s['backends']]))
+          ")
+
+          echo "Ran $ran of $expected suite(s) in this group."
+          if [ "$ran" -ne "$expected" ]; then
+            echo "::error title=Suites skipped::Ran $ran of $expected suite(s)"
+            exit 1
           fi
 
       - name: Capture and upload server logs
@@ -1641,7 +1618,7 @@ jobs:
           needs: ${{ toJSON(needs) }}
           event-name: ${{ github.event_name }}
 
-  # Same gate pattern as packaging-gate, for the self-hosted inference rigs
+  # Same gate pattern as packaging-gate, for the self-hosted inference runners
   # that PR pushes skip. The job name below belongs in main's required status
   # checks — that registration is what makes the merge-queue strictness bind,
   # so renaming the job requires a matching branch-protection update.
