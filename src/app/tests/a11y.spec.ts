@@ -3326,3 +3326,153 @@ test.describe('Effective Settings modal accessibility', () => {
     await expect(page.locator('.effective-settings__command')).toHaveCount(0);
   });
 });
+
+test.describe('Navigation rail scroll regressions', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.route('**/api/v1/health**', route => route.fulfill({
+      json: { status: 'ok', version: 'test', all_models_loaded: [] },
+    }));
+    await page.route('**/api/v1/models**', route => route.fulfill({
+      json: { data: [{ id: 'Test-Chat', name: 'Test-Chat', labels: ['chat'], recipe: 'llamacpp', downloaded: true }] },
+    }));
+    await page.route('**/api/v1/system-info**', route => route.fulfill({ json: {} }));
+  });
+
+  test('Settings sections scroll without moving the Server status footer', async ({ page }) => {
+    await page.setViewportSize({ width: 1100, height: 340 });
+    await page.goto('/');
+    await navigateToView(page, 'Settings');
+
+    const rail = page.locator('.connect__rail');
+    const nav = rail.locator(':scope > .workspace-nav');
+    const footer = rail.locator(':scope > .workspace-rail__footer');
+    await expect(nav).toHaveCSS('overflow-y', 'auto');
+    await expect(footer).toBeVisible();
+
+    const before = await footer.boundingBox();
+    const scrolled = await nav.evaluate(element => {
+      element.scrollTop = element.scrollHeight;
+      return element.scrollTop;
+    });
+    expect(scrolled).toBeGreaterThan(0);
+    const after = await footer.boundingBox();
+    expect(before).not.toBeNull();
+    expect(after).not.toBeNull();
+    expect(Math.abs(after!.y - before!.y)).toBeLessThan(1);
+    await expect(nav.locator('button').last()).toBeInViewport();
+  });
+
+  test('Model source tabs stay visible when the filter list scrolls', async ({ page }) => {
+    await page.setViewportSize({ width: 1100, height: 340 });
+    await page.goto('/');
+    await navigateToView(page, 'Models');
+
+    const tabs = page.locator('.model-nav-rail__primary');
+    const filters = page.locator('.model-nav-rail__scroll');
+    await expect(tabs).toBeVisible();
+    await expect(filters).toHaveCSS('overflow-y', 'auto');
+
+    const before = await tabs.boundingBox();
+    const scrolled = await filters.evaluate(element => {
+      element.scrollTop = element.scrollHeight;
+      return element.scrollTop;
+    });
+    expect(scrolled).toBeGreaterThan(0);
+    const after = await tabs.boundingBox();
+    expect(before).not.toBeNull();
+    expect(after).not.toBeNull();
+    expect(Math.abs(after!.y - before!.y)).toBeLessThan(1);
+    await expect(tabs.locator('button').last()).toBeInViewport();
+  });
+
+  test('Monitor sections remain reachable in a short window', async ({ page }) => {
+    await page.setViewportSize({ width: 1100, height: 220 });
+    await page.goto('/');
+    await navigateToView(page, 'Monitor');
+
+    const nav = page.locator('.monitor-rail > .workspace-nav');
+    await expect(nav).toHaveCSS('overflow-y', 'auto');
+    const scrolled = await nav.evaluate(element => {
+      element.scrollTop = element.scrollHeight;
+      return element.scrollTop;
+    });
+    expect(scrolled).toBeGreaterThan(0);
+    await expect(nav.locator('button').last()).toBeInViewport();
+  });
+
+  test('Apps and Backends filter lists scroll without moving their footers', async ({ page }) => {
+    await page.setViewportSize({ width: 1100, height: 460 });
+    await page.goto('/');
+
+    for (const view of ['Apps', 'Backends']) {
+      await navigateToView(page, view);
+      const rail = page.locator(view === 'Apps'
+        ? '.apps-workspace > .workspace-rail'
+        : '.backends--workspace > .workspace-rail');
+      const nav = rail.locator(':scope > .workspace-filter-list');
+      await expect(nav).toBeVisible();
+      await expect(nav).toHaveCSS('overflow-y', 'auto');
+
+      await nav.evaluate(element => {
+        const first = element.querySelector('button');
+        if (!first) throw new Error('Missing catalog filter button');
+        for (let i = 0; i < 24; i++) {
+          const copy = first.cloneNode(true) as HTMLButtonElement;
+          copy.removeAttribute('aria-current');
+          copy.textContent = `Extra filter ${i}`;
+          element.appendChild(copy);
+        }
+      });
+
+      const footer = rail.locator(':scope > .workspace-rail__footer');
+      const before = await footer.count() ? await footer.boundingBox() : null;
+      const scrolled = await nav.evaluate(element => {
+        element.scrollTop = element.scrollHeight;
+        return element.scrollTop;
+      });
+      expect(scrolled).toBeGreaterThan(0);
+      await expect(nav.locator('button').last()).toBeInViewport();
+      if (before) {
+        const after = await footer.boundingBox();
+        expect(after).not.toBeNull();
+        expect(Math.abs(after!.y - before.y)).toBeLessThan(1);
+      }
+    }
+  });
+
+  test('Backends options stay directly below the filters when space allows', async ({ page }) => {
+    await page.setViewportSize({ width: 1100, height: 760 });
+    await page.goto('/');
+    await navigateToView(page, 'Backends');
+
+    const rail = page.locator('.backends--workspace > .workspace-rail');
+    const nav = rail.locator(':scope > .workspace-filter-list');
+    const footer = rail.locator(':scope > .workspace-rail__footer');
+    await expect(footer.locator('input[type="checkbox"]')).toHaveCount(3);
+
+    const navBox = await nav.boundingBox();
+    const footerBox = await footer.boundingBox();
+    expect(navBox).not.toBeNull();
+    expect(footerBox).not.toBeNull();
+    expect(Math.abs(footerBox!.y - (navBox!.y + navBox!.height))).toBeLessThan(2);
+  });
+
+  test('Mobile Settings keeps its vertical context-panel navigation', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 750 });
+    await page.goto('/');
+    await navigateToView(page, 'Settings');
+
+    const rail = page.locator('.connect__rail');
+    await expect(rail).toBeHidden();
+    const openMenu = page.getByRole('button', { name: 'Open connection settings' });
+    await openMenu.click();
+    await expect(openMenu).toHaveAttribute('aria-expanded', 'true');
+    await expect(rail).toBeVisible();
+
+    const nav = rail.locator(':scope > .workspace-nav');
+    await expect(nav).toHaveCSS('flex-direction', 'column');
+    await expect(nav).toHaveCSS('overflow-y', 'auto');
+    await nav.locator('button').last().scrollIntoViewIfNeeded();
+    await expect(nav.locator('button').last()).toBeInViewport();
+  });
+});

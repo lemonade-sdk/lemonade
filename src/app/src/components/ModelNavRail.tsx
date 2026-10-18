@@ -316,8 +316,6 @@ export const ModelNavRail: React.FC<ModelNavRailProps> = ({
         onToggle={onToggleCollapsed}
         onMobileClose={mobileOpen ? onMobileClose : undefined}
       />
-      <div className="model-nav-rail__scroll">
-      {/* 1. Primary nav */}
       <ul className="model-nav-rail__primary workspace-filter-list" role="list">
         {PRIMARY_ITEMS.map(item => {
           const active = primaryFilter === item.key;
@@ -339,8 +337,7 @@ export const ModelNavRail: React.FC<ModelNavRailProps> = ({
         })}
 
       </ul>
-
-
+      <div className="model-nav-rail__scroll">
       <section className="model-nav-rail__section model-nav-rail__section--tasks">
         <h2 className="model-nav-rail__section-head">
           <button
