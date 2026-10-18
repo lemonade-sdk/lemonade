@@ -80,8 +80,8 @@ const RouteArg kStream{"stream", ArgIn::JsonBody, {{"type", "boolean"}}, false, 
                        "`true` streams the response as newline-delimited JSON; `false` sends one response "
                        "once complete. Defaults to `true`."};
 const RouteArg kKeepAlive{"keep_alive", ArgIn::JsonBody, json::object(), false, Support::Available,
-                          "`0` with nothing to generate, an empty `messages` array or `prompt`, unloads the "
-                          "model, answering with `done_reason: \"unload\"`. Other values are ignored."};
+                          "`0` with an empty input unloads the model, answering with `done_reason: "
+                          "\"unload\"`. Other values are ignored."};
 } // namespace ollama
 
 namespace ollama::embed {

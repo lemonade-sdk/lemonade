@@ -44,7 +44,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `tools` | No | A list of tools the model may call. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `format` | No | `json` constrains the reply to a JSON object. A JSON schema is accepted but not applied. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `think` | No | `true`, `false`, or a level: `low`, `medium`, `high` or `max`, the levels Ollama accepts for models that define none of their own. Not applied: reasoning models think regardless. Qwen3 models skip their reasoning when the prompt ends with `/no_think`. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
-| `keep_alive` | No | `0` with nothing to generate, an empty `messages` array or `prompt`, unloads the model, answering with `done_reason: "unload"`. Other values are ignored. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `keep_alive` | No | `0` with an empty input unloads the model, answering with `done_reason: "unload"`. Other values are ignored. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `ctx_size` | No | Lemonade extension: context size to load the model with, when this request loads it. Wins over `options.num_ctx`. Ignored unless an integer. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 A request with tools and streaming runs non-streaming on the backend and answers with two NDJSON lines: the whole message, then the final line.
@@ -208,7 +208,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `steps` | No | Image models only: inference steps. Defaults to the model's own. Ignored unless an integer. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `cfg_scale` | No | Image models only: classifier-free guidance scale. Defaults to the model's own. Ignored unless a number. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `seed` | No | Random seed for reproducible output. Ignored unless an integer. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `keep_alive` | No | `0` with nothing to generate, an empty `messages` array or `prompt`, unloads the model, answering with `done_reason: "unload"`. Other values are ignored. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `keep_alive` | No | `0` with an empty input unloads the model, answering with `done_reason: "unload"`. Other values are ignored. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `ctx_size` | No | Lemonade extension: context size to load the model with, when this request loads it. Wins over `options.num_ctx`. Ignored unless an integer. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `system` | No | System prompt. Ignored. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
 | `format` | No | Output format constraint. Ignored. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
