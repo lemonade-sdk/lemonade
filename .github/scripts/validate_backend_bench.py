@@ -531,58 +531,61 @@ def check_regression(
     current: dict, previous: dict, fork_id: str, model: str
 ) -> list[dict]:
     alerts = []
-    curr_results = {r["backend"]: r for r in backend_results(current, model)}
-    prev_results = {r["backend"]: r for r in backend_results(previous, model)}
-    for backend, curr in curr_results.items():
-        prev = prev_results.get(backend)
-        if not prev:
+
+    # Key scenarios by (backend, scenario) — merged per-ctx results can repeat a
+    # backend, so keying by backend alone would drop all but the last ctx group.
+    def by_backend_scenario(data):
+        out = {}
+        for r in backend_results(data, model):
+            for sc in r.get("scenarios", []):
+                out[(r["backend"], sc["name"])] = sc
+        return out
+
+    curr_scenarios = by_backend_scenario(current)
+    prev_scenarios = by_backend_scenario(previous)
+    for (backend, sc_name), curr_sc in curr_scenarios.items():
+        prev_sc = prev_scenarios.get((backend, sc_name))
+        if not prev_sc:
             continue
-        for curr_sc in curr.get("scenarios", []):
-            sc_name = curr_sc["name"]
-            prev_sc = next(
-                (s for s in prev.get("scenarios", []) if s["name"] == sc_name), None
+        curr_tps = curr_sc.get("tps", {}).get("mean", 0)
+        prev_tps = prev_sc.get("tps", {}).get("mean", 0)
+        curr_ttft = curr_sc.get("ttft_ms", {}).get("mean", 0)
+        prev_ttft = prev_sc.get("ttft_ms", {}).get("mean", 0)
+        if prev_tps > 0:
+            delta = (curr_tps - prev_tps) / prev_tps
+            sev = (
+                "CRITICAL"
+                if delta <= THRESHOLDS["tps_critical"]
+                else "WARN" if delta <= THRESHOLDS["tps_warn"] else None
             )
-            if not prev_sc:
-                continue
-            curr_tps = curr_sc.get("tps", {}).get("mean", 0)
-            prev_tps = prev_sc.get("tps", {}).get("mean", 0)
-            curr_ttft = curr_sc.get("ttft_ms", {}).get("mean", 0)
-            prev_ttft = prev_sc.get("ttft_ms", {}).get("mean", 0)
-            if prev_tps > 0:
-                delta = (curr_tps - prev_tps) / prev_tps
-                sev = (
-                    "CRITICAL"
-                    if delta <= THRESHOLDS["tps_critical"]
-                    else "WARN" if delta <= THRESHOLDS["tps_warn"] else None
+            if sev:
+                alerts.append(
+                    {
+                        "severity": sev,
+                        "fork_id": fork_id,
+                        "model": model,
+                        "scenario": sc_name,
+                        "metric": "tps",
+                        "delta_pct": round(delta * 100, 2),
+                        "prev": round(prev_tps, 2),
+                        "curr": round(curr_tps, 2),
+                    }
                 )
-                if sev:
-                    alerts.append(
-                        {
-                            "severity": sev,
-                            "fork_id": fork_id,
-                            "model": model,
-                            "scenario": sc_name,
-                            "metric": "tps",
-                            "delta_pct": round(delta * 100, 2),
-                            "prev": round(prev_tps, 2),
-                            "curr": round(curr_tps, 2),
-                        }
-                    )
-            if prev_ttft > 0:
-                delta = (curr_ttft - prev_ttft) / prev_ttft
-                if delta >= THRESHOLDS["ttft_warn"]:
-                    alerts.append(
-                        {
-                            "severity": "WARN",
-                            "fork_id": fork_id,
-                            "model": model,
-                            "scenario": sc_name,
-                            "metric": "ttft_ms",
-                            "delta_pct": round(delta * 100, 2),
-                            "prev": round(prev_ttft, 2),
-                            "curr": round(curr_ttft, 2),
-                        }
-                    )
+        if prev_ttft > 0:
+            delta = (curr_ttft - prev_ttft) / prev_ttft
+            if delta >= THRESHOLDS["ttft_warn"]:
+                alerts.append(
+                    {
+                        "severity": "WARN",
+                        "fork_id": fork_id,
+                        "model": model,
+                        "scenario": sc_name,
+                        "metric": "ttft_ms",
+                        "delta_pct": round(delta * 100, 2),
+                        "prev": round(prev_ttft, 2),
+                        "curr": round(curr_ttft, 2),
+                    }
+                )
     return alerts
 
 
