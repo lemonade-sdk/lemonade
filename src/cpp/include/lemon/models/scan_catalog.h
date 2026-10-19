@@ -22,6 +22,10 @@ class ScanCatalog {
     ScanCatalog(std::string extra_models_dir, DeviceType device)
         : extra_models_dir_(std::move(extra_models_dir)), device_(device) {}
 
+    // The directory as the operator set it, scanned with the extra-model recipe's
+    // own device.
+    static ScanCatalog for_dir(const std::string& extra_models_dir);
+
     // registered_paths are cache directories another model already claims.
     std::map<std::string, ModelInfo> enumerate(
         const std::set<std::filesystem::path>& registered_paths) const;

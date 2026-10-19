@@ -145,11 +145,6 @@ models::SyncService::Deps ModelManager::make_sync_deps() {
     deps.model_info = [this](const std::string& canonical) { return get_model_info(canonical); };
     deps.resolve_name = [this](const std::string& name) { return resolve_model_name(name); };
     deps.public_name = [this](const std::string& canonical) { return get_public_model_name(canonical); };
-    deps.phase = [this](const std::string& phase) {
-        if (sync_phase_callback_) {
-            sync_phase_callback_(phase);
-        }
-    };
     return deps;
 }
 
@@ -321,8 +316,7 @@ void ModelManager::start_directory_watcher() {
 
 std::map<std::string, ModelInfo> ModelManager::discover_extra_models(
     const std::set<fs::path>& registered_paths) const {
-    return models::ScanCatalog(extra_models_dir_, device_type_for_recipe(extra_model_recipe))
-        .enumerate(registered_paths);
+    return models::ScanCatalog::for_dir(extra_models_dir_).enumerate(registered_paths);
 }
 
 std::unique_ptr<models::ArtifactSource> ModelManager::source_for(
@@ -510,8 +504,6 @@ ModelManager::UpdateCheckResult ModelManager::run_update_scan(const std::vector<
     deps.snapshot = [this] { return store_.read(); };
     deps.repository_for = config_.repository_for;
     deps.cancel_requested = [this] { return sync_.cancel_requested(); };
-    deps.scan_override = update_check_override_;
-    deps.phase = sync_phase_callback_;
     deps.publish = [this](const models::ScanDetermination& settled,
                           models::UpdateScanResult& result) {
         models::publish_scan_flags(store_, settled, result);
@@ -759,10 +751,6 @@ void ModelManager::download_model(const std::string& model_name,
                                  bool do_not_upgrade,
                                  DownloadProgressCallback progress_callback,
                                  const utils::CancelToken& cancel) {
-    if (download_model_override_) {
-        download_model_override_(model_name, model_data, do_not_upgrade, progress_callback);
-        return;
-    }
     ingest_->pull(model_name, model_data, do_not_upgrade, progress_callback, cancel);
 }
 

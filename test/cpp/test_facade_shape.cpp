@@ -146,22 +146,20 @@ int main() {
     ratchet("the facade dispatches to backend ops once", kFacade, "ops_for(", 1);
     ratchet("the facade declares no test hook", kFacade, "_for_test", 0);
 
-    std::vector<std::string> allowed_hooks = {
-        "discover_extra_models_for_test",
-        "set_model_update_available_for_test",
-        "set_update_check_override_for_test",
-        "set_download_model_override_for_test",
-    };
-    int declared_hooks = 0;
-    for (const auto& hook : allowed_hooks) {
-        declared_hooks += static_cast<int>(find_in(kFacadeHeader, hook).size());
-    }
-    int total_hooks = 0;
+    // No product file declares a test hook, anywhere. A test that needs behavior
+    // substituted takes a collaborator through a constructor or config seam.
+    std::vector<std::string> hook_files;
     for (const auto& file : repo_files("src/cpp")) {
-        total_hooks += static_cast<int>(find_in(file, "_for_test").size());
+        if (!find_in(file, "_for_test").empty()) hook_files.push_back(file);
     }
-    check("the public hooks are the four already named (" + std::to_string(total_hooks) + ")",
-          total_hooks == declared_hooks);
+    check("no product file declares a test hook (" + std::to_string(hook_files.size()) + ")",
+          hook_files.empty());
+    for (const auto& file : hook_files) {
+        std::printf("  hook in: %s\n", file.c_str());
+    }
+    // Mutable override members are hooks that never got a set_* name.
+    check("the facade header holds no override member",
+          find_in(kFacadeHeader, "_override_").empty());
 
     // The facade header is what consumers include. model_info.h, registry_types.h and
     // store_snapshot.h are the models layer's public read side; any other models header

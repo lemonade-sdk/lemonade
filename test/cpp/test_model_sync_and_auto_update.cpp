@@ -1,15 +1,21 @@
 // Contract and unit tests for Model Sync and Auto-Update features.
 // Tests:
 // - RuntimeConfig auto_update_models setting and validation.
-// - ModelInfo auto_update per-model override precedence.
-// - ModelManager::should_auto_update resolution hierarchy.
+// - SyncService::should_auto_update resolution hierarchy.
+// - The sync queue: dedup, attach, join, generations, cancellation, teardown.
+//
+// The queue is driven through SyncService with its own deps; the facade wires
+// the same deps to the real scan and pull and adds nothing of its own.
 
-#include "lemon/model_manager.h"
+#include "lemon/models/model_info.h"
+#include "lemon/models/sync_service.h"
+#include "lemon/recipe_options.h"
 #include "lemon/runtime_config.h"
 #include "support/test_state_isolation.h"
 
 #include <lemon/utils/path_utils.h>
 
+#include <algorithm>
 #include <atomic>
 #include <cassert>
 #include <chrono>
@@ -18,10 +24,17 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <map>
+#include <memory>
 #include <mutex>
+#include <stdexcept>
+#include <string>
 #include <thread>
+#include <vector>
 
 using lemon::json;
+using lemon::models::SyncService;
+using lemon::models::UpdateScanResult;
 
 static int failures = 0;
 
@@ -38,11 +51,65 @@ static void set_env_var(const std::string& name, const std::string& value) {
 #endif
 }
 
+// Routes worker phases to the one test that wants to park on them.
+struct PhaseBus {
+    std::function<void(const std::string&)> sink;
+    void operator()(const std::string& phase) const {
+        if (sink) sink(phase);
+    }
+};
+
+// The queue's world: a canned check, a download recorder, a name map. Names
+// resolve to themselves; what the queue decides never depends on the store.
+struct SyncFixture {
+    std::function<UpdateScanResult(const std::vector<std::string>&)> check_fn =
+        [](const std::vector<std::string>&) { return UpdateScanResult{}; };
+    std::function<void(const std::string&, const json&, bool, lemon::DownloadProgressCallback)>
+        download_fn =
+            [](const std::string&, const json&, bool, lemon::DownloadProgressCallback) {};
+    std::map<std::string, lemon::ModelInfo> models;
+    std::atomic<int> scan_calls{0};
+    std::atomic<int> target_checks{0};
+    PhaseBus bus;
+
+    SyncService::Deps deps() {
+        SyncService::Deps d;
+        d.scan = [this](const std::vector<std::string>& targets) {
+            ++scan_calls;
+            if (targets.size() == 1) ++target_checks;
+            return check_fn(targets);
+        };
+        d.download = [this](const std::string& name, const json& options, bool do_not_upgrade,
+                            lemon::DownloadProgressCallback progress) {
+            download_fn(name, options, do_not_upgrade, progress);
+        };
+        d.model_info = [this](const std::string& canonical) {
+            auto it = models.find(canonical);
+            if (it == models.end()) throw std::invalid_argument("Model not found");
+            return it->second;
+        };
+        d.resolve_name = [](const std::string& name) { return name; };
+        d.public_name = [](const std::string& canonical) { return canonical; };
+        d.phase = [this](const std::string& phase) { bus(phase); };
+        return d;
+    }
+
+    SyncService service() { return SyncService(deps()); }
+    std::unique_ptr<SyncService> make_service() { return std::make_unique<SyncService>(deps()); }
+
+    lemon::ModelInfo& downloaded(const std::string& name) {
+        auto& info = models[name];
+        info.model_name = name;
+        info.downloaded = true;
+        return info;
+    }
+};
 
 // Parks the sync worker at a named phase so a test can act while a generation
-// is genuinely in flight. release() must run before the ModelManager dies, or
-// its destructor waits on a worker parked here.
+// is genuinely in flight. release() must run before the worker's service dies,
+// or its destructor waits on a worker parked here.
 struct HoldWorker {
+    PhaseBus& bus;
     std::string phase_prefix;
     std::mutex m;
     std::condition_variable cv;
@@ -50,8 +117,8 @@ struct HoldWorker {
     bool released = false;
     bool dead = false;
 
-    HoldWorker(lemon::ModelManager& mm, const std::string& phase) : phase_prefix(phase) {
-        mm.set_sync_phase_callback([this](const std::string& name) {
+    HoldWorker(PhaseBus& bus_in, const std::string& phase) : bus(bus_in), phase_prefix(phase) {
+        bus.sink = [this](const std::string& name) {
             if (name.rfind(phase_prefix, 0) != 0) {
                 return;
             }
@@ -62,7 +129,7 @@ struct HoldWorker {
             reached = true;
             cv.notify_all();
             cv.wait(lock, [this] { return released || dead; });
-        });
+        };
     }
 
     ~HoldWorker() {
@@ -87,25 +154,16 @@ struct HoldWorker {
     }
 };
 
+// True when `needle` names the same model as one entry of `list`, on either side.
+static bool contains(const std::vector<std::string>& list, const std::string& needle) {
+    return std::find(list.begin(), list.end(), needle) != list.end();
+}
+
 int main() {
     std::cout << "=== Model Sync & Auto-Update Unit Tests ===" << std::endl;
 
     const std::filesystem::path temp_cache = lemon::test::state_dir();
     std::error_code ec;
-
-    const auto dummy_model_dir =
-        temp_cache / "huggingface" / "hub" / "models--unsloth--gemma-3-270m-it-GGUF";
-    std::filesystem::create_directories(dummy_model_dir / "refs", ec);
-    std::filesystem::create_directories(dummy_model_dir / "snapshots" / "main", ec);
-    {
-        std::ofstream refs_file((dummy_model_dir / "refs" / "main").string());
-        refs_file << "main\n";
-    }
-    {
-        std::ofstream dummy_file((dummy_model_dir / "snapshots" / "main" / "gemma-3-270m-it-UD-IQ2_M.gguf").string(), std::ios::binary);
-        dummy_file << "GGUF_dummy_content";
-    }
-
     set_env_var("LEMONADE_CACHE_DIR", temp_cache.string());
     set_env_var("HF_HOME", (temp_cache / "huggingface").string());
 
@@ -133,7 +191,6 @@ int main() {
         check("RuntimeConfig set auto_update_models=true succeeds", false);
     }
 
-
     try {
         cfg.set(json{{"auto_update_models", "not_a_boolean"}});
         check("RuntimeConfig set invalid type for auto_update_models throws", false);
@@ -147,53 +204,59 @@ int main() {
     if (!gcfg) {
         gcfg = &cfg;
     }
-
     gcfg->set(json{{"auto_update_models", false}});
 
-    lemon::ModelManager mm;
+    // Test 3: should_auto_update precedence
+    SyncFixture plain;
+    SyncService auto_update_svc = plain.service();
 
-    // Test 3: ModelManager::should_auto_update precedence
     // Case A: info.auto_update is std::nullopt -> uses global RuntimeConfig (false)
     lemon::ModelInfo info1;
     info1.model_name = "test-model-1";
     info1.auto_update = std::nullopt;
+    check("should_auto_update fallback to global (false)",
+          auto_update_svc.should_auto_update(info1) == false);
 
-    bool should1 = mm.should_auto_update(info1);
-    check("should_auto_update fallback to global (false)", should1 == false);
-
-    // When global auto_update_models is true
     gcfg->set(json{{"auto_update_models", true}});
-    bool should2 = mm.should_auto_update(info1);
-    check("should_auto_update fallback to global (true)", should2 == true);
+    check("should_auto_update fallback to global (true)",
+          auto_update_svc.should_auto_update(info1) == true);
 
     // Case B: Explicit per-model override auto_update = true overrides global false
     gcfg->set(json{{"auto_update_models", false}});
     lemon::ModelInfo info2;
     info2.model_name = "test-model-2";
     info2.auto_update = true;
-    bool should3 = mm.should_auto_update(info2);
-    check("per-model auto_update=true overrides global false", should3 == true);
+    check("per-model auto_update=true overrides global false",
+          auto_update_svc.should_auto_update(info2) == true);
 
     // Case C: Explicit per-model override auto_update = false overrides global true
     gcfg->set(json{{"auto_update_models", true}});
     lemon::ModelInfo info3;
     info3.model_name = "test-model-3";
     info3.auto_update = false;
-    bool should4 = mm.should_auto_update(info3);
-    check("per-model auto_update=false overrides global true", should4 == false);
+    check("per-model auto_update=false overrides global true",
+          auto_update_svc.should_auto_update(info3) == false);
 
-    // Test 4: ModelManager::get_sync_status and dry-run sync query
-    mm.set_update_check_override_for_test([](const auto&) {
-        lemon::ModelManager::UpdateCheckResult r;
+    gcfg->set(json{{"auto_update_models", false}});
+
+    // Test 4: idle status and a dry run that finds nothing to do
+    SyncFixture idle_fixture;
+    idle_fixture.downloaded("Tiny-Test-Model-GGUF");
+    idle_fixture.check_fn = [](const std::vector<std::string>&) {
+        UpdateScanResult r;
         r.up_to_date_models = {"Tiny-Test-Model-GGUF"};
         return r;
-    });
-    json status = mm.get_sync_status();
-    check("get_sync_status returns idle status", status.value("status", "") == "idle");
-    check("get_sync_status already_in_progress is false", status.value("already_in_progress", true) == false);
+    };
+    SyncService idle = idle_fixture.service();
 
-    json dry_run_res = mm.sync_models({}, /*dry_run=*/true);
-    check("sync_models dry_run returns status", dry_run_res.contains("status") && dry_run_res.contains("checked_count"));
+    json status = idle.status();
+    check("status returns idle status", status.value("status", "") == "idle");
+    check("status already_in_progress is false",
+          status.value("already_in_progress", true) == false);
+
+    json dry_run_res = idle.sync({}, /*dry_run=*/true);
+    check("sync dry_run returns status",
+          dry_run_res.contains("status") && dry_run_res.contains("checked_count"));
 
     // Test 5: RecipeOptions auto_update preservation
     json ro_json = {{"auto_update", true}};
@@ -204,98 +267,103 @@ int main() {
     lemon::RecipeOptions ro_null("llamacpp", ro_json_null);
     check("RecipeOptions auto_update nullptr parsed successfully", ro_null.to_json().contains("auto_update") == false);
 
-    // Test 6: ModelSyncState outcome structure in get_sync_status
-    json status_fields = mm.get_sync_status();
-    check("get_sync_status contains checked_count", status_fields.contains("checked_count"));
-    check("get_sync_status contains updated_count", status_fields.contains("updated_count"));
-    check("get_sync_status contains models_updated", status_fields.contains("models_updated"));
-    check("get_sync_status contains models_up_to_date", status_fields.contains("models_up_to_date"));
-    check("get_sync_status contains status field", status_fields.contains("status"));
-    check("get_sync_status contains terminal_error field", status_fields.contains("terminal_error"));
+    // Test 6: status carries the whole sync-state contract
+    json status_fields = idle.status();
+    check("status contains checked_count", status_fields.contains("checked_count"));
+    check("status contains updated_count", status_fields.contains("updated_count"));
+    check("status contains models_updated", status_fields.contains("models_updated"));
+    check("status contains models_up_to_date", status_fields.contains("models_up_to_date"));
+    check("status contains status field", status_fields.contains("status"));
+    check("status contains terminal_error field", status_fields.contains("terminal_error"));
 
     // Test 8: Single-pass sync execution
-    lemon::ModelManager mm3;
-    mm3.set_update_check_override_for_test([](const auto&) {
-        lemon::ModelManager::UpdateCheckResult r;
+    SyncFixture pass_fixture;
+    pass_fixture.downloaded("Tiny-Test-Model-GGUF");
+    pass_fixture.check_fn = [](const std::vector<std::string>&) {
+        UpdateScanResult r;
         r.up_to_date_models = {"Tiny-Test-Model-GGUF"};
         return r;
-    });
-    mm3.set_download_model_override_for_test([](const auto&, const auto&, bool, auto) {});
-    mm3.enqueue_sync({});
-    json exec_res = mm3.wait_for_sync();
+    };
+    SyncService pass = pass_fixture.service();
+    auto pass_enq = pass.enqueue({});
+    json exec_res = pass.wait_for(pass_enq.sync_id);
     std::string s_status = exec_res.value("status", "");
-    check("a queued sync finishes with a valid status", s_status == "idle" || s_status == "success" || s_status == "failed");
+    check("a queued sync finishes with a valid status",
+          s_status == "idle" || s_status == "success" || s_status == "failed");
 
-    // Test 10: UpdateCheckResult registry failure handling
-    lemon::ModelManager mm_fail;
-    mm_fail.set_update_check_override_for_test([](const auto& t) {
-        lemon::ModelManager::UpdateCheckResult r;
+    // Test 10: UpdateScanResult registry failure handling
+    SyncFixture fail_fixture;
+    fail_fixture.check_fn = [](const std::vector<std::string>& t) {
+        UpdateScanResult r;
         for (const auto& m : t) {
             r.failed_models[m] = "Repository not found";
         }
         return r;
-    });
-    json dry_fail = mm_fail.sync_models({"non_existent_model_test_xyz"}, /*dry_run=*/true);
-    check("registry failure populates failed_models", dry_fail.contains("failed_models") && dry_fail["failed_models"].contains("non_existent_model_test_xyz"));
+    };
+    SyncService fail_svc = fail_fixture.service();
+    json dry_fail = fail_svc.sync({"non_existent_model_test_xyz"}, /*dry_run=*/true);
+    check("registry failure populates failed_models",
+          dry_fail.contains("failed_models") &&
+              dry_fail["failed_models"].contains("non_existent_model_test_xyz"));
     check("registry failure sets status to failed", dry_fail.value("status", "") == "failed");
-    check("registry failure does not increment checked_count", dry_fail.value("checked_count", 0) == 0);
+    check("registry failure does not increment checked_count",
+          dry_fail.value("checked_count", 0) == 0);
 
     // Test 11: Overlapping request target deduplication
-    lemon::ModelManager mm_dedup;
-    mm_dedup.set_update_check_override_for_test([](const auto& t) {
-        lemon::ModelManager::UpdateCheckResult r;
+    SyncFixture dedup_fixture;
+    dedup_fixture.check_fn = [](const std::vector<std::string>& t) {
+        UpdateScanResult r;
         for (const auto& m : t) {
             r.failed_models[m] = "Repository not found";
         }
         return r;
-    });
-    HoldWorker during_full_check(mm_dedup, "full_check_done");
-    mm_dedup.enqueue_sync({});
+    };
+    SyncService dedup = dedup_fixture.service();
+    HoldWorker during_full_check(dedup_fixture.bus, "full_check_done");
+    dedup.enqueue({});
     during_full_check.wait_until_reached();
 
-    auto second_enqueue = mm_dedup.enqueue_sync({"non_existent_model_test_xyz"});
+    auto second_enqueue = dedup.enqueue({"non_existent_model_test_xyz"});
     check("overlapping enqueue detects existing sync running", second_enqueue.already_running == true);
 
     during_full_check.release();
-    mm_dedup.wait_for_sync();
+    dedup.wait_until_idle();
 
     // Test 12: Deterministic overlapping full check and targeted enqueue deduplication
     {
-        lemon::ModelManager mm_overlap;
-        mm_overlap.set_update_check_override_for_test([](const auto& t) {
-            lemon::ModelManager::UpdateCheckResult r;
+        SyncFixture overlap_fixture;
+        overlap_fixture.downloaded("Tiny-Test-Model-GGUF");
+        overlap_fixture.check_fn = [](const std::vector<std::string>&) {
+            UpdateScanResult r;
             r.up_to_date_models = {"Tiny-Test-Model-GGUF"};
             return r;
-        });
-        mm_overlap.set_download_model_override_for_test([](const auto&, const auto&, bool, auto) {});
+        };
+        SyncService overlap = overlap_fixture.service();
 
         std::mutex pause_m;
         std::condition_variable pause_cv;
         bool full_check_done_hit = false;
         bool allow_resume = false;
         std::atomic<int> hook_invocations{0};
-        std::atomic<int> target_check_invocations{0};
 
-        mm_overlap.set_sync_phase_callback([&](const std::string& phase) {
+        overlap_fixture.bus.sink = [&](const std::string& phase) {
             if (phase == "full_check_done") {
                 hook_invocations++;
                 std::unique_lock<std::mutex> lock(pause_m);
                 full_check_done_hit = true;
                 pause_cv.notify_all();
                 pause_cv.wait(lock, [&]() { return allow_resume; });
-            } else if (phase == "registry_check:Tiny-Test-Model-GGUF") {
-                target_check_invocations++;
             }
-        });
+        };
 
-        mm_overlap.enqueue_sync({});
+        overlap.enqueue({});
 
         {
             std::unique_lock<std::mutex> lock(pause_m);
             pause_cv.wait(lock, [&]() { return full_check_done_hit; });
         }
 
-        auto enqueued_during_run = mm_overlap.enqueue_sync({"Tiny-Test-Model-GGUF"});
+        auto enqueued_during_run = overlap.enqueue({"Tiny-Test-Model-GGUF"});
         check("enqueue during active sync returns true", enqueued_during_run.already_running == true);
 
         {
@@ -304,13 +372,15 @@ int main() {
             pause_cv.notify_all();
         }
 
-        mm_overlap.wait_for_sync();
+        overlap.wait_until_idle();
 
-        json overlap_exec = mm_overlap.get_sync_status();
+        json overlap_exec = overlap.status();
         std::string o_status = overlap_exec.value("status", "");
-        check("overlap execution status is valid", o_status == "idle" || o_status == "success" || o_status == "failed");
+        check("overlap execution status is valid",
+              o_status == "idle" || o_status == "success" || o_status == "failed");
         check("full check callback triggered exactly once", hook_invocations.load() == 1);
-        check("target check triggered exactly once during sync", target_check_invocations.load() == 1);
+        check("the attached target reuses the running pass, it triggers no check of its own",
+              overlap_fixture.target_checks.load() == 0);
 
         int target_count = 0;
         if (overlap_exec.contains("models_up_to_date") && overlap_exec["models_up_to_date"].is_array()) {
@@ -331,31 +401,32 @@ int main() {
         check("overlapping target checked and processed exactly once", target_count == 1);
     }
 
-    // Test 13: Synchronous sync_models joins active sync and waits for completion
+    // Test 13: Synchronous sync joins active sync and waits for completion
     {
-        lemon::ModelManager mm_sync_join;
-        mm_sync_join.set_update_check_override_for_test([](const auto& t) {
-            lemon::ModelManager::UpdateCheckResult r;
+        SyncFixture join_fixture;
+        join_fixture.downloaded("Tiny-Test-Model-GGUF");
+        join_fixture.check_fn = [](const std::vector<std::string>&) {
+            UpdateScanResult r;
             r.up_to_date_models = {"Tiny-Test-Model-GGUF"};
             return r;
-        });
-        mm_sync_join.set_download_model_override_for_test([](const auto&, const auto&, bool, auto) {});
+        };
+        SyncService sync_join = join_fixture.service();
 
         std::mutex pause_m;
         std::condition_variable pause_c;
         bool hook_hit = false;
         bool proceed = false;
 
-        mm_sync_join.set_sync_phase_callback([&](const std::string& phase) {
+        join_fixture.bus.sink = [&](const std::string& phase) {
             if (phase == "full_check_done") {
                 std::unique_lock<std::mutex> lock(pause_m);
                 hook_hit = true;
                 pause_c.notify_all();
                 pause_c.wait(lock, [&]() { return proceed; });
             }
-        });
+        };
 
-        mm_sync_join.enqueue_sync({});
+        sync_join.enqueue({});
 
         {
             std::unique_lock<std::mutex> lock(pause_m);
@@ -365,7 +436,7 @@ int main() {
         std::atomic<bool> join_finished{false};
         json join_result;
         std::thread joiner([&]() {
-            join_result = mm_sync_join.sync_models({"Tiny-Test-Model-GGUF"}, /*dry_run=*/false);
+            join_result = sync_join.sync({"Tiny-Test-Model-GGUF"}, /*dry_run=*/false);
             join_finished = true;
         });
 
@@ -378,7 +449,7 @@ int main() {
             pause_c.notify_all();
         }
 
-        mm_sync_join.wait_for_sync();
+        sync_join.wait_until_idle();
         joiner.join();
 
         check("synchronous joiner finishes after sync completes", join_finished.load() == true);
@@ -388,85 +459,98 @@ int main() {
 
     // Test 14: Generation ID tracking and historical status lookup
     {
-        lemon::ModelManager mm_gen;
-        HoldWorker during_full_check(mm_gen, "full_check_done");
-        mm_gen.set_update_check_override_for_test([](const auto& t) {
-            lemon::ModelManager::UpdateCheckResult r;
+        SyncFixture gen_fixture;
+        gen_fixture.downloaded("Tiny-Test-Model-GGUF");
+        gen_fixture.check_fn = [](const std::vector<std::string>&) {
+            UpdateScanResult r;
             r.up_to_date_models = {"Tiny-Test-Model-GGUF"};
             return r;
-        });
-        mm_gen.set_download_model_override_for_test([](const auto&, const auto&, bool, auto) {});
+        };
+        SyncService gen = gen_fixture.service();
+        HoldWorker during_full_check(gen_fixture.bus, "full_check_done");
 
-        auto enq1 = mm_gen.enqueue_sync({});
+        auto enq1 = gen.enqueue({});
         check("first sync enqueue allocates sync_id > 0", enq1.sync_id > 0);
         check("first sync enqueue already_running is false", enq1.already_running == false);
         during_full_check.wait_until_reached();
 
-        auto enq2 = mm_gen.enqueue_sync({"non_existent_model_test_xyz"});
+        auto enq2 = gen.enqueue({"non_existent_model_test_xyz"});
         check("overlapping sync enqueue returns same sync_id", enq2.sync_id == enq1.sync_id);
         check("overlapping sync enqueue already_running is true", enq2.already_running == true);
 
         during_full_check.release();
-        mm_gen.wait_for_sync();
-        uint64_t completed_gen = mm_gen.get_sync_status().value("completed_sync_id", 0);
+        gen.wait_until_idle();
+        uint64_t completed_gen = gen.status().value("completed_sync_id", 0);
         check("completed_sync_id matches first sync_id", completed_gen == enq1.sync_id);
 
-        json historical_status = mm_gen.get_sync_status(enq1.sync_id);
+        json historical_status = gen.status(enq1.sync_id);
         check("historical status lookup returns completed generation result",
               historical_status.value("status", "") != "in_progress" &&
-              historical_status.value("sync_id", 0) == enq1.sync_id);
+                  historical_status.value("sync_id", 0) == enq1.sync_id);
 
         // Start a second sync job
-        auto enq3 = mm_gen.enqueue_sync({});
+        auto enq3 = gen.enqueue({});
         check("second sync enqueue allocates new sync_id", enq3.sync_id > enq1.sync_id);
-        json hist_old = mm_gen.get_sync_status(enq1.sync_id);
+        json hist_old = gen.status(enq1.sync_id);
         check("historical status for previous sync_id is preserved while new job is running",
               hist_old.value("status", "") != "in_progress" &&
-              hist_old.value("sync_id", 0) == enq1.sync_id);
-        mm_gen.wait_for_sync();
+                  hist_old.value("sync_id", 0) == enq1.sync_id);
+        gen.wait_until_idle();
     }
 
-    // Test 15: Stale update_available cache flag is ignored when fresh check fails
+    // Test 15: A model whose fresh check fails is not updated, whatever its
+    // cached update_available flag once said
     {
-        lemon::ModelManager mm_stale;
-        mm_stale.set_model_update_available_for_test("Tiny-Test-Model-GGUF", true);
-        lemon::ModelInfo cached = mm_stale.get_model_info("Tiny-Test-Model-GGUF");
-        check("cached update_available flag is true before fresh check", cached.update_available == true);
-
-        mm_stale.set_update_check_override_for_test([](const auto& t) {
-            lemon::ModelManager::UpdateCheckResult r;
+        SyncFixture stale_fixture;
+        stale_fixture.downloaded("Tiny-Test-Model-GGUF").update_available = true;
+        stale_fixture.check_fn = [](const std::vector<std::string>& t) {
+            UpdateScanResult r;
             for (const auto& m : t) {
                 r.failed_models[m] = "Remote registry check failed";
             }
             return r;
-        });
+        };
+        std::mutex download_m;
+        std::vector<std::string> downloaded_models;
+        stale_fixture.download_fn = [&](const std::string& name, const json&, bool,
+                                        lemon::DownloadProgressCallback) {
+            std::lock_guard<std::mutex> lock(download_m);
+            downloaded_models.push_back(name);
+        };
+        SyncService stale = stale_fixture.service();
 
-        // Targeted sync on a model whose remote check fails
-        mm_stale.enqueue_sync({"non_existent_model_test_xyz"});
-        json stale_exec = mm_stale.wait_for_sync();
+        check("the stale flag starts out set on the model under test",
+              stale_fixture.models["Tiny-Test-Model-GGUF"].update_available == true);
+
+        auto enq = stale.enqueue({"Tiny-Test-Model-GGUF"});
+        json stale_exec = stale.wait_for(enq.sync_id);
         check("failed fresh check populates failed_models",
-              stale_exec.contains("failed_models") && stale_exec["failed_models"].contains("non_existent_model_test_xyz"));
+              stale_exec.contains("failed_models") &&
+                  stale_exec["failed_models"].contains("Tiny-Test-Model-GGUF"));
         check("failed fresh check does not schedule update",
               stale_exec.contains("models_updated") && stale_exec["models_updated"].empty());
+        std::lock_guard<std::mutex> lock(download_m);
+        check("a stale flag never downloads a model on its own", downloaded_models.empty());
     }
 
     // Test 16: Empty full-sync request arriving during running targeted sync triggers full check
     {
-        lemon::ModelManager mm_full_attach;
+        SyncFixture full_fixture;
+        full_fixture.downloaded("Tiny-Test-Model-GGUF");
+        full_fixture.check_fn = [](const std::vector<std::string>&) {
+            UpdateScanResult r;
+            r.up_to_date_models = {"Tiny-Test-Model-GGUF"};
+            return r;
+        };
+        SyncService full_attach = full_fixture.service();
+
         std::mutex pause_m;
         std::condition_variable pause_cv;
         bool target_check_hit = false;
         bool allow_resume = false;
         std::atomic<int> full_check_count{0};
 
-        mm_full_attach.set_update_check_override_for_test([](const auto& t) {
-            lemon::ModelManager::UpdateCheckResult r;
-            r.up_to_date_models = {"Tiny-Test-Model-GGUF"};
-            return r;
-        });
-        mm_full_attach.set_download_model_override_for_test([](const auto&, const auto&, bool, auto) {});
-
-        mm_full_attach.set_sync_phase_callback([&](const std::string& phase) {
+        full_fixture.bus.sink = [&](const std::string& phase) {
             if (phase.rfind("check_model:", 0) == 0) {
                 std::unique_lock<std::mutex> lock(pause_m);
                 target_check_hit = true;
@@ -475,10 +559,10 @@ int main() {
             } else if (phase == "full_check_done") {
                 full_check_count++;
             }
-        });
+        };
 
         // 1. Enqueue targeted sync
-        mm_full_attach.enqueue_sync({"Tiny-Test-Model-GGUF"});
+        full_attach.enqueue({"Tiny-Test-Model-GGUF"});
 
         {
             std::unique_lock<std::mutex> lock(pause_m);
@@ -486,8 +570,9 @@ int main() {
         }
 
         // 2. While targeted sync is active, enqueue an empty sync (full sync)
-        auto enq_empty = mm_full_attach.enqueue_sync({});
-        check("empty sync enqueue during active sync returns already_running", enq_empty.already_running == true);
+        auto enq_empty = full_attach.enqueue({});
+        check("empty sync enqueue during active sync returns already_running",
+              enq_empty.already_running == true);
 
         {
             std::lock_guard<std::mutex> lock(pause_m);
@@ -495,7 +580,7 @@ int main() {
             pause_cv.notify_all();
         }
 
-        mm_full_attach.wait_for_sync();
+        full_attach.wait_until_idle();
 
         // 3. Verify that full check was triggered and completed
         check("full check was executed following empty sync enqueue", full_check_count.load() == 1);
@@ -503,39 +588,41 @@ int main() {
 
     // Test 17: Waiting for a queued sync returns that generation's snapshot
     {
-        lemon::ModelManager mm_exec_snap;
-        mm_exec_snap.set_update_check_override_for_test([](const auto& t) {
-            lemon::ModelManager::UpdateCheckResult r;
+        SyncFixture snap_fixture;
+        snap_fixture.check_fn = [](const std::vector<std::string>& t) {
+            UpdateScanResult r;
             for (const auto& m : t) {
                 r.failed_models[m] = "Remote registry error";
             }
             return r;
-        });
-        mm_exec_snap.set_download_model_override_for_test([](const auto&, const auto&, bool, auto) {});
+        };
+        SyncService exec_snap = snap_fixture.service();
 
-        auto enq = mm_exec_snap.enqueue_sync({"non_existent_model_test_xyz"});
-        json res = mm_exec_snap.wait_for_sync();
+        auto enq = exec_snap.enqueue({"non_existent_model_test_xyz"});
+        json res = exec_snap.wait_for(enq.sync_id);
         check("a completed sync reports a terminal status", res.value("status", "") != "in_progress");
-        check("the completed snapshot carries its own generation id", res.value("sync_id", 0) == enq.sync_id);
+        check("the completed snapshot carries its own generation id",
+              res.value("sync_id", 0) == enq.sync_id);
     }
 
     // Test 18: attach_if_running flag preserves targeted sync and prevents unexpected full sync expansion
     {
-        lemon::ModelManager mm_attach_only;
+        SyncFixture attach_fixture;
+        attach_fixture.downloaded("Tiny-Test-Model-GGUF");
+        attach_fixture.check_fn = [](const std::vector<std::string>&) {
+            UpdateScanResult r;
+            r.up_to_date_models = {"Tiny-Test-Model-GGUF"};
+            return r;
+        };
+        SyncService attach_only = attach_fixture.service();
+
         std::mutex pause_m;
         std::condition_variable pause_cv;
         bool target_check_hit = false;
         bool allow_resume = false;
         std::atomic<int> full_check_count{0};
 
-        mm_attach_only.set_update_check_override_for_test([](const auto& t) {
-            lemon::ModelManager::UpdateCheckResult r;
-            r.up_to_date_models = {"Tiny-Test-Model-GGUF"};
-            return r;
-        });
-        mm_attach_only.set_download_model_override_for_test([](const auto&, const auto&, bool, auto) {});
-
-        mm_attach_only.set_sync_phase_callback([&](const std::string& phase) {
+        attach_fixture.bus.sink = [&](const std::string& phase) {
             if (phase.rfind("check_model:", 0) == 0) {
                 std::unique_lock<std::mutex> lock(pause_m);
                 target_check_hit = true;
@@ -544,10 +631,10 @@ int main() {
             } else if (phase == "full_check_done") {
                 full_check_count++;
             }
-        });
+        };
 
         // 1. Start targeted sync
-        mm_attach_only.enqueue_sync({"Tiny-Test-Model-GGUF"});
+        attach_only.enqueue({"Tiny-Test-Model-GGUF"});
 
         {
             std::unique_lock<std::mutex> lock(pause_m);
@@ -555,7 +642,7 @@ int main() {
         }
 
         // 2. Attach only with empty targets (e.g. update-models --wait)
-        auto enq_attach = mm_attach_only.enqueue_sync({}, /*attach_if_running=*/true);
+        auto enq_attach = attach_only.enqueue({}, /*attach_if_running=*/true);
         check("attach_if_running returns already_running true", enq_attach.already_running == true);
 
         {
@@ -564,55 +651,63 @@ int main() {
             pause_cv.notify_all();
         }
 
-        mm_attach_only.wait_for_sync();
+        attach_only.wait_until_idle();
 
         // 3. Full check should NOT have run
-        check("attach_if_running does not expand targeted sync to full sync", full_check_count.load() == 0);
+        check("attach_if_running does not expand targeted sync to full sync",
+              full_check_count.load() == 0);
     }
 
     // Test 19: Unknown or evicted sync_id queries return not_found status
     {
-        lemon::ModelManager mm_not_found;
-        json unk = mm_not_found.get_sync_status(999999);
+        SyncFixture empty_fixture;
+        SyncService not_found = empty_fixture.service();
+        json unk = not_found.status(999999);
         check("unknown sync_id returns not_found status", unk.value("status", "") == "not_found");
-        check("unknown sync_id returns matching sync_id in response", unk.value("sync_id", 0) == 999999);
+        check("unknown sync_id returns matching sync_id in response",
+              unk.value("sync_id", 0) == 999999);
     }
 
     // Test 20: Attached full check authoritatively updates previously checked up-to-date model
     {
-        lemon::ModelManager mm_fresh;
+        SyncFixture fresh_fixture;
+        fresh_fixture.downloaded("Tiny-Test-Model-GGUF");
         std::atomic<bool> trigger_update{false};
+        std::mutex downloaded_m;
         std::vector<std::string> downloaded_models;
 
-        mm_fresh.set_update_check_override_for_test([&](const auto& t) {
-            lemon::ModelManager::UpdateCheckResult r;
+        fresh_fixture.check_fn = [&](const std::vector<std::string>&) {
+            UpdateScanResult r;
             if (trigger_update.load()) {
                 r.updated_models = {"Tiny-Test-Model-GGUF"};
             } else {
                 r.up_to_date_models = {"Tiny-Test-Model-GGUF"};
             }
             return r;
-        });
-        mm_fresh.set_download_model_override_for_test([&](const auto& m, const auto&, bool, auto) {
+        };
+        fresh_fixture.download_fn = [&](const std::string& m, const json&, bool,
+                                        lemon::DownloadProgressCallback) {
+            std::lock_guard<std::mutex> lock(downloaded_m);
             downloaded_models.push_back(m);
-        });
+        };
+        SyncService fresh = fresh_fixture.service();
 
         std::mutex pause_m;
         std::condition_variable pause_cv;
         bool target_check_hit = false;
         bool allow_resume = false;
 
-        mm_fresh.set_sync_phase_callback([&](const std::string& phase) {
+        fresh_fixture.bus.sink = [&](const std::string& phase) {
             if (phase.rfind("target_check_done:", 0) == 0) {
                 std::unique_lock<std::mutex> lock(pause_m);
                 target_check_hit = true;
                 pause_cv.notify_all();
                 pause_cv.wait(lock, [&]() { return allow_resume; });
             }
-        });
+        };
 
         // 1. Start targeted sync where model is initially up to date
-        mm_fresh.enqueue_sync({"Tiny-Test-Model-GGUF"});
+        fresh.enqueue({"Tiny-Test-Model-GGUF"});
 
         {
             std::unique_lock<std::mutex> lock(pause_m);
@@ -620,14 +715,14 @@ int main() {
         }
 
         // Verify that initial targeted check recorded the model as up to date
-        json initial_snap = mm_fresh.get_sync_status();
+        json initial_snap = fresh.status();
         check("initial targeted check records model up to date",
               initial_snap.contains("models_up_to_date") &&
-              std::find(initial_snap["models_up_to_date"].begin(), initial_snap["models_up_to_date"].end(), "Tiny-Test-Model-GGUF") != initial_snap["models_up_to_date"].end());
+                  contains(initial_snap["models_up_to_date"], "Tiny-Test-Model-GGUF"));
 
         // 2. Model receives upstream update; full sync is enqueued
         trigger_update.store(true);
-        mm_fresh.enqueue_sync({});
+        fresh.enqueue({});
 
         {
             std::lock_guard<std::mutex> lock(pause_m);
@@ -635,45 +730,47 @@ int main() {
             pause_cv.notify_all();
         }
 
-        mm_fresh.wait_for_sync();
+        fresh.wait_until_idle();
 
-        json fresh_status = mm_fresh.get_sync_status();
+        std::lock_guard<std::mutex> lock(downloaded_m);
         check("fresh full check authoritatively schedules model update",
-              std::find(downloaded_models.begin(), downloaded_models.end(), "Tiny-Test-Model-GGUF") != downloaded_models.end());
+              contains(downloaded_models, "Tiny-Test-Model-GGUF"));
     }
 
     // Test 21: Teardown during a sync joins the worker before the store dies
     {
+        SyncFixture teardown_fixture;
+        teardown_fixture.downloaded("Tiny-Test-Model-GGUF");
+        teardown_fixture.check_fn = [](const std::vector<std::string>&) {
+            UpdateScanResult r;
+            r.updated_models = {"Tiny-Test-Model-GGUF"};
+            return r;
+        };
         std::atomic<int> downloads_started{0};
         std::atomic<int> downloads_finished{0};
         std::atomic<bool> saw_cancel{false};
 
-        auto mm_teardown = std::make_unique<lemon::ModelManager>();
-        mm_teardown->set_update_check_override_for_test([](const auto&) {
-            lemon::ModelManager::UpdateCheckResult r;
-            r.updated_models = {"Tiny-Test-Model-GGUF"};
-            return r;
-        });
         // Stands in for a download: it keeps reporting progress until the sync
         // tells it to stop, which is the only way cancellation reaches a worker
         // already transferring bytes.
-        mm_teardown->set_download_model_override_for_test(
-            [&](const auto&, const auto&, bool, lemon::DownloadProgressCallback progress) {
-                ++downloads_started;
-                for (int i = 0; i < 2000; ++i) {
-                    if (!progress(lemon::DownloadProgress{})) {
-                        saw_cancel = true;
-                        // The cleanup a real transfer does after aborting: work
-                        // still in flight, so it must not outlive the manager.
-                        std::this_thread::sleep_for(std::chrono::milliseconds(200));
-                        ++downloads_finished;
-                        return;
-                    }
-                    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        teardown_fixture.download_fn = [&](const std::string&, const json&, bool,
+                                           lemon::DownloadProgressCallback progress) {
+            ++downloads_started;
+            for (int i = 0; i < 2000; ++i) {
+                if (!progress(lemon::DownloadProgress{})) {
+                    saw_cancel = true;
+                    // The cleanup a real transfer does after aborting: work
+                    // still in flight, so it must not outlive the queue.
+                    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+                    ++downloads_finished;
+                    return;
                 }
-            });
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            }
+        };
 
-        mm_teardown->enqueue_sync({});
+        auto service = teardown_fixture.make_service();
+        service->enqueue({});
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
         while (downloads_started.load() == 0 && std::chrono::steady_clock::now() < deadline) {
             std::this_thread::sleep_for(std::chrono::milliseconds(5));
@@ -682,7 +779,7 @@ int main() {
 
         // Cancellation has to reach a worker already transferring bytes, not
         // just one that has not started.
-        mm_teardown->cancel_sync();
+        service->cancel();
         const auto cancel_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
         while (!saw_cancel.load() && std::chrono::steady_clock::now() < cancel_deadline) {
             std::this_thread::sleep_for(std::chrono::milliseconds(5));
@@ -690,13 +787,13 @@ int main() {
         check("cancellation reaches the worker mid-transfer", saw_cancel.load());
 
         const auto cancel_started = std::chrono::steady_clock::now();
-        mm_teardown.reset();
+        service.reset();
         const auto teardown_ms =
             std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::steady_clock::now() - cancel_started)
                 .count();
         check("teardown joins the worker promptly", teardown_ms < 5000);
-        check("nothing the worker does outlives the manager", downloads_finished.load() == 1);
+        check("nothing the worker does outlives the queue", downloads_finished.load() == 1);
     }
 
     lemon::utils::set_cache_dir("");

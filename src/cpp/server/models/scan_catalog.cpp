@@ -18,6 +18,14 @@ namespace fs = std::filesystem;
 namespace lemon {
 namespace models {
 
+ScanCatalog ScanCatalog::for_dir(const std::string& extra_models_dir) {
+    DeviceType device = lemon::get_device_type_from_recipe(extra_model_recipe);
+    if (const auto* desc = lemon::backends::descriptor_for(extra_model_recipe)) {
+        device = desc->default_device;
+    }
+    return ScanCatalog(extra_models_dir, device);
+}
+
 using namespace lemon::utils;
 
 namespace {

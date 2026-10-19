@@ -113,10 +113,6 @@ public:
 // after directory_watcher_ and so freed first.
     ~ModelManager();
 
-    std::map<std::string, ModelInfo> discover_extra_models_for_test() const {
-        return discover_extra_models();
-    }
-
     CloudProviderRegistry* cloud_registry() const { return cloud_registry_; }
 
     json model_sources();
@@ -300,31 +296,6 @@ public:
     // Check if model should be automatically updated when updates are detected
     bool should_auto_update(const ModelInfo& info) const;
 
-    // Register a callback triggered during synchronization phases (e.g. for deterministic unit testing).
-    void set_sync_phase_callback(std::function<void(const std::string&)> cb) {
-        sync_phase_callback_ = std::move(cb);
-    }
-
-    // Set update_available in cache for deterministic unit testing.
-    void set_model_update_available_for_test(const std::string& model_name, bool available) {
-        std::string canonical = resolve_model_name(model_name);
-        StoreWrite store_write(*this);
-        auto it = store_write.draft().find(canonical);
-        if (it != store_write.draft().end()) {
-            it->second.update_available = available;
-        }
-    }
-
-    // Override update check result for deterministic unit testing.
-    void set_update_check_override_for_test(std::function<UpdateCheckResult(const std::vector<std::string>&)> override_fn) {
-        update_check_override_ = std::move(override_fn);
-    }
-
-    // Override download behavior for deterministic unit testing.
-    void set_download_model_override_for_test(std::function<void(const std::string&, const json&, bool, DownloadProgressCallback)> override_fn) {
-        download_model_override_ = std::move(override_fn);
-    }
-
     // Cancel active model synchronization.
     void cancel_sync();
 
@@ -449,10 +420,6 @@ private:
     // cache patch. The store orders its own state; this keeps the two in step so
     // two concurrent writers cannot leave the cache holding the earlier entry.
     std::mutex recipe_options_write_mutex_;
-
-    std::function<void(const std::string&)> sync_phase_callback_;
-    std::function<UpdateCheckResult(const std::vector<std::string>&)> update_check_override_;
-    std::function<void(const std::string&, const json&, bool, DownloadProgressCallback)> download_model_override_;
 
     std::shared_ptr<const models::CatalogFetchClock> catalog_fetch_clock_ =
         std::make_shared<models::CatalogFetchClock>();
