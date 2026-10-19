@@ -91,8 +91,8 @@ public:
           active_request_count_(0),
           maintenance_in_progress_(false),
           load_duration_ms_(0),
-          last_backend_activity_(std::chrono::steady_clock::now()),
-          instance_id_(next_instance_id()) {}
+          instance_id_(next_instance_id()),
+          last_backend_activity_(std::chrono::steady_clock::now()) {}
 
     uint64_t get_instance_id() const { return instance_id_; }
 

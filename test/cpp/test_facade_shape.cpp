@@ -395,13 +395,15 @@ int main() {
     };
     check("only the named headers re-export the models layer",
           reexporters == allowed_reexporters);
-    if (reexporters != allowed_reexporters) report_set_diff(reexporters, allowed_reexporters);
-    for (const auto& file : reexporters) {
-        std::printf("    %s reaches models types into every file that includes it:\n",
-                    file.c_str());
-        for (const auto& path : included_paths_in(file))
-            if (path.find(kModelsDir) != std::string::npos)
-                std::printf("      %s\n", path.c_str());
+    if (reexporters != allowed_reexporters) {
+        report_set_diff(reexporters, allowed_reexporters);
+        for (const auto& file : reexporters) {
+            std::printf("    %s reaches models types into every file that includes it:\n",
+                        file.c_str());
+            for (const auto& path : included_paths_in(file))
+                if (path.find(kModelsDir) != std::string::npos)
+                    std::printf("      %s\n", path.c_str());
+        }
     }
 
     // The models layer depends on model_info.h, never on the facade header: the DAG
@@ -563,7 +565,7 @@ int main() {
     // The measure this refactor was opened for: a ceiling, not a target. One
     // way: shrinking passes without an edit, growing names itself.
     const int lines = static_cast<int>(std::count(facade.begin(), facade.end(), '\n'));
-    constexpr int kLineCeiling = 1109;
+    constexpr int kLineCeiling = 1103;
     check("the facade is " + std::to_string(lines) + " lines, ceiling " +
               std::to_string(kLineCeiling),
           lines <= kLineCeiling);
@@ -571,14 +573,45 @@ int main() {
     // The header is the surface consumers see; members are what the facade
     // keeps beyond the components it was built from.
     const std::string header = read_repo_file(kFacadeHeader);
+    // Public surface: the functions ModelManager itself declares, nested types excluded.
+    // Counting `);` occurrences, as this did, counts doc comments and inline bodies and
+    // misses every method ending `) const;`, so the ceiling held nothing.
     int declarations = 0;
-    for (size_t at = header.find(");"); at != std::string::npos; at = header.find(");", at + 2)) {
-        ++declarations;
+    {
+        const size_t body_start = header.find('{', header.find("class ModelManager"));
+        const std::string body = strip_line_comments(header.substr(body_start));
+        int depth = 0;  // 1 inside ModelManager's own body, 2 inside a nested type or body
+        std::string segment;
+        std::string before_brace;
+        bool done = false;
+        for (const char ch : body) {
+            if (done) break;
+            if (ch == '{') {
+                before_brace = segment;
+                ++depth;
+                segment.clear();
+            } else if (ch == '}') {
+                if (depth == 1) {
+                    done = true;
+                } else {
+                    --depth;
+                    if (depth == 1 && before_brace.find('(') != std::string::npos) ++declarations;
+                }
+                segment.clear();
+                before_brace.clear();
+            } else if (ch == ';') {
+                if (depth == 1 && segment.find('(') != std::string::npos) ++declarations;
+                segment.clear();
+            } else {
+                segment += ch;
+            }
+        }
     }
     const std::vector<std::string> members = data_members(header);
-    constexpr int kHeaderDeclarationCeiling = 72;
+    constexpr int kHeaderDeclarationCeiling = 87;
     check("the facade header declares " + std::to_string(declarations) +
-              " methods, ceiling " + std::to_string(kHeaderDeclarationCeiling),
+              " methods (public and private), ceiling " +
+              std::to_string(kHeaderDeclarationCeiling),
           declarations <= kHeaderDeclarationCeiling);
     constexpr int kMemberCeiling = 18;
     check("the facade holds " + std::to_string(members.size()) + " members, ceiling " +

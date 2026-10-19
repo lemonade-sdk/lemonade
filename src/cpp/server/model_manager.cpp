@@ -982,12 +982,6 @@ std::size_t ModelManager::count_cloud_models(const std::string& provider) const 
     return cloud_rows_.count(provider);
 }
 
-std::set<std::string> ModelManager::recipes_all_models_filtered_snapshot() const {
-    auto snapshot = store_.read();
-    const std::vector<std::string> hidden = snapshot->empty_recipes();
-    return std::set<std::string>(hidden.begin(), hidden.end());
-}
-
 
 json ModelManager::cleanup_orphaned_cache(bool dry_run) {
     build_cache();

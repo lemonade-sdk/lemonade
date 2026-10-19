@@ -89,8 +89,8 @@ struct ModelManagerConfig {
 class ModelManager {
 public:
 
-// Locks the store and publishes on release, so a mutating path cannot forget to
-// publish and readers never see a half-built set.
+    // Locks the store and publishes on release, so a mutating path cannot forget to
+    // publish and readers never see a half-built set.
     class StoreWrite {
       public:
         explicit StoreWrite(ModelManager& manager) : write_(manager.store_) {}
@@ -111,8 +111,8 @@ public:
     // The paths-only shorthand.
     explicit ModelManager(const std::string& extra_models_dir = "");
 
-// Joins the watcher thread: its callback locks the store, declared
-// after directory_watcher_ and so freed first.
+    // Joins the watcher thread: its callback locks the store, declared after
+    // directory_watcher_ and so freed first.
     ~ModelManager();
 
     CloudProviderRegistry* cloud_registry() const { return cloud_registry_; }
@@ -159,8 +159,8 @@ public:
     // Invalidate the models cache (e.g. after backend install/uninstall)
     void invalidate_models_cache();
 
-// The two change signals; see models/change_notifier.h. Fires only when a routing
-// policy could have changed.
+    // The two change signals; see models/change_notifier.h. Fires only when a routing
+    // policy could have changed.
     void on_models_changed(std::function<void(std::uint64_t)> subscriber);
     void on_model_updated(std::function<void(const std::string&)> subscriber);
 
@@ -278,12 +278,6 @@ public:
     // hardware/OS reasons are excluded (they keep their "unsupported" display).
     // Builds the cache if needed.
     std::set<std::string> recipes_with_all_models_filtered();
-
-// Recipes that lost every model to the memory heuristic and kept none visible.
-
-    // Test-only raw view of the side table without a cache rebuild; prefer
-    // recipes_with_all_models_filtered() everywhere else.
-    std::set<std::string> recipes_all_models_filtered_snapshot() const;
 
     // Check if model is downloaded
     bool is_model_downloaded(const std::string& model_name);
@@ -404,12 +398,15 @@ private:
     std::map<std::string, ModelInfo> discover_extra_models(
         const std::set<std::filesystem::path>& registered_paths = {}) const;
 
-    models::RegistryDocuments registries_;
-    RecipeOptionsStore recipe_options_;
-    json architecture_defaults_;  // Per-architecture recipe option overlays (from resources)
+    // Declaration order is initialization order: config_ is first because
+    // extra_models_dir_ and alias_manager_ read it. registries_ and recipe_options_ build
+    // from static helpers and read no member, so they are safe where they stand.
     ModelManagerConfig config_;
     std::string extra_models_dir_;  // Secondary directory for GGUF model discovery
     models::AliasManager alias_manager_;
+    models::RegistryDocuments registries_;
+    RecipeOptionsStore recipe_options_;
+    json architecture_defaults_;  // Per-architecture recipe option overlays (from resources)
     CloudProviderRegistry* cloud_registry_ = nullptr;  // Not owned
     std::function<std::string()> default_model_source_provider_;
     std::unique_ptr<DirectoryWatcher> directory_watcher_;

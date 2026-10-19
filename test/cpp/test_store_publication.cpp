@@ -1,4 +1,5 @@
 #include "lemon/model_manager.h"
+#include "lemon/models/store_snapshot.h"
 #include "lemon/utils/path_utils.h"
 
 #include <atomic>
@@ -182,8 +183,7 @@ static void test_republish_while_reading(ModelManager& manager) {
         readers.emplace_back([&] {
             while (!stop.load()) {
                 const std::size_t clouds = manager.count_cloud_models("zz-no-provider");
-                const std::set<std::string> hidden =
-                    manager.recipes_all_models_filtered_snapshot();
+                const std::vector<std::string> hidden = manager.snapshot()->empty_recipes();
                 (void)clouds;
                 (void)hidden;
                 reads.fetch_add(1);
