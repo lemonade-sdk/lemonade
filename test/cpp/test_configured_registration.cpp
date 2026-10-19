@@ -79,10 +79,16 @@ int main() {
         for (const auto& backend : registered) {
             auto server = create_server(backend.recipe, BackendContext{"error"});
             check(dynamic_cast<ConfiguredServer*>(server.get()) != nullptr, backend.recipe + " factory constructs the configured server");
+            check(server && server->get_descriptor() == descriptor_for(backend.recipe), backend.recipe + " server carries the registry's descriptor object");
             check(backend.spec == &backend.entry->spec && backend.spec->definition == backend.entry->definition && backend.ops == backend.entry->ops.get(), backend.recipe + " spec/ops are the configured entry's");
             check(spec_for(backend.recipe) == backend.spec && ops_for(backend.recipe) == backend.ops, backend.recipe + " registry lookups return the configured spec/ops");
             check(backend.capabilities == (implemented_capabilities(*backend.entry) & mode_capabilities(*backend.entry)), backend.recipe + " capability export matches the definition's implemented bindings within its declared modes");
         }
+        bool shared_descriptors = builtin_registrations().size() == builtin_descriptors().size();
+        for (size_t i = 0; shared_descriptors && i < builtin_descriptors().size(); ++i) {
+            shared_descriptors = builtin_registrations()[i].descriptor == builtin_descriptors()[i] && descriptor_for(builtin_descriptors()[i]->recipe) == builtin_descriptors()[i];
+        }
+        check(shared_descriptors, "factory registrations and the descriptor registry share every descriptor object");
         check(thinksound::capabilities() == CAP_AUDIO_GENERATION && ds4::capabilities() == 0 && ryzenai::capabilities() == 0 && hrx::capabilities() == 0 && kokoro::capabilities() == CAP_TTS && moonshine::capabilities() == (CAP_TRANSCRIPTION | CAP_STREAMING_TRANSCRIPTION) && onnxruntime::capabilities() == CAP_CLASSIFICATION && trellis::capabilities() == CAP_MODEL_3D, "unchanged capability exports");
         check(thinksound::capabilities() == implemented_capabilities(*thinksound::configured_entry()) && ds4::capabilities() == implemented_capabilities(*ds4::configured_entry()) &&
               ryzenai::capabilities() == implemented_capabilities(*ryzenai::configured_entry()) && kokoro::capabilities() == implemented_capabilities(*kokoro::configured_entry()) &&
