@@ -43,6 +43,9 @@ bool build_agent_config(const std::string& agent,
 // that flag. Returns nullopt when the version can't be determined.
 std::optional<bool> opencode_needs_standalone(const std::string& binary);
 
+// Adds --standalone where OpenCode v2 accepts it for the given arguments.
+void add_opencode_standalone_arg(std::vector<std::string>& args);
+
 // Locate the agent executable.
 // Returns absolute or PATH-resolved executable for ProcessManager::start_process.
 std::string find_agent_binary(const AgentConfig& config);

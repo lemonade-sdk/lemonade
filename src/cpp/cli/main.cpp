@@ -815,7 +815,7 @@ static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& co
             std::cerr << "If opencode opens on a non-Lemonade model, rerun with --agent-args \"--standalone\"."
                       << std::endl;
         } else if (*needs_standalone) {
-            agent_config.extra_args.insert(agent_config.extra_args.begin(), "--standalone");
+            lemon_tray::add_opencode_standalone_arg(agent_config.extra_args);
         }
     }
 

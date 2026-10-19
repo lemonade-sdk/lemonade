@@ -10,6 +10,7 @@
 #include <iostream>
 #include <optional>
 #include <regex>
+#include <set>
 
 #ifndef _WIN32
 #include <unistd.h>
@@ -389,6 +390,44 @@ std::optional<bool> opencode_needs_standalone(const std::string& binary) {
         return std::nullopt;
     }
     return *major >= 2;
+}
+
+void add_opencode_standalone_arg(std::vector<std::string>& args) {
+    // v2 only accepts --standalone on the TUI and these subcommands, and only
+    // after the subcommand name; every other subcommand rejects it outright.
+    static const std::set<std::string> standalone_subcommands = {
+        "api", "mini", "models", "reload", "run", "stats"};
+    static const std::set<std::string> other_subcommands = {
+        "acp", "auth", "debug", "mcp", "pair", "plugin", "serve", "service",
+        "session", "uninstall", "update", "upgrade"};
+    static const std::set<std::string> flags_with_values = {
+        "--completions", "--log-level", "--prompt", "--server", "--session", "-s"};
+
+    for (const auto& arg : args) {
+        if (arg == "--standalone" || arg.rfind("--standalone=", 0) == 0 ||
+            arg == "--server" || arg.rfind("--server=", 0) == 0) {
+            return;
+        }
+    }
+
+    for (size_t i = 0; i < args.size(); ++i) {
+        if (flags_with_values.count(args[i])) {
+            ++i;
+            continue;
+        }
+        if (args[i].empty() || args[i][0] == '-') {
+            continue;
+        }
+        if (standalone_subcommands.count(args[i])) {
+            args.insert(args.begin() + i + 1, "--standalone");
+            return;
+        }
+        if (other_subcommands.count(args[i])) {
+            return;
+        }
+        break;
+    }
+    args.insert(args.begin(), "--standalone");
 }
 
 std::string find_agent_binary(const AgentConfig& config) {

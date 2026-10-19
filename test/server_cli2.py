@@ -1944,6 +1944,36 @@ sys.exit(0)
             self.assertEqual(payload["env"]["OPENCODE_CONFIG_CONTENT"], user_config)
             self.assertIn("OPENCODE_CONFIG_CONTENT", result.stdout + result.stderr)
 
+    def test_117i_launch_opencode_v2_places_standalone_per_subcommand(self):
+        """--standalone must follow subcommands that accept it and be omitted where v2 rejects it."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
+        cases = [
+            ("run hello", ["run", "--standalone", "hello"]),
+            (
+                "--log-level debug run hi",
+                ["--log-level", "debug", "run", "--standalone", "hi"],
+            ),
+            ("debug config", ["debug", "config"]),
+            ("--server http://127.0.0.1:4096", ["--server", "http://127.0.0.1:4096"]),
+            ("--standalone", ["--standalone"]),
+            ("./project", ["--standalone", "./project"]),
+        ]
+        for agent_args, expected_argv in cases:
+            with self.subTest(agent_args=agent_args):
+                with tempfile.TemporaryDirectory(
+                    prefix="lemonade-launch-stub-"
+                ) as temp_dir:
+                    result, payload = self._launch_opencode_stub(
+                        temp_dir,
+                        "opencode v2.0.29",
+                        extra_args=["--agent-args", agent_args],
+                    )
+
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(payload["argv"], expected_argv)
+
     def test_118_launch_opencode_creates_config(self):
         """Launch opencode should create opencode.json with Lemonade provider."""
         if IS_WINDOWS:
