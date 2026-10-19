@@ -1,19 +1,6 @@
 {
-  "generated_at": "2026-10-19T04:43:37.201222+00:00",
+  "generated_at": "2026-10-19T05:19:49.618690+00:00",
   "regressions": [
-    {
-      "severity": "WARN",
-      "fork_id": "llamacpp-amd-ecosystem-gfx11",
-      "model": "Qwen3.8-27B-GGUF",
-      "scenario": "chat-short",
-      "metric": "tps",
-      "delta_pct": -5.46,
-      "prev": 23.72,
-      "curr": 22.42,
-      "timestamp": "2026-10-11T09:46:41.737331+00:00",
-      "run_id": "38105187684",
-      "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/38105187684"
-    },
     {
       "severity": "WARN",
       "fork_id": "llamacpp-amd-ecosystem-gfx11",
@@ -2600,6 +2587,19 @@
       "timestamp": "2026-10-19T04:43:37.201222+00:00",
       "run_id": "39188554109",
       "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/39188554109"
+    },
+    {
+      "severity": "WARN",
+      "fork_id": "halo-box-strix",
+      "model": "Qwen3.6-35B-A3B-GGUF",
+      "scenario": "context-4k",
+      "metric": "tps",
+      "delta_pct": -5.22,
+      "prev": 54.69,
+      "curr": 51.84,
+      "timestamp": "2026-10-19T05:19:49.618690+00:00",
+      "run_id": "39200942360",
+      "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/39200942360"
     }
   ]
 }
