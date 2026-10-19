@@ -1912,6 +1912,38 @@ sys.exit(0)
             self.assertEqual(inline_config.get("foo"), 1)
             self.assertEqual(inline_config["model"], f"Lemonade/{ENDPOINT_TEST_MODEL}")
 
+    def test_117g_launch_opencode_merges_jsonc_inline_config(self):
+        """A user's inline config with comments must be merged, not dropped."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            result, payload = self._launch_opencode_stub(
+                temp_dir,
+                "opencode v2.0.29",
+                inline_config='{ // keep me\n "foo": 1 }',
+            )
+
+            self.assertEqual(result.returncode, 0)
+            inline_config = json.loads(payload["env"]["OPENCODE_CONFIG_CONTENT"])
+            self.assertEqual(inline_config.get("foo"), 1)
+            self.assertEqual(inline_config["model"], f"Lemonade/{ENDPOINT_TEST_MODEL}")
+
+    def test_117h_launch_opencode_passes_through_unparsable_inline_config(self):
+        """Inline config Lemonade can't parse must reach opencode unchanged, with a warning."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
+        user_config = '{"foo": 1,}'
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            result, payload = self._launch_opencode_stub(
+                temp_dir, "opencode v2.0.29", inline_config=user_config
+            )
+
+            self.assertEqual(result.returncode, 0)
+            self.assertEqual(payload["env"]["OPENCODE_CONFIG_CONTENT"], user_config)
+            self.assertIn("OPENCODE_CONFIG_CONTENT", result.stdout + result.stderr)
+
     def test_118_launch_opencode_creates_config(self):
         """Launch opencode should create opencode.json with Lemonade provider."""
         if IS_WINDOWS:

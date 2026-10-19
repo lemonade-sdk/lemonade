@@ -7,6 +7,7 @@
 
 #include <filesystem>
 #include <cstdlib>
+#include <iostream>
 #include <optional>
 #include <regex>
 
@@ -213,17 +214,21 @@ void configure_opencode_agent(const std::string& model,
     nlohmann::json inline_config = nlohmann::json::object();
     const char* existing_inline_config = std::getenv("OPENCODE_CONFIG_CONTENT");
     if (existing_inline_config && existing_inline_config[0] != '\0') {
-        inline_config = nlohmann::json::parse(existing_inline_config, nullptr, false);
-        if (!inline_config.is_object()) {
-            inline_config = nlohmann::json::object();
-        }
+        inline_config = nlohmann::json::parse(existing_inline_config, nullptr, false, true);
     }
-    inline_config["model"] = "Lemonade/" + model;
 
     config.env_vars = {
-        {"LEMONADE_API_KEY", resolved_api_key},
-        {"OPENCODE_CONFIG_CONTENT", inline_config.dump()}
+        {"LEMONADE_API_KEY", resolved_api_key}
     };
+    // opencode also accepts syntax nlohmann can't parse (e.g. trailing commas),
+    // so leave such a value untouched rather than dropping the user's settings.
+    if (inline_config.is_object()) {
+        inline_config["model"] = "Lemonade/" + model;
+        config.env_vars.emplace_back("OPENCODE_CONFIG_CONTENT", inline_config.dump());
+    } else {
+        std::cerr << "Warning: Could not parse OPENCODE_CONFIG_CONTENT; passing it to opencode unchanged, "
+                  << "so Lemonade/" << model << " won't be preselected." << std::endl;
+    }
     config.extra_args = {};
     config.install_instructions =
         "Install OpenCode CLI:\n"
