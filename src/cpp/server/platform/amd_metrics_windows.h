@@ -1,9 +1,7 @@
 #pragma once
 
-// AMD GPU telemetry for the Windows system-stats path. Adapter identity comes
-// from DXGI, integrated/discrete classification from DXCore, and live
-// utilization and memory usage from PDH GPU performance counters. System
-// libraries are loaded dynamically so the build takes no vendor SDK dependency.
+// AMD GPU telemetry for Windows system-stats, via DXGI, DXCore and PDH.
+// Libraries are loaded dynamically so the build needs no vendor SDK.
 
 #ifdef _WIN32
 
@@ -219,8 +217,6 @@ public:
         const bool util_ok =
             add_(query_, "\\GPU Engine(*)\\Utilization Percentage", 0,
                  &util_counter_) == ERROR_SUCCESS;
-        // Adapter-memory counters are system-wide, unlike DXGI's per-process
-        // QueryVideoMemoryInfo, so they report real usage across all processes.
         add_(query_, "\\GPU Adapter Memory(*)\\Dedicated Usage", 0,
              &dedicated_counter_);
         add_(query_, "\\GPU Adapter Memory(*)\\Shared Usage", 0,
@@ -261,7 +257,6 @@ public:
             if (clamped > slot) slot = clamped;
         }
 
-        // Kept separate so each adapter can combine them per its memory_type.
         accumulate_by_luid(dedicated_counter_, out.dedicated_used);
         accumulate_by_luid(shared_counter_, out.shared_used);
         return out;
@@ -399,15 +394,16 @@ inline std::vector<GpuDeviceMetrics> query_amd_gpu_metrics() {
             gpu.gpu_percent = it->second;
         }
 
-        // Count shared usage only for a UMA adapter, whose capacity includes it;
-        // on a discrete adapter it would exceed the dedicated-only total.
-        const auto ded = live.dedicated_used.find(adapter.luid);
-        const auto shr = live.shared_used.find(adapter.luid);
-        double used = -1.0;
-        if (ded != live.dedicated_used.end()) used = ded->second;
-        if (integrated && shr != live.shared_used.end())
-            used = (used < 0.0 ? 0.0 : used) + shr->second;
-        if (used >= 0.0) gpu.memory_used_gb = used / BYTES_PER_GIB;
+        // Counter selection needs a known memory pool; shared counts for UMA.
+        if (adapter.integrated) {
+            const auto ded = live.dedicated_used.find(adapter.luid);
+            const auto shr = live.shared_used.find(adapter.luid);
+            double used = -1.0;
+            if (ded != live.dedicated_used.end()) used = ded->second;
+            if (integrated && shr != live.shared_used.end())
+                used = (used < 0.0 ? 0.0 : used) + shr->second;
+            if (used >= 0.0) gpu.memory_used_gb = used / BYTES_PER_GIB;
+        }
 
         result.push_back(std::move(gpu));
     }
