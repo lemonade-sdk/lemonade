@@ -66,6 +66,18 @@ Comment: Lemonade's React wrapper is Apache-2.0. Lucide paths are ISC,
  with Feather-derived geometries also under MIT/Expat. The hugging-face,
  github and discord paths from react-icons/si (Simple Icons) are CC0-1.0.
 
+Files: src/web-app/vendor/mermaid/*
+Copyright: 2014-2022 Knut Sveidqvist
+           Mermaid contributors and bundled third-party copyright holders
+License: Expat and Apache-2.0 and ISC and BSD-3-Clause
+Comment: The checked-in Mermaid 11 browser ESM build is derived verbatim from
+ the integrity-verified npm release listed in both GUI3 package-lock.json files.
+ The upstream LICENSE is kept at src/web-app/vendor/mermaid/LICENSE.
+ This includes bundled dependencies (including D3, DOMPurify, KaTeX and
+ Cytoscape); the bundle's source maps are retained for attribution review.
+ This temporary vendoring is NOT Debian archive ready: individual upstream
+ component notices and preferred source forms require a separate audit.
+
 Files: src/app/src/vendor/model-viewer.min.js
 Copyright: 2019-2026 Google LLC
            2017 Google LLC and The Lit Project Contributors

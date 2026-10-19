@@ -1,55 +1,73 @@
 # Vendoring Mermaid for native GUI3 packages (temporary)
 
-GUI3 normally bundles Mermaid from npm. For native Debian/Ubuntu builds,
-`USE_SYSTEM_NODEJS_MODULES=ON` uses a locally staged copy of the official
-Mermaid 11 browser ESM distribution instead of the old no-op stub.
+Native Debian/Ubuntu builds (`USE_SYSTEM_NODEJS_MODULES=ON`) use the official
+Mermaid 11 **unminified browser ESM build**, not a no-op stub and not the npm
+package's `mermaid.core.mjs` entry (which expects external npm dependencies).
+The committed vendor tree contains `dist/mermaid.esm.mjs`, its static and
+lazy-loaded `dist/chunks/mermaid.esm/` modules, their source maps, upstream
+`LICENSE`, `package.json`, `README.md`, and `VENDOR-MANIFEST.json`.
 
-The assets are **not committed to Git**. They are generated **before** the
-Debian source package is created and included in its source tarball. Launchpad
-never downloads from npm, and the package build remains offline.
+**These files must be checked into Git.** The GitHub release preparation step
+checks their hashes and Git tracking *without accessing npm or the network*.
+Neither Launchpad nor Debian buildds download or regenerate vendor data.
 
-## Updating Mermaid
+## Refreshing the checked-in copy
 
-1. Update both `src/app` and `src/web-app` lockfiles, for example:
-   ```sh
-   (cd src/app && npm install --save-exact mermaid@11.16.1 --package-lock-only --ignore-scripts)
-   (cd src/web-app && npm install --save-dev --save-exact mermaid@11.16.1 --package-lock-only --ignore-scripts)
-   ```
-   Use the latest reviewed/security-patched 11.x release, not necessarily 11.16.1.
-   Inspect the lockfile diffs and commit `package.json` and `package-lock.json`
-   from both directories.
-2. From the repository root, prepare the offline assets:
-   ```sh
-   python3 tools/vendor_mermaid.py
-   python3 tools/vendor_mermaid.py --check
-   ```
-   The generator verifies the npm tarball's SHA-512 against the exact
-   integrity value committed in both lockfiles. The generated assets live in
-   `src/web-app/vendor/mermaid/` and are gitignored.
-3. Create the Debian *source* package from this prepared tree. The
-   `prepare-debian-build` GitHub Action already runs the generator before
-   `dpkg-buildpackage -S`; the downstream PPA build does not fetch npm data.
-4. For local binary builds, generate the assets before `dpkg-buildpackage -b`.
-   For reproducible offline rebuilds, run `--check` against the unpacked
-   source package, not `--download` inside the package builder.
+From the PR branch, update the **same exact security-fixed Mermaid 11 release**
+in both application manifests and locks (for example, `11.16.1`):
 
-The upstream distribution's main `mermaid.esm.min.mjs` imports adjacent ESM
-chunks, including dynamically loaded diagram renderers. The generator copies
-these together and validates all static relative imports. Copying only the
-entry file is insufficient.
+```sh
+(cd src/app && npm install --save-exact --package-lock-only --ignore-scripts mermaid@11.16.1)
+(cd src/web-app && npm install --save-dev --save-exact --package-lock-only --ignore-scripts mermaid@11.16.1)
+```
 
-## Release checks
+Review the `package.json` and `package-lock.json` diffs in **both** directories.
+A caret range or conflicting resolved tarballs is not accepted: vendoring must
+pin a single reviewed release, at least `11.16.1` for the known advisories.
 
-- Verify the source `.tar.*` **includes** the vendored files and licenses.
-- Ensure `USE_SYSTEM_NODEJS_MODULES=ON` builds on both Ubuntu PPAs and Debian
-  test environments *without network access*.
-- Run browser rendering tests against the native package for flowchart,
-  sequence, class, ER, architecture, mindmap, and malformed Mermaid input.
-- Audit licenses of **all transitive code inside the upstream prebundled JS**
-  and update `debian/copyright` before distribution. Mermaid itself uses MIT;
-  its bundled dependencies can have different licenses.
-- Update the vendored copy for upstream CVEs and rebuild/reissue Lemonade:
-  already-shipped JS bundles do not automatically pick up system updates.
+Only on a trusted developer machine with network access, refresh the vendor
+files using the exact tarball URL and SHA-512 integrity recorded in the locks:
 
-This is a short-term release workaround and is not suitable for Debian archive
-submission without further packaging work agreed with the Debian maintainer.
+```sh
+python3 tools/vendor_mermaid.py --update
+# Alternatively, for a local copy of the exact npm archive:
+# python3 tools/vendor_mermaid.py --tarball /path/to/mermaid-11.16.1.tgz
+
+git add src/app/package.json src/app/package-lock.json \
+  src/web-app/package.json src/web-app/package-lock.json
+# Include all additions, deletions, and renamed upstream chunks/maps:
+git add -A src/web-app/vendor/mermaid
+python3 tools/vendor_mermaid.py --check --require-tracked
+python3 -m unittest discover -s test -p 'vendor_mermaid_test.py'
+```
+
+The `--check` command is **offline and the default**. The extra
+`--require-tracked` check uses the Git index and thus runs in CI and developer
+checkouts, not inside Debian source tarballs. The exact upstream tarball is
+verified before extraction, extracted paths are constrained, and a manifest
+checks each committed file, the complete file set, and relative ESM imports.
+Do not edit upstream-generated `.mjs` or `.map` files manually.
+
+## Packaging and release verification
+
+- `dpkg-buildpackage -S` must include all tracked Mermaid ESM files and
+  license/manifest in the resulting source `.tar.*`; inspect that archive.
+- `contrib/debian/rules` verifies the preexisting files using the offline
+  `--check` path. Check an unpacked source package without network access,
+  with `USE_SYSTEM_NODEJS_MODULES=ON`.
+- Browser-test the **native** packaged GUI with flowchart, sequence, class,
+  ER, architecture, mindmap, and invalid Mermaid input. A successful static
+  file check is not a substitute for a real Webpack build and render test.
+- Before distribution, complete the third-party license and attribution audit
+  for code embedded in the prebuilt ESM chunks (D3, DOMPurify, KaTeX,
+  Cytoscape, etc.). The upstream Mermaid MIT license alone does **not** cover
+  every bundled dependency. The `debian/copyright` stanza records the known
+  license families, but is not an exhaustive per-component audit. Retained
+  source maps help identify components and original sources.
+- Monitor upstream security fixes, refresh the complete vendor tree, and
+  rebuild/reissue packages; bundled JS is not updated by system libraries.
+
+This is a temporary native/Ubuntu PPA solution. Unminified **bundled** ESM and
+source maps still do not constitute a complete, independently rebuildable
+upstream source tree. An actual Debian archive submission needs separate
+source/DFSG packaging work and maintainer agreement.
