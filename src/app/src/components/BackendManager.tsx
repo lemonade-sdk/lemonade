@@ -968,15 +968,16 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
   }, [fetchInfo, syncBackendStatus, toast]);
 
   const handleUninstall = useCallback(async (recipe: string, backend: string) => {
+    const key = backendKey(recipe, backend);
     try {
-      setInstalling(backendKey(recipe, backend));
+      setInstalling(key);
       await api.uninstallBackend(recipe, backend);
       toast(`${RECIPE_LABELS[recipe] || recipe} · ${backend} uninstalled`);
       void fetchInfo(false);
     } catch (err) {
       toast(`Uninstall failed: ${friendlyErrorMessage(err)}`);
     } finally {
-      setInstalling(null);
+      setInstalling(current => current === key ? null : current);
     }
   }, [fetchInfo, toast]);
 
