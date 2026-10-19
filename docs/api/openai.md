@@ -664,7 +664,7 @@ Image Generation API. You provide a text prompt and receive a generated image.
 ## `POST /v1/images/edits`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Image Editing API. You provide a source image and a text prompt describing the desired change, and receive an edited image.
+Image Editing API. Provide one or more reference images and a prompt describing the desired change, and receive an edited image.
 
 > **Note:** This endpoint accepts `multipart/form-data` requests (not JSON). Use editing-capable models such as `Flux-2-Klein-4B` or `SD-Turbo`.
 >
@@ -675,10 +675,10 @@ Image Editing API. You provide a source image and a text prompt describing the d
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
 | `model` | Yes | The diffusion model to use (e.g., `Flux-2-Klein-4B`, `SD-Turbo`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `image` / `image[]` | Yes | The source image file to edit (PNG). Sent as a file in multipart/form-data. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `image` / `image[]` | Yes | PNG or JPEG image upload. For multiple references, repeat `image[]` in order. Files are forwarded without re-encoding. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `prompt` | Yes | A text description of the desired edit. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `mask` | No | An optional mask image (PNG). White areas indicate regions to edit; black areas are preserved. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `size` | No | The size of the output image. Format: `WIDTHxHEIGHT` (e.g., `512x512`). Default: `512x512`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `size` | No | Output dimensions as `WIDTHxHEIGHT` (e.g., `512x512`). When omitted, use the first reference image's dimensions, scaling down proportionally to the model's optional `image_defaults.soft_pixel_cap` cap (default: 2048x2048 pixels, ~4 MP). An explicit size bypasses this soft cap; backend limits still apply. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `n` | No | Number of images to generate. Allowed range: `1`–`10`. Default: `1`. Values outside this range are rejected with `400 Bad Request`. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `response_format` | No | Format of the response. Only `b64_json` (base64-encoded image) is supported. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `steps` | No | Number of inference steps. Default varies by model. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
@@ -1134,7 +1134,6 @@ can be corrected by hand.
 | `reasoning` | Uses extended chain-of-thought reasoning (e.g. DeepSeek, Qwen3). |
 | `tool-calling` | Supports function/tool calling in chat completions. |
 | `coding` | Tuned for code generation and software tasks. |
-| `experimental` | Not yet validated for production use. |
 
 
 ## `GET /v1/models/{model_id}`

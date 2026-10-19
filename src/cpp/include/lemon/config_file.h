@@ -104,7 +104,8 @@ public:
     static json base_defaults();
 
     /// base_defaults() plus deployment overrides. On Linux, an optional distro
-    /// override at /usr/share/lemonade/defaults.json (and LEMONADE_DEFAULTS_PATH)
+    /// override at <prefix>/share/lemonade/defaults.json, where <prefix> is the
+    /// directory above the lemond binary's bin/ (and LEMONADE_DEFAULTS_PATH),
     /// is merged on top when present.
     static json get_defaults();
 
