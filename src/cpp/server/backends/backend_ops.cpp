@@ -2,7 +2,10 @@
 
 #include <algorithm>
 #include <filesystem>
+#include "lemon/backends/backend_descriptor_registry.h"
+#include "lemon/backends/backend_utils.h"
 #include "lemon/backends/hf_cache_util.h"
+#include "lemon/runtime_config.h"
 #include "lemon/utils/path_utils.h"
 
 namespace fs = std::filesystem;
@@ -128,6 +131,24 @@ void BackendOps::download_model(const ModelInfo& info, bool do_not_upgrade,
 const BackendOps* default_backend_ops() {
     static const BackendOps kDefault;
     return &kDefault;
+}
+
+std::optional<utils::SetupFailure> container_setup_failure(const std::string& recipe,
+                                                           const std::string& backend) {
+    const auto* cfg = RuntimeConfig::global();
+    if (!cfg || !cfg->enable_containers()) {
+        return utils::SetupFailure{"enable_containers is false",
+                                   "lemonade config set enable_containers=true"};
+    }
+    const auto& manager = utils::ContainerManager::global();
+    const ContainerPolicy* policy = BackendUtils::get_container_policy(recipe, backend);
+    if (policy && std::find(policy->devices.begin(), policy->devices.end(), "/dev/kfd") !=
+                      policy->devices.end()) {
+        if (auto failure = manager.check_selinux()) {
+            return failure;
+        }
+    }
+    return manager.check_setup();
 }
 
 } // namespace backends

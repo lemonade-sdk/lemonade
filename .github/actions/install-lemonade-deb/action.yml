@@ -16,6 +16,10 @@ inputs:
     description: 'Whether to download the artifact (set to false if already downloaded)'
     required: false
     default: 'true'
+  start-server:
+    description: "Whether to start lemond after installing"
+    required: false
+    default: 'true'
   port:
     description: "Port to start lemond on. Use 'auto' to pick a free port (needed on shared self-hosted runners where the default port may be taken)."
     required: false
@@ -114,6 +118,7 @@ runs:
         echo "Binaries verified successfully!"
 
     - name: Start server and wait for ready
+      if: inputs.start-server == 'true'
       shell: bash
       run: |
         # The .deb extract doesn't install a systemd service, so start manually.

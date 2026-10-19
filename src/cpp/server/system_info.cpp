@@ -5,6 +5,7 @@
 #include "lemon/runtime_config.h"
 #include "lemon/version.h"
 #include "lemon/backend_manager.h"
+#include "lemon/utils/container_manager.h"
 #include "lemon/utils/path_utils.h"
 #include "lemon/utils/version_utils.h"
 #include "lemon/utils/json_utils.h"
@@ -655,6 +656,17 @@ bool SystemInfo::backend_supports_arch(const std::string& recipe,
     return false;
 }
 
+// Marks `status` action_required when a setup check fails, returning whether one did.
+static bool mark_container_setup(json& status, const std::string& recipe,
+                                 const std::string& backend) {
+    const auto failure = backends::container_setup_failure(recipe, backend);
+    if (!failure) return false;
+    status["state"] = "action_required";
+    status["message"] = failure->message;
+    status["action"] = failure->action;
+    return true;
+}
+
 // Generic installation check
 static bool is_installed_state(const std::string& state) {
     return state == "installed" || state == "update_available" || state == "update_required";
@@ -669,6 +681,11 @@ static bool is_recipe_installed(const std::string& recipe, const std::string& ba
         error_message = "Linux kernel missing support";
         return false;
     }
+    if (cwsr_desc && cwsr_desc->container_for(backend)) {
+        const std::string image = BackendUtils::get_installed_backend_image(recipe, backend);
+        return !image.empty() && utils::ContainerManager::global().has_image(image);
+    }
+
     // Find the managed binary, then let the backend's ops decide installed-ness
     // (llamacpp "system" also needs the HIP plugin; flm can be a PATH package).
     bool binary_found = false;
@@ -1261,6 +1278,12 @@ json SystemInfo::build_recipes_info(const json& devices) {
 
     // Build recipes from the definition table
     for (const auto& def : recipe_defs()) {
+        const auto* def_desc = backends::descriptor_for(def.recipe);
+        const bool container_backend = def_desc && def_desc->container_for(def.backend);
+        if (container_backend && current_os != "linux") {
+            continue;
+        }
+
         // Skip if not supported on current OS
         if (def.supported_os.count(current_os) == 0) {
             // Helper to format OS name nicely
@@ -1470,6 +1493,10 @@ json SystemInfo::build_recipes_info(const json& devices) {
         } else {
             std::string installed_version = get_recipe_version(def.recipe, def.backend);
             std::string expected_version = get_expected_backend_version(def.recipe, def.backend);
+            if (container_backend) {
+                installed_version = backends::short_container_pin(installed_version);
+                expected_version = backends::short_container_pin(expected_version);
+            }
 
             // The user's *_bin pin overrides what the state machine considers
             // "expected" — otherwise an explicit-tag pin (e.g. b8664) would
@@ -1564,6 +1591,10 @@ json SystemInfo::build_recipes_info(const json& devices) {
 
         // Note: release_url and download_size_mb are added by Server::handle_system_info()
         // using BackendManager as the single source of truth for repo/version mappings.
+
+        if (supported && container_backend) {
+            mark_container_setup(backend, def.recipe, def.backend);
+        }
 
         set_backend_status(def, backend, kCurrentOsUnsupportedPriority);
 
@@ -1718,6 +1749,39 @@ std::string SystemInfo::check_recipe_supported(const std::string& recipe) {
     }
     auto result = get_supported_backends(recipe);
     return result.backends.empty() ? result.not_supported_error : "";
+}
+
+bool SystemInfo::refresh_container_setup(json& recipes) {
+    bool cleared = false;
+    for (auto& [recipe, info] : recipes.items()) {
+        const auto* desc = lemon::backends::descriptor_for(recipe);
+        if (!desc || desc->containers.empty() || !info.contains("backends")) {
+            continue;
+        }
+        for (auto& [backend, status] : info["backends"].items()) {
+            const std::string state = status.value("state", "unsupported");
+            if (!desc->container_for(backend) || state == "unsupported") {
+                continue;
+            }
+            if (!mark_container_setup(status, recipe, backend) && state == "action_required") {
+                cleared = true;
+            }
+        }
+    }
+    return cleared;
+}
+
+bool SystemInfo::is_backend_installed(const std::string& recipe, const std::string& backend) {
+    const auto* desc = backends::descriptor_for(recipe);
+    if (!desc) return false;
+    const std::string current_os = get_current_os();
+    const bool runs_here = std::any_of(desc->support.begin(), desc->support.end(),
+                                       [&](const BackendSupport& row) {
+                                           return row.backend == backend &&
+                                                  row.supported_os.count(current_os) > 0;
+                                       });
+    std::string ignored;
+    return runs_here && is_recipe_installed(recipe, backend, ignored);
 }
 
 std::string SystemInfo::check_guest_backend_installed(const std::string& recipe,
@@ -1999,46 +2063,14 @@ static std::string identify_npu_arch_linux() {
 // Check if kernel has CWSR fix for Strix Halo by looking for cwsr_size/ctl_stack_size in sysfs
 // The kernel fix exports these properties; older kernels don't have them
 bool needs_gfx1151_cwsr_fix() {
-    std::string kfd_path = "/sys/class/kfd/kfd/topology/nodes";
-
-    if (!fs::exists(kfd_path))
-        return false;
-
-    for (const auto& node_entry : fs::directory_iterator(kfd_path)) {
-        if (!node_entry.is_directory()) continue;
-
-        std::string properties_file = node_entry.path().string() + "/properties";
-        if (!fs::exists(properties_file)) continue;
-
-        std::ifstream props(properties_file);
-        if (!props.is_open())
-            continue;
-
-        bool is_gfx1151 = false;
-        bool has_cwsr_size = false;
-        bool has_ctl_stack_size = false;
-
-        std::string line;
-        while (std::getline(props, line)) {
-            if (line.find("gfx_target_version") == 0) {
-                std::string value = line.substr(line.find(" ") + 1);
-                value.erase(value.find_last_not_of(" \t\n\r") + 1);
-                if (value == "110501") {
-                    is_gfx1151 = true;
-                }
-            }
-
-            if (line.find("cwsr_size") == 0)
-                has_cwsr_size = true;
-            if (line.find("ctl_stack_size") == 0)
-                has_ctl_stack_size = true;
-        }
-
-        if (is_gfx1151) {
-            return !has_cwsr_size || !has_ctl_stack_size;
+    using utils::ContainerManager;
+    for (const std::string& properties : ContainerManager::kfd_node_properties()) {
+        const auto values = ContainerManager::parse_kfd_properties(properties);
+        const auto version = values.find("gfx_target_version");
+        if (version != values.end() && version->second == 110501) {
+            return !values.count("cwsr_size") || !values.count("ctl_stack_size");
         }
     }
-
     return false;
 }
 
