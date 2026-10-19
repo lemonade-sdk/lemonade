@@ -33,10 +33,11 @@ from pathlib import Path
 IS_WINDOWS = platform.system() == "Windows"
 BACKEND_VERSIONS_PATH = Path("src/cpp/resources/backend_versions.json")
 SCENARIO_FILE = Path("src/cpp/resources/bench_scenarios.json")
-# chat-short = TG/decode; context-4k = meaningful PP/prefill (short prompts are
-# overhead-dominated). Forks may override via bench_scenarios/ctx_size keys.
-SCENARIOS = ["chat-short", "context-4k"]
-DEFAULT_CTX_SIZE = 8192  # must fit the largest default scenario prompt (~4k tokens)
+# ctx window -> scenarios run at it. Forks override via "scenario_ctx".
+SCENARIO_CTX = {
+    4096: ["context-4k"],
+    32768: ["context-32k"],
+}
 WARMUP_RUNS = 1
 MEASUREMENT_RUNS = 3
 THRESHOLDS = {
@@ -330,6 +331,20 @@ def install_backend(base_url: str, recipe: str, backend: str) -> None:
         raise RuntimeError(f"Backend install failed ({e.code}): {body}") from e
 
 
+def merge_bench_outputs(base: dict | None, incoming: dict) -> dict:
+    """Merge per-ctx bench outputs by appending results per model."""
+    if base is None:
+        return incoming
+    base_models = {m.get("model"): m for m in base.get("models", [])}
+    for m in incoming.get("models", []):
+        name = m.get("model")
+        if name in base_models:
+            base_models[name].setdefault("results", []).extend(m.get("results", []))
+        else:
+            base.setdefault("models", []).append(m)
+    return base
+
+
 def run_bench(
     fork: dict,
     version: str,
@@ -350,70 +365,83 @@ def run_bench(
     # lemond never reads one.
     bench_as = fork.get("install_as", backend)
 
-    scenarios = fork.get("bench_scenarios") or SCENARIOS
-    ctx_size = fork.get("ctx_size", DEFAULT_CTX_SIZE)
-
-    cmd = [
-        lemonade_bin,
-        "bench",
-        model,
-        "--backend",
-        bench_as,
-        "--scenarios",
-        *scenarios,
-        "--runs",
-        str(MEASUREMENT_RUNS),
-        "--warmup",
-        str(WARMUP_RUNS),
-        "--auto-pull",
-        "--json",
-        "--output",
-        str(output_file),
-    ]
     if not SCENARIO_FILE.exists():
         raise RuntimeError(f"{SCENARIO_FILE} not found — run from the repo root")
-    cmd += ["--scenario-file", str(SCENARIO_FILE)]
-    if ctx_size is not None:
-        cmd += ["--ctx-size", str(ctx_size)]
-    if compare_file and compare_file.exists():
-        cmd += ["--compare", str(compare_file)]
 
-    env = os.environ.copy()
+    ctx_groups = fork.get("scenario_ctx") or SCENARIO_CTX
 
-    print(f"    cmd: {' '.join(cmd)}")
     recipe = fork.get("recipe", "llamacpp")
     cfg_section = fork.get("config_section", recipe)
     print(
         f"    backend key: {bench_as}  (binary routed via {cfg_section}.{bench_as}_bin)"
     )
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    env = os.environ.copy()
+
+    # One bench invocation per ctx group, then merge.
+    merged = None
+    for ctx_size, group_scenarios in sorted(ctx_groups.items()):
+        group_out = output_file.with_suffix(f".ctx{ctx_size}.json")
+        cmd = [
+            lemonade_bin,
+            "bench",
+            model,
+            "--backend",
+            bench_as,
+            "--scenarios",
+            *group_scenarios,
+            "--runs",
+            str(MEASUREMENT_RUNS),
+            "--warmup",
+            str(WARMUP_RUNS),
+            "--auto-pull",
+            "--json",
+            "--output",
+            str(group_out),
+            "--scenario-file",
+            str(SCENARIO_FILE),
+            "--ctx-size",
+            str(ctx_size),
+        ]
+        if compare_file and compare_file.exists():
+            cmd += ["--compare", str(compare_file)]
+
+        print(f"    cmd (ctx={ctx_size}): {' '.join(cmd)}")
+        if dry_run:
+            print("    [dry-run] skipping execution")
+            continue
+
+        print("    [running — streaming output below]", flush=True)
+        proc = subprocess.Popen(
+            cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+        )
+        for line in proc.stdout:
+            print(f"    {line}", end="", flush=True)
+        proc.wait()
+
+        if proc.returncode != 0:
+            print(
+                f"    [ERROR] lemonade bench failed (ctx={ctx_size}, exit {proc.returncode})"
+            )
+            continue
+        if not group_out.exists():
+            print(f"    [ERROR] output file not created: {group_out}")
+            continue
+
+        with open(group_out) as f:
+            group_data = json.load(f)
+        group_out.unlink(missing_ok=True)
+        merged = merge_bench_outputs(merged, group_data)
 
     if dry_run:
-        print("    [dry-run] skipping execution")
+        return None
+    if merged is None:
+        print(f"    [ERROR] no bench output produced for {model}")
         return None
 
-    output_file.parent.mkdir(parents=True, exist_ok=True)
-
-    # Stream output live so CI logs show progress (model pulls, scenario runs)
-    print("    [running — streaming output below]", flush=True)
-    proc = subprocess.Popen(
-        cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
-    )
-    output_lines = []
-    for line in proc.stdout:
-        print(f"    {line}", end="", flush=True)
-        output_lines.append(line)
-    proc.wait()
-
-    if proc.returncode != 0:
-        print(f"    [ERROR] lemonade bench failed (exit {proc.returncode})")
-        return None
-
-    if not output_file.exists():
-        print(f"    [ERROR] output file not created: {output_file}")
-        return None
-
-    with open(output_file) as f:
-        data = json.load(f)
+    data = merged
+    with open(output_file, "w") as f:
+        json.dump(data, f, indent=2)
 
     annotate_pp(data)
     for br in backend_results(data, model):
@@ -655,7 +683,9 @@ def main() -> int:
     if models:
         print(f"Models (from filter): {models}")
 
-    print(f"Default scenarios: {SCENARIOS} (forks may override via bench_scenarios)")
+    print(
+        f"Default scenario/ctx map: {SCENARIO_CTX} (forks may override via scenario_ctx)"
+    )
     print()
 
     leaderboard: dict = {}
@@ -834,7 +864,7 @@ def main() -> int:
             json.dumps(
                 {
                     "generated_at": datetime.now(timezone.utc).isoformat(),
-                    "scenarios": SCENARIOS,
+                    "scenarios": [s for g in SCENARIO_CTX.values() for s in g],
                     "by_model_scenario": leaderboard,
                 },
                 indent=2,

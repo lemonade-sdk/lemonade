@@ -594,11 +594,8 @@ jobs:
           leaderboard = {}
           systems = {}          # hw fingerprint -> hardware block (dedup across runs)
           lemonade_versions = set()
-          # Only surface scenarios/ctx that reflect the current comparison basis;
-          # frozen rows at other ctx or dropped scenarios are kept on disk but
-          # not rendered (they would show stale, non-comparable numbers).
-          ACTIVE_SCENARIOS = {"chat-short", "context-4k"}
-          EXPECTED_CTX = 8192
+          # Active scenario -> required ctx; other ctx/scenarios not rendered.
+          SCENARIO_CTX = {"context-4k": 4096, "context-32k": 32768}
 
           _QUANT_RE = re.compile(r"(IQ\d+_\w+|Q\d+(?:_[A-Z0-9]+)*|BF16|F16|F32|MXFP4)", re.I)
           def quant_from_checkpoint(me, data):
@@ -672,10 +669,9 @@ jobs:
             for me in model_entries:
               model = me.get("model", data.get("model", "unknown"))
               for br in me.get("results", []):
-                if br.get("ctx_size") not in (None, EXPECTED_CTX):
-                  continue
                 for sc in br.get("scenarios", []):
-                  if sc["name"] not in ACTIVE_SCENARIOS:
+                  want_ctx = SCENARIO_CTX.get(sc["name"])
+                  if want_ctx is None or br.get("ctx_size") not in (None, want_ctx):
                     continue
                   tps_block = sc.get("tps", {})
                   if tps_block.get("mean") is None:
@@ -734,10 +730,9 @@ jobs:
               mdl = me.get("model", data.get("model", "unknown"))
               quant = quant_from_checkpoint(me, data)
               for br in me.get("results", []):
-                if br.get("ctx_size") not in (None, EXPECTED_CTX):
-                  continue
                 for sc in br.get("scenarios", []):
-                  if sc["name"] not in ACTIVE_SCENARIOS:
+                  want_ctx = SCENARIO_CTX.get(sc["name"])
+                  if want_ctx is None or br.get("ctx_size") not in (None, want_ctx):
                     continue
                   tps_block = sc.get("tps", {})
                   if tps_block.get("mean") is None:
