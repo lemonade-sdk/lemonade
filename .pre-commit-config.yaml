@@ -4,12 +4,16 @@ repos:
     rev: v6.0.0
     hooks:
       - id: trailing-whitespace
+        exclude: ^src/web-app/vendor/mermaid/
       - id: end-of-file-fixer
+        exclude: ^src/web-app/vendor/mermaid/
       - id: check-yaml
       - id: check-added-large-files
         # Allow the vendored model-viewer bundle (see src/app/src/renderer/vendor/README.md),
         # which is necessarily larger than 500 KB.
-        exclude: ^src/app/src/renderer/vendor/model-viewer\.min\.js$
+        # Mermaid's upstream ESM chunks and source maps can exceed 500 KB too.
+        # Limit the exception to the exact checked-in vendor distribution.
+        exclude: ^(src/app/src/renderer/vendor/model-viewer\.min\.js|src/web-app/vendor/mermaid/dist/(?:mermaid\.esm\.mjs|chunks/mermaid\.esm/[^/]+\.mjs)(?:\.map)?)$
 
   - repo: https://github.com/psf/black
     rev: 26.1.0
@@ -35,3 +39,9 @@ repos:
         pass_filenames: false
         require_serial: true
         types_or: [c, c++, python]
+      - id: vendor-mermaid-integrity
+        name: Mermaid vendor integrity (offline)
+        entry: python3 tools/vendor_mermaid.py --check
+        language: system
+        pass_filenames: false
+        files: '^(src/web-app/vendor/mermaid/|src/(app|web-app)/package(-lock)?\.json$|tools/vendor_mermaid\.py$)'

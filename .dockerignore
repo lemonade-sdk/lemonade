@@ -39,3 +39,8 @@ build/
 **/node_modules/
 **/target/
 **/dist/
+
+# Docker ccache priming builds native packages from this filtered context.
+# Keep only the committed Mermaid distribution that its offline check needs.
+!src/web-app/vendor/mermaid/dist/
+!src/web-app/vendor/mermaid/dist/**

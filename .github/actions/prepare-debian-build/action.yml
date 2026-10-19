@@ -26,6 +26,13 @@ runs:
         printf '%s\n' "$VERSION" > .version
         echo "version=${VERSION}" >> $GITHUB_OUTPUT
 
+    - name: Verify committed Mermaid assets for offline source packaging
+      shell: bash
+      run: |
+        set -e
+        python3 -m unittest discover -s test -p 'vendor_mermaid_test.py'
+        python3 tools/vendor_mermaid.py --check --require-tracked
+
     - name: Create Debian packaging metadata
       shell: bash
       working-directory: ${{ github.workspace }}

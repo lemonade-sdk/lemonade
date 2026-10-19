@@ -1,1 +1,4 @@
 *.py text eol=lf
+
+# Keep upstream vendor bytes unchanged across platforms and hide generated diffs.
+src/web-app/vendor/mermaid/** -text linguist-vendored

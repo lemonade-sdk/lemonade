@@ -189,3 +189,6 @@ CLAUDE.local.md
 # WiX Toolset build artifacts
 *.msi
 *.wixpdb
+
+# Keep the checked-in Mermaid distribution even though other dist/ dirs are ignored.
+!/src/web-app/vendor/mermaid/dist/
