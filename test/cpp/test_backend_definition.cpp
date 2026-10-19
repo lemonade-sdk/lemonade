@@ -124,7 +124,8 @@ int main() {
     const auto& installed = installed_backend_hooks().registrations();
     const std::vector<std::pair<std::string, std::string>> expected_hooks = {{"llamacpp.gguf", "artifacts"}, {"llamacpp.max_tokens_alias", "request"},
         {"llamacpp.tool_schema_limits", "request"}, {"llamacpp.client_model", "response"}, {"kokoro.voice_index", "launch"},
-        {"moonshine.model_arch", "launch"}, {"moonshine.transcription", "operation"}};
+        {"moonshine.model_arch", "launch"}, {"moonshine.transcription", "operation"}, {"onnxruntime.model_directory", "artifacts"},
+        {"onnxruntime.servable_directory", "launch"}, {"onnxruntime.classify", "operation"}, {"onnxruntime.startup_error", "start_failure"}};
     bool agree = manifest.size() == installed.size() && manifest.size() == expected_hooks.size();
     for (size_t i = 0; agree && i < manifest.size(); ++i) {
         agree = manifest[i].id == installed[i].id && manifest[i].stage == hook_stage_name(installed[i].stage) && manifest[i].id == expected_hooks[i].first && manifest[i].stage == expected_hooks[i].second;
@@ -168,6 +169,27 @@ int main() {
     malformed([](auto& doc) { auto speech = doc["operations"][0]; speech["operation"] = "text_to_speech"; speech["model_modes"] = {"tts"}; doc["operations"].push_back(speech); }, "unsupported_feature", "/operations/1");
     malformed([](auto& doc) { doc["unsupported_messages"] = {{"embeddings", "no"}}; }, "unknown_key", "/unsupported_messages/embeddings");
     malformed([](auto& doc) { doc["launch"]["backend"] = {{"fixed", {{"linux", "cpu"}}}}; }, "invalid_shape", "/launch/backend");
+    malformed([](auto& doc) { doc["launch"]["ports"][0]["span"] = 3; }, "invalid_relationship", "/launch/ports/0");
+    malformed([](auto& doc) { doc["launch"]["ports"].push_back({{"name", "tcp"}, {"strategy", "offset"}, {"base", "http"}, {"offset", 2}, {"reject_zero", false}, {"error", ""}}); }, "invalid_reference", "/launch/ports/1/base");
+    malformed([](auto& doc) { doc["launch"]["ports"][0]["strategy"] = "probe"; doc["launch"]["ports"][0]["span"] = 2; doc["launch"]["ports"].push_back({{"name", "tcp"}, {"strategy", "offset"}, {"base", "http"}, {"offset", 2}, {"reject_zero", false}, {"error", ""}}); }, "invalid_reference", "/launch/ports/1/base");
+    malformed([](auto& doc) { doc["operations"][0]["transport"]["port"] = "other"; doc["launch"]["ports"].push_back({{"name", "other"}, {"reject_zero", false}, {"error", ""}}); }, "unsupported_feature", "/operations/0/transport/port");
+    malformed([](auto& doc) { auto& op = doc["operations"][0]; op = {{"operation", "streaming_transcription"}, {"delivery", "realtime"}, {"model_modes", {"*"}}, {"request", {{"base", "identity"}}},
+        {"transport", {{"kind", "realtime"}, {"method", "POST"}, {"path", "/"}, {"port", "http"}, {"timeout", "global"}, {"stream_codec", "jsonl.v1"}}}}; }, "unsupported_feature", "/operations/0/transport");
+    malformed([](auto& doc) { auto& op = doc["operations"][0]; op.erase("transport"); op["operation"] = "transcription"; op["model_modes"] = {"*"}; op["handler"] = {{"id", "onnxruntime.classify"}, {"params", json::object()}}; }, "unknown_handler", "/operations/0/handler/id");
+    malformed([](auto& doc) { doc["artifacts"]["main"]["files_from"] = "variant_directory"; doc["artifacts"]["main"]["files_error"] = "none"; }, "invalid_relationship", "/artifacts/main/files_from");
+    malformed([](auto& doc) { doc["artifacts"]["main"]["files_error"] = "none"; }, "invalid_relationship", "/artifacts/main/files_error");
+    malformed([](auto& doc) { doc["hooks"]["start_failure"] = {{"id", "kokoro.voice_index"}, {"params", json::object()}}; }, "unknown_hook", "/hooks/start_failure/id");
+    {
+        auto doc = baseline;
+        doc["launch"]["ports"][0]["strategy"] = "probe";
+        doc["launch"]["ports"][0]["span"] = 3;
+        doc["launch"]["ports"].push_back({{"name", "tcp"}, {"strategy", "offset"}, {"base", "http"}, {"offset", 2}, {"reject_zero", false}, {"error", ""}});
+        doc["operations"].push_back({{"operation", "streaming_transcription"}, {"delivery", "realtime"}, {"model_modes", {"*"}}, {"request", {{"base", "identity"}}},
+            {"transport", {{"kind", "realtime"}, {"method", "TCP"}, {"path", "/"}, {"port", "tcp"}, {"timeout", "global"}, {"stream_codec", "jsonl.v1"}}}});
+        doc["operations"].push_back({{"operation", "classification"}, {"delivery", "buffered"}, {"model_modes", {"*"}}, {"request", {{"base", "identity"}}}, {"handler", {{"id", "onnxruntime.classify"}, {"params", json::object()}}}});
+        doc["hooks"]["start_failure"] = {{"id", "onnxruntime.startup_error"}, {"params", json::object()}};
+        check(store.validate({"probe.json", doc.dump(), DefinitionOrigin::Builtin}).definition != nullptr, "probed span, offset port, realtime TCP transport, operation handler and start-failure hook validate");
+    }
     {
         auto doc = baseline;
         auto& speech = doc["operations"][0];

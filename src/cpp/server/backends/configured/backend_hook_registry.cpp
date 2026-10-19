@@ -3,6 +3,7 @@
 #include "lemon/backends/llamacpp/llamacpp_request.h"
 #include "lemon/backends/llamacpp/llamacpp_server.h"
 #include "lemon/backends/moonshine/moonshine_hooks.h"
+#include "lemon/backends/onnxruntime/onnxruntime_hooks.h"
 
 #include <set>
 
@@ -39,6 +40,7 @@ std::string_view hook_stage_name(HookStage stage) {
         case HookStage::Response: return "response";
         case HookStage::Launch: return "launch";
         case HookStage::Operation: return "operation";
+        case HookStage::StartFailure: return "start_failure";
     }
     return "";
 }
@@ -51,7 +53,11 @@ const BackendHookRegistry& installed_backend_hooks() {
         {"llamacpp.client_model", HookStage::Response, ResponseHook(&llamacpp::normalize_response_model)},
         {"kokoro.voice_index", HookStage::Launch, LaunchHook(&kokoro::voice_index)},
         {"moonshine.model_arch", HookStage::Launch, LaunchHook(&moonshine::model_arch)},
-        {"moonshine.transcription", HookStage::Operation, OperationHook(&moonshine::transcription)}
+        {"moonshine.transcription", HookStage::Operation, OperationHook(&moonshine::transcription)},
+        {"onnxruntime.model_directory", HookStage::Artifacts, ArtifactHook(&onnxruntime::model_directory_ops)},
+        {"onnxruntime.servable_directory", HookStage::Launch, LaunchHook(&onnxruntime::servable_directory)},
+        {"onnxruntime.classify", HookStage::Operation, OperationHook(&onnxruntime::classify)},
+        {"onnxruntime.startup_error", HookStage::StartFailure, StartFailureHook(&onnxruntime::startup_error)}
     });
     return registry;
 }

@@ -60,6 +60,7 @@ ConfiguredServer::ConfiguredServer(std::shared_ptr<const ConfiguredBackendEntry>
     adapters.completion = this;
     adapters.embeddings = this;
     adapters.reranking = this;
+    adapters.classification = this;
     adapters.transcription = this;
     adapters.streaming_transcription = this;
     adapters.slots = this;
@@ -101,7 +102,14 @@ void ConfiguredServer::load(const std::string& name, const ModelInfo& model, con
     configure_backend_watchdog({plan.command.ready_endpoint, plan.watchdog_enabled, true});
     if (!log) LOG(INFO, category.c_str()) << "Starting " << plan.command.program << " on port " << plan.command.port << std::endl;
     else if (log->starting) log->starting(category, inputs.values, plan.command);
-    start_server(services_.make_process(plan.output, plan.working_directory), plan.command, plan.readiness_timeout_seconds);
+    const auto hooks = entry_->definition->records.value("hooks", json::object());
+    try {
+        start_server(services_.make_process(plan.output, plan.working_directory), plan.command, plan.readiness_timeout_seconds);
+    } catch (const std::runtime_error& error) {
+        if (!hooks.contains("start_failure") || load_cancelled()) throw;
+        const auto details = installed_backend_hooks().target<StartFailureHook>(hooks["start_failure"]["id"].get<std::string>(), HookStage::StartFailure)(plan.command.program, plan.command.args);
+        throw std::runtime_error(std::string(error.what()) + (details.empty() ? "" : ": " + details));
+    }
 }
 const OperationProgram* ConfiguredServer::program(BackendOperation operation, OperationDelivery delivery) const {
     const OperationProgram* fallback = nullptr;
@@ -151,6 +159,10 @@ json ConfiguredServer::tokenize(const json& request_body) { return send_json(Req
 OperationHookContext ConfiguredServer::hook_context() {
     return {mapping_.values, entry_->definition->records["metadata"]["log_category"].get_ref<const std::string&>(), get_backend_port(), get_base_url(),
         [this](const std::string& endpoint, const json& body, long timeout) { return WrappedServer::forward_request(endpoint, body, timeout); }};
+}
+json ConfiguredServer::classify(const json& request) {
+    const auto& selected = bound(BackendOperation::Classification);
+    return installed_backend_hooks().target<OperationHook>(selected.handler, HookStage::Operation)(hook_context(), request);
 }
 json ConfiguredServer::audio_transcriptions(const json& request) {
     const auto& selected = bound(BackendOperation::Transcription);

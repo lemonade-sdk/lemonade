@@ -256,7 +256,7 @@ void check_witnesses() {
     WitnessServer audio(LegacyOperationProfile::ThinkSound);
     WitnessServer image(LegacyOperationProfile::StableDiffusion);
     WitnessServer mesh(LegacyOperationProfile::Trellis);
-    WitnessServer classification(LegacyOperationProfile::OnnxRuntime);
+    WitnessServer classification({{{Op::Classification, Delivery::Buffered, k_all_operation_model_types, OperationProvenance::Implemented}, "classification", "json"}});
     httplib::DataSink sink;
     llm.dispatch_completion_operation(Op::ChatCompletion, {});
     llm.dispatch_completion_operation(Op::Completion, {});

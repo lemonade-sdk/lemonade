@@ -125,9 +125,6 @@ nlohmann::json with_max_tokens_alias(nlohmann::json request) {
     return request;
 }
 
-// llama-server echoes the local .gguf path it was launched with (`-m <path>`)
-// in the OpenAI `model` field; the client-facing id keeps absolute paths (and
-// usernames) out of responses.
 nlohmann::json normalize_response_model(nlohmann::json response, const nlohmann::json& request, const std::string& model_name) {
     if (response.is_object() && response.contains("model")) {
         response["model"] = request.value("model", model_name);

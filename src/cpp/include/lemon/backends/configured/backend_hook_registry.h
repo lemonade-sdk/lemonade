@@ -21,13 +21,14 @@ struct OperationHookContext {
     std::string base_url;
     std::function<json(const std::string&, const json&, long)> post_json;
 };
-enum class HookStage { Artifacts, Request, Response, Launch, Operation };
+enum class HookStage { Artifacts, Request, Response, Launch, Operation, StartFailure };
 using ArtifactHook = const BackendOps* (*)();
 using RequestHook = json (*)(json request);
 using ResponseHook = json (*)(json response, const json& request, const std::string& model_name);
 using LaunchHook = json (*)(const LaunchHookContext& context);
 using OperationHook = json (*)(const OperationHookContext& context, const json& request);
-using HookTarget = std::variant<ArtifactHook, RequestHook, ResponseHook, LaunchHook, OperationHook>;
+using StartFailureHook = std::string (*)(const std::string& executable, const std::vector<std::string>& args);
+using HookTarget = std::variant<ArtifactHook, RequestHook, ResponseHook, LaunchHook, OperationHook, StartFailureHook>;
 struct HookRegistration {
     std::string id;
     HookStage stage;

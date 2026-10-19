@@ -203,6 +203,7 @@ public:
         const auto top_hooks = doc.value("hooks", json::object());
         if ((position("hook") != order.end()) != top_hooks.contains("launch")) error("invalid_relationship", "/launch/prepare_order", "A hook phase requires exactly one launch hook");
         if (top_hooks.contains("launch")) hook(top_hooks["launch"], "/hooks/launch", "launch");
+        if (top_hooks.contains("start_failure")) hook(top_hooks["start_failure"], "/hooks/start_failure", "start_failure");
         if (launch["backend"].contains("option") && !option_names.count(launch["backend"]["option"])) error("invalid_reference", "/launch/backend/option", "Undeclared option");
         std::set<std::string> ports;
         std::map<std::string, int> spans;
@@ -278,7 +279,7 @@ public:
         const auto install_errors = install.value("errors", json::object());
         for (const auto& [key, value] : install_errors.items()) expression(definition, "/install/errors/" + key);
         const auto hooks = doc.value("hooks", json::object());
-        for (const auto& [stage, selection] : hooks.items()) if (stage != "launch") error("unknown_hook", "/hooks/" + stage + "/id", "Hook implementation is not installed");
+        for (const auto& [stage, selection] : hooks.items()) if (stage != "launch" && stage != "start_failure") error("unknown_hook", "/hooks/" + stage + "/id", "Hook implementation is not installed");
         for (size_t i = 0; i < doc.value("rationale", json::array()).size(); ++i) {
             const std::string p = "/rationale/" + std::to_string(i) + "/subject";
             const std::string subject = doc["rationale"][i]["subject"];
@@ -385,7 +386,11 @@ const std::vector<InstalledHook>& installed_hook_manifest() {
         {"llamacpp.client_model", "response"},
         {"kokoro.voice_index", "launch"},
         {"moonshine.model_arch", "launch"},
-        {"moonshine.transcription", "operation", "transcription"}
+        {"moonshine.transcription", "operation", "transcription"},
+        {"onnxruntime.model_directory", "artifacts"},
+        {"onnxruntime.servable_directory", "launch"},
+        {"onnxruntime.classify", "operation", "classification"},
+        {"onnxruntime.startup_error", "start_failure"}
     };
     return manifest;
 }
@@ -395,7 +400,7 @@ json installed_definition_features() {
     for (const auto& hook : installed_hook_manifest()) hooks.push_back(hook.stage + ":" + hook.id + (hook.operation.empty() ? "" : ":" + hook.operation));
     return {{"definition_schema_version", 1}, {"schema", schema_digest(k_backend_definition_schema)},
         {"transports", {"http_json:json.v1", "http_json:json.v1:get", "http_sse:openai_sse.v1", "http_bytes:raw_bytes.v1", "realtime:jsonl.v1:tcp"}},
-        {"operations", {"chat_completion", "completion", "responses", "embeddings", "reranking", "transcription", "streaming_transcription", "text_to_speech", "audio_generation", "slots", "slot_action", "tokenize"}},
+        {"operations", {"chat_completion", "completion", "responses", "embeddings", "reranking", "classification", "transcription", "streaming_transcription", "text_to_speech", "audio_generation", "slots", "slot_action", "tokenize"}},
         {"ports", {"standard", "probe", "offset"}},
         {"install", {"github_release", "external_only", "machine_arch"}},
         {"launch", {"install_phase", "hook_phase", "platform_requirement", "custom_arg_defaults", "fixed_backend_by_os", "posix_executable_loader_path", "environment_order"}},

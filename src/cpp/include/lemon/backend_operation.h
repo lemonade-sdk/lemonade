@@ -98,7 +98,6 @@ enum class LegacyOperationProfile : uint8_t {
     Whisper,
     StableDiffusion,
     TheNoise,
-    OnnxRuntime,
     ThinkSound,
     AceStep,
     Trellis,

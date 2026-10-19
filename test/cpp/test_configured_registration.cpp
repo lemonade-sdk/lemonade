@@ -4,6 +4,7 @@
 #include "lemon/backends/hrx/hrx_server.h"
 #include "lemon/backends/kokoro/kokoro_server.h"
 #include "lemon/backends/moonshine/moonshine_server.h"
+#include "lemon/backends/onnxruntime/onnxruntime_server.h"
 #include "lemon/backends/ryzenai/ryzenai.h"
 #include "lemon/backends/ryzenai/ryzenai_server.h"
 #include "lemon/backends/thinksound/thinksound_server.h"
@@ -72,6 +73,7 @@ int main() {
             {"llamacpp-hrx", hrx::configured_entry(), hrx::spec(), hrx::ops(), hrx::capabilities()},
             {"kokoro", kokoro::configured_entry(), kokoro::spec(), kokoro::ops(), kokoro::capabilities()},
             {"moonshine", moonshine::configured_entry(), moonshine::spec(), moonshine::ops(), moonshine::capabilities()},
+            {"onnxruntime", onnxruntime::configured_entry(), onnxruntime::spec(), onnxruntime::ops(), onnxruntime::capabilities()},
         };
         for (const auto& backend : registered) {
             auto server = create_server(backend.recipe, BackendContext{"error"});
@@ -80,10 +82,10 @@ int main() {
             check(spec_for(backend.recipe) == backend.spec && ops_for(backend.recipe) == backend.ops, backend.recipe + " registry lookups return the configured spec/ops");
             check(backend.capabilities == (implemented_capabilities(*backend.entry) & mode_capabilities(*backend.entry)), backend.recipe + " capability export matches the definition's implemented bindings within its declared modes");
         }
-        check(thinksound::capabilities() == CAP_AUDIO_GENERATION && ds4::capabilities() == 0 && ryzenai::capabilities() == 0 && hrx::capabilities() == 0 && kokoro::capabilities() == CAP_TTS && moonshine::capabilities() == (CAP_TRANSCRIPTION | CAP_STREAMING_TRANSCRIPTION), "unchanged capability exports");
+        check(thinksound::capabilities() == CAP_AUDIO_GENERATION && ds4::capabilities() == 0 && ryzenai::capabilities() == 0 && hrx::capabilities() == 0 && kokoro::capabilities() == CAP_TTS && moonshine::capabilities() == (CAP_TRANSCRIPTION | CAP_STREAMING_TRANSCRIPTION) && onnxruntime::capabilities() == CAP_CLASSIFICATION, "unchanged capability exports");
         check(thinksound::capabilities() == implemented_capabilities(*thinksound::configured_entry()) && ds4::capabilities() == implemented_capabilities(*ds4::configured_entry()) &&
               ryzenai::capabilities() == implemented_capabilities(*ryzenai::configured_entry()) && kokoro::capabilities() == implemented_capabilities(*kokoro::configured_entry()) &&
-              moonshine::capabilities() == implemented_capabilities(*moonshine::configured_entry()), "single-mode engines export exactly their implemented bindings");
+              moonshine::capabilities() == implemented_capabilities(*moonshine::configured_entry()) && onnxruntime::capabilities() == implemented_capabilities(*onnxruntime::configured_entry()), "single-mode engines export exactly their implemented bindings");
         check(implemented_capabilities(*hrx::configured_entry()) == (CAP_EMBEDDINGS | CAP_RERANKING), "HRX implements embeddings and reranking that its chat-only mode does not advertise");
         check(thinksound::spec()->recipe == "thinksound" && thinksound::spec()->binary == "ts-server" && ds4::spec()->recipe == "ds4" && ds4::spec()->binary == "ds4-server", "alternating registration independent identities");
         check(ryzenai::spec()->recipe == "ryzenai-server" && ryzenai::spec()->binary == ryzenai::descriptor.binary, "RyzenAI split install recipe and platform binary");
