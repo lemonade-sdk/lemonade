@@ -18,6 +18,8 @@ struct GpuMemoryPool {
     double used_gb = -1.0;
     std::string label;
     GpuMemoryVendor vendor = GpuMemoryVendor::Any;
+    bool unified = false;
+    double physical_total_gb = 0.0;
 };
 
 struct GpuTargetIndices {
@@ -98,8 +100,9 @@ inline GpuMemoryPool select_gpu_memory_pool(GpuMemoryVendor vendor,
                 ? gpu.vram_used_gb + gpu.virtual_used_gb
                 : -1.0;
         }
-        return GpuMemoryPool{gpu.vram_gb + (unified ? gpu.virtual_gb : 0.0),
-                             used_gb, label, vendor};
+        const double total_gb = gpu.vram_gb + (unified ? gpu.virtual_gb : 0.0);
+        return GpuMemoryPool{total_gb, used_gb, label, vendor, unified,
+                             unified ? total_gb : 0.0};
     };
     auto most_constrained = [](const std::vector<GpuMemoryPool>& pools) {
         GpuMemoryPool result;
@@ -208,7 +211,9 @@ inline GpuMemoryPool select_gpu_memory_pool(GpuMemoryVendor vendor,
     };
     auto select_metal = [&]() -> GpuMemoryPool {
         if (apple.available && apple.vram_gb > 0)
-            return pool_for(apple, "Metal", GpuMemoryVendor::Metal);
+            return {apple.vram_gb, apple.vram_used_gb, "Metal",
+                    GpuMemoryVendor::Metal, apple.unified_memory,
+                    apple.unified_memory ? apple.virtual_gb : 0.0};
         return {};
     };
 
