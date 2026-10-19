@@ -6,7 +6,7 @@ module.exports = (env, argv) => ({
   mode: argv.mode || 'development',
 
   // Keep the expected renderer.bundle.js entry name while allowing webpack
-  // to emit additional vendor, chart, and markdown chunks.
+  // to emit additional vendor and markdown chunks.
   entry: {
     renderer: './src/index.tsx',
   },
@@ -58,11 +58,6 @@ module.exports = (env, argv) => ({
     splitChunks: {
       chunks: 'all',
       cacheGroups: {
-        charts: {
-          test: /[\\/]node_modules[\\/](d3|d3-.*)[\\/]/,
-          name: 'charts',
-          priority: 20,
-        },
         markdown: {
           test: /[\\/]node_modules[\\/](highlight\.js|markdown-it|katex|markdown-it-texmath)[\\/]/,
           name: 'markdown',
