@@ -41,6 +41,13 @@ if(NOT TARGET cpp-ci-tests)
     add_custom_target(cpp-ci-tests)
 endif()
 
+# Every test carries a wall-clock bound, so a stuck test fails the run instead of
+# eating it. Measured across all 145 declared tests: the slowest is 14 s and all
+# but four finish under 0.3 s, so reaching this bound means stuck rather than
+# slow. A test whose runtime is defined by waiting on a timeout constant states a
+# larger bound at its call site instead of raising this number for everyone.
+set(cpp_ci_test_timeout 120)
+
 # Label a CTest test for the packaging CI and make the aggregate build target
 # depend on every executable/helper target needed by that test. Internal helper
 # used by add_cpp_ci_test(); call add_cpp_ci_test() instead of this directly.
@@ -88,8 +95,12 @@ endfunction()
 #                   [DEPENDS <target>...])      # CI build deps; defaults to the
 #                                               # first COMMAND token (the test
 #                                               # executable target)
+#                   [TIMEOUT <seconds>]         # wall-clock bound; defaults to
+#                                               # cpp_ci_test_timeout. State one
+#                                               # only when the test waits on a
+#                                               # constant it does not control
 function(add_cpp_ci_test test_name)
-    cmake_parse_arguments(ACT "" "CI" "COMMAND;DEPENDS" ${ARGN})
+    cmake_parse_arguments(ACT "" "CI;TIMEOUT" "COMMAND;DEPENDS" ${ARGN})
 
     if(ACT_UNPARSED_ARGUMENTS)
         message(FATAL_ERROR
@@ -109,6 +120,11 @@ function(add_cpp_ci_test test_name)
         message(FATAL_ERROR
             "add_cpp_ci_test(${test_name}): required 'COMMAND <command>' argument is missing")
     endif()
+    if(ACT_TIMEOUT AND NOT ACT_TIMEOUT MATCHES "^[1-9][0-9]*$")
+        message(FATAL_ERROR
+            "add_cpp_ci_test(${test_name}): TIMEOUT must be a positive number of seconds, "
+            "got '${ACT_TIMEOUT}'")
+    endif()
     # Distro packaging configures with BUILD_TESTING=OFF and never runs or ships
     # a test, so reaching here means the enclosing if() forgot to check it —
     # which silently puts the whole test suite back into every package build.
@@ -121,6 +137,14 @@ function(add_cpp_ci_test test_name)
     # _add_test is the built-in add_test preserved by the override below, so this
     # helper stays exempt from the direct-add_test() ban it enforces.
     _add_test(NAME ${test_name} COMMAND ${ACT_COMMAND})
+
+    # Applied whether or not the test runs in CI: a hang is just as costly in a
+    # local run, which is how this bound came to exist.
+    if(ACT_TIMEOUT)
+        set_tests_properties(${test_name} PROPERTIES TIMEOUT ${ACT_TIMEOUT})
+    else()
+        set_tests_properties(${test_name} PROPERTIES TIMEOUT ${cpp_ci_test_timeout})
+    endif()
 
     # get_config_dir() lives in the server core, so a test that does not link the
     # core cannot reach the real config dir and has nothing to redirect. That is
@@ -3996,7 +4020,10 @@ set(_HTTP_CLIENT_TIMEOUT_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_htt
 if(BUILD_TESTING AND EXISTS "${_HTTP_CLIENT_TIMEOUT_TEST_SRC}")
     add_executable(test_http_client_timeout test/cpp/test_http_client_timeout.cpp)
     target_link_libraries(test_http_client_timeout PRIVATE lemonade-server-core)
-    add_cpp_ci_test(HttpClientTimeoutTest CI ON COMMAND test_http_client_timeout)
+    # Measured 14 s. Bound raised above the default because the test waits on
+    # kGiveUpCeilingSeconds (30 s per give-up), a constant the test is free to
+    # retune; the bound must outlive it rather than pin it.
+    add_cpp_ci_test(HttpClientTimeoutTest CI ON TIMEOUT 300 COMMAND test_http_client_timeout)
 endif()
 
 set(_REQUEST_CANCELLATION_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_request_cancellation.cpp")
@@ -4133,7 +4160,10 @@ set(_ROUTING_HELPER_RECONCILE_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/tes
 if(BUILD_TESTING AND EXISTS "${_ROUTING_HELPER_RECONCILE_TEST_SRC}")
     add_executable(test_routing_helper_reconcile test/cpp/test_routing_helper_reconcile.cpp)
     target_link_libraries(test_routing_helper_reconcile PRIVATE lemonade-server-core)
-    add_cpp_ci_test(RoutingHelperReconcileTest CI ON COMMAND test_routing_helper_reconcile)
+    # Measured 12 s: the scenario budget is the sum of eviction and reconcile
+    # waits, so it drifts with routing constants rather than with this test.
+    add_cpp_ci_test(RoutingHelperReconcileTest CI ON TIMEOUT 300
+                    COMMAND test_routing_helper_reconcile)
 endif()
 
 # Launch command bookkeeping: the command recorded at spawn must keep describing

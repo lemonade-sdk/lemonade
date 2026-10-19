@@ -15,7 +15,7 @@ SyncService::SyncService(Deps deps) : deps_(std::move(deps)), worker_([this] { r
 SyncService::~SyncService() {
     {
         std::lock_guard<std::mutex> lock(state_.mutex);
-        stop_ = true;
+        state_.stop = true;
         state_.cancel_requested = true;
     }
     state_.cv.notify_all();
@@ -28,8 +28,10 @@ void SyncService::run_worker() {
     while (true) {
         {
             std::unique_lock<std::mutex> lock(state_.mutex);
-            state_.cv.wait(lock, [this] { return stop_ || state_.is_sync_running; });
-            if (stop_) {
+            state_.cv.wait(lock, [this] { return state_.stop || state_.is_sync_running; });
+            if (state_.stop) {
+                state_.worker_exited = true;
+                state_.cv.notify_all();
                 return;
             }
         }
@@ -118,9 +120,14 @@ json SyncService::status(uint64_t sync_id) const {
 json SyncService::wait_for(uint64_t generation) const {
     std::unique_lock<std::mutex> lock(state_.mutex);
     state_.cv.wait(lock, [this, generation] {
-        return state_.completed_generation >= generation &&
-               (!state_.is_sync_running || state_.current_generation > generation);
+        return state_.worker_exited ||
+               (state_.completed_generation >= generation &&
+                (!state_.is_sync_running || state_.current_generation > generation));
     });
+    if (state_.worker_exited && state_.completed_generation < generation) {
+        LOG(WARNING, "ModelManager")
+            << "Waited for sync generation " << generation << " after the worker exited." << std::endl;
+    }
     auto it = state_.completed_generation_results.find(generation);
     if (it != state_.completed_generation_results.end()) {
         return it->second;
@@ -131,7 +138,12 @@ json SyncService::wait_for(uint64_t generation) const {
 // Shutdown uses this so a download cannot outlive the store it writes into.
 void SyncService::wait_until_idle() {
     std::unique_lock<std::mutex> lock(state_.mutex);
-    state_.cv.wait(lock, [this] { return !state_.is_sync_running; });
+    state_.cv.wait(lock, [this] { return !state_.is_sync_running || state_.worker_exited; });
+    if (state_.is_sync_running) {
+        LOG(WARNING, "ModelManager")
+            << "Sync reported idle because the worker exited with a generation still running."
+            << std::endl;
+    }
 }
 
 bool SyncService::cancel_requested() const {

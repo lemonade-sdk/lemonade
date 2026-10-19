@@ -51,11 +51,30 @@ static void set_env_var(const std::string& name, const std::string& value) {
 #endif
 }
 
-// Routes worker phases to the one test that wants to park on them.
+// Routes worker phases to the one test that wants to park on them. Install and
+// clear are guarded and the callback is copied out before it runs, so a gate can
+// retire while the worker is between phases.
 struct PhaseBus {
     std::function<void(const std::string&)> sink;
+    mutable std::mutex m;
+
+    void install(std::function<void(const std::string&)> fn) {
+        std::lock_guard<std::mutex> lock(m);
+        sink = std::move(fn);
+    }
+
+    void clear() {
+        std::lock_guard<std::mutex> lock(m);
+        sink = nullptr;
+    }
+
     void operator()(const std::string& phase) const {
-        if (sink) sink(phase);
+        std::function<void(const std::string&)> target;
+        {
+            std::lock_guard<std::mutex> lock(m);
+            target = sink;
+        }
+        if (target) target(phase);
     }
 };
 
@@ -105,53 +124,97 @@ struct SyncFixture {
     }
 };
 
-// Parks the sync worker at a named phase so a test can act while a generation
-// is genuinely in flight. release() must run before the worker's service dies,
-// or its destructor waits on a worker parked here.
-struct HoldWorker {
-    PhaseBus& bus;
-    std::string phase_prefix;
-    std::mutex m;
-    std::condition_variable cv;
-    bool reached = false;
-    bool released = false;
-    bool dead = false;
-
-    HoldWorker(PhaseBus& bus_in, const std::string& phase) : bus(bus_in), phase_prefix(phase) {
-        bus.sink = [this](const std::string& name) {
-            if (name.rfind(phase_prefix, 0) != 0) {
-                return;
-            }
-            std::unique_lock<std::mutex> lock(m);
-            if (dead) {
-                return;
-            }
-            reached = true;
-            cv.notify_all();
-            cv.wait(lock, [this] { return released || dead; });
-        };
+// Parks the sync worker at a named phase so a test can act while a generation is
+// genuinely in flight, and takes itself off the bus on the way out.
+//
+// Declaration order is load-bearing: declare the gate BEFORE the SyncService whose
+// worker it parks, and declare the service's own handle after it. Destruction runs
+// in reverse, so the worker is released first, ~SyncService joins it while this
+// gate's mutex and condition variable are still alive, and only then does the gate
+// retire. Declaring the service first frees those primitives underneath a worker
+// parked on them, and ~SyncService joins a thread that can never wake: the test
+// hangs. Every scenario here was written that way, and it hung about once in forty
+// runs.
+class PhaseGate {
+public:
+    PhaseGate(PhaseBus& bus, std::string phase_prefix)
+        : bus_(bus), phase_prefix_(std::move(phase_prefix)) {
+        bus_.install([this](const std::string& phase) { arrive(phase); });
     }
 
-    ~HoldWorker() {
+    ~PhaseGate() {
         {
-            std::lock_guard<std::mutex> lock(m);
-            dead = true;
+            std::lock_guard<std::mutex> lock(m_);
+            dead_ = true;
+            resume_ = true;
         }
-        cv.notify_all();
+        cv_.notify_all();
+        bus_.clear();
     }
 
-    void wait_until_reached() {
-        std::unique_lock<std::mutex> lock(m);
-        cv.wait(lock, [this] { return reached || dead; });
+    PhaseGate(const PhaseGate&) = delete;
+    PhaseGate& operator=(const PhaseGate&) = delete;
+
+    // False means the worker never reached the phase: the scenario's premise is
+    // gone, which is a failed check rather than a reason to go on waiting.
+    bool wait_until_reached(std::chrono::seconds budget = std::chrono::seconds(10)) {
+        std::unique_lock<std::mutex> lock(m_);
+        cv_.wait_for(lock, budget, [this] { return reached_ || dead_; });
+        return reached_;
     }
 
     void release() {
         {
-            std::lock_guard<std::mutex> lock(m);
-            released = true;
+            std::lock_guard<std::mutex> lock(m_);
+            resume_ = true;
         }
-        cv.notify_all();
+        cv_.notify_all();
     }
+
+    int hits() const { return count(phase_prefix_); }
+
+    // Arrivals seen since construction whose name starts with `phase_prefix`, so a
+    // scenario can park on one phase and count a different one.
+    int count(const std::string& phase_prefix) const {
+        std::lock_guard<std::mutex> lock(m_);
+        int total = 0;
+        for (const auto& seen : seen_) {
+            if (seen.first.rfind(phase_prefix, 0) == 0) total += seen.second;
+        }
+        return total;
+    }
+
+    // Wakes the worker at scope exit. Declare the returned guard AFTER the service
+    // so it runs before ~SyncService; without it a parked worker is joined
+    // unreleased and the run sits out the test's timeout instead of finishing.
+    struct Releaser {
+        PhaseGate& gate;
+        ~Releaser() { gate.release(); }
+    };
+
+    Releaser auto_release() { return Releaser{*this}; }
+
+private:
+    void arrive(const std::string& phase) {
+        std::unique_lock<std::mutex> lock(m_);
+        ++seen_[phase];
+        if (phase.rfind(phase_prefix_, 0) != 0) return;
+        if (dead_) return;
+        reached_ = true;
+        cv_.notify_all();
+        // Bounded: a gate nobody releases must fail the run, not park a worker for
+        // the whole ctest timeout.
+        cv_.wait_for(lock, std::chrono::seconds(30), [this] { return resume_ || dead_; });
+    }
+
+    PhaseBus& bus_;
+    const std::string phase_prefix_;
+    mutable std::mutex m_;
+    std::condition_variable cv_;
+    bool reached_ = false;
+    bool resume_ = false;
+    bool dead_ = false;
+    std::map<std::string, int> seen_;
 };
 
 // True when `needle` names the same model as one entry of `list`, on either side.
@@ -318,10 +381,11 @@ int main() {
         }
         return r;
     };
+    PhaseGate during_full_check(dedup_fixture.bus, "full_check_done");
     SyncService dedup = dedup_fixture.service();
-    HoldWorker during_full_check(dedup_fixture.bus, "full_check_done");
+    auto release_on_exit = during_full_check.auto_release();
     dedup.enqueue({});
-    during_full_check.wait_until_reached();
+    check("the worker parked in the full check", during_full_check.wait_until_reached());
 
     auto second_enqueue = dedup.enqueue({"non_existent_model_test_xyz"});
     check("overlapping enqueue detects existing sync running", second_enqueue.already_running == true);
@@ -338,47 +402,26 @@ int main() {
             r.up_to_date_models = {"Tiny-Test-Model-GGUF"};
             return r;
         };
+        PhaseGate full_check(overlap_fixture.bus, "full_check_done");
         SyncService overlap = overlap_fixture.service();
-
-        std::mutex pause_m;
-        std::condition_variable pause_cv;
-        bool full_check_done_hit = false;
-        bool allow_resume = false;
-        std::atomic<int> hook_invocations{0};
-
-        overlap_fixture.bus.sink = [&](const std::string& phase) {
-            if (phase == "full_check_done") {
-                hook_invocations++;
-                std::unique_lock<std::mutex> lock(pause_m);
-                full_check_done_hit = true;
-                pause_cv.notify_all();
-                pause_cv.wait(lock, [&]() { return allow_resume; });
-            }
-        };
+        auto release_on_exit = full_check.auto_release();
 
         overlap.enqueue({});
-
-        {
-            std::unique_lock<std::mutex> lock(pause_m);
-            pause_cv.wait(lock, [&]() { return full_check_done_hit; });
-        }
+        check("the worker parked at the end of the full check",
+              full_check.wait_until_reached());
 
         auto enqueued_during_run = overlap.enqueue({"Tiny-Test-Model-GGUF"});
         check("enqueue during active sync returns true", enqueued_during_run.already_running == true);
 
-        {
-            std::lock_guard<std::mutex> lock(pause_m);
-            allow_resume = true;
-            pause_cv.notify_all();
-        }
-
+        full_check.release();
         overlap.wait_until_idle();
 
         json overlap_exec = overlap.status();
         std::string o_status = overlap_exec.value("status", "");
         check("overlap execution status is valid",
               o_status == "idle" || o_status == "success" || o_status == "failed");
-        check("full check callback triggered exactly once", hook_invocations.load() == 1);
+        check("full check callback triggered exactly once",
+              full_check.count("full_check_done") == 1);
         check("the attached target reuses the running pass, it triggers no check of its own",
               overlap_fixture.target_checks.load() == 0);
 
@@ -410,28 +453,12 @@ int main() {
             r.up_to_date_models = {"Tiny-Test-Model-GGUF"};
             return r;
         };
+        PhaseGate full_check(join_fixture.bus, "full_check_done");
         SyncService sync_join = join_fixture.service();
-
-        std::mutex pause_m;
-        std::condition_variable pause_c;
-        bool hook_hit = false;
-        bool proceed = false;
-
-        join_fixture.bus.sink = [&](const std::string& phase) {
-            if (phase == "full_check_done") {
-                std::unique_lock<std::mutex> lock(pause_m);
-                hook_hit = true;
-                pause_c.notify_all();
-                pause_c.wait(lock, [&]() { return proceed; });
-            }
-        };
+        auto release_on_exit = full_check.auto_release();
 
         sync_join.enqueue({});
-
-        {
-            std::unique_lock<std::mutex> lock(pause_m);
-            pause_c.wait(lock, [&]() { return hook_hit; });
-        }
+        check("the worker parked at the end of the full check", full_check.wait_until_reached());
 
         std::atomic<bool> join_finished{false};
         json join_result;
@@ -443,12 +470,7 @@ int main() {
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
         check("synchronous joiner blocks while sync is running", join_finished.load() == false);
 
-        {
-            std::lock_guard<std::mutex> lock(pause_m);
-            proceed = true;
-            pause_c.notify_all();
-        }
-
+        full_check.release();
         sync_join.wait_until_idle();
         joiner.join();
 
@@ -466,13 +488,14 @@ int main() {
             r.up_to_date_models = {"Tiny-Test-Model-GGUF"};
             return r;
         };
+        PhaseGate during_full_check(gen_fixture.bus, "full_check_done");
         SyncService gen = gen_fixture.service();
-        HoldWorker during_full_check(gen_fixture.bus, "full_check_done");
+        auto release_on_exit = during_full_check.auto_release();
 
         auto enq1 = gen.enqueue({});
         check("first sync enqueue allocates sync_id > 0", enq1.sync_id > 0);
         check("first sync enqueue already_running is false", enq1.already_running == false);
-        during_full_check.wait_until_reached();
+        check("the worker parked in the full check", during_full_check.wait_until_reached());
 
         auto enq2 = gen.enqueue({"non_existent_model_test_xyz"});
         check("overlapping sync enqueue returns same sync_id", enq2.sync_id == enq1.sync_id);
@@ -542,48 +565,25 @@ int main() {
             r.up_to_date_models = {"Tiny-Test-Model-GGUF"};
             return r;
         };
+        PhaseGate model_check(full_fixture.bus, "check_model:");
         SyncService full_attach = full_fixture.service();
-
-        std::mutex pause_m;
-        std::condition_variable pause_cv;
-        bool target_check_hit = false;
-        bool allow_resume = false;
-        std::atomic<int> full_check_count{0};
-
-        full_fixture.bus.sink = [&](const std::string& phase) {
-            if (phase.rfind("check_model:", 0) == 0) {
-                std::unique_lock<std::mutex> lock(pause_m);
-                target_check_hit = true;
-                pause_cv.notify_all();
-                pause_cv.wait(lock, [&]() { return allow_resume; });
-            } else if (phase == "full_check_done") {
-                full_check_count++;
-            }
-        };
+        auto release_on_exit = model_check.auto_release();
 
         // 1. Enqueue targeted sync
         full_attach.enqueue({"Tiny-Test-Model-GGUF"});
-
-        {
-            std::unique_lock<std::mutex> lock(pause_m);
-            pause_cv.wait(lock, [&]() { return target_check_hit; });
-        }
+        check("the worker parked inside a model check", model_check.wait_until_reached());
 
         // 2. While targeted sync is active, enqueue an empty sync (full sync)
         auto enq_empty = full_attach.enqueue({});
         check("empty sync enqueue during active sync returns already_running",
               enq_empty.already_running == true);
 
-        {
-            std::lock_guard<std::mutex> lock(pause_m);
-            allow_resume = true;
-            pause_cv.notify_all();
-        }
-
+        model_check.release();
         full_attach.wait_until_idle();
 
         // 3. Verify that full check was triggered and completed
-        check("full check was executed following empty sync enqueue", full_check_count.load() == 1);
+        check("full check was executed following empty sync enqueue",
+              model_check.count("full_check_done") == 1);
     }
 
     // Test 17: Waiting for a queued sync returns that generation's snapshot
@@ -614,48 +614,24 @@ int main() {
             r.up_to_date_models = {"Tiny-Test-Model-GGUF"};
             return r;
         };
+        PhaseGate model_check(attach_fixture.bus, "check_model:");
         SyncService attach_only = attach_fixture.service();
-
-        std::mutex pause_m;
-        std::condition_variable pause_cv;
-        bool target_check_hit = false;
-        bool allow_resume = false;
-        std::atomic<int> full_check_count{0};
-
-        attach_fixture.bus.sink = [&](const std::string& phase) {
-            if (phase.rfind("check_model:", 0) == 0) {
-                std::unique_lock<std::mutex> lock(pause_m);
-                target_check_hit = true;
-                pause_cv.notify_all();
-                pause_cv.wait(lock, [&]() { return allow_resume; });
-            } else if (phase == "full_check_done") {
-                full_check_count++;
-            }
-        };
+        auto release_on_exit = model_check.auto_release();
 
         // 1. Start targeted sync
         attach_only.enqueue({"Tiny-Test-Model-GGUF"});
-
-        {
-            std::unique_lock<std::mutex> lock(pause_m);
-            pause_cv.wait(lock, [&]() { return target_check_hit; });
-        }
+        check("the worker parked inside a model check", model_check.wait_until_reached());
 
         // 2. Attach only with empty targets (e.g. update-models --wait)
         auto enq_attach = attach_only.enqueue({}, /*attach_if_running=*/true);
         check("attach_if_running returns already_running true", enq_attach.already_running == true);
 
-        {
-            std::lock_guard<std::mutex> lock(pause_m);
-            allow_resume = true;
-            pause_cv.notify_all();
-        }
-
+        model_check.release();
         attach_only.wait_until_idle();
 
         // 3. Full check should NOT have run
         check("attach_if_running does not expand targeted sync to full sync",
-              full_check_count.load() == 0);
+              model_check.count("full_check_done") == 0);
     }
 
     // Test 19: Unknown or evicted sync_id queries return not_found status
@@ -690,29 +666,13 @@ int main() {
             std::lock_guard<std::mutex> lock(downloaded_m);
             downloaded_models.push_back(m);
         };
+        PhaseGate target_check(fresh_fixture.bus, "target_check_done:");
         SyncService fresh = fresh_fixture.service();
-
-        std::mutex pause_m;
-        std::condition_variable pause_cv;
-        bool target_check_hit = false;
-        bool allow_resume = false;
-
-        fresh_fixture.bus.sink = [&](const std::string& phase) {
-            if (phase.rfind("target_check_done:", 0) == 0) {
-                std::unique_lock<std::mutex> lock(pause_m);
-                target_check_hit = true;
-                pause_cv.notify_all();
-                pause_cv.wait(lock, [&]() { return allow_resume; });
-            }
-        };
+        auto release_on_exit = target_check.auto_release();
 
         // 1. Start targeted sync where model is initially up to date
         fresh.enqueue({"Tiny-Test-Model-GGUF"});
-
-        {
-            std::unique_lock<std::mutex> lock(pause_m);
-            pause_cv.wait(lock, [&]() { return target_check_hit; });
-        }
+        check("the worker parked after the targeted check", target_check.wait_until_reached());
 
         // Verify that initial targeted check recorded the model as up to date
         json initial_snap = fresh.status();
@@ -724,17 +684,50 @@ int main() {
         trigger_update.store(true);
         fresh.enqueue({});
 
-        {
-            std::lock_guard<std::mutex> lock(pause_m);
-            allow_resume = true;
-            pause_cv.notify_all();
-        }
-
+        target_check.release();
         fresh.wait_until_idle();
 
         std::lock_guard<std::mutex> lock(downloaded_m);
         check("fresh full check authoritatively schedules model update",
               contains(downloaded_models, "Tiny-Test-Model-GGUF"));
+    }
+
+    // A service must be able to do work the instant it exists. The worker thread
+    // starts during construction and members initialize in declaration order, so
+    // a member the worker reads that is declared after the thread reads
+    // indeterminate memory -- and a worker that thereby believed it had already
+    // been told to stop exited at once, leaving the generation running forever.
+    {
+        SyncFixture boot_fixture;
+        boot_fixture.downloaded("Tiny-Test-Model-GGUF");
+        boot_fixture.check_fn = [](const std::vector<std::string>&) {
+            UpdateScanResult r;
+            r.up_to_date_models = {"Tiny-Test-Model-GGUF"};
+            return r;
+        };
+
+        bool every_service_ran = true;
+        int stuck_attempt = -1;
+        for (int attempt = 0; attempt < 200 && every_service_ran; ++attempt) {
+            SyncService boot = boot_fixture.service();
+            const auto enq = boot.enqueue({});
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+            bool terminal = false;
+            while (std::chrono::steady_clock::now() < deadline) {
+                const std::string st = boot.status(enq.sync_id).value("status", "");
+                if (st != "in_progress" && st != "not_found") {
+                    terminal = true;
+                    break;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            if (!terminal) {
+                every_service_ran = false;
+                stuck_attempt = attempt;
+            }
+        }
+        check("every freshly constructed service runs its first generation", every_service_ran);
+        if (!every_service_ran) std::printf("       stuck on attempt %d\n", stuck_attempt);
     }
 
     // Test 21: Teardown during a sync joins the worker before the store dies

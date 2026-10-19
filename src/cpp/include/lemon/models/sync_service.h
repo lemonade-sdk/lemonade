@@ -71,6 +71,11 @@ class SyncService {
         mutable std::mutex mutex;
         mutable std::condition_variable cv;
         bool is_sync_running = false;
+        bool stop = false;
+        // Set when the worker has left run_worker(). A wait treats it as "no
+        // further state change is coming" rather than waiting for a transition
+        // that can no longer happen.
+        bool worker_exited = false;
         bool is_full_sync = false;
         bool cancel_requested = false;
         uint64_t current_generation = 0;
@@ -102,8 +107,11 @@ class SyncService {
     // Startup, an explicit check request and the worker's own pass may all want
     // to scan; one at a time.
     std::mutex scan_mutex_;
+    // Declared last on purpose. Constructing it starts the thread, and members
+    // initialize in declaration order, so anything run_worker() reads has to be
+    // above it: a member declared after this one is still uninitialized the
+    // first time the worker looks at it.
     std::thread worker_;
-    bool stop_ = false;
 };
 
 }  // namespace models
