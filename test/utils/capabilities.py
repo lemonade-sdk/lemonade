@@ -84,6 +84,33 @@ CAPABILITIES = {
                 "llm": "Meta-Llama-3.1-8B-Instruct-HRX",
             },
         },
+        # The fork serves llama-server's surface for chat models only. Its models
+        # reason, so thinking is turned off for the run as for ds4 below.
+        "rocmfpx": {
+            "backends": ["rocm"],
+            "supports": {
+                "chat_completions": True,
+                "chat_completions_streaming": True,
+                "chat_completions_async": True,
+                "completions": True,
+                "completions_streaming": True,
+                "completions_async": True,
+                "responses_api": True,
+                "responses_api_streaming": True,
+                "tool_calls": True,
+                "tool_calls_streaming": True,
+                "multi_model": True,
+                "stop_parameter": True,
+                "slots": True,
+                "tokenize": True,
+                "static_max_context_window": True,
+            },
+            "test_models": {
+                "llm": "Qwen3.8-27B-ROCmFP4-FAST",
+            },
+            "chat_extra_body": {"enable_thinking": False},
+            "responses_extra_body": {"reasoning": {"effort": "none"}},
+        },
         # A reasoning model, with thinking turned off for the run: the tests'
         # small token budgets would otherwise land entirely in reasoning.
         "ds4": {
