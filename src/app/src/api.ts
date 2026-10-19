@@ -1087,14 +1087,16 @@ class LemonadeAPI {
         throw cause;
       }
       if (includeSessionHeaders && this.sessionHeadersEnabled) {
-        this.sessionHeadersEnabled = false;
-        this.onSessionHeadersFailed?.();
         try {
           const fallbackHeaders = this._headers(extraHeaders, false, auth);
           if (processedOpts.body && headers['Content-Type'] === 'application/json') {
             fallbackHeaders['Content-Type'] = 'application/json';
           }
           resp = await fetch(url, { ...processedOpts, headers: fallbackHeaders } as RequestInit);
+          if (resp.ok) {
+            this.sessionHeadersEnabled = false;
+            this.onSessionHeadersFailed?.();
+          }
         } catch {
           const err = new Error(`${method} ${url} could not be reached. ${cause instanceof Error ? cause.message : String(cause)}`) as LemonadeRequestError;
           err.url = url;
@@ -1111,10 +1113,12 @@ class LemonadeAPI {
       }
     }
 
-    if (!resp.ok) {
-      if (includeSessionHeaders && this.sessionHeadersEnabled && (resp.status === 400 || resp.status === 401 || resp.status === 403 || resp.status === 405)) {
-        this.sessionHeadersEnabled = false;
-        this.onSessionHeadersFailed?.();
+    if (!resp.ok && includeSessionHeaders && this.sessionHeadersEnabled
+        && (resp.status === 400 || resp.status === 401 || resp.status === 403 || resp.status === 405)) {
+      // Do not replay non-idempotent requests for ordinary validation/auth errors.
+      // Only an explicit complaint about our custom header warrants a fallback.
+      const errorBody = await resp.clone().text().catch(() => '');
+      if (/x[-_]client[-_]session[-_]id|client[-_]session[-_]id/i.test(errorBody)) {
         try {
           const fallbackHeaders = this._headers(extraHeaders, false, auth);
           if (processedOpts.body && headers['Content-Type'] === 'application/json') {
@@ -1123,6 +1127,8 @@ class LemonadeAPI {
           const retryResp = await fetch(url, { ...processedOpts, headers: fallbackHeaders } as RequestInit);
           if (retryResp.ok) {
             resp = retryResp;
+            this.sessionHeadersEnabled = false;
+            this.onSessionHeadersFailed?.();
           }
         } catch {}
       }
