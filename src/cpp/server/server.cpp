@@ -3471,8 +3471,9 @@ void Server::respond_with_model_options(
         const RecipeOptions no_request_options(info.recipe, nlohmann::json::object());
         RecipeOptions effective = router_->resolve_effective_options(info, no_request_options);
 
+        const json opts = model_manager_->options(model_key);
         ModelInfo without_saved = info;
-        without_saved.recipe_options = model_manager_->get_model_default_options(info);
+        without_saved.recipe_options = RecipeOptions(info.recipe, opts["defaults"]);
         RecipeOptions defaults = router_->resolve_effective_options(without_saved, no_request_options);
 
         // `effective` and `defaults` double as replayable /v1/load bodies.
@@ -3492,7 +3493,7 @@ void Server::respond_with_model_options(
         nlohmann::json response = {
             {"model_name", model_id},
             {"recipe", info.recipe},
-            {"saved", model_manager_->get_saved_model_options(model_key)},
+            {"saved", opts["saved"]},
             {"effective", effective_json},
             {"defaults", defaults_json},
             {"resolved_ctx_size", resolved_ctx}
@@ -3599,11 +3600,12 @@ void Server::handle_model_options_post(const httplib::Request& req, httplib::Res
             }
 
             if (dry_run) {
-                info.recipe_options = model_manager_->preview_saved_model_options(info, changes);
+                info.recipe_options =
+                    RecipeOptions(info.recipe, model_manager_->options(model_key, changes)["resolved_with"]);
                 return true;
             }
             if (!changes.empty()) {
-                model_manager_->update_saved_model_options(model_key, changes);
+                model_manager_->set_options(model_key, changes);
             }
             info = model_manager_->get_model_info(model_key);
             return true;
@@ -3613,8 +3615,8 @@ void Server::handle_model_options_post(const httplib::Request& req, httplib::Res
 void Server::handle_model_options_delete(const httplib::Request& req, httplib::Response& res) {
     respond_with_model_options(req, res,
         [this](const std::string& model_key, ModelInfo& info, httplib::Response&) {
-            if (!model_manager_->get_saved_model_options(model_key).empty()) {
-                model_manager_->set_saved_model_options(model_key, nlohmann::json::object());
+            if (!model_manager_->options(model_key)["saved"].empty()) {
+                model_manager_->replace_options(model_key, nlohmann::json::object());
             }
             info = model_manager_->get_model_info(model_key);
             return true;
@@ -6210,7 +6212,8 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         if (save_options) {
             json saved_for_write = options.to_json();
             if (!transient_saved_option_tombstones.empty()) {
-                const json existing_saved = model_manager_->get_saved_model_options(model_name);
+                const json existing_saved =
+                    model_manager_->options(model_name)["saved"];
                 for (const auto& key : transient_saved_option_tombstones) {
                     auto it = existing_saved.find(key);
                     if (it != existing_saved.end()) {
@@ -6218,7 +6221,7 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
                     }
                 }
             }
-            model_manager_->set_saved_model_options(model_name, saved_for_write);
+            model_manager_->replace_options(model_name, saved_for_write);
             info = model_manager_->get_model_info(model_name);
         }
 
@@ -6231,8 +6234,10 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         // Null tombstones are load-local: remove only those saved keys from the
         // local model layer without changing recipe_options.json.
         if (!transient_saved_option_tombstones.empty()) {
-            json per_model_options = model_manager_->get_model_default_options(info).to_json();
-            const json saved = model_manager_->get_saved_model_options(model_name);
+            const json load_opts = model_manager_->options(model_name);
+            json per_model_options = load_opts["defaults"];
+            if (!per_model_options.is_object()) per_model_options = json::object();
+            const json saved = load_opts["saved"];
             if (saved.is_object()) {
                 for (const auto& [key, value] : saved.items()) {
                     if (transient_saved_option_tombstones.count(key) == 0) {

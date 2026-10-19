@@ -1485,7 +1485,7 @@ RecipeOptions Router::resolve_effective_options(const ModelInfo& model_info,
 
     const json model_json = model_info.recipe_options.to_json();
     const json model_defaults_json =
-        model_manager_->get_model_default_options(model_info).to_json();
+        model_manager_->options(model_info.model_name)["defaults"];
     const json arch_json = arch_opts.to_json();
     const json backend_defaults_json = default_opt.to_json();
     const json merge_value = effective.get_option("merge_args");

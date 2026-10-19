@@ -256,12 +256,37 @@ int main() {
     }
     check("no core file names a registry provider by literal", provider_literals == 0);
 
-    // The measure this refactor was opened for: a ceiling, not a target.
+    // The measure this refactor was opened for: a ceiling, not a target. One
+    // way: shrinking passes without an edit, growing names itself.
     const int lines = static_cast<int>(std::count(facade.begin(), facade.end(), '\n'));
-    constexpr int kLineCeiling = 1097;
+    constexpr int kLineCeiling = 1082;
     check("the facade is " + std::to_string(lines) + " lines, ceiling " +
               std::to_string(kLineCeiling),
           lines <= kLineCeiling);
+
+    // The header is the surface consumers see; members are what the facade
+    // keeps beyond the components it was built from.
+    const std::string header = read_repo_file(kFacadeHeader);
+    int declarations = 0;
+    for (size_t at = header.find(");"); at != std::string::npos; at = header.find(");", at + 2)) {
+        ++declarations;
+    }
+    int members = 0;
+    {
+        std::istringstream stream(header);
+        std::string line;
+        while (std::getline(stream, line)) {
+            if (line.size() > 2 && line.compare(line.size() - 2, 2, "_;") == 0) ++members;
+        }
+    }
+    constexpr int kHeaderDeclarationCeiling = 71;
+    check("the facade header declares " + std::to_string(declarations) +
+              " methods, ceiling " + std::to_string(kHeaderDeclarationCeiling),
+          declarations <= kHeaderDeclarationCeiling);
+    constexpr int kMemberCeiling = 15;
+    check("the facade holds " + std::to_string(members) + " members, ceiling " +
+              std::to_string(kMemberCeiling),
+          members <= kMemberCeiling);
 
     if (g_failures > 0) {
         std::printf("\n%d check(s) failed\n", g_failures);

@@ -109,7 +109,7 @@ static void use_fixture_dirs(const Fixture& fx) {
 
 static void test_replace_and_read_back(const Fixture& fx) {
     ModelManager manager;
-    json saved = manager.set_saved_model_options(
+    json saved = manager.replace_options(
         "user.zz-opts", json{{"ctx_size", 4096}, {"batch_size", 128}});
     check("replace returns the new entry",
           saved.value("ctx_size", 0) == 4096 && saved.value("batch_size", 0) == 128);
@@ -119,26 +119,26 @@ static void test_replace_and_read_back(const Fixture& fx) {
           on_disk.contains("user.zz-opts") &&
               on_disk["user.zz-opts"].value("ctx_size", 0) == 4096);
 
-    json read_back = manager.get_saved_model_options("user.zz-opts");
+    json read_back = manager.options("user.zz-opts")["saved"];
     check("read back returns only the user's own entry",
           read_back.size() == 2 && read_back.value("ctx_size", 0) == 4096);
 
     check("a bare name reaches the same entry",
-          manager.get_saved_model_options("zz-opts").value("ctx_size", 0) == 4096);
+          manager.options("zz-opts")["saved"].value("ctx_size", 0) == 4096);
     check("an unknown model has no saved entry",
-          manager.get_saved_model_options("user.zz-nothing").empty());
+          manager.options("user.zz-nothing")["saved"].empty());
 }
 
 static void test_replace_overwrites_and_empty_erases(const Fixture& fx) {
     ModelManager manager;
-    manager.set_saved_model_options("user.zz-opts", json{{"ctx_size", 4096}, {"keep", 1}});
+    manager.replace_options("user.zz-opts", json{{"ctx_size", 4096}, {"keep", 1}});
 
     json replaced =
-        manager.set_saved_model_options("user.zz-opts", json{{"ctx_size", 2048}});
+        manager.replace_options("user.zz-opts", json{{"ctx_size", 2048}});
     check("replace discards keys the previous entry had",
           replaced.size() == 1 && replaced.value("ctx_size", 0) == 2048);
 
-    json emptied = manager.set_saved_model_options("user.zz-opts", json::object());
+    json emptied = manager.replace_options("user.zz-opts", json::object());
     check("replacing with an empty object returns an empty entry", emptied.empty());
     check("replacing with an empty object removes the row from disk",
           !read_json(fx.options_file).contains("user.zz-opts"));
@@ -146,36 +146,36 @@ static void test_replace_overwrites_and_empty_erases(const Fixture& fx) {
 
 static void test_merge_semantics(const Fixture& fx) {
     ModelManager manager;
-    manager.set_saved_model_options("user.zz-opts",
+    manager.replace_options("user.zz-opts",
                                     json{{"ctx_size", 4096}, {"batch_size", 64}});
 
-    json merged = manager.update_saved_model_options("user.zz-opts", json{{"ctx_size", 8192}});
+    json merged = manager.set_options("user.zz-opts", json{{"ctx_size", 8192}});
     check("merge keeps untouched keys",
           merged.value("ctx_size", 0) == 8192 && merged.value("batch_size", 0) == 64);
 
-    json nulled = manager.update_saved_model_options("user.zz-opts", json{{"batch_size", nullptr}});
+    json nulled = manager.set_options("user.zz-opts", json{{"batch_size", nullptr}});
     check("a null change removes just that option",
           nulled.size() == 1 && nulled.value("ctx_size", 0) == 8192 && !nulled.contains("batch_size"));
 
     json on_disk = read_json(fx.options_file)["user.zz-opts"];
     check("the null removal is persisted", on_disk.size() == 1 && !on_disk.contains("batch_size"));
 
-    json all_null = manager.update_saved_model_options("user.zz-opts", json{{"ctx_size", nullptr}});
+    json all_null = manager.set_options("user.zz-opts", json{{"ctx_size", nullptr}});
     check("nulling every option yields an empty entry", all_null.empty());
     check("nulling every option removes the row from disk",
           !read_json(fx.options_file).contains("user.zz-opts"));
 
-    json fresh = manager.update_saved_model_options("user.zz-other", json{{"ctx_size", 512}});
+    json fresh = manager.set_options("user.zz-other", json{{"ctx_size", 512}});
     check("merging onto no entry creates it", fresh.value("ctx_size", 0) == 512);
 }
 
 static void test_options_reach_model_info(const Fixture& fx) {
     ModelManager manager;
-    manager.set_saved_model_options("user.zz-opts", json{{"ctx_size", 3072}});
+    manager.replace_options("user.zz-opts", json{{"ctx_size", 3072}});
     check("a saved option is visible in the model info without a rebuild",
           manager.get_model_info("user.zz-opts").recipe_options.get_option("ctx_size") == 3072);
 
-    manager.update_saved_model_options("user.zz-opts", json{{"ctx_size", 1024}});
+    manager.set_options("user.zz-opts", json{{"ctx_size", 1024}});
     check("an updated option is visible in the model info",
           manager.get_model_info("user.zz-opts").recipe_options.get_option("ctx_size") == 1024);
 }
@@ -184,7 +184,7 @@ static void test_options_reach_model_info(const Fixture& fx) {
 // persist and the cache must be rebuilt to pick the entry up.
 static void test_options_for_unknown_model(const Fixture& fx) {
     ModelManager manager;
-    json saved = manager.set_saved_model_options("user.zz-absent", json{{"ctx_size", 999}});
+    json saved = manager.replace_options("user.zz-absent", json{{"ctx_size", 999}});
     check("options for an unknown model are still written", saved.value("ctx_size", 0) == 999);
     check("options for an unknown model persist",
           read_json(fx.options_file)["user.zz-absent"].value("ctx_size", 0) == 999);
@@ -193,11 +193,11 @@ static void test_options_for_unknown_model(const Fixture& fx) {
 static void test_persistence_across_instances(const Fixture& fx) {
     {
         ModelManager manager;
-        manager.set_saved_model_options("user.zz-opts", json{{"ctx_size", 7777}});
+        manager.replace_options("user.zz-opts", json{{"ctx_size", 7777}});
     }
     ModelManager restarted;
     check("a new instance reads the saved entry",
-          restarted.get_saved_model_options("user.zz-opts").value("ctx_size", 0) == 7777);
+          restarted.options("user.zz-opts")["saved"].value("ctx_size", 0) == 7777);
     check("a new instance folds the saved entry into the model info",
           restarted.get_model_info("user.zz-opts").recipe_options.get_option("ctx_size") == 7777);
 }
@@ -223,7 +223,7 @@ static void test_key_migration() {
           on_disk.contains("Stale-Built-In") &&
               on_disk["Stale-Built-In"].value("ctx_size", 0) == 4000);
     check("the migrated entry is readable",
-          manager.get_saved_model_options(legacy_key).value("ctx_size", 0) == 2048);
+          manager.options(legacy_key)["saved"].value("ctx_size", 0) == 2048);
     check("the migrated entry folds into the built-in's model info",
           manager.get_model_info(legacy_key).recipe_options.get_option("ctx_size") == 2048);
 
@@ -236,8 +236,8 @@ static void test_corrupt_file_is_not_fatal() {
 
     ModelManager manager;
     check("a non-object options file reads as empty",
-          manager.get_saved_model_options("user.zz-opts").empty());
-    json saved = manager.set_saved_model_options("user.zz-opts", json{{"ctx_size", 123}});
+          manager.options("user.zz-opts")["saved"].empty());
+    json saved = manager.replace_options("user.zz-opts", json{{"ctx_size", 123}});
     check("writing over a corrupt file succeeds", saved.value("ctx_size", 0) == 123);
     check("the corrupt file is replaced by an object",
           read_json(seeded.options_file).is_object() &&

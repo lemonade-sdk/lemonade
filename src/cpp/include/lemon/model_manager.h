@@ -87,6 +87,7 @@ struct ModelManagerConfig {
 
 class ModelManager {
 public:
+
 // Locks the store and publishes on release, so a mutating path cannot forget to
 // publish and readers never see a half-built set.
     class StoreWrite {
@@ -350,26 +351,20 @@ public:
 
     void save_model_options(const ModelInfo& info);
 
-    // The model's own entry in recipe_options.json, i.e. only what the user
-    // explicitly saved. Empty object when the model has no entry.
-    json get_saved_model_options(const std::string& model_name);
+    // One model's options in a single read: its own persisted entry, the
+    // layering that stands beneath it, and what `changes` (null clears a key)
+    // would resolve to — applied without persisting anything. The last two are
+    // null for a name the store does not know; `saved` still answers.
+    json options(const std::string& name, const json& changes = nullptr);
 
-    // What the model would resolve to with its recipe_options.json entry
-    // removed: image_defaults plus the registry JSON's own recipe_options.
-    RecipeOptions get_model_default_options(const ModelInfo& info);
+    // Merge changes into the model's recipe_options.json entry, persist and
+    // publish, and return the new entry. A null value erases that key. Atomic
+    // with respect to other writers of the same entry.
+    json set_options(const std::string& name, const json& changes);
 
     // Replace the model's recipe_options.json entry, returning the new entry.
     // An empty object erases the entry rather than persisting `{}`.
-    json set_saved_model_options(const std::string& model_name, const json& saved);
-
-    // Merge changes into the model's recipe_options.json entry and return the
-    // new entry. A null value erases that key. Atomic with respect to other
-    // writers of the same entry.
-    json update_saved_model_options(const std::string& model_name, const json& changes);
-
-    // The model-level options update_saved_model_options(changes) would leave
-    // the model with, computed without persisting anything.
-    RecipeOptions preview_saved_model_options(const ModelInfo& info, const json& changes);
+    json replace_options(const std::string& name, const json& saved);
 
     void start_directory_watcher();
 

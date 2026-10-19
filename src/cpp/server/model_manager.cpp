@@ -382,31 +382,37 @@ void ModelManager::save_model_options(const ModelInfo& info) {
     models::ModelStore::patch_options(store_write.draft(), info);
 }
 
-json ModelManager::get_saved_model_options(const std::string& model_name) {
-    const std::string id = cache_key_to_canonical_id(resolve_model_name(model_name));
-    return recipe_options_.entry(id);
-}
-
-RecipeOptions ModelManager::get_model_default_options(const ModelInfo& info) {
-    return models::build_recipe_options(info, registry_recipe_options(resolve_model_name(info.model_name)),
-                                "", json::object());
-}
-
-RecipeOptions ModelManager::preview_saved_model_options(const ModelInfo& info, const json& changes) {
-    const std::string cache_key = resolve_model_name(info.model_name);
+json ModelManager::options(const std::string& name, const json& changes) {
+    const std::string cache_key = resolve_model_name(name);
     const std::string id = cache_key_to_canonical_id(cache_key);
+    const json saved = recipe_options_.entry(id);
 
-    json saved = get_saved_model_options(cache_key);
-    for (const auto& [key, value] : changes.items()) {
-        if (value.is_null()) {
-            saved.erase(key);
-        } else {
-            saved[key] = value;
+    json applied = saved;
+    if (changes.is_object()) {
+        for (const auto& [key, value] : changes.items()) {
+            if (value.is_null()) {
+                applied.erase(key);
+            } else {
+                applied[key] = value;
+            }
         }
     }
-    // Same layering as write_saved_model_options, so a preview cannot differ
-    // from the state the real write would produce.
-    return models::build_recipe_options(info, registry_recipe_options(cache_key), id, json{{id, saved}});
+
+    json defaults = nullptr;
+    json resolved = nullptr;
+    try {
+        const ModelInfo info = get_model_info(cache_key);
+        defaults = models::build_recipe_options(
+                       info, registry_recipe_options(cache_key), "", json::object())
+                       .to_json();
+        // Same layering as write_saved_model_options, so a read of what changes
+        // would produce cannot differ from the state the write lands.
+        resolved = models::build_recipe_options(
+                       info, registry_recipe_options(cache_key), id, json{{id, applied}})
+                       .to_json();
+    } catch (const std::exception&) {
+    }
+    return {{"saved", saved}, {"defaults", defaults}, {"resolved_with", resolved}};
 }
 
 json ModelManager::registry_recipe_options(const std::string& cache_key) {
@@ -415,12 +421,12 @@ json ModelManager::registry_recipe_options(const std::string& cache_key) {
     return row ? models::row_recipe_options(*row) : json(nullptr);
 }
 
-json ModelManager::set_saved_model_options(const std::string& model_name, const json& saved) {
-    return write_saved_model_options(model_name, saved, /*merge=*/false);
+json ModelManager::replace_options(const std::string& name, const json& saved) {
+    return write_saved_model_options(name, saved, /*merge=*/false);
 }
 
-json ModelManager::update_saved_model_options(const std::string& model_name, const json& changes) {
-    return write_saved_model_options(model_name, changes, /*merge=*/true);
+json ModelManager::set_options(const std::string& name, const json& changes) {
+    return write_saved_model_options(name, changes, /*merge=*/true);
 }
 
 // Read-modify-write of one model's recipe_options.json entry.
