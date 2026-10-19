@@ -480,6 +480,69 @@ int main() {
     may_only_shrink("in-flight markers are named only where presence is decided", marker_files,
                     allowed_marker_files);
 
+    // Hermetic tests. cpp-ci runs without a network and without a running server, so a
+    // test that reaches a real host passes on a laptop and fails in CI -- and nothing
+    // said so until now. A non-loopback host *name* is not the problem: plenty of tests
+    // hand `huggingface.co` to a pure function to check URL building or endpoint
+    // classification, and banning the name would tax them. The problem is a non-loopback
+    // host in a position that sends, so the rule is a host and a request on one line.
+    const std::vector<std::string> request_tokens = {"HttpClient", "download_file", ".get(",
+                                                    "->get(", ".post(", "->post("};
+    // This file holds the token tables as data, so it matches its own patterns. A static
+    // rule cannot be applied to the source that spells the rule; excluding it costs
+    // nothing because the gate neither dials out nor forks.
+    const std::string kSelf = "test/cpp/test_facade_shape.cpp";
+    std::vector<std::string> dialing;
+    for (const auto& file : repo_files("test/cpp")) {
+        if (file == kSelf) continue;
+        std::istringstream stream(strip_line_comments(read_repo_file(file)));
+        std::string line;
+        int number = 0;
+        while (std::getline(stream, line)) {
+            ++number;
+            const size_t scheme = line.find("://");
+            if (scheme == std::string::npos) continue;
+            std::string host = line.substr(scheme + 3);
+            const size_t end = host.find_first_of("/\"' :)>");
+            if (end != std::string::npos) host = host.substr(0, end);
+            if (host.empty()) continue;
+            if (host.front() == '[') continue;  // IPv6 literal, checked below by name
+            bool loopback = host == "localhost" || host == "0.0.0.0" ||
+                            host.rfind("127.", 0) == 0 || host == "::1";
+            if (loopback) continue;
+            for (const auto& token : request_tokens) {
+                if (line.find(token) != std::string::npos) {
+                    dialing.push_back(file + ":" + std::to_string(number) + " (" + host + ")");
+                    break;
+                }
+            }
+        }
+    }
+    check("no test builds a request to a non-loopback host (" +
+              std::to_string(dialing.size()) + ")",
+          dialing.empty());
+    for (const auto& hit : dialing) std::printf("    dials out: %s\n", hit.c_str());
+
+    // A test that starts a process needs a reason written down. Spawning `lemond` in a
+    // unit test would also make one test's server another test's interference, since
+    // ctest runs these in parallel.
+    std::vector<std::string> spawners;
+    for (const auto& file : repo_files("test/cpp")) {
+        if (file == kSelf) continue;
+        for (const auto& token : {"popen", "std::system", "system(", "fork()", "execv",
+                                 "posix_spawn", "CreateProcess"}) {
+            if (!find_in(file, token).empty()) {
+                spawners.push_back(file);
+                break;
+            }
+        }
+    }
+    const std::vector<std::string> allowed_spawners = {
+        "test/cpp/test_process_manager.cpp",  // process management is the subject
+    };
+    check("only the named test spawns a process", spawners == allowed_spawners);
+    if (spawners != allowed_spawners) report_set_diff(spawners, allowed_spawners);
+
     // Acceptance, stated in production terms: the store, the scan, the pull and the
     // facade never name a provider — they name a source and let the adapter answer.
     int provider_literals = 0;
