@@ -181,8 +181,8 @@ struct CliConfig {
     bool codex_use_user_config = false;
     std::string codex_model_provider = "lemonade";
     std::string agent_args;
-    std::optional<bool> pi_mcp;
-    bool pi_codemode = false;
+    std::optional<bool> agent_mcp;
+    bool agent_codemode = false;
 
     // Cloud provider commands
     std::string cloud_provider;
@@ -725,7 +725,7 @@ static bool load_for_context_window(lemonade::LemonadeClient& client, const CliC
 // must not start pi.
 static bool check_pi_version_for_flags(const std::string& pi_binary, const CliConfig& config,
                                        const std::string& install_instructions) {
-    if (!config.pi_codemode && !config.pi_mcp.value_or(false)) {
+    if (!config.agent_codemode && !config.agent_mcp.value_or(false)) {
         return true;
     }
 
@@ -748,13 +748,13 @@ static bool check_pi_version_for_flags(const std::string& pi_binary, const CliCo
     }
     const std::string found = output.substr(0, output.find('\n'));
 
-    if (config.pi_codemode && (major < 1 || (major == 1 && minor < 1))) {
+    if (config.agent_codemode && (major < 1 || (major == 1 && minor < 1))) {
         std::cerr << "Error: --codemode needs pi 1.1 or newer (found " << found
                   << "). Reinstall pi to update it." << std::endl;
         std::cerr << install_instructions << std::endl;
         return false;
     }
-    if (config.pi_mcp.value_or(false) && major < 1) {
+    if (config.agent_mcp.value_or(false) && major < 1) {
         std::cerr << "Warning: --mcp needs pi 1.0 or newer (found " << found
                   << "); this pi ignores mcp.json." << std::endl;
     }
@@ -765,7 +765,8 @@ static bool check_pi_version_for_flags(const std::string& pi_binary, const CliCo
 // when the sync already loaded the launched model.
 static bool sync_agent_config_for_launch(lemonade::LemonadeClient& client,
                                          const CliConfig& config,
-                                         bool* model_loaded = nullptr) {
+                                         bool* model_loaded = nullptr,
+                                         std::optional<int> opencode_major = std::nullopt) {
     constexpr int default_context_window = 40960;
     // A window of 0 marks a model without a saved size until the fallback is applied.
     std::vector<lemon_cli::AgentModelEntry> models = fetch_llm_models_for_sync(client, 0);
@@ -807,20 +808,22 @@ static bool sync_agent_config_for_launch(lemonade::LemonadeClient& client,
         }
     }
 
-    // Pi compacts by contextWindow, so it waits for the load rather than
-    // guessing a window the auto-tuned model may not have.
-    if (config.agent == "pi" && !selected_unknown) {
+    // Pi and opencode compact by the window, so they wait for the load rather
+    // than guessing a window the auto-tuned model may not have.
+    const bool pi_or_opencode = config.agent == "pi" || config.agent == "opencode";
+    if (pi_or_opencode && !selected_unknown) {
         for (auto& model : models) {
             if (model.id == config.model && model.context_window <= 0) {
                 if (!load_for_context_window(client, config, model.context_window)) {
-                    std::cerr << "Not launching pi, since the model failed to load." << std::endl;
+                    std::cerr << "Not launching " << config.agent
+                              << ", since the model failed to load." << std::endl;
                     return false;
                 }
                 if (model_loaded != nullptr) {
                     *model_loaded = true;
                 }
                 if (model.context_window <= 0) {
-                    std::cerr << "Launching pi anyway, using a context size of "
+                    std::cerr << "Launching " << config.agent << " anyway, using a context size of "
                               << default_context_window << "." << std::endl;
                 }
             }
@@ -871,21 +874,22 @@ static bool sync_agent_config_for_launch(lemonade::LemonadeClient& client,
         return true;
     }
 
-    // Pi decides between an env reference and a placeholder itself, so it
-    // needs to know whether a key was configured at all.
+    // Pi and opencode decide between an env reference and a placeholder
+    // themselves, so they need to know whether a key was configured at all.
     const std::string config_api_key =
-        (config.agent == "pi" || !config.api_key.empty()) ? config.api_key : "lemonade";
+        (pi_or_opencode || !config.api_key.empty()) ? config.api_key : "lemonade";
 
-    // Only pi's config follows the server's scheme; the other agents still get http.
+    // Only pi's and opencode's config follow the server's scheme; the other agents still get http.
     const std::string base_url =
         lemon_tray::build_agent_server_base_url(
-            config.host, config.port, config.agent == "pi" && config.is_ssl) + "/v1";
+            config.host, config.port, pi_or_opencode && config.is_ssl) + "/v1";
 
-    // Pi's config references the key launch exports, so starting pi on a
-    // config that still points at another server would send it this key.
-    const bool pi_with_key = config.agent == "pi" && !config.api_key.empty();
-    const char* pi_key_stop = "Not launching pi, since it would send this server's API key "
-                              "to the server in pi's old config.";
+    // Their config references the key launch exports, so starting the agent on
+    // a config that still points at another server would send it this key.
+    const bool with_key = pi_or_opencode && !config.api_key.empty();
+    const std::string key_stop = "Not launching " + config.agent +
+                                 ", since it would send this server's API key to the server in " +
+                                 config.agent + "'s old config.";
 
     std::string error_message;
     if (!lemon_cli::sync_agent_config_file(*profile,
@@ -894,9 +898,10 @@ static bool sync_agent_config_for_launch(lemonade::LemonadeClient& client,
                                            config_api_key,
                                            models,
                                            error_message)) {
-        if (pi_with_key) {
-            std::cerr << "Error: Failed to sync pi config: " << error_message << std::endl;
-            std::cerr << pi_key_stop << std::endl;
+        if (with_key) {
+            std::cerr << "Error: Failed to sync " << config.agent << " config: " << error_message
+                      << std::endl;
+            std::cerr << key_stop << std::endl;
             return false;
         }
         std::cerr << "Warning: Failed to sync " << config.agent
@@ -904,7 +909,8 @@ static bool sync_agent_config_for_launch(lemonade::LemonadeClient& client,
         std::cerr << "Continuing with launch anyway..." << std::endl;
     }
 
-    if (config.agent == "pi") {
+    if (pi_or_opencode) {
+        const bool is_pi = config.agent == "pi";
         if (selected_unknown) {
             std::cerr << "Warning: " << config.model
                       << " is not a model on the Lemonade server; check the name with"
@@ -912,50 +918,59 @@ static bool sync_agent_config_for_launch(lemonade::LemonadeClient& client,
         }
         for (const auto& model : models) {
             if (model.id == config.model && !model.labels.empty() &&
-                std::find(model.labels.begin(), model.labels.end(), "tool-calling") ==
-                    model.labels.end()) {
-                std::cerr << "Warning: " << config.model
-                          << " is not labeled tool-calling; pi may fail to use its tools."
-                          << std::endl;
+                !lemon_cli::has_label(model, "tool-calling")) {
+                std::cerr << "Warning: " << config.model << " is not labeled tool-calling; "
+                          << config.agent << " may fail to use its tools." << std::endl;
             }
         }
 
         // Pi may still load an mcp.json launch cannot parse (Node tolerates
         // invalid UTF-8), so its lemonade entry could not be checked or refreshed.
         std::string mcp_read_error;
-        if (pi_with_key && !lemon_cli::pi_mcp_config_readable(mcp_read_error)) {
+        if (is_pi && with_key && !lemon_cli::pi_mcp_config_readable(mcp_read_error)) {
             std::cerr << "Error: Can't read pi's mcp.json: " << mcp_read_error << std::endl;
             std::cerr << "Not launching pi with an API key until it can be read." << std::endl;
             return false;
         }
 
         // An existing entry is refreshed so it follows the current host, port and key.
-        const bool had_mcp_entry = lemon_cli::pi_has_mcp_server();
-        if (config.pi_mcp.value_or(had_mcp_entry)) {
+        const bool had_mcp_entry =
+            is_pi ? lemon_cli::pi_has_mcp_server() : lemon_cli::opencode_has_mcp_server();
+        const std::string origin =
+            lemon_tray::build_agent_server_base_url(config.host, config.port, config.is_ssl);
+        if (config.agent_mcp.value_or(had_mcp_entry)) {
             std::string mcp_error;
-            if (!lemon_cli::sync_pi_mcp_server(
-                    lemon_tray::build_agent_server_base_url(config.host, config.port,
-                                                            config.is_ssl),
-                    !config.api_key.empty(), mcp_error)) {
-                if (pi_with_key && had_mcp_entry) {
-                    std::cerr << "Error: Failed to update Lemonade MCP in pi: " << mcp_error
-                              << std::endl;
-                    std::cerr << pi_key_stop << std::endl;
+            const bool synced =
+                is_pi ? lemon_cli::sync_pi_mcp_server(origin, !config.api_key.empty(), mcp_error)
+                      : lemon_cli::sync_opencode_mcp_server(
+                            origin, !config.api_key.empty(),
+                            lemon_cli::opencode_mcp_shape(opencode_major), mcp_error);
+            if (!synced) {
+                if (with_key && had_mcp_entry) {
+                    std::cerr << "Error: Failed to update Lemonade MCP in " << config.agent << ": "
+                              << mcp_error << std::endl;
+                    std::cerr << key_stop << std::endl;
                     return false;
                 }
-                std::cerr << "Warning: Failed to add Lemonade MCP to pi: " << mcp_error << std::endl;
+                std::cerr << "Warning: Failed to add Lemonade MCP to " << config.agent << ": "
+                          << mcp_error << std::endl;
                 std::cerr << "Continuing with launch anyway..." << std::endl;
             }
-        } else if (config.pi_mcp.has_value()) {
+        } else if (config.agent_mcp.has_value()) {
             std::string mcp_error;
-            if (!lemon_cli::remove_pi_mcp_server(mcp_error)) {
-                std::cerr << "Error: Failed to remove Lemonade MCP from pi: " << mcp_error
+            const bool removed = is_pi ? lemon_cli::remove_pi_mcp_server(mcp_error)
+                                       : lemon_cli::remove_opencode_mcp_server(mcp_error);
+            if (!removed) {
+                std::cerr << "Error: Failed to remove Lemonade MCP from " << config.agent << ": "
+                          << mcp_error << std::endl;
+                std::cerr << "Not launching " << config.agent << ", since --no-mcp was requested."
                           << std::endl;
-                std::cerr << "Not launching pi, since --no-mcp was requested." << std::endl;
                 return false;
             }
         }
+    }
 
+    if (config.agent == "pi") {
         // Only write settings.json if pi doesn't already have a default provider/model.
         // This preserves existing user configuration while providing seamless first-time UX.
         if (!lemon_cli::pi_has_default_config()) {
@@ -985,9 +1000,9 @@ static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& co
         std::cout << "Model was provided explicitly; skipping recipe import prompts." << std::endl;
     }
 
-    // Pi's config sync can load the model, so it waits until pi is found.
+    // Pi's and opencode's config sync can load the model, so it waits until the agent is found.
     const bool needs_config_sync = lemon_tray::agent_needs_config_sync(config.agent);
-    const bool sync_after_binary_check = config.agent == "pi";
+    const bool sync_after_binary_check = config.agent == "pi" || config.agent == "opencode";
     if (needs_config_sync && !sync_after_binary_check &&
         !sync_agent_config_for_launch(client, config)) {
         return 1;
@@ -1014,7 +1029,7 @@ static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& co
         std::cout << "Launch auth: API key provided and propagated to the launched agent." << std::endl;
     }
 
-    if (config.agent == "pi" && config.pi_codemode) {
+    if (config.agent == "pi" && config.agent_codemode) {
         agent_config.extra_args.push_back("--tools");
         agent_config.extra_args.push_back("+codemode");
     }
@@ -1039,10 +1054,46 @@ static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& co
         return 1;
     }
 
+    // The MCP entry's shape and --codemode depend on the opencode version.
+    std::optional<int> opencode_major;
+    bool opencode_codemode = false;
+    if (config.agent == "opencode") {
+        opencode_major = lemon_tray::opencode_major_version(agent_binary);
+        if (config.agent_codemode && !opencode_major) {
+            std::cerr << "Warning: Could not determine the opencode version; ignoring --codemode,"
+                      << " which needs opencode 2 or newer." << std::endl;
+        } else if (config.agent_codemode && *opencode_major < 2) {
+            std::cerr << "Error: --codemode needs opencode 2 or newer (found opencode "
+                      << *opencode_major << ")." << std::endl;
+            std::cerr << agent_config.install_instructions << std::endl;
+            return 1;
+        } else {
+            opencode_codemode = config.agent_codemode;
+        }
+    }
+
     bool model_loaded = false;
     if (needs_config_sync && sync_after_binary_check &&
-        !sync_agent_config_for_launch(client, config, &model_loaded)) {
+        !sync_agent_config_for_launch(client, config, &model_loaded, opencode_major)) {
         return 1;
+    }
+
+    if (opencode_codemode) {
+        const nlohmann::json codemode = lemon_cli::opencode_codemode_config();
+        auto inline_config = std::find_if(
+            agent_config.env_vars.begin(), agent_config.env_vars.end(),
+            [](const auto& env) { return env.first == "OPENCODE_CONFIG_CONTENT"; });
+        if (codemode.is_null()) {
+            std::cerr << "Warning: --codemode has no effect without --mcp, since opencode's"
+                      << " Code Mode only covers MCP tools." << std::endl;
+        } else if (inline_config == agent_config.env_vars.end()) {
+            std::cerr << "Warning: Ignoring --codemode, since OPENCODE_CONFIG_CONTENT could not"
+                      << " be parsed." << std::endl;
+        } else {
+            nlohmann::json merged = nlohmann::json::parse(inline_config->second);
+            merged.merge_patch(codemode);
+            inline_config->second = merged.dump();
+        }
     }
 
     if (!model_loaded) {
@@ -1069,14 +1120,12 @@ static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& co
     }
 
     if (config.agent == "opencode") {
-        const std::optional<bool> needs_standalone =
-            lemon_tray::opencode_needs_standalone(agent_binary);
-        if (!needs_standalone) {
+        if (!opencode_major) {
             std::cerr << "Warning: Could not determine the opencode version; launching without --standalone."
                       << std::endl;
             std::cerr << "If opencode opens on a non-Lemonade model, rerun with --agent-args \"--standalone\"."
                       << std::endl;
-        } else if (*needs_standalone) {
+        } else if (*opencode_major >= 2) {
             lemon_tray::add_opencode_standalone_arg(agent_config.extra_args);
         }
     }
@@ -1771,11 +1820,20 @@ int main(int argc, char* argv[]) {
         add_common_launch_options(*agent_cmd);
 
         if (agent_name == "pi") {
-            agent_cmd->add_flag("--mcp,!--no-mcp", config.pi_mcp,
+            agent_cmd->add_flag("--mcp,!--no-mcp", config.agent_mcp,
                 "Add (or remove) the Lemonade MCP server in pi's mcp.json; the choice is kept "
                 "for later launches");
-            agent_cmd->add_flag("--codemode", config.pi_codemode,
+            agent_cmd->add_flag("--codemode", config.agent_codemode,
                 "Enable pi's codemode tool for this launch");
+        }
+
+        if (agent_name == "opencode") {
+            agent_cmd->add_flag("--mcp,!--no-mcp", config.agent_mcp,
+                "Add (or remove) the Lemonade MCP server in opencode.json; the choice is kept "
+                "for later launches");
+            agent_cmd->add_flag("--codemode", config.agent_codemode,
+                "Put the Lemonade MCP server's tools in opencode's Code Mode for this launch "
+                "(opencode 2 or newer)");
         }
 
         if (agent_name == "codex") {

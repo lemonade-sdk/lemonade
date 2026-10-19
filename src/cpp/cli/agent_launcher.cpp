@@ -366,7 +366,7 @@ bool build_agent_config(const std::string& agent,
     return false;
 }
 
-std::optional<bool> opencode_needs_standalone(const std::string& binary) {
+std::optional<int> opencode_major_version(const std::string& binary) {
     const std::regex version_pattern(R"(^\s*(?:opencode\s+)?v?(\d{1,4})\.\d+\.\d+)");
     std::optional<int> major;
     try {
@@ -387,10 +387,7 @@ std::optional<bool> opencode_needs_standalone(const std::string& binary) {
         return std::nullopt;
     }
 
-    if (!major) {
-        return std::nullopt;
-    }
-    return *major >= 2;
+    return major;
 }
 
 void add_opencode_standalone_arg(std::vector<std::string>& args) {
