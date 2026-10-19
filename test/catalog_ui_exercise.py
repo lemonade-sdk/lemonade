@@ -16,6 +16,7 @@ import urllib.error
 import urllib.request
 
 from backend_catalog_http import Server, free_port, prepare, request
+from catalog_fourth_exercise import frozen_artifacts
 
 
 def digest(path):
@@ -42,13 +43,7 @@ def main():
         assert condition, message
         checks += 1
 
-    artifacts = json.loads(
-        (repo / "test/fixtures/catalog-fourth-freeze.json").read_text()
-    )["artifacts"]
-    artifacts = {name: digest(repo / name) for name in artifacts}
-    for file in (repo / "build/resources/web-app").rglob("*"):
-        if file.is_file():
-            artifacts[str(file.relative_to(repo))] = digest(file)
+    artifacts = frozen_artifacts(repo)
     transcript["freeze"] = {
         "at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "source_commit": subprocess.check_output(

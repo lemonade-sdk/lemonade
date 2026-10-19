@@ -11,18 +11,72 @@ import urllib.error
 
 from backend_catalog_http import free_port, prepare, request
 
+FROZEN_FILES = (
+    "build/include/backend_capabilities_generated.h",
+    "build/include/backend_definition_resources.h",
+    "build/include/backend_descriptors_generated.h",
+    "build/include/backend_factories_generated.h",
+    "build/lemond",
+    "build/lemonade",
+    "schemas/backend-definition-v1.schema.json",
+    "test/fake_catalog_engine.py",
+)
+FROZEN_TREES = ("build/resources", "src/cpp/resources")
+
 
 def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def aggregate(artifacts):
+    return hashlib.sha256(
+        json.dumps(artifacts, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+
+
+def frozen_artifacts(repo):
+    names = list(FROZEN_FILES)
+    for tree in FROZEN_TREES:
+        names += [
+            path.relative_to(repo).as_posix()
+            for path in (repo / tree).rglob("*")
+            if path.is_file()
+        ]
+    return {name: digest(repo / name) for name in sorted(names)}
+
+
+def take_freeze(repo):
+    def git(*arguments):
+        return subprocess.check_output(["git", *arguments], cwd=repo, text=True).strip()
+
+    artifacts = frozen_artifacts(repo)
+    return {
+        "frozen_at_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "commit": git("rev-parse", "HEAD"),
+        "tree": git("rev-parse", "HEAD^{tree}"),
+        "artifacts": artifacts,
+        "artifact_count": len(artifacts),
+        "aggregate_sha256": aggregate(artifacts),
+    }
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--freeze", type=Path, required=True)
+    parser.add_argument(
+        "--freeze",
+        type=Path,
+        required=True,
+        help="artifact manifest to verify; written from the current build when absent",
+    )
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     repo = Path(__file__).resolve().parents[1]
-    freeze = json.loads(args.freeze.read_text())
+    if args.freeze.exists():
+        freeze = json.loads(args.freeze.read_text())
+    else:
+        freeze = take_freeze(repo)
+        args.freeze.parent.mkdir(parents=True, exist_ok=True)
+        args.freeze.write_text(json.dumps(freeze, indent=2) + "\n")
     server_binary = repo / "build/lemond"
     cli_binary = repo / "build/lemonade"
     harness = repo / "test/fake_catalog_engine.py"
@@ -41,9 +95,7 @@ def main():
             actual == freeze["artifacts"],
             "frozen executables/resources/schema/harness unchanged",
         )
-        return hashlib.sha256(
-            json.dumps(actual, sort_keys=True, separators=(",", ":")).encode()
-        ).hexdigest()
+        return aggregate(actual)
 
     unchanged()
     for binary in (server_binary, cli_binary):

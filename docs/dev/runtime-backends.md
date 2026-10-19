@@ -166,4 +166,15 @@ Run `npm run typecheck` separately from the web bundle: its loader uses
 Chrome with GPU disabled, the real served bridge, isolated server data and the
 existing deterministic CPU engine. It records actual browser stages or an
 explicit unverified result when no browser is available. Native Tauri behavior
-and distribution packaging require their own environment-specific qualification.
+and distribution packaging require their own environment-specific qualification;
+see [platform qualification](platform-qualification.md).
+
+`test/catalog_fourth_exercise.py --freeze FILE --output FILE` adds the external
+definition `test/fixtures/catalog-fourth.json` to an isolated server and drives
+it through the server and the frozen CLI with the deterministic CPU engine. When
+the freeze file does not exist, the script first writes a manifest of the current
+build (`build/lemond`, `build/lemonade`, the generated registry headers, every
+file under `build/resources` and `src/cpp/resources`, the definition schema and
+the fake engine) and then checks that none of those artifacts change. The UI
+exercise freezes the same artifact set. Freeze manifests and transcripts are
+written on demand and are not committed.
