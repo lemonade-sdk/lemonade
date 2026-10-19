@@ -13,7 +13,8 @@ export interface LocalIconDefinition {
   strokeWidth?: number;
 }
 
-// Vendored at build time from lucide-react 1.25.0 and react-icons 5.7.0.
+// Vendored from lucide-react 1.25.0 (ISC) and react-icons/si 5.7.0
+// (Simple Icons, CC0-1.0). See LICENSE for attributions.
 // Keeping the geometry local lets distro/Launchpad builds run without npm-only
 // icon packages while preserving the exact GUI3 icon set.
 export const LOCAL_ICON_DEFINITIONS: Record<string, LocalIconDefinition> = {
