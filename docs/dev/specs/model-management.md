@@ -602,17 +602,23 @@ This section defines the two identity axes and which one is extensible.
 | Axis | Content | Extensible | Used by |
 | --- | --- | --- | --- |
 | **Handle** | `<source-token>.<bare>` | No, deliberately closed | user input, `user_models.json` keys, `recipe_options.json` keys, the API `model` field, `Decision::route_to` |
-| **Provenance** (`ArtifactRef`) | `{registry, repo_id, variant, revision, required}` | Yes, this is the join | cache directory naming, blob dedup, update check, `.lemonade_registry.json` |
+| **Provenance** (`ArtifactRef`) | `{registry, checkpoint_type, repo_id, variant, revision, required}` | Yes, this is the join | cache directory naming, blob dedup, update check, `.lemonade_registry.json` |
 
 ```cpp
 struct ArtifactRef {
-    RegistryId registry;        // "huggingface", "modelscope", ...
-    std::string repo_id;        // "Qwen/Qwen3-0.6B-GGUF"
+    std::optional<RegistryId> registry;  // set only when a host holds the bytes
+    std::string checkpoint_type;         // "main", "mmproj", "npu_cache", ...
+    std::string repo_id;        // "Qwen/Qwen3-0.6B-GGUF", or a path when no host
     std::string variant;        // "Q4_K_M", a file name, or empty
     std::string revision;       // "main", "master", or an explicit sha
     bool required = true;       // false: absent bytes do not clear `downloaded`
 };
 ```
+
+No recipe here, though a recipe decides which files of a repository a model wants. That is
+whose policy over the bytes rather than which bytes, so it travels in `SourcePlacement` with
+the layout: the same ref read for two backends is the same address with two opinions, and a
+field that changes what a plan contains while `operator==` ignores it is a field that lies.
 
 The artifact key is `f(registry, repo, snapshot)`, computed without touching the handle grammar, which is how blob-level sharing across models works.
 
@@ -787,7 +793,7 @@ Rules:
 5. `required` defaults to true. A lazily acquired checkpoint sets it false; `npu_cache`, the `.rai` file a whisper backend pulls beside its `.bin` on first NPU use, is the shipped case. Absent bytes there leave the model downloaded.
 6. Checkpoints of one model share one registry. `apply_default_pull_source()` (`model_registry.cpp`) rejects a body whose checkpoints name different registries, and `docs/dev/model-registries.md` states that rule. Source *kind* varies per checkpoint; *registry* does not. The shipped Whisper models satisfy it: `main` and `npu_cache` name different repositories, both on Hugging Face.
 7. **The resolver is the only site that mints an `ArtifactRef` and opens a repository.** A caller takes `refs_for(info)` and `repository_for(ref)` rather than assembling a ref from a checkpoint string, because the parsing rules above — scheme strip, variant split, the on-disk-before-repo-id order, `required` from `acquires_lazily()` — are selection, and a second copy of them is a second opinion. Today `create_repository()` is called from six places and two of them re-implement the parsing; step **S10** moves the minting here and gates the call site.
-8. The `SourcePlacement` a binding carries is resolver output, never ref content: which `ArtifactLayout` applies, and the sibling file a side checkpoint must land beside. Two refs that compare equal name the same bytes however they are placed.
+8. The `SourcePlacement` a binding carries is resolver output, never ref content: which `ArtifactLayout` applies, the sibling file a side checkpoint must land beside, and the recipe whose `BackendOps` picks files out of a listing. Two refs that compare equal name the same bytes however they are placed, and every policy that changes what is done with those bytes is now visibly in the placement rather than half in the address.
 
 ## Fetchable Repositories
 
@@ -820,12 +826,14 @@ struct Staleness {
 struct SourcePlacement {
     const ArtifactLayout* layout = nullptr;
     std::string sibling;
+    std::string recipe;   // whose BackendOps selects the files of the listing
 };
 
 class FetchableRepository : public ArtifactSource {
 public:
     const ArtifactLayout& layout() const;      // placement_.layout or the snapshot layout
     const std::string& sibling() const;
+    const std::string& recipe() const;
 
     virtual RegistryId id() const = 0;
     virtual Revision default_revision() const = 0;

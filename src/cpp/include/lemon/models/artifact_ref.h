@@ -9,8 +9,12 @@ namespace lemon {
 namespace models {
 
 // A ref is an address, nothing more: two refs that compare equal name the same bytes.
-// Where those bytes land is a property of the source that reads them, not of the address,
-// so placement — layout and sibling — lives beside the ref instead of inside it.
+// Where those bytes land, and which backend's file selection applies to them, is a
+// property of the source that reads them rather than of the address, so placement —
+// layout, sibling and recipe — lives beside the ref in SourcePlacement.
+//
+// checkpoint_type stays because it is still an address: it names a different set of bytes.
+// A recipe names whose policy about them, which is why it moved.
 //
 // repo_id is a repository id, or a path when no host holds the bytes.
 struct ArtifactRef {
@@ -18,7 +22,6 @@ struct ArtifactRef {
     std::string checkpoint_type;
     std::string repo_id;
     std::string variant;
-    std::string recipe;  // decides which files a repository provides
     std::string revision;
     bool required = true;
 

@@ -59,6 +59,9 @@ struct Staleness {
 struct SourcePlacement {
     const ArtifactLayout* layout = nullptr;
     std::string sibling;
+    // Which backend decides what a repository offers: the same repo answers with the
+    // GGUFs one recipe wants and nothing but the weights another does.
+    std::string recipe;
 };
 
 // The pullable role, layered on an artifact source.
@@ -69,6 +72,7 @@ class FetchableRepository : public ArtifactSource {
         return placement_.layout != nullptr ? *placement_.layout : hf_hub_layout();
     }
     const std::string& sibling() const { return placement_.sibling; }
+    const std::string& recipe() const { return placement_.recipe; }
 
     virtual RegistryId id() const = 0;
     virtual Revision default_revision() const = 0;

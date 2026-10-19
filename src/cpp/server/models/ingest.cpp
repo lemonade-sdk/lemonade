@@ -271,7 +271,6 @@ void ModelIngest::download_from_registry(const ModelInfo& info,
         main_ref.checkpoint_type = "main";
         main_ref.repo_id = main_repo_id;
         main_ref.variant = main_variant;
-        main_ref.recipe = info.recipe;
         refs.push_back(std::move(main_ref));
     }
     for (const auto& [type, checkpoint] : info.checkpoints) {
@@ -285,9 +284,13 @@ void ModelIngest::download_from_registry(const ModelInfo& info,
         ref.checkpoint_type = type;
         ref.repo_id = repo_id_from_checkpoint(checkpoint);
         ref.variant = variant_from_checkpoint(checkpoint);
-        ref.recipe = info.recipe;
         refs.push_back(std::move(ref));
     }
+
+    // One placement for the whole pull: every checkpoint here belongs to the same model,
+    // so the same recipe decides the file selection of every repository it reads.
+    SourcePlacement placement;
+    placement.recipe = info.recipe;
 
     std::map<std::string, std::unique_ptr<FetchableRepository>> repositories;
     std::map<std::string, RepoListing> listings;
@@ -297,7 +300,7 @@ void ModelIngest::download_from_registry(const ModelInfo& info,
         if (deps_.repository_for) {
             repository = deps_.repository_for(ref);
         } else {
-            repository = create_repository(source, ref, SourcePlacement{});
+            repository = create_repository(source, ref, placement);
         }
         if (repository == nullptr) {
             throw std::runtime_error("No artifact source for host '" + source_name +

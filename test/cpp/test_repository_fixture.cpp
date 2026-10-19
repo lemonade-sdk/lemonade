@@ -94,7 +94,6 @@ ArtifactRef side_ref(const RegistryId& host, const std::string& repo, const std:
     ref.checkpoint_type = "mmproj";  // A side checkpoint names its one file.
     ref.repo_id = repo;
     ref.variant = file;
-    ref.recipe = "llamacpp";
     return ref;
 }
 

@@ -58,8 +58,8 @@ DownloadPlan registry_download_plan(const FetchableRepository& repository, const
         }
         wanted.push_back(ref.variant);
     } else {
-        wanted = registry_files::select_main_repo_files(ref.repo_id, ref.recipe, ref.variant,
-                                                        available);
+        wanted = registry_files::select_main_repo_files(ref.repo_id, repository.recipe(),
+                                                        ref.variant, available);
     }
 
     DownloadPlan plan;

@@ -159,13 +159,13 @@ UpdateScanResult run_update_scan(const UpdateScanDeps& deps,
             ArtifactRef probe;
             probe.registry = source;
             probe.repo_id = entry.repo_id;
-            probe.recipe = candidate_models.at(entry.model_names.front()).recipe;
             probe.checkpoint_type = "main";
+            SourcePlacement probe_placement;
+            probe_placement.recipe = candidate_models.at(entry.model_names.front()).recipe;
             const std::unique_ptr<FetchableRepository> repository =
                 deps.repository_for
                     ? deps.repository_for(probe)
-                    : create_repository(probe.registry.value_or(source), probe,
-                                        SourcePlacement{});
+                    : create_repository(probe.registry.value_or(source), probe, probe_placement);
 
             // A source whose bytes cannot go stale has nothing to check; skipping
             // it changes no flag either way.

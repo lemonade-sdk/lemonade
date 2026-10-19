@@ -31,7 +31,6 @@ std::optional<LocalPathArtifactSource::Origin> origin_of(const std::string& sour
 
 ArtifactRef ref_for(const ModelInfo& info, const std::string& checkpoint_type, bool required) {
     ArtifactRef ref;
-    ref.recipe = info.recipe;
     ref.checkpoint_type = checkpoint_type;
     ref.required = required;
     return ref;
@@ -73,6 +72,7 @@ SourcePlacement ArtifactSourceResolver::placement_for(const ModelInfo& info,
                                                       const std::string& checkpoint_type) const {
     SourcePlacement placement;
     placement.layout = &layout_for(info, checkpoint_type);
+    placement.recipe = info.recipe;
     if (placement.layout != &hf_hub_layout()) {
         placement.sibling = info.resolved_path("main");
     }
@@ -123,7 +123,11 @@ std::unique_ptr<ArtifactSource> ArtifactSourceResolver::source_for(
         ref.repo_id = checkpoint.substr(checkpoint.find("://") + 3);
         ref.variant = variant_from_checkpoint(ref.repo_id);
         ref.repo_id = repo_id_from_checkpoint(ref.repo_id);
-        return open_repository(scheme_host, ref, SourcePlacement{});
+        // No layout opinion here, unlike the registry-id path below, but the recipe
+        // still decides which files of the repository the model wants.
+        SourcePlacement placement;
+        placement.recipe = info.recipe;
+        return open_repository(scheme_host, ref, placement);
     }
 
     if (checkpoint.rfind(FILE_SCHEME, 0) == 0) {
