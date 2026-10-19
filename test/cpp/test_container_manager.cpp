@@ -48,6 +48,10 @@ struct FakeHost {
     std::string stderr_noise =
         "time=\"2026-10-17T00:57:31Z\" level=warning msg=\"Falling back to --cgroup-manager=cgroupfs\"\n";
     std::map<std::string, std::string> files = {{"/etc/os-release", "ID=ubuntu\nID_LIKE=debian\n"}};
+    std::map<std::string, std::string> env;
+    bool root = false;
+    // How many commands the manager has run on the host.
+    mutable int commands = 0;
 
     ContainerHost host() const {
         ContainerHost h;
@@ -57,11 +61,17 @@ struct FakeHost {
             return group == "video" ? std::string("44") : std::string("990");
         };
         h.docker_socket_accepts = [this]() { return docker_socket; };
+        h.env = [this](const std::string& name) {
+            const auto it = env.find(name);
+            return it == env.end() ? std::string() : it->second;
+        };
+        h.is_root = [this]() { return root; };
         h.read_file = [this](const std::string& path) {
             const auto it = files.find(path);
             return it == files.end() ? std::string() : it->second;
         };
         h.run = [this](const std::vector<std::string>& argv, int, bool capture_stderr) {
+            ++commands;
             lemon::utils::CommandResult result;
             if (argv.size() > 1 && argv[0] == "podman" && argv[1] == "info") {
                 result = {podman_info_exit, podman_rootless + "\n"};
@@ -161,10 +171,30 @@ void test_tool_choice_and_setup() {
     FakeHost none;
     const ContainerManager no_tool(none.host());
     check("no tool is chosen when neither is on PATH", !no_tool.tool());
-    const auto install = no_tool.check_setup();
-    check("with no tool, the setup assistant says to install Podman",
-          install && install->message == "podman is not on PATH" &&
-              install->action == "sudo apt install podman");
+    lemon::utils::SetupReport fresh{no_tool.check_host()};
+    check("with no tool, every host step is reported at once: install Podman, then its groups",
+          fresh.ids() == std::vector<std::string>({"container_tool", "device_groups"}));
+    check("the host checks run no command before the user enables container backends",
+          none.commands == 0);
+    fresh.failures.push_back({"enable_containers", "enable_containers is false",
+                              {"lemonade config set enable_containers=true"}, ""});
+    check("each problem is on its own line",
+          fresh.message() ==
+              "podman is not on PATH\nAccount is not in both video and render\n"
+              "enable_containers is false");
+    check("the steps are numbered, consent after the host steps and logging out last",
+          fresh.action() ==
+              "1. sudo apt install podman\n2. sudo usermod -aG video,render $USER\n"
+              "3. lemonade config set enable_containers=true\n4. Log out and back in");
+    check("error text lists the problems, then the steps",
+          fresh.text() ==
+              "\n  - podman is not on PATH\n  - Account is not in both video and render\n"
+              "  - enable_containers is false\nTo fix it:\n  1. sudo apt install podman\n"
+              "  2. sudo usermod -aG video,render $USER\n"
+              "  3. lemonade config set enable_containers=true\n  4. Log out and back in");
+    const lemon::utils::SetupReport consent{{fresh.failures.back()}};
+    check("a single step is not numbered",
+          consent.action() == "lemonade config set enable_containers=true");
 
     FakeHost both;
     both.tools = {"podman", "docker"};
@@ -172,18 +202,34 @@ void test_tool_choice_and_setup() {
           ContainerManager(both.host()).tool() == lemon::utils::ContainerTool::Podman);
 
     both.groups = {"video"};
-    const auto groups = ContainerManager(both.host()).check_setup();
+    const lemon::utils::SetupReport groups{ContainerManager(both.host()).check_host()};
     check("Podman needs the account in both video and render",
-          groups && groups->message == "The user's account is not in both video and render" &&
-              groups->action == "1. sudo usermod -aG video,render $USER\n"
-                                "2. Log out and back in");
+          groups.ids() == std::vector<std::string>({"device_groups"}) &&
+              groups.message() == "Account is not in both video and render" &&
+              groups.action() == "1. sudo usermod -aG video,render $USER\n"
+                                 "2. Log out and back in");
     both.groups = {"video", "render"};
-    check("Podman passes with both groups", !ContainerManager(both.host()).check_setup());
+    check("Podman passes with both groups", ContainerManager(both.host()).check_host().empty());
+    check("rootless Podman passes podman info", !ContainerManager(both.host()).check_podman());
+
+    FakeHost remote;
+    remote.tools = {"podman"};
+    remote.env["CONTAINER_HOST"] = "unix:///run/podman/podman.sock";
+    check("before podman info runs, Podman behind CONTAINER_HOST needs neither group",
+          ContainerManager(remote.host()).check_host().empty() && remote.commands == 0);
+    FakeHost as_root;
+    as_root.tools = {"podman"};
+    as_root.root = true;
+    check("before podman info runs, Podman run as root needs neither group",
+          ContainerManager(as_root.host()).check_host().empty());
 
     FakeHost rootful;
     rootful.tools = {"podman"};
     rootful.podman_rootless = "false";
-    check("rootful Podman needs neither group", !ContainerManager(rootful.host()).check_setup());
+    const ContainerManager rootful_manager(rootful.host());
+    check("rootful Podman passes podman info", !rootful_manager.check_podman());
+    check("once podman info says rootful, Podman needs neither group",
+          rootful_manager.check_host().empty());
 
     FakeHost noisy;
     noisy.tools = {"podman"};
@@ -194,23 +240,33 @@ void test_tool_choice_and_setup() {
     broken.tools = {"podman"};
     broken.groups = {"video", "render"};
     broken.podman_info_exit = 125;
-    const auto silent = ContainerManager(broken.host()).check_setup();
+    const auto silent = ContainerManager(broken.host()).check_podman();
     check("Podman must answer podman info",
-          silent && silent->message == "`podman info` fails" &&
-              silent->action == "Run `podman info` and fix the error it prints");
+          silent && silent->id == "podman_info" && silent->message == "`podman info` fails" &&
+              lemon::utils::SetupReport{{*silent}}.action() ==
+                  "Run `podman info` and fix the error it prints");
 
     FakeHost docker;
     docker.tools = {"docker"};
     docker.docker_socket = false;
     check("Docker is chosen when Podman is not installed",
           ContainerManager(docker.host()).tool() == lemon::utils::ContainerTool::Docker);
-    const auto refused = ContainerManager(docker.host()).check_setup();
+    const lemon::utils::SetupReport refused{ContainerManager(docker.host()).check_host()};
     check("Docker needs the daemon to accept the account",
-          refused && refused->message == "The Docker daemon refuses the user's account" &&
-              refused->action == "1. sudo usermod -aG docker $USER\n2. Log out and back in");
+          refused.ids() == std::vector<std::string>({"docker_access"}) &&
+              refused.message() == "The Docker daemon refuses the account" &&
+              refused.action() == "1. sudo usermod -aG docker $USER\n2. Log out and back in");
+    check("Docker needs no podman info", !ContainerManager(docker.host()).check_podman());
     docker.docker_socket = true;
     check("Docker passes once the daemon accepts the account",
-          !ContainerManager(docker.host()).check_setup());
+          ContainerManager(docker.host()).check_host().empty());
+
+    lemon::utils::SetupReport both_relogins{groups.failures};
+    both_relogins.failures.push_back(refused.failures.front());
+    check("logging out and back in is listed once, last",
+          both_relogins.action() ==
+              "1. sudo usermod -aG video,render $USER\n2. sudo usermod -aG docker $USER\n"
+              "3. Log out and back in");
 }
 
 void test_install_commands() {
@@ -245,7 +301,8 @@ void test_helpers() {
           selinux &&
               selinux->message ==
                   "SELinux is enforcing and the container_use_devices boolean is off" &&
-              selinux->action == "sudo setsebool -P container_use_devices 1");
+              selinux->steps ==
+                  std::vector<std::string>({"sudo setsebool -P container_use_devices 1"}));
     fedora.files["/sys/fs/selinux/booleans/container_use_devices"] = "1 1";
     check("the SELinux check passes once container_use_devices is on",
           !ContainerManager(fedora.host()).check_selinux());

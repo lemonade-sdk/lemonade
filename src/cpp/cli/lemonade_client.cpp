@@ -1372,22 +1372,35 @@ int LemonadeClient::list_recipes(bool show_all) const {
                         info_col = "-";
                     }
                     if (show_all || status_str != "unsupported") {
-                        std::ostringstream row;
-                        row << std::left << std::setw(20) << recipe_col
-                            << std::setw(12) << backend.name
-                            << std::setw(14) << (backend.tier.empty() ? "-" : backend.tier)
-                            << std::setw(11) << (backend.format.empty() ? "-" : backend.format)
-                            << std::setw(16) << status_str
-                            << std::setw(46) << info_col << " ";
-                        // A long message pushes the action right; its later steps
-                        // line up under wherever the first one landed.
-                        std::string action_col = backend.action.empty() ? "-" : backend.action;
-                        const std::string indent(row.str().size(), ' ');
-                        for (size_t pos = action_col.find('\n'); pos != std::string::npos;
-                             pos = action_col.find('\n', pos + 1)) {
-                            action_col.insert(pos + 1, indent);
+                        std::ostringstream lead;
+                        lead << std::left << std::setw(20) << recipe_col
+                             << std::setw(12) << backend.name
+                             << std::setw(14) << (backend.tier.empty() ? "-" : backend.tier)
+                             << std::setw(11) << (backend.format.empty() ? "-" : backend.format)
+                             << std::setw(16) << status_str;
+                        const auto split_lines = [](const std::string& text) {
+                            std::vector<std::string> lines;
+                            std::istringstream stream(text);
+                            for (std::string line; std::getline(stream, line);) {
+                                lines.push_back(line);
+                            }
+                            return lines;
+                        };
+                        // A multi-line message and action print side by side,
+                        // one problem and one step per line.
+                        const auto messages = split_lines(info_col);
+                        const auto actions =
+                            split_lines(backend.action.empty() ? "-" : backend.action);
+                        const std::string pad(lead.str().size(), ' ');
+                        for (size_t i = 0; i < std::max(messages.size(), actions.size()); ++i) {
+                            std::ostringstream line;
+                            line << std::left << (i == 0 ? lead.str() : pad) << std::setw(46)
+                                 << (i < messages.size() ? messages[i] : "") << " "
+                                 << (i < actions.size() ? actions[i] : "");
+                            std::string text = line.str();
+                            text.erase(text.find_last_not_of(' ') + 1);
+                            std::cout << text << std::endl;
                         }
-                        std::cout << row.str() << action_col << std::endl;
 
                         first_backend = false;
                     }

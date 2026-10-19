@@ -4,6 +4,7 @@
 #include <cctype>
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -38,6 +39,7 @@ constexpr const char* kKfdTopologyNodes = "/sys/devices/virtual/kfd/kfd/topology
 constexpr int kStopSeconds = 10;
 constexpr int kCommandTimeoutSeconds = 60;
 constexpr int kPullTimeoutSeconds = 3 * 3600;
+constexpr const char* kRelogin = "Log out and back in";
 
 std::string trim(const std::string& value) {
     const auto first = value.find_first_not_of(" \t\r\n");
@@ -150,6 +152,15 @@ ContainerHost ContainerHost::real() {
     host.group_id = host_group_id;
     host.docker_socket_accepts = docker_socket_accepts_connection;
 #endif
+    host.env = [](const std::string& name) {
+        const char* value = std::getenv(name.c_str());
+        return std::string(value ? value : "");
+    };
+#ifdef _WIN32
+    host.is_root = []() { return false; };
+#else
+    host.is_root = []() { return ::geteuid() == 0; };
+#endif
     host.read_file = [](const std::string& path) { return utils::read_file(path); };
     host.run = run_on_host;
     return host;
@@ -187,31 +198,41 @@ bool ContainerManager::rootless_podman() const {
     return tool() == ContainerTool::Podman && podman_info_rootless().value_or(true);
 }
 
-std::optional<SetupFailure> ContainerManager::check_setup() const {
+bool ContainerManager::expect_rootless() const {
+    {
+        std::lock_guard<std::mutex> lock(podman_mode_mutex_);
+        if (podman_rootless_) return *podman_rootless_;
+    }
+    return host_.env("CONTAINER_HOST").empty() && !host_.is_root();
+}
+
+std::vector<SetupFailure> ContainerManager::check_host() const {
+    std::vector<SetupFailure> failures;
     const std::optional<ContainerTool> chosen = tool();
+    if (chosen == ContainerTool::Docker) {
+        if (!host_.docker_socket_accepts()) {
+            failures.push_back({"docker_access", "The Docker daemon refuses the account",
+                                {"sudo usermod -aG docker $USER"}, kRelogin});
+        }
+        return failures;
+    }
+    // With neither tool, the user is told to install Podman, so its group
+    // check applies as well.
     if (!chosen) {
-        return SetupFailure{"podman is not on PATH",
-                            podman_install_command(host_.read_file("/etc/os-release"))};
+        failures.push_back({"container_tool", "podman is not on PATH",
+                            {podman_install_command(host_.read_file("/etc/os-release"))}, ""});
     }
-    if (*chosen == ContainerTool::Podman) {
-        const std::optional<bool> rootless = podman_info_rootless();
-        if (!rootless) {
-            return SetupFailure{"`podman info` fails",
-                                "Run `podman info` and fix the error it prints"};
-        }
-        if (*rootless && (!host_.in_group("video") || !host_.in_group("render"))) {
-            return SetupFailure{"The user's account is not in both video and render",
-                                "1. sudo usermod -aG video,render $USER\n"
-                                "2. Log out and back in"};
-        }
-        return std::nullopt;
+    if (expect_rootless() && (!host_.in_group("video") || !host_.in_group("render"))) {
+        failures.push_back({"device_groups", "Account is not in both video and render",
+                            {"sudo usermod -aG video,render $USER"}, kRelogin});
     }
-    if (!host_.docker_socket_accepts()) {
-        return SetupFailure{"The Docker daemon refuses the user's account",
-                            "1. sudo usermod -aG docker $USER\n"
-                            "2. Log out and back in"};
-    }
-    return std::nullopt;
+    return failures;
+}
+
+std::optional<SetupFailure> ContainerManager::check_podman() const {
+    if (tool() != ContainerTool::Podman || podman_info_rootless()) return std::nullopt;
+    return SetupFailure{"podman_info", "`podman info` fails",
+                        {"Run `podman info` and fix the error it prints"}, ""};
 }
 
 std::optional<SetupFailure> ContainerManager::check_selinux() const {
@@ -220,10 +241,54 @@ std::optional<SetupFailure> ContainerManager::check_selinux() const {
     const bool devices_allowed =
         host_.read_file("/sys/fs/selinux/booleans/container_use_devices").compare(0, 1, "0") != 0;
     if (enforcing && !devices_allowed) {
-        return SetupFailure{"SELinux is enforcing and the container_use_devices boolean is off",
-                            "sudo setsebool -P container_use_devices 1"};
+        return SetupFailure{"selinux",
+                            "SELinux is enforcing and the container_use_devices boolean is off",
+                            {"sudo setsebool -P container_use_devices 1"}, ""};
     }
     return std::nullopt;
+}
+
+std::vector<std::string> SetupReport::ids() const {
+    std::vector<std::string> ids;
+    for (const auto& failure : failures) ids.push_back(failure.id);
+    return ids;
+}
+
+std::string SetupReport::message() const {
+    std::string text;
+    for (const auto& failure : failures) {
+        if (!text.empty()) text += '\n';
+        text += failure.message;
+    }
+    return text;
+}
+
+std::string SetupReport::action() const {
+    std::vector<std::string> steps;
+    std::vector<std::string> applies;
+    for (const auto& failure : failures) {
+        steps.insert(steps.end(), failure.steps.begin(), failure.steps.end());
+        if (!failure.apply.empty() &&
+            std::find(applies.begin(), applies.end(), failure.apply) == applies.end()) {
+            applies.push_back(failure.apply);
+        }
+    }
+    steps.insert(steps.end(), applies.begin(), applies.end());
+    if (steps.size() == 1) return steps.front();
+    std::string text;
+    for (size_t i = 0; i < steps.size(); ++i) {
+        if (i > 0) text += '\n';
+        text += std::to_string(i + 1) + ". " + steps[i];
+    }
+    return text;
+}
+
+std::string SetupReport::text() const {
+    std::string text;
+    for (const auto& line : lines_of(message())) text += "\n  - " + line;
+    text += "\nTo fix it:";
+    for (const auto& line : lines_of(action())) text += "\n  " + line;
+    return text;
 }
 
 std::vector<std::string> ContainerManager::run_command(const ContainerRunSpec& spec) const {

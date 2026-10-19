@@ -40,13 +40,30 @@ struct ContainerRunSpec {
     std::vector<std::string> command;  // program and its arguments
 };
 
-// A failed setup check: `message` says what is missing and `action` holds the
-// commands that fix it, one step per line.
+// A failed setup check. `id` names the check for clients, `message` says what
+// is missing and `steps` are the commands that fix it. `apply` is the step that
+// makes a fix take effect, such as logging out and back in, which a report
+// lists once, after every other step.
 struct SetupFailure {
+    std::string id;
     std::string message;
-    std::string action;
+    std::vector<std::string> steps;
+    std::string apply;
+};
 
-    std::string text() const { return message + ". To fix it:\n" + action; }
+// Every setup step a container backend still needs, in the order the user
+// takes them.
+struct SetupReport {
+    std::vector<SetupFailure> failures;
+
+    bool empty() const { return failures.empty(); }
+    std::vector<std::string> ids() const;
+    // One failure's message per line.
+    std::string message() const;
+    // One step per line, numbered when there is more than one.
+    std::string action() const;
+    // The messages and steps as an indented list, for error text.
+    std::string text() const;
 };
 
 struct CommandResult {
@@ -62,6 +79,9 @@ struct ContainerHost {
     std::function<std::string(const std::string& group)> group_id;
     // True when /var/run/docker.sock accepts a connection from this process.
     std::function<bool()> docker_socket_accepts;
+    // The environment variable's value, or "" when it is unset.
+    std::function<std::string(const std::string& name)> env;
+    std::function<bool()> is_root;
     std::function<std::string(const std::string& path)> read_file;
     // Runs a command line and waits for it. Without `capture_stderr`, stderr
     // stays out of `output`, since Podman prints warnings there even when the
@@ -87,10 +107,14 @@ public:
     // rootful Podman or Docker, lemond connects at the container's address.
     bool rootless_podman() const;
 
-    // The first setup check that fails for a container backend, or nullopt
-    // when every check passes. Rerun on each call, so a fix takes effect
-    // without a restart.
-    std::optional<SetupFailure> check_setup() const;
+    // Every failed check that runs before the user enables container
+    // backends: the tool on PATH, then the account's access to it. These read
+    // only PATH, groups and sockets, so no container command runs before the
+    // user opts in. Rerun on each call, so a fix takes effect without a
+    // restart.
+    std::vector<SetupFailure> check_host() const;
+    // `podman info`, which runs only once container backends are enabled.
+    std::optional<SetupFailure> check_podman() const;
     // The SELinux check for a backend whose devices include /dev/kfd, or
     // nullopt when it passes.
     std::optional<SetupFailure> check_selinux() const;
@@ -148,6 +172,9 @@ private:
     // `podman info`'s answer, nullopt while it fails. Cached once it answers,
     // since setup checks run on every /system-info request.
     std::optional<bool> podman_info_rootless() const;
+    // `podman info`'s answer once it has given one. Before that, rootless
+    // unless CONTAINER_HOST points Podman elsewhere or lemond runs as root.
+    bool expect_rootless() const;
 
     ContainerHost host_;
     mutable std::mutex podman_mode_mutex_;

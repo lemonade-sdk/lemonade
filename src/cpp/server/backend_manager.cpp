@@ -167,7 +167,7 @@ void install_container_backend(const std::string& recipe, const std::string& bac
     }
     const auto& manager = utils::ContainerManager::global();
     if (auto failure = backends::container_setup_failure(recipe, backend)) {
-        throw std::runtime_error("Cannot install " + recipe + ":" + backend + ": " +
+        throw std::runtime_error("Cannot install " + recipe + ":" + backend + ":" +
                                  failure->text());
     }
 

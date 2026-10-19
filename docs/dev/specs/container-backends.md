@@ -268,21 +268,38 @@ Container backends are hidden on Windows and macOS.
 
 ### Setup Assistant
 
-The setup assistant tells the user which setup step is missing and how to fix it. While one of its checks fails, the container backend's state is `action_required`, with two fields:
+The setup assistant tells the user every setup step that is missing and how to fix it, at once. While any of its checks fails, the container backend's state is `action_required`, with three fields:
 
-- `message`: the check's "Fails when" text.
-- `action`: the commands that fix it.
+- `message`: each failed check's "Fails when" text, one per line.
+- `action`: the commands that fix them, one step per line, numbered when there is more than one.
+- `setup_checks`: the failed checks' ids, in the order of `message`.
 
-`/system-info` reports both fields. The Backend Manager panel in the desktop and web apps shows `message`, with a help button that copies `action`, and `lemonade backends` prints both. Checks rerun on each `/system-info` request, so the backend changes to `installable` as soon as a fix takes effect.
+The checks run in two groups:
+
+1. Before the user enables container backends: the install type's tool and access checks, then [Containers enabled](#enabling-container-backends). These read only `PATH`, the account's groups and the Docker socket, so no container command runs before the user opts in. All of them run, and every one that fails is reported.
+2. Once every check in the first group passes: Podman answers (`podman info`), then the [SELinux Check](#selinux-check) and the [Halogen Kernel Check](#halogen-kernel-check).
+
+`action` lists the install commands and group changes first, then `lemonade config set enable_containers=true`, and the step that makes group changes take effect (logging out and back in, or restarting the service) once, last.
+
+`/system-info` reports all three fields. The Backend Manager panel in the desktop and web apps shows `message`, with a help button that copies `action`, and `lemonade backends` prints `message` and `action` side by side, one problem and one step per line. Checks rerun on each `/system-info` request, so the backend changes to `installable` as soon as a fix takes effect.
 
 Each install type below lists its checks in the order they run, in one table per container tool. The `action` cells are the user's setup steps.
+
+| Check | id |
+| --- | --- |
+| Podman installed | `container_tool` |
+| Device nodes accessible | `device_groups` |
+| Docker reachable | `docker_access` |
+| Containers enabled | `enable_containers` |
+| Podman answers | `podman_info` |
+| SELinux | `selinux` |
 
 ### Enabling Container Backends
 
 Container backends start disabled on every install type, and the user enables them once per `lemond`. The `.deb` and `.rpm` packages pull in Podman by default, so a fresh install pulls and runs images only after the user opts in.
 
 - `config.json` gets a global key, `enable_containers`, set to `false` in `src/cpp/resources/defaults.json`.
-- `backends::container_setup_failure()` runs this check first, before the [SELinux Check](#selinux-check), the [Halogen Kernel Check](#halogen-kernel-check) and the checks for the install type. While it fails, `lemond` refuses to install the backend, which pulls its image, and to load its models, which starts its container:
+- `backends::container_setup_failure()` runs this check after the install type's tool and access checks, so the user installs prerequisites before being asked to opt in, and before Podman answers, the [SELinux Check](#selinux-check) and the [Halogen Kernel Check](#halogen-kernel-check). While it fails, `lemond` refuses to install the backend, which pulls its image, and to load its models, which starts its container:
 
   | Check | Fails when | `action` |
   | --- | --- | --- |
@@ -292,6 +309,7 @@ Container backends start disabled on every install type, and the user enables th
 
   > Container backends run images built by community developers, pinned by digest in each Lemonade release. Once they are enabled, every client that reaches this server's API can install and start them. Keep `host` on localhost, or set LEMONADE_API_KEY before serving on the network.
 
+- `lemonade backends install`, `lemonade run` and `lemonade load` read the backend's setup state before they install it or download a model for it. When `enable_containers` is the only failed check, they print the same warning and ask the same question, enable container backends on yes, and finish the command; `lemonade backends install --yes` skips the prompt. When other checks fail, they print every failed check and its steps, ending with "Then run this command again.", and exit with status 1 before downloading anything.
 - The Backend Manager in the desktop and web apps shows this check the way it shows every check: `message`, with a help button that copies `action`. The user enables container backends through the CLI and its warning.
 - `lemonade config set` sends the change through `POST /internal/set`, which requires `LEMONADE_ADMIN_API_KEY`, or `LEMONADE_API_KEY` when only that key is set. Enabling container backends leaves the image allowlist unchanged: it is compiled into `lemond` (see [`containers` Descriptor Field](#containers-descriptor-field)).
 
@@ -336,14 +354,31 @@ When the container tool is Podman, the checks are:
 | Check | Fails when | `action` |
 | --- | --- | --- |
 | Podman installed | `podman` is not on `PATH` | The install command for the host's `ID` |
-| Podman answers | `podman info` fails | Run `podman info` and fix the error it prints |
-| Device nodes accessible | Podman is rootless and the user's account is not in both `video` and `render` | 1. `sudo usermod -aG video,render $USER`<br>2. Log out and back in |
+| Device nodes accessible | Podman is rootless and the account is not in both `video` and `render` | 1. `sudo usermod -aG video,render $USER`<br>2. Log out and back in |
+| Podman answers | `podman info` fails, once container backends are enabled | Run `podman info` and fix the error it prints |
+
+When neither tool is installed, the user is told to install Podman, so Device nodes accessible runs as well. Before `podman info` has answered, Podman counts as rootful when `CONTAINER_HOST` is set or `lemond` runs as root, and rootless otherwise.
+
+On a host without either tool, with container backends still disabled, `lemonade backends install llamacpp:nathanw` prints:
+
+```
+Error: Cannot install llamacpp:nathanw:
+  - podman is not on PATH
+  - Account is not in both video and render
+  - enable_containers is false
+To fix it:
+  1. sudo apt install podman
+  2. sudo usermod -aG video,render $USER
+  3. lemonade config set enable_containers=true
+  4. Log out and back in
+Then run this command again.
+```
 
 When the container tool is Docker, the checks are:
 
 | Check | Fails when | `action` |
 | --- | --- | --- |
-| Docker reachable | The Docker daemon refuses the user's account | 1. `sudo usermod -aG docker $USER`<br>2. Log out and back in |
+| Docker reachable | The Docker daemon refuses the account | 1. `sudo usermod -aG docker $USER`<br>2. Log out and back in |
 
 ### `lemond` as a System Service
 

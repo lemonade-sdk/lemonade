@@ -1972,6 +1972,7 @@ curl "http://localhost:13305/v1/system-info"
         - `state` - Backend lifecycle state: `unsupported`, `installable`, `update_required`, or `installed`
         - `message` - Human-readable status text for GUI and CLI users. Required for `unsupported`, `installable`, and `update_required`; empty for `installed`.
         - `action` - Actionable user instruction string. For install/update cases this is typically an exact CLI command; for other states it may be empty or another actionable value (for example, a URL).
+        - `setup_checks` - For a container backend in the `action_required` state, the ids of its failed setup checks, in the order of `message`'s lines (for example `["container_tool", "device_groups", "enable_containers"]`). `message` then holds one failed check per line and `action` the numbered steps that fix them. See [Container Backends](../guide/configuration/container-backends.md).
         - `version` - Installed or configured backend version (when available)
         - `tier` - `core`, `experimental`, or `guest`. See [Backend Tiers and Formats](#backend-tiers-and-formats).
         - `format` - `native`, `python`, or `container`. See [Backend Tiers and Formats](#backend-tiers-and-formats).

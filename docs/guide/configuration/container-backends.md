@@ -10,30 +10,26 @@ Container backends run on Linux with Podman or Docker. Lemonade uses Podman when
 
 ## Setup
 
-Container backends start disabled. Enable them once, after reading the warning the command prints:
-
-```bash
-lemonade config set enable_containers=true
-```
-
-Pass `--yes` to skip the confirmation in scripts.
-
 When `lemond` runs under your own account, from a shell, a `systemctl --user` unit, or an app that embeds it, Podman runs containers as that account. Set `CONTAINER_HOST` to root's Podman socket to run them with rootful Podman instead.
 
 **With Podman:**
 
 1. Install Podman, for example with `sudo apt install podman`, `sudo dnf install podman` or `sudo pacman -S podman`.
 2. Add your account to `video` and `render`: `sudo usermod -aG video,render $USER`.
-3. Log out and back in.
+3. Enable container backends, after reading the warning the command prints: `lemonade config set enable_containers=true`.
+4. Log out and back in.
 
 **With Docker:**
 
 1. Add your account to the `docker` group: `sudo usermod -aG docker $USER`.
-2. Log out and back in.
+2. Enable container backends: `lemonade config set enable_containers=true`.
+3. Log out and back in.
+
+Container backends start disabled. Pass `--yes` to `lemonade config set enable_containers=true` to skip the confirmation in scripts. If enabling them is the only step left, `lemonade backends install` and `lemonade run` ask for it themselves.
 
 **With SELinux enforcing**, as on Fedora, ROCm backends also need containers allowed to map GPU devices: `sudo setsebool -P container_use_devices 1`.
 
-Until setup is complete, the backend's state is `action_required`. `lemonade backends` prints the missing step and the commands that complete it, and the Backend Manager shows the same. The state updates as soon as the step takes effect.
+Until setup is complete, the backend's state is `action_required`. `lemonade backends` lists every missing step and the commands that complete them, `lemonade backends install` and `lemonade run` print the same list without downloading anything, and the Backend Manager shows the same. The state updates as soon as a step takes effect.
 
 ## Install and Run
 

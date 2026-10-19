@@ -133,22 +133,30 @@ const BackendOps* default_backend_ops() {
     return &kDefault;
 }
 
-std::optional<utils::SetupFailure> container_setup_failure(const std::string& recipe,
-                                                           const std::string& backend) {
+std::optional<utils::SetupReport> container_setup_failure(const std::string& recipe,
+                                                          const std::string& backend) {
+    const auto& manager = utils::ContainerManager::global();
+    utils::SetupReport report;
+    report.failures = manager.check_host();
     const auto* cfg = RuntimeConfig::global();
     if (!cfg || !cfg->enable_containers()) {
-        return utils::SetupFailure{"enable_containers is false",
-                                   "lemonade config set enable_containers=true"};
+        report.failures.push_back({"enable_containers", "enable_containers is false",
+                                   {"lemonade config set enable_containers=true"}, ""});
     }
-    const auto& manager = utils::ContainerManager::global();
-    const ContainerPolicy* policy = BackendUtils::get_container_policy(recipe, backend);
-    if (policy && std::find(policy->devices.begin(), policy->devices.end(), "/dev/kfd") !=
-                      policy->devices.end()) {
-        if (auto failure = manager.check_selinux()) {
-            return failure;
+    if (report.empty()) {
+        if (auto failure = manager.check_podman()) {
+            report.failures.push_back(*failure);
+        }
+        const ContainerPolicy* policy = BackendUtils::get_container_policy(recipe, backend);
+        if (policy && std::find(policy->devices.begin(), policy->devices.end(), "/dev/kfd") !=
+                          policy->devices.end()) {
+            if (auto failure = manager.check_selinux()) {
+                report.failures.push_back(*failure);
+            }
         }
     }
-    return manager.check_setup();
+    if (report.empty()) return std::nullopt;
+    return report;
 }
 
 } // namespace backends

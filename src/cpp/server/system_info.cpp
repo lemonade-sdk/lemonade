@@ -662,8 +662,9 @@ static bool mark_container_setup(json& status, const std::string& recipe,
     const auto failure = backends::container_setup_failure(recipe, backend);
     if (!failure) return false;
     status["state"] = "action_required";
-    status["message"] = failure->message;
-    status["action"] = failure->action;
+    status["message"] = failure->message();
+    status["action"] = failure->action();
+    status["setup_checks"] = failure->ids();
     return true;
 }
 

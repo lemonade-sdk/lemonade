@@ -166,11 +166,12 @@ public:
 // Shared default ops instance for backends that override nothing.
 const BackendOps* default_backend_ops();
 
-// The first setup check that fails for the container backend `recipe:backend`,
-// or nullopt: enable_containers, then the SELinux check when its devices
-// include /dev/kfd, then the checks for its install type.
-std::optional<utils::SetupFailure> container_setup_failure(const std::string& recipe,
-                                                           const std::string& backend);
+// Every setup step the container backend `recipe:backend` still needs, or
+// nullopt when it is ready: the host checks and enable_containers together,
+// then, once those pass, `podman info` and the SELinux check when its devices
+// include /dev/kfd.
+std::optional<utils::SetupReport> container_setup_failure(const std::string& recipe,
+                                                          const std::string& backend);
 
 } // namespace backends
 } // namespace lemon

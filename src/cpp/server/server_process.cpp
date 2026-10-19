@@ -110,7 +110,7 @@ std::string ContainerProcess::start(const ServerCommand& command) {
 #endif
     const auto& manager = ContainerManager::global();
     if (auto failure = backends::container_setup_failure(recipe_, backend_)) {
-        throw std::runtime_error(recipe_ + ":" + backend_ + " cannot start: " + failure->text());
+        throw std::runtime_error(recipe_ + ":" + backend_ + " cannot start:" + failure->text());
     }
     if (!ContainerManager::allowed_image(policy_.image)) {
         throw std::runtime_error(recipe_ + ":" + backend_ + " names the image " + policy_.image +
