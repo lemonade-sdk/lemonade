@@ -3,6 +3,7 @@
 #include "lemon/backends/backend_ops.h"
 #include "lemon/backends/configured/backend_definition.h"
 
+#include <functional>
 #include <string_view>
 #include <variant>
 
@@ -13,12 +14,20 @@ struct LaunchHookContext {
     const ModelInfo& model;
     const std::string& category;
 };
-enum class HookStage { Artifacts, Request, Response, Launch };
+struct OperationHookContext {
+    const json& values;
+    const std::string& category;
+    int port;
+    std::string base_url;
+    std::function<json(const std::string&, const json&, long)> post_json;
+};
+enum class HookStage { Artifacts, Request, Response, Launch, Operation };
 using ArtifactHook = const BackendOps* (*)();
 using RequestHook = json (*)(json request);
 using ResponseHook = json (*)(json response, const json& request, const std::string& model_name);
 using LaunchHook = json (*)(const LaunchHookContext& context);
-using HookTarget = std::variant<ArtifactHook, RequestHook, ResponseHook, LaunchHook>;
+using OperationHook = json (*)(const OperationHookContext& context, const json& request);
+using HookTarget = std::variant<ArtifactHook, RequestHook, ResponseHook, LaunchHook, OperationHook>;
 struct HookRegistration {
     std::string id;
     HookStage stage;

@@ -225,14 +225,14 @@ public:
 void check_rejections() {
     auto kokoro = backends::kokoro::create(backends::BackendContext{"error"});
     backends::WhisperServer whisper("error", nullptr, nullptr);
-    backends::MoonshineServer moonshine("error", nullptr, nullptr);
+    auto moonshine = backends::moonshine::create(backends::BackendContext{"error"});
     backends::SDServer sd("error", nullptr, nullptr);
     backends::TheNoiseServer noise("error", nullptr, nullptr);
     for (const auto operation : {Op::ChatCompletion, Op::Completion, Op::Responses}) {
         const std::string label = operation == Op::ChatCompletion ? "chat completion" : operation == Op::Completion ? "text completion" : "responses";
         check(kokoro->dispatch_completion_operation(operation, {}) == unsupported("Kokoro does not support text completion. Use audio speech endpoints instead.", true), "exact Kokoro exceptional rejection");
         check(whisper.dispatch_completion_operation(operation, {}) == unsupported("Whisper models do not support " + label + ". Use audio transcription endpoints instead.", true), "exact Whisper exceptional rejection");
-        check(moonshine.dispatch_completion_operation(operation, {}) == unsupported("Moonshine models do not support " + label + ". Use audio transcription endpoints instead.", true), "exact Moonshine exceptional rejection");
+        check(moonshine->dispatch_completion_operation(operation, {}) == unsupported("Moonshine models do not support " + label + ". Use audio transcription endpoints instead.", true), "exact Moonshine exceptional rejection");
         const auto title = operation == Op::ChatCompletion ? "Chat completion" : operation == Op::Completion ? "Text completion" : "Responses";
         check(sd.dispatch_completion_operation(operation, {}) == unsupported(std::string(title) + " not supported by sd-cpp (image generation model)"), "SD rejection retains absence of code field");
         check(noise.dispatch_completion_operation(operation, {}) == unsupported(std::string(title) + " not supported by thenoise (image generation model)"), "TheNoise rejection retains absence of code field");
@@ -340,7 +340,7 @@ void check_whisper_wire(FakeHttpBackend& upstream) {
 
 void check_flm_and_moonshine_wire(FakeHttpBackend& upstream) {
     LocalServer<backends::FastFlowLMServer> flm(upstream.port(), ModelType::TRANSCRIPTION);
-    LocalServer<backends::MoonshineServer> moonshine(upstream.port(), ModelType::TRANSCRIPTION);
+    auto moonshine = configured(backends::moonshine::create(backends::BackendContext{"error"}), upstream.port(), ModelType::TRANSCRIPTION);
     const std::string binary_audio("RIFF\0\xff\r\nWAVE", 12);
     const std::vector<std::pair<std::string, std::string>> formats = {
         {"fixture.mp3", "audio/mpeg"}, {"fixture.wav", "audio/wav"}, {"fixture.m4a", "audio/mp4"},
@@ -348,7 +348,7 @@ void check_flm_and_moonshine_wire(FakeHttpBackend& upstream) {
         {"fixture.unknown", "audio/wav"}, {"fixture.MP3", "audio/wav"}, {"fixture.FlAc", "audio/wav"},
         {"fixture", "audio/wav"}
     };
-    for (auto* server : std::vector<WrappedServer*>{&flm, &moonshine}) {
+    for (auto* server : std::vector<WrappedServer*>{&flm, moonshine.get()}) {
         auto* adapter = operation_adapter<ITranscriptionServer>(*server, Op::Transcription, Delivery::Buffered, ModelType::TRANSCRIPTION);
         check(adapter != nullptr, "FLM/Moonshine transcription adapter available on CPU fixture");
         if (!adapter) continue;
@@ -418,10 +418,10 @@ void check_default_rejection_framing() {
 void check_rejection_transport_isolation(FakeHttpBackend& upstream) {
     auto kokoro = configured(backends::kokoro::create(backends::BackendContext{"error"}), upstream.port(), ModelType::TTS);
     LocalServer<backends::WhisperServer> whisper(upstream.port(), ModelType::TRANSCRIPTION);
-    LocalServer<backends::MoonshineServer> moonshine(upstream.port(), ModelType::TRANSCRIPTION);
+    auto moonshine = configured(backends::moonshine::create(backends::BackendContext{"error"}), upstream.port(), ModelType::TRANSCRIPTION);
     LocalServer<backends::SDServer> sd(upstream.port(), ModelType::IMAGE);
     LocalServer<backends::TheNoiseServer> noise(upstream.port(), ModelType::IMAGE);
-    for (auto* server : std::vector<WrappedServer*>{kokoro.get(), &whisper, &moonshine, &sd, &noise}) {
+    for (auto* server : std::vector<WrappedServer*>{kokoro.get(), &whisper, moonshine.get(), &sd, &noise}) {
         const auto before = upstream.request_count();
         for (const auto operation : {Op::ChatCompletion, Op::Completion, Op::Responses}) {
             check(!server->supports_operation(operation, Delivery::Buffered, server->get_model_type()) &&

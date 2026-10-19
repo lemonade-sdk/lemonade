@@ -695,7 +695,8 @@
           "items": {
             "enum": [
               "x86_64",
-              "aarch64"
+              "aarch64",
+              ""
             ]
           }
         },
@@ -841,6 +842,14 @@
           "items": {
             "type": "string"
           }
+        },
+        "files_from": {
+          "enum": [
+            "variant_directory"
+          ]
+        },
+        "files_error": {
+          "$ref": "#/$defs/expression"
         },
         "missing_error": {
           "$ref": "#/$defs/expression"
@@ -1018,6 +1027,32 @@
               },
               "error": {
                 "type": "string"
+              },
+              "strategy": {
+                "enum": [
+                  "standard",
+                  "probe",
+                  "offset"
+                ]
+              },
+              "span": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 16
+              },
+              "attempts": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1000
+              },
+              "base": {
+                "type": "string",
+                "minLength": 1
+              },
+              "offset": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 15
               }
             },
             "required": [

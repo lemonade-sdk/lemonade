@@ -1,5 +1,6 @@
 #pragma once
 
+#include "lemon/backends/configured/backend_hook_registry.h"
 #include "lemon/backends/configured/backend_transport.h"
 #include "lemon/backends/configured/configured_backend_entry.h"
 #include "lemon/backends/configured/launch_planner.h"
@@ -11,6 +12,7 @@ struct ConfiguredServerServices {
     std::function<std::unique_ptr<ServerProcess>(ProcessOutput, const std::string&)> make_process;
 };
 class ConfiguredServer final : public WrappedServer, public IEmbeddingsServer, public IRerankingServer,
+                               public ITranscriptionServer, public IStreamingTranscriptionServer,
                                public ISlotsServer, public ITokenizerServer, public ITextToSpeechServer,
                                public IAudioGenerationServer {
 public:
@@ -25,6 +27,8 @@ public:
     json get_slots() override;
     json slots_action(int slot_id, const std::string& action, const json& request_body) override;
     json tokenize(const json& request_body) override;
+    json audio_transcriptions(const json& request) override;
+    std::string get_streaming_address() override;
     void audio_speech(const json& request, httplib::DataSink& sink) override;
     void audio_generations(const json& request, httplib::DataSink& sink) override;
     std::vector<std::string> supported_audio_formats() const override;
@@ -36,6 +40,7 @@ private:
     const OperationProgram* program(BackendOperation operation, OperationDelivery delivery) const;
     const OperationProgram& bound(BackendOperation operation) const;
     const OperationProgram* media(OperationDelivery delivery) const;
+    OperationHookContext hook_context();
     json send_json(const MappedRequest& mapped, const json& request);
     json send_completion(BackendOperation operation, const json& request);
     const std::shared_ptr<const ConfiguredBackendEntry> entry_;

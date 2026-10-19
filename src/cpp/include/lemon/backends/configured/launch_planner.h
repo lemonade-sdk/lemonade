@@ -39,6 +39,7 @@ public:
     virtual void install_backend(const std::string& public_recipe, const std::string& backend) = 0;
     virtual std::string managed_binary(const BackendSpec& spec, const std::string& backend) const = 0;
     virtual int allocate_port() = 0;
+    virtual int find_free_port(int start) = 0;
     virtual std::vector<std::pair<std::string, std::string>> environment(
         const std::string& preset, const std::string& executable, const std::string& backend, const std::string& log_category) const = 0;
     virtual PlatformInfo platform() const = 0;
@@ -55,6 +56,7 @@ public:
     void install_backend(const std::string& recipe, const std::string& backend) override { effects_.binary.install(recipe, backend); }
     std::string managed_binary(const BackendSpec& spec, const std::string& backend) const override { return effects_.binary.managed_path(spec, backend); }
     int allocate_port() override { return effects_.allocate_port(); }
+    int find_free_port(int start) override { return effects_.find_free_port(start); }
     std::vector<std::pair<std::string, std::string>> environment(const std::string& preset, const std::string& executable,
         const std::string& backend, const std::string& log_category) const override;
     PlatformInfo platform() const override { return native_platform(); }

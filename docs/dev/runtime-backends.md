@@ -37,7 +37,8 @@ administrator inputs; schema discovery does not install or replace them.
 ## Built-in configured backends
 
 ThinkSound (`thinksound`), DS4 (`ds4`), RyzenAI (`ryzenai-llm`), HRX
-(`llamacpp-hrx`) and Kokoro (`kokoro`) have no engine-specific server class. They run only through `ConfiguredServer`, from the
+(`llamacpp-hrx`), Kokoro (`kokoro`) and Moonshine (`moonshine`) have no
+engine-specific server class. They run only through `ConfiguredServer`, from the
 definitions embedded at build time from `src/cpp/resources/backends/<stem>.json`.
 There is no environment switch and no fallback implementation; the former
 `LEMONADE_THINKSOUND_CONFIGURED`, `LEMONADE_DS4_CONFIGURED` and
@@ -46,7 +47,7 @@ source of truth for its launch, install, artifact and operation behavior, and it
 `rationale` records explain the non-obvious choices (DS4 SSD streaming and
 `/v1/models` readiness, the ThinkSound companion files, RyzenAI sentinel order,
 the HRX host requirement and `--parallel 1` default, the Kokoro index file and
-streaming formats).
+streaming formats, the Moonshine port triple and architecture fallback).
 An embedded definition that fails validation stops registration at startup.
 
 `src/cpp/server/backends/<stem>/<stem>_server.cpp` is only the registration
@@ -62,6 +63,7 @@ external definitions can never request:
 | `ryzenai-llm` | `BuiltinLaunchCompatibility{{}, false, load_log}` | Its load log keeps the loading line, the resolved executable, the model path and the quoted command at DEBUG, with no INFO lines. |
 | `llamacpp-hrx` | `BuiltinLaunchCompatibility{{}, false, load_log}` | Its load log keeps the INFO loading line, adds the DEBUG per-model settings line and has no startup line. |
 | `kokoro` | `TrustedCompatibility::LegacyNonChatSse` and `BuiltinLaunchCompatibility{{}, false, load_log}` | Keeps the legacy-forwarding chat streams next to speech. Its load log keeps the loading line and logs the port once it is allocated and the POSIX loader path once the environment is resolved, at INFO. |
+| `moonshine` | `TrustedCompatibility::LegacyNonChatSse` and `BuiltinLaunchCompatibility{DEVICE_CPU, false, load_log}` | Keeps the legacy-forwarding chat streams, sets the CPU device before installation, and logs the per-model settings, model, executable and both ports at INFO and the custom arguments at DEBUG. |
 
 A `BuiltinLoadLog` replaces `ConfiguredServer`'s generic INFO `Loading model:` and
 `Starting <program> on port <port>` lines with the engine's own messages; its
@@ -74,7 +76,8 @@ The compiled descriptors in `include/lemon/backends/<stem>/<stem>.h` remain: the
 carry the recipe, option, CLI flag and support metadata linked into both
 `lemonade` and `lemond`. The oracle tests compare every configured descriptor
 field with its compiled descriptor. `capabilities()` in `<stem>_server.h` is a
-literal (`CAP_AUDIO_GENERATION` for ThinkSound, `CAP_TTS` for Kokoro, `0` for DS4,
+literal (`CAP_AUDIO_GENERATION` for ThinkSound, `CAP_TTS` for Kokoro,
+`CAP_TRANSCRIPTION | CAP_STREAMING_TRANSCRIPTION` for Moonshine, `0` for DS4,
 RyzenAI and HRX) because
 the header-only mode contract test cannot read a definition, and every engine
 shares the single `ConfiguredServer` type, which inherits `IAudioGenerationServer`
@@ -86,7 +89,8 @@ embeddings, reranking, slots and tokenize endpoints for every model mode, as its
 former llama.cpp subclass did, but declares only `chat`, so its export stays `0`.
 
 The CPU oracle tests (`test_thinksound_oracle`, `test_ds4_oracle`,
-`test_ryzenai_oracle`, `test_hrx_oracle`, `test_kokoro_oracle`, `test_configured_execution`,
+`test_ryzenai_oracle`, `test_hrx_oracle`, `test_kokoro_oracle`, `test_moonshine_oracle`,
+`test_configured_execution`,
 `test_configured_llm_execution`) drive the registered entries through fake
 effects, fake processes and loopback HTTP fixtures, against hand-authored
 expectations for argv, environment order, readiness, error envelopes,
@@ -108,6 +112,12 @@ them, so installing a hook changes the catalog's feature-manifest ID.
 | `llamacpp.tool_schema_limits` | `request` | `operations[].request.hooks` | Removes tool-schema string and array bounds that llama.cpp's grammar cannot repeat. |
 | `llamacpp.client_model` | `response` | `operations[].response.hooks` (JSON transports only) | Replaces an echoed `model` with the request's model, or the loaded model name. |
 | `kokoro.voice_index` | `launch` | `hooks.launch` with a `hook` phase in `prepare_order` | Logs and reads the resolved `index.json` and exposes it as `/launch/hook`; argv joins its `model` and `voices` entries with `path_join`. |
+| `moonshine.model_arch` | `launch` | `hooks.launch` | Returns the registry's `moonshine_arch` extra, else 2, 4 or 5 from the checkpoint name (`tiny`, `small`, otherwise). |
+| `moonshine.transcription` | `operation` (`transcription`) | `operations[].handler` | Posts the audio as multipart to `/inference` on the backend port and maps its errors to the transcription error envelope. |
+
+An operation hook replaces the transport for one buffered operation; the
+manifest names the operation it serves. Engine-specific hooks live next to their
+bridge as `<stem>_hooks.cpp`.
 
 Request hooks run in order after `remove` and `set`. A streaming operation with
 request hooks forwards a body that is not JSON unchanged; otherwise it forwards
@@ -139,6 +149,15 @@ Other launch primitives used by built-ins:
   completion, completion and responses with a literal message; the envelope
   keeps `unsupported_operation` and `model_not_applicable`.
 - `launch.backend.fixed` may name a backend per operating system.
+- Ports use `standard` allocation (the server's port chooser), `probe` (the first
+  free port from 8001 whose `span - 1` successors are also free, retried
+  `attempts` times from the next candidate) or `offset` (an earlier probed port
+  plus an offset inside its span).
+- `streaming_transcription` binds a `realtime` transport with method `TCP` on any
+  declared port; its address is `tcp://127.0.0.1:<port>` once the port exists.
+- `files_from: "variant_directory"` downloads every file under the variant's
+  directory (case-insensitive); an empty selection raises `files_error`.
+- Install cases may list `""` under `machine_arch` for an unrecognized host.
 - `cache_resolution: "sentinel_file"` resolves to the first sentinel file itself,
   not its directory.
 - Expressions `when` (a value only when its condition holds), `parent_path` and

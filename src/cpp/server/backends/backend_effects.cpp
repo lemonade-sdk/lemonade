@@ -3,6 +3,7 @@
 #include "lemon/backends/backend_utils.h"
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
+#include "lemon/utils/process_manager.h"
 
 #include <cstdlib>
 #include <filesystem>
@@ -21,6 +22,7 @@ BackendEffects production_backend_effects(BackendManager* manager, std::function
     effects.supported_backends = [](const std::string& recipe) { return SystemInfo::get_supported_backends(recipe).backends; };
     effects.validate_backend = RuntimeConfig::validate_backend_choice;
     effects.allocate_port = std::move(allocate_port);
+    effects.find_free_port = [](int start) { return utils::ProcessManager::find_free_port(start); };
     effects.rocm_arch = SystemInfo::get_rocm_arch;
     effects.runtime_directories = [](const std::string& arch) {
         return BackendUtils::join_runtime_dirs(BackendUtils::get_therock_lib_paths(arch));

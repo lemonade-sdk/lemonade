@@ -36,7 +36,7 @@ struct FormatMetadata {
 };
 struct OperationProgram {
     OperationDescription description;
-    std::string kind, method, path, port, codec;
+    std::string kind, method, path, port, codec, handler;
     long timeout_seconds = 0;
     std::vector<std::string> formats;
     std::map<std::string, FormatMetadata> format_metadata;

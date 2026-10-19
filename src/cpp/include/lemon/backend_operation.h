@@ -83,6 +83,11 @@ struct OperationBinding {
     std::string_view codec;
 };
 
+struct OperationHandlerIdentity {
+    std::string_view handler;
+    std::string_view codec;
+};
+
 enum class LegacyOperationProfile : uint8_t {
     LlamaCpp,
     Ds4,
@@ -91,7 +96,6 @@ enum class LegacyOperationProfile : uint8_t {
     Cloud,
     FastFlowLM,
     Whisper,
-    Moonshine,
     StableDiffusion,
     TheNoise,
     OnnxRuntime,
@@ -103,6 +107,7 @@ enum class LegacyOperationProfile : uint8_t {
 };
 
 void validate_operation_binding_signatures(const std::vector<OperationBinding>& bindings, bool compiled_compatibility);
+bool operation_handler_identity(BackendOperation operation, OperationDelivery delivery, OperationHandlerIdentity& identity) noexcept;
 std::string_view backend_operation_name(BackendOperation operation) noexcept;
 bool parse_backend_operation(std::string_view name, BackendOperation& operation) noexcept;
 bool valid_operation_delivery(BackendOperation operation, OperationDelivery delivery) noexcept;

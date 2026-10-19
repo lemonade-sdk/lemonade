@@ -4,6 +4,7 @@
 #include "lemon/utils/path_utils.h"
 
 #include <algorithm>
+#include <cctype>
 #include <filesystem>
 
 namespace lemon::backends {
@@ -66,6 +67,20 @@ std::string ConfiguredBackendOps::find_imported_checkpoint(const std::string& im
 }
 std::optional<std::vector<std::string>> ConfiguredBackendOps::select_checkpoint_files(const std::string& variant, const std::vector<std::string>& repository_files) const {
     const auto artifacts = definition_->records.value("artifacts", json::object());
+    for (const auto& [name, artifact] : artifacts.items()) {
+        if (artifact["role"] != "main" || !artifact.contains("files_from")) continue;
+        const auto prefix = variant.empty() || variant.back() == '/' ? variant : variant + "/";
+        std::vector<std::string> result;
+        for (const auto& file : repository_files) {
+            if (file.size() >= prefix.size() && std::equal(prefix.begin(), prefix.end(), file.begin(), [](char left, char right) {
+                return std::tolower(static_cast<unsigned char>(left)) == std::tolower(static_cast<unsigned char>(right));
+            })) result.push_back(file);
+        }
+        json::json_pointer pointer("/artifacts");
+        pointer /= name; pointer /= "files_error";
+        if (result.empty()) throw std::runtime_error(definition_->required_value(pointer.to_string(), {{"model", {{"variant", variant}}}}).get<std::string>());
+        return result;
+    }
     for (const auto& [name, artifact] : artifacts.items()) {
         if (artifact["role"] != "main" || !artifact.contains("files")) continue;
         std::vector<std::string> result;

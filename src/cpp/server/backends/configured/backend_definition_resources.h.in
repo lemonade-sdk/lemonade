@@ -7,4 +7,5 @@ inline constexpr char k_ds4_definition[] = R"definition(@DS4_DEFINITION@)definit
 inline constexpr char k_thinksound_definition[] = R"definition(@THINKSOUND_DEFINITION@)definition";
 inline constexpr char k_hrx_definition[] = R"definition(@HRX_DEFINITION@)definition";
 inline constexpr char k_kokoro_definition[] = R"definition(@KOKORO_DEFINITION@)definition";
+inline constexpr char k_moonshine_definition[] = R"definition(@MOONSHINE_DEFINITION@)definition";
 }

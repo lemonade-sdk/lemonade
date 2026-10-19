@@ -7,22 +7,18 @@ namespace {
 std::string effective_level(const ConfiguredBackendEntry& entry, const std::string& level) {
     return entry.definition->records["metadata"]["log_level_policy"] == "debug_flag" && level != "debug" ? "info" : level;
 }
-std::string_view handler(BackendOperation operation, OperationDelivery delivery) {
-    const bool buffered = delivery == OperationDelivery::Buffered;
-    switch (operation) {
-        case BackendOperation::ChatCompletion: return buffered ? "chat.buffered" : "chat.streaming";
-        case BackendOperation::Completion: return buffered ? "completion.buffered" : "completion.streaming";
-        case BackendOperation::Responses: return buffered ? "responses.buffered" : "responses.streaming";
-        case BackendOperation::Embeddings: if (buffered) return "embeddings"; break;
-        case BackendOperation::Reranking: if (buffered) return "reranking"; break;
-        case BackendOperation::TextToSpeech: return buffered ? "speech.buffered" : "speech.streaming";
-        case BackendOperation::AudioGeneration: if (buffered) return "audio"; break;
-        case BackendOperation::Slots: if (buffered) return "slots"; break;
-        case BackendOperation::SlotAction: if (buffered) return "slots.action"; break;
-        case BackendOperation::Tokenize: if (buffered) return "tokenize"; break;
-        default: break;
-    }
-    throw std::invalid_argument("Configured operation adapter is not installed");
+OperationHandlerIdentity identity(BackendOperation operation, OperationDelivery delivery) {
+    OperationHandlerIdentity result;
+    if (!operation_handler_identity(operation, delivery, result)) throw std::invalid_argument("Configured operation adapter is not installed");
+    return result;
+}
+bool executable(const OperationProgram& program) {
+    const auto operation = program.description.operation;
+    if (!program.handler.empty()) return program.kind.empty();
+    if (operation == BackendOperation::AudioGeneration || operation == BackendOperation::TextToSpeech) return program.kind == "http_bytes" && program.codec == "raw_bytes.v1";
+    if (operation == BackendOperation::StreamingTranscription) return program.kind == "realtime" && program.codec == "jsonl.v1" && program.method == "TCP";
+    if (program.description.delivery != OperationDelivery::Buffered) return program.kind == "http_sse" && program.codec == "openai_sse.v1";
+    return program.kind == "http_json" && program.codec == "json.v1" && program.method == (operation == BackendOperation::Slots ? "GET" : "POST");
 }
 const std::pair<BackendOperation, std::string_view> endpoints[] = {
     {BackendOperation::ChatCompletion, "/v1/chat/completions"},
@@ -35,19 +31,14 @@ std::vector<OperationBinding> configured_operation_bindings(const BackendDefinit
     std::vector<OperationBinding> bindings;
     for (const auto& program : definition.operations) {
         const auto& description = program.description;
-        const auto id = handler(description.operation, description.delivery);
-        const bool buffered = description.delivery == OperationDelivery::Buffered;
-        const bool audio = description.operation == BackendOperation::AudioGeneration || description.operation == BackendOperation::TextToSpeech;
-        const bool executable = audio ? program.kind == "http_bytes" && program.codec == "raw_bytes.v1" :
-            buffered ? program.kind == "http_json" && program.codec == "json.v1" && program.method == (description.operation == BackendOperation::Slots ? "GET" : "POST") :
-            program.kind == "http_sse" && program.codec == "openai_sse.v1";
-        if (!executable) throw std::invalid_argument("Configured transport signature is not installed");
-        bindings.push_back({description, id, audio ? "media" : buffered ? "json" : "sse"});
+        if (!executable(program)) throw std::invalid_argument("Configured transport signature is not installed");
+        const auto handler = identity(description.operation, description.delivery);
+        bindings.push_back({description, handler.handler, handler.codec});
     }
     const bool compatibility = trusted == TrustedCompatibility::LegacyNonChatSse;
     if (compatibility) {
         std::vector<OperationBinding> legacy;
-        for (const auto& [operation, endpoint] : endpoints) legacy.push_back({{operation, OperationDelivery::Streaming, k_all_operation_model_types, OperationProvenance::LegacyForwarding}, handler(operation, OperationDelivery::Streaming), "sse"});
+        for (const auto& [operation, endpoint] : endpoints) legacy.push_back({{operation, OperationDelivery::Streaming, k_all_operation_model_types, OperationProvenance::LegacyForwarding}, identity(operation, OperationDelivery::Streaming).handler, "sse"});
         bindings.insert(bindings.begin(), legacy.begin(), legacy.end());
     }
     validate_operation_binding_signatures(bindings, compatibility);
@@ -69,6 +60,8 @@ ConfiguredServer::ConfiguredServer(std::shared_ptr<const ConfiguredBackendEntry>
     adapters.completion = this;
     adapters.embeddings = this;
     adapters.reranking = this;
+    adapters.transcription = this;
+    adapters.streaming_transcription = this;
     adapters.slots = this;
     adapters.tokenizer = this;
     adapters.text_to_speech = this;
@@ -155,6 +148,20 @@ json ConfiguredServer::slots_action(int slot_id, const std::string& action, cons
     return send_json(mapped, request_body);
 }
 json ConfiguredServer::tokenize(const json& request_body) { return send_json(RequestMapper().map(bound(BackendOperation::Tokenize), mapping_, request_body), request_body); }
+OperationHookContext ConfiguredServer::hook_context() {
+    return {mapping_.values, entry_->definition->records["metadata"]["log_category"].get_ref<const std::string&>(), get_backend_port(), get_base_url(),
+        [this](const std::string& endpoint, const json& body, long timeout) { return WrappedServer::forward_request(endpoint, body, timeout); }};
+}
+json ConfiguredServer::audio_transcriptions(const json& request) {
+    const auto& selected = bound(BackendOperation::Transcription);
+    return installed_backend_hooks().target<OperationHook>(selected.handler, HookStage::Operation)(hook_context(), request);
+}
+std::string ConfiguredServer::get_streaming_address() {
+    const auto* selected = program(BackendOperation::StreamingTranscription, OperationDelivery::Realtime);
+    if (!selected) throw std::invalid_argument("Streaming transcription adapter is not bound");
+    const json::json_pointer port("/launch/ports/" + selected->port);
+    return mapping_.values.contains(port) ? "tcp://127.0.0.1:" + std::to_string(mapping_.values.at(port).get<int>()) : "";
+}
 const OperationProgram* ConfiguredServer::media(OperationDelivery delivery) const {
     if (const auto* speech = program(BackendOperation::TextToSpeech, delivery)) return speech;
     return delivery == OperationDelivery::Buffered ? program(BackendOperation::AudioGeneration, delivery) : nullptr;

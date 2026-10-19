@@ -5,7 +5,7 @@
 namespace lemon::backends {
 
 struct InstalledHook {
-    std::string id, stage;
+    std::string id, stage, operation;
 };
 
 std::string schema_digest(const std::string& text);

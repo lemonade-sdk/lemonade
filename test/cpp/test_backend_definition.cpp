@@ -123,14 +123,15 @@ int main() {
     const auto& manifest = installed_hook_manifest();
     const auto& installed = installed_backend_hooks().registrations();
     const std::vector<std::pair<std::string, std::string>> expected_hooks = {{"llamacpp.gguf", "artifacts"}, {"llamacpp.max_tokens_alias", "request"},
-        {"llamacpp.tool_schema_limits", "request"}, {"llamacpp.client_model", "response"}, {"kokoro.voice_index", "launch"}};
+        {"llamacpp.tool_schema_limits", "request"}, {"llamacpp.client_model", "response"}, {"kokoro.voice_index", "launch"},
+        {"moonshine.model_arch", "launch"}, {"moonshine.transcription", "operation"}};
     bool agree = manifest.size() == installed.size() && manifest.size() == expected_hooks.size();
     for (size_t i = 0; agree && i < manifest.size(); ++i) {
         agree = manifest[i].id == installed[i].id && manifest[i].stage == hook_stage_name(installed[i].stage) && manifest[i].id == expected_hooks[i].first && manifest[i].stage == expected_hooks[i].second;
     }
     check(agree, "validator hook manifest names exactly the installed compiled hooks and stages");
     json features = json::array();
-    for (const auto& hook : manifest) features.push_back(hook.stage + ":" + hook.id);
+    for (const auto& hook : manifest) features.push_back(hook.stage + ":" + hook.id + (hook.operation.empty() ? "" : ":" + hook.operation));
     check(installed_definition_features()["hooks"] == features, "feature manifest lists every installed hook");
     const auto request_hook = [&](const json& selection) { return [selection](auto& doc) { doc["operations"][0]["request"]["hooks"] = json::array({selection}); }; };
     malformed(request_hook({{"id", "absent.v1"}, {"params", json::object()}}), "unknown_hook", "/operations/0/request/hooks/0/id");

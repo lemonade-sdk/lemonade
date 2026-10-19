@@ -121,10 +121,10 @@ public:
             if ((!allow_root && text.empty()) || (!text.empty() && text[0] != '/')) throw std::invalid_argument("Invalid pointer");
         } catch (const std::exception&) { error("invalid_pointer", pointer, "Invalid JSON pointer"); }
     }
-    void hook(const json& selection, const std::string& pointer, const std::string& stage) {
+    void hook(const json& selection, const std::string& pointer, const std::string& stage, const std::string& operation = "") {
         const auto& manifest = installed_hook_manifest();
-        if (std::none_of(manifest.begin(), manifest.end(), [&](const auto& hook) { return hook.id == selection["id"] && hook.stage == stage; })) {
-            error("unknown_hook", pointer + "/id", "Hook implementation is not installed");
+        if (std::none_of(manifest.begin(), manifest.end(), [&](const auto& hook) { return hook.id == selection["id"] && hook.stage == stage && hook.operation == operation; })) {
+            error(stage == "operation" ? "unknown_handler" : "unknown_hook", pointer + "/id", "Hook implementation is not installed");
         } else if (!selection["params"].empty()) error("invalid_value", pointer + "/params", "Hook accepts no parameters");
     }
     std::vector<std::string> hook_ids(const json& selections, const std::string& pointer, const std::string& stage) {
@@ -205,7 +205,16 @@ public:
         if (top_hooks.contains("launch")) hook(top_hooks["launch"], "/hooks/launch", "launch");
         if (launch["backend"].contains("option") && !option_names.count(launch["backend"]["option"])) error("invalid_reference", "/launch/backend/option", "Undeclared option");
         std::set<std::string> ports;
-        for (size_t i = 0; i < launch["ports"].size(); ++i) if (!ports.insert(launch["ports"][i]["name"]).second) error("duplicate_value", "/launch/ports/" + std::to_string(i) + "/name", "Duplicate port");
+        std::map<std::string, int> spans;
+        for (size_t i = 0; i < launch["ports"].size(); ++i) {
+            const auto& port = launch["ports"][i];
+            const std::string p = "/launch/ports/" + std::to_string(i);
+            if (!ports.insert(port["name"]).second) error("duplicate_value", p + "/name", "Duplicate port");
+            const auto strategy = port.value("strategy", "standard");
+            if ((strategy != "probe" && (port.contains("span") || port.contains("attempts"))) || (strategy != "offset" && (port.contains("base") || port.contains("offset")))) error("invalid_relationship", p, "Port fields do not match its strategy");
+            if (strategy == "probe") spans[port["name"]] = port.value("span", 1);
+            if (strategy == "offset" && (!port.contains("base") || !port.contains("offset") || !spans.count(port["base"]) || port["offset"].get<int>() >= spans[port["base"]])) error("invalid_reference", p + "/base", "Offset ports lie inside an earlier probed span");
+        }
         if (!ports.count(launch["readiness"]["port"]) || launch["watchdog"]["port"] != launch["readiness"]["port"] || launch["watchdog"]["path"] != launch["readiness"]["path"]) error("invalid_relationship", "/launch/watchdog", "Readiness/watchdog must share a declared endpoint");
         for (size_t i = 0; i < launch["argv"].size(); ++i) {
             const std::string p = "/launch/argv/" + std::to_string(i);
@@ -231,6 +240,10 @@ public:
                 }
                 if (artifact.value("selection", "") != "first_existing") error("unsupported_feature", p + "/selection", "Sentinel selection must be first_existing");
             }
+            if (artifact.contains("files_from")) {
+                if (artifact["role"] != "main" || artifact.contains("files") || !artifact.contains("files_error")) error("invalid_relationship", p + "/files_from", "Variant directory selection owns main-checkpoint files");
+                else expression(definition, p + "/files_error");
+            } else if (artifact.contains("files_error")) error("invalid_relationship", p + "/files_error", "File errors require variant directory selection");
             if (artifact.contains("missing_error")) expression(definition, p + "/missing_error");
             else error("required", p + "/missing_error", "Load artifact error is required");
             if (artifact.contains("hook") != (artifact["strategy"] == "hook")) error("invalid_relationship", p + "/hook", "Artifact hook requires the hook strategy");
@@ -293,11 +306,15 @@ public:
             program.description = {operation, mode, mask, OperationProvenance::Implemented};
             if (!mask || !valid_operation_delivery(operation, mode)) error("unsupported_feature", p, "Invalid operation/delivery/modes");
             if (record.contains("transport") == record.contains("handler")) error("invalid_relationship", p, "Exactly one transport or handler required");
-            if (record.contains("handler")) error("unknown_handler", p + "/handler/id", "Operation hook not installed");
+            if (record.contains("handler")) {
+                hook(record["handler"], p + "/handler", "operation", record["operation"]);
+                program.handler = record["handler"]["id"];
+                if (mode != OperationDelivery::Buffered) error("unsupported_feature", p + "/delivery", "Operation handlers serve buffered delivery");
+            }
             if (record.contains("transport")) {
                 const auto& transport = record["transport"];
                 program.kind = transport["kind"]; program.method = transport["method"]; program.path = transport["path"]; program.port = transport["port"];
-                if (program.port != launch["readiness"]["port"].get<std::string>()) error("unsupported_feature", p + "/transport/port", "Multiple HTTP service ports are not installed");
+                if (program.kind != "realtime" && program.port != launch["readiness"]["port"].get<std::string>()) error("unsupported_feature", p + "/transport/port", "Multiple HTTP service ports are not installed");
                 if (!ports.count(program.port)) error("invalid_reference", p + "/transport/port", "Undeclared transport port");
                 if (program.path.empty() || program.path[0] != '/' || program.path.find("://") != std::string::npos) error("invalid_value", p + "/transport/path", "Relative endpoint path required");
                 program.timeout_seconds = transport["timeout"] == "global" ? 0 : transport["timeout"].get<long>();
@@ -307,7 +324,9 @@ public:
                 const bool sse_transport = program.kind == "http_sse" && mode == OperationDelivery::Streaming && operation <= BackendOperation::Responses && program.codec == "openai_sse.v1" && !transport.contains("response_codec");
                 const bool media_operation = (operation == BackendOperation::AudioGeneration && mode == OperationDelivery::Buffered) || operation == BackendOperation::TextToSpeech;
                 const bool bytes_transport = program.kind == "http_bytes" && media_operation && program.codec == "raw_bytes.v1" && !transport.contains("response_codec");
-                if (program.method != (operation == BackendOperation::Slots ? "GET" : "POST") || !(json_transport || sse_transport || bytes_transport)) error("unsupported_feature", p + "/transport", "Executable transport/codec/adapter combination not installed");
+                const bool realtime_transport = program.kind == "realtime" && operation == BackendOperation::StreamingTranscription && program.codec == "jsonl.v1" && program.path == "/" && !transport.contains("response_codec");
+                const auto method = realtime_transport ? "TCP" : operation == BackendOperation::Slots ? "GET" : "POST";
+                if (program.method != method || !(json_transport || sse_transport || bytes_transport || realtime_transport)) error("unsupported_feature", p + "/transport", "Executable transport/codec/adapter combination not installed");
             }
             for (const auto& previous : definition.operations) if (previous.description.operation == operation && previous.description.delivery == mode && (previous.description.model_types & mask)) error("operation_overlap", p, "Overlapping operation cells");
             const auto& request = record["request"];
@@ -364,21 +383,24 @@ const std::vector<InstalledHook>& installed_hook_manifest() {
         {"llamacpp.max_tokens_alias", "request"},
         {"llamacpp.tool_schema_limits", "request"},
         {"llamacpp.client_model", "response"},
-        {"kokoro.voice_index", "launch"}
+        {"kokoro.voice_index", "launch"},
+        {"moonshine.model_arch", "launch"},
+        {"moonshine.transcription", "operation", "transcription"}
     };
     return manifest;
 }
 
 json installed_definition_features() {
     json hooks = json::array();
-    for (const auto& hook : installed_hook_manifest()) hooks.push_back(hook.stage + ":" + hook.id);
+    for (const auto& hook : installed_hook_manifest()) hooks.push_back(hook.stage + ":" + hook.id + (hook.operation.empty() ? "" : ":" + hook.operation));
     return {{"definition_schema_version", 1}, {"schema", schema_digest(k_backend_definition_schema)},
-        {"transports", {"http_json:json.v1", "http_json:json.v1:get", "http_sse:openai_sse.v1", "http_bytes:raw_bytes.v1"}},
-        {"operations", {"chat_completion", "completion", "responses", "embeddings", "reranking", "text_to_speech", "audio_generation", "slots", "slot_action", "tokenize"}},
+        {"transports", {"http_json:json.v1", "http_json:json.v1:get", "http_sse:openai_sse.v1", "http_bytes:raw_bytes.v1", "realtime:jsonl.v1:tcp"}},
+        {"operations", {"chat_completion", "completion", "responses", "embeddings", "reranking", "transcription", "streaming_transcription", "text_to_speech", "audio_generation", "slots", "slot_action", "tokenize"}},
+        {"ports", {"standard", "probe", "offset"}},
         {"install", {"github_release", "external_only", "machine_arch"}},
         {"launch", {"install_phase", "hook_phase", "platform_requirement", "custom_arg_defaults", "fixed_backend_by_os", "posix_executable_loader_path", "environment_order"}},
         {"expressions", {"literal", "ref", "concat", "string", "coalesce", "present", "eq", "gt", "all", "any", "not", "when", "parent_path", "path_join"}},
-        {"artifact", {"default", "active_snapshot", "sentinel_directory:first_existing", "sentinel_file:first_existing", "check:nonempty"}},
+        {"artifact", {"default", "active_snapshot", "sentinel_directory:first_existing", "sentinel_file:first_existing", "check:nonempty", "files_from:variant_directory"}},
         {"unsupported_messages", {"chat_completion", "completion", "responses"}}, {"hooks", hooks}};
 }
 

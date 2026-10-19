@@ -152,7 +152,19 @@ ResolvedLaunchInputs LaunchPlanner::prepare(const BackendDefinition& definition,
             if (launch["program"].contains("missing_error") && inputs.executable.empty()) throw std::runtime_error(definition.required_value("/launch/program/missing_error", values).get<std::string>());
         } else {
             for (const auto& port : launch.at("ports")) {
-                const int number = services.allocate_port();
+                const auto strategy = port.value("strategy", "standard");
+                int number = 0;
+                if (strategy == "offset") number = values["launch"]["ports"][port["base"].get<std::string>()].get<int>() + port["offset"].get<int>();
+                else if (strategy == "probe") {
+                    for (int attempt = 0, start = 8001, span = port.value("span", 1); attempt < port.value("attempts", 1); ++attempt) {
+                        const int candidate = services.find_free_port(start);
+                        if (candidate == 0) break;
+                        int free = 1;
+                        while (free < span && services.find_free_port(candidate + free) == candidate + free) ++free;
+                        if (free == span) { number = candidate; break; }
+                        start = candidate + 1;
+                    }
+                } else number = services.allocate_port();
                 if (port["reject_zero"] == true && number == 0) throw std::runtime_error(port["error"].get<std::string>());
                 values["launch"]["ports"][port["name"].get<std::string>()] = number;
             }

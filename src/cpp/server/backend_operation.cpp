@@ -162,6 +162,16 @@ const HandlerRegistration& validate_binding_signature(const OperationBinding& bi
 
 }
 
+bool operation_handler_identity(BackendOperation operation, OperationDelivery delivery, OperationHandlerIdentity& identity) noexcept {
+    for (const auto& handler : k_handlers) {
+        if (handler.operation == operation && handler.delivery == delivery) {
+            identity = {handler.id, handler.codec};
+            return true;
+        }
+    }
+    return false;
+}
+
 void validate_operation_binding_signatures(const std::vector<OperationBinding>& bindings, bool compiled_compatibility) {
     for (size_t i = 0; i < bindings.size(); ++i) {
         validate_binding_signature(bindings[i], compiled_compatibility);
@@ -281,10 +291,6 @@ OperationBindings legacy_operation_bindings(LegacyOperationProfile profile, Oper
             }
             break;
         case LegacyOperationProfile::Whisper: add("transcription"); break;
-        case LegacyOperationProfile::Moonshine:
-            add("transcription");
-            add("transcription.realtime");
-            break;
         case LegacyOperationProfile::StableDiffusion:
             for (const auto id : {"image", "image.edits", "image.variations", "upscale"}) add(id);
             break;

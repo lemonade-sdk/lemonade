@@ -18,6 +18,7 @@ struct BackendEffects {
     std::function<std::vector<std::string>(const std::string&)> supported_backends;
     std::function<void(const std::string&, const std::string&)> validate_backend;
     std::function<int()> allocate_port;
+    std::function<int(int)> find_free_port;
     std::function<std::string()> rocm_arch;
     std::function<std::string(const std::string&)> runtime_directories;
     std::function<std::optional<std::string>()> inherited_loader;

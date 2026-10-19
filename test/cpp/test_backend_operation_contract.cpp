@@ -248,7 +248,8 @@ public:
 
 void check_witnesses() {
     WitnessServer llm(LegacyOperationProfile::LlamaCpp);
-    WitnessServer transcription(LegacyOperationProfile::Moonshine);
+    WitnessServer transcription({{{Op::Transcription, Delivery::Buffered, k_all_operation_model_types, OperationProvenance::Implemented}, "transcription", "multipart"},
+                                 {{Op::StreamingTranscription, Delivery::Realtime, k_all_operation_model_types, OperationProvenance::Implemented}, "transcription.realtime", "jsonl"}});
     const auto tts_mode = operation_model_type_mask(ModelType::TTS);
     WitnessServer tts({{{Op::TextToSpeech, Delivery::Buffered, tts_mode, OperationProvenance::Implemented}, "speech.buffered", "media"},
                        {{Op::TextToSpeech, Delivery::Streaming, tts_mode, OperationProvenance::Implemented}, "speech.streaming", "media"}});

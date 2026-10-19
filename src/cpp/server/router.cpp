@@ -7,7 +7,6 @@
 #include "lemon/backends/fastflowlm/fastflowlm_server.h"
 #include "lemon/backends/ryzenai/ryzenai_server.h"
 #include "lemon/backends/whispercpp/whispercpp_server.h"
-#include "lemon/backends/moonshine/moonshine_server.h"
 #include "lemon/backends/sdcpp/sdcpp_server.h"
 #include "lemon/backends/vllm/vllm_server.h"
 #include "lemon/server_capabilities.h"

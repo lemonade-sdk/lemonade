@@ -2,6 +2,7 @@
 #include "lemon/backends/kokoro/kokoro_hooks.h"
 #include "lemon/backends/llamacpp/llamacpp_request.h"
 #include "lemon/backends/llamacpp/llamacpp_server.h"
+#include "lemon/backends/moonshine/moonshine_hooks.h"
 
 #include <set>
 
@@ -37,6 +38,7 @@ std::string_view hook_stage_name(HookStage stage) {
         case HookStage::Request: return "request";
         case HookStage::Response: return "response";
         case HookStage::Launch: return "launch";
+        case HookStage::Operation: return "operation";
     }
     return "";
 }
@@ -47,7 +49,9 @@ const BackendHookRegistry& installed_backend_hooks() {
         {"llamacpp.max_tokens_alias", HookStage::Request, RequestHook(&llamacpp::with_max_tokens_alias)},
         {"llamacpp.tool_schema_limits", HookStage::Request, RequestHook(&llamacpp::sanitize_tool_schema_limits)},
         {"llamacpp.client_model", HookStage::Response, ResponseHook(&llamacpp::normalize_response_model)},
-        {"kokoro.voice_index", HookStage::Launch, LaunchHook(&kokoro::voice_index)}
+        {"kokoro.voice_index", HookStage::Launch, LaunchHook(&kokoro::voice_index)},
+        {"moonshine.model_arch", HookStage::Launch, LaunchHook(&moonshine::model_arch)},
+        {"moonshine.transcription", HookStage::Operation, OperationHook(&moonshine::transcription)}
     });
     return registry;
 }
