@@ -99,7 +99,7 @@ module.exports = (env, argv) => {
 
   const systemPackageAliases = useSystemPackages ? {
     'dompurify$': systemDomPurifyPath,
-    'mermaid$': path.resolve(__dirname, 'system-stubs/mermaid.ts'),
+    'mermaid$': path.resolve(__dirname, 'vendor/mermaid/dist/mermaid.esm.min.mjs'),
   } : {};
 
   let bufferPolyfill = false;

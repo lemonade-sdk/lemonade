@@ -189,3 +189,6 @@ CLAUDE.local.md
 # WiX Toolset build artifacts
 *.msi
 *.wixpdb
+
+# Generated from locked npm tarball for offline Debian/Ubuntu source packages.
+/src/web-app/vendor/mermaid/

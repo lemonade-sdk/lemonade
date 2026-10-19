@@ -26,6 +26,13 @@ runs:
         printf '%s\n' "$VERSION" > .version
         echo "version=${VERSION}" >> $GITHUB_OUTPUT
 
+    - name: Stage locked Mermaid for offline source packaging
+      shell: bash
+      run: |
+        set -e
+        python3 tools/vendor_mermaid.py
+        python3 tools/vendor_mermaid.py --check
+
     - name: Create Debian packaging metadata
       shell: bash
       working-directory: ${{ github.workspace }}
