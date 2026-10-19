@@ -696,6 +696,19 @@ class EndpointTests(ServerTestBase):
 
         if data["gpus"]:
             self.assertIn(data["primary_gpu_id"], ids)
+
+        # On a host that advertises an AMD GPU, system-stats must enumerate it.
+        info = requests.get(
+            f"{self.base_url}/system-info", timeout=TIMEOUT_DEFAULT
+        ).json()
+        amd_available = any(
+            dev.get("available") for dev in info.get("devices", {}).get("amd_gpu", [])
+        )
+        if amd_available:
+            self.assertTrue(
+                any(gpu["vendor"] == "amd" for gpu in data["gpus"]),
+                "AMD GPU advertised in system-info but absent from system-stats",
+            )
         print(f"[OK] /system-stats reported {len(data['gpus'])} GPU(s)")
 
     def test_003_models_list(self):

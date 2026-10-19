@@ -217,11 +217,13 @@ public:
         const bool util_ok =
             add_(query_, "\\GPU Engine(*)\\Utilization Percentage", 0,
                  &util_counter_) == ERROR_SUCCESS;
-        add_(query_, "\\GPU Adapter Memory(*)\\Dedicated Usage", 0,
-             &dedicated_counter_);
-        add_(query_, "\\GPU Adapter Memory(*)\\Shared Usage", 0,
-             &shared_counter_);
-        if (util_ok) {
+        const bool ded_ok =
+            add_(query_, "\\GPU Adapter Memory(*)\\Dedicated Usage", 0,
+                 &dedicated_counter_) == ERROR_SUCCESS;
+        const bool shr_ok =
+            add_(query_, "\\GPU Adapter Memory(*)\\Shared Usage", 0,
+                 &shared_counter_) == ERROR_SUCCESS;
+        if (util_ok || ded_ok || shr_ok) {
             collect_(query_);  // prime: the first collect has no delta to format
             ready_ = true;
         }
@@ -394,15 +396,18 @@ inline std::vector<GpuDeviceMetrics> query_amd_gpu_metrics() {
             gpu.gpu_percent = it->second;
         }
 
-        // Counter selection needs a known memory pool; shared counts for UMA.
+        // Counter selection needs a known memory pool. A UMA adapter spans both
+        // pools, so report usage only when both readings are present.
         if (adapter.integrated) {
             const auto ded = live.dedicated_used.find(adapter.luid);
             const auto shr = live.shared_used.find(adapter.luid);
-            double used = -1.0;
-            if (ded != live.dedicated_used.end()) used = ded->second;
-            if (integrated && shr != live.shared_used.end())
-                used = (used < 0.0 ? 0.0 : used) + shr->second;
-            if (used >= 0.0) gpu.memory_used_gb = used / BYTES_PER_GIB;
+            const bool has_ded = ded != live.dedicated_used.end();
+            const bool has_shr = shr != live.shared_used.end();
+            if (integrated && has_ded && has_shr) {
+                gpu.memory_used_gb = (ded->second + shr->second) / BYTES_PER_GIB;
+            } else if (!integrated && has_ded) {
+                gpu.memory_used_gb = ded->second / BYTES_PER_GIB;
+            }
         }
 
         result.push_back(std::move(gpu));
