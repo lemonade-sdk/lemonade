@@ -172,6 +172,12 @@ public:
     std::set<std::string> active_helper_models();
 
     // Get all supported models from server_models.json
+    // The published set as a pointer: a consumer answering a question about one
+    // model, or walking rows without editing them, reads this instead of copying.
+    std::shared_ptr<const models::StoreSnapshot> snapshot();
+
+    // An owned map keyed by the names clients use, for the wire sites that serialize
+    // it; the rename across canonical ids is what forces the copy.
     std::map<std::string, ModelInfo> get_supported_models();
 
     // Get downloaded models
@@ -417,7 +423,6 @@ private:
     // The host reads a catalog set needs; see models::CatalogSetDeps.
     models::CatalogSetDeps make_catalog_deps(std::map<std::string, json>& json_recipe_options);
     std::vector<ModelInfo> scan_extra_models(const models::CatalogAccumulator& claimed);
-    void update_model_in_cache(const std::string& model_name, bool downloaded);
     void remove_model_from_cache(const std::string& model_name);
 
     // Fills info.resolved_paths from the artifact store, adopting a complete

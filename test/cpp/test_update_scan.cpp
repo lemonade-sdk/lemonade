@@ -1,6 +1,8 @@
 #include <lemon/models/update_scan.h>
 
 #include <lemon/model_manager.h>
+#include <lemon/models/artifact_source.h>
+#include <lemon/models/artifact_store.h>
 #include <lemon/models/store_snapshot.h>
 #include <lemon/runtime_config.h>
 
@@ -17,6 +19,7 @@
 
 namespace fs = std::filesystem;
 using lemon::ModelInfo;
+using lemon::models::ArtifactSource;
 using lemon::models::ScanDetermination;
 using lemon::models::StoreSnapshot;
 using lemon::models::UpdateScanDeps;
@@ -82,16 +85,25 @@ struct Probe {
     std::vector<std::string> phases;
 };
 
-UpdateScanDeps make_deps(Probe& probe, const fs::path& cache_dir) {
+// An artifact store rooted at the test directory, empty as the day it was built.
+struct Cache {
+    explicit Cache(std::filesystem::path r) : root(std::move(r)) {}
+    std::filesystem::path root;
+    lemon::models::ModelArtifactStore artifacts{lemon::models::ModelArtifactStore::Hooks{
+        [this] { return root.string(); },
+        [](const ModelInfo&, const std::string&) -> std::unique_ptr<ArtifactSource> {
+            return nullptr;
+        },
+        [] { return std::string(); },
+    }};
+};
+
+UpdateScanDeps make_deps(Probe& probe, Cache& cache) {
     UpdateScanDeps deps;
+    deps.artifacts = &cache.artifacts;
     deps.ensure_store = [&probe] { ++probe.ensure_store_calls; };
     deps.snapshot = [&probe] {
         return std::const_pointer_cast<const StoreSnapshot>(probe.snapshot);
-    };
-    deps.hf_cache_dir = [cache_dir] { return cache_dir.string(); };
-    deps.registry_source = [](const ModelInfo&) { return std::string("huggingface"); };
-    deps.processed_snapshot_id = [](const fs::path&, const std::string&, const ModelInfo&) {
-        return std::string();
     };
     deps.cancel_requested = [] { return false; };
     deps.publish = [&probe](const ScanDetermination& settled, UpdateScanResult&) {
@@ -125,7 +137,8 @@ int main() {
 
         Probe probe;
         probe.snapshot = make_store("eligible");
-        UpdateScanDeps deps = make_deps(probe, base);
+        Cache cache(base);
+        UpdateScanDeps deps = make_deps(probe, cache);
         const UpdateScanResult result = lemon::models::run_update_scan(deps);
 
         check("offline scan reports nothing", result.updated_models.empty() &&
@@ -139,7 +152,8 @@ int main() {
     {
         Probe probe;
         probe.snapshot = make_store("Shown-Name");
-        UpdateScanDeps deps = make_deps(probe, base);
+        Cache cache(base);
+        UpdateScanDeps deps = make_deps(probe, cache);
         const UpdateScanResult result = lemon::models::run_update_scan(deps);
 
         check("only a downloaded registry checkpoint is examined",
@@ -157,7 +171,8 @@ int main() {
     {
         Probe probe;
         probe.snapshot = make_store("eligible");
-        UpdateScanDeps deps = make_deps(probe, base);
+        Cache cache(base);
+        UpdateScanDeps deps = make_deps(probe, cache);
         const UpdateScanResult result = lemon::models::run_update_scan(deps, {"flm"});
 
         check("a target outside the eligible set examines nothing",
@@ -167,7 +182,8 @@ int main() {
     {
         Probe probe;
         probe.snapshot = make_store("eligible");
-        UpdateScanDeps deps = make_deps(probe, base);
+        Cache cache(base);
+        UpdateScanDeps deps = make_deps(probe, cache);
         deps.scan_override = [](const std::vector<std::string>&) {
             UpdateScanResult res;
             res.updated_models.push_back("overridden-updated");

@@ -323,6 +323,9 @@ class EndpointTests(ServerTestBase):
             public_name = body.get("model_name")
             self.assertIsInstance(public_name, str)
             self.assertTrue(public_name)
+            registered = body.get("model")
+            self.assertIsInstance(registered, dict, f"echo of the row: {body}")
+            self.assertEqual(registered.get("checkpoint"), checkpoint)
 
             models_response = requests.get(
                 f"{self.base_url}/models?show_all=true",

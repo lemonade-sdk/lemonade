@@ -555,10 +555,11 @@ Server::Server(std::shared_ptr<RuntimeConfig> config,
             return lemon::jobs::json::parse(response.dump());
         };
         providers.model_get = [this](const std::string& id) -> lemon::jobs::json {
-            auto models = model_manager_->get_supported_models();
-            auto it = models.find(id);
-            if (it == models.end()) return lemon::jobs::json(nullptr);
-            return lemon::jobs::json::parse(model_info_to_json(id, it->second).dump());
+            const auto models = model_manager_->snapshot();
+            const std::string canonical = models->canonical_for(id);
+            const ModelInfo* info = models->find(canonical.empty() ? id : canonical);
+            if (info == nullptr) return lemon::jobs::json(nullptr);
+            return lemon::jobs::json::parse(model_info_to_json(id, *info).dump());
         };
         providers.load_op = [this, job_states, current_job, state_mutex](
                                 const lemon::jobs::json& params,
@@ -778,7 +779,7 @@ void Server::start_model_cache_warmup() {
     model_cache_warmup_thread_ = std::thread([this]() {
         try {
             LOG(DEBUG, "Server") << "Warming model list cache..." << std::endl;
-            model_manager_->get_supported_models();
+            model_manager_->snapshot();
             LOG(DEBUG, "Server") << "Model list cache warmup complete" << std::endl;
         } catch (const std::exception& e) {
             LOG(WARNING, "Server") << "Model list cache warmup failed: " << e.what() << std::endl;
@@ -2390,14 +2391,15 @@ nlohmann::json Server::create_model_error(const std::string& requested_model, co
         std::string message = "Model '" + requested_model + "' was not found. ";
 
         // Get available models and suggest some
-        auto available_models = model_manager_->get_supported_models();
+        const auto published = model_manager_->snapshot();
 
-        if (!available_models.empty()) {
+        if (!published->models.empty()) {
             // Collect model names
             std::vector<std::string> model_names;
-            model_names.reserve(available_models.size());
-            for (const auto& [name, info] : available_models) {
-                model_names.push_back(name);
+            model_names.reserve(published->models.size());
+            for (const auto& [name, info] : published->models) {
+                std::string public_name = published->public_name_for(name);
+                model_names.push_back(public_name.empty() ? name : public_name);
             }
 
             // Sort alphabetically for consistent output
@@ -3161,10 +3163,11 @@ void Server::handle_model_register(const httplib::Request& req, httplib::Respons
             {"canonical_model_name", model_name},
         };
 
-        const auto models = model_manager_->get_supported_models();
-        auto model_it = models.find(public_name);
-        if (model_it != models.end()) {
-            response["model"] = model_info_to_json(public_name, model_it->second);
+        // The names just registered are already published; this reads them back
+        // through the same lookup every other client uses.
+        if (model_manager_->model_exists(public_name)) {
+            response["model"] =
+                model_info_to_json(public_name, model_manager_->get_model_info(public_name));
         }
 
         res.set_content(response.dump(), "application/json");

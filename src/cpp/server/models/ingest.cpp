@@ -967,7 +967,7 @@ void ModelIngest::fetch_model(const ModelInfo& info, bool do_not_upgrade,
     backends::ops_for(info.recipe)->download_model(info, do_not_upgrade, progress_callback, octx);
 
     // Update cache after successful download
-    deps_.patch_downloaded(info.model_name, true);
+    deps_.store->patch_download(*deps_.artifacts, info.model_name, true);
 
     const std::string canonical_model_name = deps_.resolve_name(info.model_name);
     if (is_user_model_name(canonical_model_name)) {
@@ -1305,7 +1305,7 @@ void ModelIngest::populate_from_cached_manifest(ModelInfo& info) {
         return;
     }
 
-    const models::RegistryDocuments::Pin registries = deps_.pin();
+    const models::RegistryDocuments::Pin registries = deps_.registries->pin();
 
     for (const auto& entry : manifest["components"]) {
         if (!entry.is_string()) continue;

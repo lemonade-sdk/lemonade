@@ -18,6 +18,7 @@ namespace models {
 
 struct ArtifactRef;
 class FetchableRepository;
+class ModelArtifactStore;
 struct StoreSnapshot;
 class ModelStore;
 
@@ -36,15 +37,12 @@ struct ScanDetermination {
 };
 
 struct UpdateScanDeps {
+    // The cache the snapshots on disk live in, as itself: baseline reads and the
+    // processed-snapshot fast path both belong to it.
+    const ModelArtifactStore* artifacts;
+
     std::function<void()> ensure_store;
     std::function<std::shared_ptr<const StoreSnapshot>()> snapshot;
-    std::function<std::string()> hf_cache_dir;
-    std::function<std::string(const ModelInfo& info)> registry_source;
-    // The snapshot id pull recorded for this model's selection. A fast path
-    // only: the comparison baseline is the snapshot on disk.
-    std::function<std::string(const std::filesystem::path& model_cache_dir,
-                              const std::string& model_name,
-                              const ModelInfo& info)> processed_snapshot_id;
     // See ModelManagerConfig::repository_for.
     std::function<std::unique_ptr<FetchableRepository>(const ArtifactRef& ref)> repository_for;
     std::function<bool()> cancel_requested;

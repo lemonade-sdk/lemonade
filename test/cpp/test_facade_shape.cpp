@@ -132,7 +132,7 @@ int main() {
     check("the facade is read from the tree", facade.size() > 1000);
 
     // A path may pass through; opening one does not.
-    ratchet("the facade names a path and does no more", kFacade, "fs::", 3);
+    ratchet("the facade names a path and does no more", kFacade, "fs::", 2);
     ratchet("the facade opens no directory", kFacade, "directory_iterator", 0);
     ratchet("the facade runs no filesystem operation", kFacade, "fs::exists(", 0);
     ratchet("the facade removes nothing", kFacade, "fs::remove", 0);

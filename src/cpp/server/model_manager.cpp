@@ -172,9 +172,6 @@ models::ModelIngest::Deps ModelManager::make_ingest_deps() {
     deps.resolve_name = [this](const std::string& name) { return resolve_model_name(name); };
     deps.is_downloaded = [this](const std::string& name) { return is_model_downloaded(name); };
     deps.resolved_paths = [this](const std::string& name) { return resolved_paths_for(name); };
-    deps.patch_downloaded = [this](const std::string& name, bool downloaded) {
-        update_model_in_cache(name, downloaded);
-    };
     deps.invalidate = [this] { invalidate_models_cache(); };
     deps.persist_size = [this](const std::string& canonical_model_name) {
         StoreWrite store_write(*this);
@@ -194,7 +191,6 @@ models::ModelIngest::Deps ModelManager::make_ingest_deps() {
             store_write.invalidate_cache();
         }
     };
-    deps.pin = [this] { return registries_.pin(); };
     deps.save_options = [this](const ModelInfo& info) { save_model_options(info); };
     deps.model_updated = [this](const std::string& canonical_model_name) {
         change_notifier_.model_updated(canonical_model_name);
@@ -476,6 +472,11 @@ json ModelManager::write_saved_model_options(const std::string& model_name,
     return saved;
 }
 
+std::shared_ptr<const models::StoreSnapshot> ModelManager::snapshot() {
+    build_cache();
+    return store_.read();
+}
+
 std::map<std::string, ModelInfo> ModelManager::get_supported_models() {
     // Build cache if needed (lazy initialization)
     build_cache();
@@ -504,16 +505,10 @@ ModelManager::UpdateCheckResult ModelManager::check_for_model_updates(const std:
 // the one store write that publishes the flags it settled.
 ModelManager::UpdateCheckResult ModelManager::run_update_scan(const std::vector<std::string>& targets) {
     models::UpdateScanDeps deps;
+    deps.artifacts = artifacts_.get();
     deps.ensure_store = [this] { build_cache(); };
     deps.snapshot = [this] { return store_.read(); };
-    deps.hf_cache_dir = [this] { return get_hf_cache_dir(); };
-    deps.registry_source = [](const ModelInfo& info) { return models::registry_source_of(info); };
     deps.repository_for = config_.repository_for;
-    deps.processed_snapshot_id = [this](const fs::path& model_cache_dir,
-                                        const std::string& model_name,
-                                        const ModelInfo& info) {
-        return artifacts_->processed_snapshot_id(model_cache_dir, info);
-    };
     deps.cancel_requested = [this] { return sync_.cancel_requested(); };
     deps.scan_override = update_check_override_;
     deps.phase = sync_phase_callback_;
@@ -680,10 +675,6 @@ void ModelManager::build_cache() {
 
 
 
-
-void ModelManager::update_model_in_cache(const std::string& model_name, bool downloaded) {
-    store_.patch_download(*artifacts_, model_name, downloaded);
-}
 
 void ModelManager::remove_model_from_cache(const std::string& model_name) {
     store_.patch_removed(model_name);

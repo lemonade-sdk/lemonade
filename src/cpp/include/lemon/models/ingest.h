@@ -58,10 +58,8 @@ class ModelIngest : public ArtifactFetchService {
         RegistryDocuments* registries;
         ModelStore* store;
         std::function<void()> models_changed;
-        std::function<void(const std::string&, bool)> patch_downloaded;
         std::function<void()> invalidate;
         std::function<void(const std::string&)> persist_size;
-        std::function<RegistryDocuments::Pin()> pin;
         std::function<void(const ModelInfo&)> save_options;
         std::function<void(const std::string&)> model_updated;
         // See ModelManagerConfig::repository_for.
