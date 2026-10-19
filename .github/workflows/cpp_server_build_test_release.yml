@@ -1446,8 +1446,9 @@ jobs:
         if: always()
         uses: ./.github/actions/cleanup-processes-linux
 
-  # Container backends built for Strix Halo run on Devlab Dispatch's ephemeral
-  # Strix Halo Linux runners.
+  # Container backends run on Devlab Dispatch's ephemeral Strix Halo Linux
+  # runners, which have the memory for DS4 and Halogen models. Models go in the
+  # workspace volume, which has room for DS4's 81 GB checkpoint.
   test-container-backends:
     name: Test container backend - ${{ matrix.name }}
     runs-on: [self-hosted, Linux, devlab-dispatch, strix-halo]
@@ -1463,6 +1464,10 @@ jobs:
       fail-fast: ${{ github.event_name == 'merge_group' }}
       matrix:
         include:
+          - name: ds4
+            install: "ds4:rocm"
+            script: server_llm.py
+            extra_args: "--wrapped-server ds4 --backend rocm"
           - name: llamacpp-nathanw
             install: "llamacpp:nathanw"
             script: server_llm.py
