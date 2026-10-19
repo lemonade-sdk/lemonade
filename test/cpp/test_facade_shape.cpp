@@ -144,6 +144,9 @@ int main() {
     // One seam asks a recipe's ops what models it can see; anything beyond that and the
     // facade is back to branching on backends.
     ratchet("the facade dispatches to backend ops once", kFacade, "ops_for(", 1);
+    // Locks the facade takes for itself; publishing goes through StoreWrite.
+    ratchet("the facade takes no store lock of its own", kFacade, "lock_guard", 2);
+    ratchet("the facade holds no condition waits", kFacade, "unique_lock", 0);
     ratchet("the facade declares no test hook", kFacade, "_for_test", 0);
 
     // No product file declares a test hook, anywhere. A test that needs behavior
