@@ -29,17 +29,7 @@ namespace lemon {
 namespace {
 
 backends::PlatformInfo install_platform(const backends::BackendSpec& spec, const std::string& backend) {
-    auto platform = backends::native_platform();
-    if (spec.definition) {
-        const auto& cases = spec.definition->records["install"]["cases"];
-        const auto matches = [](const json& record, const char* axis, const std::string& value) {
-            return !record.contains(axis) || std::find(record[axis].begin(), record[axis].end(), value) != record[axis].end();
-        };
-        if (std::any_of(cases.begin(), cases.end(), [&](const auto& record) {
-            return matches(record, "backend", backend) && matches(record, "os", platform.os) && record.contains("arch");
-        })) platform.rocm_arch = SystemInfo::get_rocm_arch();
-    }
-    return platform;
+    return backends::install_platform(spec, backend, {[] { return backends::native_platform().os; }, SystemInfo::get_rocm_arch});
 }
 
 std::string normalize_backend_name(const std::string& recipe, const std::string& backend) {

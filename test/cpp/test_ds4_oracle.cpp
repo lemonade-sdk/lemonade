@@ -113,16 +113,22 @@ int main() {
     const std::vector<std::tuple<std::string, std::string, std::string, std::string>> cases = {
         {"rocm", "linux", "gfx1151", ""},
         {"cuda", "windows", "", "ds4 backend 'cuda' is not supported. Supported: rocm"},
+        {"cuda", "linux", "gfx1151", "ds4 backend 'cuda' is not supported. Supported: rocm"},
         {"rocm", "windows", "", "ds4 backend 'rocm' publishes no build for windows; Linux only"},
         {"rocm", "linux", "", "ds4 backend 'rocm' requires a ROCm GPU, but no ROCm architecture was detected"},
         {"rocm", "linux", "gfx9999", "ds4 backend 'rocm' publishes no build for gfx9999; only gfx1151 is validated upstream"}
     };
-    const auto& install_cases = entry->definition->records["install"]["cases"];
-    check(install_cases.size() == 1 && install_cases[0]["backend"] == json::array({"rocm"}) && install_cases[0]["os"] == json::array({"linux"}) && install_cases[0].contains("arch"), "ROCm architecture is consulted only for rocm on linux");
+    const auto* registered = try_get_spec_for_recipe("ds4");
+    check(registered == ds4::spec() && registered == &entry->spec, "install path resolves the registered DS4 spec");
     for (const auto& [backend, os, arch, error] : cases) for (const char* version : {"b0001", "b0002"}) {
+        const std::string host_os = os, host_arch = arch;
+        std::vector<std::string> probes;
+        const auto platform = install_platform(*registered, backend, {[&] { probes.push_back("os"); return host_os; }, [&] { probes.push_back("arch"); return host_arch; }});
+        if (backend != "rocm") check(std::find(probes.begin(), probes.end(), "arch") == probes.end(), "unsupported backend never probes the architecture");
+        else check(probes == (os != "linux" ? std::vector<std::string>{"os"} : std::vector<std::string>{"os", "arch"}), "unsupported OS probes the OS only; supported OS probes the OS then the architecture");
         std::string message; InstallParams params;
         for (auto phase : {InstallPhase::Repository, InstallPhase::Asset}) {
-            InstallContext context{entry->spec, entry->definition, "ds4", "ds4", "ds4", backend, "requested", version, "b9999", {os, "x86_64", arch}, phase};
+            InstallContext context{*registered, entry->definition, "ds4", "ds4", "ds4", backend, "requested", version, "b9999", platform, phase};
             message.clear();
             try { params = entry->spec.install_params_fn(context); } catch (const std::runtime_error& e) { message = e.what(); }
             check(message == error, "ordered install errors");

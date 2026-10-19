@@ -92,5 +92,19 @@ InstallParams ConfiguredBackendOps::install_params(const InstallContext& context
     result.sha256 = record.value("sha256", "");
     return result;
 }
+PlatformInfo install_platform(const BackendSpec& spec, const std::string& backend, const InstallPlatformSources& sources) {
+    auto platform = native_platform();
+    platform.os = sources.os();
+    if (spec.definition) {
+        const auto& cases = spec.definition->records["install"]["cases"];
+        const auto matches = [](const json& record, const char* axis, const std::string& value) {
+            return !record.contains(axis) || std::find(record[axis].begin(), record[axis].end(), value) != record[axis].end();
+        };
+        if (std::any_of(cases.begin(), cases.end(), [&](const auto& record) {
+            return matches(record, "backend", backend) && matches(record, "os", platform.os) && record.contains("arch");
+        })) platform.rocm_arch = sources.rocm_arch();
+    }
+    return platform;
+}
 
 }

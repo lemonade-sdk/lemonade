@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <memory>
 #include <string>
 
@@ -17,6 +18,11 @@ struct InstallContext {
     PlatformInfo platform;
     InstallPhase phase;
 };
+struct InstallPlatformSources {
+    std::function<std::string()> os;
+    std::function<std::string()> rocm_arch;
+};
 PlatformInfo native_platform();
+PlatformInfo install_platform(const BackendSpec& spec, const std::string& backend, const InstallPlatformSources& sources);
 
 }
