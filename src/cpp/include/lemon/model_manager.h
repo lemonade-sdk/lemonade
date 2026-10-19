@@ -308,9 +308,6 @@ public:
     // Synchronously queue targets for sync. Returns dispatch result with sync_id and whether sync was already in progress.
     SyncEnqueueResult enqueue_sync(const std::vector<std::string>& target_models = {}, bool attach_if_running = false);
 
-    // Blocks until the generation in flight (or the last one queued) is done.
-    json wait_for_sync();
-
     // Shutdown waits here, so a download cannot outlive the store it wrote.
     void wait_until_sync_idle();
 
@@ -388,7 +385,6 @@ private:
     // The host reads a catalog set needs; see models::CatalogSetDeps.
     models::CatalogSetDeps make_catalog_deps(std::map<std::string, json>& json_recipe_options);
     std::vector<ModelInfo> scan_extra_models(const models::CatalogAccumulator& claimed);
-    void remove_model_from_cache(const std::string& model_name);
 
     // Fills info.resolved_paths from the artifact store, adopting a complete
     // repository from the extra models directory when the managed cache lacks it.

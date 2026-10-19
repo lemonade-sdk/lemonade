@@ -7,7 +7,9 @@
 // The queue is driven through SyncService with its own deps; the facade wires
 // the same deps to the real scan and pull and adds nothing of its own.
 
+#include "lemon/models/alias_manager.h"
 #include "lemon/models/model_info.h"
+#include "lemon/models/store.h"
 #include "lemon/models/sync_service.h"
 #include "lemon/recipe_options.h"
 #include "lemon/runtime_config.h"
@@ -33,6 +35,8 @@
 #include <vector>
 
 using lemon::json;
+using lemon::models::AliasManager;
+using lemon::models::ModelStore;
 using lemon::models::SyncService;
 using lemon::models::UpdateScanResult;
 
@@ -78,15 +82,16 @@ struct PhaseBus {
     }
 };
 
-// The queue's world: a canned check, a download recorder, a name map. Names
-// resolve to themselves; what the queue decides never depends on the store.
+// The queue's world: a canned check, a download recorder, and a store holding the rows it
+// reads. No composer, so it never composes; no alias, so names resolve to themselves.
 struct SyncFixture {
     std::function<UpdateScanResult(const std::vector<std::string>&)> check_fn =
         [](const std::vector<std::string>&) { return UpdateScanResult{}; };
     std::function<void(const std::string&, const json&, bool, lemon::DownloadProgressCallback)>
         download_fn =
             [](const std::string&, const json&, bool, lemon::DownloadProgressCallback) {};
-    std::map<std::string, lemon::ModelInfo> models;
+    AliasManager aliases{""};
+    ModelStore store{aliases};
     std::atomic<int> scan_calls{0};
     std::atomic<int> target_checks{0};
     PhaseBus bus;
@@ -102,13 +107,7 @@ struct SyncFixture {
                             lemon::DownloadProgressCallback progress) {
             download_fn(name, options, do_not_upgrade, progress);
         };
-        d.model_info = [this](const std::string& canonical) {
-            auto it = models.find(canonical);
-            if (it == models.end()) throw std::invalid_argument("Model not found");
-            return it->second;
-        };
-        d.resolve_name = [](const std::string& name) { return name; };
-        d.public_name = [](const std::string& canonical) { return canonical; };
+        d.store = &store;
         d.phase = [this](const std::string& phase) { bus(phase); };
         return d;
     }
@@ -116,11 +115,19 @@ struct SyncFixture {
     SyncService service() { return SyncService(deps()); }
     std::unique_ptr<SyncService> make_service() { return std::make_unique<SyncService>(deps()); }
 
-    lemon::ModelInfo& downloaded(const std::string& name) {
-        auto& info = models[name];
+    // Published, not handed back: a flag set on a reference afterwards lands nowhere.
+    void downloaded(const std::string& name, bool update_available = false) {
+        lemon::ModelInfo info;
         info.model_name = name;
         info.downloaded = true;
-        return info;
+        info.update_available = update_available;
+        ModelStore::Write row{store};
+        row.draft()[name] = std::move(info);
+    }
+
+    bool update_available(const std::string& name) const {
+        const lemon::ModelInfo* row = store.read()->find(name);
+        return row != nullptr && row->update_available;
     }
 };
 
@@ -525,7 +532,7 @@ int main() {
     // cached update_available flag once said
     {
         SyncFixture stale_fixture;
-        stale_fixture.downloaded("Tiny-Test-Model-GGUF").update_available = true;
+        stale_fixture.downloaded("Tiny-Test-Model-GGUF", /*update_available=*/true);
         stale_fixture.check_fn = [](const std::vector<std::string>& t) {
             UpdateScanResult r;
             for (const auto& m : t) {
@@ -543,7 +550,7 @@ int main() {
         SyncService stale = stale_fixture.service();
 
         check("the stale flag starts out set on the model under test",
-              stale_fixture.models["Tiny-Test-Model-GGUF"].update_available == true);
+              stale_fixture.update_available("Tiny-Test-Model-GGUF"));
 
         auto enq = stale.enqueue({"Tiny-Test-Model-GGUF"});
         json stale_exec = stale.wait_for(enq.sync_id);

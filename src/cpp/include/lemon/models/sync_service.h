@@ -21,6 +21,8 @@ struct ModelInfo;
 
 namespace models {
 
+class ModelStore;
+
 // The one queue and the one worker in model management. Scanning is the only
 // model-management work that starts on one request, runs for minutes, reports
 // progress and can be cancelled, so nothing else may spawn work of its own:
@@ -32,9 +34,8 @@ class SyncService {
         std::function<void(const std::string& name, const nlohmann::json& options,
                            bool do_not_upgrade,
                            DownloadProgressCallback progress)> download;
-        std::function<ModelInfo(const std::string& canonical)> model_info;
-        std::function<std::string(const std::string& name)> resolve_name;
-        std::function<std::string(const std::string& canonical)> public_name;
+        // Reads the published set: which name is which, and what a row says.
+        ModelStore* store;
         std::function<void(const std::string& phase)> phase;
     };
 

@@ -27,6 +27,7 @@ class ModelStore;
 struct ArtifactRef;
 
 class ModelArtifactStore;
+class ModelChangeNotifier;
 
 // Collection files name components by public name while a definition may carry the
 // `user.` prefix from an export.
@@ -43,25 +44,14 @@ class ModelIngest : public ArtifactFetchService {
         // The server-wide default pull source; null when none is configured.
         std::function<std::optional<RegistryId>()> default_registry_source;
 
-        // The published model set.
-        std::function<bool(const std::string&)> model_exists;
-        std::function<bool(const std::string&)> model_exists_unfiltered;
-        std::function<ModelInfo(const std::string&)> model_info;
-        std::function<std::string(const std::string&)> filter_reason;
-        std::function<std::string(const std::string&)> resolve_name;
-        std::function<bool(const std::string&)> is_downloaded;
-        std::function<std::map<std::string, std::filesystem::path>(const std::string&)>
-            resolved_paths;
-
         // The user registry and the published set it keeps in step: a registration
         // writes the entry and invalidates the store in one move.
         RegistryDocuments* registries;
         ModelStore* store;
-        std::function<void()> models_changed;
-        std::function<void()> invalidate;
-        std::function<void(const std::string&)> persist_size;
+        ModelChangeNotifier* notifier;
+        // The facade's options write: its store, its file mutex, and a store patch that
+        // may not be opened outside the facade.
         std::function<void(const ModelInfo&)> save_options;
-        std::function<void(const std::string&)> model_updated;
         // See ModelManagerConfig::repository_for.
         std::function<std::unique_ptr<FetchableRepository>(const ArtifactRef& ref)> repository_for;
     };
@@ -134,6 +124,14 @@ class ModelIngest : public ArtifactFetchService {
                                 const utils::CancelToken& cancel) const;
 
     const ModelArtifactStore& artifacts() const;
+
+    // The row for a name, copied: a pull edits what it is handed.
+    ModelInfo require_info(const std::string& name) const;
+
+    // A name the registries still carry though the host filter dropped it.
+    bool registered_anywhere(const std::string& name) const;
+
+    void persist_size(const std::string& canonical_model_name) const;
 
     Deps deps_;
 

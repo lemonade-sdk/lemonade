@@ -4,6 +4,7 @@
 
 #include <lemon/model_manager.h>
 #include <lemon/model_types.h>
+#include <lemon/models/alias_manager.h>
 #include <lemon/models/artifact_source.h>
 #include <lemon/models/artifact_store.h>
 #include <lemon/models/store.h>
@@ -52,7 +53,8 @@ struct Fixture {
         },
         [] { return std::string(); },
     }};
-    ModelStore store;
+    lemon::models::AliasManager aliases{""};
+    ModelStore store{aliases};
 };
 
 static void test_a_download_moves_its_row() {

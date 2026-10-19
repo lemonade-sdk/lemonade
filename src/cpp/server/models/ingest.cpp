@@ -11,6 +11,7 @@
 #include <lemon/models/artifact_store.h>
 #include <lemon/models/artifact_transfer.h>
 #include <lemon/models/artifact_layout.h>
+#include <lemon/models/change_notifier.h>
 #include <lemon/models/checkpoint_grammar.h>
 #include <lemon/models/fetchable_repository.h>
 #include <lemon/models/json_catalog.h>
@@ -43,6 +44,36 @@ namespace models {
 ModelIngest::ModelIngest(Deps deps) : deps_(std::move(deps)) {}
 
 const ModelArtifactStore& ModelIngest::artifacts() const { return *deps_.artifacts; }
+
+ModelInfo ModelIngest::require_info(const std::string& name) const {
+    return *deps_.store->info(name);
+}
+
+bool ModelIngest::registered_anywhere(const std::string& name) const {
+    const RegistryDocuments::Pin registries = deps_.registries->pin();
+    if (find_registry_row(registries, name)) {
+        return true;
+    }
+    return static_cast<bool>(find_registry_row(registries, deps_.store->resolve_name(name)));
+}
+
+void ModelIngest::persist_size(const std::string& canonical_model_name) const {
+    const ModelInfo* model = deps_.store->read()->find(canonical_model_name);
+    if (model == nullptr) {
+        return;
+    }
+    const bool wrote = deps_.registries->update_user([&](json& user_models) {
+        auto entry = user_models.find(strip_user_model_prefix(canonical_model_name));
+        if (entry == user_models.end()) {
+            return false;
+        }
+        (*entry)["size"] = model->size;
+        return true;
+    });
+    if (wrote) {
+        deps_.store->invalidate();
+    }
+}
 
 std::string bare_component_name(const std::string& name) {
     return is_user_model_name(name) ? strip_user_model_prefix(name) : name;
@@ -603,13 +634,13 @@ void ModelIngest::pull(const std::string& model_name,
     }
 
     // Check if model exists in registry
-    bool model_registered = deps_.model_exists(model_name);
+    bool model_registered = deps_.store->exists(model_name);
 
     if (!model_registered) {
         // First, check if the model exists but was filtered out (unsupported recipe)
-        if (deps_.model_exists_unfiltered(model_name)) {
+        if (registered_anywhere(model_name)) {
             // Model exists in registry but is not available on this system
-            std::string filter_reason = deps_.filter_reason(model_name);
+            std::string filter_reason = deps_.store->rejection_reason(model_name);
             throw std::runtime_error(
                 "Model '" + model_name + "' is not available on this system. " +
                 filter_reason
@@ -662,7 +693,7 @@ void ModelIngest::pull(const std::string& model_name,
         // An idempotent re-pull of the same entry is allowed; silently replacing a
         // user's own with a different remote source is what made an installed GGUF
         // variant disappear when another variant reused its generated name.
-        auto info = deps_.model_info(model_name);
+        auto info = require_info(model_name);
         if (!registration_data.contains("source") &&
             !registration_data.contains("registry_source")) {
             registration_data["source"] = models::registry_source_of(info);
@@ -761,7 +792,7 @@ void ModelIngest::pull(const std::string& model_name,
             );
         }
 
-        auto info = deps_.model_info(model_name);
+        auto info = require_info(model_name);
         std::vector<std::string> components = info.components;
 
         try {
@@ -822,11 +853,11 @@ void ModelIngest::pull(const std::string& model_name,
         }
 
         for (const auto& component : components) {
-            if (!deps_.model_exists(component)) {
+            if (!deps_.store->exists(component)) {
                 LOG(WARNING, "ModelManager") << "Skipping unknown component: " << component << std::endl;
                 continue;
             }
-            auto comp_info = deps_.model_info(component);
+            auto comp_info = require_info(component);
             if (comp_info.downloaded && do_not_upgrade) {
                 LOG(INFO, "ModelManager") << "Component already downloaded: " << component << std::endl;
                 continue;
@@ -841,7 +872,7 @@ void ModelIngest::pull(const std::string& model_name,
         // bytes; drop that so the next read rebuilds from the manifest just
         // cached instead of staying wrong until a restart.
         if (!repo_id.empty()) {
-            deps_.invalidate();
+            deps_.store->invalidate();
         }
 
         // Emit a single completion event for the whole collection
@@ -882,7 +913,7 @@ void ModelIngest::pull(const std::string& model_name,
         register_user_model(model_name, registration_data);
     }
 
-    auto model_info = deps_.model_info(model_name);
+    auto model_info = require_info(model_name);
 
     const std::string download_source = requested_registry_source(model_data);
     if (!download_source.empty() &&
@@ -925,19 +956,19 @@ void ModelIngest::pull(const std::string& model_name,
     // The do_not_upgrade flag means:
     //   - Load/inference endpoints: Don't check the remote registry for updates (use cache if available)
     //   - Pull endpoint: Always check the recorded registry for the latest version (do_not_upgrade=false)
-    if (do_not_upgrade && deps_.is_downloaded(model_name)) {
+    if (do_not_upgrade && deps_.store->is_downloaded(artifacts(), model_name)) {
         LOG(INFO, "ModelManager") << "Model already downloaded and do_not_upgrade=true, using cached version" << std::endl;
         return;
     }
 
-    const auto resolved_paths_before = deps_.resolved_paths(model_info.model_name);
+    const auto resolved_paths_before = deps_.store->resolved_paths_for(model_info.model_name);
 
     fetch_model(model_info, do_not_upgrade, progress_callback, cancel);
 
-    const auto resolved_paths_after = deps_.resolved_paths(model_info.model_name);
+    const auto resolved_paths_after = deps_.store->resolved_paths_for(model_info.model_name);
 
     if (resolved_paths_before != resolved_paths_after) {
-        deps_.model_updated(model_name);
+        deps_.notifier->model_updated(model_name);
     }
 
 }
@@ -972,9 +1003,9 @@ void ModelIngest::fetch_model(const ModelInfo& info, bool do_not_upgrade,
     // Update cache after successful download
     deps_.store->patch_download(*deps_.artifacts, info.model_name, true);
 
-    const std::string canonical_model_name = deps_.resolve_name(info.model_name);
+    const std::string canonical_model_name = deps_.store->resolve_name(info.model_name);
     if (is_user_model_name(canonical_model_name)) {
-        deps_.persist_size(canonical_model_name);
+        persist_size(canonical_model_name);
     }
 }
 
@@ -1084,16 +1115,16 @@ std::vector<std::string> ModelIngest::register_components(const json& component_
         bool def_is_collection =
             def.is_object() && is_model_collection_recipe(def.value("recipe", std::string()));
         if (def_is_collection ||
-            (deps_.model_exists(name) && is_model_collection_recipe(deps_.model_info(name).recipe))) {
+            (deps_.store->exists(name) && is_model_collection_recipe(require_info(name).recipe))) {
             throw std::runtime_error(
                 "Collection components must be regular models, not collections: '" + name + "'");
         }
 
-        if (deps_.model_exists(name)) {
+        if (deps_.store->exists(name)) {
             // Local-wins: the shipped/registered definition is authoritative. Warn
             // (do not overwrite) when the inline definition has drifted.
             if (def.is_object()) {
-                ModelInfo local = deps_.model_info(name);
+                ModelInfo local = require_info(name);
                 std::string drift = collection_component_drift(local, def);
                 if (!drift.empty()) {
                     LOG(WARNING, "ModelManager") << "Collection component '" << name
@@ -1101,7 +1132,7 @@ std::vector<std::string> ModelIngest::register_components(const json& component_
                         << "definition. Drift: " << drift << std::endl;
                 }
             }
-            components.push_back(deps_.resolve_name(name));
+            components.push_back(deps_.store->resolve_name(name));
         } else if (def.is_object()) {
             // Unknown: add it from what the file carried, so the file is self-contained.
             std::string canonical = "user." + name;
@@ -1201,13 +1232,13 @@ std::optional<std::string> ModelIngest::validate_collection(
         bool is_collection_component =
             (def != nullptr && def->is_object() &&
              is_model_collection_recipe(def->value("recipe", std::string()))) ||
-            (deps_.model_exists(bare) && is_model_collection_recipe(deps_.model_info(bare).recipe));
+            (deps_.store->exists(bare) && is_model_collection_recipe(require_info(bare).recipe));
         if (is_collection_component) {
             return "Collection components must be regular models, not collections: '" +
                    component_name + "'";
         }
         if (has_models_array) {
-            if (!deps_.model_exists(bare) && def == nullptr) {
+            if (!deps_.store->exists(bare) && def == nullptr) {
                 return "Inline collection component '" + component_name +
                        "' has no matching definition in 'models' and is not a "
                        "registered model. Every component must be defined inline "
@@ -1218,7 +1249,7 @@ std::optional<std::string> ModelIngest::validate_collection(
             // already-registered model) must be a usable registration. Reject a
             // half-defined component here instead of registering it and failing
             // later mid-download.
-            if (!deps_.model_exists(bare) && def != nullptr &&
+            if (!deps_.store->exists(bare) && def != nullptr &&
                 !collection_component_def_is_valid(*def)) {
                 return "Inline collection component '" + component_name +
                        "' has an incomplete definition in 'models' (a recipe and "
@@ -1227,14 +1258,14 @@ std::optional<std::string> ModelIngest::validate_collection(
             // register_user_model() would throw on this once the import reached
             // registration, leaving a partly-imported collection behind. Report
             // it here, where the import can still be refused whole.
-            if (!deps_.model_exists(bare) && def != nullptr) {
+            if (!deps_.store->exists(bare) && def != nullptr) {
                 std::string illegal;
                 normalized_definition_labels(*def, &illegal);
                 if (!illegal.empty()) {
                     return describe_illegal_labels(component_name, illegal);
                 }
             }
-        } else if (!deps_.model_exists(component_name)) {
+        } else if (!deps_.store->exists(component_name)) {
             return "Collection component not registered: '" + component_name +
                    "'. Pull or register it before referencing it in a collection.";
         }
@@ -1249,14 +1280,14 @@ std::optional<std::string> ModelIngest::validate_collection(
         RoutingPolicyParseOptions options = make_routing_parse_options({
             [this](const std::string& name) -> std::optional<std::string> {
                 try {
-                    return deps_.resolve_name(name);
+                    return deps_.store->resolve_name(name);
                 } catch (...) {
                     return std::nullopt;
                 }
             },
             [this](const std::string& name) -> std::optional<ModelType> {
                 try {
-                    return deps_.model_info(name).type;
+                    return require_info(name).type;
                 } catch (...) {
                     return std::nullopt;
                 }
@@ -1424,7 +1455,7 @@ void ModelIngest::register_user_model(const std::string& model_name,
     // only a reconcile notices that. An ordinary model — the collection's own component
     // included — must not trigger one.
     if (is_router_collection_recipe(recipe) || overwrote_router_collection) {
-        deps_.models_changed();
+        deps_.notifier->models_changed(deps_.store->current()->generation);
     }
 }
 
@@ -1453,7 +1484,7 @@ void ModelIngest::unregister_user_model(const std::string& model_name) {
     }
 
     if (was_router_collection) {
-        deps_.models_changed();
+        deps_.notifier->models_changed(deps_.store->current()->generation);
     }
 }
 

@@ -1,6 +1,7 @@
 #include <lemon/models/sync_service.h>
 
 #include <lemon/models/model_info.h>
+#include <lemon/models/store.h>
 #include <lemon/runtime_config.h>
 #include <lemon/utils/aixlog.hpp>
 
@@ -57,14 +58,14 @@ json SyncService::sync(const std::vector<std::string>& target_models, bool dry_r
 
         if (!target_models.empty()) {
             for (const auto& input_name : target_models) {
-                const std::string canonical_name = deps_.resolve_name(input_name);
-                const std::string pub_name = deps_.public_name(canonical_name);
+                const std::string canonical_name = deps_.store->resolve_name(input_name);
+                const std::string pub_name = deps_.store->public_name_for(canonical_name);
                 if (failed_models.count(pub_name) || failed_models.count(input_name)) {
                     continue;
                 }
                 ModelInfo info;
                 try {
-                    info = deps_.model_info(canonical_name);
+                    info = *deps_.store->info(canonical_name);
                 } catch (const std::exception&) {
                     failed_models[input_name] = "Model not found or registered";
                     continue;
@@ -210,8 +211,8 @@ SyncService::Enqueued SyncService::enqueue(const std::vector<std::string>& targe
     std::lock_guard<std::mutex> lock(state_.mutex);
 
     auto is_already_known = [this](const std::string& target) -> bool {
-        std::string canonical = deps_.resolve_name(target);
-        std::string pub = deps_.public_name(canonical);
+        std::string canonical = deps_.store->resolve_name(target);
+        std::string pub = deps_.store->public_name_for(canonical);
         if (state_.active_targets.count(target) || state_.active_targets.count(pub) || state_.active_targets.count(canonical)) {
             return true;
         }
@@ -235,8 +236,8 @@ SyncService::Enqueued SyncService::enqueue(const std::vector<std::string>& targe
                 state_.is_full_sync = true;
             } else {
                 for (const auto& t : target_models) {
-                    std::string canonical = deps_.resolve_name(t);
-                    std::string pub = deps_.public_name(canonical);
+                    std::string canonical = deps_.store->resolve_name(t);
+                    std::string pub = deps_.store->public_name_for(canonical);
                     if (!is_already_known(t)) {
                         state_.pending_targets.insert(pub);
                     }
@@ -258,8 +259,8 @@ SyncService::Enqueued SyncService::enqueue(const std::vector<std::string>& targe
     state_.terminal_error.clear();
     state_.checked_count = 0;
     for (const auto& t : target_models) {
-        std::string canonical = deps_.resolve_name(t);
-        std::string pub = deps_.public_name(canonical);
+        std::string canonical = deps_.store->resolve_name(t);
+        std::string pub = deps_.store->public_name_for(canonical);
         state_.pending_targets.insert(pub);
     }
     // The worker is the only executor, so queueing is also what starts work.
@@ -324,7 +325,7 @@ void SyncService::run_generation() {
                 {
                     std::lock_guard<std::mutex> lock(state_.mutex);
                     for (const auto& [m, err] : full_check.failed_models) {
-                        std::string canonical = deps_.resolve_name(m);
+                        std::string canonical = deps_.store->resolve_name(m);
                         if (std::find(state_.completed_targets.begin(), state_.completed_targets.end(), m) == state_.completed_targets.end()) {
                             checked_canonicals_in_job[canonical] = ModelCheckOutcome::Failed;
                             canonicals_to_notify.push_back(canonical);
@@ -336,7 +337,7 @@ void SyncService::run_generation() {
                         }
                     }
                     for (const auto& m : full_check.updated_models) {
-                        std::string canonical = deps_.resolve_name(m);
+                        std::string canonical = deps_.store->resolve_name(m);
                         if (std::find(state_.completed_targets.begin(), state_.completed_targets.end(), m) == state_.completed_targets.end()) {
                             checked_canonicals_in_job[canonical] = ModelCheckOutcome::UpdateAvailable;
                             canonicals_to_notify.push_back(canonical);
@@ -351,7 +352,7 @@ void SyncService::run_generation() {
                         }
                     }
                     for (const auto& m : full_check.up_to_date_models) {
-                        std::string canonical = deps_.resolve_name(m);
+                        std::string canonical = deps_.store->resolve_name(m);
                         if (std::find(state_.completed_targets.begin(), state_.completed_targets.end(), m) == state_.completed_targets.end()) {
                             checked_canonicals_in_job[canonical] = ModelCheckOutcome::UpToDate;
                             canonicals_to_notify.push_back(canonical);
@@ -383,8 +384,8 @@ void SyncService::run_generation() {
 
             for (const auto& t : pending) {
                 try {
-                    std::string canonical_name = deps_.resolve_name(t);
-                    std::string public_name = deps_.public_name(canonical_name);
+                    std::string canonical_name = deps_.store->resolve_name(t);
+                    std::string public_name = deps_.store->public_name_for(canonical_name);
 
                     bool skip = false;
                     {
@@ -403,7 +404,7 @@ void SyncService::run_generation() {
                         deps_.phase("check_model:" + canonical_name);
                     }
 
-                    ModelInfo info = deps_.model_info(canonical_name);
+                    ModelInfo info = *deps_.store->info(canonical_name);
                     if (!info.downloaded) {
                         std::lock_guard<std::mutex> lock(state_.mutex);
                         state_.failed_models[public_name] = "Model is not downloaded";
@@ -449,10 +450,10 @@ void SyncService::run_generation() {
                     {
                         std::lock_guard<std::mutex> lock(state_.mutex);
                         state_.failed_models[t] = e.what();
-                        checked_canonicals_in_job[deps_.resolve_name(t)] = ModelCheckOutcome::Failed;
+                        checked_canonicals_in_job[deps_.store->resolve_name(t)] = ModelCheckOutcome::Failed;
                     }
                     if (deps_.phase) {
-                        deps_.phase("target_check_done:" + deps_.resolve_name(t));
+                        deps_.phase("target_check_done:" + deps_.store->resolve_name(t));
                     }
                 }
             }

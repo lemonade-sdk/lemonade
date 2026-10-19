@@ -3,6 +3,7 @@
 // landed under it, and the catalogs recorded beside the set. No manager and no disk.
 
 #include <lemon/model_manager.h>
+#include <lemon/models/alias_manager.h>
 #include <lemon/models/catalog.h>
 #include <lemon/models/store.h>
 #include <lemon/models/store_builder.h>
@@ -61,7 +62,8 @@ static std::shared_ptr<const FilterReasons> one_rejection() {
 }
 
 static void test_an_undrawn_store() {
-    ModelStore store;
+    lemon::models::AliasManager aliases{""};
+    ModelStore store{aliases};
     const auto snapshot = store.read();
     check("a reader is never handed nothing", snapshot != nullptr);
     check("and is told to build", !snapshot->valid);
@@ -87,7 +89,8 @@ static void test_an_undrawn_store() {
 }
 
 static void test_a_patch_publishes_too() {
-    ModelStore store;
+    lemon::models::AliasManager aliases{""};
+    ModelStore store{aliases};
     ModelStore::Build build(store);
     build.commit({{"user.Alpha", model("user.Alpha")}}, one_rejection(),
                  {std::make_shared<StubCatalog>("stub")});
@@ -124,7 +127,8 @@ static void test_a_patch_publishes_too() {
 }
 
 static void test_a_write_under_a_build_wins() {
-    ModelStore store;
+    lemon::models::AliasManager aliases{""};
+    ModelStore store{aliases};
     ModelStore::Build first(store);
     first.commit({{"user.Alpha", model("user.Alpha")}}, nullptr, no_catalogs());
 
@@ -171,7 +175,8 @@ static void test_a_write_under_a_build_wins() {
 }
 
 static void test_a_build_holds_only_the_builder() {
-    ModelStore store;
+    lemon::models::AliasManager aliases{""};
+    ModelStore store{aliases};
     ModelStore::Build build(store);
     build.commit({{"user.Alpha", model("user.Alpha")}}, nullptr, no_catalogs());
 
@@ -215,7 +220,8 @@ static void test_a_build_holds_only_the_builder() {
 // generation is how a slow reader learns its snapshot is no longer current, and a bump
 // that came from bookkeeping rather than from a change made that signal lie.
 static void test_invalidation_publishes_nothing() {
-    ModelStore store;
+    lemon::models::AliasManager aliases{""};
+    ModelStore store{aliases};
     ModelStore::Build build(store);
     build.commit({{"user.Alpha", model("user.Alpha")}}, nullptr, no_catalogs());
     const std::uint64_t built = store.generation();

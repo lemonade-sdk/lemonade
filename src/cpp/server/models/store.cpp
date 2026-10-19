@@ -2,6 +2,7 @@
 
 #include <lemon/backends/backend_registry.h>
 #include <lemon/canonical_id.h>
+#include <lemon/models/alias_manager.h>
 #include <lemon/models/artifact_store.h>
 #include <lemon/models/catalog_set.h>
 #include <lemon/models/composition.h>
@@ -10,19 +11,166 @@
 #include <lemon/models/store_builder.h>
 #include <lemon/models/store_snapshot.h>
 #include <lemon/utils/aixlog.hpp>
+#include <lemon/utils/model_name_utils.h>
+#include <lemon/utils/path_utils.h>
 
 #include <atomic>
+#include <cstring>
+#include <stdexcept>
 
 namespace lemon {
 namespace models {
 
-ModelStore::ModelStore() : catalogs_(std::make_unique<CatalogSet>()) {
+namespace {
+
+// A name no row claims is still worth looking up: a canonical id is its own public name.
+std::string key_for(const StoreSnapshot& snapshot, const std::string& name) {
+    const std::string canonical = snapshot.canonical_for(name);
+    return canonical.empty() ? name : canonical;
+}
+
+std::string public_name_in(const StoreSnapshot& snapshot, const std::string& canonical_id) {
+    const std::string public_name = snapshot.public_name_for(canonical_id);
+    return public_name.empty() ? canonical_id : public_name;
+}
+
+}  // namespace
+
+ModelStore::ModelStore(const AliasManager& aliases, Composer composer)
+    : composer_(std::move(composer)), aliases_(aliases), catalogs_(std::make_unique<CatalogSet>()) {
     // Readers must always have a snapshot; an invalid one tells them to build.
     auto empty = std::make_shared<StoreSnapshot>();
     std::atomic_store(&snapshot_, std::const_pointer_cast<const StoreSnapshot>(empty));
 }
 
 ModelStore::~ModelStore() = default;
+
+std::shared_ptr<const StoreSnapshot> ModelStore::current() {
+    if (composer_) {
+        ensure_current(composer_);
+    }
+    return read();
+}
+
+std::optional<ResolvedModel> ModelStore::resolve(const std::string& requested) {
+    auto snapshot = current();
+
+    std::string name = utils::normalize_model_name(requested);
+    constexpr const char kLatest[] = ":latest";
+    if (name.size() > strlen(kLatest) &&
+        name.compare(name.size() - strlen(kLatest), strlen(kLatest), kLatest) == 0) {
+        name.erase(name.size() - strlen(kLatest));
+    }
+
+    // A snapshot name wins over an alias, so an alias can never hide a model.
+    const auto from_snapshot = [&snapshot](const std::string& candidate) {
+        const std::string canonical = key_for(*snapshot, candidate);
+        const ModelInfo* found = snapshot->find(canonical);
+        if (found == nullptr) return std::pair<std::string, const ModelInfo*>{};
+        return std::pair<std::string, const ModelInfo*>{canonical, found};
+    };
+
+    auto hit = from_snapshot(name);
+    bool via_alias = false;
+    if (hit.second == nullptr) {
+        const std::string target = aliases_.resolve_alias(name).value_or("");
+        if (target.empty()) return std::nullopt;
+        hit = from_snapshot(target);
+        if (hit.second == nullptr) return std::nullopt;
+        via_alias = true;
+    }
+
+    ResolvedModel resolved;
+    resolved.canonical_id = hit.first;
+    resolved.info = std::shared_ptr<const ModelInfo>(snapshot, hit.second);
+    resolved.via_alias = via_alias;
+    // A client that asked by alias is answered under that alias.
+    resolved.wire_id = via_alias ? name : public_name_in(*snapshot, hit.first);
+    return resolved;
+}
+
+bool ModelStore::exists(const std::string& requested) {
+    auto snapshot = current();
+    return snapshot->find(key_for(*snapshot, requested)) != nullptr;
+}
+
+std::shared_ptr<const ModelInfo> ModelStore::info(const std::string& name) {
+    auto snapshot = current();
+    const ModelInfo* found = snapshot->find(key_for(*snapshot, name));
+    if (found == nullptr) {
+        throw std::runtime_error("Model not found: " + name);
+    }
+    return std::shared_ptr<const ModelInfo>(snapshot, found);
+}
+
+std::string ModelStore::resolve_name(const std::string& name) {
+    auto snapshot = current();
+    return key_for(*snapshot, name);
+}
+
+std::string ModelStore::public_name_for(const std::string& canonical_id) {
+    return public_name_in(*current(), canonical_id);
+}
+
+std::string ModelStore::rejection_reason(const std::string& name) {
+    auto snapshot = current();
+    return snapshot->rejection_reason(key_for(*snapshot, name));
+}
+
+std::map<std::string, ModelInfo> ModelStore::supported_models() {
+    auto snapshot = current();
+    std::map<std::string, ModelInfo> public_models;
+    for (const auto& [name, info] : snapshot->models) {
+        ModelInfo public_info = info;
+        public_info.model_name = public_name_in(*snapshot, name);
+        public_models[public_info.model_name] = std::move(public_info);
+    }
+    return public_models;
+}
+
+std::map<std::string, ModelInfo> ModelStore::downloaded_models() {
+    auto snapshot = current();
+    std::map<std::string, ModelInfo> downloaded;
+    for (const auto& [name, info] : snapshot->models) {
+                if (!info.downloaded) continue;
+        ModelInfo public_info = info;
+        public_info.model_name = public_name_in(*snapshot, name);
+        downloaded[public_info.model_name] = std::move(public_info);
+    }
+    return downloaded;
+}
+
+std::map<std::string, std::filesystem::path> ModelStore::resolved_paths_for(
+    const std::string& canonical_id) const {
+    // Does not ensure: callers compare paths across a fetch on one snapshot and must not
+    // wait behind a writer for a question about a row they already hold.
+    const ModelInfo* row = read()->find(canonical_id);
+    std::map<std::string, std::filesystem::path> paths;
+    if (row == nullptr) {
+        return paths;
+    }
+    for (const auto& [type, path] : row->resolved_paths) {
+        paths[type] = utils::path_from_utf8(path).lexically_normal();
+    }
+    return paths;
+}
+
+bool ModelStore::is_downloaded(const ModelArtifactStore& artifacts, const std::string& name) {
+    auto snapshot = current();
+    const std::string key = key_for(*snapshot, name);
+    const ModelInfo* row = snapshot->find(key);
+    if (row == nullptr) {
+        return false;
+    }
+    if (!row->downloaded ||
+        artifacts.download_policy(*row) == backends::DownloadPolicy::SelfManaged ||
+        artifacts.complete(*row)) {
+        return row->downloaded;
+    }
+    // Nothing rebuilds on its own, so the published row is corrected here.
+    patch_download(artifacts, key, false);
+    return false;
+}
 
 std::shared_ptr<const StoreSnapshot> ModelStore::read() const {
     return std::atomic_load(&snapshot_);

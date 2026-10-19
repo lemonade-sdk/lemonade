@@ -1,12 +1,16 @@
 #pragma once
 
 #include <lemon/models/catalog_descriptor.h>
+#include <lemon/models/composition.h>
+#include <lemon/models/store_snapshot.h>
 
 #include <cstdint>
+#include <filesystem>
 #include <functional>
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -17,9 +21,8 @@ struct ModelInfo;
 namespace models {
 
 class ModelArtifactStore;
-struct CompositionResult;
+class AliasManager;
 struct FilterReasons;
-struct StoreSnapshot;
 class CatalogSet;
 class ModelCatalog;
 
@@ -32,8 +35,38 @@ class ModelCatalog;
 // in the meantime.
 class ModelStore {
 public:
-    ModelStore();
+    // The compose a stale set triggers, installed by the owner: composing reads catalogs,
+    // registries, the machine probe and saved options, all of which live behind
+    // ModelComposition. With none installed the store never builds, answering from what it
+    // has published.
+    using Composer = std::function<CompositionResult()>;
+
+    // `aliases` must outlive the store.
+    explicit ModelStore(const AliasManager& aliases, Composer composer = {});
     ~ModelStore();
+
+    // Reads, all of which take a current set first: a request arriving after an
+    // invalidation waits for the one rebuild behind it. `read()` and `resolved_paths_for()`
+    // are the two that never wait.
+    std::shared_ptr<const StoreSnapshot> current();
+
+    // The only place a requested name becomes a model.
+    std::optional<ResolvedModel> resolve(const std::string& requested);
+    bool exists(const std::string& requested);
+    // Throws when no row answers; the nullable question is `read()->find()`.
+    std::shared_ptr<const ModelInfo> info(const std::string& name);
+    std::string resolve_name(const std::string& name);
+    std::string public_name_for(const std::string& canonical_id);
+    std::string rejection_reason(const std::string& canonical_id);
+    std::map<std::string, ModelInfo> supported_models();
+    std::map<std::string, ModelInfo> downloaded_models();
+    std::map<std::string, std::filesystem::path> resolved_paths_for(
+        const std::string& canonical_id) const;
+
+    // The one read allowed to change the set: a row saying `downloaded` whose bytes are
+    // gone is corrected for every reader. Which bytes belong to a row stays the artifact
+    // store's question.
+    bool is_downloaded(const ModelArtifactStore& artifacts, const std::string& name);
 
     // Never null. `valid` false means the set is empty and the caller should build.
     std::shared_ptr<const StoreSnapshot> read() const;
@@ -122,6 +155,9 @@ public:
     void publish_locked(std::map<std::string, ModelInfo> models,
                         std::shared_ptr<const FilterReasons> reasons);
     bool cache_valid_locked() const;
+
+    Composer composer_;
+    const AliasManager& aliases_;
 
     mutable std::mutex writer_mutex_;
     std::mutex builder_mutex_;

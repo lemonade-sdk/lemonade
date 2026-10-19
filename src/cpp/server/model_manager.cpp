@@ -142,9 +142,7 @@ models::SyncService::Deps ModelManager::make_sync_deps() {
                            DownloadProgressCallback progress) {
         download_model(name, options, do_not_upgrade, progress);
     };
-    deps.model_info = [this](const std::string& canonical) { return get_model_info(canonical); };
-    deps.resolve_name = [this](const std::string& name) { return resolve_model_name(name); };
-    deps.public_name = [this](const std::string& canonical) { return get_public_model_name(canonical); };
+    deps.store = &store_;
     return deps;
 }
 
@@ -158,38 +156,8 @@ models::ModelIngest::Deps ModelManager::make_ingest_deps() {
     };
     deps.registries = &registries_;
     deps.store = &store_;
-    deps.models_changed = [this] { notify_models_changed(); };
-    deps.model_exists = [this](const std::string& name) { return model_exists(name); };
-    deps.model_exists_unfiltered =
-        [this](const std::string& name) { return model_exists_unfiltered(name); };
-    deps.model_info = [this](const std::string& name) { return get_model_info(name); };
-    deps.filter_reason = [this](const std::string& name) { return get_model_filter_reason(name); };
-    deps.resolve_name = [this](const std::string& name) { return resolve_model_name(name); };
-    deps.is_downloaded = [this](const std::string& name) { return is_model_downloaded(name); };
-    deps.resolved_paths = [this](const std::string& name) { return resolved_paths_for(name); };
-    deps.invalidate = [this] { invalidate_models_cache(); };
-    deps.persist_size = [this](const std::string& canonical_model_name) {
-        const auto published = store_.read();
-        const ModelInfo* model = published->find(canonical_model_name);
-        if (model == nullptr) {
-            return;
-        }
-        const bool wrote = registries_.update_user([&](json& user_models) {
-            auto entry = user_models.find(strip_user_model_prefix(canonical_model_name));
-            if (entry == user_models.end()) {
-                return false;
-            }
-            (*entry)["size"] = model->size;
-            return true;
-        });
-        if (wrote) {
-            store_.invalidate();
-        }
-    };
+    deps.notifier = &change_notifier_;
     deps.save_options = [this](const ModelInfo& info) { save_model_options(info); };
-    deps.model_updated = [this](const std::string& canonical_model_name) {
-        change_notifier_.model_updated(canonical_model_name);
-    };
     return deps;
 }
 
@@ -202,6 +170,7 @@ ModelManager::ModelManager(ModelManagerConfig config)
       alias_manager_(config_.cache_dir.empty() ? utils::get_cache_dir() : config_.cache_dir),
       registries_(load_server_models(), get_user_models_file()),
       recipe_options_(get_recipe_options_file()),
+      store_(alias_manager_, [this] { return composition_->run(); }),
       artifacts_(std::make_unique<models::ModelArtifactStore>(models::ModelArtifactStore::Hooks{
           [this] { return get_hf_cache_dir(); },
           [this](const ModelInfo& info, const std::string& type) { return source_for(info, type); },
@@ -498,22 +467,7 @@ std::shared_ptr<const models::StoreSnapshot> ModelManager::snapshot() {
 }
 
 std::map<std::string, ModelInfo> ModelManager::get_supported_models() {
-    // Build cache if needed (lazy initialization)
-    build_cache();
-
-    // Return copy of cache (all models, including their download status)
-    auto snapshot = store_.read();
-    std::map<std::string, ModelInfo> public_models;
-    for (const auto& [name, info] : snapshot->models) {
-        std::string public_name = snapshot->public_name_for(name);
-        if (public_name.empty()) {
-            public_name = name;
-        }
-        ModelInfo public_info = info;
-        public_info.model_name = public_name;
-        public_models[public_name] = std::move(public_info);
-    }
-    return public_models;
+    return store_.supported_models();
 }
 
 ModelManager::UpdateCheckResult ModelManager::check_updates(const std::vector<std::string>& targets) {
@@ -563,11 +517,6 @@ void ModelManager::wait_until_sync_idle() {
 ModelManager::SyncEnqueueResult ModelManager::enqueue_sync(const std::vector<std::string>& target_models, bool attach_if_running) {
     return sync_.enqueue(target_models, attach_if_running);
 }
-
-json ModelManager::wait_for_sync() {
-    return sync_.wait_for(sync_.status().value("sync_id", 0));
-}
-
 
 void ModelManager::download_from_huggingface_engine(
         const ModelInfo& info, DownloadProgressCallback progress_callback) {
@@ -694,62 +643,12 @@ void ModelManager::build_cache() {
 
 
 
-void ModelManager::remove_model_from_cache(const std::string& model_name) {
-    store_.patch_removed(model_name);
-}
-
 std::map<std::string, ModelInfo> ModelManager::get_downloaded_models() {
-    // Build cache if needed
-    build_cache();
-
-    // Filter and return downloaded models. Collections (Omni) are included once
-    // all their components are downloaded: the server orchestrates /chat/completions
-    // for them (see CollectionOrchestrator), so they are genuine OpenAI-compatible
-    // chat models and should appear in /v1/models and Ollama /api/tags. A collection's
-    // `downloaded` flag already reflects component status (see build_cache).
-    auto snapshot = store_.read();
-    std::map<std::string, ModelInfo> downloaded;
-    for (const auto& [name, info] : snapshot->models) {
-        if (info.downloaded) {
-            std::string public_name = snapshot->public_name_for(name);
-            if (public_name.empty()) {
-                public_name = name;
-            }
-            ModelInfo public_info = info;
-            public_info.model_name = public_name;
-            downloaded[public_name] = std::move(public_info);
-        }
-    }
-    return downloaded;
+    return store_.downloaded_models();
 }
 
 bool ModelManager::is_model_downloaded(const std::string& model_name) {
-    // Build cache if needed
-    build_cache();
-    // O(1) lookup - download status is in cache
-    auto snapshot = store_.read();
-    std::string canonical_name = snapshot->canonical_for(model_name);
-    if (canonical_name.empty()) {
-        canonical_name = model_name;
-    }
-    const ModelInfo* cached = snapshot->find(canonical_name);
-    if (cached == nullptr) {
-        return false;
-    }
-    if (!cached->downloaded ||
-        download_policy(*cached) == backends::DownloadPolicy::SelfManaged ||
-        artifacts_->complete(*cached)) {
-        return cached->downloaded;
-    }
-
-    // Files went missing since the cache was built. Nothing rebuilds on its own,
-    // so record it through a store write for every other reader.
-    StoreWrite store_write(*this);
-    auto it = store_write.draft().find(canonical_name);
-    if (it != store_write.draft().end()) {
-        it->second.downloaded = false;
-    }
-    return false;
+    return store_.is_downloaded(*artifacts_, model_name);
 }
 
 backends::DownloadPolicy ModelManager::download_policy(const ModelInfo& info) const {
@@ -803,43 +702,7 @@ std::vector<std::pair<std::string, const ModelInfo*>> ModelManager::listing_rows
 }
 
 std::optional<models::ResolvedModel> ModelManager::resolve(const std::string& requested) {
-    build_cache();
-    auto snapshot = store_.read();
-
-    std::string name = utils::normalize_model_name(requested);
-    constexpr const char kLatest[] = ":latest";
-    if (name.size() > strlen(kLatest) &&
-        name.compare(name.size() - strlen(kLatest), strlen(kLatest), kLatest) == 0) {
-        name.erase(name.size() - strlen(kLatest));
-    }
-
-    // A snapshot name wins over an alias, so an alias can never hide a model.
-    const auto from_snapshot = [&snapshot](const std::string& candidate) {
-        const std::string canonical = snapshot->canonical_for(candidate);
-        const ModelInfo* found = snapshot->find(canonical.empty() ? candidate : canonical);
-        if (found == nullptr) return std::pair<std::string, const ModelInfo*>{};
-        return std::pair<std::string, const ModelInfo*>{canonical.empty() ? candidate : canonical,
-                                                        found};
-    };
-
-    auto hit = from_snapshot(name);
-    bool via_alias = false;
-    if (hit.second == nullptr) {
-        const std::string target = alias_manager_.resolve_alias(name).value_or("");
-        if (target.empty()) return std::nullopt;
-        hit = from_snapshot(target);
-        if (hit.second == nullptr) return std::nullopt;
-        via_alias = true;
-    }
-
-    models::ResolvedModel resolved;
-    resolved.canonical_id = hit.first;
-    resolved.info = std::shared_ptr<const ModelInfo>(snapshot, hit.second);
-    resolved.via_alias = via_alias;
-    resolved.wire_id = via_alias
-                           ? name
-                           : get_public_model_name(hit.first);
-    return resolved;
+    return store_.resolve(requested);
 }
 
 std::map<std::string, std::string> ModelManager::aliases() const {
@@ -925,7 +788,7 @@ void ModelManager::delete_model(const std::string& model_name) {
     }
 
     forget_registered_model(canonical_model_name);
-    remove_model_from_cache(canonical_model_name);
+    store_.patch_removed(canonical_model_name);
 }
 
 std::map<std::string, ModelInfo> ModelManager::all_models() const {
@@ -934,15 +797,7 @@ std::map<std::string, ModelInfo> ModelManager::all_models() const {
 
 std::map<std::string, std::filesystem::path> ModelManager::resolved_paths_for(
     const std::string& canonical_model_name) const {
-    const ModelInfo* info = store_.read()->find(canonical_model_name);
-    std::map<std::string, std::filesystem::path> paths;
-    if (info == nullptr) {
-        return paths;
-    }
-    for (const auto& [type, path] : info->resolved_paths) {
-        paths[type] = path_from_utf8(path).lexically_normal();
-    }
-    return paths;
+    return store_.resolved_paths_for(canonical_model_name);
 }
 
 
@@ -1006,55 +861,19 @@ json ModelManager::cleanup_orphaned_cache(bool dry_run) {
 }
 
 ModelInfo ModelManager::get_model_info(const std::string& model_name) {
-    // Build cache if needed
-    build_cache();
-
-    // O(1) lookup in the published snapshot
-    auto snapshot = store_.read();
-    std::string canonical_name = snapshot->canonical_for(model_name);
-    if (canonical_name.empty()) {
-        canonical_name = model_name;
-    }
-    if (const ModelInfo* found = snapshot->find(canonical_name)) {
-        return *found;
-    }
-
-    throw std::runtime_error("Model not found: " + model_name);
+    return *store_.info(model_name);
 }
 
 std::string ModelManager::resolve_model_name(const std::string& model_name) {
-    build_cache();
-
-    auto snapshot = store_.read();
-    std::string canonical_name = snapshot->canonical_for(model_name);
-    return canonical_name.empty() ? model_name : canonical_name;
+    return store_.resolve_name(model_name);
 }
 
 std::string ModelManager::get_public_model_name(const std::string& model_name) {
-    build_cache();
-
-    auto snapshot = store_.read();
-    std::string public_name = snapshot->public_name_for(model_name);
-    return public_name.empty() ? model_name : public_name;
+    return store_.public_name_for(model_name);
 }
 
 bool ModelManager::model_exists(const std::string& model_name) {
-    // Build cache if needed
-    build_cache();
-
-    // O(1) lookup in the published snapshot
-    {
-        auto snapshot = store_.read();
-        std::string canonical_name = snapshot->canonical_for(model_name);
-        if (canonical_name.empty()) {
-            canonical_name = model_name;
-        }
-        if (snapshot->find(canonical_name) != nullptr) {
-            return true;
-        }
-    }
-
-    return false;
+    return store_.exists(model_name);
 }
 
 std::optional<std::string> ModelManager::validate_collection_request(
@@ -1073,23 +892,11 @@ bool ModelManager::model_exists_unfiltered(const std::string& model_name) {
 }
 
 std::string ModelManager::get_model_filter_reason(const std::string& model_name) {
-    // Ensure cache is built (this populates the filter reasons)
-    build_cache();
-
-    auto snapshot = store_.read();
-    std::string canonical_name = snapshot->canonical_for(model_name);
-    if (canonical_name.empty()) {
-        canonical_name = model_name;
-    }
-
-    // Model wasn't filtered out (either it's available or doesn't exist)
-    return snapshot->rejection_reason(canonical_name);
+    return store_.rejection_reason(model_name);
 }
 
 std::set<std::string> ModelManager::recipes_with_all_models_filtered() {
-    build_cache();
-    auto snapshot = store_.read();
-    const std::vector<std::string> hidden = snapshot->empty_recipes();
+    const std::vector<std::string> hidden = store_.current()->empty_recipes();
     return std::set<std::string>(hidden.begin(), hidden.end());
 }
 

@@ -438,6 +438,9 @@ public:
     std::vector<CatalogDescriptor> descriptors() const;
     std::uint64_t generation() const;                    // rises on every publish
 
+    // Marks the set stale and publishes nothing: rule 6a.
+    void invalidate();
+
     // A patch: one writer at a time, published when the scope ends. The draft
     // starts as the published set, so a change edits rows and leaves the rest.
     class Write {
@@ -475,19 +478,29 @@ public:
 };
 ```
 
-The read side below is the shape a consumer wants and the store does not yet answer, because resolution lives on the facade and every collaborator therefore reaches back into the facade for it. Each is a pure read of the published snapshot; step **S7** moves them here and deletes the lambdas that re-expose them.
-
 ```cpp
-// (S7) — shipped on the facade today, as ModelManager methods.
-std::optional<ResolvedModel> resolve(const std::string& requested) const;   // the six steps below
-bool exists(const std::string& requested) const;
-bool exists_unfiltered(const std::string& requested) const;   // before the host filter
-std::shared_ptr<const ModelInfo> info(const std::string& name) const;       // aliasing, see below
-std::map<std::string, ModelInfo> supported_models() const;    // what /v1/models lists
-std::map<std::string, ModelInfo> downloaded_models() const;
+// The read side. Each entry point asks for a current set first, so a request that
+// arrives after an invalidation waits for the one rebuild that follows it and every read
+// behind that is a lookup. `read()` and `resolved_paths_for()` are the exceptions: they
+// answer from the published snapshot without waiting on a writer.
+std::shared_ptr<const StoreSnapshot> current();
+std::optional<ResolvedModel> resolve(const std::string& requested);   // the six steps below
+bool exists(const std::string& requested);
+std::shared_ptr<const ModelInfo> info(const std::string& name);       // aliasing, see below
+std::string resolve_name(const std::string& name);          // the key, or the name given
+std::string public_name_for(const std::string& canonical_id);
+std::string rejection_reason(const std::string& canonical_id);
+std::map<std::string, ModelInfo> supported_models();        // what /v1/models lists
+std::map<std::string, ModelInfo> downloaded_models();
+std::map<std::string, std::filesystem::path> resolved_paths_for(const std::string& canonical_id) const;
+bool is_downloaded(const ModelArtifactStore&, const std::string& name);   // rule 6
 ```
 
-`info()` returns an aliasing `shared_ptr` into the published snapshot, so a caller holding a `ModelInfo` across a request keeps a valid object after the next swap.
+`info()` throws for a name no row answers, which is what the facade's lookup has always said; the nullable question is `read()->find()`. It returns an aliasing `shared_ptr` into the published snapshot, so a caller holding a `ModelInfo` across a request keeps a valid object after the next swap.
+
+The composer that a stale set triggers is installed by the owner, because composing reads catalogs, registries, the machine probe and saved options -- everything behind `ModelComposition`. A store with no composer answers from what it has published and never builds, which is what a test that patches rows directly wants.
+
+**Not on the store: "does this name exist before the host filter".** That question belongs to the registries rather than to the published set -- a filtered model is absent from the snapshot by construction -- so `ModelIngest` answers it from the `RegistryDocuments` it already holds. A store that grew such a method would be a second registry reader for one caller.
 
 `ModelComposition::run()` (`composition.cpp`) is the pipeline. It composes a `CompositionResult{models, reasons, catalogs, downloaded}` that `Build::commit` either installs or throws away; nothing holds a second copy of the set between builds. Its steps, in the order they must run:
 
@@ -508,14 +521,14 @@ Rules:
 3. Download status comes from artifact sources, never from a comparison on `ModelInfo::source`.
 4. The store runs no thread. `ensure_current()` composes on the thread of whoever asked — the sync service's worker, the directory watcher, or the request that found the set stale — and publishes with `std::atomic_store`. One compose runs at a time; a second caller that arrives while one runs waits for it rather than starting its own.
 5. The nine steps are the body of one function. The pipeline is fixed, not a pluggable stage list: a new stage is an edit to `ModelComposition::run()`, which is exactly the friction wanted here.
-6. A read publishes nothing. `generation` is the signal clients watch for "the set changed", so a read answers from the published snapshot and never takes the store lock — a read that published would invalidate every watcher without changing anything. One exception ships today: `is_model_downloaded()` records a self-heal through a store write when files went missing since the build, which is a change to the set and not a no-op; S7 gives that path a named verb so no read writes by accident.
+6. A read publishes nothing. `generation` is the signal clients watch for "the set changed", so a read answers from the published snapshot and never takes the store lock — a read that published would invalidate every watcher without changing anything. The one exception is named rather than accidental: `is_downloaded(artifacts, name)` answers from the snapshot and, when the bytes have gone missing since the build, corrects the row through `patch_download` so every other reader sees it -- a change to the set, not a no-op, and the collections that route through the model follow it.
 6a. **An invalidation publishes nothing either.** `ModelStore::invalidate()` takes the writer lock, clears `cache_valid_`, returns: no draft copied, no tables derived, no generation. Marking the set stale changes no rows, and the rebuild that follows is the change — so invalidating twice and reading once moves the generation once. `Write::invalidate_cache()` survives for the four callers that invalidate from inside a write they are already publishing: a download completing through a backend that rebuilds its own model list, and the three ingest paths beside it.
 7. The store lock covers the commit, not the computation. Catalog reads, hardware filtering, artifact status and metadata population run over a candidate that the published set cannot see, and one builder runs at a time. On a warm host with 141 models, 52 ms of a 53 ms rebuild needs no lock at all; holding it across the whole build made every other writer — a download completing, a delete, a config write that changes the set — wait for work that touches none of its state.
 8. A download landing patches the rows it changed rather than rebuilding the set: the model, and the collections that carry it. It decides from the published snapshot, so the filesystem walk — resolved paths, the header a backend reads for metadata, the on-disk size — happens outside the store lock, and it keeps any options another writer committed while it worked. Held this way the patch costs 15 µs of store lock against 2.0 ms when it did its work inside the lock.
 9. Publishing derives what a reader could recompute — the alias maps and the helper-model projection — from the set published beside them, so no writer has to remember to update a name table and none can point at a model that is gone. Deriving costs 206 µs on a 143-model store, against 100 µs to copy the set itself; writes are rare enough (62 across a whole CLI suite) that the invariant is worth the arithmetic. The filter table is the one thing a build hands over explicitly, because a patch says nothing about hardware fit and carries the published table forward.
 10. Outside a write the model set exists once, in the published snapshot. A write seeds a draft from the snapshot readers hold and works on that; the publish moves the draft into the new snapshot. Nothing mutates a published snapshot in place, so a reader cannot see a set half-updated, and there is no member left holding a second copy that a later edit could read by mistake.
 11. A compose whose generation moved while it ran does not commit. Its candidate predates a write it never saw, so it yields: that write stays published, the set stays marked stale, and the next `ensure_current()` composes again from the registries and disk the writer wrote to. Yielding costs one dropped composition; committing would cost the write.
-12. Marking the set stale is not a write. An invalidation flips a flag and publishes nothing; the rebuild that follows is the publish, and it is the only `generation` bump an invalidation causes. (S6; today an invalidation runs through the patch protocol and publishes the unchanged set, which bumps the generation for a set that did not change.)
+12. Marking the set stale is not a write. An invalidation flips a flag and publishes nothing; the rebuild that follows is the publish, and it is the only `generation` bump an invalidation causes. `Write::invalidate_cache()` survives for the callers that invalidate from inside a write they are already publishing.
 
 ## Hardware Filtering
 
@@ -577,7 +590,7 @@ struct ResolvedModel {
 };
 ```
 
-`resolve(requested)` runs these steps — on `ModelManager` today, on `ModelStore` from **S7**, which is where [Model Store](#model-store) places them:
+`ModelStore::resolve(requested)` runs these steps:
 
 1. Normalize with `utils::normalize_model_name()` and strip a trailing `:latest`.
 2. Look the name up in `StoreSnapshot::public_aliases`. A hit wins: exact canonical ID, then the bare-name precedence winner, then a model's `input_aliases`.
@@ -591,7 +604,7 @@ Rules:
 1. The snapshot wins over an alias, and `POST /internal/aliases` rejects an alias that collides with a canonical model name with 409, so a colliding pair cannot be created.
 2. `AliasManager` lives at `src/cpp/include/lemon/models/alias_manager.h` with its implementation in `src/cpp/server/models/alias_manager.cpp`. It owns `<cache_dir>/aliases.json` in mode `0600`, writes it on every mutation, prunes cyclic chains at load, and guards its map with one `std::shared_mutex`. `ModelManager` constructs the one instance from `ModelManagerConfig.cache_dir`; the alias routes and `lemonade alias` reach it through `ModelManager::set_alias()` and `ModelManager::remove_alias()`, which delegate to that instance.
 3. Aliases are consulted at resolution time, never folded into the snapshot. An alias mutation takes effect on the next request with no store rebuild and no generation bump.
-4. `ModelStore` holds a `const AliasManager&`, with no interface between them (S7; today the facade holds the one instance and resolution runs there, which is why collaborators reach back into the facade for it).
+4. `ModelStore` holds a `const AliasManager&` — the one instance `ModelManager` constructs — with no interface between them.
 5. `get_all_aliases()` returns a `std::map`, so `/internal/aliases` and the alias rows of `/v1/models` come out in a stable order and a golden test is reproducible.
 6. `ModelManager::list()` appends one row per alias that resolves to a listed model, with `id` set to the alias. The route serializes and does nothing else.
 7. Every gateway resolves through this function, so aliases mean the same thing on the OpenAI, Ollama, Anthropic and MCP surfaces.

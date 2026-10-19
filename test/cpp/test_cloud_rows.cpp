@@ -2,6 +2,7 @@
 // what an evict leaves alone. The provider is a callable, so no server is involved.
 
 #include <lemon/model_manager.h>
+#include <lemon/models/alias_manager.h>
 #include <lemon/models/cloud_rows.h>
 #include <lemon/models/store.h>
 #include <lemon/models/store_snapshot.h>
@@ -51,7 +52,8 @@ static void test_refresh_reseeds_one_provider() {
     std::vector<std::vector<ModelInfo>> listings{{listed("alpha", "p1"), listed("beta", "p1")},
                                                  {listed("beta", "p1")}};
     size_t calls = 0;
-    ModelStore store;
+    lemon::models::AliasManager aliases{""};
+    ModelStore store{aliases};
     CloudRows rows(store, [&listings, &calls](const std::string&) {
         return listings[std::min(calls++, listings.size() - 1)];
     });
@@ -67,7 +69,8 @@ static void test_refresh_reseeds_one_provider() {
 }
 
 static void test_refresh_leaves_everyone_else_alone() {
-    ModelStore store;
+    lemon::models::AliasManager aliases{""};
+    ModelStore store{aliases};
     publish(store, {
         {"alpha", listed("alpha", "p1")},
         {"other", listed("other", "p2")},
@@ -81,7 +84,8 @@ static void test_refresh_leaves_everyone_else_alone() {
 }
 
 static void test_refresh_does_not_take_a_held_name() {
-    ModelStore store;
+    lemon::models::AliasManager aliases{""};
+    ModelStore store{aliases};
     publish(store, {{"shared", [] {
         ModelInfo info;
         info.model_name = "shared";
@@ -97,7 +101,8 @@ static void test_refresh_does_not_take_a_held_name() {
 }
 
 static void test_rows_a_listing_left_undressed() {
-    ModelStore store;
+    lemon::models::AliasManager aliases{""};
+    ModelStore store{aliases};
     CloudRows rows(store, [](const std::string&) {
         return std::vector<ModelInfo>{listed("bare", "p1")};
     });
@@ -109,7 +114,8 @@ static void test_rows_a_listing_left_undressed() {
 }
 
 static void test_evict_and_the_empty_ask() {
-    ModelStore store;
+    lemon::models::AliasManager aliases{""};
+    ModelStore store{aliases};
     publish(store, {
         {"alpha", listed("alpha", "p1")},
         {"beta", listed("beta", "p1")},
