@@ -51,6 +51,7 @@ namespace models {
 
 class ModelComposition;
 class ArtifactSource;
+struct CheckpointStatus;
 class FetchableRepository;
 struct ArtifactRef;
 class CatalogAccumulator;
@@ -125,6 +126,10 @@ public:
     // The ArtifactSource for one checkpoint.
     std::unique_ptr<models::ArtifactSource> source_for(
         const ModelInfo& info, const std::string& checkpoint_type) const;
+
+    // Every checkpoint of this model, present or not, straight from the
+    // sources a pull would use. The wire's checkpoint_status[] is this list.
+    std::vector<models::CheckpointStatus> checkpoint_status(const ModelInfo& info) const;
 
     // Unfiltered: see models::KnownModels.
     std::map<std::string, ModelInfo> all_models() const;

@@ -262,7 +262,7 @@ int main() {
     // The measure this refactor was opened for: a ceiling, not a target. One
     // way: shrinking passes without an edit, growing names itself.
     const int lines = static_cast<int>(std::count(facade.begin(), facade.end(), '\n'));
-    constexpr int kLineCeiling = 1082;
+    constexpr int kLineCeiling = 1109;
     check("the facade is " + std::to_string(lines) + " lines, ceiling " +
               std::to_string(kLineCeiling),
           lines <= kLineCeiling);
@@ -282,7 +282,7 @@ int main() {
             if (line.size() > 2 && line.compare(line.size() - 2, 2, "_;") == 0) ++members;
         }
     }
-    constexpr int kHeaderDeclarationCeiling = 71;
+    constexpr int kHeaderDeclarationCeiling = 72;
     check("the facade header declares " + std::to_string(declarations) +
               " methods, ceiling " + std::to_string(kHeaderDeclarationCeiling),
           declarations <= kHeaderDeclarationCeiling);

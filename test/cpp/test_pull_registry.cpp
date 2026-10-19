@@ -4,6 +4,7 @@
 // a real host.
 
 #include <lemon/model_manager.h>
+#include <lemon/models/store_snapshot.h>
 #include <lemon/models/artifact_layout.h>
 #include <lemon/models/fetchable_repository.h>
 
@@ -86,8 +87,17 @@ class ScriptedRepository : public FetchableRepository {
           trace_(trace) {}
 
     ArtifactKind kind() const override { return ArtifactKind::Registry; }
-    std::string resolve() const override { return ""; }
-    Presence present() const override { return Presence{}; }
+    std::string resolve() const override { return present().path; }
+    // The scripted host keeps its bytes in the staged tree: an honest answer
+    // for the status reads, while acquisition stays scripted for the pull.
+    Presence present() const override {
+        if (script_.find(ref_.repo_id) == script_.end()) return Presence{};
+        std::string flat = ref_.repo_id;
+        for (auto& c : flat) {
+            if (c == '/') c = '-';
+        }
+        return Presence{true, stage_root_ + "/" + flat + "/" + ref_.variant, ""};
+    }
     Acquisition acquisition() const override { return Acquisition{}; }
     Deletion deletion() const override { return Deletion{Deletion::Kind::CacheDir, ""}; }
 
@@ -153,6 +163,7 @@ struct Fixture {
 
     ModelManager make_manager() const {
         ModelManagerConfig config;
+        config.default_model_source = [] { return std::string("huggingface"); };
         config.repository_for = [this](const ArtifactRef& ref) {
             return std::make_unique<ScriptedRepository>(ref, script, stage.string(),
                                                         &const_cast<Trace&>(trace));
@@ -252,6 +263,26 @@ void test_a_pull_lands_exactly_the_selected_files() {
     const auto& aux_rec = aux_prov["processed_models"]["user.Pull-Char"];
     check(!aux_rec.contains("selection") && aux_rec["checkpoints"].contains("side"),
           "the auxiliary file records only the checkpoint it holds");
+
+    // What the wire answers as checkpoint_status[] comes from the same sources
+    // the pull just used.
+    const auto statuses = mm.checkpoint_status(mm.get_model_info("user.Pull-Char"));
+    check(statuses.size() == 2, "checkpoint_status lists every checkpoint");
+    const lemon::models::CheckpointStatus* main_status = nullptr;
+    const lemon::models::CheckpointStatus* side_status = nullptr;
+    for (const auto& status : statuses) {
+        if (status.type == "main") main_status = &status;
+        if (status.type == "side") side_status = &status;
+    }
+    check(main_status != nullptr && main_status->present && main_status->required &&
+              main_status->registry.str() == "huggingface",
+          "main is present, required, on the registry it came from");
+    check(main_status != nullptr && fs::path(main_status->path).filename() == "model.gguf" &&
+              main_status->path.rfind(fx.stage.string(), 0) == 0,
+          "main's path is where its source says the bytes are");
+    check(side_status != nullptr && side_status->present &&
+              fs::path(side_status->path).filename() == "side.bin",
+          "the auxiliary checkpoint reports itself present too");
 
     // The whole wire plan: three main files and one aux, at the listing's snapshot.
     // URLs carry the download ref the listing names, while the snapshot directory

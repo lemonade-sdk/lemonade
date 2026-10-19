@@ -738,6 +738,21 @@ class EndpointTests(ServerTestBase):
         model_ids = [m["id"] for m in data["data"]]
         self.assertIn(ENDPOINT_TEST_MODEL, model_ids)
 
+        # checkpoint_status[] and update_available are part of the row contract.
+        pulled = next(m for m in data["data"] if m["id"] == ENDPOINT_TEST_MODEL)
+        self.assertIsInstance(pulled.get("checkpoint_status"), list)
+        self.assertTrue(
+            any(
+                entry.get("type") == "main"
+                and entry.get("present") is True
+                and entry.get("required") is True
+                and entry.get("path")
+                for entry in pulled["checkpoint_status"]
+            ),
+            f"downloaded model reports its main checkpoint: {pulled['checkpoint_status']}",
+        )
+        self.assertIsInstance(pulled.get("update_available"), bool)
+
         print(f"[OK] /models returned {len(data['data'])} downloaded models")
 
     def test_004_models_list_show_all(self):

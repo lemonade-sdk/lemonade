@@ -3243,6 +3243,21 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
         {"recipe_options", info.recipe_options.to_json()},
     };
 
+    nlohmann::json checkpoint_status = nlohmann::json::array();
+    for (const auto& status : model_manager_->checkpoint_status(info)) {
+        checkpoint_status.push_back({
+            {"type", status.type},
+            {"present", status.present},
+            {"required", status.required},
+            {"registry", status.registry.empty()
+                ? std::string()
+                : remote_registry_source_name(
+                    parse_remote_registry_source(status.registry.str()))},
+            {"path", status.present ? status.path : std::string()},
+        });
+    }
+    model_json["checkpoint_status"] = std::move(checkpoint_status);
+
     // Surface the cloud provider on cloud entries so the Model Manager can
     // bucket each provider into its own sub-heading. Omitted on local models
     // so the field doesn't pollute every entry — and skipped for the Ollama

@@ -319,10 +319,37 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models(
     return models::ScanCatalog::for_dir(extra_models_dir_).enumerate(registered_paths);
 }
 
+std::vector<models::CheckpointStatus> ModelManager::checkpoint_status(const ModelInfo& info) const {
+    std::vector<models::CheckpointStatus> statuses;
+    statuses.reserve(info.checkpoints.size());
+    for (const auto& [type, checkpoint] : info.checkpoints) {
+        models::CheckpointStatus status;
+        status.type = type;
+        try {
+            const std::unique_ptr<models::ArtifactSource> source = source_for(info, type);
+            status.required = source->ref().required;
+            status.registry = source->ref().registry.value_or(RegistryId{});
+            const models::Presence presence = source->present();
+            status.present = presence.complete;
+            status.path = presence.path;
+        } catch (const std::exception&) {
+            // A source that cannot even be built holds nothing; say present=false
+            // rather than failing the listing.
+        }
+        statuses.push_back(std::move(status));
+    }
+    return statuses;
+}
+
 std::unique_ptr<models::ArtifactSource> ModelManager::source_for(
     const ModelInfo& info, const std::string& checkpoint_type) const {
     models::ArtifactSourceResolver::Hooks hooks;
     hooks.download_policy = [this](const ModelInfo& info) { return download_policy(info); };
+    hooks.repository_for = [this](const RegistryId& host, const models::ArtifactRef& ref,
+                                   const models::SourcePlacement& placement) {
+        return config_.repository_for ? config_.repository_for(ref)
+                                      : models::create_repository(host, ref, placement);
+    };
 
     hooks.default_registry_id = [this]() {
         return default_model_source_provider_ != nullptr ? default_model_source_provider_()

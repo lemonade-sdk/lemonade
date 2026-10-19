@@ -994,6 +994,15 @@ curl http://localhost:13305/v1/models?show_all=true
       "downloaded": true,
       "suggested": true,
       "update_available": false,
+      "checkpoint_status": [
+        {
+          "type": "main",
+          "present": true,
+          "required": true,
+          "registry": "huggingface",
+          "path": "/home/you/.cache/lemonade/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/main/Qwen3-0.6B-Q4_0.gguf"
+        }
+      ],
       "labels": ["reasoning"]
     },
     {
@@ -1047,6 +1056,12 @@ curl http://localhost:13305/v1/models?show_all=true
   - `max_completion_tokens` - Optional integer alias for `max_output_tokens` adhering to OpenAI convention, when reported by cloud providers.
   - `downloaded` - Boolean indicating if the model is downloaded and available locally
   - `update_available` - Boolean indicating a newer commit exists on HuggingFace for this model. Only set for downloaded HF-backed models. `false` otherwise.
+  - `checkpoint_status` - Array with one entry per checkpoint of the model, answering where its bytes are:
+    - `type` - Checkpoint slot, e.g. `"main"`, `"mmproj"`, `"vae"`
+    - `present` - Boolean; `true` only when the checkpoint's bytes are complete at `path`
+    - `required` - Boolean; a missing required checkpoint keeps the model undownloaded, an optional one (loaded lazily) does not
+    - `registry` - Registry hosting the checkpoint (empty for local files and directories)
+    - `path` - Absolute path to the checkpoint file, empty when `present` is `false` or the backend owns the bytes itself
   - `suggested` - Boolean indicating if the model is recommended for general use
   - `labels` - Array of tags describing the model's capabilities and characteristics. See [Model Labels](#model-labels) for the full list.
   - `image_defaults` - (Image models only) Default generation parameters for the model:
@@ -1170,6 +1185,15 @@ Returns a single model object with the same fields as described in the [models l
   "context_length": 8192,
   "downloaded": true,
   "suggested": true,
+  "checkpoint_status": [
+    {
+      "type": "main",
+      "present": true,
+      "required": true,
+      "registry": "huggingface",
+      "path": "/home/you/.cache/lemonade/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/main/Qwen3-0.6B-Q4_0.gguf"
+    }
+  ],
   "labels": ["reasoning"],
   "recipe_options": {
     "ctx_size": 8192,

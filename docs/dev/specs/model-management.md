@@ -61,7 +61,7 @@ Model management answers what *can* run: the set of models, why one cannot run n
 | The policy a model declares | routing, parsed from the recipe document | `ModelInfo::route_policy`, carried |
 | Whether a policy accepts a request, and what to load for it | routing | the policy engine |
 
-1. Routing reads model management through `resolve()`, `exists()`, `public_name()`, `view()` and `options()`. `options()` carries the architecture-defaults overlay, so routing reads no options file.
+1. Routing reads model management through `resolve()`, `model_exists()`, `get_public_model_name()` and `options()`. `options()` carries the architecture-defaults overlay, so routing reads no options file.
 2. `ModelStore` carries `ModelInfo::route_policy` without interpreting it. The only part it reads is the helper-name list it projects into the snapshot.
 3. No component in this spec evaluates a policy expression or decides which model to load.
 
@@ -145,79 +145,88 @@ This section defines the single model-facing interface the HTTP layer, the gatew
 
 ```cpp
 struct ModelManagerConfig {
-    std::string cache_dir;
-    std::string config_dir;
+    std::string cache_dir;                 // empty: whatever utils::get_cache_dir() resolves to
     std::string extra_models_dir;
-    // Installed backends and their pools; empty means probe this machine. It is asked
-    // per rebuild with the models in play, since the probe asks per recipe.
-    std::function<BackendAvailability(const std::map<std::string, ModelInfo>&)> availability;
-    CloudProviderRegistry* cloud_providers = nullptr;    // listings for ListedCatalog
+    CloudProviderRegistry* cloud_providers = nullptr;   // listings for ListedCatalog
+    std::function<std::string()> default_model_source;  // registry a bare checkpoint lands on
+    std::function<json()> model_catalogs;               // configured catalog documents
     std::vector<std::shared_ptr<ModelCatalog>> extra_catalogs;  // tests and embedders
+    // What this machine can run, read at the start of every rebuild; empty probes
+    // the hardware. A caller that means a particular machine says so here.
+    std::function<BackendAvailability(const std::map<std::string, ModelInfo>&)> availability;
+    // The single seam that picks the repository answering for a checkpoint, threaded
+    // unchanged into every consumer: pull, update scan, artifact sources and the
+    // checkpoint-status read alike. Empty binds the real host.
+    std::function<std::unique_ptr<FetchableRepository>(const ArtifactRef&)> repository_for;
 };
+```
 
+The config is the injection point. There is no other door: the facade declares no
+test hook and holds no mutable override member, and `FacadeShapeTest` refuses the
+first `_for_test` in any product file and the first `*_override_` in its header.
+
+```cpp
 class ModelManager {
 public:
     explicit ModelManager(ModelManagerConfig);
     ~ModelManager();
 
-    // Names
-    std::optional<ResolvedModel> resolve(const std::string& requested) const;
-    bool exists(const std::string& name) const;
-    std::string public_name(const std::string& canonical_id) const;
+    // Reads. A consumer answering a question about one model, or walking rows
+    // without editing them, reads the snapshot pointer — never a copy of the map.
+    std::shared_ptr<const StoreSnapshot> snapshot();
+    std::optional<ResolvedModel> resolve(const std::string& requested);
+    ModelInfo get_model_info(const std::string& name);
+    bool model_exists(const std::string& name);
+    bool is_model_downloaded(const std::string& name);
+    std::string get_public_model_name(const std::string& canonical_id);
+    std::string canonical_for_request(const std::string& requested);
+    // One entry per checkpoint — type, present, required, registry, path — from
+    // the same sources a pull would use; the wire's checkpoint_status[] is this.
+    std::vector<CheckpointStatus> checkpoint_status(const ModelInfo& info) const;
 
-    // The model set
-    std::vector<ModelView> list(const ListFilter&) const;
-    std::optional<ModelView> view(const std::string& name) const;
-    std::vector<ModelFileInfo> files(const std::string& name) const;
-    std::string filter_reason(const std::string& name) const;
-    std::set<std::string> recipes_without_visible_model() const;
-    std::set<std::string> helper_models() const;
+    // Owned maps exist for the wire sites that serialize them: the key rename
+    // from canonical ids to listed names is what forces the copy.
+    std::map<std::string, ModelInfo> get_supported_models();
+    std::map<std::string, ModelInfo> get_downloaded_models();
 
-    // Artifacts
-    bool downloaded(const std::string& name) const;
-    std::string checkpoint_path(const std::string& name, const std::string& type) const;
-    DeleteResult remove(const std::string& name);
-    CleanupReport cleanup_orphaned_cache();
+    // Artifacts and deletion
+    void delete_model(const std::string& name);
+    void download_model(const std::string& name, const json& model_data,
+                        bool do_not_upgrade, DownloadProgressCallback,
+                        const utils::CancelToken& cancel);
+    std::unique_ptr<ArtifactSource> source_for(const ModelInfo& info,
+                                               const std::string& checkpoint_type) const;
 
-    // Registration
-    std::optional<std::string> validate(const nlohmann::json& definition) const;   // error text
-    PullResult pull(const nlohmann::json& request, DownloadProgressCallback, CancelToken&);
-    std::string register_model(const nlohmann::json& definition);   // canonical id
-    std::string import_model(const std::string& path, const nlohmann::json& overrides);
-    VariantList variants(const RepoRef&) const;
-    SearchResult search(const std::string& query, const RegistryId&) const;
+    // Registry search, asked of the source that can answer it; a source that
+    // cannot is an error, not an empty list.
+    RegistrySearchResponse search_registry(const std::string& source, const std::string& query,
+                                           std::size_t limit, bool gguf_only) const;
 
-    // Sync
-    ScanResult check_updates(const std::vector<std::string>& targets = {});
-    SyncHandle sync(const std::vector<std::string>& models);
-    SyncStatus sync_status() const;
+    // Sync — queue ids are uint64_t and status is json, because that is the wire
+    SyncEnqueueResult enqueue_sync(const std::vector<std::string>& targets = {},
+                                   bool attach_if_running = false);
+    json sync_models(const std::vector<std::string>& targets = {}, bool dry_run = false,
+                     bool attach_if_running = false);
+    UpdateCheckResult check_updates(const std::vector<std::string>& targets = {});
+    json sync_status(uint64_t sync_id = 0) const;
+    json wait_for_sync();
     void cancel_sync();
 
-    // Options
-    json options(const std::string& name) const;
-    json set_options(const std::string& name, const json& changes);
+    // Options: one read, two writes. options(name[, changes]) carries the entry,
+    // the layering beneath it, and what changes would resolve to without
+    // persisting — the dry-run is a read, so preview is not a verb.
+    json options(const std::string& name, const json& changes = nullptr);
+    json set_options(const std::string& name, const json& changes);    // merge; null clears
+    json replace_options(const std::string& name, const json& saved);  // {} erases the entry
 
     // Aliases — delegation to the single AliasManager instance
-    std::map<std::string, std::string> aliases() const;
-    bool set_alias(const std::string& alias, const std::string& target, std::string& err_msg);
-    bool remove_alias(const std::string& alias);
-
-    // Change plumbing for other components
-    std::uint64_t generation() const;                              // the published snapshot's
-    void on_models_changed(std::function<void(std::uint64_t)>);     // one subscriber
-    void on_model_updated(std::function<void(const std::string&)>); // one subscriber
+    ...
 
 private:
-    ModelManagerConfig cfg_;
-    ModelChangeNotifier changes_;
-    AliasManager aliases_;
-    RecipeOptionsStore options_;
-    ModelArtifactStore artifacts_;
-    ArtifactTransfer transfer_;
-    ModelStore store_;
-    ArtifactSourceResolver resolver_;
-    ModelIngest ingest_;
-    ModelSyncService sync_;
+    // Members are exactly the components built from the config at construction:
+    // change notifier, alias manager, options store, artifact store, catalog set,
+    // registries, store, ingest, composition, cloud rows, sync service, watcher.
+    // Nothing else, and none is replaced afterwards.
 };
 ```
 
@@ -226,10 +235,13 @@ private:
 | Its only members are the components it constructs at startup, never replaced afterwards | ownership without state: no facade method mutates the facade, and nothing can drift from the store |
 | Every method delegates to one component or composes at most two | a method that needs a third is a missing use case, added to the component that owns the data |
 | No branch on a registry id, recipe, checkpoint type or source token | that branch is a capability method on the component instead |
-| It is the only `lemon/models/` header any consumer includes | `server.cpp`, `ollama_api.cpp`, `anthropic_api.cpp`, `mcp_server.cpp` and the router include `lemon/models/model_manager.h` and nothing else from the directory |
+| Its header plus three leaf read headers are what consumers include | `server.cpp`, `ollama_api.cpp`, `anthropic_api.cpp`, `mcp_server.cpp` and the router include `lemon/model_manager.h` and, from `lemon/models/`, only `model_info.h`, `registry_types.h` and `store_snapshot.h` — wire facts and the published read side; every other models header reaching a consumer is named by `FacadeShapeTest` and retires by deletion |
 | No component includes it | the dependency graph stays a DAG with the facade on top |
+| It declares no test hook and holds no override member | substitution arrives through `ModelManagerConfig` or a component's own deps; the gate names the first `_for_test` anywhere in product code |
 
-`ModelView` is the facade's projection of one model, and the contract between model management and API serialization:
+The model object a listing serializes is a row of the published snapshot plus the
+facade's `checkpoint_status()`; there is no `ModelView` projection type — a second
+table of the same facts would only drift from the store:
 
 | Field | Source |
 | --- | --- |
@@ -700,7 +712,7 @@ These value types carry data across the ports:
 | Revision semantics: `refs/main` read, write and resolution, which Hugging Face needs and ModelScope's branch API does not | the sync queue, cancellation, progress reporting |
 | Staleness basis: Hugging Face compares LFS content ids across commits, ModelScope compares tree fingerprints | catalog merge, precedence, public aliasing |
 | `cache_dir_name()`, including the `models--` and `modelscope--` prefixes | change notification and the generation counter, per [Change Notification](#change-notification) |
-| Artifact selection: `select_main_repo_files()`, `group_aux_checkpoint_variants()` | `ModelView` assembly |
+| Artifact selection: `select_main_repo_files()`, `group_aux_checkpoint_variants()` | model-object serialization (HTTP layer) |
 | `search()` behind `supports_search()`, backing `/registry/search` | |
 
 Rules:
@@ -992,7 +1004,7 @@ Rules:
 2. `StoreSnapshot::generation` is the change signal for everything else. A reader compares generations to decide whether to re-read, a rebuild coalesces on it, and `ModelManager::generation()` exposes it without a callback.
 3. Callbacks run outside every lock. A subscriber reads the snapshot published at the generation it was handed, never a draft: the notification follows the atomic swap.
 4. Producers of `models_changed`: a catalog a watcher or settings event named, a completed ingest, deletion or sync scan, and a config change that alters the catalog set. Producers of `model_updated`: a completed re-download whose resolved checkpoint paths differ from the paths in the published snapshot. An alias mutation produces neither.
-5. Catalog change detection is polled, not pushed. A file catalog answers from a stat of its document (`CatalogLocator::changed()`), and a fetched one answers from an in-process window over its cached body — `CatalogFetchClock`, one minute — because a rebuild is triggered by local events that cannot have changed what a remote host serves. The window is in-memory, so a restart always asks the origin, and a change to the catalog set clears it. A `DirectoryWatcher` callback holds no subscriber list and carries no data: it invalidates, and the rebuild that follows is what notifies.
+5. Invalidation is event-driven, plus one window. Nothing probes: a locator's `read()` hands back the state it observed (`CatalogState`) so a conditional GET is possible, and that is the whole freshness conversation a locator has. A file catalog is re-read when the watcher or a settings event names it; a fetched one re-reads when an in-process window over its cached body expires — `CatalogFetchClock`, one minute — because a rebuild is triggered by local events that cannot have changed what a remote host serves. The window is in-memory, so a restart always asks the origin, and a change to the catalog set clears it. A `DirectoryWatcher` callback holds no subscriber list and carries no data: it invalidates, and the rebuild that follows is what notifies.
 6. A subscriber is added only where the snapshot cannot carry the answer. A consumer that needs currency rather than a signal compares `generation()`.
 
 ## Recipe Options
@@ -1046,44 +1058,51 @@ Rules:
 This section places each component in the tree and states how it is built.
 
 ```text
-src/cpp/include/lemon/models/
-  model_manager.h        ModelManager, ModelManagerConfig, ModelView, ListFilter
-  model_info.h           ModelInfo, ModelFileInfo, GgufMetadata
-  model_catalog.h        ModelCatalog, CatalogAccumulator, CatalogEntry, CatalogId, CatalogState
-  catalog_locator.h      FileLocator, ResourceLocator, HttpLocator, Locator
-  descriptors.h          CatalogDescriptor, RepositoryDescriptor, DocEntry, EnvVar
-  model_store.h          ModelStore, StoreSnapshot, RejectedModel
-  store_builder.h        StoreBuilder, StoreDraft, FilterResult, BackendAvailability,
-                         filter_hardware()
-  name_resolution.h      ResolvedModel
-  alias_manager.h        AliasManager
-  artifact_ref.h         ArtifactRef, CheckpointRef
-  artifact_source.h      ArtifactSource, Presence, Acquisition, Deletion, ArtifactKind
-  artifact_resolver.h    ArtifactSourceResolver
-  fetchable_repository.h FetchableRepository, RegistryId, registry
-  artifact_transfer.h    ArtifactTransfer, FileTransfer, DownloadPlan, DownloadFile
-  artifact_layout.h      ArtifactLayout, HfHubLayout, SiblingLayout
-  model_artifact_store.h ModelArtifactStore, ProvenanceRecord, DeleteResult, CleanupReport
-  model_ingest.h         ModelIngest, PullResult
-  model_sync_service.h   ModelSyncService, ScanResult, SyncStatus, SyncHandle
-  model_change_notifier.h ModelChangeNotifier
-  recipe_options_store.h RecipeOptionsStore
-src/cpp/server/models/
-  model_manager.cpp
-  json_catalog.cpp scan_catalog.cpp listed_catalog.cpp discovered_catalog.cpp
-  catalog_locator.cpp
-  model_store.cpp store_builder.cpp
-  artifact_resolver.cpp huggingface_repository.cpp modelscope_repository.cpp
-  artifact_transfer.cpp file_transfer.cpp artifact_layout.cpp model_artifact_store.cpp
-  model_ingest.cpp model_sync_service.cpp
-  model_change_notifier.cpp recipe_options_store.cpp alias_manager.cpp
+src/cpp/include/lemon/models/          public to consumers (the only four):
+  model_info.h           ModelInfo, GgufMetadata — the row itself
+  registry_types.h       wire facts that persist on disk or cross HTTP: registry
+                         search and file-tree types, source parsing and display
+  store_snapshot.h       StoreSnapshot, ResolvedModel, CheckpointStatus — the
+                         published read side
+  model_errors.h         RegistrationError and friends
+  ...everything else     internal to the models layer; FacadeShapeTest names and
+                         retires any other header that reaches a consumer
+
+  artifact_ref.h         ArtifactRef, CheckpointRef          registry_id.h
+  artifact_source.h      ArtifactSource, Presence, Acquisition, Deletion        catalog.h
+  artifact_store.h       ModelArtifactStore, Provenance      download_progress.h
+  artifact_transfer.h    ArtifactTransfer, FileTransfer, DownloadPlan           host_availability.h
+  artifact_layout.h      ArtifactLayout, HfHubLayout, SiblingLayout, SourcePlacement
+  artifact_resolver.h    ArtifactSourceResolver             artifact_fetch.h
+  fetchable_repository.h FetchableRepository, registry_download_plan, create_repository
+  store.h                ModelStore, StoreWrite
+  store_builder.h        composition helpers, BackendAvailability
+  composition.h          ModelComposition                  model_index.h
+  catalog_set.h          CatalogSet, CatalogSetDeps        configured_catalog.h
+  catalog_locator.h      Locator, CatalogState             catalog_fetch_clock.h
+  json_catalog.h scan_catalog.h listed_catalog.h           sync_service.h
+  ingest.h               ModelIngest                       update_scan.h
+  change_notifier.h      ModelChangeNotifier               alias_manager.h
+  registry_documents.h   RegistryDocuments                 registry_descriptors.h
+  recipe_options_store.h RecipeOptionsStore                recipe_option_layers.h
+  cloud_rows.h           CloudRows                         entry_identity.h
+  checkpoint_grammar.h   handle grammar                    routing_parse_options.h
+  definition_labels.h    model_sources.h                   backend_availability.h
+
+src/cpp/server/models/     one .cpp per header above, plus:
+  fetchable_repository.cpp   the registry adapter pair lives here —
+  registry_repository.cpp    registry_repository.cpp is one of exactly two files
+                             allowed to name the legacy ModelRegistry header
+                             (the other is src/cpp/server/model_registry.{h,cpp},
+                             private to the server)
+src/cpp/server/model_manager.cpp   the facade and its composition root
 ```
 
 1. Every `.cpp` under `src/cpp/server/models/` is named in the `lemonade-server-core` source list in the root `CMakeLists.txt`, so a new catalog or repository adds one line there. The CLI compiles its own `COMMON_SOURCES` list in `src/cpp/cli/CMakeLists.txt`; a file that reaches the backend registry stays out of it, which is what lets one binary name a host without being able to pull from it.
 2. `alias_manager.{h,cpp}` moves into `lemon/models/` and `src/cpp/server/models/`, because resolution is the only consumer of its lookup half. Its header includes the standard library alone; `load()` and `save()` keep the file I/O in the `.cpp`.
 3. Headers in `lemon/models/` include the standard library, `nlohmann/json`, and each other. None includes a backend header, `router.h` or `server.h`. Contact with backends is `BackendOps`, `BackendAvailability`, and injected `std::function` seams — the idiom `routing_policy.h` documents.
 4. One component per `.cpp`. A file past roughly 500 lines signals a component that is holding two responsibilities, and `ModelArtifactStore` and `ModelIngest` are the ones to watch.
-5. Three headers are public: `model_manager.h`, the behavior; `model_info.h`, the value object that crosses the whole server by value; and `store_snapshot.h`, the read-only set a consumer holds while it works, `ResolvedModel` included. The write protocol beside the snapshot stays internal, and a consumer that needs something the facade does not expose has found a gap to fix in the facade or the component behind it. Nothing in `lemon/models/` includes the facade header: the value object lives in the leaf, so the dependency graph points at the facade from the top, never from below.
+5. Four models headers are public, beside the facade's own: `model_info.h`, the value object that crosses the whole server by value; `store_snapshot.h`, the read-only set a consumer holds while it works, `ResolvedModel` and `CheckpointStatus` included; `registry_types.h`, the wire facts that persist on disk or cross HTTP; and `model_errors.h`, what a refused call throws. The legacy `ModelRegistry` class is not public at all — its header sits in `src/cpp/server/` and only its adapter pair may name it. The write protocol beside the snapshot stays internal, and a consumer that needs something the facade does not expose has found a gap to fix in the facade or the component behind it. Nothing in `lemon/models/` includes the facade header: the value object lives in the leaf, so the dependency graph points at the facade from the top, never from below.
 6. The `ModelManager` constructor is the only place any of these components is created. Nothing else in the process news a store, a catalog or a repository, which is what makes `ModelManagerConfig` the single injection point.
 
 ## Contracts
@@ -1248,7 +1267,15 @@ which becomes one row of `docs/dev/model-registries.md`:
 
 ### Model Object Fields
 
-`ModelView` is the model object's field table, and one generator pass emits both the JSON serialization and the `docs/api` description of a model object from it, so the response and its documentation cannot drift. Each field carries its type, its availability — always, or only for a cloud or registered model — and one sentence of description. `checkpoint_status` documents one entry per checkpoint: `type`, `present`, `required`, `registry`, `path`.
+There is no generated model-object pass. Serialization lives in the HTTP layer
+(`model_info_to_json`) and `docs/api/openai.md` describes each field beside its
+example; both are edited in the same change that changes the field. A new field
+names its source row or facade call in this table, and the endpoint pin in
+`test/server_endpoints.py` plus the export-strip check in the app regression suite
+are what catch drift — `checkpoint_status` is the worked example: a row of
+`CheckpointStatus` structs, documented entries (`type`, `present`, `required`,
+`registry`, `path`), pinned against a live server, and refused by the export
+allowlist because its paths belong to one machine.
 
 ### Drift Check
 
@@ -1271,17 +1298,18 @@ This section states the coverage that protects the design and the tests that pro
 | `test_store_builder` | golden `StoreSnapshot` for a fixture catalog set: merge, precedence, alias maps, projection; `filter_hardware()` over the whole set and over one entry, with rejection reasons |
 | `test_model_catalog` | each `Locator` read policy, `required()` throw versus contribute-nothing, the state each read observes |
 | `test_name_resolution` | snapshot beats alias, chains to `MAX_ALIAS_CHAIN_DEPTH`, a cycle yields no target, a chain still naming an alias at the limit yields no target, `:latest`, `input_aliases`, `wire_id` under an alias |
-| `test_model_manager_facade` | the facade constructed over a fixture `ModelManagerConfig` with temp paths; a static check that no consumer includes a `lemon/models/` header other than `model_manager.h` and `model_info.h` |
+| `test_model_manager_facade` (`test_facade_shape`) | the facade constructed over a fixture `ModelManagerConfig` with temp paths; a static check that no consumer reaches a models header beyond `model_info.h`, `registry_types.h` and `store_snapshot.h`; the one-way ceilings — lines, declarations, members, locks — and the zero assertions: no `_for_test`, no `*_override_`, exactly two files may name the legacy registry header, no provider string literal in core |
 | `test_artifact_resolver` | the seven selection rules, per-checkpoint independence, a model with two sources |
 | `test_download_plan` | manifest JSON to `DownloadPlan`, disk-space accounting, GGUF magic rejection, hash mismatch fails without retry, cancellation throws |
 | `test_file_transfer` | scheme dispatch across `http` and `file`, one mixed-scheme plan reporting one progress total, a `file://` plan that completes with `offline=true`, `auth_headers()` stripped on a cross-origin redirect and still sent on a same-origin one |
 | `test_model_deletion` | every `Deletion` row, the containment check, shared-repo variant delete |
 | `test_registry_provenance` | v1 read, v2 write, per-checkpoint snapshot keys, `selection` mismatch triggering a fetch |
+| `test_pull_registry` | the end-to-end pull through the repository seam: the exact URL plan per checkpoint, snapshot directories keyed by listing revision, `refs/main` pins, resume manifest, provenance v2 as pulled, an unmet auxiliary checkpoint refusing before any bytes move, a pre-set `CancelToken` stopping short of landing artifacts, and `checkpoint_status()` reporting each checkpoint where its source says it is |
 | `test_identity_round_trip` | every registered catalog's minted IDs survive `parse_canonical_id()` and `is_reserved_registration_name()` |
 | `test_model_change_notifier` | one subscriber per signal, callbacks run unlocked and after the swap, a reader at generation N never sees generation N+1 |
 | `test_model_sync_service` | target selection, `can_go_stale()` filtering, per-group listing, auto-update override, cancellation |
 | `test_model_source_descriptors` | every registered source has a descriptor with a non-empty `summary`, and the `/internal/model-sources` payload matches the compiled sets |
-| `test_update_available` | the flag a scan publishes to the row a client reads: set for a newer snapshot, cleared when the registry answers the snapshot on disk, unmoved by a failed check, never set for a model with no remote registry to ask, and never announced for a model whose repositories did not all answer. The registry arrives through `ModelManagerConfig.registry_for` |
+| `test_update_available` | the flag a scan publishes to the row a client reads: set for a newer snapshot, cleared when the registry answers the snapshot on disk, unmoved by a failed check, never set for a model with no remote registry to ask, and never announced for a model whose repositories did not all answer. The repository arrives through `ModelManagerConfig.repository_for` |
 
 These suites cover behavior this spec pins, and they are the contract: `test_model_manager_collection_validation`, `test_model_download_state`, `test_model_sync_and_auto_update`, `test_extra_model_discovery`, `test_model_registry`, `test_hf_update_check`, `test_recipe_hiding`, `test_streaming_memory_filter`, `test_config_default_source`, `test_model_alias`, `test_directory_watcher`, `test_recipe_options_precedence`.
 

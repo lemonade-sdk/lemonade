@@ -1,6 +1,7 @@
 #pragma once
 
 #include <lemon/models/model_info.h>
+#include <lemon/models/registry_id.h>
 #include <lemon/models/catalog_descriptor.h>
 #include <lemon/models/store_builder.h>
 
@@ -21,6 +22,16 @@ struct ResolvedModel {
     std::string wire_id;
     std::shared_ptr<const ModelInfo> info;
     bool via_alias = false;
+};
+
+// One checkpoint's answer for the wire: where its bytes are, whether they are
+// there, and whether anything breaks without them.
+struct CheckpointStatus {
+    std::string type;
+    bool present = false;
+    bool required = true;
+    RegistryId registry;
+    std::string path;
 };
 
 // Immutable view; a reader's shared_ptr keeps what it read valid.
