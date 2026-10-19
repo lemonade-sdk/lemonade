@@ -69,10 +69,11 @@ carry the recipe, option, CLI flag and support metadata linked into both
 `lemonade` and `lemond`. The oracle tests compare every configured descriptor
 field with its compiled descriptor. `capabilities()` in `<stem>_server.h` is a
 literal (`CAP_AUDIO_GENERATION` for ThinkSound, `0` for DS4 and RyzenAI) because
-the header-only mode contract test cannot read a definition, and
-`ConfiguredServer` implements every media interface, so the mask cannot be
-derived from its type. `ConfiguredRegistrationTest` fails if a literal disagrees
-with the definition's implemented operation bindings.
+the header-only mode contract test cannot read a definition, and every engine
+shares the single `ConfiguredServer` type, which inherits `IAudioGenerationServer`
+whether or not its definition binds audio generation, so a mask derived from the
+type would claim audio generation for DS4 and RyzenAI. `ConfiguredRegistrationTest`
+fails if a literal disagrees with the definition's implemented operation bindings.
 
 The CPU oracle tests (`test_thinksound_oracle`, `test_ds4_oracle`,
 `test_ryzenai_oracle`, `test_configured_execution`,
