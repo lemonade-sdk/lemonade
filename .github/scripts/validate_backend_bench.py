@@ -38,7 +38,7 @@ SCENARIO_FILE = Path("src/cpp/resources/bench_scenarios.json")
 SCENARIOS = ["chat-short", "context-4k"]
 DEFAULT_CTX_SIZE = 8192  # must fit the largest default scenario prompt (~4k tokens)
 WARMUP_RUNS = 1
-MEASUREMENT_RUNS = 3  # best-of, not average — 3 runs suffice
+MEASUREMENT_RUNS = 3
 THRESHOLDS = {
     "tps_warn": -0.05,
     "tps_critical": -0.15,
@@ -370,8 +370,9 @@ def run_bench(
         "--output",
         str(output_file),
     ]
-    if SCENARIO_FILE.exists():
-        cmd += ["--scenario-file", str(SCENARIO_FILE)]
+    if not SCENARIO_FILE.exists():
+        raise RuntimeError(f"{SCENARIO_FILE} not found — run from the repo root")
+    cmd += ["--scenario-file", str(SCENARIO_FILE)]
     if ctx_size is not None:
         cmd += ["--ctx-size", str(ctx_size)]
     if compare_file and compare_file.exists():
@@ -654,7 +655,7 @@ def main() -> int:
     if models:
         print(f"Models (from filter): {models}")
 
-    print(f"Scenarios: {SCENARIOS}")
+    print(f"Default scenarios: {SCENARIOS} (forks may override via bench_scenarios)")
     print()
 
     leaderboard: dict = {}

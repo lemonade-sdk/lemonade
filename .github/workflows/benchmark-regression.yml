@@ -594,13 +594,18 @@ jobs:
           leaderboard = {}
           systems = {}          # hw fingerprint -> hardware block (dedup across runs)
           lemonade_versions = set()
+          # Only surface scenarios/ctx that reflect the current comparison basis;
+          # frozen rows at other ctx or dropped scenarios are kept on disk but
+          # not rendered (they would show stale, non-comparable numbers).
+          ACTIVE_SCENARIOS = {"chat-short", "context-4k"}
+          EXPECTED_CTX = 8192
 
           _QUANT_RE = re.compile(r"(IQ\d+_\w+|Q\d+(?:_[A-Z0-9]+)*|BF16|F16|F32|MXFP4)", re.I)
           def quant_from_checkpoint(me, data):
             ck = (me.get("checkpoints") or {}).get("main") or data.get("checkpoint") or ""
             fname = ck.split(":")[-1]
             m = _QUANT_RE.search(fname)
-            return m.group(1) if m else None
+            return m.group(1).upper() if m else None
 
           def hw_fingerprint(hw):
             gpu = hw.get("gpu") or []
@@ -617,7 +622,8 @@ jobs:
               name = g.get("name", "") if isinstance(g, dict) else ""
               if name and not name.strip().isdigit():
                 return name
-            return (gpu_list or [{}])[0].get("name") if gpu_list else None
+            first = (gpu_list or [{}])[0]
+            return first.get("name") if isinstance(first, dict) else None
 
           forks_config = json.loads(Path("src/cpp/resources/benchmark_forks.json").read_text())
           experimental_forks = [f["fork_id"] for f in forks_config["forks"] if f.get("experimental", False)]
@@ -637,6 +643,7 @@ jobs:
             hw_id = hw_fingerprint(hw) if hw else None
             if hw_id:
               readable = _gpu_label(hw.get("gpu"))
+              ts = data.get("timestamp") or ""
               if hw_id not in systems:
                 systems[hw_id] = {
                   "id": hw_id,
@@ -647,10 +654,15 @@ jobs:
                   "ram_gb": hw.get("ram_gb"),
                   "os": hw.get("os"),
                   "lemonade_version": lem_ver,
+                  "_ts": ts,
                 }
-              elif readable and systems[hw_id].get("gpu", "").strip().isdigit():
-                systems[hw_id]["gpu"] = readable
-                systems[hw_id]["gpu_full"] = hw.get("gpu")
+              else:
+                cur = systems[hw_id]
+                if readable and (cur.get("gpu") or "").strip().isdigit():
+                  cur["gpu"] = readable
+                  cur["gpu_full"] = hw.get("gpu")
+                if lem_ver and ts >= cur.get("_ts", ""):
+                  cur["lemonade_version"], cur["_ts"] = lem_ver, ts
             # The bench writes a top-level "models" array (one entry per model),
             # each with its own model name + results[]. Fall back to the flat
             # top-level shape for any legacy files.
@@ -660,7 +672,11 @@ jobs:
             for me in model_entries:
               model = me.get("model", data.get("model", "unknown"))
               for br in me.get("results", []):
+                if br.get("ctx_size") not in (None, EXPECTED_CTX):
+                  continue
                 for sc in br.get("scenarios", []):
+                  if sc["name"] not in ACTIVE_SCENARIOS:
+                    continue
                   tps_block = sc.get("tps", {})
                   if tps_block.get("mean") is None:
                     continue
@@ -679,7 +695,9 @@ jobs:
                     "quant": quant_from_checkpoint(me, data),
                     "tps_mean": round(tps_block["mean"], 2),
                     "tps_p95": round(tps_block.get("p95", 0), 2),
+                    "tg_tps": round(tps_block["mean"], 2),
                     "ttft_ms_mean": round(ttft_block.get("mean", 0), 2),
+                    "ttft_ms_best": round(ttft_block["min"], 2) if ttft_block.get("min") else None,
                     "pp_tps": pp_tps,
                     "input_tokens": sc.get("input_tokens"),
                     "vram_peak_gb": sc.get("vram_peak_gb"),
@@ -716,7 +734,11 @@ jobs:
               mdl = me.get("model", data.get("model", "unknown"))
               quant = quant_from_checkpoint(me, data)
               for br in me.get("results", []):
+                if br.get("ctx_size") not in (None, EXPECTED_CTX):
+                  continue
                 for sc in br.get("scenarios", []):
+                  if sc["name"] not in ACTIVE_SCENARIOS:
+                    continue
                   tps_block = sc.get("tps", {})
                   if tps_block.get("mean") is None:
                     continue
@@ -729,8 +751,12 @@ jobs:
                   h.append({
                     "version": ver, "timestamp": me.get("timestamp", data.get("timestamp")),
                     "tps_mean": round(tps_block["mean"], 2),
+                    "tps_p95": round(tps_block.get("p95", 0), 2),
+                    "tg_tps": round(tps_block["mean"], 2),
                     "ttft_ms_mean": round(ttft_block.get("mean", 0), 2),
+                    "ttft_ms_best": round(ttft_block["min"], 2) if ttft_block.get("min") else None,
                     "pp_tps": pp_tps,
+                    "vram_peak_gb": sc.get("vram_peak_gb"),
                     "input_tokens": sc.get("input_tokens"),
                     "quant": quant,
                     "lemonade_version": lem_ver,
@@ -743,6 +769,12 @@ jobs:
                 pts = sorted(history[mdl][scn][fid], key=lambda p: p.get("timestamp") or "")
                 history[mdl][scn][fid] = pts[-30:]
 
+          for _s in systems.values():
+            _s.pop("_ts", None)
+
+          def _vkey(v):
+            return tuple(int(p) if p.isdigit() else -1 for p in str(v).lstrip("v").split("."))
+
           server = os.environ.get("GITHUB_SERVER_URL", "https://github.com")
           repo   = os.environ.get("GITHUB_REPOSITORY", "")
           latest_version = None
@@ -753,7 +785,7 @@ jobs:
               if e.get("lemonade_version") and ts >= latest_ts:
                 latest_ts, latest_version = ts, e["lemonade_version"]
           if latest_version is None and lemonade_versions:
-            latest_version = sorted(lemonade_versions)[-1]
+            latest_version = max(lemonade_versions, key=_vkey)
           out = {
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "run_id": os.environ.get("GITHUB_RUN_ID"),
@@ -763,7 +795,7 @@ jobs:
             "actions_url": f"{server}/{repo}/actions/workflows/benchmark-regression.yml" if repo else None,
             "commit": os.environ.get("GITHUB_SHA"),
             "lemonade_version": latest_version,
-            "lemonade_versions_seen": sorted(lemonade_versions),
+            "lemonade_versions_seen": sorted(lemonade_versions, key=_vkey),
             "systems": list(systems.values()),
             "experimental_forks": experimental_forks,
             "by_model_scenario": leaderboard,
