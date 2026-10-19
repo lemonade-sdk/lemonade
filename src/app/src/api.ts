@@ -671,6 +671,7 @@ type ModelStateListener = () => void;
 
 
 type HostSettingsApi = {
+  isWebApp?: boolean;
   getSettings?: () => Promise<unknown>;
   saveSettings?: (settings: unknown) => Promise<unknown>;
   getServerBaseUrl?: () => Promise<string | null | undefined>;
@@ -851,7 +852,7 @@ class LemonadeAPI {
 
   get canPersistApiKey(): boolean {
     const hostApi = getHostSettingsApi();
-    return Boolean(hostApi?.getSettings && hostApi?.saveSettings);
+    return Boolean(hostApi?.getSettings && hostApi?.saveSettings && hostApi.isWebApp !== true);
   }
 
   async loadConnectionSettings(): Promise<void> {
@@ -875,7 +876,12 @@ class LemonadeAPI {
           this._hostBaseUrl = normalizeBaseUrl(resolvedUrl);
           safeSetLocalStorage(LS_BASE_URL, this._hostBaseUrl);
         }
-        this._sessionApiKey = apiKey;
+        // The lemond browser shim stores settings in localStorage. Remove any
+        // key saved by an earlier GUI version, but preserve non-secret settings.
+        if (hostApi.isWebApp && apiKey && hostApi.saveSettings) {
+          await hostApi.saveSettings(mergeConnectionSettings(settings, resolvedUrl, ''));
+        }
+        this._sessionApiKey = hostApi.isWebApp ? '' : apiKey;
         return;
       }
 
@@ -910,7 +916,7 @@ class LemonadeAPI {
       return { apiKeyPersisted: false };
     }
 
-    const persistedApiKey = rememberApiKey ? apiKey : '';
+    const persistedApiKey = rememberApiKey && !hostApi.isWebApp ? apiKey : '';
     const currentSettings = await hostApi.getSettings();
     await hostApi.saveSettings(mergeConnectionSettings(currentSettings, normalized, persistedApiKey));
     return { apiKeyPersisted: Boolean(persistedApiKey) };
