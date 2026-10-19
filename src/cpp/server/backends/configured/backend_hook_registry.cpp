@@ -34,19 +34,6 @@ const HookRegistration& BackendHookRegistry::require(std::string_view id, HookSt
     throw std::invalid_argument("Unknown hook");
 }
 
-std::string_view hook_stage_name(HookStage stage) {
-    switch (stage) {
-        case HookStage::Artifacts: return "artifacts";
-        case HookStage::Request: return "request";
-        case HookStage::Response: return "response";
-        case HookStage::Launch: return "launch";
-        case HookStage::Operation: return "operation";
-        case HookStage::StartFailure: return "start_failure";
-        case HookStage::SinkOperation: return "sink_operation";
-    }
-    return "";
-}
-
 const BackendHookRegistry& installed_backend_hooks() {
     static const BackendHookRegistry registry({
         {"llamacpp.gguf", HookStage::Artifacts, ArtifactHook(&llamacpp::ops)},

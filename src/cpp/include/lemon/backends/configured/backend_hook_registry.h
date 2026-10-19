@@ -47,7 +47,6 @@ private:
     const std::vector<HookRegistration> registrations_;
 };
 
-std::string_view hook_stage_name(HookStage stage);
 const BackendHookRegistry& installed_backend_hooks();
 
 }
