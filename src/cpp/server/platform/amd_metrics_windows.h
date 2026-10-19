@@ -1,16 +1,17 @@
 #pragma once
 
-// AMD GPU telemetry for the Windows system-stats path. Adapter identity and
-// memory capacity come from DXGI; live utilization and memory usage come from
-// PDH GPU performance counters. System libraries are loaded dynamically so the
-// build takes no vendor SDK dependency.
+// AMD GPU telemetry for the Windows system-stats path. Adapter identity comes
+// from DXGI, integrated/discrete classification from DXCore, and live
+// utilization and memory usage from PDH GPU performance counters. System
+// libraries are loaded dynamically so the build takes no vendor SDK dependency.
 
 #ifdef _WIN32
 
 #include <lemon/system_metrics_platform.h>
 
 #include <windows.h>
-#include <dxgi1_4.h>
+#include <dxgi.h>
+#include <dxcore.h>
 #include <pdh.h>
 #include <pdhmsg.h>
 
@@ -19,6 +20,7 @@
 #include <cstring>
 #include <map>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -57,7 +59,56 @@ struct AmdAdapter {
     std::string name;
     std::string luid;        // matches PDH instance-name LUIDs
     double memory_total_gb = -1.0;
-    bool shared = false;     // integrated / UMA
+    std::optional<bool> integrated;  // nullopt when DXCore can't classify it
+};
+
+// ---- DXCore: integrated vs discrete classification --------------------------
+
+class DxCoreLibrary {
+public:
+    DxCoreLibrary() {
+        library_ = LoadLibraryExA("dxcore.dll", nullptr,
+                                  LOAD_LIBRARY_SEARCH_SYSTEM32);
+        if (library_) {
+            create_ = reinterpret_cast<CreateFactoryFn>(reinterpret_cast<void*>(
+                GetProcAddress(library_, "DXCoreCreateAdapterFactory")));
+        }
+        if (create_) {
+            create_(IID_PPV_ARGS(&factory_));
+        }
+    }
+
+    ~DxCoreLibrary() {
+        if (factory_) factory_->Release();
+        if (library_) FreeLibrary(library_);
+    }
+
+    DxCoreLibrary(const DxCoreLibrary&) = delete;
+    DxCoreLibrary& operator=(const DxCoreLibrary&) = delete;
+
+    std::optional<bool> is_integrated(const LUID& luid) const {
+        if (!factory_) return std::nullopt;
+        IDXCoreAdapter* adapter = nullptr;
+        if (FAILED(factory_->GetAdapterByLuid(luid, IID_PPV_ARGS(&adapter))) ||
+            !adapter) {
+            return std::nullopt;
+        }
+        std::optional<bool> result;
+        bool value = false;
+        if (adapter->IsPropertySupported(DXCoreAdapterProperty::IsIntegrated) &&
+            SUCCEEDED(adapter->GetProperty(DXCoreAdapterProperty::IsIntegrated,
+                                           &value))) {
+            result = value;
+        }
+        adapter->Release();
+        return result;
+    }
+
+private:
+    using CreateFactoryFn = HRESULT(WINAPI*)(REFIID, void**);
+    LibraryHandle library_ = nullptr;
+    CreateFactoryFn create_ = nullptr;
+    IDXCoreAdapterFactory* factory_ = nullptr;
 };
 
 // ---- DXGI: adapter identity and memory capacity -----------------------------
@@ -88,7 +139,7 @@ public:
 
     bool ready() const { return create_ != nullptr; }
 
-    std::vector<AmdAdapter> query_adapters() const {
+    std::vector<AmdAdapter> query_adapters(const DxCoreLibrary& dxcore) const {
         std::vector<AmdAdapter> adapters;
         if (!create_) return adapters;
 
@@ -108,7 +159,8 @@ public:
             if (SUCCEEDED(adapter1->GetDesc1(&desc)) &&
                 desc.VendorId == kAmdVendorId &&
                 (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) == 0) {
-                adapters.push_back(make_adapter(adapter1, desc));
+                adapters.push_back(
+                    make_adapter(desc, dxcore.is_integrated(desc.AdapterLuid)));
             }
             adapter1->Release();
             adapter1 = nullptr;
@@ -120,32 +172,19 @@ public:
 private:
     using CreateFactory1Fn = HRESULT(WINAPI*)(REFIID, void**);
 
-    static AmdAdapter make_adapter(IDXGIAdapter1* adapter1,
-                                   const DXGI_ADAPTER_DESC1& desc) {
+    static AmdAdapter make_adapter(const DXGI_ADAPTER_DESC1& desc,
+                                   std::optional<bool> integrated) {
         AmdAdapter entry;
         entry.luid = luid_token(desc.AdapterLuid);
         entry.id = "amd:" + entry.luid;
         entry.name = narrow(desc.Description);
-        // APUs carve out a small dedicated pool but expose a large shared one;
-        // discrete cards are the reverse.
-        entry.shared = desc.SharedSystemMemory > desc.DedicatedVideoMemory;
+        entry.integrated = integrated;
 
-        uint64_t total = entry.shared ? desc.SharedSystemMemory
-                                      : desc.DedicatedVideoMemory;
-        IDXGIAdapter3* adapter3 = nullptr;
-        if (!entry.shared &&
-            SUCCEEDED(adapter1->QueryInterface(
-                __uuidof(IDXGIAdapter3),
-                reinterpret_cast<void**>(&adapter3))) &&
-            adapter3) {
-            DXGI_QUERY_VIDEO_MEMORY_INFO local{};
-            if (SUCCEEDED(adapter3->QueryVideoMemoryInfo(
-                    0, DXGI_MEMORY_SEGMENT_GROUP_LOCAL, &local)) &&
-                local.Budget > total) {
-                total = local.Budget;
-            }
-            adapter3->Release();
-        }
+        if (!integrated) return entry;  // unclassified: no reliable capacity
+        // A UMA adapter's capacity is both pools, matching its combined usage.
+        const uint64_t total = *integrated
+            ? desc.DedicatedVideoMemory + desc.SharedSystemMemory
+            : desc.DedicatedVideoMemory;
         if (total > 0) entry.memory_total_gb = total / BYTES_PER_GIB;
         return entry;
     }
@@ -217,8 +256,9 @@ public:
         });
         for (const auto& [key, load] : per_engine) {
             const std::string luid = key.substr(0, key.find('|'));
+            const double clamped = load > 100.0 ? 100.0 : load;
             double& slot = out.utilization[luid];
-            if (load > slot) slot = load;
+            if (clamped > slot) slot = clamped;
         }
 
         // Kept separate so each adapter can combine them per its memory_type.
@@ -334,7 +374,8 @@ inline std::vector<GpuDeviceMetrics> query_amd_gpu_metrics() {
 
     DxgiLibrary dxgi;
     if (!dxgi.ready()) return {};
-    const auto adapters = dxgi.query_adapters();
+    DxCoreLibrary dxcore;
+    const auto adapters = dxgi.query_adapters(dxcore);
     if (adapters.empty()) return {};
 
     const AmdLiveMetrics live = sample_live_metrics();
@@ -342,11 +383,15 @@ inline std::vector<GpuDeviceMetrics> query_amd_gpu_metrics() {
     std::vector<GpuDeviceMetrics> result;
     result.reserve(adapters.size());
     for (const auto& adapter : adapters) {
+        const bool integrated = adapter.integrated.value_or(false);
+
         GpuDeviceMetrics gpu;
         gpu.id = adapter.id;
         gpu.vendor = "amd";
         gpu.name = adapter.name.empty() ? "AMD GPU" : adapter.name;
-        gpu.memory_type = adapter.shared ? "shared" : "dedicated";
+        gpu.memory_type = !adapter.integrated ? "unknown"
+                        : integrated          ? "shared"
+                                              : "dedicated";
         gpu.memory_total_gb = adapter.memory_total_gb;
 
         if (const auto it = live.utilization.find(adapter.luid);
@@ -354,14 +399,13 @@ inline std::vector<GpuDeviceMetrics> query_amd_gpu_metrics() {
             gpu.gpu_percent = it->second;
         }
 
-        // A discrete adapter's memory_total is dedicated VRAM only, so counting
-        // its shared spill would let used exceed total; a UMA adapter's capacity
-        // is the shared pool, so both its dedicated carveout and shared count.
+        // Count shared usage only for a UMA adapter, whose capacity includes it;
+        // on a discrete adapter it would exceed the dedicated-only total.
         const auto ded = live.dedicated_used.find(adapter.luid);
         const auto shr = live.shared_used.find(adapter.luid);
         double used = -1.0;
         if (ded != live.dedicated_used.end()) used = ded->second;
-        if (adapter.shared && shr != live.shared_used.end())
+        if (integrated && shr != live.shared_used.end())
             used = (used < 0.0 ? 0.0 : used) + shr->second;
         if (used >= 0.0) gpu.memory_used_gb = used / BYTES_PER_GIB;
 
