@@ -89,7 +89,7 @@ int main() {
     const auto* spec = thinksound::spec();
     for (const auto& [backend, filename] : installs) {
         for (const auto phase : {InstallPhase::Repository, InstallPhase::Asset}) {
-            const InstallContext context{*spec, spec->definition, "thinksound", spec->recipe, spec->pin_recipe, backend, "", "ignored-tag", "ignored-tag", native_platform(), phase};
+            const InstallContext context{*spec, spec->definition, "thinksound", spec->pin_recipe, backend, "", "ignored-tag", "ignored-tag", native_platform(), phase};
             const auto value = spec->install_params_fn(context);
             check(value.repo == "pwilkin/thinksound.cpp" && value.filename == filename && value.version_override.empty(), "permissive independent install asset");
         }

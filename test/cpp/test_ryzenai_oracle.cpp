@@ -40,7 +40,7 @@ int main() {
     check(entry->definition->records["metadata"]["binary"] == json{{"windows", "ryzenai-server.exe"}, {"linux", "ryzenai-server"}, {"macos", "ryzenai-server"}}, "independent platform binary strings");
     for (const char* backend : {"npu", "unexpected", ""}) for (const char* version : {"b0001", "latest", ""}) {
         for (const char* os : {"windows", "linux", "macos", "unexpected"}) for (auto phase : {InstallPhase::Repository, InstallPhase::Asset}) {
-            InstallContext context{entry->spec, entry->definition, "ryzenai-llm", "ryzenai-server", "ryzenai-llm", backend, version, "pin", "resolved", {os, "x86_64", ""}, phase};
+            InstallContext context{entry->spec, entry->definition, "ryzenai-llm", "ryzenai-llm", backend, version, "pin", "resolved", {os, "x86_64", ""}, phase};
             const auto params = entry->spec.install_params_fn(context);
             check(params.repo == "lemonade-sdk/ryzenai-server" && params.filename == "ryzenai-server.zip" && params.version_override.empty(), "permissive install across OS/backend/version/phases");
         }
@@ -92,7 +92,7 @@ int main() {
     }
     Fixture fixture(0); fixture.executable = "nonempty-unstatable"; fixture.paths.insert(u8"/models/Ryzen AI/雪"); Services services(fixture);
     LaunchPlanner planner; utils::HttpClient::set_default_timeout(37);
-    const auto inputs = planner.prepare(*entry->definition, entry->spec, {"fixture", ryzen_model(), RecipeOptions("ryzenai-llm", json::object()), "trace", false}, services);
+    const auto inputs = planner.prepare(*entry->definition, entry->spec, {"fixture", ryzen_model(), RecipeOptions("ryzenai-llm", json::object()), "trace"}, services);
     const auto plan = planner.plan(*entry->definition, inputs);
     check(plan.command.port == 0 && plan.command.program == "nonempty-unstatable" && plan.readiness_timeout_seconds == 600 && plan.command.ready_endpoint == "/health" && plan.watchdog_enabled && !plan.output.inherit, "RyzenAI nonempty executable/no second stat, zero port, fixed 600 timeout");
     utils::HttpClient::set_default_timeout(300);
@@ -163,13 +163,13 @@ int main() {
         check(thinksound->ops->select_checkpoint_files("", {"dit-bf16.gguf", "other"}) == std::optional<std::vector<std::string>>{{"dit-bf16.gguf"}} && !ds4->ops->select_checkpoint_files("", {"other"}) && entry->ops->find_imported_checkpoint("/absent") == "", "three independent artifact policies");
         check(!thinksound->launch_compatibility.device_on_backend_selection && !thinksound->launch_compatibility.posix_executable_loader_path && !entry->launch_compatibility.device_on_backend_selection, "DS4 attachment never leaks into other entries");
     }
-    const std::vector<std::tuple<std::shared_ptr<const ConfiguredBackendEntry>, std::string, std::string, std::string, std::string, std::string>> installations = {
-        {thinksound, "thinksound", "thinksound", "vulkan", "pwilkin/thinksound.cpp", "thinksound-vulkan-linux-x64.tar.gz"},
-        {ds4, "ds4", "ds4", "rocm", "lemonade-sdk/ds4-rocm", "ds4-pin-linux-rocm-gfx1151-x64.tar.gz"},
-        {entry, "ryzenai-llm", "ryzenai-server", "npu", "lemonade-sdk/ryzenai-server", "ryzenai-server.zip"}
+    const std::vector<std::tuple<std::shared_ptr<const ConfiguredBackendEntry>, std::string, std::string, std::string, std::string>> installations = {
+        {thinksound, "thinksound", "vulkan", "pwilkin/thinksound.cpp", "thinksound-vulkan-linux-x64.tar.gz"},
+        {ds4, "ds4", "rocm", "lemonade-sdk/ds4-rocm", "ds4-pin-linux-rocm-gfx1151-x64.tar.gz"},
+        {entry, "ryzenai-llm", "npu", "lemonade-sdk/ryzenai-server", "ryzenai-server.zip"}
     };
-    for (int pass = 0; pass < 3; ++pass) for (const auto& [owner, public_recipe, install_recipe, backend, repository, filename] : installations) {
-        InstallContext context{owner->spec, owner->definition, public_recipe, install_recipe, public_recipe, backend, "requested", "pin", "resolved", {"linux", "x86_64", "gfx1151"}, InstallPhase::Repository};
+    for (int pass = 0; pass < 3; ++pass) for (const auto& [owner, public_recipe, backend, repository, filename] : installations) {
+        InstallContext context{owner->spec, owner->definition, public_recipe, public_recipe, backend, "requested", "pin", "resolved", {"linux", "x86_64", "gfx1151"}, InstallPhase::Repository};
         const auto params = owner->spec.install_params_fn(context);
         check(params.repo == repository && params.filename == filename, "alternating three-entry repositories and assets independent literals");
         check(owner->definition->operations[0].path == (public_recipe == "thinksound" ? "/generate" : "/v1/chat/completions"), "alternating three-entry independent operation paths");

@@ -297,7 +297,7 @@ void check_registration() {
         {"rocm", "linux", "trellis-rocm-linux-x64.tar.gz"}, {"rocm-nightly", "macos", "trellis-rocm-linux-x64.tar.gz"}, {"unsupported", "linux", "trellis-unsupported-linux-x64.tar.gz"},
     };
     for (const auto& [backend, os, filename] : assets) for (const auto phase : {InstallPhase::Repository, InstallPhase::Asset}) {
-        const InstallContext context{*spec, spec->definition, "trellis", "trellis", "trellis", backend, "", "ignored", "ignored", {os, "x86_64", ""}, phase};
+        const InstallContext context{*spec, spec->definition, "trellis", "trellis", backend, "", "ignored", "ignored", {os, "x86_64", ""}, phase};
         const auto params = spec->install_params_fn(context);
         check(params.repo == "pwilkin/trellis.cpp" && params.filename == filename && params.version_override.empty(), "TRELLIS asset " + backend + "/" + os);
     }

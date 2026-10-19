@@ -301,7 +301,7 @@ void check_registration() {
         {"linux", "aarch64", "moonshine-server-v9-linux-arm64.tar.gz"}, {"linux", "x86_64", "moonshine-server-v9-linux-x64.tar.gz"}, {"linux", "", "moonshine-server-v9-linux-x64.tar.gz"},
     };
     for (const auto& [os, arch, filename] : assets) for (const char* backend : {"cpu", "rocm", ""}) {
-        InstallContext context{*spec, spec->definition, "moonshine", "moonshine", "moonshine", backend, "", "v9", "v9", {os, arch, ""}, InstallPhase::Asset};
+        InstallContext context{*spec, spec->definition, "moonshine", "moonshine", backend, "", "v9", "v9", {os, arch, ""}, InstallPhase::Asset};
         const auto params = spec->install_params_fn(context);
         check(params.repo == "lemonade-sdk/moonshine-server-rocm" && params.filename == filename, "Moonshine asset " + os + "/" + arch + "/" + backend);
         context.phase = InstallPhase::Repository;

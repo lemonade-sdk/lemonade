@@ -543,7 +543,7 @@ std::string BackendManager::get_or_resolve_latest_tag(const std::string& recipe,
         // First call extracts the repo for this (recipe, backend); filename
         // templating is discarded.
         auto pinned_params = spec->install_params_fn(backends::InstallContext{
-            *spec, spec->definition, recipe, spec->recipe, pin_recipe, resolved_backend,
+            *spec, spec->definition, recipe, pin_recipe, resolved_backend,
             spec->definition ? backends::BackendUtils::get_bin_config_value(recipe, resolved_backend) : "", pinned, "", install_platform(*spec, resolved_backend), backends::InstallPhase::Repository});
         return fetch_latest_github_tag(pinned_params.repo, /*throw_on_failure=*/false);
     } catch (const std::exception& e) {
@@ -569,7 +569,7 @@ BackendManager::InstallParams BackendManager::get_install_params(const std::stri
 
     // Two-pass: first call gets the repo for resolve_user_version (filename
     // discarded); second call templates the resolved tag into the real filename.
-    backends::InstallContext context{*spec, spec->definition, recipe, spec->recipe, pin_recipe,
+    backends::InstallContext context{*spec, spec->definition, recipe, pin_recipe,
         resolved_backend, spec->definition ? backends::BackendUtils::get_bin_config_value(recipe, resolved_backend) : "", pinned, "", install_platform(*spec, resolved_backend), backends::InstallPhase::Repository};
     auto pinned_params = spec->install_params_fn(context);
     std::string resolved_version = resolve_user_version(

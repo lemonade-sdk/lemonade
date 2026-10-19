@@ -85,14 +85,14 @@ ConfiguredServer::ConfiguredServer(std::shared_ptr<const ConfiguredBackendEntry>
     set_descriptor(&entry_->descriptor);
 }
 
-void ConfiguredServer::load(const std::string& name, const ModelInfo& model, const RecipeOptions& options, bool do_not_upgrade) {
+void ConfiguredServer::load(const std::string& name, const ModelInfo& model, const RecipeOptions& options, bool) {
     const std::string category = entry_->definition->records["metadata"]["log_category"];
     const auto& log = entry_->launch_compatibility.load_log;
     LaunchPlanner planner;
     planner.require_platform(*entry_->definition, *services_.launch);
     if (!log) LOG(INFO, category.c_str()) << "Loading model: " << name << std::endl;
     else if (log->loading) log->loading(category, name, options);
-    LoadContext context{name, model, options, log_level_, do_not_upgrade, {}};
+    LoadContext context{name, model, options, log_level_, {}};
     if (entry_->launch_compatibility.device_on_backend_selection) context.backend_selected = [this] {
         device_type_ = *entry_->launch_compatibility.device_on_backend_selection;
     };

@@ -251,12 +251,12 @@ void check_registration() {
         {"metal", "macos", "kokoros-darwin-arm64-metal.tar.gz"}, {"metal", "windows", ""}, {"metal", "linux", ""},
     };
     for (const auto& [backend, os, filename] : assets) for (const auto phase : {InstallPhase::Repository, InstallPhase::Asset}) for (const char* arch : {"x86_64", "aarch64"}) {
-        const InstallContext context{*spec, spec->definition, "kokoro", "kokoro", "kokoro", backend, "", "b21", "b22", {os, arch, ""}, phase};
+        const InstallContext context{*spec, spec->definition, "kokoro", "kokoro", backend, "", "b21", "b22", {os, arch, ""}, phase};
         const auto params = spec->install_params_fn(context);
         check(params.repo == "lemonade-sdk/Kokoros" && params.filename == filename && params.version_override.empty(), "Kokoro asset " + backend + "/" + os);
     }
     for (const char* backend : {"rocm", "", "vulkan"}) {
-        const InstallContext context{*spec, spec->definition, "kokoro", "kokoro", "kokoro", backend, "", "b21", "b21", {"linux", "x86_64", ""}, InstallPhase::Asset};
+        const InstallContext context{*spec, spec->definition, "kokoro", "kokoro", backend, "", "b21", "b21", {"linux", "x86_64", ""}, InstallPhase::Asset};
         std::string message;
         try { spec->install_params_fn(context); } catch (const std::runtime_error& error) { message = error.what(); }
         check(message == std::string("[KokoroServer] Unknown kokoros backend: ") + backend, "Kokoro rejects an unknown backend");

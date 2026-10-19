@@ -267,12 +267,12 @@ void check_registration() {
         {"linux", "aarch64", "ort-server-0.3.7-linux-arm64.tar.gz"}, {"linux", "x86_64", "ort-server-0.3.7-linux-x64.tar.gz"}, {"linux", "", "ort-server-0.3.7-linux-x64.tar.gz"},
     };
     for (const auto& [os, arch, filename] : assets) for (const char* backend : {"cpu", "rocm"}) {
-        const InstallContext context{*spec, spec->definition, "onnxruntime", "onnxruntime", "onnxruntime", backend, "", "0.3.6", "0.3.7", {os, arch, ""}, InstallPhase::Asset};
+        const InstallContext context{*spec, spec->definition, "onnxruntime", "onnxruntime", backend, "", "0.3.6", "0.3.7", {os, arch, ""}, InstallPhase::Asset};
         const auto params = spec->install_params_fn(context);
         check(params.repo == "lemonade-sdk/ort-server" && params.filename == filename, "ONNX Runtime asset " + os + "/" + arch);
     }
     std::string message;
-    try { spec->install_params_fn({*spec, spec->definition, "onnxruntime", "onnxruntime", "onnxruntime", "cpu", "", "0.3.7", "0.3.7", {"windows", "aarch64", ""}, InstallPhase::Asset}); }
+    try { spec->install_params_fn({*spec, spec->definition, "onnxruntime", "onnxruntime", "cpu", "", "0.3.7", "0.3.7", {"windows", "aarch64", ""}, InstallPhase::Asset}); }
     catch (const std::runtime_error& error) { message = error.what(); }
     check(message == "The onnxruntime backend has no Windows-on-ARM64 build of ort-server yet", "ONNX Runtime rejects Windows on ARM64");
     const auto* ops = onnxruntime::ops();

@@ -16,7 +16,7 @@ int main() {
         EffectsFixture fixture(8123);
         FixtureLaunchServices services(fixture);
         RecipeOptions options("thinksound", {{"thinksound_backend", backend}});
-        const auto inputs = planner.prepare(*thinksound->definition, thinksound->spec, {"fixture", model(), options, "debug", true}, services);
+        const auto inputs = planner.prepare(*thinksound->definition, thinksound->spec, {"fixture", model(), options, "debug"}, services);
         const auto plan = planner.plan(*thinksound->definition, inputs);
         std::vector<std::string> expected = {u8"model:/model dir/雪\"trailing\\", std::string("validate:thinksound:") + backend,
             std::string("external:thinksound:") + backend, std::string("install:thinksound:") + backend,
@@ -47,7 +47,7 @@ int main() {
         if (scenario == 3) fixture.external = "/external dir/ts-server";
         FixtureLaunchServices services(fixture);
         std::string message;
-        try { planner.prepare(*thinksound->definition, thinksound->spec, {"fixture", model(), empty_options(), "error", false}, services); }
+        try { planner.prepare(*thinksound->definition, thinksound->spec, {"fixture", model(), empty_options(), "error"}, services); }
         catch (const std::exception& error) { message = error.what(); }
         if (scenario == 0) check(message == "Model path not found for checkpoint: fixture/repo" && fixture.events.size() == 1, "artifact failure before selection");
         if (scenario == 1) check(!message.empty() && fixture.events.size() == 2, "empty supported failure before install");
@@ -61,7 +61,7 @@ int main() {
     };
     for (const auto& [os, backend, filename] : installs) {
         for (const auto phase : {InstallPhase::Repository, InstallPhase::Asset}) {
-            InstallContext context{thinksound->spec, thinksound->definition, "thinksound", "thinksound", "thinksound", backend,
+            InstallContext context{thinksound->spec, thinksound->definition, "thinksound", "thinksound", backend,
                 "user-tag", "pin-tag", "resolved-tag", {os, "x86_64", ""}, phase};
             const auto params = thinksound->spec.install_params_fn(context);
             check(params.repo == "pwilkin/thinksound.cpp" && params.filename == filename && params.version_override.empty(), "independent install assets in both phases");
@@ -71,7 +71,7 @@ int main() {
     static std::vector<std::string>* captured = &versions;
     const auto legacy = +[](const std::string& backend, const std::string& version) { captured->push_back(backend + ":" + version); return InstallParams{"repo", "asset", ""}; };
     BackendSpec legacy_spec("legacy-install", "legacy-bin", legacy);
-    InstallContext legacy_context{legacy_spec, nullptr, "legacy-public", "legacy-install", "legacy-pin", "backend", "user", "pinned", "resolved", native_platform(), InstallPhase::Repository};
+    InstallContext legacy_context{legacy_spec, nullptr, "legacy-public", "legacy-pin", "backend", "user", "pinned", "resolved", native_platform(), InstallPhase::Repository};
     legacy_spec.install_params_fn(legacy_context);
     legacy_context.phase = InstallPhase::Asset;
     legacy_spec.install_params_fn(legacy_context);
@@ -87,7 +87,7 @@ int main() {
     alternate_doc["install"]["cases"][0]["sha256"] = std::string(64, 'a');
     const auto other = entry(alternate_doc.dump());
     for (int i = 0; i < 3; ++i) {
-        InstallContext context{other->spec, other->definition, "other", "other-install", "other-pin", "vulkan", "user", "pin", "resolved", {"linux", "x86_64", ""}, InstallPhase::Repository};
+        InstallContext context{other->spec, other->definition, "other", "other-pin", "vulkan", "user", "pin", "resolved", {"linux", "x86_64", ""}, InstallPhase::Repository};
         auto params = other->spec.install_params_fn(context);
         check(params.repo == "other/repo" && params.filename == "asset-pin" && params.version_override == "fixed-release" && params.sha256 == std::string(64, 'a'), "other repository phase isolation");
         context.phase = InstallPhase::Asset; params = other->spec.install_params_fn(context);

@@ -113,7 +113,7 @@ int main() {
     for (const char* host : {"windows", "linux", "macos"}) {
         Fixture fixture(0); Services services(fixture, true); services.host.os = host;
         utils::HttpClient::set_default_timeout(37);
-        const auto inputs = planner.prepare(*entry->definition, entry->spec, {"fixture", ds4_model(), RecipeOptions("ds4", json::object()), "error", false}, services);
+        const auto inputs = planner.prepare(*entry->definition, entry->spec, {"fixture", ds4_model(), RecipeOptions("ds4", json::object()), "error"}, services);
         const auto plan = planner.plan(*entry->definition, inputs);
         check(plan.command.env == std::vector<std::pair<std::string, std::string>>{{"LD_LIBRARY_PATH", "/bundle:old"}} && plan.command.port == 0 && plan.readiness_timeout_seconds == 37 && plan.watchdog_enabled && plan.command.ready_endpoint == "/v1/models", "synthetic hosts POSIX attachment/global timeout/zero port");
         const auto before = fixture.events; planner.plan(*entry->definition, inputs); check(fixture.events == before, "DS4 pure plan");
@@ -137,7 +137,7 @@ int main() {
         else check(probes == (os != "linux" ? std::vector<std::string>{"os"} : std::vector<std::string>{"os", "arch"}), "unsupported OS probes the OS only; supported OS probes the OS then the architecture");
         std::string message; InstallParams params;
         for (auto phase : {InstallPhase::Repository, InstallPhase::Asset}) {
-            InstallContext context{*registered, entry->definition, "ds4", "ds4", "ds4", backend, "requested", version, "b9999", platform, phase};
+            InstallContext context{*registered, entry->definition, "ds4", "ds4", backend, "requested", version, "b9999", platform, phase};
             message.clear();
             try { params = entry->spec.install_params_fn(context); } catch (const std::runtime_error& e) { message = e.what(); }
             check(message == error, "ordered install errors");

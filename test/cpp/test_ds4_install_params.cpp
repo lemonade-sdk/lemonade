@@ -49,7 +49,7 @@ lemon::backends::InstallParams install_params(const std::string& backend, const 
     auto platform = lemon::backends::native_platform();
     platform.os = os;
     platform.rocm_arch = arch;
-    return spec->install_params_fn({*spec, spec->definition, "ds4", spec->recipe, spec->pin_recipe, backend, "",
+    return spec->install_params_fn({*spec, spec->definition, "ds4", spec->pin_recipe, backend, "",
                                     version, version, platform, lemon::backends::InstallPhase::Asset});
 }
 

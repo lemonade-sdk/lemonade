@@ -145,11 +145,11 @@ void check_install() {
     const auto* spec = hrx::spec();
     check(spec->recipe == "llamacpp-hrx" && spec->binary == "llama-server" && spec->pin_recipe == "llamacpp-hrx" && !spec->supports_split_archive, "HRX install identities");
     for (const auto phase : {InstallPhase::Repository, InstallPhase::Asset}) {
-        const InstallContext context{*spec, spec->definition, "llamacpp-hrx", spec->recipe, spec->pin_recipe, "hrx", "", "hrx-b99", "hrx-b99", {"linux", "x86_64", ""}, phase};
+        const InstallContext context{*spec, spec->definition, "llamacpp-hrx", spec->pin_recipe, "hrx", "", "hrx-b99", "hrx-b99", {"linux", "x86_64", ""}, phase};
         const auto params = spec->install_params_fn(context);
         check(params.repo == "ROCm/ggml-staging-automation" && params.filename == "llama-hrx-b99-bin-manylinux-hrx-x64.tar.gz" && params.version_override.empty() && params.sha256.empty(), "HRX installer maps the version to the exact release asset");
     }
-    const InstallContext split{*spec, spec->definition, "llamacpp-hrx", spec->recipe, spec->pin_recipe, "hrx", "", "pinned", "resolved", {"linux", "x86_64", ""}, InstallPhase::Repository};
+    const InstallContext split{*spec, spec->definition, "llamacpp-hrx", spec->pin_recipe, "hrx", "", "pinned", "resolved", {"linux", "x86_64", ""}, InstallPhase::Repository};
     check(spec->install_params_fn(split).filename == "llama-pinned-bin-manylinux-hrx-x64.tar.gz", "repository phase uses the pinned version");
     auto asset = split;
     asset.phase = InstallPhase::Asset;
@@ -162,7 +162,7 @@ void check_install() {
         {"hrx", {"linux", "aarch64", ""}, "The HRX backend is available on Linux x86-64 only"},
     };
     for (const auto& [backend, platform, expected] : rejected) {
-        const InstallContext context{*spec, spec->definition, "llamacpp-hrx", spec->recipe, spec->pin_recipe, backend, "", "hrx-b99", "hrx-b99", platform, InstallPhase::Asset};
+        const InstallContext context{*spec, spec->definition, "llamacpp-hrx", spec->pin_recipe, backend, "", "hrx-b99", "hrx-b99", platform, InstallPhase::Asset};
         std::string message;
         try { spec->install_params_fn(context); } catch (const std::exception& error) { message = error.what(); }
         check(message == expected, "HRX installer rejects backend before host: " + backend + "/" + platform.os + "/" + platform.machine_arch);

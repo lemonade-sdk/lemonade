@@ -184,7 +184,7 @@ int main(int argc, char** argv) {
         auto a_server = create_server("catalog-alpha", {"error"});
         auto b_server = create_server("catalog-beta", {"error"});
         check(a_server->get_descriptor()->recipe == "catalog-alpha" && b_server->get_descriptor()->recipe == "catalog-beta", "interleaved independent factories");
-        InstallContext context{*b_spec, b_spec->definition, "catalog-beta", "beta-installer", "beta-pin", "cpu", "requested", "v7", "v9", {"linux", "x86_64", ""}, InstallPhase::Asset};
+        InstallContext context{*b_spec, b_spec->definition, "catalog-beta", "beta-pin", "cpu", "requested", "v7", "v9", {"linux", "x86_64", ""}, InstallPhase::Asset};
         const auto params = b_spec->install_params_fn(context);
         check(params.repo == "fixture/beta" && params.filename == "beta-v9.zip" && a_spec->recipe == "catalog-alpha", "independent install context and identities");
     }
@@ -207,7 +207,7 @@ int main(int argc, char** argv) {
     fixture.paths.insert("/fake/catalog-engine");
     Services services(fixture);
     ModelInfo model;
-    auto inputs = LaunchPlanner().prepare(*a_spec->definition, *a_spec, {"fake", model, RecipeOptions("catalog-alpha", json::object()), "error", false, {}}, services);
+    auto inputs = LaunchPlanner().prepare(*a_spec->definition, *a_spec, {"fake", model, RecipeOptions("catalog-alpha", json::object()), "error", {}}, services);
     check(LaunchPlanner().plan(*a_spec->definition, inputs).command.args == std::vector<std::string>{"--port", "8123", "--batch", "2"}, "omitted external default reaches launch expression");
     check(std::none_of(fixture.events.begin(), fixture.events.end(), [](const auto& e) { return e.rfind("install:", 0) == 0; }), "external-only never installs");
     std::printf("%d/%d checks passed\n", checks - failures, checks);
