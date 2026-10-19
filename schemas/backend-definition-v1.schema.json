@@ -875,6 +875,7 @@
           "items": {
             "enum": [
               "artifacts",
+              "custom_args",
               "backend",
               "install",
               "hook",
@@ -883,7 +884,7 @@
             ]
           },
           "minItems": 4,
-          "maxItems": 6,
+          "maxItems": 7,
           "uniqueItems": true
         },
         "requires": {

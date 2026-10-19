@@ -255,7 +255,7 @@ void check_witnesses() {
                        {{Op::TextToSpeech, Delivery::Streaming, tts_mode, OperationProvenance::Implemented}, "speech.streaming", "media"}});
     WitnessServer audio(LegacyOperationProfile::ThinkSound);
     WitnessServer image(LegacyOperationProfile::StableDiffusion);
-    WitnessServer mesh(LegacyOperationProfile::Trellis);
+    WitnessServer mesh({{{Op::Model3DGeneration, Delivery::Buffered, k_all_operation_model_types, OperationProvenance::Implemented}, "mesh", "media"}});
     WitnessServer classification({{{Op::Classification, Delivery::Buffered, k_all_operation_model_types, OperationProvenance::Implemented}, "classification", "json"}});
     httplib::DataSink sink;
     llm.dispatch_completion_operation(Op::ChatCompletion, {});

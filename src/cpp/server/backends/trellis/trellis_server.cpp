@@ -1,231 +1,41 @@
-#include <cstdlib>
-#include <filesystem>
-#include "lemon/backend_manager.h"
-#include "lemon/backends/backend_load_helpers.h"
-#include "lemon/backends/backend_ops.h"
-#include "lemon/backends/backend_registry.h"
+#include "backend_definition_resources.h"
 #include "lemon/backends/backend_utils.h"
-#include "lemon/backends/hf_cache_util.h"
-#include "lemon/backends/trellis/trellis.h"
+#include "lemon/backends/configured/backend_definition_store.h"
+#include "lemon/backends/configured/configured_backend_entry.h"
 #include "lemon/backends/trellis/trellis_server.h"
-#include "lemon/error_types.h"
-#include "lemon/model_manager.h"
-#include "lemon/runtime_config.h"
-#include "lemon/system_info.h"
-#include <lemon/utils/aixlog.hpp>
-#include "lemon/utils/custom_args.h"
-#include "lemon/utils/http_client.h"
-#include "lemon/utils/image_sniff.h"
-#include "lemon/utils/json_utils.h"
-#include "lemon/utils/path_utils.h"
-#include <set>
-#include <stdexcept>
-#include <string>
+#include "lemon/utils/aixlog.hpp"
+#include "lemon/wrapped_server.h"
+
 #include <utility>
-#include <vector>
 
-namespace lemon {
-namespace backends {
-
-InstallParams TrellisServer::get_install_params(const std::string& backend, const std::string& version) {
-    (void)version;
-    InstallParams params;
-    params.repo = "pwilkin/trellis.cpp";
-    const std::string variant = (backend.rfind("rocm", 0) == 0) ? "rocm" : backend;
-#ifdef _WIN32
-    params.filename = "trellis-" + variant + "-windows-x64.zip";
-#else
-    params.filename = "trellis-" + variant + "-linux-x64.tar.gz";
-#endif
-    return params;
-}
-
-TrellisServer::TrellisServer(const std::string& log_level,
-                             ModelManager* model_manager,
-                             BackendManager* backend_manager)
-    : WrappedServer("trellis-server", log_level, model_manager, backend_manager) {
-    bind_legacy_operations(LegacyOperationProfile::Trellis, *this);
-}
-
-void TrellisServer::load(const std::string& model_name,
-                         const ModelInfo& model_info,
-                         const RecipeOptions& options,
-                         bool /*do_not_upgrade*/) {
-    LOG(INFO, "trellis-server") << "Loading model: " << model_name << std::endl;
-
-    const std::string model_path = model_info.resolved_path();
-    if (model_path.empty() || !std::filesystem::exists(model_path)) {
-        throw std::runtime_error("Model path not found for checkpoint: " + model_info.checkpoint());
-    }
-
-    // Validate before binary resolution, which can download a backend archive.
-    const std::string trellis_args = options.get_option("trellis_args");
-    if (!trellis_args.empty()) {
-        const std::set<std::string> reserved_flags = {"-m", "--models", "--host", "--port", "--res"};
-        const std::string validation_error =
-            utils::validate_custom_args(trellis_args, reserved_flags);
-        if (!validation_error.empty()) {
-            throw std::invalid_argument(
-                "Invalid custom trellis-server arguments:\n" + validation_error);
-        }
-    }
-
-    std::string backend = options.get_option("trellis_backend");
-    if (backend.empty()) {
-        auto supported = SystemInfo::get_supported_backends("trellis");
-        backend = first_supported_backend(
-            supported.backends, "TRELLIS 3D generation", "this system: no supported GPU backend (Vulkan, ROCm, or CUDA) detected");
-    }
-    RuntimeConfig::validate_backend_choice("trellis", backend);
-    const std::string exe_path = resolve_external_or_managed_binary(
-        *trellis::spec(), backend, backend_binary_services(*backend_manager_));
-
-    port_ = choose_port();
-    if (port_ == 0) {
-        throw std::runtime_error("Failed to find an available port");
-    }
-
-    std::vector<std::string> args = {
-        "--models", model_path,
-        "--host", "127.0.0.1",
-        "--port", std::to_string(port_),
-        "--res", "512",
-    };
-
-    if (!trellis_args.empty()) {
-        LOG(DEBUG, "trellis-server") << "Adding custom arguments: " << trellis_args << std::endl;
-        const std::vector<std::string> custom_args_vec = utils::parse_custom_args(trellis_args);
-        args.insert(args.end(), custom_args_vec.begin(), custom_args_vec.end());
-    }
-
-    std::vector<std::pair<std::string, std::string>> env_vars;
-    const std::string exe_dir = std::filesystem::path(exe_path).parent_path().string();
-    auto prepend_loader_path = [&env_vars, &exe_dir](const std::string& extra_dirs) {
-#ifdef _WIN32
-        const char* inherited = std::getenv("PATH");
-        constexpr bool windows = true;
-#else
-        const char* inherited = std::getenv("LD_LIBRARY_PATH");
-        constexpr bool windows = false;
-#endif
-        env_vars.push_back(make_loader_path_override(
-            exe_dir, extra_dirs,
-            inherited ? std::optional<std::string>(inherited) : std::nullopt, windows));
-    };
-    if (backend == "rocm") {
-        const std::string arch = SystemInfo::get_rocm_arch();
-        std::string dirs;
-        if (!arch.empty()) {
-            dirs = BackendUtils::join_runtime_dirs(
-                BackendUtils::get_therock_lib_paths(arch));
-        }
-        prepend_loader_path(dirs);
-    } else if (backend == "cuda") {
-        prepend_loader_path("");
-        BackendUtils::apply_cuda_env_vars(env_vars, "trellis-server");
-    }
-
-    LOG(INFO, "trellis-server") << "Starting " << exe_path << " on port " << port_ << std::endl;
-    ServerCommand command;
-    command.program = exe_path;
-    command.args = std::move(args);
-    command.env = std::move(env_vars);
-    command.port = port_;
-    start_server(std::make_unique<NativeProcess>(ProcessOutput{is_debug(), true}), command);
-}
-
-void TrellisServer::model_3d_generations(const json& request, httplib::DataSink& sink) {
-    if (!request.contains("image") || !request["image"].is_string()) {
-        return;  // handler already validated; nothing to stream
-    }
-    std::string b64 = request["image"].get<std::string>();
-    auto comma = b64.find(',');
-    if (b64.rfind("data:", 0) == 0 && comma != std::string::npos) {
-        b64 = b64.substr(comma + 1);
-    }
-    std::string image = utils::JsonUtils::base64_decode(b64);
-
-    const auto sniffed = utils::sniff_image(image);
-    if (!sniffed.ok()) {
-        const std::string payload = json{{"error", {
-            {"message", "unsupported image format: expected PNG, JPEG, BMP, or GIF"},
-            {"type", "invalid_request_error"},
-            {"status_code", 400}}}}.dump();
-        sink.write(payload.data(), payload.size());
-        return;
-    }
-
-    std::vector<utils::MultipartField> fields;
-    fields.push_back({"image", image, "input." + sniffed.extension, sniffed.mime});
-    if (request.contains("seed")) {
-        fields.push_back({"seed", std::to_string(request["seed"].get<int>()), "", ""});
-    }
-    if (request.contains("resolution")) {
-        std::string res = request["resolution"].is_string()
-                              ? request["resolution"].get<std::string>()
-                              : std::to_string(request["resolution"].get<int>());
-        fields.push_back({"resolution", res, "", ""});
-    }
-    if (request.contains("bg_removal") && request["bg_removal"].is_string()) {
-        fields.push_back({"bg_removal", request["bg_removal"].get<std::string>(), "", ""});
-    }
-    if (request.contains("uv") && request["uv"].is_string()) {
-        fields.push_back({"uv", request["uv"].get<std::string>(), "", ""});
-    }
-
-    auto fail = [&sink](const std::string& message) {
-        const std::string payload =
-            json{{"error", {{"message", message}, {"type", "backend_error"}}}}.dump();
-        sink.write(payload.data(), payload.size());
-    };
-    try {
-        auto resp = utils::HttpClient::post_multipart(
-            get_base_url() + "/generate",
-            fields,
-            1800,
-            utils::HttpSecurityPolicy::TrustedLoopback);
-        if (resp.curl_code != 0) {
-            LOG(ERROR, "trellis-server") << "generation transport error: " << resp.curl_error << std::endl;
-            fail("generation transport error: " + resp.curl_error);
-            return;
-        }
-        if (resp.status_code < 200 || resp.status_code >= 300) {
-            LOG(ERROR, "trellis-server") << "generation failed (HTTP " << resp.status_code
-                                         << "): " << resp.body << std::endl;
-            fail("generation failed (HTTP " + std::to_string(resp.status_code) + ")");
-            return;
-        }
-        sink.write(resp.body.data(), resp.body.size());
-    } catch (const std::exception& e) {
-        LOG(ERROR, "trellis-server") << "model_3d_generations failed: " << e.what() << std::endl;
-        fail(e.what());
-    }
-}
-
-}  // namespace backends
-
-namespace backends {
+namespace lemon::backends::trellis {
 
 namespace {
-class TrellisOps : public BackendOps {
-public:
-    std::string resolve_checkpoint_path(const ModelInfo& info,
-                                        const CheckpointResolveContext& ctx) const override {
-        (void)info;
-        return hf_cache::active_snapshot_or_cache_path(ctx.model_cache_path);
-    }
-};
-}  // namespace
-
-namespace trellis {
-
-std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
-    return make_server<TrellisServer>(ctx);
+BuiltinLoadLog load_log() {
+    BuiltinLoadLog log;
+    log.loading = [](const std::string& category, const std::string& model_name, const RecipeOptions&) {
+        LOG(INFO, category.c_str()) << "Loading model: " << model_name << std::endl;
+    };
+    log.starting = [](const std::string& category, const json& values, const ServerCommand& command) {
+        const std::string custom = values.at("options").at("trellis_args");
+        if (!custom.empty()) LOG(DEBUG, category.c_str()) << "Adding custom arguments: " << custom << std::endl;
+        LOG(INFO, category.c_str()) << "Starting " << command.program << " on port " << command.port << std::endl;
+    };
+    return log;
+}
 }
 
-const BackendSpec* spec() { return make_spec<TrellisServer>(descriptor); }
-const BackendOps* ops() { return single_ops<TrellisOps>(); }
+std::shared_ptr<const ConfiguredBackendEntry> configured_entry() {
+    static const auto entry = [] {
+        auto result = BackendDefinitionStore().validate({"embedded:trellis.json", k_trellis_definition, DefinitionOrigin::Builtin});
+        if (!result.definition) throw DefinitionValidationError(std::move(result.diagnostics));
+        return ConfiguredBackendEntry::make(result.definition, TrustedCompatibility::LegacyNonChatSse, {{}, false, load_log()});
+    }();
+    return entry;
+}
 
-}  // namespace trellis
-}  // namespace backends
-}  // namespace lemon
+std::unique_ptr<WrappedServer> create(const BackendContext& ctx) { return configured_entry()->factory(ctx); }
+const BackendSpec* spec() { return &configured_entry()->spec; }
+const BackendOps* ops() { return configured_entry()->ops.get(); }
+
+}

@@ -54,6 +54,14 @@ std::vector<std::pair<std::string, std::string>> EffectLaunchServices::environme
 }
 long EffectLaunchServices::default_timeout_seconds() const { return utils::HttpClient::get_default_timeout(); }
 
+namespace {
+void validate_custom_arguments(const json& custom, const std::string& text) {
+    if (text.empty()) return;
+    const auto error = utils::validate_custom_args(text, custom["reserved"].get<std::set<std::string>>());
+    if (!error.empty()) throw std::invalid_argument(custom["error_prefix"].get<std::string>() + error);
+}
+}
+
 void LaunchPlanner::require_platform(const BackendDefinition& definition, const LaunchServices& services) const {
     const auto& launch = definition.records.at("launch");
     if (!launch.contains("requires")) return;
@@ -128,6 +136,8 @@ ResolvedLaunchInputs LaunchPlanner::prepare(const BackendDefinition& definition,
             }
             values["launch"]["backend"] = backend;
             if (context.backend_selected) context.backend_selected();
+        } else if (phase == "custom_args") {
+            validate_custom_arguments(launch["custom_args"], custom_text);
         } else if (phase == "install") {
             services.install_backend(definition.recipe, backend);
         } else if (phase == "hook") {
@@ -177,10 +187,7 @@ ResolvedLaunchInputs LaunchPlanner::prepare(const BackendDefinition& definition,
     }
     if (launch.contains("custom_args")) {
         const auto& custom = launch["custom_args"];
-        if (!custom_text.empty()) {
-            const auto error = utils::validate_custom_args(custom_text, custom["reserved"].get<std::set<std::string>>());
-            if (!error.empty()) throw std::invalid_argument(custom["error_prefix"].get<std::string>() + error);
-        }
+        if (std::find(order.begin(), order.end(), "custom_args") == order.end()) validate_custom_arguments(custom, custom_text);
         std::vector<utils::RuntimeArgDefault> defaults;
         for (const auto& item : custom.value("defaults", json::array())) defaults.push_back({item["args"], item["flag"], item.value("aliases", std::vector<std::string>{})});
         const auto resolved = defaults.empty() ? custom_text : utils::append_runtime_arg_defaults(custom_text, defaults);

@@ -67,6 +67,7 @@ ConfiguredServer::ConfiguredServer(std::shared_ptr<const ConfiguredBackendEntry>
     adapters.tokenizer = this;
     adapters.text_to_speech = this;
     adapters.audio_generation = this;
+    adapters.model_3d = this;
     adapters.completion_rejections = {
         [](WrappedServer& server, const json& request) { return server.chat_completion(request); },
         [](WrappedServer& server, const json& request) { return server.completion(request); },
@@ -188,6 +189,10 @@ void ConfiguredServer::audio_generations(const json& request, httplib::DataSink&
     const auto* selected = program(BackendOperation::AudioGeneration, OperationDelivery::Buffered);
     if (!selected) throw std::invalid_argument("Audio generation adapter is not bound");
     transport_.send_stream(RequestMapper().map(*selected, mapping_, request), sink);
+}
+void ConfiguredServer::model_3d_generations(const json& request, httplib::DataSink& sink) {
+    const auto& selected = bound(BackendOperation::Model3DGeneration);
+    installed_backend_hooks().target<SinkOperationHook>(selected.handler, HookStage::SinkOperation)(hook_context(), request, sink);
 }
 std::vector<std::string> ConfiguredServer::supported_audio_formats() const {
     const auto* selected = media(OperationDelivery::Buffered);

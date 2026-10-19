@@ -301,7 +301,6 @@ OperationBindings legacy_operation_bindings(LegacyOperationProfile profile, Oper
             break;
         case LegacyOperationProfile::ThinkSound:
         case LegacyOperationProfile::AceStep: add("audio", audio); break;
-        case LegacyOperationProfile::Trellis: add("mesh"); break;
         case LegacyOperationProfile::OpenMoss:
             add("speech.buffered", tts);
             add("speech.streaming", tts);

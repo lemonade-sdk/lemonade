@@ -37,8 +37,8 @@ administrator inputs; schema discovery does not install or replace them.
 ## Built-in configured backends
 
 ThinkSound (`thinksound`), DS4 (`ds4`), RyzenAI (`ryzenai-llm`), HRX
-(`llamacpp-hrx`), Kokoro (`kokoro`), Moonshine (`moonshine`) and ONNX Runtime
-(`onnxruntime`) have no engine-specific server class. They run only through `ConfiguredServer`, from the
+(`llamacpp-hrx`), Kokoro (`kokoro`), Moonshine (`moonshine`), ONNX Runtime
+(`onnxruntime`) and TRELLIS.2 (`trellis`) have no engine-specific server class. They run only through `ConfiguredServer`, from the
 definitions embedded at build time from `src/cpp/resources/backends/<stem>.json`.
 There is no environment switch and no fallback implementation; the former
 `LEMONADE_THINKSOUND_CONFIGURED`, `LEMONADE_DS4_CONFIGURED` and
@@ -48,7 +48,8 @@ source of truth for its launch, install, artifact and operation behavior, and it
 `/v1/models` readiness, the ThinkSound companion files, RyzenAI sentinel order,
 the HRX host requirement and `--parallel 1` default, the Kokoro index file and
 streaming formats, the Moonshine port triple and architecture fallback, the ONNX
-Runtime servable-directory rules and startup diagnostics).
+Runtime servable-directory rules and startup diagnostics, the TRELLIS
+custom-argument order and mesh upload).
 An embedded definition that fails validation stops registration at startup.
 
 `src/cpp/server/backends/<stem>/<stem>_server.cpp` is only the registration
@@ -66,6 +67,7 @@ external definitions can never request:
 | `kokoro` | `TrustedCompatibility::LegacyNonChatSse` and `BuiltinLaunchCompatibility{{}, false, load_log}` | Keeps the legacy-forwarding chat streams next to speech. Its load log keeps the loading line and logs the port once it is allocated and the POSIX loader path once the environment is resolved, at INFO. |
 | `moonshine` | `TrustedCompatibility::LegacyNonChatSse` and `BuiltinLaunchCompatibility{DEVICE_CPU, false, load_log}` | Keeps the legacy-forwarding chat streams, sets the CPU device before installation, and logs the per-model settings, model, executable and both ports at INFO and the custom arguments at DEBUG. |
 | `onnxruntime` | `TrustedCompatibility::LegacyNonChatSse` and `BuiltinLaunchCompatibility{DEVICE_CPU, false, load_log}` | Keeps the legacy-forwarding chat streams, sets the CPU device before installation, and logs the per-model settings, the servable directory and the executable at INFO. |
+| `trellis` | `TrustedCompatibility::LegacyNonChatSse` and `BuiltinLaunchCompatibility{{}, false, load_log}` | Keeps the legacy-forwarding chat streams; its load log adds the DEBUG custom-argument line before the INFO startup line. |
 
 A `BuiltinLoadLog` replaces `ConfiguredServer`'s generic INFO `Loading model:` and
 `Starting <program> on port <port>` lines with the engine's own messages; its
@@ -80,7 +82,7 @@ carry the recipe, option, CLI flag and support metadata linked into both
 field with its compiled descriptor. `capabilities()` in `<stem>_server.h` is a
 literal (`CAP_AUDIO_GENERATION` for ThinkSound, `CAP_TTS` for Kokoro,
 `CAP_TRANSCRIPTION | CAP_STREAMING_TRANSCRIPTION` for Moonshine, `CAP_CLASSIFICATION`
-for ONNX Runtime, `0` for DS4,
+for ONNX Runtime, `CAP_MODEL_3D` for TRELLIS, `0` for DS4,
 RyzenAI and HRX) because
 the header-only mode contract test cannot read a definition, and every engine
 shares the single `ConfiguredServer` type, which inherits `IAudioGenerationServer`
@@ -93,7 +95,7 @@ former llama.cpp subclass did, but declares only `chat`, so its export stays `0`
 
 The CPU oracle tests (`test_thinksound_oracle`, `test_ds4_oracle`,
 `test_ryzenai_oracle`, `test_hrx_oracle`, `test_kokoro_oracle`, `test_moonshine_oracle`,
-`test_onnxruntime_oracle`,
+`test_onnxruntime_oracle`, `test_trellis_oracle`,
 `test_configured_execution`,
 `test_configured_llm_execution`) drive the registered entries through fake
 effects, fake processes and loopback HTTP fixtures, against hand-authored
@@ -122,9 +124,12 @@ them, so installing a hook changes the catalog's feature-manifest ID.
 | `onnxruntime.servable_directory` | `launch` | `hooks.launch` | Rejects a missing or ambiguous layout under the resolved path at load and returns the servable directory. |
 | `onnxruntime.classify` | `operation` (`classification`) | `operations[].handler` | Sends `text` (or `input`) and an optional `top_k` to `/classify` with a 120-second timeout; a request without either string gets a 400 envelope. |
 | `onnxruntime.startup_error` | `start_failure` | `hooks.start_failure` | Reruns the refused executable for at most 20 seconds and appends up to 400 bytes of its output, or its exit code and installed files, to the start error. |
+| `trellis.mesh` | `sink_operation` (`model_3d_generation`) | `operations[].handler` | Decodes a base64 or data-URL image, rejects formats other than PNG, JPEG, BMP and GIF, posts it as multipart to `/generate` (30-minute timeout) with the optional fields, and writes the mesh bytes or a JSON error to the sink. |
 
 An operation hook replaces the transport for one buffered operation; the
-manifest names the operation it serves. Engine-specific hooks live next to their
+manifest names the operation it serves. Hooks for media operations
+(`model_3d_generation`, `text_to_speech`, `audio_generation`) use the
+`sink_operation` stage and write to the response sink. Engine-specific hooks live next to their
 bridge as `<stem>_hooks.cpp`.
 
 Request hooks run in order after `remove` and `set`. A streaming operation with
@@ -133,6 +138,8 @@ the re-serialized result. llama.cpp's own server class calls the same functions.
 
 Other launch primitives used by built-ins:
 
+- A `custom_args` phase in `prepare_order` validates the custom arguments at that
+  point instead of after the last phase.
 - A `hook` phase in `prepare_order` runs the definition's `hooks.launch` hook and
   stores its result under `/launch/hook`. A launch hook may log and may fail the
   load.

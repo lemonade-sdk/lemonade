@@ -124,7 +124,7 @@ public:
     void hook(const json& selection, const std::string& pointer, const std::string& stage, const std::string& operation = "") {
         const auto& manifest = installed_hook_manifest();
         if (std::none_of(manifest.begin(), manifest.end(), [&](const auto& hook) { return hook.id == selection["id"] && hook.stage == stage && hook.operation == operation; })) {
-            error(stage == "operation" ? "unknown_handler" : "unknown_hook", pointer + "/id", "Hook implementation is not installed");
+            error(stage == "operation" || stage == "sink_operation" ? "unknown_handler" : "unknown_hook", pointer + "/id", "Hook implementation is not installed");
         } else if (!selection["params"].empty()) error("invalid_value", pointer + "/params", "Hook accepts no parameters");
     }
     std::vector<std::string> hook_ids(const json& selections, const std::string& pointer, const std::string& stage) {
@@ -200,6 +200,7 @@ public:
         const bool installs_first = install_phase ? position("backend") < position("install") && position("install") < position("program") && position("install") < position("ports") : position("program") < position("ports");
         if (!complete || !(position("backend") < position("program") && installs_first)) error("invalid_relationship", "/launch/prepare_order", "Preparation dependency order violated");
         if (install_phase && (launch["program"]["source"] != "managed" || doc["install"]["strategy"] != "github_release")) error("invalid_relationship", "/launch/prepare_order", "Separate installation requires a managed release program");
+        if (position("custom_args") != order.end() && !launch.contains("custom_args")) error("invalid_relationship", "/launch/prepare_order", "A custom_args phase requires custom_args");
         const auto top_hooks = doc.value("hooks", json::object());
         if ((position("hook") != order.end()) != top_hooks.contains("launch")) error("invalid_relationship", "/launch/prepare_order", "A hook phase requires exactly one launch hook");
         if (top_hooks.contains("launch")) hook(top_hooks["launch"], "/hooks/launch", "launch");
@@ -308,7 +309,8 @@ public:
             if (!mask || !valid_operation_delivery(operation, mode)) error("unsupported_feature", p, "Invalid operation/delivery/modes");
             if (record.contains("transport") == record.contains("handler")) error("invalid_relationship", p, "Exactly one transport or handler required");
             if (record.contains("handler")) {
-                hook(record["handler"], p + "/handler", "operation", record["operation"]);
+                const bool media = operation == BackendOperation::Model3DGeneration || operation == BackendOperation::TextToSpeech || operation == BackendOperation::AudioGeneration;
+                hook(record["handler"], p + "/handler", media ? "sink_operation" : "operation", record["operation"]);
                 program.handler = record["handler"]["id"];
                 if (mode != OperationDelivery::Buffered) error("unsupported_feature", p + "/delivery", "Operation handlers serve buffered delivery");
             }
@@ -390,7 +392,8 @@ const std::vector<InstalledHook>& installed_hook_manifest() {
         {"onnxruntime.model_directory", "artifacts"},
         {"onnxruntime.servable_directory", "launch"},
         {"onnxruntime.classify", "operation", "classification"},
-        {"onnxruntime.startup_error", "start_failure"}
+        {"onnxruntime.startup_error", "start_failure"},
+        {"trellis.mesh", "sink_operation", "model_3d_generation"}
     };
     return manifest;
 }
@@ -400,10 +403,10 @@ json installed_definition_features() {
     for (const auto& hook : installed_hook_manifest()) hooks.push_back(hook.stage + ":" + hook.id + (hook.operation.empty() ? "" : ":" + hook.operation));
     return {{"definition_schema_version", 1}, {"schema", schema_digest(k_backend_definition_schema)},
         {"transports", {"http_json:json.v1", "http_json:json.v1:get", "http_sse:openai_sse.v1", "http_bytes:raw_bytes.v1", "realtime:jsonl.v1:tcp"}},
-        {"operations", {"chat_completion", "completion", "responses", "embeddings", "reranking", "classification", "transcription", "streaming_transcription", "text_to_speech", "audio_generation", "slots", "slot_action", "tokenize"}},
+        {"operations", {"chat_completion", "completion", "responses", "embeddings", "reranking", "classification", "transcription", "streaming_transcription", "text_to_speech", "audio_generation", "model_3d_generation", "slots", "slot_action", "tokenize"}},
         {"ports", {"standard", "probe", "offset"}},
         {"install", {"github_release", "external_only", "machine_arch"}},
-        {"launch", {"install_phase", "hook_phase", "platform_requirement", "custom_arg_defaults", "fixed_backend_by_os", "posix_executable_loader_path", "environment_order"}},
+        {"launch", {"install_phase", "hook_phase", "custom_args_phase", "platform_requirement", "custom_arg_defaults", "fixed_backend_by_os", "posix_executable_loader_path", "environment_order"}},
         {"expressions", {"literal", "ref", "concat", "string", "coalesce", "present", "eq", "gt", "all", "any", "not", "when", "parent_path", "path_join"}},
         {"artifact", {"default", "active_snapshot", "sentinel_directory:first_existing", "sentinel_file:first_existing", "check:nonempty", "files_from:variant_directory"}},
         {"unsupported_messages", {"chat_completion", "completion", "responses"}}, {"hooks", hooks}};

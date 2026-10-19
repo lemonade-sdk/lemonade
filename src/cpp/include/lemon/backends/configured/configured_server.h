@@ -14,7 +14,7 @@ struct ConfiguredServerServices {
 class ConfiguredServer final : public WrappedServer, public IEmbeddingsServer, public IRerankingServer,
                                public IClassificationServer, public ITranscriptionServer, public IStreamingTranscriptionServer,
                                public ISlotsServer, public ITokenizerServer, public ITextToSpeechServer,
-                               public IAudioGenerationServer {
+                               public IAudioGenerationServer, public IModel3DServer {
 public:
     ConfiguredServer(std::shared_ptr<const ConfiguredBackendEntry> entry, const BackendContext& context,
                      ConfiguredServerServices services = {});
@@ -32,6 +32,7 @@ public:
     std::string get_streaming_address() override;
     void audio_speech(const json& request, httplib::DataSink& sink) override;
     void audio_generations(const json& request, httplib::DataSink& sink) override;
+    void model_3d_generations(const json& request, httplib::DataSink& sink) override;
     std::vector<std::string> supported_audio_formats() const override;
     std::vector<std::string> supported_streaming_audio_formats() const override;
     AudioFormatMetadata audio_format_metadata(const std::string& format) const override;

@@ -1131,6 +1131,7 @@ file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/hrx.json" HRX_
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/kokoro.json" KOKORO_DEFINITION)
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/moonshine.json" MOONSHINE_DEFINITION)
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/onnxruntime.json" ONNXRUNTIME_DEFINITION)
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/trellis.json" TRELLIS_DEFINITION)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/schemas/backend-definition-v1.schema.json"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/thinksound.json"
@@ -1139,7 +1140,8 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/hrx.json"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/kokoro.json"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/moonshine.json"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/onnxruntime.json")
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/onnxruntime.json"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/trellis.json")
 configure_file(src/cpp/server/backends/configured/backend_definition_resources.h.in
     "${CMAKE_CURRENT_BINARY_DIR}/include/backend_definition_resources.h" @ONLY)
 set(LEMON_BACKEND_DEFINITION_DATA_SOURCES
@@ -3709,6 +3711,12 @@ if(BUILD_TESTING)
     add_executable(test_onnxruntime_oracle test/cpp/test_onnxruntime_oracle.cpp)
     target_link_libraries(test_onnxruntime_oracle PRIVATE lemonade-server-core)
     add_cpp_ci_test(OnnxRuntimeOracleTest CI ON COMMAND test_onnxruntime_oracle)
+endif()
+
+if(BUILD_TESTING)
+    add_executable(test_trellis_oracle test/cpp/test_trellis_oracle.cpp)
+    target_link_libraries(test_trellis_oracle PRIVATE lemonade-server-core)
+    add_cpp_ci_test(TrellisOracleTest CI ON COMMAND test_trellis_oracle)
 endif()
 
 if(BUILD_TESTING)

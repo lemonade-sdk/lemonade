@@ -9,4 +9,5 @@ inline constexpr char k_hrx_definition[] = R"definition(@HRX_DEFINITION@)definit
 inline constexpr char k_kokoro_definition[] = R"definition(@KOKORO_DEFINITION@)definition";
 inline constexpr char k_moonshine_definition[] = R"definition(@MOONSHINE_DEFINITION@)definition";
 inline constexpr char k_onnxruntime_definition[] = R"definition(@ONNXRUNTIME_DEFINITION@)definition";
+inline constexpr char k_trellis_definition[] = R"definition(@TRELLIS_DEFINITION@)definition";
 }

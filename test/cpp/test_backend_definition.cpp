@@ -125,7 +125,8 @@ int main() {
     const std::vector<std::pair<std::string, std::string>> expected_hooks = {{"llamacpp.gguf", "artifacts"}, {"llamacpp.max_tokens_alias", "request"},
         {"llamacpp.tool_schema_limits", "request"}, {"llamacpp.client_model", "response"}, {"kokoro.voice_index", "launch"},
         {"moonshine.model_arch", "launch"}, {"moonshine.transcription", "operation"}, {"onnxruntime.model_directory", "artifacts"},
-        {"onnxruntime.servable_directory", "launch"}, {"onnxruntime.classify", "operation"}, {"onnxruntime.startup_error", "start_failure"}};
+        {"onnxruntime.servable_directory", "launch"}, {"onnxruntime.classify", "operation"}, {"onnxruntime.startup_error", "start_failure"},
+        {"trellis.mesh", "sink_operation"}};
     bool agree = manifest.size() == installed.size() && manifest.size() == expected_hooks.size();
     for (size_t i = 0; agree && i < manifest.size(); ++i) {
         agree = manifest[i].id == installed[i].id && manifest[i].stage == hook_stage_name(installed[i].stage) && manifest[i].id == expected_hooks[i].first && manifest[i].stage == expected_hooks[i].second;
@@ -179,6 +180,8 @@ int main() {
     malformed([](auto& doc) { doc["artifacts"]["main"]["files_from"] = "variant_directory"; doc["artifacts"]["main"]["files_error"] = "none"; }, "invalid_relationship", "/artifacts/main/files_from");
     malformed([](auto& doc) { doc["artifacts"]["main"]["files_error"] = "none"; }, "invalid_relationship", "/artifacts/main/files_error");
     malformed([](auto& doc) { doc["hooks"]["start_failure"] = {{"id", "kokoro.voice_index"}, {"params", json::object()}}; }, "unknown_hook", "/hooks/start_failure/id");
+    malformed([](auto& doc) { doc["launch"]["prepare_order"] = {"artifacts", "custom_args", "backend", "program", "ports"}; }, "invalid_relationship", "/launch/prepare_order");
+    malformed([](auto& doc) { auto& op = doc["operations"][0]; op.erase("transport"); op["handler"] = {{"id", "trellis.mesh"}, {"params", json::object()}}; }, "unknown_handler", "/operations/0/handler/id");
     {
         auto doc = baseline;
         doc["launch"]["ports"][0]["strategy"] = "probe";

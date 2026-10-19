@@ -4,6 +4,7 @@
 #include "lemon/backends/llamacpp/llamacpp_server.h"
 #include "lemon/backends/moonshine/moonshine_hooks.h"
 #include "lemon/backends/onnxruntime/onnxruntime_hooks.h"
+#include "lemon/backends/trellis/trellis_hooks.h"
 
 #include <set>
 
@@ -41,6 +42,7 @@ std::string_view hook_stage_name(HookStage stage) {
         case HookStage::Launch: return "launch";
         case HookStage::Operation: return "operation";
         case HookStage::StartFailure: return "start_failure";
+        case HookStage::SinkOperation: return "sink_operation";
     }
     return "";
 }
@@ -57,7 +59,8 @@ const BackendHookRegistry& installed_backend_hooks() {
         {"onnxruntime.model_directory", HookStage::Artifacts, ArtifactHook(&onnxruntime::model_directory_ops)},
         {"onnxruntime.servable_directory", HookStage::Launch, LaunchHook(&onnxruntime::servable_directory)},
         {"onnxruntime.classify", HookStage::Operation, OperationHook(&onnxruntime::classify)},
-        {"onnxruntime.startup_error", HookStage::StartFailure, StartFailureHook(&onnxruntime::startup_error)}
+        {"onnxruntime.startup_error", HookStage::StartFailure, StartFailureHook(&onnxruntime::startup_error)},
+        {"trellis.mesh", HookStage::SinkOperation, SinkOperationHook(&trellis::mesh)}
     });
     return registry;
 }

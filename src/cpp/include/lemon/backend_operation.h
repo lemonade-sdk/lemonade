@@ -100,7 +100,6 @@ enum class LegacyOperationProfile : uint8_t {
     TheNoise,
     ThinkSound,
     AceStep,
-    Trellis,
     OpenMoss,
     Count
 };

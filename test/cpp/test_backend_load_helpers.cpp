@@ -274,7 +274,7 @@ void check_environment_order() {
 
 void check_production_call_boundaries() {
     const auto root = std::filesystem::path(__FILE__).parent_path().parent_path().parent_path();
-    for (const std::string stem : {"trellis", "acestep", "openmoss"}) {
+    for (const std::string stem : {"acestep", "openmoss"}) {
         std::ifstream input(root / "src/cpp/server/backends" / stem / (stem + "_server.cpp"));
         if (!input) throw std::runtime_error("Cannot read production wrapper fixture");
         const std::string source((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
@@ -298,10 +298,6 @@ void check_production_call_boundaries() {
         check((source.find("backend == \"rocm\"", loader) != std::string::npos) == (stem != "openmoss") &&
               source.find("backend.rfind", loader) == std::string::npos,
               stem + " production keeps exact rocm condition outside string helper");
-        if (stem == "trellis") {
-            check(source.find("utils::validate_custom_args(trellis_args, reserved_flags)") < resolution,
-                  "Trellis custom argument validation remains before binary lookup");
-        }
     }
 }
 
