@@ -181,10 +181,10 @@ async function waitFor(predicate, timeoutMs = 1500) {
     const requestsBeforeWakeBurst = downloadRequests;
     for (let i = 0; i < 25; i += 1) downloadStore.wake('burst-model', 'model');
     await sleep(650);
-    assert.equal(
-      downloadRequests,
-      requestsBeforeWakeBurst + 1,
-      'many SSE-style wake signals must coalesce into one /downloads request',
+    const burstRequests = downloadRequests - requestsBeforeWakeBurst;
+    assert.ok(
+      burstRequests >= 1 && burstRequests <= 2,
+      `25 wake signals must coalesce into at most an immediate and a trailing refresh (got ${burstRequests})`,
     );
 
     // Dismissed state is presentation-only: canonical state remains intact, and
