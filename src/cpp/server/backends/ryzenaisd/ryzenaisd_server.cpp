@@ -79,7 +79,6 @@ void RyzenAISDServer::load(const std::string& model_name,
                         ? image_defaults_.height
                         : static_cast<int>(recipe_options_.get_option("height"));
 
-    image_defaults_ = model_info.image_defaults;
     device_type_ = DEVICE_NPU;
 
     std::string model_path = model_info.resolved_path("main");
@@ -117,6 +116,8 @@ void RyzenAISDServer::load(const std::string& model_name,
         unload();
         process_alive = false;
     }
+
+    image_defaults_ = model_info.image_defaults;
 
     if (process_alive) {
         LOG(INFO, "RyzenAISDServer") << "Process already running — hot-swapping model via /v1/internal/load" << std::endl;
