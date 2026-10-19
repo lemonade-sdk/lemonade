@@ -3569,8 +3569,11 @@ void Server::respond_with_model_options(
 
         const int64_t auto_ctx = resolve_auto_ctx_size(effective, info);
         const nlohmann::json effective_ctx = effective.get_option("ctx_size");
-        const int64_t resolved_ctx = auto_ctx != -2 ? auto_ctx
-            : (effective_ctx.is_number() ? effective_ctx.get<int64_t>() : -1);
+        nlohmann::json resolved_ctx = nullptr;
+        if (auto_ctx != AUTO_CTX_NO_CAPACITY) {
+            resolved_ctx = auto_ctx != -2 ? auto_ctx
+                : (effective_ctx.is_number() ? effective_ctx.get<int64_t>() : -1);
+        }
 
         nlohmann::json response = {
             {"model_name", model_id},
