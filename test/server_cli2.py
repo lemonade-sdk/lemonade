@@ -2877,6 +2877,25 @@ sys.exit(0)
             self.assertNotIn("lemonade", mcp)
             self.assertIn("lemonade", mcp["servers"])
 
+    def test_144b_launch_opencode_unknown_version_keeps_the_mcp_entry_shape(self):
+        """A failed version probe must not move a v2 entry to mcp.lemonade, where v2 ignores codemode."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            self._launch_opencode_agent(temp_dir, ["--ctx-size", "4096", "--mcp"])
+            config = self._read_opencode_config(temp_dir)
+            config["mcp"]["servers"]["lemonade"]["disabled"] = True
+            with open(self._opencode_config_path(temp_dir), "w", encoding="utf-8") as f:
+                json.dump(config, f)
+
+            self._launch_opencode_agent(temp_dir, ["--ctx-size", "4096"], version="")
+            mcp = self._read_opencode_config(temp_dir)["mcp"]
+            self.assertNotIn("lemonade", mcp)
+            entry = mcp["servers"]["lemonade"]
+            self.assertIs(entry["codemode"], False)
+            self.assertIs(entry["disabled"], True)
+
     def test_145_launch_opencode_mcp_header_follows_the_key(self):
         """The MCP entry references the key only while launch exports one."""
         if IS_WINDOWS:

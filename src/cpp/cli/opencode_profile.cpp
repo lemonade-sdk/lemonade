@@ -116,8 +116,18 @@ const AgentConfigProfile& opencode_profile() {
 }
 
 OpencodeMcpShape opencode_mcp_shape(std::optional<int> major_version) {
-    return major_version && *major_version >= 2 ? OpencodeMcpShape::Servers
-                                                : OpencodeMcpShape::Legacy;
+    if (major_version) {
+        return *major_version >= 2 ? OpencodeMcpShape::Servers : OpencodeMcpShape::Legacy;
+    }
+    // Moving a v2 entry to mcp.<name> would turn its Code Mode back on, so
+    // without a version an existing entry keeps its shape.
+    nlohmann::json config;
+    std::string ignored;
+    if (read_json_object(resolve_opencode_config_path(), config, ignored) &&
+        config.contains(nlohmann::json::json_pointer("/mcp/servers/lemonade"))) {
+        return OpencodeMcpShape::Servers;
+    }
+    return OpencodeMcpShape::Legacy;
 }
 
 bool opencode_has_mcp_server() {

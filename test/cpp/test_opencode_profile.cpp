@@ -211,6 +211,14 @@ void test_mcp_legacy(const fs::path& config_path) {
               "servers": {"other": {"type": "remote", "url": "http://other/mcp"}}
           }})"));
     check("no entry is detected after remove", !lemon_cli::opencode_has_mcp_server());
+
+    write_file(config_path, R"({"mcp": {"servers": {"lemonade": {
+        "type": "remote", "url": "http://localhost:13305/mcp", "codemode": false
+    }}}})");
+    check("unknown version keeps an existing mcp.servers entry there",
+          lemon_cli::opencode_mcp_shape(std::nullopt) == OpencodeMcpShape::Servers);
+    check("opencode 1 still moves it to mcp.<name>",
+          lemon_cli::opencode_mcp_shape(1) == OpencodeMcpShape::Legacy);
 }
 
 void test_codemode_config(const fs::path& config_path) {

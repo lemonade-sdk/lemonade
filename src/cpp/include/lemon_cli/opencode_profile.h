@@ -19,7 +19,8 @@ enum class OpencodeMcpShape {
     Servers,  // mcp.servers.lemonade
 };
 
-// Servers for opencode 2 and newer; Legacy otherwise, including an unknown version.
+// Servers for opencode 2 and newer, Legacy for opencode 1. With an unknown
+// version, an existing mcp.servers entry stays there; otherwise Legacy.
 OpencodeMcpShape opencode_mcp_shape(std::optional<int> major_version);
 
 // Whether opencode.json has a "lemonade" MCP server in either shape.
