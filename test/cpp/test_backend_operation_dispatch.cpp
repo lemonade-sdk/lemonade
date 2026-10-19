@@ -152,13 +152,18 @@ public:
     }
     bool is_backend_alive() const override { return true; }
     // The factory fallback keeps its concrete type; attach a fake process without loading a model.
-    static void attach_transport(WrappedServer& server, int port) {
+    static void attach_transport(WrappedServer& server, int port, ModelType mode = ModelType::LLM) {
         server.*(&LocalServer::port_) = port;
         server.*(&LocalServer::process_) = std::make_unique<RunningFakeProcess>();
-        server.set_model_metadata("client-fixture", "upstream-fixture", ModelType::LLM, DEVICE_CPU, RecipeOptions{});
+        server.set_model_metadata("client-fixture", "upstream-fixture", mode, DEVICE_CPU, RecipeOptions{});
         server.set_state(ModelState::READY);
     }
 };
+
+std::unique_ptr<WrappedServer> configured(std::unique_ptr<WrappedServer> server, int port = 0, ModelType mode = ModelType::LLM) {
+    if (port) LocalServer<backends::LlamaCppServer>::attach_transport(*server, port, mode);
+    return server;
+}
 
 void check_llama_dispatch(FakeHttpBackend& upstream) {
     LocalServer<backends::LlamaCppServer> server(upstream.port());
@@ -186,8 +191,7 @@ void check_llama_dispatch(FakeHttpBackend& upstream) {
     check(upstream.last_path() == "/slots/2", "slot action retains POST dispatch");
     operation_adapter<ITokenizerServer>(server, Op::Tokenize, Delivery::Buffered, ModelType::LLM)->tokenize(request);
     check(upstream.last_path() == "/tokenize", "tokenize retains POST dispatch");
-    auto hrx = backends::hrx::create(backends::BackendContext{"error"});
-    LocalServer<backends::LlamaCppServer>::attach_transport(*hrx, upstream.port());
+    auto hrx = configured(backends::hrx::create(backends::BackendContext{"error"}), upstream.port());
     operation_adapter<IEmbeddingsServer>(*hrx, Op::Embeddings, Delivery::Buffered, ModelType::LLM)->embeddings(request);
     check(upstream.last_path() == "/v1/embeddings", "HRX keeps callable embeddings despite advertised mask");
     operation_adapter<IRerankingServer>(*hrx, Op::Reranking, Delivery::Buffered, ModelType::LLM)->reranking(request);
@@ -200,9 +204,17 @@ json unsupported(const std::string& message, bool code = false) {
     return error;
 }
 
-class FallbackSpeechServer : public backends::KokoroServer {
+class FallbackSpeechServer : public WrappedServer, public ITextToSpeechServer {
 public:
-    FallbackSpeechServer() : backends::KokoroServer("error", nullptr, nullptr) {}
+    FallbackSpeechServer() : WrappedServer("fixture", "error") {
+        const auto tts = operation_model_type_mask(ModelType::TTS);
+        bind_operations(OperationBindings(operation_adapters_for(*this), {
+            {{Op::TextToSpeech, Delivery::Buffered, tts, OperationProvenance::Implemented}, "speech.buffered", "media"},
+            {{Op::TextToSpeech, Delivery::Streaming, tts, OperationProvenance::Implemented}, "speech.streaming", "media"}}, true));
+    }
+    void load(const std::string&, const ModelInfo&, const RecipeOptions&, bool) override {}
+    void audio_speech(const json&, httplib::DataSink&) override {}
+    std::vector<std::string> supported_audio_formats() const override { return {"mp3", "wav", "opus", "pcm"}; }
     std::vector<std::string> supported_streaming_audio_formats() const override { return {}; }
     AudioFormatMetadata audio_format_metadata(const std::string& format) const override {
         return format == "pcm" ? AudioFormatMetadata{"audio/pcm", {{"X-Sample-Rate", "24000"}, {"X-Channels", "1"}}}
@@ -211,14 +223,14 @@ public:
 };
 
 void check_rejections() {
-    backends::KokoroServer kokoro("error", nullptr, nullptr);
+    auto kokoro = backends::kokoro::create(backends::BackendContext{"error"});
     backends::WhisperServer whisper("error", nullptr, nullptr);
     backends::MoonshineServer moonshine("error", nullptr, nullptr);
     backends::SDServer sd("error", nullptr, nullptr);
     backends::TheNoiseServer noise("error", nullptr, nullptr);
     for (const auto operation : {Op::ChatCompletion, Op::Completion, Op::Responses}) {
         const std::string label = operation == Op::ChatCompletion ? "chat completion" : operation == Op::Completion ? "text completion" : "responses";
-        check(kokoro.dispatch_completion_operation(operation, {}) == unsupported("Kokoro does not support text completion. Use audio speech endpoints instead.", true), "exact Kokoro exceptional rejection");
+        check(kokoro->dispatch_completion_operation(operation, {}) == unsupported("Kokoro does not support text completion. Use audio speech endpoints instead.", true), "exact Kokoro exceptional rejection");
         check(whisper.dispatch_completion_operation(operation, {}) == unsupported("Whisper models do not support " + label + ". Use audio transcription endpoints instead.", true), "exact Whisper exceptional rejection");
         check(moonshine.dispatch_completion_operation(operation, {}) == unsupported("Moonshine models do not support " + label + ". Use audio transcription endpoints instead.", true), "exact Moonshine exceptional rejection");
         const auto title = operation == Op::ChatCompletion ? "Chat completion" : operation == Op::Completion ? "Text completion" : "Responses";
@@ -231,9 +243,9 @@ void check_rejections() {
     backends::OpenMossServer openmoss("error", nullptr, nullptr);
     check(!operation_adapter<ITextToSpeechServer>(openmoss, Op::TextToSpeech, Delivery::Buffered, ModelType::AUDIO_GENERATION), "OpenMoss audio mode cannot dispatch speech");
     check(!operation_adapter<IAudioGenerationServer>(openmoss, Op::AudioGeneration, Delivery::Buffered, ModelType::TTS), "OpenMoss speech mode cannot dispatch audio generation");
-    check(operation_metadata_adapter<ITextToSpeechServer>(&kokoro, Op::TextToSpeech, Delivery::Buffered)->supported_audio_formats() ==
+    check(operation_metadata_adapter<ITextToSpeechServer>(kokoro.get(), Op::TextToSpeech, Delivery::Buffered)->supported_audio_formats() ==
           std::vector<std::string>({"mp3", "wav", "opus", "pcm"}), "buffered Kokoro formats preserve pre-mode-check metadata");
-    check(operation_metadata_adapter<ITextToSpeechServer>(&kokoro, Op::TextToSpeech, Delivery::Streaming)->supported_streaming_audio_formats() ==
+    check(operation_metadata_adapter<ITextToSpeechServer>(kokoro.get(), Op::TextToSpeech, Delivery::Streaming)->supported_streaming_audio_formats() ==
           std::vector<std::string>({"pcm"}), "Kokoro streaming remains PCM-only");
     const auto pcm = openmoss.audio_format_metadata("pcm");
     check(pcm.content_type == "audio/pcm" && pcm.headers.empty(), "pre-load PCM MIME is exact without invented sample rate or channels");
@@ -247,7 +259,7 @@ void check_rejections() {
           "typed metadata adapter preserves exact PCM rate and channel headers");
     check(!operation_metadata_adapter<ITextToSpeechServer>(&fallback, Op::TextToSpeech, Delivery::Realtime),
           "invalid metadata delivery cannot use compatibility fallback");
-    const auto formats = kokoro.supported_streaming_audio_formats();
+    const auto formats = operation_metadata_adapter<ITextToSpeechServer>(kokoro.get(), Op::TextToSpeech, Delivery::Streaming)->supported_streaming_audio_formats();
     check(std::find(formats.begin(), formats.end(), "mp3") == formats.end(), "explicit MP3 is unavailable in Kokoro streaming formats");
 }
 
@@ -404,12 +416,12 @@ void check_default_rejection_framing() {
 }
 
 void check_rejection_transport_isolation(FakeHttpBackend& upstream) {
-    LocalServer<backends::KokoroServer> kokoro(upstream.port(), ModelType::TTS);
+    auto kokoro = configured(backends::kokoro::create(backends::BackendContext{"error"}), upstream.port(), ModelType::TTS);
     LocalServer<backends::WhisperServer> whisper(upstream.port(), ModelType::TRANSCRIPTION);
     LocalServer<backends::MoonshineServer> moonshine(upstream.port(), ModelType::TRANSCRIPTION);
     LocalServer<backends::SDServer> sd(upstream.port(), ModelType::IMAGE);
     LocalServer<backends::TheNoiseServer> noise(upstream.port(), ModelType::IMAGE);
-    for (auto* server : std::vector<WrappedServer*>{&kokoro, &whisper, &moonshine, &sd, &noise}) {
+    for (auto* server : std::vector<WrappedServer*>{kokoro.get(), &whisper, &moonshine, &sd, &noise}) {
         const auto before = upstream.request_count();
         for (const auto operation : {Op::ChatCompletion, Op::Completion, Op::Responses}) {
             check(!server->supports_operation(operation, Delivery::Buffered, server->get_model_type()) &&
@@ -424,7 +436,8 @@ void check_rejection_transport_isolation(FakeHttpBackend& upstream) {
 }
 
 void check_tts_delivery_wire(FakeHttpBackend& upstream) {
-    LocalServer<backends::KokoroServer> kokoro(upstream.port(), ModelType::TTS);
+    auto server = configured(backends::kokoro::create(backends::BackendContext{"error"}), upstream.port(), ModelType::TTS);
+    auto& kokoro = *server;
     for (const auto delivery : {Delivery::Buffered, Delivery::Streaming}) {
         auto* adapter = operation_adapter<ITextToSpeechServer>(kokoro, Op::TextToSpeech, delivery, ModelType::TTS);
         check(adapter != nullptr, "Kokoro binds both public speech deliveries independently");

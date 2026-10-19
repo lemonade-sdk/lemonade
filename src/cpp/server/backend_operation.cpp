@@ -285,10 +285,6 @@ OperationBindings legacy_operation_bindings(LegacyOperationProfile profile, Oper
             add("transcription");
             add("transcription.realtime");
             break;
-        case LegacyOperationProfile::Kokoro:
-            add("speech.buffered", tts);
-            add("speech.streaming", tts);
-            break;
         case LegacyOperationProfile::StableDiffusion:
             for (const auto id : {"image", "image.edits", "image.variations", "upscale"}) add(id);
             break;

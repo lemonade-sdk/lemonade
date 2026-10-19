@@ -72,6 +72,22 @@
       "required": [],
       "additionalProperties": false
     },
+    "unsupported_messages": {
+      "type": "object",
+      "properties": {
+        "chat_completion": {
+          "type": "string"
+        },
+        "completion": {
+          "type": "string"
+        },
+        "responses": {
+          "type": "string"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
     "rationale": {
       "type": "array",
       "items": {
@@ -281,6 +297,51 @@
           },
           "required": [
             "not"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "when": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/expression"
+              },
+              "minItems": 2,
+              "maxItems": 2
+            }
+          },
+          "required": [
+            "when"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "parent_path": {
+              "$ref": "#/$defs/expression"
+            }
+          },
+          "required": [
+            "parent_path"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "path_join": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/expression"
+              },
+              "minItems": 1
+            }
+          },
+          "required": [
+            "path_join"
           ],
           "additionalProperties": false
         }
@@ -747,7 +808,8 @@
           "enum": [
             "default",
             "active_snapshot",
-            "sentinel_directory"
+            "sentinel_directory",
+            "sentinel_file"
           ]
         },
         "import_resolution": {
@@ -803,12 +865,13 @@
               "artifacts",
               "backend",
               "install",
+              "hook",
               "program",
               "ports"
             ]
           },
           "minItems": 4,
-          "maxItems": 5,
+          "maxItems": 6,
           "uniqueItems": true
         },
         "requires": {
@@ -848,7 +911,31 @@
               "type": "object",
               "properties": {
                 "fixed": {
-                  "type": "string"
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "windows": {
+                          "type": "string"
+                        },
+                        "linux": {
+                          "type": "string"
+                        },
+                        "macos": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "windows",
+                        "linux",
+                        "macos"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
                 }
               },
               "required": [
@@ -1020,7 +1107,14 @@
               "enum": [
                 "inherit",
                 "executable_loader_path",
+                "posix_executable_loader_path",
                 "bundled_accelerator_runtime"
+              ]
+            },
+            "order": {
+              "enum": [
+                "preset_first",
+                "set_first"
               ]
             },
             "set": {

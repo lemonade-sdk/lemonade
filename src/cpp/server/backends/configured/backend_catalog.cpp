@@ -125,7 +125,8 @@ BackendCatalog::BackendCatalog(const std::vector<DefinitionSource>& sources)
         if (install["strategy"] == "github_release") {
             std::set<std::string> backends;
             const auto& selection = definition.records["launch"]["backend"];
-            if (selection.contains("fixed")) backends.insert(selection["fixed"]);
+            if (selection.contains("fixed") && selection["fixed"].is_string()) backends.insert(selection["fixed"]);
+            else if (selection.contains("fixed")) for (const auto& [os, fixed] : selection["fixed"].items()) backends.insert(fixed);
             for (const auto& row : install["cases"]) for (const auto& backend : row.value("backend", json::array())) backends.insert(backend);
             const auto versions = install.value("default_versions", json::object());
             const auto pins = utils::JsonUtils::load_from_file(utils::get_resource_path("resources/backend_versions.json"));

@@ -15,6 +15,7 @@ std::string_view handler(BackendOperation operation, OperationDelivery delivery)
         case BackendOperation::Responses: return buffered ? "responses.buffered" : "responses.streaming";
         case BackendOperation::Embeddings: if (buffered) return "embeddings"; break;
         case BackendOperation::Reranking: if (buffered) return "reranking"; break;
+        case BackendOperation::TextToSpeech: return buffered ? "speech.buffered" : "speech.streaming";
         case BackendOperation::AudioGeneration: if (buffered) return "audio"; break;
         case BackendOperation::Slots: if (buffered) return "slots"; break;
         case BackendOperation::SlotAction: if (buffered) return "slots.action"; break;
@@ -36,7 +37,7 @@ std::vector<OperationBinding> configured_operation_bindings(const BackendDefinit
         const auto& description = program.description;
         const auto id = handler(description.operation, description.delivery);
         const bool buffered = description.delivery == OperationDelivery::Buffered;
-        const bool audio = description.operation == BackendOperation::AudioGeneration;
+        const bool audio = description.operation == BackendOperation::AudioGeneration || description.operation == BackendOperation::TextToSpeech;
         const bool executable = audio ? program.kind == "http_bytes" && program.codec == "raw_bytes.v1" :
             buffered ? program.kind == "http_json" && program.codec == "json.v1" && program.method == (description.operation == BackendOperation::Slots ? "GET" : "POST") :
             program.kind == "http_sse" && program.codec == "openai_sse.v1";
@@ -70,6 +71,7 @@ ConfiguredServer::ConfiguredServer(std::shared_ptr<const ConfiguredBackendEntry>
     adapters.reranking = this;
     adapters.slots = this;
     adapters.tokenizer = this;
+    adapters.text_to_speech = this;
     adapters.audio_generation = this;
     adapters.completion_rejections = {
         [](WrappedServer& server, const json& request) { return server.chat_completion(request); },
@@ -131,6 +133,9 @@ json ConfiguredServer::send_json(const MappedRequest& mapped, const json& reques
 }
 json ConfiguredServer::send_completion(BackendOperation operation, const json& request) {
     if (const auto* selected = program(operation, OperationDelivery::Buffered)) return send_json(RequestMapper().map(*selected, mapping_, request), request);
+    const auto messages = entry_->definition->records.value("unsupported_messages", json::object());
+    const std::string name(backend_operation_name(operation));
+    if (messages.contains(name)) return json{{"error", {{"message", messages[name]}, {"type", "unsupported_operation"}, {"code", "model_not_applicable"}}}};
     if (operation == BackendOperation::ChatCompletion) return WrappedServer::chat_completion(request);
     if (operation == BackendOperation::Completion) return WrappedServer::completion(request);
     return WrappedServer::responses(request);
@@ -150,26 +155,37 @@ json ConfiguredServer::slots_action(int slot_id, const std::string& action, cons
     return send_json(mapped, request_body);
 }
 json ConfiguredServer::tokenize(const json& request_body) { return send_json(RequestMapper().map(bound(BackendOperation::Tokenize), mapping_, request_body), request_body); }
+const OperationProgram* ConfiguredServer::media(OperationDelivery delivery) const {
+    if (const auto* speech = program(BackendOperation::TextToSpeech, delivery)) return speech;
+    return delivery == OperationDelivery::Buffered ? program(BackendOperation::AudioGeneration, delivery) : nullptr;
+}
+void ConfiguredServer::audio_speech(const json& request, httplib::DataSink& sink) {
+    const auto* selected = program(BackendOperation::TextToSpeech, OperationDelivery::Buffered);
+    if (!selected) selected = program(BackendOperation::TextToSpeech, OperationDelivery::Streaming);
+    if (!selected) throw std::invalid_argument("Text to speech adapter is not bound");
+    transport_.send_stream(RequestMapper().map(*selected, mapping_, request), sink);
+}
 void ConfiguredServer::audio_generations(const json& request, httplib::DataSink& sink) {
     const auto* selected = program(BackendOperation::AudioGeneration, OperationDelivery::Buffered);
     if (!selected) throw std::invalid_argument("Audio generation adapter is not bound");
     transport_.send_stream(RequestMapper().map(*selected, mapping_, request), sink);
 }
 std::vector<std::string> ConfiguredServer::supported_audio_formats() const {
-    const auto* selected = program(BackendOperation::AudioGeneration, OperationDelivery::Buffered);
+    const auto* selected = media(OperationDelivery::Buffered);
+    return selected ? selected->formats : std::vector<std::string>{};
+}
+std::vector<std::string> ConfiguredServer::supported_streaming_audio_formats() const {
+    const auto* selected = media(OperationDelivery::Streaming);
     return selected ? selected->formats : std::vector<std::string>{};
 }
 AudioFormatMetadata ConfiguredServer::audio_format_metadata(const std::string& format) const {
-    AudioFormatMetadata metadata;
-    const auto* selected = program(BackendOperation::AudioGeneration, OperationDelivery::Buffered);
-    if (selected) {
+    for (const auto delivery : {OperationDelivery::Buffered, OperationDelivery::Streaming}) {
+        const auto* selected = media(delivery);
+        if (!selected) continue;
         const auto found = selected->format_metadata.find(format);
-        if (found != selected->format_metadata.end()) {
-            metadata.content_type = found->second.content_type;
-            metadata.headers = found->second.headers;
-        }
+        if (found != selected->format_metadata.end()) return {found->second.content_type, found->second.headers};
     }
-    return metadata;
+    return {};
 }
 void ConfiguredServer::forward_streaming_request(const std::string& endpoint, const std::string& body, httplib::DataSink& sink, bool sse, long timeout, TelemetryCallback callback) {
     for (const auto& [operation, path] : endpoints) {

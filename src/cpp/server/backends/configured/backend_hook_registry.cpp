@@ -1,4 +1,5 @@
 #include "lemon/backends/configured/backend_hook_registry.h"
+#include "lemon/backends/kokoro/kokoro_hooks.h"
 #include "lemon/backends/llamacpp/llamacpp_request.h"
 #include "lemon/backends/llamacpp/llamacpp_server.h"
 
@@ -31,7 +32,13 @@ const HookRegistration& BackendHookRegistry::require(std::string_view id, HookSt
 }
 
 std::string_view hook_stage_name(HookStage stage) {
-    return stage == HookStage::Artifacts ? "artifacts" : stage == HookStage::Request ? "request" : "response";
+    switch (stage) {
+        case HookStage::Artifacts: return "artifacts";
+        case HookStage::Request: return "request";
+        case HookStage::Response: return "response";
+        case HookStage::Launch: return "launch";
+    }
+    return "";
 }
 
 const BackendHookRegistry& installed_backend_hooks() {
@@ -39,7 +46,8 @@ const BackendHookRegistry& installed_backend_hooks() {
         {"llamacpp.gguf", HookStage::Artifacts, ArtifactHook(&llamacpp::ops)},
         {"llamacpp.max_tokens_alias", HookStage::Request, RequestHook(&llamacpp::with_max_tokens_alias)},
         {"llamacpp.tool_schema_limits", HookStage::Request, RequestHook(&llamacpp::sanitize_tool_schema_limits)},
-        {"llamacpp.client_model", HookStage::Response, ResponseHook(&llamacpp::normalize_response_model)}
+        {"llamacpp.client_model", HookStage::Response, ResponseHook(&llamacpp::normalize_response_model)},
+        {"kokoro.voice_index", HookStage::Launch, LaunchHook(&kokoro::voice_index)}
     });
     return registry;
 }

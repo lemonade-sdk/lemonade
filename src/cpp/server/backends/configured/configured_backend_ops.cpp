@@ -8,12 +8,12 @@
 
 namespace lemon::backends {
 namespace {
-std::string first_sentinel_directory(const std::string& root, const std::string& sentinel) {
+std::string first_sentinel(const std::string& root, const std::string& sentinel, bool directory) {
     const auto path = utils::path_from_utf8(root);
     if (hf_cache::exists(path)) {
         for (const auto& entry : std::filesystem::recursive_directory_iterator(path, hf_cache::dir_options())) {
             if (entry.is_regular_file() && entry.path().filename() == sentinel) {
-                return utils::path_to_utf8(entry.path().parent_path());
+                return utils::path_to_utf8(directory ? entry.path().parent_path() : entry.path());
             }
         }
     }
@@ -47,8 +47,9 @@ std::string ConfiguredBackendOps::resolve_checkpoint_path(const ModelInfo& info,
         if (artifact["role"] == context.type) selected = &artifact;
     }
     if (selected && selected->value("cache_resolution", "default") == "active_snapshot") return hf_cache::active_snapshot_or_cache_path(context.model_cache_path);
-    if (selected && selected->value("cache_resolution", "default") == "sentinel_directory") {
-        const auto found = first_sentinel_directory(context.model_cache_path, selected->at("sentinel"));
+    const auto cache = selected ? selected->value("cache_resolution", "default") : "default";
+    if (cache == "sentinel_directory" || cache == "sentinel_file") {
+        const auto found = first_sentinel(context.model_cache_path, selected->at("sentinel"), cache == "sentinel_directory");
         return found.empty() ? context.model_cache_path : found;
     }
     return BackendOps::resolve_checkpoint_path(info, context);
@@ -58,7 +59,7 @@ std::string ConfiguredBackendOps::find_imported_checkpoint(const std::string& im
     const auto artifacts = definition_->records.value("artifacts", json::object());
     for (const auto& [name, artifact] : artifacts.items()) {
         if (artifact["role"] == "main" && artifact.value("import_resolution", "default") == "sentinel_directory") {
-            return first_sentinel_directory(import_directory, artifact.at("sentinel"));
+            return first_sentinel(import_directory, artifact.at("sentinel"), true);
         }
     }
     return BackendOps::find_imported_checkpoint(import_directory);

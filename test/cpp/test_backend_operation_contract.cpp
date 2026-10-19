@@ -207,6 +207,13 @@ public:
         : WrappedServer("fixture", "error") {
         bind_legacy_operations(profile, *this);
     }
+    explicit WitnessServer(std::vector<OperationBinding> media)
+        : WrappedServer("fixture", "error") {
+        for (const auto [operation, id] : {std::pair<Op, std::string_view>{Op::ChatCompletion, "chat.streaming"}, {Op::Completion, "completion.streaming"}, {Op::Responses, "responses.streaming"}}) {
+            media.push_back({{operation, Delivery::Streaming, k_all_operation_model_types, OperationProvenance::LegacyForwarding}, id, "sse"});
+        }
+        bind_operations(OperationBindings(operation_adapters_for(*this), std::move(media), true));
+    }
     std::array<int, 18> calls{};
     mutable std::atomic<int> probes{0};
     json hit(Op operation) { ++calls[static_cast<size_t>(operation)]; return {{"witness", static_cast<int>(operation)}}; }
@@ -242,7 +249,9 @@ public:
 void check_witnesses() {
     WitnessServer llm(LegacyOperationProfile::LlamaCpp);
     WitnessServer transcription(LegacyOperationProfile::Moonshine);
-    WitnessServer tts(LegacyOperationProfile::Kokoro);
+    const auto tts_mode = operation_model_type_mask(ModelType::TTS);
+    WitnessServer tts({{{Op::TextToSpeech, Delivery::Buffered, tts_mode, OperationProvenance::Implemented}, "speech.buffered", "media"},
+                       {{Op::TextToSpeech, Delivery::Streaming, tts_mode, OperationProvenance::Implemented}, "speech.streaming", "media"}});
     WitnessServer audio(LegacyOperationProfile::ThinkSound);
     WitnessServer image(LegacyOperationProfile::StableDiffusion);
     WitnessServer mesh(LegacyOperationProfile::Trellis);

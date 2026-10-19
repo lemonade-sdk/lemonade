@@ -8,11 +8,17 @@
 
 namespace lemon::backends {
 
-enum class HookStage { Artifacts, Request, Response };
+struct LaunchHookContext {
+    const json& values;
+    const ModelInfo& model;
+    const std::string& category;
+};
+enum class HookStage { Artifacts, Request, Response, Launch };
 using ArtifactHook = const BackendOps* (*)();
 using RequestHook = json (*)(json request);
 using ResponseHook = json (*)(json response, const json& request, const std::string& model_name);
-using HookTarget = std::variant<ArtifactHook, RequestHook, ResponseHook>;
+using LaunchHook = json (*)(const LaunchHookContext& context);
+using HookTarget = std::variant<ArtifactHook, RequestHook, ResponseHook, LaunchHook>;
 struct HookRegistration {
     std::string id;
     HookStage stage;

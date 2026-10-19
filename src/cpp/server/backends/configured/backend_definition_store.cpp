@@ -107,9 +107,10 @@ public:
         }
         const auto& entry = *value.begin();
         const auto name = value.begin().key();
-        const std::map<std::string, K> kinds = {{"concat", K::Concat}, {"string", K::String}, {"coalesce", K::Coalesce}, {"present", K::Present}, {"eq", K::Eq}, {"gt", K::Gt}, {"all", K::All}, {"any", K::Any}, {"not", K::Not}};
+        const std::map<std::string, K> kinds = {{"concat", K::Concat}, {"string", K::String}, {"coalesce", K::Coalesce}, {"present", K::Present}, {"eq", K::Eq}, {"gt", K::Gt}, {"all", K::All}, {"any", K::Any}, {"not", K::Not},
+            {"when", K::When}, {"parent_path", K::ParentPath}, {"path_join", K::PathJoin}};
         expression.kind = kinds.at(name);
-        if (name == "string" || name == "present" || name == "not") expression.children.push_back(compile(entry, pointer + "/" + name, depth + 1));
+        if (name == "string" || name == "present" || name == "not" || name == "parent_path") expression.children.push_back(compile(entry, pointer + "/" + name, depth + 1));
         else for (size_t i = 0; i < entry.size(); ++i) expression.children.push_back(compile(entry[i], pointer + "/" + name + "/" + std::to_string(i), depth + 1));
         if (name == "present" && expression.children.front().kind != K::Ref) error("invalid_expression", pointer, "present requires a reference");
         return expression;
@@ -199,6 +200,9 @@ public:
         const bool installs_first = install_phase ? position("backend") < position("install") && position("install") < position("program") && position("install") < position("ports") : position("program") < position("ports");
         if (!complete || !(position("backend") < position("program") && installs_first)) error("invalid_relationship", "/launch/prepare_order", "Preparation dependency order violated");
         if (install_phase && (launch["program"]["source"] != "managed" || doc["install"]["strategy"] != "github_release")) error("invalid_relationship", "/launch/prepare_order", "Separate installation requires a managed release program");
+        const auto top_hooks = doc.value("hooks", json::object());
+        if ((position("hook") != order.end()) != top_hooks.contains("launch")) error("invalid_relationship", "/launch/prepare_order", "A hook phase requires exactly one launch hook");
+        if (top_hooks.contains("launch")) hook(top_hooks["launch"], "/hooks/launch", "launch");
         if (launch["backend"].contains("option") && !option_names.count(launch["backend"]["option"])) error("invalid_reference", "/launch/backend/option", "Undeclared option");
         std::set<std::string> ports;
         for (size_t i = 0; i < launch["ports"].size(); ++i) if (!ports.insert(launch["ports"][i]["name"]).second) error("duplicate_value", "/launch/ports/" + std::to_string(i) + "/name", "Duplicate port");
@@ -219,7 +223,8 @@ public:
         const auto artifacts = doc.value("artifacts", json::object());
         for (const auto& [name, artifact] : artifacts.items()) {
             const std::string p = "/artifacts/" + escape(name);
-            if (artifact.value("cache_resolution", "default") == "sentinel_directory" || artifact.value("import_resolution", "default") == "sentinel_directory") {
+            const auto cache = artifact.value("cache_resolution", "default");
+            if (cache == "sentinel_directory" || cache == "sentinel_file" || artifact.value("import_resolution", "default") == "sentinel_directory") {
                 const std::string sentinel = artifact.value("sentinel", "");
                 if (sentinel.empty() || sentinel == "." || sentinel == ".." || sentinel.find_first_of("/\\:") != std::string::npos || sentinel.find('\0') != std::string::npos) {
                     error("invalid_relationship", p + "/sentinel", "Sentinel must be a nonempty single filename");
@@ -260,7 +265,7 @@ public:
         const auto install_errors = install.value("errors", json::object());
         for (const auto& [key, value] : install_errors.items()) expression(definition, "/install/errors/" + key);
         const auto hooks = doc.value("hooks", json::object());
-        for (const auto& [stage, selection] : hooks.items()) error("unknown_hook", "/hooks/" + stage + "/id", "Hook implementation is not installed");
+        for (const auto& [stage, selection] : hooks.items()) if (stage != "launch") error("unknown_hook", "/hooks/" + stage + "/id", "Hook implementation is not installed");
         for (size_t i = 0; i < doc.value("rationale", json::array()).size(); ++i) {
             const std::string p = "/rationale/" + std::to_string(i) + "/subject";
             const std::string subject = doc["rationale"][i]["subject"];
@@ -300,7 +305,8 @@ public:
                 const bool json_operation = operation <= BackendOperation::Reranking || operation == BackendOperation::Slots || operation == BackendOperation::SlotAction || operation == BackendOperation::Tokenize;
                 const bool json_transport = program.kind == "http_json" && mode == OperationDelivery::Buffered && json_operation && program.codec == "json.v1" && !transport.contains("stream_codec");
                 const bool sse_transport = program.kind == "http_sse" && mode == OperationDelivery::Streaming && operation <= BackendOperation::Responses && program.codec == "openai_sse.v1" && !transport.contains("response_codec");
-                const bool bytes_transport = program.kind == "http_bytes" && mode == OperationDelivery::Buffered && operation == BackendOperation::AudioGeneration && program.codec == "raw_bytes.v1" && !transport.contains("response_codec");
+                const bool media_operation = (operation == BackendOperation::AudioGeneration && mode == OperationDelivery::Buffered) || operation == BackendOperation::TextToSpeech;
+                const bool bytes_transport = program.kind == "http_bytes" && media_operation && program.codec == "raw_bytes.v1" && !transport.contains("response_codec");
                 if (program.method != (operation == BackendOperation::Slots ? "GET" : "POST") || !(json_transport || sse_transport || bytes_transport)) error("unsupported_feature", p + "/transport", "Executable transport/codec/adapter combination not installed");
             }
             for (const auto& previous : definition.operations) if (previous.description.operation == operation && previous.description.delivery == mode && (previous.description.model_types & mask)) error("operation_overlap", p, "Overlapping operation cells");
@@ -324,7 +330,13 @@ public:
             program.formats = record.value("formats", std::vector<std::string>{});
             const auto formats = record.value("format_metadata", json::object());
             for (const auto& [format, metadata] : formats.items()) program.format_metadata.emplace(format, FormatMetadata{metadata.value("content_type", ""), metadata.value("headers", std::map<std::string, std::string>{})});
-            if (operation == BackendOperation::AudioGeneration && program.formats.empty()) error("required", p + "/formats", "Media formats required");
+            if ((operation == BackendOperation::AudioGeneration || operation == BackendOperation::TextToSpeech) && program.formats.empty()) error("required", p + "/formats", "Media formats required");
+            for (size_t j = 0; j < i; ++j) {
+                const auto& previous = doc["operations"][j];
+                const bool speech = previous["operation"] == "text_to_speech" && record["operation"] == "text_to_speech";
+                if ((previous["operation"] == "text_to_speech" && record["operation"] == "audio_generation") || (previous["operation"] == "audio_generation" && record["operation"] == "text_to_speech")) error("unsupported_feature", p, "One media operation family per definition");
+                if (speech && (previous.value("transport", json()) != record.value("transport", json()) || previous["request"] != record["request"])) error("invalid_relationship", p, "Speech deliveries share one transport and request");
+            }
             definition.operations.push_back(std::move(program));
         }
     }
@@ -351,7 +363,8 @@ const std::vector<InstalledHook>& installed_hook_manifest() {
         {"llamacpp.gguf", "artifacts"},
         {"llamacpp.max_tokens_alias", "request"},
         {"llamacpp.tool_schema_limits", "request"},
-        {"llamacpp.client_model", "response"}
+        {"llamacpp.client_model", "response"},
+        {"kokoro.voice_index", "launch"}
     };
     return manifest;
 }
@@ -361,11 +374,12 @@ json installed_definition_features() {
     for (const auto& hook : installed_hook_manifest()) hooks.push_back(hook.stage + ":" + hook.id);
     return {{"definition_schema_version", 1}, {"schema", schema_digest(k_backend_definition_schema)},
         {"transports", {"http_json:json.v1", "http_json:json.v1:get", "http_sse:openai_sse.v1", "http_bytes:raw_bytes.v1"}},
-        {"operations", {"chat_completion", "completion", "responses", "embeddings", "reranking", "audio_generation", "slots", "slot_action", "tokenize"}},
+        {"operations", {"chat_completion", "completion", "responses", "embeddings", "reranking", "text_to_speech", "audio_generation", "slots", "slot_action", "tokenize"}},
         {"install", {"github_release", "external_only", "machine_arch"}},
-        {"launch", {"install_phase", "platform_requirement", "custom_arg_defaults"}},
-        {"expressions", {"literal", "ref", "concat", "string", "coalesce", "present", "eq", "gt", "all", "any", "not"}},
-        {"artifact", {"default", "active_snapshot", "sentinel_directory:first_existing", "check:nonempty"}}, {"hooks", hooks}};
+        {"launch", {"install_phase", "hook_phase", "platform_requirement", "custom_arg_defaults", "fixed_backend_by_os", "posix_executable_loader_path", "environment_order"}},
+        {"expressions", {"literal", "ref", "concat", "string", "coalesce", "present", "eq", "gt", "all", "any", "not", "when", "parent_path", "path_join"}},
+        {"artifact", {"default", "active_snapshot", "sentinel_directory:first_existing", "sentinel_file:first_existing", "check:nonempty"}},
+        {"unsupported_messages", {"chat_completion", "completion", "responses"}}, {"hooks", hooks}};
 }
 
 DefinitionValidationResult BackendDefinitionStore::validate(const DefinitionSource& source) const {

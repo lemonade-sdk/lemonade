@@ -583,7 +583,7 @@ protected:
     }
 
     template<class Server>
-    void bind_legacy_operations(LegacyOperationProfile profile, Server& server) {
+    static OperationAdapters operation_adapters_for(Server& server) {
         OperationAdapters adapters;
         adapters.completion = dynamic_cast<ICompletionServer*>(&server);
         adapters.embeddings = dynamic_cast<IEmbeddingsServer*>(&server);
@@ -616,7 +616,12 @@ protected:
                                           bool sse, long timeout, TelemetryCallback callback) {
             instance.forward_streaming_request(endpoint, body, sink, sse, timeout, std::move(callback));
         };
-        operation_bindings_ = std::make_unique<const OperationBindings>(legacy_operation_bindings(profile, adapters));
+        return adapters;
+    }
+
+    template<class Server>
+    void bind_legacy_operations(LegacyOperationProfile profile, Server& server) {
+        operation_bindings_ = std::make_unique<const OperationBindings>(legacy_operation_bindings(profile, operation_adapters_for(server)));
     }
 
     struct BackendWatchdogPolicy {

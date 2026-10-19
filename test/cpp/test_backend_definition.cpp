@@ -122,9 +122,13 @@ int main() {
     }
     const auto& manifest = installed_hook_manifest();
     const auto& installed = installed_backend_hooks().registrations();
-    bool agree = manifest.size() == installed.size();
-    for (size_t i = 0; agree && i < manifest.size(); ++i) agree = manifest[i].id == installed[i].id && manifest[i].stage == hook_stage_name(installed[i].stage);
-    check(agree && manifest.size() == 4, "validator hook manifest names exactly the installed compiled hooks and stages");
+    const std::vector<std::pair<std::string, std::string>> expected_hooks = {{"llamacpp.gguf", "artifacts"}, {"llamacpp.max_tokens_alias", "request"},
+        {"llamacpp.tool_schema_limits", "request"}, {"llamacpp.client_model", "response"}, {"kokoro.voice_index", "launch"}};
+    bool agree = manifest.size() == installed.size() && manifest.size() == expected_hooks.size();
+    for (size_t i = 0; agree && i < manifest.size(); ++i) {
+        agree = manifest[i].id == installed[i].id && manifest[i].stage == hook_stage_name(installed[i].stage) && manifest[i].id == expected_hooks[i].first && manifest[i].stage == expected_hooks[i].second;
+    }
+    check(agree, "validator hook manifest names exactly the installed compiled hooks and stages");
     json features = json::array();
     for (const auto& hook : manifest) features.push_back(hook.stage + ":" + hook.id);
     check(installed_definition_features()["hooks"] == features, "feature manifest lists every installed hook");
@@ -155,6 +159,43 @@ int main() {
         check(store.validate({"tokenize.json", doc.dump(), DefinitionOrigin::Builtin}).definition != nullptr, "tokenize binds a POST JSON transport");
         slots["transport"]["method"] = "GET";
         check(!store.validate({"tokenize.json", doc.dump(), DefinitionOrigin::Builtin}).definition, "tokenize rejects a GET transport");
+    }
+    malformed([](auto& doc) { doc["launch"]["prepare_order"] = {"artifacts", "backend", "hook", "program", "ports"}; }, "invalid_relationship", "/launch/prepare_order");
+    malformed([](auto& doc) { doc["hooks"]["launch"] = {{"id", "kokoro.voice_index"}, {"params", json::object()}}; }, "invalid_relationship", "/launch/prepare_order");
+    malformed([](auto& doc) { doc["launch"]["prepare_order"] = {"artifacts", "backend", "hook", "program", "ports"}; doc["hooks"]["launch"] = {{"id", "llamacpp.gguf"}, {"params", json::object()}}; }, "unknown_hook", "/hooks/launch/id");
+    malformed([](auto& doc) { doc["artifacts"]["main"]["cache_resolution"] = "sentinel_file"; }, "invalid_relationship", "/artifacts/main/sentinel");
+    malformed([](auto& doc) { auto speech = doc["operations"][0]; speech["operation"] = "text_to_speech"; speech["model_modes"] = {"tts"}; doc["operations"].push_back(speech); }, "unsupported_feature", "/operations/1");
+    malformed([](auto& doc) { doc["unsupported_messages"] = {{"embeddings", "no"}}; }, "unknown_key", "/unsupported_messages/embeddings");
+    malformed([](auto& doc) { doc["launch"]["backend"] = {{"fixed", {{"linux", "cpu"}}}}; }, "invalid_shape", "/launch/backend");
+    {
+        auto doc = baseline;
+        auto& speech = doc["operations"][0];
+        speech["operation"] = "text_to_speech"; speech["model_modes"] = {"tts"};
+        auto streaming = speech;
+        streaming["delivery"] = "streaming";
+        doc["operations"].push_back(streaming);
+        check(store.validate({"speech.json", doc.dump(), DefinitionOrigin::Builtin}).definition != nullptr, "speech binds buffered and streaming deliveries on one byte transport");
+        doc["operations"][1]["transport"]["timeout"] = 5;
+        check(!store.validate({"speech.json", doc.dump(), DefinitionOrigin::Builtin}).definition, "speech deliveries must share one transport");
+        doc["operations"][1] = streaming;
+        doc["operations"][1]["formats"] = json::array();
+        check(!store.validate({"speech.json", doc.dump(), DefinitionOrigin::Builtin}).definition, "speech deliveries declare formats");
+    }
+    {
+        const auto when = expression_program({{"when", json::array({json{{"present", json{{"ref", "/request/flag"}}}}, true})}});
+        check(mapper.map(when->operations[0], {}, {{"flag", nullptr}}).body["value"] == true, "when yields its value for a present null");
+        check(!mapper.map(when->operations[0], {}, json::object()).body.contains("value"), "when without its condition is omitted");
+        const auto joined = expression_program({{"path_join", json::array({json{{"parent_path", json{{"ref", "/request/file"}}}}, json{{"ref", "/request/name"}}})}});
+        check(mapper.map(joined->operations[0], {}, {{"file", "/models/dir/index.json"}, {"name", "net.onnx"}}).body["value"] == "/models/dir/net.onnx", "path_join of a parent path");
+        check(mapper.map(joined->operations[0], {}, {{"file", "/models/dir/index.json"}, {"name", "/abs/net.onnx"}}).body["value"] == "/abs/net.onnx", "path_join keeps an absolute component");
+        for (const auto& name : {json(nullptr), json(5)}) {
+            std::string message;
+            try { mapper.map(joined->operations[0], {}, {{"file", "/models/dir/index.json"}, {"name", name}}); } catch (const json::type_error& error) { message = error.what(); }
+            check(message == std::string("[json.exception.type_error.302] type must be string, but is ") + name.type_name(), "path_join keeps the nlohmann path conversion error");
+        }
+        std::string message;
+        try { mapper.map(joined->operations[0], {}, {{"file", "/models/dir/index.json"}}); } catch (const json::type_error& error) { message = error.what(); }
+        check(message == "[json.exception.type_error.302] type must be string, but is null", "path_join converts a missing component as null");
     }
     std::printf("%d/%d checks passed\n", checks - failures, checks);
     return failures ? 1 : 0;

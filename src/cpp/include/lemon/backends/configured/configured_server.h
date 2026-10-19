@@ -11,7 +11,8 @@ struct ConfiguredServerServices {
     std::function<std::unique_ptr<ServerProcess>(ProcessOutput, const std::string&)> make_process;
 };
 class ConfiguredServer final : public WrappedServer, public IEmbeddingsServer, public IRerankingServer,
-                               public ISlotsServer, public ITokenizerServer, public IAudioGenerationServer {
+                               public ISlotsServer, public ITokenizerServer, public ITextToSpeechServer,
+                               public IAudioGenerationServer {
 public:
     ConfiguredServer(std::shared_ptr<const ConfiguredBackendEntry> entry, const BackendContext& context,
                      ConfiguredServerServices services = {});
@@ -24,14 +25,17 @@ public:
     json get_slots() override;
     json slots_action(int slot_id, const std::string& action, const json& request_body) override;
     json tokenize(const json& request_body) override;
+    void audio_speech(const json& request, httplib::DataSink& sink) override;
     void audio_generations(const json& request, httplib::DataSink& sink) override;
     std::vector<std::string> supported_audio_formats() const override;
+    std::vector<std::string> supported_streaming_audio_formats() const override;
     AudioFormatMetadata audio_format_metadata(const std::string& format) const override;
     void forward_streaming_request(const std::string& endpoint, const std::string& request_body,
         httplib::DataSink& sink, bool sse = true, long timeout_seconds = 0, TelemetryCallback telemetry_callback = nullptr) override;
 private:
     const OperationProgram* program(BackendOperation operation, OperationDelivery delivery) const;
     const OperationProgram& bound(BackendOperation operation) const;
+    const OperationProgram* media(OperationDelivery delivery) const;
     json send_json(const MappedRequest& mapped, const json& request);
     json send_completion(BackendOperation operation, const json& request);
     const std::shared_ptr<const ConfiguredBackendEntry> entry_;

@@ -22,7 +22,7 @@ struct DefinitionDiagnostic {
     std::string code, definition, file, pointer, message;
 };
 struct Expression {
-    enum class Kind { Literal, Ref, Concat, String, Coalesce, Present, Eq, Gt, All, Any, Not };
+    enum class Kind { Literal, Ref, Concat, String, Coalesce, Present, Eq, Gt, All, Any, Not, When, ParentPath, PathJoin };
     Kind kind = Kind::Literal;
     json literal;
     std::string reference, type;

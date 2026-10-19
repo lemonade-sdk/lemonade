@@ -92,7 +92,6 @@ enum class LegacyOperationProfile : uint8_t {
     FastFlowLM,
     Whisper,
     Moonshine,
-    Kokoro,
     StableDiffusion,
     TheNoise,
     OnnxRuntime,

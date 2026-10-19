@@ -1,6 +1,8 @@
 #include "lemon/backends/configured/backend_hook_registry.h"
 #include "lemon/backends/configured/request_mapper.h"
 
+#include <filesystem>
+
 namespace lemon::backends {
 
 namespace {
@@ -42,6 +44,13 @@ std::optional<json> Expression::evaluate(const json& context) const {
         return kind == K::All;
     }
     if (kind == K::Not) return !require(children.front().evaluate(context)).get<bool>();
+    if (kind == K::When) return require(children[0].evaluate(context)).get<bool>() ? children[1].evaluate(context) : std::nullopt;
+    if (kind == K::ParentPath) return std::filesystem::path(require(children.front().evaluate(context)).get<std::string>()).parent_path().string();
+    if (kind == K::PathJoin) {
+        std::filesystem::path joined;
+        for (const auto& child : children) joined /= child.evaluate(context).value_or(json()).get<std::filesystem::path>();
+        return joined.string();
+    }
     if (kind == K::Eq || kind == K::Gt) {
         const json left = require(children[0].evaluate(context));
         const json right = require(children[1].evaluate(context));

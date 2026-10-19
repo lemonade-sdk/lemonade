@@ -1,4 +1,5 @@
 #include "lemon/backends/backend_option_contract.h"
+#include "lemon/backends/configured/backend_hook_registry.h"
 #include "lemon/backends/configured/launch_planner.h"
 #include "lemon/utils/custom_args.h"
 #include "lemon/utils/http_client.h"
@@ -31,6 +32,14 @@ std::vector<std::pair<std::string, std::string>> EffectLaunchServices::environme
     const std::string& preset, const std::string& executable, const std::string& backend, const std::string& category) const {
     std::vector<std::pair<std::string, std::string>> result;
     if (preset == "inherit") return result;
+    if (preset == "posix_executable_loader_path") {
+        if (platform().os == "windows") return result;
+        const auto inherited = effects_.inherited_posix_loader();
+        auto value = std::filesystem::path(executable).parent_path().string();
+        if (inherited && !inherited->empty()) value += ":" + *inherited;
+        result.emplace_back("LD_LIBRARY_PATH", value);
+        return result;
+    }
     if (preset == "bundled_accelerator_runtime" && backend != "rocm" && backend != "cuda") return result;
     std::string directories;
     if (preset == "bundled_accelerator_runtime" && backend == "rocm") {
@@ -108,7 +117,7 @@ ResolvedLaunchInputs LaunchPlanner::prepare(const BackendDefinition& definition,
             }
         } else if (phase == "backend") {
             const auto& selection = launch.at("backend");
-            if (selection.contains("fixed")) backend = selection.at("fixed");
+            if (selection.contains("fixed")) backend = selection["fixed"].is_string() ? selection["fixed"] : selection["fixed"].at(services.platform().os);
             else {
                 const std::string option = selection.at("option");
                 backend = context.options.get_option(option).get<std::string>();
@@ -121,6 +130,9 @@ ResolvedLaunchInputs LaunchPlanner::prepare(const BackendDefinition& definition,
             if (context.backend_selected) context.backend_selected();
         } else if (phase == "install") {
             services.install_backend(definition.recipe, backend);
+        } else if (phase == "hook") {
+            const std::string category = metadata["log_category"];
+            values["launch"]["hook"] = installed_backend_hooks().target<LaunchHook>(definition.records["hooks"]["launch"]["id"].get<std::string>(), HookStage::Launch)({values, context.model_info, category});
         } else if (phase == "program") {
             const BackendBinaryServices binary = {
                 [&](const auto&, const auto&) { return services.external_binary(spec, backend); },
@@ -167,6 +179,10 @@ ResolvedLaunchInputs LaunchPlanner::prepare(const BackendDefinition& definition,
     const auto& readiness = launch.at("readiness");
     values["launch"]["readiness_timeout"] = readiness["timeout"] == "global" ? services.default_timeout_seconds() : readiness["timeout"].get<long>();
     inputs.environment = services.environment(launch["environment"]["preset"], inputs.executable, backend, metadata["log_category"]);
+    if (context.phase_prepared) {
+        values["launch"]["environment"] = inputs.environment;
+        context.phase_prepared("environment", values);
+    }
     return inputs;
 }
 
@@ -190,9 +206,16 @@ LaunchPlan LaunchPlanner::plan(const BackendDefinition& definition, const Resolv
     }
     plan.command.args.insert(plan.command.args.end(), inputs.custom_arguments.begin(), inputs.custom_arguments.end());
     const auto entries = launch["environment"].value("set", json::array());
+    std::vector<std::pair<std::string, std::string>> assigned;
     for (size_t i = 0; i < entries.size(); ++i) {
-        const std::string name = entries[i]["name"];
-        const auto value = definition.required_value("/launch/environment/set/" + std::to_string(i) + "/value", inputs.values).get<std::string>();
+        assigned.emplace_back(entries[i]["name"], definition.required_value("/launch/environment/set/" + std::to_string(i) + "/value", inputs.values).get<std::string>());
+    }
+    if (launch["environment"].value("order", "preset_first") == "set_first") {
+        for (const auto& entry : plan.command.env) {
+            if (std::none_of(assigned.begin(), assigned.end(), [&](const auto& set) { return set.first == entry.first; })) assigned.push_back(entry);
+        }
+        plan.command.env = std::move(assigned);
+    } else for (const auto& [name, value] : assigned) {
         auto found = std::find_if(plan.command.env.begin(), plan.command.env.end(), [&](const auto& entry) { return entry.first == name; });
         if (found == plan.command.env.end()) plan.command.env.emplace_back(name, value);
         else found->second = value;
