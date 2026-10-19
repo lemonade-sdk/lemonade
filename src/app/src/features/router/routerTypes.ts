@@ -360,8 +360,8 @@ export function normalizeRouterNode(node: RouterNode): RouterNode {
     return { ...node, children: children.slice(0, 1).length ? children.slice(0, 1) : [createRouterLeaf()] };
   }
   if (children.length === 0) return createRouterLeaf();
-  // Preserve AND/OR groups even with 1 child so gate structure is not silently
-  // discarded — validation will prompt the user to add a second condition.
+  // Preserve authored AND/OR nesting. The server accepts nonempty singleton gates,
+  // and flattening them can change rule identity or create duplicate siblings.
   return { ...node, children };
 }
 
@@ -491,7 +491,6 @@ function validateNode(
   if (node.kind === 'group') {
     if (node.operator === 'not' && node.children.length !== 1) errors.push(`${path}: ${t('NOT requires exactly one condition.')}`);
     if ((node.operator === 'all' || node.operator === 'any') && node.children.length === 0) errors.push(`${path}: ${t('{gate} gate requires at least one condition.', { gate: node.operator.toUpperCase() })}`);
-    if ((node.operator === 'all' || node.operator === 'any') && node.children.length === 1) errors.push(`${path}: ${t('{gate} gate needs at least 2 conditions - add another or remove the gate.', { gate: node.operator.toUpperCase() })}`);
 
     const directConditions = new Set<string>();
     node.children.forEach((child, index) => {

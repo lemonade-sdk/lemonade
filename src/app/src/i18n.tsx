@@ -286,6 +286,7 @@ const ZH_CN: Record<string, string> = {
   'Copy': '复制',
   'Save': '保存',
   'Save & resend': '保存并重新发送',
+  'Edit & resend': '编辑并重新发送',
   'Stop': '停止',
   'Stop generating': '停止生成',
   'Conversations': '对话',

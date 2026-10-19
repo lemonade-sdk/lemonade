@@ -26,7 +26,7 @@ for (const [fileName, source] of [[navPath, nav], [listPath, list], [managerPath
   assert.equal(errors.length, 0, errors.map(d => ts.flattenDiagnosticMessageText(d.messageText, '\n')).join('\n'));
 }
 
-assert.match(nav, /<span>\{mobileOpen \? 'Categories' : 'Task'\}<\/span>/);
+assert.match(nav, /<span>\{mobileOpen \? t\('Categories'\) : t\('Task'\)\}<\/span>/);
 assert.match(nav, /key: 'llm', label: 'Chat'/);
 assert.match(nav, /key: 'router', label: 'Router'/);
 assert.match(nav, /model-nav-rail__task-chip/);
@@ -46,6 +46,17 @@ assert.match(nav, /addCustomTag/);
 assert.match(nav, /Remove custom tag/);
 assert.doesNotMatch(nav, /nav-backend-select/);
 assert.doesNotMatch(nav, /\+ Recommended \+/);
+assert.match(nav, /<\/ul>\s*<div className="model-nav-rail__scroll">\s*<section className="model-nav-rail__section model-nav-rail__section--tasks">/,
+  'model-source tabs must stay outside the scrollable filter sections');
+assert.match(styles, /\.model-nav-rail__primary\s*\{[^}]*flex-shrink:\s*0;/s);
+assert.match(styles, /@media \(min-width: 769px\)[\s\S]*?\.workspace-rail > \.workspace-nav,\s*\.workspace-catalog-layout \.workspace-rail > \.workspace-filter-list\s*\{[^}]*min-height:\s*0;[^}]*overflow-y:\s*auto;/s,
+  'desktop workspace rails must scroll navigation and filters independently');
+assert.match(styles, /\.workspace-rail > \.workspace-nav\s*\{[^}]*flex:\s*1 1 auto;/s,
+  'Settings and Monitor navigation must fill their rails');
+assert.match(styles, /\.workspace-catalog-layout \.workspace-rail > \.workspace-filter-list\s*\{[^}]*flex:\s*0 1 auto;/s,
+  'Backends and Apps filters must not push their footers down when space is available');
+assert.doesNotMatch(styles, /\.monitor-nav\s*\{\s*flex:\s*0 0 auto;/,
+  'Monitor navigation must not be forced to its full intrinsic height');
 
 assert.match(list, /export function modelMatchesTasks/);
 assert.match(list, /export function modelMatchesBackends/);
@@ -140,7 +151,16 @@ function loadListHelpers() {
     if (request === '../modelCapabilities') return capModule.exports;
     if (request === './Icon') return { Icon() {}, CapabilityIcon() {} };
     if (request.includes('downloadStore')) return { activeDownloadForModel() { return undefined; } };
-    if (request === './WorkspacePanels') return { WorkspaceActionButton() {}, WorkspaceActionGroup() {}, WorkspaceListPanel() {} };
+    if (request === './WorkspacePanels') return {
+      WorkspaceActionButton() {}, WorkspaceActionGroup() {}, WorkspaceListPanel() {},
+      WorkspaceList() {}, WorkspaceListGroup() {}, WorkspaceListRow() {},
+    };
+    if (request === '../features/backends/recipeMetadata') return { recipeBackendOptionName() { return null; } };
+    if (request === '../i18n') return {
+      useI18n() {
+        return { t: (key, vars = {}) => key.replace(/\{(\w+)\}/g, (_, name) => String(vars[name] ?? '')) };
+      },
+    };
     if (request === '../modelPresentation') return {
       backendColor: recipe => `color:${recipe}`,
       backendCompactLabel: recipe => recipe,

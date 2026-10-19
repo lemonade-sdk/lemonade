@@ -184,7 +184,7 @@ export default function ReplayTab({
             onClick={handleRunReplay}
             style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
           >
-            <Icon name="play" size={14} /> Replay
+            <Icon name="play" size={14} /> {t('Replay')}
           </button>
           <div className="replay-actions-subrow">
             <button
