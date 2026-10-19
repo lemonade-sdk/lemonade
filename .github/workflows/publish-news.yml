@@ -60,7 +60,9 @@ jobs:
       - name: Copy news from main to website
         run: |
           for attempt in 1 2 3; do
-            git fetch -q --depth=1 origin main website
+            git fetch -q --depth=1 origin \
+              +refs/heads/main:refs/remotes/origin/main \
+              +refs/heads/website:refs/remotes/origin/website
             git checkout -q -B website origin/website
             git rm -rq --ignore-unmatch docs/news docs/assets/news-data.js
             git checkout origin/main -- docs/news docs/assets/news-data.js
