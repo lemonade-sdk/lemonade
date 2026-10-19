@@ -2178,6 +2178,7 @@ sys.exit(0)
         self.assertEqual(result.returncode, 0, result.stderr)
         with open(capture_path, "r", encoding="utf-8") as f:
             payload = json.load(f)
+        payload["stdout"] = result.stdout
         payload["stderr"] = result.stderr
         return payload
 
@@ -2297,7 +2298,8 @@ sys.exit(0)
             self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
 
         with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
-            self._launch_pi(temp_dir, ["--ctx-size", "4096"])
+            payload = self._launch_pi(temp_dir, ["--ctx-size", "4096"])
+            self.assertIn("Loading model in background", payload["stdout"])
             model = self._pi_model_entry(temp_dir, ENDPOINT_TEST_MODEL)
             self.assertEqual(model["contextWindow"], 4096)
             self.assertEqual(model["maxTokens"], 4096)
@@ -2315,7 +2317,9 @@ sys.exit(0)
             with tempfile.TemporaryDirectory(
                 prefix="lemonade-launch-stub-"
             ) as temp_dir:
-                self._launch_pi(temp_dir)
+                payload = self._launch_pi(temp_dir)
+                # The model is already loaded, so no second load is sent.
+                self.assertNotIn("Loading model in background", payload["stdout"])
                 model = self._pi_model_entry(temp_dir, ENDPOINT_TEST_MODEL)
                 loaded_ctx = requests.get(
                     model_url, headers=_auth_headers(), timeout=TIMEOUT_DEFAULT

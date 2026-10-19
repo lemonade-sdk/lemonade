@@ -761,9 +761,11 @@ static bool check_pi_version_for_flags(const std::string& pi_binary, const CliCo
     return true;
 }
 
-// Returns false when launch must not start the agent.
+// Returns false when launch must not start the agent. model_loaded is set
+// when the sync already loaded the launched model.
 static bool sync_agent_config_for_launch(lemonade::LemonadeClient& client,
-                                         const CliConfig& config) {
+                                         const CliConfig& config,
+                                         bool* model_loaded = nullptr) {
     constexpr int default_context_window = 40960;
     // A window of 0 marks a model without a saved size until the fallback is applied.
     std::vector<lemon_cli::AgentModelEntry> models = fetch_llm_models_for_sync(client, 0);
@@ -813,6 +815,9 @@ static bool sync_agent_config_for_launch(lemonade::LemonadeClient& client,
                 if (!load_for_context_window(client, config, model.context_window)) {
                     std::cerr << "Not launching pi, since the model failed to load." << std::endl;
                     return false;
+                }
+                if (model_loaded != nullptr) {
+                    *model_loaded = true;
                 }
                 if (model.context_window <= 0) {
                     std::cerr << "Launching pi anyway, using a context size of "
@@ -1034,31 +1039,34 @@ static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& co
         return 1;
     }
 
+    bool model_loaded = false;
     if (needs_config_sync && sync_after_binary_check &&
-        !sync_agent_config_for_launch(client, config)) {
+        !sync_agent_config_for_launch(client, config, &model_loaded)) {
         return 1;
     }
 
-    std::cout << "Loading model in background: " << config.model << std::endl;
+    if (!model_loaded) {
+        std::cout << "Loading model in background: " << config.model << std::endl;
 
-    // Trigger load asynchronously so launch is non-blocking for agent startup.
-    std::thread([host = config.host,
-                 port = config.port,
-                 api_key = config.api_key,
-                 is_ssl = config.is_ssl,
-                 model = config.model,
-                 recipe_options = config.recipe_options]() {
-        try {
-            lemonade::LemonadeClient async_client(host, port, api_key, is_ssl);
-            nlohmann::json request_body = recipe_options;
-            request_body["model_name"] = model;
-            request_body["save_options"] = false;
-            // Keep async load silent to avoid disrupting interactive agent UIs.
-            (void)async_client.make_request("/api/v1/load", "POST", request_body.dump(), "application/json");
-        } catch (const std::exception& e) {
-            (void)e;
-        }
-    }).detach();
+        // Trigger load asynchronously so launch is non-blocking for agent startup.
+        std::thread([host = config.host,
+                     port = config.port,
+                     api_key = config.api_key,
+                     is_ssl = config.is_ssl,
+                     model = config.model,
+                     recipe_options = config.recipe_options]() {
+            try {
+                lemonade::LemonadeClient async_client(host, port, api_key, is_ssl);
+                nlohmann::json request_body = recipe_options;
+                request_body["model_name"] = model;
+                request_body["save_options"] = false;
+                // Keep async load silent to avoid disrupting interactive agent UIs.
+                (void)async_client.make_request("/api/v1/load", "POST", request_body.dump(), "application/json");
+            } catch (const std::exception& e) {
+                (void)e;
+            }
+        }).detach();
+    }
 
     std::cout << "Launching " << config.agent << "..." << std::endl;
 
