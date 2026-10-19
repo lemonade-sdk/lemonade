@@ -79,11 +79,30 @@ before a failing phase still appear. The subprocess log level itself comes from
 the definition's `log_level_policy` (`debug_flag` for RyzenAI, `passthrough`
 otherwise), not from the attachment.
 
-The compiled descriptors in `include/lemon/backends/<stem>/<stem>.h` remain: they
-carry the recipe, option, CLI flag and support metadata linked into both
-`lemonade` and `lemond`. Each engine's oracle test compares every configured
-descriptor field with its compiled descriptor through the shared `descriptor()`
-helper in `test/cpp/configured_fixture.h`. `capabilities()` in `<stem>_server.h`
+Each definition's `metadata` block is also the single source of the engine's
+`BackendDescriptor`: the recipe, option, CLI flag and support data linked into both
+`lemonade` and `lemond`. At configure time, for every `LEMON_BACKENDS` stem that
+has a `src/cpp/resources/backends/<stem>.json`,
+`cmake/BackendDescriptorFromDefinition.cmake` writes
+`lemon::backends::<stem>::descriptor` into the generated
+`backend_descriptors_generated.h` with CMake's own `string(JSON)`, so these engines
+have no `<stem>.h`. Descriptor headers under `include/lemon/backends/<stem>/` exist
+only for the engines without a definition. The generator emits every descriptor
+field, including each support row's OS set, devices, summary and architecture
+gates and each option's JSON default; `metadata.config_extra` and option defaults
+keep their JSON values. It maps `default_device`, `slot_policy`, `version_policy`,
+`tier` and `format` by explicit tables and fails the configure step, naming the
+file and JSON pointer, on an unknown value, an unknown key, a wrong type or a
+missing required field, instead of defaulting it. `server_name`, `log_category`
+and `log_level_policy` are server-only and never reach the descriptor. A per-OS
+`binary` object becomes `#ifdef _WIN32` / `__APPLE__` / Linux branches, matching
+`native_platform()`. The objects are `inline const`, so the descriptor registry,
+the factory registry and the capability registry share one object per engine and
+the pointers callers cache stay valid for the process. Each engine's oracle test
+compares every field of the descriptor `ConfiguredBackendEntry` builds from the
+same JSON at runtime with the generated one, `descriptor_for("<recipe>")`, through
+the shared `descriptor()` helper in `test/cpp/configured_fixture.h`, so the two
+mappings cannot drift. `capabilities()` in `<stem>_server.h`
 is a literal (`CAP_AUDIO_GENERATION` for ThinkSound, `CAP_TTS` for Kokoro,
 `CAP_TRANSCRIPTION | CAP_STREAMING_TRANSCRIPTION` for Moonshine, `CAP_CLASSIFICATION`
 for ONNX Runtime, `CAP_MODEL_3D` for TRELLIS, `0` for DS4, RyzenAI and HRX)

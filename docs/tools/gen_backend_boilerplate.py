@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Generate backend boilerplate (docs + config defaults) from the descriptors.
 
-The C++ backend descriptors (src/cpp/include/lemon/backends/<stem>/<stem>.h) are
-the single source of truth for what each backend is. This script boots a `lemond`
-server and regenerates the committed artifacts that would otherwise be
-hand-maintained:
+The C++ backend descriptors are the single source of truth for what each backend
+is: src/cpp/include/lemon/backends/<stem>/<stem>.h, or for a backend with a
+definition, the metadata of src/cpp/resources/backends/<stem>.json, from which
+CMake generates the descriptor. This script boots a `lemond` server and
+regenerates the committed artifacts that would otherwise be hand-maintained:
 
   * Marker-delimited regions of the backend reference docs, from
     ``/system-info`` ``recipes``.
