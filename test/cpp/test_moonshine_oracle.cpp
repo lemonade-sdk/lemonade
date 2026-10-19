@@ -169,6 +169,34 @@ void check_launch(Upstream& upstream) {
     }
 }
 
+void check_failure_states(Upstream& upstream) {
+    const int u = upstream.port;
+    const auto tcp = [](int port) { return "tcp://127.0.0.1:" + std::to_string(port); };
+    const RecipeOptions invalid("moonshine", {{"moonshine_args", "--port 1"}});
+    const std::string rejected = "Invalid custom moonshine-server arguments:\n";
+    {
+        Arm arm(u);
+        check(arm.load(model(), invalid).rfind(rejected, 0) == 0 && probes(arm.fixture.events).size() == 3, "Moonshine rejects custom arguments after probing all three ports");
+        check(address(*arm.server).empty() && arm.server->get_backend_port() == 0, "a fresh Moonshine object that fails preparation reports no TCP address and no HTTP port");
+    }
+    {
+        Arm arm(u);
+        arm.fixture.child_running = false;
+        check(arm.load(model()) == "moonshine-server failed to start", "Moonshine readiness failure");
+        check(address(*arm.server) == tcp(u + 2) && arm.server->get_backend_port() == 0, "a Moonshine readiness failure keeps the newly mapped TCP address while the HTTP port resets");
+    }
+    {
+        Arm arm(u);
+        check(arm.load(model()).empty() && address(*arm.server) == tcp(u + 2) && arm.server->get_backend_port() == u, "Moonshine loads before the failed reloads");
+        arm.free = {u - 3, u - 2, u - 1};
+        check(arm.load(model(), invalid).rfind(rejected, 0) == 0 && probes(arm.fixture.events).back() == "probe:" + std::to_string(u - 1), "a reload probes new ports before rejecting its custom arguments");
+        check(address(*arm.server) == tcp(u + 2) && arm.server->get_backend_port() == u, "a failed Moonshine preparation keeps the previous TCP address and HTTP port");
+        arm.free.clear();
+        check(arm.load(model()) == "Failed to find three consecutive available ports", "Moonshine reload port search fails");
+        check(address(*arm.server) == tcp(u + 2) && arm.server->get_backend_port() == u, "a failed Moonshine port search keeps the previous TCP address and HTTP port");
+    }
+}
+
 void check_logging(Upstream& upstream) {
     const int u = upstream.port;
     {
@@ -301,6 +329,7 @@ int main() {
     Upstream upstream;
     check_registration();
     check_launch(upstream);
+    check_failure_states(upstream);
     check_logging(upstream);
     check_transcription(upstream);
     std::printf("%d/%d checks passed\n", checks - failures, checks);

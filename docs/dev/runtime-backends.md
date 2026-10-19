@@ -107,6 +107,64 @@ effects, fake processes and loopback HTTP fixtures, against hand-authored
 expectations for argv, environment order, readiness, error envelopes,
 operation bindings and install assets.
 
+## Differences from the retired wrapper classes
+
+The migrated engines keep their routed HTTP behavior. What differs is log
+ordering, the state a server object is left in after a failed load, and direct
+C++ calls that the HTTP handlers never make. `Router` constructs a new server for
+every load attempt, including its retry, and keeps it only when `load()`
+succeeds, so a server object that failed to load is never reachable through
+HTTP.
+
+- **Moonshine streaming address.** `ConfiguredServer` replaces its port mapping
+  only once preparation succeeds, and `get_streaming_address()` reads that
+  mapping. A fresh object whose preparation fails, for example on custom
+  arguments rejected after the three ports were probed, reports an empty
+  address. A readiness failure keeps the newly mapped `tcp://` address while the
+  HTTP port resets to 0, as the wrapper's did. A failed preparation on an object
+  that loaded before, including a failed port search, keeps the previous address.
+  The wrapper instead set both ports to 0 before searching and published the
+  probed ports before it validated custom arguments.
+- **Moonshine and ONNX Runtime HTTP port.** A `probe` port becomes the server's
+  HTTP port only when `start_server()` runs. A failure after probing leaves
+  `get_backend_port()` at its prior value, 0 on a fresh object, where the
+  wrappers had already assigned the probed port. A `standard` port still comes
+  from the server's port chooser, which publishes it at allocation.
+- **TRELLIS custom-argument log line.** The load log's `starting` hook writes the
+  DEBUG `Adding custom arguments:` line after preparation has resolved the
+  accelerator environment; the wrapper wrote it before. The CUDA environment's
+  INFO lines (`Respecting existing CUDA_VISIBLE_DEVICES=`, `Restricting
+  CUDA_VISIBLE_DEVICES to`, `Setting __NV_PRIME_RENDER_OFFLOAD=1`) now precede it,
+  and an exception thrown while the environment is resolved suppresses it, where
+  the wrapper had already written it. Only log output changes.
+- **HRX streaming forwarding.** A direct `forward_streaming_request()` call binds
+  only `/v1/chat/completions`, `/v1/completions` and `/v1/responses`; any other
+  endpoint throws `std::invalid_argument` (`Streaming operation adapter is not
+  bound`), where the inherited llama.cpp override forwarded it unchanged. The
+  router streams only those three routes, which behave as before.
+- **HRX installation.** An unsupported install backend raises the same message
+  as a `std::runtime_error` from the definition's `install.errors.backend`, where
+  the wrapper threw `std::invalid_argument`. `/install` handles both alike, so its
+  responses are unchanged.
+- **Option conversion order.** Preparation converts the custom-argument option
+  and then `ctx_size` before its first phase. HRX therefore converts both before
+  installation and model resolution, and reports a malformed `hrx_args` before a
+  malformed `ctx_size`; the wrapper converted them after installation and model
+  resolution, `ctx_size` first. TRELLIS converts `trellis_args` before it checks
+  the model path. Each conversion error keeps its text; only when it surfaces
+  changes.
+- **Kokoro malformed speech request.** A direct `audio_speech()` call with a
+  JSON scalar instead of an object throws `json::out_of_range` (404, from the
+  request mapper's JSON-pointer assignment), where the wrapper's key assignment
+  threw `json::type_error` (305). The speech handler requires `model` and
+  `input` fields before it calls the backend, so such a body never reaches it.
+
+The oracle tests pin the Moonshine and ONNX Runtime failure states and the
+TRELLIS accelerator log order with CPU fakes. The TRELLIS test runs the
+production CUDA environment step with `CUDA_VISIBLE_DEVICES` already set, so no
+GPU is queried; see [platform qualification](platform-qualification.md) for where
+these tests have run.
+
 ## Installed hooks
 
 A hook is compiled behavior that a built-in definition selects by ID. The
@@ -188,7 +246,8 @@ Other launch primitives used by built-ins:
   `attempts` times from the next candidate) or `offset` (an earlier probed port
   plus an offset inside its span).
 - `streaming_transcription` binds a `realtime` transport with method `TCP` on any
-  declared port; its address is `tcp://127.0.0.1:<port>` once the port exists.
+  declared port; its address is `tcp://127.0.0.1:<port>` from the last load whose
+  preparation succeeded, and empty before one has.
 - `files_from: "variant_directory"` downloads every file under the variant's
   directory (case-insensitive); an empty selection raises `files_error`.
 - Install cases may list `""` under `machine_arch` for an unrecognized host.

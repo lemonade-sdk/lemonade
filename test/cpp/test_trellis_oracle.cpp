@@ -1,11 +1,14 @@
 #include "configured_fixture.h"
+#include "lemon/backends/backend_utils.h"
 #include "lemon/backends/configured/configured_server.h"
 #include "lemon/backends/trellis/trellis.h"
 #include "lemon/backends/trellis/trellis_server.h"
 #include "lemon/utils/json_utils.h"
 
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 
 using namespace thinksound_oracle;
 using namespace lemon::backends;
@@ -143,6 +146,63 @@ void check_launch(Upstream& upstream) {
     }
 }
 
+class ScopedEnv {
+public:
+    ScopedEnv(const char* key, const char* value) : key_(key) {
+        if (const char* previous = std::getenv(key)) previous_ = previous;
+        set(value);
+    }
+    ~ScopedEnv() {
+        if (previous_) set(previous_->c_str());
+#ifdef _WIN32
+        else _putenv_s(key_.c_str(), "");
+#else
+        else unsetenv(key_.c_str());
+#endif
+    }
+private:
+    void set(const char* value) {
+#ifdef _WIN32
+        _putenv_s(key_.c_str(), value);
+#else
+        setenv(key_.c_str(), value, 1);
+#endif
+    }
+    std::string key_;
+    std::optional<std::string> previous_;
+};
+
+std::unique_ptr<WrappedServer> trellis_server(EffectsFixture& fixture, BackendEffects effects) {
+    return std::make_unique<ConfiguredServer>(trellis::configured_entry(), BackendContext{"debug"},
+        ConfiguredServerServices{std::make_shared<EffectLaunchServices>(std::move(effects)), fixture.effects().make_process});
+}
+
+void check_accelerator_logging(Upstream& upstream) {
+    const ScopedEnv devices("CUDA_VISIBLE_DEVICES", "3");
+    const ScopedEnv prime("__NV_PRIME_RENDER_OFFLOAD", "1");
+    const auto recipe = [](const char* backend) { return options({{"trellis_backend", backend}, {"trellis_args", "--steps 12"}}); };
+    {
+        EffectsFixture fixture(upstream.port);
+        auto effects = fixture.effects();
+        effects.append_cuda = [](auto& env, const std::string& category) { BackendUtils::apply_cuda_env_vars(env, category); };
+        auto server = trellis_server(fixture, effects);
+        LogCapture capture("trellis-server");
+        check(load(*server, recipe("cuda")).empty() && fixture.command.env.size() == 1, "TRELLIS loads the CUDA backend with the production CUDA environment step");
+        check(capture.records == std::vector<std::string>{"Info Loading model: fixture", "Info Respecting existing CUDA_VISIBLE_DEVICES=3", "Debug Adding custom arguments: --steps 12",
+            "Info Starting /bin dir/ts-server on port " + std::to_string(upstream.port)}, "TRELLIS CUDA environment diagnostics precede the custom-argument line");
+    }
+    for (const char* backend : {"cuda", "rocm"}) {
+        EffectsFixture fixture(upstream.port);
+        auto effects = fixture.effects();
+        effects.append_cuda = [](auto&, const std::string&) { throw std::runtime_error("accelerator environment witness"); };
+        effects.rocm_arch = []() -> std::string { throw std::runtime_error("accelerator environment witness"); };
+        auto server = trellis_server(fixture, effects);
+        LogCapture capture("trellis-server");
+        check(load(*server, recipe(backend)) == "accelerator environment witness" && capture.records == std::vector<std::string>{"Info Loading model: fixture"} &&
+              std::find(fixture.events.begin(), fixture.events.end(), "process") == fixture.events.end(), std::string("an accelerator environment failure suppresses the TRELLIS custom-argument line: ") + backend);
+    }
+}
+
 void check_mesh(Upstream& upstream) {
     EffectsFixture fixture(upstream.port);
     auto server = trellis_server(fixture);
@@ -259,6 +319,7 @@ int main() {
     Upstream upstream;
     check_registration();
     check_launch(upstream);
+    check_accelerator_logging(upstream);
     check_mesh(upstream);
     std::printf("%d/%d checks passed\n", checks - failures, checks);
     return failures ? 1 : 0;

@@ -160,6 +160,33 @@ void check_launch(Upstream& upstream) {
     }
 }
 
+void check_failure_states(Upstream& upstream) {
+    const RecipeOptions invalid("onnxruntime", {{"onnxruntime_args", "--port 1"}});
+    const std::string rejected = "Invalid custom ort-server arguments:\n";
+    Tree tree;
+    tree.complete("m");
+    {
+        Arm arm(upstream.port, tree);
+        check(arm.load(tree, invalid).rfind(rejected, 0) == 0 && arm.fixture.events.back() == "probe:8001" && arm.server->get_backend_port() == 0, "a fresh ONNX Runtime object that fails after probing publishes no HTTP port");
+    }
+    {
+        Arm arm(upstream.port, tree);
+        check(arm.load(tree).empty() && arm.server->get_backend_port() == upstream.port, "ONNX Runtime loads before the failed reloads");
+        arm.fixture.port = upstream.port + 1;
+        check(arm.load(tree, invalid).rfind(rejected, 0) == 0 && arm.server->get_backend_port() == upstream.port, "a failed ONNX Runtime preparation keeps the previous HTTP port instead of the newly probed one");
+        arm.fixture.port = 0;
+        check(arm.load(tree) == "Failed to find an available port for ort-server" && arm.server->get_backend_port() == upstream.port, "a failed ONNX Runtime probe keeps the previous HTTP port");
+    }
+#ifndef _WIN32
+    {
+        Arm arm(upstream.port, tree);
+        arm.fixture.executable = tree.script("ort-server", "exit 3");
+        arm.fixture.child_running = false;
+        check(arm.load(tree) == "ort-server failed to start: exited with code 3; installed: ort-server" && arm.server->get_backend_port() == 0, "an ONNX Runtime readiness failure resets the HTTP port");
+    }
+#endif
+}
+
 void check_startup_error(Upstream& upstream) {
 #ifndef _WIN32
     const std::vector<std::pair<std::string, std::string>> scripts = {
@@ -273,6 +300,7 @@ int main() {
     Upstream upstream;
     check_registration();
     check_launch(upstream);
+    check_failure_states(upstream);
     check_startup_error(upstream);
     check_operations(upstream);
     std::printf("%d/%d checks passed\n", checks - failures, checks);
