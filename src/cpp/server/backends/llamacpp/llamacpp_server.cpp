@@ -349,6 +349,14 @@ void LlamaCppServer::load(const std::string& model_name,
     push_arg(args, reserved_flags, "--jinja", std::vector<std::string>{"--no-jinja"});
     push_arg(args, reserved_flags, "--metrics");
 
+    // To detect silent CPU fallback, raise llama-server verbosity in debug so the
+    // device-selection lines ("llama_prepare_model_devices: using device ...",
+    // "offloaded N/N layers to GPU") are emitted. At the default threshold they are suppressed.
+    if (is_debug()) {
+        args.push_back("-lv");
+        args.push_back("4");
+    }
+
     LOG(DEBUG, "LlamaCpp") << "Using backend: " << llamacpp_backend << "\n"
             << "[LlamaCpp] Use GPU: " << (use_gpu ? "true" : "false") << std::endl;
 

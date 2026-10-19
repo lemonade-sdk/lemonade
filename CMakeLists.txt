@@ -2942,6 +2942,7 @@ if(BUILD_TESTING AND EXISTS "${_ROUTING_CONFORMANCE_CORPUS_TEST_SRC}")
     )
     target_include_directories(test_routing_conformance_corpus PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/cpp
         ${CMAKE_CURRENT_BINARY_DIR}/include
     )
     target_link_libraries(test_routing_conformance_corpus PRIVATE nlohmann_json::nlohmann_json)
@@ -2956,6 +2957,24 @@ if(BUILD_TESTING AND EXISTS "${_ROUTING_CONFORMANCE_CORPUS_TEST_SRC}")
 
     include(CTest)
     add_cpp_ci_test(RoutingConformanceCorpusTest CI ON COMMAND test_routing_conformance_corpus)
+endif()
+
+# Self-test for the conformance corpus runner's pure checks (issue #2425): locks the
+# in-memory row guards (unknown key / missing, duplicate or malformed name / unknown
+# service) and the Decision comparison, so a regression that neutered one fails CI
+# instead of silently eroding coverage.
+set(_ROUTING_CONFORMANCE_HARNESS_CHECKS_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_conformance_harness_checks.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_ROUTING_CONFORMANCE_HARNESS_CHECKS_TEST_SRC}")
+    add_executable(test_conformance_harness_checks test/cpp/test_conformance_harness_checks.cpp)
+    target_include_directories(test_conformance_harness_checks PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/cpp
+    )
+    target_link_libraries(test_conformance_harness_checks PRIVATE nlohmann_json::nlohmann_json)
+
+    include(CTest)
+    add_cpp_ci_test(ConformanceHarnessChecksTest CI ON COMMAND test_conformance_harness_checks)
 endif()
 
 # ModelManager collection validation for collection.router registration:
@@ -3106,7 +3125,7 @@ if(BUILD_TESTING AND EXISTS "${_AUTO_TUNE_TEST_SRC}")
     )
 
     include(CTest)
-    add_cpp_ci_test(AutoTuneTest CI OFF COMMAND test_auto_tune)
+    add_cpp_ci_test(AutoTuneTest CI ON COMMAND test_auto_tune)
 endif()
 
 set(_GPU_MEMORY_SELECTION_TEST_SRC
@@ -3302,6 +3321,13 @@ if(BUILD_TESTING AND EXISTS "${_GFX_ARCH_GATING_TEST_SRC}")
     add_executable(test_gfx_arch_gating test/cpp/test_gfx_arch_gating.cpp)
     target_link_libraries(test_gfx_arch_gating PRIVATE lemonade-server-core)
     add_cpp_ci_test(GfxArchGatingTest CI ON COMMAND test_gfx_arch_gating)
+endif()
+
+set(_ROCM_PATH_MEASURE_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_rocm_path_measure.cpp")
+if(BUILD_TESTING AND EXISTS "${_ROCM_PATH_MEASURE_TEST_SRC}")
+    add_executable(test_rocm_path_measure test/cpp/test_rocm_path_measure.cpp)
+    target_link_libraries(test_rocm_path_measure PRIVATE lemonade-server-core)
+    add_cpp_ci_test(RocmPathMeasureTest CI ON COMMAND test_rocm_path_measure)
 endif()
 
 set(_NETWORK_UTILS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_network_utils.cpp")
