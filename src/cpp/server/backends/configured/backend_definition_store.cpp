@@ -122,6 +122,7 @@ public:
         } catch (const std::exception&) { error("invalid_pointer", pointer, "Invalid JSON pointer"); }
     }
     void hook(const json& selection, const std::string& pointer, const std::string& stage, const std::string& operation = "") {
+        if (source.origin != DefinitionOrigin::Builtin) { error("reserved_hook", pointer + "/id", "Compiled hooks are reserved for built-in definitions"); return; }
         const auto& manifest = installed_hook_manifest();
         if (std::none_of(manifest.begin(), manifest.end(), [&](const auto& hook) { return hook.id == selection["id"] && hook.stage == stage && hook.operation == operation; })) {
             error(stage == "operation" || stage == "sink_operation" ? "unknown_handler" : "unknown_hook", pointer + "/id", "Hook implementation is not installed");
@@ -409,7 +410,7 @@ json installed_definition_features() {
         {"launch", {"install_phase", "hook_phase", "custom_args_phase", "platform_requirement", "custom_arg_defaults", "fixed_backend_by_os", "posix_executable_loader_path", "environment_order"}},
         {"expressions", {"literal", "ref", "concat", "string", "coalesce", "present", "eq", "gt", "all", "any", "not", "when", "parent_path", "path_join"}},
         {"artifact", {"default", "active_snapshot", "sentinel_directory:first_existing", "sentinel_file:first_existing", "check:nonempty", "files_from:variant_directory"}},
-        {"unsupported_messages", {"chat_completion", "completion", "responses"}}, {"hooks", hooks}};
+        {"unsupported_messages", {"chat_completion", "completion", "responses"}}, {"hooks", hooks}, {"hook_origins", {"builtin"}}};
 }
 
 DefinitionValidationResult BackendDefinitionStore::validate(const DefinitionSource& source) const {

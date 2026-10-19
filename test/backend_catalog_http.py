@@ -71,6 +71,14 @@ def definition(identity="http-alpha", option="http_batch"):
     }
 
 
+def hooked():
+    result = definition()
+    result["hooks"] = {
+        "start_failure": {"id": "onnxruntime.startup_error", "params": {}}
+    }
+    return result
+
+
 def request(port, path, key="regular-test-key", body=None, headers=None):
     fields = dict(headers or {})
     if key is not None:
@@ -443,6 +451,26 @@ def main(binary):
                 "builtin cannot substitute",
             )
             check(
+                request(server.port, "/v1/backends/validate", body=hooked())[:2]
+                == (
+                    400,
+                    {
+                        "valid": False,
+                        "validation": "server",
+                        "catalog_id": catalog_id,
+                        "diagnostics": [
+                            {
+                                "code": "reserved_hook",
+                                "definition": "http-alpha",
+                                "pointer": "/hooks/start_failure/id",
+                                "message": "Compiled hooks are reserved for built-in definitions",
+                            }
+                        ],
+                    },
+                ),
+                "external definition cannot select a compiled hook",
+            )
+            check(
                 before
                 == {
                     str(p.relative_to(root)): p.read_bytes()
@@ -563,6 +591,22 @@ def main(binary):
                 != catalog_id,
                 "restart adopts changed definition",
             )
+        (directory / "a.json").write_text(json.dumps(hooked()))
+        failed = Server(binary, root)
+        try:
+            check(
+                failed.process.wait(timeout=15) != 0,
+                "external hook selection fails startup",
+            )
+            failed.log.seek(0)
+            check(
+                "http-alpha /hooks/start_failure/id reserved_hook: "
+                "Compiled hooks are reserved for built-in definitions"
+                in failed.log.read().decode(errors="replace"),
+                "startup names the reserved hook selection",
+            )
+        finally:
+            failed.close()
     print(f"{checks}/{checks} catalog HTTP checks passed")
 
 

@@ -449,6 +449,22 @@ def main(binary):
                 result.returncode == 2 and not fixture.calls,
                 "v1 rejects nonscalar unset values",
             )
+            candidate = definition("offline-fixture", "offline_batch")
+            candidate["hooks"] = {
+                "start_failure": {"id": "onnxruntime.startup_error", "params": {}}
+            }
+            file.write_text(json.dumps(candidate))
+            result = run("backends", "validate", str(file), "--offline", target=False)
+            check(
+                result.returncode == 2
+                and not fixture.calls
+                and [
+                    (row["code"], row["pointer"])
+                    for row in json.loads(result.stdout)["diagnostics"]
+                ]
+                == [("reserved_hook", "/hooks/start_failure/id")],
+                "offline validation refuses an external hook selection",
+            )
             file.write_bytes(b" " * (1024 * 1024 + 1))
             check(
                 run("backends", "validate", str(file)).returncode == 2

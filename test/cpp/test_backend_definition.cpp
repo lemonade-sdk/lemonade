@@ -4,7 +4,10 @@
 #include "backend_definition_resources.h"
 #include "thinksound_oracle.h"
 
+#include <algorithm>
 #include <functional>
+#include <set>
+#include <tuple>
 
 using namespace thinksound_oracle;
 using namespace lemon::backends;
@@ -135,6 +138,7 @@ int main() {
     json features = json::array();
     for (const auto& hook : manifest) features.push_back(hook.stage + ":" + hook.id + (hook.operation.empty() ? "" : ":" + hook.operation));
     check(installed_definition_features()["hooks"] == features, "feature manifest lists every installed hook");
+    check(installed_definition_features()["hook_origins"] == json::array({"builtin"}), "feature manifest declares hooks selectable only by built-in definitions");
     const auto request_hook = [&](const json& selection) { return [selection](auto& doc) { doc["operations"][0]["request"]["hooks"] = json::array({selection}); }; };
     malformed(request_hook({{"id", "absent.v1"}, {"params", json::object()}}), "unknown_hook", "/operations/0/request/hooks/0/id");
     malformed(request_hook({{"id", "llamacpp.client_model"}, {"params", json::object()}}), "unknown_hook", "/operations/0/request/hooks/0/id");
@@ -182,6 +186,82 @@ int main() {
     malformed([](auto& doc) { doc["hooks"]["start_failure"] = {{"id", "kokoro.voice_index"}, {"params", json::object()}}; }, "unknown_hook", "/hooks/start_failure/id");
     malformed([](auto& doc) { doc["launch"]["prepare_order"] = {"artifacts", "custom_args", "backend", "program", "ports"}; }, "invalid_relationship", "/launch/prepare_order");
     malformed([](auto& doc) { auto& op = doc["operations"][0]; op.erase("transport"); op["handler"] = {{"id", "trellis.mesh"}, {"params", json::object()}}; }, "unknown_handler", "/operations/0/handler/id");
+    {
+        auto vocabulary = baseline;
+        for (auto& option : vocabulary["metadata"]["options"]) option["cli_flag"] = "";
+        check(store.validate({"external.json", vocabulary.dump(), DefinitionOrigin::External}).definition != nullptr, "an external definition without hooks validates");
+        const auto selection = [](const std::string& id) { return json{{"id", id}, {"params", json::object()}}; };
+        const auto place = [&](const InstalledHook& hook, json& doc) -> std::string {
+            if (hook.stage == "artifacts") {
+                auto& main = doc["artifacts"]["main"];
+                main.erase("files"); main["strategy"] = "hook"; main["cache_resolution"] = "default"; main["hook"] = selection(hook.id);
+                auto& rationale = doc["rationale"];
+                rationale.erase(std::remove_if(rationale.begin(), rationale.end(), [](const json& record) { return record["subject"] == "/artifacts/main/files"; }), rationale.end());
+                return "/artifacts/main/hook/id";
+            }
+            if (hook.stage == "request") { doc["operations"][0]["request"]["hooks"] = json::array({selection(hook.id)}); return "/operations/0/request/hooks/0/id"; }
+            if (hook.stage == "response") {
+                doc["operations"].push_back({{"operation", "embeddings"}, {"delivery", "buffered"}, {"model_modes", {"*"}}, {"request", {{"base", "identity"}}}, {"response", {{"hooks", json::array({selection(hook.id)})}}},
+                    {"transport", {{"kind", "http_json"}, {"method", "POST"}, {"path", "/v1/embeddings"}, {"port", "http"}, {"timeout", "global"}, {"response_codec", "json.v1"}}}});
+                return "/operations/1/response/hooks/0/id";
+            }
+            if (hook.stage == "launch") { doc["launch"]["prepare_order"] = {"artifacts", "backend", "hook", "program", "ports"}; doc["hooks"]["launch"] = selection(hook.id); return "/hooks/launch/id"; }
+            if (hook.stage == "start_failure") { doc["hooks"]["start_failure"] = selection(hook.id); return "/hooks/start_failure/id"; }
+            doc["operations"].push_back({{"operation", hook.operation}, {"delivery", "buffered"}, {"model_modes", {"*"}}, {"request", {{"base", "identity"}}}, {"handler", selection(hook.id)}});
+            return "/operations/1/handler/id";
+        };
+        const auto only = [&](const json& doc, DefinitionOrigin origin, const std::string& code, const std::vector<std::string>& pointers) {
+            const auto result = store.validate({"origin.json", doc.dump(), origin});
+            bool exact = !result.definition && result.diagnostics.size() == pointers.size();
+            for (size_t i = 0; exact && i < pointers.size(); ++i) exact = result.diagnostics[i].code == code && result.diagnostics[i].pointer == pointers[i];
+            if (exact && code == "reserved_hook") for (const auto& diagnostic : result.diagnostics) exact = exact && diagnostic.message == "Compiled hooks are reserved for built-in definitions";
+            return exact;
+        };
+        std::set<std::string> stages;
+        for (const auto& hook : installed_hook_manifest()) {
+            auto doc = vocabulary;
+            const auto pointer = place(hook, doc);
+            stages.insert(hook.stage);
+            check(store.validate({"builtin.json", doc.dump(), DefinitionOrigin::Builtin}).definition != nullptr, "a built-in definition selects installed hook " + hook.id);
+            check(only(doc, DefinitionOrigin::External, "reserved_hook", {pointer}), "an external definition naming installed hook " + hook.id + " is rejected at " + pointer);
+        }
+        check(stages == std::set<std::string>{"artifacts", "request", "response", "launch", "operation", "start_failure", "sink_operation"}, "the external hook matrix covers every installed hook stage");
+        {
+            auto doc = vocabulary;
+            doc["hooks"]["start_failure"] = selection("absent.v1");
+            check(only(doc, DefinitionOrigin::External, "reserved_hook", {"/hooks/start_failure/id"}), "an external definition naming an unknown hook gets the same reservation");
+            doc["hooks"]["start_failure"] = selection("onnxruntime.startup_error");
+            doc["hooks"]["start_failure"]["params"] = {{"x", 1}};
+            check(only(doc, DefinitionOrigin::External, "reserved_hook", {"/hooks/start_failure/id"}), "an external hook selection is refused before its parameters are considered");
+        }
+        for (const auto origin : {DefinitionOrigin::Builtin, DefinitionOrigin::External}) {
+            auto install = vocabulary;
+            install["install"]["hook"] = selection("onnxruntime.startup_error");
+            check(only(install, origin, "unknown_hook", {"/install/hook"}), "install hooks are refused for every origin");
+            for (const auto* stage : {"install", "artifacts", "availability", "model_discovery", "model_download", "remote_context"}) {
+                auto doc = vocabulary;
+                doc["hooks"][stage] = selection("onnxruntime.startup_error");
+                check(only(doc, origin, "unknown_hook", {std::string("/hooks/") + stage + "/id"}), std::string("hook stage without an implementation is refused for every origin: ") + stage);
+            }
+        }
+        const std::vector<std::tuple<std::string, std::string, std::vector<std::string>>> definitions = {
+            {"thinksound", k_thinksound_definition, {}}, {"ds4", k_ds4_definition, {}}, {"ryzenai", k_ryzenai_definition, {}},
+            {"hrx", k_hrx_definition, {"/artifacts/main/hook/id", "/operations/0/request/hooks/0/id", "/operations/0/request/hooks/1/id", "/operations/0/response/hooks/0/id",
+                "/operations/1/request/hooks/0/id", "/operations/1/response/hooks/0/id", "/operations/2/request/hooks/0/id", "/operations/2/response/hooks/0/id",
+                "/operations/3/request/hooks/0/id", "/operations/3/request/hooks/1/id", "/operations/5/request/hooks/0/id"}},
+            {"kokoro", k_kokoro_definition, {"/hooks/launch/id"}},
+            {"moonshine", k_moonshine_definition, {"/hooks/launch/id", "/operations/0/handler/id"}},
+            {"onnxruntime", k_onnxruntime_definition, {"/artifacts/main/hook/id", "/hooks/launch/id", "/hooks/start_failure/id", "/operations/0/handler/id"}},
+            {"trellis", k_trellis_definition, {"/operations/0/handler/id"}},
+        };
+        for (const auto& [name, text, pointers] : definitions) {
+            check(store.validate({name + ".json", text, DefinitionOrigin::Builtin}).definition != nullptr, "built-in " + name + " definition validates with its hooks");
+            auto doc = json::parse(text);
+            for (auto& option : doc["metadata"]["options"]) option["cli_flag"] = "";
+            if (pointers.empty()) check(store.validate({name + ".json", doc.dump(), DefinitionOrigin::External}).definition != nullptr, "hook-free " + name + " vocabulary stays valid as an external definition");
+            else check(only(doc, DefinitionOrigin::External, "reserved_hook", pointers), "an external copy of " + name + " is rejected at exactly its hook selections");
+        }
+    }
     {
         auto doc = baseline;
         doc["launch"]["ports"][0]["strategy"] = "probe";

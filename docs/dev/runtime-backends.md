@@ -15,12 +15,13 @@ External definitions cannot replace a compiled recipe, including a built-in
 that runs from an embedded definition. Definition IDs, external recipes, configuration sections,
 and external option ownership must be unique. Built-in/common options, request
 control fields, and global configuration keys are reserved. External definitions
-receive no compiled compatibility attachment or named CLI flags.
+receive no compiled compatibility attachment, compiled hook or named CLI flag.
 
 Use `schemas/backend-definition-v1.schema.json` as the structural contract. Only
-installed primitives are accepted; definitions do not install hooks or code. They
-can select compiled hooks that are already installed (see
-[Installed hooks](#installed-hooks)).
+installed primitives are accepted; definitions do not install hooks or code. Only
+built-in definitions can select an installed compiled hook (see
+[Installed hooks](#installed-hooks)); an external definition expresses its
+behavior through data primitives alone.
 External scalar options retain their JSON types, enum/range constraints and
 `unset_values` (default `[null]`). Values such as `false`, `0`, `""`, and `-1` are
 preserved unless declared unset. Existing REST null clearing semantics apply.
@@ -107,12 +108,26 @@ operation bindings and install assets.
 
 ## Installed hooks
 
-A hook is compiled behavior that a definition selects by ID. The validator, which
-the CLI also links, accepts only the IDs and stages listed in
+A hook is compiled behavior that a built-in definition selects by ID. The
+validator, which the CLI also links, accepts only the IDs and stages listed in
 `installed_hook_manifest()`; `installed_backend_hooks()` binds the same IDs to
 typed functions in `lemond`, and `BackendDefinitionTest` fails if the two lists
 differ. Every installed hook takes empty `params`. The feature manifest lists
 them, so installing a hook changes the catalog's feature-manifest ID.
+
+Hooks reach engine-specific compiled behavior (file reads, directory scans,
+multipart and TCP clients, a rerun of the backend executable), so only a
+definition embedded at build time can select one. `BackendDefinitionStore::validate`
+rejects every hook selection in an external definition before it looks up the
+ID: `hooks.launch`, `hooks.start_failure`, an artifact `hook`, an operation
+`handler`, and each `request.hooks` and `response.hooks` entry. The diagnostic
+has code `reserved_hook`, message `Compiled hooks are reserved for built-in
+definitions`, and the selection's `/id` pointer, whether or not the ID is
+installed. An install hook and the other `hooks` stages have no implementation
+and fail with `unknown_hook` for every origin. Startup discovery in `backends.d`,
+`POST backends/validate` and `lemonade backends validate --offline` share this
+validator. The feature manifest records the rule as `"hook_origins":
+["builtin"]`.
 
 | ID | Stage | Selected by | Effect |
 | --- | --- | --- | --- |
