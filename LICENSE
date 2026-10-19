@@ -205,15 +205,25 @@ THIRD-PARTY NOTICES
 
 PORTIONS LICENSED AS FOLLOWS
 
-## Lucide Icons
+## Vendored icon geometries
 
-SVG icon paths copied from Lucide (https://lucide.dev) are used in
-`src/app/src/renderer/components/Icons.tsx`. The following icons are included:
-ChevronLeft, ChevronRight, BookOpen, ExternalLink, Boxes, Cpu, Store,
-Settings, and SlidersHorizontal. These icons are licensed under the ISC
-license from https://github.com/lucide-icons/lucide.
+`src/app/src/components/localIcons.tsx` contains SVG paths from Lucide
+(https://lucide.dev, ISC), plus the hugging-face, github and discord icons
+from Simple Icons (https://simpleicons.org, CC0-1.0), sourced through
+`react-icons/si`. The React wrapper is Lemonade code under Apache-2.0.
+Some Lucide paths are derived from Feather (https://feathericons.com) and
+retain its MIT license and copyright (c) 2013-present Cole Bemis.
 
-## GUI3 frontend dependencies and distro fallback stubs
+## Vendored model-viewer
+
+`src/app/src/vendor/model-viewer.min.js` comes from `@google/model-viewer`
+4.3.0 (copyright 2019-2026 Google LLC, Apache-2.0). Its bundled dependencies
+include Lit (copyright 2017 Google LLC and The Lit Project Contributors,
+BSD-3-Clause), three.js (copyright 2010-2026 three.js authors, MIT) and
+@monogrid/gainmap-js (copyright 2023 MONOGRID, MIT). The original bundle
+retains upstream license notices; see `src/app/src/vendor/README.md`.
+
+## GUI3 frontend dependencies and distro fallback stub
 
 The GUI3 frontend references the following third-party packages through npm or
 system Node.js packages:
@@ -225,12 +235,10 @@ system Node.js packages:
 - markdown-it-texmath: MIT
 - Mermaid: MIT
 - React and React DOM: MIT
-- Recharts: MIT
 
-The files under `src/web-app/system-stubs/` are original conservative fallback
-implementations for distro system-node builds and are licensed as part of
-Lemonade under Apache-2.0. They are not copied from the upstream DOMPurify,
-Mermaid, Recharts, or highlight.js source trees.
+`src/web-app/system-stubs/mermaid.ts` is an original conservative fallback
+for distro system-node builds, licensed under Apache-2.0. It is not copied
+from the upstream Mermaid source tree.
 
 > ISC License
 >
@@ -249,6 +257,35 @@ Mermaid, Recharts, or highlight.js source trees.
 > WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
 > ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 > OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+> BSD 3-Clause License (Lit)
+>
+> Copyright (c) The Lit Project Contributors.
+> Copyright (c) 2017 Google LLC. All rights reserved.
+>
+> Redistribution and use in source and binary forms, with or without
+> modification, are permitted provided that the following conditions are met:
+>
+> 1. Redistributions of source code must retain the above copyright notice,
+>    this list of conditions and the following disclaimer.
+> 2. Redistributions in binary form must reproduce the above copyright notice,
+>    this list of conditions and the following disclaimer in the documentation
+>    and/or other materials provided with the distribution.
+> 3. Neither the name of the copyright holder nor the names of its
+>    contributors may be used to endorse or promote products derived from
+>    this software without specific prior written permission.
+>
+> THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+> AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
+> THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+> PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR
+> CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+> EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+> PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+> PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+> OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+> NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+> SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ## amdxdna_accel.h
 

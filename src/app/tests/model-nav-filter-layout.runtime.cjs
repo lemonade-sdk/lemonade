@@ -46,6 +46,17 @@ assert.match(nav, /addCustomTag/);
 assert.match(nav, /Remove custom tag/);
 assert.doesNotMatch(nav, /nav-backend-select/);
 assert.doesNotMatch(nav, /\+ Recommended \+/);
+assert.match(nav, /<\/ul>\s*<div className="model-nav-rail__scroll">\s*<section className="model-nav-rail__section model-nav-rail__section--tasks">/,
+  'model-source tabs must stay outside the scrollable filter sections');
+assert.match(styles, /\.model-nav-rail__primary\s*\{[^}]*flex-shrink:\s*0;/s);
+assert.match(styles, /@media \(min-width: 769px\)[\s\S]*?\.workspace-rail > \.workspace-nav,\s*\.workspace-catalog-layout \.workspace-rail > \.workspace-filter-list\s*\{[^}]*min-height:\s*0;[^}]*overflow-y:\s*auto;/s,
+  'desktop workspace rails must scroll navigation and filters independently');
+assert.match(styles, /\.workspace-rail > \.workspace-nav\s*\{[^}]*flex:\s*1 1 auto;/s,
+  'Settings and Monitor navigation must fill their rails');
+assert.match(styles, /\.workspace-catalog-layout \.workspace-rail > \.workspace-filter-list\s*\{[^}]*flex:\s*0 1 auto;/s,
+  'Backends and Apps filters must not push their footers down when space is available');
+assert.doesNotMatch(styles, /\.monitor-nav\s*\{\s*flex:\s*0 0 auto;/,
+  'Monitor navigation must not be forced to its full intrinsic height');
 
 assert.match(list, /export function modelMatchesTasks/);
 assert.match(list, /export function modelMatchesBackends/);

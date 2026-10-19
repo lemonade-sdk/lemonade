@@ -33,10 +33,8 @@ Comment: Tauri application and installer artwork with dependencies:
 Files: src/web-app/system-stubs/*
 Copyright: 2026 Advanced Micro Devices, Inc. (AMD)
 License: Apache-2.0
-Comment: Original conservative fallback implementations used only by distro
- system-node builds when selected npm packages are unavailable as system
- packages. These files are not copied from DOMPurify, Mermaid, or
- highlight.js upstream source code.
+Comment: Original Mermaid fallback for distro system-node builds; not copied
+ from upstream Mermaid.
 
 Files: docs/assets/favicon.ico
        docs/assets/logo.png
@@ -64,9 +62,25 @@ Comment: FastFlowLM integration code shipped in this source package is Apache-2.
  The FastFlowLM runtime itself is not shipped in Debian source and may be
  distributed under separate terms.
 
-Files: src/app/src/renderer/components/Icons.tsx
-Copyright: Cole Bemis 2013-2022, Lucide Contributors 2022
-License: ISC
+Files: src/app/src/components/localIcons.tsx
+Copyright: 2024-2026 Advanced Micro Devices, Inc. (AMD)
+           2013-present Cole Bemis
+           2022-2026 Lucide Contributors
+           Simple Icons Contributors
+License: Apache-2.0 and ISC and Expat and CC0-1.0
+Comment: Lemonade's React wrapper is Apache-2.0. Lucide paths are ISC,
+ with Feather-derived geometries also under MIT/Expat. The hugging-face,
+ github and discord paths from react-icons/si (Simple Icons) are CC0-1.0.
+
+Files: src/app/src/vendor/model-viewer.min.js
+Copyright: 2019-2026 Google LLC
+           2017 Google LLC and The Lit Project Contributors
+           2010-2026 three.js authors
+           2023 MONOGRID
+License: Apache-2.0 and BSD-3-Clause and Expat
+Comment: Bundled @google/model-viewer 4.3.0 is Apache-2.0. The bundle also
+ includes BSD-3-Clause Lit and MIT/Expat three.js and gainmap-js code.
+ See src/app/src/vendor/README.md for provenance.
 
 Files: src/cpp/include/lemon/utils/aixlog.hpp
 Copyright: 2017-2021 Johannes Pohl
@@ -95,6 +109,37 @@ License: Apache-2.0
  .
  On Debian systems, the complete text of the Apache License,
  Version 2.0 can be found in "/usr/share/common-licenses/Apache-2.0".
+
+License: BSD-3-Clause
+ Redistribution and use in source and binary forms, with or without
+ modification, are permitted provided that the following conditions are met:
+ .
+ 1. Redistributions of source code must retain the above copyright notice,
+    this list of conditions and the following disclaimer.
+ .
+ 2. Redistributions in binary form must reproduce the above copyright notice,
+    this list of conditions and the following disclaimer in the documentation
+    and/or other materials provided with the distribution.
+ .
+ 3. Neither the name of the copyright holder nor the names of its
+    contributors may be used to endorse or promote products derived from
+    this software without specific prior written permission.
+ .
+ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
+ THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+ PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS
+ BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ POSSIBILITY OF SUCH DAMAGE.
+
+License: CC0-1.0
+ On Debian systems, the complete text of the Creative Commons Zero 1.0
+ Universal license is in /usr/share/common-licenses/CC0-1.0.
 
 License: Expat
  Permission is hereby granted, free of charge, to any person obtaining a
