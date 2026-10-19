@@ -111,6 +111,35 @@ CAPABILITIES = {
             "chat_extra_body": {"enable_thinking": False},
             "responses_extra_body": {"reasoning": {"effort": "none"}},
         },
+        # A reasoning model; thinking is turned off for chat as for ds4 below. Its
+        # Responses API honors only a launch-time switch, so a responses request
+        # reasons briefly and gets room to finish.
+        "halogen": {
+            "backends": ["rocm"],
+            "supports": {
+                "chat_completions": True,
+                "chat_completions_streaming": True,
+                "chat_completions_async": True,
+                "completions": True,
+                "completions_streaming": True,
+                "completions_async": True,
+                "responses_api": True,
+                "responses_api_streaming": True,
+                "tool_calls": True,
+                "tool_calls_streaming": True,
+                "multi_model": True,
+                "stop_parameter": True,
+                "static_max_context_window": True,
+            },
+            "test_models": {
+                "llm": "Qwen3.8-Flash-Next-Halogen",
+            },
+            "chat_extra_body": {"enable_thinking": False},
+            "responses_extra_body": {
+                "reasoning": {"effort": "minimal"},
+                "max_output_tokens": 512,
+            },
+        },
         # A reasoning model, with thinking turned off for the run: the tests'
         # small token budgets would otherwise land entirely in reasoning.
         "ds4": {
