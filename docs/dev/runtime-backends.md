@@ -38,8 +38,9 @@ administrator inputs; schema discovery does not install or replace them.
 
 ThinkSound (`thinksound`), DS4 (`ds4`), RyzenAI (`ryzenai-llm`), HRX
 (`llamacpp-hrx`), Kokoro (`kokoro`), Moonshine (`moonshine`), ONNX Runtime
-(`onnxruntime`) and TRELLIS.2 (`trellis`) have no engine-specific server class. They run only through `ConfiguredServer`, from the
-definitions embedded at build time from `src/cpp/resources/backends/<stem>.json`.
+(`onnxruntime`) and TRELLIS.2 (`trellis`) have no engine-specific server class.
+They run only through `ConfiguredServer`, from the definitions embedded at build
+time from `src/cpp/resources/backends/<stem>.json`.
 There is no environment switch and no fallback implementation; the former
 `LEMONADE_THINKSOUND_CONFIGURED`, `LEMONADE_DS4_CONFIGURED` and
 `LEMONADE_RYZENAI_CONFIGURED` variables are ignored. Each definition is the single
@@ -82,12 +83,14 @@ carry the recipe, option, CLI flag and support metadata linked into both
 field with its compiled descriptor. `capabilities()` in `<stem>_server.h` is a
 literal (`CAP_AUDIO_GENERATION` for ThinkSound, `CAP_TTS` for Kokoro,
 `CAP_TRANSCRIPTION | CAP_STREAMING_TRANSCRIPTION` for Moonshine, `CAP_CLASSIFICATION`
-for ONNX Runtime, `CAP_MODEL_3D` for TRELLIS, `0` for DS4,
-RyzenAI and HRX) because
-the header-only mode contract test cannot read a definition, and every engine
-shares the single `ConfiguredServer` type, which inherits `IAudioGenerationServer`
-whether or not its definition binds audio generation, so a mask derived from the
-type would claim audio generation for DS4 and RyzenAI. `ConfiguredRegistrationTest`
+for ONNX Runtime, `CAP_MODEL_3D` for TRELLIS, `0` for DS4, RyzenAI and HRX)
+because the header-only mode contract test cannot read a definition, and every
+engine shares the single `ConfiguredServer` type, which inherits every capability
+interface a definition can bind (embeddings, reranking, classification,
+transcription, streaming transcription, speech, audio generation, 3D generation,
+slots and tokenize) whether or not its definition binds it, so a mask derived
+from the type would claim all of them for every engine. Dispatch reads only the
+operation bindings. `ConfiguredRegistrationTest`
 fails if a literal disagrees with the definition's implemented operation bindings
 inside the recipe's declared deployment modes. HRX binds llama-server's
 embeddings, reranking, slots and tokenize endpoints for every model mode, as its
@@ -129,8 +132,8 @@ them, so installing a hook changes the catalog's feature-manifest ID.
 An operation hook replaces the transport for one buffered operation; the
 manifest names the operation it serves. Hooks for media operations
 (`model_3d_generation`, `text_to_speech`, `audio_generation`) use the
-`sink_operation` stage and write to the response sink. Engine-specific hooks live next to their
-bridge as `<stem>_hooks.cpp`.
+`sink_operation` stage and write to the response sink. Engine-specific hooks live
+next to their bridge as `<stem>_hooks.cpp`.
 
 Request hooks run in order after `remove` and `set`. A streaming operation with
 request hooks forwards a body that is not JSON unchanged; otherwise it forwards
