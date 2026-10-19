@@ -81,7 +81,7 @@ ConfiguredBackendEntry::ConfiguredBackendEntry(std::shared_ptr<const BackendDefi
           if (!owner) throw std::logic_error("Configured factory entry has expired");
           return std::make_unique<ConfiguredServer>(std::move(owner), context);
       }) {
-    if ((trusted != TrustedCompatibility::None || launch.device_on_backend_selection || launch.posix_executable_loader_path) && definition->origin != DefinitionOrigin::Builtin) throw std::invalid_argument("External definitions cannot attach compiled compatibility");
+    if ((trusted != TrustedCompatibility::None || launch.device_on_backend_selection || launch.posix_executable_loader_path || launch.load_log) && definition->origin != DefinitionOrigin::Builtin) throw std::invalid_argument("External definitions cannot attach compiled compatibility");
 }
 
 }

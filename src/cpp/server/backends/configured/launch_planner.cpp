@@ -126,6 +126,7 @@ ResolvedLaunchInputs LaunchPlanner::prepare(const BackendDefinition& definition,
                 values["launch"]["ports"][port["name"].get<std::string>()] = number;
             }
         }
+        if (context.phase_prepared) context.phase_prepared(phase.get<std::string>(), values);
     }
     for (const auto& option : metadata.at("options")) {
         const std::string name = option["name"];

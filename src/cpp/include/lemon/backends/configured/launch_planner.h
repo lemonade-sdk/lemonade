@@ -14,6 +14,7 @@ struct LoadContext {
     std::string log_level;
     bool do_not_upgrade;
     std::function<void()> backend_selected;
+    std::function<void(const std::string& phase, const json& values)> phase_prepared;
 };
 struct ResolvedLaunchInputs {
     json values;

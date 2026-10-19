@@ -54,8 +54,15 @@ external definitions can never request:
 | Recipe | Attachment | Effect |
 | --- | --- | --- |
 | `thinksound` | `TrustedCompatibility::LegacyNonChatSse` | Keeps the legacy-forwarding streaming bindings for chat completion, completion and responses next to buffered audio generation. |
-| `ds4` | `BuiltinLaunchCompatibility{DEVICE_GPU, true}` | Sets the GPU device once the backend is selected, before installation, and prepends the bundled executable directory to `LD_LIBRARY_PATH` on every host. |
-| `ryzenai-llm` | none | |
+| `ds4` | `BuiltinLaunchCompatibility{DEVICE_GPU, true, load_log}` | Sets the GPU device once the backend is selected, before installation, and prepends the bundled executable directory to `LD_LIBRARY_PATH` on every host. Its load log drops the generic loading line, logs custom arguments at DEBUG and logs the executable and model path in the INFO startup line. |
+| `ryzenai-llm` | `BuiltinLaunchCompatibility{{}, false, load_log}` | Its load log keeps the loading line, the resolved executable, the model path and the quoted command at DEBUG, with no INFO lines. |
+
+A `BuiltinLoadLog` replaces `ConfiguredServer`'s generic INFO `Loading model:` and
+`Starting <program> on port <port>` lines with the engine's own messages; its
+`prepared` hook runs after each `prepare_order` phase, so diagnostics emitted
+before a failing phase still appear. The subprocess log level itself comes from
+the definition's `log_level_policy` (`debug_flag` for RyzenAI, `passthrough`
+otherwise), not from the attachment.
 
 The compiled descriptors in `include/lemon/backends/<stem>/<stem>.h` remain: they
 carry the recipe, option, CLI flag and support metadata linked into both

@@ -21,7 +21,9 @@ int main() {
     {
         EffectsFixture fixture(http.port);
         auto server = thinksound_server(fixture, "debug");
+        LogCapture capture("thinksound-server");
         server->load("fixture", model(), empty_options(), true);
+        check(capture.records == std::vector<std::string>{"Info Loading model: fixture", "Info Starting /bin dir/ts-server on port " + std::to_string(http.port)}, "ThinkSound keeps its info loading and startup lines");
         check(fixture.events == std::vector<std::string>{u8"model:/model dir/雪\"trailing\\", "supported:thinksound", "validate:thinksound:vulkan", "external:thinksound:vulkan", "install:thinksound:vulkan", "managed:thinksound:vulkan", "port", "process", "start"}, "launch preparation ordered trace");
         check(fixture.command.program == "/bin dir/ts-server" && fixture.command.args == std::vector<std::string>{"--dir", u8"/model dir/雪\"trailing\\", "--host", "127.0.0.1", "--port", std::to_string(http.port)}, "argv vector boundaries");
         check(fixture.command.env.empty() && fixture.cwd.empty() && fixture.output.inherit && !fixture.output.filter_health_logs && fixture.command.ready_endpoint == "/health", "vulkan cwd output health");

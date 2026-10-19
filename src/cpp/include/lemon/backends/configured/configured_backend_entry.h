@@ -2,14 +2,22 @@
 
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/configured/configured_backend_ops.h"
+#include "lemon/server_process.h"
 
 namespace lemon::backends {
 
 enum class TrustedCompatibility { None, LegacyNonChatSse };
 
+struct BuiltinLoadLog {
+    std::function<void(const std::string& category, const std::string& model_name)> loading;
+    std::function<void(const std::string& category, const std::string& phase, const json& values)> prepared;
+    std::function<void(const std::string& category, const json& values, const ServerCommand& command)> starting;
+};
+
 struct BuiltinLaunchCompatibility {
     std::optional<DeviceType> device_on_backend_selection;
     bool posix_executable_loader_path = false;
+    std::optional<BuiltinLoadLog> load_log;
 };
 
 std::vector<OperationBinding> configured_operation_bindings(const BackendDefinition& definition, TrustedCompatibility trusted);

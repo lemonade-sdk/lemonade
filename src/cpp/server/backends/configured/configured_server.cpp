@@ -74,17 +74,21 @@ ConfiguredServer::ConfiguredServer(std::shared_ptr<const ConfiguredBackendEntry>
 
 void ConfiguredServer::load(const std::string& name, const ModelInfo& model, const RecipeOptions& options, bool do_not_upgrade) {
     const std::string category = entry_->definition->records["metadata"]["log_category"];
-    LOG(INFO, category.c_str()) << "Loading model: " << name << std::endl;
+    const auto& log = entry_->launch_compatibility.load_log;
+    if (!log) LOG(INFO, category.c_str()) << "Loading model: " << name << std::endl;
+    else if (log->loading) log->loading(category, name);
     LaunchPlanner planner;
     LoadContext context{name, model, options, log_level_, do_not_upgrade, {}};
     if (entry_->launch_compatibility.device_on_backend_selection) context.backend_selected = [this] {
         device_type_ = *entry_->launch_compatibility.device_on_backend_selection;
     };
+    if (log && log->prepared) context.phase_prepared = [&](const std::string& phase, const json& values) { log->prepared(category, phase, values); };
     const auto inputs = planner.prepare(*entry_->definition, entry_->spec, context, *services_.launch);
     mapping_.values = inputs.values;
     const auto plan = planner.plan(*entry_->definition, inputs);
     configure_backend_watchdog({plan.command.ready_endpoint, plan.watchdog_enabled, true});
-    LOG(INFO, category.c_str()) << "Starting " << plan.command.program << " on port " << plan.command.port << std::endl;
+    if (!log) LOG(INFO, category.c_str()) << "Starting " << plan.command.program << " on port " << plan.command.port << std::endl;
+    else if (log->starting) log->starting(category, inputs.values, plan.command);
     start_server(services_.make_process(plan.output, plan.working_directory), plan.command, plan.readiness_timeout_seconds);
 }
 const OperationProgram* ConfiguredServer::program(BackendOperation operation, OperationDelivery delivery) const {

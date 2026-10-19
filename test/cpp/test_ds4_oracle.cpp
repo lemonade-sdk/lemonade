@@ -24,7 +24,7 @@ void load(WrappedServer& server, const RecipeOptions& options = RecipeOptions("d
 
 int main() {
     const auto entry = ds4::configured_entry();
-    check(entry->compatibility == TrustedCompatibility::None && entry->launch_compatibility.device_on_backend_selection == DEVICE_GPU && entry->launch_compatibility.posix_executable_loader_path, "registered DS4 entry carries the GPU device and POSIX loader attachment");
+    check(entry->compatibility == TrustedCompatibility::None && entry->launch_compatibility.device_on_backend_selection == DEVICE_GPU && entry->launch_compatibility.posix_executable_loader_path && entry->launch_compatibility.load_log, "registered DS4 entry carries the GPU device, POSIX loader and load-log attachment");
     descriptor(entry->descriptor, ds4::descriptor);
     const auto& d = entry->descriptor;
     check(d.recipe == "ds4" && d.display_name == "DwarfStar4" && d.binary == "ds4-server" && d.config_section.empty() && d.default_device == DEVICE_GPU && d.slot_policy == SlotPolicy::Standard && d.uses_ctx_size && !d.selectable_backend && d.streams_model_from_storage, "independent DS4 metadata identities");
@@ -34,7 +34,7 @@ int main() {
     external_document["metadata"]["options"][0]["cli_flag"] = "";
     auto external = BackendDefinitionStore().validate({"external.json", external_document.dump(), DefinitionOrigin::External});
     check(bool(external.definition), "external DS4 vocabulary remains valid");
-    for (const auto compatibility : {BuiltinLaunchCompatibility{DEVICE_GPU, false}, BuiltinLaunchCompatibility{{}, true}, BuiltinLaunchCompatibility{DEVICE_GPU, true}}) {
+    for (const auto compatibility : {BuiltinLaunchCompatibility{DEVICE_GPU, false}, BuiltinLaunchCompatibility{{}, true}, BuiltinLaunchCompatibility{DEVICE_GPU, true}, BuiltinLaunchCompatibility{{}, false, BuiltinLoadLog{}}}) {
         bool rejected = false;
         try { ConfiguredBackendEntry::make(external.definition, TrustedCompatibility::None, compatibility); } catch (const std::invalid_argument& error) { rejected = std::string(error.what()) == "External definitions cannot attach compiled compatibility"; }
         check(rejected, "external rejects every nonempty launch attachment");
@@ -98,6 +98,15 @@ int main() {
             check(fixture.output.inherit == (std::string(level) == "info" || std::string(level) == "debug") && fixture.output.filter_health_logs && fixture.cwd.empty(), "DS4 output exact levels");
             const auto& args = fixture.command.args;
             check(std::vector<std::string>(args.end() - 4, args.end()) == std::vector<std::string>{"--ssd-streaming", "--user", "two words", "--user=again"}, "DS4 streaming precedes duplicate custom args");
+        }
+        for (const char* custom : {"", "--user 'two words'", "--port 1"}) {
+            Fixture fixture(http.port); auto server = arm(fixture, "info");
+            LogCapture capture("DS4");
+            try { load(*server, RecipeOptions("ds4", {{"ds4_args", custom}})); } catch (const std::invalid_argument&) {}
+            const std::string starting = u8"Info Starting ds4-server (/bundle/ds4-server) for /models/Deep Seek/雪.gguf on port " + std::to_string(http.port);
+            const std::vector<std::string> expected = std::string(custom).empty() ? std::vector<std::string>{starting} :
+                std::string(custom) == "--port 1" ? std::vector<std::string>{} : std::vector<std::string>{"Debug Adding custom arguments: --user 'two words'", starting};
+            check(capture.records == expected, "DS4 logs custom arguments at debug and the model path at startup, with no generic loading line");
         }
     }
     LaunchPlanner planner;

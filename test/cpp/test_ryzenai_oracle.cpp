@@ -36,7 +36,7 @@ int main() {
     check(d.recipe == "ryzenai-llm" && d.display_name == "Ryzen AI LLM" && d.config_section == "ryzenai" && d.default_device == DEVICE_NPU && d.slot_policy == SlotPolicy::ExclusiveNpu && d.uses_ctx_size && !d.selectable_backend && !d.streams_model_from_storage, "independent RyzenAI identities/policy");
     check(d.options.empty() && d.config_defaults() == json{{"server_bin", "builtin"}} && d.supported_modes == std::vector<std::string>{"chat"} && d.required_checkpoints == std::vector<std::string>{"main"} && d.web_display_name == "Ryzen AI SW NPU", "independent RyzenAI options/defaults/modes");
     check(d.support.size() == 1 && d.support[0].backend == "npu" && d.support[0].tier == BackendTier::Core && d.support[0].supported_os == std::set<std::string>{"windows"} && d.support[0].devices == DeviceConstraints{{"amd_npu", {"XDNA2"}}} && ryzenai::capabilities() == 0, "independent support and capability export");
-    check(entry->spec.recipe == "ryzenai-server" && entry->spec.public_recipe == "ryzenai-llm" && entry->spec.pin_recipe == "ryzenai-llm" && !entry->spec.supports_split_archive && !entry->launch_compatibility.device_on_backend_selection && !entry->launch_compatibility.posix_executable_loader_path, "split spec identities; empty launch attachment");
+    check(entry->spec.recipe == "ryzenai-server" && entry->spec.public_recipe == "ryzenai-llm" && entry->spec.pin_recipe == "ryzenai-llm" && !entry->spec.supports_split_archive && !entry->launch_compatibility.device_on_backend_selection && !entry->launch_compatibility.posix_executable_loader_path && entry->launch_compatibility.load_log, "split spec identities; load-log-only launch attachment");
     check(entry->definition->records["metadata"]["binary"] == json{{"windows", "ryzenai-server.exe"}, {"linux", "ryzenai-server"}, {"macos", "ryzenai-server"}}, "independent platform binary strings");
     for (const char* backend : {"npu", "unexpected", ""}) for (const char* version : {"b0001", "latest", ""}) {
         for (const char* os : {"windows", "linux", "macos", "unexpected"}) for (auto phase : {InstallPhase::Repository, InstallPhase::Asset}) {
@@ -46,6 +46,16 @@ int main() {
         }
     }
     Http http; http.models = 503;
+    for (const char* missing : {"", "/missing"}) {
+        Fixture fixture(http.port); auto server = arm(fixture, "info"); auto model = ryzen_model();
+        if (*missing) model.resolved_paths["main"] = missing;
+        LogCapture capture("RyzenAI");
+        try { load(*server, RecipeOptions("ryzenai-llm", {{"ctx_size", 4096}}), model); } catch (const std::runtime_error&) {}
+        std::vector<std::string> expected{"Debug Loading model: fixture", "Debug Found ryzenai-server at: /bundle/ryzenai-server"};
+        if (!*missing) expected.insert(expected.end(), {u8"Debug Model path: /models/Ryzen AI/雪",
+            u8"Debug Starting: \"/bundle/ryzenai-server\" \"-m\" \"/models/Ryzen AI/雪\" \"--port\" \"" + std::to_string(http.port) + "\" \"--ctx-size\" \"4096\""});
+        check(capture.records == expected, "RyzenAI loading/executable/model-path/command diagnostics stay at debug in wrapper order");
+    }
     {
         for (const auto context : {json(nullptr), json(-1), json(0), json(4096), json(3.9)}) for (const char* level : {"debug", "trace", "info", "error", ""}) for (bool upgrade : {false, true}) {
             Fixture fixture(http.port); auto server = arm(fixture, level);
