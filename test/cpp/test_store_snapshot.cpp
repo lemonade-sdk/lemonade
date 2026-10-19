@@ -1,6 +1,7 @@
 #include "lemon/model_manager.h"
 #include "lemon/utils/path_utils.h"
 #include "show_all_models.h"
+#include "support/server_wired_manager.h"
 
 #include <chrono>
 #include <cstdio>
@@ -332,7 +333,7 @@ int main() {
     lemon::utils::set_models_dir(path_to_utf8(fx.models_dir));
 
     {
-        ModelManager manager;
+        ModelManager manager(lemon::test::server_wired_config());
         test_published_snapshot(manager, fx);
         test_canonical_identity(manager, fx);
         test_precedence_and_public_naming(manager, fx);

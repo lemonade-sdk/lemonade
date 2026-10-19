@@ -2,6 +2,7 @@
 
 #include "artifact_ref.h"
 #include "artifact_transfer.h"
+#include "download_markers.h"
 #include <lemon/utils/path_utils.h>
 
 #include <filesystem>
@@ -65,6 +66,31 @@ inline bool exists_on_disk(const std::string& path) {
     return std::filesystem::exists(utils::path_from_utf8(path), ec);
 }
 
+// The three checks that make bytes a checkpoint: they are there, nothing is still in
+// flight where they sit, and the backend that reads them accepts them. Every answer to
+// "is this present" runs through here, so the store and the source cannot hold different
+// opinions about the same path.
+inline Presence checkpoint_bytes_present(const std::string& path,
+                                         const FileValidator& validator = nullptr,
+                                         const std::string& missing_reason = {}) {
+    if (path.empty() || !exists_on_disk(path)) {
+        return Presence{false, "",
+                        missing_reason.empty() ? "no bytes at " + path : missing_reason};
+    }
+    if (const std::string in_flight = interrupted_download(path); !in_flight.empty()) {
+        return Presence{false, path, in_flight};
+    }
+    if (validator != nullptr) {
+        // The backend that reads the file decides whether it is one: an HTML error page
+        // saved under a .gguf name is bytes, not the model.
+        const std::string invalid = validator(path);
+        if (!invalid.empty()) {
+            return Presence{false, path, invalid};
+        }
+    }
+    return Presence{true, path, ""};
+}
+
 // Found on disk; the origin decides whether deletion may remove them.
 class LocalPathArtifactSource : public ArtifactSource {
   public:
@@ -79,16 +105,7 @@ class LocalPathArtifactSource : public ArtifactSource {
     std::string resolve() const override { return path_; }
 
     Presence present() const override {
-        if (!exists_on_disk(path_)) {
-            return Presence{false, "", "no file at " + path_};
-        }
-        if (validator_ != nullptr) {
-            const std::string reason = validator_(path_);
-            if (!reason.empty()) {
-                return Presence{false, path_, reason};
-            }
-        }
-        return Presence{true, path_, ""};
+        return checkpoint_bytes_present(path_, validator_, "no file at " + path_);
     }
 
     Acquisition acquisition() const override { return Acquisition{}; }

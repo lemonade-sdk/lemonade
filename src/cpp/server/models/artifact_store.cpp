@@ -36,18 +36,6 @@ namespace {
 constexpr const char* kLog = "ModelArtifactStore";
 constexpr const char kProvenanceFile[] = ".lemonade_registry.json";
 
-// Non-recursive scan for .partial markers to confirm folder integrity.
-bool has_partial_files(const fs::path& dir) {
-    std::error_code ec;
-    if (!safe_is_directory(dir)) return false;
-    for (const auto& entry : fs::directory_iterator(dir, ec)) {
-        if (entry.path().extension() == ".partial") {
-            return true;
-        }
-    }
-    return false;
-}
-
 bool acquired_lazily(const ModelInfo& info, const std::string& type) {
     return backends::ops_for(info.recipe)->acquires_lazily(type);
 }
@@ -360,46 +348,38 @@ std::string ModelArtifactStore::resolve_path_in(const ModelInfo& info, const std
     return backends::ops_for(info.recipe)->resolve_checkpoint_path(info, ctx);
 }
 
+// The same three checks every ArtifactSource::present() applies, asked of the path this
+// store resolved. Asking a source instead would derive the location a second time from
+// provenance, and the two derivations part company wherever the store knows something the
+// provenance rules do not — an extra-models-dir cache adopted for a registered model, for
+// instance, or a shard family resolved into one file.
 bool ModelArtifactStore::complete(const ModelInfo& info) const {
     for (const auto& [type, checkpoint] : info.checkpoints) {
         (void)checkpoint;
-
-        // A side cache the engine fetches on first use is not required.
+        // Optionality is the backend's single rule, read through the same predicate the
+        // resolver uses when it sets ArtifactRef::required.
         if (acquired_lazily(info, type)) continue;
 
-        const std::string resolved_path = info.resolved_path(type);
-        if (!path_complete(resolved_path)) {
-            return false;
-        }
+        const Presence presence = checkpoint_bytes_present(
+            info.resolved_path(type),
+            [recipe = info.recipe](const std::string& path) {
+                return backends::ops_for(recipe)->validate_checkpoint_file(path);
+            });
+        if (presence.complete) continue;
 
-        // Per-backend file validation (e.g. llamacpp checks GGUF magic).
-        std::string invalid = backends::ops_for(info.recipe)->validate_checkpoint_file(resolved_path);
-        if (!invalid.empty()) {
-            LOG(WARNING, kLog)
-                << invalid << "; marking model as not downloaded: " << resolved_path << std::endl;
-            return false;
+        // Bytes that are there and refused are worth a line; a model simply not
+        // fetched yet is not.
+        if (!presence.path.empty()) {
+            LOG(WARNING, kLog) << presence.reason << "; marking model as not downloaded: "
+                               << presence.path << std::endl;
         }
+        return false;
     }
     return true;
 }
 
 bool ModelArtifactStore::path_complete(const std::string& path_str) {
-    if (path_str.empty()) return false;
-
-    fs::path resolved = utils::path_from_utf8(path_str);
-    if (!safe_exists(resolved)) return false;
-
-    // A manifest or .partial file marks an interrupted multi-file download: file
-    // checkpoints check their parent directory for the manifest and their own
-    // .partial marker, directory checkpoints check the directory itself.
-    fs::path marker_dir = safe_is_directory(resolved) ? resolved : resolved.parent_path();
-    if (safe_exists(marker_dir / ".download_manifest.json")) return false;
-
-    if (!safe_is_directory(resolved)) {
-        return !safe_exists(utils::path_from_utf8(path_str + ".partial"));
-    }
-
-    return !has_partial_files(resolved);
+    return checkpoint_bytes_present(path_str).complete;
 }
 
 std::uint64_t ModelArtifactStore::size_bytes(const fs::path& path) {
@@ -1094,6 +1074,7 @@ bool ModelArtifactStore::adopt_extra_cache(ModelInfo& info,
     }
 
     ModelInfo candidate = info;
+    candidate.source = local_origin::extra_models_dir;
     std::set<fs::path> matched_paths;
     const bool all_complete = [&]() -> bool {
         try {

@@ -1,3 +1,4 @@
+#include "support/server_wired_manager.h"
 // Deleting a model must reclaim its repo when nothing else is living in it, and
 // must leave the repo alone when something is. The dividing line is what is on
 // disk, not what the catalog lists: several entries routinely map to one repo,
@@ -312,7 +313,7 @@ int main() {
     write_file(temp / "user_models.json", user_models.dump(2));
 
     {
-        ModelManager manager;
+        ModelManager manager(lemon::test::server_wired_config());
 
         // solo-b is listed but was never downloaded, so nothing else is living
         // in the repo and the whole thing goes.
@@ -533,7 +534,7 @@ int main() {
     // tells Lemonade it happened. Each case needs its own manager: deleting a user
     // model invalidates the cache, which would rebuild it and hide the staleness.
     {
-        ModelManager manager;
+        ModelManager manager(lemon::test::server_wired_config());
         (void)manager.get_model_info("user.late-a");  // builds the cache
 
         write_file(late_repo / "snapshots" / "snap" / "b.gguf");
@@ -548,7 +549,7 @@ int main() {
     }
 
     {
-        ModelManager manager;
+        ModelManager manager(lemon::test::server_wired_config());
         (void)manager.get_model_info("user.arrive-a");  // builds the cache
 
         // The deleted model's own files arrive late too, so its cached resolved
@@ -574,7 +575,7 @@ int main() {
 
         // The constructor sets the directory without starting a watcher, so
         // nothing invalidates the cache when the files below appear.
-        ModelManager manager(path_to_utf8(extra_root));
+        ModelManager manager(lemon::test::server_wired_config(path_to_utf8(extra_root)));
         (void)manager.get_model_info("user.adopted-a");  // nothing on disk yet
 
         fs::path adopted_repo = extra_root / "models--org--adopted";
@@ -602,7 +603,7 @@ int main() {
         write_file(ext / "snapshots" / "snap" / "Model-Q4_K_M.gguf");
         write_file(ext / "refs" / "main", "snap");
 
-        ModelManager manager(path_to_utf8(extra_root));
+        ModelManager manager(lemon::test::server_wired_config(path_to_utf8(extra_root)));
         bool threw = false;
         try {
             manager.delete_model("user.adoptleft-a");
@@ -635,7 +636,7 @@ int main() {
         write_file(ext / "snapshots" / "snap" / gguf);
         write_file(ext / "refs" / "main", "snap");
 
-        ModelManager manager(path_to_utf8(extra_root));
+        ModelManager manager(lemon::test::server_wired_config(path_to_utf8(extra_root)));
         if (!manager.model_exists(registered)) {
             std::printf("[SKIP] %s is no longer in the catalog\n", registered.c_str());
         } else {
@@ -667,7 +668,7 @@ int main() {
         write_file(ext / "snapshots" / "snap" / "vae.bin", "VAE");
         write_file(ext / "refs" / "main", "snap");
 
-        ModelManager manager(path_to_utf8(extra_root));
+        ModelManager manager(lemon::test::server_wired_config(path_to_utf8(extra_root)));
         manager.delete_model("user.adopt2-a");
         check("a sibling served from extra_models_dir keeps its managed file",
               fs::exists(managed / "snapshots" / "snap" / "b.gguf"));

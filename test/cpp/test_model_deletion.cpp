@@ -1,5 +1,6 @@
 #include "lemon/model_manager.h"
 #include "lemon/utils/path_utils.h"
+#include "support/server_wired_manager.h"
 
 #include <chrono>
 #include <cstdio>
@@ -354,7 +355,7 @@ int main() {
     lemon::utils::set_models_dir(path_to_utf8(fx.models_dir));
 
     {
-        ModelManager manager(path_to_utf8(fx.extra_dir));
+        ModelManager manager(lemon::test::server_wired_config(path_to_utf8(fx.extra_dir)));
         test_registry_backed_delete(manager, fx);
         test_shared_repo_keeps_other_variants(manager, fx);
         test_multi_repo_delete_removes_every_owned_repo(manager, fx);

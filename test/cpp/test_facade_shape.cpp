@@ -470,6 +470,9 @@ int main() {
         if (names_marker) marker_files.push_back(file);
     }
     const std::vector<std::string> allowed_marker_files = {
+        // The read side: presence asks these and nothing else does.
+        "src/cpp/include/lemon/models/download_markers.h",
+        "src/cpp/server/models/download_markers.cpp",
         "src/cpp/include/lemon/models/ingest.h",
         "src/cpp/server/backends/backend_ops.cpp",
         "src/cpp/server/backends/llamacpp/llamacpp_gguf.cpp",

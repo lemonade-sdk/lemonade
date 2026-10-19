@@ -1,6 +1,7 @@
 #include "lemon/model_manager.h"
 #include "lemon/models/store_snapshot.h"
 #include "lemon/utils/path_utils.h"
+#include "support/server_wired_manager.h"
 
 #include <atomic>
 #include <chrono>
@@ -217,7 +218,7 @@ int main() {
     fs::create_directories(models_dir);
     lemon::utils::set_models_dir(path_to_utf8(models_dir));
 
-    ModelManager manager;
+    ModelManager manager(lemon::test::server_wired_config());
     test_registration_publishes(manager);
     test_deletion_publishes(manager);
     test_republish_after_replacement(manager);

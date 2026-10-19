@@ -1,7 +1,9 @@
 #include <lemon/models/fetchable_repository.h>
 
+#include <lemon/backends/backend_registry.h>
 #include <lemon/backends/hf_cache_util.h>
 #include "../model_registry.h"
+#include <lemon/models/download_markers.h>
 #include <lemon/models/registry_descriptors.h>
 #include <lemon/registry_files.h>
 #include <lemon/utils/path_utils.h>
@@ -96,10 +98,10 @@ class RegistryBackedRepository : public FetchableRepository {
         if (target.empty()) {
             return Presence{false, "", "no active snapshot for " + ref_.repo_id};
         }
-        if (!utils::safe_exists(utils::path_from_utf8(target))) {
-            return Presence{false, "", "no bytes at " + target};
-        }
-        return Presence{true, target, ""};
+        return checkpoint_bytes_present(
+            target, [this](const std::string& path) {
+                return backends::ops_for(recipe())->validate_checkpoint_file(path);
+            });
     }
 
     Acquisition acquisition() const override {
