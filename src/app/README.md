@@ -45,6 +45,11 @@ when no saved endpoint overrides it.
 | `npm run build:nobundle` | Tauri executable without an installer bundle. |
 | `npm run watch:renderer` | Rebuild the renderer when sources change. |
 
+The Tauri build scripts override the prototype package version with the Lemonade
+release version from `tools/version.py` (or `LEMONADE_VERSION`), using the same
+`year % 100` mapping as the WiX MSI version. Use these scripts rather than calling
+`tauri build` directly when preparing release artifacts.
+
 The CMake integration also provides a `tauri-app` target, for example
 `cmake --build --preset windows --target tauri-app` after configuring the
 repository. On Windows, this stages `lemonade-app.exe` under `build/app/`.
