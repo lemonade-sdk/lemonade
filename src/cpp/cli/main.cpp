@@ -1087,7 +1087,8 @@ static int handle_config_view(lemonade::LemonadeClient& client) {
 }
 
 static int handle_config_set(lemonade::LemonadeClient& client,
-                             const std::vector<std::string>& raw_args) {
+                             const std::vector<std::string>& raw_args,
+                             bool yes) {
     nlohmann::json updates = nlohmann::json::object();
 
     for (const auto& arg : raw_args) {
@@ -1141,6 +1142,19 @@ static int handle_config_set(lemonade::LemonadeClient& client,
         std::cerr << "Usage: lemonade config set key=value [key=value ...]" << std::endl;
         std::cerr << "Example: lemonade config set llamacpp.backend=rocm port=8123" << std::endl;
         return 1;
+    }
+
+    if (updates.value("enable_containers", nlohmann::json()) == true && !yes) {
+        std::cout << "Container backends run images built by community developers, pinned by "
+                  << "digest in each Lemonade release. Once they are enabled, every client that "
+                  << "reaches this server's API can install and start them. Keep `host` on "
+                  << "localhost, or set LEMONADE_API_KEY before serving on the network."
+                  << std::endl;
+        if (!lemon_cli::prompt_yes_no("Enable container backends?", false)) {
+            std::cout << "Container backends stay disabled. Pass --yes to enable them without "
+                      << "this prompt." << std::endl;
+            return 1;
+        }
     }
 
     try {
@@ -1311,6 +1325,8 @@ int main(int argc, char* argv[]) {
     CLI::App* config_cmd = app.add_subcommand("config", "View or modify server configuration")->group("Server");
     CLI::App* config_set_cmd = config_cmd->add_subcommand("set", "Set configuration values (e.g., llamacpp.backend=rocm port=8123)")->group("Subcommands");
     config_set_cmd->allow_extras(true);
+    config_set_cmd->add_flag("--yes", config.yes,
+        "Confirm settings that ask first, such as enable_containers=true");
     config_set_cmd->fallthrough(false);
 
     // Model commands
@@ -1730,7 +1746,7 @@ int main(int argc, char* argv[]) {
         }
     } else if (config_cmd->count() > 0) {
         if (config_set_cmd->count() > 0) {
-            return handle_config_set(client, config_set_cmd->remaining());
+            return handle_config_set(client, config_set_cmd->remaining(), config.yes);
         }
         return handle_config_view(client);
     } else if (cleanup_cmd->count() > 0) {

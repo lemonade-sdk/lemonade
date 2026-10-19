@@ -45,6 +45,7 @@ inline const BackendDescriptor descriptor = {
           {"gfx90a", {/*os*/ {"linux"}, /*channels*/ {}}},
           {"gfx942", {/*os*/ {"linux"}, /*channels*/ {}}}}},
         {"cpu", BackendTier::Core, BackendFormat::Native, {"windows", "linux"}, {{"cpu", {"x86_64", "arm64"}}}, "x86_64 CPU; ARM64 CPU (Linux)"},
+        {"nathanw", BackendTier::Guest, BackendFormat::Container, {"linux"}, {{"amd_gpu", {"gfx1151"}}}, "AMD Strix Halo (Vulkan performance fork)"},
     },
     /*supported_modes*/ {"chat", "embeddings", "reranking"},
     /*required_checkpoints*/ {"main"},
@@ -59,6 +60,14 @@ inline const BackendDescriptor descriptor = {
     /*arg_variants*/    {"rocm", "vulkan", "cpu"},
     /*bin_variants*/    {"rocm", "vulkan", "cuda", "cpu"},
     /*config_extra*/    {{"prefer_system", true}},
+    /*streams_model_from_storage*/ false,
+    /*containers*/ {
+        {"nathanw", {
+            /*image*/   "docker.io/kyuz0/amd-strix-halo-toolboxes",
+            /*devices*/ {"/dev/dri"},
+            /*cap_add*/ {},
+        }},
+    },
 };
 
 }  // namespace llamacpp
