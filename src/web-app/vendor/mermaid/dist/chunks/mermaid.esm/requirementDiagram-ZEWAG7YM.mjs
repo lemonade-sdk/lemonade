@@ -1228,7 +1228,7 @@ var getStyles = /* @__PURE__ */ __name((options) => {
     stroke: ${options.requirementBorderColor};
     stroke-width: ${options.requirementBorderSize};
   }
-
+  
   .reqTitle, .reqLabel{
     fill:  ${options.requirementTextColor};
   }

@@ -4171,7 +4171,7 @@ var require_connection = __commonJS({
         }
         if (responseMessage.id === null) {
           if (responseMessage.error) {
-            logger.error(`Received response message without id: Error is:
+            logger.error(`Received response message without id: Error is: 
 ${JSON.stringify(responseMessage.error, void 0, 4)}`);
           } else {
             logger.error(`Received response message without id. No further error information provided.`);
@@ -16447,8 +16447,8 @@ var defaultGrammarValidatorErrorProvider = {
     const extraArgument = getExtraProductionArgument2(duplicateProd);
     const hasExplicitIndex = index > 0;
     let msg = `->${dslName}${hasExplicitIndex ? index : ""}<- ${extraArgument ? `with argument: ->${extraArgument}<-` : ""}
-                  appears more than once (${duplicateProds.length} times) in the top level rule: ->${topLevelName}<-.
-                  For further details see: https://chevrotain.io/docs/FAQ.html#NUMERICAL_SUFFIXES
+                  appears more than once (${duplicateProds.length} times) in the top level rule: ->${topLevelName}<-.                  
+                  For further details see: https://chevrotain.io/docs/FAQ.html#NUMERICAL_SUFFIXES 
                   `;
     msg = msg.replace(/[ \t]+/g, " ");
     msg = msg.replace(/\s\s+/g, "\n");
@@ -16521,7 +16521,7 @@ Only the last alternative may be an empty alternative.`;
     const leftRecursivePath = `${ruleName} --> ${pathNames.concat([ruleName]).join(" --> ")}`;
     const errMsg = `Left Recursion found in grammar.
 rule: <${ruleName}> can be invoked from itself (directly or indirectly)
-without consuming any Tokens. The grammar path that causes this is:
+without consuming any Tokens. The grammar path that causes this is: 
  ${leftRecursivePath}
  To fix this refactor your grammar to remove the left recursion.
 see: https://en.wikipedia.org/wiki/LL_parser#Left_factoring.`;
@@ -18667,7 +18667,7 @@ var TreeBuilder = class {
   }
   /**
        *  @see setInitialNodeLocationOnlyOffsetRegular for explanation why this work
-
+  
        * @param cstNode
        */
   setInitialNodeLocationFullRegular(cstNode) {

@@ -1599,6 +1599,7 @@ if(CAN_BUILD_WEB_APP AND BUILD_WEB_APP)
         "${APP_SOURCE_DIR}/styles/*"
         "${WEB_APP_SOURCE_DIR}/*.json"
         "${WEB_APP_SOURCE_DIR}/*.js"
+        "${WEB_APP_SOURCE_DIR}/*.mjs"
         "${WEB_APP_SOURCE_DIR}/*.ts"
         "${WEB_APP_SOURCE_DIR}/*.tsx"
         "${WEB_APP_SOURCE_DIR}/*.css"

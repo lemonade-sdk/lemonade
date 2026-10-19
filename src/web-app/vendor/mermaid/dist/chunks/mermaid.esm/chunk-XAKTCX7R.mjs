@@ -3444,10 +3444,10 @@ var Graph = class {
      * Creates new graph with nodes filtered via `filter`.
      * Edges incident to rejected node
      * are also removed.
-     *
+     * 
      * In case of compound graph, if parent is rejected by `filter`,
      * than all its children are rejected too.
-
+  
      * @param {(v: NodeID) => boolean} filter - Function that returns `true` for nodes to keep.
      * @returns {Graph<GraphLabel, NodeLabel, EdgeLabel>} A new graph containing only the nodes for which `filter` returns `true`.
      * @remarks Average-case complexity: O(|E|+|V|).

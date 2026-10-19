@@ -7035,10 +7035,10 @@ var require_cytoscape_fcose = __commonJS({
                 var _require = __webpack_require__2(657), spectralLayout = _require.spectralLayout;
                 var _require2 = __webpack_require__2(816), coseLayout = _require2.coseLayout;
                 var defaults = Object.freeze({
-                  // 'draft', 'default' or 'proof'
-                  // - 'draft' only applies spectral layout
+                  // 'draft', 'default' or 'proof' 
+                  // - 'draft' only applies spectral layout 
                   // - 'default' improves the quality with subsequent CoSE layout (fast cooling rate)
-                  // - 'proof' improves the quality with subsequent CoSE layout (slow cooling rate)
+                  // - 'proof' improves the quality with subsequent CoSE layout (slow cooling rate) 
                   quality: "default",
                   // Use random node positions at beginning of layout
                   // if this is set to false, then quality option must be "proof"
@@ -7104,7 +7104,7 @@ var require_cytoscape_fcose = __commonJS({
                   gravityCompound: 1,
                   // Gravity range (constant)
                   gravityRange: 3.8,
-                  // Initial cooling factor for incremental layout
+                  // Initial cooling factor for incremental layout  
                   initialEnergyOnIncremental: 0.3,
                   /* constraint options */
                   // Fix required nodes to predefined positions
@@ -7113,7 +7113,7 @@ var require_cytoscape_fcose = __commonJS({
                   // Align required nodes in vertical/horizontal direction
                   // {vertical: [['n1', 'n2')], ['n3', 'n4']], horizontal: ['n2', 'n4']}
                   alignmentConstraint: void 0,
-                  // Place two nodes relatively in vertical/horizontal direction
+                  // Place two nodes relatively in vertical/horizontal direction 
                   // [{top: 'n1', bottom: 'n2', gap: 100}, {left: 'n3', right: 'n4', gap: 75}]
                   relativePlacementConstraint: void 0,
                   /* layout event callbacks */
@@ -8286,10 +8286,10 @@ var getStyles = /* @__PURE__ */ __name((options) => `
     stroke-dasharray: 8;
   }
   .node-icon-text {
-    display: flex;
+    display: flex; 
     align-items: center;
   }
-
+  
   .node-icon-text > div {
     color: #fff;
     margin: 1px;

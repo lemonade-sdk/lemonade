@@ -5231,7 +5231,7 @@ async function bang(parent, node) {
   const effectiveHeight = Math.max(h, minHeight);
   label.attr("transform", `translate(${-bbox.width / 2}, ${-bbox.height / 2})`);
   let bangElem;
-  const path = `M0 0
+  const path = `M0 0 
     a${r},${r} 1 0,0 ${effectiveWidth * 0.25},${-1 * effectiveHeight * 0.1}
     a${r},${r} 1 0,0 ${effectiveWidth * 0.25},${0}
     a${r},${r} 1 0,0 ${effectiveWidth * 0.25},${0}
@@ -5289,7 +5289,7 @@ async function cloud(parent, node) {
   const r4 = 0.2 * w;
   const { cssStyles } = node;
   let cloudElem;
-  const path = `M0 0
+  const path = `M0 0 
     a${r1},${r1} 0 0,1 ${w * 0.25},${-1 * w * 0.1}
     a${r3},${r3} 1 0,1 ${w * 0.4},${-1 * w * 0.1}
     a${r2},${r2} 1 0,1 ${w * 0.35},${w * 0.2}

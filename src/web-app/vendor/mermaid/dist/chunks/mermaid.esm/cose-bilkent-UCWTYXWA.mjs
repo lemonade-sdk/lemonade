@@ -4484,9 +4484,9 @@ var require_cytoscape_cose_bilkent = __commonJS({
               // Called on `layoutstop`
               stop: /* @__PURE__ */ __name(function stop() {
               }, "stop"),
-              // 'draft', 'default' or 'proof"
-              // - 'draft' fast cooling rate
-              // - 'default' moderate cooling rate
+              // 'draft', 'default' or 'proof" 
+              // - 'draft' fast cooling rate 
+              // - 'default' moderate cooling rate 
               // - "proof" slow cooling rate
               quality: "default",
               // include labels in node dimensions

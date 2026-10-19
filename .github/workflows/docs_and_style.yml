@@ -145,5 +145,6 @@ jobs:
           args: >-
             --offline --include-fragments --no-progress
             --exclude-path node_modules --exclude-path build
+            --exclude-path '(^|/)src/web-app/vendor/mermaid/README\.md$'
             './**/*.md'
           fail: true

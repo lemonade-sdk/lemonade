@@ -55,6 +55,13 @@ Do not edit upstream-generated `.mjs` or `.map` files manually.
 - `contrib/debian/rules` verifies the preexisting files using the offline
   `--check` path. Check an unpacked source package without network access,
   with `USE_SYSTEM_NODEJS_MODULES=ON`.
+- The Docker compiler-cache prime uses a `.dockerignore`-filtered tree. The
+  narrow Mermaid `dist/` exception must remain so its offline verification
+  sees the same upstream chunks and maps as the full source checkout.
+- The upstream README is kept verbatim and excluded from Lemonade's Markdown
+  link checker: it references upstream assets intentionally not vendored here.
+- Git EOL normalization and automated whitespace/EOF rewriting are disabled for
+  the upstream vendor tree; a local pre-commit integrity hook catches drift.
 - Browser-test the **native** packaged GUI with flowchart, sequence, class,
   ER, architecture, mindmap, and invalid Mermaid input. A successful static
   file check is not a substitute for a real Webpack build and render test.

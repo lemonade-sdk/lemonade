@@ -17618,7 +17618,7 @@ var defaults$6 = {
   transform: /* @__PURE__ */ __name(function transform2(node, position3) {
     return position3;
   }, "transform")
-  // transform a given node position. Useful for changing flow direction in discrete layouts
+  // transform a given node position. Useful for changing flow direction in discrete layouts 
 };
 function CircleLayout(options2) {
   this.options = extend({}, defaults$6, options2);
@@ -18665,7 +18665,7 @@ var defaults$3 = {
   transform: /* @__PURE__ */ __name(function transform4(node, position3) {
     return position3;
   }, "transform")
-  // transform a given node position. Useful for changing flow direction in discrete layouts
+  // transform a given node position. Useful for changing flow direction in discrete layouts 
 };
 function GridLayout(options2) {
   this.options = extend({}, defaults$3, options2);
@@ -18962,7 +18962,7 @@ var defaults2 = {
   transform: /* @__PURE__ */ __name(function transform6(node, position3) {
     return position3;
   }, "transform")
-  // transform a given node position. Useful for changing flow direction in discrete layouts
+  // transform a given node position. Useful for changing flow direction in discrete layouts 
 };
 function RandomLayout(options2) {
   this.options = extend({}, defaults2, options2);
@@ -30598,7 +30598,7 @@ cytoscape/dist/cytoscape.esm.mjs:
   *)
   (*!
   Event object based on jQuery events, MIT license
-
+  
   https://jquery.org/license/
   https://tldrlegal.com/license/mit-license
   https://github.com/jquery/jquery/blob/master/src/event.js

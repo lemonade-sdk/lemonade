@@ -976,7 +976,7 @@ var drawCommitTags = /* @__PURE__ */ __name((gLabels, commit2, commitPosition, p
       rect.attr("class", "tag-label-bkg").attr(
         "points",
         `
-      ${pos - maxTagBboxWidth / 2 - PX / 2},${ly + PY}
+      ${pos - maxTagBboxWidth / 2 - PX / 2},${ly + PY}  
       ${pos - maxTagBboxWidth / 2 - PX / 2},${ly - PY}
       ${commitPosition.posWithOffset - maxTagBboxWidth / 2 - PX},${ly - h2 - PY}
       ${commitPosition.posWithOffset + maxTagBboxWidth / 2 + PX},${ly - h2 - PY}
@@ -1902,7 +1902,7 @@ var getStyles = /* @__PURE__ */ __name((options) => {
     font-family: 'trebuchet ms', verdana, arial, sans-serif;
     font-family: var(--mermaid-font-family);
   }
-
+  
   ${useNeoColorGen ? genColor(options) : normalTheme(options)}
 
   .branch {
