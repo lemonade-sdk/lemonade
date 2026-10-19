@@ -72,6 +72,32 @@ async function removeDownload(download: DownloadListItem): Promise<void> {
   await downloadStore.refresh();
 }
 
+function startDownloadAgain(download: DownloadListItem, action: 'Resume' | 'Retry'): void {
+  const wake = () => { downloadStore.wake(download.modelName, download.downloadType); };
+  const onError = (err: Error) => {
+    console.error(`${action} download failed:`, friendlyErrorMessage(err));
+    wake();
+  };
+  wake();
+
+  let request: Promise<void>;
+  if (download.downloadType === 'backend') {
+    const separator = download.modelName.indexOf(':');
+    if (separator <= 0 || separator === download.modelName.length - 1) {
+      onError(new Error(`Invalid backend download: ${download.modelName}`));
+      return;
+    }
+    request = api.installBackend(
+      download.modelName.slice(0, separator),
+      download.modelName.slice(separator + 1),
+      { onProgress: wake, onComplete: wake, onError },
+    );
+  } else {
+    request = api.pullModel(download.modelName, { onProgress: wake, onComplete: wake, onError });
+  }
+  void request.catch(onError);
+}
+
 const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose }) => {
   const { t } = useI18n();
   const [downloads, setDownloads] = useState<DownloadListItem[]>(() => downloadStore.visibleSnapshot());
@@ -200,41 +226,13 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
   });
 
   const handleResume = (download: DownloadListItem) => withBusy(download.id, async () => {
-    downloadStore.wake(download.modelName, download.downloadType);
-    if (download.downloadType === 'model') {
-      const wake = () => { downloadStore.wake(download.modelName, 'model'); };
-      void api.pullModel(download.modelName, {
-        onProgress: wake,
-        onComplete: wake,
-        onError: err => {
-          console.error('Resume download failed:', friendlyErrorMessage(err));
-          wake();
-        },
-      }).catch(err => {
-        console.error('Resume download failed:', friendlyErrorMessage(err));
-        wake();
-      });
-    }
+    startDownloadAgain(download, 'Resume');
     await downloadStore.refresh();
   });
 
   const handleRetry = (download: DownloadListItem) => withBusy(download.id, async () => {
     await removeDownload(download);
-    if (download.downloadType === 'model') {
-      downloadStore.wake(download.modelName, 'model');
-      const wake = () => { downloadStore.wake(download.modelName, 'model'); };
-      void api.pullModel(download.modelName, {
-        onProgress: wake,
-        onComplete: wake,
-        onError: err => {
-          console.error('Retry download failed:', friendlyErrorMessage(err));
-          wake();
-        },
-      }).catch(err => {
-        console.error('Retry download failed:', friendlyErrorMessage(err));
-        wake();
-      });
-    }
+    startDownloadAgain(download, 'Retry');
     await downloadStore.refresh();
   });
 

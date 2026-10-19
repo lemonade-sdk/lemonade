@@ -261,7 +261,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
 
     await externalDirectory.fill('/restricted/models');
     await page.getByRole('button', { name: 'Save directories', exact: true }).click();
-    await expect(page.locator('.connect__error')).toContainText('not readable by the Lemonade server');
+    await expect(page.locator('.connect__section--directories > .connect__error')).toContainText('not readable by the Lemonade server');
     await expect(page.locator('.connect__notice')).toHaveCount(0);
   });
 
