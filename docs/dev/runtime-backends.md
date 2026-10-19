@@ -11,8 +11,8 @@ The catalog freezes immediately before configuration loading in both standalone
 and embedded Windows startup. Editing definitions or sending SIGHUP has no effect
 until restart. An invalid catalog never publishes a subset or starts serving.
 Compiled backends retain their order; external entries append in filename order.
-External definitions cannot replace a compiled recipe, including an opt-out
-configured built-in. Definition IDs, external recipes, configuration sections,
+External definitions cannot replace a compiled recipe, including a built-in
+that runs from an embedded definition. Definition IDs, external recipes, configuration sections,
 and external option ownership must be unique. Built-in/common options, request
 control fields, and global configuration keys are reserved. External definitions
 receive no compiled compatibility attachment or named CLI flags.
@@ -31,6 +31,48 @@ not cover their pin identity. Shipped pins and existing user version/path choice
 retain precedence. `external_only` requires a configured executable and never
 falls through to downloading one. Definitions and model registrations are local
 administrator inputs; schema discovery does not install or replace them.
+
+## Built-in configured backends
+
+ThinkSound (`thinksound`), DS4 (`ds4`) and RyzenAI (`ryzenai-llm`) have no
+engine-specific server class. They run only through `ConfiguredServer`, from the
+definitions embedded at build time from `src/cpp/resources/backends/<stem>.json`.
+There is no environment switch and no fallback implementation; the former
+`LEMONADE_THINKSOUND_CONFIGURED`, `LEMONADE_DS4_CONFIGURED` and
+`LEMONADE_RYZENAI_CONFIGURED` variables are ignored. Each definition is the single
+source of truth for its launch, install, artifact and operation behavior, and its
+`rationale` records explain the non-obvious choices (DS4 SSD streaming and
+`/v1/models` readiness, the ThinkSound companion files, RyzenAI sentinel order).
+An embedded definition that fails validation stops registration at startup.
+
+`src/cpp/server/backends/<stem>/<stem>_server.cpp` is only the registration
+bridge. It validates the embedded definition once, builds the
+`ConfiguredBackendEntry` and exposes it through `configured_entry()`, `create()`,
+`spec()` and `ops()`. The bridge also attaches the compiled compatibility that
+external definitions can never request:
+
+| Recipe | Attachment | Effect |
+| --- | --- | --- |
+| `thinksound` | `TrustedCompatibility::LegacyNonChatSse` | Keeps the legacy-forwarding streaming bindings for chat completion, completion and responses next to buffered audio generation. |
+| `ds4` | `BuiltinLaunchCompatibility{DEVICE_GPU, true}` | Sets the GPU device once the backend is selected, before installation, and prepends the bundled executable directory to `LD_LIBRARY_PATH` on every host. |
+| `ryzenai-llm` | none | |
+
+The compiled descriptors in `include/lemon/backends/<stem>/<stem>.h` remain: they
+carry the recipe, option, CLI flag and support metadata linked into both
+`lemonade` and `lemond`. The oracle tests compare every configured descriptor
+field with its compiled descriptor. `capabilities()` in `<stem>_server.h` is a
+literal (`CAP_AUDIO_GENERATION` for ThinkSound, `0` for DS4 and RyzenAI) because
+the header-only mode contract test cannot read a definition, and
+`ConfiguredServer` implements every media interface, so the mask cannot be
+derived from its type. `ConfiguredRegistrationTest` fails if a literal disagrees
+with the definition's implemented operation bindings.
+
+The CPU oracle tests (`test_thinksound_oracle`, `test_ds4_oracle`,
+`test_ryzenai_oracle`, `test_configured_execution`,
+`test_configured_llm_execution`) drive the registered entries through fake
+effects, fake processes and loopback HTTP fixtures, against hand-authored
+expectations for argv, environment order, readiness, error envelopes,
+operation bindings and install assets.
 
 ## Metadata and validation API
 
@@ -58,8 +100,9 @@ recipe can be substituted in a private candidate; built-ins cannot. Success is
 
 Definition hashes cover canonical source JSON before validator defaults. Object
 key order and whitespace do not affect them; array order and source values do.
-Catalog hashes also cover ordered identities, origins, selected built-in arms and
-the installed feature manifest, and exclude ports, paths and credentials.
+Catalog hashes also cover ordered identities, origins, whether each built-in runs
+from a compiled server class or an embedded definition, and the installed feature
+manifest, and exclude ports, paths and credentials.
 
 The docs generator uses separate temporary cache/config directories and
 `--builtin-backends-only`, which skips external directory discovery entirely.

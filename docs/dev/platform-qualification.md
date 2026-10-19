@@ -54,11 +54,6 @@ Windows, PowerShell, from a configured VS 2022 checkout (use `vs18` for VS 2026)
 cmake --build --preset windows --target lemond lemonade LemonadeServer cpp-ci-tests web-app
 ctest --test-dir build -C Release --output-on-failure -R '^(WindowsArgsTest|WindowsProcessTest)$'
 ctest --test-dir build -C Release --output-on-failure -L cpp-ci
-$env:LEMONADE_THINKSOUND_CONFIGURED='1'
-$env:LEMONADE_DS4_CONFIGURED='1'
-$env:LEMONADE_RYZENAI_CONFIGURED='1'
-ctest --test-dir build -C Release --output-on-failure -L cpp-ci
-Remove-Item Env:LEMONADE_THINKSOUND_CONFIGURED, Env:LEMONADE_DS4_CONFIGURED, Env:LEMONADE_RYZENAI_CONFIGURED
 ```
 
 Run the native argv test on a machine whose ANSI code page is **not** UTF-8;
@@ -90,9 +85,6 @@ macOS, from an already configured default build:
 cmake --build --preset default --target lemond lemonade cpp-ci-tests web-app
 ctest --test-dir build --output-on-failure -R '^WindowsArgsTest$'
 ctest --test-dir build --output-on-failure -L cpp-ci
-LEMONADE_THINKSOUND_CONFIGURED=1 LEMONADE_DS4_CONFIGURED=1 \
-  LEMONADE_RYZENAI_CONFIGURED=1 \
-  ctest --test-dir build --output-on-failure -L cpp-ci
 ```
 
 Repeat the CPU fake argv/cwd/environment, readiness/failure/early-exit/unload/

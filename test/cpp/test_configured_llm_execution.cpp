@@ -22,15 +22,13 @@ void set_env(const char* key, const char* value) {
     setenv(key, value, 1);
 #endif
 }
-std::unique_ptr<WrappedServer> arm(bool configured, Fixture& fixture) {
+std::unique_ptr<WrappedServer> arm(Fixture& fixture) {
     if (use_ryzenai) {
         fixture.executable = "/bundle/ryzenai-server";
-        if (!configured) return std::make_unique<RyzenAIServer>(false, nullptr, nullptr, fixture.effects());
-        return std::make_unique<ConfiguredServer>(definition_entry(k_ryzenai_definition), BackendContext{"error"},
+        return std::make_unique<ConfiguredServer>(ryzenai::configured_entry(), BackendContext{"error"},
             ConfiguredServerServices{std::make_shared<Services>(fixture), fixture.effects().make_process});
     }
-    if (!configured) return std::make_unique<Ds4Server>("error", nullptr, nullptr, fixture.effects());
-    return std::make_unique<ConfiguredServer>(definition_entry(k_ds4_definition, {DEVICE_GPU, true}), BackendContext{"error"},
+    return std::make_unique<ConfiguredServer>(ds4::configured_entry(), BackendContext{"error"},
         ConfiguredServerServices{std::make_shared<Services>(fixture, true), fixture.effects().make_process});
 }
 void load(WrappedServer& server) {
@@ -44,8 +42,8 @@ int main(int argc, char**) {
     set_env("LEMONADE_BACKEND_WATCHDOG_POLL_SECONDS", "1");
     set_env("LEMONADE_BACKEND_WATCHDOG_GRACE_SECONDS", "10");
     Http http;
-    for (bool configured : {false, true}) {
-        Fixture fixture(http.port); auto server = arm(configured, fixture);
+    {
+        Fixture fixture(http.port); auto server = arm(fixture);
         check(server->chat_completion(json::object()) == json::parse(use_ryzenai ? R"({"error":{"message":"No model loaded: RyzenAI-Server","type":"model_not_loaded"}})" : R"({"error":{"message":"No model loaded: ds4-server","type":"model_not_loaded"}})"), "literal no loaded model envelope");
         load(*server);
         for (const auto& [operation, endpoint] : std::vector<std::pair<BackendOperation, std::string>>{{BackendOperation::ChatCompletion, "/v1/chat/completions"}, {BackendOperation::Completion, "/v1/completions"}, {BackendOperation::Responses, "/v1/responses"}}) {
@@ -103,7 +101,7 @@ int main(int argc, char**) {
         server->unload();
         check(fixture.stops == 1 && server->get_process_id() == 0 && server->get_backend_port() == 0 && server->get_launch_command().empty(), "unload clears command/process/port");
         for (int scenario = 0; scenario < 3; ++scenario) {
-            Fixture failure(http.port); auto failed = arm(configured, failure); std::atomic<bool> cancel{scenario == 1};
+            Fixture failure(http.port); auto failed = arm(failure); std::atomic<bool> cancel{scenario == 1};
             failed->set_load_cancel_flag(&cancel); if (scenario == 0) failure.child_running = false;
             std::string message;
             try {
@@ -113,7 +111,7 @@ int main(int argc, char**) {
             check(message == (use_ryzenai ? "RyzenAI-Server failed to start" : "ds4-server failed to start") && failure.stops == 1 && failed->get_process_id() == 0, "literal child-exit/cancel/timeout readiness cleanup");
         }
         {
-            Fixture crash(http.port); auto idle = arm(configured, crash); load(*idle);
+            Fixture crash(http.port); auto idle = arm(crash); load(*idle);
             const int before = use_ryzenai ? http.health_calls.load() : http.model_calls.load();
             http.delay();
             std::thread worker([&] { idle->completion(json::object()); });
@@ -126,7 +124,7 @@ int main(int argc, char**) {
             check(crash.stopped.wait_for(lock, std::chrono::seconds(3), [&] { return crash.stops == 1; }) && idle->was_watchdog_triggered(), "idle crash watchdog cleanup");
         }
         for (int progress : {0, 1}) {
-            Fixture crash(http.port); auto failed = arm(configured, crash); load(*failed);
+            Fixture crash(http.port); auto failed = arm(crash); load(*failed);
             http.disconnect = progress; http.on_disconnect = [&] { crash.child_running = false; };
             Capture capture; bool retry = false;
             try { failed->forward_streaming_request("/v1/completions", "malformed", capture.sink); } catch (const BackendStreamRetryableReset&) { retry = true; }
@@ -135,12 +133,12 @@ int main(int argc, char**) {
             else check(capture.bytes.find("data: {\"partial\":true}") == 0 && capture.bytes.find(use_ryzenai ? "\"backend\":\"RyzenAI-Server\"" : "\"backend\":\"ds4-server\"") != std::string::npos && capture.bytes.find("backend_watchdog_reset") != std::string::npos, "partial SSE plus backend reset identity");
             http.disconnect = -1; http.on_disconnect = {};
         }
-        { Fixture cleanup(http.port); { auto child = arm(configured, cleanup); load(*child); } check(cleanup.stops == 1, "destructor stops fake child"); }
+        { Fixture cleanup(http.port); { auto child = arm(cleanup); load(*child); } check(cleanup.stops == 1, "destructor stops fake child"); }
     }
     const auto root = std::filesystem::temp_directory_path() / ("configured-llm-public-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
     std::filesystem::create_directories(root); utils::set_cache_dir(root.string()); utils::set_config_dir(root.string());
     const std::string previous = std::getenv("PATH") ? std::getenv("PATH") : ""; set_env("PATH", root.string().c_str()); set_env("LEMONADE_FLM_NPU_BIN", "");
-    for (bool configured : {false, true}) {
+    {
         auto configuration = ConfigFile::base_defaults();
         configuration.update(json{{"offline", true}, {"disable_model_filtering", true}, {"no_fetch_executables", true}, {"auto_evict", false}, {"auto_check_model_updates", false}, {"inhibit_suspend", false}, {"log_level", "error"}});
         auto config = std::make_shared<RuntimeConfig>(configuration); RuntimeConfig::set_global(config.get());
@@ -149,7 +147,7 @@ int main(int argc, char**) {
             auto& router = MediaResponseTestHook::router(frontend);
             auto& models = MediaResponseTestHook::models(frontend);
             models.register_user_model("user.fixture", {{"recipe", recipe()}, {"checkpoint", "fixture/repo"}});
-            Fixture fixture(http.port); auto server = arm(configured, fixture); load(*server); auto* resident = server.get();
+            Fixture fixture(http.port); auto server = arm(fixture); load(*server); auto* resident = server.get();
             RoutingHelperTestHook::add(router, std::move(server));
             const auto identity = RoutingHelperTestHook::identity(router, resident);
             check(identity.model_name == "user.fixture" && identity.checkpoint == "fixture/repo" && identity.recipe == recipe() && identity.device == (use_ryzenai ? "npu" : "gpu"), "real router telemetry public recipe/model/checkpoint/device");

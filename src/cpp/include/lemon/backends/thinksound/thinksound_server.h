@@ -1,50 +1,23 @@
 #pragma once
 
-#include "lemon/backends/backend_effects.h"
 #include "lemon/backends/backend_registry.h"
-#include "lemon/backends/backend_utils.h"
 #include "lemon/server_capabilities.h"
-#include "lemon/wrapped_server.h"
 
-#include <httplib.h>
-#include <string>
+#include <cstdint>
+#include <memory>
 
-namespace lemon {
-namespace backends {
+namespace lemon::backends {
 
-// ThinkSound SFX backend. Wraps the resident ts-server; maps the
-// /audio/generations request onto its POST /generate.
-class ThinkSoundServer : public WrappedServer, public IAudioGenerationServer {
-public:
-    static InstallParams get_install_params(const std::string& backend, const std::string& version);
+struct ConfiguredBackendEntry;
 
-    ThinkSoundServer(const std::string& log_level,
-                     ModelManager* model_manager,
-                     BackendManager* backend_manager);
+}
 
-    ThinkSoundServer(const std::string& log_level, ModelManager* model_manager,
-                     BackendManager* backend_manager, BackendEffects effects);
+namespace lemon::backends::thinksound {
 
-    void load(const std::string& model_name,
-              const ModelInfo& model_info,
-              const RecipeOptions& options,
-              bool do_not_upgrade) override;
-
-    // IAudioGenerationServer
-    void audio_generations(const json& request, httplib::DataSink& sink) override;
-
-private:
-    BackendEffects effects_;
-};
-
-namespace thinksound {
+std::shared_ptr<const ConfiguredBackendEntry> configured_entry();
 std::unique_ptr<WrappedServer> create(const BackendContext& ctx);
 const BackendSpec* spec();
 const BackendOps* ops();
-const BackendSpec* legacy_spec();
-const BackendOps* legacy_ops();
-constexpr uint32_t capabilities() { return capability_mask_of<ThinkSoundServer>(); }
-}  // namespace thinksound
+constexpr uint32_t capabilities() { return CAP_AUDIO_GENERATION; }
 
-}  // namespace backends
-}  // namespace lemon
+}

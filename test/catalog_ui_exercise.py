@@ -223,14 +223,6 @@ def main():
             ).isoformat()
             transcript["freeze"]["selected_config_sha256"] = frozen_config
             transcript["freeze"]["discovery_harness_sha256"] = digest(flm)
-            transcript["freeze"]["configured_optins"] = {
-                name: env.get(name, "0")
-                for name in (
-                    "LEMONADE_THINKSOUND_CONFIGURED",
-                    "LEMONADE_DS4_CONFIGURED",
-                    "LEMONADE_RYZENAI_CONFIGURED",
-                )
-            }
             (args.output / "freeze.json").write_text(
                 json.dumps(transcript["freeze"], indent=2)
             )

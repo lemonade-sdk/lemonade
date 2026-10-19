@@ -1,31 +1,39 @@
+#include "configured_fixture.h"
+#include "lemon/backends/configured/configured_server.h"
 #include "lemon/backends/thinksound/thinksound_server.h"
-#include "thinksound_oracle.h"
 
 #include <chrono>
 #include <filesystem>
 #include <fstream>
 
 using namespace thinksound_oracle;
-using lemon::backends::ThinkSoundServer;
+using namespace lemon::backends;
+
+namespace {
+std::unique_ptr<WrappedServer> thinksound_server(EffectsFixture& fixture, const std::string& level) {
+    return std::make_unique<ConfiguredServer>(thinksound::configured_entry(), BackendContext{level},
+        ConfiguredServerServices{std::make_shared<FixtureLaunchServices>(fixture), fixture.effects().make_process});
+}
+}
 
 int main() {
     HttpFixture http;
     {
         EffectsFixture fixture(http.port);
-        ThinkSoundServer server("debug", nullptr, nullptr, fixture.effects());
-        server.load("fixture", model(), empty_options(), true);
+        auto server = thinksound_server(fixture, "debug");
+        server->load("fixture", model(), empty_options(), true);
         check(fixture.events == std::vector<std::string>{u8"model:/model dir/雪\"trailing\\", "supported:thinksound", "validate:thinksound:vulkan", "external:thinksound:vulkan", "install:thinksound:vulkan", "managed:thinksound:vulkan", "port", "process", "start"}, "launch preparation ordered trace");
         check(fixture.command.program == "/bin dir/ts-server" && fixture.command.args == std::vector<std::string>{"--dir", u8"/model dir/雪\"trailing\\", "--host", "127.0.0.1", "--port", std::to_string(http.port)}, "argv vector boundaries");
         check(fixture.command.env.empty() && fixture.cwd.empty() && fixture.output.inherit && !fixture.output.filter_health_logs && fixture.command.ready_endpoint == "/health", "vulkan cwd output health");
-        wire_oracle(server, http);
-        server.unload();
-        check(fixture.stops == 1 && server.get_process_info().pid == 0 && server.get_launch_command().empty(), "unload clears process");
+        wire_oracle(*server, http);
+        server->unload();
+        check(fixture.stops == 1 && server->get_process_info().pid == 0 && server->get_launch_command().empty(), "unload clears process");
     }
     for (const auto* backend : {"rocm", "cuda", "rocm-stable", "rocm-nightly"}) {
         EffectsFixture fixture(http.port);
         fixture.external = "/external dir/ts-server";
-        ThinkSoundServer server("trace", nullptr, nullptr, fixture.effects());
-        server.load("fixture", model(), RecipeOptions("thinksound", {{"thinksound_backend", backend}}), false);
+        auto server = thinksound_server(fixture, "trace");
+        server->load("fixture", model(), RecipeOptions("thinksound", {{"thinksound_backend", backend}}), false);
 #ifdef _WIN32
         const std::string key = "PATH";
         const std::string rocm = "/runtime/core:/runtime/libs;/external dir;old";
@@ -48,9 +56,9 @@ int main() {
         if (failure == 1) fixture.supported.clear();
         if (failure == 2) fixture.port = 0;
         if (failure == 3) fixture.child_running = false;
-        ThinkSoundServer server("error", nullptr, nullptr, fixture.effects());
+        auto server = thinksound_server(fixture, "error");
         std::string message;
-        try { server.load("fixture", model(), empty_options(), false); }
+        try { server->load("fixture", model(), empty_options(), false); }
         catch (const std::exception& e) { message = e.what(); }
         if (failure == 0) check(message == "Model path not found for checkpoint: fixture/repo" && fixture.events.size() == 1, "missing artifact precedence");
         if (failure == 1) check(!message.empty() && fixture.events.size() == 2, "empty backend rejects before install");
@@ -74,17 +82,21 @@ int main() {
         {"unsupported", "thinksound-unsupported-linux-x64.tar.gz"}
 #endif
     };
+    const auto* spec = thinksound::spec();
     for (const auto& [backend, filename] : installs) {
-        const auto value = ThinkSoundServer::get_install_params(backend, "ignored-tag");
-        check(value.repo == "pwilkin/thinksound.cpp" && value.filename == filename && value.version_override.empty(), "permissive independent install asset");
+        for (const auto phase : {InstallPhase::Repository, InstallPhase::Asset}) {
+            const InstallContext context{*spec, spec->definition, "thinksound", spec->recipe, spec->pin_recipe, backend, "", "ignored-tag", "ignored-tag", native_platform(), phase};
+            const auto value = spec->install_params_fn(context);
+            check(value.repo == "pwilkin/thinksound.cpp" && value.filename == filename && value.version_override.empty(), "permissive independent install asset");
+        }
     }
     {
         EffectsFixture fixture(http.port);
         std::atomic<bool> cancel{true};
-        ThinkSoundServer server("error", nullptr, nullptr, fixture.effects());
-        server.set_load_cancel_flag(&cancel);
+        auto server = thinksound_server(fixture, "error");
+        server->set_load_cancel_flag(&cancel);
         std::string message;
-        try { server.load("fixture", model(), empty_options(), false); }
+        try { server->load("fixture", model(), empty_options(), false); }
         catch (const std::exception& e) { message = e.what(); }
         check(message == "thinksound-server failed to start" && fixture.stops == 1, "load cancellation stops child");
     }
@@ -93,8 +105,8 @@ int main() {
         fixture.arch.clear();
         fixture.inherited = inherited;
         {
-            ThinkSoundServer server("error", nullptr, nullptr, fixture.effects());
-            server.load("fixture", model(), RecipeOptions("thinksound", {{"thinksound_backend", "rocm"}}), false);
+            auto server = thinksound_server(fixture, "error");
+            server->load("fixture", model(), RecipeOptions("thinksound", {{"thinksound_backend", "rocm"}}), false);
 #ifdef _WIN32
             const std::string expected = inherited ? "/bin dir;" : "/bin dir";
             const std::string key = "PATH";
@@ -106,7 +118,7 @@ int main() {
         }
         check(fixture.stops == 1, "destructor stops child");
     }
-    const auto* ops = backends::thinksound::legacy_ops();
+    const auto* ops = thinksound::ops();
     check(ops->select_checkpoint_files("ignored", {"clip-tokenizer.gguf", "dit-q8.gguf", "t5-bf16.gguf", "dit-bf16.gguf", "vae-f32.gguf", "metaclip-text-f32.gguf", "t5-tokenizer.gguf"}) == std::optional<std::vector<std::string>>{{"dit-bf16.gguf", "t5-bf16.gguf", "metaclip-text-f32.gguf", "vae-f32.gguf", "t5-tokenizer.gguf", "clip-tokenizer.gguf"}}, "six companion files ordered");
     check(ops->select_checkpoint_files("ignored", {"t5-bf16.gguf", "dit-bf16.gguf"}) == std::optional<std::vector<std::string>>{{"dit-bf16.gguf", "t5-bf16.gguf"}}, "missing companions skipped");
     check(ops->select_checkpoint_files("ignored", {}) == std::optional<std::vector<std::string>>{std::vector<std::string>{}}, "engaged empty selection");

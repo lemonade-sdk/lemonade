@@ -186,8 +186,9 @@ include(GNUInstallDirs)
 #   stem   - identifier-safe name and folder. Each backend lives in its own
 #            folder, shipping (in namespace lemon::backends::<stem>):
 #              include/lemon/backends/<stem>/<stem>.h         inline const descriptor (CLI-safe data)
-#              include/lemon/backends/<stem>/<stem>_server.h  WrappedServer subclass + create() decl
-#              server/backends/<stem>/<stem>_server.cpp       implementation + create() def
+#              include/lemon/backends/<stem>/<stem>_server.h  create()/spec()/ops()/capabilities() decls
+#              server/backends/<stem>/<stem>_server.cpp       their definitions, backed by a WrappedServer
+#                                                             subclass or by resources/backends/<stem>.json
 #
 # Adding a backend is one line here plus that folder. The codegen later in this
 # file (see "Self-describing backends registry codegen") compiles the server
@@ -3649,7 +3650,6 @@ if(BUILD_TESTING)
     add_executable(test_configured_execution test/cpp/test_configured_execution.cpp)
     target_link_libraries(test_configured_execution PRIVATE lemonade-server-core)
     add_cpp_ci_test(ConfiguredExecutionTest CI ON COMMAND test_configured_execution)
-    add_cpp_ci_test(ConfiguredLegacyRegistrationTest CI ON COMMAND test_configured_execution --legacy-registration-only)
 endif()
 
 if(BUILD_TESTING)
@@ -3668,31 +3668,13 @@ endif()
 if(BUILD_TESTING)
     add_executable(test_configured_registration test/cpp/test_configured_registration.cpp)
     target_link_libraries(test_configured_registration PRIVATE lemonade-server-core)
-    foreach(_thinksound RANGE 0 1)
-        foreach(_ds4 RANGE 0 1)
-            foreach(_ryzenai RANGE 0 1)
-                add_cpp_ci_test(ConfiguredRegistration${_thinksound}${_ds4}${_ryzenai} CI ON
-                    COMMAND ${CMAKE_COMMAND} -E env
-                        LEMONADE_THINKSOUND_CONFIGURED=${_thinksound} LEMONADE_DS4_CONFIGURED=${_ds4} LEMONADE_RYZENAI_CONFIGURED=${_ryzenai}
-                        $<TARGET_FILE:test_configured_registration>
-                    DEPENDS test_configured_registration)
-            endforeach()
-        endforeach()
-    endforeach()
-    foreach(_value IN ITEMS "" "0" "true")
-        if(_value STREQUAL "")
-            set(_label Empty)
-        else()
-            set(_label ${_value})
-        endif()
-        add_cpp_ci_test(ConfiguredRegistration${_label} CI ON
-            COMMAND ${CMAKE_COMMAND} -E env
-                LEMONADE_THINKSOUND_CONFIGURED=${_value} LEMONADE_DS4_CONFIGURED=${_value} LEMONADE_RYZENAI_CONFIGURED=${_value}
-                $<TARGET_FILE:test_configured_registration>
-            DEPENDS test_configured_registration)
-    endforeach()
-    add_cpp_ci_test(ConfiguredRegistrationUnset CI ON
+    add_cpp_ci_test(ConfiguredRegistrationTest CI ON
         COMMAND ${CMAKE_COMMAND} -E env --unset=LEMONADE_THINKSOUND_CONFIGURED --unset=LEMONADE_DS4_CONFIGURED --unset=LEMONADE_RYZENAI_CONFIGURED
+            $<TARGET_FILE:test_configured_registration>
+        DEPENDS test_configured_registration)
+    add_cpp_ci_test(ConfiguredRegistrationRetiredOptOutTest CI ON
+        COMMAND ${CMAKE_COMMAND} -E env
+            LEMONADE_THINKSOUND_CONFIGURED=0 LEMONADE_DS4_CONFIGURED=0 LEMONADE_RYZENAI_CONFIGURED=0
             $<TARGET_FILE:test_configured_registration>
         DEPENDS test_configured_registration)
 endif()

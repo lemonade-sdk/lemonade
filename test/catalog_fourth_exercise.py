@@ -123,9 +123,6 @@ def main():
     env.update(
         LEMONADE_API_KEY="regular-test-key",
         LEMONADE_ADMIN_API_KEY="admin-test-key",
-        LEMONADE_THINKSOUND_CONFIGURED="1",
-        LEMONADE_DS4_CONFIGURED="1",
-        LEMONADE_RYZENAI_CONFIGURED="1",
     )
     process = None
     log = None

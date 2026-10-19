@@ -541,20 +541,20 @@ def main(binary):
         alpha["metadata"]["options"].pop()
         alpha["launch"]["backend"] = {"fixed": "cpu"}
         (directory / "a.json").write_text(json.dumps(alpha))
-        optins = (
+        retired_optins = (
             "LEMONADE_THINKSOUND_CONFIGURED",
             "LEMONADE_DS4_CONFIGURED",
             "LEMONADE_RYZENAI_CONFIGURED",
         )
-        selected = "0" if os.environ.get(optins[0]) == "1" else "1"
-        with Server(
-            binary, root, env_overrides={key: selected for key in optins}
-        ) as server:
-            check(
-                request(server.port, "/v1/backends/schema")[1]["catalog_id"]
-                != catalog_id,
-                "selected built-in arms affect catalog digest",
-            )
+        for value in ("0", "1"):
+            with Server(
+                binary, root, env_overrides={key: value for key in retired_optins}
+            ) as server:
+                check(
+                    request(server.port, "/v1/backends/schema")[1]["catalog_id"]
+                    == catalog_id,
+                    "retired configured opt-in environment does not affect catalog digest",
+                )
         alpha["metadata"]["options"][0]["default_value"] = 3
         (directory / "a.json").write_text(json.dumps(alpha))
         with Server(binary, root) as server:

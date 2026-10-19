@@ -2,13 +2,13 @@
 #include <stdexcept>
 #include <string>
 
+#include "lemon/backends/backend_utils.h"
 #include "lemon/backends/ds4/ds4.h"
 #include "lemon/backends/ds4/ds4_server.h"
 #include "lemon/system_info.h"
 #include "lemon/utils/custom_args.h"
 
 using lemon::SystemInfo;
-using lemon::backends::Ds4Server;
 
 namespace {
 
@@ -23,16 +23,22 @@ void expect(bool condition, const std::string& label) {
     }
 }
 
+lemon::backends::InstallParams install_params(const std::string& backend, const std::string& version,
+                                              const std::string& arch) {
+    const auto* spec = lemon::backends::ds4::spec();
+    auto platform = lemon::backends::native_platform();
+    platform.rocm_arch = arch;
+    return spec->install_params_fn({*spec, spec->definition, "ds4", spec->recipe, spec->pin_recipe, backend, "",
+                                    version, version, platform, lemon::backends::InstallPhase::Asset});
+}
+
 std::string install_filename(const std::string& arch, const std::string& version) {
-    SystemInfo::set_rocm_arch_override(arch);
-    const auto params = Ds4Server::get_install_params("rocm", version);
-    SystemInfo::set_rocm_arch_override("");
-    return params.filename;
+    return install_params("rocm", version, arch).filename;
 }
 
 bool throws_for_backend(const std::string& backend) {
     try {
-        Ds4Server::get_install_params(backend, "b0001");
+        install_params(backend, "b0001", "");
     } catch (const std::exception&) {
         return true;
     }
@@ -40,30 +46,22 @@ bool throws_for_backend(const std::string& backend) {
 }
 
 bool throws_for_arch(const std::string& arch) {
-    SystemInfo::set_rocm_arch_override(arch);
-    bool threw = false;
     try {
-        Ds4Server::get_install_params("rocm", "b0001");
+        install_params("rocm", "b0001", arch);
     } catch (const std::exception&) {
-        threw = true;
+        return true;
     }
-    SystemInfo::set_rocm_arch_override("");
-    return threw;
+    return false;
 }
 
 }  // namespace
 
 int main() {
-    // get_install_params() rejects the host OS before it looks at the
-    // architecture, so asset resolution can only be asserted where ds4 actually
-    // publishes. Everywhere else the only correct outcome is a refusal.
     const bool host_publishes =
         lemon::backends::ds4::publishes_for_os(lemon::get_current_os());
 
     if (host_publishes) {
-        SystemInfo::set_rocm_arch_override("gfx1151");
-        const auto params = Ds4Server::get_install_params("rocm", "b0001");
-        SystemInfo::set_rocm_arch_override("");
+        const auto params = install_params("rocm", "b0001", "gfx1151");
 
         expect(params.repo == "lemonade-sdk/ds4-rocm",
                "rocm resolves to the ds4-rocm release repo");
@@ -91,6 +89,8 @@ int main() {
                "install refuses a CDNA architecture");
         expect(!throws_for_arch("gfx1151"),
                "install still resolves for the supported architecture");
+        expect(throws_for_arch(""),
+               "install refuses a host with no ROCm architecture");
     } else {
         expect(throws_for_arch("gfx1151"),
                "install refuses a host OS ds4 publishes no build for");
@@ -118,10 +118,6 @@ int main() {
            "does not publish for windows");
     expect(!lemon::backends::ds4::publishes_for_os("macos"),
            "does not publish for macos");
-
-    // The no-GPU case (get_rocm_arch() == "") is guarded in get_install_params
-    // but cannot be asserted here: an empty override clears the override rather
-    // than setting an empty architecture, so the probe falls back to hardware.
 
     // ds4-server parses left-to-right, so anything appended after Lemonade's
     // own flags wins. Every argument Lemonade manages must be refused.

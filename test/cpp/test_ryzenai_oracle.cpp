@@ -1,8 +1,10 @@
 #include "lemon/backends/ds4/ds4.h"
+#include "lemon/backends/ds4/ds4_server.h"
 #include "lemon/backends/hf_cache_util.h"
 #include "lemon/backends/ryzenai/ryzenai.h"
 #include "lemon/backends/ryzenai/ryzenai_server.h"
 #include "lemon/backends/thinksound/thinksound.h"
+#include "lemon/backends/thinksound/thinksound_server.h"
 #include "llm_configured_fixture.h"
 
 using namespace llm_oracle;
@@ -16,10 +18,9 @@ void operator delete[](void* memory, size_t) noexcept { std::free(memory); }
 
 namespace {
 ModelInfo ryzen_model() { auto model = ds4_model(); model.resolved_paths["main"] = u8"/models/Ryzen AI/雪"; return model; }
-std::unique_ptr<WrappedServer> arm(bool configured, Fixture& fixture, const std::string& level = "error") {
+std::unique_ptr<WrappedServer> arm(Fixture& fixture, const std::string& level = "error") {
     fixture.executable = "/bundle/ryzenai-server"; fixture.paths.insert(u8"/models/Ryzen AI/雪");
-    if (!configured) return std::make_unique<RyzenAIServer>(level == "debug", nullptr, nullptr, fixture.effects());
-    return std::make_unique<ConfiguredServer>(definition_entry(k_ryzenai_definition), BackendContext{level},
+    return std::make_unique<ConfiguredServer>(ryzenai::configured_entry(), BackendContext{level},
         ConfiguredServerServices{std::make_shared<Services>(fixture), fixture.effects().make_process});
 }
 void load(WrappedServer& server, const RecipeOptions& options, const ModelInfo& model = ryzen_model(), bool upgrade = false) {
@@ -28,7 +29,8 @@ void load(WrappedServer& server, const RecipeOptions& options, const ModelInfo& 
 }
 }
 int main() {
-    const auto entry = definition_entry(k_ryzenai_definition);
+    const auto entry = ryzenai::configured_entry();
+    check(entry->compatibility == TrustedCompatibility::None, "registered RyzenAI entry has no compiled compatibility");
     descriptor(entry->descriptor, ryzenai::descriptor);
     const auto& d = entry->descriptor;
     check(d.recipe == "ryzenai-llm" && d.display_name == "Ryzen AI LLM" && d.config_section == "ryzenai" && d.default_device == DEVICE_NPU && d.slot_policy == SlotPolicy::ExclusiveNpu && d.uses_ctx_size && !d.selectable_backend && !d.streams_model_from_storage, "independent RyzenAI identities/policy");
@@ -37,18 +39,16 @@ int main() {
     check(entry->spec.recipe == "ryzenai-server" && entry->spec.public_recipe == "ryzenai-llm" && entry->spec.pin_recipe == "ryzenai-llm" && !entry->spec.supports_split_archive && !entry->launch_compatibility.device_on_backend_selection && !entry->launch_compatibility.posix_executable_loader_path, "split spec identities; empty launch attachment");
     check(entry->definition->records["metadata"]["binary"] == json{{"windows", "ryzenai-server.exe"}, {"linux", "ryzenai-server"}, {"macos", "ryzenai-server"}}, "independent platform binary strings");
     for (const char* backend : {"npu", "unexpected", ""}) for (const char* version : {"b0001", "latest", ""}) {
-        auto params = RyzenAIServer::get_install_params(backend, version);
-        check(params.repo == "lemonade-sdk/ryzenai-server" && params.filename == "ryzenai-server.zip" && params.version_override.empty(), "A permissive fixed install params");
         for (const char* os : {"windows", "linux", "macos", "unexpected"}) for (auto phase : {InstallPhase::Repository, InstallPhase::Asset}) {
             InstallContext context{entry->spec, entry->definition, "ryzenai-llm", "ryzenai-server", "ryzenai-llm", backend, version, "pin", "resolved", {os, "x86_64", ""}, phase};
-            params = entry->spec.install_params_fn(context);
-            check(params.repo == "lemonade-sdk/ryzenai-server" && params.filename == "ryzenai-server.zip" && params.version_override.empty(), "D permissive install across OS/backend/version/phases");
+            const auto params = entry->spec.install_params_fn(context);
+            check(params.repo == "lemonade-sdk/ryzenai-server" && params.filename == "ryzenai-server.zip" && params.version_override.empty(), "permissive install across OS/backend/version/phases");
         }
     }
     Http http; http.models = 503;
-    for (bool configured : {false, true}) {
+    {
         for (const auto context : {json(nullptr), json(-1), json(0), json(4096), json(3.9)}) for (const char* level : {"debug", "trace", "info", "error", ""}) for (bool upgrade : {false, true}) {
-            Fixture fixture(http.port); auto server = arm(configured, fixture, level);
+            Fixture fixture(http.port); auto server = arm(fixture, level);
             RecipeOptions options("ryzenai-llm", json::object()); if (!context.is_null()) options.set_option("ctx_size", context);
             load(*server, options, ryzen_model(), upgrade);
             const std::string ctx = context.is_null() || context == -1 ? "-1" : context == 0 ? "0" : context == 3.9 ? "3" : "4096";
@@ -60,7 +60,7 @@ int main() {
             if (context == 4096 && std::string(level) == "debug" && !upgrade) bindings(*server, fixture);
         }
         for (int scenario = 0; scenario < 6; ++scenario) {
-            Fixture fixture(http.port); auto server = arm(configured, fixture); auto model = ryzen_model();
+            Fixture fixture(http.port); auto server = arm(fixture); auto model = ryzen_model();
             model.resolved_paths["main"] = scenario == 4 ? "" : "/missing";
             if (scenario == 0) fixture.install_fails = true;
             if (scenario == 1) fixture.lookup_fails = true;
@@ -90,10 +90,9 @@ int main() {
     std::filesystem::create_directories(root);
     auto verify = [&](const std::string& path, const std::string& cache_expected, const std::string& import_expected) {
         CheckpointResolveContext context; context.model_cache_path = path;
-        for (const BackendOps* ops : {ryzenai::legacy_ops(), static_cast<const BackendOps*>(entry->ops.get())}) {
-            check(ops->resolve_checkpoint_path(ryzen_model(), context) == cache_expected && ops->find_imported_checkpoint(path) == import_expected, "independent cache/import sentinel expectations");
-            check(!ops->select_checkpoint_files("any", {"model.onnx"}), "sentinel retains inherited file selection");
-        }
+        const BackendOps* ops = ryzenai::ops();
+        check(ops->resolve_checkpoint_path(ryzen_model(), context) == cache_expected && ops->find_imported_checkpoint(path) == import_expected, "independent cache/import sentinel expectations");
+        check(!ops->select_checkpoint_files("any", {"model.onnx"}), "sentinel retains inherited file selection");
     };
     const auto utf8 = [](const auto& path) { return utils::path_to_utf8(path); };
     verify(utf8(root / "absent"), utf8(root / "absent"), "");
@@ -119,9 +118,9 @@ int main() {
     std::printf("Fixture directory enumeration: %s, %s; refs/main=%s\n", enumeration[0].c_str(), enumeration[1].c_str(), other.c_str());
     std::filesystem::create_directories(root / "refs"); std::ofstream(root / "refs/main") << other;
     verify(utf8(root), utf8(root / "snapshots" / first), utf8(root / "snapshots" / first));
-    for (const BackendOps* ops : {ryzenai::legacy_ops(), static_cast<const BackendOps*>(entry->ops.get())}) {
+    {
         bool threw = false;
-        try { ops->find_imported_checkpoint(utf8(root / "wrong.json")); } catch (const std::filesystem::filesystem_error&) { threw = true; }
+        try { ryzenai::ops()->find_imported_checkpoint(utf8(root / "wrong.json")); } catch (const std::filesystem::filesystem_error&) { threw = true; }
         check(threw, "throwing recursive iterator preserves regular-file-root failure");
     }
     std::filesystem::create_directories(root / "custom");
@@ -145,8 +144,8 @@ int main() {
     }
     auto hooked = json::parse(k_ryzenai_definition); hooked["artifacts"]["main"]["strategy"] = "hook"; hooked["artifacts"]["main"]["hook"] = "ryzenai.artifacts.v1";
     check(!BackendDefinitionStore().validate({"hook.json", hooked.dump(), DefinitionOrigin::Builtin}).definition, "artifact hooks still rejected");
-    const auto thinksound = definition_entry(k_thinksound_definition);
-    const auto ds4 = definition_entry(k_ds4_definition, {DEVICE_GPU, true});
+    const auto thinksound = lemon::backends::thinksound::configured_entry();
+    const auto ds4 = lemon::backends::ds4::configured_entry();
     for (int i = 0; i < 3; ++i) {
         auto ts = thinksound->factory(BackendContext{"error"}); auto ds = ds4->factory(BackendContext{"error"}); auto ryzen = entry->factory(BackendContext{"error"});
         check(thinksound->spec.recipe == "thinksound" && thinksound->spec.binary == "ts-server" && ds4->spec.recipe == "ds4" && ds4->spec.binary == "ds4-server" && entry->spec.recipe == "ryzenai-server", "three independent factory/spec owners");

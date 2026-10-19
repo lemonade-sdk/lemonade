@@ -12,10 +12,8 @@ void operator delete(void* memory, size_t) noexcept { std::free(memory); }
 void operator delete[](void* memory, size_t) noexcept { std::free(memory); }
 
 namespace {
-auto ds4_entry() { return definition_entry(k_ds4_definition, {DEVICE_GPU, true}); }
-std::unique_ptr<WrappedServer> arm(bool configured, Fixture& fixture, const std::string& level = "error") {
-    if (!configured) return std::make_unique<Ds4Server>(level, nullptr, nullptr, fixture.effects());
-    return std::make_unique<ConfiguredServer>(ds4_entry(), BackendContext{level}, ConfiguredServerServices{
+std::unique_ptr<WrappedServer> arm(Fixture& fixture, const std::string& level = "error") {
+    return std::make_unique<ConfiguredServer>(ds4::configured_entry(), BackendContext{level}, ConfiguredServerServices{
         std::make_shared<Services>(fixture, true), fixture.effects().make_process});
 }
 void load(WrappedServer& server, const RecipeOptions& options = RecipeOptions("ds4", json::object()), const ModelInfo& model = ds4_model(), bool upgrade = false) {
@@ -25,7 +23,8 @@ void load(WrappedServer& server, const RecipeOptions& options = RecipeOptions("d
 }
 
 int main() {
-    const auto entry = ds4_entry();
+    const auto entry = ds4::configured_entry();
+    check(entry->compatibility == TrustedCompatibility::None && entry->launch_compatibility.device_on_backend_selection == DEVICE_GPU && entry->launch_compatibility.posix_executable_loader_path, "registered DS4 entry carries the GPU device and POSIX loader attachment");
     descriptor(entry->descriptor, ds4::descriptor);
     const auto& d = entry->descriptor;
     check(d.recipe == "ds4" && d.display_name == "DwarfStar4" && d.binary == "ds4-server" && d.config_section.empty() && d.default_device == DEVICE_GPU && d.slot_policy == SlotPolicy::Standard && d.uses_ctx_size && !d.selectable_backend && d.streams_model_from_storage, "independent DS4 metadata identities");
@@ -42,10 +41,10 @@ int main() {
     }
     check(bool(ConfiguredBackendEntry::make(external.definition)), "external permits empty launch attachment");
     Http http; http.health = 503;
-    for (bool configured : {false, true}) {
+    {
         for (const auto context : {json(nullptr), json(-1), json(0), json(4096), json(3.9)}) for (bool upgrade : {false, true}) {
             Fixture fixture(http.port);
-            auto server = arm(configured, fixture, "debug");
+            auto server = arm(fixture, "debug");
             RecipeOptions options("ds4", json::object()); if (!context.is_null()) options.set_option("ctx_size", context);
             load(*server, options, ds4_model(), upgrade);
             std::vector<std::string> expected = {"-m", u8"/models/Deep Seek/雪.gguf", "--host", "127.0.0.1", "--port", std::to_string(http.port)};
@@ -63,7 +62,7 @@ int main() {
             model.checkpoints["main"] = scenario < 3 ? "/absolute" : scenario == 3 ? "relative" : scenario == 4 ? "/absent" : "";
             if (scenario < 4 || scenario == 6) fixture.paths.insert("/absolute");
             if (scenario == 7) fixture.paths.clear();
-            auto server = arm(configured, fixture);
+            auto server = arm(fixture);
             std::string message;
             try { load(*server, RecipeOptions("ds4", json::object()), model); } catch (const std::runtime_error& error) { message = error.what(); }
             if (scenario < 3) check(message.empty() && fixture.command.args[1] == "/absolute", "DS4 absolute fallback");
@@ -71,21 +70,21 @@ int main() {
             else check(message.empty() && fixture.command.args[1] == u8"/models/Deep Seek/雪.gguf", "resolved DS4 path wins");
         }
         for (const char* option : {"ds4_args", "ctx_size"}) {
-            Fixture fixture(http.port); auto server = arm(configured, fixture);
+            Fixture fixture(http.port); auto server = arm(fixture);
             RecipeOptions options("ds4", json::object()); options.set_option(option, json::object());
             bool rejected = false;
             try { load(*server, options); } catch (const json::type_error&) { rejected = true; }
             check(rejected && fixture.events.empty(), "DS4 option conversion fails before any effect");
         }
         for (const char* flag : {"--backend", "--cpu", "--ctx", "--cuda", "--host", "--metal", "--model", "--port", "--rocm", "-c", "-m"}) for (const char* suffix : {" value", "=value"}) {
-            Fixture fixture(http.port); auto server = arm(configured, fixture);
+            Fixture fixture(http.port); auto server = arm(fixture);
             std::string message;
             try { load(*server, RecipeOptions("ds4", {{"ds4_args", std::string(flag) + suffix}})); } catch (const std::invalid_argument& error) { message = error.what(); }
             check(message == std::string("Invalid custom ds4-server arguments:\nArgument '") + flag + "' is managed by Lemonade and cannot be overridden.\nReserved arguments: --backend, --cpu, --ctx, --cuda, --host, --metal, --model, --port, --rocm, -c, -m", "DS4 reserved flag exact invalid_argument literal");
             check(fixture.events == std::vector<std::string>{u8"exists:/models/Deep Seek/雪.gguf", u8"exists:/models/Deep Seek/雪.gguf", "install:ds4:rocm", "managed:ds4:rocm", "port"}, "DS4 custom rejection after port before environment");
         }
         {
-            Fixture fixture(http.port); auto server = arm(configured, fixture);
+            Fixture fixture(http.port); auto server = arm(fixture);
             bool device_at_install = false;
             fixture.on_install = [&] { device_at_install = server->get_device_type() == DEVICE_GPU; }; fixture.install_fails = true;
             bool original = false;
@@ -93,7 +92,7 @@ int main() {
             check(original && device_at_install && server->get_device_type() == DEVICE_GPU, "DS4 assignment before failing install");
         }
         for (const auto inherited : {std::optional<std::string>{}, std::optional<std::string>{""}, std::optional<std::string>{"old:a"}}) for (const char* level : {"info", "debug", "trace", "error"}) {
-            Fixture fixture(http.port); fixture.inherited = inherited; auto server = arm(configured, fixture, level);
+            Fixture fixture(http.port); fixture.inherited = inherited; auto server = arm(fixture, level);
             load(*server, RecipeOptions("ds4", {{"ds4_args", "--user 'two words' --user=again"}}));
             check(fixture.command.env == std::vector<std::pair<std::string, std::string>>{{"LD_LIBRARY_PATH", !inherited ? "/bundle" : "/bundle:" + *inherited}}, "literal DS4 loader absent/empty/present");
             check(fixture.output.inherit == (std::string(level) == "info" || std::string(level) == "debug") && fixture.output.filter_health_logs && fixture.cwd.empty(), "DS4 output exact levels");
@@ -118,17 +117,16 @@ int main() {
         {"rocm", "linux", "", "ds4 backend 'rocm' requires a ROCm GPU, but no ROCm architecture was detected"},
         {"rocm", "linux", "gfx9999", "ds4 backend 'rocm' publishes no build for gfx9999; only gfx1151 is validated upstream"}
     };
+    const auto& install_cases = entry->definition->records["install"]["cases"];
+    check(install_cases.size() == 1 && install_cases[0]["backend"] == json::array({"rocm"}) && install_cases[0]["os"] == json::array({"linux"}) && install_cases[0].contains("arch"), "ROCm architecture is consulted only for rocm on linux");
     for (const auto& [backend, os, arch, error] : cases) for (const char* version : {"b0001", "b0002"}) {
-        std::vector<std::string> events; std::string message; InstallParams params;
-        try { params = Ds4Server::get_install_params(backend, version, {[&] { events.push_back("os"); return os; }, [&] { events.push_back("arch"); return arch; }}); } catch (const std::runtime_error& e) { message = e.what(); }
-        check(message == error && events == (backend != "rocm" ? std::vector<std::string>{} : os != "linux" ? std::vector<std::string>{"os"} : std::vector<std::string>{"os", "arch"}), "A lazy install ordered probes and exact errors");
-        if (error.empty()) check(params.repo == "lemonade-sdk/ds4-rocm" && params.filename == "ds4-" + std::string(version) + "-linux-rocm-gfx1151-x64.tar.gz", "A literal install repository/asset");
+        std::string message; InstallParams params;
         for (auto phase : {InstallPhase::Repository, InstallPhase::Asset}) {
             InstallContext context{entry->spec, entry->definition, "ds4", "ds4", "ds4", backend, "requested", version, "b9999", {os, "x86_64", arch}, phase};
             message.clear();
             try { params = entry->spec.install_params_fn(context); } catch (const std::runtime_error& e) { message = e.what(); }
-            check(message == error, "D ordered install errors");
-            if (error.empty()) check(params.repo == "lemonade-sdk/ds4-rocm" && params.filename == "ds4-" + std::string(phase == InstallPhase::Repository ? version : "b9999") + "-linux-rocm-gfx1151-x64.tar.gz", "D distinct pin/asset versions literal");
+            check(message == error, "ordered install errors");
+            if (error.empty()) check(params.repo == "lemonade-sdk/ds4-rocm" && params.filename == "ds4-" + std::string(phase == InstallPhase::Repository ? version : "b9999") + "-linux-rocm-gfx1151-x64.tar.gz", "distinct pin/asset versions literal");
         }
     }
     check(http.health_calls == 0 && http.model_calls > 0, "DS4 never probes health; non-JSON models readiness succeeds");
