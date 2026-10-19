@@ -45,6 +45,12 @@ public:
     // still current.
     std::uint64_t generation() const;
 
+    // Marks the published set stale: the next read composes a new one. Nothing is copied
+    // and nothing is published here, so invalidating twice and rebuilding once bumps the
+    // generation once -- from the rebuild that changed the set, which is what a
+    // generation is for.
+    void invalidate();
+
     // A patch: one writer at a time, published when the scope ends. The draft starts as
     // the published set, so a change edits rows and leaves the rest alone.
     class Write {

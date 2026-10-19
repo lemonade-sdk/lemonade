@@ -211,10 +211,37 @@ static void test_a_build_holds_only_the_builder() {
               !store.read()->find("user.Alpha")->downloaded && !store.read()->valid);
 }
 
+// The set did not change when it was marked stale, so nothing may claim it did: the
+// generation is how a slow reader learns its snapshot is no longer current, and a bump
+// that came from bookkeeping rather than from a change made that signal lie.
+static void test_invalidation_publishes_nothing() {
+    ModelStore store;
+    ModelStore::Build build(store);
+    build.commit({{"user.Alpha", model("user.Alpha")}}, nullptr, no_catalogs());
+    const std::uint64_t built = store.generation();
+
+    store.invalidate();
+    store.invalidate();
+
+    check("invalidating publishes no new generation", store.generation() == built);
+
+    ModelStore::Build compose(store);
+    check("the next read is asked to compose", !compose.up_to_date());
+    check("and readers still hold the set that was there", store.read()->models.size() == 1);
+    compose.commit({{"user.Alpha", model("user.Alpha")}, {"user.Beta", model("user.Beta")}},
+                   nullptr, no_catalogs());
+    check("and the rebuild advances the generation exactly once",
+          store.generation() == built + 1);
+
+    ModelStore::Build settled(store);
+    check("a settled store is not composed again", settled.up_to_date());
+}
+
 int main() {
     test_an_undrawn_store();
     test_a_patch_publishes_too();
     test_a_write_under_a_build_wins();
+    test_invalidation_publishes_nothing();
     test_a_build_holds_only_the_builder();
 
     if (g_failures != 0) {

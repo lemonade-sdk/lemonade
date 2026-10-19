@@ -169,9 +169,9 @@ models::ModelIngest::Deps ModelManager::make_ingest_deps() {
     deps.resolved_paths = [this](const std::string& name) { return resolved_paths_for(name); };
     deps.invalidate = [this] { invalidate_models_cache(); };
     deps.persist_size = [this](const std::string& canonical_model_name) {
-        StoreWrite store_write(*this);
-        const auto model = store_write.draft().find(canonical_model_name);
-        if (model == store_write.draft().end()) {
+        const auto published = store_.read();
+        const ModelInfo* model = published->find(canonical_model_name);
+        if (model == nullptr) {
             return;
         }
         const bool wrote = registries_.update_user([&](json& user_models) {
@@ -179,11 +179,11 @@ models::ModelIngest::Deps ModelManager::make_ingest_deps() {
             if (entry == user_models.end()) {
                 return false;
             }
-            (*entry)["size"] = model->second.size;
+            (*entry)["size"] = model->size;
             return true;
         });
         if (wrote) {
-            store_write.invalidate_cache();
+            store_.invalidate();
         }
     };
     deps.save_options = [this](const ModelInfo& info) { save_model_options(info); };
@@ -243,10 +243,7 @@ std::string ModelManager::get_hf_cache_dir() const {
     return lemon::utils::get_hf_cache_dir();
 }
 
-void ModelManager::invalidate_models_cache() {
-    StoreWrite store_write(*this);
-    store_write.invalidate_cache();
-}
+void ModelManager::invalidate_models_cache() { store_.invalidate(); }
 
 void ModelManager::on_models_changed(std::function<void(std::uint64_t)> subscriber) {
     change_notifier_.on_models_changed(std::move(subscriber));
@@ -288,10 +285,9 @@ void ModelManager::set_extra_models_dir(const std::string& dir) {
 void ModelManager::catalog_set_changed() {
     // The set itself moved, so every origin is asked again.
     catalog_fetch_clock_->forget_all();
-    {
-        StoreWrite store_write(*this);
-        store_write.invalidate_cache();
-    }
+    store_.invalidate();
+    // The one generation bump this path makes is the rebuild below, which is the moment
+    // the published set actually changed.
     notify_models_changed();
 }
 
@@ -303,10 +299,7 @@ void ModelManager::start_directory_watcher() {
     directory_watcher_ = std::make_unique<DirectoryWatcher>(extra_models_dir_);
     directory_watcher_->set_callback([this]() {
         LOG(DEBUG, "ModelManager") << "Extra models directory changed, invalidating cache" << std::endl;
-        {
-            StoreWrite store_write(*this);
-            store_write.invalidate_cache();
-        }
+        store_.invalidate();
         notify_models_changed();
     });
     directory_watcher_->start();

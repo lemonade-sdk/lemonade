@@ -34,6 +34,11 @@ std::vector<CatalogDescriptor> ModelStore::descriptors() const {
 
 std::uint64_t ModelStore::generation() const { return read()->generation; }
 
+void ModelStore::invalidate() {
+    std::lock_guard<std::mutex> writer(writer_mutex_);
+    cache_valid_ = false;
+}
+
 bool ModelStore::cache_valid_locked() const { return cache_valid_; }
 
 ModelStore::Write::Write(ModelStore& store) : store_(store), lock_(store.writer_mutex_) {

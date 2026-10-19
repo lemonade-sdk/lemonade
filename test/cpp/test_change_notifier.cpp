@@ -132,15 +132,37 @@ static void test_only_a_policy_change_fires_the_signal(ModelManager& manager) {
     check("but the model is there for readers", manager.model_exists("user.Ordinary"));
 }
 
-static void test_generation_survives_a_rebuild(ModelManager& manager) {
+// A generation is a change signal, so it moves when the set changes. Marking the set
+// stale changes no rows: copying them, deriving the tables and publishing a new
+// generation announced a change that had not happened, and every consumer woke for it.
+static void test_invalidation_marks_stale_without_publishing(ModelManager& manager) {
     const uint64_t before = manager.generation();
     manager.invalidate_models_cache();
-    const uint64_t after_invalidate = manager.generation();
-    manager.get_supported_models();
 
-    check("invalidating publishes, so a lock-free reader sees it",
-          after_invalidate > before);
-    check("rebuilding moves the generation on again", manager.generation() > after_invalidate);
+    check("invalidating publishes nothing", manager.generation() == before);
+
+    manager.get_supported_models();
+    check("the rebuild is what moves the generation", manager.generation() == before + 1);
+
+    manager.invalidate_models_cache();
+    manager.invalidate_models_cache();
+    const uint64_t twice = manager.generation();
+    manager.get_supported_models();
+    check("invalidating twice rebuilds once, and advances the generation once",
+          manager.generation() == twice + 1);
+}
+
+static void test_an_invalidation_announces_nothing(ModelManager& manager) {
+    int fired = 0;
+    manager.on_models_changed([&](uint64_t) { ++fired; });
+
+    manager.invalidate_models_cache();
+    manager.invalidate_models_cache();
+    manager.get_supported_models();
+    check("marking the set stale and rebuilding it notifies no subscriber", fired == 0);
+
+    manager.notify_models_changed();
+    check("a change that is announced still arrives", fired == 1);
 }
 
 int main() {
@@ -163,7 +185,8 @@ int main() {
     ModelManager manager;
     test_notification_carries_the_published_generation(manager);
     test_only_a_policy_change_fires_the_signal(manager);
-    test_generation_survives_a_rebuild(manager);
+    test_invalidation_marks_stale_without_publishing(manager);
+    test_an_invalidation_announces_nothing(manager);
 
     std::filesystem::remove_all(temp);
 

@@ -351,8 +351,7 @@ std::string ModelArtifactStore::resolve_path_in(const ModelInfo& info, const std
 // The same three checks every ArtifactSource::present() applies, asked of the path this
 // store resolved. Asking a source instead would derive the location a second time from
 // provenance, and the two derivations part company wherever the store knows something the
-// provenance rules do not — an extra-models-dir cache adopted for a registered model, for
-// instance, or a shard family resolved into one file.
+// provenance rules do not — see adopt_extra_cache and collect_registered_shards.
 bool ModelArtifactStore::complete(const ModelInfo& info) const {
     for (const auto& [type, checkpoint] : info.checkpoints) {
         (void)checkpoint;
@@ -1117,8 +1116,7 @@ bool ModelArtifactStore::adopt_extra_cache(ModelInfo& info,
 
     if (registered_paths) {
         for (const auto& path : matched_paths) {
-            // A partial shard family stays excluded: loose shards would each
-            // surface as their own unusable extra.* model.
+            // A partial family stays excluded — see collect_registered_shards.
             if (all_complete || is_gguf_shard_filename(path.filename().string(), nullptr)) {
                 registered_paths->insert(path);
             }
