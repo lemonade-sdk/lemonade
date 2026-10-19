@@ -1,35 +1,16 @@
 """
 Stable Diffusion NPU image generation tests for Lemonade Server.
 
-Tests the /images/generations and /images/edits endpoints with the
-ryzenai-sd (AMD Ryzen AI NPU) backend. These tests follow the same
-structure as server_sd.py (sd-cpp), server_whisper.py (whispercpp), and
-server_llm.py (ryzenai): a ServerTestBase subclass driven by the shared
-harness, gated by the capability catalog, run against an already-running
-`lemond` server.
-
-The NPU models are registered in server_models.json with
-`recipe: "ryzenai-sd"`. On first load Lemonade installs the pinned
-ryzenai-sd-server release, downloads the checkpoint (a HuggingFace repo id),
-and spawns the subprocess.
-
-Prerequisites:
-    - `lemond` is already running (this harness does not start it).
-    - An AMD Ryzen AI NPU is available.
+Tests the /images/generations and /images/edits endpoints with the ryzenai-sd
+(AMD Ryzen AI NPU) backend. Requires an AMD Ryzen AI NPU.
 
 Usage:
     python server_ryzenai_sd.py --wrapped-server ryzenai-sd-server --backend npu
     python server_ryzenai_sd.py --cli-binary /path/to/lemonade
 
-    # Backward compatible (defaults to ryzenai-sd-server):
-    python server_ryzenai_sd.py
-
-Notes:
-    - First load can take several minutes (checkpoint download + subprocess
-      startup + ONNX/NPU compile), so model operations use a generous timeout.
-    - NPU models have fixed compiled shapes; the output size follows the model
-      rather than the request when they disagree, so tests validate PNG
-      contents rather than exact dimensions.
+Note: the first load downloads the checkpoint and compiles it for the NPU,
+which can take several minutes. NPU models have fixed compiled shapes, so
+these tests validate PNG contents rather than exact output dimensions.
 """
 
 import base64
@@ -53,8 +34,7 @@ from utils.test_models import (
     TIMEOUT_DEFAULT,
 )
 
-# NPU first load (download + subprocess spawn + compile) can be slow; allow a
-# generous timeout for model operations. Overridable via env var.
+# The first load has to download and compile the model for the NPU.
 TIMEOUT_NPU_MODEL_OPERATION = int(
     os.environ.get("LEMONADE_TEST_SD_NPU_TIMEOUT", "3600")
 )
@@ -94,12 +74,8 @@ class StableDiffusionNPUTests(ServerTestBase):
     """Tests for Stable Diffusion image generation on the AMD Ryzen AI NPU."""
 
     def _load_model_or_fail(self):
-        """Load the configured NPU model, triggering download/spawn on first call.
-
-        Loading the same model again is a no-op on the server side (the running
-        ryzenai-sd-server hot-swaps or reuses the pipeline), so calling this at
-        the top of each positive test is cheap after the first load.
-        """
+        """Load the configured NPU model. Cheap after the first call, since the
+        server reuses the already-running subprocess."""
         model = _get_image_model()
         print(f"[INFO] Loading NPU model {model}")
         response = requests.post(
@@ -113,10 +89,6 @@ class StableDiffusionNPUTests(ServerTestBase):
             f"Failed to load model {model}: {response.text}",
         )
         return model
-
-    # =========================================================================
-    # IMAGE GENERATION
-    # =========================================================================
 
     @skip_if_unsupported("image_generation_b64")
     def test_001_basic_image_generation(self):
@@ -221,7 +193,7 @@ class StableDiffusionNPUTests(ServerTestBase):
             "response_format": "b64_json",
         }
 
-        print(f"[INFO] Testing image generation with steps=2")
+        print("[INFO] Testing image generation with steps=2")
         response = requests.post(
             f"{self.base_url}/images/generations",
             json=payload,
@@ -255,7 +227,7 @@ class StableDiffusionNPUTests(ServerTestBase):
             "response_format": "b64_json",
         }
 
-        print(f"[INFO] Testing image generation with seed=12345")
+        print("[INFO] Testing image generation with seed=12345")
         response = requests.post(
             f"{self.base_url}/images/generations",
             json=payload,
@@ -311,10 +283,6 @@ class StableDiffusionNPUTests(ServerTestBase):
         self.assertGreater(defaults.get("width", 0), 0, "width should be positive")
         self.assertGreater(defaults.get("height", 0), 0, "height should be positive")
         print(f"[OK] {model} image_defaults verified: {defaults}")
-
-    # =========================================================================
-    # IMAGE EDITS (img2img)
-    # =========================================================================
 
     @skip_if_unsupported("image_edits")
     def test_007_image_edit_basic(self):

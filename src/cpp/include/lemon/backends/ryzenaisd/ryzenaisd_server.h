@@ -28,7 +28,7 @@ public:
 
     void unload() override;
 
-    // ICompletionServer stubs — not supported for image-generation backends
+    // ICompletionServer stubs - unsupported on an image-generation backend
     json chat_completion(const json& request) override;
     json completion(const json& request) override;
     json responses(const json& request) override;
@@ -39,16 +39,14 @@ public:
     json image_variations(const json& request) override;
 
 private:
-    // image_defaults from the currently loaded model's server_models.json entry.
     ImageDefaults image_defaults_;
 
-    // Resolve the final "WxH" size string for the request.
     std::string resolve_size(const json& request) const;
 
-    // Build the flat {"steps":N,"cfg_scale":N.N,"seed":N} object that
-    // ryzenai-sd-server's parse_extra_args() expects embedded in the prompt
-    // as <sd_cpp_extra_args>...</sd_cpp_extra_args>. Precedence for each
-    // value: request override -> model image_defaults -> recipe_options.
+    // ryzenai-sd-server reads only prompt/size/n from the request body, so
+    // steps/cfg_scale/seed/strength reach it through a flat JSON object
+    // embedded in the prompt as <sd_cpp_extra_args>...</sd_cpp_extra_args>.
+    // Precedence: request -> model image_defaults -> recipe options.
     json build_extra_args(const json& request) const;
 };
 

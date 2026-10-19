@@ -1248,13 +1248,8 @@ static std::ostream& operator<<(std::ostream& os, const Color& color)
 
 } // namespace AixLog
 
-// Deliberately NOT restoring the Windows ERROR/DEBUG macros here (no
-// pop_macro): this header is included near the top of most translation
-// units, and LOG(ERROR, ...) / LOG(DEBUG, ...) call sites appear throughout
-// those files *after* this include. Popping the macros back would silently
-// re-corrupt every such call site to LOG(0, ...) (windows.h's ERROR == 0,
-// i.e. Severity::trace) instead of Severity::error, hiding real errors from
-// the configured log level. Nothing else in this codebase relies on the raw
-// windows.h ERROR/DEBUG macros being defined past this point.
+// The Windows ERROR/DEBUG macros are deliberately left popped. Restoring them
+// here would rewrite every later LOG(ERROR, ...) to LOG(0, ...), i.e.
+// Severity::trace, silently hiding errors. Nothing here needs the raw macros.
 
 #endif // AIX_LOG_HPP

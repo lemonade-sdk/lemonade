@@ -673,9 +673,8 @@ protected:
     std::atomic<bool>* load_cancel_ = nullptr;
 
     // Polls `endpoint` until the backend answers or the timeout elapses.
-    // start_server() calls this for a cold start; backends that switch models
-    // inside a live subprocess need it again after the swap, since the
-    // subprocess can ack a swap and then die re-initializing the accelerator.
+    // Protected so backends that swap models inside a live subprocess can
+    // re-check readiness afterwards, not just on cold start.
     bool wait_for_ready(const std::string& endpoint, long timeout_seconds);
 
 private:

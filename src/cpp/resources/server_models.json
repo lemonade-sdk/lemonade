@@ -2881,6 +2881,7 @@
     "SD-Turbo-NPU": {
         "checkpoint": "amd/sd-turbo-amdnpu-onnx",
         "recipe": "ryzenai-sd",
+        "suggested": true,
         "labels": [
             "image"
         ],
@@ -2890,6 +2891,62 @@
             "cfg_scale": 0.0,
             "width": 512,
             "height": 512
+        }
+    },
+    "SDXL-Turbo-NPU": {
+        "checkpoint": "amd/sdxl-turbo-amdnpu-onnx",
+        "recipe": "ryzenai-sd",
+        "suggested": true,
+        "labels": [
+            "image"
+        ],
+        "image_defaults": {
+            "steps": 4,
+            "cfg_scale": 0.0,
+            "width": 512,
+            "height": 512
+        }
+    },
+    "SDXL-Base-NPU": {
+        "checkpoint": "amd/sdxl-base-amdnpu-onnx",
+        "recipe": "ryzenai-sd",
+        "suggested": true,
+        "labels": [
+            "image"
+        ],
+        "image_defaults": {
+            "steps": 20,
+            "cfg_scale": 5.0,
+            "width": 1024,
+            "height": 1024
+        }
+    },
+    "FLUX.1-Schnell-NPU": {
+        "checkpoint": "amd/FLUX.1-schnell-amdnpu-onnx",
+        "recipe": "ryzenai-sd",
+        "suggested": true,
+        "labels": [
+            "image"
+        ],
+        "image_defaults": {
+            "steps": 4,
+            "cfg_scale": 0.0,
+            "width": 1024,
+            "height": 1024
+        }
+    },
+    "FLUX.2-Klein-NPU": {
+        "checkpoint": "amd/FLUX.2-klein-amdnpu-onnx",
+        "recipe": "ryzenai-sd",
+        "suggested": true,
+        "labels": [
+            "image"
+        ],
+        "image_defaults": {
+            "steps": 20,
+            "cfg_scale": 0.0,
+            "width": 1024,
+            "height": 1024
         }
     }
 }

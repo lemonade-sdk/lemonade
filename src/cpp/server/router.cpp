@@ -822,10 +822,8 @@ void Router::commit_loaded_server_locked(
     DeviceType device_type,
     bool final_pinned) {
     if (hotswap_target) {
-        // Publish the new identity only now that the swap has actually
-        // completed -- doing this before load() succeeds would let
-        // concurrent requests for the new model name route to a backend
-        // that's still mid-swap on its old model.
+        // Publishing the new identity before load() succeeded would route
+        // requests for it to a backend still mid-swap on its old model.
         hotswap_target->set_model_metadata(canonical_model_name, model_info.checkpoint(), model_type, device_type, effective_options);
         hotswap_target->set_pinned(final_pinned);
         return;
@@ -1045,11 +1043,9 @@ void Router::load_model(const std::string& model_name,
 
         // NPU EXCLUSIVITY CHECK — driven by the backend's slot policy (descriptor).
         //   ExclusiveNpu (ryzenai-llm, whisper-on-npu): lock the entire NPU,
-        //                evicting all NPU servers of OTHER recipes first. A
-        //                same-recipe NPU server already running is reused (hot-swap)
-        //                instead of evicted -- WrappedServer::load() detects the
-        //                live subprocess and switches models in place rather than
-        //                paying a full re-init cost.
+        //                evicting all NPU servers of OTHER recipes first. A live
+        //                same-recipe server is reused as a hot-swap target, since
+        //                its load() can switch models in place.
         //   CoexistByType (flm): coexist with other FLM types (max 1 per type),
         //                but evict exclusive-NPU peers.
         // Standard/Unmetered backends share no device exclusivity.
@@ -1112,9 +1108,8 @@ void Router::load_model(const std::string& model_name,
         // Count-based LRU is scoped to (ModelType, ResidencyClass). A local
         // routing helper therefore does not consume or evict a normal candidate
         // slot of the same ModelType. Cloud remains unmetered and outside both pools.
-        // Reusing an existing NPU slot via hot-swap also skips this check: it
-        // doesn't consume an additional slot, and the capacity check could
-        // otherwise select hotswap_target itself as the LRU victim of its own pool.
+        // A hot-swap consumes no additional slot, and running the capacity
+        // check anyway could pick hotswap_target as its own LRU victim.
         const bool is_unmetered_load = is_unmetered_recipe(model_info.recipe);
         if (!hotswap_target && !is_unmetered_load) {
             ensure_residency_capacity(model_type, requested_residency_class,
@@ -1152,7 +1147,6 @@ void Router::load_model(const std::string& model_name,
 
         LOG(DEBUG, "Router") << "Effective settings: " << effective_options.to_log_string() << std::endl;
 
-        // Create a new backend server, or reuse the hot-swap target found above.
         std::unique_ptr<WrappedServer> new_server;
         WrappedServer* target_server = create_or_reuse_backend_locked(
             hotswap_target, canonical_model_name, model_info, effective_options,

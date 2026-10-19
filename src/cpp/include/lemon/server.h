@@ -308,6 +308,8 @@ private:
     // Shared helpers for image multipart handlers
     // Return true on success; on failure set res status/body and return false.
     bool parse_n_from_form(const httplib::Request& req, httplib::Response& res, nlohmann::json& out);
+    bool parse_int_from_form(const httplib::Request& req, httplib::Response& res, nlohmann::json& out, const std::string& field);
+    bool parse_float_from_form(const httplib::Request& req, httplib::Response& res, nlohmann::json& out, const std::string& field);
     bool extract_image_from_form(const httplib::Request& req, httplib::Response& res, nlohmann::json& out, bool allow_multiple = false);
     bool load_image_model(const nlohmann::json& request_json, httplib::Response& res);
 
