@@ -99,7 +99,6 @@ module.exports = (env, argv) => {
 
   const systemPackageAliases = useSystemPackages ? {
     'dompurify$': systemDomPurifyPath,
-    'mermaid$': path.resolve(__dirname, 'system-stubs/mermaid.ts'),
   } : {};
 
   let bufferPolyfill = false;
@@ -259,13 +258,6 @@ module.exports = (env, argv) => {
             name: 'startup-chat',
             chunks: 'initial',
             priority: 70,
-            enforce: true,
-          },
-          mermaid: {
-            test: /[\\/]node_modules[\\/](mermaid|@mermaid-js|cytoscape|dagre-d3-es)[\\/]/,
-            name: 'mermaid',
-            chunks: 'async',
-            priority: 60,
             enforce: true,
           },
           charts: {

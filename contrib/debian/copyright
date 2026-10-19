@@ -27,14 +27,7 @@ Comment: Tauri application and installer artwork with dependencies:
  - katex (Expat/MIT)
  - markdown-it (Expat/MIT)
  - markdown-it-texmath (Expat/MIT)
- - mermaid (Expat/MIT)
  - react and react-dom (Expat/MIT)
-
-Files: src/web-app/system-stubs/*
-Copyright: 2026 Advanced Micro Devices, Inc. (AMD)
-License: Apache-2.0
-Comment: Original Mermaid fallback for distro system-node builds; not copied
- from upstream Mermaid.
 
 Files: docs/assets/favicon.ico
        docs/assets/logo.png
