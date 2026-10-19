@@ -76,6 +76,8 @@ struct ContainerHost {
     std::function<bool(const std::string& group)> in_group;
     // The group's numeric ID, or "" when the host defines no such group.
     std::function<std::string(const std::string& group)> group_id;
+    // The name of the account this process runs as, or "" when it is unknown.
+    std::function<std::string()> account;
     // True when /var/run/docker.sock accepts a connection from this process.
     std::function<bool()> docker_socket_accepts;
     // The environment variable's value, or "" when it is unset.
@@ -109,6 +111,7 @@ public:
     // Every failed check of the tool on PATH and the account's access to it.
     // Rerun on each call, so a fix takes effect without a restart.
     std::vector<SetupFailure> check_host() const;
+    // lemond.service's subordinate ID ranges, then `podman info`.
     std::optional<SetupFailure> check_podman() const;
 
     std::vector<std::string> run_command(const ContainerRunSpec& spec) const;
