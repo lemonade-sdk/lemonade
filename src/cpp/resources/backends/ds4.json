@@ -336,6 +336,18 @@
       "text": "The bundled runtime is adjacent to the executable; the built-in compatibility attachment preserves the wrapper's literal LD_LIBRARY_PATH behavior on every fixture host.",
       "source": "bc5f994c29eb256a1f3fca60259ab656782493f8:src/cpp/server/backends/ds4/ds4_server.cpp:127",
       "tests": ["ds4_loader_environment"]
+    },
+    {
+      "subject": "/launch/custom_args/reserved",
+      "text": "ds4-server parses its arguments left to right, so a later flag wins over the ones Lemonade sets: moving the port breaks readiness and proxying, rebinding the host exposes the backend, swapping the model desynchronises the router, and the backend-selection flags would run the child on a different device than the one Lemonade is tracking.",
+      "source": "be8f4c26485ef5d1131329cb14ade7d0ae3f6e76:src/cpp/include/lemon/backends/ds4/ds4.h:12",
+      "tests": ["ds4_reserved_custom_args_rejected"]
+    },
+    {
+      "subject": "/install/cases/0/os",
+      "text": "The direct backend-install endpoint does not go through model filtering, and the support row's architecture check does not read supported_os, so the install case itself must refuse other operating systems rather than resolve the Linux asset.",
+      "source": "be8f4c26485ef5d1131329cb14ade7d0ae3f6e76:src/cpp/include/lemon/backends/ds4/ds4.h:17",
+      "tests": ["ds4_install_refuses_other_os"]
     }
   ]
 }

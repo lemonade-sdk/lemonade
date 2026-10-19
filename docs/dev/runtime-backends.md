@@ -46,12 +46,13 @@ There is no environment switch and no fallback implementation; the former
 `LEMONADE_THINKSOUND_CONFIGURED`, `LEMONADE_DS4_CONFIGURED` and
 `LEMONADE_RYZENAI_CONFIGURED` variables are ignored. Each definition is the single
 source of truth for its launch, install, artifact and operation behavior, and its
-`rationale` records explain the non-obvious choices (DS4 SSD streaming and
-`/v1/models` readiness, the ThinkSound companion files, RyzenAI sentinel order,
-the HRX host requirement and `--parallel 1` default, the Kokoro index file and
-streaming formats, the Moonshine port triple and architecture fallback, the ONNX
-Runtime servable-directory rules and startup diagnostics, the TRELLIS
-custom-argument order and mesh upload).
+`rationale` records explain the non-obvious choices (DS4 SSD streaming,
+`/v1/models` readiness, reserved arguments and Linux-only install case, the
+ThinkSound companion files, RyzenAI sentinel order, the HRX host requirement and
+`--parallel 1` default, the Kokoro index file and streaming formats, the
+Moonshine port triple and architecture fallback, the ONNX Runtime
+servable-directory rules and startup diagnostics, the TRELLIS custom-argument
+order and mesh upload).
 An embedded definition that fails validation stops registration at startup.
 
 `src/cpp/server/backends/<stem>/<stem>_server.cpp` is only the registration
