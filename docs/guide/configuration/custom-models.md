@@ -374,6 +374,8 @@ lemonade config set extra_models_dir="/home/you/.lmstudio/models"
 > ```
 >
 > The rejected value was not saved, so run `config set` again after the restart. `ProtectHome=tmpfs` keeps the rest of `/home` hidden.
+>
+> The drop-in exposes only that one folder. If you later point `extra_models_dir` at a path outside it, change `BindReadOnlyPaths` to match, then run `daemon-reload` and restart `lemond` again. `config set` alone is not enough, because systemd sets up the mount when the service starts.
 
 ### Model Naming Scheme
 
