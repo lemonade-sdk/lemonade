@@ -1,4 +1,3 @@
-#include "lemon/backends/kokoro/kokoro.h"
 #include "lemon/backends/kokoro/kokoro_server.h"
 #include "llm_configured_fixture.h"
 
@@ -233,7 +232,7 @@ void check_operations(Upstream& upstream) {
 
 void check_registration() {
     const auto entry = kokoro::configured_entry();
-    descriptor(entry->descriptor, kokoro::descriptor);
+    descriptor(entry->descriptor, registered_descriptor("kokoro"));
     const auto& d = entry->descriptor;
 #ifdef _WIN32
     const std::string binary = "koko.exe";

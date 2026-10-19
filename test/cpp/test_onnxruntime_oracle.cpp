@@ -1,4 +1,3 @@
-#include "lemon/backends/onnxruntime/onnxruntime.h"
 #include "lemon/backends/onnxruntime/onnxruntime_server.h"
 #include "llm_configured_fixture.h"
 
@@ -255,7 +254,7 @@ void check_operations(Upstream& upstream) {
 
 void check_registration() {
     const auto entry = onnxruntime::configured_entry();
-    descriptor(entry->descriptor, onnxruntime::descriptor);
+    descriptor(entry->descriptor, registered_descriptor("onnxruntime"));
     const auto& d = entry->descriptor;
     check(d.recipe == "onnxruntime" && d.binary == "ort-server" && d.default_device == DEVICE_CPU && d.supported_modes == std::vector<std::string>{"classification"} && d.support.size() == 3 && d.support[2].device_summary == "arm64 CPU", "independent ONNX Runtime descriptor identities");
     check(entry->compatibility == TrustedCompatibility::LegacyNonChatSse && entry->launch_compatibility.device_on_backend_selection == DEVICE_CPU && entry->launch_compatibility.load_log, "ONNX Runtime carries the legacy SSE, CPU device and load-log attachments");

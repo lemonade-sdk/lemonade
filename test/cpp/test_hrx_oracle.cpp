@@ -1,4 +1,3 @@
-#include "lemon/backends/hrx/hrx.h"
 #include "lemon/backends/hrx/hrx_server.h"
 #include "lemon/backends/llamacpp/llamacpp_server.h"
 #include "llm_configured_fixture.h"
@@ -243,11 +242,12 @@ void check_operations(Upstream& upstream) {
 
 void check_registration() {
     const auto entry = hrx::configured_entry();
-    descriptor(entry->descriptor, hrx::descriptor, true);
+    const auto& compiled = registered_descriptor("llamacpp-hrx");
+    descriptor(entry->descriptor, compiled, true);
     const auto& d = entry->descriptor;
     check(d.recipe == "llamacpp-hrx" && d.display_name == "HRX GPU" && d.binary == "llama-server" && d.config_section == "hrx" && d.default_device == DEVICE_GPU && d.uses_ctx_size && d.exposes_prometheus_metrics && d.takes_args && d.bin_variants == std::vector<std::string>{"hrx"}, "independent HRX descriptor identities");
     check(d.support.size() == 1 && d.support[0].arch_gates.size() == 2 && d.support[0].arch_gates.at("gfx1100").os == std::set<std::string>{"linux"} && d.support[0].arch_gates.at("gfx1151").channels.empty() &&
-          hrx::descriptor.support[0].arch_gates.size() == 2 && hrx::descriptor.support[0].arch_gates.at("gfx1151").os == std::set<std::string>{"linux"}, "HRX arch gates match the compiled descriptor");
+          compiled.support[0].arch_gates.size() == 2 && compiled.support[0].arch_gates.at("gfx1151").os == std::set<std::string>{"linux"}, "HRX arch gates match the compiled descriptor");
     check(entry->compatibility == TrustedCompatibility::None && !entry->launch_compatibility.device_on_backend_selection && !entry->launch_compatibility.posix_executable_loader_path && entry->launch_compatibility.load_log, "HRX carries only the load-log attachment");
     check(hrx::capabilities() == 0 && hrx::capabilities() == (llamacpp::capabilities() & ~(CAP_EMBEDDINGS | CAP_RERANKING)), "HRX advertised capability mask stays chat-only");
     const auto* ops = hrx::ops();

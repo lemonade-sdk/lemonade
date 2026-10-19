@@ -1,7 +1,6 @@
 #include "configured_fixture.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backends/configured/configured_server.h"
-#include "lemon/backends/trellis/trellis.h"
 #include "lemon/backends/trellis/trellis_server.h"
 #include "lemon/utils/json_utils.h"
 
@@ -286,7 +285,7 @@ void check_mesh(Upstream& upstream) {
 void check_registration() {
     const auto entry = trellis::configured_entry();
     const auto& d = entry->descriptor;
-    const auto& compiled = trellis::descriptor;
+    const auto& compiled = registered_descriptor("trellis");
     descriptor(d, compiled);
     check(d.recipe == "trellis" && d.binary == "trellis-server" && d.supported_modes == std::vector<std::string>{"3d"} && d.options.size() == 2 && d.support.size() == 3 && d.config_defaults() == json{{"backend", "auto"}, {"args", ""}, {"vulkan_bin", "builtin"}, {"rocm_bin", "builtin"}, {"cuda_bin", "builtin"}}, "independent TRELLIS descriptor literals");
     check(entry->compatibility == TrustedCompatibility::LegacyNonChatSse && !entry->launch_compatibility.device_on_backend_selection && entry->launch_compatibility.load_log, "TRELLIS carries the legacy SSE and load-log attachments");

@@ -1,9 +1,6 @@
-#include "lemon/backends/ds4/ds4.h"
 #include "lemon/backends/ds4/ds4_server.h"
 #include "lemon/backends/hf_cache_util.h"
-#include "lemon/backends/ryzenai/ryzenai.h"
 #include "lemon/backends/ryzenai/ryzenai_server.h"
-#include "lemon/backends/thinksound/thinksound.h"
 #include "lemon/backends/thinksound/thinksound_server.h"
 #include "llm_configured_fixture.h"
 
@@ -31,7 +28,7 @@ void load(WrappedServer& server, const RecipeOptions& options, const ModelInfo& 
 int main() {
     const auto entry = ryzenai::configured_entry();
     check(entry->compatibility == TrustedCompatibility::None, "registered RyzenAI entry has no compiled compatibility");
-    descriptor(entry->descriptor, ryzenai::descriptor);
+    descriptor(entry->descriptor, registered_descriptor("ryzenai-llm"));
     const auto& d = entry->descriptor;
     check(d.recipe == "ryzenai-llm" && d.display_name == "Ryzen AI LLM" && d.config_section == "ryzenai" && d.default_device == DEVICE_NPU && d.slot_policy == SlotPolicy::ExclusiveNpu && d.uses_ctx_size && !d.selectable_backend && !d.streams_model_from_storage, "independent RyzenAI identities/policy");
     check(d.options.empty() && d.config_defaults() == json{{"server_bin", "builtin"}} && d.supported_modes == std::vector<std::string>{"chat"} && d.required_checkpoints == std::vector<std::string>{"main"} && d.web_display_name == "Ryzen AI SW NPU", "independent RyzenAI options/defaults/modes");

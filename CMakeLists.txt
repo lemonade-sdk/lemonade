@@ -189,6 +189,8 @@ include(GNUInstallDirs)
 #              include/lemon/backends/<stem>/<stem>_server.h  create()/spec()/ops()/capabilities() decls
 #              server/backends/<stem>/<stem>_server.cpp       their definitions, backed by a WrappedServer
 #                                                             subclass or by resources/backends/<stem>.json
+#            A backend with a definition at resources/backends/<stem>.json has no
+#            <stem>.h: its descriptor is generated from the definition's metadata.
 #
 # Adding a backend is one line here plus that folder. The codegen later in this
 # file (see "Self-describing backends registry codegen") compiles the server
@@ -1113,6 +1115,7 @@ endif()
 # compiles each backend's server source and regenerates the registry headers that
 # bind every descriptor to its create().
 set(LEMON_DESCRIPTOR_INCLUDES "")
+set(LEMON_DESCRIPTOR_DEFINITIONS "")
 set(LEMON_DESCRIPTOR_ENTRIES "")
 set(LEMON_FACTORY_INCLUDES "")
 set(LEMON_FACTORY_ENTRIES "")
@@ -1161,8 +1164,14 @@ set(LEMON_BACKEND_FACTORY_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/configured/configured_backend_entry.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/backend_ops.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/hf_cache_util.cpp)
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/BackendDescriptorFromDefinition.cmake)
+# CONFIGURE_DEPENDS so adding or removing a definition switches that backend
+# between a generated descriptor and its <stem>.h on the next build.
+file(GLOB LEMON_BACKEND_DEFINITION_FILES CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/*.json)
 foreach(_backend_entry ${LEMON_BACKENDS})
     string(REPLACE "|" ";" _backend_parts "${_backend_entry}")
+    list(GET _backend_parts 0 _backend_recipe)
     list(GET _backend_parts 1 _backend_stem)
     # The descriptor is header-only (no source). Compile every .cpp in the
     # backend's folder (server class + any backend-private helpers like GGUF
@@ -1172,8 +1181,16 @@ foreach(_backend_entry ${LEMON_BACKENDS})
     file(GLOB _backend_srcs CONFIGURE_DEPENDS
         ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/${_backend_stem}/*.cpp)
     list(APPEND LEMON_BACKEND_FACTORY_SOURCES ${_backend_srcs})
-    string(APPEND LEMON_DESCRIPTOR_INCLUDES
-        "#include \"lemon/backends/${_backend_stem}/${_backend_stem}.h\"\n")
+    set(_backend_definition ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/${_backend_stem}.json)
+    if(_backend_definition IN_LIST LEMON_BACKEND_DEFINITION_FILES)
+        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${_backend_definition})
+        lemon_backend_descriptor_from_definition(_backend_descriptor
+            ${_backend_stem} ${_backend_recipe} ${_backend_definition})
+        string(APPEND LEMON_DESCRIPTOR_DEFINITIONS "${_backend_descriptor}")
+    else()
+        string(APPEND LEMON_DESCRIPTOR_INCLUDES
+            "#include \"lemon/backends/${_backend_stem}/${_backend_stem}.h\"\n")
+    endif()
     string(APPEND LEMON_DESCRIPTOR_ENTRIES
         "        &lemon::backends::${_backend_stem}::descriptor,\n")
     string(APPEND LEMON_FACTORY_INCLUDES

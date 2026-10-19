@@ -1,6 +1,5 @@
 #include "configured_fixture.h"
 #include "lemon/backends/configured/configured_server.h"
-#include "lemon/backends/thinksound/thinksound.h"
 #include "lemon/backends/thinksound/thinksound_server.h"
 #include "lemon/config_file.h"
 #include "lemon/utils/path_utils.h"
@@ -241,8 +240,8 @@ int main() {
     std::filesystem::remove_all(root);
     const auto definition_entry = backends::thinksound::configured_entry();
     const json expected_defaults = {{"backend", "auto"}, {"vulkan_bin", "builtin"}, {"rocm_bin", "builtin"}, {"cuda_bin", "builtin"}};
-    check(definition_entry->descriptor.config_defaults() == expected_defaults && backends::thinksound::descriptor.config_defaults() == expected_defaults, "configured and compiled config defaults match independent literal");
-    for (const auto* descriptor : {&definition_entry->descriptor, &backends::thinksound::descriptor}) {
+    check(definition_entry->descriptor.config_defaults() == expected_defaults && registered_descriptor("thinksound").config_defaults() == expected_defaults, "configured and compiled config defaults match independent literal");
+    for (const auto* descriptor : {&definition_entry->descriptor, &registered_descriptor("thinksound")}) {
         check(descriptor->recipe == "thinksound" && descriptor->display_name == "ThinkSound" && descriptor->binary == "ts-server" && descriptor->config_section.empty() && descriptor->default_device == DEVICE_GPU && descriptor->slot_policy == SlotPolicy::Standard && descriptor->selectable_backend && !descriptor->uses_ctx_size && !descriptor->dynamic_models && descriptor->supported_modes == std::vector<std::string>{"audio-generation"} && descriptor->rocm_channels == std::vector<std::string>{"stable"}, "configured and compiled descriptor identity literals");
         check(descriptor->options.size() == 1 && descriptor->options[0].name == "thinksound_backend" && descriptor->options[0].cli_flag == "--thinksound" && descriptor->options[0].default_value == "" && descriptor->options[0].type_name == "BACKEND" && descriptor->options[0].help == "ThinkSound backend to use" && descriptor->options[0].group == "Audio Generation Options", "configured and compiled option and CLI metadata literals");
     }

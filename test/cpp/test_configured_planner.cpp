@@ -1,5 +1,4 @@
 #include "configured_fixture.h"
-#include "lemon/backends/thinksound/thinksound.h"
 #include "lemon/backends/thinksound/thinksound_server.h"
 
 #include <chrono>
@@ -110,7 +109,7 @@ int main() {
     std::filesystem::remove(root / "refs/main");
     check(thinksound->ops->resolve_checkpoint_path(model(), cache) == root.string(), "snapshot original cache fallback");
     std::filesystem::remove_all(root);
-    check(thinksound->descriptor.config_defaults() == backends::thinksound::descriptor.config_defaults(), "descriptor config defaults unchanged");
+    check(thinksound->descriptor.config_defaults() == registered_descriptor("thinksound").config_defaults(), "descriptor config defaults unchanged");
     std::printf("%d/%d checks passed\n", checks - failures, checks);
     return failures ? 1 : 0;
 }

@@ -1,4 +1,3 @@
-#include "lemon/backends/moonshine/moonshine.h"
 #include "lemon/backends/moonshine/moonshine_server.h"
 #include "llm_configured_fixture.h"
 
@@ -287,7 +286,7 @@ void check_transcription(Upstream& upstream) {
 
 void check_registration() {
     const auto entry = moonshine::configured_entry();
-    descriptor(entry->descriptor, moonshine::descriptor);
+    descriptor(entry->descriptor, registered_descriptor("moonshine"));
     const auto& d = entry->descriptor;
     check(d.recipe == "moonshine" && d.binary == "moonshine-server" && d.default_device == DEVICE_CPU && d.supported_modes == std::vector<std::string>{"transcription"} &&
           d.default_capabilities == std::vector<std::string>{"realtime-transcription"} && d.arg_variants == std::vector<std::string>{"cpu"} && d.takes_args, "independent Moonshine descriptor identities");

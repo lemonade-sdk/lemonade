@@ -1,4 +1,3 @@
-#include "lemon/backends/ds4/ds4.h"
 #include "lemon/backends/ds4/ds4_server.h"
 #include "llm_configured_fixture.h"
 
@@ -25,7 +24,7 @@ void load(WrappedServer& server, const RecipeOptions& options = RecipeOptions("d
 int main() {
     const auto entry = ds4::configured_entry();
     check(entry->compatibility == TrustedCompatibility::None && entry->launch_compatibility.device_on_backend_selection == DEVICE_GPU && entry->launch_compatibility.posix_executable_loader_path && entry->launch_compatibility.load_log, "registered DS4 entry carries the GPU device, POSIX loader and load-log attachment");
-    descriptor(entry->descriptor, ds4::descriptor);
+    descriptor(entry->descriptor, registered_descriptor("ds4"));
     const auto& d = entry->descriptor;
     check(d.recipe == "ds4" && d.display_name == "DwarfStar4" && d.binary == "ds4-server" && d.config_section.empty() && d.default_device == DEVICE_GPU && d.slot_policy == SlotPolicy::Standard && d.uses_ctx_size && !d.selectable_backend && d.streams_model_from_storage, "independent DS4 metadata identities");
     check(d.options.size() == 1 && d.options[0].name == "ds4_args" && d.options[0].cli_flag == "--ds4-args" && d.options[0].default_value == "" && d.config_defaults() == json{{"args", ""}} && d.supported_modes == std::vector<std::string>{"chat"} && d.required_checkpoints == std::vector<std::string>{"main"}, "independent DS4 options/defaults/modes");

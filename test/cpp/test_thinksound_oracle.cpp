@@ -1,6 +1,5 @@
 #include "configured_fixture.h"
 #include "lemon/backends/configured/configured_server.h"
-#include "lemon/backends/thinksound/thinksound.h"
 #include "lemon/backends/thinksound/thinksound_server.h"
 
 #include <chrono>
@@ -18,7 +17,7 @@ std::unique_ptr<WrappedServer> thinksound_server(EffectsFixture& fixture, const 
 }
 
 int main() {
-    descriptor(thinksound::configured_entry()->descriptor, thinksound::descriptor);
+    descriptor(thinksound::configured_entry()->descriptor, registered_descriptor("thinksound"));
     HttpFixture http;
     {
         EffectsFixture fixture(http.port);

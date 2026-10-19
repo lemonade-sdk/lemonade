@@ -2,6 +2,7 @@
 
 #include "backend_definition_resources.h"
 #include "lemon/backends/backend_descriptor.h"
+#include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/configured/backend_definition_store.h"
 #include "lemon/backends/configured/configured_backend_entry.h"
 #include "lemon/backends/configured/launch_planner.h"
@@ -27,6 +28,11 @@ inline std::shared_ptr<const backends::ConfiguredBackendEntry> entry(const std::
         throw std::runtime_error("Invalid configured fixture");
     }
     return backends::ConfiguredBackendEntry::make(result.definition, compatibility);
+}
+inline const BackendDescriptor& registered_descriptor(const std::string& recipe) {
+    const BackendDescriptor* registered = backends::descriptor_for(recipe);
+    if (!registered) throw std::runtime_error("No registered descriptor for " + recipe);
+    return *registered;
 }
 inline void descriptor(const BackendDescriptor& value, const BackendDescriptor& compiled, bool gated = false) {
     check(value.recipe == compiled.recipe && value.display_name == compiled.display_name && value.binary == compiled.binary && value.config_section == compiled.config_section, "compiled descriptor identities");

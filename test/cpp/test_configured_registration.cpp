@@ -6,7 +6,6 @@
 #include "lemon/backends/moonshine/moonshine_server.h"
 #include "lemon/backends/onnxruntime/onnxruntime_server.h"
 #include "lemon/backends/trellis/trellis_server.h"
-#include "lemon/backends/ryzenai/ryzenai.h"
 #include "lemon/backends/ryzenai/ryzenai_server.h"
 #include "lemon/backends/thinksound/thinksound_server.h"
 
@@ -91,7 +90,7 @@ int main() {
               trellis::capabilities() == implemented_capabilities(*trellis::configured_entry()), "single-mode engines export exactly their implemented bindings");
         check(implemented_capabilities(*hrx::configured_entry()) == (CAP_EMBEDDINGS | CAP_RERANKING), "HRX implements embeddings and reranking that its chat-only mode does not advertise");
         check(thinksound::spec()->recipe == "thinksound" && thinksound::spec()->binary == "ts-server" && ds4::spec()->recipe == "ds4" && ds4::spec()->binary == "ds4-server", "alternating registration independent identities");
-        check(ryzenai::spec()->recipe == "ryzenai-server" && ryzenai::spec()->binary == ryzenai::descriptor.binary, "RyzenAI split install recipe and platform binary");
+        check(ryzenai::spec()->recipe == "ryzenai-server" && ryzenai::spec()->binary == registered_descriptor("ryzenai-llm").binary, "RyzenAI split install recipe and platform binary");
         check(thinksound::configured_entry()->compatibility == TrustedCompatibility::LegacyNonChatSse && !thinksound::configured_entry()->launch_compatibility.device_on_backend_selection && !thinksound::configured_entry()->launch_compatibility.posix_executable_loader_path && !thinksound::configured_entry()->launch_compatibility.load_log, "ThinkSound carries only the legacy non-chat SSE attachment");
         check(ds4::configured_entry()->compatibility == TrustedCompatibility::None && ds4::configured_entry()->launch_compatibility.device_on_backend_selection == DEVICE_GPU && ds4::configured_entry()->launch_compatibility.posix_executable_loader_path && ds4::configured_entry()->launch_compatibility.load_log, "DS4 carries only the built-in launch attachment");
         check(ryzenai::configured_entry()->compatibility == TrustedCompatibility::None && !ryzenai::configured_entry()->launch_compatibility.device_on_backend_selection && !ryzenai::configured_entry()->launch_compatibility.posix_executable_loader_path && ryzenai::configured_entry()->launch_compatibility.load_log, "RyzenAI carries only the load-log attachment");
