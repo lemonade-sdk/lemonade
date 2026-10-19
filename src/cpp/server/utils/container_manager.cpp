@@ -20,6 +20,7 @@
 
 #ifndef _WIN32
 #include <grp.h>
+#include <pwd.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <unistd.h>
@@ -33,6 +34,7 @@ namespace utils {
 namespace {
 
 constexpr const char* kLabel = "ai.lemonade";
+constexpr const char* kServiceAccount = "lemonade";
 constexpr const char* kDockerSocket = "/var/run/docker.sock";
 constexpr int kStopSeconds = 10;
 constexpr int kCommandTimeoutSeconds = 60;
@@ -83,6 +85,16 @@ bool process_in_group(const std::string& group) {
     std::vector<gid_t> groups(static_cast<size_t>(count));
     if (::getgroups(count, groups.data()) < 0) return false;
     return std::find(groups.begin(), groups.end(), gid) != groups.end();
+}
+
+std::string process_account() {
+    struct passwd entry = {};
+    struct passwd* found = nullptr;
+    std::vector<char> buffer(16384);
+    if (::getpwuid_r(::geteuid(), &entry, buffer.data(), buffer.size(), &found) != 0 || !found) {
+        return "";
+    }
+    return found->pw_name;
 }
 
 std::string host_group_id(const std::string& group) {
@@ -143,10 +155,12 @@ ContainerHost ContainerHost::real() {
     host.on_path = [](const std::string& name) { return !find_executable_in_path(name).empty(); };
 #ifdef _WIN32
     host.in_group = [](const std::string&) { return false; };
+    host.account = []() { return std::string(); };
     host.group_id = [](const std::string&) { return std::string(); };
     host.docker_socket_accepts = []() { return false; };
 #else
     host.in_group = process_in_group;
+    host.account = process_account;
     host.group_id = host_group_id;
     host.docker_socket_accepts = docker_socket_accepts_connection;
 #endif
@@ -206,11 +220,14 @@ bool ContainerManager::expect_rootless() const {
 
 std::vector<SetupFailure> ContainerManager::check_host(bool containers_enabled) const {
     std::vector<SetupFailure> failures;
+    const bool service = host_.account() == kServiceAccount;
+    const std::string member = service ? kServiceAccount : "$USER";
+    const std::string apply = service ? "sudo systemctl restart lemond" : kRelogin;
     const std::optional<ContainerTool> chosen = tool();
     if (chosen == ContainerTool::Docker) {
         if (containers_enabled && !host_.docker_socket_accepts()) {
             failures.push_back({"docker_access", "The Docker daemon refuses the account",
-                                {"sudo usermod -aG docker $USER"}, kRelogin});
+                                {"sudo usermod -aG docker " + member}, apply});
         }
         return failures;
     }
@@ -222,13 +239,29 @@ std::vector<SetupFailure> ContainerManager::check_host(bool containers_enabled) 
     }
     if (expect_rootless() && (!host_.in_group("video") || !host_.in_group("render"))) {
         failures.push_back({"device_groups", "Account is not in both video and render",
-                            {"sudo usermod -aG video,render $USER"}, kRelogin});
+                            {"sudo usermod -aG video,render " + member}, apply});
     }
     return failures;
 }
 
 std::optional<SetupFailure> ContainerManager::check_podman() const {
-    if (tool() != ContainerTool::Podman || podman_info_rootless()) return std::nullopt;
+    if (tool() != ContainerTool::Podman) return std::nullopt;
+    if (host_.account() == kServiceAccount && host_.on_path("getsubids")) {
+        const auto has_range = [this](const std::vector<std::string>& argv) {
+            const CommandResult result =
+                host_.run(argv, kCommandTimeoutSeconds, /*capture_stderr=*/false);
+            return result.exit_code == 0 && !trim(result.output).empty();
+        };
+        if (!has_range({"getsubids", kServiceAccount}) ||
+            !has_range({"getsubids", "-g", kServiceAccount})) {
+            return SetupFailure{"subordinate_ids",
+                                "getsubids lemonade or getsubids -g lemonade prints no range",
+                                {"Ask the host's administrator to allocate 65,536 subordinate "
+                                 "UIDs and GIDs to lemonade"},
+                                "sudo systemctl restart lemond"};
+        }
+    }
+    if (podman_info_rootless()) return std::nullopt;
     return SetupFailure{"podman_info", "`podman info` fails",
                         {"Run `podman info` and fix the error it prints"}, ""};
 }
