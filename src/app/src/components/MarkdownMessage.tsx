@@ -11,7 +11,6 @@ import { useI18n } from '../i18n';
 
 interface MarkdownMessageProps {
   content: string;
-  isComplete?: boolean;
   onOptionSelect?: (text: string) => void;
 }
 

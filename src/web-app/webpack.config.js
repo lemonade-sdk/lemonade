@@ -260,13 +260,6 @@ module.exports = (env, argv) => {
             priority: 70,
             enforce: true,
           },
-          charts: {
-            test: /[\\/]node_modules[\\/](d3|d3-.*)[\\/]/,
-            name: 'charts',
-            chunks: 'async',
-            priority: 55,
-            enforce: true,
-          },
           markdown: {
             test: /[\\/]node_modules[\\/](highlight\.js|markdown-it|katex|markdown-it-texmath|dompurify)[\\/]/,
             name: 'markdown',

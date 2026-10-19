@@ -223,7 +223,7 @@ BSD-3-Clause), three.js (copyright 2010-2026 three.js authors, MIT) and
 @monogrid/gainmap-js (copyright 2023 MONOGRID, MIT). The original bundle
 retains upstream license notices; see `src/app/src/vendor/README.md`.
 
-## GUI3 frontend dependencies and distro fallback stub
+## GUI3 frontend dependencies
 
 The GUI3 frontend references the following third-party packages through npm or
 system Node.js packages:
@@ -233,12 +233,7 @@ system Node.js packages:
 - KaTeX: MIT
 - markdown-it: MIT
 - markdown-it-texmath: MIT
-- Mermaid: MIT
 - React and React DOM: MIT
-
-`src/web-app/system-stubs/mermaid.ts` is an original conservative fallback
-for distro system-node builds, licensed under Apache-2.0. It is not copied
-from the upstream Mermaid source tree.
 
 > ISC License
 >
