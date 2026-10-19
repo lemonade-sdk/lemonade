@@ -16,6 +16,7 @@ Rootful Podman and Docker give that account root-equivalent control of the host'
 |---------|--------|-------|
 | `ds4:rocm` | DS4 | [kyuz0/strix-halo-ds4-toolbox](https://hub.docker.com/r/kyuz0/strix-halo-ds4-toolbox) |
 | `llamacpp:nathanw` | llama.cpp Vulkan performance fork | [kyuz0/amd-strix-halo-toolboxes](https://hub.docker.com/r/kyuz0/amd-strix-halo-toolboxes) |
+| `rocmfpx:rocm` | llama.cpp ROCm FPX fork | [kyuz0/amd-strix-halo-toolboxes](https://hub.docker.com/r/kyuz0/amd-strix-halo-toolboxes) |
 
 ## Setup
 
