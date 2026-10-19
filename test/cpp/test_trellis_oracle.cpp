@@ -227,12 +227,8 @@ void check_registration() {
     const auto entry = trellis::configured_entry();
     const auto& d = entry->descriptor;
     const auto& compiled = trellis::descriptor;
-    check(d.recipe == compiled.recipe && d.display_name == compiled.display_name && d.binary == compiled.binary && d.config_section == compiled.config_section && d.default_device == compiled.default_device &&
-          d.selectable_backend == compiled.selectable_backend && d.supported_modes == compiled.supported_modes && d.rocm_channels == compiled.rocm_channels && d.bin_variants == compiled.bin_variants &&
-          d.takes_args == compiled.takes_args && d.config_defaults() == compiled.config_defaults() && d.options.size() == 2 && compiled.options.size() == 2, "TRELLIS descriptor matches the compiled descriptor");
-    for (size_t i = 0; i < 2; ++i) check(d.options[i].name == compiled.options[i].name && d.options[i].cli_flag == compiled.options[i].cli_flag && d.options[i].type_name == compiled.options[i].type_name && d.options[i].help == compiled.options[i].help && d.options[i].group == compiled.options[i].group, "TRELLIS option metadata");
-    for (size_t i = 0; i < 3; ++i) check(d.support[i].backend == compiled.support[i].backend && d.support[i].devices == compiled.support[i].devices && d.support[i].supported_os == compiled.support[i].supported_os && d.support[i].device_summary == compiled.support[i].device_summary, "TRELLIS support rows");
-    check(d.recipe == "trellis" && d.binary == "trellis-server" && d.supported_modes == std::vector<std::string>{"3d"} && d.config_defaults() == json{{"backend", "auto"}, {"args", ""}, {"vulkan_bin", "builtin"}, {"rocm_bin", "builtin"}, {"cuda_bin", "builtin"}}, "independent TRELLIS descriptor literals");
+    descriptor(d, compiled);
+    check(d.recipe == "trellis" && d.binary == "trellis-server" && d.supported_modes == std::vector<std::string>{"3d"} && d.options.size() == 2 && d.support.size() == 3 && d.config_defaults() == json{{"backend", "auto"}, {"args", ""}, {"vulkan_bin", "builtin"}, {"rocm_bin", "builtin"}, {"cuda_bin", "builtin"}}, "independent TRELLIS descriptor literals");
     check(entry->compatibility == TrustedCompatibility::LegacyNonChatSse && !entry->launch_compatibility.device_on_backend_selection && entry->launch_compatibility.load_log, "TRELLIS carries the legacy SSE and load-log attachments");
     check(trellis::capabilities() == CAP_MODEL_3D, "TRELLIS capability export");
     const auto* spec = trellis::spec();

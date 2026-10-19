@@ -80,9 +80,10 @@ otherwise), not from the attachment.
 
 The compiled descriptors in `include/lemon/backends/<stem>/<stem>.h` remain: they
 carry the recipe, option, CLI flag and support metadata linked into both
-`lemonade` and `lemond`. The oracle tests compare every configured descriptor
-field with its compiled descriptor. `capabilities()` in `<stem>_server.h` is a
-literal (`CAP_AUDIO_GENERATION` for ThinkSound, `CAP_TTS` for Kokoro,
+`lemonade` and `lemond`. Each engine's oracle test compares every configured
+descriptor field with its compiled descriptor through the shared `descriptor()`
+helper in `test/cpp/configured_fixture.h`. `capabilities()` in `<stem>_server.h`
+is a literal (`CAP_AUDIO_GENERATION` for ThinkSound, `CAP_TTS` for Kokoro,
 `CAP_TRANSCRIPTION | CAP_STREAMING_TRANSCRIPTION` for Moonshine, `CAP_CLASSIFICATION`
 for ONNX Runtime, `CAP_MODEL_3D` for TRELLIS, `0` for DS4, RyzenAI and HRX)
 because the header-only mode contract test cannot read a definition, and every
