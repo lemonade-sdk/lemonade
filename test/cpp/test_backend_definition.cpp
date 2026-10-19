@@ -106,19 +106,55 @@ int main() {
     const auto identity = store.validate({"identity.json", identity_doc.dump(), DefinitionOrigin::Builtin});
     const std::string original = "{ \"z\": 1, \"a\": 0 }";
     check(identity.definition && mapper.map(identity.definition->operations[0], {}, json::parse(original), original).original_body == original, "identity SSE preserves original bytes");
-    const auto artifact_hook = +[](const BackendDefinition&, const ModelInfo&, const CheckpointResolveContext&, const json&) { return std::string("fixture"); };
-    const json parameters = {{"type", "object"}, {"additionalProperties", false}};
-    BackendHookRegistry hooks({{"fixture.v1", HookStage::Artifacts, parameters, {}, artifact_hook}});
-    check(hooks.require("fixture.v1", HookStage::Artifacts).id == "fixture.v1", "typed hook table resolution");
-    for (int invalid = 0; invalid < 4; ++invalid) {
+    const auto artifact_hook = +[]() { return default_backend_ops(); };
+    BackendHookRegistry hooks({{"fixture.v1", HookStage::Artifacts, artifact_hook}});
+    check(hooks.require("fixture.v1", HookStage::Artifacts).id == "fixture.v1" && hooks.target<ArtifactHook>("fixture.v1", HookStage::Artifacts)() == default_backend_ops(), "typed hook table resolution");
+    for (int invalid = 0; invalid < 5; ++invalid) {
         bool rejected = false;
         try {
-            if (invalid == 0) hooks.require("fixture.v1", HookStage::Launch);
+            if (invalid == 0) hooks.require("fixture.v1", HookStage::Request);
             if (invalid == 1) hooks.require("absent.v1", HookStage::Artifacts);
-            if (invalid == 2) BackendHookRegistry({{"fixture.v1", HookStage::Launch, parameters, {}, artifact_hook}});
-            if (invalid == 3) BackendHookRegistry({{"fixture.v1", HookStage::Artifacts, parameters, {}, ArtifactHook(nullptr)}});
+            if (invalid == 2) BackendHookRegistry({{"fixture.v1", HookStage::Request, artifact_hook}});
+            if (invalid == 3) BackendHookRegistry({{"fixture.v1", HookStage::Artifacts, ArtifactHook(nullptr)}});
+            if (invalid == 4) BackendHookRegistry({{"fixture.v1", HookStage::Artifacts, artifact_hook}, {"fixture.v1", HookStage::Artifacts, artifact_hook}});
         } catch (const std::invalid_argument&) { rejected = true; }
-        check(rejected, "unknown/null/wrong hook stage/signature rejected");
+        check(rejected, "unknown/null/duplicate/wrong hook stage/signature rejected");
+    }
+    const auto& manifest = installed_hook_manifest();
+    const auto& installed = installed_backend_hooks().registrations();
+    bool agree = manifest.size() == installed.size();
+    for (size_t i = 0; agree && i < manifest.size(); ++i) agree = manifest[i].id == installed[i].id && manifest[i].stage == hook_stage_name(installed[i].stage);
+    check(agree && manifest.size() == 4, "validator hook manifest names exactly the installed compiled hooks and stages");
+    json features = json::array();
+    for (const auto& hook : manifest) features.push_back(hook.stage + ":" + hook.id);
+    check(installed_definition_features()["hooks"] == features, "feature manifest lists every installed hook");
+    const auto request_hook = [&](const json& selection) { return [selection](auto& doc) { doc["operations"][0]["request"]["hooks"] = json::array({selection}); }; };
+    malformed(request_hook({{"id", "absent.v1"}, {"params", json::object()}}), "unknown_hook", "/operations/0/request/hooks/0/id");
+    malformed(request_hook({{"id", "llamacpp.client_model"}, {"params", json::object()}}), "unknown_hook", "/operations/0/request/hooks/0/id");
+    malformed(request_hook({{"id", "llamacpp.tool_schema_limits"}, {"params", {{"x", 1}}}}), "invalid_value", "/operations/0/request/hooks/0/params");
+    malformed([](auto& doc) { doc["operations"][0]["response"]["hooks"] = json::array({{{"id", "llamacpp.client_model"}, {"params", json::object()}}}); }, "invalid_relationship", "/operations/0/response/hooks");
+    malformed([](auto& doc) { doc["artifacts"]["main"]["hook"] = {{"id", "llamacpp.gguf"}, {"params", json::object()}}; }, "invalid_relationship", "/artifacts/main/hook");
+    malformed([](auto& doc) { doc["artifacts"]["main"]["strategy"] = "hook"; doc["artifacts"]["main"]["hook"] = {{"id", "llamacpp.gguf"}, {"params", json::object()}}; }, "invalid_relationship", "/artifacts/main/hook");
+    malformed([](auto& doc) { doc["artifacts"]["main"]["strategy"] = "hook"; doc["artifacts"]["main"]["hook"] = {{"id", "llamacpp.max_tokens_alias"}, {"params", json::object()}}; }, "unknown_hook", "/artifacts/main/hook/id");
+    malformed([](auto& doc) { doc["launch"]["prepare_order"] = {"artifacts", "backend", "install", "program", "ports"}; }, "invalid_relationship", "/launch/prepare_order");
+    malformed([](auto& doc) { doc["launch"]["program"]["source"] = "managed"; doc["launch"]["prepare_order"] = {"artifacts", "backend", "program", "install", "ports"}; }, "invalid_relationship", "/launch/prepare_order");
+    malformed([](auto& doc) { doc["launch"]["program"]["source"] = "managed"; doc["launch"]["prepare_order"] = {"artifacts", "backend", "ports", "install", "program"}; }, "invalid_relationship", "/launch/prepare_order");
+    malformed([](auto& doc) { doc["launch"]["prepare_order"] = {"artifacts", "backend", "program"}; }, "invalid_value", "/launch/prepare_order");
+    {
+        auto doc = baseline;
+        doc["launch"]["program"]["source"] = "managed";
+        doc["launch"]["prepare_order"] = {"backend", "install", "artifacts", "ports", "program"};
+        check(store.validate({"install.json", doc.dump(), DefinitionOrigin::Builtin}).definition != nullptr, "a separate managed install may precede ports and a later program lookup");
+        auto& slots = doc["operations"][0];
+        slots = {{"operation", "slots"}, {"delivery", "buffered"}, {"model_modes", {"*"}}, {"request", {{"base", "identity"}}},
+            {"transport", {{"kind", "http_json"}, {"method", "GET"}, {"path", "/slots"}, {"port", "http"}, {"timeout", "global"}, {"response_codec", "json.v1"}}}};
+        check(store.validate({"slots.json", doc.dump(), DefinitionOrigin::Builtin}).definition != nullptr, "slots bind a GET JSON transport");
+        slots["transport"]["method"] = "POST";
+        check(!store.validate({"slots.json", doc.dump(), DefinitionOrigin::Builtin}).definition, "slots reject a POST transport");
+        slots["operation"] = "tokenize";
+        check(store.validate({"tokenize.json", doc.dump(), DefinitionOrigin::Builtin}).definition != nullptr, "tokenize binds a POST JSON transport");
+        slots["transport"]["method"] = "GET";
+        check(!store.validate({"tokenize.json", doc.dump(), DefinitionOrigin::Builtin}).definition, "tokenize rejects a GET transport");
     }
     std::printf("%d/%d checks passed\n", checks - failures, checks);
     return failures ? 1 : 0;

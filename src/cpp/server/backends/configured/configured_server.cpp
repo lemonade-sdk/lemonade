@@ -1,3 +1,4 @@
+#include "lemon/backends/configured/backend_hook_registry.h"
 #include "lemon/backends/configured/configured_server.h"
 #include "lemon/utils/aixlog.hpp"
 
@@ -7,10 +8,19 @@ std::string effective_level(const ConfiguredBackendEntry& entry, const std::stri
     return entry.definition->records["metadata"]["log_level_policy"] == "debug_flag" && level != "debug" ? "info" : level;
 }
 std::string_view handler(BackendOperation operation, OperationDelivery delivery) {
-    if (operation == BackendOperation::AudioGeneration && delivery == OperationDelivery::Buffered) return "audio";
-    if (operation == BackendOperation::ChatCompletion) return delivery == OperationDelivery::Buffered ? "chat.buffered" : "chat.streaming";
-    if (operation == BackendOperation::Completion) return delivery == OperationDelivery::Buffered ? "completion.buffered" : "completion.streaming";
-    if (operation == BackendOperation::Responses) return delivery == OperationDelivery::Buffered ? "responses.buffered" : "responses.streaming";
+    const bool buffered = delivery == OperationDelivery::Buffered;
+    switch (operation) {
+        case BackendOperation::ChatCompletion: return buffered ? "chat.buffered" : "chat.streaming";
+        case BackendOperation::Completion: return buffered ? "completion.buffered" : "completion.streaming";
+        case BackendOperation::Responses: return buffered ? "responses.buffered" : "responses.streaming";
+        case BackendOperation::Embeddings: if (buffered) return "embeddings"; break;
+        case BackendOperation::Reranking: if (buffered) return "reranking"; break;
+        case BackendOperation::AudioGeneration: if (buffered) return "audio"; break;
+        case BackendOperation::Slots: if (buffered) return "slots"; break;
+        case BackendOperation::SlotAction: if (buffered) return "slots.action"; break;
+        case BackendOperation::Tokenize: if (buffered) return "tokenize"; break;
+        default: break;
+    }
     throw std::invalid_argument("Configured operation adapter is not installed");
 }
 const std::pair<BackendOperation, std::string_view> endpoints[] = {
@@ -28,7 +38,8 @@ std::vector<OperationBinding> configured_operation_bindings(const BackendDefinit
         const bool buffered = description.delivery == OperationDelivery::Buffered;
         const bool audio = description.operation == BackendOperation::AudioGeneration;
         const bool executable = audio ? program.kind == "http_bytes" && program.codec == "raw_bytes.v1" :
-            buffered ? program.kind == "http_json" && program.codec == "json.v1" : program.kind == "http_sse" && program.codec == "openai_sse.v1";
+            buffered ? program.kind == "http_json" && program.codec == "json.v1" && program.method == (description.operation == BackendOperation::Slots ? "GET" : "POST") :
+            program.kind == "http_sse" && program.codec == "openai_sse.v1";
         if (!executable) throw std::invalid_argument("Configured transport signature is not installed");
         bindings.push_back({description, id, audio ? "media" : buffered ? "json" : "sse"});
     }
@@ -47,6 +58,7 @@ ConfiguredServer::ConfiguredServer(std::shared_ptr<const ConfiguredBackendEntry>
       entry_(std::move(entry)), services_(std::move(services)),
       transport_(TransportAccess{
           [this](const auto& endpoint, const auto& body, long timeout) { return WrappedServer::forward_request(endpoint, body, timeout); },
+          [this](const auto& endpoint, long timeout) { return WrappedServer::forward_get_request(endpoint, timeout); },
           [this](const auto& endpoint, const auto& body, auto& sink, bool sse, long timeout, TelemetryCallback callback) {
               WrappedServer::forward_streaming_request(endpoint, body, sink, sse, timeout, std::move(callback));
           }}) {
@@ -54,6 +66,10 @@ ConfiguredServer::ConfiguredServer(std::shared_ptr<const ConfiguredBackendEntry>
     if (!services_.make_process) services_.make_process = [](ProcessOutput output, const std::string& cwd) { return std::make_unique<NativeProcess>(output, cwd); };
     OperationAdapters adapters;
     adapters.completion = this;
+    adapters.embeddings = this;
+    adapters.reranking = this;
+    adapters.slots = this;
+    adapters.tokenizer = this;
     adapters.audio_generation = this;
     adapters.completion_rejections = {
         [](WrappedServer& server, const json& request) { return server.chat_completion(request); },
@@ -75,9 +91,10 @@ ConfiguredServer::ConfiguredServer(std::shared_ptr<const ConfiguredBackendEntry>
 void ConfiguredServer::load(const std::string& name, const ModelInfo& model, const RecipeOptions& options, bool do_not_upgrade) {
     const std::string category = entry_->definition->records["metadata"]["log_category"];
     const auto& log = entry_->launch_compatibility.load_log;
-    if (!log) LOG(INFO, category.c_str()) << "Loading model: " << name << std::endl;
-    else if (log->loading) log->loading(category, name);
     LaunchPlanner planner;
+    planner.require_platform(*entry_->definition, *services_.launch);
+    if (!log) LOG(INFO, category.c_str()) << "Loading model: " << name << std::endl;
+    else if (log->loading) log->loading(category, name, options);
     LoadContext context{name, model, options, log_level_, do_not_upgrade, {}};
     if (entry_->launch_compatibility.device_on_backend_selection) context.backend_selected = [this] {
         device_type_ = *entry_->launch_compatibility.device_on_backend_selection;
@@ -102,8 +119,18 @@ const OperationProgram* ConfiguredServer::program(BackendOperation operation, Op
     }
     return matches == 1 ? fallback : nullptr;
 }
+const OperationProgram& ConfiguredServer::bound(BackendOperation operation) const {
+    const auto* selected = program(operation, OperationDelivery::Buffered);
+    if (!selected) throw std::invalid_argument(std::string(backend_operation_name(operation)) + " adapter is not bound");
+    return *selected;
+}
+json ConfiguredServer::send_json(const MappedRequest& mapped, const json& request) {
+    auto response = transport_.send_json(mapped);
+    for (const auto& id : mapped.operation->response_hooks) response = installed_backend_hooks().target<ResponseHook>(id, HookStage::Response)(std::move(response), request, get_model_name());
+    return response;
+}
 json ConfiguredServer::send_completion(BackendOperation operation, const json& request) {
-    if (const auto* selected = program(operation, OperationDelivery::Buffered)) return transport_.send_json(RequestMapper().map(*selected, mapping_, request));
+    if (const auto* selected = program(operation, OperationDelivery::Buffered)) return send_json(RequestMapper().map(*selected, mapping_, request), request);
     if (operation == BackendOperation::ChatCompletion) return WrappedServer::chat_completion(request);
     if (operation == BackendOperation::Completion) return WrappedServer::completion(request);
     return WrappedServer::responses(request);
@@ -111,6 +138,18 @@ json ConfiguredServer::send_completion(BackendOperation operation, const json& r
 json ConfiguredServer::chat_completion(const json& request) { return send_completion(BackendOperation::ChatCompletion, request); }
 json ConfiguredServer::completion(const json& request) { return send_completion(BackendOperation::Completion, request); }
 json ConfiguredServer::responses(const json& request) { return send_completion(BackendOperation::Responses, request); }
+json ConfiguredServer::embeddings(const json& request) { return send_json(RequestMapper().map(bound(BackendOperation::Embeddings), mapping_, request), request); }
+json ConfiguredServer::reranking(const json& request) { return send_json(RequestMapper().map(bound(BackendOperation::Reranking), mapping_, request), request); }
+json ConfiguredServer::get_slots() { return send_json(RequestMapper().map(bound(BackendOperation::Slots), mapping_, json::object()), json::object()); }
+json ConfiguredServer::slots_action(int slot_id, const std::string& action, const json& request_body) {
+    auto mapped = RequestMapper().map(bound(BackendOperation::SlotAction), mapping_, request_body);
+    for (const auto& [name, value] : {std::pair<std::string, std::string>{"{slot_id}", std::to_string(slot_id)}, {"{action}", action}}) {
+        const auto found = mapped.path.find(name);
+        if (found != std::string::npos) mapped.path.replace(found, name.size(), value);
+    }
+    return send_json(mapped, request_body);
+}
+json ConfiguredServer::tokenize(const json& request_body) { return send_json(RequestMapper().map(bound(BackendOperation::Tokenize), mapping_, request_body), request_body); }
 void ConfiguredServer::audio_generations(const json& request, httplib::DataSink& sink) {
     const auto* selected = program(BackendOperation::AudioGeneration, OperationDelivery::Buffered);
     if (!selected) throw std::invalid_argument("Audio generation adapter is not bound");
@@ -136,9 +175,15 @@ void ConfiguredServer::forward_streaming_request(const std::string& endpoint, co
     for (const auto& [operation, path] : endpoints) {
         if (path != endpoint) continue;
         if (const auto* selected = program(operation, OperationDelivery::Streaming)) {
-            if (selected->identity && selected->remove.empty() && selected->set.empty()) {
-                WrappedServer::forward_streaming_request(selected->path, body, sink, sse,
-                    selected->timeout_seconds == 0 ? timeout : selected->timeout_seconds, std::move(callback));
+            const long effective_timeout = selected->timeout_seconds == 0 ? timeout : selected->timeout_seconds;
+            if (selected->identity && selected->remove.empty() && selected->set.empty() && selected->request_hooks.empty()) {
+                WrappedServer::forward_streaming_request(selected->path, body, sink, sse, effective_timeout, std::move(callback));
+                return;
+            }
+            if (!selected->request_hooks.empty()) {
+                const auto parsed = json::parse(body, nullptr, false);
+                const auto forwarded = parsed.is_discarded() ? body : RequestMapper().map(*selected, mapping_, parsed).body.dump();
+                WrappedServer::forward_streaming_request(selected->path, forwarded, sink, sse, effective_timeout, std::move(callback));
                 return;
             }
             const auto request = json::parse(body);

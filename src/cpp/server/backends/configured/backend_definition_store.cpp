@@ -120,6 +120,20 @@ public:
             if ((!allow_root && text.empty()) || (!text.empty() && text[0] != '/')) throw std::invalid_argument("Invalid pointer");
         } catch (const std::exception&) { error("invalid_pointer", pointer, "Invalid JSON pointer"); }
     }
+    void hook(const json& selection, const std::string& pointer, const std::string& stage) {
+        const auto& manifest = installed_hook_manifest();
+        if (std::none_of(manifest.begin(), manifest.end(), [&](const auto& hook) { return hook.id == selection["id"] && hook.stage == stage; })) {
+            error("unknown_hook", pointer + "/id", "Hook implementation is not installed");
+        } else if (!selection["params"].empty()) error("invalid_value", pointer + "/params", "Hook accepts no parameters");
+    }
+    std::vector<std::string> hook_ids(const json& selections, const std::string& pointer, const std::string& stage) {
+        std::vector<std::string> ids;
+        for (size_t i = 0; i < selections.size(); ++i) {
+            hook(selections[i], pointer + "/" + std::to_string(i), stage);
+            ids.push_back(selections[i]["id"]);
+        }
+        return ids;
+    }
     void expression(BackendDefinition& definition, const std::string& pointer) {
         definition.expressions.emplace(pointer, compile(definition.records.at(json::json_pointer(pointer)), pointer));
     }
@@ -178,8 +192,13 @@ public:
             }
         }
         const auto& launch = doc["launch"];
-        auto position = [&](const char* name) { return std::find(launch["prepare_order"].begin(), launch["prepare_order"].end(), name); };
-        if (!(position("backend") < position("program") && position("program") < position("ports"))) error("invalid_relationship", "/launch/prepare_order", "Preparation dependency order violated");
+        const auto& order = launch["prepare_order"];
+        auto position = [&](const char* name) { return std::find(order.begin(), order.end(), name); };
+        const bool install_phase = position("install") != order.end();
+        const bool complete = position("artifacts") != order.end() && position("program") != order.end() && position("ports") != order.end();
+        const bool installs_first = install_phase ? position("backend") < position("install") && position("install") < position("program") && position("install") < position("ports") : position("program") < position("ports");
+        if (!complete || !(position("backend") < position("program") && installs_first)) error("invalid_relationship", "/launch/prepare_order", "Preparation dependency order violated");
+        if (install_phase && (launch["program"]["source"] != "managed" || doc["install"]["strategy"] != "github_release")) error("invalid_relationship", "/launch/prepare_order", "Separate installation requires a managed release program");
         if (launch["backend"].contains("option") && !option_names.count(launch["backend"]["option"])) error("invalid_reference", "/launch/backend/option", "Undeclared option");
         std::set<std::string> ports;
         for (size_t i = 0; i < launch["ports"].size(); ++i) if (!ports.insert(launch["ports"][i]["name"]).second) error("duplicate_value", "/launch/ports/" + std::to_string(i) + "/name", "Duplicate port");
@@ -209,7 +228,13 @@ public:
             }
             if (artifact.contains("missing_error")) expression(definition, p + "/missing_error");
             else error("required", p + "/missing_error", "Load artifact error is required");
-            if (artifact.contains("hook") || artifact["strategy"] == "hook") error("unknown_hook", p + "/hook", "Artifact hook not installed");
+            if (artifact.contains("hook") != (artifact["strategy"] == "hook")) error("invalid_relationship", p + "/hook", "Artifact hook requires the hook strategy");
+            else if (artifact.contains("hook")) {
+                hook(artifact["hook"], p + "/hook", "artifacts");
+                if (artifact["role"] != "main" || artifact.contains("files") || artifact.value("cache_resolution", "default") != "default" || artifact.value("import_resolution", "default") != "default") {
+                    error("invalid_relationship", p + "/hook", "Artifact hooks own main-checkpoint resolution");
+                }
+            }
         }
         auto& install = doc["install"];
         if (install["strategy"] == "hook" || install.contains("hook")) error("unknown_hook", "/install/hook", "Install hook not installed");
@@ -222,7 +247,7 @@ public:
             if (install["cases"][i].contains("version_override")) expression(definition, p + "/version_override");
             for (size_t j = 0; j < i; ++j) {
                 bool overlap = true;
-                for (const auto* axis : {"backend", "os", "arch"}) {
+                for (const auto* axis : {"backend", "os", "machine_arch", "arch"}) {
                     const auto& left = install["cases"][i]; const auto& right = install["cases"][j];
                     if (!left.contains(axis) || !right.contains(axis)) continue;
                     bool intersects = false;
@@ -266,22 +291,26 @@ public:
             if (record.contains("handler")) error("unknown_handler", p + "/handler/id", "Operation hook not installed");
             if (record.contains("transport")) {
                 const auto& transport = record["transport"];
-                program.kind = transport["kind"]; program.path = transport["path"]; program.port = transport["port"];
+                program.kind = transport["kind"]; program.method = transport["method"]; program.path = transport["path"]; program.port = transport["port"];
                 if (program.port != launch["readiness"]["port"].get<std::string>()) error("unsupported_feature", p + "/transport/port", "Multiple HTTP service ports are not installed");
                 if (!ports.count(program.port)) error("invalid_reference", p + "/transport/port", "Undeclared transport port");
                 if (program.path.empty() || program.path[0] != '/' || program.path.find("://") != std::string::npos) error("invalid_value", p + "/transport/path", "Relative endpoint path required");
                 program.timeout_seconds = transport["timeout"] == "global" ? 0 : transport["timeout"].get<long>();
                 program.codec = transport.value("response_codec", transport.value("stream_codec", ""));
-                const bool json_transport = program.kind == "http_json" && mode == OperationDelivery::Buffered && operation <= BackendOperation::Responses && program.codec == "json.v1" && !transport.contains("stream_codec");
+                const bool json_operation = operation <= BackendOperation::Reranking || operation == BackendOperation::Slots || operation == BackendOperation::SlotAction || operation == BackendOperation::Tokenize;
+                const bool json_transport = program.kind == "http_json" && mode == OperationDelivery::Buffered && json_operation && program.codec == "json.v1" && !transport.contains("stream_codec");
                 const bool sse_transport = program.kind == "http_sse" && mode == OperationDelivery::Streaming && operation <= BackendOperation::Responses && program.codec == "openai_sse.v1" && !transport.contains("response_codec");
                 const bool bytes_transport = program.kind == "http_bytes" && mode == OperationDelivery::Buffered && operation == BackendOperation::AudioGeneration && program.codec == "raw_bytes.v1" && !transport.contains("response_codec");
-                if (transport["method"] != "POST" || !(json_transport || sse_transport || bytes_transport)) error("unsupported_feature", p + "/transport", "Executable transport/codec/adapter combination not installed");
+                if (program.method != (operation == BackendOperation::Slots ? "GET" : "POST") || !(json_transport || sse_transport || bytes_transport)) error("unsupported_feature", p + "/transport", "Executable transport/codec/adapter combination not installed");
             }
             for (const auto& previous : definition.operations) if (previous.description.operation == operation && previous.description.delivery == mode && (previous.description.model_types & mask)) error("operation_overlap", p, "Overlapping operation cells");
             const auto& request = record["request"];
             program.identity = request["base"] == "identity";
             program.omit_missing = request.value("omit_missing", false);
             program.remove = request.value("remove", std::vector<std::string>{});
+            program.request_hooks = hook_ids(request.value("hooks", json::array()), p + "/request/hooks", "request");
+            program.response_hooks = hook_ids(record.value("response", json::object()).value("hooks", json::array()), p + "/response/hooks", "response");
+            if (!program.response_hooks.empty() && program.kind != "http_json") error("invalid_relationship", p + "/response/hooks", "Response hooks require a JSON transport");
             for (const auto& path : program.remove) pointer_valid(path, p + "/request/remove", false);
             std::vector<std::string> destinations;
             const auto assignments = request.value("set", json::object());
@@ -317,13 +346,26 @@ std::string schema_digest(const std::string& text) {
     return result;
 }
 
+const std::vector<InstalledHook>& installed_hook_manifest() {
+    static const std::vector<InstalledHook> manifest = {
+        {"llamacpp.gguf", "artifacts"},
+        {"llamacpp.max_tokens_alias", "request"},
+        {"llamacpp.tool_schema_limits", "request"},
+        {"llamacpp.client_model", "response"}
+    };
+    return manifest;
+}
+
 json installed_definition_features() {
+    json hooks = json::array();
+    for (const auto& hook : installed_hook_manifest()) hooks.push_back(hook.stage + ":" + hook.id);
     return {{"definition_schema_version", 1}, {"schema", schema_digest(k_backend_definition_schema)},
-        {"transports", {"http_json:json.v1", "http_sse:openai_sse.v1", "http_bytes:raw_bytes.v1"}},
-        {"operations", {"chat_completion", "completion", "responses", "audio_generation"}},
-        {"install", {"github_release", "external_only"}},
+        {"transports", {"http_json:json.v1", "http_json:json.v1:get", "http_sse:openai_sse.v1", "http_bytes:raw_bytes.v1"}},
+        {"operations", {"chat_completion", "completion", "responses", "embeddings", "reranking", "audio_generation", "slots", "slot_action", "tokenize"}},
+        {"install", {"github_release", "external_only", "machine_arch"}},
+        {"launch", {"install_phase", "platform_requirement", "custom_arg_defaults"}},
         {"expressions", {"literal", "ref", "concat", "string", "coalesce", "present", "eq", "gt", "all", "any", "not"}},
-        {"artifact", {"default", "active_snapshot", "sentinel_directory:first_existing"}}, {"hooks", json::array()}};
+        {"artifact", {"default", "active_snapshot", "sentinel_directory:first_existing", "check:nonempty"}}, {"hooks", hooks}};
 }
 
 DefinitionValidationResult BackendDefinitionStore::validate(const DefinitionSource& source) const {

@@ -2,37 +2,9 @@
 
 #include "lemon/backends/backend_descriptor.h"
 
-#include <set>
-#include <string>
-
 namespace lemon {
 namespace backends {
 namespace hrx {
-
-inline const std::set<std::string>& reserved_custom_arg_flags() {
-    static const std::set<std::string> kReservedCustomArgFlags = {
-        "-c",
-        "-dev",
-        "-dr",
-        "-hf",
-        "-hff",
-        "-hfr",
-        "-m",
-        "-mu",
-        "--ctx-size",
-        "--device",
-        "--docker-repo",
-        "--hf-file",
-        "--hf-repo",
-        "--jinja",
-        "--metrics",
-        "--model",
-        "--model-url",
-        "--no-jinja",
-        "--port",
-    };
-    return kReservedCustomArgFlags;
-}
 
 inline const BackendDescriptor descriptor = {
     /*recipe*/          "llamacpp-hrx",

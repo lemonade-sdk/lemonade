@@ -4,8 +4,13 @@
 
 namespace lemon::backends {
 
+struct InstalledHook {
+    std::string id, stage;
+};
+
 std::string schema_digest(const std::string& text);
 nlohmann::json installed_definition_features();
+const std::vector<InstalledHook>& installed_hook_manifest();
 
 class BackendDefinitionStore {
 public:

@@ -10,7 +10,8 @@ struct ConfiguredServerServices {
     std::shared_ptr<LaunchServices> launch;
     std::function<std::unique_ptr<ServerProcess>(ProcessOutput, const std::string&)> make_process;
 };
-class ConfiguredServer final : public WrappedServer, public IAudioGenerationServer {
+class ConfiguredServer final : public WrappedServer, public IEmbeddingsServer, public IRerankingServer,
+                               public ISlotsServer, public ITokenizerServer, public IAudioGenerationServer {
 public:
     ConfiguredServer(std::shared_ptr<const ConfiguredBackendEntry> entry, const BackendContext& context,
                      ConfiguredServerServices services = {});
@@ -18,6 +19,11 @@ public:
     json chat_completion(const json& request) override;
     json completion(const json& request) override;
     json responses(const json& request) override;
+    json embeddings(const json& request) override;
+    json reranking(const json& request) override;
+    json get_slots() override;
+    json slots_action(int slot_id, const std::string& action, const json& request_body) override;
+    json tokenize(const json& request_body) override;
     void audio_generations(const json& request, httplib::DataSink& sink) override;
     std::vector<std::string> supported_audio_formats() const override;
     AudioFormatMetadata audio_format_metadata(const std::string& format) const override;
@@ -25,6 +31,8 @@ public:
         httplib::DataSink& sink, bool sse = true, long timeout_seconds = 0, TelemetryCallback telemetry_callback = nullptr) override;
 private:
     const OperationProgram* program(BackendOperation operation, OperationDelivery delivery) const;
+    const OperationProgram& bound(BackendOperation operation) const;
+    json send_json(const MappedRequest& mapped, const json& request);
     json send_completion(BackendOperation operation, const json& request);
     const std::shared_ptr<const ConfiguredBackendEntry> entry_;
     ConfiguredServerServices services_;

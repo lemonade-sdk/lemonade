@@ -9,7 +9,7 @@ namespace lemon::backends {
 enum class TrustedCompatibility { None, LegacyNonChatSse };
 
 struct BuiltinLoadLog {
-    std::function<void(const std::string& category, const std::string& model_name)> loading;
+    std::function<void(const std::string& category, const std::string& model_name, const RecipeOptions& options)> loading;
     std::function<void(const std::string& category, const std::string& phase, const json& values)> prepared;
     std::function<void(const std::string& category, const json& values, const ServerCommand& command)> starting;
 };

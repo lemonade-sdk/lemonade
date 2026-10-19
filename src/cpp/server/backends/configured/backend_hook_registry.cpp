@@ -1,4 +1,6 @@
 #include "lemon/backends/configured/backend_hook_registry.h"
+#include "lemon/backends/llamacpp/llamacpp_request.h"
+#include "lemon/backends/llamacpp/llamacpp_server.h"
 
 #include <set>
 
@@ -15,18 +17,6 @@ BackendHookRegistry::BackendHookRegistry(std::vector<HookRegistration> registrat
         if (static_cast<size_t>(registration.stage) != registration.target.index()) {
             throw std::invalid_argument("Hook stage/signature mismatch");
         }
-        if (!registration.parameter_schema.is_object() || registration.parameter_schema.value("type", "") != "object" ||
-            !registration.parameter_schema.contains("additionalProperties") || registration.parameter_schema["additionalProperties"] != false) {
-            throw std::invalid_argument("Hook parameter schema must be closed");
-        }
-        for (const auto& operation : registration.operations) {
-            const bool json_stage = registration.stage == HookStage::JsonOperation && operation.delivery == OperationDelivery::Buffered;
-            const bool sink_stage = registration.stage == HookStage::SinkOperation && operation.delivery != OperationDelivery::Realtime;
-            if (!(json_stage || sink_stage) || !valid_operation_delivery(operation.operation, operation.delivery) ||
-                !operation.model_types || (operation.model_types & ~k_all_operation_model_types) || operation.provenance != OperationProvenance::Implemented) {
-                throw std::invalid_argument("Invalid hook operation signature");
-            }
-        }
     }
 }
 
@@ -38,6 +28,20 @@ const HookRegistration& BackendHookRegistry::require(std::string_view id, HookSt
         }
     }
     throw std::invalid_argument("Unknown hook");
+}
+
+std::string_view hook_stage_name(HookStage stage) {
+    return stage == HookStage::Artifacts ? "artifacts" : stage == HookStage::Request ? "request" : "response";
+}
+
+const BackendHookRegistry& installed_backend_hooks() {
+    static const BackendHookRegistry registry({
+        {"llamacpp.gguf", HookStage::Artifacts, ArtifactHook(&llamacpp::ops)},
+        {"llamacpp.max_tokens_alias", HookStage::Request, RequestHook(&llamacpp::with_max_tokens_alias)},
+        {"llamacpp.tool_schema_limits", HookStage::Request, RequestHook(&llamacpp::sanitize_tool_schema_limits)},
+        {"llamacpp.client_model", HookStage::Response, ResponseHook(&llamacpp::normalize_response_model)}
+    });
+    return registry;
 }
 
 }

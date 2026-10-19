@@ -1127,11 +1127,13 @@ file(READ "${CMAKE_CURRENT_SOURCE_DIR}/schemas/backend-definition-v1.schema.json
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/thinksound.json" THINKSOUND_DEFINITION)
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/ds4.json" DS4_DEFINITION)
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/ryzenai.json" RYZENAI_DEFINITION)
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/hrx.json" HRX_DEFINITION)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/schemas/backend-definition-v1.schema.json"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/thinksound.json"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/ds4.json"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/ryzenai.json")
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/ryzenai.json"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/hrx.json")
 configure_file(src/cpp/server/backends/configured/backend_definition_resources.h.in
     "${CMAKE_CURRENT_BINARY_DIR}/include/backend_definition_resources.h" @ONLY)
 set(LEMON_BACKEND_DEFINITION_DATA_SOURCES
@@ -2713,10 +2715,10 @@ if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_backend_a
     add_cpp_ci_test(BackendArtifactHelpersTest CI ON COMMAND test_backend_artifact_helpers)
 endif()
 
-if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_hrx_contract.cpp")
-    add_executable(test_hrx_contract test/cpp/test_hrx_contract.cpp)
-    target_link_libraries(test_hrx_contract PRIVATE lemonade-server-core)
-    add_cpp_ci_test(HrxContractTest CI ON COMMAND test_hrx_contract)
+if(BUILD_TESTING)
+    add_executable(test_hrx_oracle test/cpp/test_hrx_oracle.cpp)
+    target_link_libraries(test_hrx_oracle PRIVATE lemonade-server-core)
+    add_cpp_ci_test(HrxOracleTest CI ON COMMAND test_hrx_oracle)
 endif()
 
 # Job engine pure core: the `when`/`branch` expression evaluator + reference

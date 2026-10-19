@@ -85,7 +85,6 @@ struct OperationBinding {
 
 enum class LegacyOperationProfile : uint8_t {
     LlamaCpp,
-    Hrx,
     Ds4,
     RyzenAI,
     Vllm,

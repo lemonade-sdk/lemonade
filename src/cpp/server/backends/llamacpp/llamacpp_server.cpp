@@ -581,26 +581,19 @@ void LlamaCppServer::load(const std::string& model_name,
         command);
 }
 
-json LlamaCppServer::normalize_response_model(json response, const json& request) const {
-    if (response.is_object() && response.contains("model")) {
-        response["model"] = request.value("model", get_model_name());
-    }
-    return response;
-}
-
 json LlamaCppServer::chat_completion(const json& request) {
-    return normalize_response_model(
+    return llamacpp::normalize_response_model(
         forward_request("/v1/chat/completions",
                         llamacpp::sanitize_tool_schema_limits(
-                            JsonUtils::with_legacy_max_tokens_alias(request))),
-        request);
+                            llamacpp::with_max_tokens_alias(request))),
+        request, get_model_name());
 }
 
 json LlamaCppServer::completion(const json& request) {
-    return normalize_response_model(
+    return llamacpp::normalize_response_model(
         forward_request("/v1/completions",
-                        JsonUtils::with_legacy_max_tokens_alias(request)),
-        request);
+                        llamacpp::with_max_tokens_alias(request)),
+        request, get_model_name());
 }
 
 json LlamaCppServer::embeddings(const json& request) {
@@ -624,10 +617,10 @@ json LlamaCppServer::tokenize(const json& request_body) {
 }
 
 json LlamaCppServer::responses(const json& request) {
-    return normalize_response_model(
+    return llamacpp::normalize_response_model(
         forward_request("/v1/responses",
                         llamacpp::sanitize_tool_schema_limits(request)),
-        request);
+        request, get_model_name());
 }
 
 void LlamaCppServer::forward_streaming_request(const std::string& endpoint,
@@ -641,7 +634,7 @@ void LlamaCppServer::forward_streaming_request(const std::string& endpoint,
         json request = json::parse(request_body, nullptr, false);
         if (!request.is_discarded()) {
             if (endpoint == "/v1/chat/completions") {
-                JsonUtils::add_legacy_max_tokens_alias(request);
+                request = llamacpp::with_max_tokens_alias(std::move(request));
             }
             body = llamacpp::sanitize_tool_schema_limits(std::move(request)).dump();
         }

@@ -13,7 +13,7 @@ namespace lemon::backends::ryzenai {
 namespace {
 BuiltinLoadLog load_log() {
     BuiltinLoadLog log;
-    log.loading = [](const std::string& category, const std::string& model_name) {
+    log.loading = [](const std::string& category, const std::string& model_name, const RecipeOptions&) {
         LOG(DEBUG, category.c_str()) << "Loading model: " << model_name << std::endl;
     };
     log.prepared = [](const std::string& category, const std::string& phase, const json& values) {

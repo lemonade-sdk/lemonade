@@ -7,6 +7,7 @@ namespace lemon::backends {
 
 struct TransportAccess {
     std::function<json(const std::string&, const json&, long)> post_json;
+    std::function<json(const std::string&, long)> get_json;
     std::function<void(const std::string&, const std::string&, httplib::DataSink&, bool, long, WrappedServer::TelemetryCallback)> post_stream;
 };
 class BackendTransport {

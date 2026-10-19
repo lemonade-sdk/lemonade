@@ -1,4 +1,5 @@
 #include "lemon/backends/llamacpp/llamacpp_request.h"
+#include "lemon/utils/json_utils.h"
 
 #include <cmath>
 #include <cstdint>
@@ -117,6 +118,21 @@ nlohmann::json sanitize_tool_schema_limits(nlohmann::json request) {
     }
 
     return request;
+}
+
+nlohmann::json with_max_tokens_alias(nlohmann::json request) {
+    utils::JsonUtils::add_legacy_max_tokens_alias(request);
+    return request;
+}
+
+// llama-server echoes the local .gguf path it was launched with (`-m <path>`)
+// in the OpenAI `model` field; the client-facing id keeps absolute paths (and
+// usernames) out of responses.
+nlohmann::json normalize_response_model(nlohmann::json response, const nlohmann::json& request, const std::string& model_name) {
+    if (response.is_object() && response.contains("model")) {
+        response["model"] = request.value("model", model_name);
+    }
+    return response;
 }
 
 }  // namespace llamacpp

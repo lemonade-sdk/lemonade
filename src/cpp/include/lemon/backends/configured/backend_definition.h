@@ -36,7 +36,7 @@ struct FormatMetadata {
 };
 struct OperationProgram {
     OperationDescription description;
-    std::string kind, path, port, codec;
+    std::string kind, method, path, port, codec;
     long timeout_seconds = 0;
     std::vector<std::string> formats;
     std::map<std::string, FormatMetadata> format_metadata;
@@ -44,6 +44,7 @@ struct OperationProgram {
     bool omit_missing = false;
     std::vector<std::string> remove;
     std::vector<std::pair<std::string, Expression>> set;
+    std::vector<std::string> request_hooks, response_hooks;
 };
 struct BackendDefinition {
     std::string id, recipe, digest;

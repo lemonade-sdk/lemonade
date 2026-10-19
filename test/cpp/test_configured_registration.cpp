@@ -1,6 +1,7 @@
 #include "configured_fixture.h"
 #include "lemon/backends/configured/configured_server.h"
 #include "lemon/backends/ds4/ds4_server.h"
+#include "lemon/backends/hrx/hrx_server.h"
 #include "lemon/backends/ryzenai/ryzenai.h"
 #include "lemon/backends/ryzenai/ryzenai_server.h"
 #include "lemon/backends/thinksound/thinksound_server.h"
@@ -43,6 +44,14 @@ uint32_t implemented_capabilities(const ConfiguredBackendEntry& entry) {
     }
     return mask;
 }
+uint32_t mode_capabilities(const ConfiguredBackendEntry& entry) {
+    const std::map<std::string, uint32_t> modes = {{"embeddings", CAP_EMBEDDINGS}, {"reranking", CAP_RERANKING},
+        {"transcription", CAP_TRANSCRIPTION | CAP_STREAMING_TRANSCRIPTION}, {"tts", CAP_TTS}, {"classification", CAP_CLASSIFICATION},
+        {"image", CAP_IMAGE | CAP_UPSCALE}, {"audio-generation", CAP_AUDIO_GENERATION}, {"3d", CAP_MODEL_3D}};
+    uint32_t mask = 0;
+    for (const auto& mode : entry.descriptor.supported_modes) if (modes.count(mode)) mask |= modes.at(mode);
+    return mask;
+}
 struct Registered {
     std::string recipe;
     std::shared_ptr<const ConfiguredBackendEntry> entry;
@@ -58,15 +67,19 @@ int main() {
             {"thinksound", thinksound::configured_entry(), thinksound::spec(), thinksound::ops(), thinksound::capabilities()},
             {"ds4", ds4::configured_entry(), ds4::spec(), ds4::ops(), ds4::capabilities()},
             {"ryzenai-llm", ryzenai::configured_entry(), ryzenai::spec(), ryzenai::ops(), ryzenai::capabilities()},
+            {"llamacpp-hrx", hrx::configured_entry(), hrx::spec(), hrx::ops(), hrx::capabilities()},
         };
         for (const auto& backend : registered) {
             auto server = create_server(backend.recipe, BackendContext{"error"});
             check(dynamic_cast<ConfiguredServer*>(server.get()) != nullptr, backend.recipe + " factory constructs the configured server");
             check(backend.spec == &backend.entry->spec && backend.spec->definition == backend.entry->definition && backend.ops == backend.entry->ops.get(), backend.recipe + " spec/ops are the configured entry's");
             check(spec_for(backend.recipe) == backend.spec && ops_for(backend.recipe) == backend.ops, backend.recipe + " registry lookups return the configured spec/ops");
-            check(backend.capabilities == implemented_capabilities(*backend.entry), backend.recipe + " capability export matches the definition's implemented bindings");
+            check(backend.capabilities == (implemented_capabilities(*backend.entry) & mode_capabilities(*backend.entry)), backend.recipe + " capability export matches the definition's implemented bindings within its declared modes");
         }
-        check(thinksound::capabilities() == CAP_AUDIO_GENERATION && ds4::capabilities() == 0 && ryzenai::capabilities() == 0, "unchanged capability exports");
+        check(thinksound::capabilities() == CAP_AUDIO_GENERATION && ds4::capabilities() == 0 && ryzenai::capabilities() == 0 && hrx::capabilities() == 0, "unchanged capability exports");
+        check(thinksound::capabilities() == implemented_capabilities(*thinksound::configured_entry()) && ds4::capabilities() == implemented_capabilities(*ds4::configured_entry()) &&
+              ryzenai::capabilities() == implemented_capabilities(*ryzenai::configured_entry()), "single-mode engines export exactly their implemented bindings");
+        check(implemented_capabilities(*hrx::configured_entry()) == (CAP_EMBEDDINGS | CAP_RERANKING), "HRX implements embeddings and reranking that its chat-only mode does not advertise");
         check(thinksound::spec()->recipe == "thinksound" && thinksound::spec()->binary == "ts-server" && ds4::spec()->recipe == "ds4" && ds4::spec()->binary == "ds4-server", "alternating registration independent identities");
         check(ryzenai::spec()->recipe == "ryzenai-server" && ryzenai::spec()->binary == ryzenai::descriptor.binary, "RyzenAI split install recipe and platform binary");
         check(thinksound::configured_entry()->compatibility == TrustedCompatibility::LegacyNonChatSse && !thinksound::configured_entry()->launch_compatibility.device_on_backend_selection && !thinksound::configured_entry()->launch_compatibility.posix_executable_loader_path && !thinksound::configured_entry()->launch_compatibility.load_log, "ThinkSound carries only the legacy non-chat SSE attachment");

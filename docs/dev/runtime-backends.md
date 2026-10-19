@@ -18,7 +18,9 @@ control fields, and global configuration keys are reserved. External definitions
 receive no compiled compatibility attachment or named CLI flags.
 
 Use `schemas/backend-definition-v1.schema.json` as the structural contract. Only
-installed primitives are accepted; definitions do not install hooks or code.
+installed primitives are accepted; definitions do not install hooks or code. They
+can select compiled hooks that are already installed (see
+[Installed hooks](#installed-hooks)).
 External scalar options retain their JSON types, enum/range constraints and
 `unset_values` (default `[null]`). Values such as `false`, `0`, `""`, and `-1` are
 preserved unless declared unset. Existing REST null clearing semantics apply.
@@ -34,15 +36,16 @@ administrator inputs; schema discovery does not install or replace them.
 
 ## Built-in configured backends
 
-ThinkSound (`thinksound`), DS4 (`ds4`) and RyzenAI (`ryzenai-llm`) have no
-engine-specific server class. They run only through `ConfiguredServer`, from the
+ThinkSound (`thinksound`), DS4 (`ds4`), RyzenAI (`ryzenai-llm`) and HRX
+(`llamacpp-hrx`) have no engine-specific server class. They run only through `ConfiguredServer`, from the
 definitions embedded at build time from `src/cpp/resources/backends/<stem>.json`.
 There is no environment switch and no fallback implementation; the former
 `LEMONADE_THINKSOUND_CONFIGURED`, `LEMONADE_DS4_CONFIGURED` and
 `LEMONADE_RYZENAI_CONFIGURED` variables are ignored. Each definition is the single
 source of truth for its launch, install, artifact and operation behavior, and its
 `rationale` records explain the non-obvious choices (DS4 SSD streaming and
-`/v1/models` readiness, the ThinkSound companion files, RyzenAI sentinel order).
+`/v1/models` readiness, the ThinkSound companion files, RyzenAI sentinel order,
+the HRX host requirement and `--parallel 1` default).
 An embedded definition that fails validation stops registration at startup.
 
 `src/cpp/server/backends/<stem>/<stem>_server.cpp` is only the registration
@@ -56,6 +59,7 @@ external definitions can never request:
 | `thinksound` | `TrustedCompatibility::LegacyNonChatSse` | Keeps the legacy-forwarding streaming bindings for chat completion, completion and responses next to buffered audio generation. |
 | `ds4` | `BuiltinLaunchCompatibility{DEVICE_GPU, true, load_log}` | Sets the GPU device once the backend is selected, before installation, and prepends the bundled executable directory to `LD_LIBRARY_PATH` on every host. Its load log drops the generic loading line, logs custom arguments at DEBUG and logs the executable and model path in the INFO startup line. |
 | `ryzenai-llm` | `BuiltinLaunchCompatibility{{}, false, load_log}` | Its load log keeps the loading line, the resolved executable, the model path and the quoted command at DEBUG, with no INFO lines. |
+| `llamacpp-hrx` | `BuiltinLaunchCompatibility{{}, false, load_log}` | Its load log keeps the INFO loading line, adds the DEBUG per-model settings line and has no startup line. |
 
 A `BuiltinLoadLog` replaces `ConfiguredServer`'s generic INFO `Loading model:` and
 `Starting <program> on port <port>` lines with the engine's own messages; its
@@ -68,19 +72,59 @@ The compiled descriptors in `include/lemon/backends/<stem>/<stem>.h` remain: the
 carry the recipe, option, CLI flag and support metadata linked into both
 `lemonade` and `lemond`. The oracle tests compare every configured descriptor
 field with its compiled descriptor. `capabilities()` in `<stem>_server.h` is a
-literal (`CAP_AUDIO_GENERATION` for ThinkSound, `0` for DS4 and RyzenAI) because
+literal (`CAP_AUDIO_GENERATION` for ThinkSound, `0` for DS4, RyzenAI and HRX) because
 the header-only mode contract test cannot read a definition, and every engine
 shares the single `ConfiguredServer` type, which inherits `IAudioGenerationServer`
 whether or not its definition binds audio generation, so a mask derived from the
 type would claim audio generation for DS4 and RyzenAI. `ConfiguredRegistrationTest`
-fails if a literal disagrees with the definition's implemented operation bindings.
+fails if a literal disagrees with the definition's implemented operation bindings
+inside the recipe's declared deployment modes. HRX binds llama-server's
+embeddings, reranking, slots and tokenize endpoints for every model mode, as its
+former llama.cpp subclass did, but declares only `chat`, so its export stays `0`.
 
 The CPU oracle tests (`test_thinksound_oracle`, `test_ds4_oracle`,
-`test_ryzenai_oracle`, `test_configured_execution`,
+`test_ryzenai_oracle`, `test_hrx_oracle`, `test_configured_execution`,
 `test_configured_llm_execution`) drive the registered entries through fake
 effects, fake processes and loopback HTTP fixtures, against hand-authored
 expectations for argv, environment order, readiness, error envelopes,
 operation bindings and install assets.
+
+## Installed hooks
+
+A hook is compiled behavior that a definition selects by ID. The validator, which
+the CLI also links, accepts only the IDs and stages listed in
+`installed_hook_manifest()`; `installed_backend_hooks()` binds the same IDs to
+typed functions in `lemond`, and `BackendDefinitionTest` fails if the two lists
+differ. Every installed hook takes empty `params`. The feature manifest lists
+them, so installing a hook changes the catalog's feature-manifest ID.
+
+| ID | Stage | Selected by | Effect |
+| --- | --- | --- | --- |
+| `llamacpp.gguf` | `artifacts` | an artifact with `"strategy": "hook"` (role `main` only) | Delegates metadata probing, checkpoint resolution, import lookup and checkpoint validation to llama.cpp's GGUF rules. |
+| `llamacpp.max_tokens_alias` | `request` | `operations[].request.hooks` | Copies `max_completion_tokens` to an absent `max_tokens`. |
+| `llamacpp.tool_schema_limits` | `request` | `operations[].request.hooks` | Removes tool-schema string and array bounds that llama.cpp's grammar cannot repeat. |
+| `llamacpp.client_model` | `response` | `operations[].response.hooks` (JSON transports only) | Replaces an echoed `model` with the request's model, or the loaded model name. |
+
+Request hooks run in order after `remove` and `set`. A streaming operation with
+request hooks forwards a body that is not JSON unchanged; otherwise it forwards
+the re-serialized result. llama.cpp's own server class calls the same functions.
+
+Other launch primitives used by built-ins:
+
+- `prepare_order` may contain a separate `install` phase for a managed program.
+  It must follow `backend` and precede both `program` and `ports`; the `program`
+  phase then only looks up the installed executable. Without it, `program` must
+  precede `ports`.
+- `launch.requires` rejects other operating systems or machine architectures
+  with its literal `error` before any logging or installation.
+- `custom_args.defaults` appends arguments, as llama.cpp's runtime defaults do,
+  unless the user's arguments already name the flag or one of its aliases.
+- An artifact with `"check": "nonempty"` accepts any nonempty resolved path
+  without an existence probe.
+- Install cases may select on `machine_arch`; a miss reports
+  `install.errors.machine_arch`.
+- JSON transports also serve `embeddings`, `reranking`, `tokenize`, `slots`
+  (`GET`) and `slot_action`, whose path substitutes `{slot_id}` and `{action}`.
 
 ## Metadata and validation API
 

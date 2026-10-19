@@ -186,11 +186,12 @@ void check_llama_dispatch(FakeHttpBackend& upstream) {
     check(upstream.last_path() == "/slots/2", "slot action retains POST dispatch");
     operation_adapter<ITokenizerServer>(server, Op::Tokenize, Delivery::Buffered, ModelType::LLM)->tokenize(request);
     check(upstream.last_path() == "/tokenize", "tokenize retains POST dispatch");
-    LocalServer<backends::HrxServer> hrx(upstream.port());
-    operation_adapter<IEmbeddingsServer>(hrx, Op::Embeddings, Delivery::Buffered, ModelType::LLM)->embeddings(request);
-    check(upstream.last_path() == "/v1/embeddings", "HRX inherits callable embeddings despite advertised mask");
-    operation_adapter<IRerankingServer>(hrx, Op::Reranking, Delivery::Buffered, ModelType::LLM)->reranking(request);
-    check(upstream.last_path() == "/v1/rerank", "HRX inherits callable reranking despite advertised mask");
+    auto hrx = backends::hrx::create(backends::BackendContext{"error"});
+    LocalServer<backends::LlamaCppServer>::attach_transport(*hrx, upstream.port());
+    operation_adapter<IEmbeddingsServer>(*hrx, Op::Embeddings, Delivery::Buffered, ModelType::LLM)->embeddings(request);
+    check(upstream.last_path() == "/v1/embeddings", "HRX keeps callable embeddings despite advertised mask");
+    operation_adapter<IRerankingServer>(*hrx, Op::Reranking, Delivery::Buffered, ModelType::LLM)->reranking(request);
+    check(upstream.last_path() == "/v1/rerank", "HRX keeps callable reranking despite advertised mask");
 }
 
 json unsupported(const std::string& message, bool code = false) {

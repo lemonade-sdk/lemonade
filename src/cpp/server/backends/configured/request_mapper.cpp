@@ -1,3 +1,4 @@
+#include "lemon/backends/configured/backend_hook_registry.h"
 #include "lemon/backends/configured/request_mapper.h"
 
 namespace lemon::backends {
@@ -73,8 +74,8 @@ MappedRequest RequestMapper::map(const OperationProgram& operation, const Mappin
                                 const json& request, std::optional<std::string_view> original_body) const {
     json values = context.values;
     values["request"] = request;
-    MappedRequest result{&operation, operation.identity ? request : json::object(), std::nullopt};
-    if (operation.identity && operation.remove.empty() && operation.set.empty() && original_body) {
+    MappedRequest result{&operation, operation.identity ? request : json::object(), std::nullopt, operation.path};
+    if (operation.identity && operation.remove.empty() && operation.set.empty() && operation.request_hooks.empty() && original_body) {
         result.original_body = std::string(*original_body);
     }
     for (const auto& destination : operation.remove) {
@@ -92,6 +93,7 @@ MappedRequest RequestMapper::map(const OperationProgram& operation, const Mappin
         if (!value) throw std::invalid_argument("Missing mapping value at " + destination);
         result.body[json::json_pointer(destination)] = std::move(*value);
     }
+    for (const auto& id : operation.request_hooks) result.body = installed_backend_hooks().target<RequestHook>(id, HookStage::Request)(std::move(result.body));
     return result;
 }
 

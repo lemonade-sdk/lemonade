@@ -1,9 +1,9 @@
-#include "backend_definition_resources.h"
 #include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/configured/backend_catalog.h"
 #include "lemon/recipe_options.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
+#include "lemon/wrapped_server.h"
 
 #include <algorithm>
 #include <filesystem>
@@ -84,11 +84,6 @@ BackendCatalog::BackendCatalog(const std::vector<DefinitionSource>& sources)
     const auto defaults = utils::JsonUtils::load_from_file(utils::get_resource_path("resources/defaults.json"));
     for (const auto& [key, value] : defaults.items()) { sections.insert(key); option_names.insert(key); }
     for (const auto& [key, value] : RecipeOptions::common_option_defaults().items()) option_names.insert(key);
-    for (const auto* text : {k_thinksound_definition, k_ds4_definition, k_ryzenai_definition}) {
-        auto result = BackendDefinitionStore().validate({"embedded", text, DefinitionOrigin::Builtin});
-        if (!result.definition) throw DefinitionValidationError(std::move(result.diagnostics));
-        ids.insert(result.definition->id);
-    }
     json arms = json::array();
     schema_ = {{"schema_version", 1}, {"control_version", 1}, {"definition_schema_version", 1},
         {"feature_manifest_id", schema_digest(installed_definition_features().dump())}, {"recipes", json::array()}};
@@ -102,8 +97,9 @@ BackendCatalog::BackendCatalog(const std::vector<DefinitionSource>& sources)
         arms.push_back({descriptor->recipe, definition ? "D" : "A"});
         auto row = descriptor_row(*descriptor, definition, false);
         if (definition) {
-            const auto trusted = descriptor->recipe == "thinksound" ? TrustedCompatibility::LegacyNonChatSse : TrustedCompatibility::None;
-            for (const auto& binding : configured_operation_bindings(*definition, trusted)) row["operations"].push_back(operation_row(binding.description));
+            ids.insert(definition->id);
+            const auto server = registration.create(BackendContext{"error"});
+            for (const auto& description : server->operation_bindings()->descriptions()) row["operations"].push_back(operation_row(description));
         }
         schema_["recipes"].push_back(std::move(row));
     }

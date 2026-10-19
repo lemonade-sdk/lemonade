@@ -2,6 +2,7 @@
 #include "lemon/backends/configured/launch_planner.h"
 #include "lemon/utils/custom_args.h"
 #include "lemon/utils/http_client.h"
+#include "lemon/utils/recipe_arg_resolver.h"
 
 #include <algorithm>
 #include <filesystem>
@@ -44,6 +45,17 @@ std::vector<std::pair<std::string, std::string>> EffectLaunchServices::environme
 }
 long EffectLaunchServices::default_timeout_seconds() const { return utils::HttpClient::get_default_timeout(); }
 
+void LaunchPlanner::require_platform(const BackendDefinition& definition, const LaunchServices& services) const {
+    const auto& launch = definition.records.at("launch");
+    if (!launch.contains("requires")) return;
+    const auto& required = launch["requires"];
+    const auto platform = services.platform();
+    auto allowed = [&](const char* axis, const std::string& value) {
+        return !required.contains(axis) || std::find(required[axis].begin(), required[axis].end(), value) != required[axis].end();
+    };
+    if (!allowed("os", platform.os) || !allowed("machine_arch", platform.machine_arch)) throw std::runtime_error(required["error"].get<std::string>());
+}
+
 ResolvedLaunchInputs LaunchPlanner::prepare(const BackendDefinition& definition, const BackendSpec& spec,
                                            const LoadContext& context, LaunchServices& services) const {
     const auto& launch = definition.records.at("launch");
@@ -73,7 +85,9 @@ ResolvedLaunchInputs LaunchPlanner::prepare(const BackendDefinition& definition,
     if (metadata.at("log_level_policy") == "debug_flag" && level != "debug") level = "info";
     values["launch"]["log_level"] = level;
     std::string backend;
-    for (const auto& phase : launch.at("prepare_order")) {
+    const auto& order = launch.at("prepare_order");
+    const bool install_phase = std::find(order.begin(), order.end(), "install") != order.end();
+    for (const auto& phase : order) {
         if (phase == "artifacts") {
             const auto artifacts = definition.records.value("artifacts", json::object());
             for (const auto& [name, artifact] : artifacts.items()) {
@@ -86,7 +100,7 @@ ResolvedLaunchInputs LaunchPlanner::prepare(const BackendDefinition& definition,
                         if (!raw.empty() && std::filesystem::path(raw).is_absolute() && services.exists(raw)) path = raw;
                     }
                     valid = !path.empty() && services.exists(path);
-                } else valid = !path.empty() && services.exists(path);
+                } else valid = !path.empty() && (artifact.value("check", "exists") == "nonempty" || services.exists(path));
                 values["artifacts"][name] = path;
                 json::json_pointer pointer("/artifacts");
                 pointer /= name; pointer /= "missing_error";
@@ -105,6 +119,8 @@ ResolvedLaunchInputs LaunchPlanner::prepare(const BackendDefinition& definition,
             }
             values["launch"]["backend"] = backend;
             if (context.backend_selected) context.backend_selected();
+        } else if (phase == "install") {
+            services.install_backend(definition.recipe, backend);
         } else if (phase == "program") {
             const BackendBinaryServices binary = {
                 [&](const auto&, const auto&) { return services.external_binary(spec, backend); },
@@ -116,7 +132,10 @@ ResolvedLaunchInputs LaunchPlanner::prepare(const BackendDefinition& definition,
                 inputs.executable = services.external_binary(spec, backend);
                 if (inputs.executable.empty() || !services.exists(inputs.executable)) throw std::runtime_error("External backend executable is required");
             } else if (launch["program"]["source"] == "external_or_managed") inputs.executable = resolve_external_or_managed_binary(spec, backend, binary);
-            else { services.install_backend(definition.recipe, backend); inputs.executable = services.managed_binary(spec, backend); }
+            else {
+                if (!install_phase) services.install_backend(definition.recipe, backend);
+                inputs.executable = services.managed_binary(spec, backend);
+            }
             values["launch"]["executable"] = inputs.executable;
             if (launch["program"].contains("missing_error") && inputs.executable.empty()) throw std::runtime_error(definition.required_value("/launch/program/missing_error", values).get<std::string>());
         } else {
@@ -132,11 +151,16 @@ ResolvedLaunchInputs LaunchPlanner::prepare(const BackendDefinition& definition,
         const std::string name = option["name"];
         if (!values["options"].contains(name)) values["options"][name] = context.options.has_option(name) ? context.options.get_option(name) : option["default_value"];
     }
-    if (launch.contains("custom_args") && !custom_text.empty()) {
+    if (launch.contains("custom_args")) {
         const auto& custom = launch["custom_args"];
-        const auto error = utils::validate_custom_args(custom_text, custom["reserved"].get<std::set<std::string>>());
-        if (!error.empty()) throw std::invalid_argument(custom["error_prefix"].get<std::string>() + error);
-        inputs.custom_arguments = utils::parse_custom_args(custom_text);
+        if (!custom_text.empty()) {
+            const auto error = utils::validate_custom_args(custom_text, custom["reserved"].get<std::set<std::string>>());
+            if (!error.empty()) throw std::invalid_argument(custom["error_prefix"].get<std::string>() + error);
+        }
+        std::vector<utils::RuntimeArgDefault> defaults;
+        for (const auto& item : custom.value("defaults", json::array())) defaults.push_back({item["args"], item["flag"], item.value("aliases", std::vector<std::string>{})});
+        const auto resolved = defaults.empty() ? custom_text : utils::append_runtime_arg_defaults(custom_text, defaults);
+        if (!resolved.empty()) inputs.custom_arguments = utils::parse_custom_args(resolved);
     }
     const auto platform = services.platform();
     values["platform"] = {{"os", platform.os}, {"machine_arch", platform.machine_arch}, {"rocm_arch", platform.rocm_arch}};

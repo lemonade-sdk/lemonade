@@ -11,6 +11,7 @@ struct MappedRequest {
     const OperationProgram* operation;
     json body;
     std::optional<std::string> original_body;
+    std::string path;
 };
 class RequestMapper {
 public:

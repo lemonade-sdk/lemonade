@@ -1,3 +1,4 @@
+#include "lemon/backends/configured/backend_hook_registry.h"
 #include "lemon/backends/configured/configured_backend_ops.h"
 #include "lemon/backends/hf_cache_util.h"
 #include "lemon/utils/path_utils.h"
@@ -20,7 +21,23 @@ std::string first_sentinel_directory(const std::string& root, const std::string&
 }
 }
 
+ConfiguredBackendOps::ConfiguredBackendOps(std::shared_ptr<const BackendDefinition> definition) : definition_(std::move(definition)) {
+    const auto artifacts = definition_->records.value("artifacts", json::object());
+    for (const auto& [name, artifact] : artifacts.items()) {
+        if (artifact.contains("hook")) artifact_hook_ = installed_backend_hooks().target<ArtifactHook>(artifact["hook"]["id"].get<std::string>(), HookStage::Artifacts)();
+    }
+}
+void ConfiguredBackendOps::populate_metadata(ModelInfo& info, const BackendOpsContext& context) const {
+    if (artifact_hook_) artifact_hook_->populate_metadata(info, context);
+}
+std::string ConfiguredBackendOps::validate_registration_checkpoint(const std::string& checkpoint) const {
+    return artifact_hook_ ? artifact_hook_->validate_registration_checkpoint(checkpoint) : "";
+}
+std::string ConfiguredBackendOps::validate_checkpoint_file(const std::string& resolved_path) const {
+    return artifact_hook_ ? artifact_hook_->validate_checkpoint_file(resolved_path) : "";
+}
 std::string ConfiguredBackendOps::resolve_checkpoint_path(const ModelInfo& info, const CheckpointResolveContext& context) const {
+    if (artifact_hook_) return artifact_hook_->resolve_checkpoint_path(info, context);
     const auto artifacts = definition_->records.value("artifacts", json::object());
     const json* selected = nullptr;
     for (const auto& [name, artifact] : artifacts.items()) {
@@ -37,6 +54,7 @@ std::string ConfiguredBackendOps::resolve_checkpoint_path(const ModelInfo& info,
     return BackendOps::resolve_checkpoint_path(info, context);
 }
 std::string ConfiguredBackendOps::find_imported_checkpoint(const std::string& import_directory) const {
+    if (artifact_hook_) return artifact_hook_->find_imported_checkpoint(import_directory);
     const auto artifacts = definition_->records.value("artifacts", json::object());
     for (const auto& [name, artifact] : artifacts.items()) {
         if (artifact["role"] == "main" && artifact.value("import_resolution", "default") == "sentinel_directory") {
@@ -80,6 +98,7 @@ InstallParams ConfiguredBackendOps::install_params(const InstallContext& context
     };
     filter("backend", context.backend, "backend");
     filter("os", context.platform.os, "os");
+    filter("machine_arch", context.platform.machine_arch, "machine_arch");
     if (context.platform.rocm_arch.empty() && std::all_of(eligible.begin(), eligible.end(), [&](size_t i) { return install["cases"][i].contains("arch"); })) {
         if (install.contains("errors") && install["errors"].contains("missing_arch")) throw std::runtime_error(definition_->required_value("/install/errors/missing_arch", values).get<std::string>());
     }

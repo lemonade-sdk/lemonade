@@ -629,6 +629,15 @@
             "type": "string"
           }
         },
+        "machine_arch": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "x86_64",
+              "aarch64"
+            ]
+          }
+        },
         "repo": {
           "type": "string",
           "minLength": 1
@@ -703,6 +712,9 @@
             "arch": {
               "$ref": "#/$defs/expression"
             },
+            "machine_arch": {
+              "$ref": "#/$defs/expression"
+            },
             "no_case": {
               "$ref": "#/$defs/expression"
             }
@@ -747,6 +759,12 @@
         "absolute_checkpoint_fallback": {
           "type": "boolean"
         },
+        "check": {
+          "enum": [
+            "exists",
+            "nonempty"
+          ]
+        },
         "sentinel": {
           "type": "string"
         },
@@ -784,13 +802,45 @@
             "enum": [
               "artifacts",
               "backend",
+              "install",
               "program",
               "ports"
             ]
           },
           "minItems": 4,
-          "maxItems": 4,
+          "maxItems": 5,
           "uniqueItems": true
+        },
+        "requires": {
+          "type": "object",
+          "properties": {
+            "os": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "windows",
+                  "linux",
+                  "macos"
+                ]
+              }
+            },
+            "machine_arch": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "x86_64",
+                  "aarch64"
+                ]
+              }
+            },
+            "error": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "error"
+          ],
+          "additionalProperties": false
         },
         "backend": {
           "oneOf": [
@@ -927,6 +977,33 @@
             },
             "error_prefix": {
               "type": "string"
+            },
+            "defaults": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "flag": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "aliases": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "args",
+                  "flag"
+                ],
+                "additionalProperties": false
+              }
             }
           },
           "required": [
@@ -1138,6 +1215,12 @@
         },
         "omit_missing": {
           "type": "boolean"
+        },
+        "hooks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/hook"
+          }
         }
       },
       "required": [
@@ -1197,6 +1280,19 @@
         },
         "request": {
           "$ref": "#/$defs/request"
+        },
+        "response": {
+          "type": "object",
+          "properties": {
+            "hooks": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/hook"
+              }
+            }
+          },
+          "required": [],
+          "additionalProperties": false
         }
       },
       "required": [

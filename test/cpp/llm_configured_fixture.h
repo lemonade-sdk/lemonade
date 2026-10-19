@@ -142,7 +142,7 @@ inline void bindings(WrappedServer& server, Fixture& fixture) {
     reader.join();
     check(correct && count == 0 && fixture.events == events, "all nine modes full matrix inert allocation-free support");
 }
-inline void descriptor(const BackendDescriptor& value, const BackendDescriptor& compiled) {
+inline void descriptor(const BackendDescriptor& value, const BackendDescriptor& compiled, bool gated = false) {
     check(value.recipe == compiled.recipe && value.display_name == compiled.display_name && value.binary == compiled.binary && value.config_section == compiled.config_section, "compiled descriptor identities");
     check(value.default_device == compiled.default_device && value.slot_policy == compiled.slot_policy && value.selectable_backend == compiled.selectable_backend && value.uses_ctx_size == compiled.uses_ctx_size && value.dynamic_models == compiled.dynamic_models, "compiled descriptor policy");
     check(value.supported_modes == compiled.supported_modes && value.required_checkpoints == compiled.required_checkpoints && value.default_capabilities == compiled.default_capabilities && value.web_display_name == compiled.web_display_name && value.rocm_channels == compiled.rocm_channels, "compiled descriptor lists");
@@ -154,7 +154,9 @@ inline void descriptor(const BackendDescriptor& value, const BackendDescriptor& 
     }
     for (size_t i = 0; i < value.support.size(); ++i) {
         const auto& a = value.support[i]; const auto& b = compiled.support[i];
-        check(a.backend == b.backend && a.tier == b.tier && a.format == b.format && a.supported_os == b.supported_os && a.devices == b.devices && a.device_summary == b.device_summary && a.arch_gates.empty() && b.arch_gates.empty(), "every compiled support field");
+        bool gates = a.arch_gates.size() == b.arch_gates.size() && (gated ? !a.arch_gates.empty() : a.arch_gates.empty());
+        for (const auto& [arch, gate] : a.arch_gates) gates = gates && b.arch_gates.count(arch) && b.arch_gates.at(arch).os == gate.os && b.arch_gates.at(arch).channels == gate.channels;
+        check(a.backend == b.backend && a.tier == b.tier && a.format == b.format && a.supported_os == b.supported_os && a.devices == b.devices && a.device_summary == b.device_summary && gates, "every compiled support field");
     }
 }
 }

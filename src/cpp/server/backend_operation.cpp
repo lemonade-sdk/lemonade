@@ -267,7 +267,6 @@ OperationBindings legacy_operation_bindings(LegacyOperationProfile profile, Oper
     }
     switch (profile) {
         case LegacyOperationProfile::LlamaCpp:
-        case LegacyOperationProfile::Hrx:
             for (const auto id : {"embeddings", "reranking", "slots", "slots.action", "tokenize"}) add(id);
             break;
         case LegacyOperationProfile::FastFlowLM:

@@ -65,6 +65,7 @@ private:
 };
 class LaunchPlanner {
 public:
+    void require_platform(const BackendDefinition& definition, const LaunchServices& services) const;
     ResolvedLaunchInputs prepare(const BackendDefinition& definition, const BackendSpec& spec,
                                 const LoadContext& context, LaunchServices& services) const;
     LaunchPlan plan(const BackendDefinition& definition, const ResolvedLaunchInputs& inputs) const;
