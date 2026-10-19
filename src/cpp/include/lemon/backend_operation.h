@@ -90,15 +90,12 @@ struct OperationHandlerIdentity {
 
 enum class LegacyOperationProfile : uint8_t {
     LlamaCpp,
-    Ds4,
-    RyzenAI,
     Vllm,
     Cloud,
     FastFlowLM,
     Whisper,
     StableDiffusion,
     TheNoise,
-    ThinkSound,
     AceStep,
     OpenMoss,
     Count

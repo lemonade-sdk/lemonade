@@ -253,7 +253,7 @@ void check_witnesses() {
     const auto tts_mode = operation_model_type_mask(ModelType::TTS);
     WitnessServer tts({{{Op::TextToSpeech, Delivery::Buffered, tts_mode, OperationProvenance::Implemented}, "speech.buffered", "media"},
                        {{Op::TextToSpeech, Delivery::Streaming, tts_mode, OperationProvenance::Implemented}, "speech.streaming", "media"}});
-    WitnessServer audio(LegacyOperationProfile::ThinkSound);
+    WitnessServer audio(LegacyOperationProfile::AceStep);
     WitnessServer image(LegacyOperationProfile::StableDiffusion);
     WitnessServer mesh({{{Op::Model3DGeneration, Delivery::Buffered, k_all_operation_model_types, OperationProvenance::Implemented}, "mesh", "media"}});
     WitnessServer classification({{{Op::Classification, Delivery::Buffered, k_all_operation_model_types, OperationProvenance::Implemented}, "classification", "json"}});

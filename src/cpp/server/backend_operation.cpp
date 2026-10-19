@@ -299,7 +299,6 @@ OperationBindings legacy_operation_bindings(LegacyOperationProfile profile, Oper
             rejections.push_back({BackendOperation::ImageVariations, OperationDelivery::Buffered,
                                   k_all_operation_model_types, OperationProvenance::Implemented});
             break;
-        case LegacyOperationProfile::ThinkSound:
         case LegacyOperationProfile::AceStep: add("audio", audio); break;
         case LegacyOperationProfile::OpenMoss:
             add("speech.buffered", tts);
