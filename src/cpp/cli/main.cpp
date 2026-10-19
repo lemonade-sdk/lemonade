@@ -548,11 +548,8 @@ static void print_setup_steps(const std::string& recipe, const std::string& back
     std::cerr << "Then run this command again." << std::endl;
 }
 
-// Checks a container backend's setup before a command installs it or loads a
-// model on it, so nothing is downloaded while setup is incomplete. When
-// enabling container backends is the only step left, asks for it and enables
-// it, so the command can finish; otherwise prints every missing step. Returns
-// false when the command should stop.
+// Runs before anything is downloaded. Asks for consent only when it is the
+// last step left, so a yes lets the command finish. False means stop.
 static bool ready_container_backend(lemonade::LemonadeClient& client, const std::string& recipe,
                                     std::string backend, bool yes) {
     nlohmann::json status;

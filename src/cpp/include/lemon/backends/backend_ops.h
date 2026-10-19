@@ -166,10 +166,8 @@ public:
 // Shared default ops instance for backends that override nothing.
 const BackendOps* default_backend_ops();
 
-// Every setup step the container backend `recipe:backend` still needs, or
-// nullopt when it is ready: the host checks and enable_containers together,
-// then, once those pass, `podman info` and the SELinux check when its devices
-// include /dev/kfd.
+// nullopt when `recipe:backend` is ready. `podman info` and SELinux run only
+// once the user has opted in.
 std::optional<utils::SetupReport> container_setup_failure(const std::string& recipe,
                                                           const std::string& backend);
 
