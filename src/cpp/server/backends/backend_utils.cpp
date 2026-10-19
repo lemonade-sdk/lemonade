@@ -343,6 +343,27 @@ namespace lemon::backends {
         }
 
         RuntimeConfig::validate_bin_path(section, bin_key, bin_value);
+
+        // A directory (the documented form, e.g. /home/me/llama.cpp/build/bin)
+        // names where the backend binary lives, but callers exec the returned
+        // path, so resolve the binary inside it. Only the top level is checked
+        // so a broad directory is never walked recursively.
+        std::error_code ec;
+        const std::filesystem::path dir = utils::path_from_utf8(bin_value);
+        if (std::filesystem::is_directory(dir, ec)) {
+            const BackendSpec* spec = try_get_spec_for_recipe(recipe);
+            if (spec && !spec->binary.empty()) {
+                std::vector<std::string> names = {spec->binary};
+#ifdef _WIN32
+                names.push_back(spec->binary + ".exe");
+#endif
+                for (const auto& name : names) {
+                    if (std::filesystem::is_regular_file(dir / name, ec)) {
+                        return utils::path_to_utf8(dir / name);
+                    }
+                }
+            }
+        }
         return bin_value;
     }
 
