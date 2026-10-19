@@ -164,6 +164,8 @@ export function useDashboardData(isActive = true): DashboardData {
   const countersRef = useRef<SessionCounters>(initCounters());
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const failureCountRef = useRef(0);
+  const pollGenerationRef = useRef(0);
+  const lastAppliedPollGenerationRef = useRef(0);
   const previousRequestCountRef = useRef<number | null>(null);
   const slotWindowRef = useRef(new Map<number, { ts: number; decoded: number; prompted: number }[]>());
   const targetAggRef = useRef({
@@ -244,6 +246,7 @@ export function useDashboardData(isActive = true): DashboardData {
   /* ── Polling ─────────────────────────────────────────────── */
 
   const poll = useCallback(async () => {
+    const pollGeneration = ++pollGenerationRef.current;
     try {
       let healthError: unknown = null;
       const [h, st, ss] = await Promise.all([
@@ -252,12 +255,8 @@ export function useDashboardData(isActive = true): DashboardData {
         api.systemStats().catch(() => null),
       ]);
 
+      if (pollGeneration < lastAppliedPollGenerationRef.current) return;
       if (!h) throw healthError || new Error(api.lastConnectionError || 'Server health endpoint is unavailable.');
-      failureCountRef.current = 0;
-
-      setHealth(h);
-      if (st) setStats(st);
-      if (ss) setSysStats(ss);
 
       let slotData: SlotData[] = [];
       const loaded = Array.isArray(h.all_models_loaded) ? h.all_models_loaded : [];
@@ -271,23 +270,30 @@ export function useDashboardData(isActive = true): DashboardData {
       const supportsSlots = Boolean(
         activeModel && (activeModel.recipe === 'llamacpp' || activeModel.recipe === 'vllm'),
       );
+      let nextSlotsUnsupported = Boolean(activeModel);
+      let nextSlotStatus = activeModel
+        ? 'Current backend does not expose llama.cpp/vLLM slot telemetry.'
+        : 'Load a llama.cpp or vLLM chat model to see slot telemetry.';
       if (supportsSlots) {
         try {
           const response = await api.slots();
           slotData = Array.isArray(response) ? response : [];
-          setSlotsUnsupported(false);
-          setSlotStatus(slotData.length > 0 ? 'Slot telemetry is live.' : 'Compatible backend loaded, but no slot activity is currently reported.');
+          nextSlotsUnsupported = false;
+          nextSlotStatus = slotData.length > 0 ? 'Slot telemetry is live.' : 'Compatible backend loaded, but no slot activity is currently reported.';
         } catch (err) {
           slotData = [];
-          setSlotsUnsupported(true);
-          setSlotStatus(`Slot telemetry unavailable: ${friendlyErrorMessage(err)}`);
+          nextSlotsUnsupported = true;
+          nextSlotStatus = `Slot telemetry unavailable: ${friendlyErrorMessage(err)}`;
         }
-      } else {
-        setSlotsUnsupported(Boolean(activeModel));
-        setSlotStatus(activeModel
-          ? 'Current backend does not expose llama.cpp/vLLM slot telemetry.'
-          : 'Load a llama.cpp or vLLM chat model to see slot telemetry.');
       }
+      if (pollGeneration < lastAppliedPollGenerationRef.current) return;
+      lastAppliedPollGenerationRef.current = pollGeneration;
+      failureCountRef.current = 0;
+      setHealth(h);
+      if (st) setStats(st);
+      if (ss) setSysStats(ss);
+      setSlotsUnsupported(nextSlotsUnsupported);
+      setSlotStatus(nextSlotStatus);
       setSlots(slotData);
 
       const { aggTps, aggPromptTps, perSlotLive } = computeAggregates(slotData);
@@ -357,6 +363,8 @@ export function useDashboardData(isActive = true): DashboardData {
 
       setLastError(null);
     } catch (err) {
+      if (pollGeneration < lastAppliedPollGenerationRef.current) return;
+      lastAppliedPollGenerationRef.current = pollGeneration;
       failureCountRef.current += 1;
       setLastError(`${friendlyErrorMessage(err)}${failureCountRef.current >= 3 ? ' Polling paused after repeated failures.' : ''}`);
       setSlots([]);

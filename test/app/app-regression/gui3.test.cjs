@@ -40,6 +40,7 @@ function loadChatModelOverride() {
 }
 
 const tests = [
+  ...require('./dashboardPolling.test.cjs').tests,
   {
     name: 'collection helpers preserve component order and collection identity',
     run() {
