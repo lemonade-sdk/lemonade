@@ -24,6 +24,9 @@ std::vector<GPUInfo> MacOSSystemInfo::detect_metal_gpus() {
             NSLog(@"[Metal] Detected device: %s", device_name_str.c_str());
             gpu.name = device_name_str;
             gpu.available = true;
+            if (@available(macOS 10.15, *)) {
+                gpu.unified_memory = [device hasUnifiedMemory];
+            }
 
             // Get VRAM size
             uint64_t vram_bytes = [device recommendedMaxWorkingSetSize];
@@ -40,6 +43,9 @@ std::vector<GPUInfo> MacOSSystemInfo::detect_metal_gpus() {
                         GPUInfo additional_gpu;
                         additional_gpu.name = [dev.name UTF8String];
                         additional_gpu.available = true;
+                        if (@available(macOS 10.15, *)) {
+                            additional_gpu.unified_memory = [dev hasUnifiedMemory];
+                        }
 
                         uint64_t additional_vram = [dev recommendedMaxWorkingSetSize];
                         additional_gpu.vram_gb = additional_vram / (1024.0 * 1024.0 * 1024.0);
@@ -93,6 +99,7 @@ GPUInfo MacOSSystemInfo::get_apple_silicon_device() {
         gpu.name = "Apple Silicon (unified memory)";
         gpu.vram_gb = total_ram_gb;
         gpu.virtual_gb = total_ram_gb;
+        gpu.unified_memory = true;
         return gpu;
     }
 
