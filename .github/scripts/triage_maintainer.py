@@ -358,7 +358,8 @@ MAINTAINER_TEMPLATE = r"""<!doctype html>
   .gen-time { font-size:12px; color:var(--muted); }
 
   /* filter bar */
-  #filter-bar { padding:14px 24px; border-bottom:1px solid var(--border);
+  .page-band { padding:14px 24px; border-bottom:1px solid var(--border); }
+  #filter-bar {
                 background:var(--panel); display:flex; gap:16px;
                 flex-wrap:wrap; align-items:flex-end; }
   .filter-group { display:flex; flex-direction:column; gap:5px; }
@@ -382,7 +383,7 @@ MAINTAINER_TEMPLATE = r"""<!doctype html>
   /* result bar */
   .flex-row { display:flex; align-items:center; flex-wrap:wrap; }
   /* activity chart */
-  #activity-chart { padding:16px 24px 20px; border-bottom:1px solid var(--border); background:var(--panel); }
+  #activity-chart { background:var(--panel); }
   .chart-header { display:flex; align-items:center; gap:16px; flex-wrap:wrap; margin-bottom:14px; }
   .chart-header h2 { font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; color:var(--muted); margin:0; }
   .legend-item { display:inline-flex; align-items:center; gap:5px; font-size:12px; color:var(--muted); }
@@ -421,7 +422,7 @@ MAINTAINER_TEMPLATE = r"""<!doctype html>
   /* Cumulative open line */
   #cumulative-chart { width:100%; overflow:hidden; }
 
-  #result-bar { padding:10px 24px; gap:16px; border-bottom:1px solid var(--border); font-size:13px; }
+  #result-bar { gap:16px; font-size:13px; }
   #result-count { font-weight:600; }
   .result-breakdown { color:var(--muted); font-size:12px; }
   .chip { display:inline-block; padding:1px 8px; border-radius:10px;
@@ -473,25 +474,29 @@ MAINTAINER_TEMPLATE = r"""<!doctype html>
 <body>
 
 <header>
-  <h1>PR Triage — <span style="color:var(--muted)">__REPO__</span></h1>
-  <div class="header-right">
+  <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;width:100%;">
     <div>
+      <h1 style="margin:0;font-size:17px;font-weight:600;">PR Triage — <span style="color:var(--muted);font-weight:400">__REPO__</span></h1>
+      <div style="font-size:11px;color:var(--muted);margin-top:2px;">generated __GENERATED_AT__</div>
+    </div>
+    <a class="header-link" href="index.html" style="font-size:13px;color:var(--muted);">&#8592; Label dashboard</a>
+  </div>
+  <div id="hdr-stats" style="display:flex;gap:20px;flex-wrap:wrap;align-items:center;width:100%;padding-top:10px;border-top:1px solid var(--border);margin-top:10px;">
+    <div style="text-align:center;">
       <div class="total-badge" id="hdr-total">—</div>
       <div class="total-label">open PRs</div>
     </div>
-    <div style="font-size:12px;color:var(--muted);line-height:1.8;">
-      <div id="hdr-wg-count">— with workgroup</div>
-      <div id="hdr-maint-count">— maintainer PRs</div>
-      <div id="hdr-first-count">— first-timers</div>
-      <div id="hdr-stale-count">— stale 30d+</div>
-      <div id="hdr-rfc-count" style="color:var(--hot)">— RFC required</div>
+    <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:13px;">
+      <span id="hdr-wg-count" style="color:var(--wg);">— with workgroup</span>
+      <span id="hdr-maint-count" style="color:var(--muted);">— maintainer PRs</span>
+      <span id="hdr-first-count" style="color:var(--first);">— first-timers</span>
+      <span id="hdr-stale-count" style="color:var(--staleness);">— stale 30d+</span>
+      <span id="hdr-rfc-count" style="color:var(--hot);">— RFC required</span>
     </div>
-    <a class="header-link" href="index.html">&#8592; Label dashboard</a>
   </div>
-  <span class="gen-time">generated __GENERATED_AT__</span>
 </header>
 
-<div id="activity-chart">
+<div id="activity-chart" class="page-band">
   <div class="chart-header">
     <h2>PR Activity</h2>
     <span class="legend-item"><span class="legend-dot bar-opened"></span>Opened</span>
@@ -520,7 +525,7 @@ MAINTAINER_TEMPLATE = r"""<!doctype html>
     <div id="cumulative-chart"></div>
   </div>
 </div>
-<div id="filter-bar">
+<div id="filter-bar" class="page-band">
   <div class="filter-group">
     <label>Filter by</label>
     <select id="wg-select">
@@ -563,7 +568,7 @@ MAINTAINER_TEMPLATE = r"""<!doctype html>
   <button id="clear-btn">Clear all</button>
 </div>
 
-<div id="result-bar" class="flex-row">
+<div id="result-bar" class="flex-row page-band">
   <span id="result-count"></span>
   <span class="result-breakdown" id="result-breakdown"></span>
 </div>
@@ -994,6 +999,7 @@ setTimeout(() => renderCumulativeChart(), 50);
   renderCumulativeChart();
 });
 
+updateSummary();
 renderActivityChart();
 renderWGBreakdown();
 setTimeout(() => renderCumulativeChart(), 50);
