@@ -78,8 +78,9 @@ struct ModelManagerConfig {
     // hardware. A caller that means a particular machine says so here.
     std::function<models::BackendAvailability(const std::map<std::string, ModelInfo>&)> availability;
 
-    // Which source answers for a checkpoint's repository, in a pull and in a scan
-    // alike; empty binds the real host.
+    // The single seam that picks the repository answering for a checkpoint, threaded
+    // unchanged into every consumer, pull and update scan alike; empty binds the real
+    // host. A test that wants to watch a download end to end answers here instead.
     std::function<std::unique_ptr<models::FetchableRepository>(const models::ArtifactRef& ref)>
         repository_for;
 };

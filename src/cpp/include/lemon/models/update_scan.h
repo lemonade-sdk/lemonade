@@ -45,7 +45,7 @@ struct UpdateScanDeps {
     std::function<std::string(const std::filesystem::path& model_cache_dir,
                               const std::string& model_name,
                               const ModelInfo& info)> processed_snapshot_id;
-    // Which source answers for a checkpoint's repository. Empty means the real host.
+    // See ModelManagerConfig::repository_for.
     std::function<std::unique_ptr<FetchableRepository>(const ArtifactRef& ref)> repository_for;
     std::function<bool()> cancel_requested;
     std::function<void(const ScanDetermination&, UpdateScanResult&)> publish;
