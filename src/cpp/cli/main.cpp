@@ -602,8 +602,11 @@ static bool ready_container_backend(lemonade::LemonadeClient& client, const std:
 
 // The backend `--<recipe>` names, or "" for the recipe's default.
 static std::string selected_backend(const nlohmann::json& recipe_options, std::string recipe) {
+    if (!recipe_options.is_object()) return "";
     recipe.erase(std::remove(recipe.begin(), recipe.end(), '-'), recipe.end());
-    const std::string backend = recipe_options.value(recipe + "_backend", "");
+    const auto option = recipe_options.find(recipe + "_backend");
+    if (option == recipe_options.end() || !option->is_string()) return "";
+    const std::string backend = option->get<std::string>();
     return backend == "auto" ? "" : backend;
 }
 
