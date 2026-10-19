@@ -239,7 +239,7 @@ int main() {
 
     // A newer snapshot, and no listing for the revision on disk: the scan cannot prove
     // the bytes it downloads are the same, so it advertises one.
-    const auto newer = manager.check_for_model_updates({"zz-updatable"});
+    const auto newer = manager.check_updates({"zz-updatable"});
     check("a newer snapshot is reported under the public name",
           contains(newer.updated_models, "zz-updatable"));
     check("a newer snapshot reaches the row a reader asks", flagged(manager, "user.zz-updatable"));
@@ -247,7 +247,7 @@ int main() {
 
     // A down registry settles nothing, so the determination made above survives it.
     registry.unreachable = true;
-    const auto failed = manager.check_for_model_updates({"zz-updatable"});
+    const auto failed = manager.check_updates({"zz-updatable"});
     check("an unreachable registry reports the model as failed",
           failed.failed_models.count("zz-updatable") == 1);
     check("a failed check reports no update", failed.updated_models.empty());
@@ -256,14 +256,14 @@ int main() {
     // A completed determination of "unchanged" is what takes the flag back off.
     registry.unreachable = false;
     registry.latest_snapshot = "snap-old";
-    const auto unchanged = manager.check_for_model_updates({"zz-updatable"});
+    const auto unchanged = manager.check_updates({"zz-updatable"});
     check("the model is reported up to date",
           contains(unchanged.up_to_date_models, "zz-updatable"));
     check("an unchanged registry clears the flag", !flagged(manager, "user.zz-updatable"));
 
     registry.latest_snapshot = "snap-newer";
     registry.asked.clear();
-    const auto targeted = manager.check_for_model_updates({"user.zz-updatable"});
+    const auto targeted = manager.check_updates({"user.zz-updatable"});
     check("a targeted scan reports its target", contains(targeted.updated_models, "zz-updatable"));
     check("a targeted scan asks nothing about the model outside it",
           !asked_about(registry.asked, "zz/second"));
@@ -274,7 +274,7 @@ int main() {
     registry.fail_repo = "zz/mmprojrepo";
     registry.latest_snapshot = "snap-newer";
     registry.asked.clear();
-    const auto partial = manager.check_for_model_updates({"zz-multi"});
+    const auto partial = manager.check_updates({"zz-multi"});
     check("a model whose auxiliary repository failed is reported as failed",
           partial.failed_models.count("zz-multi") == 1);
     check("a model whose auxiliary repository failed is not announced as updated",
@@ -286,7 +286,7 @@ int main() {
               asked_about(registry.asked, "zz/updatable"));
     // A finished answer about one repository is still not an answer about the model.
     registry.latest_by_repo["zz/updatable"] = "snap-old";
-    const auto partial_unchanged = manager.check_for_model_updates({"zz-multi"});
+    const auto partial_unchanged = manager.check_updates({"zz-multi"});
     check("a model whose auxiliary repository failed is not announced as up to date",
           !contains(partial_unchanged.up_to_date_models, "zz-multi"));
     check("and it is still reported as failed", partial_unchanged.failed_models.count("zz-multi") == 1);
@@ -298,7 +298,7 @@ int main() {
     registry.asked.clear();
     registry.can_go_stale = false;
     const bool flag_before = flagged(manager, "user.zz-updatable");
-    const auto frozen = manager.check_for_model_updates({});
+    const auto frozen = manager.check_updates({});
     check("a source that cannot go stale is never listed", registry.asked.empty());
     check("a source that cannot go stale reports nothing", frozen.updated_models.empty() &&
           frozen.up_to_date_models.empty() && frozen.failed_models.empty());
@@ -306,7 +306,7 @@ int main() {
           flagged(manager, "user.zz-updatable") == flag_before);
     registry.can_go_stale = true;
 
-    const auto every = manager.check_for_model_updates({});
+    const auto every = manager.check_updates({});
     check("a local-path model is never asked about", !asked_about(registry.asked, "zz/local"));
     check("a local-path model is not reported updated", !contains(every.updated_models, "zz-local"));
     check("a local-path model is not reported up to date either",

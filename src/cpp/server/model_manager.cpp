@@ -496,7 +496,7 @@ std::map<std::string, ModelInfo> ModelManager::get_supported_models() {
     return public_models;
 }
 
-ModelManager::UpdateCheckResult ModelManager::check_for_model_updates(const std::vector<std::string>& targets) {
+ModelManager::UpdateCheckResult ModelManager::check_updates(const std::vector<std::string>& targets) {
     return sync_.scan_for_updates(targets);
 }
 
@@ -528,7 +528,7 @@ json ModelManager::sync_models(const std::vector<std::string>& target_models, bo
     return sync_.sync(target_models, dry_run, attach_if_running);
 }
 
-json ModelManager::get_sync_status(uint64_t sync_id) const {
+json ModelManager::sync_status(uint64_t sync_id) const {
     return sync_.status(sync_id);
 }
 

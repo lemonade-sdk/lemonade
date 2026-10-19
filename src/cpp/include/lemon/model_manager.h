@@ -291,7 +291,7 @@ public:
     // repo has changed and clears stale flags for repos that were successfully
     // verified as current. If targets is non-empty, restricts check to specified targets.
     // Safe to call from a background thread — locks are internal.
-    UpdateCheckResult check_for_model_updates(const std::vector<std::string>& targets = {});
+    UpdateCheckResult check_updates(const std::vector<std::string>& targets = {});
 
 
     // Check if model should be automatically updated when updates are detected
@@ -304,7 +304,7 @@ public:
     using SyncEnqueueResult = models::SyncService::Enqueued;
 
     // Query model sync status (running state, active/pending targets, completed count, or specific sync_id outcome)
-    json get_sync_status(uint64_t sync_id = 0) const;
+    json sync_status(uint64_t sync_id = 0) const;
 
     // Synchronously queue targets for sync. Returns dispatch result with sync_id and whether sync was already in progress.
     SyncEnqueueResult enqueue_sync(const std::vector<std::string>& target_models = {}, bool attach_if_running = false);

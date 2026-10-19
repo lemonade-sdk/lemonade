@@ -790,7 +790,7 @@ void Server::start_model_cache_warmup() {
         if (config_->auto_check_model_updates()) {
             try {
                 LOG(DEBUG, "Server") << "Checking downloaded models for updates..." << std::endl;
-                auto check_res = model_manager_->check_for_model_updates();
+                auto check_res = model_manager_->check_updates();
                 LOG(DEBUG, "Server") << "Model update check complete" << std::endl;
 
                 for (const auto& [model_name, err] : check_res.failed_models) {
@@ -2743,7 +2743,7 @@ void Server::handle_model_update_check(const httplib::Request& req, httplib::Res
     }
 
     try {
-        auto check_res = model_manager_->check_for_model_updates();
+        auto check_res = model_manager_->check_updates();
 
         nlohmann::json response = {
             {"status", check_res.failed_models.empty() ? "success" : "failed"},
@@ -2864,14 +2864,14 @@ void Server::handle_models_sync(const httplib::Request& req, httplib::Response& 
     if (!async_specified || async_dispatch) {
         auto enqueue_res = model_manager_->enqueue_sync(target_models, attach_if_running);
         if (enqueue_res.already_running) {
-            nlohmann::json status = model_manager_->get_sync_status(enqueue_res.sync_id);
+            nlohmann::json status = model_manager_->sync_status(enqueue_res.sync_id);
             res.set_content(status.dump(), "application/json");
             res.status = 200;
             return;
         }
 
         // Enqueueing is dispatching: the sync service's own worker drains it.
-        nlohmann::json dispatched_result = model_manager_->get_sync_status(enqueue_res.sync_id);
+        nlohmann::json dispatched_result = model_manager_->sync_status(enqueue_res.sync_id);
         dispatched_result["message"] = "Model synchronization dispatched in background";
         dispatched_result["async"] = true;
         dispatched_result["already_in_progress"] = false;
@@ -2908,7 +2908,7 @@ void Server::handle_models_sync_status(const httplib::Request& req, httplib::Res
                 return;
             }
         }
-        nlohmann::json status = model_manager_->get_sync_status(sync_id);
+        nlohmann::json status = model_manager_->sync_status(sync_id);
         res.set_content(status.dump(), "application/json");
         res.status = 200;
     } catch (const std::exception& e) {
