@@ -139,25 +139,20 @@ class ModelArtifactStore {
     // repository cache. A dry run reports and deletes nothing.
     CleanupReport cleanup_orphaned_cache(const KnownModels& all_models, bool dry_run) const;
 
-    // A repository cache's own bookkeeping: which snapshot is active, and which
-    // model was processed into it.
+    // A repository cache's own bookkeeping -- its active snapshot and its processed-model
+    // ledger. These forward to repository_provenance.h, which is where the rules are stated.
 
-    // The snapshot `refs/main` points at, empty when the cache has none.
     std::string active_snapshot_ref(const std::filesystem::path& repo_cache_dir) const;
     std::filesystem::path active_snapshot_path(const std::filesystem::path& repo_cache_dir) const;
     void write_active_snapshot(const std::filesystem::path& repo_cache_dir,
                                const std::string& commit_hash) const;
-    // A superseded snapshot, kept only while it is not the active one.
     void remove_unused_snapshot(const std::filesystem::path& repo_cache_dir,
                                 const std::string& snapshot_dir,
                                 const std::string& active_ref) const;
 
-    // The snapshot this model was last processed from, so a re-pull can reuse it.
-    // Empty when there is none, or when what was processed is not this selection.
     std::string processed_snapshot_id(const std::filesystem::path& repo_cache_dir,
                                       const ModelInfo& info) const;
-    // checkpoint_type names the slot whose bytes landed in this repository;
-    // empty means main.
+    // checkpoint_type defaults to main.
     void record_processed_model(const std::filesystem::path& repo_cache_dir,
                                 const ModelInfo& info,
                                 const Provenance& provenance,
