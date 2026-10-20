@@ -139,8 +139,7 @@ class ModelArtifactStore {
     // repository cache. A dry run reports and deletes nothing.
     CleanupReport cleanup_orphaned_cache(const KnownModels& all_models, bool dry_run) const;
 
-    // A repository cache's own bookkeeping -- its active snapshot and its processed-model
-    // ledger. These forward to repository_provenance.h, which is where the rules are stated.
+    // Repository-cache bookkeeping; see repository_provenance.h.
 
     std::string active_snapshot_ref(const std::filesystem::path& repo_cache_dir) const;
     std::filesystem::path active_snapshot_path(const std::filesystem::path& repo_cache_dir) const;
