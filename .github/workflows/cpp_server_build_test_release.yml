@@ -1496,7 +1496,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          lemonade config set ctx_size=4096 extensor.backend=rocm extensor.extensor_preset=balanced --yes
+          lemonade config set ctx_size=4096 extensor.backend=rocm extensor.extensor_preset=balanced
           lemonade backends install extensor:rocm
           EXTENSOR_BINARY=$(find "$GITHUB_WORKSPACE/bin/extensor/rocm" -type f -name extensor-server -print -quit)
           if [ -z "$EXTENSOR_BINARY" ] || [ ! -x "$EXTENSOR_BINARY" ]; then
