@@ -1,3 +1,4 @@
+#include <lemon/models/artifact_ref.h>
 #include <lemon/models/artifact_store.h>
 
 #include <lemon/backends/backend_ops.h>
@@ -9,7 +10,6 @@
 #include <lemon/hf_variants.h>
 #include <lemon/models/registry_types.h>
 #include <lemon/models/artifact_source.h>
-#include <lemon/models/checkpoint_grammar.h>
 #include <lemon/utils/aixlog.hpp>
 #include <lemon/utils/json_utils.h>
 #include <lemon/utils/path_utils.h>

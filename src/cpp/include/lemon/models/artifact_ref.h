@@ -29,6 +29,10 @@ struct ArtifactRef {
     bool operator!=(const ArtifactRef& other) const { return !(*this == other); }
 };
 
+// The `repo_id[:variant]` grammar a ref's parts are written in, split at the first colon.
+std::string repo_id_from_checkpoint(const std::string& checkpoint);
+std::string variant_from_checkpoint(const std::string& checkpoint);
+
 // One checkpoint of one model.
 struct CheckpointRef {
     std::string canonical_id;

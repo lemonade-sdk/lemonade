@@ -5,7 +5,7 @@
 #include <lemon/gguf_reader.h>
 #include <lemon/gguf_shard_utils.h>
 #include <lemon/hf_variants.h>
-#include <lemon/models/checkpoint_grammar.h>
+#include <lemon/models/artifact_ref.h>
 #include <lemon/utils/aixlog.hpp>
 #include <lemon/utils/path_utils.h>
 #include <lemon/utils/http_client.h>

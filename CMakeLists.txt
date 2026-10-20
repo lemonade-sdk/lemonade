@@ -1068,8 +1068,6 @@ set(SOURCES_CORE
     src/cpp/server/models/artifact_transfer.cpp
     src/cpp/server/models/catalog.cpp
     src/cpp/server/models/change_notifier.cpp
-    src/cpp/server/models/checkpoint_grammar.cpp
-    src/cpp/server/models/definition_labels.cpp
     src/cpp/server/models/download_markers.cpp
     src/cpp/server/models/entry_identity.cpp
     src/cpp/server/models/fetchable_repository.cpp

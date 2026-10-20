@@ -1,8 +1,9 @@
+#include <lemon/models/artifact_ref.h>
 #include <lemon/models/json_catalog.h>
 
+#include <lemon/backends/backend_descriptor_registry.h>
 #include <lemon/canonical_id.h>
 #include <lemon/models/registry_types.h>
-#include <lemon/models/checkpoint_grammar.h>
 #include <lemon/utils/aixlog.hpp>
 #include <lemon/utils/json_utils.h>
 
@@ -11,6 +12,29 @@
 
 namespace lemon {
 namespace models {
+
+std::string describe_illegal_labels(const std::string& model_name, const std::string& reason) {
+    return "Model '" + model_name + "': " + reason;
+}
+
+std::set<std::string> normalized_definition_labels(const nlohmann::json& model_data,
+                                                  std::string* illegal) {
+    const std::string recipe = model_data.value("recipe", std::string());
+    std::vector<std::string> labels = {"custom"};
+    for (const auto& label : model_data.value("labels", std::vector<std::string>{})) {
+        add_label_once(labels, label);
+    }
+    if (model_data.value("reasoning", false)) add_label_once(labels, "reasoning");
+    if (model_data.value("vision", false)) add_label_once(labels, "vision");
+    if (model_data.value("embedding", false)) add_label_once(labels, "embeddings");
+    if (model_data.value("reranking", false)) add_label_once(labels, "reranking");
+
+    if (illegal != nullptr) {
+        *illegal = backends::illegal_deployment_labels(labels, recipe);
+    }
+    backends::ensure_deployment_label(labels, recipe);
+    return std::set<std::string>(labels.begin(), labels.end());
+}
 
 void parse_model_source_fields(ModelInfo& info, const json& row) {
     const std::string raw_source = utils::JsonUtils::get_or_default<std::string>(row, "source", "");

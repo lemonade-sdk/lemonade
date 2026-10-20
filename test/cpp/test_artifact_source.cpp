@@ -4,7 +4,7 @@
 
 #include "lemon/models/artifact_ref.h"
 #include "lemon/models/artifact_source.h"
-#include "lemon/models/checkpoint_grammar.h"
+#include "lemon/models/artifact_ref.h"
 #include "lemon/models/fetchable_repository.h"
 #include "lemon/utils/path_utils.h"
 

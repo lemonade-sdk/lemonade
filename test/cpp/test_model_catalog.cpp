@@ -1,5 +1,5 @@
 #include "lemon/models/catalog.h"
-#include "lemon/models/checkpoint_grammar.h"
+#include "lemon/models/artifact_ref.h"
 #include "lemon/models/listed_catalog.h"
 #include "lemon/models/model_index.h"
 #include "lemon/models/registry_id.h"

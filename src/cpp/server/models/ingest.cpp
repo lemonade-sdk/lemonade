@@ -1,3 +1,4 @@
+#include <lemon/models/artifact_ref.h>
 #include <lemon/models/ingest.h>
 
 #include <lemon/backends/backend_registry.h>
@@ -13,11 +14,9 @@
 #include <lemon/models/artifact_transfer.h>
 #include <lemon/models/artifact_layout.h>
 #include <lemon/models/change_notifier.h>
-#include <lemon/models/checkpoint_grammar.h>
 #include <lemon/models/fetchable_repository.h>
 #include <lemon/models/json_catalog.h>
 #include <lemon/models/registry_descriptors.h>
-#include <lemon/models/definition_labels.h>
 #include <lemon/models/routing_parse_options.h>
 #include <lemon/models/registry_documents.h>
 #include <lemon/models/store.h>

@@ -1,6 +1,7 @@
 #include <lemon/model_manager.h>
 #include <lemon/runtime_config.h>
 #include <lemon/hf_variants.h>
+#include <lemon/models/artifact_ref.h>
 #include <lemon/models/registry_types.h>
 #include <lemon/canonical_id.h>
 #include <lemon/directory_watcher.h>
@@ -9,8 +10,6 @@
 #include <lemon/models/fetchable_repository.h>
 #include <lemon/models/artifact_transfer.h>
 #include <lemon/models/catalog.h>
-#include <lemon/models/checkpoint_grammar.h>
-#include <lemon/models/definition_labels.h>
 #include <lemon/models/entry_identity.h>
 #include <lemon/models/host_availability.h>
 #include <lemon/models/ingest.h>
