@@ -63,6 +63,7 @@ struct FilterReasons;
 struct HostFilter;
 struct ResolvedModel;
 struct StoreSnapshot;
+class ArtifactSourceResolver;
 }  // namespace models
 
 // Everything the composition root needs. Server fills it in; a test points the
@@ -158,6 +159,10 @@ public:
     // the questions about it. A write scope needs a non-const ModelStore, so nothing that
     // receives this can hold the store's writer.
     const models::ModelStore& store() const { return store_; }
+
+    // The one site that binds a checkpoint to a source. It hands out sources and
+    // repositories, and no way to write anything.
+    const models::ArtifactSourceResolver& resolver() const { return *resolver_; }
 
     // An owned map keyed by the names clients use, for the wire sites that serialize
     // it; the rename across canonical ids is what forces the copy.
@@ -420,9 +425,7 @@ private:
     // The published model set, its catalogs and the rules for changing either. Declared
     // before what reads it: destruction runs in reverse.
     models::ModelStore store_;
-
-
-
+    std::unique_ptr<models::ArtifactSourceResolver> resolver_;
   private:
 
     UpdateCheckResult run_update_scan(const std::vector<std::string>& targets);

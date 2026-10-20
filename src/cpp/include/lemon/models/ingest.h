@@ -26,6 +26,7 @@ class FetchableRepository;
 class ModelStore;
 struct ArtifactRef;
 
+class ArtifactSourceResolver;
 class ModelArtifactStore;
 class ModelChangeNotifier;
 
@@ -52,8 +53,8 @@ class ModelIngest : public ArtifactFetchService {
         // The facade's options write: its store, its file mutex, and a store patch that
         // may not be opened outside the facade.
         std::function<void(const ModelInfo&)> save_options;
-        // See ModelManagerConfig::repository_for.
-        std::function<std::unique_ptr<FetchableRepository>(const ArtifactRef& ref)> repository_for;
+        // Refs and repositories both come from the resolver, never assembled here.
+        const ArtifactSourceResolver* resolver = nullptr;
     };
 
     explicit ModelIngest(Deps deps);

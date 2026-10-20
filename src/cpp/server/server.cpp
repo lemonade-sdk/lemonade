@@ -6147,7 +6147,7 @@ void Server::handle_pull_variants(const httplib::Request& req, httplib::Response
         bool not_found = false;
         const std::string resolved_source = remote_registry_source_name(parsed_source);
         nlohmann::json body = lemon::fetch_pull_variants(
-            checkpoint, resolved_source, not_found);
+            model_manager_->resolver(), checkpoint, resolved_source, not_found);
         if (not_found) {
             res.status = 404;
             nlohmann::json error = {{"error", "Checkpoint '" + checkpoint + "' not found on " +

@@ -2,6 +2,7 @@
 
 #include <lemon/backends/backend_ops.h>
 #include <lemon/backends/backend_registry.h>
+#include <lemon/models/artifact_store.h>
 #include <lemon/models/model_info.h>
 #include <lemon/models/registry_types.h>
 #include <lemon/models/checkpoint_grammar.h>
@@ -51,6 +52,16 @@ const RegistryDescriptor* host_of_scheme_prefix(const std::string& checkpoint, R
 
 ArtifactSourceResolver::ArtifactSourceResolver(Hooks hooks) : hooks_(std::move(hooks)) {}
 
+RegistryId ArtifactSourceResolver::default_host() const {
+    if (hooks_.default_registry_id != nullptr) {
+        const std::string configured = hooks_.default_registry_id();
+        if (!configured.empty()) {
+            return parse_remote_registry_source(configured);
+        }
+    }
+    return huggingface_descriptor().id;
+}
+
 FileValidator ArtifactSourceResolver::validator_for(const std::string& recipe) const {
     return [recipe](const std::string& path) {
         return backends::ops_for(recipe)->validate_checkpoint_file(path);
@@ -59,11 +70,54 @@ FileValidator ArtifactSourceResolver::validator_for(const std::string& recipe) c
 
 std::unique_ptr<ArtifactSource> ArtifactSourceResolver::open_repository(
     const RegistryId& host, const ArtifactRef& ref, const SourcePlacement& placement) const {
+    ArtifactRef bound = ref;
+    bound.registry = host;
+    return repository_for(bound, placement);
+}
+
+std::vector<ArtifactRef> ArtifactSourceResolver::refs_for(const ModelInfo& info) const {
+    const auto source = parse_remote_registry_source(registry_source_of(info));
+    const auto ops = backends::ops_for(info.recipe);
+
+    std::vector<ArtifactRef> refs;
+
+    ArtifactRef main_ref;
+    main_ref.registry = source;
+    main_ref.checkpoint_type = "main";
+    main_ref.repo_id = repo_id_from_checkpoint(info.checkpoint("main"));
+    main_ref.variant = variant_from_checkpoint(info.checkpoint("main"));
+    if (main_ref.repo_id.empty()) {
+        throw RegistrationError("model checkpoint does not contain a repository id");
+    }
+    refs.push_back(std::move(main_ref));
+
+    // Auxiliary checkpoints inherit the model's host: a registration has one provenance and
+    // one update domain. A malformed one is refused here, loudly — the update check skips it
+    // silently, which is the difference a user sees as a missing file.
+    for (const auto& [type, checkpoint] : info.checkpoints) {
+        if (type == "main" || ops->acquires_lazily(type)) continue;
+        ArtifactRef ref;
+        ref.registry = source;
+        ref.checkpoint_type = type;
+        ref.repo_id = repo_id_from_checkpoint(checkpoint);
+        ref.variant = variant_from_checkpoint(checkpoint);
+        if (ref.repo_id.empty() || ref.variant.empty()) {
+            throw RegistrationError("Additional checkpoints must contain an exact repository variant");
+        }
+        refs.push_back(std::move(ref));
+    }
+    return refs;
+}
+
+std::unique_ptr<FetchableRepository> ArtifactSourceResolver::repository_for(
+    const ArtifactRef& ref, const SourcePlacement& placement) const {
+    const RegistryId host = ref.registry.value_or(default_host());
     std::unique_ptr<FetchableRepository> repository =
         hooks_.repository_for != nullptr ? hooks_.repository_for(host, ref, placement)
                                          : create_repository(host, ref, placement);
     if (repository == nullptr) {
-        throw RegistrationError("no repository registered for host '" + host.str() + "'");
+        throw RegistrationError("no repository for host '" + host.str() + "' repository '" +
+                                ref.repo_id + "'");
     }
     return repository;
 }

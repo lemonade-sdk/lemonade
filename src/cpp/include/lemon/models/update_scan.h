@@ -21,6 +21,7 @@ class FetchableRepository;
 class ModelArtifactStore;
 struct StoreSnapshot;
 class ModelStore;
+class ArtifactSourceResolver;
 
 struct UpdateScanResult {
     std::vector<std::string> updated_models;
@@ -43,8 +44,8 @@ struct UpdateScanDeps {
 
     std::function<void()> ensure_store;
     std::function<std::shared_ptr<const StoreSnapshot>()> snapshot;
-    // See ModelManagerConfig::repository_for.
-    std::function<std::unique_ptr<FetchableRepository>(const ArtifactRef& ref)> repository_for;
+    // The probe repository each target is checked against comes from the resolver.
+    const ArtifactSourceResolver* resolver = nullptr;
     std::function<bool()> cancel_requested;
     std::function<void(const ScanDetermination&, UpdateScanResult&)> publish;
     std::function<void(const std::string& phase)> phase;

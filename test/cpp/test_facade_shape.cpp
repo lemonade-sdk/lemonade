@@ -523,6 +523,24 @@ int main() {
     if (write_scope_files != allowed_write_scopes)
         report_set_diff(write_scope_files, allowed_write_scopes);
 
+    // A checkpoint is bound to a source in one place. The resolver binds it; the facade
+    // wires the seam a test or an embedded host can override; fetchable_repository.h is the
+    // factory itself. Anything else that calls create_repository has assembled a provider
+    // URL somewhere the injected host cannot reach, and a stubbed pull stops stubbing.
+    std::vector<std::string> repository_binders;
+    for (const auto& file : product) {
+        if (!find_in(file, "create_repository(").empty()) repository_binders.push_back(file);
+    }
+    const std::vector<std::string> allowed_binders = {
+        "src/cpp/include/lemon/models/fetchable_repository.h",
+        "src/cpp/server/model_manager.cpp",
+        "src/cpp/server/models/artifact_resolver.cpp",
+        "src/cpp/server/models/fetchable_repository.cpp",
+    };
+    std::sort(repository_binders.begin(), repository_binders.end());
+    check("a checkpoint is bound to a source in one place", repository_binders == allowed_binders);
+    if (repository_binders != allowed_binders) report_set_diff(repository_binders, allowed_binders);
+
     // Presence of a checkpoint is one question with one answer (S5). Every file naming an
     // in-flight marker is a file that can answer it, which is exactly the bug: an
     // interrupted pull can report present and not-downloaded at once. The list may only
@@ -677,12 +695,12 @@ int main() {
         }
     }
     const std::vector<std::string> members = data_members(header);
-    constexpr int kHeaderDeclarationCeiling = 81;
+    constexpr int kHeaderDeclarationCeiling = 82;
     check("the facade header declares " + std::to_string(declarations) +
               " methods (public and private), ceiling " +
               std::to_string(kHeaderDeclarationCeiling),
           declarations <= kHeaderDeclarationCeiling);
-    constexpr int kMemberCeiling = 18;
+    constexpr int kMemberCeiling = 19;
     check("the facade holds " + std::to_string(members.size()) + " members, ceiling " +
               std::to_string(kMemberCeiling),
           static_cast<int>(members.size()) <= kMemberCeiling);

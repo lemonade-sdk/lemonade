@@ -148,7 +148,7 @@ models::SyncService::Deps ModelManager::make_sync_deps() {
 
 models::ModelIngest::Deps ModelManager::make_ingest_deps() {
     models::ModelIngest::Deps deps;
-    deps.repository_for = config_.repository_for;
+    deps.resolver = resolver_.get();
     deps.artifacts = artifacts_.get();
     deps.default_registry_source = [this] {
         if (!default_model_source_provider_) return std::optional<RegistryId>{};
@@ -171,6 +171,17 @@ ModelManager::ModelManager(ModelManagerConfig config)
       registries_(load_server_models(), get_user_models_file()),
       recipe_options_(get_recipe_options_file()),
       store_(alias_manager_, [this] { return composition_->run(); }),
+      resolver_(std::make_unique<models::ArtifactSourceResolver>(models::ArtifactSourceResolver::Hooks{
+          [this](const ModelInfo& info) { return download_policy(info); },
+          [this](const models::RegistryId& host, const models::ArtifactRef& ref,
+                 const models::SourcePlacement& placement) {
+              return config_.repository_for ? config_.repository_for(ref)
+                                            : models::create_repository(host, ref, placement);
+          },
+          [this] {
+              return default_model_source_provider_ != nullptr ? default_model_source_provider_()
+                                                               : std::string();
+          }})),
       artifacts_(std::make_unique<models::ModelArtifactStore>(models::ModelArtifactStore::Hooks{
           [this] { return get_hf_cache_dir(); },
           [this](const ModelInfo& info, const std::string& type) { return source_for(info, type); },
@@ -301,19 +312,7 @@ std::vector<models::CheckpointStatus> ModelManager::checkpoint_status(const Mode
 
 std::unique_ptr<models::ArtifactSource> ModelManager::source_for(
     const ModelInfo& info, const std::string& checkpoint_type) const {
-    models::ArtifactSourceResolver::Hooks hooks;
-    hooks.download_policy = [this](const ModelInfo& info) { return download_policy(info); };
-    hooks.repository_for = [this](const RegistryId& host, const models::ArtifactRef& ref,
-                                   const models::SourcePlacement& placement) {
-        return config_.repository_for ? config_.repository_for(ref)
-                                      : models::create_repository(host, ref, placement);
-    };
-
-    hooks.default_registry_id = [this]() {
-        return default_model_source_provider_ != nullptr ? default_model_source_provider_()
-                                                        : std::string();
-    };
-    return models::ArtifactSourceResolver(hooks).source_for(info, checkpoint_type);
+    return resolver_->source_for(info, checkpoint_type);
 }
 
 void ModelManager::resolve_all_model_paths(ModelInfo& info) {
@@ -478,7 +477,7 @@ ModelManager::UpdateCheckResult ModelManager::run_update_scan(const std::vector<
     deps.artifacts = artifacts_.get();
     deps.ensure_store = [this] { build_cache(); };
     deps.snapshot = [this] { return store_.read(); };
-    deps.repository_for = config_.repository_for;
+    deps.resolver = resolver_.get();
     deps.cancel_requested = [this] { return sync_.cancel_requested(); };
     deps.publish = [this](const models::ScanDetermination& settled,
                           models::UpdateScanResult& result) {
@@ -717,8 +716,7 @@ RegistrySearchResponse ModelManager::search_registry(const std::string& source_n
     const auto source = parse_remote_registry_source(source_name);
     models::ArtifactRef probe;
     probe.registry = source;
-    const auto repository =
-        models::create_repository(source, probe, models::SourcePlacement{});
+    const auto repository = resolver_->repository_for(probe, models::SourcePlacement{});
     if (!repository->supports_search()) {
         throw std::runtime_error(remote_registry_display_name(source) +
                                  " does not support model search");

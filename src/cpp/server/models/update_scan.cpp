@@ -1,3 +1,4 @@
+#include <lemon/models/artifact_resolver.h>
 #include <lemon/models/update_scan.h>
 
 #include <lemon/backends/backend_registry.h>
@@ -163,9 +164,7 @@ UpdateScanResult run_update_scan(const UpdateScanDeps& deps,
             SourcePlacement probe_placement;
             probe_placement.recipe = candidate_models.at(entry.model_names.front()).recipe;
             const std::unique_ptr<FetchableRepository> repository =
-                deps.repository_for
-                    ? deps.repository_for(probe)
-                    : create_repository(probe.registry.value_or(source), probe, probe_placement);
+                deps.resolver->repository_for(probe, probe_placement);
 
             // A source whose bytes cannot go stale has nothing to check; skipping
             // it changes no flag either way.

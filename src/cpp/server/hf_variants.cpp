@@ -1,3 +1,4 @@
+#include <lemon/models/artifact_resolver.h>
 #include "lemon/hf_variants.h"
 
 #include <algorithm>
@@ -341,7 +342,8 @@ GgufVariantSet enumerate_gguf_variants(
     return result;
 }
 
-nlohmann::json fetch_pull_variants(const std::string& checkpoint,
+nlohmann::json fetch_pull_variants(const models::ArtifactSourceResolver& resolver,
+                                   const std::string& checkpoint,
                                    const std::string& registry_source,
                                    bool& not_found) {
     not_found = false;
@@ -354,8 +356,7 @@ nlohmann::json fetch_pull_variants(const std::string& checkpoint,
     models::ArtifactRef probe;
     probe.registry = source;
     probe.repo_id = checkpoint;
-    const auto source_repository =
-        models::create_repository(source, probe, models::SourcePlacement{});
+    const auto source_repository = resolver.repository_for(probe, models::SourcePlacement{});
     models::RepoListing repository;
     try {
         repository = source_repository->list(checkpoint);

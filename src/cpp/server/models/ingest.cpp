@@ -8,6 +8,7 @@
 #include <lemon/models/model_info.h>
 #include <lemon/models/registry_types.h>
 #include <lemon/model_types.h>
+#include <lemon/models/artifact_resolver.h>
 #include <lemon/models/artifact_store.h>
 #include <lemon/models/artifact_transfer.h>
 #include <lemon/models/artifact_layout.h>
@@ -278,45 +279,17 @@ void ModelIngest::download_from_registry(const ModelInfo& info,
                                          const utils::CancelToken& cancel) const {
     const std::string main_repo_id = repo_id_from_checkpoint(info.checkpoint("main"));
     const std::string main_variant = variant_from_checkpoint(info.checkpoint("main"));
-    if (main_repo_id.empty()) {
-        throw std::runtime_error("Model checkpoint does not contain a repository id");
-    }
 
     const std::string source_name = models::registry_source_of(info);
     const auto source = parse_remote_registry_source(source_name);
     const std::string source_display = remote_registry_display_name(source);
 
+    // Selection is the resolver's, and it is asked before anything touches the filesystem:
+    // a model whose checkpoint names no repository fails here, not after a directory.
+    const std::vector<ArtifactRef> refs = deps_.resolver->refs_for(info);
+
     const fs::path cache_root = path_from_utf8(artifacts().root());
     ensure_create_directories(cache_root);
-
-    // Every checkpoint of this pull becomes a ref, and each ref is bound to one
-    // source here — the orchestrator never assembles a provider URL itself.
-    // Auxiliary checkpoints inherit the model-level registry source: intentional,
-    // a registration has one provenance and update domain. Pull rejects a
-    // malformed auxiliary checkpoint loudly, where the update check
-    // (group_aux_checkpoint_variants) silently skips it.
-    std::vector<ArtifactRef> refs;
-    {
-        ArtifactRef main_ref;
-        main_ref.registry = source;
-        main_ref.checkpoint_type = "main";
-        main_ref.repo_id = main_repo_id;
-        main_ref.variant = main_variant;
-        refs.push_back(std::move(main_ref));
-    }
-    for (const auto& [type, checkpoint] : info.checkpoints) {
-        if (type == "main" || backends::ops_for(info.recipe)->acquires_lazily(type)) continue;
-        if (repo_id_from_checkpoint(checkpoint).empty() ||
-            variant_from_checkpoint(checkpoint).empty()) {
-            throw std::runtime_error("Additional checkpoints must contain an exact repository variant");
-        }
-        ArtifactRef ref;
-        ref.registry = source;
-        ref.checkpoint_type = type;
-        ref.repo_id = repo_id_from_checkpoint(checkpoint);
-        ref.variant = variant_from_checkpoint(checkpoint);
-        refs.push_back(std::move(ref));
-    }
 
     // One placement for the whole pull: every checkpoint here belongs to the same model,
     // so the same recipe decides the file selection of every repository it reads.
@@ -327,16 +300,8 @@ void ModelIngest::download_from_registry(const ModelInfo& info,
     std::map<std::string, RepoListing> listings;
     for (const auto& ref : refs) {
         if (listings.count(ref.repo_id)) continue;
-        std::unique_ptr<FetchableRepository> repository;
-        if (deps_.repository_for) {
-            repository = deps_.repository_for(ref);
-        } else {
-            repository = create_repository(source, ref, placement);
-        }
-        if (repository == nullptr) {
-            throw std::runtime_error("No artifact source for host '" + source_name +
-                                     "' repository " + ref.repo_id);
-        }
+        std::unique_ptr<FetchableRepository> repository =
+            deps_.resolver->repository_for(ref, placement);
         listings.emplace(ref.repo_id, repository->list(ref.repo_id, ref.revision));
         repositories.emplace(ref.repo_id, std::move(repository));
     }

@@ -1,3 +1,4 @@
+#include <lemon/models/artifact_resolver.h>
 #include <lemon/models/update_scan.h>
 
 #include <lemon/model_manager.h>
@@ -98,8 +99,58 @@ struct Cache {
     }};
 };
 
+// What the scan does with a host is what this test pins, so the host is a stub that answers
+// "I can go stale" and then fails on the tree: the same shape as a registry that refuses the
+// connection, which is what HF_ENDPOINT pointed at a dead port for.
+class UnreachableRepository : public lemon::models::FetchableRepository {
+  public:
+    explicit UnreachableRepository(const lemon::models::ArtifactRef& ref)
+        : FetchableRepository(ref, lemon::models::SourcePlacement{}) {}
+
+    lemon::models::ArtifactKind kind() const override { return lemon::models::ArtifactKind::Registry; }
+    std::string resolve() const override { return ""; }
+    lemon::models::Presence present() const override { return {}; }
+    lemon::models::Acquisition acquisition() const override { return {}; }
+    lemon::models::Deletion deletion() const override {
+        return lemon::models::Deletion{lemon::models::Deletion::Kind::CacheDir, ""};
+    }
+
+    lemon::models::RegistryId id() const override {
+        return ref_.registry.value_or(lemon::models::huggingface_descriptor().id);
+    }
+    lemon::models::Revision default_revision() const override { return {"main", false}; }
+    lemon::models::RepoListing list(const std::string&, const std::string&) const override {
+        throw std::runtime_error("the fixture registry is unreachable");
+    }
+    std::string file_url(const lemon::models::RepoRef&) const override { return {}; }
+    bool can_go_stale() const override { return true; }
+    lemon::models::Revision active_revision(const lemon::models::LocalRef&) const override { return {}; }
+    void set_active_revision(const lemon::models::LocalRef&, const lemon::models::Revision&) override {}
+    lemon::models::Staleness compare(const lemon::models::LocalRef&,
+                                     const lemon::models::RepoListing&) const override {
+        return {};
+    }
+    void commit(const lemon::models::LocalRef&, const lemon::models::Revision&) override {}
+    std::string cache_dir_name(const std::string& repo_id) const override {
+        std::string slug = "models--";
+        for (char c : repo_id) slug += (c == '/') ? "--" : std::string(1, c);
+        return slug;
+    }
+};
+
 UpdateScanDeps make_deps(Probe& probe, Cache& cache) {
     UpdateScanDeps deps;
+    // This test is about the scan's bookkeeping, so the seam answers "no host here" and the
+    // scan's own error path runs — which is what an unregistered host does in production.
+    static const lemon::models::ArtifactSourceResolver stub_host{
+        lemon::models::ArtifactSourceResolver::Hooks{
+            {},
+            [](const lemon::models::RegistryId&, const lemon::models::ArtifactRef& ref,
+               const lemon::models::SourcePlacement&) {
+                return std::make_unique<UnreachableRepository>(ref);
+            },
+            {}}};
+    deps.resolver = &stub_host;
     deps.artifacts = &cache.artifacts;
     deps.ensure_store = [&probe] { ++probe.ensure_store_calls; };
     deps.snapshot = [&probe] {
