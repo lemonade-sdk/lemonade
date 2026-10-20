@@ -1772,10 +1772,9 @@ jobs:
           needs: ${{ toJSON(needs) }}
           event-name: ${{ github.event_name }}
 
-  # Same gate pattern as packaging-gate, for the self-hosted inference runners
-  # that PR pushes skip. The job name below belongs in main's required status
-  # checks — that registration is what makes the merge-queue strictness bind,
-  # so renaming the job requires a matching branch-protection update.
+  # Same gate pattern as packaging-gate. Also includes jobs that run on every
+  # PR, so that we can keep those as required PR checks without adjusting repo
+  # settings.
   backends-gate:
     name: Inference backend tests
     needs: [build-lemonade-server-installer, build-lemonade-deb, cpp-unit-tests, test-exe-inference, test-deb-inference, test-container-backends, test-container-smoke, test-watchdog-lifecycle-linux]
