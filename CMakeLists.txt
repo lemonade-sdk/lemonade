@@ -1431,6 +1431,14 @@ set(TOOL_DEFINITIONS_SRC
 file(GLOB API_DOC_FILES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/docs/api/*.md")
 
+set(API_DOC_COPY_COMMAND)
+if(API_DOC_FILES)
+    set(API_DOC_COPY_COMMAND
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${API_DOC_FILES}
+            ${CMAKE_BINARY_DIR}/resources/docs/api/)
+endif()
+
 # Create a custom target that depends on resource files
 # This ensures resources are copied when source files change
 add_custom_command(
@@ -1443,9 +1451,7 @@ add_custom_command(
         ${CMAKE_BINARY_DIR}/resources/toolDefinitions.json
     COMMAND ${CMAKE_COMMAND} -E make_directory
         ${CMAKE_BINARY_DIR}/resources/docs/api
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${API_DOC_FILES}
-        ${CMAKE_BINARY_DIR}/resources/docs/api/
+    ${API_DOC_COPY_COMMAND}
     COMMAND ${CMAKE_COMMAND} -E touch ${CMAKE_CURRENT_BINARY_DIR}/resources.stamp
     DEPENDS ${RESOURCE_FILES} ${TOOL_DEFINITIONS_SRC} ${API_DOC_FILES}
     COMMENT "Copying resources to build directory"
@@ -2367,7 +2373,7 @@ if(BUILD_TESTING AND EXISTS "${_ARCHIVE_PLATFORM_TEST_SRC}")
     add_cpp_ci_test(ArchivePlatformTest CI ON COMMAND test_archive_platform)
 endif()
 
-if(BUILD_TESTING)
+if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_windows_args.cpp")
     add_executable(test_windows_args
         test/cpp/test_windows_args.cpp
         src/cpp/server/utils/windows_args.cpp
@@ -2377,7 +2383,9 @@ if(BUILD_TESTING)
     )
     add_cpp_ci_test(WindowsArgsTest CI ON COMMAND test_windows_args)
 
-    if(WIN32)
+    if(WIN32 AND
+       EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/windows_argv_echo_child.cpp" AND
+       EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_windows_process.cpp")
         add_executable(windows_argv_echo_child test/cpp/windows_argv_echo_child.cpp)
         target_link_libraries(windows_argv_echo_child PRIVATE nlohmann_json::nlohmann_json)
         add_executable(test_windows_process
@@ -2725,7 +2733,7 @@ if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_backend_a
     add_cpp_ci_test(BackendArtifactHelpersTest CI ON COMMAND test_backend_artifact_helpers)
 endif()
 
-if(BUILD_TESTING)
+if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_hrx_oracle.cpp")
     add_executable(test_hrx_oracle test/cpp/test_hrx_oracle.cpp)
     target_link_libraries(test_hrx_oracle PRIVATE lemonade-server-core)
     add_cpp_ci_test(HrxOracleTest CI ON COMMAND test_hrx_oracle)
@@ -3602,7 +3610,7 @@ if(BUILD_TESTING AND
     endif()
 endif()
 
-if(BUILD_TESTING)
+if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cmake/CMakeLists.txt")
     add_cpp_ci_test(HttplibDetection_config_only CI OFF COMMAND ${CMAKE_COMMAND} -B ${CMAKE_CURRENT_BINARY_DIR}/test_httplib_config_only -S ${CMAKE_CURRENT_SOURCE_DIR}/test/cmake -DTEST_CASE=config_only -DDETECTION_MACRO_PATH=${CMAKE_SOURCE_DIR}/cmake/DetectSystemHttplib.cmake)
     add_cpp_ci_test(HttplibDetection_old_header CI OFF COMMAND ${CMAKE_COMMAND} -B ${CMAKE_CURRENT_BINARY_DIR}/test_httplib_old_header -S ${CMAKE_CURRENT_SOURCE_DIR}/test/cmake -DTEST_CASE=old_header -DDETECTION_MACRO_PATH=${CMAKE_SOURCE_DIR}/cmake/DetectSystemHttplib.cmake)
     add_cpp_ci_test(HttplibDetection_modern_header CI OFF COMMAND ${CMAKE_COMMAND} -B ${CMAKE_CURRENT_BINARY_DIR}/test_httplib_modern_header -S ${CMAKE_CURRENT_SOURCE_DIR}/test/cmake -DTEST_CASE=modern_header -DDETECTION_MACRO_PATH=${CMAKE_SOURCE_DIR}/cmake/DetectSystemHttplib.cmake)
@@ -3661,19 +3669,21 @@ if(BUILD_TESTING AND EXISTS "${_MODEL_SYNC_TEST_SRC}")
     add_cpp_ci_test(ModelSyncAndAutoUpdateTest CI ON COMMAND test_model_sync_and_auto_update)
 endif()
 
-if(BUILD_TESTING)
+if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_thinksound_oracle.cpp")
     add_executable(test_thinksound_oracle test/cpp/test_thinksound_oracle.cpp)
     target_link_libraries(test_thinksound_oracle PRIVATE lemonade-server-core)
     add_cpp_ci_test(ThinkSoundOracleTest CI ON COMMAND test_thinksound_oracle)
 endif()
 
-if(BUILD_TESTING)
+if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_backend_definition.cpp")
     add_executable(test_backend_definition test/cpp/test_backend_definition.cpp)
     target_link_libraries(test_backend_definition PRIVATE lemonade-server-core)
     add_cpp_ci_test(BackendDefinitionTest CI ON COMMAND test_backend_definition)
 endif()
 
-if(BUILD_TESTING)
+if(BUILD_TESTING AND
+   EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_backend_definition_resources.cpp" AND
+   EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/backend_definition_resource_files.h.in")
     lemon_backend_definition_resource_index(LEMON_DEFINITION_RESOURCE_INDEX
         ${LEMON_BACKEND_DEFINITION_SCHEMA}
         ${LEMON_BACKEND_DEFINITION_FILES})
@@ -3689,32 +3699,32 @@ if(BUILD_TESTING)
     add_cpp_ci_test(BackendDefinitionResourcesTest CI ON COMMAND test_backend_definition_resources)
 endif()
 
-if(BUILD_TESTING)
+if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_configured_planner.cpp")
     add_executable(test_configured_planner test/cpp/test_configured_planner.cpp)
     target_link_libraries(test_configured_planner PRIVATE lemonade-server-core)
     add_cpp_ci_test(ConfiguredPlannerTest CI ON COMMAND test_configured_planner)
 endif()
 
-if(BUILD_TESTING)
+if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_configured_execution.cpp")
     add_executable(test_configured_execution test/cpp/test_configured_execution.cpp)
     target_link_libraries(test_configured_execution PRIVATE lemonade-server-core)
     add_cpp_ci_test(ConfiguredExecutionTest CI ON COMMAND test_configured_execution)
 endif()
 
-if(BUILD_TESTING)
+if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_ds4_oracle.cpp")
     add_executable(test_ds4_oracle test/cpp/test_ds4_oracle.cpp)
     target_link_libraries(test_ds4_oracle PRIVATE lemonade-server-core)
     add_cpp_ci_test(Ds4OracleTest CI ON COMMAND test_ds4_oracle)
 endif()
 
-if(BUILD_TESTING)
+if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_configured_llm_execution.cpp")
     add_executable(test_configured_llm_execution test/cpp/test_configured_llm_execution.cpp)
     target_link_libraries(test_configured_llm_execution PRIVATE lemonade-server-core)
     add_cpp_ci_test(ConfiguredDs4ExecutionTest CI ON COMMAND test_configured_llm_execution)
     add_cpp_ci_test(ConfiguredRyzenAiExecutionTest CI ON COMMAND test_configured_llm_execution --ryzenai)
 endif()
 
-if(BUILD_TESTING)
+if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_configured_registration.cpp")
     add_executable(test_configured_registration test/cpp/test_configured_registration.cpp)
     target_link_libraries(test_configured_registration PRIVATE lemonade-server-core)
     add_cpp_ci_test(ConfiguredRegistrationTest CI ON
@@ -3728,51 +3738,57 @@ if(BUILD_TESTING)
         DEPENDS test_configured_registration)
 endif()
 
-if(BUILD_TESTING)
+if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_ryzenai_oracle.cpp")
     add_executable(test_ryzenai_oracle test/cpp/test_ryzenai_oracle.cpp)
     target_link_libraries(test_ryzenai_oracle PRIVATE lemonade-server-core)
     add_cpp_ci_test(RyzenAiOracleTest CI ON COMMAND test_ryzenai_oracle)
 endif()
 
-if(BUILD_TESTING)
+if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_kokoro_oracle.cpp")
     add_executable(test_kokoro_oracle test/cpp/test_kokoro_oracle.cpp)
     target_link_libraries(test_kokoro_oracle PRIVATE lemonade-server-core)
     add_cpp_ci_test(KokoroOracleTest CI ON COMMAND test_kokoro_oracle)
 endif()
 
-if(BUILD_TESTING)
+if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_moonshine_oracle.cpp")
     add_executable(test_moonshine_oracle test/cpp/test_moonshine_oracle.cpp)
     target_link_libraries(test_moonshine_oracle PRIVATE lemonade-server-core)
     add_cpp_ci_test(MoonshineOracleTest CI ON COMMAND test_moonshine_oracle)
 endif()
 
-if(BUILD_TESTING)
+if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_onnxruntime_oracle.cpp")
     add_executable(test_onnxruntime_oracle test/cpp/test_onnxruntime_oracle.cpp)
     target_link_libraries(test_onnxruntime_oracle PRIVATE lemonade-server-core)
     add_cpp_ci_test(OnnxRuntimeOracleTest CI ON COMMAND test_onnxruntime_oracle)
 endif()
 
-if(BUILD_TESTING)
+if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_trellis_oracle.cpp")
     add_executable(test_trellis_oracle test/cpp/test_trellis_oracle.cpp)
     target_link_libraries(test_trellis_oracle PRIVATE lemonade-server-core)
     add_cpp_ci_test(TrellisOracleTest CI ON COMMAND test_trellis_oracle)
 endif()
 
-if(BUILD_TESTING)
+if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_backend_catalog.cpp")
     add_executable(test_backend_catalog test/cpp/test_backend_catalog.cpp)
     target_link_libraries(test_backend_catalog PRIVATE lemonade-server-core)
     add_cpp_ci_test(BackendCatalogTest CI ON COMMAND test_backend_catalog)
     add_cpp_ci_test(BackendCatalogLateBootstrapTest CI ON COMMAND test_backend_catalog --late)
     add_cpp_ci_test(BackendCatalogLateSchemaBootstrapTest CI ON COMMAND test_backend_catalog --late-schema)
+endif()
+
+if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/backend_catalog_http.py")
     add_cpp_ci_test(BackendCatalogHttpTest CI ON
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/backend_catalog_http.py $<TARGET_FILE:lemond>
         DEPENDS lemond)
 endif()
 
-if(BUILD_TESTING)
+if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/backend_schema_cli.py")
     add_cpp_ci_test(BackendSchemaCliTest CI ON
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/backend_schema_cli.py $<TARGET_FILE:lemonade>
         DEPENDS lemonade)
+endif()
+
+if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cli_repl_options.py")
     add_cpp_ci_test(CliReplOptionsTest CI ON
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/cli_repl_options.py $<TARGET_FILE:lemond> $<TARGET_FILE:lemonade>
         DEPENDS lemond lemonade)
