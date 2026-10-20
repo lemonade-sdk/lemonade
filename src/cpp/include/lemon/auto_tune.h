@@ -8,6 +8,7 @@
 #include <optional>
 #include <system_error>
 #include <lemon/auto_context_budget.h>
+#include <lemon/backends/backend_descriptor_registry.h>
 #include <lemon/gpu_memory_selection.h>
 #include <lemon/model_manager.h>
 #include <lemon/system_info.h>
@@ -347,6 +348,14 @@ inline int64_t resolve_auto_ctx_size(const RecipeOptions& effective_options,
     std::string backend;
     std::string device;
     const std::string recipe = effective_options.get_recipe();
+    const auto* descriptor = backends::descriptor_for(recipe);
+    if (descriptor && descriptor->skip_model_size_filter) {
+        // Adaptive weight caches invalidate the full-residency memory estimate.
+        const int64_t fallback = is_embedding ? EMBEDDING_CTX_SIZE : AUTO_CTX_FALLBACK;
+        LOG(DEBUG, "AutoTune") << "resolve_auto_ctx_size: " << model_info.model_name
+                               << " — backend manages memory, returning " << fallback;
+        return fallback;
+    }
     const json backend_json = effective_options.get_option(recipe + "_backend");
     const json device_json = effective_options.get_option(recipe + "_device");
     if (backend_json.is_string()) backend = backend_json.get<std::string>();

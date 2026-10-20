@@ -61,7 +61,10 @@ because these AMD downloads do not provide a latest-release discovery endpoint.
 An absolute executable path selects a user-managed installation.
 
 The presets are `exact`, `balanced`, `fast`, and `demo`. Lemonade forwards
-`ctx_size` as EXTENSOR's `--context-size`.
+`ctx_size` as EXTENSOR's `--context-size`. Automatic context sizing (`ctx_size: -1`,
+the default) uses 4096 tokens for EXTENSOR because its weight streaming makes a
+full-model memory estimate unsuitable. Explicit context sizes are preserved;
+EXTENSOR checks memory capacity when loading.
 
 ## Download controls
 
