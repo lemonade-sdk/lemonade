@@ -552,30 +552,39 @@ jobs:
               "$(git commit-tree "$(git hash-object -t tree /dev/null)" -m 'init benchmark history')"
           fi
           git worktree add bench-history "$HISTORY_BRANCH"
-          RUN_ID="${{ github.run_id }}"
-          shopt -s nullglob
-          for d in artifacts/bench-results-*; do
-            name="$(basename "$d")"
-            fork="${name#bench-results-}"
-            fork="${fork%-$RUN_ID}"
-            mkdir -p "bench-history/results/$fork"
-            # results are nested under <fork>/<model>/run-*.json — preserve that
-            find "$d" -name 'run-*.json' ! -name '*regression*' -print0 \
-              | while IFS= read -r -d '' f; do
-                  rel="${f#"$d"/}"           # e.g. ci/results/<fork>/<model>/run-X.json or <fork>/<model>/run-X.json
-                  rel="${rel#ci/results/}"
-                  rel="${rel#"$fork"/}"      # strip leading <fork>/ so we can re-root
-                  dest="bench-history/results/$fork/$rel"
-                  mkdir -p "$(dirname "$dest")"
-                  cp "$f" "$dest"
-                done
-            echo "$fork: $(find "bench-history/results/$fork" -name 'run-*.json' 2>/dev/null | wc -l) run file(s) in history"
-          done
+          python3 - << 'PY'
+          import json, shutil
+          from pathlib import Path
+          dest_root = Path("bench-history/results")
+          counts = {}
+          for f in sorted(Path("artifacts").rglob("run-*.json")):
+            if "regression" in f.name:
+              continue
+            try:
+              data = json.loads(f.read_text())
+            except Exception as e:
+              print(f"  [skip] {f}: unreadable ({e})")
+              continue
+            fork = data.get("fork_id")
+            if not fork:
+              print(f"  [skip] {f}: no fork_id field")
+              continue
+            model = f.parent.name
+            dest = dest_root / fork / model / f.name
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy(f, dest)
+            counts[fork] = counts.get(fork, 0) + 1
+          for fork in sorted(counts):
+            total = len(list((dest_root / fork).rglob("run-*.json")))
+            print(f"{fork}: +{counts[fork]} this run, {total} run file(s) in history")
+          if not counts:
+            print("WARNING: no run files found in artifacts/ — nothing merged")
+          PY
 
       - name: Aggregate leaderboard (full history)
         run: |
           python3 - << 'PY'
-          import json, os
+          import json, os, re
           from pathlib import Path
           from datetime import datetime, timezone
           # Full history, so the leaderboard keeps entries for forks that were
@@ -583,7 +592,36 @@ jobs:
           # per-fork replacement means the newest run per fork wins.
           results_dir = Path("bench-history/results")
           leaderboard = {}
-          lemonade_version = None
+          systems = {}          # hw fingerprint -> hardware block (dedup across runs)
+          lemonade_versions = set()
+          # Active scenario -> required ctx; other ctx/scenarios not rendered.
+          SCENARIO_CTX = {"context-4k": 4096, "context-32k": 32768}
+
+          _QUANT_RE = re.compile(r"(IQ\d+_\w+|Q\d+(?:_[A-Z0-9]+)*|BF16|F16|F32|MXFP4)", re.I)
+          def quant_from_checkpoint(me, data):
+            ck = (me.get("checkpoints") or {}).get("main") or data.get("checkpoint") or ""
+            fname = ck.split(":")[-1]
+            m = _QUANT_RE.search(fname)
+            return m.group(1).upper() if m else None
+
+          def hw_fingerprint(hw):
+            gpu = hw.get("gpu") or []
+            vram = gpu[0].get("vram_gb") if gpu and isinstance(gpu[0], dict) else None
+            return "|".join(str(x) for x in (hw.get("cpu"), vram, hw.get("os")))
+
+          def _gpu_label(gpu_list):
+            for g in (gpu_list or []):
+              name = g.get("name", "") if isinstance(g, dict) else ""
+              m = re.search(r"gfx\d+", name)
+              if m:
+                return m.group(0)
+            for g in (gpu_list or []):
+              name = g.get("name", "") if isinstance(g, dict) else ""
+              if name and not name.strip().isdigit():
+                return name
+            first = (gpu_list or [{}])[0]
+            return first.get("name") if isinstance(first, dict) else None
+
           forks_config = json.loads(Path("src/cpp/resources/benchmark_forks.json").read_text())
           experimental_forks = [f["fork_id"] for f in forks_config["forks"] if f.get("experimental", False)]
           for run_file in sorted(results_dir.rglob("run-*.json")):
@@ -595,8 +633,33 @@ jobs:
               continue
             fork_id = data.get("fork_id", "unknown")
             version = data.get("fork_version", "unknown")
-            if lemonade_version is None and data.get("lemonade_version"):
-              lemonade_version = data["lemonade_version"]
+            hw = data.get("hardware", {}) or {}
+            lem_ver = data.get("lemonade_version") or hw.get("lemonade_version")
+            if lem_ver:
+              lemonade_versions.add(lem_ver)
+            hw_id = hw_fingerprint(hw) if hw else None
+            if hw_id:
+              readable = _gpu_label(hw.get("gpu"))
+              ts = data.get("timestamp") or ""
+              if hw_id not in systems:
+                systems[hw_id] = {
+                  "id": hw_id,
+                  "cpu": hw.get("cpu"),
+                  "gpu": readable,
+                  "gpu_full": hw.get("gpu"),
+                  "vram_gb": (hw.get("gpu") or [{}])[0].get("vram_gb") if hw.get("gpu") else None,
+                  "ram_gb": hw.get("ram_gb"),
+                  "os": hw.get("os"),
+                  "lemonade_version": lem_ver,
+                  "_ts": ts,
+                }
+              else:
+                cur = systems[hw_id]
+                if readable and (cur.get("gpu") or "").strip().isdigit():
+                  cur["gpu"] = readable
+                  cur["gpu_full"] = hw.get("gpu")
+                if lem_ver and ts >= cur.get("_ts", ""):
+                  cur["lemonade_version"], cur["_ts"] = lem_ver, ts
             # The bench writes a top-level "models" array (one entry per model),
             # each with its own model name + results[]. Fall back to the flat
             # top-level shape for any legacy files.
@@ -607,9 +670,17 @@ jobs:
               model = me.get("model", data.get("model", "unknown"))
               for br in me.get("results", []):
                 for sc in br.get("scenarios", []):
-                  tps = sc.get("tps", {}).get("mean")
-                  if tps is None:
+                  want_ctx = SCENARIO_CTX.get(sc["name"])
+                  if want_ctx is None or br.get("ctx_size") not in (None, want_ctx):
                     continue
+                  tps_block = sc.get("tps", {})
+                  if tps_block.get("mean") is None:
+                    continue
+                  ttft_block = sc.get("ttft_ms", {})
+                  in_tok = sc.get("input_tokens")
+                  pp_tps = sc.get("pp_tps")
+                  if pp_tps is None and in_tok and ttft_block.get("min", 0) > 0:
+                    pp_tps = round(in_tok * 1000.0 / ttft_block["min"], 2)
                   key = f"{model}|{sc['name']}"
                   entry = {
                     "model": model, "scenario": sc["name"],
@@ -617,13 +688,18 @@ jobs:
                     "fork_repo": data.get("fork_repo", ""), "fork_version": version,
                     "backend": br.get("backend"),
                     "ctx_size": br.get("ctx_size"),
-                    "tps_mean": round(tps, 2),
-                    "tps_p95": round(sc.get("tps", {}).get("p95", 0), 2),
-                    "ttft_ms_mean": round(sc.get("ttft_ms", {}).get("mean", 0), 2),
+                    "quant": quant_from_checkpoint(me, data),
+                    "tps_mean": round(tps_block["mean"], 2),
+                    "tps_p95": round(tps_block.get("p95", 0), 2),
+                    "tg_tps": round(tps_block["mean"], 2),
+                    "ttft_ms_mean": round(ttft_block.get("mean", 0), 2),
+                    "ttft_ms_best": round(ttft_block["min"], 2) if ttft_block.get("min") else None,
+                    "pp_tps": pp_tps,
                     "input_tokens": sc.get("input_tokens"),
                     "vram_peak_gb": sc.get("vram_peak_gb"),
                     "timestamp": me.get("timestamp", data.get("timestamp")),
-                    # provenance: which CI run produced this number
+                    "lemonade_version": lem_ver,
+                    "hw_id": hw_id,
                     "run_id": data.get("run_id"),
                     "run_url": data.get("run_url"),
                     "commit": data.get("commit"),
@@ -645,22 +721,40 @@ jobs:
               continue
             fid = data.get("fork_id", "unknown")
             ver = data.get("fork_version", "unknown")
+            hw = data.get("hardware", {}) or {}
+            lem_ver = data.get("lemonade_version") or hw.get("lemonade_version")
             model_entries = data.get("models")
             if not isinstance(model_entries, list):
               model_entries = [data]
             for me in model_entries:
               mdl = me.get("model", data.get("model", "unknown"))
+              quant = quant_from_checkpoint(me, data)
               for br in me.get("results", []):
                 for sc in br.get("scenarios", []):
-                  tps = sc.get("tps", {}).get("mean")
-                  if tps is None:
+                  want_ctx = SCENARIO_CTX.get(sc["name"])
+                  if want_ctx is None or br.get("ctx_size") not in (None, want_ctx):
                     continue
+                  tps_block = sc.get("tps", {})
+                  if tps_block.get("mean") is None:
+                    continue
+                  ttft_block = sc.get("ttft_ms", {})
+                  in_tok = sc.get("input_tokens")
+                  pp_tps = sc.get("pp_tps")
+                  if pp_tps is None and in_tok and ttft_block.get("min", 0) > 0:
+                    pp_tps = round(in_tok * 1000.0 / ttft_block["min"], 2)
                   h = history.setdefault(mdl, {}).setdefault(sc["name"], {}).setdefault(fid, [])
                   h.append({
                     "version": ver, "timestamp": me.get("timestamp", data.get("timestamp")),
-                    "tps_mean": round(tps, 2),
-                    "ttft_ms_mean": round(sc.get("ttft_ms", {}).get("mean", 0), 2),
+                    "tps_mean": round(tps_block["mean"], 2),
+                    "tps_p95": round(tps_block.get("p95", 0), 2),
+                    "tg_tps": round(tps_block["mean"], 2),
+                    "ttft_ms_mean": round(ttft_block.get("mean", 0), 2),
+                    "ttft_ms_best": round(ttft_block["min"], 2) if ttft_block.get("min") else None,
+                    "pp_tps": pp_tps,
+                    "vram_peak_gb": sc.get("vram_peak_gb"),
                     "input_tokens": sc.get("input_tokens"),
+                    "quant": quant,
+                    "lemonade_version": lem_ver,
                     "run_id": data.get("run_id"), "run_url": data.get("run_url"),
                   })
           # sort each series chronologically and keep the last 30 points
@@ -670,8 +764,23 @@ jobs:
                 pts = sorted(history[mdl][scn][fid], key=lambda p: p.get("timestamp") or "")
                 history[mdl][scn][fid] = pts[-30:]
 
+          for _s in systems.values():
+            _s.pop("_ts", None)
+
+          def _vkey(v):
+            return tuple(int(p) if p.isdigit() else -1 for p in str(v).lstrip("v").split("."))
+
           server = os.environ.get("GITHUB_SERVER_URL", "https://github.com")
           repo   = os.environ.get("GITHUB_REPOSITORY", "")
+          latest_version = None
+          latest_ts = ""
+          for entries in leaderboard.values():
+            for e in entries:
+              ts = e.get("timestamp") or ""
+              if e.get("lemonade_version") and ts >= latest_ts:
+                latest_ts, latest_version = ts, e["lemonade_version"]
+          if latest_version is None and lemonade_versions:
+            latest_version = max(lemonade_versions, key=_vkey)
           out = {
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "run_id": os.environ.get("GITHUB_RUN_ID"),
@@ -680,7 +789,9 @@ jobs:
             "repo_url": f"{server}/{repo}" if repo else None,
             "actions_url": f"{server}/{repo}/actions/workflows/benchmark-regression.yml" if repo else None,
             "commit": os.environ.get("GITHUB_SHA"),
-            "lemonade_version": lemonade_version,
+            "lemonade_version": latest_version,
+            "lemonade_versions_seen": sorted(lemonade_versions, key=_vkey),
+            "systems": list(systems.values()),
             "experimental_forks": experimental_forks,
             "by_model_scenario": leaderboard,
             "history": history,
