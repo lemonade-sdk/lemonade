@@ -1128,9 +1128,10 @@ set(LEMON_BACKEND_DESCRIPTOR_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/backend_option_contract.cpp)
 file(GLOB LEMON_BACKEND_DEFINITION_FILES CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/*.json)
+set(LEMON_BACKEND_DEFINITION_SCHEMA ${CMAKE_CURRENT_SOURCE_DIR}/schemas/backend-definition-v1.schema.json)
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/BackendDefinitionResources.cmake)
 lemon_backend_definition_resources(LEMON_DEFINITION_RESOURCES
-    ${CMAKE_CURRENT_SOURCE_DIR}/schemas/backend-definition-v1.schema.json
+    ${LEMON_BACKEND_DEFINITION_SCHEMA}
     ${LEMON_BACKEND_DEFINITION_FILES})
 configure_file(src/cpp/server/backends/configured/backend_definition_resources.h.in
     "${CMAKE_CURRENT_BINARY_DIR}/include/backend_definition_resources.h" @ONLY)
@@ -3647,6 +3648,22 @@ if(BUILD_TESTING)
     add_executable(test_backend_definition test/cpp/test_backend_definition.cpp)
     target_link_libraries(test_backend_definition PRIVATE lemonade-server-core)
     add_cpp_ci_test(BackendDefinitionTest CI ON COMMAND test_backend_definition)
+endif()
+
+if(BUILD_TESTING)
+    lemon_backend_definition_resource_index(LEMON_DEFINITION_RESOURCE_INDEX
+        ${LEMON_BACKEND_DEFINITION_SCHEMA}
+        ${LEMON_BACKEND_DEFINITION_FILES})
+    configure_file(test/cpp/backend_definition_resource_files.h.in
+        "${CMAKE_CURRENT_BINARY_DIR}/test/include/backend_definition_resource_files.h" @ONLY)
+    add_executable(test_backend_definition_resources test/cpp/test_backend_definition_resources.cpp)
+    target_include_directories(test_backend_definition_resources PRIVATE
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+        ${CMAKE_CURRENT_BINARY_DIR}/test/include)
+    target_compile_definitions(test_backend_definition_resources PRIVATE
+        LEMON_GENERATED_INCLUDE_DIR="${CMAKE_CURRENT_BINARY_DIR}/include"
+        LEMON_CXX_LITERAL_BUDGET=${LEMON_CXX_LITERAL_BUDGET})
+    add_cpp_ci_test(BackendDefinitionResourcesTest CI ON COMMAND test_backend_definition_resources)
 endif()
 
 if(BUILD_TESTING)
