@@ -22,6 +22,7 @@ const STOP_SINGLE_REPETITIONS = 5;
 const STOP_CYCLE_REPETITIONS = 4;
 const WAITING_WARNING_REPETITIONS = 8;
 const MAX_FAILURE_HISTORY = 128;
+const MAX_RETRY_SPACING = 8;
 
 // These fields change during ordinary status reporting without changing the result.
 const TRANSIENT_RESULT_KEYS = new Set([
@@ -68,8 +69,7 @@ function parsedObject(content: string): Record<string, unknown> | null {
 function failureSignature(outcome: ToolOutcome): string | null {
   const value = parsedObject(outcome.content);
   if (!outcome.error && !value?.error) return null;
-  const error = value?.error || outcome.content;
-  return fingerprint(typeof error === 'string' ? error : JSON.stringify(stableJson(error, true)));
+  return fingerprint(normalized(outcome.content || '', true));
 }
 
 function callSignature(call: ToolInvocation): string {
@@ -96,40 +96,76 @@ function canonicalCycle(keys: readonly string[]): string {
   return rotations.sort()[0];
 }
 
+interface TrackedFailure {
+  result: string;
+  count: number;
+  retryAfter: number;
+  retrySpacing: number;
+  probing: boolean;
+}
+
 export class ToolLoopDetector {
   private history: Array<{ key: string; names: string }> = [];
   private warnedPattern: string | null = null;
   private waitingKey: string | null = null;
   private waitingCount = 0;
-  private failures = new Map<string, { error: string; count: number }>();
+  private successfulRounds = 0;
+  private failures = new Map<string, TrackedFailure>();
 
+  // Checking this also reserves one permitted recovery attempt.
   blockedReason(call: ToolInvocation): string | null {
     const failure = this.failures.get(callSignature(call));
-    return failure && failure.count >= STOP_SINGLE_REPETITIONS
-      ? `${call.function.name} with these arguments failed identically ${STOP_SINGLE_REPETITIONS} times. This call is blocked; change the arguments or use a different tool.`
-      : null;
+    if (!failure || failure.count < STOP_SINGLE_REPETITIONS) return null;
+    if (!failure.probing && this.successfulRounds >= failure.retryAfter) {
+      failure.probing = true;
+      return null;
+    }
+    return `${call.function.name} with these arguments failed identically at least ${STOP_SINGLE_REPETITIONS} times. This call is temporarily blocked; change the arguments or use a different tool.`;
   }
 
   private observeFailures(calls: readonly ToolInvocation[], outcomes: readonly ToolOutcome[]): ToolLoopNotice | null {
     let notice: ToolLoopNotice | null = null;
+    const succeeded = new Set(calls.flatMap((call, i) =>
+      failureSignature(outcomes[i]) === null ? [callSignature(call)] : []));
+
     for (let i = 0; i < calls.length; i++) {
       const key = callSignature(calls[i]);
       const error = failureSignature(outcomes[i]);
-      if (!error) {
+      if (succeeded.has(key)) {
         this.failures.delete(key);
         continue;
       }
+      if (error === null) continue;
+
       const previous = this.failures.get(key);
-      const count = previous?.error === error ? Math.min(previous.count + 1, STOP_SINGLE_REPETITIONS) : 1;
+      const same = previous?.result === error;
+      const count = same ? Math.min(previous.count + 1, STOP_SINGLE_REPETITIONS) : 1;
+      let retrySpacing = same ? previous.retrySpacing : 1;
+      let retryAfter = same ? previous.retryAfter : 0;
+      if (count === STOP_SINGLE_REPETITIONS) {
+        if (same && previous.probing) {
+          // One failed recovery probe must not reopen the call every round.
+          retrySpacing = Math.min(retrySpacing * 2, MAX_RETRY_SPACING);
+          retryAfter = this.successfulRounds + retrySpacing;
+        } else if (!same || previous.count < STOP_SINGLE_REPETITIONS) {
+          // Another successful tool result gives one chance to recheck the error.
+          retryAfter = this.successfulRounds + 1;
+        }
+      }
+
       this.failures.delete(key);
-      this.failures.set(key, { error, count });
+      this.failures.set(key, { result: error, count, retrySpacing, retryAfter, probing: false });
       if (this.failures.size > MAX_FAILURE_HISTORY) this.failures.delete(this.failures.keys().next().value!);
       if (count === WARN_REPETITIONS || (count === STOP_SINGLE_REPETITIONS && previous?.count !== count)) {
         notice = {
           action: 'warn',
-          reason: `${calls[i].function.name} returned the same error ${count} times with unchanged arguments. ${count === STOP_SINGLE_REPETITIONS ? 'Further identical calls will be skipped; use different arguments or another tool.' : 'Do not retry it unchanged.'}`,
+          reason: `${calls[i].function.name} returned the same result ${count} times with unchanged arguments. ${count === STOP_SINGLE_REPETITIONS ? 'Further identical calls will be throttled, with recovery attempts after successful other tool calls; change the arguments or use a different tool.' : 'Do not retry it unchanged.'}`,
         };
       }
+    }
+    if (outcomes.some(outcome => failureSignature(outcome) === null
+      && (!isWaiting(outcome) || isReportedProgress(outcome)))) {
+      this.successfulRounds++;
     }
     return notice;
   }
@@ -137,13 +173,18 @@ export class ToolLoopDetector {
   observe(calls: readonly ToolInvocation[], outcomes: readonly ToolOutcome[]): ToolLoopNotice | null {
     if (calls.length === 0 || calls.length !== outcomes.length) return null;
 
-    // Track individual failures before considering overall round progress.
+    // New arguments or changed error details are activity the round guard must see.
+    const changedFailure = calls.some((call, i) => {
+      const result = failureSignature(outcomes[i]);
+      const previous = this.failures.get(callSignature(call));
+      return result !== null && (previous === undefined || previous.result !== result);
+    });
     const failureNotice = this.observeFailures(calls, outcomes);
     // A failed call is handled by its own guard and must not cause the
     // round-level guard to disable unrelated tools.
     const active = calls.map((call, i) => ({ call, outcome: outcomes[i] }))
       .filter(item => failureSignature(item.outcome) === null);
-    const changed = active.some(item => isReportedProgress(item.outcome));
+    const changed = changedFailure || active.some(item => isReportedProgress(item.outcome));
     const waiting = active.length > 0 && active.every(item => isWaiting(item.outcome));
     if (changed) {
       this.history = [];

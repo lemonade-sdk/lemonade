@@ -69,22 +69,50 @@ async function main() {
     await active.onToolCalls([bad(i), good(i)]);
     assert.equal(active.snapshot().toolsDisabled, false, 'productive tools must remain available');
   }
-  assert.equal(called.filter(tc => tc.function.name === 'validate').length, 5);
+  assert.equal(called.filter(tc => tc.function.name === 'validate').length, 6,
+    'another successful tool permits one validation retry after blocking');
   assert.equal(called.filter(tc => tc.function.name === 'edit_line').length, 7);
   const { fullMessages, allToolCalls } = active.snapshot();
-  const skipped = fullMessages.find(msg => msg.role === 'tool' && msg.tool_call_id === 'bad_5');
+  const skipped = fullMessages.find(msg => msg.role === 'tool' && msg.tool_call_id === 'bad_6');
   assert.match(JSON.parse(skipped.content).error, /Skipped: validate/);
   assert.equal(allToolCalls.find(entry => entry.name === 'validate' && entry.result.startsWith('Skipped:')).status, 'error');
   assert.ok(fullMessages.find(msg => msg.role === 'tool' && msg.tool_call_id === 'good_6'));
 
-  // If the model ignores the feedback and makes only blocked calls, stop safely.
-  await active.onToolCalls([bad(7)]);
-  assert.equal(active.snapshot().toolsDisabled, false);
-  await active.onToolCalls([bad(8)]);
-  assert.equal(active.snapshot().toolsDisabled, true);
-  assert.equal(called.filter(tc => tc.function.name === 'validate').length, 5);
-  assert.match(active.snapshot().fullMessages.at(-1).content, /Tools are now disabled/);
-  console.log('Tool-loop hook: individual skipping, useful parallel work and final fallback passed.');
+  // A repaired error can be validated with the original arguments.
+  let repaired = false;
+  const recoveryCalls = [];
+  const recovering = makeHarness(async tc => {
+    recoveryCalls.push(tc);
+    const broken = tc.function.name === 'validate' && !repaired;
+    return { role: 'tool', tool_call_id: tc.id,
+      content: JSON.stringify(broken ? { error: 'invalid mesh' } : { changed: true }),
+      error: broken };
+  });
+  for (let i = 0; i < 5; i++) await recovering.onToolCalls([bad(i), good(i)]);
+  repaired = true;
+  await recovering.onToolCalls([bad(5), good(5)]);
+  assert.equal(recoveryCalls.filter(tc => tc.function.name === 'validate').length, 6);
+  assert.deepEqual(JSON.parse(recovering.snapshot().fullMessages.find(msg =>
+    msg.role === 'tool' && msg.tool_call_id === 'bad_5').content), { changed: true });
+  await recovering.onToolCalls([bad(6)]);
+  assert.equal(recoveryCalls.filter(tc => tc.function.name === 'validate').length, 7);
+  assert.equal(recovering.snapshot().toolsDisabled, false);
+
+  // Without any other completed tool, two exclusively blocked rounds finish safely.
+  const stalledCalls = [];
+  const stalled = makeHarness(async tc => {
+    stalledCalls.push(tc);
+    return { role: 'tool', tool_call_id: tc.id,
+      content: JSON.stringify({ error: 'invalid mesh' }), error: true };
+  });
+  for (let i = 0; i < 5; i++) await stalled.onToolCalls([bad(i)]);
+  await stalled.onToolCalls([bad(5)]);
+  assert.equal(stalled.snapshot().toolsDisabled, false);
+  await stalled.onToolCalls([bad(6)]);
+  assert.equal(stalled.snapshot().toolsDisabled, true);
+  assert.equal(stalledCalls.length, 5);
+  assert.match(stalled.snapshot().fullMessages.at(-1).content, /Tools are now disabled/);
+  console.log('Tool-loop hook: retries, recovery, per-call skipping and final fallback passed.');
 }
 
 main().catch(err => { console.error(err); process.exitCode = 1; });

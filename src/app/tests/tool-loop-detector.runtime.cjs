@@ -113,7 +113,10 @@ for (let i = 0; i < 5; i++) {
   ], [result({ error: 'invalid geometry' }, true), result({ changed: true })]);
   assert.equal(notice?.action, i === 2 || i === 4 ? 'warn' : undefined);
 }
-assert.match(productive.blockedReason(badValidation), /blocked/);
+assert.equal(productive.blockedReason(badValidation), null,
+  'a completed edit gives a blocked validation one recovery attempt');
+assert.match(productive.blockedReason(badValidation), /blocked/,
+  'the same permitted recovery attempt cannot be consumed twice');
 assert.equal(productive.blockedReason(call('edit_line', { step: 4 })), null);
 assert.equal(productive.blockedReason(call('validate', { mesh: 'fixed.stl' })), null);
 
@@ -126,6 +129,8 @@ for (let i = 0; i < 5; i++) {
   ], [result({ error: 'not found', request_id: `req_${i}` }), result({ models: ['qwen'] })]);
   assert.equal(notice?.action, i === 2 || i === 4 ? 'warn' : undefined);
 }
+assert.equal(search.blockedReason(badLoad), null,
+  'successful model discovery permits one guarded retry of a previous failure');
 assert.match(search.blockedReason(badLoad), /blocked/);
 assert.equal(search.blockedReason(call('list_models', { query: 'q5' })), null);
 
@@ -187,6 +192,90 @@ for (let i = 0; i < 100; i++) {
   assert.equal(observe(changed, call('inspect_geometry', { file: `mesh_${i}.stl` }),
     result({ error: 'syntax' }, true)), null);
 }
+// Identical error text with changing diagnostic details is not a repeated result.
+const improving = new ToolLoopDetector();
+const sameValidation = call('validate', { mesh: 'part.stl' });
+for (let remaining = 20; remaining >= 0; remaining--) {
+  assert.equal(observe(improving, sameValidation,
+    result({ error: 'Invalid mesh', remaining, fixed_lines: 20 - remaining }, true)), null);
+  assert.equal(improving.blockedReason(sameValidation), null);
+}
+
+// Even a changing ERROR result counts as progress for the round-level guard.
+// A constant successful status read must not mask steadily improving validation.
+const improvingWithStatus = new ToolLoopDetector();
+for (let remaining = 20; remaining >= 0; remaining--) {
+  const notice = improvingWithStatus.observe([
+    sameValidation, call('get_server_health', {}),
+  ], [result({ error: 'Invalid mesh', remaining }, true), result({ status: 'ok' })]);
+  assert.notEqual(notice?.action, 'stop', 'changing error details must prevent a false global stop');
+}
+
+// Exploring distinct arguments is also new activity, even if each attempt fails.
+const exploratory = new ToolLoopDetector();
+for (let i = 0; i < 100; i++) {
+  const notice = exploratory.observe([
+    call('load_model', { model_name: `candidate-${i}` }), call('get_server_health', {}),
+  ], [result({ error: 'model not found' }, true), result({ status: 'ok' })]);
+  assert.notEqual(notice?.action, 'stop', 'new failed arguments must not trigger a false global stop');
+}
+
+// After another tool succeeds, allow precisely one probe. A repeated error
+// blocks immediately again, with increasing spacing between later probes.
+const recovery = new ToolLoopDetector();
+for (let i = 0; i < 5; i++) observe(recovery, sameValidation, result({ error: 'still invalid' }, true));
+assert.match(recovery.blockedReason(sameValidation), /blocked/);
+observe(recovery, call('edit_line', { line: 1 }), result({ changed: true }));
+assert.equal(recovery.blockedReason(sameValidation), null);
+assert.match(recovery.blockedReason(sameValidation), /blocked/, 'only one identical probe per round');
+observe(recovery, sameValidation, result({ error: 'still invalid' }, true));
+assert.match(recovery.blockedReason(sameValidation), /blocked/);
+observe(recovery, call('edit_line', { line: 2 }), result({ changed: true }));
+assert.match(recovery.blockedReason(sameValidation), /blocked/, 'a failed probe increases retry spacing');
+observe(recovery, call('edit_line', { line: 3 }), result({ changed: true }));
+assert.equal(recovery.blockedReason(sameValidation), null);
+observe(recovery, sameValidation, result({ status: 'valid' }));
+assert.equal(recovery.blockedReason(sameValidation), null, 'a successful probe clears the block');
+
+// Persistent failures are probed less often, even when unrelated work keeps succeeding.
+const throttled = new ToolLoopDetector();
+for (let i = 0; i < 5; i++) observe(throttled, sameValidation, result({ error: 'stuck' }, true));
+let editStep = 0;
+for (const spacing of [1, 2, 4, 8, 8]) {
+  for (let i = 0; i < spacing; i++) {
+    assert.match(throttled.blockedReason(sameValidation), /blocked/);
+    observe(throttled, call('edit_line', { line: ++editStep }), result({ changed: true }));
+  }
+  assert.equal(throttled.blockedReason(sameValidation), null);
+  observe(throttled, sameValidation, result({ error: 'stuck' }, true));
+  assert.match(throttled.blockedReason(sameValidation), /blocked/);
+}
+
+// Waiting status is not a successful result and must not reopen a failure.
+const pendingRecovery = new ToolLoopDetector();
+for (let i = 0; i < 5; i++) observe(pendingRecovery, sameValidation, result({ error: 'invalid' }, true));
+for (let i = 0; i < 40; i++) {
+  observe(pendingRecovery, call('get_job_status', { id: 1 }), result({ status: 'running', timestamp: i }));
+  assert.match(pendingRecovery.blockedReason(sameValidation), /blocked/);
+}
+
+// The 128-entry bound evicts the oldest failure history, not entire tool rounds.
+const bounded = new ToolLoopDetector();
+const oldest = call('validate', { file: 'old.stl' });
+for (let i = 0; i < 5; i++) observe(bounded, oldest, result({ error: 'invalid' }, true));
+assert.match(bounded.blockedReason(oldest), /blocked/);
+for (let i = 0; i < 128; i++) {
+  observe(bounded, call('validate', { file: `different-${i}.stl` }), result({ error: 'invalid' }, true));
+}
+assert.equal(bounded.blockedReason(oldest), null);
+
+// A success for the same key takes precedence over a parallel failure.
+const sameBatch = new ToolLoopDetector();
+for (let i = 0; i < 5; i++) observe(sameBatch, sameValidation, result({ error: 'invalid' }, true));
+sameBatch.observe([sameValidation, sameValidation],
+  [result({ status: 'fixed' }), result({ error: 'invalid' }, true)]);
+assert.equal(sameBatch.blockedReason(sameValidation), null);
+
 // The streaming hook must be governed by observed results, not by a fixed round count.
 const hook = fs.readFileSync(path.join(__dirname, '../src/hooks/useChatStreaming.ts'), 'utf8');
 assert.match(hook, /const toolLoopDetector = new ToolLoopDetector\(\)/);
