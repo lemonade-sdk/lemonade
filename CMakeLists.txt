@@ -1076,6 +1076,8 @@ set(SOURCES_CORE
     src/cpp/server/models/json_catalog.cpp
     src/cpp/server/models/listed_catalog.cpp
     src/cpp/server/models/model_sources.cpp
+    src/cpp/server/models/ingest_collections.cpp
+    src/cpp/server/models/repository_provenance.cpp
     src/cpp/server/models/catalog_set.cpp
     src/cpp/server/models/catalog_fetch_clock.cpp
     src/cpp/server/models/catalog_locator.cpp
