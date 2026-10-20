@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Vision: Automatically Selecting the Best Known Configuration (auto-BKC) - Lemonade Server</title>
+  <title>Vision: your auto-optimizing local stack of agents, models, and engines - Lemonade Server</title>
   <link rel="icon" href="../assets/favicon.ico">
   <link rel="stylesheet" href="../assets/website-styles.css">
   <link rel="stylesheet" href="../assets/flowchart.css">
@@ -12,9 +12,9 @@
   <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@600;700;800&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script src="../assets/navbar.js"></script>
-  <meta name="description" content="Lemonade's vision for auto-BKC: pick an agent, and Lemonade installs and configures the best known model and engine for your system in one click.">
-  <meta property="og:title" content="Vision: your auto-optimizing local stack of agents, models, and engines. Automatically Selecting the Best Known Configuration (auto-BKC)">
-  <meta property="og:description" content="Lemonade's vision for auto-BKC: pick an agent, and Lemonade installs and configures the best known model and engine for your system in one click.">
+  <meta name="description" content="Lemonade's vision for an auto-optimizing local stack: pick an agent, and Lemonade installs and configures the best known model and engine for your system in one click.">
+  <meta property="og:title" content="Vision: your auto-optimizing local stack of agents, models, and engines">
+  <meta property="og:description" content="Lemonade's vision for an auto-optimizing local stack: pick an agent, and Lemonade installs and configures the best known model and engine for your system in one click.">
   <meta property="og:image" content="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/banner.png">
   <meta property="og:type" content="article">
   <meta property="article:published_time" content="2026-10-14">
@@ -742,7 +742,7 @@
           </div>
           <div class="anim-hub" id="anim-hub">
             <span class="hub-name">Strix Halo</span>
-            <span class="hub-sub">auto-BKC</span>
+            <span class="hub-sub">auto-optimize</span>
           </div>
           <div class="anim-col" data-col="model">
             <div class="anim-label">Model</div>
@@ -772,7 +772,7 @@
       </ul>
 
       <h2>Vision</h2>
-      <p>The fragmented ecosystem of engines should be abstracted away from users and developers. They should be automatically presented with a "best known configuration" (BKC) for their use case, which we refer to as <strong>auto-BKC</strong>.</p>
+      <p>The fragmented ecosystem of engines should be abstracted away from users and developers. They should be automatically presented with an automatically optimized starting point for their use case, which we refer to as <strong>auto-opt</strong>.</p>
       <p>In practice:</p>
       <figure class="bkc-flow">
         <div class="flow-track">
@@ -812,7 +812,7 @@
       </figure>
 
       <h3>Theory</h3>
-      <p>Auto-BKC is possible because there are two subjective aspects to setting up a local AI agent, and everything else has an objective answer.</p>
+      <p>Auto-Opt is possible because there are two subjective aspects to setting up a local AI agent, and everything else has an objective answer.</p>
       <figure class="bkc-theory">
         <div class="theory-grid">
           <div class="zone zone-subjective">
@@ -844,7 +844,7 @@
       </figure>
 
       <h2>Enabling Technology</h2>
-      <p>What do we need to build to enable the vision of auto-BKC?</p>
+      <p>What do we need to build to enable the vision of auto-opt?</p>
 
       <nav class="tm-board" aria-label="Enabling Technology contents">
         <div class="tm-body">
@@ -944,7 +944,7 @@
       </div>
 
       <h3 id="agent-manager">Agent Manager</h3>
-      <p>Assists users with the installation, configuration, and launch of agents to work with local AI. Contains enough metadata about each agent's use case to enable auto-BKC, along with benchmark data, to recommend engines and models.</p>
+      <p>Assists users with the installation, configuration, and launch of agents to work with local AI. Contains enough metadata about each agent's use case to enable automatic optimization, along with benchmark data, to recommend engines and models.</p>
       <p>Candidate agents: Pi, AnythingLLM, Hermes, DeepSeek Harness, Claude Code, Codex, GitHub CLI.</p>
       <p>We will also investigate deep integration of Pi into Lemonade, which could be used for:</p>
       <ul>
@@ -1167,7 +1167,7 @@
 
         setStatus(
           !reached(0) ? `Agent selected: ${c.agent}` :
-          !reached(1) ? 'Finding the best known configuration…' :
+          !reached(1) ? 'Finding the best configuration…' :
           t < T.atEngine ? `Model: ${c.model}` :
           `${c.model} on ${c.engine}. ${c.agent} is live.`
         );
