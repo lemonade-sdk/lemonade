@@ -41,7 +41,7 @@ module.exports = (env, argv) => ({
     filename: '[name].bundle.js',
     chunkFilename: '[name].chunk.js',
 
-    // GUI3/Tauri packaging expects the renderer application here.
+    // Lemonade App/Tauri packaging expects the renderer application here.
     path: path.resolve(__dirname, 'dist/renderer'),
 
     // Resolve lazy-loaded chunks relative to the actual renderer bundle.
@@ -51,7 +51,7 @@ module.exports = (env, argv) => ({
   },
 
   optimization: {
-    // GUI3 contains large visualization and markdown dependencies.
+    // Lemonade App contains large visualization and markdown dependencies.
     // Avoid expensive minification in CI and development builds.
     minimize: false,
 

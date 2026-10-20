@@ -299,7 +299,7 @@ function binaryStl(triangles: Array<[Vec3, Vec3, Vec3]>): ArrayBuffer {
   if (triangles.length === 0) throw new Error('The generated GLB contains no triangle mesh to export.');
   const output = new ArrayBuffer(84 + triangles.length * 50);
   const bytes = new Uint8Array(output);
-  const header = new TextEncoder().encode('Lemonade GUI3 STL export');
+  const header = new TextEncoder().encode('Lemonade App STL export');
   bytes.set(header.subarray(0, 80), 0);
   const view = new DataView(output);
   view.setUint32(80, triangles.length, true);

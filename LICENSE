@@ -223,9 +223,9 @@ BSD-3-Clause), three.js (copyright 2010-2026 three.js authors, MIT) and
 @monogrid/gainmap-js (copyright 2023 MONOGRID, MIT). The original bundle
 retains upstream license notices; see `src/app/src/vendor/README.md`.
 
-## GUI3 frontend dependencies
+## Lemonade App frontend dependencies
 
-The GUI3 frontend references the following third-party packages through npm or
+The Lemonade App frontend references the following third-party packages through npm or
 system Node.js packages:
 
 - DOMPurify: Apache-2.0

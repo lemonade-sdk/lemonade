@@ -12,7 +12,7 @@ export interface LemonadeDefaultChatModel {
 }
 
 /**
- * The only place that defines GUI3's downloadable chat fallbacks.
+ * The only place that defines the App's downloadable chat fallbacks.
  * Replacing a default model must not require touching ChatView behavior.
  */
 export const LEMONADE_DEFAULT_CHAT_MODELS: readonly LemonadeDefaultChatModel[] = [
