@@ -48,5 +48,6 @@ private:
 };
 
 const BackendHookRegistry& installed_backend_hooks();
+void audit_hook_abi_metadata(const BackendHookRegistry& registry);
 
 }

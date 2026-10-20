@@ -187,6 +187,13 @@ private:
 }
 
 namespace v2 {
+CompositionDiagnostics check_fragment(const Json& value, std::string_view fragment, Budget& budget) {
+    StructuralChecker checker(budget.limits, &budget);
+    checker.check(value, schema_document().at("$defs").at(std::string(fragment)), "");
+    budget.work(0, checker.visits());
+    return std::move(checker.result);
+}
+
 CompositionDiagnostics check_structure(const nlohmann::json& value, DefinitionV2SchemaRoot root, const DefinitionLimits& limits, std::size_t& visits, Budget* budget) {
     StructuralChecker checker(limits, budget);
     const auto& schema = schema_document();

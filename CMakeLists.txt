@@ -1147,11 +1147,15 @@ add_library(lemonade-backend-definition-v2 STATIC
     src/cpp/server/backends/configured/backend_definition_edits.cpp
     src/cpp/server/backends/configured/backend_definition_provenance.cpp
     src/cpp/server/backends/configured/backend_definition_resolver.cpp
-    src/cpp/server/backends/configured/backend_definition_descriptor.cpp)
+    src/cpp/server/backends/configured/backend_definition_descriptor.cpp
+    src/cpp/server/backends/configured/backend_definition_exports.cpp
+    src/cpp/server/backends/configured/backend_hook_abi.cpp)
 target_include_directories(lemonade-backend-definition-v2 PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
     PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/include)
 target_link_libraries(lemonade-backend-definition-v2 PUBLIC nlohmann_json::nlohmann_json lemonade-digest-crypto)
+
+
 
 set(LEMON_BACKEND_DEFINITION_DATA_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backend_operation_data.cpp
@@ -3872,4 +3876,22 @@ if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_backend_d
         LEMON_PRODUCTION_DEFINITIONS="${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends")
     target_link_libraries(test_backend_definition_descriptor PRIVATE lemonade-backend-definition-v2)
     add_cpp_ci_test(BackendDefinitionDescriptorTest CI ON COMMAND test_backend_definition_descriptor)
+endif()
+
+if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_backend_definition_exports.cpp")
+    add_executable(test_backend_definition_exports
+        test/cpp/test_backend_definition_exports.cpp
+        src/cpp/server/backends/configured/backend_definition_exports.cpp)
+    target_compile_definitions(test_backend_definition_exports PRIVATE
+        LEMON_BACKEND_EXPORT_TESTING
+        LEMON_TEST_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures")
+    target_include_directories(test_backend_definition_exports PRIVATE src/cpp/server/backends/configured)
+    target_link_libraries(test_backend_definition_exports PRIVATE lemonade-backend-definition-v2)
+    add_cpp_ci_test(BackendDefinitionExportsTest CI ON COMMAND test_backend_definition_exports)
+endif()
+
+if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_backend_hook_abi.cpp")
+    add_executable(test_backend_hook_abi test/cpp/test_backend_hook_abi.cpp)
+    target_link_libraries(test_backend_hook_abi PRIVATE lemonade-server-core)
+    add_cpp_ci_test(BackendHookAbiTest CI ON COMMAND test_backend_hook_abi)
 endif()

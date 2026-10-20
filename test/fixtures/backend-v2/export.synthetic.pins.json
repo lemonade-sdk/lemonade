@@ -1,0 +1,236 @@
+{
+  "source": "sha256:4feb0147bfce18c84047608f75ad0f02097b25c67acd6968d1bcad3f3e2f08f5",
+  "definition": "sha256:f8477134f16d8ccc1009ce732f6bbae4794f4c4dca16b7b2b4da4809ed64f1d6",
+  "dependencies": "sha256:3acb87c8851d6504bf3e83c8656b427b4e8d6414497fd9f2e908432c38e3c85d",
+  "policy": "sha256:f54436637fe904f6825ebb7aa60e4fad05b166de5b62a4b830d57e7b6bd9fae6",
+  "slots": [
+    {
+      "slot": {
+        "owner_kind": 0,
+        "owner_id": "launch",
+        "stage": "launch",
+        "hook_id": "kokoro.voice_index"
+      },
+      "abi": 1,
+      "parameters": "sha256:6d693d6f53d8a4cf83131c975c7332b76757260037939107fb0d48576143e5e3",
+      "removal": 2,
+      "dependencies": [],
+      "sealed_inputs": [
+        {
+          "path": "/launch/program",
+          "at": "",
+          "match": null
+        }
+      ],
+      "mutable_inputs": [
+        {
+          "target": {
+            "path": "/metadata/display_name",
+            "at": "",
+            "match": null
+          },
+          "type": 3,
+          "allow_absent": false,
+          "minimum": null,
+          "maximum": null,
+          "maximum_length": 128,
+          "values": [],
+          "schema_fragment": "",
+          "reference_roots": []
+        }
+      ],
+      "required_phases": [],
+      "effects": [
+        0
+      ],
+      "owner_semantics": "sha256:34554e16d632b4823d1f9bd93a6cd5b275ae8a342d236dbc60b862f5dd10c1f6",
+      "ordered_hooks": [
+        "kokoro.voice_index"
+      ],
+      "mutation_policy_digest": "sha256:d2abd34aecbc87e102d9aba533115dc4859b51ab8350f8f7cfaf55056ec47158"
+    },
+    {
+      "slot": {
+        "owner_kind": 2,
+        "owner_id": "main",
+        "stage": "artifacts",
+        "hook_id": "llamacpp.gguf"
+      },
+      "abi": 1,
+      "parameters": "sha256:6d693d6f53d8a4cf83131c975c7332b76757260037939107fb0d48576143e5e3",
+      "removal": 1,
+      "dependencies": [],
+      "sealed_inputs": [
+        {
+          "path": "/launch/program",
+          "at": "",
+          "match": null
+        }
+      ],
+      "mutable_inputs": [
+        {
+          "target": {
+            "path": "/metadata/display_name",
+            "at": "",
+            "match": null
+          },
+          "type": 3,
+          "allow_absent": false,
+          "minimum": null,
+          "maximum": null,
+          "maximum_length": 128,
+          "values": [],
+          "schema_fragment": "",
+          "reference_roots": []
+        }
+      ],
+      "required_phases": [],
+      "effects": [
+        0
+      ],
+      "owner_semantics": "sha256:63c983e954104d7c314b9f7f29a9aa206b2317a000178f9bbfffdafcdaa04574",
+      "ordered_hooks": [
+        "llamacpp.gguf"
+      ],
+      "mutation_policy_digest": "sha256:bab02b9a22121eb37fd50fe66d1dcd316ccbb3d77600e8149a8153acfa725d85"
+    },
+    {
+      "slot": {
+        "owner_kind": 1,
+        "owner_id": "chat.buffered",
+        "stage": "request",
+        "hook_id": "llamacpp.max_tokens_alias"
+      },
+      "abi": 1,
+      "parameters": "sha256:6d693d6f53d8a4cf83131c975c7332b76757260037939107fb0d48576143e5e3",
+      "removal": 1,
+      "dependencies": [],
+      "sealed_inputs": [
+        {
+          "path": "/launch/program",
+          "at": "",
+          "match": null
+        }
+      ],
+      "mutable_inputs": [
+        {
+          "target": {
+            "path": "/metadata/display_name",
+            "at": "",
+            "match": null
+          },
+          "type": 3,
+          "allow_absent": false,
+          "minimum": null,
+          "maximum": null,
+          "maximum_length": 128,
+          "values": [],
+          "schema_fragment": "",
+          "reference_roots": []
+        }
+      ],
+      "required_phases": [],
+      "effects": [
+        0
+      ],
+      "owner_semantics": "sha256:f6216a1d15e7509c634e01b48fb8ae87f80aeb8db34be4d611078a5b7e9129aa",
+      "ordered_hooks": [
+        "llamacpp.max_tokens_alias",
+        "llamacpp.tool_schema_limits"
+      ],
+      "mutation_policy_digest": "sha256:3b29dc523722ffd884720cc59c77193c586b7a9465a8acc37ca520eddaa688f0"
+    },
+    {
+      "slot": {
+        "owner_kind": 1,
+        "owner_id": "chat.buffered",
+        "stage": "request",
+        "hook_id": "llamacpp.tool_schema_limits"
+      },
+      "abi": 1,
+      "parameters": "sha256:6d693d6f53d8a4cf83131c975c7332b76757260037939107fb0d48576143e5e3",
+      "removal": 1,
+      "dependencies": [],
+      "sealed_inputs": [
+        {
+          "path": "/launch/program",
+          "at": "",
+          "match": null
+        }
+      ],
+      "mutable_inputs": [
+        {
+          "target": {
+            "path": "/metadata/display_name",
+            "at": "",
+            "match": null
+          },
+          "type": 3,
+          "allow_absent": false,
+          "minimum": null,
+          "maximum": null,
+          "maximum_length": 128,
+          "values": [],
+          "schema_fragment": "",
+          "reference_roots": []
+        }
+      ],
+      "required_phases": [],
+      "effects": [
+        0
+      ],
+      "owner_semantics": "sha256:f6216a1d15e7509c634e01b48fb8ae87f80aeb8db34be4d611078a5b7e9129aa",
+      "ordered_hooks": [
+        "llamacpp.max_tokens_alias",
+        "llamacpp.tool_schema_limits"
+      ],
+      "mutation_policy_digest": "sha256:1deb1bacd4f63ec0f170202c38c8f48566730801de12099959dfc8e3f395bd5a"
+    },
+    {
+      "slot": {
+        "owner_kind": 1,
+        "owner_id": "chat.buffered",
+        "stage": "response",
+        "hook_id": "llamacpp.client_model"
+      },
+      "abi": 1,
+      "parameters": "sha256:6d693d6f53d8a4cf83131c975c7332b76757260037939107fb0d48576143e5e3",
+      "removal": 1,
+      "dependencies": [],
+      "sealed_inputs": [
+        {
+          "path": "/launch/program",
+          "at": "",
+          "match": null
+        }
+      ],
+      "mutable_inputs": [
+        {
+          "target": {
+            "path": "/metadata/display_name",
+            "at": "",
+            "match": null
+          },
+          "type": 3,
+          "allow_absent": false,
+          "minimum": null,
+          "maximum": null,
+          "maximum_length": 128,
+          "values": [],
+          "schema_fragment": "",
+          "reference_roots": []
+        }
+      ],
+      "required_phases": [],
+      "effects": [
+        0
+      ],
+      "owner_semantics": "sha256:f6216a1d15e7509c634e01b48fb8ae87f80aeb8db34be4d611078a5b7e9129aa",
+      "ordered_hooks": [
+        "llamacpp.client_model"
+      ],
+      "mutation_policy_digest": "sha256:c0a6dc16afbf095721eaa13dbd370c62a4d9ee028fadf19e36586d9073b5445c"
+    }
+  ],
+  "registry": "sha256:0a4f0f6c6b55ab2cc71b386fb795ab57d23cd6b0960dd25e083e9eef5629d558"
+}

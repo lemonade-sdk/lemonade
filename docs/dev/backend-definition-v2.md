@@ -303,3 +303,73 @@ It rejects unknown enums and OS names. Production callers and generated v1 objec
 remain on their original paths. The separate CMake v2 initializer emitter is used
 only by an embedded synthetic fixture. Its private resolution cache depends on
 embedded source/schema data and the resolver, with no registry/factory recursion.
+
+## Compiled export registry
+
+The first phase-3 unit adds the data-only `BuiltinExportRegistry` and
+`HookAbiDescriptor` tables. Production exports are empty. In particular,
+`llamacpp@1` is not installed as an export. The example definitions remain
+composition examples and cannot supply authority. Resolution, including a
+caller-supplied `DefinitionNamespace::Builtin`, is still a data operation.
+
+Export keys consist of a builtin ID and a positive contract major. Lookup is
+exact; there is no version fallback. Registry construction is private to the
+loader. The synthetic registry constructor is defined only in the export test
+executable, and is absent from the production library. External JSON cannot
+provide or replace a registry entry.
+
+Each contract pins the canonical source, declaration and dependency digests, a
+positive policy revision, and the complete policy digest. Each exported slot
+identifies a root slot, stable operation ID or artifact key, its stage and hook
+ID. Its policy binds the installed ABI revision, parameter digest, ordered hook
+sequence, semantic owner digest, removal rule, slot and phase dependencies,
+sealed inputs, typed mutable inputs, and allowed effects. Every hook selection
+in the base must have exactly one policy. Duplicate hook IDs in one owner/stage,
+uncovered selections, cyclic dependencies and contradictory data policies fail
+the audit.
+
+Mutable scalar inputs declare a type, optional range, string byte bound, enum
+and permitted absence. Structured input rules use the audited `Expression`
+schema fragment and explicit reference roots; arbitrary policy expressions are
+not supported. Literal expression payloads and reference defaults remain data.
+Hook selections and operation owner semantics cannot be declared mutable.
+These records are inputs to the later authorizer; the registry audit alone
+does not authorize an external declaration.
+
+Identity domains are distinct:
+
+| Identity | Domain prefix, followed by canonical JSON |
+|---|---|
+| Parameters | `lemonade.backend-hook-parameters.v1\n` |
+| Owner semantics | `lemonade.backend-hook-owner.v1\n` |
+| Mutation policy | `lemonade.backend-hook-mutation-policy.v1\n` |
+| Export policy | `lemonade.backend-export-policy.v1\n` |
+| Registry | `lemonade.backend-export-registry.v1\n` |
+| Installed ABI metadata | `lemonade.backend-hook-abi.v1\n` |
+
+The registry identity binds sorted export identities and the installed ABI
+metadata, including implementation revisions and operation restrictions. The
+production aggregate digest is a committed literal in
+`backend_definition_exports.cpp`; normal builds do not regenerate it. Test
+source, definition, dependency, policy and aggregate pins are committed in
+`test/fixtures/backend-v2/export.synthetic.pins.json`. The original resolver
+domains and fixtures are unchanged. Filesystem labels, function pointers and
+execution defaults do not enter these identities.
+
+The server compares every executable hook registration with its data-only ABI
+descriptor and audits the installed registry before returning the installed
+hook table. This calls no hook targets. An ABI revision change requires a new
+contract major for every dependent export. Incompatible slot meaning, removal
+obligations, parameter shape, input surface or effects also require a new major.
+A compatible implementation correction changes the implementation identity;
+a compatible data update changes the base identities. Old majors can coexist
+only as separately pinned and audited entries. Removing a major provides no
+fallback for its children.
+
+The legacy installed feature manifest is unchanged. Exporting an existing hook
+adds authorization permission, rather than installing a new executable
+primitive. A later, separate admission manifest must advertise that permission.
+The authorizer, frozen mixed-version catalog, candidate graph validation and
+representation negotiation remain pending; production admission and executable
+validation are still v1-only. No v2 registration or factory is constructed by
+this unit.

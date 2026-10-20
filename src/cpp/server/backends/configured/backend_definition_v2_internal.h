@@ -110,6 +110,7 @@ CompositionDiagnostics relationships(const Json& declaration, const LayerState& 
 std::string digest(std::string_view domain, const Json& value, Budget& budget);
 CompositionDiagnostics check_structure(const Json& value, DefinitionV2SchemaRoot root,
     const DefinitionLimits& limits, std::size_t& visits, Budget* budget = nullptr);
+CompositionDiagnostics check_fragment(const Json& value, std::string_view fragment, Budget& budget);
 void sort_diagnostics(CompositionDiagnostics& diagnostics);
 
 struct ProvenanceData {

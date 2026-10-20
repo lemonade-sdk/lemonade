@@ -1,3 +1,5 @@
+#include "lemon/backends/configured/backend_definition_exports.h"
+#include "lemon/backends/configured/backend_hook_abi.h"
 #include "lemon/backends/configured/backend_hook_registry.h"
 #include "lemon/backends/kokoro/kokoro_hooks.h"
 #include "lemon/backends/llamacpp/llamacpp_request.h"
@@ -34,8 +36,20 @@ const HookRegistration& BackendHookRegistry::require(std::string_view id, HookSt
     throw std::invalid_argument("Unknown hook");
 }
 
+void audit_hook_abi_metadata(const BackendHookRegistry& registry) {
+    static const char* stages[] = {"artifacts", "request", "response", "launch", "operation", "start_failure", "sink_operation"};
+    if (registry.registrations().size() != installed_hook_abis().size()) throw std::logic_error("Hook ABI registry size mismatch");
+    for (const auto& registration : registry.registrations()) {
+        const auto* abi = find_hook_abi(registration.id);
+        const auto stage = static_cast<std::size_t>(registration.stage);
+        if (!abi || stage >= sizeof(stages) / sizeof(stages[0]) || abi->stage != stages[stage] || !abi->revision || !abi->implementation_revision)
+            throw std::logic_error("Hook ABI registry mismatch");
+    }
+}
+
 const BackendHookRegistry& installed_backend_hooks() {
-    static const BackendHookRegistry registry({
+    static const BackendHookRegistry registry = [] {
+        BackendHookRegistry value({
         {"llamacpp.gguf", HookStage::Artifacts, ArtifactHook(&llamacpp::ops)},
         {"llamacpp.max_tokens_alias", HookStage::Request, RequestHook(&llamacpp::with_max_tokens_alias)},
         {"llamacpp.tool_schema_limits", HookStage::Request, RequestHook(&llamacpp::sanitize_tool_schema_limits)},
@@ -48,7 +62,11 @@ const BackendHookRegistry& installed_backend_hooks() {
         {"onnxruntime.classify", HookStage::Operation, OperationHook(&onnxruntime::classify)},
         {"onnxruntime.startup_error", HookStage::StartFailure, StartFailureHook(&onnxruntime::startup_error)},
         {"trellis.mesh", HookStage::SinkOperation, SinkOperationHook(&trellis::mesh)}
-    });
+        });
+        audit_hook_abi_metadata(value);
+        installed_builtin_exports();
+        return value;
+    }();
     return registry;
 }
 
