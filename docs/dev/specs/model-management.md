@@ -180,6 +180,7 @@ public:
     bool is_model_downloaded(const std::string& name);
     std::string get_public_model_name(const std::string& canonical_id);
     std::string canonical_for_request(const std::string& requested);
+    std::string resolve_model_name(const std::string& name);  // the key, or the name given
     // One entry per checkpoint — type, present, required, registry, path — from
     // the same sources a pull would use; the wire's checkpoint_status[] is this.
     std::vector<CheckpointStatus> checkpoint_status(const ModelInfo& info) const;
@@ -209,7 +210,7 @@ public:
                      bool attach_if_running = false);
     UpdateCheckResult check_updates(const std::vector<std::string>& targets = {});
     json sync_status(uint64_t sync_id = 0) const;
-    json wait_for_sync();
+    void wait_until_sync_idle();
     void cancel_sync();
 
     // Options: one read, two writes. options(name[, changes]) carries the entry,
@@ -220,7 +221,65 @@ public:
     json replace_options(const std::string& name, const json& saved);  // {} erases the entry
 
     // Aliases — delegation to the single AliasManager instance
-    ...
+    std::map<std::string, std::string> aliases() const;
+    std::optional<std::string> resolve_alias(const std::string& alias_or_name) const;
+    bool set_alias(const std::string& alias, const std::string& target, std::string& err_msg);
+    bool remove_alias(const std::string& alias);
+
+    // Registration, and the registry documents behind it
+    void register_model(const std::string& name, const json& model_data,
+                        bool allow_missing_checkpoint = false, bool replace_existing = false);
+    void register_user_model(const std::string& name, const json& model_data,
+                             const std::string& source = "");
+    std::optional<std::string> validate_collection_request(const std::string& name,
+                                                           const json& model_data);
+    json model_sources();
+    // A registry row answers this name, filtered out or not. Paired with
+    // get_model_filter_reason, it is how a gateway tells "unknown" from
+    // "known here, cannot run here".
+    bool model_exists_unfiltered(const std::string& name);
+    std::string get_model_filter_reason(const std::string& name);
+
+    // Listing detail: the rows and files the wire serializes, and what is left per recipe
+    std::vector<std::pair<std::string, const ModelInfo*>> listing_rows(
+        const std::map<std::string, ModelInfo>& listed);
+    std::vector<ModelFileInfo> list_model_files(const std::string& name);
+    std::set<std::string> recipes_with_all_models_filtered();
+    std::set<std::string> active_helper_models();
+    backends::DownloadPolicy download_policy(const ModelInfo& info) const;
+    json get_architecture_defaults(const std::string& architecture) const;
+    std::string get_hf_cache_dir() const;
+    void download_registered_model(const ModelInfo& info, bool do_not_upgrade = false,
+                                   DownloadProgressCallback progress_callback = nullptr);
+    bool should_auto_update(const ModelInfo& info) const;
+
+    // Cloud providers
+    CloudProviderRegistry* cloud_registry() const;
+    std::size_t count_cloud_models(const std::string& provider) const;
+    std::size_t evict_cloud_models(const std::string& provider);
+    std::size_t refresh_cloud_models(const std::string& provider);
+    RegistryId download_source_for(const ModelInfo& info) const;
+
+    // Change: invalidate, publish, subscribe
+    void invalidate_models_cache();
+    void notify_models_changed();
+    void catalog_set_changed();
+    void on_models_changed(std::function<void(std::uint64_t)> subscriber);
+    void on_model_updated(std::function<void(const std::string&)> subscriber);
+
+    // Kept for source compatibility with integrations built against the original API;
+    // registry_source still decides which provider is contacted. No caller in the tree.
+    void download_from_huggingface_engine(const ModelInfo& info,
+                                          DownloadProgressCallback progress_callback = nullptr);
+
+    // Cache maintenance
+    json cleanup_orphaned_cache(bool dry_run);
+    void set_extra_models_dir(const std::string& dir);
+
+    // The published set, without composing it — rule 6b. Nothing reached through this
+    // waits on a writer, and a write scope needs a non-const store, so this hands out
+    // no way to hold one.
+    const models::ModelStore& store() const;
 
 private:
     // Members are exactly the components built from the config at construction:
@@ -235,6 +294,7 @@ private:
 | Its only members are the components it constructs at startup, never replaced afterwards | ownership without state: no facade method mutates the facade, and nothing can drift from the store |
 | Every method delegates to one component or composes at most two | a method that needs a third is a missing use case, added to the component that owns the data |
 | No branch on a registry id, recipe, checkpoint type or source token | that branch is a capability method on the component instead |
+| The read verbs stay, and `store()` is const | rule 6b: composing is a write, so a gateway holding the store would hold the writer |
 | Only callers include its header; four leaf headers are what everyone else includes | The translation units that call the orchestrator — `server.cpp`, `ollama_api.cpp`, `anthropic_api.cpp`, `mcp_server.cpp`, the router, each backend's `.cpp` — include `lemon/model_manager.h`. No **header** does: one that merely names the orchestrator takes `model_manager_types.h`, and one that reads a row takes `model_info.h`, `registry_types.h`, `store_snapshot.h` or `download_progress.h` from `lemon/models/`. Every other models header reaching a consumer is named by `FacadeShapeTest` and retires by deletion |
 | No component includes it | the dependency graph stays a DAG with the facade on top |
 | It declares no test hook and holds no override member | substitution arrives through `ModelManagerConfig` or a component's own deps; the gate names the first `_for_test` anywhere in product code |
@@ -615,7 +675,7 @@ Rules:
 3. Aliases are consulted at resolution time, never folded into the snapshot. An alias mutation takes effect on the next request with no store rebuild and no generation bump.
 4. `ModelStore` holds a `const AliasManager&` — the one instance `ModelManager` constructs — with no interface between them.
 5. `get_all_aliases()` returns a `std::map`, so `/internal/aliases` and the alias rows of `/v1/models` come out in a stable order and a golden test is reproducible.
-6. `ModelManager::list()` appends one row per alias that resolves to a listed model, with `id` set to the alias. The route serializes and does nothing else.
+6. `ModelManager::listing_rows(listed)` appends one row per alias that resolves to a listed model, with `id` set to the alias. The route serializes and does nothing else. (The name ships as `listing_rows`, not `list`: `list` collides with the provider-side `ArtifactSource::list()` this document uses elsewhere, and the two are unrelated.)
 7. Every gateway resolves through this function, so aliases mean the same thing on the OpenAI, Ollama, Anthropic and MCP surfaces.
 
 ## Identity: Handles And Provenance
