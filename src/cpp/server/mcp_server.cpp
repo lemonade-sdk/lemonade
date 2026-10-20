@@ -20,6 +20,7 @@
 #include "lemon/api_docs.h"
 #include "lemon/collection_orchestrator.h"
 #include "lemon/model_types.h"
+#include "lemon/thinking_controls.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
 #include "lemon/version.h"
@@ -513,9 +514,16 @@ json McpServer::tool_chat(const json& arguments) {
     // Reasoning models (Qwen3, DeepSeek-R1) burn small max_tokens budgets on
     // <think> blocks, leaving content empty. Disable thinking by default;
     // callers can opt back in via chat_template_kwargs.enable_thinking=true.
-    if (!openai_request.contains("chat_template_kwargs")) {
-        openai_request["chat_template_kwargs"] = {{"enable_thinking", false}};
+    bool enable_thinking = false;
+    const auto kwargs = openai_request.find("chat_template_kwargs");
+    if (kwargs != openai_request.end() && kwargs->is_object()) {
+        const auto nested = kwargs->find("enable_thinking");
+        if (nested != kwargs->end() && nested->is_boolean()) {
+            enable_thinking = nested->get<bool>();
+        }
     }
+    openai_request["enable_thinking"] = enable_thinking;
+    normalize_thinking_controls(openai_request);
 
     json response = router_->chat_completion(openai_request);
     if (response.contains("error")) {
