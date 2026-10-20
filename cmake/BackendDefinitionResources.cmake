@@ -1,10 +1,13 @@
+include(${CMAKE_CURRENT_LIST_DIR}/CxxStringLiterals.cmake)
+
 function(_lemon_embedded_definition out symbol path)
     file(READ "${path}" _text)
     string(FIND "${_text}" ")definition\"" _delimiter)
     if(NOT _delimiter EQUAL -1)
         message(FATAL_ERROR "${path}: byte ${_delimiter}: contains the raw string delimiter )definition\", which would end the embedded ${symbol} literal early")
     endif()
-    set(${out} "inline constexpr char ${symbol}[] = R\"definition(${_text})definition\";\n" PARENT_SCOPE)
+    lemon_cxx_raw_string_literals(_literals definition "${path}: ${symbol}" "${_text}")
+    set(${out} "inline constexpr char ${symbol}[] = ${_literals};\n" PARENT_SCOPE)
 endfunction()
 
 function(lemon_backend_definition_resources out schema_path)

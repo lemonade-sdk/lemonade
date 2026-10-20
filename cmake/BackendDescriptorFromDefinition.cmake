@@ -5,6 +5,8 @@ if(CMAKE_VERSION VERSION_LESS 3.19)
     message(FATAL_ERROR "Generating backend descriptors from definitions needs string(JSON), available from CMake 3.19")
 endif()
 
+include(${CMAKE_CURRENT_LIST_DIR}/CxxStringLiterals.cmake)
+
 set(_LEMON_DESCRIPTOR_METADATA_KEYS
     display_name binary config_section default_device slot_policy selectable_backend
     uses_ctx_size dynamic_models options support supported_modes required_checkpoints
@@ -59,6 +61,8 @@ function(_lemon_cxx_string out value where)
     if(_escaped MATCHES "[${_first_control}-${_last_control}${_delete}]")
         _lemon_definition_fail("${where}" "contains a control character the emitter cannot write")
     endif()
+    string(LENGTH "${_escaped}" _length)
+    lemon_cxx_literal_within_budget("${_lemon_definition_path}: ${where}" ${_length})
     set(${out} "\"${_escaped}\"" PARENT_SCOPE)
 endfunction()
 
@@ -163,7 +167,8 @@ function(_lemon_raw_json out text where)
     if(NOT _delimiter EQUAL -1)
         _lemon_definition_fail("${where}" "contains the raw string delimiter )json\"")
     endif()
-    set(${out} "nlohmann::json::parse(R\"json(${text})json\")" PARENT_SCOPE)
+    lemon_cxx_raw_string_literals(_literals json "${_lemon_definition_path}: ${where}" "${text}")
+    set(${out} "nlohmann::json::parse(${_literals})" PARENT_SCOPE)
 endfunction()
 
 function(_lemon_json_value out type value where)
