@@ -54,6 +54,8 @@ void ExtensorServer::load(const std::string& model_name,
     if (!fs::is_regular_file(model, ec) || ec) {
         throw std::runtime_error("EXTENSOR model does not exist: " + model_path);
     }
+    // Paths must survive NativeProcess changing the child's working directory.
+    model_path = utils::path_to_utf8(fs::absolute(model));
 
     std::string preset = options.get_option("extensor_preset");
     if (preset != "exact" && preset != "balanced" && preset != "fast" && preset != "demo") {
@@ -62,7 +64,9 @@ void ExtensorServer::load(const std::string& model_name,
     }
 
     backend_manager_->install_backend(extensor::spec()->recipe, backend);
-    const std::string executable = BackendUtils::get_backend_binary_path(*extensor::spec(), backend);
+    const fs::path executable_path = fs::absolute(utils::path_from_utf8(
+        BackendUtils::get_backend_binary_path(*extensor::spec(), backend)));
+    const std::string executable = utils::path_to_utf8(executable_path);
 
     port_ = choose_port();
     std::vector<std::string> args = {
@@ -77,7 +81,6 @@ void ExtensorServer::load(const std::string& model_name,
         args.push_back(std::to_string(ctx_size));
     }
 
-    fs::path executable_path = utils::path_from_utf8(executable);
     fs::path working_dir = executable_path.parent_path();
     if (working_dir.filename() == "bin" &&
         fs::exists(working_dir.parent_path() / "share" / "extensor", ec) && !ec) {
