@@ -205,8 +205,8 @@ const commaListPayload = {
 };
 const commaListDraft = router.parseRouterPayload(commaListPayload);
 const commaListBuilt = router.buildRouterPullRequest(commaListDraft);
-assert.deepEqual(commaListBuilt.routing.rules[0].match.all[0].keywords_any, ['hello, world', 'plain'], 'comma-containing keywords must remain one value through GUI3');
-assert.deepEqual(commaListBuilt.routing.rules[0].match.all[1].metadata.any, ['red,blue', 'green'], 'comma-containing metadata tokens must remain one value through GUI3');
+assert.deepEqual(commaListBuilt.routing.rules[0].match.all[0].keywords_any, ['hello, world', 'plain'], 'comma-containing keywords must remain one value through Lemonade App');
+assert.deepEqual(commaListBuilt.routing.rules[0].match.all[1].metadata.any, ['red,blue', 'green'], 'comma-containing metadata tokens must remain one value through Lemonade App');
 const commaClassifierPayload = {
   version: '1', model_name: 'user.CommaClassifier', recipe: 'collection.router',
   components: ['model-a', 'llm-helper', 'embed-helper'],
@@ -225,7 +225,7 @@ assert.throws(() => router.parseRouterPayload({ ...commaListPayload, version: 1 
 assert.throws(() => router.parseRouterPayload({
   ...commaListPayload,
   routing: { ...commaListPayload.routing, rules: [{ ...commaListPayload.routing.rules[0], match: { keywords_any: [' padded '] } }] },
-}), /leading or trailing whitespace/, 'import must reject list values GUI3 would normalize on save instead of silently changing semantics');
+}), /leading or trailing whitespace/, 'import must reject list values Lemonade App would normalize on save instead of silently changing semantics');
 
 const nlPayload = {
   version: '1', model_name: 'user.nl', recipe: 'collection.router', components: ['a', 'router-model'],
@@ -570,7 +570,7 @@ assert.throws(
 );
 
 // Self-review: imports must fail closed at every schema layer instead of silently
-// dropping data that GUI3 cannot round-trip.
+// dropping data that Lemonade App cannot round-trip.
 assert.throws(
   () => router.parseRouterPayload({ ...implicitAllPayload, future_root: true }),
   /Router JSON contains unsupported field/,
@@ -661,12 +661,12 @@ assert.match(nodeEditorSource, />AND<|>AND<\/button>/, 'a leaf must be wrappable
 assert.match(nodeEditorSource, /unusedGroupLeafType/, 'group inspector add/change helpers must seed a condition type that is not already in the gate');
 assert.match(editorSource, /Switching to the Natural-language router will clear the current ordered rules and classifiers/);
 assert.match(editorSource, /Switching to Ordered rules will clear the current routing model and instruction/);
-assert.doesNotMatch(editorSource, /window\.confirm/, 'router editor confirmations must use GUI3-native dialogs rather than browser confirm');
+assert.doesNotMatch(editorSource, /window\.confirm/, 'router editor confirmations must use Lemonade App-native dialogs rather than browser confirm');
 assert.match(editorSource, /routerDraftHasRulesProgress\(draft\)[\s\S]*kind: 'switch-llm'/, 'rules-to-LLM mode changes must open a branded warning before clearing meaningful work');
 assert.match(editorSource, /routerDraftHasLlmProgress\(draft\)[\s\S]*kind: 'switch-rules'/, 'LLM-to-rules mode changes must open a branded warning before clearing meaningful work');
 assert.match(editorSource, /if \(isDirty\)[\s\S]*kind: 'reset'/, 'New must warn whenever it would discard changes relative to the loaded/saved baseline');
 assert.match(editorSource, /switchRouterDraftMode\(current, mode\)/, 'confirmed mode changes must use the tested destructive transition helper');
-assert.match(editorSource, /<Modal[\s\S]*router-confirm-dialog-title/, 'destructive router actions must render through the GUI3 modal surface');
+assert.match(editorSource, /<Modal[\s\S]*router-confirm-dialog-title/, 'destructive router actions must render through the Lemonade App modal surface');
 assert.match(editorSource, /router-editor__toast[\s\S]*role="status"/, 'successful registration feedback must remain visible in a bottom-right status toast');
 assert.match(editorSource, /api\.modelDetail\(modelNameValue\)/, 'editing a server router must fetch its full model detail before parsing the policy');
 const detailCallIndex = editorSource.indexOf('api.modelDetail(modelNameValue)');
@@ -681,7 +681,7 @@ assert.match(modelPickerSource, /router-model-picker__search/, 'model picker mus
 assert.match(modelPickerSource, /role="combobox"/, 'model picker search must expose combobox semantics');
 assert.match(modelPickerSource, /model\.labels/, 'model picker search should match model labels as well as names');
 assert.match(modelPickerSource, /createPortal[\s\S]*document\.body/, 'searchable model menus must escape capped list overflow via a portal');
-assert.match(editorSource, /<RouterRuleGraph/, 'ordered rules must use the visual GUI3 graph builder');
+assert.match(editorSource, /<RouterRuleGraph/, 'ordered rules must use the visual Lemonade App graph builder');
 assert.match(editorSource, /router-editor__rules-workspace[\s\S]*router-editor__rule-list[\s\S]*router-editor__rule-builder/, 'rules must use the GUI2-style compact-list plus selected-canvas pipeline instead of embedding a canvas in every rule');
 assert.match(editorSource, /selectedRuleIndex/, 'the visual pipeline must keep one selected rule bound to the graph canvas');
 assert.match(graphSource, /application\/x-lemonade-router-node/, 'graph builder must use an isolated drag payload type');
@@ -725,7 +725,7 @@ assert.match(stylesSource, /router-graph__tool--any \{ color: var\(--success\)/,
 assert.match(stylesSource, /router-graph__tool--not \{ color: var\(--danger\)/, 'NOT gates must be red');
 assert.match(stylesSource, /router-graph__tool--all \{ color: var\(--accent-fg\)/, 'AND gates must use the blue/accent color');
 assert.match(editorSource, /onExpand=\{\(\) => setExpandedRuleIndex\(selectedRuleIndex\)\}/, 'graph builder needs an explicit expand action');
-assert.match(editorSource, /router-graph-expanded-title[\s\S]*router-editor__graph-modal[\s\S]*<RouterRuleGraph/, 'expanded graph editing must render a real editable graph in the GUI3 modal surface');
+assert.match(editorSource, /router-graph-expanded-title[\s\S]*router-editor__graph-modal[\s\S]*<RouterRuleGraph/, 'expanded graph editing must render a real editable graph in the Lemonade App modal surface');
 assert.doesNotMatch(editorSource, /<h3>Natural-language router<\/h3>|<h3>Natural-Language Router<\/h3>/, 'NL mode must not repeat its strategy label as a section heading');
 assert.doesNotMatch(editorSource, /The selected model must return exactly one candidate\. Invalid output falls back to the default model\./, 'misleading NL-router helper copy must stay removed');
 
@@ -757,9 +757,9 @@ regexSafetyDraft.name = 'RegexSafety';
 regexSafetyDraft.candidates = ['model-a'];
 regexSafetyDraft.defaultModel = 'model-a';
 regexSafetyDraft.rules = [{ ...router.createRouterRule(0, 'model-a'), condition: { ...router.createRouterLeaf('regex'), textValue: '((a+))+' } }];
-assert.match(router.validateRouterDraft(regexSafetyDraft).join(' '), /nested unbounded quantifier/, 'GUI3 must catch wrapper-group nested quantifiers rejected by the C++ server');
+assert.match(router.validateRouterDraft(regexSafetyDraft).join(' '), /nested unbounded quantifier/, 'Lemonade App must catch wrapper-group nested quantifiers rejected by the C++ server');
 regexSafetyDraft.rules[0].condition = { ...router.createRouterLeaf('regex'), textValue: '(a+){2,}' };
-assert.match(router.validateRouterDraft(regexSafetyDraft).join(' '), /nested unbounded quantifier/, 'GUI3 must catch unbounded brace quantifiers rejected by the C++ server');
+assert.match(router.validateRouterDraft(regexSafetyDraft).join(' '), /nested unbounded quantifier/, 'Lemonade App must catch unbounded brace quantifiers rejected by the C++ server');
 regexSafetyDraft.rules[0].condition = { ...router.createRouterLeaf('regex'), textValue: '(a+){2,4}' };
 assert.doesNotMatch(router.validateRouterDraft(regexSafetyDraft).join(' '), /nested unbounded quantifier/, 'bounded outer quantifiers should remain allowed, matching the server safeguard');
 regexSafetyDraft.rules[0].condition = { ...router.createRouterLeaf('regex'), textValue: ' ^hello $ ' };
@@ -908,4 +908,4 @@ assert.match(editorSource, /Model\/component identifiers are exact server identi
 assert.match(editorSource, /exact component identity[\s\S]{0,180}modelName: candidate/);
 assert.doesNotMatch(editorSource, /const normalized = name\.trim\(\);[\s\S]{0,120}names\.add\(normalized\)/);
 
-console.log('GUI3 router editor contract checks passed.');
+console.log('Lemonade App router editor contract checks passed.');

@@ -719,7 +719,7 @@ Do these first. All are small changes with high compliance impact.
 
 24. **Account menu dialog** ✅ DONE — `AccountMenu.tsx` promoted to a complete modal dialog. Added `aria-modal="true"` on the panel, `ref` on both trigger and panel, `useFocusTrap(panelRef, open)` for Tab containment, Escape keydown handler (`closePanel()`) that restores focus to the trigger via `requestAnimationFrame`. The × close button now calls `closePanel()` instead of `setOpen(false)`. **Modal-vs-popover decision: MODAL.** The panel already declared `role="dialog"` and `aria-haspopup="dialog"`; it contains multi-mode forms (sign-in, create, settings) where interaction is modal in nature. Upgrading to full modal is consistent with the existing declaration and prevents screen-reader virtual-cursor from escaping into page content while the panel is open.
 
-### GUI3 A11y Series — targeted fixes (branches feat/gui3-*)
+### Lemonade App A11y Series — targeted fixes (branches feat/gui3-*)
 
 **#2342 — Download progress: native progressbar semantics + status announcements** ✅ DONE (2026-06-22, `feat/gui3-download-a11y`)
 - `DownloadManager.tsx` line ~283: replaced `<div aria-label="NN%">` with `role="progressbar"` + `aria-valuenow` / `aria-valuemin={0}` / `aria-valuemax={100}` + `aria-label` including the model name (`"Downloading Llama-3.1-8B: 42%"`). Visual `<span>` text gets `aria-hidden="true"` to avoid double-reading.

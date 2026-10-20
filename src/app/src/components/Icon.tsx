@@ -6,7 +6,7 @@ import { LOCAL_ICON_DEFINITIONS, LocalIcon } from './localIcons';
  * Central icon registry.
  *
  * Icon geometry is vendored locally so npm-based desktop builds and distro
- * system-module builds render the same GUI3 icons without requiring
+ * system-module builds render the same Lemonade App icons without requiring
  * lucide-react or react-icons at package-build time.
  */
 

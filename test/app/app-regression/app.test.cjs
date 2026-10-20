@@ -47,7 +47,7 @@ const tests = [
       assertMatches(
         source,
         /const candidates = \[[\s\S]*?model as any\)\.components[\s\S]*?model as any\)\.component_models[\s\S]*?model as any\)\.recipe_options\?\.components/,
-        'Collection components should accept the GUI3 model shapes.',
+        'Collection components should accept the Lemonade App model shapes.',
       );
       assertIncludes(
         source,
@@ -81,7 +81,7 @@ const tests = [
     name: 'ModelScope results are validated through bounded variant lookups',
     run() {
       const source = normalizeWhitespace(readSource(MODEL_MANAGER));
-      assertIncludes(source, 'searchModelScope(q, ac.signal)', 'GUI3 should use the ModelScope search API.');
+      assertIncludes(source, 'searchModelScope(q, ac.signal)', 'Lemonade App should use the ModelScope search API.');
       assertIncludes(
         source,
         "loadRemoteVariants('modelscope', candidate.id, ac.signal)",
@@ -95,7 +95,7 @@ const tests = [
     },
   },
   {
-    name: 'GUI3 Omni definitions keep planner guidance and required media tools',
+    name: 'Lemonade App Omni definitions keep planner guidance and required media tools',
     run() {
       const definitions = JSON.parse(readSource(TOOL_DEFINITIONS));
       const names = definitions.tools.map((tool) => tool.function.name).sort();
@@ -104,13 +104,13 @@ const tests = [
       assertIncludes(definitions.system_prompt, '{tool_guidance}', 'The Omni planner prompt should reserve the guidance slot.');
 
       const source = normalizeWhitespace(readSource(OMNI_TOOLS));
-      assertIncludes(source, 'DEFAULT_OMNI_SYSTEM_PROMPT_TEMPLATE', 'GUI3 should keep a shared Omni prompt template.');
-      assertIncludes(source, 'renderOmniSystemPrompt', 'GUI3 should render the planner prompt from available tools.');
-      assertIncludes(source, 'resolveExplicitImageSize', 'GUI3 should support explicit image dimensions.');
+      assertIncludes(source, 'DEFAULT_OMNI_SYSTEM_PROMPT_TEMPLATE', 'Lemonade App should keep a shared Omni prompt template.');
+      assertIncludes(source, 'renderOmniSystemPrompt', 'Lemonade App should render the planner prompt from available tools.');
+      assertIncludes(source, 'resolveExplicitImageSize', 'Lemonade App should support explicit image dimensions.');
     },
   },
   {
-    name: 'GUI3 ModelManager loads collection components while keeping the collection virtual',
+    name: 'Lemonade App ModelManager loads collection components while keeping the collection virtual',
     run() {
       const source = normalizeWhitespace(readSource(MODEL_MANAGER));
       assertIncludes(
@@ -134,7 +134,7 @@ const tests = [
     // An override that outlived its conversation used to win over a model that was
     // loaded right then, so the next prompt reloaded a model the user had already
     // deleted their way out of.
-    name: 'GUI3 chat model override never outlives the conversation that set it',
+    name: 'Lemonade App chat model override never outlives the conversation that set it',
     run() {
       const overrides = loadChatModelOverride();
       if (!overrides) return { skip: true, reason: "typescript not installed - run 'npm ci' in src/app first" };
@@ -164,7 +164,7 @@ const tests = [
     },
   },
   {
-    name: 'GUI3 chat model override defers to resident models and idempotent activation',
+    name: 'Lemonade App chat model override defers to resident models and idempotent activation',
     run() {
       const overrides = loadChatModelOverride();
       if (!overrides) return { skip: true, reason: "typescript not installed - run 'npm ci' in src/app first" };
@@ -202,7 +202,7 @@ const tests = [
     },
   },
   {
-    name: 'GUI3 ChatView clears the chat model override on every conversation exit',
+    name: 'Lemonade App ChatView clears the chat model override on every conversation exit',
     run() {
       const source = normalizeWhitespace(readSource(CHAT_VIEW));
       assertMatches(
@@ -228,7 +228,7 @@ const tests = [
     },
   },
   {
-    name: 'GUI3 throughput supports llama.cpp slots and FLM live stats',
+    name: 'Lemonade App throughput supports llama.cpp slots and FLM live stats',
     run() {
       const tsPath = path.join(repoRoot, 'src', 'app', 'node_modules', 'typescript');
       try { require.resolve(tsPath); }
