@@ -453,7 +453,7 @@ curl http://localhost:13305/v1/models/Qwen3-0.6B-GGUF/options
 | `saved` | The model's own entry in `recipe_options.json`: only what was explicitly saved, or `{}` when nothing is. It can also hold keys this endpoint does not accept, such as `pinned` written by `/v1/load`, so replay `effective` rather than `saved`. |
 | `effective` | The `/v1/load` body shown above. Posting it back whole to this endpoint saves every resolved value as an override, so send only the options the user changed. |
 | `defaults` | What `effective` becomes if `saved` is erased, in the same shape. A `ctx_size` of `-1` means the server picks the context size automatically. |
-| `resolved_ctx_size` | The context size a load right now would use: the effective `ctx_size`, or the automatically computed size when that is `-1`. |
+| `resolved_ctx_size` | The context size a load right now would use: the effective `ctx_size`, or the automatically computed size when that is `-1`. `null` means automatic sizing found insufficient memory and no valid context is available. |
 
 > Note: per-architecture defaults come from the model's GGUF metadata. For a model that has not been downloaded yet, every key is still present but carries the value it has before those defaults apply.
 
@@ -1719,9 +1719,10 @@ Example `gpus` entry (all measurement fields can be `null`):
 }
 ```
 
-On Linux, AMD and NVIDIA devices are enumerated separately. On Windows this
-change provides NVIDIA NVML telemetry; other vendors still require their own
-platform implementation. On macOS the new per-GPU list is empty.
+On Linux, AMD and NVIDIA devices are enumerated separately. On Windows, NVIDIA
+telemetry comes from NVML and AMD telemetry from DXGI, DXCore, and PDH; other
+vendors still require their own platform implementation. On macOS the new
+per-GPU list is empty.
 NVML alone does not establish whether memory is dedicated or shared, so
 NVIDIA devices report `memory_type` as `unknown`.
 

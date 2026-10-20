@@ -53,6 +53,18 @@ struct GgufMetadata {
     int64_t head_count_kv_scalar = 0;
 };
 
+// BERT encoders may omit KV-head dimensions in GGUF. Estimate full-width
+// F16 K/V storage from the hidden width and transformer layer count.
+inline double estimate_bert_encoder_kv_bytes_per_token(const GgufMetadata& gguf,
+                                                        bool encoder_model) {
+    if (!encoder_model || gguf.architecture.find("bert") == std::string::npos ||
+        gguf.block_count <= 0 || gguf.embedding_length <= 0) {
+        return 0.0;
+    }
+    return static_cast<double>(gguf.block_count) *
+           static_cast<double>(gguf.embedding_length) * 4.0;
+}
+
 // ── Low-level binary readers ──────────────────────────────────────────
 
 template <typename T>
