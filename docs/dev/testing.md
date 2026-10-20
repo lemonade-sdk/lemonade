@@ -152,7 +152,7 @@ Packaging, distro, PPA, backend-validation, self-hosted inference and most macOS
 | Fedora RPM, Debian 13, Launchpad PPA, `Build Lemonade Desktop Installer` | `Packaging builds`, `Launchpad PPA builds` | `ci:distros` |
 | macOS `.dmg`, `Test CLI/Endpoints (macos-latest)`, `Test Embeddable (macOS)`, `Test .dmg - macOS inference` | `macOS builds` | `ci:macos` |
 | llama.cpp, vLLM, stable-diffusion.cpp validation | `llama.cpp validation`, `vLLM validation`, `stable-diffusion.cpp validation` | `ci:upgrades` |
-| `Test .exe - *` and `Test .deb - *` inference suites on the self-hosted rigs | `Inference backend tests` | `ci:backends` |
+| `Test .exe - *`, `Test .deb - *`, and `Test Extensor - ROCm (Devlab Dispatch)` inference suites | `Inference backend tests` | `ci:backends` |
 
 Every gated job is reachable from a PR by label — nothing is merge-queue-only. Apply the label when your change plausibly affects that surface (a backend version pin wants `ci:upgrades`, packaging or install-path changes want `ci:distros`, `#ifdef __APPLE__` or CMake changes want `ci:macos`, a wrapped-server or inference-path change wants `ci:backends`); the label takes effect immediately, without a push. Fork contributors can't apply labels themselves — ask a maintainer (or the [Discord](https://discord.gg/5xXzkMu8Zk)) to add one. Note that `Test .dmg - macOS inference` exercises several of the same wrapped servers (llama.cpp, whisper.cpp, moonshine, kokoro) on Metal but lives in the macOS group — a change to one of those that could break on Metal wants `ci:macos` too. `Build Embeddable Lemonade (macOS)` still runs on every PR as the AppleClang compile check.
 
@@ -160,6 +160,40 @@ Two consequences worth knowing:
 
 - **A green PR does not mean macOS, packaging or hardware inference are green.** If your change touches those surfaces, label it rather than discovering the break in the queue.
 - **Adding a new suite to a gated job means it only runs in the queue by default.** Say so in the PR description.
+
+### Extensor on Devlab Dispatch
+
+`test-extensor-inference` uses the ephemeral Strix Halo pool with
+`runs-on: [self-hosted, Linux, X64, devlab-dispatch, strix-halo]`. Extensor runs
+natively on the host.
+See [runner requirements](./self-hosted-runners.md#devlab-dispatch) for provisioning.
+
+The job downloads the current workflow's Lemonade `.deb`, starts `lemond` on an
+available port, installs the pinned `extensor:rocm` archive, checks its shared
+libraries, and runs:
+
+```bash
+.venv/bin/python test/server_llm.py --wrapped-server extensor --backend rocm --cli-binary lemonade
+```
+
+The capability catalog selects `Qwen3.6-35B-A3B-EXTENSOR`, whose target-only v1
+image works with Extensor 2.3.2. The job pins the context to 4096 and uses the
+`balanced` preset. The shared suite covers ordinary chat, concurrent requests,
+synchronous and asynchronous streaming, stop sequences, and tool calls.
+Thinking is disabled in those requests so short token budgets produce answers.
+Text completions, Responses, embeddings, and other undeclared capabilities skip.
+
+Model downloads go into `$RUNNER_TEMP/huggingface`, with no persistent cache
+assumed. The Qwen download is about 18 GB; the runner needs room for the model,
+backend archive, extracted runtime, and build artifact. The job has a four-hour
+timeout and uploads `server-logs-extensor-rocm` even after a test failure.
+
+To test a PR, add `ci:backends` and inspect the **Test Extensor - ROCm (Devlab
+Dispatch)** check. Label additions and later pushes trigger runs. This job is
+also a dependency of **Inference backend tests** in the merge queue. Manual
+workflow runs enable it when both signing inputs are false; release branches
+and tags skip it. A green PR gate alone does not prove inference ran: check
+that the Extensor job succeeded rather than skipped.
 
 ### macOS specifics
 

@@ -17,6 +17,7 @@ Usage:
     python server_llm.py --wrapped-server ryzenai --backend hybrid
     python server_llm.py --wrapped-server ryzenai --backend npu
     python server_llm.py --wrapped-server flm
+    python server_llm.py --wrapped-server extensor --backend rocm
 """
 
 import asyncio
@@ -67,6 +68,10 @@ class LLMTests(ServerTestBase):
 
     # Enable multi-model support (2 of each type) — translated to /internal/set
     additional_server_args = ["--max-loaded-models", "2"]
+
+    def setUp(self):
+        super().setUp()
+        self.chat_extra_body = get_capabilities().get("chat_extra_body", {})
 
     @classmethod
     def setUpClass(cls):
@@ -143,6 +148,7 @@ class LLMTests(ServerTestBase):
             messages=self.messages,
             max_completion_tokens=10,
             stream=False,
+            extra_body=self.chat_extra_body,
         )
 
         print(f"Response: {completion.choices[0].message.content}")
@@ -197,6 +203,7 @@ class LLMTests(ServerTestBase):
                     ],
                     "max_tokens": 8,
                     "stream": False,
+                    **self.chat_extra_body,
                 },
                 headers=headers,
                 timeout=TIMEOUT_MODEL_OPERATION,
@@ -249,6 +256,7 @@ class LLMTests(ServerTestBase):
             messages=self.messages,
             stream=True,
             max_completion_tokens=10,
+            extra_body=self.chat_extra_body,
         )
 
         complete_response = ""
@@ -282,6 +290,7 @@ class LLMTests(ServerTestBase):
                 messages=self.messages,
                 stream=True,
                 max_completion_tokens=10,
+                extra_body=self.chat_extra_body,
             )
 
             complete_response = ""
@@ -459,6 +468,7 @@ class LLMTests(ServerTestBase):
     # =========================================================================
 
     @skip_if_unsupported("stop_parameter")
+    @skip_if_unsupported("completions")
     def test_009_completions_with_stop(self):
         """Test completions with stop parameter."""
         client = self.get_openai_client()
@@ -491,6 +501,7 @@ class LLMTests(ServerTestBase):
             messages=messages,
             stop=["2."],  # Stop before the second item
             max_completion_tokens=50,
+            extra_body=self.chat_extra_body,
         )
 
         response = completion.choices[0].message.content
@@ -544,6 +555,7 @@ class LLMTests(ServerTestBase):
             ],
             tools=[SAMPLE_TOOL],
             max_completion_tokens=50,
+            extra_body=self.chat_extra_body,
         )
 
         tool_calls = getattr(completion.choices[0].message, "tool_calls", None)
@@ -569,6 +581,7 @@ class LLMTests(ServerTestBase):
             tools=[SAMPLE_TOOL],
             max_completion_tokens=50,
             stream=True,
+            extra_body=self.chat_extra_body,
         )
 
         tool_call_count = 0

@@ -1446,6 +1446,83 @@ jobs:
         if: always()
         uses: ./.github/actions/cleanup-processes-linux
 
+  test-extensor-inference:
+    name: Test Extensor - ROCm (Devlab Dispatch)
+    runs-on: [self-hosted, Linux, X64, devlab-dispatch, strix-halo]
+    needs: build-lemonade-deb
+    if: >-
+      !startsWith(github.ref, 'refs/tags/') &&
+      !startsWith(github.ref, 'refs/heads/release-v') &&
+      inputs.enable_signing != true &&
+      inputs.disable_macos_signing != true &&
+      (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:backends'))
+    timeout-minutes: 240
+    env:
+      LEMONADE_CI_MODE: "True"
+      HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
+      PYTHONIOENCODING: utf-8
+      GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+      LEMONADE_VERSION: ${{ needs.build-lemonade-deb.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set Hugging Face cache
+        run: |
+          mkdir -p "$RUNNER_TEMP/huggingface/hub"
+          echo "HF_HOME=$RUNNER_TEMP/huggingface" >> "$GITHUB_ENV"
+          echo "HF_HUB_CACHE=$RUNNER_TEMP/huggingface/hub" >> "$GITHUB_ENV"
+
+      - name: Check GPU device access
+        run: |
+          if [ ! -r /dev/kfd ] || [ ! -w /dev/kfd ]; then
+            echo "::error::Native Extensor needs read/write access to /dev/kfd and the GPU render node. Check the Dispatch runner's GPU permissions."
+            exit 1
+          fi
+
+      - name: Install Lemonade (.deb)
+        uses: ./.github/actions/install-lemonade-deb
+        with:
+          version: ${{ env.LEMONADE_VERSION }}
+          port: auto
+
+      - name: Setup Python and virtual environment
+        uses: ./.github/actions/setup-venv
+        with:
+          venv-name: '.venv'
+          python-version: '3.10'
+          requirements-file: 'test/requirements.txt'
+
+      - name: Install Extensor and check native dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          lemonade config set ctx_size=4096 extensor.backend=rocm extensor.extensor_preset=balanced --yes
+          lemonade backends install extensor:rocm
+          EXTENSOR_BINARY=$(find "$GITHUB_WORKSPACE/bin/extensor/rocm" -type f -name extensor-server -print -quit)
+          if [ -z "$EXTENSOR_BINARY" ] || [ ! -x "$EXTENSOR_BINARY" ]; then
+            echo "::error::Extensor installation did not produce an executable extensor-server."
+            exit 1
+          fi
+          ldd "$EXTENSOR_BINARY" | tee "$RUNNER_TEMP/lemonade-extensor-dependencies.log"
+          if grep -q 'not found' "$RUNNER_TEMP/lemonade-extensor-dependencies.log"; then
+            echo "::error::The Dispatch runner needs ROCm 7, hipBLAS, hipBLASLt, OpenMP and liburing (including liburing-ffi.so.2) for native Extensor. See the missing libraries above."
+            exit 1
+          fi
+
+      - name: Run Extensor LLM tests
+        run: |
+          .venv/bin/python test/server_llm.py --wrapped-server extensor --backend rocm --cli-binary lemonade
+
+      - name: Capture and upload server logs
+        if: always()
+        uses: ./.github/actions/capture-server-logs
+        with:
+          artifact-name: server-logs-extensor-rocm
+
+      - name: Cleanup
+        if: always()
+        uses: ./.github/actions/cleanup-processes-linux
+
   test-watchdog-lifecycle-linux:
     name: Test watchdog lifecycle (ubuntu-latest)
     runs-on: ubuntu-latest
@@ -1624,7 +1701,7 @@ jobs:
   # so renaming the job requires a matching branch-protection update.
   backends-gate:
     name: Inference backend tests
-    needs: [build-lemonade-server-installer, build-lemonade-deb, cpp-unit-tests, test-exe-inference, test-deb-inference, test-watchdog-lifecycle-linux]
+    needs: [build-lemonade-server-installer, build-lemonade-deb, cpp-unit-tests, test-exe-inference, test-deb-inference, test-extensor-inference, test-watchdog-lifecycle-linux]
     if: always()
     runs-on: ubuntu-latest
     steps:
