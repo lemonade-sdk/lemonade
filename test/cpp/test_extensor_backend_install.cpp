@@ -1,11 +1,14 @@
 #include "lemon/backend_manager.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/backends/extensor/extensor_install.h"
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
 #include "lemon/utils/path_utils.h"
 
 #include "test_config_helpers.h"
 
+#include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -19,6 +22,68 @@ using lemon::RuntimeConfig;
 using lemon::SystemInfo;
 using lemon::backends::BackendUtils;
 using test_helpers::check;
+
+static void check_archive_verification() {
+    const auto* spec = lemon::backends::try_get_spec_for_recipe("extensor");
+    const std::string pinned_version = BackendUtils::get_backend_version("extensor", "rocm");
+    const fs::path install_dir = BackendUtils::get_install_directory("extensor", "rocm");
+    const fs::path binary = install_dir / "extensor-server";
+    const fs::path fixture = fs::path(__FILE__).parent_path() / "fixtures/extensor-untrusted.zip";
+
+    lemon::json versions;
+    std::ifstream(lemon::utils::get_resource_path("resources/backend_versions.json")) >> versions;
+    for (const auto& arch : {"gfx1151", "gfx1152", "gfx1201"}) {
+        const auto params = lemon::backends::extensor::install_params(
+            "rocm", pinned_version, "linux", arch);
+        const auto digest = versions.at("checksums").at("extensor").value(params.filename, "");
+        check(digest.size() == 71 && digest.compare(0, 7, "sha256:") == 0 &&
+                  std::all_of(digest.begin() + 7, digest.end(),
+                              [](unsigned char ch) { return std::isxdigit(ch); }),
+              "each published EXTENSOR target has a pinned SHA-256 digest");
+    }
+
+    for (bool missing_pin : {true, false}) {
+        const std::string version = missing_pin ? "v0.0.0" : pinned_version;
+        const auto params = lemon::backends::extensor::install_params(
+            "rocm", version, "linux", "gfx1151");
+        fs::create_directories(install_dir);
+        std::ofstream(binary) << "working binary";
+        std::ofstream(install_dir / "version.txt") << "old-version";
+        const fs::path archive = fs::temp_directory_path() /
+            ("extensor_rocm_" + version + "_" + params.filename);
+        fs::copy_file(fixture, archive, fs::copy_options::overwrite_existing);
+
+        bool rejected = false;
+        std::string message;
+        try {
+            // Plain HTTP is rejected before network access if cache verification
+            // fails and the downloader tries to replace the cached archive.
+            BackendUtils::install_from_release(*spec, version, "", params.filename, "rocm",
+                                               nullptr, "http://127.0.0.1:1/unused.zip");
+        } catch (const std::exception& error) {
+            rejected = true;
+            message = error.what();
+        }
+        check(rejected, missing_pin ? "archive without a pinned digest is rejected" :
+                                     "cached archive that differs from the pin is rejected");
+        if (missing_pin) {
+            check(message.find("pinned SHA-256") != std::string::npos,
+                  "missing pin reports the required checksum metadata");
+        }
+        std::string installed;
+        {
+            std::ifstream input(binary);
+            std::getline(input, installed);
+        }
+        check(installed == "working binary", "archive verification failure preserves the installed binary");
+        std::ifstream(install_dir / "version.txt") >> installed;
+        check(installed == "old-version", "archive verification failure preserves version.txt");
+        check(!fs::exists(install_dir.string() + ".staging"),
+              "archive verification failure removes staging");
+        check(!fs::exists(archive), "unverified cached archive is removed");
+        fs::remove_all(install_dir);
+    }
+}
 
 int main() {
     const fs::path root = fs::temp_directory_path() /
@@ -81,6 +146,8 @@ int main() {
             fs::remove_all(install_dir);
             RuntimeConfig::set_global(nullptr);
         }
+
+        check_archive_verification();
 
 #ifdef __linux__
         RuntimeConfig config({{"offline", true}, {"no_fetch_executables", true},

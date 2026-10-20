@@ -685,6 +685,18 @@ namespace lemon::backends {
                 utils::DownloadOptions archive_download_opts;
                 archive_download_opts.expected_hash = lookup_expected_asset_hash(
                     spec.recipe, backend, expected_version, repo, filename);
+                if (!download_url.empty()) {
+                    std::string digest = archive_download_opts.expected_hash;
+                    if (digest.compare(0, 7, "sha256:") == 0) {
+                        digest.erase(0, 7);
+                    }
+                    if (digest.size() != 64 || !std::all_of(digest.begin(), digest.end(),
+                            [](unsigned char ch) { return std::isxdigit(ch); })) {
+                        throw std::runtime_error(
+                            "A pinned SHA-256 digest in backend_versions.json is required for " +
+                            spec.recipe + " archive " + filename);
+                    }
+                }
                 archive_download_opts.resume_partial = false;
 
                 auto download_result = utils::HttpClient::download_file(

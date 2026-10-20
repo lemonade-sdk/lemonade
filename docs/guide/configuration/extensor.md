@@ -13,8 +13,9 @@ architecture reported by ROCm:
 Other GPU targets and operating systems are rejected before downloading. The
 archive's binaries and `share/extensor` assets are kept together under
 `<cache_dir>/bin/extensor/rocm/`. Lemonade reuses an installed version that matches
-the selected version. Updates are staged and verified before replacing the
-working installation.
+the selected version. Each downloaded archive must match its pinned SHA-256
+digest in `src/cpp/resources/backend_versions.json` before extraction. Updates
+are staged and verified before replacing the working installation.
 
 ## Configuration
 
@@ -25,6 +26,8 @@ These built-in model names select the `extensor` recipe:
 | `Qwen3.6-35B-A3B-EXTENSOR` | `amd/Qwen3.6-35B-A3B-EXTENSOR:Qwen3.6-35B-A3B-EXTENSOR-ROCmFP4-v1.extensor.gguf` |
 | `DeepSeek-V4-Flash-EXTENSOR` | `amd/DeepSeek-V4-Flash-EXTENSOR:DeepSeek-V4-Flash-EXTENSOR-MXFP4-Tile16-v2.extensor.gguf` |
 | `GLM-5.2-EXTENSOR` | `amd/GLM-5.2-EXTENSOR:GLM-5.2-EXTENSOR-Q2_K-Experts-v1.extensor.gguf` |
+
+These models are available in the catalog but are not suggested by default.
 
 A load or inference request downloads the selected image if it is missing,
 then starts EXTENSOR with its cached path. Completed images are reused;
@@ -56,8 +59,9 @@ Use the same model name in `/v1/chat/completions` to load it on the first reques
 An optional `extensor.extensor_model_path` selects an existing local image instead.
 
 `builtin` selects the version pinned by Lemonade (currently `v2.3.2`). An explicit
-version such as `v2.3.2` selects that version's AMD archive. `latest` is unsupported
-because these AMD downloads do not provide a latest-release discovery endpoint.
+version such as `v2.3.2` selects that version's AMD archive and requires a matching
+checksum pin. Versions without a pinned digest cannot be downloaded. `latest` is
+unsupported because these AMD downloads do not provide a latest-release discovery endpoint.
 An absolute executable path selects a user-managed installation.
 
 The presets are `exact`, `balanced`, `fast`, and `demo`. Lemonade forwards

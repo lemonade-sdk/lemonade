@@ -67,7 +67,7 @@
     "Qwen3.6-35B-A3B-EXTENSOR": {
         "checkpoint": "amd/Qwen3.6-35B-A3B-EXTENSOR:Qwen3.6-35B-A3B-EXTENSOR-ROCmFP4-v1.extensor.gguf",
         "recipe": "extensor",
-        "suggested": true,
+        "suggested": false,
         "labels": [
             "chat",
             "reasoning",
@@ -78,7 +78,7 @@
     "DeepSeek-V4-Flash-EXTENSOR": {
         "checkpoint": "amd/DeepSeek-V4-Flash-EXTENSOR:DeepSeek-V4-Flash-EXTENSOR-MXFP4-Tile16-v2.extensor.gguf",
         "recipe": "extensor",
-        "suggested": true,
+        "suggested": false,
         "labels": [
             "chat",
             "reasoning",
@@ -89,7 +89,7 @@
     "GLM-5.2-EXTENSOR": {
         "checkpoint": "amd/GLM-5.2-EXTENSOR:GLM-5.2-EXTENSOR-Q2_K-Experts-v1.extensor.gguf",
         "recipe": "extensor",
-        "suggested": true,
+        "suggested": false,
         "labels": [
             "chat",
             "reasoning",
