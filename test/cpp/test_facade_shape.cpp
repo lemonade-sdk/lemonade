@@ -652,7 +652,7 @@ int main() {
     // The measure this refactor was opened for: a ceiling, not a target. One
     // way: shrinking passes without an edit, growing names itself.
     const int lines = static_cast<int>(std::count(facade.begin(), facade.end(), '\n'));
-    constexpr int kLineCeiling = 879;
+    constexpr int kLineCeiling = 876;
     check("the facade is " + std::to_string(lines) + " lines, ceiling " +
               std::to_string(kLineCeiling),
           lines <= kLineCeiling);
@@ -707,6 +707,15 @@ int main() {
     if (static_cast<int>(members.size()) > kMemberCeiling) {
         for (const auto& name : members) std::printf("    member: %s\n", name.c_str());
     }
+
+    // One line per budget, measured rather than asserted. A ceiling only says "not
+    // worse"; these say where the number actually is, so a shrink shows up in the CTest
+    // output without anyone having to go looking for it.
+    std::printf("\nbudgets: facade %d/%d lines | header %d/%d declarations | %zu/%d members"
+                " | reach %zu/%d direct, %zu/%d transitive\n",
+                lines, kLineCeiling, declarations, kHeaderDeclarationCeiling, members.size(),
+                kMemberCeiling, facade_consumers.size(), kFacadeIncluderCeiling, reach.size(),
+                kFacadeClosureCeiling);
 
     if (g_failures > 0) {
         std::printf("\n%d check(s) failed\n", g_failures);
