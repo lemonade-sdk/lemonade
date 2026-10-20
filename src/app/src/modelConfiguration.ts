@@ -331,7 +331,7 @@ export function loadModelTunings(): Record<string, ModelTuning> {
 
 export function saveModelTunings(tunings: Record<string, ModelTuning>): void {
   // recipe_options is server-owned. Persist only genuinely client-owned model
-  // tuning fields; stale recipe_options bytes from older GUI3 builds are never
+  // tuning fields; stale recipe_options bytes from older Lemonade App builds are never
   // read, copied forward, migrated, or rewritten.
   const clientOwned: Record<string, Record<string, unknown>> = {};
   for (const [modelName, tuning] of Object.entries(tunings)) {

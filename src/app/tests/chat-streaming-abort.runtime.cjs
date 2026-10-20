@@ -91,6 +91,26 @@ const apiStub = {
   },
 };
 
+// Load the real implementation: this test checks cancellation while a tool
+// settles, so mocking out loop detection would hide integration regressions.
+const detectorPath = path.join(root, 'src/hooks/toolLoopDetector.ts');
+const detectorCompiled = ts.transpileModule(fs.readFileSync(detectorPath, 'utf8'), {
+  compilerOptions: {
+    target: ts.ScriptTarget.ES2020,
+    module: ts.ModuleKind.CommonJS,
+  },
+  fileName: detectorPath,
+  reportDiagnostics: true,
+});
+const detectorErrors = (detectorCompiled.diagnostics || []).filter(
+  diagnostic => diagnostic.category === ts.DiagnosticCategory.Error,
+);
+assert.equal(detectorErrors.length, 0);
+const detectorModule = { exports: {} };
+new Function('exports', 'module', detectorCompiled.outputText)(
+  detectorModule.exports, detectorModule,
+);
+
 /* ── Module wiring ───────────────────────────────────────────────────────── */
 
 const originalWindow = global.window;
@@ -111,6 +131,7 @@ new Function('exports', 'require', 'module', '__filename', '__dirname', compiled
   request => {
     if (request === 'react') return reactStub;
     if (request === '../api') return apiStub;
+    if (request === './toolLoopDetector') return detectorModule.exports;
     throw new Error(`Unexpected dependency while loading useChatStreaming: ${request}`);
   },
   hookModule,

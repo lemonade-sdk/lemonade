@@ -1595,7 +1595,7 @@ test.describe('Accessibility — MCP Gateway panel (#2417)', () => {
     expect(initParams['protocolVersion']).toBe('2025-11-25');
     expect(initParams['capabilities']).toMatchObject({ tools: {} });
     const clientInfo = initParams['clientInfo'] as Record<string, string> | undefined;
-    expect(clientInfo?.['name']).toBe('lemonade-gui3');
+    expect(clientInfo?.['name']).toBe('lemonade-app');
     expect(typeof clientInfo?.['version']).toBe('string');
 
     // (b) notifications/initialized is second (no id field — it is a notification)

@@ -6195,7 +6195,7 @@ optgroup {
   flex: 0 0 auto;
 }
 
-/* GUI2 feature parity additions for GUI3 prototype */
+/* Feature parity additions */
 .hidden-file-input {
   display: none;
 }
@@ -12878,7 +12878,7 @@ a.backend-card__version:focus-visible {
   }
 }
 
-/* ── Remote model providers (GUI3) ─────────────────────────── */
+/* ── Remote model providers ─────────────────────────── */
 .model-nav-rail__section-label {
   display: flex;
   align-items: center;
@@ -13212,7 +13212,7 @@ a.backend-card__version:focus-visible {
 .mcp-server-form__actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: var(--space-2); }
 @media (max-width: 720px) { .mcp-server-form, .mcp-panel__admin-auth-controls, .mcp-transport-options { grid-template-columns: 1fr; } .mcp-server-form__wide { grid-column: auto; } .mcp-panel__card-header { flex-direction: column; } }
 
-/* ── GUI3 model router editor ───────────────────────────────── */
+/* ── Router editor ───────────────────────────────── */
 .manager__detail-form-panel--router { overflow: hidden; }
 .router-editor {
   width: 100%;
@@ -13717,7 +13717,7 @@ a.backend-card__version:focus-visible {
 .router-model-picker__stale { padding: var(--space-3); color: var(--text-tertiary); font-size: var(--text-xs); line-height: var(--leading-relaxed); }
 .router-model-picker__stale { border-top: 1px solid var(--border-subtle); background: color-mix(in srgb, var(--warning) 6%, var(--surface-1)); }
 
-/* GUI3-native success toast. Keeps Save & register feedback visible while the editor is scrolled. */
+/* Router editor success toast. Keeps Save & register feedback visible while the editor is scrolled. */
 .router-editor__toast {
   position: fixed;
   z-index: 240;
@@ -13743,7 +13743,7 @@ a.backend-card__version:focus-visible {
 .router-confirm-dialog__body p { margin: 0; color: var(--text-secondary); font-size: var(--text-sm); line-height: var(--leading-relaxed); }
 .router-confirm-dialog__icon { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 50%; background: var(--danger-soft); color: var(--danger); }
 
-/* Visual rule graph, adapted from GUI2's drag/drop pipeline for GUI3 RouterNode. */
+/* Visual rule graph, adapted from the earlier drag/drop pipeline for the router editor. */
 .router-graph { border-top: 1px solid var(--border-subtle); background: var(--surface-1); }
 .router-graph__workspace {
   display: grid;

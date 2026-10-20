@@ -1,7 +1,7 @@
 /**
  * ModelNavRail — the LEFT navigation rail of the three-pane model view.
  *
- * Pane layout (GUI3, #2355 follow-up requested by fl0rianr):
+ * Pane layout (Lemonade App, #2355 follow-up requested by fl0rianr):
  *   ┌──────────────┬──────────────────┬─────────────────────────┐
  *   │ ModelNavRail │  ModelListPanel  │     ModelDetailPanel     │
  *   │   (left)     │     (middle)     │         (right)          │

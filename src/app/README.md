@@ -1,22 +1,14 @@
-# Lemonade App (GUI3)
+# Lemonade App
 
-GUI3 is Lemonade's shared **React 19 + TypeScript + webpack** frontend. The same
-UI runs in the **Tauri desktop app** and in the **browser app** served by
-`lemond`. The server owns models, backends, and persistent model configuration;
-the GUI owns its connection, presentation, and optional local chat history.
+The Lemonade App uses a shared **React 19 + TypeScript + webpack** frontend. The same UI runs in the **Tauri desktop app** and in the **browser app** served by `lemond`. The server owns models, backends, and persistent model configuration; the GUI owns its connection, presentation, and optional local chat history.
 
-For user-facing instructions, see the [GUI3 guide](../../docs/guide/gui3.md).
-For Tauri and platform build details, see the
-[desktop app developer guide](../../docs/dev/app.md).
+For user-facing instructions, see the [Lemonade App guide](../../docs/guide/app.md). For Tauri and platform build details, see the [desktop app developer guide](../../docs/dev/app.md).
 
 ## Prerequisites
 
 - Node.js 20+ and npm (install dependencies with `npm ci`).
-- A running Lemonade Server (`lemond`) for end-to-end testing. The default
-  endpoint is `http://localhost:13305`; it can be changed under
-  **Settings > Server**.
-- Rust/Cargo and platform-specific dependencies only for Tauri desktop builds;
-  see the [desktop app developer guide](../../docs/dev/app.md#prerequisites).
+- A running Lemonade Server (`lemond`) for end-to-end testing. The default endpoint is `http://localhost:13305`; it can be changed under **Settings > Server**.
+- Rust/Cargo and platform-specific dependencies only for Tauri desktop builds; see the [desktop app developer guide](../../docs/dev/app.md#prerequisites).
 
 Run the following commands from `src/app/`.
 
@@ -27,14 +19,9 @@ npm ci
 npm run dev:renderer
 ```
 
-This starts the webpack development server at **http://localhost:9123** with
-hot reloading. It does not launch the desktop app. To develop the desktop app
-and its renderer together, use `npm run dev` (Tauri).
+This starts the webpack development server at **http://localhost:9123** with hot reloading. It does not launch the desktop app. To develop the desktop app and its renderer together, use `npm run dev` (Tauri).
 
-The GUI calls the real server's `/api/v1/...` endpoints. A renderer running on
-port 9123 is not itself `lemond`; check **Settings > Server** if it connects to
-the wrong instance. Browser builds served by `lemond` use the server origin
-when no saved endpoint overrides it.
+The GUI calls the real server's `/api/v1/...` endpoints. A renderer running on port 9123 is not itself `lemond`; check **Settings > Server** if it connects to the wrong instance. Browser builds served by `lemond` use the server origin when no saved endpoint overrides it.
 
 ## Building
 
@@ -45,14 +32,9 @@ when no saved endpoint overrides it.
 | `npm run build:nobundle` | Tauri executable without an installer bundle. |
 | `npm run watch:renderer` | Rebuild the renderer when sources change. |
 
-The CMake integration also provides a `tauri-app` target, for example
-`cmake --build --preset windows --target tauri-app` after configuring the
-repository. On Windows, this stages `lemonade-app.exe` under `build/app/`.
+The CMake integration also provides a `tauri-app` target, for example `cmake --build --preset windows --target tauri-app` after configuring the repository. On Windows, this stages `lemonade-app.exe` under `build/app/`.
 
-**Browser distribution is built separately** under `src/web-app/`, reusing
-`src/app/src/`. Its dependency manifest and build configuration must remain
-separate for Debian's system-module packaging. See the
-[web UI developer guide](../../docs/dev/web-ui.md).
+**Browser distribution is built separately** under `src/web-app/`, reusing `src/app/src/`. Its dependency manifest and build configuration must remain separate for Debian's system-module packaging. See the [web UI developer guide](../../docs/dev/web-ui.md).
 
 ## Testing
 
@@ -64,41 +46,27 @@ npm run typecheck
 npm run test:ui-regressions
 ```
 
-`npm test` uses an isolated, non-HMR renderer at `127.0.0.1:4173` by default.
-The test runner executes the accessibility and functional suites sequentially
-to avoid shared-browser-state collisions. `PLAYWRIGHT_BASE_URL` can target
-another test URL; a loopback URL still starts the managed test server.
+`npm test` uses an isolated, non-HMR renderer at `127.0.0.1:4173` by default. The test runner executes the accessibility and functional suites sequentially to avoid shared-browser-state collisions. `PLAYWRIGHT_BASE_URL` can target another test URL; a loopback URL still starts the managed test server.
 
-Real-server smoke tests are opt-in and require a reachable `lemond` (and any
-models required by those tests):
+For accessibility expectations and focused tests, see [Accessibility](ACCESSIBILITY.md).
+
+Real-server smoke tests are opt-in and require a reachable `lemond` (and any models required by those tests):
 
 ```bash
 LEMONADE_REAL_SERVER=1 npm test
 ```
 
-Additional focused runtime tests are listed in `package.json`, including
-`test:mcp-runtime`, `test:effective-settings`, and `test:storage`.
+Additional focused runtime tests are listed in `package.json`, including `test:mcp-runtime`, `test:effective-settings`, and `test:storage`.
 
 ## Features and ownership
 
-The UI provides Chat (including supported multimodal modes), model discovery
-and server-side registration, model loading and configuration, backend
-management, the Apps marketplace, Monitor, and Settings. Model settings are
-sent to the server; client-local Favorites and request-time Chat settings are
-not server-wide configuration.
+The UI provides Chat (including supported multimodal modes), model discovery and server-side registration, model loading and configuration, backend management, the Apps marketplace, Monitor, and Settings. Model settings are sent to the server; client-local Favorites and request-time Chat settings are not server-wide configuration.
 
-- **Server-owned:** downloaded and loaded models, custom model definitions,
-  backend installations, persistent load settings, and server configuration.
-- **Client-owned:** server endpoint, theme and layout, Favorites, request-time
-  Chat preferences, and optional chat history. Chat history is stored locally
-  only when enabled in **Settings > Chat**; attachments and generated media are
-  not saved as part of the persistent history.
-- **Authentication:** an optional API key controls access to the configured
-  server.
+- **Server-owned:** downloaded and loaded models, custom model definitions, backend installations, persistent load settings, and server configuration.
+- **Client-owned:** server endpoint, theme and layout, Favorites, request-time Chat preferences, and optional chat history. Chat history is stored locally only when enabled in **Settings > Chat**; attachments and generated media are not saved as part of the persistent history.
+- **Authentication:** an optional API key controls access to the configured server.
 
-Multiple GUI clients may connect to the same server. Server-side changes can
-be visible to all of them, while each client's local preferences remain
-independent.
+Multiple GUI clients may connect to the same server. Server-side changes can be visible to all of them, while each client's local preferences remain independent.
 
 ## Source layout
 
@@ -121,15 +89,7 @@ playwright.config.ts Playwright projects and isolated test server
 
 ## Troubleshooting
 
-- **Connection fails:** check `lemond` and its URL/API key in
-  **Settings > Server**. For a local instance, try
-  `curl http://localhost:13305/api/v1/health`.
-- **Port 9123 is busy:** stop the other renderer instance or run
-  `npm run dev:renderer -- --port 9000`. Tauri's configured development URL
-  remains port 9123, so update that configuration if you change ports while
-  developing the desktop app.
-- **Playwright cannot start:** run `npx playwright install chromium`, check
-  whether port 4173 is occupied, and clear an unintended
-  `PLAYWRIGHT_BASE_URL` override.
-- **Changes are not visible:** hard-refresh the renderer or restart
-  `npm run dev:renderer`.
+- **Connection fails:** check `lemond` and its URL/API key in **Settings > Server**. For a local instance, try `curl http://localhost:13305/api/v1/health`.
+- **Port 9123 is busy:** stop the other renderer instance or run `npm run dev:renderer -- --port 9000`. Tauri's configured development URL remains port 9123, so update that configuration if you change ports while developing the desktop app.
+- **Playwright cannot start:** run `npx playwright install chromium`, check whether port 4173 is occupied, and clear an unintended `PLAYWRIGHT_BASE_URL` override.
+- **Changes are not visible:** hard-refresh the renderer or restart `npm run dev:renderer`.

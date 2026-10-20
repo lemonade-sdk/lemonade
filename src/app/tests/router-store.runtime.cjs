@@ -70,7 +70,7 @@ const validDraft = {
     assert.equal(info.recipe, 'collection.router');
     assert.equal(info.routing.default_model, 'smart');
     assert.equal(store.routerRegistrationOptions(info).display_name, 'Scoped router');
-    console.log('GUI3 router store is non-persistent; lemond owns router definitions.');
+    console.log('Lemonade App router store is non-persistent; lemond owns router definitions.');
   } finally {
     fs.rmSync(outputPath, { recursive: true, force: true });
   }
