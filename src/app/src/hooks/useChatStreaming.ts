@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { ChatMessage, LiveStreamStats, ChatCompletionStats } from '../api';
 import type { ToolCall, ToolResult } from '../tools/lemonadeTools';
+import { ToolLoopDetector } from './toolLoopDetector';
 
 export type { ToolCall } from '../tools/lemonadeTools';
 
@@ -11,7 +12,6 @@ export function chatThinkingParams(mode: ChatThinkingMode): Record<string, unkno
 }
 
 
-const MAX_TOOL_ROUNDS = 5;
 const TOOL_FOLLOWUP_PROMPT = [
   "Use the tool result to answer the user's last request with concrete, specific details.",
   'Do not stop at a raw count such as "105 models" or at "success". Present the actual names/status/details returned by the tool.',
@@ -205,15 +205,20 @@ export function useChatStreaming(
     const hasImageInput = messages.some(message => Array.isArray(message.content)
       && message.content.some(part => part.type === 'image_url'));
 
-    let toolRound = 0;
+    const toolLoopDetector = new ToolLoopDetector();
+    let toolsDisabled = false;
+    let blockedOnlyRounds = 0;
     const allToolCalls: ToolCallEntry[] = [];
 
     const runCompletion = async (): Promise<void> => {
       const { default: api } = await import(/* webpackChunkName: "api-client" */ '../api');
       return new Promise<void>((resolve, reject) => {
-        api.chatCompletion(model, retriedWithoutTools ? withoutToolPrompt : fullMessages, {
+        const withoutToolSystemPrompt = toolsDisabled && runtime?.systemPrompt
+          && fullMessages[0]?.role === 'system' && fullMessages[0].content === runtime.systemPrompt
+          ? fullMessages.slice(1) : fullMessages;
+        api.chatCompletion(model, retriedWithoutTools ? withoutToolPrompt : withoutToolSystemPrompt, {
           params: chatThinkingParams(thinkingMode),
-          tools: !retriedWithoutTools && runtime?.tools?.length ? runtime.tools : undefined,
+          tools: !toolsDisabled && !retriedWithoutTools && runtime?.tools?.length ? runtime.tools : undefined,
           onReasoning: (_token, fullReasoning) => {
             if (!ownsConversation()) return;
             const buf = tokenBufferRef.current;
@@ -235,16 +240,14 @@ export function useChatStreaming(
           },
           onToolCalls: async (toolCalls) => {
             try {
-              toolRound++;
-              if (toolRound > MAX_TOOL_ROUNDS) {
-                onError(convoId, 'Too many tool call rounds. Stopping to prevent loops.');
-                cleanupIfOwned();
+              if (!ownsConversation() || controller.signal.aborted) {
+                dropTokenBufferIfOwned();
                 resolve();
                 return;
               }
-
-              if (controller.signal.aborted) {
-                dropTokenBufferIfOwned();
+              if (toolsDisabled) {
+                onError(convoId, 'The model requested tools despite loop protection disabling tool calls.');
+                cleanupIfOwned();
                 resolve();
                 return;
               }
@@ -268,10 +271,18 @@ export function useChatStreaming(
                 { role: 'assistant' as const, content: '', tool_calls: toolCalls },
               ];
 
-              // Execute all tool calls in parallel
-              const results = await Promise.all(
-                toolCalls.map(tc => runtime!.execute(tc as ToolCall))
-              );
+              // Skip only invocations already blocked by repeated identical errors.
+              const blockedReasons = toolCalls.map(tc => toolLoopDetector.blockedReason(tc));
+              const results: ToolExecutionPayload[] = await Promise.all(toolCalls.map((tc, i) => {
+                const reason = blockedReasons[i];
+                return reason ? {
+                  role: 'tool' as const,
+                  tool_call_id: tc.id,
+                  content: JSON.stringify({ error: `Skipped: ${reason}` }),
+                  displayResult: `Skipped: ${reason}`,
+                  error: true,
+                } : runtime!.execute(tc as ToolCall);
+              }));
 
               // Tool execution takes no abort signal, so a stop mid-call lands
               // here with a dead controller.
@@ -301,23 +312,54 @@ export function useChatStreaming(
                 }
               }
 
-              // Append tool results, then remind the model to produce a real final
-              // answer (or call a narrower tool) instead of echoing a broad count.
+              // Keep every tool result in the model's history, including unsuccessful ones.
               for (const result of results) {
                 fullMessages = [
                   ...fullMessages,
                   { role: 'tool' as const, content: result.content, tool_call_id: result.tool_call_id },
                 ];
               }
+              const executedCalls = toolCalls.filter((_, i) => !blockedReasons[i]);
+              const executedResults = results.filter((_, i) => !blockedReasons[i]);
+              const onlyBlocked = toolCalls.length > 0 && executedCalls.length === 0;
+              blockedOnlyRounds = onlyBlocked ? blockedOnlyRounds + 1 : 0;
+              const loopNotice = blockedOnlyRounds >= 2
+                ? { action: 'stop' as const, reason: 'The model continued requesting only blocked tool calls' }
+                : toolLoopDetector.observe(executedCalls, executedResults);
+              if (loopNotice) {
+                console.warn(`[Chat tools] ${loopNotice.action}: ${loopNotice.reason}`);
+                if (loopNotice.action === 'stop') {
+                  toolsDisabled = true;
+                  allToolCalls.push({
+                    name: 'loop_protection',
+                    args: '(automatic)',
+                    result: `${loopNotice.reason}. Further tool calls have been disabled for this response.`,
+                    status: 'error',
+                  });
+                }
+              }
+              const guidance = loopNotice?.action === 'stop'
+                ? `${loopNotice.reason}. Tools are now disabled for this response. Explain what you completed and what remains unfinished, without claiming further actions succeeded. Include any relevant generated code in your answer for the user to inspect.`
+                : loopNotice?.action === 'warn'
+                  ? `${TOOL_FOLLOWUP_PROMPT}
+
+Possible tool loop: ${loopNotice.reason}. Do not repeat identical calls with unchanged results. Try a different approach, wait for real progress, or explain the blocker.`
+                  : blockedReasons.some(Boolean)
+                    ? `${TOOL_FOLLOWUP_PROMPT}
+
+Some tool calls were skipped after repeated identical failures. Other tools remain available; change the blocked call's arguments or choose a different tool.`
+                    : TOOL_FOLLOWUP_PROMPT;
               fullMessages = [
                 ...fullMessages,
-                { role: 'user' as const, content: TOOL_FOLLOWUP_PROMPT },
+                { role: 'user' as const, content: guidance },
               ];
 
               // Clear tool status, keep accumulated tool call entries
               setActiveStreams(prev => ({
                 ...prev,
-                [convoId]: { ...(prev[convoId] || { content: '', thinking: '', toolCalls: [] }), toolStatus: undefined, toolCalls: [...allToolCalls] },
+                [convoId]: { ...(prev[convoId] || { content: '', thinking: '', toolCalls: [] }),
+                  toolStatus: loopNotice?.action === 'stop' ? 'Tool loop detected; finishing without tools...' : undefined,
+                  toolCalls: [...allToolCalls] },
               }));
 
               // Re-run completion with tool results
