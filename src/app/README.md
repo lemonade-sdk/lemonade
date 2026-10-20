@@ -48,6 +48,8 @@ npm run test:ui-regressions
 
 `npm test` uses an isolated, non-HMR renderer at `127.0.0.1:4173` by default. The test runner executes the accessibility and functional suites sequentially to avoid shared-browser-state collisions. `PLAYWRIGHT_BASE_URL` can target another test URL; a loopback URL still starts the managed test server.
 
+For accessibility expectations and focused tests, see [Accessibility](ACCESSIBILITY.md).
+
 Real-server smoke tests are opt-in and require a reachable `lemond` (and any models required by those tests):
 
 ```bash

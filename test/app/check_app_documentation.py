@@ -20,7 +20,13 @@ PAGES = (
     "docs/guide/app-audio-and-3d.md",
     "docs/guide/app-operations.md",
 )
-DOCS = (*PAGES, "docs/dev/app.md", "docs/guide/README.md", "src/app/README.md")
+DOCS = (
+    *PAGES,
+    "docs/dev/app.md",
+    "docs/guide/README.md",
+    "src/app/README.md",
+    "src/app/ACCESSIBILITY.md",
+)
 ERRORS = []
 
 
@@ -55,23 +61,45 @@ def main() -> int:
             continue
         text = path.read_text(encoding="utf-8")
         visible_text = re.sub(r"https?://[^\s)]+", "", text)
-        if re.search(r"\bGUI3\b|gui3\.md", visible_text, flags=re.I):
-            complain(f"{filename}: contains obsolete GUI3 branding/link")
+        if re.search(r"\bGUI[0-9]+\b|gui[0-9]+\.md", visible_text, flags=re.I):
+            complain(
+                f"{filename}: contains obsolete generation-specific GUI branding/link"
+            )
         inspect_links(path, text)
         if filename in PAGES and filename.removeprefix("docs/") not in nav:
             complain(f"{filename}: page not referenced by mkdocs.yml navigation")
 
-    if (ROOT / "docs/guide/gui3.md").exists():
-        complain("old docs/guide/gui3.md still exists")
+    for legacy_guide in (ROOT / "docs/guide").glob("gui[0-9]*.md"):
+        complain(f"obsolete guide still exists: {legacy_guide.relative_to(ROOT)}")
     if (ROOT / "src/app/docs/audio-and-3d-modalities.md").exists():
         complain("unpublished src/app/docs/audio-and-3d-modalities.md still exists")
+
+    readme_path = ROOT / "src/app/README.md"
+    if readme_path.is_file() and not re.search(
+        r"\]\(ACCESSIBILITY\.md(?:#[^)]*)?\)",
+        readme_path.read_text(encoding="utf-8"),
+        flags=re.I,
+    ):
+        complain("src/app/README.md: missing link to ACCESSIBILITY.md")
+
+    accessibility_path = ROOT / "src/app/ACCESSIBILITY.md"
+    if accessibility_path.is_file():
+        accessibility_text = accessibility_path.read_text(encoding="utf-8")
+        if not re.search(r"\]\(tests/a11y\.spec\.ts(?:#[^)]*)?\)", accessibility_text):
+            complain("src/app/ACCESSIBILITY.md: missing link to tests/a11y.spec.ts")
+        if "npm run test:a11y" not in accessibility_text:
+            complain("src/app/ACCESSIBILITY.md: missing npm run test:a11y command")
 
     manifest_path = ROOT / "src/app/package.json"
     if manifest_path.is_file():
         scripts = json.loads(manifest_path.read_text(encoding="utf-8")).get(
             "scripts", {}
         )
-        for filename in ("docs/dev/app.md", "src/app/README.md"):
+        for filename in (
+            "docs/dev/app.md",
+            "src/app/README.md",
+            "src/app/ACCESSIBILITY.md",
+        ):
             path = ROOT / filename
             if not path.exists():
                 continue
