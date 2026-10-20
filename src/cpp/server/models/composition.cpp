@@ -76,8 +76,6 @@ CompositionResult ModelComposition::run() {
         }
     }
 
-    // One snapshot of the saved options for the whole pass, so a concurrent
-    // options write cannot split the build across two states.
     const json saved_options = deps_.saved_options();
     for (auto& [name, info] : all_models) {
         json jro = json_recipe_options.count(name) ? json_recipe_options[name] : json(nullptr);

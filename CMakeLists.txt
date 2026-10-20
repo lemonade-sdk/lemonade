@@ -3470,19 +3470,6 @@ if(BUILD_TESTING AND EXISTS "${_COMPOSE_RETRY_TEST_SRC}")
     add_cpp_ci_test(ComposeRetryTest CI ON COMMAND test_compose_retry)
 endif()
 
-set(_STORE_PATCHES_TEST_SRC
-    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_store_patches.cpp"
-)
-if(BUILD_TESTING AND EXISTS "${_STORE_PATCHES_TEST_SRC}")
-    add_executable(test_store_patches
-        test/cpp/test_store_patches.cpp
-    )
-    target_link_libraries(test_store_patches PRIVATE lemonade-server-core)
-
-    include(CTest)
-    add_cpp_ci_test(StorePatchesTest CI ON COMMAND test_store_patches)
-endif()
-
 set(_COMPOSITION_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_composition.cpp"
 )
@@ -3509,31 +3496,18 @@ if(BUILD_TESTING AND EXISTS "${_CLOUD_ROWS_TEST_SRC}")
     add_cpp_ci_test(CloudRowsTest CI ON COMMAND test_cloud_rows)
 endif()
 
-set(_STORE_TEST_SRC
-    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_store.cpp"
+set(_STORE_WRITE_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_store_write.cpp"
 )
-if(BUILD_TESTING AND EXISTS "${_STORE_TEST_SRC}")
-    add_executable(test_store
-        test/cpp/test_store.cpp
+if(BUILD_TESTING AND EXISTS "${_STORE_WRITE_TEST_SRC}")
+    add_executable(test_store_write
+        test/cpp/test_store_write.cpp
     )
-    target_link_libraries(test_store PRIVATE lemonade-server-core)
+    target_link_libraries(test_store_write PRIVATE lemonade-server-core)
+    add_dependencies(test_store_write copy_resources)
 
     include(CTest)
-    add_cpp_ci_test(StoreTest CI ON COMMAND test_store)
-endif()
-
-set(_STORE_BUILD_TEST_SRC
-    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_store_build.cpp"
-)
-if(BUILD_TESTING AND EXISTS "${_STORE_BUILD_TEST_SRC}")
-    add_executable(test_store_build
-        test/cpp/test_store_build.cpp
-    )
-    target_link_libraries(test_store_build PRIVATE lemonade-server-core)
-    add_dependencies(test_store_build copy_resources)
-
-    include(CTest)
-    add_cpp_ci_test(StoreBuildTest CI ON COMMAND test_store_build)
+    add_cpp_ci_test(StoreWriteTest CI ON COMMAND test_store_write)
 endif()
 
 set(_MODEL_ENTRY_IDENTITY_TEST_SRC
