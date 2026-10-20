@@ -457,7 +457,7 @@ int main() {
         if (file != kFacadeHeader) consumers.push_back(file);
     const std::vector<std::string> facade_consumers =
         includers_of("lemon/model_manager.h", consumers);
-    constexpr int kFacadeIncluderCeiling = 29;
+    constexpr int kFacadeIncluderCeiling = 22;
     check("the facade header reaches " + std::to_string(facade_consumers.size()) +
               " product files, ceiling " + std::to_string(kFacadeIncluderCeiling),
           static_cast<int>(facade_consumers.size()) <= kFacadeIncluderCeiling);

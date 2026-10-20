@@ -148,9 +148,7 @@ static void test_in_place_update_publishes(ModelManager& manager) {
         return;
     }
 
-    ModelInfo info = manager.get_model_info("user.Options");
-    info.recipe_options.set_option(key, json(4096));
-    manager.save_model_options(info);
+    manager.replace_options("user.Options", json{{key, json(4096)}});
 
     check("an in-place update publishes to readers",
           manager.get_model_info("user.Options").recipe_options.get_option(key) == json(4096));

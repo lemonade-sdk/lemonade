@@ -196,7 +196,7 @@ static void test_the_commit_publishes_the_filter_reasons() {
     // is the one that stays published.
     ModelInfo present = manager.get_model_info("Present-Model");
     present.recipe_options = RecipeOptions("llamacpp", json{{"ctx_size", 1024}});
-    manager.save_model_options(present);
+    manager.replace_options("Present-Model", present.recipe_options.to_json());
     check("a patch to one row keeps the table of what the host cannot run",
           !manager.get_model_filter_reason("Absent-Model").empty());
 }
@@ -313,7 +313,7 @@ static void test_a_write_seeds_from_what_readers_hold() {
 
     ModelInfo alpha = manager.get_model_info("Alpha");
     alpha.recipe_options = RecipeOptions("llamacpp", json{{"ctx_size", 2048}});
-    manager.save_model_options(alpha);  // a write that changes one row
+    manager.replace_options("Alpha", alpha.recipe_options.to_json());  // one row changes
     check("a patch to one row leaves the rest of the set published",
           manager.model_exists("Alpha") && manager.model_exists("Beta") &&
               manager.model_exists("user.Gamma"));

@@ -90,7 +90,10 @@ class ModelManager {
 public:
 
     // Locks the store and publishes on release, so a mutating path cannot forget to
-    // publish and readers never see a half-built set.
+
+    // Locks the store and publishes on release, so a mutating path cannot forget to publish
+    // and readers never see a half-built set. Private once the facade has a read-only seam to
+    // the store: test_model_manager_shim holds one to show a reader is never blocked.
     class StoreWrite {
       public:
         explicit StoreWrite(ModelManager& manager) : write_(manager.store_) {}
@@ -140,7 +143,6 @@ public:
 
     // Drop the model's own registration, if it has one. Rows the catalog re-creates
     // have none.
-    void forget_registered_model(const std::string& canonical_model_name);
 
     // Refresh discovered models for one provider. Looks up creds via the
     // registry, calls CloudServer::discover_models, and re-seeds the
@@ -345,7 +347,6 @@ public:
     // Override global config defaults but are overridden by model-level recipe_options.
     json get_architecture_defaults(const std::string& architecture) const;
 
-    void save_model_options(const ModelInfo& info);
 
     // One model's options in a single read: its own persisted entry, the
     // layering that stands beneath it, and what `changes` (null clears a key)
@@ -362,9 +363,15 @@ public:
     // An empty object erases the entry rather than persisting `{}`.
     json replace_options(const std::string& name, const json& saved);
 
-    void start_directory_watcher();
 
 private:
+
+
+    // Internal to the facade: called from its own mutating paths.
+    void forget_registered_model(const std::string& canonical_model_name);
+    void save_model_options(const ModelInfo& info);
+    void start_directory_watcher();
+
     static json load_server_models();
     json load_architecture_defaults();
 
