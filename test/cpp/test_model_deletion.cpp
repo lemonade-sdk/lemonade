@@ -1,3 +1,4 @@
+#include "lemon/config_file.h"
 #include "lemon/model_manager.h"
 #include "lemon/utils/path_utils.h"
 #include "support/server_wired_manager.h"
@@ -71,6 +72,7 @@ struct Fixture {
     fs::path user_models_file;
 
     fs::path hf_single;
+    fs::path self_managed_neighbour;
     fs::path hf_shared;
     fs::path hf_main_repo;
     fs::path hf_aux_repo;
@@ -93,6 +95,9 @@ static Fixture create_fixture() {
     fs::create_directories(fx.models_dir);
 
     fx.hf_single = make_hf_repo(fx.models_dir, "zz/single", "snap-a", {"main.gguf"});
+    // Stands next to the self-managed row's checkpoint and must survive its delete.
+    fx.self_managed_neighbour =
+        make_hf_repo(fx.models_dir, "zz/neighbour", "snap-n", {"keep.gguf"});
     fx.hf_shared =
         make_hf_repo(fx.models_dir, "zz/shared", "snap-s", {"a.gguf", "b.gguf"});
     fx.hf_main_repo = make_hf_repo(fx.models_dir, "zz/mainrepo", "snap-m", {"main.gguf"});
@@ -155,6 +160,10 @@ static Fixture create_fixture() {
          json{{"checkpoints", json{{"main", "uploads/zz-upload.gguf"}}},
               {"recipe", "llamacpp"},
               {"source", "local_upload"}}},
+        // flm's descriptor says self_manages_downloads, so its checkpoint names an entry
+        // in flm's own store rather than a path into the models directory.
+        {"zz-self-managed",
+         json{{"checkpoint", "zz/selfmanaged-model"}, {"recipe", "flm"}}},
     };
     write_file(fx.user_models_file, user_models.dump(2));
     return fx;
@@ -184,6 +193,26 @@ static bool gone_from_cache(ModelManager& manager, const std::string& name) {
     } catch (const std::exception&) {
         return true;
     }
+}
+
+// A backend that fetched its own weights owns their removal. lemonde must hand the delete
+// to that backend and keep its hands off the models directory; the branch that gets this
+// wrong takes a user's directory with it.
+static void test_self_managed_delete_delegates(ModelManager& manager, const Fixture& fx) {
+    check("self-managed model starts registered",
+          still_registered(fx, "zz-self-managed"));
+
+    std::string error;
+    const bool completed = delete_model(manager, "user.zz-self-managed", error);
+
+    // No flm executable here, so the delegate refuses instead of removing. Either way
+    // the request reached the backend, which is what is pinned: a CacheDir branch would
+    // have completed silently and looked like success.
+    check("the delete reaches the backend that fetched the bytes",
+          !completed && error.find("FLM") != std::string::npos);
+    check("a refused delete removes nothing from the models directory",
+          fs::exists(fx.self_managed_neighbour));
+    check("a refused delete keeps the registration", still_registered(fx, "zz-self-managed"));
 }
 
 static void test_registry_backed_delete(ModelManager& manager, const Fixture& fx) {
@@ -354,12 +383,21 @@ int main() {
     lemon::utils::set_config_dir(path_to_utf8(fx.root));
     lemon::utils::set_models_dir(path_to_utf8(fx.models_dir));
 
+    // Backend filtering drops a model whose recipe the host cannot run, and flm is a
+    // system package this test host will not have. Which files a delete may remove does
+    // not depend on what this machine can load.
+    json config_json = lemon::ConfigFile::base_defaults();
+    config_json["disable_model_filtering"] = true;
+    lemon::RuntimeConfig config(config_json);
+    lemon::RuntimeConfig::set_global(&config);
+
     {
         ModelManager manager(lemon::test::server_wired_config(path_to_utf8(fx.extra_dir)));
         test_registry_backed_delete(manager, fx);
         test_shared_repo_keeps_other_variants(manager, fx);
         test_multi_repo_delete_removes_every_owned_repo(manager, fx);
         test_registry_only_delete(manager, fx);
+        test_self_managed_delete_delegates(manager, fx);
         test_imported_model_delete(manager, fx);
         test_uploaded_model_delete(manager, fx);
         test_adopted_cache_delete(manager, fx);
@@ -368,6 +406,7 @@ int main() {
         test_extra_model_delete(manager, fx);
     }
 
+    lemon::RuntimeConfig::set_global(nullptr);
     fs::remove_all(fx.root);
 
     if (g_failures == 0) {

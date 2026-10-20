@@ -715,40 +715,50 @@ json RuntimeConfig::backend_config(const std::string& backend_name) const {
     return json::object();
 }
 
+namespace {
+
+// A config.json the operator edited by hand can hold any type at any key. Reading one
+// as the wrong type must not throw: a caller that asks for a backend's settings and gets
+// an exception loses whatever it was building, and recipe detection losing means every
+// model on the machine reads as unavailable. Absence and mismatch read the same way.
+const json* find_backend_value(const json& config, const std::string& backend,
+                               const std::string& key) {
+    const auto section = config.find(backend);
+    if (section == config.end() || !section->is_object()) {
+        return nullptr;
+    }
+    const auto value = section->find(key);
+    return value == section->end() ? nullptr : &*value;
+}
+
+}  // namespace
+
 std::string RuntimeConfig::backend_string(const std::string& backend,
                                            const std::string& key) const {
     std::shared_lock lock(mutex_);
-    if (config_.contains(backend) && config_[backend].contains(key)) {
-        return config_[backend][key].get<std::string>();
-    }
-    return "";
+    const json* value = find_backend_value(config_, backend, key);
+    return value != nullptr && value->is_string() ? value->get<std::string>() : "";
 }
 
 bool RuntimeConfig::backend_bool(const std::string& backend,
                                   const std::string& key) const {
     std::shared_lock lock(mutex_);
-    if (config_.contains(backend) && config_[backend].contains(key)) {
-        return config_[backend][key].get<bool>();
-    }
-    return false;
+    const json* value = find_backend_value(config_, backend, key);
+    return value != nullptr && value->is_boolean() ? value->get<bool>() : false;
 }
 
 int RuntimeConfig::backend_int(const std::string& backend,
                                 const std::string& key) const {
     std::shared_lock lock(mutex_);
-    if (config_.contains(backend) && config_[backend].contains(key)) {
-        return config_[backend][key].get<int>();
-    }
-    return 0;
+    const json* value = find_backend_value(config_, backend, key);
+    return value != nullptr && value->is_number_integer() ? value->get<int>() : 0;
 }
 
 double RuntimeConfig::backend_double(const std::string& backend,
                                       const std::string& key) const {
     std::shared_lock lock(mutex_);
-    if (config_.contains(backend) && config_[backend].contains(key)) {
-        return config_[backend][key].get<double>();
-    }
-    return 0.0;
+    const json* value = find_backend_value(config_, backend, key);
+    return value != nullptr && value->is_number() ? value->get<double>() : 0.0;
 }
 
 json RuntimeConfig::recipe_options(const std::string& backend) const {
