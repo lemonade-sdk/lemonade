@@ -3381,12 +3381,16 @@ if(BUILD_TESTING AND EXISTS "${_DS4_INSTALL_TEST_SRC}")
     add_cpp_ci_test(Ds4InstallParamsTest CI ON COMMAND test_ds4_install_params)
 endif()
 
-if(BUILD_TESTING)
+set(_EXTENSOR_INSTALL_PARAMS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_extensor_install_params.cpp")
+if(BUILD_TESTING AND EXISTS "${_EXTENSOR_INSTALL_PARAMS_TEST_SRC}")
     add_executable(test_extensor_install_params test/cpp/test_extensor_install_params.cpp)
     target_include_directories(test_extensor_install_params PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include)
     add_cpp_ci_test(ExtensorInstallParamsTest CI ON COMMAND test_extensor_install_params)
+endif()
 
+set(_EXTENSOR_BACKEND_INSTALL_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_extensor_backend_install.cpp")
+if(BUILD_TESTING AND EXISTS "${_EXTENSOR_BACKEND_INSTALL_TEST_SRC}")
     add_executable(test_extensor_backend_install test/cpp/test_extensor_backend_install.cpp)
     target_link_libraries(test_extensor_backend_install PRIVATE lemonade-server-core)
     add_cpp_ci_test(ExtensorBackendInstallTest CI ON COMMAND test_extensor_backend_install)
