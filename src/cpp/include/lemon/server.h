@@ -22,7 +22,7 @@
 #include "runtime_config.h"
 #include "router.h"
 #include "routing_policy.h"
-#include "model_manager.h"
+#include "lemon/model_manager_types.h"
 #include "utils/cancel_token.h"
 #include "backend_manager.h"
 #include "cloud_provider_registry.h"
@@ -365,7 +365,6 @@ private:
     std::thread http_v4_thread_;
     std::thread http_v6_thread_;
     std::thread model_cache_warmup_thread_;
-
 
     // Routed servers (all routes/handlers; never listen) and the main-port
     // front listeners that feed them — see upgradable_http_server.h

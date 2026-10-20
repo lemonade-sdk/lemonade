@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <condition_variable>
 #include <iostream>
+#include <lemon/model_manager.h>
 #include <mutex>
 #include <queue>
 #include <thread>

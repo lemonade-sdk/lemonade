@@ -8,6 +8,7 @@
 #include <lemon/models/artifact_store.h>
 #include <lemon/models/catalog.h>
 #include <lemon/models/entry_identity.h>
+#include <lemon/models/ingest.h>
 #include <lemon/models/recipe_option_layers.h>
 #include <lemon/models/routing_parse_options.h>
 #include <lemon/routing_policy.h>

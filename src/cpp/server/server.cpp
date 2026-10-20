@@ -3,6 +3,7 @@
 #include "lemon/audio_types.h"
 #include "lemon/auto_tune.h"
 #include "lemon/error_types.h"
+#include <lemon/model_manager.h>
 #include <optional>
 #include "lemon/canonical_id.h"
 #include "lemon/collection_orchestrator.h"

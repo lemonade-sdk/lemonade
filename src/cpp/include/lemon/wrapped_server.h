@@ -14,13 +14,13 @@
 #include "utils/process_manager.h"
 #include "utils/http_client.h"
 #include "server_capabilities.h"
-#include "model_manager.h"
 #include "model_residency.h"
 #include "backend_manager.h"
 #include "recipe_options.h"
 #include "streaming_proxy.h"
 #include "backends/backend_descriptor.h"
 #include "server_process.h"
+#include "model_manager_types.h"
 
 namespace lemon {
 
@@ -31,7 +31,6 @@ public:
     explicit BackendStreamRetryableReset(const std::string& reason)
         : std::runtime_error(reason) {}
 };
-
 
 struct Telemetry {
     int input_tokens = 0;
@@ -97,7 +96,6 @@ public:
     uint64_t get_instance_id() const { return instance_id_; }
 
     virtual ~WrappedServer();
-
 
     void set_log_level(const std::string& log_level) { log_level_ = log_level; }
 

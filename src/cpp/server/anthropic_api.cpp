@@ -7,6 +7,7 @@
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/session_utils.h"
 #include <iostream>
+#include <lemon/model_manager.h>
 #include <sstream>
 #include <chrono>
 #include <algorithm>

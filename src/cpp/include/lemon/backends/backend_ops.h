@@ -3,8 +3,9 @@
 #include <optional>
 #include <string>
 #include <vector>
-#include "lemon/model_manager.h"  // ModelInfo, DownloadProgressCallback
 #include "lemon/models/artifact_fetch.h"  // ArtifactFetchService
+#include "lemon/models/download_progress.h"
+#include "lemon/models/model_info.h"
 #include "lemon/utils/cancel_token.h"     // CancelToken
 
 namespace lemon {

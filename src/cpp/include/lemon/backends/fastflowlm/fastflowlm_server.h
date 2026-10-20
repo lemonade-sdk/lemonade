@@ -4,6 +4,7 @@
 
 #include "lemon/wrapped_server.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/models/registry_types.h"
 #include <string>
 
 namespace lemon {
@@ -12,7 +13,6 @@ namespace backends {
 class FastFlowLMServer : public WrappedServer, public IEmbeddingsServer, public ITranscriptionServer {
 public:
     static InstallParams get_install_params(const std::string& backend, const std::string& version);
-
 
     FastFlowLMServer(const std::string& log_level, ModelManager* model_manager = nullptr,
                      BackendManager* backend_manager = nullptr);

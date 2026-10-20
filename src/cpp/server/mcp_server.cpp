@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
+#include <lemon/model_manager.h>
 #include <mutex>
 #include <sstream>
 #include <string>

@@ -10,7 +10,7 @@
 #include <nlohmann/json.hpp>
 
 #include "mcp_tool.h"
-#include "model_manager.h"
+#include "lemon/model_manager_types.h"
 #include "router.h"
 
 namespace lemon {

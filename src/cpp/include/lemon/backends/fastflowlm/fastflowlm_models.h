@@ -4,7 +4,9 @@
 #include <filesystem>
 #include <string>
 #include <vector>
-#include "lemon/model_manager.h"  // ModelInfo, DownloadProgressCallback
+#include "lemon/models/download_progress.h"
+#include "lemon/models/model_info.h"
+#include "lemon/models/registry_types.h"
 
 namespace lemon {
 

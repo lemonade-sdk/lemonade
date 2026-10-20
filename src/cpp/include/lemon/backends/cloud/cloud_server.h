@@ -3,7 +3,7 @@
 #include "lemon/backends/backend_registry.h"
 
 #include "lemon/cloud_provider_registry.h"
-#include "lemon/model_manager.h"
+#include "lemon/model_manager_types.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/wrapped_server.h"
 #include <map>

@@ -160,6 +160,26 @@ std::vector<std::string> includers_of(const std::string& header,
     return result;
 }
 
+// Every file that compiles `header`, directly or through another header. Nothing enforces
+// the basename uniqueness this resolves through, but no two headers in src/cpp share one.
+std::vector<std::string> closure_of(const std::string& header,
+                                    const std::vector<std::string>& files) {
+    std::vector<std::string> seen;
+    std::vector<std::string> frontier{header};
+    while (!frontier.empty()) {
+        const std::vector<std::string> includers = includers_of(frontier.back(), files);
+        frontier.pop_back();
+        for (const auto& file : includers)
+            if (std::find(seen.begin(), seen.end(), file) == seen.end()) {
+                seen.push_back(file);
+                if (file.size() > 2 && file.compare(file.size() - 2, 2, ".h") == 0)
+                    frontier.push_back(file);
+            }
+    }
+    std::sort(seen.begin(), seen.end());
+    return seen;
+}
+
 void report_set_diff(const std::vector<std::string>& found,
                      const std::vector<std::string>& allowed) {
     for (const auto& file : found)
@@ -336,7 +356,8 @@ int main() {
     const std::vector<std::string> public_headers = {
         "lemon/models/model_info.h",
         "lemon/models/registry_types.h",  // wire facts that live on disk
-        "lemon/models/store_snapshot.h"};
+        "lemon/models/store_snapshot.h",
+        "lemon/models/download_progress.h"};  // the progress leaf
     std::vector<std::string> escaping;
     for (const auto& file : product) {
         if (in_models_layer(file) || file == kFacade || file == kFacadeHeader) continue;
@@ -391,10 +412,19 @@ int main() {
         "src/cpp/include/lemon/backends/backend_ops.h",  // ArtifactFetchService
         "src/cpp/include/lemon/gguf_reader.h",        // GGUF facts read through a source
         "src/cpp/include/lemon/model_manager.h",      // the aggregator S8 is shrinking
+        "src/cpp/include/lemon/backend_manager.h",    // DownloadProgressCallback
+        "src/cpp/include/lemon/backends/fastflowlm/fastflowlm_models.h",  // flm discovery rows
+        "src/cpp/include/lemon/backends/fastflowlm/fastflowlm_server.h",  // RegistryId it passes
         "src/cpp/server/model_registry.h",            // the adapter's own side
     };
+    std::sort(reexporters.begin(), reexporters.end());
+    const std::vector<std::string> expected_reexporters = [&allowed_reexporters] {
+        auto copy = allowed_reexporters;
+        std::sort(copy.begin(), copy.end());
+        return copy;
+    }();
     check("only the named headers re-export the models layer",
-          reexporters == allowed_reexporters);
+          reexporters == expected_reexporters);
     if (reexporters != allowed_reexporters) {
         report_set_diff(reexporters, allowed_reexporters);
         for (const auto& file : reexporters) {
@@ -434,6 +464,27 @@ int main() {
     if (static_cast<int>(facade_consumers.size()) < kFacadeIncluderCeiling)
         std::printf("note: facade reach is at %zu; tighten the ceiling to it\n",
                     facade_consumers.size());
+
+    // Reach rather than the count above: a header that hands the facade onward costs every
+    // file behind it, a .cpp that names it costs only itself.
+    const std::vector<std::string> reach = closure_of(kFacadeHeader, consumers);
+    constexpr int kFacadeClosureCeiling = 22;
+    check("the facade reaches " + std::to_string(reach.size()) +
+              " product files transitively, ceiling " + std::to_string(kFacadeClosureCeiling),
+          static_cast<int>(reach.size()) <= kFacadeClosureCeiling);
+    if (static_cast<int>(reach.size()) < kFacadeClosureCeiling)
+        std::printf("note: transitive facade reach is at %zu; tighten the ceiling to it\n",
+                    reach.size());
+
+    std::vector<std::string> headers;
+    for (const auto& file : facade_consumers)
+        if (file.size() > 2 && file.compare(file.size() - 2, 2, ".h") == 0)
+            headers.push_back(file);
+    // Empty on purpose, and it stays empty: model_manager_types.h is what a header
+    // includes to name the facade. A .cpp naming model_manager.h is fine - it calls it.
+    const std::vector<std::string> allowed_propagators;
+    check("no header hands the facade to whoever includes it", headers == allowed_propagators);
+    if (headers != allowed_propagators) report_set_diff(headers, allowed_propagators);
 
     // The legacy registry class lives with its two adapters and nowhere else. Matched as
     // an include, so a comment naming the header is not a caller and a real one is.

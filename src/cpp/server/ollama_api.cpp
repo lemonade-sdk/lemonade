@@ -4,6 +4,7 @@
 #include "lemon/model_types.h"
 #include "lemon/runtime_config.h"
 #include <iostream>
+#include <lemon/model_manager.h>
 #include <lemon/utils/aixlog.hpp>
 #include <sstream>
 #include <algorithm>

@@ -7,7 +7,7 @@
 #include <nlohmann/json.hpp>
 #include <httplib.h>
 #include "router.h"
-#include "model_manager.h"
+#include "lemon/model_manager_types.h"
 #include "model_types.h"
 
 namespace lemon {
