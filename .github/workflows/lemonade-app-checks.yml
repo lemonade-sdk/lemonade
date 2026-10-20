@@ -5,7 +5,7 @@ on:
     paths:
       - 'src/app/**'
       - 'src/web-app/**'
-      - 'docs/guide/app*.md'
+      - 'docs/guide/app/**'
       - 'docs/guide/README.md'
       - 'docs/dev/app.md'
       - 'mkdocs.yml'

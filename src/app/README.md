@@ -2,7 +2,7 @@
 
 The Lemonade App uses a shared **React 19 + TypeScript + webpack** frontend. The same UI runs in the **Tauri desktop app** and in the **browser app** served by `lemond`. The server owns models, backends, and persistent model configuration; the GUI owns its connection, presentation, and optional local chat history.
 
-For user-facing instructions, see the [Lemonade App guide](../../docs/guide/app.md). For Tauri and platform build details, see the [desktop app developer guide](../../docs/dev/app.md).
+For user-facing instructions, see the [Lemonade App guide](../../docs/guide/app/README.md). For Tauri and platform build details, see the [desktop app developer guide](../../docs/dev/app.md).
 
 ## Prerequisites
 
@@ -39,22 +39,22 @@ The CMake integration also provides a `tauri-app` target, for example `cmake --b
 ## Testing
 
 ```bash
-npx playwright install chromium  # first run only
-npm test                        # a11y, then functional Playwright tests
-npm run test:headed
-npm run typecheck
-npm run test:ui-regressions
+# Run from src/app/
+npx playwright install chromium  # First-time Playwright browser setup
+
+npm test                         # 1. Runtime regressions
+                                 # 2. Playwright accessibility (a11y)
+                                 # 3. Playwright functional tests
+
+npm run test:server              # Real-server smoke tests (requires running lemond)
+npm run test:headed              # Same as npm test, but with visible Playwright browsers
+npm run typecheck                # TypeScript type checking
+npm run test:ui-regressions      # Focused UI regression tests (also included in npm test)
 ```
 
 `npm test` uses an isolated, non-HMR renderer at `127.0.0.1:4173` by default. The test runner executes the accessibility and functional suites sequentially to avoid shared-browser-state collisions. `PLAYWRIGHT_BASE_URL` can target another test URL; a loopback URL still starts the managed test server.
 
 For accessibility expectations and focused tests, see [Accessibility](ACCESSIBILITY.md).
-
-Real-server smoke tests are opt-in and require a reachable `lemond` (and any models required by those tests):
-
-```bash
-LEMONADE_REAL_SERVER=1 npm test
-```
 
 Additional focused runtime tests are listed in `package.json`, including `test:mcp-runtime`, `test:effective-settings`, and `test:storage`.
 

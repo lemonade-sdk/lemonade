@@ -14,11 +14,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 PAGES = (
-    "docs/guide/app.md",
-    "docs/guide/app-models.md",
-    "docs/guide/app-chat.md",
-    "docs/guide/app-audio-and-3d.md",
-    "docs/guide/app-operations.md",
+    "docs/guide/app/README.md",
+    "docs/guide/app/models.md",
+    "docs/guide/app/chat.md",
+    "docs/guide/app/audio-and-3d.md",
+    "docs/guide/app/operations.md",
 )
 DOCS = (
     *PAGES,
@@ -71,6 +71,8 @@ def main() -> int:
 
     for legacy_guide in (ROOT / "docs/guide").glob("gui[0-9]*.md"):
         complain(f"obsolete guide still exists: {legacy_guide.relative_to(ROOT)}")
+    for legacy_guide in (ROOT / "docs/guide").glob("app*.md"):
+        complain(f"obsolete app guide still exists: {legacy_guide.relative_to(ROOT)}")
     if (ROOT / "src/app/docs/audio-and-3d-modalities.md").exists():
         complain("unpublished src/app/docs/audio-and-3d-modalities.md still exists")
 

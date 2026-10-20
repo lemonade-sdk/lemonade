@@ -1,6 +1,6 @@
 # Chat and effective settings
 
-[App overview](app.md)
+[App overview](README.md)
 
 ## Use Chat
 

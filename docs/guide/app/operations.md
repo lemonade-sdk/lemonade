@@ -1,6 +1,6 @@
-# Backends, monitoring, and settings
+# Backends, apps, monitoring, and settings
 
-[App overview](app.md)
+[App overview](README.md)
 
 ## Manage inference backends
 
@@ -38,7 +38,7 @@ Settings is divided by purpose:
 - **MCP gateway:** the built-in Lemon-Tools MCP endpoint and discovered tools. The current GUI reports external MCP administration as unavailable while its local client host is being introduced.
 - **Help & support:** documentation, release notes, GitHub, and Discord.
 
-**Save settings** applies the current Settings section. In Chat, **Reset defaults** resets the local draft; save it to persist the reset. In Memory and model-update settings, **Discard changes** reloads the server's current values.
+**Save settings** applies changes in Chat, Memory, and the model-update controls under Model storage. Server connection and directory changes instead use **Connect** and **Save directories**. In Chat, **Reset defaults** resets the local draft; save it to persist the reset. In Memory and model-update settings, **Discard changes** restores the server's current values.
 
 Theme is a title-bar control and is local to the GUI client. The app does not currently expose a zoom setting in Settings.
 
@@ -48,7 +48,7 @@ Open the title-bar download icon to see active, paused, completed, cancelled, an
 
 Depending on state, a row can be paused, resumed, cancelled, retried, removed from the list, or have its partial files deleted. **Clear completed** removes terminal history rows. Finalization can continue briefly after the byte count reaches 100%.
 
-Model preparation also appears inline in Chat, and model, backend, connection, MCP, and download failures appear near the control that initiated them. Lemonade App does not currently provide a general-purpose Jobs workspace; use the [Job Engine API](../api/lemonade.md#job-engine-api) for server job sequences.
+Model preparation also appears inline in Chat, and model, backend, connection, MCP, and download failures appear near the control that initiated them. Lemonade App does not currently provide a general-purpose Jobs workspace; use the [Job Engine API](../../api/lemonade.md#job-engine-api) for server job sequences.
 
 ## Remote servers and multiple clients
 

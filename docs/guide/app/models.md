@@ -1,6 +1,6 @@
 # Manage models in the Lemonade App
 
-[App overview](app.md)
+[App overview](README.md)
 
 ## Find and prepare models
 
