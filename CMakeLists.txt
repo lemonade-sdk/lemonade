@@ -1126,25 +1126,12 @@ set(LEMON_CAPABILITY_ENTRIES "")
 set(LEMON_BACKEND_DESCRIPTOR_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/backend_descriptor_registry.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/backend_option_contract.cpp)
-file(READ "${CMAKE_CURRENT_SOURCE_DIR}/schemas/backend-definition-v1.schema.json" BACKEND_DEFINITION_SCHEMA)
-file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/thinksound.json" THINKSOUND_DEFINITION)
-file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/ds4.json" DS4_DEFINITION)
-file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/ryzenai.json" RYZENAI_DEFINITION)
-file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/hrx.json" HRX_DEFINITION)
-file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/kokoro.json" KOKORO_DEFINITION)
-file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/moonshine.json" MOONSHINE_DEFINITION)
-file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/onnxruntime.json" ONNXRUNTIME_DEFINITION)
-file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/trellis.json" TRELLIS_DEFINITION)
-set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/schemas/backend-definition-v1.schema.json"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/thinksound.json"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/ds4.json"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/ryzenai.json"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/hrx.json"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/kokoro.json"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/moonshine.json"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/onnxruntime.json"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/trellis.json")
+file(GLOB LEMON_BACKEND_DEFINITION_FILES CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/*.json)
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/BackendDefinitionResources.cmake)
+lemon_backend_definition_resources(LEMON_DEFINITION_RESOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/schemas/backend-definition-v1.schema.json
+    ${LEMON_BACKEND_DEFINITION_FILES})
 configure_file(src/cpp/server/backends/configured/backend_definition_resources.h.in
     "${CMAKE_CURRENT_BINARY_DIR}/include/backend_definition_resources.h" @ONLY)
 set(LEMON_BACKEND_DEFINITION_DATA_SOURCES
@@ -1165,10 +1152,6 @@ set(LEMON_BACKEND_FACTORY_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/backend_ops.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/hf_cache_util.cpp)
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/BackendDescriptorFromDefinition.cmake)
-# CONFIGURE_DEPENDS so adding or removing a definition switches that backend
-# between a generated descriptor and its <stem>.h on the next build.
-file(GLOB LEMON_BACKEND_DEFINITION_FILES CONFIGURE_DEPENDS
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/*.json)
 foreach(_backend_entry ${LEMON_BACKENDS})
     string(REPLACE "|" ";" _backend_parts "${_backend_entry}")
     list(GET _backend_parts 0 _backend_recipe)
@@ -1183,7 +1166,6 @@ foreach(_backend_entry ${LEMON_BACKENDS})
     list(APPEND LEMON_BACKEND_FACTORY_SOURCES ${_backend_srcs})
     set(_backend_definition ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/${_backend_stem}.json)
     if(_backend_definition IN_LIST LEMON_BACKEND_DEFINITION_FILES)
-        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${_backend_definition})
         lemon_backend_descriptor_from_definition(_backend_descriptor
             ${_backend_stem} ${_backend_recipe} ${_backend_definition})
         string(APPEND LEMON_DESCRIPTOR_DEFINITIONS "${_backend_descriptor}")
