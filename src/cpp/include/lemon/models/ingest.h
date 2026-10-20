@@ -38,6 +38,8 @@ std::string bare_component_name(const std::string& name);
 bool collection_component_def_is_valid(const nlohmann::json& def);
 
 // Pull and import settle through one path, so neither redefines "installed".
+class IngestCollections;
+
 class ModelIngest : public ArtifactFetchService {
   public:
     struct Deps {
@@ -58,6 +60,7 @@ class ModelIngest : public ArtifactFetchService {
     };
 
     explicit ModelIngest(Deps deps);
+    ~ModelIngest();
 
     RegistryId download_source_for(const ModelInfo& info) const override;
 
@@ -93,7 +96,7 @@ class ModelIngest : public ArtifactFetchService {
                      const utils::CancelToken& cancel = utils::CancelToken());
 
     // Disk state only: no request, no registration.
-    void populate_from_cached_manifest(ModelInfo& info);
+    void populate_from_cached_manifest(ModelInfo& info);  // forwards to the collection unit
 
   private:
     // Cycle-detecting form used by the collection fan-out. `visited` holds the
@@ -103,19 +106,6 @@ class ModelIngest : public ArtifactFetchService {
               std::set<std::string>& visited, bool register_only,
               bool allow_missing_checkpoint, bool replace_existing,
               const utils::CancelToken& cancel = utils::CancelToken());
-
-    nlohmann::json fetch_collection_manifest(const std::string& repo_id,
-                                             const std::string& registry_source,
-                                             bool do_not_upgrade);
-
-    // Known entries keep their local copy; unknown ones are added from what the
-    // list itself carries. Returns canonical names in the order given.
-    std::vector<std::string> register_components(const nlohmann::json& component_names,
-                                                 const nlohmann::json& component_defs,
-                                                 const std::string& registry_source);
-    std::vector<std::string> resolve_components_from_manifest(const std::string& repo_id,
-                                                              const std::string& registry_source,
-                                                              bool do_not_upgrade);
 
     void download_from_registry(const ModelInfo& info, DownloadProgressCallback progress_callback,
                                 const utils::CancelToken& cancel) const;
@@ -135,6 +125,8 @@ class ModelIngest : public ArtifactFetchService {
     void persist_size(const std::string& canonical_model_name) const;
 
     Deps deps_;
+
+    std::unique_ptr<IngestCollections> collections_;
 
     // Serializes downloads that write the same repository's `.partial` files.
     std::mutex download_locks_mutex_;
