@@ -8,9 +8,9 @@ The Lemonade App is Lemonade's graphical client for finding models, configuring 
 
 The Chat view shows the workspace navigation (**1**), selected model (**2**), and **Effective settings** button (**3**).
 
-For source builds, see the [desktop app developer guide](../dev/app.md).
+For source builds, see the [desktop app developer guide](../../dev/app.md).
 
-Learn about [models](app-models.md), [Chat and effective settings](app-chat.md), [audio and 3D](app-audio-and-3d.md), and [backends, Monitor, and Settings](app-operations.md).
+Learn about [models](models.md), [Chat and effective settings](chat.md), [audio and 3D](audio-and-3d.md), and [Backends, Apps, Monitor, and Settings](operations.md).
 
 ## Open the app
 
@@ -75,4 +75,4 @@ For a problem specific to Lemonade App, use the repository's [issue forms](https
 
 Select **Desktop App / UI** as the issue component. Use the regular issue process for unrelated server, backend, model, or API issues.
 
-For server behavior, see [server concepts](concepts.md), [configuration](configuration/README.md), and the [API reference](../api/README.md).
+For server behavior, see [server concepts](../concepts.md), [configuration](../configuration/README.md), and the [API reference](../../api/README.md).

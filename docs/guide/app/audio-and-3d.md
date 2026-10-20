@@ -1,6 +1,6 @@
 # Audio and 3D in the Lemonade App
 
-[App overview](app.md)
+[App overview](README.md)
 
 Lemonade App treats speech input, speech output, generated audio, and 3D as distinct capabilities instead of overloading one generic audio mode.
 

@@ -14,25 +14,46 @@ The app connects to the saved endpoint or discovers a local server where possibl
 
 ## Source layout
 
+Selected paths (not a complete file listing):
+
 ```text
 src/app/
-  package.json                  Tauri and webpack scripts
-  webpack.config.js             Renderer bundling and dev server (port 9123)
-  playwright.config.ts          UI test configuration
+  package.json                   npm scripts and dependencies
+  webpack.config.js              Renderer build and dev server (port 9123)
+  playwright.config.ts           UI test server (port 4173) and projects
   src/
-    index.tsx                   React entry point
-    tauriShim.ts                window.api / Tauri host integration
-    App.tsx                     Workspaces and navigation
-    api.ts                      Lemonade Server API client
-    components/                 Chat, Models, Backends, Monitor, Settings
-    features/                   Model, download, chat history, router logic
-    hooks/                      Shared React hooks
+    index.tsx                    React entry point
+    App.tsx                      Shared application shell and navigation
+    i18n.tsx                     UI translations and locale management
+    api.ts                       Lemonade Server HTTP client
+    tauriShim.ts                 Desktop/browser host bridge
+    storage.ts                   Client-local storage and migrations
+    components/                  Workspace views (Chat, Models...) and dialogs
+    features/                    Models, collections, router, downloads, chat
+    hooks/                       Shared React hooks
+    tools/                       MCP and Omni tools, tool definitions
+    styles/                      CSS and theme tokens
   src-tauri/
-    tauri.conf.json             Desktop build and window configuration
-    src/settings.rs             Host settings persistence
-    src/beacon.rs               Local server discovery
-    src/lib.rs                  Tauri setup, commands and plugins
-src/web-app/                   Separate browser build using shared React UI
+    tauri.conf.json              Tauri build and development configuration
+    src/
+      lib.rs                     Native host initialization and plugins
+      commands.rs                Tauri commands for the renderer
+      settings.rs                Host settings persistence
+      beacon.rs                  Local server discovery
+  scripts/
+    run-gui-tests.mjs            Runtime and Playwright test runner
+    run-runtime-tests.mjs        Node runtime regression tests
+    run-playwright-tests.mjs     Accessibility and functional UI tests
+    run-server-tests.mjs         Real-server smoke test selection
+  tests/
+    a11y.spec.ts                 Accessibility tests
+    features.spec.ts             Functional UI tests
+    *.runtime.cjs                Focused Node regression tests
+src/web-app/
+  package.json                   Separate browser build dependencies
+  webpack.config.js              Browser bundle configuration
+test/app/
+  check_app_documentation.py     Documentation consistency checks
 ```
 
 The browser build has its own dependency manifest to support Debian system modules. Do not merge `src/web-app/package.json` into `src/app/package.json`. See [web UI development](web-ui.md).
@@ -68,18 +89,29 @@ npm run build:tauri          # Desktop app with platform bundles
 
 ## Testing
 
+Run these commands from `src/app/`:
+
 ```bash
-npx playwright install chromium   # first run only
-npm test                         # sequential Playwright a11y + functional
-npm run typecheck
-npm run test:ui-regressions
-cargo test --manifest-path src-tauri/Cargo.toml
+npx playwright install chromium  # First-time Playwright browser setup
+
+npm test                         # 1. Runtime regressions
+                                 # 2. Playwright accessibility (a11y)
+                                 # 3. Playwright functional tests
+
+npm run test:a11y                # Accessibility tests only
+npm run test:server              # Real-server smoke tests (requires running lemond)
+npm run test:headed              # Same as npm test, with visible Playwright browsers
+npm run typecheck                # TypeScript type checking
+npm run test:ui-regressions      # Focused regressions (also included in npm test)
+cargo test --manifest-path src-tauri/Cargo.toml  # Rust host tests
 ```
 
-`npm test` uses a separate renderer at `127.0.0.1:4173` by default; real-server smoke tests can be enabled with `LEMONADE_REAL_SERVER=1 npm test`. Other focused Node tests are listed in `src/app/package.json`, including `test:router-editor`, `test:mcp-runtime`, and `test:effective-settings`.
+`npm test` runs without a Lemonade Server and uses an isolated renderer at `127.0.0.1:4173` by default. `npm run test:server` is separate: it runs the `@real-server` Playwright tests against an already running `lemond`. For accessibility expectations and manual checks, see [Accessibility](../../src/app/ACCESSIBILITY.md).
+
+Other focused Node tests are listed in `src/app/package.json`, including `test:router-editor`, `test:mcp-runtime`, and `test:effective-settings`.
 
 For a manual desktop integration check, start `lemond` independently, connect under **Settings > Server**, open **Models**, download and load a chat model, and send a chat message. To check an Omni Collection, use **Open custom models** in the Models toolbar, configure its component models, and verify that it is offered in the Chat model picker. Custom model definitions are registered on the server, not in per-user browser accounts.
 
 ## Keeping the App guide accurate
 
-The [App guide](../guide/app.md) is split into task-focused pages so UI changes can be reviewed near the affected behavior. Run `python3 test/app/check_app_documentation.py` from the repository root when updating the interface or its documentation. The checker verifies navigation, local links, referenced npm scripts, and key UI labels. This check cannot verify every screenshot or user workflow. Before each release, manually review the guide against the current Lemonade App and run the App and real-server smoke tests.
+The [App guide](../guide/app/README.md) is split into task-focused pages so UI changes can be reviewed near the affected behavior. Run `python3 test/app/check_app_documentation.py` from the repository root when updating the interface or its documentation. The checker verifies navigation, local links, referenced npm scripts, and key UI labels. This check cannot verify every screenshot or user workflow. Before each release, manually review the guide against the current Lemonade App and run the App and real-server smoke tests.
