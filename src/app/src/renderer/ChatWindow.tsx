@@ -4,6 +4,7 @@ import {
   AppSettings,
   mergeWithDefaultSettings,
 } from './utils/appSettings';
+import { installModelFromForm, installModelFromJSON, readModelJSONFile } from './utils/addModel';
 import { serverFetch } from './utils/serverConfig';
 import { useModels } from './hooks/useModels';
 import { useInferenceState } from './hooks/useInferenceState';
@@ -224,25 +225,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
   const handleAddModelInstall = (data: ModelInstallData) => {
     setShowAddModelForm(false);
     setAddModelInitialValues(undefined);
-    const modelName = data.name.startsWith('user.') ? data.name : `user.${data.name}`;
-    window.dispatchEvent(new CustomEvent('installModel', {
-      detail: {
-        name: modelName,
-        registrationData: {
-          checkpoint: data.checkpoint,
-          checkpoints: data.checkpoints,
-          recipe: data.recipe,
-          // Omitted on "Automatic" so lemond applies its default_model_source.
-          ...(data.source ? { source: data.source } : {}),
-          mmproj: data.mmproj,
-          labels: data.labels,
-          reasoning: data.reasoning,
-          vision: data.vision,
-          embedding: data.embedding,
-          reranking: data.reranking,
-        },
-      },
-    }));
+    installModelFromForm(data);
   };
 
   const handleNewChat = () => {
@@ -346,18 +329,12 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
         type="file"
         accept=".json"
         style={{ display: 'none' }}
-        onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+        onChange={async (e: React.ChangeEvent<HTMLInputElement>) => {
           const file = e.target.files?.[0];
-          if (!file) return;
-          const reader = new FileReader();
-          reader.onload = (ev) => {
-            try {
-              const json = JSON.parse(ev.target?.result as string);
-              window.dispatchEvent(new CustomEvent('installModelFromJSON', { detail: json }));
-            } catch { /* ignore */ }
-          };
-          reader.readAsText(file);
           e.target.value = '';
+          if (!file) return;
+          const json = await readModelJSONFile(file);
+          if (json) installModelFromJSON(json);
         }}
       />
       {showAddModelForm && createPortal(
