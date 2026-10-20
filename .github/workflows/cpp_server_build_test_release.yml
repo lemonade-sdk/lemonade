@@ -1542,6 +1542,7 @@ jobs:
           - {tool: podman, mode: rootful}
           - {tool: docker, mode: rootful}
     env:
+      LEMONADE_CI_MODE: "True"
       HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
       PYTHONIOENCODING: utf-8
     steps:

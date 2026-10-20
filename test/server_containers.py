@@ -139,6 +139,13 @@ class ContainerSmokeTest(unittest.TestCase):
         containers = labeled("container")
         self.assertEqual(len(containers), 1, containers)
         self.assertTrue(containers[0].startswith(f"lemonade-{RECIPE}-{BACKEND}-"))
+        # lemond publishes a loopback port only when it detects rootless Podman,
+        # so this checks lemond's own view of the mode, not just the tool's.
+        published = tool("port", containers[0]).stdout.strip()
+        if args.mode == "rootless":
+            self.assertIn("-> 127.0.0.1:", published)
+        else:
+            self.assertEqual(published, "")
 
         client = OpenAI(
             base_url=self.url(""), api_key="lemonade", timeout=TIMEOUT_MODEL_OPERATION
