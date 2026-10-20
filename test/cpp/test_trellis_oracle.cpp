@@ -5,6 +5,7 @@
 #include "lemon/utils/json_utils.h"
 
 #include <cstdlib>
+#include <curl/curl.h>
 #include <filesystem>
 #include <fstream>
 #include <optional>
@@ -268,8 +269,9 @@ void check_mesh(Upstream& upstream) {
         LogCapture capture("trellis-server");
         Capture output;
         operation_adapter<IModel3DServer>(*orphan, BackendOperation::Model3DGeneration, OperationDelivery::Buffered, ModelType::MESH)->model_3d_generations({{"image", encoded}}, output.sink);
-        check(output.bytes == R"({"error":{"message":"CURL error: Could not connect to server","type":"backend_error"}})" &&
-              capture.records == std::vector<std::string>{"Error model_3d_generations failed: CURL error: Could not connect to server"}, "TRELLIS refused-connection exception envelope and log");
+        const std::string error = std::string("CURL error: ") + curl_easy_strerror(CURLE_COULDNT_CONNECT);
+        check(output.bytes == json{{"error", {{"message", error}, {"type", "backend_error"}}}}.dump() &&
+              capture.records == std::vector<std::string>{"Error model_3d_generations failed: " + error}, "TRELLIS refused-connection exception envelope and log");
     }
     for (const auto operation : {BackendOperation::ChatCompletion, BackendOperation::Completion, BackendOperation::Responses}) {
         const std::string label = operation == BackendOperation::ChatCompletion ? "chat completion" : operation == BackendOperation::Completion ? "text completion" : "responses";
