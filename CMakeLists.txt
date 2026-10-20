@@ -1345,6 +1345,8 @@ if(WIN32)
         ole32
         oleaut32
         shell32
+        dxgi
+        pdh
     )
 elseif(APPLE)
     target_link_libraries(lemonade-server-core PUBLIC
@@ -3410,6 +3412,13 @@ if(BUILD_TESTING AND EXISTS "${_GFX_ARCH_GATING_TEST_SRC}")
     add_cpp_ci_test(GfxArchGatingTest CI ON COMMAND test_gfx_arch_gating)
 endif()
 
+set(_ROCM_PATH_MEASURE_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_rocm_path_measure.cpp")
+if(BUILD_TESTING AND EXISTS "${_ROCM_PATH_MEASURE_TEST_SRC}")
+    add_executable(test_rocm_path_measure test/cpp/test_rocm_path_measure.cpp)
+    target_link_libraries(test_rocm_path_measure PRIVATE lemonade-server-core)
+    add_cpp_ci_test(RocmPathMeasureTest CI ON COMMAND test_rocm_path_measure)
+endif()
+
 set(_NETWORK_UTILS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_network_utils.cpp")
 if(BUILD_TESTING AND EXISTS "${_NETWORK_UTILS_TEST_SRC}")
     add_executable(test_network_utils test/cpp/test_network_utils.cpp)
@@ -3626,6 +3635,20 @@ if(BUILD_TESTING AND EXISTS "${_LAUNCH_COMMAND_TEST_SRC}")
     add_executable(test_launch_command test/cpp/test_launch_command.cpp)
     target_link_libraries(test_launch_command PRIVATE lemonade-server-core)
     add_cpp_ci_test(LaunchCommandTest CI ON COMMAND test_launch_command)
+endif()
+
+# What `lemonade launch pi` writes into pi's agent directory. The CLI sources
+# are compiled in directly because the CLI is not a library.
+set(_PI_PROFILE_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_pi_profile.cpp")
+if(BUILD_TESTING AND EXISTS "${_PI_PROFILE_TEST_SRC}")
+    add_executable(test_pi_profile
+        test/cpp/test_pi_profile.cpp
+        src/cpp/cli/agent_launcher.cpp
+        src/cpp/cli/pi_profile.cpp
+    )
+    target_include_directories(test_pi_profile PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include)
+    target_link_libraries(test_pi_profile PRIVATE lemonade-server-core nlohmann_json::nlohmann_json)
+    add_cpp_ci_test(PiProfileTest CI ON COMMAND test_pi_profile)
 endif()
 
 set(_MODEL_SYNC_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_model_sync_and_auto_update.cpp")
