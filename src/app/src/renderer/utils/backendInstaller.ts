@@ -5,6 +5,7 @@ import { fetchSystemInfoData, Recipes, SystemData } from './systemData';
 import { ModelsData } from './modelData';
 import { toFrontendOptionName, OPTION_DEFINITIONS } from '../recipes/recipeOptionsConfig';
 import { getCollectionComponents, isCollectionModel, isRouterCollection } from './collectionModels';
+import { readHttpError } from './httpErrors';
 
 function extractServerErrorMessage(errorText: string, fallback: string): string {
   if (!errorText) return fallback;
@@ -342,8 +343,7 @@ export async function installBackend(
     });
 
     if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Failed: ${errorText || response.statusText}`);
+      throw await readHttpError(response, `Failed to install backend: ${response.statusText}`);
     }
 
     const data = await response.json();
@@ -594,8 +594,7 @@ export async function pullModel(
     });
 
     if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Failed to download model: ${errorText || response.statusText}`);
+      throw await readHttpError(response, `Failed to download model: ${response.statusText}`);
     }
 
     const contentType = response.headers.get('Content-Type') || '';
@@ -887,10 +886,7 @@ async function ensureModelReadyInternal(
       });
 
       if (!loadResponse.ok) {
-        const errorData = await loadResponse.json().catch(() => ({}));
-        const errorMsg = (typeof errorData.error === 'string' ? errorData.error : errorData.error?.message) || `Failed to load model: ${loadResponse.statusText}`;
-
-        throw new Error(errorMsg);
+        throw await readHttpError(loadResponse, `Failed to load model: ${loadResponse.statusText}`);
       }
     };
 
