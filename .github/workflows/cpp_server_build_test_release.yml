@@ -1479,6 +1479,24 @@ jobs:
             exit 1
           fi
 
+      # lemond must inherit this path before it launches Extensor.
+      - name: Prepare liburing runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          LIBURING_DIR=$(mktemp -d "$RUNNER_TEMP/lemonade-liburing.XXXXXX")
+          cd "$LIBURING_DIR"
+          apt-get download liburing2
+          dpkg-deb -f liburing2_*.deb Package Version
+          dpkg-deb -x liburing2_*.deb "$LIBURING_DIR/runtime"
+          LIBURING_FFI=$(find "$LIBURING_DIR/runtime" -name liburing-ffi.so.2 -print -quit)
+          if [ -z "$LIBURING_FFI" ] || [ ! -r "$LIBURING_FFI" ]; then
+            dpkg-deb --contents liburing2_*.deb
+            echo "::error::The runner's liburing2 package does not contain liburing-ffi.so.2. Its apt repositories must provide a version with the FFI library."
+            exit 1
+          fi
+          printf 'LD_LIBRARY_PATH=%s%s\n' "$(dirname "$LIBURING_FFI")" "${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
+
       - name: Install Lemonade (.deb)
         uses: ./.github/actions/install-lemonade-deb
         with:

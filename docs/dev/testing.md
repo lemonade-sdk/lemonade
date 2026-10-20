@@ -165,12 +165,13 @@ Two consequences worth knowing:
 
 `test-extensor-inference` uses the ephemeral Strix Halo pool with
 `runs-on: [self-hosted, Linux, X64, devlab-dispatch, strix-halo]`. Extensor runs
-natively on the host.
+natively in the runner environment.
 See [runner requirements](./self-hosted-runners.md#devlab-dispatch) for provisioning.
 
-The job downloads the current workflow's Lemonade `.deb`, starts `lemond` on an
-available port, installs the pinned `extensor:rocm` archive, checks its shared
-libraries, and runs:
+The job downloads and extracts `liburing2` into a temporary directory without
+sudo, then sets the library search path. It downloads the current workflow's
+Lemonade `.deb`, starts `lemond` on an available port, installs the pinned
+`extensor:rocm` archive, checks its shared libraries, and runs:
 
 ```bash
 .venv/bin/python test/server_llm.py --wrapped-server extensor --backend rocm --cli-binary lemonade

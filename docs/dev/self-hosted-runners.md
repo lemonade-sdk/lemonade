@@ -82,17 +82,20 @@ The repository must be granted access to the pool by its administrators.
 Adding labels to workflow YAML does not register a runner or grant that access.
 
 Native Extensor testing requires ROCm 7, hipBLAS, hipBLASLt, OpenMP, and liburing
-(including `liburing-ffi.so.2`) available to the host dynamic linker. The runner
-account needs access to `/dev/kfd` and the GPU render node under `/dev/dri`.
-Provision these in the runner environment; the job downloads Extensor itself
-but does not install a GPU driver or ROCm stack. A working container backend on
-the same pool does not establish that the host has these libraries.
+(including `liburing-ffi.so.2`) available to the dynamic linker. Provision the
+GPU driver, ROCm stack, and OpenMP in the runner environment. The job downloads
+`liburing2` through apt and extracts it into a temporary directory without sudo;
+the runner's apt package lists must offer a version containing the FFI library.
+It sets `LD_LIBRARY_PATH` before starting Lemonade so Extensor inherits it.
+The runner account needs access to `/dev/kfd` and the GPU render node under
+`/dev/dri`. A working container backend on the same pool does not establish
+that the runner environment has the native backend's libraries.
 
 Run one GPU inference job at a time per machine. Give the job sufficient local
 disk for the approximately 18 GB Qwen model plus the backend and package, and
-network access to GitHub Actions artifacts, AMD's Extensor downloads, Python
-package dependencies, and Hugging Face model downloads. The job uses a temporary
-model cache. See [the test workflow](./testing.md#extensor-on-devlab-dispatch)
+network access to apt package downloads, GitHub Actions artifacts, AMD's Extensor
+downloads, Python package dependencies, and Hugging Face model downloads. The
+job uses a temporary model cache. See [the test workflow](./testing.md#extensor-on-devlab-dispatch)
 for PR triggers and diagnostics.
 
 ## New Runner Setup
