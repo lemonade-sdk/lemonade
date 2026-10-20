@@ -508,6 +508,21 @@ int main() {
     may_only_shrink("StoreWrite appears only in the facade", store_write_files,
                     allowed_store_write);
 
+    // The store's own write token, in product code: the models layer writes (ingest,
+    // cloud_rows, update_scan) and the facade writes through StoreWrite. A gateway or a
+    // backend that opened one could hold the writer across a read of its own - the deadlock
+    // the store's Write comment forbids. Tests own their stores and are not product files.
+    std::vector<std::string> write_scope_files;
+    for (const auto& file : product) {
+        if (file.find("/models/") != std::string::npos) continue;
+        if (!find_in(file, "ModelStore::Write").empty()) write_scope_files.push_back(file);
+    }
+    const std::vector<std::string> allowed_write_scopes = {kFacadeHeader};
+    check("only the models layer and the facade open a store write scope",
+          write_scope_files == allowed_write_scopes);
+    if (write_scope_files != allowed_write_scopes)
+        report_set_diff(write_scope_files, allowed_write_scopes);
+
     // Presence of a checkpoint is one question with one answer (S5). Every file naming an
     // in-flight marker is a file that can answer it, which is exactly the bug: an
     // interrupted pull can report present and not-downloaded at once. The list may only
@@ -662,7 +677,7 @@ int main() {
         }
     }
     const std::vector<std::string> members = data_members(header);
-    constexpr int kHeaderDeclarationCeiling = 85;
+    constexpr int kHeaderDeclarationCeiling = 86;
     check("the facade header declares " + std::to_string(declarations) +
               " methods (public and private), ceiling " +
               std::to_string(kHeaderDeclarationCeiling),

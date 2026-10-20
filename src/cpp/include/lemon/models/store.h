@@ -86,6 +86,13 @@ public:
 
     // A patch: one writer at a time, published when the scope ends. The draft starts as
     // the published set, so a change edits rows and leaves the rest alone.
+    // One write scope. Holding it is what publishes: the draft is the live map until this
+    // releases, and the snapshot readers hold is untouched until then.
+    //
+    // A scope must never contain a call into a collaborator - the facade, a backend, an
+    // ingest entry point - because a collaborator answers reads, and a read taken while the
+    // writer is held waits on a lock the read itself could release only by finishing work that
+    // may want the writer. Callers that need both take the read first, then the write.
     class Write {
       public:
         explicit Write(ModelStore& store);
@@ -99,6 +106,11 @@ public:
         bool cache_valid() const;
         // For a change nothing here can patch: the next read composes a set afresh.
         void invalidate_cache();
+
+        // An invalidation epoch, bumped by either invalidation. A compose compares it
+        // against the one it started from, so a persist that lands mid-compose refuses the
+        // compose instead of being buried under it. Bumping `generation` here was rejected:
+        // it counts published sets, and an invalidation publishes nothing.
 
       private:
         ModelStore& store_;
@@ -126,6 +138,7 @@ public:
       private:
         ModelStore& store_;
         std::uint64_t based_on_ = 0;
+        std::uint64_t based_on_invalidation_ = 0;
         bool up_to_date_ = false;
         std::unique_lock<std::mutex> builder_;
     };
@@ -165,6 +178,8 @@ public:
     std::shared_ptr<const StoreSnapshot> snapshot_;
     std::unique_ptr<CatalogSet> catalogs_;
     std::uint64_t generation_ = 0;
+    // Counts invalidations, published sets aside. See Write::invalidate_cache.
+    std::uint64_t invalidations_ = 0;
     bool cache_valid_ = false;
 };
 

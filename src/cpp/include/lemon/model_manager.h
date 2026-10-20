@@ -89,26 +89,6 @@ struct ModelManagerConfig {
 class ModelManager {
 public:
 
-    // Locks the store and publishes on release, so a mutating path cannot forget to
-
-    // Locks the store and publishes on release, so a mutating path cannot forget to publish
-    // and readers never see a half-built set. Private once the facade has a read-only seam to
-    // the store: test_model_manager_shim holds one to show a reader is never blocked.
-    class StoreWrite {
-      public:
-        explicit StoreWrite(ModelManager& manager) : write_(manager.store_) {}
-        StoreWrite(const StoreWrite&) = delete;
-        StoreWrite& operator=(const StoreWrite&) = delete;
-
-        // The published set, editable until this goes out of scope.
-        std::map<std::string, ModelInfo>& draft() { return write_.draft(); }
-        bool cache_valid() const { return write_.cache_valid(); }
-        void invalidate_cache() { write_.invalidate_cache(); }
-
-      private:
-        models::ModelStore::Write write_;
-    };
-
     explicit ModelManager(ModelManagerConfig config);
 
     // The paths-only shorthand.
@@ -179,6 +159,11 @@ public:
     // The published set as a pointer: a consumer answering a question about one
     // model, or walking rows without editing them, reads this instead of copying.
     std::shared_ptr<const models::StoreSnapshot> snapshot();
+
+    // The store's read side: `read()` hands out the published set, and the snapshot answers
+    // the questions about it. A write scope needs a non-const ModelStore, so nothing that
+    // receives this can hold the store's writer.
+    const models::ModelStore& store() const { return store_; }
 
     // An owned map keyed by the names clients use, for the wire sites that serialize
     // it; the rename across canonical ids is what forces the copy.
@@ -365,6 +350,24 @@ public:
 
 
 private:
+
+    // Locks the store and publishes on release, so a mutating path cannot forget to
+
+    class StoreWrite {
+      public:
+        explicit StoreWrite(ModelManager& manager) : write_(manager.store_) {}
+        StoreWrite(const StoreWrite&) = delete;
+        StoreWrite& operator=(const StoreWrite&) = delete;
+
+        // The published set, editable until this goes out of scope.
+        std::map<std::string, ModelInfo>& draft() { return write_.draft(); }
+        bool cache_valid() const { return write_.cache_valid(); }
+        void invalidate_cache() { write_.invalidate_cache(); }
+
+      private:
+        models::ModelStore::Write write_;
+    };
+
 
 
     // Internal to the facade: called from its own mutating paths.

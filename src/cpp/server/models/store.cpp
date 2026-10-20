@@ -185,6 +185,7 @@ std::uint64_t ModelStore::generation() const { return read()->generation; }
 void ModelStore::invalidate() {
     std::lock_guard<std::mutex> writer(writer_mutex_);
     cache_valid_ = false;
+    ++invalidations_;
 }
 
 bool ModelStore::cache_valid_locked() const { return cache_valid_; }
@@ -200,7 +201,10 @@ std::map<std::string, ModelInfo>& ModelStore::Write::draft() { return store_.dra
 
 bool ModelStore::Write::cache_valid() const { return store_.cache_valid_locked(); }
 
-void ModelStore::Write::invalidate_cache() { store_.cache_valid_ = false; }
+void ModelStore::Write::invalidate_cache() {
+    store_.cache_valid_ = false;
+    ++store_.invalidations_;
+}
 
 ModelStore::Write::~Write() {
     // Deriving the tables can fail; readers keep the previous snapshot rather than
@@ -216,7 +220,8 @@ ModelStore::Write::~Write() {
 
 ModelStore::Build::Build(ModelStore& store) : store_(store) {
     // Probed before taking the builder: publishing on a read that changes nothing would
-    // leave the generation useless as a change signal.
+    // leave the generation useless as a change signal. Both epochs are recorded here, since
+    // either moving means the set this is about to build would predate something.
     {
         std::lock_guard<std::mutex> probe(store.writer_mutex_);
         if (store.cache_valid_locked()) {
@@ -224,6 +229,7 @@ ModelStore::Build::Build(ModelStore& store) : store_(store) {
             return;
         }
         based_on_ = store.generation_;
+        based_on_invalidation_ = store.invalidations_;
     }
 
     // Composing reads catalogs, disk and backends without touching the published set, so
@@ -236,6 +242,7 @@ ModelStore::Build::Build(ModelStore& store) : store_(store) {
         return;
     }
     based_on_ = store.generation_;
+    based_on_invalidation_ = store.invalidations_;
 }
 
 ModelStore::Build::~Build() = default;
@@ -246,7 +253,7 @@ bool ModelStore::Build::commit(std::map<std::string, ModelInfo>&& composed,
     bool landed = false;
     {
         std::lock_guard<std::mutex> writer(store_.writer_mutex_);
-        if (store_.generation_ == based_on_) {
+        if (store_.generation_ == based_on_ && store_.invalidations_ == based_on_invalidation_) {
             // One swap, so a reader never sees a catalog set half-rebuilt.
             store_.catalogs_->replace_with(std::move(catalogs));
             store_.cache_valid_ = true;

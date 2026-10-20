@@ -88,6 +88,38 @@ static void test_an_undrawn_store() {
     check("a store that answers is not rebuilt", again.up_to_date());
 }
 
+// A writer holds the store while a reader asks for the set. The published snapshot is a
+// shared_ptr taken independently of the writer, so the reader answers from it instead of
+// queueing behind the lock.
+static void test_a_read_answers_while_a_writer_holds() {
+    lemon::models::AliasManager aliases{""};
+    ModelStore store{aliases};
+    ModelStore::Build build(store);
+    build.commit({{"user.Alpha", model("user.Alpha")}}, one_rejection(),
+                 {std::make_shared<StubCatalog>("stub")});
+
+    std::atomic<bool> holds{false};
+    std::thread writer([&store, &holds] {
+        ModelStore::Write write(store);
+        holds = true;
+        std::this_thread::sleep_for(std::chrono::milliseconds(400));
+    });
+    while (!holds.load()) {
+        std::this_thread::yield();
+    }
+
+    const auto started = std::chrono::steady_clock::now();
+    const auto published = store.read();
+    const auto microseconds = std::chrono::duration_cast<std::chrono::microseconds>(
+                                  std::chrono::steady_clock::now() - started)
+                                  .count();
+    writer.join();
+
+    check("a read answers while a writer holds the store", microseconds < 150000);
+    check("and answers with the set published before the write",
+          published && published->find("user.Alpha") != nullptr);
+}
+
 static void test_a_patch_publishes_too() {
     lemon::models::AliasManager aliases{""};
     ModelStore store{aliases};
@@ -219,6 +251,29 @@ static void test_a_build_holds_only_the_builder() {
 // The set did not change when it was marked stale, so nothing may claim it did: the
 // generation is how a slow reader learns its snapshot is no longer current, and a bump
 // that came from bookkeeping rather than from a change made that signal lie.
+// A writer that persists outside the store invalidates it rather than patching it, so it
+// publishes nothing and the generation stays where it was. A compose in flight has to notice
+// anyway, or it lands a set built before that persist and calls it valid.
+static void test_an_invalidation_under_a_build_wins() {
+    lemon::models::AliasManager aliases{""};
+    ModelStore store{aliases};
+    ModelStore::Build first(store);
+    first.commit({{"user.Alpha", model("user.Alpha")}}, nullptr, no_catalogs());
+
+    // One invalidation puts the store back on a compose; the one below is the persist that
+    // lands while that compose is reading the registries.
+    store.invalidate();
+    ModelStore::Build compose(store);
+    check("the compose starts", !compose.up_to_date());
+    store.invalidate();
+    check("a persist that published nothing still refuses the older candidate",
+          !compose.commit({{"user.Alpha", model("user.Alpha", true)}}, nullptr, no_catalogs()));
+    // The refused candidate marked the row downloaded; the published set must not carry it.
+    const auto settled = store.read();
+    check("and the refused candidate never became the published set",
+          settled->find("user.Alpha") != nullptr && !settled->find("user.Alpha")->downloaded);
+}
+
 static void test_invalidation_publishes_nothing() {
     lemon::models::AliasManager aliases{""};
     ModelStore store{aliases};
@@ -245,8 +300,10 @@ static void test_invalidation_publishes_nothing() {
 
 int main() {
     test_an_undrawn_store();
+    test_a_read_answers_while_a_writer_holds();
     test_a_patch_publishes_too();
     test_a_write_under_a_build_wins();
+    test_an_invalidation_under_a_build_wins();
     test_invalidation_publishes_nothing();
     test_a_build_holds_only_the_builder();
 

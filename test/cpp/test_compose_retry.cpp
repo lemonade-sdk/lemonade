@@ -64,8 +64,7 @@ int main() {
             if (++late.passes == 2 && late.manager != nullptr) {
                 // Something persisted while this set was being put together. A writer
                 // persists and invalidates; it never patches the composed set.
-                ModelManager::StoreWrite write(*late.manager);
-                write.invalidate_cache();
+                late.manager->invalidate_models_cache();
                 return std::vector<ModelInfo>{row("Fixture-Model")};
             }
             if (late.passes == 1) return std::vector<ModelInfo>{row("Fixture-Model")};
@@ -87,8 +86,7 @@ int main() {
 
     manager.get_supported_models();
     {
-        ModelManager::StoreWrite write(manager);
-        write.invalidate_cache();
+        manager.invalidate_models_cache();
     }
 
     const int composed_before = late.passes;
