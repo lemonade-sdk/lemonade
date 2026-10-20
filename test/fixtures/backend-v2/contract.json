@@ -1,0 +1,1208 @@
+[
+  {
+    "name": "minimal-envelope",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture"
+    },
+    "valid": true
+  },
+  {
+    "name": "missing-schema_version",
+    "root": "envelope",
+    "value": {
+      "id": "fixture",
+      "recipe": "fixture"
+    },
+    "valid": false
+  },
+  {
+    "name": "missing-id",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "recipe": "fixture"
+    },
+    "valid": false
+  },
+  {
+    "name": "missing-recipe",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture"
+    },
+    "valid": false
+  },
+  {
+    "name": "unknown-root-kind",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "kind": {}
+    },
+    "valid": false
+  },
+  {
+    "name": "unknown-root-metadata",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "metadata": {}
+    },
+    "valid": false
+  },
+  {
+    "name": "unknown-root-trusted",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "trusted": {}
+    },
+    "valid": false
+  },
+  {
+    "name": "unknown-root-grants",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "grants": {}
+    },
+    "valid": false
+  },
+  {
+    "name": "unknown-root-remote",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "remote": {}
+    },
+    "valid": false
+  },
+  {
+    "name": "unknown-root-unknown",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "unknown": {}
+    },
+    "valid": false
+  },
+  {
+    "name": "wrong-version-1",
+    "root": "envelope",
+    "value": {
+      "schema_version": 1,
+      "id": "fixture",
+      "recipe": "fixture"
+    },
+    "valid": false
+  },
+  {
+    "name": "wrong-version-True",
+    "root": "envelope",
+    "value": {
+      "schema_version": true,
+      "id": "fixture",
+      "recipe": "fixture"
+    },
+    "valid": false
+  },
+  {
+    "name": "wrong-version-2.0",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2.0,
+      "id": "fixture",
+      "recipe": "fixture"
+    },
+    "valid": false
+  },
+  {
+    "name": "wrong-version-2",
+    "root": "envelope",
+    "value": {
+      "schema_version": "2",
+      "id": "fixture",
+      "recipe": "fixture"
+    },
+    "valid": false
+  },
+  {
+    "name": "wrong-version-None",
+    "root": "envelope",
+    "value": {
+      "schema_version": null,
+      "id": "fixture",
+      "recipe": "fixture"
+    },
+    "valid": false
+  },
+  {
+    "name": "valid-parent",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "extends": {
+        "builtin": "base",
+        "contract": 1
+      }
+    },
+    "valid": true
+  },
+  {
+    "name": "valid-parent",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "extends": {
+        "builtin": "base",
+        "contract": 4294967295
+      }
+    },
+    "valid": true
+  },
+  {
+    "name": "valid-parent",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "extends": {
+        "external": "base"
+      }
+    },
+    "valid": true
+  },
+  {
+    "name": "valid-parent",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "extends": {
+        "builtin": "base",
+        "contract": 1,
+        "expected_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    },
+    "valid": true
+  },
+  {
+    "name": "invalid-parent",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "extends": {}
+    },
+    "valid": false
+  },
+  {
+    "name": "invalid-parent",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "extends": {
+        "builtin": "base"
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "invalid-parent",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "extends": {
+        "builtin": "base",
+        "contract": 0
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "invalid-parent",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "extends": {
+        "builtin": "base",
+        "contract": 4294967296
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "invalid-parent",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "extends": {
+        "builtin": "base",
+        "contract": 1.0
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "invalid-parent",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "extends": {
+        "builtin": "base",
+        "contract": true
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "invalid-parent",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "extends": {
+        "external": "base",
+        "contract": 1
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "invalid-parent",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "extends": {
+        "builtin": "base",
+        "external": "base",
+        "contract": 1
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "invalid-parent",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "extends": {
+        "external": "base",
+        "expected_digest": "oops"
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "invalid-parent",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "extends": {
+        "external": "../bad"
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "merge-plain",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "edits": [
+        {
+          "op": "merge",
+          "path": "/metadata/config_extra/x",
+          "value": {}
+        }
+      ]
+    },
+    "valid": true
+  },
+  {
+    "name": "merge-matched",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "edits": [
+        {
+          "op": "merge",
+          "path": "/metadata/config_extra/x",
+          "value": {},
+          "match": {
+            "id": "args"
+          }
+        }
+      ]
+    },
+    "valid": true
+  },
+  {
+    "name": "merge-unknown-member",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "edits": [
+        {
+          "op": "merge",
+          "path": "/metadata/config_extra/x",
+          "value": {},
+          "match": {
+            "id": "args"
+          },
+          "unknown": true
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "merge-value-presence",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "edits": [
+        {
+          "op": "merge",
+          "path": "/metadata/config_extra/x",
+          "match": {
+            "id": "args"
+          }
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "merge-at-without-match",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "edits": [
+        {
+          "op": "merge",
+          "path": "/metadata/config_extra/x",
+          "value": {},
+          "at": "/name"
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "replace-plain",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "edits": [
+        {
+          "op": "replace",
+          "path": "/metadata/config_extra/x",
+          "value": {}
+        }
+      ]
+    },
+    "valid": true
+  },
+  {
+    "name": "replace-matched",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "edits": [
+        {
+          "op": "replace",
+          "path": "/metadata/config_extra/x",
+          "value": {},
+          "match": {
+            "id": "args"
+          }
+        }
+      ]
+    },
+    "valid": true
+  },
+  {
+    "name": "replace-unknown-member",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "edits": [
+        {
+          "op": "replace",
+          "path": "/metadata/config_extra/x",
+          "value": {},
+          "match": {
+            "id": "args"
+          },
+          "unknown": true
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "replace-value-presence",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "edits": [
+        {
+          "op": "replace",
+          "path": "/metadata/config_extra/x",
+          "match": {
+            "id": "args"
+          }
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "replace-at-without-match",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "edits": [
+        {
+          "op": "replace",
+          "path": "/metadata/config_extra/x",
+          "value": {},
+          "at": "/name"
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "add-plain",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "edits": [
+        {
+          "op": "add",
+          "path": "/metadata/config_extra/x",
+          "value": {}
+        }
+      ]
+    },
+    "valid": true
+  },
+  {
+    "name": "add-matched",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "edits": [
+        {
+          "op": "add",
+          "path": "/metadata/config_extra/x",
+          "value": {},
+          "match": {
+            "id": "args"
+          },
+          "at": "/name"
+        }
+      ]
+    },
+    "valid": true
+  },
+  {
+    "name": "add-unknown-member",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "edits": [
+        {
+          "op": "add",
+          "path": "/metadata/config_extra/x",
+          "value": {},
+          "match": {
+            "id": "args"
+          },
+          "at": "/name",
+          "unknown": true
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "add-value-presence",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "edits": [
+        {
+          "op": "add",
+          "path": "/metadata/config_extra/x",
+          "match": {
+            "id": "args"
+          },
+          "at": "/name"
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "add-at-without-match",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "edits": [
+        {
+          "op": "add",
+          "path": "/metadata/config_extra/x",
+          "value": {},
+          "at": "/name"
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "remove-plain",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "edits": [
+        {
+          "op": "remove",
+          "path": "/metadata/config_extra/x"
+        }
+      ]
+    },
+    "valid": true
+  },
+  {
+    "name": "remove-matched",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "edits": [
+        {
+          "op": "remove",
+          "path": "/metadata/config_extra/x",
+          "match": {
+            "id": "args"
+          }
+        }
+      ]
+    },
+    "valid": true
+  },
+  {
+    "name": "remove-unknown-member",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "edits": [
+        {
+          "op": "remove",
+          "path": "/metadata/config_extra/x",
+          "match": {
+            "id": "args"
+          },
+          "unknown": true
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "remove-value-presence",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "edits": [
+        {
+          "op": "remove",
+          "path": "/metadata/config_extra/x",
+          "match": {
+            "id": "args"
+          },
+          "value": null
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "remove-at-without-match",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "edits": [
+        {
+          "op": "remove",
+          "path": "/metadata/config_extra/x",
+          "at": "/name"
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "clear-plain",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "edits": [
+        {
+          "op": "clear",
+          "path": "/metadata/config_extra/x"
+        }
+      ]
+    },
+    "valid": true
+  },
+  {
+    "name": "clear-matched",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "edits": [
+        {
+          "op": "clear",
+          "path": "/metadata/config_extra/x",
+          "match": {
+            "id": "args"
+          }
+        }
+      ]
+    },
+    "valid": true
+  },
+  {
+    "name": "clear-unknown-member",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "edits": [
+        {
+          "op": "clear",
+          "path": "/metadata/config_extra/x",
+          "match": {
+            "id": "args"
+          },
+          "unknown": true
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "clear-value-presence",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "edits": [
+        {
+          "op": "clear",
+          "path": "/metadata/config_extra/x",
+          "match": {
+            "id": "args"
+          },
+          "value": null
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "clear-at-without-match",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "edits": [
+        {
+          "op": "clear",
+          "path": "/metadata/config_extra/x",
+          "at": "/name"
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "insert-anchor",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "edits": [
+        {
+          "op": "add",
+          "path": "/launch/argv",
+          "value": {},
+          "before": {
+            "id": "x"
+          }
+        }
+      ]
+    },
+    "valid": true
+  },
+  {
+    "name": "insert-anchor",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "edits": [
+        {
+          "op": "add",
+          "path": "/launch/argv",
+          "value": {},
+          "after": {
+            "name": "x"
+          }
+        }
+      ]
+    },
+    "valid": true
+  },
+  {
+    "name": "invalid-edit",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "edits": [
+        {
+          "op": "merge",
+          "path": "/x",
+          "value": null
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "invalid-edit",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "edits": [
+        {
+          "op": "add",
+          "path": "/x",
+          "match": {
+            "id": "x"
+          },
+          "value": {}
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "invalid-edit",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "edits": [
+        {
+          "op": "add",
+          "path": "/x",
+          "match": {
+            "id": "x"
+          },
+          "at": "",
+          "value": {}
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "invalid-edit",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "edits": [
+        {
+          "op": "add",
+          "path": "/x",
+          "before": {
+            "id": "x"
+          },
+          "after": {
+            "id": "y"
+          },
+          "value": {}
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "invalid-edit",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "edits": [
+        {
+          "op": "replace",
+          "path": "/x",
+          "before": {
+            "id": "x"
+          },
+          "value": {}
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "invalid-edit",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "edits": [
+        {
+          "op": "replace",
+          "path": "/x",
+          "match": {
+            "id": "x",
+            "name": "x"
+          },
+          "value": {}
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "invalid-edit",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "edits": [
+        {
+          "op": "replace",
+          "path": "/x",
+          "match": {
+            "id": 1
+          },
+          "value": {}
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "invalid-edit",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "edits": [
+        {
+          "op": "replace",
+          "path": "/x",
+          "match": {
+            "name": ""
+          },
+          "value": {}
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "pointer-syntax",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "edits": [
+        {
+          "op": "clear",
+          "path": "/"
+        }
+      ]
+    },
+    "valid": true
+  },
+  {
+    "name": "pointer-syntax",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "edits": [
+        {
+          "op": "clear",
+          "path": "/a~0b/~1/"
+        }
+      ]
+    },
+    "valid": true
+  },
+  {
+    "name": "pointer-syntax",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "edits": [
+        {
+          "op": "clear",
+          "path": "/0"
+        }
+      ]
+    },
+    "valid": true
+  },
+  {
+    "name": "pointer-syntax",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "edits": [
+        {
+          "op": "clear",
+          "path": "/x/0"
+        }
+      ]
+    },
+    "valid": true
+  },
+  {
+    "name": "bad-pointer",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "edits": [
+        {
+          "op": "clear",
+          "path": ""
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "bad-pointer",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "edits": [
+        {
+          "op": "clear",
+          "path": "x"
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "bad-pointer",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "edits": [
+        {
+          "op": "clear",
+          "path": "/~"
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "bad-pointer",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "edits": [
+        {
+          "op": "clear",
+          "path": "/~2"
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "bad-pointer",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "edits": [
+        {
+          "op": "clear",
+          "path": "/x~01~3"
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "partial-payload",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "merge": {
+        "artifacts": {
+          "main": {
+            "required_when": true
+          }
+        }
+      }
+    },
+    "valid": true
+  },
+  {
+    "name": "merge-identity",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "merge": {
+        "id": "other"
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "merge-unknown",
+    "root": "envelope",
+    "value": {
+      "schema_version": 2,
+      "id": "fixture",
+      "recipe": "fixture",
+      "merge": {
+        "unknown": {}
+      }
+    },
+    "valid": false
+  }
+]
