@@ -77,6 +77,7 @@ Comment: Lemonade's React wrapper is Apache-2.0. Lucide paths are ISC,
  github and discord paths from react-icons/si (Simple Icons) are CC0-1.0.
 
 Files: src/app/src/vendor/model-viewer.min.js
+       src/app/src/renderer/vendor/model-viewer.min.js
 Copyright: 2019-2026 Google LLC
            2017 Google LLC and The Lit Project Contributors
            2010-2026 three.js authors
