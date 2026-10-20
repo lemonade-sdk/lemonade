@@ -64,10 +64,12 @@ These are enforced mechanically, not just by convention:
 - `test/test_routing_fixtures.py` keeps the schemas self-valid and the example
   fixtures conformant.
 - A committed conformance corpus (golden policy → expected `Decision`) under
-  `test/conformance/routing/<schema_major>/` enforces *behavioral* stability
-  across versions: a runner replays each case through the real engine and
-  asserts the emitted `Decision` equals the recorded one, field for field. See
-  that directory's `README.md`.
+  `test/conformance/routing/<schema_major>/` guards *behavioral* stability: a
+  runner replays each case through the real engine and asserts the emitted
+  `Decision` equals the recorded one, field for field. It holds the engine to the
+  expectations committed alongside it; making those expectations immutable across
+  versions needs the corpus freeze, which is still follow-up work. See that
+  directory's `README.md`.
 
 Lemonade executes a policy identically regardless of version — the only behavioral
 drift for model-backed classifiers (semantic_similarity / classifier / llm) comes

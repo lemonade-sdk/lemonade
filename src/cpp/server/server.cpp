@@ -42,6 +42,7 @@
 #include <iomanip>
 #include <sstream>
 #include <fstream>
+#include <limits>
 #include <map>
 #include <memory>
 #include <thread>
@@ -89,7 +90,92 @@ namespace lemon {
 
 namespace {
 
+nlohmann::json gpu_device_details_json(const SystemGpuMetrics& snapshot) {
+    nlohmann::json result;
+    result["primary_gpu_id"] = snapshot.primary_gpu_id.empty()
+        ? nlohmann::json() : nlohmann::json(snapshot.primary_gpu_id);
+    result["gpus"] = nlohmann::json::array();
+    for (const auto& gpu : snapshot.gpus) {
+        nlohmann::json entry;
+        entry["id"] = gpu.id;
+        entry["vendor"] = gpu.vendor;
+        entry["name"] = gpu.name;
+        entry["memory_type"] = gpu.memory_type;
+        entry["gpu_percent"] = gpu.gpu_percent >= 0.0
+            ? nlohmann::json(gpu.gpu_percent) : nlohmann::json();
+        entry["memory_total_gb"] = gpu.memory_total_gb >= 0.0
+            ? nlohmann::json(gpu.memory_total_gb) : nlohmann::json();
+        entry["memory_used_gb"] = gpu.memory_used_gb >= 0.0
+            ? nlohmann::json(gpu.memory_used_gb) : nlohmann::json();
+        result["gpus"].push_back(std::move(entry));
+    }
+    return result;
+}
 
+std::optional<std::pair<int, int>> image_dimensions_from_bytes(const std::string& bytes) {
+    auto at = [&bytes](size_t i) -> std::uint8_t {
+        return static_cast<std::uint8_t>(bytes[i]);
+    };
+    if (bytes.size() >= 24 &&
+        bytes.compare(0, 8, "\x89PNG\r\n\x1a\n", 8) == 0 &&
+        bytes.compare(12, 4, "IHDR", 4) == 0) {
+        auto be32 = [&](size_t i) -> std::uint32_t {
+            return (std::uint32_t(at(i)) << 24) | (std::uint32_t(at(i + 1)) << 16) |
+                   (std::uint32_t(at(i + 2)) << 8) | std::uint32_t(at(i + 3));
+        };
+        const auto width = be32(16);
+        const auto height = be32(20);
+        if (width > 0 && height > 0 &&
+            width <= static_cast<std::uint32_t>(std::numeric_limits<int>::max()) &&
+            height <= static_cast<std::uint32_t>(std::numeric_limits<int>::max())) {
+            return std::pair<int, int>{static_cast<int>(width), static_cast<int>(height)};
+        }
+    }
+    if (bytes.size() >= 4 && at(0) == 0xff && at(1) == 0xd8) {
+        size_t pos = 2;
+        while (pos < bytes.size()) {
+            if (at(pos) != 0xff) break;
+            while (pos < bytes.size() && at(pos) == 0xff) ++pos;
+            if (pos >= bytes.size()) break;
+            const auto marker = at(pos++);
+            if (marker == 0xd9 || marker == 0xda) break;
+            if (marker == 0x01 || (marker >= 0xd0 && marker <= 0xd7)) continue;
+            if (bytes.size() - pos < 2) break;
+            const size_t segment_len = (size_t(at(pos)) << 8) | at(pos + 1);
+            if (segment_len < 2 || segment_len > bytes.size() - pos) break;
+            const bool sof = marker >= 0xc0 && marker <= 0xcf &&
+                             marker != 0xc4 && marker != 0xc8 && marker != 0xcc;
+            if (sof && segment_len >= 7) {
+                const int height = (int(at(pos + 3)) << 8) | at(pos + 4);
+                const int width = (int(at(pos + 5)) << 8) | at(pos + 6);
+                if (width > 0 && height > 0) return std::pair<int, int>{width, height};
+            }
+            pos += segment_len;
+        }
+    }
+    return std::nullopt;
+}
+
+// Default soft cap for inferred image-edit dimensions.
+constexpr std::uint64_t kDefaultMaxEditPixels = 2048ULL * 2048ULL;
+
+std::pair<int, int> cap_image_area(int width, int height, std::uint64_t max_pixels) {
+    const auto pixels = static_cast<std::uint64_t>(width) * height;
+    if (pixels <= max_pixels) return {width, height};
+
+    const double scale = std::sqrt(static_cast<double>(max_pixels) / pixels);
+    int scaled_width = std::max(1, static_cast<int>(width * scale));
+    int scaled_height = std::max(1, static_cast<int>(height * scale));
+    // A dimension rounded up to one pixel must not violate the area cap.
+    if (static_cast<std::uint64_t>(scaled_width) * scaled_height > max_pixels) {
+        if (scaled_width > scaled_height) {
+            scaled_width = static_cast<int>(max_pixels / scaled_height);
+        } else {
+            scaled_height = static_cast<int>(max_pixels / scaled_width);
+        }
+    }
+    return {scaled_width, scaled_height};
+}
 
 // Normalize client-provided model names: strip ":latest" suffix (Ollama/Docker convention)
 // Returns true if the model name was modified
@@ -446,11 +532,17 @@ Server::Server(std::shared_ptr<RuntimeConfig> config,
             stats["cpu_percent"] =
                 cpu_percent >= 0 ? lemon::jobs::json(cpu_percent) : lemon::jobs::json();
             stats["memory_gb"] = metrics_platform_->get_memory_usage_gb();
-            const double gpu_percent = get_gpu_usage();
-            stats["gpu_percent"] =
-                gpu_percent >= 0 ? lemon::jobs::json(gpu_percent) : lemon::jobs::json();
-            const double vram_gb = get_vram_usage();
-            stats["vram_gb"] = vram_gb >= 0 ? lemon::jobs::json(vram_gb) : lemon::jobs::json();
+            const auto gpu_metrics = metrics_platform_->get_system_gpu_metrics();
+            stats["gpu_percent"] = gpu_metrics.gpu_percent >= 0
+                ? lemon::jobs::json(gpu_metrics.gpu_percent)
+                : lemon::jobs::json();
+            stats["vram_gb"] = gpu_metrics.vram_used_gb >= 0
+                ? lemon::jobs::json(gpu_metrics.vram_used_gb)
+                : lemon::jobs::json();
+            const auto gpu_details = gpu_device_details_json(gpu_metrics);
+            stats["primary_gpu_id"] = lemon::jobs::json::parse(
+                gpu_details["primary_gpu_id"].dump());
+            stats["gpus"] = lemon::jobs::json::parse(gpu_details["gpus"].dump());
             const double npu_percent = get_npu_utilization();
             stats["npu_percent"] =
                 npu_percent >= 0 ? lemon::jobs::json(npu_percent) : lemon::jobs::json();
@@ -3261,6 +3353,8 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
             img_def["sampling_method"] = info.image_defaults.sampling_method;
         if (info.image_defaults.flow_shift > 0.0f)
             img_def["flow_shift"] = info.image_defaults.flow_shift;
+        if (info.image_defaults.soft_pixel_cap > 0)
+            img_def["soft_pixel_cap"] = info.image_defaults.soft_pixel_cap;
         model_json["image_defaults"] = img_def;
     }
 
@@ -3475,8 +3569,11 @@ void Server::respond_with_model_options(
 
         const int64_t auto_ctx = resolve_auto_ctx_size(effective, info);
         const nlohmann::json effective_ctx = effective.get_option("ctx_size");
-        const int64_t resolved_ctx = auto_ctx != -2 ? auto_ctx
-            : (effective_ctx.is_number() ? effective_ctx.get<int64_t>() : -1);
+        nlohmann::json resolved_ctx = nullptr;
+        if (auto_ctx != AUTO_CTX_NO_CAPACITY) {
+            resolved_ctx = auto_ctx != -2 ? auto_ctx
+                : (effective_ctx.is_number() ? effective_ctx.get<int64_t>() : -1);
+        }
 
         nlohmann::json response = {
             {"model_name", model_id},
@@ -5293,16 +5390,43 @@ bool Server::parse_n_from_form(const httplib::Request& req, httplib::Response& r
     return true;
 }
 
-bool Server::extract_image_from_form(const httplib::Request& req, httplib::Response& res, nlohmann::json& out) {
+bool Server::extract_image_from_form(const httplib::Request& req, httplib::Response& res, nlohmann::json& out, bool allow_multiple) {
+    // A multipart map groups files by field name, losing mixed upload order.
+    if (allow_multiple && req.form.files.count("image") > 0 &&
+        req.form.files.count("image[]") > 0) {
+        res.status = 400;
+        nlohmann::json error = {{"error", {
+            {"message", "Use either 'image' or 'image[]', not both"},
+            {"type", "invalid_request_error"}
+        }}};
+        res.set_content(error.dump(), "application/json");
+        return false;
+    }
+    nlohmann::json images = nlohmann::json::array();
     for (const auto& file_pair : req.form.files) {
         if (file_pair.first == "image" || file_pair.first == "image[]") {
             const auto& file = file_pair.second;
-            out["image_data"] = utils::JsonUtils::base64_encode(file.content);
-            out["image_filename"] = file.filename;
+            const std::string encoded = utils::JsonUtils::base64_encode(file.content);
+            if (!out.contains("image_data")) {
+                // Keep the existing single-image contract for other callers.
+                out["image_data"] = encoded;
+                out["image_filename"] = file.filename;
+                out["image_content_type"] = file.content_type;
+            }
             LOG(INFO, "Server") << "Image file: " << file.filename
                       << " (" << file.content.size() << " bytes)" << std::endl;
-            return true;
+            if (!allow_multiple) return true;
+            // Preserve original upload bytes, MIME and reference order.
+            images.push_back({
+                {"data", encoded},
+                {"filename", file.filename},
+                {"content_type", file.content_type},
+            });
         }
+    }
+    if (!images.empty()) {
+        out["image_files"] = std::move(images);
+        return true;
     }
     res.status = 400;
     nlohmann::json error = {{"error", {
@@ -5427,7 +5551,32 @@ void Server::handle_image_edits(const httplib::Request& req, httplib::Response& 
         if (!parse_int_field("seed"))      return;
 
         if (!parse_n_from_form(req, res, request_json))      return;
-        if (!extract_image_from_form(req, res, request_json)) return;
+        if (!extract_image_from_form(req, res, request_json, /*allow_multiple=*/true)) return;
+
+        // The first uploaded image sets the output size unless explicitly provided.
+        if (!request_json.contains("size")) {
+            std::uint64_t soft_pixel_cap = kDefaultMaxEditPixels;
+            if (request_json.contains("model") && request_json["model"].is_string()) {
+                const auto model = router_->try_get_model_info(
+                    resolve_alias_target(request_json["model"].get<std::string>()));
+                if (model && model->image_defaults.soft_pixel_cap > 0) {
+                    soft_pixel_cap = model->image_defaults.soft_pixel_cap;
+                }
+            }
+            for (const auto& file_pair : req.form.files) {
+                if (file_pair.first != "image" && file_pair.first != "image[]") continue;
+                const auto original = image_dimensions_from_bytes(file_pair.second.content);
+                if (original) {
+                    const auto [width, height] = cap_image_area(
+                        original->first, original->second, soft_pixel_cap);
+                    request_json["size"] = std::to_string(width) + "x" + std::to_string(height);
+                } else {
+                    LOG(WARNING, "Server") << "Cannot determine source image dimensions; "
+                        "using backend defaults" << std::endl;
+                }
+                break;
+            }
+        }
 
         // Extract optional mask file
         for (const auto& file_pair : req.form.files) {
@@ -5885,6 +6034,14 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
         LOG(ERROR, "Server") << "ERROR in handle_pull: " << e.what() << std::endl;
         res.status = 400;
         nlohmann::json error = {{"error", e.what()}};
+        res.set_content(error.dump(), "application/json");
+    } catch (const lemon::RegistryRateLimitError& e) {
+        LOG(WARNING, "Server") << "Registry unavailable in handle_pull: " << e.what() << std::endl;
+        res.status = 503;
+        res.set_header("Retry-After", std::to_string(e.retry_after_seconds()));
+        nlohmann::json error = {{"error", e.what()},
+                                {"code", lemon::kRegistryUnavailableErrorCode},
+                                {"upstream_status_code", e.status_code()}};
         res.set_content(error.dump(), "application/json");
     } catch (const std::exception& e) {
         LOG(ERROR, "Server") << "ERROR in handle_pull: " << e.what() << std::endl;
@@ -6867,8 +7024,9 @@ void Server::handle_metrics(const httplib::Request& req, httplib::Response& res)
     try {
         SystemMetrics system_metrics;
         system_metrics.cpu_percent = get_cpu_usage();
-        system_metrics.gpu_percent = get_gpu_usage();
-        system_metrics.vram_gb = get_vram_usage();
+        const auto gpu_metrics = metrics_platform_->get_system_gpu_metrics();
+        system_metrics.gpu_percent = gpu_metrics.gpu_percent;
+        system_metrics.vram_gb = gpu_metrics.vram_used_gb;
         system_metrics.npu_percent = get_npu_utilization();
 
         res.set_content(build_prometheus_metrics(*router_, system_metrics),
@@ -6967,16 +7125,6 @@ double Server::get_cpu_usage() {
 #endif
 }
 
-// Get GPU usage percentage (AMD GPUs on Linux)
-double Server::get_gpu_usage() {
-    return metrics_platform_->get_gpu_usage();
-}
-
-// Get VRAM/GTT usage in GB (AMD GPUs on Linux)
-double Server::get_vram_usage() {
-    return metrics_platform_->get_vram_usage_gb();
-}
-
 // Helper: Get NPU utilization (AMD NPU on Linux)
 double Server::get_npu_utilization() {
     return metrics_platform_->get_npu_utilization();
@@ -6998,13 +7146,16 @@ void Server::handle_system_stats(const httplib::Request& req, httplib::Response&
     // Get memory info
     stats["memory_gb"] = metrics_platform_->get_memory_usage_gb();
 
-    // GPU usage
-    double gpu_percent = get_gpu_usage();
-    stats["gpu_percent"] = (gpu_percent >= 0) ? nlohmann::json(gpu_percent) : nlohmann::json();
-
-    // VRAM usage
-    double vram_gb = get_vram_usage();
-    stats["vram_gb"] = (vram_gb >= 0) ? nlohmann::json(vram_gb) : nlohmann::json();
+    const auto gpu_metrics = metrics_platform_->get_system_gpu_metrics();
+    stats["gpu_percent"] = gpu_metrics.gpu_percent >= 0
+        ? nlohmann::json(gpu_metrics.gpu_percent)
+        : nlohmann::json();
+    stats["vram_gb"] = gpu_metrics.vram_used_gb >= 0
+        ? nlohmann::json(gpu_metrics.vram_used_gb)
+        : nlohmann::json();
+    const auto gpu_details = gpu_device_details_json(gpu_metrics);
+    stats["primary_gpu_id"] = gpu_details["primary_gpu_id"];
+    stats["gpus"] = gpu_details["gpus"];
 
     // NPU Utilization
     double npu_percent = get_npu_utilization();
@@ -7703,6 +7854,12 @@ void Server::stream_download_operation(
 
             } catch (const lemon::UnknownModelError& e) {
                 nlohmann::json error_data = {{"error", e.what()}, {"code", lemon::kUnknownModelErrorCode}};
+                std::string event = "event: error\ndata: " + error_data.dump() + "\n\n";
+                sink.write(event.c_str(), event.size());
+            } catch (const lemon::RegistryRateLimitError& e) {
+                nlohmann::json error_data = {{"error", e.what()},
+                                             {"code", lemon::kRegistryUnavailableErrorCode},
+                                             {"retry_after", e.retry_after_seconds()}};
                 std::string event = "event: error\ndata: " + error_data.dump() + "\n\n";
                 sink.write(event.c_str(), event.size());
             } catch (const std::exception& e) {

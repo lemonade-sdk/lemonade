@@ -86,6 +86,7 @@ struct ImageDefaults {
     int height = 512;
     std::string sampling_method;
     float flow_shift = 0.0f;
+    std::uint64_t soft_pixel_cap = 0;  // 0 uses the server's inferred edit-size cap
 
     bool has_defaults = false;  // True if explicit defaults were provided in JSON
 };
@@ -547,8 +548,9 @@ private:
     void download_from_registry(const ModelInfo& info,
                                    DownloadProgressCallback progress_callback = nullptr);
 
-    // Discover GGUF models from extra_models_dir
-    std::map<std::string, ModelInfo> discover_extra_models() const;
+    // Discover independent GGUF models, excluding complete registered cache files.
+    std::map<std::string, ModelInfo> discover_extra_models(
+        const std::set<std::filesystem::path>& registered_paths = {}) const;
 
     ModelInfo init_extra_model_info(const std::string& name) const;
 
@@ -557,7 +559,8 @@ private:
         const std::filesystem::path& dir_path,
         const std::vector<std::filesystem::path>& gguf_files,
         std::map<std::string, ModelInfo>& discovered,
-        const std::filesystem::path& search_path) const;
+        const std::filesystem::path& search_path,
+        std::set<std::string>& claimed_names) const;
 
     json server_models_;
     json user_models_;

@@ -52,14 +52,14 @@ int main() {
     const std::string backend = "-b 2048 -ub 1024 -np 1";
     const std::string architecture = "--temp 0.8 --top-k 40";
     const std::string model_defaults = "--flash-attn on";
-    const std::string model = "--no-mmap --threads 8";
+    const std::string model = "--load-mode none --threads 8";
 
     failures += !expect_args(
         "no request inherits backend and model scope",
         resolve_scoped_custom_args(
             {backend, architecture, model_defaults, model,
              CustomArgsRequestState::Omitted, "", true}),
-        "-b 2048 -ub 1024 -np 1 --temp 0.8 --top-k 40 --no-mmap --threads 8");
+        "-b 2048 -ub 1024 -np 1 --temp 0.8 --top-k 40 --load-mode none --threads 8");
 
     failures += !expect_args(
         "request replaces model scope and keeps backend",
@@ -111,11 +111,11 @@ int main() {
         "-b 2048 --threads 4");
 
     failures += !expect_args(
-        "request negation overrides backend opposite",
+        "request load-mode overrides backend load-mode",
         resolve_scoped_custom_args(
-            {"--mmap -b 2048", "", "", "",
-             CustomArgsRequestState::Value, "--no-mmap", true}),
-        "-b 2048 --no-mmap");
+            {"--load-mode mmap -b 2048", "", "", "",
+             CustomArgsRequestState::Value, "--load-mode none", true}),
+        "-b 2048 --load-mode none");
 
     failures += !expect_args(
         "repeatable request flags survive wholesale model replacement",

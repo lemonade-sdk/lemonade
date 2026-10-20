@@ -1,8 +1,7 @@
 #include "lemon/model_manager.h"
-#include "lemon/utils/path_utils.h"
+#include "support/test_state_isolation.h"
 
 #include <algorithm>
-#include <chrono>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -22,11 +21,7 @@ static void check(const char* name, bool ok) {
 }
 
 static fs::path make_temp_dir() {
-    fs::path dir = fs::temp_directory_path();
-    dir /= "extra_model_discovery_" +
-           std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
-    fs::create_directories(dir);
-    return dir;
+    return lemon::test::make_scratch_dir("extra-models");
 }
 
 // Discovery never reads GGUF content, so an empty file is a valid fixture.
@@ -439,12 +434,28 @@ static void test_discovery_is_independent_of_creation_order() {
     check("discovery result is independent of file creation order", forward == reversed);
 }
 
-int main() {
-    // The constructor loads the registry JSON files unconditionally, so point it
-    // at a scratch dir to keep the test off the real user cache.
-    fs::path cache_dir = make_temp_dir();
-    lemon::utils::set_cache_dir(cache_dir.string());
+static void test_qualified_id_skips_kept_folder_name() {
+    fs::path dir = make_temp_dir();
+    touch(dir / "a" / "Shared" / "Llama-Q4_K_M.gguf");
+    touch(dir / "a" / "Shared" / "Llama-Q8_0.gguf");
+    touch(dir / "a" / "beta-Shared" / "Mistral-Q4_K_M.gguf");
+    touch(dir / "a" / "beta-Shared" / "Mistral-Q8_0.gguf");
+    touch(dir / "beta" / "Shared" / "Phi.gguf");
 
+    ModelManager manager(dir.string());
+    auto models = manager.discover_extra_models_for_test();
+
+    const ModelInfo* owner = find_model(models, "extra.Mistral-Q4_K_M");
+    check("earlier folder keeps its folder name",
+          owner != nullptr && has_alias(*owner, "beta-Shared"));
+    check("qualified id does not shadow a kept folder name",
+          find_model(models, "extra.beta-Shared") == nullptr &&
+          find_model(models, "extra.beta-Shared-2") != nullptr);
+
+    fs::remove_all(dir);
+}
+
+int main() {
     test_root_files();
     test_split_variant_folder();
     test_folder_model();
@@ -464,8 +475,7 @@ int main() {
     test_root_beats_category_for_short_id();
     test_non_normalized_search_path();
     test_discovery_is_independent_of_creation_order();
-
-    fs::remove_all(cache_dir);
+    test_qualified_id_skips_kept_folder_name();
 
     if (g_failures == 0) {
         std::printf("All extra model discovery tests passed.\n");

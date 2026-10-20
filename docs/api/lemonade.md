@@ -409,14 +409,14 @@ curl http://localhost:13305/v1/models/Qwen3-0.6B-GGUF/options
 
 ### Response format
 
-`effective` is the exact request body a [`POST /v1/load`](#post-v1load) for this model uses right now, with every option the recipe accepts resolved through the full priority chain. `defaults` is what a reset model would get. For `llamacpp`, with `--no-mmap` saved and the context size left automatic:
+`effective` is the exact request body a [`POST /v1/load`](#post-v1load) for this model uses right now, with every option the recipe accepts resolved through the full priority chain. `defaults` is what a reset model would get. For `llamacpp`, with `--load-mode none` saved and the context size left automatic:
 
 ```json
 {
   "model_name": "Qwen3-0.6B-GGUF",
   "recipe": "llamacpp",
   "saved": {
-    "llamacpp_args": "--no-mmap"
+    "llamacpp_args": "--load-mode none"
   },
   "effective": {
     "auto_evict": null,
@@ -424,7 +424,7 @@ curl http://localhost:13305/v1/models/Qwen3-0.6B-GGUF/options
     "downsize_idle_timeout": 60,
     "evict_idle_timeout": 300,
     "evict_weight_factor": 1.0,
-    "llamacpp_args": "--no-mmap",
+    "llamacpp_args": "--load-mode none",
     "llamacpp_backend": "vulkan",
     "llamacpp_device": "",
     "merge_args": true,
@@ -453,7 +453,7 @@ curl http://localhost:13305/v1/models/Qwen3-0.6B-GGUF/options
 | `saved` | The model's own entry in `recipe_options.json`: only what was explicitly saved, or `{}` when nothing is. It can also hold keys this endpoint does not accept, such as `pinned` written by `/v1/load`, so replay `effective` rather than `saved`. |
 | `effective` | The `/v1/load` body shown above. Posting it back whole to this endpoint saves every resolved value as an override, so send only the options the user changed. |
 | `defaults` | What `effective` becomes if `saved` is erased, in the same shape. A `ctx_size` of `-1` means the server picks the context size automatically. |
-| `resolved_ctx_size` | The context size a load right now would use: the effective `ctx_size`, or the automatically computed size when that is `-1`. |
+| `resolved_ctx_size` | The context size a load right now would use: the effective `ctx_size`, or the automatically computed size when that is `-1`. `null` means automatic sizing found insufficient memory and no valid context is available. |
 
 > Note: per-architecture defaults come from the model's GGUF metadata. For a model that has not been downloaded yet, every key is still present but carries the value it has before those defaults apply.
 
@@ -1196,7 +1196,7 @@ curl -X POST http://localhost:13305/v1/load \
     "model_name": "Qwen3-0.6B-GGUF",
     "ctx_size": 8192,
     "llamacpp_backend": "rocm",
-    "llamacpp_args": "--flash-attn on --no-mmap"
+    "llamacpp_args": "--flash-attn on --load-mode none"
   }'
 ```
 
@@ -1209,7 +1209,7 @@ curl -X POST http://localhost:13305/v1/load \
     "model_name": "Qwen3-0.6B-GGUF",
     "ctx_size": 8192,
     "llamacpp_backend": "vulkan",
-    "llamacpp_args": "--no-context-shift --no-mmap",
+    "llamacpp_args": "--no-context-shift --load-mode none",
     "save_options": true
   }'
 ```
@@ -1539,11 +1539,11 @@ curl http://localhost:13305/v1/health
         "-m", "~/.cache/huggingface/hub/models--nomic-ai--nomic-embed-text-v1-GGUF/.../nomic-embed-text-v1.Q4_K_S.gguf",
         "--ctx-size", "8192",
         "--port", "8002",
-        "--no-mmap"
+        "--load-mode none"
       ],
       "recipe_options": {
         "ctx_size": 8192,
-        "llamacpp_args": "--no-mmap",
+        "llamacpp_args": "--load-mode none",
         "llamacpp_backend": "rocm"
       },
       "backend_url": "http://127.0.0.1:8002/v1"
@@ -1636,7 +1636,8 @@ curl http://localhost:13305/v1/stats
   "prompt_tokens_total": 108,
   "cache_tokens_total": 1152,
   "routing_decisions_total": 4,
-  "routing_switches_total": 1
+  "routing_switches_total": 1,
+  "live": {"active_requests": 0, "estimated_tokens_per_second": 0.0}
 }
 ```
 
@@ -1649,6 +1650,7 @@ curl http://localhost:13305/v1/stats
 - `prompt_tokens` - Total prompt tokens including cached tokens
 - `cache_tokens` - Prompt tokens served from the backend's prefix cache on the last request (llama.cpp `timings.cache_n`, or `usage.prompt_tokens_details.cached_tokens` / Responses-API `input_tokens_details.cached_tokens` from OpenAI-compatible cloud providers). `null` when the last request did not report cache usage
 - `*_total` - Cumulative counters since server start
+- `live` - Number of streams with recent generated output and best-effort tokens/s. The rate estimates tokens from SSE text and is **not** an exact token count; use the existing last-request statistics for exact completed-inference numbers. The values become zero after about 3 seconds without generated output or immediately when a request ends. Status and keepalive SSE events are ignored.
 - `routing_decisions_total` - Routing decisions made by `collection.router` dispatch
 - `routing_switches_total` - Routing decisions that changed a conversation's routed model (a proxy for route ping-pong; conversations are identified by a hash of the system prompt and first user message)
 
@@ -1688,6 +1690,41 @@ curl http://localhost:13305/v1/system-stats
 - `npu_percent` - NPU utilization percentage, or `null` when unavailable
 
 GPU, VRAM, and NPU telemetry availability depends on the operating system and installed drivers. Unsupported values are returned as `null`.
+
+The `primary_gpu_id` and `gpus` fields describe the individual host GPUs. The legacy
+`gpu_percent` and `vram_gb` values now come from the same primary device: the GPU
+with the largest known GPU-accessible memory capacity (ties broken by stable ID).
+Selection does not depend on current GPU utilization. Device IDs remain stable
+across ordinary telemetry failures; unavailable live measurements become `null`.
+The primary GPU for this display is **not** necessarily the GPU targeted by a
+model recipe. `vram_gb` retains its historical name but represents GPU memory
+usage, which can be shared system memory for AMD APUs.
+
+Example `gpus` entry (all measurement fields can be `null`):
+
+```json
+{
+  "primary_gpu_id": "amd:0000:c1:00.0",
+  "gpus": [
+    {
+      "id": "amd:0000:c1:00.0",
+      "vendor": "amd",
+      "name": "AMD GPU (card0)",
+      "memory_type": "shared",
+      "gpu_percent": 25.0,
+      "memory_total_gb": 120.0,
+      "memory_used_gb": 18.0
+    }
+  ]
+}
+```
+
+On Linux, AMD and NVIDIA devices are enumerated separately. On Windows, NVIDIA
+telemetry comes from NVML and AMD telemetry from DXGI, DXCore, and PDH; other
+vendors still require their own platform implementation. On macOS the new
+per-GPU list is empty.
+NVML alone does not establish whether memory is dedicated or shared, so
+NVIDIA devices report `memory_type` as `unknown`.
 
 ## `GET /metrics`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
@@ -1823,25 +1860,33 @@ curl "http://localhost:13305/v1/system-info"
           "state": "installed",
           "message": "",
           "action": "",
-          "version": "b7869"
+          "version": "b7869",
+          "tier": "core",
+          "format": "native"
         },
         "rocm": {
           "devices": ["amd_gpu"],
           "state": "installable",
           "message": "Backend is supported but not installed.",
-          "action": "lemonade backends install llamacpp:rocm"
+          "action": "lemonade backends install llamacpp:rocm",
+          "tier": "core",
+          "format": "native"
         },
         "metal": {
           "devices": [],
           "state": "unsupported",
           "message": "Requires macOS",
-          "action": ""
+          "action": "",
+          "tier": "core",
+          "format": "native"
         },
         "cpu": {
           "devices": ["cpu"],
           "state": "update_required",
           "message": "Backend update is required before use.",
-          "action": "lemonade backends install llamacpp:cpu"
+          "action": "lemonade backends install llamacpp:cpu",
+          "tier": "core",
+          "format": "native"
         }
       }
     },
@@ -1920,6 +1965,7 @@ curl "http://localhost:13305/v1/system-info"
 - `recipes` - Software recipes and their backend support status
   - Each recipe (e.g., `llamacpp`, `whispercpp`, `flm`) contains:
     - `default_backend` - Preferred backend selected by server policy for this system (present when at least one backend is not `unsupported`)
+    - `experimental` - `true` when the `default_backend`'s tier is `experimental` or `guest`. See [Backend Tiers and Formats](#backend-tiers-and-formats).
     - `backends` - Available backends for this recipe
       - Each backend contains:
         - `devices` - List of devices **on this system** that support this backend (empty if not supported)
@@ -1927,6 +1973,8 @@ curl "http://localhost:13305/v1/system-info"
         - `message` - Human-readable status text for GUI and CLI users. Required for `unsupported`, `installable`, and `update_required`; empty for `installed`.
         - `action` - Actionable user instruction string. For install/update cases this is typically an exact CLI command; for other states it may be empty or another actionable value (for example, a URL).
         - `version` - Installed or configured backend version (when available)
+        - `tier` - `core`, `experimental`, or `guest`. See [Backend Tiers and Formats](#backend-tiers-and-formats).
+        - `format` - `native`, `python`, or `container`. See [Backend Tiers and Formats](#backend-tiers-and-formats).
 - `cloud` - Cloud OpenAI-compatible providers configured on this server (omitted when no providers are installed). Contains:
   - `providers` - Array, one entry per installed provider:
     - `name` - Provider name used as the model-name prefix (e.g. `fireworks`).
@@ -1938,6 +1986,22 @@ curl "http://localhost:13305/v1/system-info"
     - `env_var_set` - `true` if the env var is set in `lemond`'s environment.
     - `runtime_key_set` - `true` if an in-memory key has been supplied via `POST /v1/cloud/auth` this session.
     - `models_discovered` - Number of chat-capable models currently in the catalog for this provider.
+
+### Backend Tiers and Formats
+
+| Tier | Meaning |
+|------|---------|
+| `core` | Supported by Lemonade's maintainers for production use. |
+| `experimental` | Provided by Lemonade's maintainers, not supported for production use. |
+| `guest` | Developed and published outside Lemonade's maintainers. Use at your own risk. The models of a recipe whose only backends on this system are guest backends stay hidden from `GET /v1/models?show_all=true` until one of those backends is installed. |
+
+| Format | Meaning |
+|--------|---------|
+| `native` | A compiled executable. |
+| `python` | Python, packaged with its own interpreter. |
+| `container` | An OCI image, run by a pre-installed Podman or Docker. |
+
+The same backend can carry different labels on different operating systems. Each entry in a recipe's `backends` object reports the labels for this system's operating system.
 
 ## `POST /v1/install`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
