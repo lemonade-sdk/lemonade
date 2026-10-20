@@ -2,7 +2,7 @@
 const newsData = [
     {
         title: "Vision: your auto-optimizing local stack of agents, models, and engines",
-        url: "https://lemonade-server.ai/news/auto-bkc-vision.html",
+        url: "https://lemonade-server.ai/news/auto-opt-vision.html",
         date: "October 20, 2026",
         description: "A blog laying out a vision for Lemonade's technical development in the coming months. Pick an agent, and Lemonade installs and configures the best known model and engine for your system in one click.",
         image: "https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/banner.png",
