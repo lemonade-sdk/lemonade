@@ -289,10 +289,6 @@ bool checkpoint_shared(const std::string& checkpoint, const std::string& registr
 
 }  // namespace
 
-std::string registry_source_of(const ModelInfo& info) {
-    return remote_registry_source_name(parse_remote_registry_source(info.registry_source));
-}
-
 std::string repo_id_to_cache_dir_name(const std::string& repo_id,
                                       const std::string& registry_source) {
     return registry_repo_cache_dir_name(repo_id, parse_remote_registry_source(registry_source));

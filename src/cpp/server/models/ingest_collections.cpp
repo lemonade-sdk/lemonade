@@ -47,9 +47,9 @@ static std::string collection_component_drift(const ModelInfo& local, const json
     if (!m.recipe.empty() && m.recipe != local.recipe) {
         diffs.push_back("recipe (manifest='" + m.recipe + "' local='" + local.recipe + "')");
     }
-    if (models::registry_source_of(m) != models::registry_source_of(local)) {
-        diffs.push_back("source (manifest='" + models::registry_source_of(m) +
-                        "' local='" + models::registry_source_of(local) + "')");
+    if (registry_source_of(m) != registry_source_of(local)) {
+        diffs.push_back("source (manifest='" + registry_source_of(m) +
+                        "' local='" + registry_source_of(local) + "')");
     }
     for (const auto& [type, ck] : m.checkpoints) {
         if (ck.empty()) continue;
@@ -427,7 +427,7 @@ void IngestCollections::populate_from_cached_manifest(ModelInfo& info) {
     if (repo_id.empty()) return;
 
     fs::path cache_dir = path_from_utf8(deps_.artifacts->root()) /
-        repo_id_to_cache_dir_name(repo_id, models::registry_source_of(info));
+        repo_id_to_cache_dir_name(repo_id, registry_source_of(info));
     json manifest = read_cached_collection_manifest(*deps_.artifacts, cache_dir);
     if (!manifest.is_object() || !manifest.contains("components") ||
         !manifest["components"].is_array()) {

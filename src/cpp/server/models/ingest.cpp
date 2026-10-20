@@ -181,7 +181,7 @@ static std::string describe_registration_conflict(const ModelInfo& existing,
     add_diff("recipe", existing.recipe, requested_recipe);
 
     const std::string requested_source = requested_registry_source(requested);
-    add_diff("source", models::registry_source_of(existing), requested_source);
+    add_diff("source", registry_source_of(existing), requested_source);
 
     const std::string requested_mmproj = requested.value("mmproj", std::string());
     if (!requested_mmproj.empty()) {
@@ -226,7 +226,7 @@ void ModelIngest::download_from_registry(const ModelInfo& info,
     const std::string main_repo_id = repo_id_from_checkpoint(info.checkpoint("main"));
     const std::string main_variant = variant_from_checkpoint(info.checkpoint("main"));
 
-    const std::string source_name = models::registry_source_of(info);
+    const std::string source_name = registry_source_of(info);
     const auto source = parse_remote_registry_source(source_name);
     const std::string source_display = remote_registry_display_name(source);
 
@@ -607,7 +607,7 @@ void ModelIngest::pull(const std::string& model_name,
         auto info = require_info(model_name);
         if (!registration_data.contains("source") &&
             !registration_data.contains("registry_source")) {
-            registration_data["source"] = models::registry_source_of(info);
+            registration_data["source"] = registry_source_of(info);
         }
 
         const bool explicit_definition =
@@ -711,7 +711,7 @@ void ModelIngest::pull(const std::string& model_name,
                 model_data.contains("components") && model_data["components"].is_array()) {
                 // Exported-collection format: `models` carries what `components` names.
                 components = collections_->register_components(model_data["components"], model_data["models"],
-                                                models::registry_source_of(info));
+                                                registry_source_of(info));
 
                 // Rewrite with canonical names; the bulky payload is dropped.
                 if (is_user_model_name(model_name) && !components.empty()) {
@@ -724,7 +724,7 @@ void ModelIngest::pull(const std::string& model_name,
                 // lives in the registry, so fetch it. An explicit pull refreshes so a
                 // member added upstream since the last pull is picked up.
                 components = collections_->resolve_from_manifest(
-                    repo_id, models::registry_source_of(info), do_not_upgrade);
+                    repo_id, registry_source_of(info), do_not_upgrade);
             }
 
             if (components.empty()) {
@@ -896,7 +896,7 @@ void ModelIngest::fetch_model(const ModelInfo& info, bool do_not_upgrade,
     {
         std::lock_guard<std::mutex> guard(download_locks_mutex_);
         auto& slot = download_locks_[
-            models::registry_source_of(info) + ":" +
+            registry_source_of(info) + ":" +
             repo_id_from_checkpoint(info.checkpoint("main"))];
         if (!slot) slot = std::make_shared<std::mutex>();
         repo_lock = slot;

@@ -1,5 +1,6 @@
 #include "model_registry.h"
 
+#include "lemon/models/model_info.h"
 #include "lemon/models/registry_id.h"
 
 #include <algorithm>
@@ -845,6 +846,10 @@ RegistryId parse_remote_registry_source(const std::string& source) {
 
 std::string remote_registry_source_name(RegistryId source) {
     return require_descriptor(source).id.str();
+}
+
+std::string registry_source_of(const ModelInfo& info) {
+    return remote_registry_source_name(parse_remote_registry_source(info.registry_source));
 }
 
 std::string remote_registry_display_name(RegistryId source) {

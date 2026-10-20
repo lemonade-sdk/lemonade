@@ -108,6 +108,12 @@ models::RegistryId parse_remote_registry_source(const std::string& source);
 std::string remote_registry_source_name(models::RegistryId source);
 std::string remote_registry_display_name(models::RegistryId source);
 
+struct ModelInfo;
+
+// A row's registry, normalized. Every read of ModelInfo::registry_source goes through this,
+// because a row may name the registry in any of its aliases.
+std::string registry_source_of(const ModelInfo& info);
+
 // Short form used when a registry is spelled as a URL scheme. The accepted
 // short aliases are the same ones parse_remote_registry_source() recognizes.
 std::string remote_registry_scheme_prefix(models::RegistryId source);

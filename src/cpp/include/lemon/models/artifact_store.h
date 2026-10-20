@@ -25,10 +25,6 @@ struct ArtifactSource;
 // in model_index.h, which answers "which canonical id owns this bare name".
 using KnownModels = std::map<std::string, ModelInfo>;
 
-// A checkpoint row's registry, normalized. Every read of `ModelInfo::registry_source`
-// goes through this, because a row may name the registry in any of its aliases.
-std::string registry_source_of(const ModelInfo& info);
-
 // The managed-cache directory name for one repository, in that registry's namespace.
 std::string repo_id_to_cache_dir_name(const std::string& repo_id,
                                       const std::string& registry_source);
