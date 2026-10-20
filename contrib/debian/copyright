@@ -29,6 +29,17 @@ Comment: Tauri application and installer artwork with dependencies:
  - markdown-it-texmath (Expat/MIT)
  - react and react-dom (Expat/MIT)
 
+Files: src/app/src/styles/hljs-styles.css
+Copyright: 2006 Ivan Sagalaev
+           2016 GitHub, Inc.
+License: BSD-3-Clause and Expat
+Comment: Theme-scoped copies of the GitHub and GitHub Dark styles from
+ highlight.js 11.11.1 (BSD-3-Clause). Those themes draw on GitHub syntax
+ styling from Primer (MIT/Expat); their upstream theme headers are retained.
+ Sources: https://github.com/highlightjs/highlight.js/tree/11.11.1/src/styles
+  https://github.com/primer/github-syntax-light
+  https://github.com/primer/github-syntax-dark
+
 Files: docs/assets/favicon.ico
        docs/assets/logo.png
        docs/assets/logo_512.png
@@ -58,7 +69,7 @@ Comment: FastFlowLM integration code shipped in this source package is Apache-2.
 Files: src/app/src/components/localIcons.tsx
 Copyright: 2024-2026 Advanced Micro Devices, Inc. (AMD)
            2013-present Cole Bemis
-           2022-2026 Lucide Contributors
+           2026 Lucide Icons and Contributors
            Simple Icons Contributors
 License: Apache-2.0 and ISC and Expat and CC0-1.0
 Comment: Lemonade's React wrapper is Apache-2.0. Lucide paths are ISC,
@@ -70,9 +81,11 @@ Copyright: 2019-2026 Google LLC
            2017 Google LLC and The Lit Project Contributors
            2010-2026 three.js authors
            2023 MONOGRID
+           2023 Arjun Barrett
 License: Apache-2.0 and BSD-3-Clause and Expat
-Comment: Bundled @google/model-viewer 4.3.0 is Apache-2.0. The bundle also
- includes BSD-3-Clause Lit and MIT/Expat three.js and gainmap-js code.
+Comment: Bundled @google/model-viewer 4.3.1 is Apache-2.0. The bundle also
+ includes BSD-3-Clause Lit and MIT/Expat three.js, gainmap-js, and fflate
+ 0.8.2 code.
  See src/app/src/vendor/README.md for provenance.
 
 Files: src/cpp/include/lemon/utils/aixlog.hpp
