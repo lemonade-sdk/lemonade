@@ -200,7 +200,12 @@ std::vector<HookSelection> hook_selections(const Json& declaration, Budget& budg
         const std::string& stage, const std::string& pointer, const std::string& owner_pointer,
         const std::string& operation, const Json& semantics, const std::vector<std::string>& ordered) {
         budget.work(pointer.size(), 1);
-        budget.keep(checked_sum(sizeof(HookSelection), checked_sum(pointer.size(), measure(hook, budget).bytes)));
+        const auto semantics_metrics = measure(semantics, budget);
+        budget.keep(checked_sum(semantics_metrics.bytes, checked_product(semantics_metrics.nodes, sizeof(Json))));
+        for (const auto& id : ordered) { budget.keep(checked_sum(sizeof(std::string), id.size())); budget.work(id.size(), 1); }
+        const auto hook_metrics = measure(hook, budget);
+        budget.keep(checked_sum(sizeof(HookSelection), checked_sum(hook_metrics.bytes, checked_product(hook_metrics.nodes, sizeof(Json)))));
+        for (const auto& text : {pointer, owner_pointer, operation, owner, stage}) budget.keep(text.size());
         result.push_back({{kind, owner, stage, hook.at("id")}, pointer, owner_pointer, operation,
             hook.value("params", Json::object()), semantics, ordered});
     };
@@ -209,6 +214,8 @@ std::vector<HookSelection> hook_selections(const Json& declaration, Budget& budg
     if (declaration.contains("install") && declaration["install"].contains("hook"))
         append(declaration["install"]["hook"], SlotOwnerKind::Root, "install", "install", "/install/hook", "/install", "", Json{{"strategy", declaration["install"].at("strategy")}}, {declaration["install"]["hook"].at("id")});
     if (declaration.contains("artifacts")) for (const auto& [name, artifact] : declaration["artifacts"].items()) if (artifact.contains("hook")) {
+        const auto artifact_metrics = measure(artifact, budget);
+        budget.keep(checked_sum(artifact_metrics.bytes, checked_product(artifact_metrics.nodes, sizeof(Json))));
         auto semantics = artifact;
         semantics.erase("hook");
         append(artifact["hook"], SlotOwnerKind::Artifact, name, "artifacts", "/artifacts/" + pointer_token(name) + "/hook",
@@ -217,6 +224,8 @@ std::vector<HookSelection> hook_selections(const Json& declaration, Budget& budg
     if (declaration.contains("operations")) for (std::size_t index = 0; index < declaration["operations"].size(); ++index) {
         const auto& operation = declaration["operations"][index];
         const auto path = "/operations/" + std::to_string(index);
+        const auto operation_metrics = measure(operation, budget);
+        budget.keep(checked_sum(operation_metrics.bytes, checked_product(operation_metrics.nodes, sizeof(Json))));
         Json semantics = Json::object();
         for (const auto* key : {"id", "operation", "delivery", "model_modes", "transport", "formats", "format_metadata"})
             if (operation.contains(key)) semantics[key] = operation[key];

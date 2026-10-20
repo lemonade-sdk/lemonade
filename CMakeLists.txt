@@ -1149,6 +1149,7 @@ add_library(lemonade-backend-definition-v2 STATIC
     src/cpp/server/backends/configured/backend_definition_resolver.cpp
     src/cpp/server/backends/configured/backend_definition_descriptor.cpp
     src/cpp/server/backends/configured/backend_definition_exports.cpp
+    src/cpp/server/backends/configured/backend_definition_authorization.cpp
     src/cpp/server/backends/configured/backend_hook_abi.cpp)
 target_include_directories(lemonade-backend-definition-v2 PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
@@ -3894,4 +3895,17 @@ if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_backend_h
     add_executable(test_backend_hook_abi test/cpp/test_backend_hook_abi.cpp)
     target_link_libraries(test_backend_hook_abi PRIVATE lemonade-server-core)
     add_cpp_ci_test(BackendHookAbiTest CI ON COMMAND test_backend_hook_abi)
+endif()
+
+if(BUILD_TESTING)
+    add_executable(test_backend_definition_authorization
+        test/cpp/test_backend_definition_authorization.cpp
+        src/cpp/server/backends/configured/backend_definition_authorization.cpp
+        src/cpp/server/backends/configured/backend_definition_exports.cpp)
+    target_compile_definitions(test_backend_definition_authorization PRIVATE
+        LEMON_BACKEND_EXPORT_TESTING
+        LEMON_TEST_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures")
+    target_include_directories(test_backend_definition_authorization PRIVATE src/cpp/server/backends/configured)
+    target_link_libraries(test_backend_definition_authorization PRIVATE lemonade-backend-definition-v2)
+    add_cpp_ci_test(BackendDefinitionAuthorizationTest CI ON COMMAND test_backend_definition_authorization)
 endif()

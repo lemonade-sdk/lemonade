@@ -314,8 +314,8 @@ caller-supplied `DefinitionNamespace::Builtin`, is still a data operation.
 
 Export keys consist of a builtin ID and a positive contract major. Lookup is
 exact; there is no version fallback. Registry construction is private to the
-loader. The synthetic registry constructor is defined only in the export test
-executable, and is absent from the production library. External JSON cannot
+loader. The synthetic registry and trusted snapshot constructors are defined only in
+the export and authorization test executables, and is absent from the production library. External JSON cannot
 provide or replace a registry entry.
 
 Each contract pins the canonical source, declaration and dependency digests, a
@@ -333,7 +333,7 @@ and permitted absence. Structured input rules use the audited `Expression`
 schema fragment and explicit reference roots; arbitrary policy expressions are
 not supported. Literal expression payloads and reference defaults remain data.
 Hook selections and operation owner semantics cannot be declared mutable.
-These records are inputs to the later authorizer; the registry audit alone
+These records are inputs to the authorizer; the registry audit alone
 does not authorize an external declaration.
 
 Identity domains are distinct:
@@ -369,7 +369,76 @@ fallback for its children.
 The legacy installed feature manifest is unchanged. Exporting an existing hook
 adds authorization permission, rather than installing a new executable
 primitive. A later, separate admission manifest must advertise that permission.
-The authorizer, frozen mixed-version catalog, candidate graph validation and
-representation negotiation remain pending; production admission and executable
-validation are still v1-only. No v2 registration or factory is constructed by
-this unit.
+The authorization unit described below consumes these records. Mixed-version
+catalog admission, candidate graph validation and representation negotiation
+remain pending; production admission and executable validation are still
+v1-only. No v2 registration or factory is constructed by this unit.
+
+
+## Loader authority and sealed slots
+
+`load_v2_authority_snapshot(external_sources, limits)` owns a frozen source index
+and a copy of the installed compiled registry. Its intake rejects builtin keys
+and nonzero external contract numbers. Only `BuiltinCatalogLoader` constructs
+`FrozenDefinitionSnapshot`; it audits every compiled export against the owned
+sources. Production has no bundled v2 exports, including `llamacpp@1`.
+Synthetic trusted intake is compiled only into the tests.
+
+`DefinitionAuthorizer(snapshot).authorize(leaf)` accepts an external key, never a
+caller-built `ResolvedDefinition` or pure `DefinitionSourceSnapshot`. It first
+runs the unchanged pure resolver, including declaration hashing, and then
+checks every external layer. Success creates an immutable `AuthorizedDefinition`
+containing the exact resolved object and an opaque `ResolvedAuthority`. Neither
+authority nor authorized results have public constructors or JSON serializers.
+Copying declaration data or selecting the builtin namespace cannot produce a
+token. Each token retains its frozen snapshot, registry identity, exact resolved
+object and authorization revision.
+
+A private grant stores the builtin ID and contract major, source, declaration
+and dependency digests, logical owner, stage, hook ID, ABI revision, parameter
+digest and mutation policy digest. The original root and policy remain attached
+through external descendants. The next layer receives only its immediate
+parent's surviving grants. Removed mandatory-owner obligations remain in force,
+so renaming an operation or artifact cannot recreate its protected behavior
+without the required hook.
+
+The private authored-value observer is part of the existing edit engine. After
+pure resolution, authorization parses each frozen external envelope again and
+replays its merge and ordered edits through that engine. Parsing, replay,
+inspection, projections and retained grants share the resolver's remaining work
+and retention budgets. The observer examines original values at schema hook
+positions and direct hook-field targets, including selections overwritten by
+later edits. Protected operation and artifact owner fields also reject authored
+writes. Request literals remain ordinary data. Source values and local labels
+never enter the authorship journal, authorization diagnostics or catalog rows.
+The value-free journal alone cannot distinguish a hidden hook selection from
+an ordinary overwritten value.
+
+Final verification requires an exact inherited slot and installed ABI, sealed
+parameters, owner semantics, ordered hook sequence and recursively preserved
+hook provenance. Replacing an identical hook or an enclosing subtree does not
+preserve provenance. Each surviving grant checks explicit sealed inputs, typed
+mutable values and the remaining declaration data. Existing data is sealed by
+default; the identity fields and rationale are excluded, and operations are
+compared by stable ID. Inserting an unrelated operation preserves existing
+slots. Mutable inputs must satisfy every retained policy that consumes them.
+
+Removing a mandatory hook while its owner remains rejects. Removing an owner
+requires an explicit `WithOwner` policy. Another operation with the same
+operation kind or backend transport endpoint, or artifact with the same role,
+rejects conservatively. This also applies when the original mandatory owner
+remains, so adding a hookless alias cannot bypass its protection.
+`Independent` slots may disappear only when all retained slot and phase
+dependencies remain satisfied. Hook lists can be cleared when every removed
+slot permits it; replacing a list with retained hooks re-authors those hooks.
+Removing an independently removable launch hook may also remove its associated
+`hook` preparation phase, as required by the pure relationship validator.
+
+The final verifier enumerates all surviving selections after all edits and
+checks the root obligations even for grants removed by an earlier external
+parent. It never rebuilds a child's grants from the root export. Compatibility
+attachments and serialized origin or authority controls are forbidden.
+Authorization does not compile expressions, bind functions, apply executable
+defaults, construct entries, validate executable support or publish a catalog.
+Future executable consumers must accept the authorized token. The v1 store,
+legacy metadata projections, schema export and hash domains remain unchanged.

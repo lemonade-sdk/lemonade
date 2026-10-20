@@ -1,10 +1,16 @@
 #pragma once
 
 #include "backend_definition_v2_internal.h"
+#include "lemon/backends/configured/backend_definition_authorization.h"
 #include "lemon/backends/configured/backend_definition_exports.h"
 #include "lemon/backends/configured/backend_hook_abi.h"
 
 namespace lemon::backends::v2 {
+
+struct AuthorizationFailure {
+    std::string code;
+    SourceLocation source;
+};
 
 struct HookSelection {
     LogicalHookSlot slot;
@@ -35,6 +41,13 @@ CompositionDiagnostics audit_export_contracts(const std::vector<BuiltinExportCon
     std::string_view expected_registry_digest,
     const DefinitionLimits& limits = {});
 
+void verify_slot_shape(const HookSelection& selection, const ExportSlotPolicy& policy,
+    const SourceLocation& source, Budget& budget);
+std::vector<LogicalHookSlot> verify_surviving_grants(const ResolvedDefinition& definition,
+    const ResolvedDefinition& parent, const ResolvedDefinition& base, const BuiltinExportContract* contract,
+    const std::vector<LogicalHookSlot>& inherited_slots, const NodePtr& parent_root, const NodePtr& current_root,
+    Budget& budget);
+
 }
 
 namespace lemon::backends {
@@ -42,6 +55,18 @@ namespace lemon::backends {
 class BuiltinCatalogLoader {
 public:
     static const BuiltinExportRegistry& installed_exports();
+    static FrozenDefinitionSnapshotResult freeze(
+        const std::vector<DefinitionSourceView>& external_sources, const DefinitionLimits& limits);
+    static FrozenDefinitionSnapshotResult test_freeze(
+        const std::vector<DefinitionSourceView>& sources,
+        std::shared_ptr<const BuiltinExportRegistry> registry, const DefinitionLimits& limits = {});
+
+private:
+    static FrozenDefinitionSnapshotResult freeze_sources(
+        const std::vector<DefinitionSourceView>& sources,
+        std::shared_ptr<const BuiltinExportRegistry> registry, const DefinitionLimits& limits);
+
+public:
     static std::shared_ptr<const BuiltinExportRegistry> test_exports(
         const std::vector<BuiltinExportContract>& contracts,
         std::shared_ptr<const DefinitionSourceSnapshot> sources,

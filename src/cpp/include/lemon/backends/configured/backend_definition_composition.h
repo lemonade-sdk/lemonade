@@ -116,6 +116,7 @@ private:
     struct Impl;
     std::shared_ptr<const Impl> impl_;
     friend class DefinitionResolver;
+    friend class DefinitionAuthorizer;
 };
 
 struct ResolvedDefinition {

@@ -220,13 +220,15 @@ NodePtr target_node(const NodePtr& root, const DefinitionTarget& target, const D
     return node;
 }
 
-void apply_layer(LayerState& state, const Json& envelope, const DefinitionKey& key, Budget& budget) {
+void apply_layer(LayerState& state, const Json& envelope, const DefinitionKey& key, Budget& budget,
+    const AuthoredValueObserver& observer) {
     budget.keep(checked_sum(sizeof(DefinitionKey), key.id.size()));
     auto document = std::make_shared<const DefinitionKey>(key);
     budget.keep(sizeof(Origin));
     auto root_origin = std::make_shared<Origin>(Origin{document, {}, {}});
     if (!state.root) state.root = authored(Json::object(), root_origin, budget);
     if (envelope.contains("merge")) {
+        if (observer) observer(state.root, "", DefinitionEditKind::Merge, &envelope["merge"], {key, "/merge"});
         const auto origin = origin_child(root_origin, "merge", budget);
         budget.admit(merged_metrics(state.root, envelope["merge"], budget));
         merge_removals(state, state.root, envelope["merge"], {"", {}, ""}, origin, budget);
@@ -278,6 +280,13 @@ void apply_layer(LayerState& state, const Json& envelope, const DefinitionKey& k
                         (kind == DefinitionEditKind::Replace && !edit["value"].contains(name)) ||
                         (edit["value"].contains(name) && edit["value"][name] != target.match->value)) fail("identity_protected", "value");
                 }
+            }
+            if (observer) {
+                std::string effective;
+                for (const auto& step : path) effective = join_pointer(effective,
+                    step.array ? std::to_string(step.index) : step.key, budget.limits);
+                observer(state.root, effective, kind, edit.contains("value") ? &edit["value"] : nullptr,
+                    {key, pointer + (edit.contains("value") ? "/value" : "")});
             }
             if (kind == DefinitionEditKind::Merge && old->kind != Node::Kind::Object) fail("invalid_target_type", "path");
             if (kind == DefinitionEditKind::Clear && old->kind == Node::Kind::Scalar) fail("invalid_target_type", "path");

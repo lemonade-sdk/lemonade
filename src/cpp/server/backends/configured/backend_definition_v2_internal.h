@@ -2,6 +2,7 @@
 
 #include "lemon/backends/configured/backend_definition_resolver.h"
 
+#include <functional>
 #include <map>
 #include <stdexcept>
 
@@ -104,7 +105,10 @@ DefinitionTarget target_from(const Json& value, std::string_view path_member = "
 NodePtr target_node(const NodePtr& root, const DefinitionTarget& target, const DefinitionLimits& limits);
 std::optional<SourceLocation> removed_at(const std::vector<Removal>& removals, const DefinitionTarget& target);
 void apply_identity(LayerState& state, const Json& envelope, const DefinitionKey& key, Budget& budget);
-void apply_layer(LayerState& state, const Json& envelope, const DefinitionKey& key, Budget& budget);
+using AuthoredValueObserver = std::function<void(const NodePtr&, const std::string&, DefinitionEditKind,
+    const Json*, const SourceLocation&)>;
+void apply_layer(LayerState& state, const Json& envelope, const DefinitionKey& key, Budget& budget,
+    const AuthoredValueObserver& observer = {});
 NodePtr effective_node(NodePtr node, std::string_view pointer, const DefinitionLimits& limits);
 CompositionDiagnostics relationships(const Json& declaration, const LayerState& state, Budget& budget);
 std::string digest(std::string_view domain, const Json& value, Budget& budget);
