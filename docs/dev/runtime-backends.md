@@ -69,6 +69,21 @@ literal that ends early. It also fails when `<stem>` does not match
 `[a-z][a-z0-9_]*`, because the stem names the constant. A file whose stem has no
 `LEMON_BACKENDS` entry is still embedded, but nothing registers it.
 
+MSVC rejects a string literal longer than 16,380 bytes before adjacent literals
+are concatenated (error C2026; MSVC 14.51 lifts the limit), and the schema alone
+is over 33,000 bytes. `cmake/CxxStringLiterals.cmake` therefore writes each
+constant as adjacent raw string literals of at most 8,000 bytes, half the limit,
+which the compiler concatenates back into the file's bytes. It splits after the
+last line break that fits in the budget. A line longer than the budget is split
+inside the line, never inside a UTF-8 sequence, because the generated header must
+stay valid UTF-8 for MSVC, and never between a carriage return and its line feed,
+because compilers fold CRLF inside a raw string to LF but treat a lone CR
+differently. The configure step fails, naming the file, the constant and the byte
+offset, when such a line is not valid UTF-8, and, naming the length, when any
+emitted literal would exceed the budget. `BackendDefinitionResourcesTest` compares
+every embedded constant with its source file byte for byte and checks that every
+generated header is valid UTF-8 with no string literal over the budget.
+
 A new built-in configured engine needs:
 
 - its definition, `src/cpp/resources/backends/<stem>.json`;
@@ -122,7 +137,10 @@ have no `<stem>.h`. Descriptor headers under `include/lemon/backends/<stem>/` ex
 only for the engines without a definition. The generator emits every descriptor
 field, including each support row's OS set, devices, summary and architecture
 gates and each option's JSON default; `metadata.config_extra` and option defaults
-keep their JSON values. It maps `default_device`, `slot_policy`, `version_policy`,
+keep their JSON values, emitted as `nlohmann::json::parse()` of raw string
+literals split the same way as the embedded definitions. Any other string literal
+it would emit over the 8,000-byte budget, such as an option's help text, fails
+the configure step. It maps `default_device`, `slot_policy`, `version_policy`,
 `tier` and `format` by explicit tables and fails the configure step, naming the
 file and JSON pointer, on an unknown value, an unknown key, a wrong type or a
 missing required field, instead of defaulting it. `server_name`, `log_category`
