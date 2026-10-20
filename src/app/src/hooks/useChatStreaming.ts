@@ -207,6 +207,7 @@ export function useChatStreaming(
 
     const toolLoopDetector = new ToolLoopDetector();
     let toolsDisabled = false;
+    let blockedOnlyRounds = 0;
     const allToolCalls: ToolCallEntry[] = [];
 
     const runCompletion = async (): Promise<void> => {
@@ -270,10 +271,18 @@ export function useChatStreaming(
                 { role: 'assistant' as const, content: '', tool_calls: toolCalls },
               ];
 
-              // Execute all tool calls in parallel
-              const results = await Promise.all(
-                toolCalls.map(tc => runtime!.execute(tc as ToolCall))
-              );
+              // Skip only invocations already blocked by repeated identical errors.
+              const blockedReasons = toolCalls.map(tc => toolLoopDetector.blockedReason(tc));
+              const results: ToolExecutionPayload[] = await Promise.all(toolCalls.map((tc, i) => {
+                const reason = blockedReasons[i];
+                return reason ? {
+                  role: 'tool' as const,
+                  tool_call_id: tc.id,
+                  content: JSON.stringify({ error: `Skipped: ${reason}` }),
+                  displayResult: `Skipped: ${reason}`,
+                  error: true,
+                } : runtime!.execute(tc as ToolCall);
+              }));
 
               // Tool execution takes no abort signal, so a stop mid-call lands
               // here with a dead controller.
@@ -310,7 +319,13 @@ export function useChatStreaming(
                   { role: 'tool' as const, content: result.content, tool_call_id: result.tool_call_id },
                 ];
               }
-              const loopNotice = toolLoopDetector.observe(toolCalls, results);
+              const executedCalls = toolCalls.filter((_, i) => !blockedReasons[i]);
+              const executedResults = results.filter((_, i) => !blockedReasons[i]);
+              const onlyBlocked = toolCalls.length > 0 && executedCalls.length === 0;
+              blockedOnlyRounds = onlyBlocked ? blockedOnlyRounds + 1 : 0;
+              const loopNotice = blockedOnlyRounds >= 2
+                ? { action: 'stop' as const, reason: 'The model continued requesting only blocked tool calls' }
+                : toolLoopDetector.observe(executedCalls, executedResults);
               if (loopNotice) {
                 console.warn(`[Chat tools] ${loopNotice.action}: ${loopNotice.reason}`);
                 if (loopNotice.action === 'stop') {
@@ -329,7 +344,11 @@ export function useChatStreaming(
                   ? `${TOOL_FOLLOWUP_PROMPT}
 
 Possible tool loop: ${loopNotice.reason}. Do not repeat identical calls with unchanged results. Try a different approach, wait for real progress, or explain the blocker.`
-                  : TOOL_FOLLOWUP_PROMPT;
+                  : blockedReasons.some(Boolean)
+                    ? `${TOOL_FOLLOWUP_PROMPT}
+
+Some tool calls were skipped after repeated identical failures. Other tools remain available; change the blocked call's arguments or choose a different tool.`
+                    : TOOL_FOLLOWUP_PROMPT;
               fullMessages = [
                 ...fullMessages,
                 { role: 'user' as const, content: guidance },

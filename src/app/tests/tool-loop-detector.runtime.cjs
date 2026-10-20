@@ -49,7 +49,9 @@ assert.equal(observe(failing, invalid, result({ error: 'unsupported' }, true)), 
 assert.equal(observe(failing, invalid, result({ error: 'unsupported' }, true)), null);
 assert.equal(observe(failing, invalid, result({ error: 'unsupported' }, true)).action, 'warn');
 assert.equal(observe(failing, invalid, result({ error: 'unsupported' }, true)), null);
-assert.equal(observe(failing, invalid, result({ error: 'unsupported' }, true)).action, 'stop');
+assert.equal(observe(failing, invalid, result({ error: 'unsupported' }, true)).action, 'warn');
+assert.match(failing.blockedReason(invalid), /blocked/);
+assert.equal(failing.blockedReason(call('inspect_geometry', { file: 'valid.stl' })), null);
 
 // JSON key order, transient request identifiers and argument whitespace do not hide loops.
 const shuffled = new ToolLoopDetector();
@@ -59,9 +61,10 @@ for (let i = 0; i < 5; i++) {
     { timestamp: i, request_id: `${i}`, error: 'not found' }, true);
   const verdict = observe(shuffled, action, response);
   if (i === 2) assert.equal(verdict?.action, 'warn');
-  else if (i === 4) assert.equal(verdict?.action, 'stop');
+  else if (i === 4) assert.equal(verdict?.action, 'warn');
   else assert.equal(verdict, null);
 }
+assert.match(shuffled.blockedReason(call('get_model_info', { b: 2, a: 1 })), /blocked/);
 
 // Cycles involving multiple different tool calls should be caught too.
 const alternating = new ToolLoopDetector();
@@ -97,6 +100,53 @@ for (let i = 0; i < 5; i++) {
     call('get_build_status', { job: 1 }), call('inspect_geometry', { file: 'bad.stl' }),
   ], [result({ status: 'running' }), result({ error: 'syntax' }, true)]);
   if (i === 2) assert.equal(notice?.action, 'warn');
+  else if (i === 4) assert.equal(notice?.action, 'warn');
+  else assert.equal(notice, null);
+}
+
+// A productive parallel call must not mask a failing invocation.
+const productive = new ToolLoopDetector();
+const badValidation = call('validate', { mesh: 'bad.stl' });
+for (let i = 0; i < 5; i++) {
+  const notice = productive.observe([
+    badValidation, call('edit_line', { step: i }),
+  ], [result({ error: 'invalid geometry' }, true), result({ changed: true })]);
+  assert.equal(notice?.action, i === 2 || i === 4 ? 'warn' : undefined);
+}
+assert.match(productive.blockedReason(badValidation), /blocked/);
+assert.equal(productive.blockedReason(call('edit_line', { step: 4 })), null);
+assert.equal(productive.blockedReason(call('validate', { mesh: 'fixed.stl' })), null);
+
+// A changed search query must not make repeated load failures invisible.
+const search = new ToolLoopDetector();
+const badLoad = call('load_model', { model_name: 'typo' });
+for (let i = 0; i < 5; i++) {
+  const notice = search.observe([
+    badLoad, call('list_models', { query: `q${i}` }),
+  ], [result({ error: 'not found', request_id: `req_${i}` }), result({ models: ['qwen'] })]);
+  assert.equal(notice?.action, i === 2 || i === 4 ? 'warn' : undefined);
+}
+assert.match(search.blockedReason(badLoad), /blocked/);
+assert.equal(search.blockedReason(call('list_models', { query: 'q5' })), null);
+
+// Distinct errors are not repeated failures, and a success resets the count.
+const recovered = new ToolLoopDetector();
+const retry = call('load_model', { model_name: 'correct' });
+for (let i = 0; i < 12; i++) {
+  assert.equal(observe(recovered, retry, result({ error: `failure ${i}` }, true)), null);
+}
+assert.equal(recovered.blockedReason(retry), null);
+for (let i = 0; i < 4; i++) observe(recovered, retry, result({ error: 'temporary' }, true));
+assert.equal(recovered.blockedReason(retry), null);
+assert.equal(observe(recovered, retry, result({ status: 'ready' })), null);
+for (let i = 0; i < 4; i++) observe(recovered, retry, result({ error: 'temporary' }, true));
+assert.equal(recovered.blockedReason(retry), null);
+
+// Repeated successful read-only calls still trigger the original round-level guard.
+const readOnly = new ToolLoopDetector();
+for (let i = 0; i < 5; i++) {
+  const notice = observe(readOnly, call('list_models', { status: 'local' }), result({ count: 1 }));
+  if (i === 2) assert.equal(notice?.action, 'warn');
   else if (i === 4) assert.equal(notice?.action, 'stop');
   else assert.equal(notice, null);
 }
@@ -107,8 +157,10 @@ for (let i = 0; i < 5; i++) {
   const entries = [call('inspect_geometry', { file: 'A.stl' }), call('inspect_geometry', { file: 'B.stl' })];
   if (i % 2) entries.reverse();
   const replies = entries.map((_, j) => result({ error: j + (i % 2 ? 1 : 0) }, true));
-  // The result/error pairing changes here, so no false positive loop is expected.
-  assert.equal(batch.observe(entries, replies), null);
+  // B fails identically even though call ordering and A's error change.
+  const notice = batch.observe(entries, replies);
+  if (i === 2 || i === 4) assert.equal(notice?.action, 'warn');
+  else assert.equal(notice, null);
 }
 
 // Parallel tool-call ordering does not mask a real stalled batch.
@@ -138,7 +190,8 @@ for (let i = 0; i < 100; i++) {
 // The streaming hook must be governed by observed results, not by a fixed round count.
 const hook = fs.readFileSync(path.join(__dirname, '../src/hooks/useChatStreaming.ts'), 'utf8');
 assert.match(hook, /const toolLoopDetector = new ToolLoopDetector\(\)/);
-assert.match(hook, /toolLoopDetector\.observe\(toolCalls, results\)/);
+assert.match(hook, /toolLoopDetector\.observe\(executedCalls, executedResults\)/);
+assert.match(hook, /toolLoopDetector\.blockedReason\(tc\)/);
 assert.match(hook, /tools: !toolsDisabled &&/);
 assert.match(hook, /if \(toolsDisabled\) \{/);
 assert.match(hook, /withoutToolSystemPrompt/);

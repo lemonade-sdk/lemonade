@@ -21,6 +21,7 @@ const WARN_REPETITIONS = 3;
 const STOP_SINGLE_REPETITIONS = 5;
 const STOP_CYCLE_REPETITIONS = 4;
 const WAITING_WARNING_REPETITIONS = 8;
+const MAX_FAILURE_HISTORY = 128;
 
 // These fields change during ordinary status reporting without changing the result.
 const TRANSIENT_RESULT_KEYS = new Set([
@@ -64,6 +65,17 @@ function parsedObject(content: string): Record<string, unknown> | null {
   } catch { return null; }
 }
 
+function failureSignature(outcome: ToolOutcome): string | null {
+  const value = parsedObject(outcome.content);
+  if (!outcome.error && !value?.error) return null;
+  const error = value?.error || outcome.content;
+  return fingerprint(typeof error === 'string' ? error : JSON.stringify(stableJson(error, true)));
+}
+
+function callSignature(call: ToolInvocation): string {
+  return `${call.function.name}|${fingerprint(normalized(call.function.arguments || '{}', false))}`;
+}
+
 function isReportedProgress(outcome: ToolOutcome): boolean {
   if (outcome.error) return false;
   if (outcome.artifacts?.length) return true;
@@ -89,24 +101,66 @@ export class ToolLoopDetector {
   private warnedPattern: string | null = null;
   private waitingKey: string | null = null;
   private waitingCount = 0;
+  private failures = new Map<string, { error: string; count: number }>();
+
+  blockedReason(call: ToolInvocation): string | null {
+    const failure = this.failures.get(callSignature(call));
+    return failure && failure.count >= STOP_SINGLE_REPETITIONS
+      ? `${call.function.name} with these arguments failed identically ${STOP_SINGLE_REPETITIONS} times. This call is blocked; change the arguments or use a different tool.`
+      : null;
+  }
+
+  private observeFailures(calls: readonly ToolInvocation[], outcomes: readonly ToolOutcome[]): ToolLoopNotice | null {
+    let notice: ToolLoopNotice | null = null;
+    for (let i = 0; i < calls.length; i++) {
+      const key = callSignature(calls[i]);
+      const error = failureSignature(outcomes[i]);
+      if (!error) {
+        this.failures.delete(key);
+        continue;
+      }
+      const previous = this.failures.get(key);
+      const count = previous?.error === error ? Math.min(previous.count + 1, STOP_SINGLE_REPETITIONS) : 1;
+      this.failures.delete(key);
+      this.failures.set(key, { error, count });
+      if (this.failures.size > MAX_FAILURE_HISTORY) this.failures.delete(this.failures.keys().next().value!);
+      if (count === WARN_REPETITIONS || (count === STOP_SINGLE_REPETITIONS && previous?.count !== count)) {
+        notice = {
+          action: 'warn',
+          reason: `${calls[i].function.name} returned the same error ${count} times with unchanged arguments. ${count === STOP_SINGLE_REPETITIONS ? 'Further identical calls will be skipped; use different arguments or another tool.' : 'Do not retry it unchanged.'}`,
+        };
+      }
+    }
+    return notice;
+  }
 
   observe(calls: readonly ToolInvocation[], outcomes: readonly ToolOutcome[]): ToolLoopNotice | null {
     if (calls.length === 0 || calls.length !== outcomes.length) return null;
 
-    // Explicit changes may be repeated safely. An ongoing job can also
-    // require repeated status reads without proving that the agent is stuck.
-    const changed = outcomes.some(isReportedProgress);
-    const waiting = outcomes.every(isWaiting);
+    // Track individual failures before considering overall round progress.
+    const failureNotice = this.observeFailures(calls, outcomes);
+    // A failed call is handled by its own guard and must not cause the
+    // round-level guard to disable unrelated tools.
+    const active = calls.map((call, i) => ({ call, outcome: outcomes[i] }))
+      .filter(item => failureSignature(item.outcome) === null);
+    const changed = active.some(item => isReportedProgress(item.outcome));
+    const waiting = active.length > 0 && active.every(item => isWaiting(item.outcome));
     if (changed) {
       this.history = [];
       this.warnedPattern = null;
       this.waitingKey = null;
       this.waitingCount = 0;
-      return null;
+      return failureNotice;
+    }
+    if (active.length === 0) {
+      this.history = [];
+      this.warnedPattern = null;
+      this.waitingKey = null;
+      this.waitingCount = 0;
+      return failureNotice;
     }
 
-    const entries = calls.map((call, index) => {
-      const outcome = outcomes[index];
+    const entries = active.map(({ call, outcome }) => {
       const name = call.function.name;
       return {
         name,
@@ -123,7 +177,7 @@ export class ToolLoopDetector {
       this.warnedPattern = null;
       return this.waitingCount === WAITING_WARNING_REPETITIONS
         ? { action: 'warn', reason: 'The job is still running with no visible change; avoid rapid repeated polling' }
-        : null;
+        : failureNotice;
     }
     this.waitingKey = null;
     this.waitingCount = 0;
@@ -155,9 +209,9 @@ export class ToolLoopDetector {
         this.warnedPattern = pattern;
         return { action: 'warn', reason };
       }
-      return null;
+      return failureNotice;
     }
     this.warnedPattern = null;
-    return null;
+    return failureNotice;
   }
 }
