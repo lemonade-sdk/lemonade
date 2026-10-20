@@ -82,12 +82,12 @@ int main() {
 
     const std::uint64_t generation_before_reads = manager.store().generation();
     manager.store().read();
-    manager.resolved_paths_for("Shim-Model");
+    manager.store().resolved_paths_for("Shim-Model");
     manager.model_exists("Shim-Model");
     manager.is_model_downloaded("Shim-Model");
     check("a batch of reads leaves the generation where it was",
           manager.store().generation() == generation_before_reads);
-    check("a model nobody recorded paths for has none", manager.resolved_paths_for("Nobody-Here").empty());
+    check("a model nobody recorded paths for has none", manager.store().resolved_paths_for("Nobody-Here").empty());
 
     const fs::path bodies = scratch / "catalogs";
     fs::create_directories(bodies);

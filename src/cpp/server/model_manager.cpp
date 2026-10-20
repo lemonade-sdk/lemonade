@@ -488,7 +488,6 @@ ModelManager::UpdateCheckResult ModelManager::run_update_scan(const std::vector<
     return models::run_update_scan(deps, targets);
 }
 
-
 bool ModelManager::should_auto_update(const ModelInfo& info) const {
     return sync_.should_auto_update(info);
 }
@@ -638,7 +637,6 @@ void ModelManager::build_cache() {
 
 
 
-
 std::map<std::string, ModelInfo> ModelManager::get_downloaded_models() {
     return store_.downloaded_models();
 }
@@ -781,12 +779,6 @@ void ModelManager::delete_model(const std::string& model_name) {
     store_.patch_removed(canonical_model_name);
 }
 
-std::map<std::string, std::filesystem::path> ModelManager::resolved_paths_for(
-    const std::string& canonical_model_name) const {
-    return store_.resolved_paths_for(canonical_model_name);
-}
-
-
 void ModelManager::register_user_model(const std::string& model_name,
                                        const json& model_data,
                                        const std::string& source) {
@@ -815,7 +807,6 @@ std::size_t ModelManager::evict_cloud_models(const std::string& provider) {
 std::size_t ModelManager::count_cloud_models(const std::string& provider) const {
     return cloud_rows_.count(provider);
 }
-
 
 json ModelManager::cleanup_orphaned_cache(bool dry_run) {
     build_cache();
@@ -866,7 +857,6 @@ std::optional<std::string> ModelManager::validate_collection_request(
     const std::string& model_name, const json& model_data) {
     return ingest_->validate_collection(model_name, model_data);
 }
-
 
 bool ModelManager::model_exists_unfiltered(const std::string& model_name) {
     const models::RegistryDocuments::Pin registries = registries_.pin();
