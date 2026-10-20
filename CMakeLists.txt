@@ -1141,11 +1141,17 @@ lemon_backend_definition_v2_resources(LEMON_DEFINITION_V2_RESOURCES
 configure_file(src/cpp/server/backends/configured/backend_definition_v2_resources.h.in
     "${CMAKE_CURRENT_BINARY_DIR}/include/backend_definition_v2_resources.h" @ONLY)
 add_library(lemonade-backend-definition-v2 STATIC
-    src/cpp/server/backends/configured/backend_definition_v2_contract.cpp)
+    src/cpp/server/backends/configured/backend_definition_v2_contract.cpp
+    src/cpp/server/backends/configured/backend_definition_v2_parse.cpp
+    src/cpp/server/backends/configured/backend_definition_budget.cpp
+    src/cpp/server/backends/configured/backend_definition_edits.cpp
+    src/cpp/server/backends/configured/backend_definition_provenance.cpp
+    src/cpp/server/backends/configured/backend_definition_resolver.cpp
+    src/cpp/server/backends/configured/backend_definition_descriptor.cpp)
 target_include_directories(lemonade-backend-definition-v2 PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
     PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/include)
-target_link_libraries(lemonade-backend-definition-v2 PUBLIC nlohmann_json::nlohmann_json)
+target_link_libraries(lemonade-backend-definition-v2 PUBLIC nlohmann_json::nlohmann_json lemonade-digest-crypto)
 
 set(LEMON_BACKEND_DEFINITION_DATA_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backend_operation_data.cpp
@@ -1254,6 +1260,7 @@ endif()
 # ============================================================
 
 target_link_libraries(lemonade-server-core PUBLIC
+    lemonade-backend-definition-v2
     nlohmann_json::nlohmann_json
     lemonade-httplib
 )
@@ -1351,6 +1358,7 @@ endif()
 # Platform-specific linking
 if(WIN32)
     target_link_libraries(lemonade-server-core PUBLIC
+    lemonade-backend-definition-v2
         ws2_32
         wsock32
         wbemuuid
@@ -1362,6 +1370,7 @@ if(WIN32)
     )
 elseif(APPLE)
     target_link_libraries(lemonade-server-core PUBLIC
+    lemonade-backend-definition-v2
         "-framework Metal"
         "-framework Foundation"
         "-framework CoreServices"
@@ -3806,7 +3815,8 @@ if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cli_repl_options.p
         DEPENDS lemond lemonade)
 endif()
 
-if(BUILD_TESTING)
+if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_backend_definition_v2_contract.cpp"
+    AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_backend_definition_v1_compat.cpp")
     add_executable(test_backend_definition_v2_contract test/cpp/test_backend_definition_v2_contract.cpp)
     target_include_directories(test_backend_definition_v2_contract PRIVATE src/cpp/server/backends/configured)
     target_compile_definitions(test_backend_definition_v2_contract PRIVATE
@@ -3820,4 +3830,46 @@ if(BUILD_TESTING)
         LEMON_TEST_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures")
     target_link_libraries(test_backend_definition_v1_compat PRIVATE lemonade-server-core)
     add_cpp_ci_test(BackendDefinitionV1CompatTest CI ON COMMAND test_backend_definition_v1_compat)
+endif()
+
+if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_backend_definition_resolver_bounds.cpp")
+    add_executable(test_backend_definition_resolver_bounds test/cpp/test_backend_definition_resolver_bounds.cpp)
+    target_include_directories(test_backend_definition_resolver_bounds PRIVATE src/cpp/server/backends/configured)
+    target_compile_definitions(test_backend_definition_resolver_bounds PRIVATE LEMON_TEST_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures")
+    target_link_libraries(test_backend_definition_resolver_bounds PRIVATE lemonade-backend-definition-v2)
+    add_cpp_ci_test(BackendDefinitionResolverBoundsTest CI ON COMMAND test_backend_definition_resolver_bounds)
+endif()
+
+if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_backend_definition_resolver.cpp")
+    add_executable(test_backend_definition_resolver test/cpp/test_backend_definition_resolver.cpp)
+    target_include_directories(test_backend_definition_resolver PRIVATE src/cpp/server/backends/configured)
+    target_compile_definitions(test_backend_definition_resolver PRIVATE LEMON_TEST_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures")
+    target_link_libraries(test_backend_definition_resolver PRIVATE lemonade-backend-definition-v2)
+    add_cpp_ci_test(BackendDefinitionResolverTest CI ON COMMAND test_backend_definition_resolver)
+endif()
+
+if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_backend_definition_resolver_diagnostics.cpp")
+    add_executable(test_backend_definition_resolver_diagnostics test/cpp/test_backend_definition_resolver_diagnostics.cpp)
+    target_include_directories(test_backend_definition_resolver_diagnostics PRIVATE src/cpp/server/backends/configured)
+    target_compile_definitions(test_backend_definition_resolver_diagnostics PRIVATE LEMON_TEST_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures")
+    target_link_libraries(test_backend_definition_resolver_diagnostics PRIVATE lemonade-backend-definition-v2)
+    add_cpp_ci_test(BackendDefinitionResolverDiagnosticsTest CI ON COMMAND test_backend_definition_resolver_diagnostics)
+endif()
+
+if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_backend_definition_descriptor.cpp"
+    AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/backend_definition_descriptor_peer.cpp"
+    AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/backend_definition_v2_descriptor.h.in")
+    lemon_backend_descriptor_v2_initializer(LEMON_TEST_V2_DESCRIPTOR v2_fixture "fixture_resolved_definition()")
+    set(_v2_fixture "${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures/backend-v2/llamacpp.example.json")
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_v2_fixture}")
+    _lemon_embedded_definition(LEMON_TEST_V2_SOURCE k_fixture_source "${_v2_fixture}")
+    configure_file(test/cpp/backend_definition_v2_descriptor.h.in
+        "${CMAKE_CURRENT_BINARY_DIR}/include/backend_definition_v2_descriptor.h" @ONLY)
+    add_executable(test_backend_definition_descriptor
+        test/cpp/test_backend_definition_descriptor.cpp test/cpp/backend_definition_descriptor_peer.cpp)
+    target_compile_definitions(test_backend_definition_descriptor PRIVATE
+        LEMON_TEST_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures"
+        LEMON_PRODUCTION_DEFINITIONS="${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends")
+    target_link_libraries(test_backend_definition_descriptor PRIVATE lemonade-backend-definition-v2)
+    add_cpp_ci_test(BackendDefinitionDescriptorTest CI ON COMMAND test_backend_definition_descriptor)
 endif()

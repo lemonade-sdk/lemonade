@@ -54,8 +54,8 @@ substitution, or multiple-parent form is supported.
 Source namespace and contract are loader-owned facts. Built-in source-table keys
 require a positive contract; external keys require contract zero. Envelope `id`
 must equal its source-table key. JSON cannot claim loader authority. Only v2
-sources can participate in the v2 graph. Snapshot ownership, parent lookup, cycle
-checking, and source admission belong to the resolver increment.
+sources can participate in the v2 graph. The data-only resolver owns snapshots, dependency lookup, cycle checking, and
+source admission.
 
 `merge` is a partial object restricted to these payload members: `kind`,
 `metadata`, `install`, `artifacts`, `launch`, `operations`, `hooks`,
@@ -214,7 +214,7 @@ and preflight must bound scratch too. Cache subtree nodes/depth/exact compact by
 including escaped keys and delimiters. Memoized parents still incur each child's
 logical output and work charges. Removal does not refund cumulative work. The
 128 MiB limit concerns logical data, not process RSS. These new bounds do not alter
-production v1 admission. The resolver increment must qualify these enforcement seams.
+production v1 admission. The bounds tests instrument DOM, clone, origin, and pointer admission seams.
 
 ## Identity serialization
 
@@ -261,3 +261,45 @@ typed hooks, descriptor initializers independent of registration/factories, and 
 llama.cpp port. No source or provenance object can serialize authority. CLI
 materialization, production definition conversion, and real backend/platform
 qualification remain later increments.
+
+## Data resolver implementation
+
+`make_v2_source_snapshot` preflights admitted byte views with SAX, rejects decoded
+key duplicates, and validates the envelope grammar using control-only scratch
+records. It owns source bytes and loader keys, without retaining local labels.
+The lexer scratch and duplicate-key sets are bounded by raw source admission;
+no unbounded token can precede that check. Dependency closure limits are checked
+before constructing payload DOMs. A resolver with lower limits rechecks source
+admission before using its snapshot.
+
+`DefinitionResolver::resolve` uses a single-parent dependency walk and a private
+transaction cache. Its immutable nodes cache exact compact bytes, nodes, and depth.
+Object merge and edits project the complete new root before constructing changed
+nodes. Unaffected nodes and their compact origin chains remain shared. Published
+results contain an independent JSON declaration and immutable provenance; failed
+children cannot modify parents. Retention accounting conservatively charges
+admitted scratch, copies, indexes, dependency data, journal records, and cached
+results as logical data. It does not estimate allocator overhead or promise an RSS
+ceiling. Cache hits still charge the transaction's logical output budget.
+
+`origin_at` accepts effective JSON pointers, including numeric positions for
+inspection. Editing and rationale resolution forbid numeric array traversal.
+Origins follow nodes across array insertion/removal, while tombstones cover
+explicit removals, clear/replace operations, and container replacement during
+merge. Re-authored data takes precedence over an older removal when reporting a
+missing descendant. The authorship journal includes equal-value replacements.
+Diagnostics and related locations share the diagnostic record budget.
+
+The structural checker uses linear implementations of the four shipped string
+patterns; the schema audit rejects unknown patterns as well as unsupported
+keywords. Relationship checking follows schema expression locations and leaves
+arbitrary JSON values opaque. It checks stable/public/config-key identities,
+option references, rationale targets, preparation dependencies, environment-hook
+presence, release-case presence, and declared readiness/watchdog ports. Hook lookup,
+authorization, expression compilation, and executable adapter checks attach later.
+
+`descriptor_from_declaration(declaration, origin, platform)` is a pure data mapper.
+It rejects unknown enums and OS names. Production callers and generated v1 objects
+remain on their original paths. The separate CMake v2 initializer emitter is used
+only by an embedded synthetic fixture. Its private resolution cache depends on
+embedded source/schema data and the resolver, with no registry/factory recursion.

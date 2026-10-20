@@ -36,6 +36,9 @@ int main() {
         check(errors.entries.size() == 1 && errors.entries[0].code == "unsupported_schema_keyword", std::string("detect ignored keyword ") + keyword);
     }
     auto schema = v2::schema_document();
+    schema["$defs"]["Identifier"]["pattern"] = "(a+)+";
+    check(v2::check_schema_keywords(schema).entries[0].code == "unsupported_schema_pattern", "unbounded schema patterns rejected by audit");
+    schema = v2::schema_document();
     schema["$defs"]["Option"]["properties"]["id"]["$ref"] = "other.json#/$defs/Identifier";
     check(!v2::check_schema_keywords(schema).entries.empty(), "cross-file references fail keyword audit");
     auto base = read("llamacpp.example.json");

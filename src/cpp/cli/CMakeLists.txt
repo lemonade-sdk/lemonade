@@ -76,6 +76,7 @@ add_executable(lemonade
 )
 
 target_link_libraries(lemonade PRIVATE
+    lemonade-backend-definition-v2
     nlohmann_json::nlohmann_json
     lemonade-digest-crypto
     lemonade-httplib

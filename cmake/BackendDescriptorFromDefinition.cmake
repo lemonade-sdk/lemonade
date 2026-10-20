@@ -448,3 +448,14 @@ ${_options}${_support}    d.supported_modes = ${_supported_modes};
 
 " PARENT_SCOPE)
 endfunction()
+
+function(lemon_backend_descriptor_v2_initializer OUTPUT STEM RESOLVED_EXPRESSION)
+    if(NOT STEM MATCHES "^[a-z][a-z0-9_]*$")
+        message(FATAL_ERROR "Invalid v2 descriptor symbol: ${STEM}")
+    endif()
+    set(${OUTPUT} "namespace lemon::backends::${STEM} {
+inline const BackendDescriptor descriptor = descriptor_from_declaration(
+    (${RESOLVED_EXPRESSION}).declaration, DefinitionNamespace::Builtin, DescriptorPlatform::native());
+}
+" PARENT_SCOPE)
+endfunction()

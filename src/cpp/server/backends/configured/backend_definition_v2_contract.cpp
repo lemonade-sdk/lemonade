@@ -3,7 +3,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <regex>
 #include <set>
 #include <tuple>
 
@@ -35,6 +34,8 @@ CompositionDiagnostics check_schema_keywords(const nlohmann::json& schema) {
             if (!supported.count(key)) {
                 if (result.entries.size() < 100) result.entries.push_back({"unsupported_schema_keyword", "", pointer, "Unsupported schema keyword", {}, {}, {}});
                 else result.truncated = true;
+            } else if (key == "pattern" && value != "^[a-z][a-z0-9._-]*$" && value != "^sha256:[a-f0-9]{64}$" && value != "^[a-fA-F0-9]{64}$" && value != "^(?:/(?:[^~/]|~[01])*)+$") {
+                result.entries.push_back({"unsupported_schema_pattern", "", pointer, "Unsupported schema pattern", {}, {}, {}});
             } else if (key == "properties" || key == "$defs") {
                 for (const auto& [name, child] : value.items()) self(self, child, pointer + "/" + pointer_token(name));
             } else if (key == "anyOf" || key == "oneOf") {
@@ -53,6 +54,21 @@ CompositionDiagnostics check_schema_keywords(const nlohmann::json& schema) {
 namespace {
 using Json = nlohmann::json;
 
+bool matches_pattern(const std::string& text, const std::string& pattern) {
+    const auto lower = [](char c) { return c >= 'a' && c <= 'z'; };
+    const auto digit = [](char c) { return c >= '0' && c <= '9'; };
+    const auto hex = [&](char c) { return digit(c) || (c >= 'a' && c <= 'f'); };
+    if (pattern == "^[a-z][a-z0-9._-]*$") return !text.empty() && lower(text[0]) && std::all_of(text.begin(), text.end(), [&](char c) { return lower(c) || digit(c) || c == '.' || c == '_' || c == '-'; });
+    if (pattern == "^sha256:[a-f0-9]{64}$") return text.size() == 71 && text.compare(0, 7, "sha256:") == 0 && std::all_of(text.begin() + 7, text.end(), hex);
+    if (pattern == "^[a-fA-F0-9]{64}$") return text.size() == 64 && std::all_of(text.begin(), text.end(), [&](char c) { return hex(c) || (c >= 'A' && c <= 'F'); });
+    if (pattern == "^(?:/(?:[^~/]|~[01])*)+$") {
+        if (text.empty() || text[0] != '/') return false;
+        for (std::size_t i = 1; i < text.size(); ++i) if (text[i] == '~' && (++i == text.size() || (text[i] != '0' && text[i] != '1'))) return false;
+        return true;
+    }
+    throw std::logic_error("Unsupported v2 schema pattern");
+}
+
 bool matches_type(const Json& value, const std::string& type) {
     if (type == "object") return value.is_object();
     if (type == "array") return value.is_array();
@@ -65,12 +81,15 @@ bool matches_type(const Json& value, const std::string& type) {
 
 class StructuralChecker {
 public:
-    explicit StructuralChecker(const DefinitionLimits& limits) : limits_(limits) {}
+    explicit StructuralChecker(const DefinitionLimits& limits, v2::Budget* budget) : limits_(limits), budget_(budget) {}
 
     CompositionDiagnostics result;
+    std::size_t visits() const { return visits_; }
 
     void error(const std::string& code, const std::string& path, const std::string& message) {
         ++errors_;
+        if (probing_) return;
+        if (result.entries.size() < limits_.diagnostics && budget_) budget_->keep(v2::checked_sum(sizeof(CompositionDiagnostic), v2::checked_sum(path.size(), message.size())));
         if (result.entries.size() < limits_.diagnostics) result.entries.push_back({code, "", path, message, {}, {}, {}});
         else result.truncated = true;
     }
@@ -93,7 +112,9 @@ public:
                 auto saved = std::move(result);
                 result = {};
                 const auto previous_errors = errors_;
+                ++probing_;
                 check(value, alternative, path, depth, refs + 1);
+                --probing_;
                 if (errors_ == previous_errors) ++matches;
                 errors_ = previous_errors;
                 result = std::move(saved);
@@ -114,7 +135,7 @@ public:
             const auto length = std::count_if(text.begin(), text.end(), [](unsigned char c) { return (c & 0xc0) != 0x80; });
             if (rule.contains("minLength") && static_cast<std::size_t>(length) < rule["minLength"].get<std::size_t>()) error("invalid_value", path, "String too short");
             if (rule.contains("maxLength") && static_cast<std::size_t>(length) > rule["maxLength"].get<std::size_t>()) error("invalid_value", path, "String too long");
-            if (rule.contains("pattern") && !std::regex_match(text, std::regex(rule["pattern"].get<std::string>()))) error("invalid_value", path, "Invalid string format");
+            if (rule.contains("pattern") && !matches_pattern(text, rule["pattern"].get<std::string>())) error("invalid_value", path, "Invalid string format");
         }
         if (value.is_number()) {
             if (value.is_number_float() && !std::isfinite(value.get<double>())) error("invalid_value", path, "Nonfinite number");
@@ -157,20 +178,35 @@ private:
     }
 
     const DefinitionLimits& limits_;
+    v2::Budget* budget_;
+    std::size_t probing_ = 0;
     std::size_t errors_ = 0;
     std::size_t visits_ = 0;
     bool exhausted_ = false;
 };
 }
 
-CompositionDiagnostics validate_v2_structure(const nlohmann::json& value, DefinitionV2SchemaRoot root, const DefinitionLimits& limits) {
-    StructuralChecker checker(limits);
-    const auto& schema = v2::schema_document();
+namespace v2 {
+CompositionDiagnostics check_structure(const nlohmann::json& value, DefinitionV2SchemaRoot root, const DefinitionLimits& limits, std::size_t& visits, Budget* budget) {
+    StructuralChecker checker(limits, budget);
+    const auto& schema = schema_document();
     checker.check(value, root == DefinitionV2SchemaRoot::Envelope ? schema : schema["$defs"]["Declaration"], "");
-    std::sort(checker.result.entries.begin(), checker.result.entries.end(), [](const auto& left, const auto& right) {
-        return std::tie(left.definition, left.pointer, left.code) < std::tie(right.definition, right.pointer, right.code);
-    });
+    visits = checker.visits();
+    sort_diagnostics(checker.result);
     return std::move(checker.result);
+}
+}
+
+CompositionDiagnostics validate_v2_structure(const nlohmann::json& value, DefinitionV2SchemaRoot root, const DefinitionLimits& limits) {
+    std::size_t visits = 0, retained = 0;
+    v2::Budget budget{limits, {}, retained};
+    try { return v2::check_structure(value, root, limits, visits, &budget); }
+    catch (const v2::LimitExceeded&) {
+        CompositionDiagnostics result;
+        if (limits.diagnostics) result.entries.push_back({"limit_exceeded", "", "", "Structural validation budget exceeded", {}, {}, {}});
+        else result.truncated = true;
+        return result;
+    }
 }
 
 }
