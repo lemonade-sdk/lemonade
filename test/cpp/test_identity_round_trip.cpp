@@ -101,7 +101,7 @@ int main() {
     ModelManager manager(std::move(config));
     // A read that composes; the readers below take the published set as it stands.
     static_cast<void>(manager.get_supported_models());
-    const auto models = manager.all_models();
+    const auto models = manager.store().read()->models;
     // Named rows rather than a count: a build box without accelerators publishes
     // fewer built-ins, and that says nothing about identity.
     check("the fixture rows are all published",

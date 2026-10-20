@@ -107,7 +107,7 @@ static void test_notification_carries_the_published_generation(ModelManager& man
 
     check("a change notifies once", delivered.size() == 1);
     check("the notification names the current snapshot",
-          !delivered.empty() && delivered.back() == manager.generation());
+          !delivered.empty() && delivered.back() == manager.store().generation());
 
     const uint64_t first = delivered.empty() ? 0 : delivered.back();
     manager.notify_models_changed();
@@ -119,7 +119,7 @@ static void test_notification_carries_the_published_generation(ModelManager& man
     manager.notify_models_changed();
 
     check("after a change the generation has moved", delivered.size() == 3 && delivered[2] > first);
-    check("and matches the snapshot again", delivered.back() == manager.generation());
+    check("and matches the snapshot again", delivered.back() == manager.store().generation());
 }
 
 static void test_only_a_policy_change_fires_the_signal(ModelManager& manager) {
@@ -136,20 +136,20 @@ static void test_only_a_policy_change_fires_the_signal(ModelManager& manager) {
 // stale changes no rows: copying them, deriving the tables and publishing a new
 // generation announced a change that had not happened, and every consumer woke for it.
 static void test_invalidation_marks_stale_without_publishing(ModelManager& manager) {
-    const uint64_t before = manager.generation();
+    const uint64_t before = manager.store().generation();
     manager.invalidate_models_cache();
 
-    check("invalidating publishes nothing", manager.generation() == before);
+    check("invalidating publishes nothing", manager.store().generation() == before);
 
     manager.get_supported_models();
-    check("the rebuild is what moves the generation", manager.generation() == before + 1);
+    check("the rebuild is what moves the generation", manager.store().generation() == before + 1);
 
     manager.invalidate_models_cache();
     manager.invalidate_models_cache();
-    const uint64_t twice = manager.generation();
+    const uint64_t twice = manager.store().generation();
     manager.get_supported_models();
     check("invalidating twice rebuilds once, and advances the generation once",
-          manager.generation() == twice + 1);
+          manager.store().generation() == twice + 1);
 }
 
 static void test_an_invalidation_announces_nothing(ModelManager& manager) {

@@ -1,4 +1,6 @@
 #include "lemon/model_manager.h"
+#include "lemon/models/artifact_source.h"
+#include "lemon/models/artifact_store.h"
 #include "lemon/models/store_snapshot.h"
 #include "lemon/utils/path_utils.h"
 #include "support/test_state_isolation.h"
@@ -21,6 +23,18 @@ static int g_failures = 0;
 static void check(const char* name, bool ok) {
     std::printf("[%s] %s\n", ok ? "PASS" : "FAIL", name);
     if (!ok) ++g_failures;
+}
+
+// Completeness is a question about a row and the bytes on disk, so the row never has to be
+// registered: this store is wired like the manager's, minus the two hooks the question does
+// not use.
+static lemon::models::ModelArtifactStore artifacts_for_test() {
+    return lemon::models::ModelArtifactStore{lemon::models::ModelArtifactStore::Hooks{
+        [] { return std::string(); },
+        [](const ModelInfo&, const std::string&)
+            -> std::unique_ptr<lemon::models::ArtifactSource> { return nullptr; },
+        [] { return std::string(); },
+    }};
 }
 
 static void write_file(const fs::path& path, const std::string& contents = "data") {
@@ -157,34 +171,34 @@ static void test_required_checkpoint_completeness(ModelManager& manager,
     };
 
     check("multi-checkpoint: no files is incomplete",
-          !manager.checkpoints_complete(info));
+          !artifacts_for_test().complete(info));
 
     write_file(main_path);
     check("multi-checkpoint: missing auxiliary file is incomplete",
-          !manager.checkpoints_complete(info));
+          !artifacts_for_test().complete(info));
 
     write_file(vae_path);
     check("multi-checkpoint: all required files is complete",
-          manager.checkpoints_complete(info));
+          artifacts_for_test().complete(info));
 
     fs::path partial_path = main_path;
     partial_path += ".partial";
     write_file(partial_path, "partial");
     check("multi-checkpoint: .partial makes checkpoint incomplete",
-          !manager.checkpoints_complete(info));
+          !artifacts_for_test().complete(info));
 
     fs::remove(partial_path);
     check("multi-checkpoint: removing .partial restores completeness",
-          manager.checkpoints_complete(info));
+          artifacts_for_test().complete(info));
 
     fs::path manifest = dir / ".download_manifest.json";
     write_file(manifest, "{}");
     check("multi-checkpoint: download manifest marks interrupted download",
-          !manager.checkpoints_complete(info));
+          !artifacts_for_test().complete(info));
 
     fs::remove(manifest);
     check("multi-checkpoint: removing manifest restores completeness",
-          manager.checkpoints_complete(info));
+          artifacts_for_test().complete(info));
 }
 
 // A side cache the engine fetches on first use must not hold the model back: the
@@ -204,21 +218,21 @@ static void test_a_side_cache_is_not_required(ModelManager& manager, const fs::p
     };
 
     check("with neither file present the model is not downloaded",
-          !manager.checkpoints_complete(info));
+          !artifacts_for_test().complete(info));
 
     write_file(main_path);
     check("the model is downloaded without its side cache",
-          manager.checkpoints_complete(info));
+          artifacts_for_test().complete(info));
 
     write_file(side_path);
     check("and stays downloaded once the side cache arrives",
-          manager.checkpoints_complete(info));
+          artifacts_for_test().complete(info));
 
     // The optionality is the backend's declaration, not a property of the name.
     info.recipe = "llamacpp";
     fs::remove(side_path);
     check("a backend that fetches everything needs all of it",
-          !manager.checkpoints_complete(info));
+          !artifacts_for_test().complete(info));
 }
 
 static void test_single_checkpoint_partial_guard(ModelManager& manager,
@@ -233,13 +247,13 @@ static void test_single_checkpoint_partial_guard(ModelManager& manager,
     info.resolved_paths = {{"main", path_to_utf8(model_path)}};
 
     check("single checkpoint remains complete without marker",
-          manager.checkpoints_complete(info));
+          artifacts_for_test().complete(info));
 
     fs::path partial_path = model_path;
     partial_path += ".partial";
     write_file(partial_path, "partial");
     check("single checkpoint .partial guard remains active",
-          !manager.checkpoints_complete(info));
+          !artifacts_for_test().complete(info));
 }
 
 static void test_hf_manifest_marks_variant_incomplete(

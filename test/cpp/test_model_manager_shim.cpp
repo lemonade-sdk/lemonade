@@ -80,13 +80,13 @@ int main() {
     }
     check("the facade hands the fixture model back", read_back);
 
-    const std::uint64_t generation_before_reads = manager.generation();
-    manager.all_models();
+    const std::uint64_t generation_before_reads = manager.store().generation();
+    manager.store().read();
     manager.resolved_paths_for("Shim-Model");
     manager.model_exists("Shim-Model");
     manager.is_model_downloaded("Shim-Model");
     check("a batch of reads leaves the generation where it was",
-          manager.generation() == generation_before_reads);
+          manager.store().generation() == generation_before_reads);
     check("a model nobody recorded paths for has none", manager.resolved_paths_for("Nobody-Here").empty());
 
     const fs::path bodies = scratch / "catalogs";

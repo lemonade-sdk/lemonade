@@ -115,7 +115,6 @@ public:
     std::vector<models::CheckpointStatus> checkpoint_status(const ModelInfo& info) const;
 
     // Unfiltered: see models::KnownModels.
-    std::map<std::string, ModelInfo> all_models() const;
 
     // Absolute paths recorded for a model, empty if nothing is recorded.
     std::map<std::string, std::filesystem::path> resolved_paths_for(
@@ -151,7 +150,6 @@ public:
     void notify_models_changed();
 
     // Snapshot generation, for consumers that need currency not a callback.
-    std::uint64_t generation();
 
     std::set<std::string> active_helper_models();
 
@@ -224,7 +222,6 @@ public:
     bool set_alias(const std::string& alias, const std::string& target, std::string& err_msg);
     bool remove_alias(const std::string& alias);
     std::optional<std::string> resolve_alias(const std::string& alias_or_name) const;
-    bool has_alias(const std::string& alias) const;
 
     // Clean up orphaned files from multi-repo models downloaded in old layout
     nlohmann::json cleanup_orphaned_cache(bool dry_run);
@@ -308,8 +305,6 @@ public:
     backends::DownloadPolicy download_policy(const ModelInfo& info) const;
 
 
-    // The artifact store's completeness answer for this model.
-    bool checkpoints_complete(const ModelInfo& info) const;
 
     // Source-compatible alias for integrations built against the original API.
     // The model's registry_source still controls which provider is contacted.

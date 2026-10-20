@@ -222,10 +222,6 @@ void ModelManager::on_model_updated(std::function<void(const std::string&)> subs
     change_notifier_.on_model_updated(std::move(subscriber));
 }
 
-std::uint64_t ModelManager::generation() {
-    return store_.read()->generation;
-}
-
 std::set<std::string> ModelManager::active_helper_models() {
     build_cache();
     return store_.read()->helper_models;
@@ -655,10 +651,6 @@ backends::DownloadPolicy ModelManager::download_policy(const ModelInfo& info) co
     return artifacts_->download_policy(info);
 }
 
-bool ModelManager::checkpoints_complete(const ModelInfo& info) const {
-    return artifacts_->complete(info);
-}
-
 void ModelManager::download_registered_model(const ModelInfo& info, bool do_not_upgrade, DownloadProgressCallback progress_callback) {
     ingest_->fetch_model(info, do_not_upgrade, progress_callback);
 }
@@ -719,8 +711,6 @@ bool ModelManager::remove_alias(const std::string& alias) { return alias_manager
 std::optional<std::string> ModelManager::resolve_alias(const std::string& alias_or_name) const {
     return alias_manager_.resolve_alias(alias_or_name);
 }
-
-bool ModelManager::has_alias(const std::string& alias) const { return alias_manager_.has_alias(alias); }
 
 RegistrySearchResponse ModelManager::search_registry(const std::string& source_name,
                                                              const std::string& query,
@@ -789,10 +779,6 @@ void ModelManager::delete_model(const std::string& model_name) {
 
     forget_registered_model(canonical_model_name);
     store_.patch_removed(canonical_model_name);
-}
-
-std::map<std::string, ModelInfo> ModelManager::all_models() const {
-    return store_.read()->models;
 }
 
 std::map<std::string, std::filesystem::path> ModelManager::resolved_paths_for(

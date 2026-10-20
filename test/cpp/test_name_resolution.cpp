@@ -114,7 +114,7 @@ int main() {
     check("a prefixed input alias resolves too",
           resolves_to(manager, "extra.Claimant-Nickname", "Claimant-Model"));
     bool listed_under_alias = false;
-    for (const auto& [key, info] : manager.all_models()) {
+    for (const auto& [key, info] : manager.store().read()->models) {
         static_cast<void>(info);
         if (manager.get_public_model_name(key) == "Contested-Name") listed_under_alias = true;
     }
