@@ -10,10 +10,61 @@ def canonical(value):
     return json.dumps(value, indent=2, sort_keys=True) + "\n"
 
 
+def assert_v2_transition(before, after, output):
+    left = before["cli_validation"]["v2"]["online"]
+    right = after["cli_validation"]["v2"]["online"]
+    if left == right:
+        return
+    catalog = before["schema"]["body"]["catalog_id"]
+    old = {
+        "catalog_id": catalog,
+        "diagnostics": [
+            {
+                "code": "invalid_value",
+                "definition": "snapshot-fixture",
+                "message": "Incorrect constant",
+                "pointer": "/schema_version",
+            }
+        ],
+        "valid": False,
+        "validation": "server",
+    }
+    new = {
+        "catalog_id": catalog,
+        "diagnostics": [
+            {
+                "code": "unknown_key",
+                "definition": "snapshot-fixture",
+                "message": "Definition admission failed",
+                "pointer": "/kind",
+            }
+        ],
+        "input_schema_version": 2,
+        "stages": dict(
+            resolved=False, authorized=False, catalog_admitted=False, executable=False
+        ),
+        "valid": False,
+        "validation": "server",
+    }
+    assert left == dict(
+        status=2, stderr="", stdout=canonical(old)
+    ), "Unexpected historical online-v2 diagnostic"
+    assert right == dict(
+        status=2, stderr="", stdout=canonical(new)
+    ), "Unexpected admitted-language online-v2 diagnostic"
+    (output / "v2-online-before.json").write_text(canonical(left))
+    (output / "v2-online-after.json").write_text(canonical(right))
+    marker = {"separately_asserted": "flat v1 document with schema_version 2"}
+    before["cli_validation"]["v2"]["online"] = marker
+    after["cli_validation"]["v2"]["online"] = marker
+    print("online-v2: exact old/new diagnostics asserted separately")
+
+
 def compare(baseline, actual, output):
     before = json.loads(baseline.read_text())
     after = json.loads(actual.read_text())
     output.mkdir(parents=True, exist_ok=True)
+    assert_v2_transition(before, after, output)
     selectors = {
         "legacy": lambda value: value,
         "schema": lambda value: value["schema"],

@@ -1,3 +1,5 @@
+#include "backend_catalog_admission_internal.h"
+#include "backend_definition_resources.h"
 #include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/configured/backend_catalog.h"
 #include "lemon/recipe_options.h"
@@ -78,9 +80,25 @@ json descriptor_row(const BackendDescriptor& descriptor, const BackendDefinition
 }
 
 BackendCatalog::BackendCatalog(const std::vector<DefinitionSource>& sources)
-    : data_(std::make_shared<BackendCatalogData>()), registrations_(builtin_registrations()), sources_(sources) {
+    : BackendCatalog(sources, freeze_builtin_catalog()) {}
+
+BackendCatalog::BackendCatalog(const std::vector<DefinitionSource>& sources, std::shared_ptr<const FrozenBuiltinCatalog> builtins)
+    : builtins_(std::move(builtins)), data_(std::make_shared<BackendCatalogData>()), registrations_(builtin_registrations()) {
+    std::vector<ExternalDefinitionInput> inputs;
+    if (sources.size() > DefinitionLimits{}.snapshot_documents) fail("limit_exceeded", "", "", "", "Catalog source count exceeded");
+    for (const auto& source : sources) inputs.push_back({source.text, source.file});
+    const auto snapshot = make_catalog_source_snapshot(builtins_, inputs);
+    const auto admission = snapshot.snapshot ? admit_catalog(snapshot.snapshot) : CatalogAdmissionResult{nullptr, snapshot.diagnostics};
+    if (!admission.catalog) {
+        std::vector<DefinitionDiagnostic> errors;
+        for (const auto& row : admission.diagnostics.entries) errors.push_back({row.code, row.definition, "", row.pointer, row.message});
+        throw DefinitionValidationError(std::move(errors));
+    }
+    admitted_ = admission.catalog;
+    for (const auto& source : snapshot.snapshot->sources_) if (source.header.version == 2)
+        fail("unsupported_execution_version", "", source.header.id, "/schema_version", "Executable validation for definition version 2 is not installed");
     std::set<std::string> ids, recipes, sections{"no_broadcast"}, option_names{"no_broadcast"};
-    const auto defaults = utils::JsonUtils::load_from_file(utils::get_resource_path("resources/defaults.json"));
+    const auto& defaults = builtins_->defaults_;
     for (const auto& [key, value] : defaults.items()) { sections.insert(key); option_names.insert(key); }
     for (const auto& [key, value] : RecipeOptions::common_option_defaults().items()) option_names.insert(key);
     json arms = json::array();
@@ -103,13 +121,13 @@ BackendCatalog::BackendCatalog(const std::vector<DefinitionSource>& sources)
         schema_["recipes"].push_back(std::move(row));
     }
     for (const auto& source : sources) {
-        auto result = BackendDefinitionStore().validate({source.file, source.text, DefinitionOrigin::External});
-        if (!result.definition) throw DefinitionValidationError(std::move(result.diagnostics));
-        const auto& definition = *result.definition;
+        const auto header = inspect_catalog_input(source.text, DefinitionLimits{});
+        const auto parsed_definition = admitted_->v1_definition(header.id);
+        const auto& definition = *parsed_definition;
         if (!ids.insert(definition.id).second) fail("id_collision", source.file, definition.id, "/id", "Definition ID already owned");
         if (!recipes.insert(definition.recipe).second) fail("recipe_collision", source.file, definition.id, "/recipe", "Recipe already owned");
         std::shared_ptr<const ConfiguredBackendEntry> entry;
-        try { entry = ConfiguredBackendEntry::make(result.definition); }
+        try { entry = ConfiguredBackendEntry::make(parsed_definition); }
         catch (const std::exception&) { fail("invalid_binding", source.file, definition.id, "", "Definition cannot bind to installed server primitives"); }
         if (!sections.insert(entry->descriptor.effective_config_section()).second) fail("section_collision", source.file, definition.id, "/metadata/config_section", "Configuration section already owned");
         auto& contracts = data_->external_options[definition.recipe];
@@ -128,7 +146,7 @@ BackendCatalog::BackendCatalog(const std::vector<DefinitionSource>& sources)
             else if (selection.contains("fixed")) for (const auto& [os, fixed] : selection["fixed"].items()) backends.insert(fixed);
             for (const auto& row : install["cases"]) for (const auto& backend : row.value("backend", json::array())) backends.insert(backend);
             const auto versions = install.value("default_versions", json::object());
-            const auto pins = utils::JsonUtils::load_from_file(utils::get_resource_path("resources/backend_versions.json"));
+            const auto& pins = builtins_->pins_;
             const auto shipped = pins.value(entry->spec.pin_recipe, json::object());
             std::set<std::string> normalized;
             for (const auto& backend : backends) {
@@ -148,32 +166,80 @@ BackendCatalog::BackendCatalog(const std::vector<DefinitionSource>& sources)
     schema_["catalog_id"] = schema_digest(json{{"export", schema_}, {"arms", arms}}.dump());
 }
 
-json BackendCatalog::export_schema(const std::string& recipe) const {
+json BackendCatalog::export_schema(const std::string& recipe, unsigned representation) const {
+    if (representation != 1 && representation != 2) throw std::invalid_argument("Unknown catalog representation");
     json result = schema_;
+    if (representation == 2) {
+        result["schema_version"] = 2;
+        result["definition_schema_version"] = 2;
+        result["accepted_definition_versions"] = {1, 2};
+        result["acceptance_stage"] = "declaration_authorization";
+        result["executable_definition_versions"] = {1};
+        result["resolver_revision"] = 1;
+        result["authorizer_revision"] = 1;
+        result["grant_policy_revision"] = 1;
+        result["legacy_feature_manifest_id"] = schema_["feature_manifest_id"];
+        result["admission_manifest"] = installed_definition_admission_features();
+        result["feature_manifest_id"] = schema_digest(result["admission_manifest"].dump());
+        result["export_registry_id"] = installed_builtin_exports().digest();
+        result["catalog_v2_id"] = schema_digest(json{{"domain", "lemonade.backend-catalog-v2.v1"},
+            {"admission", admitted_->admission_id()}, {"executable", schema_["catalog_id"]}}.dump());
+        for (auto& row : result["recipes"]) row["input_schema_version"] = row["definition_id"].is_null() ? json() : json(1);
+    }
     if (recipe.empty()) return result;
+    auto rows = std::move(result["recipes"]);
     result["recipes"] = json::array();
-    for (const auto& row : schema_["recipes"]) if (row["recipe"] == recipe) result["recipes"].push_back(row);
+    for (const auto& row : rows) if (row["recipe"] == recipe) result["recipes"].push_back(row);
     return result;
 }
 
 json BackendCatalog::validate(const std::string& bytes) const {
     json response = {{"valid", false}, {"validation", "server"}, {"catalog_id", schema_["catalog_id"]}, {"diagnostics", json::array()}};
-    auto parsed = BackendDefinitionStore().validate({"", bytes, DefinitionOrigin::External});
+    CatalogInputHeader header;
+    try { header = inspect_catalog_input(bytes, DefinitionLimits{}); } catch (...) {}
+    const bool v2_input = header.version == 2;
+    auto parsed = v2_input ? DefinitionValidationResult{} : BackendDefinitionStore().validate({"", bytes, DefinitionOrigin::External});
     auto errors = parsed.diagnostics;
-    if (parsed.definition) {
-        auto sources = sources_;
-        sources.erase(std::remove_if(sources.begin(), sources.end(), [&](const auto& source) {
-            const auto result = BackendDefinitionStore().validate(source);
-            return result.definition && result.definition->id == parsed.definition->id && result.definition->recipe == parsed.definition->recipe;
-        }), sources.end());
-        sources.push_back({"", bytes, DefinitionOrigin::External});
-        try {
-            BackendCatalog candidate(sources);
-            response["valid"] = true;
-            response["definition_id"] = parsed.definition->id;
-            response["recipe"] = parsed.definition->recipe;
-            response["definition_hash"] = parsed.definition->digest;
-        } catch (const DefinitionValidationError& error) { errors = error.diagnostics; }
+    if (v2_input) {
+        response["input_schema_version"] = 2;
+        response["stages"] = {{"resolved", false}, {"authorized", false}, {"catalog_admitted", false}, {"executable", false}};
+    }
+    if (v2_input || parsed.definition) {
+        std::vector<ExternalDefinitionInput> inputs;
+        for (const auto& source : admitted_->sources().sources_) {
+            if (source.header.id == header.id && source.header.recipe == header.recipe) continue;
+            inputs.push_back({source.bytes, ""});
+        }
+        inputs.push_back({bytes, ""});
+        if (v2_input) {
+            const auto candidate = validate_candidate_definition(admitted_, bytes);
+            const auto& admission = candidate.admission;
+            response["stages"]["resolved"] = admission.resolved;
+            response["stages"]["authorized"] = admission.authorized;
+            for (const auto& error : admission.diagnostics.entries) response["diagnostics"].push_back(public_admission_diagnostic(error));
+            if (admission.catalog) {
+                const auto authorized = admission.catalog->v2_definition(header.id);
+                const auto& resolved = authorized->definition();
+                response["definition_id"] = header.id;
+                response["recipe"] = header.recipe;
+                response["definition_hash"] = resolved.definition_hash;
+                response["dependency_digest"] = resolved.dependency_digest;
+                response["candidate_admission_id"] = admission.catalog->admission_id();
+                response["stages"] = {{"resolved", true}, {"authorized", true}, {"catalog_admitted", true}, {"executable", false}};
+                response["diagnostics"].push_back({{"code", "unsupported_execution_version"}, {"definition", header.id},
+                    {"pointer", "/schema_version"}, {"message", "Executable validation for definition version 2 is not installed"}});
+            }
+        } else {
+            std::vector<DefinitionSource> sources;
+            for (const auto& input : inputs) sources.push_back({"", std::string(input.bytes), DefinitionOrigin::External});
+            try {
+                BackendCatalog candidate(sources, builtins_);
+                response["valid"] = true;
+                response["definition_id"] = parsed.definition->id;
+                response["recipe"] = parsed.definition->recipe;
+                response["definition_hash"] = parsed.definition->digest;
+            } catch (const DefinitionValidationError& error) { errors = error.diagnostics; }
+        }
     }
     for (const auto& error : errors) response["diagnostics"].push_back({{"code", error.code}, {"definition", error.definition}, {"pointer", error.pointer}, {"message", error.message}});
     return response;
@@ -188,24 +254,32 @@ std::vector<DefinitionSource> discover_backend_definitions(const std::string& co
         if (!fs::is_directory(directory)) throw std::runtime_error("Not a directory");
         const auto readable = [](fs::perms permissions) { return (permissions & (fs::perms::owner_read | fs::perms::group_read | fs::perms::others_read)) != fs::perms::none; };
         if (!readable(fs::status(directory).permissions())) throw std::runtime_error("Directory unreadable");
+        const DefinitionLimits limits;
+        std::size_t count = k_backend_definition_source_count, bytes = k_backend_definition_source_bytes;
         std::vector<fs::path> paths;
         for (const auto& entry : fs::directory_iterator(directory)) {
             if (entry.path().extension() != ".json") continue;
             const auto status = entry.symlink_status();
             if (fs::is_directory(status)) continue;
+            if (count >= limits.snapshot_documents) fail("limit_exceeded", "", "", "", "Catalog source count exceeded");
+            ++count;
             paths.push_back(entry.path());
         }
         std::sort(paths.begin(), paths.end(), [](const auto& left, const auto& right) { return left.filename().u8string() < right.filename().u8string(); });
         for (const auto& path : paths) {
             if (!fs::is_regular_file(fs::symlink_status(path))) fail("invalid_file", utils::path_to_utf8(path), "", "", "Selected JSON entry must be a regular file");
             if (!readable(fs::status(path).permissions())) fail("unreadable_file", utils::path_to_utf8(path), "", "", "Selected definition is unreadable");
+            const auto size = fs::file_size(path);
+            if (size > limits.source_bytes || size > limits.snapshot_source_bytes - bytes) fail("limit_exceeded", "", "", "", "Catalog source bytes exceeded");
+            const auto allowance = std::min(limits.source_bytes, limits.snapshot_source_bytes - bytes);
             std::ifstream input(path, std::ios::binary);
             if (!input) fail("unreadable_file", utils::path_to_utf8(path), "", "", "Selected definition cannot be opened");
-            std::string text(1024 * 1024 + 1, '\0');
+            std::string text(allowance + 1, '\0');
             input.read(text.data(), static_cast<std::streamsize>(text.size()));
             text.resize(static_cast<size_t>(input.gcount()));
             if (input.bad()) fail("unreadable_file", utils::path_to_utf8(path), "", "", "Selected definition cannot be read");
-            if (text.size() > 1024 * 1024) fail("limit_exceeded", utils::path_to_utf8(path), "", "", "Definition exceeds 1 MiB");
+            if (text.size() > allowance) fail("limit_exceeded", utils::path_to_utf8(path), "", "", "Definition exceeds 1 MiB");
+            bytes += text.size();
             result.push_back({utils::path_to_utf8(path), std::move(text), DefinitionOrigin::External});
         }
     } catch (const DefinitionValidationError&) { throw; }

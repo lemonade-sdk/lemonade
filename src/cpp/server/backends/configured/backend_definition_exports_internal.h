@@ -57,6 +57,8 @@ public:
     static const BuiltinExportRegistry& installed_exports();
     static FrozenDefinitionSnapshotResult freeze(
         const std::vector<DefinitionSourceView>& external_sources, const DefinitionLimits& limits);
+    static FrozenDefinitionSnapshotResult compose(std::shared_ptr<const FrozenDefinitionSnapshot> builtins,
+        const std::vector<DefinitionSourceView>& external_sources, const DefinitionLimits& limits, std::size_t& retained);
     static FrozenDefinitionSnapshotResult test_freeze(
         const std::vector<DefinitionSourceView>& sources,
         std::shared_ptr<const BuiltinExportRegistry> registry, const DefinitionLimits& limits = {});
@@ -64,7 +66,7 @@ public:
 private:
     static FrozenDefinitionSnapshotResult freeze_sources(
         const std::vector<DefinitionSourceView>& sources,
-        std::shared_ptr<const BuiltinExportRegistry> registry, const DefinitionLimits& limits);
+        std::shared_ptr<const BuiltinExportRegistry> registry, const DefinitionLimits& limits, std::size_t* retained = nullptr);
 
 public:
     static std::shared_ptr<const BuiltinExportRegistry> test_exports(

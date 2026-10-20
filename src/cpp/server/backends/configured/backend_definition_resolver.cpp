@@ -55,10 +55,12 @@ struct DefinitionResolver::Impl {
     };
     std::shared_ptr<const DefinitionSourceSnapshot> snapshot;
     DefinitionLimits limits;
-    std::size_t retained = 0;
+    std::size_t owned_retained = 0;
+    std::size_t* shared_retained = nullptr;
     std::map<std::string, Cached> cache;
 
     DefinitionResolutionResult run(const DefinitionKey& leaf) {
+        auto& retained = shared_retained ? *shared_retained : owned_retained;
         DefinitionResolutionResult result;
         const auto error = [&](const DefinitionKey& key, const std::string& code, const std::string& pointer, const std::vector<SourceLocation>& related = std::vector<SourceLocation>{}) {
             if (limits.diagnostics == 0) { result.diagnostics.truncated = true; return; }
@@ -203,10 +205,14 @@ struct DefinitionResolver::Impl {
 };
 
 DefinitionResolver::DefinitionResolver(std::shared_ptr<const DefinitionSourceSnapshot> snapshot, DefinitionLimits limits)
-    : impl_(std::make_unique<Impl>()) {
+    : DefinitionResolver(std::move(snapshot), limits, nullptr) {}
+
+DefinitionResolver::DefinitionResolver(std::shared_ptr<const DefinitionSourceSnapshot> snapshot,
+    DefinitionLimits limits, std::size_t* retained) : impl_(std::make_unique<Impl>()) {
     impl_->snapshot = std::move(snapshot);
     impl_->limits = limits;
-    impl_->retained = impl_->snapshot ? impl_->snapshot->logical_bytes : 0;
+    impl_->owned_retained = impl_->snapshot ? impl_->snapshot->logical_bytes : 0;
+    impl_->shared_retained = retained;
 }
 DefinitionResolver::~DefinitionResolver() = default;
 DefinitionResolver::DefinitionResolver(DefinitionResolver&&) noexcept = default;

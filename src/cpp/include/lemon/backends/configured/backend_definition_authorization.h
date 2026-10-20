@@ -14,6 +14,7 @@ private:
     std::shared_ptr<const Impl> impl_;
     friend class BuiltinCatalogLoader;
     friend class DefinitionAuthorizer;
+    friend struct CatalogAdmissionBuilder;
 };
 
 struct FrozenDefinitionSnapshotResult {
@@ -32,6 +33,7 @@ private:
     struct Impl;
     std::shared_ptr<const Impl> impl_;
     friend class DefinitionAuthorizer;
+    friend struct CatalogAdmissionBuilder;
 };
 
 class AuthorizedDefinition {
@@ -44,11 +46,13 @@ private:
     std::shared_ptr<const ResolvedDefinition> definition_;
     ResolvedAuthority authority_;
     friend class DefinitionAuthorizer;
+    friend struct CatalogAdmissionBuilder;
 };
 
 struct DefinitionAuthorizationResult {
     std::shared_ptr<const AuthorizedDefinition> definition;
     CompositionDiagnostics diagnostics;
+    bool resolved = false;
 };
 
 class DefinitionAuthorizer {
@@ -57,7 +61,9 @@ public:
     DefinitionAuthorizationResult authorize(const DefinitionKey& leaf) const;
 
 private:
+    DefinitionAuthorizationResult authorize_accounted(const DefinitionKey& leaf, std::size_t* retained) const;
     std::shared_ptr<const FrozenDefinitionSnapshot> snapshot_;
+    friend struct CatalogAdmissionBuilder;
 };
 
 }

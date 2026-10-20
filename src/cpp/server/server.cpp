@@ -1204,7 +1204,7 @@ void Server::setup_routes(httplib::Server &web_server) {
     };
 
     register_get("backends/schema", [](const httplib::Request& req, httplib::Response& res) {
-        size_t count = 0;
+        size_t count = 0, representation_count = 0;
         const auto query_start = req.target.find('?');
         if (query_start != std::string::npos) {
             // httplib collapses identical query pairs; the original target preserves them.
@@ -1214,7 +1214,14 @@ void Server::setup_routes(httplib::Server &web_server) {
                 httplib::Params params;
                 httplib::detail::parse_query_text(field, params);
                 count += params.count("recipe");
+                representation_count += params.count("representation");
             }
+        }
+        const auto representation = req.get_param_value("representation");
+        if (representation_count > 1 || (representation_count && representation != "1" && representation != "2")) {
+            res.status = 400;
+            res.set_content(json{{"error", {{"message", "Expected one supported catalog representation"}, {"type", "invalid_request_error"}, {"code", "invalid_representation"}}}}.dump(), "application/json");
+            return;
         }
         if (count > 1 || (count == 1 && req.get_param_value("recipe").empty())) {
             res.status = 400;
@@ -1222,7 +1229,7 @@ void Server::setup_routes(httplib::Server &web_server) {
             return;
         }
         const auto recipe = req.get_param_value("recipe");
-        const auto schema = backends::frozen_backend_catalog().export_schema(recipe);
+        const auto schema = backends::frozen_backend_catalog().export_schema(recipe, representation == "2" ? 2 : 1);
         if (count && schema["recipes"].empty()) {
             res.status = 404;
             res.set_content(json{{"error", {{"message", "Unknown backend recipe: " + recipe}, {"type", "invalid_request_error"}, {"code", "unknown_recipe"}}}}.dump(), "application/json");

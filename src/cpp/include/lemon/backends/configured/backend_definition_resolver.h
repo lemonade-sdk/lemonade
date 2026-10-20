@@ -37,8 +37,11 @@ public:
     DefinitionResolutionResult resolve(const DefinitionKey& leaf);
 
 private:
+    DefinitionResolver(std::shared_ptr<const DefinitionSourceSnapshot> snapshot,
+        DefinitionLimits limits, std::size_t* retained);
     struct Impl;
     std::unique_ptr<Impl> impl_;
+    friend class DefinitionAuthorizer;
 };
 
 }

@@ -133,6 +133,9 @@ public:
     std::size_t logical_bytes = 0;
 };
 
+DefinitionSnapshotResult make_v2_source_snapshot_accounted(const std::vector<DefinitionSourceView>& sources,
+    const DefinitionLimits& limits, std::size_t* retained);
+
 struct ResolutionProvenance::Impl : v2::ProvenanceData {};
 
 }

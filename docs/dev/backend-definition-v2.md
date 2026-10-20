@@ -442,3 +442,75 @@ Authorization does not compile expressions, bind functions, apply executable
 defaults, construct entries, validate executable support or publish a catalog.
 Future executable consumers must accept the authorized token. The v1 store,
 legacy metadata projections, schema export and hash domains remain unchanged.
+
+### Catalog admission and private candidates
+
+`freeze_builtin_catalog()` captures the installed reservations, defaults, pins,
+export registry and builtin authority context. `make_catalog_source_snapshot()`
+indexes mixed v1/v2 external input with forced external origin. `admit_catalog()`
+returns an immutable `AdmittedCatalog` only after every v2 source has resolved and
+passed authorization and all ownership checks have passed. It creates no server
+registrations. Startup rejects v2 execution with `unsupported_execution_version`.
+
+External IDs cannot claim builtin definition, backend, section or installation
+identities, including compiled-only backends. Recipes, configuration sections and
+public option names have one owner. Persisted option keys use the runtime suffix
+mapping (`_backend`, `_args`, `_device`). V2 `install_recipe` and `pin_recipe` are
+absent or equal the leaf recipe. An inherited explicit alias must be removed or
+replaced by the child. Existing valid v1 aliases remain supported and reserve
+those identities against v2 claims, independent of source order.
+
+All sources are indexed before resolution, so forward references work. An
+external v1 parent produces `unsupported_parent_version`; an absent external
+parent produces `missing_parent` at `/extends/external`. A builtin without an
+installed export produces `unexported_builtin`; a different available contract
+produces `contract_mismatch`. Validation never searches disk or retrieves a
+missing dependency.
+
+The catalog limits include builtin sources: 1,024 definitions, 64 MiB source
+bytes and 128 MiB retained logical data. Discovery bounds the selected path list
+and checks file allowances before reading. Intake checks the complete source
+allowance before copying. Its ledger charges owned source copies, headers and
+indices, v1 compiler allowance, dependency edges, v2 source snapshots, resolver
+DOMs and provenance, dependencies, authorization replay and grants, ownership
+sets and identity data. The v1 compiler allowance is conservative, so logical
+admission can reject before a process reaches 128 MiB RSS; this is not an RSS
+promise. Per-source, chain, work and diagnostic limits still apply. Public recipe
+rows also have an independent limit of 1,024.
+
+`validate_candidate_definition()` replaces only a matching external ID and recipe
+in the captured source set and uses the same admission API as startup. Every
+proposed graph is rebuilt and every descendant is reauthorized. No authority is
+reused across snapshots. A failed parent pin, removed dependency or changed
+policy rejects the entire proposal; the active object remains immutable. An
+immediate-parent declaration pin does not pin transitive dependency or policy
+identities.
+
+The existing `POST backends/validate` route uses this private mechanism. A v2
+candidate that passes admission still returns HTTP 400 and `valid:false`, with
+`resolved`, `authorized` and `catalog_admitted` true and `executable` false. Its
+only remaining diagnostic is `unsupported_execution_version`. A candidate is
+never published. Responses allow logical identities, hashes and bounded safe
+diagnostic pointers; they exclude source and resolved declarations, local labels,
+server paths, command/environment values, exception text, grants and policies.
+
+### Representation negotiation
+
+`GET backends/schema` keeps its exact legacy body and ETag when `representation`
+is omitted or is `1`. `representation=2` requests the admission view. Empty,
+unknown and repeated values, including repeated identical values, return
+`invalid_representation`. All four API prefixes and authentication apply.
+
+The v2 view retains the executable `catalog_id` and adds a separate
+`catalog_v2_id`, `accepted_definition_versions:[1,2]`,
+`acceptance_stage:"declaration_authorization"`,
+`executable_definition_versions:[1]`, resolver/authorizer/grant revisions and an
+independently versioned `admission_manifest`. Its identity includes the v2 schema,
+export-registry and hook-ABI identities and admission bounds. Export permissions
+are represented by their registry identity, never by policy bodies or grant
+records. The legacy feature manifest and its schema version are unchanged.
+
+V2 recipe rows identify the actual input version: `1` for existing definitions
+and `null` for compiled-only recipes. Candidates do not become recipe rows. The
+ETag remains the digest of the exact serialized response, including its selected
+representation and recipe filter. A legacy ETag cannot validate a v2 body.

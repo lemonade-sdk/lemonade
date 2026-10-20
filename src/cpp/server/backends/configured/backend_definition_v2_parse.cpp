@@ -152,6 +152,11 @@ CompositionDiagnostics preflight_source(const SourceRecord& source, const Defini
 }
 
 DefinitionSnapshotResult make_v2_source_snapshot(const std::vector<DefinitionSourceView>& sources, const DefinitionLimits& limits) {
+    return make_v2_source_snapshot_accounted(sources, limits, nullptr);
+}
+
+DefinitionSnapshotResult make_v2_source_snapshot_accounted(const std::vector<DefinitionSourceView>& sources,
+    const DefinitionLimits& limits, std::size_t* retained) {
     DefinitionSnapshotResult result;
     auto snapshot = std::make_shared<DefinitionSourceSnapshot>();
     std::size_t source_bytes = 0;
@@ -193,6 +198,10 @@ DefinitionSnapshotResult make_v2_source_snapshot(const std::vector<DefinitionSou
         }
         const auto key = v2::key_string(source.key);
         if (snapshot->sources.count(key)) { error(source.key, "duplicate_source", "/id"); return result; }
+        if (retained) {
+            try { v2::charge(*retained, logical, limits.retained_logical_bytes); }
+            catch (const v2::LimitExceeded&) { error(source.key, "limit_exceeded", ""); return result; }
+        }
         source_bytes += source.bytes.size();
         snapshot->logical_bytes += logical;
         snapshot->sources.emplace(key, v2::SourceRecord{source.key, std::string(source.bytes), std::move(preflight.header), preflight.nodes});

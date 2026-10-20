@@ -80,11 +80,15 @@ std::optional<std::vector<std::size_t>> literal_sizes(const std::string& text) {
 }
 
 int main() {
+    std::size_t source_bytes = 0, definitions = 0;
     for (const auto& resource : lemon::backends::k_embedded_resource_files) {
+        if (resource.data != lemon::backends::k_backend_definition_schema && resource.data != lemon::backends::k_backend_definition_v2_schema) { source_bytes += resource.size; ++definitions; }
         const std::string embedded(resource.data, resource.size);
         check(embedded == read_bytes(resource.path), std::string("the embedded constant equals ") + resource.path + " byte for byte");
         check(std::strlen(resource.data) == resource.size, std::string("the embedded constant for ") + resource.path + " has no NUL byte");
     }
+    check(source_bytes == lemon::backends::k_backend_definition_source_bytes, "catalog builtin source allowance equals embedded source bytes");
+    check(definitions == lemon::backends::k_backend_definition_source_count, "catalog builtin definition count equals embedded sources");
     std::size_t literals = 0;
     for (const auto& entry : std::filesystem::recursive_directory_iterator(LEMON_GENERATED_INCLUDE_DIR)) {
         if (!entry.is_regular_file() || entry.path().extension() != ".h") continue;

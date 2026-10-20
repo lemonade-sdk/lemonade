@@ -1166,6 +1166,8 @@ set(LEMON_BACKEND_FACTORY_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/backend_effects.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/backend_load_helpers.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/configured/backend_hook_registry.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/configured/backend_catalog_admission.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/configured/backend_catalog_projection.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/configured/backend_catalog.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/configured/request_mapper.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/configured/backend_transport.cpp
@@ -3908,4 +3910,25 @@ if(BUILD_TESTING)
     target_include_directories(test_backend_definition_authorization PRIVATE src/cpp/server/backends/configured)
     target_link_libraries(test_backend_definition_authorization PRIVATE lemonade-backend-definition-v2)
     add_cpp_ci_test(BackendDefinitionAuthorizationTest CI ON COMMAND test_backend_definition_authorization)
+endif()
+
+if(BUILD_TESTING)
+    foreach(_suite admission invalidation admission_bounds)
+        add_executable(test_backend_catalog_${_suite}
+            test/cpp/test_backend_catalog_${_suite}.cpp
+            src/cpp/server/backends/configured/backend_definition_authorization.cpp
+            src/cpp/server/backends/configured/backend_definition_exports.cpp)
+        target_compile_definitions(test_backend_catalog_${_suite} PRIVATE
+            LEMON_BACKEND_EXPORT_TESTING
+            LEMON_TEST_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures")
+        target_include_directories(test_backend_catalog_${_suite} PRIVATE src/cpp/server/backends/configured)
+        target_link_libraries(test_backend_catalog_${_suite} PRIVATE lemonade-server-core)
+        add_cpp_ci_test(BackendCatalog_${_suite}Test CI ON COMMAND test_backend_catalog_${_suite})
+    endforeach()
+endif()
+
+if(BUILD_TESTING)
+    add_cpp_ci_test(BackendCatalogNegotiationTest CI ON
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/backend_catalog_negotiation.py $<TARGET_FILE:lemond>
+        DEPENDS lemond)
 endif()
