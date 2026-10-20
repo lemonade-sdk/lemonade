@@ -55,6 +55,38 @@ servable-directory rules and startup diagnostics, the TRELLIS custom-argument
 order and mesh upload).
 An embedded definition that fails validation stops registration at startup.
 
+CMake embeds every `src/cpp/resources/backends/<stem>.json` its
+`file(GLOB CONFIGURE_DEPENDS)` finds as `lemon::backends::k_<stem>_definition` in
+the generated `backend_definition_resources.h`, after `k_backend_definition_schema`
+from `schemas/backend-definition-v1.schema.json`;
+`cmake/BackendDefinitionResources.cmake` writes the constants in lexicographic file
+order. Adding or removing a definition re-runs the configure step on the next build,
+and so does editing a definition or the schema. Each constant is a raw string
+literal delimited by `R"definition(` and `)definition"`, so the configure step
+fails, naming the file and byte offset, when a definition or the schema contains
+`)definition"` (any JSON string ending in `)definition`), instead of emitting a
+literal that ends early. It also fails when `<stem>` does not match
+`[a-z][a-z0-9_]*`, because the stem names the constant. A file whose stem has no
+`LEMON_BACKENDS` entry is still embedded, but nothing registers it.
+
+A new built-in configured engine needs:
+
+- its definition, `src/cpp/resources/backends/<stem>.json`;
+- its `"<recipe>|<stem>"` entry in `LEMON_BACKENDS` in `CMakeLists.txt`, the
+  explicit registration that compiles its bridge, generates its descriptor and
+  adds it to the registries;
+- its registration bridge, `src/cpp/server/backends/<stem>/<stem>_server.cpp`,
+  which validates `k_<stem>_definition`, and
+  `src/cpp/include/lemon/backends/<stem>/<stem>_server.h`, which declares
+  `configured_entry()`, `create()`, `spec()`, `ops()` and the `capabilities()`
+  literal;
+- its version pins in `src/cpp/resources/backend_versions.json` when it downloads
+  a binary, and its models in `src/cpp/resources/server_models.json`.
+
+It needs no other CMake or template edit: its embedded definition and its
+descriptor follow from the file and the `LEMON_BACKENDS` entry. An external
+definition in `backends.d` needs no rebuild at all.
+
 `src/cpp/server/backends/<stem>/<stem>_server.cpp` is only the registration
 bridge. It validates the embedded definition once, builds the
 `ConfiguredBackendEntry` and exposes it through `configured_entry()`, `create()`,
