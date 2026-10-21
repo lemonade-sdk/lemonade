@@ -38,7 +38,7 @@ enum class VersionPolicy {
 // A container backend's image, and the device nodes and Linux permissions its
 // container gets.
 struct ContainerPolicy {
-    std::string image;                  // only docker.io/kyuz0/* and ghcr.io/peonist-ai/*
+    std::string image;
     std::vector<std::string> devices;   // device nodes the container can open, e.g. "/dev/dri"
     std::vector<std::string> cap_add;   // capabilities given back after --cap-drop=all
 };
