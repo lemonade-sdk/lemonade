@@ -154,7 +154,11 @@ static std::string rel(const fs::path& models_dir, const std::string& path) {
     if (path.find("imported") != std::string::npos) return "<import>";
     fs::path as_path = path_from_utf8(path);
     if (!as_path.is_absolute()) return path;
-    return path_to_utf8(as_path.lexically_relative(models_dir));
+    std::string relative = path_to_utf8(as_path.lexically_relative(models_dir));
+    for (char& character : relative) {
+        if (character == '\\') character = '/';
+    }
+    return relative;
 }
 
 static std::string snapshot_signature(const std::map<std::string, ModelInfo>& models,
