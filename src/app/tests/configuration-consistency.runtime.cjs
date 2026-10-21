@@ -266,7 +266,7 @@ assert.doesNotMatch(chatSource, /loadModelTuning\s*\([^)]*\)[^;\n]*recipe_option
 
 
 
-// GUI3 server-defined recipe metadata contract v4.
+// Lemonade App server-defined recipe metadata contract v4.
 assert.doesNotMatch(backendManagerSource, /RECIPE_CAPABILITY/, 'backend sections must not enumerate recipes');
 assert.doesNotMatch(backendManagerSource, /backendSupportsArgs/, 'backend Args availability must not use a recipe allowlist');
 assert.match(backendManagerSource, /llamacpp:\s+'llama\.cpp'/,
@@ -403,4 +403,4 @@ assert.match(modelListSource, /active:\s*favorited/, 'favorited row action must 
 assert.match(styles, /focus-within:not\(\.workspace-list-row--pointer-action\)\s+\.workspace-list-row__action/, 'pointer-only row action must not remain visible from row focus alone');
 assert.match(styles, /workspace-list-row__action--latched,\s*\n\.workspace-list-row__action--active\s*\{[^}]*color:\s*var\(--accent-fg\)/s, 'active row action must use the accent color without latching visibility');
 
-console.log('GUI3 configuration consistency contract checks passed.');
+console.log('Lemonade App configuration consistency contract checks passed.');

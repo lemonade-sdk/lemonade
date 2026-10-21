@@ -236,9 +236,7 @@ class RouterTests(ServerTestBase):
             pull_model_with_retry(model)
         print(f"[SETUP] Registering {COLLECTION_NAME}...")
         resp = requests.post(
-            f"http://localhost:{PORT}/api/v1/pull",
-            json={**POLICY, "do_not_upgrade": True},
-            timeout=60,
+            f"http://localhost:{PORT}/api/v1/pull", json=POLICY, timeout=60
         )
         assert (
             resp.status_code == 200
@@ -612,9 +610,7 @@ class RouterTests(ServerTestBase):
                 },
             }
             resp = requests.post(
-                f"http://localhost:{PORT}/api/v1/pull",
-                json={**policy, "do_not_upgrade": True},
-                timeout=60,
+                f"http://localhost:{PORT}/api/v1/pull", json=policy, timeout=60
             )
             self.assertEqual(resp.status_code, 200, f"register failed: {resp.text}")
 
@@ -938,9 +934,7 @@ class RouterTests(ServerTestBase):
         try:
             self._load_semantic_model()
             resp = requests.post(
-                f"http://localhost:{PORT}/api/v1/pull",
-                json={**policy, "do_not_upgrade": True},
-                timeout=60,
+                f"http://localhost:{PORT}/api/v1/pull", json=policy, timeout=60
             )
             self.assertEqual(resp.status_code, 200, f"register failed: {resp.text}")
 
@@ -1085,9 +1079,7 @@ class RouterTests(ServerTestBase):
                 },
             }
             resp = requests.post(
-                f"http://localhost:{PORT}/api/v1/pull",
-                json={**policy, "do_not_upgrade": True},
-                timeout=60,
+                f"http://localhost:{PORT}/api/v1/pull", json=policy, timeout=60
             )
             self.assertEqual(resp.status_code, 200, f"register failed: {resp.text}")
 
@@ -1212,9 +1204,7 @@ class RouterTests(ServerTestBase):
             },
         }
         resp = requests.post(
-            f"http://localhost:{PORT}/api/v1/pull",
-            json={**policy, "do_not_upgrade": True},
-            timeout=120,
+            f"http://localhost:{PORT}/api/v1/pull", json=policy, timeout=120
         )
         self.assertEqual(resp.status_code, 200, f"register failed: {resp.text}")
 

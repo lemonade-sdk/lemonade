@@ -147,6 +147,7 @@ class InspectStoreClass {
   private ws: WebSocket | null = null;
   private reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
   private currentWsUrl: string = '';
+  private currentWsApiKey = '';
   private autoSelectNextTrace = false;
   private connectionGeneration = 0;
 
@@ -408,11 +409,14 @@ class InspectStoreClass {
 
     // Skip redundant automatic connection attempts, but allow explicit reconnect()
     // to replace the socket even if the current socket is still open.
-    if (!force && this.ws && this.currentWsUrl === wsUrl && this.hasActiveSocket()) {
+    if (!force && this.ws && this.currentWsUrl === wsUrl && this.currentWsApiKey === apiKey && this.hasActiveSocket()) {
       return;
     }
 
     this.currentWsUrl = wsUrl;
+    this.currentWsApiKey = apiKey;
+    this.setState({ captureReady: 'connecting' });
+    api.sessionHeadersEnabled = false;
     const generation = ++this.connectionGeneration;
 
     if (this.ws) {
@@ -431,6 +435,7 @@ class InspectStoreClass {
       this.ws = socket;
 
       const isCurrentSocket = () => this.ws === socket && this.connectionGeneration === generation;
+      let authRejected = false;
 
       socket.onopen = () => {
         if (!isCurrentSocket()) return;
@@ -454,8 +459,17 @@ class InspectStoreClass {
         try {
           const raw = JSON.parse(event.data);
           if (raw && raw.type === 'error') {
-            console.error('Inspect WebSocket auth/connection error:', raw.error?.message || raw);
-            this.showToast(raw.error?.message || 'Authentication failed');
+            const message = raw.error?.message || 'Authentication failed';
+            console.error('Inspect WebSocket auth/connection error:', message);
+            if (message === 'Invalid API key') {
+              authRejected = true;
+              if (apiKey) this.showToast(message);
+              this.setState({ captureReady: 'disconnected' });
+              api.sessionHeadersEnabled = false;
+              socket.close();
+            } else {
+              this.showToast(message);
+            }
             return;
           }
           if (raw && raw.type === 'auth.ok') {
@@ -476,6 +490,11 @@ class InspectStoreClass {
         if (!isCurrentSocket()) return;
         this.ws = null;
         if (!this.state.capturing) return;
+        if (authRejected) {
+          this.setState({ captureReady: 'disconnected' });
+          api.sessionHeadersEnabled = false;
+          return;
+        }
         if (this.state.captureReady !== 'unsupported') {
           this.setState({ captureReady: 'connecting' });
         }
@@ -510,6 +529,7 @@ class InspectStoreClass {
     }
     this.connectionGeneration++;
     this.currentWsUrl = '';
+    this.currentWsApiKey = '';
     this.setState({ captureReady: 'disconnected' });
     api.sessionHeadersEnabled = false;
     if (this.ws) {

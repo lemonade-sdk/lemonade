@@ -1306,6 +1306,8 @@ if(WIN32)
         ole32
         oleaut32
         shell32
+        dxgi
+        pdh
     )
 elseif(APPLE)
     target_link_libraries(lemonade-server-core PUBLIC

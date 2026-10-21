@@ -1,6 +1,15 @@
 // News content data - easy to add new entries
 const newsData = [
     {
+        title: "Vision: Automatically Selecting the Best Known Configuration (auto-BKC)",
+        url: "https://lemonade-server.ai/news/auto-bkc-vision.html",
+        date: "October 20, 2026",
+        description: "A blog laying out a vision for Lemonade's technical development in the coming months. Pick an agent, and Lemonade installs and configures the best known model and engine for your system in one click.",
+        image: "https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/banner.png",
+        imageStyle: "width: 100%; height: 100%; object-position: center top; ",
+        type: "blog"
+        },
+    {
         title: "Why AnythingLLM is moving from Ollama to Lemonade and llama.cpp",
         url: "https://anythingllm.com/blog/lemonade-llama-cpp",
         date: "October 13, 2026",

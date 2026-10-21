@@ -258,7 +258,7 @@ const McpPanel: React.FC<McpPanelProps> = ({ connectionStatus, isActive }) => {
           params: {
             protocolVersion: MCP_PROTOCOL_VERSION,
             capabilities: { tools: {} },
-            clientInfo: { name: 'lemonade-gui3', version: CLIENT_VERSION },
+            clientInfo: { name: 'lemonade-app', version: CLIENT_VERSION },
           },
         }),
         signal: requestSignal(signal, 8000),

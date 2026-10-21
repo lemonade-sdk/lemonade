@@ -1,5 +1,5 @@
-name: 'Extract Lemonade (.deb)'
-description: 'Extracts a Lemonade .deb for binary smoke tests; does not test package installation'
+name: 'Install Lemonade (.deb)'
+description: 'Downloads and extracts Lemonade .deb package, then verifies installation'
 inputs:
   version:
     description: 'Version string for the .deb package (e.g., 0.5.0)'

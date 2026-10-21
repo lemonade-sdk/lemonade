@@ -38,7 +38,7 @@ export function loadGlobalModelSettings(): GlobalModelSettings {
     if (!raw) return { ...DEFAULT_GLOBAL_MODEL_SETTINGS };
     const parsed = JSON.parse(raw);
     const sanitized = sanitizeGlobalModelSettings(parsed);
-    // Drop lifecycle fields written by older GUI3 builds. They are server-owned
+    // Drop lifecycle fields written by older App builds. They are server-owned
     // and must never be restored or translated into runtime configuration.
     if (JSON.stringify(parsed) !== JSON.stringify(sanitized)) {
       localStorage.setItem(settingsKey(), JSON.stringify(sanitized));

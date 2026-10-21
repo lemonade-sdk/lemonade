@@ -73,7 +73,7 @@ assert.match(customModelStoreSource, /if \(normalizedCheckpoints\.main\) opts\.c
 assert.doesNotMatch(customModelStoreSource, /Object\.values\(checkpoints \|\| \{\}\)\[0\]/,
   'import must not reinterpret an arbitrary secondary checkpoint as the main checkpoint');
 assert.doesNotMatch(manager, /loadLegacyCustomModels|clearLegacyCustomModels|legacyCustomMigrationStartedRef/,
-  'GUI3 must not migrate custom-model definitions from browser storage');
+  'Lemonade App must not migrate custom-model definitions from browser storage');
 assert.doesNotMatch(customModelStoreSource, /localStorage|CUSTOM_MODELS_KEY|loadLegacyCustomModels|clearLegacyCustomModels/,
   'customModelStore must contain no browser persistence compatibility layer');
 

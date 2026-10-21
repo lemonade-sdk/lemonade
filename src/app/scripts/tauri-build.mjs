@@ -9,8 +9,15 @@ const repoRoot = fileURLToPath(new URL('../../../', import.meta.url));
 
 function lemonadeVersion() {
   if (process.env.LEMONADE_VERSION?.trim()) return process.env.LEMONADE_VERSION.trim();
-  for (const python of [process.env.PYTHON, 'python3', 'python'].filter(Boolean)) {
-    const run = spawnSync(python, ['tools/version.py'], {
+  const pythonCandidates = [
+    [process.env.PYTHON, []],
+    ['python3', []],
+    ['python', []],
+    ['py', ['-3']],
+  ];
+  for (const [python, prefix] of pythonCandidates) {
+    if (!python) continue;
+    const run = spawnSync(python, [...prefix, 'tools/version.py'], {
       cwd: repoRoot, encoding: 'utf8', windowsHide: true,
     });
     if (!run.error && run.status === 0 && run.stdout.trim()) return run.stdout.trim();
@@ -39,7 +46,10 @@ try {
     // Launch the JavaScript CLI entry point directly. Spawning tauri.cmd
     // without a shell fails on Windows, while a shell can corrupt JSON args.
     const cli = fileURLToPath(new URL('../node_modules/@tauri-apps/cli/tauri.js', import.meta.url));
-    const child = spawnSync(process.execPath, [cli, ...cliArgs], { cwd: appRoot, stdio: 'inherit' });
+    const child = spawnSync(process.execPath, [cli, ...cliArgs], {
+      cwd: appRoot, stdio: 'inherit',
+      env: { ...process.env, LEMONADE_TAURI_VERSION: version },
+    });
     if (child.error) throw child.error;
     process.exitCode = child.status ?? 1;
   }

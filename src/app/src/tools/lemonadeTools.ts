@@ -235,7 +235,7 @@ function isRouterModel(model: AnyModel | null | undefined): boolean {
 }
 
 function withLocalRouterModels(models: AnyModel[]): AnyModel[] {
-  // Current GUI3 stores Router definitions in lemond; api.models(true) is the source of truth.
+  // Current Lemonade App stores Router definitions in lemond; api.models(true) is the source of truth.
   return models;
 }
 

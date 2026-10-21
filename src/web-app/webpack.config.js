@@ -59,7 +59,7 @@ class EmitAppCssPlugin {
 }
 
 module.exports = (env, argv) => {
-  // The CMake web build stages app/ and web-app/ next to each other. GUI3 used
+  // The CMake web build stages app/ and web-app/ next to each other. Lemonade App used
   // both a flattened app/src/index.tsx layout and the newer app/src/renderer/
   // layout during development; support either so this config is drop-in safe.
   const appRoot = path.resolve(__dirname, '../app');
