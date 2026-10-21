@@ -286,9 +286,7 @@ Container backends start disabled, because the `.deb` and `.rpm` packages pull i
 | --- | --- | --- |
 | Containers enabled | `enable_containers` is `false` | `lemonade config set enable_containers=true` |
 
-The change goes through `POST /internal/set`, so it needs `LEMONADE_ADMIN_API_KEY` when one is set. Before sending it, `lemonade config set enable_containers=true` prints this warning and asks for confirmation, which `--yes` skips:
-
-> Container backends run images built by community developers, pinned by digest in each Lemonade release. Once they are enabled, every client that reaches this server's API can install and start them. Keep `host` on localhost, or set LEMONADE_API_KEY before serving on the network.
+The change goes through `POST /internal/set`, so it needs `LEMONADE_ADMIN_API_KEY` when one is set, and the CLI shows a security warning before sending it.
 
 ### Tool Choice and Install Commands
 
