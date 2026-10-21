@@ -133,18 +133,14 @@ std::string ContainerProcess::start(const ServerCommand& command) {
     std::set<std::string> destinations;
     for (const auto& model_file : command.model_files) {
         if (model_file.empty() || inside.count(model_file)) continue;
-        fs::path named(model_file);
-        if (!named.has_filename()) named = named.parent_path();
-        const std::string file_name = named.filename().string();
+        const std::string file_name = fs::path(model_file).filename().string();
         std::string destination = std::string(kModelsDir) + "/" + file_name;
         // Two files can share a name; the second gets a numbered directory.
         for (int n = 2; destinations.count(destination); ++n) {
             destination = std::string(kModelsDir) + "/" + std::to_string(n) + "/" + file_name;
         }
         destinations.insert(destination);
-        for (auto& mount : ContainerManager::model_mounts(model_file, destination)) {
-            spec.mounts.push_back(std::move(mount));
-        }
+        spec.mounts.push_back(ContainerManager::model_mount(model_file, destination));
         inside[model_file] = destination;
     }
     const auto rewrite = [&inside](const std::string& value) {
