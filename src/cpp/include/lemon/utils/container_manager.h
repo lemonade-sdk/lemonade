@@ -108,10 +108,10 @@ public:
 
     // Every failed check that runs before the user enables container
     // backends: the tool on PATH, then the account's access to it. These read
-    // only PATH, groups and sockets, so no container command runs before the
-    // user opts in. Rerun on each call, so a fix takes effect without a
-    // restart.
-    std::vector<SetupFailure> check_host() const;
+    // only PATH and groups until `containers_enabled`, which adds the Docker
+    // socket check, so nothing reaches Podman or Docker before the user opts
+    // in. Rerun on each call, so a fix takes effect without a restart.
+    std::vector<SetupFailure> check_host(bool containers_enabled) const;
     // `podman info`, which runs only once container backends are enabled.
     std::optional<SetupFailure> check_podman() const;
 

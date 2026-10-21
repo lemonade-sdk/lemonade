@@ -36,7 +36,7 @@ lemonade backends install llamacpp:nathanw
 lemonade run Qwen3-4B-GGUF --llamacpp nathanw
 ```
 
-Install pulls the image, so loading a model starts from the image already on disk. `lemonade backends uninstall llamacpp:nathanw` removes it.
+Install pulls the image, so loading a model starts from the image already on disk. `lemonade backends uninstall llamacpp:nathanw` removes it; with containers disabled, uninstall leaves the image on disk, for `podman rmi` or `docker rmi`.
 
 ## How Containers Run
 
@@ -47,4 +47,6 @@ Each loaded model gets its own container, named `lemonade-<recipe>-<backend>-<mo
 - drops every Linux capability its backend does not need, and runs with `no-new-privileges`
 - joins its own `--internal` network, so only this machine reaches its API and the server inside stays off the internet
 
-Unloading a model stops its container. When `lemond` starts, it removes any `ai.lemonade` containers and networks a previous run left behind.
+Unloading a model stops its container. When `lemond` starts with containers enabled, it removes any `ai.lemonade` containers and networks a previous run left behind.
+
+While `enable_containers` is `false`, Lemonade does not run Podman or Docker or connect to their sockets. Setting it to `false` unloads every model running in a container first.

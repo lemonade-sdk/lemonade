@@ -204,11 +204,11 @@ bool ContainerManager::expect_rootless() const {
     return host_.env("CONTAINER_HOST").empty() && !host_.is_root();
 }
 
-std::vector<SetupFailure> ContainerManager::check_host() const {
+std::vector<SetupFailure> ContainerManager::check_host(bool containers_enabled) const {
     std::vector<SetupFailure> failures;
     const std::optional<ContainerTool> chosen = tool();
     if (chosen == ContainerTool::Docker) {
-        if (!host_.docker_socket_accepts()) {
+        if (containers_enabled && !host_.docker_socket_accepts()) {
             failures.push_back({"docker_access", "The Docker daemon refuses the account",
                                 {"sudo usermod -aG docker $USER"}, kRelogin});
         }

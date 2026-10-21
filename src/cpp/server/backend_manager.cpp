@@ -232,8 +232,12 @@ std::string container_registry_url(const std::string& image) {
 
 void uninstall_container_backend(const std::string& recipe, const std::string& backend) {
     const std::string image = backends::BackendUtils::get_installed_backend_image(recipe, backend);
-    if (!image.empty()) {
+    if (!image.empty() && backends::containers_enabled()) {
         utils::ContainerManager::global().remove_image(image);
+    } else if (!image.empty()) {
+        LOG(WARNING, "BackendManager") << "Containers are disabled, so the image " << image
+                                       << " stays on disk. Remove it with `podman rmi` or "
+                                       << "`docker rmi`." << std::endl;
     }
     const fs::path install_dir = container_version_file(recipe, backend).parent_path();
     std::error_code ec;

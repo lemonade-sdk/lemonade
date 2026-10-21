@@ -163,7 +163,7 @@ For example, the `llamacpp` entry holds a native pin and a container pin side by
 
 - picks the container tool (see [Tool Choice and Install Commands](#tool-choice-and-install-commands))
 - builds the `podman run` or `docker run` command in one function, which holds every Podman and Docker difference § (see [Command Contract](#command-contract))
-- runs, stops, inspects and sweeps containers by name and label †; the sweep runs at startup and includes stopped containers
+- runs, stops, inspects and sweeps containers by name and label †; the sweep runs at startup while `enable_containers` is `true` and includes stopped containers
 - checks prerequisites before a load and gives each failure its fix (see [Setup Assistant](#setup-assistant))
 - pulls and removes images for install and uninstall
 
@@ -287,6 +287,8 @@ Container backends start disabled, because the `.deb` and `.rpm` packages pull i
 | Containers enabled | `enable_containers` is `false` | `lemonade config set enable_containers=true` |
 
 The change goes through `POST /internal/set`, so it needs `LEMONADE_ADMIN_API_KEY` when one is set, and the CLI shows a security warning before sending it.
+
+While it is `false`, `lemond` does not run Podman or Docker or connect to their sockets: the startup sweep is skipped, the Docker socket check waits until it is `true`, an installed backend counts as installed from its recorded pin alone, and uninstall leaves the image on disk. Setting it to `false` unloads every model running in a container, since nothing cleans up a container once they are disabled.
 
 ### Tool Choice and Install Commands
 

@@ -16,6 +16,7 @@
 #include "lemon/mcp_server.h"
 #include "lemon/ollama_api.h"
 #include "lemon/backends/backend_descriptor_registry.h"
+#include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/cloud/cloud_server.h"
 #include "lemon/backends/backend_utils.h"
@@ -2098,7 +2099,9 @@ void Server::run() {
     // memory and the names the next load of each model needs. This runs only
     // once the port is ours, so a second lemond that is about to exit leaves
     // the running one's containers alone.
-    utils::ContainerManager::global().sweep();
+    if (backends::containers_enabled()) {
+        utils::ContainerManager::global().sweep();
+    }
 #endif
 
     // Operators binding beyond loopback should secure the server with an API
@@ -7521,6 +7524,23 @@ void Server::apply_config_side_effects(const json& applied_changes) {
                 LOG(INFO, "Server") << "Download rate limit disabled" << std::endl;
             }
             utils::HttpClient::set_download_rate_limit(bps);
+        } else if (key == "enable_containers") {
+            // Containers can only be cleaned up while they are enabled, so a
+            // container left running now would outlive a crash.
+            if (!config_->enable_containers()) {
+                for (const auto& name : router_->get_container_model_names()) {
+                    LOG(INFO, "Server") << "Unloading " << name
+                                        << " because containers were disabled" << std::endl;
+                    try {
+                        router_->unload_model(name);
+                    } catch (const std::exception& e) {
+                        LOG(WARNING, "Server") << "Failed to unload " << name << ": " << e.what()
+                                               << std::endl;
+                    }
+                }
+            }
+            SystemInfoCache::invalidate_recipes();
+            model_manager_->invalidate_models_cache();
         } else if (key == "allowed_origins") {
             LOG(INFO, "Server") << "Allowed origins updated: " << config_->allowed_origins() << std::endl;
         } else if (key == "broadcast" || key == "no_broadcast") {

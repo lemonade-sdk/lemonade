@@ -195,6 +195,8 @@ public:
 
     json get_all_loaded_models() const;
 
+    std::vector<std::string> get_container_model_names() const;
+
     json get_max_model_limits() const;
 
     // Get pinned model counts per type

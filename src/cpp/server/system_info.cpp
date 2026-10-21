@@ -10,6 +10,7 @@
 #include "lemon/utils/version_utils.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/process_manager.h"
+#include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/backend_registry.h"
@@ -684,7 +685,10 @@ static bool is_recipe_installed(const std::string& recipe, const std::string& ba
     }
     if (cwsr_desc && cwsr_desc->container_for(backend)) {
         const std::string image = BackendUtils::get_installed_backend_image(recipe, backend);
-        return !image.empty() && utils::ContainerManager::global().has_image(image);
+        if (image.empty()) return false;
+        // While containers are disabled, the recorded pin stands in for the image.
+        return !backends::containers_enabled() ||
+               utils::ContainerManager::global().has_image(image);
     }
 
     // Find the managed binary, then let the backend's ops decide installed-ness
