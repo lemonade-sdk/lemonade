@@ -1,0 +1,36 @@
+{
+  "baseline_commit": "cc73edbeb800589a62478b963e8a0cf2d920357d",
+  "baseline_source_sha256": {
+    "src/cpp/include/lemon/backends/llamacpp/llamacpp.h": "71439c0ad19f7a6aa81133ea992d110411c71329185c59068a38f796a544f581",
+    "src/cpp/server/backends/llamacpp/llamacpp_gguf.cpp": "d0e548649bcabdf518572fcd882fa80a12d266cdb2bed2ef3b274e3f6e4c09ed",
+    "src/cpp/server/backends/llamacpp/llamacpp_request.cpp": "dc70771bfea85a6bd4bc9d6f42b4c61808fecf9c93370294e5bd17f14706bf31",
+    "src/cpp/server/backends/llamacpp/llamacpp_server.cpp": "0f3b1e9607dc607c03bb8a19a244621f737a256376153bdde18e0a1f39ca40c1"
+  },
+  "buffered_transcripts": 32,
+  "cases_per_view": 476,
+  "fixture_sha256": {
+    "cases.json": "ed7d3795937283057afbc6ea3b14c335ca3ea7f46e4d0516510a64f5c678898f",
+    "descriptor-linux.json": "6a52b9b0b42904ce83f05907223d54fac3f53a0502bd04db6306896931392da5",
+    "descriptor-macos.json": "6a52b9b0b42904ce83f05907223d54fac3f53a0502bd04db6306896931392da5",
+    "descriptor-windows.json": "d37535a3c75bfa3365f465a45f4fdad8abbfd3bc36d2a64cf1249bda57192130",
+    "linux_arm64.json": "eec950e193d0f43795152acd375944180488aa51f71094bff86ee47a86bf89a5",
+    "linux_x64.json": "cfd4b491e94fc3558a525fd1fa5757fb6781df7e3fab20ee76a4d051b5fabb5a",
+    "macos_arm64.json": "9507dd5ca6123c2a02d2114c8e962ef701e856727747edc718fea42b28990ea7",
+    "pins.json": "8404ea4f0a0f2d4ea49be10ec8d551c4ae8022fccf3e89c3824a5ffabffb945d",
+    "windows_x64.json": "4f051964983849ac9d3dfaabe62b6a1764222c7352efede5c92c545e58ec3413"
+  },
+  "native_host": "Linux x86_64",
+  "normalization": {
+    "/oracle": "<ROOT>",
+    "temporary_cache_root": "<TEMP>"
+  },
+  "operation_cells": 11,
+  "platform_qualification": "Wrapper branch simulation on host ABI; separate descriptor views constrain target binary spelling. Native Windows/macOS and real engines remain unit4h work.",
+  "streaming_transcripts": 40,
+  "wrapper_views": [
+    "linux_x64",
+    "linux_arm64",
+    "windows_x64",
+    "macos_arm64"
+  ]
+}

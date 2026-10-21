@@ -1346,10 +1346,9 @@ set(LLAMACPP_REQUEST_TEST_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_llam
 if(BUILD_TESTING AND EXISTS "${LLAMACPP_REQUEST_TEST_SOURCE}")
     add_executable(test_llamacpp_request
         ${LLAMACPP_REQUEST_TEST_SOURCE}
-        src/cpp/server/backends/llamacpp/llamacpp_request.cpp
     )
-    target_link_libraries(test_llamacpp_request PRIVATE nlohmann_json::nlohmann_json)
-    add_cpp_ci_test(llamacpp_request CI OFF COMMAND test_llamacpp_request)
+    target_link_libraries(test_llamacpp_request PRIVATE lemonade-server-core)
+    add_cpp_ci_test(llamacpp_request CI ON COMMAND test_llamacpp_request)
 endif()
 
 # libwebsockets for the realtime and log-stream WebSocket server
@@ -3963,4 +3962,65 @@ if(BUILD_TESTING AND CMAKE_NM AND NOT MSVC)
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/backend_execution_purity.py
             --nm ${CMAKE_NM} --library $<TARGET_FILE:lemonade-backend-definition-execution>
         DEPENDS lemonade-backend-definition-execution)
+endif()
+
+if(BUILD_TESTING AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_library(lemonade-llamacpp-oracle-base STATIC
+        $<FILTER:$<TARGET_OBJECTS:lemonade-server-core>,EXCLUDE,(llamacpp_server|llamacpp_request|backend_utils|runtime_config).cpp.o$>)
+    target_link_libraries(lemonade-llamacpp-oracle-base PUBLIC
+        $<TARGET_GENEX_EVAL:lemonade-server-core,$<TARGET_PROPERTY:lemonade-server-core,INTERFACE_LINK_LIBRARIES>>)
+    foreach(_view linux_x64 linux_arm64 windows_x64 macos_arm64)
+        if(_view MATCHES "^linux")
+            set(_oracle_os 1)
+        elseif(_view MATCHES "^windows")
+            set(_oracle_os 2)
+        else()
+            set(_oracle_os 3)
+        endif()
+        if(_view MATCHES "arm64$")
+            set(_oracle_arm64 1)
+        else()
+            set(_oracle_arm64 0)
+        endif()
+        add_executable(test_llamacpp_oracle_${_view}
+            test/cpp/test_llamacpp_oracle.cpp
+            src/cpp/server/backends/llamacpp/llamacpp_server.cpp
+            src/cpp/server/backends/llamacpp/llamacpp_request.cpp
+            src/cpp/server/backends/backend_utils.cpp
+            src/cpp/server/runtime_config.cpp)
+        target_compile_definitions(test_llamacpp_oracle_${_view} PRIVATE
+            LEMONADE_LLAMACPP_ORACLE
+            LEMONADE_LLAMACPP_ORACLE_OS=${_oracle_os}
+            LEMONADE_LLAMACPP_ORACLE_ARM64=${_oracle_arm64}
+            LEMON_ORACLE_VIEW="${_view}"
+            LEMON_ORACLE_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures/llamacpp-oracle")
+        target_include_directories(test_llamacpp_oracle_${_view} PRIVATE src/cpp/server)
+        target_link_libraries(test_llamacpp_oracle_${_view} PRIVATE lemonade-llamacpp-oracle-base lemonade-test-isolation)
+        add_cpp_ci_test(LlamaCppOracle_${_view}Test CI ON COMMAND test_llamacpp_oracle_${_view})
+    endforeach()
+endif()
+
+if(BUILD_TESTING AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_executable(test_llamacpp_oracle_transport test/cpp/test_llamacpp_oracle_transport.cpp)
+    target_compile_definitions(test_llamacpp_oracle_transport PRIVATE
+        LEMON_ORACLE_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures/llamacpp-oracle")
+    target_link_libraries(test_llamacpp_oracle_transport PRIVATE lemonade-server-core)
+    add_cpp_ci_test(LlamaCppOracleTransportTest CI ON COMMAND test_llamacpp_oracle_transport)
+endif()
+
+if(BUILD_TESTING AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    foreach(_view linux windows macos)
+        if(_view STREQUAL "windows")
+            set(_oracle_descriptor_os 2)
+        else()
+            set(_oracle_descriptor_os 1)
+        endif()
+        add_executable(test_llamacpp_oracle_descriptor_${_view} test/cpp/test_llamacpp_oracle_descriptor.cpp)
+        target_compile_definitions(test_llamacpp_oracle_descriptor_${_view} PRIVATE
+            LEMON_ORACLE_DESCRIPTOR_OS=${_oracle_descriptor_os}
+            LEMON_ORACLE_VIEW="${_view}"
+            LEMON_ORACLE_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures/llamacpp-oracle")
+        target_link_libraries(test_llamacpp_oracle_descriptor_${_view} PRIVATE nlohmann_json::nlohmann_json)
+        add_cpp_ci_test(LlamaCppOracleDescriptor_${_view}Test CI ON COMMAND test_llamacpp_oracle_descriptor_${_view})
+    endforeach()
 endif()

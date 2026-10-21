@@ -13,6 +13,9 @@
 #include <unordered_set>
 #include <utility>
 
+#include "backends/llamacpp/llamacpp_effects.h"
+
+#line 16
 namespace fs = std::filesystem;
 
 namespace lemon {
@@ -224,7 +227,7 @@ void RuntimeConfig::validate_backend_choice(const std::string& config_section,
 
     if (value == "system") {
         const auto* desc = lemon::backends::descriptor_for(recipe);
-        const std::string current_os = get_current_os();
+        const std::string current_os = LLAMA_EFFECT(get_current_os(), backends::llamacpp::oracle::effects().os());
         if (desc) {
             auto supported = std::find_if(
                 desc->support.begin(), desc->support.end(),
@@ -235,7 +238,7 @@ void RuntimeConfig::validate_backend_choice(const std::string& config_section,
         }
     }
 
-    auto result = SystemInfo::get_supported_backends(recipe);
+    auto result = LLAMA_EFFECT(SystemInfo::get_supported_backends(recipe), backends::llamacpp::oracle::effects().supported_backends(recipe));
 
     if (std::find(result.backends.begin(), result.backends.end(), value)
         == result.backends.end()) {

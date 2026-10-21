@@ -40,6 +40,9 @@
 
 using json = nlohmann::json;
 
+#include "llamacpp/llamacpp_effects.h"
+
+#line 43
 namespace lemon::backends {
 
     const BackendSpec* try_get_spec_for_recipe(const std::string& recipe) {
@@ -393,7 +396,7 @@ namespace lemon::backends {
     std::string BackendUtils::get_backend_binary_path(const BackendSpec& spec, const std::string& backend) {
         if (backend == "system") {
             // Check if binary exists in PATH
-            std::string path = utils::find_executable_in_path(spec.binary);
+            std::string path = LLAMA_EFFECT(utils::find_executable_in_path(spec.binary), llamacpp::oracle::effects().path_executable(spec.binary));
             if (!path.empty()) {
                 return spec.binary;
             }
@@ -410,14 +413,14 @@ namespace lemon::backends {
             resolved_backend = "rocm-" + channel;
         }
 
-        std::string exe_path = find_external_backend_binary(spec.recipe, resolved_backend);
+        std::string exe_path = LLAMA_EFFECT(find_external_backend_binary(spec.recipe, resolved_backend), llamacpp::oracle::effects().external_binary(spec.recipe, resolved_backend));
 
         if (!exe_path.empty()) {
             return exe_path;
         }
 
-        std::string install_dir = get_install_directory(spec.recipe, resolved_backend);
-        exe_path = find_executable_in_install_dir(install_dir, spec.binary);
+        std::string install_dir = LLAMA_EFFECT(get_install_directory(spec.recipe, resolved_backend), llamacpp::oracle::effects().install_directory(spec.recipe, resolved_backend));
+        exe_path = LLAMA_EFFECT(find_executable_in_install_dir(install_dir, spec.binary), llamacpp::oracle::effects().installed_binary(install_dir, spec.binary));
 
         if (!exe_path.empty()) {
             return exe_path;
@@ -2276,11 +2279,11 @@ namespace lemon::backends {
     }
 
     std::string BackendUtils::join_runtime_dirs(const std::vector<std::string>& dirs) {
-#if !defined(__linux__) && !defined(_WIN32)
+#if !LLAMA_LINUX && !LLAMA_WINDOWS
         (void)dirs;
         return "";
 #else
-#ifdef _WIN32
+#if LLAMA_WINDOWS
         const char sep = ';';
 #else
         const char sep = ':';
@@ -2438,15 +2441,15 @@ namespace lemon::backends {
             const std::string& log_tag,
             bool skip_visible_devices) {
         if (!skip_visible_devices) {
-            std::string existing_visible_devices = utils::get_environment_variable_utf8("CUDA_VISIBLE_DEVICES");
+            std::string existing_visible_devices = LLAMA_EFFECT(utils::get_environment_variable_utf8("CUDA_VISIBLE_DEVICES"), llamacpp::oracle::effects().environment_string("CUDA_VISIBLE_DEVICES"));
             const bool has_visible_override = !existing_visible_devices.empty();
 
             if (has_visible_override) {
                 LOG(INFO, log_tag) << "Respecting existing CUDA_VISIBLE_DEVICES="
                                    << existing_visible_devices << std::endl;
             } else {
-                std::string cuda_arch = SystemInfo::get_cuda_arch();
-                std::string visible_devices = SystemInfo::get_cuda_visible_devices_for_arch(cuda_arch);
+                std::string cuda_arch = LLAMA_EFFECT(SystemInfo::get_cuda_arch(), llamacpp::oracle::effects().cuda_arch());
+                std::string visible_devices = LLAMA_EFFECT(SystemInfo::get_cuda_visible_devices_for_arch(cuda_arch), llamacpp::oracle::effects().cuda_visible_devices(cuda_arch));
                 if (!cuda_arch.empty() && !visible_devices.empty()) {
                     env_vars.push_back({"CUDA_VISIBLE_DEVICES", visible_devices});
                     LOG(INFO, log_tag)
@@ -2458,8 +2461,8 @@ namespace lemon::backends {
             }
         }
 
-#ifdef __linux__
-        const char* existing_prime = std::getenv("__NV_PRIME_RENDER_OFFLOAD");
+#if LLAMA_LINUX
+        const char* existing_prime = LLAMA_EFFECT(std::getenv("__NV_PRIME_RENDER_OFFLOAD"), llamacpp::oracle::effects().environment("__NV_PRIME_RENDER_OFFLOAD"));
         if (!existing_prime || existing_prime[0] == '\0') {
             env_vars.push_back({"__NV_PRIME_RENDER_OFFLOAD", "1"});
             LOG(INFO, log_tag) << "Setting __NV_PRIME_RENDER_OFFLOAD=1 for PRIME Offload compatibility"
