@@ -1,8 +1,0 @@
-{
-  "port": 35669,
-  "health": 200,
-  "schema_status": 200,
-  "recipes": 17,
-  "definitions": 8,
-  "exit_code": 0
-}
