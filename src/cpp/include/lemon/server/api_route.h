@@ -75,7 +75,7 @@ struct RouteSpec {
     std::vector<RouteExample> examples;    // the first is the route's main example
     std::vector<RouteError> errors;        // every error the route writes, besides those its base class adds
     ErrorFormat error_format = ErrorFormat::Plain;
-    RequestFormat request_format = RequestFormat::Raw;  // Raw: no body parsing, only query arguments are checked; OptionalJson: an empty or null body is {}
+    RequestFormat request_format = RequestFormat::Raw;  // Raw: no body parsing, only query argument values are checked; OptionalJson: an empty or null body is {}
     bool quiet_log = false;           // leave out of the access log
 };
 

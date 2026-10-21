@@ -594,7 +594,7 @@ bool ApiRoute::check_args(RouteRequest& req, httplib::Response& res, bool query_
                 req.body.erase(alias);
             }
         }
-        if (!present && arg.required) {
+        if (!present && arg.required && !query_only) {
             std::string message = "Missing required argument '" + arg.name + "'";
             for (const auto& alias : arg.aliases) {
                 message += " (or '" + alias + "')";
