@@ -24,6 +24,7 @@ using lemon::system_info_detail::device_matches_constraint;
 using lemon::system_info_detail::gfx_target_version_to_arch;
 using lemon::system_info_detail::gpu_display_name;
 using lemon::system_info_detail::identify_cuda_arch_from_name;
+using lemon::system_info_detail::hip_visible_device;
 using lemon::system_info_detail::rocm_device_memory_from_sysfs;
 
 static bool expect_string(const char* name,
@@ -347,6 +348,19 @@ int main() {
         failures += !expect_device_memory(
             "an empty topology goes unreported",
             sysfs, "gfx1151", false);
+    }
+
+    {
+        FakeSysfs sysfs("hip");
+        sysfs.add_node("0", "0", "-1");
+        sysfs.add_node("1", "120001", "128");
+        sysfs.add_node("2", "110501", "129");
+        failures += !expect_string(
+            "the HIP index skips the CPU node and counts other GPUs before the match",
+            hip_visible_device(sysfs.kfd_nodes(), "gfx1151"), "1");
+        failures += !expect_string(
+            "no HIP index when no GPU matches",
+            hip_visible_device(sysfs.kfd_nodes(), "gfx942"), "");
     }
 
     failures += !expect_string(

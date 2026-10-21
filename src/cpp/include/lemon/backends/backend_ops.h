@@ -222,5 +222,11 @@ const BackendOps* default_backend_ops();
 // nullopt when the host is ready to run container backends.
 std::optional<utils::SetupReport> container_setup_failure();
 
+// `host`, the report container_setup_failure() returned, plus the checks
+// `recipe:backend` needs on top of it.
+std::optional<utils::SetupReport> container_setup_failure(
+    const std::string& recipe, const std::string& backend,
+    const std::optional<utils::SetupReport>& host);
+
 } // namespace backends
 } // namespace lemon
