@@ -177,9 +177,11 @@ static void test_republish_while_reading(ModelManager& manager) {
 
     std::atomic<bool> stop{false};
     std::atomic<long> reads{0};
+    std::atomic<int> live{0};
     std::vector<std::thread> readers;
     for (int i = 0; i < 4; ++i) {
         readers.emplace_back([&] {
+            live.fetch_add(1);
             while (!stop.load()) {
                 const std::size_t clouds = manager.count_cloud_models("zz-no-provider");
                 const std::vector<std::string> hidden = manager.snapshot()->empty_recipes();
@@ -190,10 +192,18 @@ static void test_republish_while_reading(ModelManager& manager) {
         });
     }
 
+    const auto await = [](auto settled) {
+        for (int attempt = 0; attempt < 5000 && !settled(); ++attempt) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+    };
+    await([&] { return live.load() == static_cast<int>(readers.size()); });
+
     for (int i = 0; i < 500; ++i) {
         manager.invalidate_models_cache();
     }
 
+    await([&] { return reads.load() > 0; });
     stop.store(true);
     for (auto& reader : readers) {
         reader.join();
