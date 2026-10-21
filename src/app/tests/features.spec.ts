@@ -1505,7 +1505,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
     expect(chatReqOn!.headers['x-client-session-id']).toBeDefined();
   });
 
-  test('24 — fallback retry: retries without session headers on fetch preflight/network failure and disables them', async ({ page }) => {
+  test('24 — inspect: ambiguous POST failures are not replayed; explicit header rejection falls back', async ({ page }) => {
     // Mock WebSocket to immediately connect and send auth.ok
     await page.addInitScript(() => {
       class MockWebSocket {
@@ -1546,49 +1546,56 @@ test.describe('Lemonade UI — Feature Parity', () => {
       (window as any).WebSocket = MockWebSocket as any;
     });
 
-    // Mock chat completion: reject requests with session headers, succeed without them
+    let rejectWithHttpResponse = false;
+    const attemptHeaders: boolean[] = [];
     await page.route(/\/api\/v1\/chat\/completions/, async route => {
-      const headers = route.request().headers();
-      if (headers['x-client-session-id']) {
+      const hasSessionHeader = Boolean(route.request().headers()['x-client-session-id']);
+      attemptHeaders.push(hasSessionHeader);
+      if (hasSessionHeader && !rejectWithHttpResponse) {
         await route.abort('failed');
+      } else if (hasSessionHeader) {
+        await route.fulfill({
+          status: 400,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: 'X-Client-Session-Id header not supported' }),
+        });
       } else {
         await route.fulfill({
           status: 200,
           contentType: 'application/json',
-          body: JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'fallback-success' } }] })
+          body: JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'fallback-success' } }] }),
         });
       }
     });
 
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
-
-    // Turn capturing ON
     await page.evaluate(() => {
       (window as any).inspectStore.setState({ capturing: true });
     });
+    await expect.poll(() => page.evaluate(() => (window as any).apiClient.sessionHeadersEnabled)).toBe(true);
 
-    // Wait briefly for WebSocket connection to authenticate and enable headers
-    await page.waitForTimeout(200);
-
-    // Verify sessionHeadersEnabled is true initially
-    const initialEnabled = await page.evaluate(() => (window as any).apiClient.sessionHeadersEnabled);
-    expect(initialEnabled).toBe(true);
-
-    // Call chat completion
-    const result = await page.evaluate(async () => {
+    const chatOnce = () => page.evaluate(async () => {
       try {
-        const resp = await (window as any).apiClient.chatCompletionOnce('mock-model', []);
-        return resp;
+        return await (window as any).apiClient.chatCompletionOnce('mock-model', []);
       } catch (e) {
         return `failed: ${e instanceof Error ? e.message : String(e)}`;
       }
     });
 
-    // Check that we got fallback success and sessionHeadersEnabled was disabled
-    expect(result).toBe('fallback-success');
-    const finalEnabled = await page.evaluate(() => (window as any).apiClient.sessionHeadersEnabled);
-    expect(finalEnabled).toBe(false);
+    // The first POST may already be running on lemond; a network error is not
+    // proof that it is safe to start the same inference a second time.
+    expect(await chatOnce()).toMatch(/^failed: POST .*\/api\/v1\/chat\/completions could not be reached/);
+    expect(attemptHeaders).toEqual([true]);
+    expect(await page.evaluate(() => (window as any).apiClient.sessionHeadersEnabled)).toBe(true);
+
+    // An explicit HTTP rejection naming the custom header is different:
+    // the server has answered, so the supported header-free fallback remains.
+    rejectWithHttpResponse = true;
+    attemptHeaders.length = 0;
+    expect(await chatOnce()).toBe('fallback-success');
+    expect(attemptHeaders).toEqual([true, false]);
+    expect(await page.evaluate(() => (window as any).apiClient.sessionHeadersEnabled)).toBe(false);
   });
 
   test('25 — Configuration tab saves model-specific defaults through lemond', async ({ page }) => {

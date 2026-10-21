@@ -1086,7 +1086,8 @@ class LemonadeAPI {
       if (processedOpts.signal?.aborted) {
         throw cause;
       }
-      if (includeSessionHeaders && this.sessionHeadersEnabled) {
+      if (includeSessionHeaders && this.sessionHeadersEnabled
+          && (method === 'GET' || method === 'HEAD' || method === 'OPTIONS')) {
         try {
           const fallbackHeaders = this._headers(extraHeaders, false, auth);
           if (processedOpts.body && headers['Content-Type'] === 'application/json') {
