@@ -1482,7 +1482,10 @@ int LemonadeClient::install_cloud_provider(const std::string& provider,
                                             bool allow_insecure_http,
                                             const std::optional<std::string>& auth_header_name,
                                             const std::optional<std::string>& auth_header_prefix,
-                                            const std::optional<std::string>& wire_format) {
+                                            const std::optional<std::string>& wire_format,
+                                            bool alpha_generate_fallback,
+                                            const std::optional<std::string>& alpha_generate_url,
+                                            const std::optional<std::string>& alpha_cli_version) {
     std::cout << "Installing cloud provider: " << provider
               << " (" << base_url << ")" << std::endl;
     try {
@@ -1505,6 +1508,15 @@ int LemonadeClient::install_cloud_provider(const std::string& provider,
         }
         if (wire_format) {
             body["wire_format"] = *wire_format;
+        }
+        if (alpha_generate_fallback) {
+            body["alpha_generate_fallback"] = true;
+        }
+        if (alpha_generate_url) {
+            body["alpha_generate_url"] = *alpha_generate_url;
+        }
+        if (alpha_cli_version) {
+            body["alpha_cli_version"] = *alpha_cli_version;
         }
         std::string response = make_request("/api/v1/install", "POST",
                                              body.dump(), "application/json");
@@ -1655,6 +1667,15 @@ int LemonadeClient::cloud_list(bool json_output) const {
             const std::string wire_format = p.value("wire_format", std::string("openai"));
             if (wire_format != "openai") {
                 std::cout << "    wire format: " << wire_format << std::endl;
+            }
+            if (p.value("alpha_generate_fallback", false)) {
+                std::cout << "    alpha/generate fallback: on";
+                const std::string alpha_url =
+                    p.value("alpha_generate_url", std::string(""));
+                if (!alpha_url.empty()) {
+                    std::cout << " (" << alpha_url << ")";
+                }
+                std::cout << std::endl;
             }
             print_response_warnings(p, "    ");
         }

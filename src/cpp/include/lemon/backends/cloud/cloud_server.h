@@ -46,6 +46,14 @@ namespace backends {
  * to support gateways that front an OpenAI-shaped API with a differently
  * named key header. Streaming via SSE. Providers registered with a non-openai
  * wire_format are rejected here and relayed from /v1/messages instead.
+ *
+ * Proprietary fallback: providers installed with alpha_generate_fallback=true
+ * (CommandCode-style vendors) retry model-not-found class errors from the
+ * OpenAI-compatible base URL through the vendor's agent endpoint
+ * (/alpha/generate). The proprietary event stream is translated back to the
+ * OpenAI shape, so downstream clients never see the vendor envelope. The
+ * alpha endpoint has no usable non-streaming mode, hence the fallback always
+ * requests a stream and buffers it for non-streaming callers.
  */
 class CloudServer : public WrappedServer {
 public:
@@ -139,7 +147,37 @@ private:
     ResolvedCreds resolve_creds() const;
 
     json post_with_auth(const std::string& path, const json& request,
-                        const ResolvedCreds& creds, long timeout_seconds = 0);
+                        const ResolvedCreds& creds, long timeout_seconds = 0,
+                        int* out_status = nullptr);
+    // Proprietary agent-endpoint fallback (see class doc). Enabled per
+    // provider via the registry; unknown providers and legacy records opt out.
+    bool alpha_fallback_enabled() const;
+    struct AlphaTarget {
+        std::string url;
+        std::string cli_version;
+        utils::HttpSecurityPolicy policy =
+            utils::HttpSecurityPolicy::ExternalHttpsOnly;
+    };
+    // Resolves the fallback endpoint from the provider record (explicit
+    // alpha_generate_url or scheme://host/alpha/generate derived from
+    // base_url). Empty url means the fallback cannot run.
+    AlphaTarget resolve_alpha_target(const ResolvedCreds& creds) const;
+    // True when the OpenAI-compatible error response means "this model id is
+    // not served behind this endpoint" and the proprietary retry is worth
+    // attempting. Auth, quota, and validation errors never qualify. Pass the
+    // upstream HTTP status when known; 0 falls back to error.details, if any.
+    bool alpha_error_qualifies(int http_status, const json& error_response) const;
+    // Non-streaming fallback: always requests an alpha stream and buffers it
+    // into a complete OpenAI object (chat or legacy completion when legacy).
+    json alpha_chat_completion(const json& openai_request,
+                               const ResolvedCreds& creds, bool legacy);
+    // Streaming fallback: translates the alpha event stream into OpenAI SSE
+    // chunks on the fly.
+    void forward_alpha_stream(const std::string& openai_body,
+                              const ResolvedCreds& creds, bool legacy,
+                              bool include_usage, httplib::DataSink& sink,
+                              long timeout_seconds,
+                              TelemetryCallback telemetry_callback);
     json rewrite_model_field(const json& request) const;
     // When true, the endpoints implemented here are unreachable for this
     // provider — it is served from /v1/messages instead.
