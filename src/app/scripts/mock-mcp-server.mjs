@@ -10,7 +10,7 @@ function handle(message) {
   if (message.method === 'notifications/initialized') return;
   const id = message.id ?? null;
   if (message.method === 'initialize') {
-    send({ jsonrpc: '2.0', id, result: { protocolVersion: '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'lemonade-gui3-echo', version: '1.0.0' } } });
+    send({ jsonrpc: '2.0', id, result: { protocolVersion: '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'lemonade-app-echo', version: '1.0.0' } } });
   } else if (message.method === 'tools/list') {
     send({ jsonrpc: '2.0', id, result: { tools: [{ name: 'echo', description: 'Return the supplied text.', inputSchema: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'], additionalProperties: false } }] } });
   } else if (message.method === 'tools/call') {

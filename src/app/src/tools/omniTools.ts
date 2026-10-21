@@ -22,7 +22,7 @@ const MAX_IMAGE_DIMENSION = 2048;
 const IMAGE_DIMENSION_STEP = 8;
 
 // Keep these built-in schemas aligned with GUI2/main's Omni tool definitions.
-// GUI3 currently owns Omni runtime wiring in omniTools.ts; when a shared
+// The app currently owns Omni runtime wiring in omniTools.ts; when a shared
 // definition file exists in the target branch, only this data block should move.
 const DEFAULT_OMNI_TOOLS: ToolDefinitionEntry[] = [
   {
