@@ -5,7 +5,7 @@ const newsData = [
         url: "https://lemonade-server.ai/news/auto-opt-vision.html",
         date: "October 20, 2026",
         description: "A blog laying out a vision for Lemonade's technical development in the coming months. Pick an agent, and Lemonade installs and configures the best known model and engine for your system in one click.",
-        image: "https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/banner.png",
+        image: "https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/banner_03.png",
         imageStyle: "width: 100%; height: 100%; object-position: center top; ",
         type: "blog"
         },
