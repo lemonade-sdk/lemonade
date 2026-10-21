@@ -387,6 +387,14 @@ public:
         if (response.status_code == 404 || response.status_code == 401 || response.status_code == 403) {
             throw RegistryNotFoundError("Hugging Face repository not found or not accessible: " + repo_id);
         }
+        if (response.status_code == 429 || response.status_code >= 500) {
+            // HttpClient::get() does not surface response headers, so this is
+            // our own default rather than the upstream Retry-After value.
+            throw RegistryRateLimitError(response.status_code, 30,
+                                         "Hugging Face API returned status " +
+                                         std::to_string(response.status_code) +
+                                         " for " + repo_id);
+        }
         if (response.status_code != 200) {
             throw std::runtime_error("Hugging Face API returned status " +
                                      std::to_string(response.status_code) +

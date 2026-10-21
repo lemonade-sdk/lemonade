@@ -26,6 +26,10 @@ const RouteError kIllegalLabels{
     400, "",
     "Labels or `embedding`/`reranking` flags name a deployment mode the recipe cannot serve, "
     "or name two"};
+const RouteError kRegistryUnavailable{
+    503, "registry_unavailable",
+    "Without `stream`, the model registry rate-limits or is temporarily unavailable; the "
+    "`Retry-After` header and the body's `upstream_status_code` carry the details"};
 const RouteError kPullFailed{
     500, "",
     "Another failure occurs, for example a failed download, a model this system cannot run, a "
@@ -117,7 +121,7 @@ public:
             "Pulling an already-downloaded model downloads any newer commit from its registry. "
             "Loading a model never checks for updates, and "
             "[`POST /v1/models/check-updates`](#post-v1modelscheck-updates) only reports them.",
-            "With `stream`, the error event or the job reports an unknown model.",
+            "With `stream`, the error event or the job reports an unknown model or an unavailable registry.",
             "In offline mode a new definition is still registered, but nothing is downloaded.",
             "### Register and Install a Model\n\n"
             "Registering writes the model to `user_models.json` in the Lemonade config directory "
@@ -200,7 +204,7 @@ public:
         s.examples = {job_example, success_example, events_example, register_example,
                       collection_example};
         s.errors = {kBodyNotJson, kArgMissing, kArgInvalid, kInvalidSource, kInvalidModelDefinition,
-                    kLemondOffline, kUnknownModel, kIllegalLabels, kPullFailed};
+                    kLemondOffline, kUnknownModel, kIllegalLabels, kRegistryUnavailable, kPullFailed};
         s.request_format = RequestFormat::Json;
         return s;
     }
@@ -300,6 +304,14 @@ public:
         } catch (const lemon::InvalidModelDefinitionError& e) {
             LOG(ERROR, "Server") << "ERROR in handle_pull: " << e.what() << std::endl;
             write_plain_error(res, kIllegalLabels, e.what());
+        } catch (const lemon::RegistryRateLimitError& e) {
+            LOG(WARNING, "Server") << "Registry unavailable in handle_pull: " << e.what() << std::endl;
+            res.status = kRegistryUnavailable.status;
+            res.set_header("Retry-After", std::to_string(e.retry_after_seconds()));
+            json error = {{"error", e.what()},
+                          {"code", lemon::kRegistryUnavailableErrorCode},
+                          {"upstream_status_code", e.status_code()}};
+            res.set_content(error.dump(), "application/json");
         } catch (const std::exception& e) {
             LOG(ERROR, "Server") << "ERROR in handle_pull: " << e.what() << std::endl;
             write_plain_error(res, kPullFailed, e.what());

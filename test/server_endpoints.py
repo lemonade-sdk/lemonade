@@ -660,6 +660,57 @@ class EndpointTests(ServerTestBase):
             self.assertIn(key, stats, f"{key} missing from /stats")
         print("[OK] cache and routing telemetry series present in /metrics and /stats")
 
+    def test_002c_system_stats_gpu_schema(self):
+        """/system-stats reports a well-formed gpus[] with sane per-device values."""
+        response = requests.get(
+            f"{self.base_url}/system-stats", timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+
+        self.assertIn("gpus", data)
+        self.assertIsInstance(data["gpus"], list)
+        self.assertIn("primary_gpu_id", data)
+
+        ids = set()
+        for gpu in data["gpus"]:
+            for field in ("id", "vendor", "name", "memory_type"):
+                self.assertIn(field, gpu)
+            self.assertNotIn(gpu["id"], ids, "duplicate GPU id")
+            ids.add(gpu["id"])
+            self.assertIn(gpu["memory_type"], ("shared", "dedicated", "unknown"))
+
+            pct = gpu.get("gpu_percent")
+            if pct is not None:
+                self.assertGreaterEqual(pct, 0.0)
+                self.assertLessEqual(pct, 100.0)
+
+            total = gpu.get("memory_total_gb")
+            used = gpu.get("memory_used_gb")
+            if total is not None:
+                self.assertGreaterEqual(total, 0.0)
+            if used is not None:
+                self.assertGreaterEqual(used, 0.0)
+            if total is not None and used is not None:
+                self.assertLessEqual(used, total + 1e-6)
+
+        if data["gpus"]:
+            self.assertIn(data["primary_gpu_id"], ids)
+
+        # On a host that advertises an AMD GPU, system-stats must enumerate it.
+        info = requests.get(
+            f"{self.base_url}/system-info", timeout=TIMEOUT_DEFAULT
+        ).json()
+        amd_available = any(
+            dev.get("available") for dev in info.get("devices", {}).get("amd_gpu", [])
+        )
+        if amd_available:
+            self.assertTrue(
+                any(gpu["vendor"] == "amd" for gpu in data["gpus"]),
+                "AMD GPU advertised in system-info but absent from system-stats",
+            )
+        print(f"[OK] /system-stats reported {len(data['gpus'])} GPU(s)")
+
     def test_003_models_list(self):
         """Test listing available models via /models endpoint."""
         # Model is already pulled in setUpClass

@@ -388,6 +388,10 @@ void DownloadManager::stream(const Operation& operation, httplib::DataSink& sink
 
     } catch (const lemon::UnknownModelError& e) {
         write_sse_event(sink, "error", {{"error", e.what()}, {"code", lemon::kUnknownModelErrorCode}});
+    } catch (const lemon::RegistryRateLimitError& e) {
+        write_sse_event(sink, "error", {{"error", e.what()},
+                                        {"code", lemon::kRegistryUnavailableErrorCode},
+                                        {"retry_after", e.retry_after_seconds()}});
     } catch (const std::exception& e) {
         std::string error_msg = e.what();
         if (error_msg != "Download cancelled") {
@@ -441,7 +445,8 @@ nlohmann::ordered_json DownloadManager::event_schema() {
             "percent": {"type": "number", "description": "Share of the current file downloaded, from `0` to `100`."},
             "status": {"const": "ok", "description": "Only on a complete event for an operation that had nothing to download."},
             "error": {"type": "string", "description": "Only on an error event."},
-            "code": {"type": "string", "description": "`unknown_model` when the model is not in the registry."}
+            "code": {"type": "string", "description": "`unknown_model` when the model is not in the registry, or `registry_unavailable` when the registry rate-limits or is temporarily unavailable."},
+            "retry_after": {"type": "integer", "description": "With `registry_unavailable`: seconds to wait before retrying."}
         }
     })");
 }

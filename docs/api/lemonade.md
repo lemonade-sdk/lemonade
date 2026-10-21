@@ -1838,7 +1838,7 @@ This endpoint does not take any parameters.
 
 `gpu_percent` and `vram_gb` come from the primary GPU: the one with the largest known GPU-accessible memory capacity (ties broken by ID), whatever its current utilization, and not necessarily the GPU a model recipe targets. `vram_gb` keeps its historical name but reports GPU memory usage, which can be shared system memory on AMD APUs.
 
-GPU, VRAM and NPU telemetry depends on the operating system and installed drivers. On Linux, AMD and NVIDIA GPUs are enumerated; on Windows, NVIDIA GPUs through NVML; on macOS `gpus` is empty. NVML does not report whether memory is dedicated or shared, so NVIDIA GPUs report `memory_type` as `unknown`.
+GPU, VRAM and NPU telemetry depends on the operating system and installed drivers. On Linux, AMD and NVIDIA GPUs are enumerated; on Windows, NVIDIA GPUs through NVML and AMD GPUs through DXGI, DXCore and PDH; on macOS `gpus` is empty. NVML does not report whether memory is dedicated or shared, so NVIDIA GPUs report `memory_type` as `unknown`.
 
 ### Example
 
