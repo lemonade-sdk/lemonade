@@ -1,18 +1,15 @@
 """
-Container backend smoke test: drives llamacpp:nathanw end to end through one
-container tool, on a host with no GPU.
-
-The image's llama-server finds no Vulkan device and runs on the CPU, so this
-exercises install, load, chat, unload, the startup sweep and uninstall through
-the real Podman or Docker without Strix Halo hardware. Unlike the other suites,
-it starts and stops lemond itself, since the sweep needs a restart.
+Container backend smoke test: drives one container backend end to end through
+one container tool: install, load, chat, unload, the startup sweep and
+uninstall. Unlike the other suites, it starts and stops lemond itself, since the
+sweep needs a restart.
 
 Usage:
-    python test/server_containers.py --lemond PATH --tool podman --mode rootless
+    python test/server_containers.py --lemond PATH --backend llamacpp:nathanw \
+        --tool podman --mode rootless
 """
 
 import argparse
-import json
 import os
 import socket
 import subprocess
@@ -20,7 +17,6 @@ import sys
 import tempfile
 import time
 import unittest
-from pathlib import Path
 
 import requests
 from openai import OpenAI
@@ -33,8 +29,6 @@ from utils.server_base import (
 )
 from utils.test_models import ENDPOINT_TEST_MODEL, TIMEOUT_MODEL_OPERATION
 
-RECIPE = "llamacpp"
-BACKEND = "nathanw"
 LABEL = "ai.lemonade"
 LEFTOVER = "lemonade-smoke-leftover"
 
@@ -62,17 +56,13 @@ def labeled(kind):
     return tool(*command, "--filter", f"label={LABEL}").stdout.split()
 
 
-def pinned_image():
-    versions = Path(__file__).parent.parent / "src/cpp/resources/backend_versions.json"
-    digest = json.loads(versions.read_text(encoding="utf-8"))[RECIPE][BACKEND]
-    return f"docker.io/kyuz0/amd-strix-halo-toolboxes@{digest.split('@')[1]}"
-
-
 class ContainerSmokeTest(unittest.TestCase):
     lemond = None
     port = None
     cache_dir = None
     log = None
+    # The <image>@<digest> lemond ran, read from its container.
+    image = None
 
     @classmethod
     def setUpClass(cls):
@@ -126,19 +116,22 @@ class ContainerSmokeTest(unittest.TestCase):
 
     def test_02_install(self):
         self.cli("config", "set", "enable_containers=true", "--yes")
-        self.cli("backends", "install", f"{RECIPE}:{BACKEND}", "--force")
-        self.assertEqual(tool("image", "inspect", pinned_image()).returncode, 0)
+        self.cli("backends", "install", args.backend, "--force")
 
     def test_03_load_and_chat(self):
         pull_model_with_retry(ENDPOINT_TEST_MODEL, port=self.port)
+        recipe, backend = args.backend.split(":")
         response = load_model(
-            ENDPOINT_TEST_MODEL, port=self.port, llamacpp_backend=BACKEND
+            ENDPOINT_TEST_MODEL, port=self.port, **{f"{recipe}_backend": backend}
         )
         self.assertEqual(response.status_code, 200, response.text)
 
         containers = labeled("container")
         self.assertEqual(len(containers), 1, containers)
-        self.assertTrue(containers[0].startswith(f"lemonade-{RECIPE}-{BACKEND}-"))
+        self.assertTrue(containers[0].startswith(f"lemonade-{recipe}-{backend}-"))
+        type(self).image = tool(
+            "inspect", "--format", "{{.Config.Image}}", containers[0]
+        ).stdout.strip()
         # lemond publishes a loopback port only when it detects rootless Podman,
         # so this checks lemond's own view of the mode, not just the tool's.
         published = tool("port", containers[0]).stdout.strip()
@@ -179,7 +172,7 @@ class ContainerSmokeTest(unittest.TestCase):
         )
         self.assertEqual(
             tool(
-                "create", "--label", LABEL, "--name", LEFTOVER, pinned_image(), "true"
+                "create", "--label", LABEL, "--name", LEFTOVER, self.image, "true"
             ).returncode,
             0,
         )
@@ -191,8 +184,8 @@ class ContainerSmokeTest(unittest.TestCase):
         self.assertEqual(labeled("network"), [])
 
     def test_06_uninstall(self):
-        self.cli("backends", "uninstall", f"{RECIPE}:{BACKEND}")
-        self.assertNotEqual(tool("image", "inspect", pinned_image()).returncode, 0)
+        self.cli("backends", "uninstall", args.backend)
+        self.assertNotEqual(tool("image", "inspect", self.image).returncode, 0)
 
 
 def main():
@@ -200,6 +193,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--lemond", required=True, help="Path to lemond")
     parser.add_argument("--cli-binary", default="lemonade", help="Path to lemonade")
+    parser.add_argument(
+        "--backend",
+        required=True,
+        help="Container backend as recipe:backend, e.g. llamacpp:nathanw",
+    )
     parser.add_argument("--tool", required=True, choices=["podman", "docker"])
     parser.add_argument("--mode", required=True, choices=["rootless", "rootful"])
     args = parser.parse_args()

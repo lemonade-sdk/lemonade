@@ -1592,7 +1592,7 @@ jobs:
         run: |
           sudo -E -u "$USER" env "PATH=$PATH" .venv/bin/python test/server_containers.py \
             --lemond "$(command -v lemond)" --cli-binary "$(command -v lemonade)" \
-            --tool ${{ matrix.tool }} --mode ${{ matrix.mode }}
+            --backend llamacpp:nathanw --tool ${{ matrix.tool }} --mode ${{ matrix.mode }}
 
       - name: Capture and upload server logs
         if: always()
