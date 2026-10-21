@@ -1588,10 +1588,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#ds4-dwarfstar4-experimental" class="md-nav__link">
+  <a href="#ds4-dwarfstar4" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        <code>ds4</code> — DwarfStar4 (experimental)
+        <code>ds4</code> — DwarfStar4
       </span>
     </span>
   </a>
@@ -1621,10 +1621,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#llamacpp-hrx-hrx-gpu-experimental" class="md-nav__link">
+  <a href="#llamacpp-hrx-hrx-gpu" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        <code>llamacpp-hrx</code> — HRX GPU (experimental)
+        <code>llamacpp-hrx</code> — HRX GPU
       </span>
     </span>
   </a>
@@ -1709,10 +1709,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#vllm-vllm-rocm-experimental" class="md-nav__link">
+  <a href="#vllm-vllm-rocm" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        <code>vllm</code> — vLLM ROCm (experimental)
+        <code>vllm</code> — vLLM ROCm
       </span>
     </span>
   </a>
@@ -2967,10 +2967,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#ds4-dwarfstar4-experimental" class="md-nav__link">
+  <a href="#ds4-dwarfstar4" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        <code>ds4</code> — DwarfStar4 (experimental)
+        <code>ds4</code> — DwarfStar4
       </span>
     </span>
   </a>
@@ -3000,10 +3000,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#llamacpp-hrx-hrx-gpu-experimental" class="md-nav__link">
+  <a href="#llamacpp-hrx-hrx-gpu" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        <code>llamacpp-hrx</code> — HRX GPU (experimental)
+        <code>llamacpp-hrx</code> — HRX GPU
       </span>
     </span>
   </a>
@@ -3088,10 +3088,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#vllm-vllm-rocm-experimental" class="md-nav__link">
+  <a href="#vllm-vllm-rocm" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        <code>vllm</code> — vLLM ROCm (experimental)
+        <code>vllm</code> — vLLM ROCm
       </span>
     </span>
   </a>
@@ -3231,7 +3231,7 @@ the generator instead. Prose outside the markers is preserved. -->
 </tr>
 <tr>
 <td><code>ds4</code></td>
-<td>DwarfStar4 (experimental)</td>
+<td>DwarfStar4</td>
 <td>no</td>
 <td>yes</td>
 <td>rocm</td>
@@ -3259,7 +3259,7 @@ the generator instead. Prose outside the markers is preserved. -->
 </tr>
 <tr>
 <td><code>llamacpp-hrx</code></td>
-<td>HRX GPU (experimental)</td>
+<td>HRX GPU</td>
 <td>no</td>
 <td>yes</td>
 <td>hrx</td>
@@ -3322,7 +3322,7 @@ the generator instead. Prose outside the markers is preserved. -->
 </tr>
 <tr>
 <td><code>vllm</code></td>
-<td>vLLM ROCm (experimental)</td>
+<td>vLLM ROCm</td>
 <td>yes</td>
 <td>yes</td>
 <td>rocm</td>
@@ -3339,12 +3339,15 @@ the generator instead. Prose outside the markers is preserved. -->
 <!-- END GENERATED: backends-overview -->
 
 <h2 id="support-matrix">Support matrix</h2>
+<p>Each backend has a tier and a format; see <a href="../../api/lemonade/#backend-tiers-and-formats">Backend Tiers and Formats</a>.</p>
 <!-- BEGIN GENERATED: backends-matrix -->
 <table>
 <thead>
 <tr>
 <th>Recipe</th>
 <th>Backend</th>
+<th>Tier</th>
+<th>Format</th>
 <th>OS</th>
 <th>Device families</th>
 </tr>
@@ -3353,246 +3356,328 @@ the generator instead. Prose outside the markers is preserved. -->
 <tr>
 <td><code>acestep</code></td>
 <td>cuda</td>
+<td>experimental</td>
+<td>native</td>
 <td>linux, windows</td>
 <td>nvidia_gpu</td>
 </tr>
 <tr>
 <td><code>acestep</code></td>
 <td>vulkan</td>
+<td>experimental</td>
+<td>native</td>
 <td>linux, windows</td>
 <td>amd_gpu; cpu (x86_64); nvidia_gpu</td>
 </tr>
 <tr>
 <td><code>acestep</code></td>
 <td>rocm</td>
+<td>experimental</td>
+<td>native</td>
 <td>linux, windows</td>
 <td>amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X)</td>
 </tr>
 <tr>
 <td><code>ds4</code></td>
 <td>rocm</td>
+<td>guest</td>
+<td>native</td>
 <td>linux</td>
 <td>amd_gpu (gfx1151)</td>
 </tr>
 <tr>
 <td><code>flm</code></td>
 <td>npu</td>
+<td>core</td>
+<td>native</td>
 <td>linux, windows</td>
 <td>amd_npu (XDNA2)</td>
 </tr>
 <tr>
 <td><code>kokoro</code></td>
 <td>metal</td>
+<td>core</td>
+<td>native</td>
 <td>macos</td>
 <td>metal</td>
 </tr>
 <tr>
 <td><code>kokoro</code></td>
 <td>cpu</td>
+<td>core</td>
+<td>native</td>
 <td>linux, windows</td>
 <td>cpu (x86_64)</td>
 </tr>
 <tr>
 <td><code>llamacpp</code></td>
 <td>system</td>
+<td>core</td>
+<td>native</td>
 <td>linux</td>
 <td>cpu (arm64, x86_64)</td>
 </tr>
 <tr>
 <td><code>llamacpp</code></td>
 <td>metal</td>
+<td>core</td>
+<td>native</td>
 <td>macos</td>
 <td>metal</td>
 </tr>
 <tr>
 <td><code>llamacpp</code></td>
 <td>cuda</td>
+<td>core</td>
+<td>native</td>
 <td>linux, windows</td>
 <td>nvidia_gpu (sm_100, sm_120, sm_121, sm_75, sm_80, sm_86, sm_89, sm_90)</td>
 </tr>
 <tr>
 <td><code>llamacpp</code></td>
 <td>vulkan</td>
+<td>core</td>
+<td>native</td>
 <td>linux, windows</td>
 <td>amd_gpu; cpu (arm64, x86_64)</td>
 </tr>
 <tr>
 <td><code>llamacpp</code></td>
 <td>rocm</td>
+<td>core</td>
+<td>native</td>
 <td>linux, windows</td>
 <td>amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X, gfx908, gfx90a, gfx942, gfx950)</td>
 </tr>
 <tr>
 <td><code>llamacpp</code></td>
 <td>cpu</td>
+<td>core</td>
+<td>native</td>
 <td>linux, windows</td>
 <td>cpu (arm64, x86_64)</td>
 </tr>
 <tr>
 <td><code>llamacpp-hrx</code></td>
 <td>hrx</td>
+<td>experimental</td>
+<td>native</td>
 <td>linux</td>
 <td>amd_gpu (gfx1100, gfx1151)</td>
 </tr>
 <tr>
 <td><code>moonshine</code></td>
 <td>cpu</td>
+<td>core</td>
+<td>python</td>
 <td>windows</td>
 <td>cpu (x86_64)</td>
 </tr>
 <tr>
 <td><code>moonshine</code></td>
 <td>cpu</td>
+<td>core</td>
+<td>python</td>
 <td>linux</td>
 <td>cpu (arm64, x86_64)</td>
 </tr>
 <tr>
 <td><code>moonshine</code></td>
 <td>cpu</td>
+<td>core</td>
+<td>python</td>
 <td>macos</td>
 <td>cpu (arm64)</td>
 </tr>
 <tr>
 <td><code>onnxruntime</code></td>
 <td>cpu</td>
+<td>experimental</td>
+<td>native</td>
 <td>windows</td>
 <td>cpu (x86_64)</td>
 </tr>
 <tr>
 <td><code>onnxruntime</code></td>
 <td>cpu</td>
+<td>experimental</td>
+<td>native</td>
 <td>linux</td>
 <td>cpu (arm64, x86_64)</td>
 </tr>
 <tr>
 <td><code>onnxruntime</code></td>
 <td>cpu</td>
+<td>experimental</td>
+<td>native</td>
 <td>macos</td>
 <td>cpu (arm64)</td>
 </tr>
 <tr>
 <td><code>openmoss</code></td>
 <td>cuda</td>
+<td>experimental</td>
+<td>native</td>
 <td>linux, windows</td>
 <td>nvidia_gpu</td>
 </tr>
 <tr>
 <td><code>openmoss</code></td>
 <td>vulkan</td>
+<td>experimental</td>
+<td>native</td>
 <td>linux, windows</td>
 <td>amd_gpu; cpu (x86_64); nvidia_gpu</td>
 </tr>
 <tr>
 <td><code>ryzenai-llm</code></td>
 <td>npu</td>
+<td>core</td>
+<td>native</td>
 <td>windows</td>
 <td>amd_npu (XDNA2)</td>
 </tr>
 <tr>
 <td><code>sd-cpp</code></td>
 <td>metal</td>
+<td>core</td>
+<td>native</td>
 <td>macos</td>
 <td>metal</td>
 </tr>
 <tr>
 <td><code>sd-cpp</code></td>
 <td>cuda</td>
+<td>core</td>
+<td>native</td>
 <td>linux, windows</td>
 <td>nvidia_gpu (sm_100, sm_120, sm_121, sm_75, sm_80, sm_86, sm_89, sm_90)</td>
 </tr>
 <tr>
 <td><code>sd-cpp</code></td>
 <td>vulkan</td>
+<td>core</td>
+<td>native</td>
 <td>linux, windows</td>
 <td>amd_gpu; cpu (x86_64); nvidia_gpu</td>
 </tr>
 <tr>
 <td><code>sd-cpp</code></td>
 <td>rocm</td>
+<td>core</td>
+<td>native</td>
 <td>linux</td>
 <td>amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X)</td>
 </tr>
 <tr>
 <td><code>sd-cpp</code></td>
 <td>cpu</td>
+<td>core</td>
+<td>native</td>
 <td>linux, windows</td>
 <td>cpu (x86_64)</td>
 </tr>
 <tr>
 <td><code>thenoise</code></td>
 <td>rocm</td>
+<td>core</td>
+<td>python</td>
 <td>linux, windows</td>
 <td>amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X)</td>
 </tr>
 <tr>
 <td><code>thinksound</code></td>
 <td>cuda</td>
+<td>experimental</td>
+<td>native</td>
 <td>linux, windows</td>
 <td>nvidia_gpu</td>
 </tr>
 <tr>
 <td><code>thinksound</code></td>
 <td>vulkan</td>
+<td>experimental</td>
+<td>native</td>
 <td>linux, windows</td>
 <td>amd_gpu; cpu (x86_64); nvidia_gpu</td>
 </tr>
 <tr>
 <td><code>thinksound</code></td>
 <td>rocm</td>
+<td>experimental</td>
+<td>native</td>
 <td>linux, windows</td>
 <td>amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X)</td>
 </tr>
 <tr>
 <td><code>trellis</code></td>
 <td>cuda</td>
+<td>experimental</td>
+<td>native</td>
 <td>linux, windows</td>
 <td>nvidia_gpu</td>
 </tr>
 <tr>
 <td><code>trellis</code></td>
 <td>vulkan</td>
+<td>experimental</td>
+<td>native</td>
 <td>linux, windows</td>
 <td>amd_gpu; cpu (x86_64); nvidia_gpu</td>
 </tr>
 <tr>
 <td><code>trellis</code></td>
 <td>rocm</td>
+<td>experimental</td>
+<td>native</td>
 <td>linux, windows</td>
 <td>amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X)</td>
 </tr>
 <tr>
 <td><code>vllm</code></td>
 <td>rocm</td>
+<td>experimental</td>
+<td>python</td>
 <td>linux</td>
 <td>amd_gpu (gfx110X, gfx1150, gfx1151, gfx120X)</td>
 </tr>
 <tr>
 <td><code>whispercpp</code></td>
 <td>npu</td>
+<td>core</td>
+<td>native</td>
 <td>windows</td>
 <td>amd_npu (XDNA2)</td>
 </tr>
 <tr>
 <td><code>whispercpp</code></td>
 <td>metal</td>
+<td>core</td>
+<td>native</td>
 <td>macos</td>
 <td>metal</td>
 </tr>
 <tr>
 <td><code>whispercpp</code></td>
 <td>vulkan</td>
+<td>core</td>
+<td>native</td>
 <td>linux, windows</td>
 <td>amd_gpu; cpu (x86_64)</td>
 </tr>
 <tr>
 <td><code>whispercpp</code></td>
 <td>rocm</td>
+<td>core</td>
+<td>native</td>
 <td>linux, windows</td>
 <td>amd_gpu (gfx110X, gfx1150, gfx1151, gfx120X)</td>
 </tr>
 <tr>
 <td><code>whispercpp</code></td>
 <td>cpu</td>
+<td>core</td>
+<td>native</td>
 <td>linux, windows</td>
 <td>cpu (x86_64)</td>
 </tr>
@@ -3631,7 +3716,7 @@ per-architecture restriction is enforced by the backend's install gate.</p>
 </tr>
 </tbody>
 </table>
-<h4 id="ds4-dwarfstar4-experimental"><code>ds4</code> — DwarfStar4 (experimental)</h4>
+<h4 id="ds4-dwarfstar4"><code>ds4</code> — DwarfStar4</h4>
 <table>
 <thead>
 <tr>
@@ -3729,7 +3814,7 @@ per-architecture restriction is enforced by the backend's install gate.</p>
 </tr>
 </tbody>
 </table>
-<h4 id="llamacpp-hrx-hrx-gpu-experimental"><code>llamacpp-hrx</code> — HRX GPU (experimental)</h4>
+<h4 id="llamacpp-hrx-hrx-gpu"><code>llamacpp-hrx</code> — HRX GPU</h4>
 <table>
 <thead>
 <tr>
@@ -4030,7 +4115,7 @@ per-architecture restriction is enforced by the backend's install gate.</p>
 </tr>
 </tbody>
 </table>
-<h4 id="vllm-vllm-rocm-experimental"><code>vllm</code> — vLLM ROCm (experimental)</h4>
+<h4 id="vllm-vllm-rocm"><code>vllm</code> — vLLM ROCm</h4>
 <table>
 <thead>
 <tr>
@@ -4105,8 +4190,8 @@ per-architecture restriction is enforced by the backend's install gate.</p>
 <h3 id="openmoss-openmoss">OpenMOSS (<code>openmoss</code>)</h3>
 <p><code>moss-tts-server</code> hosts exactly one <code>--model</code> per process, so the voice generator that ships as a component of the speech model cannot be served by the same process. <code>OpenMossServer</code> runs the cascade one model at a time: the speech process is stopped, a transient process is spawned on the voice-generator checkpoint to render a single reference sample, and the speech process is brought back. Holding both would require a card that fits the pair, a strictly harder requirement than running the model that was actually asked for. For the same reason, <code>server_models.json</code> keeps <code>size</code> as the peak resident requirement of the main speech model rather than adding the non-resident VoiceGen download size. Rendered samples are cached per description for the life of the load, so repeating a description costs nothing. The speech process is restarted even when design fails, so an unsuccessful design cannot leave a loaded model with no process behind it.</p>
 <p>The legacy <code>MOSS-VoiceGen</code> registry entry remains as a compatibility model for existing clients; integrated voice design on <code>OpenMOSS-TTS</code> and <code>MOSS-TTS-Local</code> does not depend on that standalone entry.</p>
-<p><code>request_mutex_</code> serialises a process-changing voice-design request against normal OpenMOSS inference, <code>load()</code>, and <code>unload()</code>. Speech and SFX hold it shared; voice design and lifecycle changes hold it exclusively. During the intentional speech -&gt; VoiceGenerator -&gt; speech swap, <code>process_swap_in_progress_</code> keeps <code>is_backend_alive()</code> true so the router does not mistake the temporarily empty speech-process handle for a crash. A request arriving in that window is accepted and then waits on <code>request_mutex_</code> until speech is restored. <code>start_speech_process()</code> therefore calls <code>stop_speech_process()</code> rather than <code>unload()</code> on a failed readiness wait, because <code>unload()</code> takes the same exclusive lock.</p>
-<p>The transient design process is polled for readiness through its own <code>/health</code> rather than the shared <code>wait_for_ready()</code>, since it does not own <code>port_</code>; the poll also checks <code>ProcessManager::is_running()</code> each round and reports the child's exit code, so a subprocess that dies during model loading returns that error instead of polling to the timeout. <code>spawn()</code> uses <code>find_free_port()</code> instead of <code>choose_port()</code> for the same reason — <code>choose_port()</code> assigns <code>port_</code>, and the caller decides which process <code>port_</code> addresses.</p>
+<p><code>request_mutex_</code> serialises a process-changing voice-design request against normal OpenMOSS inference, <code>load()</code>, and <code>unload()</code>. Speech and SFX hold it shared; voice design and lifecycle changes hold it exclusively. During the intentional speech -&gt; VoiceGenerator -&gt; speech swap, <code>process_swap_in_progress_</code> keeps <code>is_backend_alive()</code> true so the router does not mistake the temporarily empty speech-process handle for a crash. A request arriving in that window is accepted and then waits on <code>request_mutex_</code> until speech is restored. When the speech process fails its readiness wait, <code>start_server()</code> stops it, so the voice-design path does not call <code>unload()</code>, which would take the same exclusive lock again.</p>
+<p>The transient design process is a local <code>NativeProcess</code> in <code>render_reference_sample()</code> rather than a <code>start_server()</code> call, because it does not own <code>port_</code>. Its readiness loop polls its own <code>/health</code> and checks <code>designer.running()</code> each round, so a subprocess that dies during model loading fails the request at once instead of polling to the deadline, and destroying <code>designer</code> stops the process and logs its exit code. <code>server_command()</code> picks the port with <code>find_free_port()</code> instead of <code>choose_port()</code> for the same reason: <code>choose_port()</code> assigns <code>port_</code>, and <code>start_server()</code> points <code>port_</code> at the speech process only.</p>
 <p>Reference-conditioned TTS can exceed OpenMOSS's default 8192-token context. Lemonade intentionally keeps the upstream context default instead of forcing a larger allocation, preserving compatibility with memory-constrained GPUs. OpenMOSS v0.3 chunks prefill batches, but a complete prompt still has to fit <code>n_ctx</code>; unusually long references may therefore be rejected by upstream with guidance to shorten the reference or raise the context size.</p>
 <p>Lemonade does not inject <code>max_audio_frames</code> into OpenMOSS speech requests. OpenMOSS v0.3 owns this policy: its VoiceGenerator derives a text-based duration window when needed, while MOSS-TTS/MOSS-TTSD keep their reference-aware/native stop behavior. Keeping that distinction in the backend avoids truncating conditioned or multi-speaker speech.</p>
 <p>Voice design is opt-in through the <code>voice_design_description</code> extension and is never inferred from <code>voice</code>, which keeps its OpenAI-compatible meaning and is forwarded as an instruction. A client sending <code>"voice": "default"</code> gets speech rather than a design run for a voice literally named "default". The field is ignored when the request already carries <code>reference_wav_b64</code>. Request fields are read with a type-checking accessor rather than <code>json::value()</code>, which throws on a type mismatch instead of falling back to the default and would turn a client's wrong-typed field into a 500.</p>

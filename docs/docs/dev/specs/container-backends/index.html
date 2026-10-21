@@ -3367,8 +3367,8 @@
 <p>Its <strong>tier</strong> is one of:</p>
 <ol>
 <li><code>core</code>: supported by Lemonade's maintainers for production use.</li>
-<li><code>community</code>: provided by Lemonade's maintainers, but not supported for production use.</li>
-<li><code>experimental</code>: developed in the community and listed in Lemonade. Use at your own risk.</li>
+<li><code>experimental</code>: provided by Lemonade's maintainers, but not supported for production use.</li>
+<li><code>guest</code>: developed and published outside Lemonade's maintainers. Use at your own risk.</li>
 </ol>
 <p>Its <strong>format</strong> is one of:</p>
 <ol>
@@ -3378,11 +3378,11 @@
 </ol>
 <p>Tier and format are set per backend. Examples:
 - <code>llamacpp:rocm</code>: core, native
-- <code>vllm:rocm</code>: community, python
-- <code>halogen:rocm</code>: experimental, container</p>
-<p>Lemonade's GUI and CLI will display a disclaimer the first time the user attempts to install an experimental backend. Models specific to an experimental backend should not be displayed in <code>/v1/models?show_all=true</code> until the backend has been installed.</p>
+- <code>vllm:rocm</code>: experimental, python
+- <code>halogen:rocm</code>: guest, container</p>
+<p>Lemonade's GUI and CLI will display a disclaimer the first time the user attempts to install a guest backend. Models specific to a guest backend should not be displayed in <code>/v1/models?show_all=true</code> until the backend has been installed.</p>
 <blockquote>
-<p>Note: we can keep the experimental boolean label in the descriptor to avoid a breaking change.</p>
+<p>Note: tier replaces the descriptor's <code>experimental</code> boolean. <code>/system-info</code> keeps each recipe's <code>experimental</code> field, <code>true</code> when its <code>default_backend</code> has the <code>experimental</code> or <code>guest</code> tier.</p>
 </blockquote>
 <h2 id="class-architecture">Class Architecture</h2>
 <p><code>WrappedServer</code> is Lemonade's main primitive: a subclass per inference engine, each spawning a server subprocess and proxying HTTP to it. This spec adds the concept of a <strong>container backend</strong> to the existing concept of a <strong>native backend</strong>. This section describes the class architecture that enables native and container backends to share as many concepts as possible, while diverging where necessary.</p>

@@ -1537,6 +1537,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#starting-the-server-process" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Starting the server process
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#register-it-one-line" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -2767,6 +2778,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#starting-the-server-process" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Starting the server process
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#register-it-one-line" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -2911,7 +2933,7 @@
 <span class="w">        </span><span class="p">{</span><span class="s">"myrecipe_args"</span><span class="p">,</span><span class="w"> </span><span class="s">"--myrecipe-args"</span><span class="p">,</span><span class="w"> </span><span class="s">""</span><span class="p">,</span><span class="w"> </span><span class="s">"ARGS"</span><span class="p">,</span><span class="w"> </span><span class="s">"Custom args to pass"</span><span class="p">,</span><span class="w"> </span><span class="s">"My Options"</span><span class="p">},</span>
 <span class="w">    </span><span class="p">},</span>
 <span class="w">    </span><span class="cm">/*support*/</span><span class="w"> </span><span class="p">{</span><span class="w">                           </span><span class="c1">// OS / device families ({} = no local gating)</span>
-<span class="w">        </span><span class="p">{</span><span class="s">"myrecipe"</span><span class="p">,</span><span class="w"> </span><span class="s">"cpu"</span><span class="p">,</span><span class="w"> </span><span class="p">{</span><span class="s">"linux"</span><span class="p">,</span><span class="w"> </span><span class="s">"windows"</span><span class="p">},</span><span class="w"> </span><span class="p">{{</span><span class="s">"cpu"</span><span class="p">,</span><span class="w"> </span><span class="p">{</span><span class="s">"x86_64"</span><span class="p">}}}},</span>
+<span class="w">        </span><span class="p">{</span><span class="s">"cpu"</span><span class="p">,</span><span class="w"> </span><span class="n">BackendTier</span><span class="o">::</span><span class="n">Experimental</span><span class="p">,</span><span class="w"> </span><span class="n">BackendFormat</span><span class="o">::</span><span class="n">Native</span><span class="p">,</span><span class="w"> </span><span class="p">{</span><span class="s">"linux"</span><span class="p">,</span><span class="w"> </span><span class="s">"windows"</span><span class="p">},</span><span class="w"> </span><span class="p">{{</span><span class="s">"cpu"</span><span class="p">,</span><span class="w"> </span><span class="p">{</span><span class="s">"x86_64"</span><span class="p">}}}},</span>
 <span class="w">    </span><span class="p">},</span>
 <span class="w">    </span><span class="cm">/*supported_modes*/</span><span class="w"> </span><span class="p">{</span><span class="s">"chat"</span><span class="p">},</span><span class="w">           </span><span class="c1">// every mode you serve, most-default first</span>
 <span class="w">    </span><span class="cm">/*required_checkpoints*/</span><span class="w"> </span><span class="p">{</span><span class="s">"main"</span><span class="p">},</span><span class="w">      </span><span class="c1">// unconditional files; conditional ones checked in load()</span>
@@ -2921,9 +2943,10 @@
 <span class="p">}}}</span><span class="w">  </span><span class="c1">// namespace lemon::backends::myrecipe</span>
 </code></pre></div>
 <p><code>SlotPolicy</code> controls accelerator sharing: <code>Standard</code> (counts toward LRU slots), <code>ExclusiveNpu</code> (evicts all NPU servers first), <code>CoexistByType</code> (one per model type), <code>Unmetered</code> (never counted, never auto-evicted — cloud).</p>
+<p>Each <code>support</code> row names its backend's tier (<code>BackendTier::Core</code>, <code>BackendTier::Experimental</code> or <code>BackendTier::Guest</code>) and format (<code>BackendFormat::Native</code>, <code>BackendFormat::Python</code> or <code>BackendFormat::Container</code>) right after the backend name, so a row without them does not compile. Rows for the same backend on different OSes can carry different labels; <code>/system-info</code> reports the labels of the row for the current OS. See <a href="../../api/lemonade/#backend-tiers-and-formats">Backend Tiers and Formats</a> for what each value means.</p>
 <p><code>supported_modes</code> is the backend's contract with the model registry. A model whose labels name no mode is stamped with <code>supported_modes[0]</code>; a model whose labels name a mode absent from the list is refused by <code>POST /pull</code> with a 400 rather than failing later at inference time. <code>BackendModeContractTest</code> fails the build if this list disagrees with the capability interfaces your server class implements.</p>
 <h2 id="the-server-class-factory-stemstem_serverhcpp">The server class + factory — <code>&lt;stem&gt;/&lt;stem&gt;_server.{h,cpp}</code></h2>
-<p>The server class is a <code>WrappedServer</code> subclass. Implement <code>load()</code>, <code>unload()</code>, and only the capability interfaces you serve (<code>ITranscriptionServer</code>, <code>IImageServer</code>, <code>ITextToSpeechServer</code>, …). <code>WrappedServer</code> provides default "unsupported" <code>chat_completion</code>/<code>completion</code>/<code>responses</code>, so a non-chat backend does not stub them. Alongside it, a free <code>create()</code> builds the instance.</p>
+<p>The server class is a <code>WrappedServer</code> subclass. Implement <code>load()</code> (<a href="#starting-the-server-process">Starting the server process</a>) and only the capability interfaces you serve (<code>ITranscriptionServer</code>, <code>IImageServer</code>, <code>ITextToSpeechServer</code>, …). <code>WrappedServer</code> provides default "unsupported" <code>chat_completion</code>/<code>completion</code>/<code>responses</code>, so a non-chat backend does not stub them. Alongside it, a free <code>create()</code> builds the instance.</p>
 <p><code>&lt;stem&gt;_server.h</code>:</p>
 <div class="highlight"><pre><span></span><code><span class="cp">#pragma once</span>
 <span class="cp">#include</span><span class="w"> </span><span class="cpf">"lemon/backends/backend_registry.h"</span><span class="w">   </span><span class="c1">// BackendContext</span>
@@ -2932,7 +2955,7 @@
 <span class="k">namespace</span><span class="w"> </span><span class="nn">lemon</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">namespace</span><span class="w"> </span><span class="nn">backends</span><span class="w"> </span><span class="p">{</span>
 
 <span class="k">class</span><span class="w"> </span><span class="nc">MyServer</span><span class="w"> </span><span class="o">:</span><span class="w"> </span><span class="k">public</span><span class="w"> </span><span class="n">WrappedServer</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="c1">// load(), unload(), the capability methods you serve …</span>
+<span class="w">    </span><span class="c1">// load(), the capability methods you serve …</span>
 <span class="p">};</span>
 
 <span class="k">namespace</span><span class="w"> </span><span class="nn">myrecipe</span><span class="w"> </span><span class="p">{</span>
@@ -2953,6 +2976,52 @@
 <span class="p">}</span>
 <span class="p">}}}</span><span class="w">  </span><span class="c1">// namespace lemon::backends::myrecipe</span>
 </code></pre></div>
+<h2 id="starting-the-server-process">Starting the server process</h2>
+<p><code>load()</code> builds a <code>ServerCommand</code> and passes it to <code>start_server()</code> together with the <code>ServerProcess</code> that runs it:</p>
+<div class="highlight"><pre><span></span><code><span class="kt">void</span><span class="w"> </span><span class="nf">MyServer::load</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">string</span><span class="o">&amp;</span><span class="w"> </span><span class="n">model_name</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">ModelInfo</span><span class="o">&amp;</span><span class="w"> </span><span class="n">model_info</span><span class="p">,</span>
+<span class="w">                    </span><span class="k">const</span><span class="w"> </span><span class="n">RecipeOptions</span><span class="o">&amp;</span><span class="w"> </span><span class="n">options</span><span class="p">,</span><span class="w"> </span><span class="kt">bool</span><span class="w"> </span><span class="n">do_not_upgrade</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">backend_manager_</span><span class="o">-&gt;</span><span class="n">install_backend</span><span class="p">(</span><span class="n">myrecipe</span><span class="o">::</span><span class="n">spec</span><span class="p">()</span><span class="o">-&gt;</span><span class="n">recipe</span><span class="p">,</span><span class="w"> </span><span class="s">"cpu"</span><span class="p">);</span>
+<span class="w">    </span><span class="n">port_</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">choose_port</span><span class="p">();</span>
+
+<span class="w">    </span><span class="n">ServerCommand</span><span class="w"> </span><span class="n">command</span><span class="p">;</span>
+<span class="w">    </span><span class="n">command</span><span class="p">.</span><span class="n">program</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">BackendUtils</span><span class="o">::</span><span class="n">get_backend_binary_path</span><span class="p">(</span><span class="o">*</span><span class="n">myrecipe</span><span class="o">::</span><span class="n">spec</span><span class="p">(),</span><span class="w"> </span><span class="s">"cpu"</span><span class="p">);</span>
+<span class="w">    </span><span class="n">command</span><span class="p">.</span><span class="n">args</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="s">"-m"</span><span class="p">,</span><span class="w"> </span><span class="n">model_info</span><span class="p">.</span><span class="n">resolved_path</span><span class="p">(),</span><span class="w"> </span><span class="s">"--port"</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">to_string</span><span class="p">(</span><span class="n">port_</span><span class="p">)};</span>
+<span class="w">    </span><span class="n">command</span><span class="p">.</span><span class="n">port</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">port_</span><span class="p">;</span>
+<span class="w">    </span><span class="n">start_server</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="n">make_unique</span><span class="o">&lt;</span><span class="n">NativeProcess</span><span class="o">&gt;</span><span class="p">(</span><span class="n">ProcessOutput</span><span class="p">{</span><span class="n">is_debug</span><span class="p">(),</span><span class="w"> </span><span class="nb">false</span><span class="p">}),</span><span class="w"> </span><span class="n">command</span><span class="p">);</span>
+<span class="p">}</span>
+</code></pre></div>
+<p><code>start_server()</code> launches the process and polls <code>command.ready_endpoint</code> until it answers, then starts the backend watchdog on the same endpoint. It throws, with the process stopped, when the process exits, the load is cancelled, or the timeout passes first. These settings cover the differences between servers:</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>command.env</code></td>
+<td>Extra environment variables for the server process.</td>
+</tr>
+<tr>
+<td><code>command.ready_endpoint</code></td>
+<td>The path polled for readiness and by the watchdog. Defaults to <code>/health</code>; set it when the server has a different always-on route (FLM uses <code>/api/tags</code>).</td>
+</tr>
+<tr>
+<td><code>start_server(process, command, timeout_seconds)</code></td>
+<td>Startup timeout in seconds. Defaults to 600.</td>
+</tr>
+<tr>
+<td><code>ProcessOutput{inherit, filter_health_logs}</code></td>
+<td><code>inherit</code> copies the server's output into the Lemonade log. <code>filter_health_logs</code> drops the server's health-check request lines from that output.</td>
+</tr>
+<tr>
+<td><code>NativeProcess(output, working_dir)</code></td>
+<td>Working directory for the server process. Defaults to the Lemonade process's own.</td>
+</tr>
+</tbody>
+</table>
+<p>The default <code>unload()</code> calls <code>stop_server()</code>. Override it when the backend owns resources beyond the process, such as files it created (vLLM's ROCm shim directory), and call <code>stop_server()</code> from the override. The router destroys the server object right after <code>unload()</code>, so an override cleans up external resources only. The <code>WrappedServer</code> destructor stops the server too, so a backend writes a destructor only for its own resources (whisper.cpp removes its temp directory).</p>
 <h2 id="register-it-one-line">Register it: one line</h2>
 <div class="highlight"><pre><span></span><code><span class="nb">set</span><span class="p">(</span><span class="s">LEMON_BACKENDS</span>
 <span class="w">    </span><span class="s">...</span>
@@ -3050,7 +3119,7 @@
 <td>set <code>dynamic_models = true</code> and provide them in the class (see cloud's <code>discover_models()</code>)</td>
 </tr>
 <tr>
-<td>Per-create setup before load (ryzenai <code>set_model_path</code>)</td>
+<td>Per-create setup before load (cloud's provider)</td>
 <td>do it in <code>create()</code></td>
 </tr>
 </tbody>

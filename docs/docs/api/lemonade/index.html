@@ -3662,6 +3662,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#backend-tiers-and-formats" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Backend Tiers and Formats
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -5750,6 +5761,17 @@
     <span class="md-ellipsis">
       <span class="md-typeset">
         Response format
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#backend-tiers-and-formats" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Backend Tiers and Formats
       </span>
     </span>
   </a>
@@ -8483,7 +8505,8 @@ which mirrors the path used on the documentation website; the <code>.md</code> s
 <span class="w">  </span><span class="nt">"prompt_tokens_total"</span><span class="p">:</span><span class="w"> </span><span class="mi">108</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">"cache_tokens_total"</span><span class="p">:</span><span class="w"> </span><span class="mi">1152</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">"routing_decisions_total"</span><span class="p">:</span><span class="w"> </span><span class="mi">4</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">"routing_switches_total"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span>
+<span class="w">  </span><span class="nt">"routing_switches_total"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"live"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"active_requests"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="nt">"estimated_tokens_per_second"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.0</span><span class="p">}</span>
 <span class="p">}</span>
 </code></pre></div>
 <p><strong>Field Descriptions:</strong></p>
@@ -8495,6 +8518,7 @@ which mirrors the path used on the documentation website; the <code>.md</code> s
 <li><code>prompt_tokens</code> - Total prompt tokens including cached tokens</li>
 <li><code>cache_tokens</code> - Prompt tokens served from the backend's prefix cache on the last request (llama.cpp <code>timings.cache_n</code>, or <code>usage.prompt_tokens_details.cached_tokens</code> / Responses-API <code>input_tokens_details.cached_tokens</code> from OpenAI-compatible cloud providers). <code>null</code> when the last request did not report cache usage</li>
 <li><code>*_total</code> - Cumulative counters since server start</li>
+<li><code>live</code> - Number of streams with recent generated output and best-effort tokens/s. The rate estimates tokens from SSE text and is <strong>not</strong> an exact token count; use the existing last-request statistics for exact completed-inference numbers. The values become zero after about 3 seconds without generated output or immediately when a request ends. Status and keepalive SSE events are ignored.</li>
 <li><code>routing_decisions_total</code> - Routing decisions made by <code>collection.router</code> dispatch</li>
 <li><code>routing_switches_total</code> - Routing decisions that changed a conversation's routed model (a proxy for route ping-pong; conversations are identified by a hash of the system prompt and first user message)</li>
 </ul>
@@ -8524,6 +8548,36 @@ which mirrors the path used on the documentation website; the <code>.md</code> s
 <li><code>npu_percent</code> - NPU utilization percentage, or <code>null</code> when unavailable</li>
 </ul>
 <p>GPU, VRAM, and NPU telemetry availability depends on the operating system and installed drivers. Unsupported values are returned as <code>null</code>.</p>
+<p>The <code>primary_gpu_id</code> and <code>gpus</code> fields describe the individual host GPUs. The legacy
+<code>gpu_percent</code> and <code>vram_gb</code> values now come from the same primary device: the GPU
+with the largest known GPU-accessible memory capacity (ties broken by stable ID).
+Selection does not depend on current GPU utilization. Device IDs remain stable
+across ordinary telemetry failures; unavailable live measurements become <code>null</code>.
+The primary GPU for this display is <strong>not</strong> necessarily the GPU targeted by a
+model recipe. <code>vram_gb</code> retains its historical name but represents GPU memory
+usage, which can be shared system memory for AMD APUs.</p>
+<p>Example <code>gpus</code> entry (all measurement fields can be <code>null</code>):</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"primary_gpu_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"amd:0000:c1:00.0"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"gpus"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">"id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"amd:0000:c1:00.0"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"vendor"</span><span class="p">:</span><span class="w"> </span><span class="s2">"amd"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"AMD GPU (card0)"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"memory_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"shared"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"gpu_percent"</span><span class="p">:</span><span class="w"> </span><span class="mf">25.0</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"memory_total_gb"</span><span class="p">:</span><span class="w"> </span><span class="mf">120.0</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"memory_used_gb"</span><span class="p">:</span><span class="w"> </span><span class="mf">18.0</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">]</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>On Linux, AMD and NVIDIA devices are enumerated separately. On Windows, NVIDIA
+telemetry comes from NVML and AMD telemetry from DXGI, DXCore, and PDH; other
+vendors still require their own platform implementation. On macOS the new
+per-GPU list is empty.
+NVML alone does not establish whether memory is dedicated or shared, so
+NVIDIA devices report <code>memory_type</code> as <code>unknown</code>.</p>
 <h2 id="get-metrics"><code>GET /metrics</code></h2>
 <p><sub><img alt="Status" src="https://img.shields.io/badge/status-fully_available-green" /></sub></p>
 <p>Prometheus scrape endpoint for Lemonade Server. The endpoint returns Prometheus text exposition format and is intended to be scraped by Prometheus, not by Grafana directly.</p>
@@ -8618,25 +8672,33 @@ lemonade_server_info{version="10.4.0"} 1
 <span class="w">          </span><span class="nt">"state"</span><span class="p">:</span><span class="w"> </span><span class="s2">"installed"</span><span class="p">,</span>
 <span class="w">          </span><span class="nt">"message"</span><span class="p">:</span><span class="w"> </span><span class="s2">""</span><span class="p">,</span>
 <span class="w">          </span><span class="nt">"action"</span><span class="p">:</span><span class="w"> </span><span class="s2">""</span><span class="p">,</span>
-<span class="w">          </span><span class="nt">"version"</span><span class="p">:</span><span class="w"> </span><span class="s2">"b7869"</span>
+<span class="w">          </span><span class="nt">"version"</span><span class="p">:</span><span class="w"> </span><span class="s2">"b7869"</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">"tier"</span><span class="p">:</span><span class="w"> </span><span class="s2">"core"</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">"format"</span><span class="p">:</span><span class="w"> </span><span class="s2">"native"</span>
 <span class="w">        </span><span class="p">},</span>
 <span class="w">        </span><span class="nt">"rocm"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
 <span class="w">          </span><span class="nt">"devices"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"amd_gpu"</span><span class="p">],</span>
 <span class="w">          </span><span class="nt">"state"</span><span class="p">:</span><span class="w"> </span><span class="s2">"installable"</span><span class="p">,</span>
 <span class="w">          </span><span class="nt">"message"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Backend is supported but not installed."</span><span class="p">,</span>
-<span class="w">          </span><span class="nt">"action"</span><span class="p">:</span><span class="w"> </span><span class="s2">"lemonade backends install llamacpp:rocm"</span>
+<span class="w">          </span><span class="nt">"action"</span><span class="p">:</span><span class="w"> </span><span class="s2">"lemonade backends install llamacpp:rocm"</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">"tier"</span><span class="p">:</span><span class="w"> </span><span class="s2">"core"</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">"format"</span><span class="p">:</span><span class="w"> </span><span class="s2">"native"</span>
 <span class="w">        </span><span class="p">},</span>
 <span class="w">        </span><span class="nt">"metal"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
 <span class="w">          </span><span class="nt">"devices"</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span>
 <span class="w">          </span><span class="nt">"state"</span><span class="p">:</span><span class="w"> </span><span class="s2">"unsupported"</span><span class="p">,</span>
 <span class="w">          </span><span class="nt">"message"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Requires macOS"</span><span class="p">,</span>
-<span class="w">          </span><span class="nt">"action"</span><span class="p">:</span><span class="w"> </span><span class="s2">""</span>
+<span class="w">          </span><span class="nt">"action"</span><span class="p">:</span><span class="w"> </span><span class="s2">""</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">"tier"</span><span class="p">:</span><span class="w"> </span><span class="s2">"core"</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">"format"</span><span class="p">:</span><span class="w"> </span><span class="s2">"native"</span>
 <span class="w">        </span><span class="p">},</span>
 <span class="w">        </span><span class="nt">"cpu"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
 <span class="w">          </span><span class="nt">"devices"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"cpu"</span><span class="p">],</span>
 <span class="w">          </span><span class="nt">"state"</span><span class="p">:</span><span class="w"> </span><span class="s2">"update_required"</span><span class="p">,</span>
 <span class="w">          </span><span class="nt">"message"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Backend update is required before use."</span><span class="p">,</span>
-<span class="w">          </span><span class="nt">"action"</span><span class="p">:</span><span class="w"> </span><span class="s2">"lemonade backends install llamacpp:cpu"</span>
+<span class="w">          </span><span class="nt">"action"</span><span class="p">:</span><span class="w"> </span><span class="s2">"lemonade backends install llamacpp:cpu"</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">"tier"</span><span class="p">:</span><span class="w"> </span><span class="s2">"core"</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">"format"</span><span class="p">:</span><span class="w"> </span><span class="s2">"native"</span>
 <span class="w">        </span><span class="p">}</span>
 <span class="w">      </span><span class="p">}</span>
 <span class="w">    </span><span class="p">},</span>
@@ -8723,6 +8785,7 @@ lemonade_server_info{version="10.4.0"} 1
 </li>
 <li>Each recipe (e.g., <code>llamacpp</code>, <code>whispercpp</code>, <code>flm</code>) contains:<ul>
 <li><code>default_backend</code> - Preferred backend selected by server policy for this system (present when at least one backend is not <code>unsupported</code>)</li>
+<li><code>experimental</code> - <code>true</code> when the <code>default_backend</code>'s tier is <code>experimental</code> or <code>guest</code>. See <a href="#backend-tiers-and-formats">Backend Tiers and Formats</a>.</li>
 <li><code>backends</code> - Available backends for this recipe</li>
 <li>Each backend contains:<ul>
 <li><code>devices</code> - List of devices <strong>on this system</strong> that support this backend (empty if not supported)</li>
@@ -8730,6 +8793,8 @@ lemonade_server_info{version="10.4.0"} 1
 <li><code>message</code> - Human-readable status text for GUI and CLI users. Required for <code>unsupported</code>, <code>installable</code>, and <code>update_required</code>; empty for <code>installed</code>.</li>
 <li><code>action</code> - Actionable user instruction string. For install/update cases this is typically an exact CLI command; for other states it may be empty or another actionable value (for example, a URL).</li>
 <li><code>version</code> - Installed or configured backend version (when available)</li>
+<li><code>tier</code> - <code>core</code>, <code>experimental</code>, or <code>guest</code>. See <a href="#backend-tiers-and-formats">Backend Tiers and Formats</a>.</li>
+<li><code>format</code> - <code>native</code>, <code>python</code>, or <code>container</code>. See <a href="#backend-tiers-and-formats">Backend Tiers and Formats</a>.</li>
 </ul>
 </li>
 </ul>
@@ -8748,6 +8813,52 @@ lemonade_server_info{version="10.4.0"} 1
 </ul>
 </li>
 </ul>
+<h3 id="backend-tiers-and-formats">Backend Tiers and Formats</h3>
+<table>
+<thead>
+<tr>
+<th>Tier</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>core</code></td>
+<td>Supported by Lemonade's maintainers for production use.</td>
+</tr>
+<tr>
+<td><code>experimental</code></td>
+<td>Provided by Lemonade's maintainers, not supported for production use.</td>
+</tr>
+<tr>
+<td><code>guest</code></td>
+<td>Developed and published outside Lemonade's maintainers. Use at your own risk. The models of a recipe whose only backends on this system are guest backends stay hidden from <code>GET /v1/models?show_all=true</code> until one of those backends is installed.</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th>Format</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>native</code></td>
+<td>A compiled executable.</td>
+</tr>
+<tr>
+<td><code>python</code></td>
+<td>Python, packaged with its own interpreter.</td>
+</tr>
+<tr>
+<td><code>container</code></td>
+<td>An OCI image, run by a pre-installed Podman or Docker.</td>
+</tr>
+</tbody>
+</table>
+<p>The same backend can carry different labels on different operating systems. Each entry in a recipe's <code>backends</code> object reports the labels for this system's operating system.</p>
 <h2 id="post-v1install"><code>POST /v1/install</code></h2>
 <p><sub><img alt="Status" src="https://img.shields.io/badge/status-fully_available-green" /></sub></p>
 <p>Install or update a backend for a specific recipe/backend pair, <strong>or</strong> register a cloud OpenAI-compatible provider. The request body is dispatched by the <code>backend</code> field: any value other than <code>"cloud"</code> is treated as a local backend install.</p>

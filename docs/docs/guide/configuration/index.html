@@ -3467,7 +3467,7 @@
 <p>When <code>lemond</code> starts, effective configuration is resolved by deep-merging settings in increasing precedence:</p>
 <ol>
 <li><strong>Built-in Defaults</strong>: Factory defaults baked into the release (<code>resources/defaults.json</code> and backend descriptors).</li>
-<li><strong>Distro / System Defaults</strong>: On Linux, <code>lemond</code> merges <code>/usr/share/lemonade/defaults.json</code> if it exists, so distro packages can ship system-level defaults (e.g. backend <code>*_bin</code> paths pointing at system-installed binaries).</li>
+<li><strong>Distro / System Defaults</strong>: On Linux, <code>lemond</code> merges <code>share/lemonade/defaults.json</code> under its own install prefix if it exists (<code>/usr/share/lemonade/defaults.json</code> for <code>/usr/bin/lemond</code>), so distro packages can ship system-level defaults (e.g. backend <code>*_bin</code> paths pointing at system-installed binaries).</li>
 <li><strong>Environment Defaults</strong>: Set the <code>LEMONADE_DEFAULTS_PATH</code> environment variable to a <code>defaults.json</code> at any location to merge on top (for non-FHS distros like Nix/Guix that cannot write under <code>/usr/share</code>).</li>
 <li><strong>User Overrides (<code>config.json</code>)</strong>: Values explicitly set in your <code>config.json</code> override defaults.</li>
 <li><strong>CLI Flags</strong>: Arguments passed to <code>lemond</code> (e.g. <code>--port</code>, <code>--host</code>).</li>

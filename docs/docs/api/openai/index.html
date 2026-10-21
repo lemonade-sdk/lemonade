@@ -5289,7 +5289,7 @@ python<span class="w"> </span>examples/realtime_transcription.py<span class="w">
 </div>
 <h2 id="post-v1imagesedits"><code>POST /v1/images/edits</code></h2>
 <p><sub><img alt="Status" src="https://img.shields.io/badge/status-fully_available-green" /></sub></p>
-<p>Image Editing API. You provide a source image and a text prompt describing the desired change, and receive an edited image.</p>
+<p>Image Editing API. Provide one or more reference images and a prompt describing the desired change, and receive an edited image.</p>
 <blockquote>
 <p><strong>Note:</strong> This endpoint accepts <code>multipart/form-data</code> requests (not JSON). Use editing-capable models such as <code>Flux-2-Klein-4B</code> or <code>SD-Turbo</code>.</p>
 <p><strong>Performance:</strong> CPU inference takes several minutes per image. GPU (ROCm) is significantly faster.</p>
@@ -5314,7 +5314,7 @@ python<span class="w"> </span>examples/realtime_transcription.py<span class="w">
 <tr>
 <td><code>image</code> / <code>image[]</code></td>
 <td>Yes</td>
-<td>The source image file to edit (PNG). Sent as a file in multipart/form-data.</td>
+<td>PNG or JPEG image upload. For multiple references, repeat <code>image[]</code> in order. Files are forwarded without re-encoding.</td>
 <td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
 </tr>
 <tr>
@@ -5332,7 +5332,7 @@ python<span class="w"> </span>examples/realtime_transcription.py<span class="w">
 <tr>
 <td><code>size</code></td>
 <td>No</td>
-<td>The size of the output image. Format: <code>WIDTHxHEIGHT</code> (e.g., <code>512x512</code>). Default: <code>512x512</code>.</td>
+<td>Output dimensions as <code>WIDTHxHEIGHT</code> (e.g., <code>512x512</code>). When omitted, use the first reference image's dimensions, scaling down proportionally to the model's optional <code>image_defaults.soft_pixel_cap</code> cap (default: 2048x2048 pixels, ~4 MP). An explicit size bypasses this soft cap; backend limits still apply.</td>
 <td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
 </tr>
 <tr>
@@ -6053,10 +6053,6 @@ can be corrected by hand.</p>
 <tr>
 <td><code>coding</code></td>
 <td>Tuned for code generation and software tasks.</td>
-</tr>
-<tr>
-<td><code>experimental</code></td>
-<td>Not yet validated for production use.</td>
 </tr>
 </tbody>
 </table>

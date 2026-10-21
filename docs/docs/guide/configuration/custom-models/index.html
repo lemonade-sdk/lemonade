@@ -4531,7 +4531,11 @@ from the embedded definitions.</p>
 <p>Components must already be registered (built-in models, or other <code>user.*</code> entries earlier in this file). Loading the collection (<code>lemonade load user.MyKit</code>) loads each component; deleting the collection removes only the collection entry, leaving components on disk.</p>
 <p>The equivalent CLI registration is shown in <a href="#pull-an-omni-collection">Pull an Omni Collection</a>.</p>
 <h3 id="image-defaults">Image defaults</h3>
-<p>For <code>sd-cpp</code> recipe models, you can specify default image generation parameters:</p>
+<p>For image models (including <code>sd-cpp</code> and <code>thenoise</code>), you can specify default generation parameters.
+The optional <code>soft_pixel_cap</code> limits the <strong>inferred output area</strong> of <code>/images/edits</code> when
+<code>size</code> is omitted; Lemonade preserves the input aspect ratio. If this field is
+missing or zero, the global 4,194,304-pixel (~4 MP) fallback applies.
+Explicitly requested output sizes are not subject to this soft cap:</p>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
 <span class="w">    </span><span class="nt">"My-SD-Model"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
 <span class="w">        </span><span class="nt">"checkpoint"</span><span class="p">:</span><span class="w"> </span><span class="s2">"org/repo:model.safetensors"</span><span class="p">,</span>
@@ -4541,7 +4545,8 @@ from the embedded definitions.</p>
 <span class="w">            </span><span class="nt">"steps"</span><span class="p">:</span><span class="w"> </span><span class="mi">20</span><span class="p">,</span>
 <span class="w">            </span><span class="nt">"cfg_scale"</span><span class="p">:</span><span class="w"> </span><span class="mf">7.0</span><span class="p">,</span>
 <span class="w">            </span><span class="nt">"width"</span><span class="p">:</span><span class="w"> </span><span class="mi">512</span><span class="p">,</span>
-<span class="w">            </span><span class="nt">"height"</span><span class="p">:</span><span class="w"> </span><span class="mi">512</span>
+<span class="w">            </span><span class="nt">"height"</span><span class="p">:</span><span class="w"> </span><span class="mi">512</span><span class="p">,</span>
+<span class="w">            </span><span class="nt">"soft_pixel_cap"</span><span class="p">:</span><span class="w"> </span><span class="mi">262144</span>
 <span class="w">        </span><span class="p">}</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="p">}</span>

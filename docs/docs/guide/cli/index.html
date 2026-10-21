@@ -925,10 +925,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#hrx-gpu-experimental-llamacpp-hrx-recipe" class="md-nav__link">
+  <a href="#hrx-gpu-llamacpp-hrx-recipe" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        HRX GPU (experimental) (<code>llamacpp-hrx</code> recipe)
+        HRX GPU (<code>llamacpp-hrx</code> recipe)
       </span>
     </span>
   </a>
@@ -991,10 +991,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#vllm-rocm-experimental-vllm-recipe" class="md-nav__link">
+  <a href="#vllm-rocm-vllm-recipe" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        vLLM ROCm (experimental) (<code>vllm</code> recipe)
+        vLLM ROCm (<code>vllm</code> recipe)
       </span>
     </span>
   </a>
@@ -1013,10 +1013,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#dwarfstar4-experimental-ds4-recipe" class="md-nav__link">
+  <a href="#dwarfstar4-ds4-recipe" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        DwarfStar4 (experimental) (<code>ds4</code> recipe)
+        DwarfStar4 (<code>ds4</code> recipe)
       </span>
     </span>
   </a>
@@ -3544,10 +3544,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#hrx-gpu-experimental-llamacpp-hrx-recipe" class="md-nav__link">
+  <a href="#hrx-gpu-llamacpp-hrx-recipe" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        HRX GPU (experimental) (<code>llamacpp-hrx</code> recipe)
+        HRX GPU (<code>llamacpp-hrx</code> recipe)
       </span>
     </span>
   </a>
@@ -3610,10 +3610,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#vllm-rocm-experimental-vllm-recipe" class="md-nav__link">
+  <a href="#vllm-rocm-vllm-recipe" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        vLLM ROCm (experimental) (<code>vllm</code> recipe)
+        vLLM ROCm (<code>vllm</code> recipe)
       </span>
     </span>
   </a>
@@ -3632,10 +3632,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#dwarfstar4-experimental-ds4-recipe" class="md-nav__link">
+  <a href="#dwarfstar4-ds4-recipe" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        DwarfStar4 (experimental) (<code>ds4</code> recipe)
+        DwarfStar4 (<code>ds4</code> recipe)
       </span>
     </span>
   </a>
@@ -4693,7 +4693,7 @@ lemonade<span class="w"> </span>import<span class="w"> </span>model-with-id-alia
 </tr>
 </tbody>
 </table>
-<h4 id="hrx-gpu-experimental-llamacpp-hrx-recipe">HRX GPU (experimental) (<code>llamacpp-hrx</code> recipe)</h4>
+<h4 id="hrx-gpu-llamacpp-hrx-recipe">HRX GPU (<code>llamacpp-hrx</code> recipe)</h4>
 <table>
 <thead>
 <tr>
@@ -4815,7 +4815,7 @@ lemonade<span class="w"> </span>import<span class="w"> </span>model-with-id-alia
 </tr>
 </tbody>
 </table>
-<h4 id="vllm-rocm-experimental-vllm-recipe">vLLM ROCm (experimental) (<code>vllm</code> recipe)</h4>
+<h4 id="vllm-rocm-vllm-recipe">vLLM ROCm (<code>vllm</code> recipe)</h4>
 <table>
 <thead>
 <tr>
@@ -4859,7 +4859,7 @@ lemonade<span class="w"> </span>import<span class="w"> </span>model-with-id-alia
 </tr>
 </tbody>
 </table>
-<h4 id="dwarfstar4-experimental-ds4-recipe">DwarfStar4 (experimental) (<code>ds4</code> recipe)</h4>
+<h4 id="dwarfstar4-ds4-recipe">DwarfStar4 (<code>ds4</code> recipe)</h4>
 <table>
 <thead>
 <tr>
@@ -5146,7 +5146,8 @@ lemonade<span class="w"> </span>backends<span class="w"> </span>uninstall<span c
 </table>
 <p><strong>Notes:</strong>
 - Supported backends depend on your system and the recipe
-- Use <code>lemonade backends --all</code> to list all available recipes and backends</p>
+- Use <code>lemonade backends --all</code> to list all available recipes and backends
+- Each backend lists its tier and format. See <a href="../../api/lemonade/#backend-tiers-and-formats">Backend Tiers and Formats</a> for what each value means.</p>
 <p><strong>Examples:</strong></p>
 <div class="highlight"><pre><span></span><code><span class="c1"># List supported recipes and backends</span>
 lemonade<span class="w"> </span>backends
@@ -5478,7 +5479,7 @@ lemonade<span class="w"> </span>telemetry<span class="w"> </span>on
 lemonade<span class="w"> </span>telemetry<span class="w"> </span>off
 </code></pre></div>
 <h2 id="options-for-bench">Options for bench</h2>
-<p>The <code>bench</code> command measures chat completion performance (TTFT and tokens-per-second) for one or more models across one or more installed backends, context sizes, and scenario workloads. It sends <code>POST /api/v1/chat/completions</code> requests and extracts timing data from the server response.</p>
+<p>The <code>bench</code> command measures chat completion performance (TTFT, prefill throughput, and decode tokens-per-second) for one or more models across one or more installed backends, context sizes, and scenario workloads. It sends <code>POST /api/v1/chat/completions</code> requests and extracts timing data from the server response.</p>
 <div class="highlight"><pre><span></span><code>lemonade bench [options] MODEL_NAME [MODEL_NAME ...]
 </code></pre></div>
 <h3 id="required-arguments">Required Arguments</h3>
@@ -5755,26 +5756,27 @@ lemonade<span class="w"> </span>telemetry<span class="w"> </span>off
 <p>Vision scenarios are excluded by default both because they require a vision-capable model and because embedding and transferring image payloads adds overhead; opt in deliberately when benchmarking a multimodal model.</p>
 <h3 id="output">Output</h3>
 <h4 id="table-output-default">Table Output (default)</h4>
-<p>Results are printed as a table grouped by backend. Columns show TTFT (Time To First Token) and TPS (Tokens Per Second) with mean, min/max (or p50/p95 when <code>--runs &gt;= 10</code>), and peak VRAM usage:</p>
+<p>Results are printed as a table grouped by backend. Columns show TTFT (Time To First Token) and TPS (decode Tokens Per Second) with mean, min/max (or p50/p95 when <code>--runs &gt;= 10</code>), PP t/s, and peak VRAM usage:</p>
 <div class="highlight"><pre><span></span><code>Benchmark: Qwen3-0.6B-GGUF
 ====================================================================================================
 
 Backend: llamacpp/vulkan (ctx=4096)
 ----------------------------------------------------------------------------------------------------
-Scenario            TTFT    min     max     TPS     min     max     VRAM (GB)
+Scenario            TTFT     min      max      PP t/s  TPS      min      max      VRAM (GB)
 ----------------------------------------------------------------------------------------------------
-chat-short          45.2    42.1    48.3    185.3   178.2   192.1   1.2
-chat-long-output    48.7    46.5    51.2    142.6   138.4   147.8   1.2
-code-short          46.1    44.3    47.8    168.9   162.3   175.4   1.2
+chat-short          45.2     42.1     48.3     1327.4  185.3    178.2    192.1    1.2
+chat-long-output    48.7     46.5     51.2     1330.5  142.6    138.4    147.8    1.2
+code-short          46.1     44.3     47.8     1296.8  168.9    162.3    175.4    1.2
 </code></pre></div>
+<p><strong>Note:</strong> <code>PP t/s</code> is prefill throughput — the prompt tokens divided by TTFT. Backends that report a prompt-eval time (<code>timings.prompt_ms</code>, as llama.cpp does) yield the backend's own prefill rate; backends that only report a wall-clock TTFT (<code>usage.prefill_duration_ttft</code>, as cloud models do) include request routing and transfer overhead, so their <code>PP t/s</code> reads lower than raw compute speed. Workloads without a prefill timing, such as embedding and image generation, show <code>-</code>.</p>
 <h4 id="json-output">JSON Output</h4>
 <p>With <code>--json</code>, results are emitted as structured JSON. Use <code>--output FILE</code> to save them for later comparison with <code>--compare</code>.
 The top-level JSON always includes a <code>models</code> array, even for single-model runs, so downstream tooling can handle a single schema for all benchmark results.
-Each scenario includes <code>duration_ms</code> stats (<code>mean</code>, <code>min</code>, <code>max</code>, <code>p50</code>, <code>p95</code>) representing end-to-end request time per run.</p>
+Each scenario includes <code>duration_ms</code> stats (<code>mean</code>, <code>min</code>, <code>max</code>, <code>p50</code>, <code>p95</code>) representing end-to-end request time per run, and <code>pp_tps</code> stats with the same keys when the workload reported a prefill timing.</p>
 <p>With <code>--response-log FILE</code>, the actual model output will be saved to the named destination as JSONL (one JSON object per line),
 along with test parameters such as backend, model, scenario, and context size.</p>
 <h3 id="comparison-mode">Comparison Mode</h3>
-<p>Pass <code>--compare PREVIOUS.json</code> to compare current results against a saved JSON file. This shows percentage change in TTFT and TPS, plus VRAM delta.</p>
+<p>Pass <code>--compare PREVIOUS.json</code> to compare current results against a saved JSON file. This shows percentage change in TTFT, prefill throughput, and TPS, plus VRAM delta.</p>
 <p>Model matching behavior:
 - Models are matched by model name.
 - If a model exists in the current run but not in the previous run, it is reported as <strong>new</strong> and scenario deltas are left blank.
@@ -5795,7 +5797,7 @@ lemonade<span class="w"> </span>bench<span class="w"> </span>--compare<span clas
 - <strong>removed</strong> — was in previous run but not in current
 - <strong>failed</strong> — all measurement runs errored
 - <strong>prev_failed</strong> — previous run errored, no baseline</p>
-<p><strong>Note:</strong> TTFT change &gt; 0 means slower (worse). TPS change &gt; 0 means faster (better).</p>
+<p><strong>Note:</strong> TTFT change &gt; 0 means slower (worse). TPS and PP (prefill throughput) change &gt; 0 means faster (better). PP is reported as <code>-</code> when either run lacks prefill data, for example when comparing against a file written by an older <code>lemonade</code>.</p>
 <h3 id="examples">Examples</h3>
 <div class="highlight"><pre><span></span><code><span class="c1"># Benchmark with default scenarios and all installed backends</span>
 lemonade<span class="w"> </span>bench<span class="w"> </span>Qwen3-0.6B-GGUF
