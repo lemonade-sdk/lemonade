@@ -10,18 +10,7 @@ This policy extends the [spec-driven development policy](./spec-driven-dev.md) w
 
 ### User Story
 
-Each new backend must claim some differentiation relative to other engines, which will be provided in the release notes for the integration.
-
-Differentiation can come in many forms:
-
-| Form | Description |
-|------|-------------|
-| Performance advantage | Sustained performance advantage on hot models. |
-| Agility advantage | Earlier access to new models and optimizations. |
-| Platform support | Operating systems or hardware not covered by other backends. |
-| Ecosystem bridges | Enables Lemonade to integrate models specific to a particular ecosystem. E.g., providing access to WinML models, model Snaps, etc. |
-| Novel techniques | E.g., new approaches to SSD weight streaming, new quantization formats, etc. |
-| etc. | Authors are welcome to propose an axis of differentiation not mentioned here. |
+What should the release notes say about the new backend?
 
 ### Test Plan
 
