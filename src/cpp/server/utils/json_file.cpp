@@ -18,15 +18,17 @@ namespace lemon {
 namespace utils {
 
 json load_optional_json(const std::string& path) {
-    if (!fs::exists(path)) {
+    const fs::path file = path_from_utf8(path);
+    std::error_code ec;
+    if (!fs::exists(file, ec)) {
         return json::object();
     }
 
     try {
-        LOG(INFO, "ModelManager") << "Loading " << fs::path(path).filename() << std::endl;
+        LOG(INFO, "ModelManager") << "Loading " << file.filename() << std::endl;
         return JsonUtils::load_from_file(path);
     } catch (const std::exception& e) {
-        LOG(WARNING, "ModelManager") << "Could not load " << fs::path(path).filename() << ": " << e.what() << std::endl;
+        LOG(WARNING, "ModelManager") << "Could not load " << file.filename() << ": " << e.what() << std::endl;
         return json::object();
     }
 }
