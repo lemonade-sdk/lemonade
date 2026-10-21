@@ -1,0 +1,210 @@
+{
+  "schema_version": 2,
+  "id": "typed-authority",
+  "recipe": "typed-authority",
+  "merge": {
+    "kind": "local",
+    "metadata": {
+      "display_name": "Synthetic export",
+      "server_name": "fake-engine",
+      "binary": "fake-engine",
+      "supported_modes": [
+        "chat"
+      ],
+      "options": [
+        {
+          "id": "engine",
+          "name": "fork_engine",
+          "cli_flag": "--fork-engine",
+          "value_type": "string",
+          "default_value": "cpu",
+          "help": "engine"
+        },
+        {
+          "id": "arguments",
+          "name": "fork_args",
+          "value_type": "string",
+          "default_value": ""
+        },
+        {
+          "id": "threads",
+          "name": "fork_threads",
+          "value_type": "integer",
+          "default_value": 4,
+          "minimum": 1,
+          "maximum": 64
+        }
+      ],
+      "support": [
+        {
+          "id": "cpu",
+          "backend": "cpu",
+          "tier": "guest",
+          "format": "native",
+          "supported_os": [
+            "linux"
+          ],
+          "devices": {
+            "cpu": [
+              "x86_64"
+            ]
+          },
+          "device_summary": "CPU"
+        }
+      ],
+      "default_device": "cpu",
+      "rocm_channels": [
+        "stable"
+      ]
+    },
+    "install": {
+      "strategy": "github_release",
+      "default_versions": {
+        "cpu": "v1"
+      },
+      "cases": [
+        {
+          "id": "cpu",
+          "repo": "test/engine",
+          "filename": {
+            "concat": [
+              "engine-",
+              {
+                "ref": "/install/version"
+              },
+              {
+                "ref": "/platform/os"
+              }
+            ]
+          },
+          "backend": [
+            "cpu"
+          ]
+        }
+      ]
+    },
+    "launch": {
+      "prepare_order": [
+        "backend",
+        "artifacts",
+        "program",
+        "ports"
+      ],
+      "backend": {
+        "fixed": "cpu"
+      },
+      "program": {
+        "source": "managed",
+        "install_policy": "always"
+      },
+      "ports": [
+        {
+          "name": "http",
+          "reject_zero": false,
+          "error": ""
+        }
+      ],
+      "argv": [
+        {
+          "id": "device",
+          "flag": "--device",
+          "aliases": [
+            "-d"
+          ],
+          "value": "cpu",
+          "reserve": "always"
+        }
+      ],
+      "environment": {
+        "preset": "inherit",
+        "set": [
+          {
+            "name": "GGML_DISABLE_VULKAN",
+            "value": "1"
+          }
+        ]
+      },
+      "working_directory": {
+        "windows": "executable_directory",
+        "linux": "inherit",
+        "macos": "inherit"
+      },
+      "output": {
+        "inherit_levels": [
+          "info",
+          "debug",
+          "trace"
+        ],
+        "filter": true
+      },
+      "readiness": {
+        "port": "http",
+        "path": "/health",
+        "timeout": 600
+      },
+      "watchdog": {
+        "policy": "standard",
+        "port": "http",
+        "path": "/health"
+      },
+      "custom_args": {
+        "option": "arguments",
+        "reserved": [
+          "--device",
+          "-d"
+        ],
+        "error_prefix": "reserved",
+        "defaults": [
+          {
+            "id": "parallel",
+            "args": "--parallel 1",
+            "flag": "--parallel",
+            "stage": "launch",
+            "respect_merge_args": true
+          }
+        ]
+      },
+      "context_floor": {
+        "embedding": 8192
+      }
+    },
+    "operations": [
+      {
+        "id": "chat.buffered",
+        "operation": "chat_completion",
+        "delivery": "buffered",
+        "model_modes": [
+          "chat"
+        ],
+        "transport": {
+          "kind": "http_json",
+          "method": "POST",
+          "path": "/chat",
+          "port": "http",
+          "timeout": 1
+        },
+        "request": {
+          "base": "identity",
+          "hooks": [
+            {
+              "id": "llamacpp.max_tokens_alias",
+              "params": {}
+            },
+            {
+              "id": "llamacpp.tool_schema_limits",
+              "params": {}
+            }
+          ]
+        },
+        "response": {
+          "hooks": [
+            {
+              "id": "llamacpp.client_model",
+              "params": {}
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

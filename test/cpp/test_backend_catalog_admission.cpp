@@ -13,6 +13,24 @@ int main() {
         check(admitted.catalog->v1_definition("legacy") != nullptr && admitted.catalog->v2_definition("child") != nullptr, "mixed versions retained without conversion");
         check(admitted.catalog->v2_definition("child")->definition().key.space == DefinitionNamespace::External, "intake forces external origin");
     }
+    static_assert(!std::is_copy_constructible_v<AuthorizedDefinition>);
+    const auto frozen_transaction = admission_fixture::snapshot({root()});
+    const auto transaction_a = admit_catalog(frozen_transaction.snapshot);
+    const auto transaction_b = admit_catalog(frozen_transaction.snapshot);
+    check(transaction_a.catalog && transaction_b.catalog && transaction_a.catalog->admission_id() == transaction_b.catalog->admission_id(), "IdenticalTransactionDigestsAreNotAuthority");
+    if (transaction_a.catalog && transaction_b.catalog) {
+        const auto a = transaction_a.catalog->v2_definition("root");
+        const auto b = transaction_b.catalog->v2_definition("root");
+        check(CatalogAdmissionBuilder::contains_token(*transaction_a.catalog, *a) && CatalogAdmissionBuilder::contains_token(*transaction_b.catalog, *b), "AdmittedTokenExactMembership");
+        check(!CatalogAdmissionBuilder::contains_token(*transaction_a.catalog, *b) && !CatalogAdmissionBuilder::contains_token(*transaction_b.catalog, *a), "CrossTransactionTokenRejected");
+        const auto clone = CatalogAdmissionBuilder::test_clone_token(*a);
+        check(!CatalogAdmissionBuilder::contains_token(*transaction_a.catalog, *clone), "UnlistedTokenRejectedDespiteMatchingTicket");
+        const auto bytes = root().dump();
+        const auto standalone = DefinitionAuthorizer(load_v2_authority_snapshot({{{DefinitionNamespace::External, "root", 0}, bytes, ""}}).snapshot).authorize({DefinitionNamespace::External, "root", 0});
+        check(standalone.definition && !CatalogAdmissionBuilder::contains_token(*transaction_a.catalog, *standalone.definition), "StandaloneTokenHasNoAdmissionTicket");
+        CatalogAdmissionBuilder::test_detach_ticket(*a);
+        check(!CatalogAdmissionBuilder::contains_token(*transaction_a.catalog, *a), "TicketIdentityRequiredForListedToken");
+    }
     reject({root(), root()}, "id_collision", "duplicate v2 ID rejected");
     reject({root(), legacy("root")}, "id_collision", "cross version ID collision rejected");
     auto value = root("other"); value["recipe"] = "root";

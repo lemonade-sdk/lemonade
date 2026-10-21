@@ -7,6 +7,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace lemon::backends {
@@ -41,6 +42,40 @@ struct MutableDataRule {
     std::vector<std::string> reference_roots;
 };
 
+enum class MutableFragmentKind {
+    OptionPresentationV1, OptionDefaultV1, ArgvSpellingsV1, ReservedFlagsV1,
+    CustomDefaultsV1, DeviceSelectionV1, EnvironmentEntriesV1, SupportRowsV1,
+    InstallCasesV1, ContextFloorsV1
+};
+
+enum class ReferencePhase { Input, RuntimeOptions, InstallRepository, InstallAsset, Artifacts, Prepare, Launch, Request };
+
+struct TypedDataReference {
+    std::string path;
+    MutableValueType type;
+    ReferencePhase phase;
+};
+
+struct CollectionPermissions {
+    bool add = false;
+    bool remove = false;
+    bool clear = false;
+};
+
+struct MutableFragmentRule {
+    MutableFragmentKind kind;
+    DefinitionTarget target;
+    std::vector<std::string> fields;
+    CollectionPermissions collection;
+    std::size_t maximum_records = 64;
+    std::size_t maximum_length = 4096;
+    double minimum = 0;
+    double maximum = 1048576;
+    std::vector<std::pair<std::string, std::vector<std::string>>> domains;
+    std::vector<std::string> required_records;
+    std::vector<TypedDataReference> references;
+};
+
 struct ExportSlotPolicy {
     LogicalHookSlot slot;
     std::uint32_t hook_abi_revision;
@@ -54,6 +89,7 @@ struct ExportSlotPolicy {
     std::vector<HookEffect> effects;
     std::string owner_semantics_digest;
     std::vector<std::string> ordered_hooks;
+    std::vector<MutableFragmentRule> mutable_fragments;
 };
 
 struct OperationOwnerPolicy {
@@ -78,6 +114,7 @@ struct BuiltinExportContract {
     std::vector<ExportSlotPolicy> slots;
     std::vector<OperationOwnerPolicy> owners;
     std::string owner_graph_digest;
+    std::vector<MutableFragmentRule> mutable_fragments;
 };
 
 class BuiltinCatalogLoader;

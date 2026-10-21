@@ -9,7 +9,7 @@ namespace lemon::backends::execution {
 
 using Json = nlohmann::json;
 
-inline constexpr unsigned compiler_revision = 1;
+inline constexpr unsigned compiler_revision = 2;
 inline constexpr unsigned defaults_revision = 1;
 inline constexpr unsigned binding_revision = 1;
 inline constexpr unsigned adapter_revision = 1;

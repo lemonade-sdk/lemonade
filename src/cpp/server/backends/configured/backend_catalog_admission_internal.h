@@ -8,6 +8,12 @@
 
 namespace lemon::backends {
 
+class CatalogAdmissionTicket final {
+private:
+    CatalogAdmissionTicket() = default;
+    friend struct CatalogAdmissionBuilder;
+};
+
 struct CatalogInputHeader {
     unsigned version = 0;
     std::string id;
@@ -56,7 +62,14 @@ struct CatalogAdmissionBuilder {
     static CatalogAdmissionResult admit(std::shared_ptr<const CatalogSourceSnapshot> snapshot);
     static CandidateAdmissionResult candidate(std::shared_ptr<const AdmittedCatalog> active, std::string_view bytes);
     static std::string authority_identity(const AuthorizedDefinition& definition);
+    static bool contains_token(const AdmittedCatalog& catalog, const AuthorizedDefinition& token) noexcept;
+    static std::shared_ptr<const AuthorizedDefinition> attach_ticket(
+        std::shared_ptr<const AuthorizedDefinition> token, std::shared_ptr<const CatalogAdmissionTicket> ticket);
     static std::vector<std::shared_ptr<const ResolvedDefinition>> builtin_definitions(const FrozenDefinitionSnapshot& snapshot);
+#ifdef LEMON_BACKEND_EXPORT_TESTING
+    static void test_detach_ticket(const AuthorizedDefinition& token);
+    static std::shared_ptr<const AuthorizedDefinition> test_clone_token(const AuthorizedDefinition& token);
+#endif
     static std::shared_ptr<const FrozenBuiltinCatalog> test_builtins(
         std::shared_ptr<const FrozenDefinitionSnapshot> authority, const std::vector<DefinitionSourceView>& sources);
 };

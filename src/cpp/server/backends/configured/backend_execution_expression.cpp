@@ -1,4 +1,5 @@
 #include "backend_definition_execution_internal.h"
+#include "backend_definition_policy_internal.h"
 
 #include <algorithm>
 #include <filesystem>
@@ -91,6 +92,20 @@ Expression compile(const Json& value, const std::string& pointer, Program& progr
         } else {
             valid_pointer(text, pointer);
             phase_reference(text, pointer, program.normalized);
+            if (text.rfind("/platform/", 0) == 0 || text.rfind("/install/", 0) == 0 ||
+                text.rfind("/artifacts/", 0) == 0 || text.rfind("/launch/", 0) == 0) {
+                budget.work(text.size(), v2::checked_sum(program.bindings.size(), program.normalized["launch"]["ports"].size()));
+                budget.keep(v2::checked_product(v2::checked_sum(text.size(), 128), 4));
+                const auto known = v2::typed_data_reference(text, program.normalized);
+                require(known.has_value(), "invalid_reference", pointer);
+                const auto type = known->type == MutableValueType::Integer ? "integer" :
+                    known->type == MutableValueType::Boolean ? "boolean" : known->type == MutableValueType::Number ? "number" : "string";
+                require(result.type.empty() || result.type == type, "invalid_type", pointer);
+                require(!result.default_value || type_matches(*result.default_value, type), "invalid_type", pointer);
+                require(pointer.find("/version_override") == std::string::npos || known->phase != ReferencePhase::InstallAsset,
+                    "phase_dependency", pointer);
+                result.type = type;
+            }
             result.reference = text;
         }
         return result;

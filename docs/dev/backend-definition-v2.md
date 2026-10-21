@@ -638,3 +638,70 @@ exports remain empty and the v1 path is unchanged. Hook-bearing authorized input
 is rejected before normalization; typed binding belongs to phase 4c. Phase 4b
 first freezes the existing llama.cpp behavioral oracle. Catalog compilation and
 execution attach later through the retained authority and immutable program.
+
+## Typed mutable contracts and admission membership (phase 4c increment)
+
+The mutable surface has a separate closed `MutableFragmentKind` vocabulary.
+An installed policy chooses an exact stable target, the permitted fields,
+record and string limits, numeric bounds, finite value domains, required
+records, collection permissions and typed references. JSON cannot select a
+validator or grant an arbitrary subtree capability.
+
+| Contract | Mutable data | Sealed data |
+|---|---|---|
+| `OptionPresentationV1` | Name, CLI flag, help and group of an existing option ID | ID, value type, binding role, UI and references |
+| `OptionDefaultV1` | Typed scalar default and permitted enum, range and scalar unset constraints | Value type, fields outside the policy and outer bounds |
+| `ArgvSpellingsV1` | Flag, aliases and an explicitly designated literal string value | Stable record ID, condition, reservation policy and reference source |
+| `ReservedFlagsV1` | Bounded unique flag spellings | Required managed flags and aliases cannot disappear |
+| `CustomDefaultsV1` | Typed default records, arguments, flags, aliases, Boolean conditions, permitted stage and merge policy | Hook grants, managed reservations and additional hidden flags |
+| `DeviceSelectionV1` | Fixed backend, default device and channel data within finite domains | Selection strategy, option binding and effect capabilities |
+| `EnvironmentEntriesV1` | Name-keyed child assignments and typed string values | Parent environment reads, staging destinations and other capabilities |
+| `SupportRowsV1` | Closed support rows with finite backend, OS, tier, format, device, architecture and channel data | Executable operations, installer strategy and hooks |
+| `InstallCasesV1` | Closed release cases, permitted repository and selectors, typed filename/version expressions, backend-keyed default versions | Strategy, hook, recipe ownership and download capabilities |
+| `ContextFloorsV1` | Positive bounded floors under canonical model-type keys | Original caller options and fact-provider authority |
+
+Each contract establishes the shared outer envelope. Every surviving slot also
+has its own surface; those restrictions intersect. A slot cannot widen the
+shared limits, fields, domains, references or collection permissions. The shared
+sealed projection still applies when the final hook-bearing owner is removed.
+Older scalar and `Expression` rules keep their existing representation and pins.
+Policies using the new surface include it in their canonical policy identity;
+the synthetic authority fixture pins policy revision 4 explicitly.
+
+Closed record validation runs before permitted data is masked from sealed
+comparisons. The observer also checks authored writes, so replacing an enclosing
+launch/metadata/install subtree or an existing option/argv record cannot become
+a permitted edit by preserving some final sealed values. Collection `add`,
+`remove` and `clear` are separate permissions, checked against the authored
+operation as well as final record membership. Clearing and re-adding identical
+bytes does not bypass a denied `clear`. Required records cannot disappear.
+Complete operation-owner semantics and empty hook chains stay independently
+sealed; the new fragment targets cannot name an operation owner.
+
+Typed references name a specific producer field, scalar result type and
+availability phase. Platform, install, declared-artifact, allocated-port and
+launch references are enumerated rather than admitted by root prefix. Option
+references use stable IDs. Prepare/runtime facts require their corresponding
+typed provider symbol; removing the producer invalidates the reference.
+Repository-phase expressions cannot consume asset-phase version facts, and
+install expressions cannot consume launch facts. Compiler revision 2 checks
+named platform/install/artifact/launch fields and types in addition to the
+existing phase checks. The compiler still rejects hook-bearing declarations;
+typed provider execution requires the remaining binding work.
+
+Admission now gives each transaction a private `CatalogAdmissionTicket` and
+retains it in its admitted authorization wrappers. Its private membership check
+requires both ticket-object equality and the exact token-object address in that
+catalog's retained maps. Identical deterministic admission digests do not grant
+cross-transaction authority. A wrapper carrying the same ticket but absent from
+the maps also rejects. Standalone authorization has no ticket. The ticket is
+neither serialized nor used as a deterministic digest. The future binder must
+check the token retained by its exact compiled input through this boundary.
+
+This increment does not complete unit 4c. The ten-target callable inventory,
+typed adapters, symbolic hook compilation, `ExecutableDefinition`, immutable
+binder and its bounds/boundary suites remain pending. The narrow `ArtifactOps`
+table and artifact-only HRX capability proof also remain pending. No new v2
+callable target is installed, neither production v2 table is populated, startup
+still rejects v2 execution and candidate validation remains `executable:false`.
+The existing v1 artifact provider is not evidence of HRX capability separation.

@@ -1,4 +1,5 @@
 #include "backend_catalog_admission_internal.h"
+#include "backend_definition_policy_internal.h"
 
 #include <algorithm>
 #include <map>
@@ -153,14 +154,20 @@ void erase_target(Json& declaration, const DefinitionTarget& target, Budget& bud
 }
 
 Json data_projection(const Json& declaration, const Json& base, const ExportSlotPolicy& policy,
-    const BuiltinExportContract& contract, const Json& final_declaration, Budget& budget) {
+    const BuiltinExportContract& contract, const Json& final_declaration, Budget& budget, bool shared = false) {
     const auto metrics = measure(declaration, budget);
     budget.keep(checked_sum(metrics.bytes, checked_product(metrics.nodes, sizeof(Json))));
     budget.work(metrics.bytes, metrics.nodes);
     auto result = declaration;
     for (const auto* field : {"id", "recipe", "schema_version", "rationale", "hooks"}) result.erase(field);
     if (result.contains("install")) result["install"].erase("hook");
-    for (const auto& rule : policy.mutable_inputs) erase_target(result, rule.target, budget);
+    if (shared) {
+        for (const auto& slot : contract.slots) for (const auto& rule : slot.mutable_inputs) erase_target(result, rule.target, budget);
+        mask_fragments(result, contract.mutable_fragments, budget);
+    } else {
+        for (const auto& rule : policy.mutable_inputs) erase_target(result, rule.target, budget);
+        mask_fragments(result, policy.mutable_fragments, budget);
+    }
     if (!final_declaration.value("hooks", Json::object()).contains("launch") && result.contains("launch")) {
         auto& order = result["launch"]["prepare_order"];
         order.erase(std::remove(order.begin(), order.end(), Json("hook")), order.end());
@@ -331,6 +338,7 @@ std::vector<LogicalHookSlot> verify_surviving_grants(const ResolvedDefinition& d
         }
         for (const auto& rule : policy.mutable_inputs) require(accepts_mutable_value(rule,
             policy_value(definition.declaration, rule.target, budget), budget), "invalid_mutable_input", source);
+        validate_fragments(policy.mutable_fragments, definition.declaration, base.declaration, budget);
         require(data_projection(definition.declaration, base.declaration, policy, export_contract, definition.declaration, budget) ==
             data_projection(base.declaration, base.declaration, policy, export_contract, definition.declaration, budget), "sealed_data_changed", source);
         surviving.push_back(selection.slot);
@@ -350,6 +358,12 @@ std::vector<LogicalHookSlot> verify_surviving_grants(const ResolvedDefinition& d
             verify_owner_aliases(definition.declaration, base.declaration, policy, budget, source);
     }
     if (contract) verify_operation_owners(definition, parent, *contract, selected, parent_root, current_root, budget);
+    if (contract && !contract->mutable_fragments.empty()) {
+        validate_fragments(contract->mutable_fragments, definition.declaration, base.declaration, budget);
+        ExportSlotPolicy envelope{};
+        require(data_projection(definition.declaration, base.declaration, envelope, *contract, definition.declaration, budget, true) ==
+            data_projection(base.declaration, base.declaration, envelope, *contract, definition.declaration, budget, true), "fragment_scope_escape", {key, ""});
+    }
     return surviving;
 
 }
@@ -492,6 +506,18 @@ FrozenDefinitionSnapshotResult load_v2_authority_snapshot(const std::vector<Defi
 }
 
 #ifdef LEMON_BACKEND_EXPORT_TESTING
+void CatalogAdmissionBuilder::test_detach_ticket(const AuthorizedDefinition& token) {
+    const_cast<AuthorizedDefinition&>(token).ticket_.reset();
+}
+
+std::shared_ptr<const AuthorizedDefinition> CatalogAdmissionBuilder::test_clone_token(const AuthorizedDefinition& token) {
+    auto copy = std::shared_ptr<AuthorizedDefinition>(new AuthorizedDefinition());
+    copy->definition_ = token.definition_;
+    copy->authority_ = token.authority_;
+    copy->ticket_ = token.ticket_;
+    return copy;
+}
+
 std::shared_ptr<const FrozenBuiltinCatalog> CatalogAdmissionBuilder::test_builtins(
     std::shared_ptr<const FrozenDefinitionSnapshot> authority, const std::vector<DefinitionSourceView>& sources) {
     auto value = std::shared_ptr<FrozenBuiltinCatalog>(new FrozenBuiltinCatalog());
@@ -644,10 +670,19 @@ DefinitionAuthorizationResult DefinitionAuthorizer::authorize_impl(const Definit
             LayerState inspection;
             if (parent) inspection.root = parent->provenance->impl_->root;
             apply_layer(inspection, envelope, key, budget,
-                [&](const NodePtr& root, const std::string& pointer, DefinitionEditKind, const Json* value, const SourceLocation& source) {
+                [&](const NodePtr& root, const std::string& pointer, DefinitionEditKind kind, const Json* value, const SourceLocation& source) {
                     auto path = pointer_tokens(pointer, limits);
                     if (value) inspect_value(*value, path, source, budget);
                     inspect_owner_value(value, path, root, authority->contract, source, budget);
+                    if (authority->contract) {
+                        inspect_fragment_write(authority->contract->mutable_fragments, root, pointer, kind, value, source, budget);
+                        const auto selections = hook_selections(definition.declaration, budget);
+                        for (const auto& policy : authority->contract->slots) if (std::any_of(selections.begin(), selections.end(), [&](const auto& item) {
+                            return slot_key(item.slot, budget) == slot_key(policy.slot, budget);
+                        })) {
+                            inspect_fragment_write(policy.mutable_fragments, root, pointer, kind, value, source, budget);
+                        }
+                    }
                 });
             std::vector<LogicalHookSlot> inherited;
             for (const auto& grant : authority->grants) {

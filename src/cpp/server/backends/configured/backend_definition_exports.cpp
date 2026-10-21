@@ -1,4 +1,5 @@
 #include "backend_definition_exports_internal.h"
+#include "backend_definition_policy_internal.h"
 
 #include <algorithm>
 #include <cmath>
@@ -215,10 +216,12 @@ Json slot_policy_json(const ExportSlotPolicy& policy) {
     for (const auto& target : policy.sealed_inputs) sealed.push_back(target_json(target));
     for (const auto& rule : policy.mutable_inputs) mutable_fields.push_back(mutable_rule_json(rule));
     for (const auto effect : policy.effects) effects.push_back(static_cast<unsigned>(effect));
-    return {{"slot", slot_json(policy.slot)}, {"abi", policy.hook_abi_revision}, {"parameters", policy.parameter_digest},
+    Json result = {{"slot", slot_json(policy.slot)}, {"abi", policy.hook_abi_revision}, {"parameters", policy.parameter_digest},
         {"removal", static_cast<unsigned>(policy.removal)}, {"dependencies", dependencies}, {"sealed_inputs", sealed},
         {"mutable_inputs", mutable_fields}, {"required_phases", policy.required_phases}, {"effects", effects},
         {"owner_semantics", policy.owner_semantics_digest}, {"ordered_hooks", policy.ordered_hooks}};
+    if (!policy.mutable_fragments.empty()) result["mutable_fragments"] = fragment_rules_json(policy.mutable_fragments);
+    return result;
 }
 
 const std::vector<std::string>& operation_owner_fields() {
@@ -280,8 +283,10 @@ Json export_policy_json(const BuiltinExportContract& contract) {
         value["mutation_policy_digest"] = policy.mutation_policy_digest;
         slots.push_back(std::move(value));
     }
-    return {{"builtin", contract.key.id}, {"contract", contract.key.contract}, {"policy_revision", contract.policy_revision},
+    Json result = {{"builtin", contract.key.id}, {"contract", contract.key.contract}, {"policy_revision", contract.policy_revision},
         {"slots", slots}, {"owners", owner_graph_json(contract.owners)}, {"owner_graph_digest", contract.owner_graph_digest}};
+    if (!contract.mutable_fragments.empty()) result["mutable_fragments"] = fragment_rules_json(contract.mutable_fragments);
+    return result;
 }
 
 Json hook_abi_json(const std::vector<HookAbiDescriptor>& descriptors) {
@@ -438,6 +443,7 @@ CompositionDiagnostics audit_export_contracts(const std::vector<BuiltinExportCon
             const auto document = std::make_shared<const DefinitionKey>(definition.key);
             const auto root = authored(definition.declaration, std::make_shared<Origin>(Origin{document, {}, {}}), budget);
             audit_owner_graph(contract, definition.declaration, budget, error);
+            verify_fragment_envelope(contract, definition.declaration, budget);
             std::set<std::string> selected, policies;
             std::map<std::string, std::vector<std::string>> groups;
             for (const auto& selection : selections) {
@@ -520,7 +526,8 @@ CompositionDiagnostics audit_export_contracts(const std::vector<BuiltinExportCon
             };
             for (const auto& policy : contract.slots) if (!visit(visit, policy)) { error(id, "slot_dependency_cycle", ""); break; }
         }
-    } catch (const LimitExceeded&) { error("", "limit_exceeded", ""); }
+    } catch (const AuthorizationFailure& failure) { error("", failure.code, failure.source.pointer); }
+    catch (const LimitExceeded&) { error("", "limit_exceeded", ""); }
     catch (const EditFailure&) { error("", "invalid_data_policy", ""); }
     catch (const std::exception&) { error("", "invalid_export_policy", ""); }
     sort_diagnostics(result);

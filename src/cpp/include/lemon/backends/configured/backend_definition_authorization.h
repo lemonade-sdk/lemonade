@@ -4,6 +4,7 @@
 
 namespace lemon::backends {
 
+class CatalogAdmissionTicket;
 class BuiltinCatalogLoader;
 class DefinitionAuthorizer;
 
@@ -43,6 +44,9 @@ public:
 
 private:
     AuthorizedDefinition() = default;
+    AuthorizedDefinition(const AuthorizedDefinition&) = delete;
+    AuthorizedDefinition& operator=(const AuthorizedDefinition&) = delete;
+    std::shared_ptr<const CatalogAdmissionTicket> ticket_;
     std::shared_ptr<const ResolvedDefinition> definition_;
     ResolvedAuthority authority_;
     friend class DefinitionAuthorizer;

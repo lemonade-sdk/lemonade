@@ -157,5 +157,14 @@ int main() {
     check(code(compile(value), "selector_overlap"), "InstallSelectorsDoNotOverlap");
     value["merge"]["install"]["cases"].erase(1); value["merge"]["install"]["supports_split_archive"] = true; value["merge"]["install"]["cases"][0]["sha256"] = std::string(64, 'a');
     check(code(compile(value), "unsupported_execution_feature"), "SplitArchiveDigestUnsupported");
+    auto invalid_fact = fixture();
+    invalid_fact["merge"]["operations"][0]["request"]["set"] = {{"/x", {{"ref", "/platform/arbitrary"}}}};
+    check(code(compile(invalid_fact), "invalid_reference"), "ExpandedReferenceFieldClosed");
+    invalid_fact["merge"]["operations"][0]["request"]["set"] = {{"/x", {{"ref", "/platform/os"}, {"type", "boolean"}}}};
+    check(code(compile(invalid_fact), "invalid_type"), "ExpandedReferenceTypePinned");
+    invalid_fact["merge"]["operations"][0]["request"]["set"] = {{"/x", {{"ref", "/artifacts/missing"}}}};
+    check(code(compile(invalid_fact), "invalid_reference"), "ExpandedReferenceProducerRequired");
+    invalid_fact["merge"]["operations"][0]["request"]["set"] = {{"/x", {{"ref", "/install/version"}}}};
+    check(code(compile(invalid_fact), "invalid_reference"), "InstallProducerRequired");
     return finish();
 }

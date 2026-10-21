@@ -257,6 +257,7 @@ CatalogSnapshotResult CatalogAdmissionBuilder::snapshot(std::shared_ptr<const Fr
 }
 
 struct AdmittedCatalog::Impl {
+    std::shared_ptr<const CatalogAdmissionTicket> ticket;
     std::shared_ptr<const CatalogSourceSnapshot> sources;
     std::map<std::string, std::shared_ptr<const BackendDefinition>> v1;
     std::map<std::string, std::shared_ptr<const AuthorizedDefinition>> v2;
@@ -264,6 +265,22 @@ struct AdmittedCatalog::Impl {
     CatalogAdmissionMetrics metrics;
     std::string identity;
 };
+
+std::shared_ptr<const AuthorizedDefinition> CatalogAdmissionBuilder::attach_ticket(
+    std::shared_ptr<const AuthorizedDefinition> token, std::shared_ptr<const CatalogAdmissionTicket> ticket) {
+    auto admitted = std::shared_ptr<AuthorizedDefinition>(new AuthorizedDefinition());
+    admitted->definition_ = token->definition_;
+    admitted->authority_ = token->authority_;
+    admitted->ticket_ = std::move(ticket);
+    return admitted;
+}
+
+bool CatalogAdmissionBuilder::contains_token(const AdmittedCatalog& catalog, const AuthorizedDefinition& token) noexcept {
+    if (!catalog.impl_ || !token.ticket_ || token.ticket_.get() != catalog.impl_->ticket.get()) return false;
+    for (const auto& entry : catalog.impl_->builtin_v2) if (entry.second.get() == &token) return true;
+    for (const auto& entry : catalog.impl_->v2) if (entry.second.get() == &token) return true;
+    return false;
+}
 
 CatalogAdmissionResult CatalogAdmissionBuilder::admit(std::shared_ptr<const CatalogSourceSnapshot> snapshot) {
     CatalogAdmissionResult result;
@@ -274,6 +291,8 @@ CatalogAdmissionResult CatalogAdmissionBuilder::admit(std::shared_ptr<const Cata
         auto impl = std::make_shared<AdmittedCatalog::Impl>();
         impl->sources = snapshot;
         impl->metrics = snapshot->metrics_;
+        keep(impl->metrics.retained_logical_bytes, sizeof(CatalogAdmissionTicket) + 64, limits);
+        impl->ticket = std::shared_ptr<const CatalogAdmissionTicket>(new CatalogAdmissionTicket());
         auto& retained = impl->metrics.retained_logical_bytes;
         const auto& builtin = *snapshot->builtins_;
         keep(retained, builtin.logical_bytes_, limits);
@@ -289,7 +308,7 @@ CatalogAdmissionResult CatalogAdmissionBuilder::admit(std::shared_ptr<const Cata
             result.authorized = authorized.definition != nullptr;
             if (!authorized.definition) { append(result.diagnostics, authorized.diagnostics, limits); return result; }
             keep(retained, checked_sum(key_string(key).size(), sizeof(std::shared_ptr<const AuthorizedDefinition>) + 1024), limits);
-            impl->builtin_v2.emplace(key_string(key), authorized.definition);
+            impl->builtin_v2.emplace(key_string(key), attach_ticket(authorized.definition, impl->ticket));
             ++impl->metrics.authorized_definitions;
             identities.push_back({{"builtin", key_string(key)}, {"authorization", authority_identity(*authorized.definition)}});
         }
@@ -336,7 +355,7 @@ CatalogAdmissionResult CatalogAdmissionBuilder::admit(std::shared_ptr<const Cata
                 if (!authorized.definition) { append(result.diagnostics, authorized.diagnostics, limits); return result; }
                 ++impl->metrics.authorized_definitions;
                 keep(retained, id.size() + sizeof(std::shared_ptr<const AuthorizedDefinition>) + 1024, limits);
-                impl->v2.emplace(id, authorized.definition);
+                impl->v2.emplace(id, attach_ticket(authorized.definition, impl->ticket));
                 const auto& resolved = authorized.definition->definition();
                 declaration = &resolved.declaration;
                 const auto& metadata = declaration->at("metadata");
