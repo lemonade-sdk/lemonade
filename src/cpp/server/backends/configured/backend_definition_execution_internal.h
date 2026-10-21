@@ -1,6 +1,7 @@
 #pragma once
 
 #include "backend_definition_v2_internal.h"
+#include "backend_hook_contracts_internal.h"
 #include "lemon/backends/configured/backend_definition_execution.h"
 
 #include <map>

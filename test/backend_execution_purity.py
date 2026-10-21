@@ -15,7 +15,8 @@ def main():
         r"(?:\b(?:open|open64|fopen|fopen64|socket|connect|bind|listen|accept|"
         r"fork|vfork|system|popen|execve|posix_spawn|stat|lstat|access|getenv|"
         r"read|write|unlink|mkdir|chdir|dlopen|CreateProcess|CreateFile)\b|"
-        r"installed_backend_hooks|WrappedServer|ServerProcess|NativeProcess|"
+        r"installed_backend_hooks|lemon::backends::typed::(?:installed_targets|audit_targets|llamacpp::)|"
+        r"WrappedServer|ServerProcess|NativeProcess|"
         r"hardware|httplib|curl_|std::filesystem::(?:exists|status|canonical|"
         r"directory_iterator|current_path|create_|remove|rename))"
     )

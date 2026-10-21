@@ -1169,6 +1169,10 @@ target_link_libraries(lemonade-backend-definition-execution PUBLIC lemonade-back
 set(LEMON_BACKEND_DEFINITION_DATA_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backend_operation_data.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/configured/backend_definition_store.cpp)
+set(LEMON_TYPED_HOOK_SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/configured/backend_typed_hook_registry_internal.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/configured/typed/llamacpp_artifacts.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/configured/typed/llamacpp_hooks.cpp)
 set(LEMON_BACKEND_FACTORY_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/backend_registry.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/backend_effects.cpp
@@ -1238,6 +1242,16 @@ list(APPEND SOURCES_CORE ${LEMON_BACKEND_DESCRIPTOR_SOURCES} ${LEMON_BACKEND_DEF
 # Server core OBJECT library (shared by lemond and Lemonade.exe)
 # ============================================================
 add_library(lemonade-server-core OBJECT ${SOURCES_CORE})
+add_library(lemonade-backend-artifacts OBJECT
+    src/cpp/server/backends/configured/typed/llamacpp_artifacts.cpp)
+target_include_directories(lemonade-backend-artifacts PRIVATE src/cpp/include)
+target_link_libraries(lemonade-backend-artifacts PRIVATE nlohmann_json::nlohmann_json)
+add_library(lemonade-backend-typed-hooks STATIC
+    src/cpp/server/backends/configured/backend_typed_hook_registry_internal.cpp
+    src/cpp/server/backends/configured/typed/llamacpp_hooks.cpp
+    $<TARGET_OBJECTS:lemonade-backend-artifacts>)
+target_include_directories(lemonade-backend-typed-hooks PRIVATE src/cpp/include)
+target_link_libraries(lemonade-backend-typed-hooks PRIVATE nlohmann_json::nlohmann_json)
 
 # ============================================================
 # lemond executable
@@ -1275,6 +1289,7 @@ endif()
 # ============================================================
 
 target_link_libraries(lemonade-server-core PUBLIC
+    lemonade-backend-typed-hooks
     lemonade-backend-definition-v2
     nlohmann_json::nlohmann_json
     lemonade-httplib
@@ -2762,9 +2777,24 @@ if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_backend_l
     add_cpp_ci_test(BackendLoadHelpersTest CI ON COMMAND test_backend_load_helpers)
 endif()
 
+if(BUILD_TESTING AND (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_backend_artifact_helpers.cpp"
+    OR EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_backend_hook_abi.cpp"))
+    add_library(lemonade-typed-hook-test STATIC ${LEMON_TYPED_HOOK_SOURCES})
+    target_compile_definitions(lemonade-typed-hook-test PRIVATE LEMONADE_TYPED_HOOK_TEST)
+    target_link_libraries(lemonade-typed-hook-test PRIVATE lemonade-server-core)
+endif()
 if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_backend_artifact_helpers.cpp")
     add_executable(test_backend_artifact_helpers test/cpp/test_backend_artifact_helpers.cpp)
-    target_link_libraries(test_backend_artifact_helpers PRIVATE lemonade-server-core)
+    target_compile_definitions(test_backend_artifact_helpers PRIVATE LEMONADE_TYPED_HOOK_TEST)
+    target_include_directories(test_backend_artifact_helpers PRIVATE src/cpp/server/backends/configured)
+    target_link_libraries(test_backend_artifact_helpers PRIVATE lemonade-typed-hook-test lemonade-server-core)
+    if(UNIX AND CMAKE_NM AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/backend_typed_hook_audit.py")
+        add_custom_command(TARGET test_backend_artifact_helpers POST_BUILD
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/backend_typed_hook_audit.py
+                --nm ${CMAKE_NM} --object $<TARGET_OBJECTS:lemonade-backend-artifacts>
+                --production $<TARGET_FILE:lemonade-backend-typed-hooks>
+            VERBATIM)
+    endif()
     add_cpp_ci_test(BackendArtifactHelpersTest CI ON COMMAND test_backend_artifact_helpers)
 endif()
 
@@ -3902,7 +3932,10 @@ endif()
 
 if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_backend_hook_abi.cpp")
     add_executable(test_backend_hook_abi test/cpp/test_backend_hook_abi.cpp)
-    target_link_libraries(test_backend_hook_abi PRIVATE lemonade-server-core)
+    target_compile_definitions(test_backend_hook_abi PRIVATE
+        LEMONADE_TYPED_HOOK_TEST LEMON_TEST_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures")
+    target_include_directories(test_backend_hook_abi PRIVATE src/cpp/server/backends/configured)
+    target_link_libraries(test_backend_hook_abi PRIVATE lemonade-typed-hook-test lemonade-server-core)
     add_cpp_ci_test(BackendHookAbiTest CI ON COMMAND test_backend_hook_abi)
 endif()
 
