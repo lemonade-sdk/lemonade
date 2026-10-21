@@ -32,6 +32,11 @@ The GUI calls the real server's `/api/v1/...` endpoints. A renderer running on p
 | `npm run build:nobundle` | Tauri executable without an installer bundle. |
 | `npm run watch:renderer` | Rebuild the renderer when sources change. |
 
+Tauri build commands use the Lemonade release version from `tools/version.py`
+(or `LEMONADE_VERSION`) rather than the prototype package version. On
+Windows, the executable's numeric and text versions use that same
+release version.
+
 The CMake integration also provides a `tauri-app` target, for example `cmake --build --preset windows --target tauri-app` after configuring the repository. On Windows, this stages `lemonade-app.exe` under `build/app/`.
 
 **Browser distribution is built separately** under `src/web-app/`, reusing `src/app/src/`. Its dependency manifest and build configuration must remain separate for Debian's system-module packaging. See the [web UI developer guide](../../docs/dev/web-ui.md).

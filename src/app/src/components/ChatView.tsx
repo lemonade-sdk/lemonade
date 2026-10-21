@@ -46,6 +46,7 @@ import {
 } from '../modelCapabilities';
 import { storageKey } from '../storage';
 import { CHAT_HISTORY_PREFERENCE_EVENT, loadChatHistoryPreference, saveChatHistoryPreference } from '../features/chatHistory/historySettings';
+import { prepareToolCallsForStorage } from '../features/chatHistory/toolCallPersistence';
 import type { DownloadListItem } from '../features/downloadManager/downloadStore';
 import { findModelInfoByName, getAudioTranscriptionComponent, getPrimaryChatComponent, getVisionChatComponent, isCollectionModel, virtualLoadedCollection } from '../features/collections/collectionModels';
 import { LEMONADE_MCP_SERVER_ID, LEMONADE_MCP_TOOL_COUNT, MAX_MCP_SERVER_SELECTION, type McpServerToolOption } from '../tools/mcpMetadata';
@@ -347,6 +348,7 @@ function saveConversations(convos: Conversation[], persist: boolean) {
       audioName: undefined,
       model3dUrl: undefined,
       model3dName: undefined,
+      toolCalls: prepareToolCallsForStorage(m.toolCalls),
     })),
   }));
   try { localStorage.setItem(scopedKey(STORAGE_KEY), JSON.stringify({ version: STORAGE_VERSION, conversations: stripped })); } catch { /* ignore */ }
