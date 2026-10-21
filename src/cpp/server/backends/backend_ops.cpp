@@ -4,6 +4,7 @@
 #include <filesystem>
 #include "lemon/backends/backend_descriptor.h"
 #include "lemon/backends/backend_descriptor_registry.h"
+#include "lemon/backends/backend_utils.h"
 #include "lemon/backends/hf_cache_util.h"
 #include "lemon/models/artifact_ref.h"
 #include "lemon/models/artifact_store.h"
@@ -152,6 +153,20 @@ std::optional<utils::SetupReport> container_setup_failure() {
     }
     if (report.empty()) return std::nullopt;
     return report;
+}
+
+std::optional<utils::SetupReport> container_setup_failure(
+    const std::string& recipe, const std::string& backend,
+    const std::optional<utils::SetupReport>& host) {
+    if (host) return host;
+    const ContainerPolicy* policy = BackendUtils::get_container_policy(recipe, backend);
+    if (policy && std::find(policy->devices.begin(), policy->devices.end(), "/dev/kfd") !=
+                      policy->devices.end()) {
+        if (auto failure = utils::ContainerManager::global().check_selinux()) {
+            return utils::SetupReport{{*failure}};
+        }
+    }
+    return std::nullopt;
 }
 
 } // namespace backends

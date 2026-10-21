@@ -113,6 +113,9 @@ public:
     std::vector<SetupFailure> check_host() const;
     // lemond.service's subordinate ID ranges, then `podman info`.
     std::optional<SetupFailure> check_podman() const;
+    // The SELinux check for a backend whose devices include /dev/kfd, or
+    // nullopt when it passes.
+    std::optional<SetupFailure> check_selinux() const;
 
     std::vector<std::string> run_command(const ContainerRunSpec& spec) const;
 

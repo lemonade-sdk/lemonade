@@ -1,5 +1,6 @@
 #include "lemon/server_process.h"
 
+#include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <map>
@@ -8,6 +9,7 @@
 #include <thread>
 
 #include "lemon/backends/backend_ops.h"
+#include "lemon/system_info.h"
 #include "lemon/utils/container_manager.h"
 
 #include <lemon/utils/aixlog.hpp>
@@ -107,7 +109,8 @@ std::string ContainerProcess::start(const ServerCommand& command) {
                              " is a container backend, which runs on Linux");
 #endif
     const auto& manager = ContainerManager::global();
-    if (auto failure = backends::container_setup_failure()) {
+    if (auto failure = backends::container_setup_failure(recipe_, backend_,
+                                                         backends::container_setup_failure())) {
         throw std::runtime_error(recipe_ + ":" + backend_ + " cannot start:" + failure->text());
     }
     if (!ContainerManager::allowed_image(policy_.image)) {
@@ -148,6 +151,11 @@ std::string ContainerProcess::start(const ServerCommand& command) {
         return it == inside.end() ? value : it->second;
     };
 
+    if (std::find(policy_.devices.begin(), policy_.devices.end(), "/dev/kfd") !=
+        policy_.devices.end()) {
+        const std::string gpu = hip_visible_device(SystemInfo::get_rocm_arch());
+        if (!gpu.empty()) spec.env.push_back({"HIP_VISIBLE_DEVICES", gpu});
+    }
     for (const auto& [key, value] : command.env) {
         spec.env.push_back({key, rewrite(value)});
     }
