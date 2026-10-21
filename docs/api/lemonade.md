@@ -352,7 +352,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 Pulling an already-downloaded model downloads any newer commit from its registry. Loading a model never checks for updates, and [`POST /v1/models/check-updates`](#post-v1modelscheck-updates) only reports them.
 
-With `stream`, the error event or the job reports an unknown model or an unavailable registry.
+With `stream`, the error event or the job reports an unknown model, and the error event also reports an unavailable registry.
 
 In offline mode a new definition is still registered, but nothing is downloaded.
 
