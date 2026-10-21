@@ -469,7 +469,8 @@ std::variant<std::string, json> McpServer::resolve_model_for_tool(
     }
 
     // 3. Load a model of the right type that's already downloaded \u2014 no network.
-    for (const auto& [name, info] : model_manager_->snapshot()->models) {
+    const auto snapshot = model_manager_->snapshot();
+    for (const auto& [name, info] : snapshot->models) {
         if (info.downloaded && info.type == want_type) return name;
     }
 
@@ -825,7 +826,8 @@ json McpServer::tool_omni(const json& arguments) {
         !arguments["model"].get<std::string>().empty()) {
         model = model_manager_->canonical_for_request(arguments["model"].get<std::string>());
     } else {
-        for (const auto& [name, info] : model_manager_->snapshot()->models) {
+        const auto snapshot = model_manager_->snapshot();
+        for (const auto& [name, info] : snapshot->models) {
             if (info.downloaded && is_omni_collection_recipe(info.recipe)) {
                 model = name;
                 break;
