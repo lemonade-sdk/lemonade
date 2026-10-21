@@ -155,8 +155,28 @@ std::shared_ptr<const FrozenBuiltinCatalog> CatalogAdmissionBuilder::freeze() {
     }
     frozen->definitions_ = k_backend_definition_source_count;
     frozen->source_bytes_ = k_backend_definition_source_bytes;
-    frozen->authority_ = load_v2_authority_snapshot({}).snapshot;
+    frozen->authority_ = BuiltinCatalogLoader::freeze_embedded().snapshot;
     if (!frozen->authority_) throw std::logic_error("Installed builtin authority is invalid");
+    for (const auto& source : embedded_v2_sources()) {
+        reserve(frozen->ids_, source.key.id, retained, limits);
+        charge(frozen->definitions_, 1, limits.snapshot_documents);
+        charge(frozen->source_bytes_, source.bytes.size(), limits.snapshot_source_bytes);
+    }
+    for (const auto& definition : builtin_definitions(*frozen->authority_)) {
+        const auto& declaration = definition->declaration;
+        const auto recipe = declaration.at("recipe").get<std::string>();
+        const auto& metadata = declaration.at("metadata");
+        const auto section_value = metadata.value("config_section", "");
+        const auto section = section_value.empty() ? recipe : section_value;
+        reserve(frozen->ids_, definition->key.id, retained, limits);
+        reserve(frozen->recipes_, recipe, retained, limits);
+        reserve(frozen->sections_, section, retained, limits);
+        for (const auto& option : metadata.value("options", Json::array())) {
+            const auto name = option.at("name").get<std::string>();
+            reserve(frozen->options_, name, retained, limits);
+            reserve(frozen->persisted_[section], backend_option_config_key(name), retained, limits);
+        }
+    }
     frozen->identity_ = identity("lemonade.backend-builtin-context.v1\n", {{"ids", frozen->ids_}, {"recipes", frozen->recipes_},
         {"sections", frozen->sections_}, {"options", frozen->options_}, {"persisted", frozen->persisted_},
         {"defaults", frozen->defaults_}, {"pins", frozen->pins_}, {"exports", installed_builtin_exports().digest()}});
@@ -240,6 +260,7 @@ struct AdmittedCatalog::Impl {
     std::shared_ptr<const CatalogSourceSnapshot> sources;
     std::map<std::string, std::shared_ptr<const BackendDefinition>> v1;
     std::map<std::string, std::shared_ptr<const AuthorizedDefinition>> v2;
+    std::map<std::string, std::shared_ptr<const AuthorizedDefinition>> builtin_v2;
     CatalogAdmissionMetrics metrics;
     std::string identity;
 };
@@ -262,6 +283,16 @@ CatalogAdmissionResult CatalogAdmissionBuilder::admit(std::shared_ptr<const Cata
         std::size_t rows = recipes.size();
         charge(rows, snapshot->sources_.size(), 1024);
         Json identities = Json::array();
+        for (const auto& key : BuiltinCatalogLoader::builtin_leaves(*snapshot->authority_)) {
+            const auto authorized = BuiltinCatalogLoader::authorize_builtin(snapshot->authority_, key, &retained);
+            result.resolved = authorized.resolved;
+            result.authorized = authorized.definition != nullptr;
+            if (!authorized.definition) { append(result.diagnostics, authorized.diagnostics, limits); return result; }
+            keep(retained, checked_sum(key_string(key).size(), sizeof(std::shared_ptr<const AuthorizedDefinition>) + 1024), limits);
+            impl->builtin_v2.emplace(key_string(key), authorized.definition);
+            ++impl->metrics.authorized_definitions;
+            identities.push_back({{"builtin", key_string(key)}, {"authorization", authority_identity(*authorized.definition)}});
+        }
         DefinitionAuthorizer authorizer(snapshot->authority_);
         // All v1 aliases are reserved before v2 ownership is considered, independent of file order.
         for (const auto& source : snapshot->sources_) if (source.v1) for (const auto* key : {"install_recipe", "pin_recipe"}) {
@@ -420,6 +451,12 @@ std::shared_ptr<const BackendDefinition> AdmittedCatalog::v1_definition(const st
 std::shared_ptr<const AuthorizedDefinition> AdmittedCatalog::v2_definition(const std::string& id) const {
     const auto found = impl_->v2.find(id);
     return found == impl_->v2.end() ? nullptr : found->second;
+}
+
+std::shared_ptr<const AuthorizedDefinition> AdmittedCatalog::builtin_v2_definition(const DefinitionKey& key) const {
+    if (key.space != DefinitionNamespace::Builtin || key.contract == 0) return nullptr;
+    const auto found = impl_->builtin_v2.find(key_string(key));
+    return found == impl_->builtin_v2.end() ? nullptr : found->second;
 }
 
 }

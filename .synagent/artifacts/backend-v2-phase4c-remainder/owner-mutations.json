@@ -1,0 +1,323 @@
+[
+  {
+    "rule": "inherited_sibling_denied",
+    "assertion": "InheritedSameKindSiblingAdmitted",
+    "compiled": true,
+    "binary": "/tmp/lemonade-unit4c-remainder/owner-mutations/inherited_sibling_denied/test",
+    "arguments": [],
+    "caught": true,
+    "returncode": 1
+  },
+  {
+    "rule": "hook_free_sibling_denied",
+    "assertion": "InheritedHookFreeCompletionAdmitted",
+    "compiled": true,
+    "binary": "/tmp/lemonade-unit4c-remainder/owner-mutations/hook_free_sibling_denied/test",
+    "arguments": [],
+    "caught": true,
+    "returncode": 1
+  },
+  {
+    "rule": "new_alias_admitted",
+    "assertion": "NewHooklessAliasRejected",
+    "compiled": true,
+    "binary": "/tmp/lemonade-unit4c-remainder/owner-mutations/new_alias_admitted/test",
+    "arguments": [],
+    "caught": true,
+    "returncode": 1
+  },
+  {
+    "rule": "zero_grants_drop_owner_obligations",
+    "assertion": "AliasObligationsSurviveZeroGrants",
+    "compiled": true,
+    "binary": "/tmp/lemonade-unit4c-remainder/owner-mutations/zero_grants_drop_owner_obligations/test",
+    "arguments": [],
+    "caught": true,
+    "returncode": 1
+  },
+  {
+    "rule": "hidden_hook_free_owner_write_ignored",
+    "assertion": "HiddenHookFreeOwnerWriteThenRemovalRejected",
+    "compiled": true,
+    "binary": "/tmp/lemonade-unit4c-remainder/owner-mutations/hidden_hook_free_owner_write_ignored/test",
+    "arguments": [],
+    "caught": true,
+    "returncode": 1
+  },
+  {
+    "rule": "copied_sanitizer_not_inspected",
+    "assertion": "CopiedSanitizerNewOwnerRejected",
+    "compiled": true,
+    "binary": "/tmp/lemonade-unit4c-remainder/owner-mutations/copied_sanitizer_not_inspected/test",
+    "arguments": [],
+    "caught": true,
+    "returncode": 1
+  },
+  {
+    "rule": "hook_free_owner_unaccounted",
+    "assertion": "HookFreeOwnerRecordRequired",
+    "compiled": true,
+    "binary": "/tmp/lemonade-unit4c-remainder/owner-mutations/hook_free_owner_unaccounted/test",
+    "arguments": [],
+    "caught": true,
+    "returncode": 1
+  },
+  {
+    "rule": "duplicate_owner_admitted",
+    "assertion": "OwnerIdentityUnique",
+    "compiled": true,
+    "binary": "/tmp/lemonade-unit4c-remainder/owner-mutations/duplicate_owner_admitted/test",
+    "arguments": [],
+    "caught": true,
+    "returncode": 1
+  },
+  {
+    "rule": "nonexistent_owner_admitted",
+    "assertion": "OwnerRecordMustExist",
+    "compiled": true,
+    "binary": "/tmp/lemonade-unit4c-remainder/owner-mutations/nonexistent_owner_admitted/test",
+    "arguments": [],
+    "caught": true,
+    "returncode": 1
+  },
+  {
+    "rule": "remove_readd_laundering",
+    "assertion": "FinalImmediateParentOwnerSubset",
+    "compiled": true,
+    "binary": "/tmp/lemonade-unit4c-remainder/owner-mutations/remove_readd_laundering/test",
+    "arguments": [],
+    "caught": true,
+    "returncode": 1
+  },
+  {
+    "rule": "owner_provenance_ignored",
+    "assertion": "FinalHookFreeOwnerProvenance",
+    "compiled": true,
+    "binary": "/tmp/lemonade-unit4c-remainder/owner-mutations/owner_provenance_ignored/test",
+    "arguments": [],
+    "caught": true,
+    "returncode": 1
+  },
+  {
+    "rule": "owner_semantics_ignored",
+    "assertion": "FinalHookFreeOwnerSemantics",
+    "compiled": true,
+    "binary": "/tmp/lemonade-unit4c-remainder/owner-mutations/owner_semantics_ignored/test",
+    "arguments": [],
+    "caught": true,
+    "returncode": 1
+  },
+  {
+    "rule": "owner_removal_permission_ignored",
+    "assertion": "FinalHookFreeRemovalPermission",
+    "compiled": true,
+    "binary": "/tmp/lemonade-unit4c-remainder/owner-mutations/owner_removal_permission_ignored/test",
+    "arguments": [],
+    "caught": true,
+    "returncode": 1
+  },
+  {
+    "rule": "owner_dependency_ignored",
+    "assertion": "RetainedOwnerDependencyCannotDisappear",
+    "compiled": true,
+    "binary": "/tmp/lemonade-unit4c-remainder/owner-mutations/owner_dependency_ignored/test",
+    "arguments": [],
+    "caught": true,
+    "returncode": 1
+  },
+  {
+    "rule": "final_owner_chain_ignored",
+    "assertion": "FinalOwnerChainMustMatchGraph",
+    "compiled": true,
+    "binary": "/tmp/lemonade-unit4c-remainder/owner-mutations/final_owner_chain_ignored/test",
+    "arguments": [],
+    "caught": true,
+    "returncode": 1
+  },
+  {
+    "rule": "missing_owner_dependency_admitted",
+    "assertion": "OwnerDependencyMustExist",
+    "compiled": true,
+    "binary": "/tmp/lemonade-unit4c-remainder/owner-mutations/missing_owner_dependency_admitted/test",
+    "arguments": [],
+    "caught": true,
+    "returncode": 1
+  },
+  {
+    "rule": "duplicate_owner_dependency_admitted",
+    "assertion": "OwnerDependencyUnique",
+    "compiled": true,
+    "binary": "/tmp/lemonade-unit4c-remainder/owner-mutations/duplicate_owner_dependency_admitted/test",
+    "arguments": [],
+    "caught": true,
+    "returncode": 1
+  },
+  {
+    "rule": "self_owner_dependency_admitted",
+    "assertion": "OwnerCannotDependOnItself",
+    "compiled": true,
+    "binary": "/tmp/lemonade-unit4c-remainder/owner-mutations/self_owner_dependency_admitted/test",
+    "arguments": [],
+    "caught": true,
+    "returncode": 1
+  },
+  {
+    "rule": "owner_dependency_cycle_admitted",
+    "assertion": "OwnerDependenciesAcyclic",
+    "compiled": true,
+    "binary": "/tmp/lemonade-unit4c-remainder/owner-mutations/owner_dependency_cycle_admitted/test",
+    "arguments": [],
+    "caught": true,
+    "returncode": 1
+  },
+  {
+    "rule": "nonremovable_owner_slot_mismatch",
+    "assertion": "OwnerSlotRemovalConsistent",
+    "compiled": true,
+    "binary": "/tmp/lemonade-unit4c-remainder/owner-mutations/nonremovable_owner_slot_mismatch/test",
+    "arguments": [],
+    "caught": true,
+    "returncode": 1
+  },
+  {
+    "rule": "forbidden_slot_owner_mismatch",
+    "assertion": "ForbiddenSlotMakesOwnerNonremovable",
+    "compiled": true,
+    "binary": "/tmp/lemonade-unit4c-remainder/owner-mutations/forbidden_slot_owner_mismatch/test",
+    "arguments": [],
+    "caught": true,
+    "returncode": 1
+  },
+  {
+    "rule": "owner_semantics_copy_uncharged",
+    "assertion": "OwnerSemanticsChargedBeforeCopy",
+    "compiled": true,
+    "binary": "/tmp/lemonade-unit4c-remainder/owner-mutations/owner_semantics_copy_uncharged/test",
+    "arguments": [],
+    "caught": true,
+    "returncode": 1
+  },
+  {
+    "rule": "owner_chain_work_uncharged",
+    "assertion": "OwnerChainWorkChargedBeforeRetention",
+    "compiled": true,
+    "binary": "/tmp/lemonade-unit4c-remainder/owner-mutations/owner_chain_work_uncharged/test",
+    "arguments": [],
+    "caught": true,
+    "returncode": 1
+  },
+  {
+    "rule": "owner_graph_pin_ignored",
+    "assertion": "IndependentOwnerGraphPin",
+    "compiled": true,
+    "binary": "/tmp/lemonade-unit4c-remainder/owner-mutations/owner_graph_pin_ignored/test",
+    "arguments": [],
+    "caught": true,
+    "returncode": 1
+  },
+  {
+    "rule": "empty_export_registry_pin_ignored",
+    "assertion": "EmptyExportRegistryStillPinsAbiMetadata",
+    "compiled": true,
+    "binary": "/tmp/lemonade-unit4c-remainder/owner-mutations/empty_export_registry_pin_ignored/test",
+    "arguments": [],
+    "caught": true,
+    "returncode": 1
+  },
+  {
+    "rule": "request_chain_unaudited",
+    "assertion": "EmptyRequestChainAudited",
+    "compiled": true,
+    "binary": "/tmp/lemonade-unit4c-remainder/owner-mutations/request_chain_unaudited/test",
+    "arguments": [],
+    "caught": true,
+    "returncode": 1
+  },
+  {
+    "rule": "response_chain_unaudited",
+    "assertion": "EmptyResponseChainAudited",
+    "compiled": true,
+    "binary": "/tmp/lemonade-unit4c-remainder/owner-mutations/response_chain_unaudited/test",
+    "arguments": [],
+    "caught": true,
+    "returncode": 1
+  },
+  {
+    "rule": "handler_chain_unaudited",
+    "assertion": "EmptyHandlerChainAudited",
+    "compiled": true,
+    "binary": "/tmp/lemonade-unit4c-remainder/owner-mutations/handler_chain_unaudited/test",
+    "arguments": [],
+    "caught": true,
+    "returncode": 1
+  },
+  {
+    "rule": "fields_unaudited",
+    "assertion": "OwnerSealedFieldsComplete",
+    "compiled": true,
+    "binary": "/tmp/lemonade-unit4c-remainder/owner-mutations/fields_unaudited/test",
+    "arguments": [],
+    "caught": true,
+    "returncode": 1
+  },
+  {
+    "rule": "collisions_unaudited",
+    "assertion": "CollisionGraphComplete",
+    "compiled": true,
+    "binary": "/tmp/lemonade-unit4c-remainder/owner-mutations/collisions_unaudited/test",
+    "arguments": [],
+    "caught": true,
+    "returncode": 1
+  },
+  {
+    "rule": "semantics_unaudited",
+    "assertion": "OwnerSemanticsAudited",
+    "compiled": true,
+    "binary": "/tmp/lemonade-unit4c-remainder/owner-mutations/semantics_unaudited/test",
+    "arguments": [],
+    "caught": true,
+    "returncode": 1
+  },
+  {
+    "rule": "mutable_hook_free_owner",
+    "assertion": "HookFreeOwnerCannotBeMutable",
+    "compiled": true,
+    "binary": "/tmp/lemonade-unit4c-remainder/owner-mutations/mutable_hook_free_owner/test",
+    "arguments": [],
+    "caught": true,
+    "returncode": 1
+  },
+  {
+    "rule": "envelope_changes_endpoint_identity",
+    "assertion": "EndpointIdentityIgnoresEnvelopeAndDelivery",
+    "compiled": true,
+    "binary": "/tmp/lemonade-unit4c-remainder/owner-mutations/envelope_changes_endpoint_identity/test",
+    "arguments": [
+      "--endpoints"
+    ],
+    "caught": true,
+    "returncode": 1
+  },
+  {
+    "rule": "public_operation_kind_ignored",
+    "assertion": "PublicOperationKindConservative",
+    "compiled": true,
+    "binary": "/tmp/lemonade-unit4c-remainder/owner-mutations/public_operation_kind_ignored/test",
+    "arguments": [
+      "--endpoints"
+    ],
+    "caught": true,
+    "returncode": 1
+  },
+  {
+    "rule": "uncertain_endpoint_exempted",
+    "assertion": "UncertainEndpointHasNoExemption",
+    "compiled": true,
+    "binary": "/tmp/lemonade-unit4c-remainder/owner-mutations/uncertain_endpoint_exempted/test",
+    "arguments": [
+      "--endpoints"
+    ],
+    "caught": true,
+    "returncode": 1
+  }
+]

@@ -1,0 +1,602 @@
+[
+  {
+    "name": "cpp-ci",
+    "command": [
+      "ctest",
+      "--test-dir",
+      "build",
+      "-L",
+      "^cpp-ci$",
+      "--output-on-failure",
+      "--timeout",
+      "180"
+    ],
+    "returncode": 0,
+    "seconds": 157.01,
+    "tail": [
+      "cpp-ci    = 156.97 sec*proc (134 tests)",
+      "",
+      "Total Test time (real) = 157.00 sec"
+    ]
+  },
+  {
+    "name": "builtin_authorization",
+    "command": [
+      "build/test_backend_definition_builtin_authorization"
+    ],
+    "returncode": 0,
+    "seconds": 0.02,
+    "tail": [
+      "34 checks, 0 failures"
+    ]
+  },
+  {
+    "name": "owner_graph",
+    "command": [
+      "build/test_backend_definition_owner_graph"
+    ],
+    "returncode": 0,
+    "seconds": 0.29,
+    "tail": [
+      "195 checks, 0 failures"
+    ]
+  },
+  {
+    "name": "exports",
+    "command": [
+      "build/test_backend_definition_exports"
+    ],
+    "returncode": 0,
+    "seconds": 0.03,
+    "tail": [
+      "72 checks, 0 failures"
+    ]
+  },
+  {
+    "name": "authorization",
+    "command": [
+      "build/test_backend_definition_authorization"
+    ],
+    "returncode": 0,
+    "seconds": 0.07,
+    "tail": [
+      "80 checks, 0 failures"
+    ]
+  },
+  {
+    "name": "v2_contract",
+    "command": [
+      "build/test_backend_definition_v2_contract"
+    ],
+    "returncode": 0,
+    "seconds": 0.05,
+    "tail": [
+      "117/117 checks passed"
+    ]
+  },
+  {
+    "name": "resolver",
+    "command": [
+      "build/test_backend_definition_resolver"
+    ],
+    "returncode": 0,
+    "seconds": 0.08,
+    "tail": [
+      "64/64 checks passed"
+    ]
+  },
+  {
+    "name": "resolver_bounds",
+    "command": [
+      "build/test_backend_definition_resolver_bounds"
+    ],
+    "returncode": 0,
+    "seconds": 0.02,
+    "tail": [
+      "80/80 checks passed"
+    ]
+  },
+  {
+    "name": "resolver_diagnostics",
+    "command": [
+      "build/test_backend_definition_resolver_diagnostics"
+    ],
+    "returncode": 0,
+    "seconds": 0.03,
+    "tail": [
+      "25/25 checks passed"
+    ]
+  },
+  {
+    "name": "descriptor",
+    "command": [
+      "build/test_backend_definition_descriptor"
+    ],
+    "returncode": 0,
+    "seconds": 0.01,
+    "tail": [
+      "51/51 checks passed"
+    ]
+  },
+  {
+    "name": "v1_compat",
+    "command": [
+      "build/test_backend_definition_v1_compat"
+    ],
+    "returncode": 0,
+    "seconds": 0.03,
+    "tail": [
+      "8/8 v1 compiled definitions, programs, expression trees, features and diagnostics unchanged"
+    ]
+  },
+  {
+    "name": "execution",
+    "command": [
+      "build/test_backend_definition_execution"
+    ],
+    "returncode": 0,
+    "seconds": 0.03,
+    "tail": [
+      "122 checks, 0 failures"
+    ]
+  },
+  {
+    "name": "execution_bounds",
+    "command": [
+      "build/test_backend_definition_execution_bounds"
+    ],
+    "returncode": 0,
+    "seconds": 0.02,
+    "tail": [
+      "48 checks, 0 failures"
+    ]
+  },
+  {
+    "name": "execution_boundary",
+    "command": [
+      "build/test_backend_definition_execution_boundary"
+    ],
+    "returncode": 0,
+    "seconds": 0.01,
+    "tail": [
+      "7 checks, 0 failures"
+    ]
+  },
+  {
+    "name": "abi",
+    "command": [
+      "build/test_backend_hook_abi"
+    ],
+    "returncode": 0,
+    "seconds": 0.01,
+    "tail": [
+      "8 checks, 0 failures"
+    ]
+  },
+  {
+    "name": "admission",
+    "command": [
+      "build/test_backend_catalog_admission"
+    ],
+    "returncode": 0,
+    "seconds": 0.04,
+    "tail": [
+      "73 checks, 0 failures"
+    ]
+  },
+  {
+    "name": "invalidation",
+    "command": [
+      "build/test_backend_catalog_invalidation"
+    ],
+    "returncode": 0,
+    "seconds": 0.02,
+    "tail": [
+      "23 checks, 0 failures"
+    ]
+  },
+  {
+    "name": "admission_bounds",
+    "command": [
+      "build/test_backend_catalog_admission_bounds"
+    ],
+    "returncode": 0,
+    "seconds": 0.64,
+    "tail": [
+      "21 checks, 0 failures"
+    ]
+  },
+  {
+    "name": "catalog-http",
+    "command": [
+      "/usr/bin/python3",
+      "test/backend_catalog_http.py",
+      "build/lemond"
+    ],
+    "returncode": 0,
+    "seconds": 4.55,
+    "tail": [
+      "115/115 catalog HTTP checks passed"
+    ]
+  },
+  {
+    "name": "frozen-cli",
+    "command": [
+      "/usr/bin/python3",
+      "test/backend_schema_cli.py",
+      "build/lemonade"
+    ],
+    "returncode": 0,
+    "seconds": 1.36,
+    "tail": [
+      "104/104 frozen CLI checks passed"
+    ]
+  },
+  {
+    "name": "cli-repl",
+    "command": [
+      "/usr/bin/python3",
+      "test/cli_repl_options.py",
+      "build/lemond",
+      "build/lemonade"
+    ],
+    "returncode": 0,
+    "seconds": 20.89,
+    "tail": [
+      "58/58 CLI REPL fake-engine checks passed"
+    ]
+  },
+  {
+    "name": "negotiation",
+    "command": [
+      "/usr/bin/python3",
+      "test/backend_catalog_negotiation.py",
+      "build/lemond"
+    ],
+    "returncode": 0,
+    "seconds": 1.52,
+    "tail": [
+      "88 checks passed"
+    ]
+  },
+  {
+    "name": "snapshot-after",
+    "command": [
+      "/usr/bin/python3",
+      "test/backend_v1_snapshot.py",
+      "capture",
+      "--lemond",
+      "build/lemond",
+      "--cli",
+      "build/lemonade",
+      "--out",
+      "/devel/tools/lemonade/.synagent/artifacts/backend-v2-phase4c-remainder/after"
+    ],
+    "returncode": 0,
+    "seconds": 1.33,
+    "tail": [
+      "Captured v1 baseline in /devel/tools/lemonade/.synagent/artifacts/backend-v2-phase4c-remainder/after/snapshot.json"
+    ]
+  },
+  {
+    "name": "snapshot-compare",
+    "command": [
+      "/usr/bin/python3",
+      "test/backend_v1_snapshot.py",
+      "compare",
+      "--lemond",
+      "build/lemond",
+      "--cli",
+      "build/lemonade",
+      "--baseline",
+      "/devel/tools/lemonade/.synagent/artifacts/backend-v2-phase4c-remainder/before"
+    ],
+    "returncode": 0,
+    "seconds": 1.33,
+    "tail": [
+      "v1 API, eight digests, CLI, defaults and recipe metadata: identical"
+    ]
+  },
+  {
+    "name": "v1-projections",
+    "command": [
+      "/usr/bin/python3",
+      "test/backend_v1_phase3_compare.py",
+      "--baseline",
+      "/devel/tools/lemonade/.synagent/artifacts/backend-v2-phase4c-remainder/before/snapshot.json",
+      "--actual",
+      "/devel/tools/lemonade/.synagent/artifacts/backend-v2-phase4c-remainder/after/snapshot.json",
+      "--out",
+      "/devel/tools/lemonade/.synagent/artifacts/backend-v2-phase4c-remainder/comparison"
+    ],
+    "returncode": 0,
+    "seconds": 0.05,
+    "tail": [
+      "schema: 0 diff bytes",
+      "digests: 0 diff bytes",
+      "etags: 0 diff bytes"
+    ]
+  },
+  {
+    "name": "data-parity",
+    "command": [
+      "/usr/bin/python3",
+      "test/backend_definition_data_parity.py",
+      "--build-dir",
+      "build",
+      "--baseline-commit",
+      "1ea315ae32a21d79c0e551a957a19f68023a1709",
+      "--views",
+      "native",
+      "windows",
+      "macos",
+      "--out",
+      "/tmp/lemonade-unit4c-remainder/data-parity",
+      "--mode",
+      "run"
+    ],
+    "returncode": 0,
+    "seconds": 0.08,
+    "tail": [
+      "native: 17 full descriptors, 8 production and 3 synthetic mapper cases identical",
+      "windows: 17 full descriptors, 8 production and 3 synthetic mapper cases identical",
+      "macos: 17 full descriptors, 8 production and 3 synthetic mapper cases identical"
+    ]
+  },
+  {
+    "name": "compiler-purity",
+    "command": [
+      "/usr/bin/python3",
+      "test/backend_execution_purity.py",
+      "--nm",
+      "/usr/bin/nm",
+      "--library",
+      "build/liblemonade-backend-definition-execution.a"
+    ],
+    "returncode": 0,
+    "seconds": 0.05,
+    "tail": [
+      "Compiler symbol boundary: no filesystem IO, process, hook, hardware or network dependencies"
+    ]
+  },
+  {
+    "name": "loader-symbols",
+    "command": [
+      "/usr/bin/python3",
+      "test/backend_definition_builtin_audit.py",
+      "symbols",
+      "--build",
+      "build",
+      "--out",
+      "/tmp/lemonade-unit4c-remainder/symbols"
+    ],
+    "returncode": 0,
+    "seconds": 0.07,
+    "tail": [
+      "Production has no test constructors; loader has no hook, factory, IO or service dependencies"
+    ]
+  },
+  {
+    "name": "builtin-mutations",
+    "command": [
+      "/usr/bin/python3",
+      "test/backend_definition_builtin_audit.py",
+      "mutations",
+      "--build",
+      "build",
+      "--out",
+      "/tmp/lemonade-unit4c-remainder/builtin-mutations",
+      "--run-only"
+    ],
+    "returncode": 0,
+    "seconds": 0.64,
+    "tail": [
+      "builtin_mint_skipped_at_admission: caught by BuiltinTokenFreshForEveryAdmission",
+      "legacy_accepts_typed_artifact_provider: caught by TypedArtifactCannotImpersonateLegacyProvider",
+      "15/15 isolated builtin and ABI mutations caught"
+    ]
+  },
+  {
+    "name": "additional-mutations",
+    "command": [
+      "/usr/bin/python3",
+      "test/backend_definition_builtin_audit.py",
+      "mutations",
+      "--build",
+      "build",
+      "--out",
+      "/tmp/lemonade-unit4c-remainder/additional-mutations",
+      "--run-only"
+    ],
+    "returncode": 0,
+    "seconds": 0.07,
+    "tail": [
+      "public_intake_budget_exception_escapes: caught by ExternalCompositionBudgetReturnsDiagnostic",
+      "abi_audit_invokes_target: caught by ABI audit never invokes executable targets",
+      "2/2 isolated builtin and ABI mutations caught"
+    ]
+  },
+  {
+    "name": "owner-mutations",
+    "command": [
+      "/usr/bin/python3",
+      "test/backend_definition_owner_audit.py",
+      "mutations",
+      "--build",
+      "build",
+      "--out",
+      "/tmp/lemonade-unit4c-remainder/owner-mutations",
+      "--run-only"
+    ],
+    "returncode": 0,
+    "seconds": 24.05,
+    "tail": [
+      "public_operation_kind_ignored: caught by PublicOperationKindConservative",
+      "uncertain_endpoint_exempted: caught by UncertainEndpointHasNoExemption",
+      "35/35 isolated owner mutations caught"
+    ]
+  },
+  {
+    "name": "renderer-backend-catalog",
+    "command": [
+      "npm",
+      "--prefix",
+      "src/app",
+      "run",
+      "test:backend-catalog"
+    ],
+    "returncode": 0,
+    "seconds": 0.32,
+    "tail": [
+      "PASS ordinary external load and chat preflight also use the catalog and transient options",
+      "PASS external chat preserves an already-loaded transient override",
+      "24/24 tests passed; 0 failed"
+    ]
+  },
+  {
+    "name": "renderer-recipe-form",
+    "command": [
+      "npm",
+      "--prefix",
+      "src/app",
+      "run",
+      "test:recipe-form"
+    ],
+    "returncode": 0,
+    "seconds": 0.23,
+    "tail": [
+      "PASS changed backend choices and types revalidate retained dirty edits",
+      "PASS model snapshot verifies exact recipe/id and scalar shape",
+      "83/83 tests passed; 0 failed"
+    ]
+  },
+  {
+    "name": "renderer-schema-recipe-options",
+    "command": [
+      "npm",
+      "--prefix",
+      "src/app",
+      "run",
+      "test:schema-recipe-options"
+    ],
+    "returncode": 0,
+    "seconds": 0.36,
+    "tail": [
+      "PASS legacy context slider helpers retain numeric and auto semantics",
+      "22/22 tests passed; 0 failed",
+      "Using explicit server base URL: http://one.test/proxy/"
+    ]
+  },
+  {
+    "name": "generator",
+    "command": [
+      "/usr/bin/python3",
+      "docs/tools/gen_backend_boilerplate.py",
+      "--lemond",
+      "build/lemond",
+      "--check"
+    ],
+    "returncode": 0,
+    "seconds": 11.09,
+    "tail": [
+      "All generated files are up to date."
+    ]
+  },
+  {
+    "name": "whole-snapshot",
+    "command": [
+      "cmp",
+      "/devel/tools/lemonade/.synagent/artifacts/backend-v2-phase4c-remainder/before/snapshot.json",
+      "/devel/tools/lemonade/.synagent/artifacts/backend-v2-phase4c-remainder/after/snapshot.json"
+    ],
+    "returncode": 0,
+    "seconds": 0.0,
+    "tail": []
+  },
+  {
+    "name": "oracle-equality",
+    "command": [
+      "/usr/bin/python3",
+      "test/llamacpp_oracle_audit.py",
+      "equality",
+      "--build",
+      "build",
+      "--out",
+      "/tmp/lemonade-unit4c-remainder/oracle-equality"
+    ],
+    "returncode": 0,
+    "seconds": 14.66,
+    "tail": [
+      "    }",
+      "  }",
+      "}"
+    ]
+  },
+  {
+    "name": "oracle-mutations",
+    "command": [
+      "/usr/bin/python3",
+      "test/llamacpp_oracle_audit.py",
+      "mutations",
+      "--build",
+      "build",
+      "--out",
+      "/tmp/lemonade-unit4c-remainder/oracle-mutations"
+    ],
+    "returncode": 0,
+    "seconds": 50.31,
+    "tail": [
+      "context-floor {'returncode': 1, 'caught': True, 'suite': 'test_llamacpp_oracle_linux_x64'}",
+      "readiness-endpoint {'returncode': 1, 'caught': True, 'suite': 'test_llamacpp_oracle_linux_x64'}",
+      "failure-order {'returncode': 1, 'caught': True, 'suite': 'test_llamacpp_oracle_linux_x64'}"
+    ]
+  },
+  {
+    "name": "smoke",
+    "command": [
+      "/usr/bin/python3",
+      "/devel/tools/lemonade/.synagent/artifacts/backend-v2-phase4c-remainder/smoke.py"
+    ],
+    "returncode": 0,
+    "seconds": 0.77,
+    "tail": [
+      "{'port': 35669, 'health': 200, 'schema_status': 200, 'recipes': 17, 'definitions': 8, 'exit_code': 0}"
+    ]
+  },
+  {
+    "name": "protected-source",
+    "command": [
+      "git",
+      "diff",
+      "--exit-code",
+      "1ea315ae32a21d79c0e551a957a19f68023a1709",
+      "--",
+      "schemas/backend-definition-v1.schema.json",
+      "src/cpp/resources/backends",
+      "src/cpp/resources/defaults.json",
+      "src/cpp/server/backends/configured/backend_definition_store.cpp",
+      "src/cpp/server/backends/configured/configured_backend_ops.cpp",
+      "src/cpp/server/backends/configured/configured_backend_entry.cpp",
+      "cmake/BackendDescriptorFromDefinition.cmake",
+      "src/cpp/server/backends/llamacpp/llamacpp_server.cpp",
+      "src/cpp/server/backends/llamacpp/llamacpp_request.cpp",
+      "test/fixtures/llamacpp-oracle",
+      "test/fixtures/backend-v2/export.synthetic.json",
+      "test/cpp/test_backend_definition_authorization.cpp"
+    ],
+    "returncode": 0,
+    "seconds": 0.0,
+    "tail": []
+  },
+  {
+    "name": "diff-check",
+    "command": [
+      "git",
+      "diff",
+      "--check"
+    ],
+    "returncode": 0,
+    "seconds": 0.01,
+    "tail": []
+  }
+]

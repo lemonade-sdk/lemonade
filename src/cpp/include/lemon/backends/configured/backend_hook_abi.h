@@ -16,6 +16,7 @@ struct HookAbiDescriptor {
 };
 
 const std::vector<HookAbiDescriptor>& installed_hook_abis();
+const std::vector<HookAbiDescriptor>& installed_legacy_hook_abis();
 const HookAbiDescriptor* find_hook_abi(std::string_view id) noexcept;
 const std::string& installed_hook_abi_digest();
 

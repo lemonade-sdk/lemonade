@@ -56,6 +56,7 @@ struct CatalogAdmissionBuilder {
     static CatalogAdmissionResult admit(std::shared_ptr<const CatalogSourceSnapshot> snapshot);
     static CandidateAdmissionResult candidate(std::shared_ptr<const AdmittedCatalog> active, std::string_view bytes);
     static std::string authority_identity(const AuthorizedDefinition& definition);
+    static std::vector<std::shared_ptr<const ResolvedDefinition>> builtin_definitions(const FrozenDefinitionSnapshot& snapshot);
     static std::shared_ptr<const FrozenBuiltinCatalog> test_builtins(
         std::shared_ptr<const FrozenDefinitionSnapshot> authority, const std::vector<DefinitionSourceView>& sources);
 };

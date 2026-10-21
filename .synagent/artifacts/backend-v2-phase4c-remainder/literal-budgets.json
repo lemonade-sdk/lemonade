@@ -1,0 +1,17 @@
+[
+  {
+    "file": "build/include/backend_definition_resources.h",
+    "literals": 15,
+    "maximum_bytes": 7993
+  },
+  {
+    "file": "build/include/backend_definition_v2_resources.h",
+    "literals": 6,
+    "maximum_bytes": 8000
+  },
+  {
+    "file": "build/include/backend_descriptors_generated.h",
+    "literals": 0,
+    "maximum_bytes": 0
+  }
+]

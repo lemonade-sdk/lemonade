@@ -1,0 +1,50 @@
+CMake Warning (dev) at CMakeLists.txt:3994:
+  Syntax Warning in cmake code at column 128
+
+  Argument not separated from preceding token by whitespace.
+This warning is for project developers.  Use -Wno-dev to suppress it.
+
+-- Lemonade version: 2026.44.0~1764.1ea315ae
+-- Using system nlohmann_json (>= 3.11.3)
+-- Using system libcurl (version 8.18.0, >= 8.5.0)
+-- Using system zstd (version 1.5.7, >= 1.5.5)
+-- System CLI11 not found or version < 2.4.2, will use FetchContent
+-- System cpp-httplib not found or version < 0.26.0, will use FetchContent
+-- Using system libwebsockets (version 4.3.5-unknown, >= 4.3.3)
+CMake Deprecation Warning at build/_deps/cli11-src/CMakeLists.txt:1 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+
+
+out/httplib.h and out/httplib.cc are up to date
+-- System mbedtls not found; fetching mbedTLS for CLI HTTPS and digest verification
+CMake Deprecation Warning at build/_deps/mbedtls-src/CMakeLists.txt:21 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+
+
+-- libdrm_amdgpu found
+-- libcap found - capability inheritance will be enabled
+-- Node.js found: /home/ilintar/.local/bin/node
+-- npm found: /home/ilintar/.local/bin/npm
+-- Cargo found: /home/ilintar/.cargo/bin/cargo
+-- Tauri app can be built with: cmake --build --preset default --target tauri-app
+-- Web app will be built automatically (disable with -DBUILD_WEB_APP=OFF)
+-- === Lemonade Tray Configuration ===
+-- Platform: Linux
+-- lemonade-tray: DISABLED (REQUIRE_LINUX_TRAY=OFF)
+-- ====================================
+-- KaTeX fonts found at /usr/share/fonts/truetype/katex, creating symlinks
+-- Embeddable archive target available: cmake --build . --target embeddable
+--   Archive: lemonade-embeddable-2026.44.0~1764.1ea315ae-ubuntu-x64.tar.gz
+-- Configuring done (1.2s)
+-- Generating done (0.3s)
+-- Build files have been written to: /devel/tools/lemonade/build

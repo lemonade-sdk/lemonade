@@ -31,6 +31,8 @@ int main() {
     audit_hook_abi_metadata(BackendHookRegistry(registrations));
     check(invocations == 0, "ABI audit never invokes executable targets");
     check(registrations.size() == 12, "all installed executable hooks described");
+    check(installed_legacy_hook_abis().size() == 12 && installed_hook_abis().size() == 19,
+        "LegacyAndTypedInventoriesAreSeparate");
     const auto rejected = [&](const std::function<void(std::vector<HookRegistration>&)>& change) {
         auto copy = registrations;
         change(copy);
@@ -40,6 +42,7 @@ int main() {
     };
     check(rejected([](auto& entries) { entries.pop_back(); }), "missing executable registration rejected");
     check(rejected([](auto& entries) { entries[0].id = "unknown.executable"; }), "unknown executable registration rejected");
+    check(rejected([](auto& entries) { entries[0].id = "llamacpp.artifacts.v1"; }), "TypedArtifactCannotImpersonateLegacyProvider");
     check(rejected([&](auto& entries) { entries[0].stage = HookStage::Request; entries[0].target = targets[1]; }), "executable stage change rejected");
     check(invocations == 0, "rejected audits never invoke executable targets");
     std::printf("%d checks, %d failures\n", checks, failures);

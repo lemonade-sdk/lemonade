@@ -106,8 +106,25 @@ int main() {
     check(has_code(audit(value, abis), "invalid_hook_abi"), "duplicate ABI metadata");
     abis = installed_hook_abis(); abis[0].operations = {"chat_completion", "chat_completion"};
     check(has_code(audit(value, abis), "invalid_hook_abi"), "ambiguous ABI operation restrictions");
-    check(installed_hook_abis().size() == 12 && installed_hook_abi_digest().size() == 71, "data-only ABI inventory");
-    check(!find_hook_abi("llamacpp.prepare.v1"), "phase 4 hooks are not advertised");
+    const auto inventory = Json::parse(read_bytes("hook-abi.inventory.json"));
+    check(installed_hook_abis().size() == 19 && v2::hook_abi_json(installed_hook_abis()) == inventory.at("abis") &&
+        installed_hook_abi_digest() == inventory.at("abi_digest"), "ReviewedTypedAbiInventory");
+    check(v2::hook_abi_json(installed_legacy_hook_abis()) == inventory.at("legacy_abis"), "ExactLegacyAbiProjection");
+    const auto* prepare = find_hook_abi("llamacpp.prepare.v1");
+    check(prepare && prepare->stage == "launch" && prepare->revision == 1 && prepare->implementation_revision == 1 &&
+        prepare->operations.empty(), "PrepareAbiUsesLaunchSlot");
+    check(installed_builtin_exports().digest() == inventory.at("registry_digest"), "ReviewedProductionAggregatePin");
+    auto stale_abis = installed_hook_abis();
+    ++stale_abis.back().implementation_revision;
+    check(has_code(v2::audit_export_contracts({}, nullptr, stale_abis, installed_builtin_exports().digest()),
+        "registry_digest_mismatch"), "EmptyExportsStillPinAbiImplementation");
+    stale_abis = installed_hook_abis();
+    ++stale_abis.back().revision;
+    check(has_code(v2::audit_export_contracts({}, nullptr, stale_abis, installed_builtin_exports().digest()),
+        "registry_digest_mismatch"), "EmptyExportsStillPinAbiRevision");
+    check(has_code(v2::audit_export_contracts({}, nullptr, installed_hook_abis(),
+        "sha256:283179bf6e03aba5facd47fd9b2538007ecddc2ac9a46473573713694f070899"),
+        "registry_digest_mismatch"), "EmptyExportsRejectPriorAggregatePin");
     std::set<std::string> hook_references;
     const auto walk = [&](const auto& self, const Json& rule, const std::string& path) -> void {
         if (rule.is_object() && rule.value("$ref", Json()) == "#/$defs/Hook") hook_references.insert(path);

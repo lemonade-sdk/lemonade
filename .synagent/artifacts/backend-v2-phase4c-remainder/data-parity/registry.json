@@ -1,0 +1,146 @@
+{
+  "abi_digest": "sha256:8a3f1079a23231f2b54d8c0f9e052b186bdc5c33438c7838b7d539c0230d03ff",
+  "abis": [
+    {
+      "id": "kokoro.voice_index",
+      "implementation_revision": 1,
+      "operations": [],
+      "revision": 1,
+      "stage": "launch"
+    },
+    {
+      "id": "llamacpp.artifacts.v1",
+      "implementation_revision": 1,
+      "operations": [],
+      "revision": 1,
+      "stage": "artifacts"
+    },
+    {
+      "id": "llamacpp.backend.v1",
+      "implementation_revision": 1,
+      "operations": [],
+      "revision": 1,
+      "stage": "backend"
+    },
+    {
+      "id": "llamacpp.client_model",
+      "implementation_revision": 1,
+      "operations": [],
+      "revision": 1,
+      "stage": "response"
+    },
+    {
+      "id": "llamacpp.environment.v1",
+      "implementation_revision": 1,
+      "operations": [],
+      "revision": 1,
+      "stage": "environment"
+    },
+    {
+      "id": "llamacpp.gguf",
+      "implementation_revision": 1,
+      "operations": [],
+      "revision": 1,
+      "stage": "artifacts"
+    },
+    {
+      "id": "llamacpp.install_context.v1",
+      "implementation_revision": 1,
+      "operations": [],
+      "revision": 1,
+      "stage": "install_context"
+    },
+    {
+      "id": "llamacpp.max_tokens_alias",
+      "implementation_revision": 1,
+      "operations": [],
+      "revision": 1,
+      "stage": "request"
+    },
+    {
+      "id": "llamacpp.prepare.v1",
+      "implementation_revision": 1,
+      "operations": [],
+      "revision": 1,
+      "stage": "launch"
+    },
+    {
+      "id": "llamacpp.runtime_options.v1",
+      "implementation_revision": 1,
+      "operations": [],
+      "revision": 1,
+      "stage": "runtime_options"
+    },
+    {
+      "id": "llamacpp.system.v1",
+      "implementation_revision": 1,
+      "operations": [],
+      "revision": 1,
+      "stage": "system"
+    },
+    {
+      "id": "llamacpp.tool_schema_limits",
+      "implementation_revision": 1,
+      "operations": [],
+      "revision": 1,
+      "stage": "request"
+    },
+    {
+      "id": "moonshine.model_arch",
+      "implementation_revision": 1,
+      "operations": [],
+      "revision": 1,
+      "stage": "launch"
+    },
+    {
+      "id": "moonshine.transcription",
+      "implementation_revision": 1,
+      "operations": [
+        "transcription"
+      ],
+      "revision": 1,
+      "stage": "operation"
+    },
+    {
+      "id": "onnxruntime.classify",
+      "implementation_revision": 1,
+      "operations": [
+        "classification"
+      ],
+      "revision": 1,
+      "stage": "operation"
+    },
+    {
+      "id": "onnxruntime.model_directory",
+      "implementation_revision": 1,
+      "operations": [],
+      "revision": 1,
+      "stage": "artifacts"
+    },
+    {
+      "id": "onnxruntime.servable_directory",
+      "implementation_revision": 1,
+      "operations": [],
+      "revision": 1,
+      "stage": "launch"
+    },
+    {
+      "id": "onnxruntime.startup_error",
+      "implementation_revision": 1,
+      "operations": [],
+      "revision": 1,
+      "stage": "start_failure"
+    },
+    {
+      "id": "trellis.mesh",
+      "implementation_revision": 1,
+      "operations": [
+        "model_3d_generation"
+      ],
+      "revision": 1,
+      "stage": "sink_operation"
+    }
+  ],
+  "digest": "sha256:6bac770f2a8d740927eb20a69a430d9430a0eabea744efedb74486afe941ead6",
+  "exports": 0
+}

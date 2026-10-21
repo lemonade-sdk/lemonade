@@ -4,7 +4,7 @@
 
 namespace lemon::backends {
 
-const std::vector<HookAbiDescriptor>& installed_hook_abis() {
+const std::vector<HookAbiDescriptor>& installed_legacy_hook_abis() {
     static const std::vector<HookAbiDescriptor> descriptors = {
         {"kokoro.voice_index", "launch", 1, 1, {}},
         {"llamacpp.client_model", "response", 1, 1, {}},
@@ -19,6 +19,24 @@ const std::vector<HookAbiDescriptor>& installed_hook_abis() {
         {"onnxruntime.startup_error", "start_failure", 1, 1, {}},
         {"trellis.mesh", "sink_operation", 1, 1, {"model_3d_generation"}}
     };
+    return descriptors;
+}
+
+const std::vector<HookAbiDescriptor>& installed_hook_abis() {
+    static const std::vector<HookAbiDescriptor> descriptors = [] {
+        auto result = installed_legacy_hook_abis();
+        const std::vector<HookAbiDescriptor> typed = {
+            {"llamacpp.artifacts.v1", "artifacts", 1, 1, {}},
+            {"llamacpp.backend.v1", "backend", 1, 1, {}},
+            {"llamacpp.environment.v1", "environment", 1, 1, {}},
+            {"llamacpp.install_context.v1", "install_context", 1, 1, {}},
+            {"llamacpp.prepare.v1", "launch", 1, 1, {}},
+            {"llamacpp.runtime_options.v1", "runtime_options", 1, 1, {}},
+            {"llamacpp.system.v1", "system", 1, 1, {}}
+        };
+        result.insert(result.end(), typed.begin(), typed.end());
+        return result;
+    }();
     return descriptors;
 }
 

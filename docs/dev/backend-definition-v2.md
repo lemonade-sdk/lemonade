@@ -365,9 +365,13 @@ source, definition, dependency, policy and aggregate pins are committed in
 domains and fixtures are unchanged. Filesystem labels, function pointers and
 execution defaults do not enter these identities.
 
-The server compares every executable hook registration with its data-only ABI
-descriptor and audits the installed registry before returning the installed
-hook table. This calls no hook targets. An ABI revision change requires a new
+The server compares every legacy executable hook registration with the exact
+twelve-record legacy ABI projection before returning the installed hook table.
+The complete data-only inventory contains nineteen records; the seven additional
+records describe the v2 backend, install-context, runtime-options, launch/prepare,
+environment, system and narrow artifact slots. They do not install callable
+targets. `hook-abi.inventory.json` pins both inventories, the ABI digest and the
+production export-registry aggregate. These audits call no hook targets. An ABI revision change requires a new
 contract major for every dependent export. Incompatible slot meaning, removal
 obligations, parameter shape, input surface or effects also require a new major.
 A compatible implementation correction changes the implementation identity;
@@ -476,12 +480,40 @@ The first 4c increment implements the owner graph and authorization revision 2.
 The single-operation phase-3 fixture and all its negative assertions remain
 unchanged. A separate synthetic sibling fixture audits the eleven frozen
 llama.cpp cells against all four oracle views; streaming completion has empty
-request and response chains. This increment adds no typed callable ABI, mutable
-fragment contracts, builtin-leaf authorization or executable binder. Production
-exports remain empty, and v2 declarations remain non-executable. The installed
-empty-export/12-ABI registry pin remains
-`sha256:283179bf6e03aba5facd47fd9b2538007ecddc2ac9a46473573713694f070899`;
-the remaining 4c ABI expansion must re-pin it after reviewing all 19 records.
+request and response chains.
+
+The next 4c increment adds loader-owned builtin leaf authorization and the
+nineteen-record ABI metadata inventory. Its production export-registry pin is
+`sha256:6bac770f2a8d740927eb20a69a430d9430a0eabea744efedb74486afe941ead6`.
+ABI metadata, including implementation revisions, contributes to this aggregate
+even when the export set is empty. The twelve legacy records, source/declaration/
+dependency hashes and v1 projection remain unchanged. Synthetic aggregate pins
+change to include the expanded inventory; builds compare literal expectations.
+
+Builtin v2 bytes and leaf execution policies have separate loader-owned embedded
+tables in `backend_builtin_authorization.cpp`. Both production tables are empty.
+The loader audits each leaf's source, resolved declaration, dependency closure,
+owner graph and slot policy pins before freezing the context. Builtin closure
+contains only embedded builtin sources. Internal sources can be composed without
+exporting them; only leaves with an audited execution policy can receive a token.
+The shared policy record shape does not grant external export permission.
+
+Catalog admission mints a fresh builtin token for each admitted transaction.
+`builtin_v2_definition(key)` retrieves that retained token with exact namespace
+and contract-major matching. The public authorizer and source intake remain
+external-only. A caller-created `ResolvedDefinition` cannot mint authority.
+Builtin authorization identity revision 3 additionally binds source, builtin
+policy and builtin policy-table identities; external revision 2 is unchanged.
+Test-only constructors are compiled into test executables and are absent from
+the production archive. Loader objects have no target, factory, service or IO
+dependencies.
+
+Unit 4c is still incomplete: the ten typed mutable fragment contracts, expanded
+typed fact references, private callable targets, symbolic compilation, immutable
+binder, admission ticket/membership check and artifact-only HRX capability test
+remain pending. Fresh tokens alone do not implement the transaction membership
+check. The existing scalar/Expression surface and owner sealing stay in force.
+Production exports remain empty, and v2 declarations remain non-executable.
 
 ### Catalog admission and private candidates
 

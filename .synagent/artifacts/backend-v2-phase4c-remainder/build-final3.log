@@ -1,0 +1,3 @@
+[0/2] Re-checking globbed directories...
+[1/3] Building CXX object CMakeFiles/test_backend_definition_builtin_authorization.dir/test/cpp/test_backend_definition_builtin_authorization.cpp.o
+[2/3] Linking CXX executable test_backend_definition_builtin_authorization

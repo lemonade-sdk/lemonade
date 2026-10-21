@@ -30,6 +30,7 @@ public:
     const CatalogSourceSnapshot& sources() const noexcept;
     std::shared_ptr<const BackendDefinition> v1_definition(const std::string& id) const;
     std::shared_ptr<const AuthorizedDefinition> v2_definition(const std::string& id) const;
+    std::shared_ptr<const AuthorizedDefinition> builtin_v2_definition(const DefinitionKey& key) const;
 
 private:
     AdmittedCatalog() = default;

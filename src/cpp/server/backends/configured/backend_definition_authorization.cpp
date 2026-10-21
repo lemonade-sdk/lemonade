@@ -10,6 +10,7 @@ namespace lemon::backends {
 struct FrozenDefinitionSnapshot::Impl {
     std::shared_ptr<const DefinitionSourceSnapshot> sources;
     std::shared_ptr<const BuiltinExportRegistry> registry;
+    std::shared_ptr<const BuiltinExecutionPolicies> builtin_policies;
     DefinitionLimits limits;
 };
 
@@ -373,11 +374,13 @@ struct ResolvedAuthority::Impl {
     const BuiltinExportContract* contract = nullptr;
     std::string registry_digest;
     std::uint32_t authorization_revision = 2;
+    bool builtin = false;
     std::vector<GrantIdentity> grants;
 };
 
 FrozenDefinitionSnapshotResult BuiltinCatalogLoader::freeze_sources(const std::vector<DefinitionSourceView>& sources,
-    std::shared_ptr<const BuiltinExportRegistry> registry, const DefinitionLimits& limits, std::size_t* retained) {
+    std::shared_ptr<const BuiltinExportRegistry> registry, const DefinitionLimits& limits, std::size_t* retained,
+    std::shared_ptr<const BuiltinExecutionPolicies> builtin_policies) {
     FrozenDefinitionSnapshotResult result;
     const auto input = make_v2_source_snapshot_accounted(sources, limits, retained);
     result.diagnostics = input.diagnostics;
@@ -385,9 +388,16 @@ FrozenDefinitionSnapshotResult BuiltinCatalogLoader::freeze_sources(const std::v
     const auto audit = audit_export_contracts(registry->exports(), input.snapshot, installed_hook_abis(), registry->digest(), limits);
     result.diagnostics = audit;
     if (!audit.entries.empty() || audit.truncated) return result;
+    if (builtin_policies) {
+        const auto builtin_audit = audit_export_contracts(builtin_policies->leaves, input.snapshot,
+            installed_hook_abis(), builtin_policies->digest, limits);
+        result.diagnostics = builtin_audit;
+        if (!builtin_audit.entries.empty() || builtin_audit.truncated) return result;
+    }
     auto impl = std::make_shared<FrozenDefinitionSnapshot::Impl>();
     impl->sources = input.snapshot;
     impl->registry = std::move(registry);
+    impl->builtin_policies = std::move(builtin_policies);
     impl->limits = limits;
     auto snapshot = std::shared_ptr<FrozenDefinitionSnapshot>(new FrozenDefinitionSnapshot());
     snapshot->impl_ = std::move(impl);
@@ -403,7 +413,47 @@ FrozenDefinitionSnapshotResult BuiltinCatalogLoader::freeze(const std::vector<De
         else result.diagnostics.truncated = true;
         return result;
     }
-    return freeze_sources(external_sources, std::make_shared<const BuiltinExportRegistry>(installed_exports()), limits);
+    const auto builtins = freeze_embedded(limits);
+    if (!builtins.snapshot) return builtins;
+    std::size_t retained = 0;
+    try { return compose(builtins.snapshot, external_sources, limits, retained); }
+    catch (const LimitExceeded&) {
+        FrozenDefinitionSnapshotResult result;
+        if (limits.diagnostics) result.diagnostics.entries.push_back({"limit_exceeded", "", "", "Definition snapshot exceeds limits", {}, {}, {}});
+        else result.diagnostics.truncated = true;
+        return result;
+    }
+}
+
+FrozenDefinitionSnapshotResult BuiltinCatalogLoader::freeze_embedded(const DefinitionLimits& limits) {
+    for (const auto& source : embedded_v2_sources())
+        require(source.key.space == DefinitionNamespace::Builtin && source.key.contract != 0,
+            "invalid_builtin_source", {source.key, ""});
+    return freeze_sources(embedded_v2_sources(), std::make_shared<const BuiltinExportRegistry>(installed_exports()),
+        limits, nullptr, std::make_shared<const BuiltinExecutionPolicies>(embedded_v2_policies()));
+}
+
+std::vector<DefinitionKey> BuiltinCatalogLoader::builtin_leaves(const FrozenDefinitionSnapshot& snapshot) {
+    std::vector<DefinitionKey> result;
+    if (snapshot.impl_->builtin_policies) for (const auto& policy : snapshot.impl_->builtin_policies->leaves)
+        result.push_back({DefinitionNamespace::Builtin, policy.key.id, policy.key.contract});
+    return result;
+}
+
+std::vector<std::shared_ptr<const ResolvedDefinition>> CatalogAdmissionBuilder::builtin_definitions(const FrozenDefinitionSnapshot& snapshot) {
+    std::vector<std::shared_ptr<const ResolvedDefinition>> result;
+    DefinitionResolver resolver(snapshot.impl_->sources, snapshot.impl_->limits);
+    for (const auto& key : BuiltinCatalogLoader::builtin_leaves(snapshot)) {
+        const auto resolved = resolver.resolve(key);
+        if (!resolved.definition) throw std::logic_error("Invalid builtin leaf");
+        result.push_back(resolved.definition);
+    }
+    return result;
+}
+
+DefinitionAuthorizationResult BuiltinCatalogLoader::authorize_builtin(std::shared_ptr<const FrozenDefinitionSnapshot> snapshot,
+    const DefinitionKey& leaf, std::size_t* retained) {
+    return DefinitionAuthorizer(std::move(snapshot)).authorize_impl(leaf, retained, true);
 }
 
 FrozenDefinitionSnapshotResult BuiltinCatalogLoader::compose(std::shared_ptr<const FrozenDefinitionSnapshot> builtins,
@@ -417,13 +467,22 @@ FrozenDefinitionSnapshotResult BuiltinCatalogLoader::compose(std::shared_ptr<con
         require(source.key.space == DefinitionNamespace::External && source.key.contract == 0, "origin_promotion", {source.key, ""});
         sources.push_back(source);
     }
-    return freeze_sources(sources, builtins->impl_->registry, limits, &retained);
+    return freeze_sources(sources, builtins->impl_->registry, limits, &retained, builtins->impl_->builtin_policies);
 }
 
 #ifdef LEMON_BACKEND_EXPORT_TESTING
 FrozenDefinitionSnapshotResult BuiltinCatalogLoader::test_freeze(const std::vector<DefinitionSourceView>& sources,
     std::shared_ptr<const BuiltinExportRegistry> registry, const DefinitionLimits& limits) {
     return freeze_sources(sources, std::move(registry), limits);
+}
+
+FrozenDefinitionSnapshotResult BuiltinCatalogLoader::test_freeze_builtins(const std::vector<DefinitionSourceView>& sources,
+    const BuiltinExecutionPolicies& policies, const DefinitionLimits& limits) {
+    for (const auto& source : sources) if (source.key.space != DefinitionNamespace::Builtin || source.key.contract == 0)
+        return {nullptr, {limits.diagnostics ? std::vector<CompositionDiagnostic>{{"invalid_builtin_source", source.key.id, "", "Invalid embedded source", {}, {}, {}}} :
+            std::vector<CompositionDiagnostic>{}, limits.diagnostics == 0}};
+    return freeze_sources(sources, std::make_shared<const BuiltinExportRegistry>(installed_exports()), limits,
+        nullptr, std::make_shared<const BuiltinExecutionPolicies>(policies));
 }
 #endif
 
@@ -463,9 +522,15 @@ std::string CatalogAdmissionBuilder::authority_identity(const AuthorizedDefiniti
     Json grants = Json::array();
     for (const auto& grant : authority.grants) grants.push_back({{"builtin", grant.base_id},
         {"contract", grant.contract_major}, {"slot", slot_json(grant.slot)}});
-    return identity("lemonade.backend-authorization.v1\n", {{"revision", authority.authorization_revision},
+    Json value = {{"revision", authority.authorization_revision},
         {"registry", authority.registry_digest}, {"definition", authority.resolved->definition_hash},
-        {"dependencies", authority.resolved->dependency_digest}, {"grants", grants}});
+        {"dependencies", authority.resolved->dependency_digest}, {"grants", grants}};
+    if (authority.builtin) {
+        value["builtin_policy"] = authority.contract->policy_digest;
+        value["builtin_registry"] = authority.snapshot->impl_->builtin_policies->digest;
+        value["source"] = authority.resolved->source_digest;
+    }
+    return identity("lemonade.backend-authorization.v1\n", value);
 }
 
 const ResolvedDefinition& AuthorizedDefinition::definition() const noexcept { return *definition_; }
@@ -478,6 +543,10 @@ DefinitionAuthorizationResult DefinitionAuthorizer::authorize(const DefinitionKe
 }
 
 DefinitionAuthorizationResult DefinitionAuthorizer::authorize_accounted(const DefinitionKey& leaf, std::size_t* shared_retained) const {
+    return authorize_impl(leaf, shared_retained, false);
+}
+
+DefinitionAuthorizationResult DefinitionAuthorizer::authorize_impl(const DefinitionKey& leaf, std::size_t* shared_retained, bool builtin) const {
     DefinitionAuthorizationResult result;
     const auto limits = snapshot_ ? snapshot_->impl_->limits : DefinitionLimits{};
     const auto error = [&](const std::string& code, const SourceLocation& source) {
@@ -487,7 +556,8 @@ DefinitionAuthorizationResult DefinitionAuthorizer::authorize_accounted(const De
     };
     try {
         require(snapshot_ != nullptr, "invalid_authority_snapshot", {leaf, ""});
-        require(leaf.space == DefinitionNamespace::External && leaf.contract == 0, "origin_promotion", {leaf, ""});
+        require(builtin ? leaf.space == DefinitionNamespace::Builtin && leaf.contract != 0 :
+            leaf.space == DefinitionNamespace::External && leaf.contract == 0, "origin_promotion", {leaf, ""});
         const auto& frozen = *snapshot_->impl_;
         DefinitionResolver resolver(frozen.sources, limits, shared_retained);
         const auto resolved = resolver.resolve(leaf);
@@ -518,7 +588,30 @@ DefinitionAuthorizationResult DefinitionAuthorizer::authorize_accounted(const De
         chain.push_back(leaf);
         std::shared_ptr<const ResolvedDefinition> parent;
         std::shared_ptr<ResolvedAuthority::Impl> authority;
-        for (std::size_t index = 0; index < chain.size(); ++index) {
+        if (builtin) {
+            require(frozen.builtin_policies != nullptr, "unregistered_builtin", {leaf, ""});
+            const auto& policies = frozen.builtin_policies->leaves;
+            const auto found = std::find_if(policies.begin(), policies.end(), [&](const auto& policy) {
+                return policy.key.id == leaf.id && policy.key.contract == leaf.contract;
+            });
+            require(found != policies.end(), "unregistered_builtin", {leaf, ""});
+            for (const auto& key : chain) require(key.space == DefinitionNamespace::Builtin,
+                "external_builtin_dependency", {key, "/extends"});
+            budget.keep(sizeof(ResolvedAuthority::Impl));
+            authority = std::make_shared<ResolvedAuthority::Impl>();
+            authority->builtin = true;
+            authority->authorization_revision = 3;
+            authority->base = resolved.definition;
+            authority->contract = &*found;
+            for (const auto& policy : found->slots) {
+                slot_key(policy.slot, budget);
+                budget.keep(checked_sum(sizeof(ResolvedAuthority::Impl::GrantIdentity), checked_sum(leaf.id.size(), 512)));
+                authority->grants.push_back({leaf.id, leaf.contract, resolved.definition->source_digest,
+                    resolved.definition->definition_hash, resolved.definition->dependency_digest,
+                    policy.slot, policy.hook_abi_revision, policy.parameter_digest, policy.mutation_policy_digest});
+            }
+        }
+        for (std::size_t index = 0; !builtin && index < chain.size(); ++index) {
             const auto& key = chain[index];
             const auto layer = key_string(key) == key_string(leaf) ? resolved : resolver.resolve(key);
             require(layer.definition != nullptr, "invalid_authority_graph", {key, ""});

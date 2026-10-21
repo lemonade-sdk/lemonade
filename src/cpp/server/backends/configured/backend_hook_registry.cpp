@@ -8,6 +8,7 @@
 #include "lemon/backends/onnxruntime/onnxruntime_hooks.h"
 #include "lemon/backends/trellis/trellis_hooks.h"
 
+#include <algorithm>
 #include <set>
 
 namespace lemon::backends {
@@ -38,9 +39,11 @@ const HookRegistration& BackendHookRegistry::require(std::string_view id, HookSt
 
 void audit_hook_abi_metadata(const BackendHookRegistry& registry) {
     static const char* stages[] = {"artifacts", "request", "response", "launch", "operation", "start_failure", "sink_operation"};
-    if (registry.registrations().size() != installed_hook_abis().size()) throw std::logic_error("Hook ABI registry size mismatch");
+    const auto& legacy = installed_legacy_hook_abis();
+    if (registry.registrations().size() != legacy.size()) throw std::logic_error("Hook ABI registry size mismatch");
     for (const auto& registration : registry.registrations()) {
-        const auto* abi = find_hook_abi(registration.id);
+        const auto found = std::find_if(legacy.begin(), legacy.end(), [&](const auto& abi) { return abi.id == registration.id; });
+        const auto* abi = found == legacy.end() ? nullptr : &*found;
         const auto stage = static_cast<std::size_t>(registration.stage);
         if (!abi || stage >= sizeof(stages) / sizeof(stages[0]) || abi->stage != stages[stage] || !abi->revision || !abi->implementation_revision)
             throw std::logic_error("Hook ABI registry mismatch");

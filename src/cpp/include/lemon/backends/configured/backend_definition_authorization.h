@@ -62,7 +62,9 @@ public:
 
 private:
     DefinitionAuthorizationResult authorize_accounted(const DefinitionKey& leaf, std::size_t* retained) const;
+    DefinitionAuthorizationResult authorize_impl(const DefinitionKey& leaf, std::size_t* retained, bool builtin) const;
     std::shared_ptr<const FrozenDefinitionSnapshot> snapshot_;
+    friend class BuiltinCatalogLoader;
     friend struct CatalogAdmissionBuilder;
 };
 

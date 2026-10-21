@@ -208,7 +208,13 @@ def run_views(args):
         print(
             f"{view}: 17 full descriptors, 8 production and 3 synthetic mapper cases identical"
         )
-    assert registry["exports"] == 0 and len(registry["abis"]) == 12
+    inventory = json.loads(
+        (REPO / "test/fixtures/backend-v2/hook-abi.inventory.json").read_text()
+    )
+    assert registry["exports"] == 0 and len(registry["abis"]) == 19
+    assert registry["abis"] == inventory["abis"]
+    assert registry["abi_digest"] == inventory["abi_digest"]
+    assert registry["digest"] == inventory["registry_digest"]
     (args.out / "registry.json").write_text(json.dumps(registry, indent=2) + "\n")
 
 

@@ -58,6 +58,14 @@ std::vector<LogicalHookSlot> verify_surviving_grants(const ResolvedDefinition& d
 
 namespace lemon::backends {
 
+struct BuiltinExecutionPolicies {
+    std::vector<BuiltinExportContract> leaves;
+    std::string digest;
+};
+
+const std::vector<DefinitionSourceView>& embedded_v2_sources();
+const BuiltinExecutionPolicies& embedded_v2_policies();
+
 class BuiltinCatalogLoader {
 public:
     static const BuiltinExportRegistry& installed_exports();
@@ -65,20 +73,33 @@ public:
         const std::vector<DefinitionSourceView>& external_sources, const DefinitionLimits& limits);
     static FrozenDefinitionSnapshotResult compose(std::shared_ptr<const FrozenDefinitionSnapshot> builtins,
         const std::vector<DefinitionSourceView>& external_sources, const DefinitionLimits& limits, std::size_t& retained);
+    static FrozenDefinitionSnapshotResult freeze_embedded(const DefinitionLimits& limits = {});
+    static std::vector<DefinitionKey> builtin_leaves(const FrozenDefinitionSnapshot& snapshot);
+#ifdef LEMON_BACKEND_EXPORT_TESTING
     static FrozenDefinitionSnapshotResult test_freeze(
         const std::vector<DefinitionSourceView>& sources,
         std::shared_ptr<const BuiltinExportRegistry> registry, const DefinitionLimits& limits = {});
+    static FrozenDefinitionSnapshotResult test_freeze_builtins(
+        const std::vector<DefinitionSourceView>& sources, const BuiltinExecutionPolicies& policies,
+        const DefinitionLimits& limits = {});
+#endif
 
 private:
     static FrozenDefinitionSnapshotResult freeze_sources(
         const std::vector<DefinitionSourceView>& sources,
-        std::shared_ptr<const BuiltinExportRegistry> registry, const DefinitionLimits& limits, std::size_t* retained = nullptr);
+        std::shared_ptr<const BuiltinExportRegistry> registry, const DefinitionLimits& limits, std::size_t* retained = nullptr,
+        std::shared_ptr<const BuiltinExecutionPolicies> builtin_policies = {});
+    static DefinitionAuthorizationResult authorize_builtin(std::shared_ptr<const FrozenDefinitionSnapshot> snapshot,
+        const DefinitionKey& leaf, std::size_t* retained);
+    friend struct CatalogAdmissionBuilder;
 
 public:
+#ifdef LEMON_BACKEND_EXPORT_TESTING
     static std::shared_ptr<const BuiltinExportRegistry> test_exports(
         const std::vector<BuiltinExportContract>& contracts,
         std::shared_ptr<const DefinitionSourceSnapshot> sources,
         const std::vector<HookAbiDescriptor>& abis, std::string_view expected_digest);
+#endif
 };
 
 }
