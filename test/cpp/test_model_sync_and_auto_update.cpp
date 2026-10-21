@@ -6,7 +6,7 @@
 
 #include "lemon/model_manager.h"
 #include "lemon/runtime_config.h"
-#include "lemon/utils/path_utils.h"
+#include "support/test_state_isolation.h"
 
 #include <atomic>
 #include <cassert>
@@ -39,13 +39,8 @@ static void set_env_var(const std::string& name, const std::string& value) {
 int main() {
     std::cout << "=== Model Sync & Auto-Update Unit Tests ===" << std::endl;
 
-    const auto tick = std::chrono::steady_clock::now().time_since_epoch().count();
-    const std::filesystem::path temp_cache =
-        std::filesystem::temp_directory_path() / ("lemonade_sync_test_" + std::to_string(tick));
+    const std::filesystem::path temp_cache = lemon::test::state_dir();
     std::error_code ec;
-    std::filesystem::create_directories(temp_cache, ec);
-    lemon::utils::set_cache_dir(temp_cache.string());
-    lemon::utils::set_config_dir(temp_cache.string());
 
     const auto dummy_model_dir =
         temp_cache / "huggingface" / "hub" / "models--unsloth--gemma-3-270m-it-GGUF";
@@ -601,10 +596,6 @@ int main() {
         check("fresh full check authoritatively schedules model update",
               std::find(downloaded_models.begin(), downloaded_models.end(), "Tiny-Test-Model-GGUF") != downloaded_models.end());
     }
-
-    lemon::utils::set_cache_dir("");
-    lemon::utils::set_config_dir("");
-    std::filesystem::remove_all(temp_cache, ec);
 
     if (failures == 0) {
         std::cout << "All Model Sync & Auto-Update tests passed successfully!" << std::endl;

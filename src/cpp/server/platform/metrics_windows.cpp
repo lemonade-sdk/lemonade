@@ -1,6 +1,9 @@
+#include "amd_metrics_windows.h"
+#include "nvidia_metrics.h"
 #include <lemon/system_metrics_platform.h>
 #include <windows.h>
 #include <cmath>
+#include <vector>
 
 namespace lemon {
 
@@ -61,19 +64,26 @@ public:
     }
 
     double get_gpu_usage() override {
-        // GPU usage monitoring not implemented for Windows
-        return -1.0;
+        return get_system_gpu_metrics().gpu_percent;
     }
 
     double get_vram_usage_gb() override {
-        // VRAM monitoring not implemented for Windows
-        return -1.0;
+        return get_system_gpu_metrics().vram_used_gb;
+    }
+
+    SystemGpuMetrics get_system_gpu_metrics() override {
+        auto devices = query_amd_gpu_metrics();
+        auto nvidia = query_nvidia_gpu_metrics();
+        devices.insert(devices.end(), nvidia.begin(), nvidia.end());
+        return gpu_tracker_.update(devices);
     }
 
     double get_npu_utilization() override {
         // NPU monitoring not implemented for Windows
         return -1.0;
     }
+private:
+    GpuMetricsTracker gpu_tracker_;
 };
 
 std::unique_ptr<SystemMetricsPlatform> create_metrics_platform() {

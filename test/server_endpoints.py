@@ -660,6 +660,57 @@ class EndpointTests(ServerTestBase):
             self.assertIn(key, stats, f"{key} missing from /stats")
         print("[OK] cache and routing telemetry series present in /metrics and /stats")
 
+    def test_002c_system_stats_gpu_schema(self):
+        """/system-stats reports a well-formed gpus[] with sane per-device values."""
+        response = requests.get(
+            f"{self.base_url}/system-stats", timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+
+        self.assertIn("gpus", data)
+        self.assertIsInstance(data["gpus"], list)
+        self.assertIn("primary_gpu_id", data)
+
+        ids = set()
+        for gpu in data["gpus"]:
+            for field in ("id", "vendor", "name", "memory_type"):
+                self.assertIn(field, gpu)
+            self.assertNotIn(gpu["id"], ids, "duplicate GPU id")
+            ids.add(gpu["id"])
+            self.assertIn(gpu["memory_type"], ("shared", "dedicated", "unknown"))
+
+            pct = gpu.get("gpu_percent")
+            if pct is not None:
+                self.assertGreaterEqual(pct, 0.0)
+                self.assertLessEqual(pct, 100.0)
+
+            total = gpu.get("memory_total_gb")
+            used = gpu.get("memory_used_gb")
+            if total is not None:
+                self.assertGreaterEqual(total, 0.0)
+            if used is not None:
+                self.assertGreaterEqual(used, 0.0)
+            if total is not None and used is not None:
+                self.assertLessEqual(used, total + 1e-6)
+
+        if data["gpus"]:
+            self.assertIn(data["primary_gpu_id"], ids)
+
+        # On a host that advertises an AMD GPU, system-stats must enumerate it.
+        info = requests.get(
+            f"{self.base_url}/system-info", timeout=TIMEOUT_DEFAULT
+        ).json()
+        amd_available = any(
+            dev.get("available") for dev in info.get("devices", {}).get("amd_gpu", [])
+        )
+        if amd_available:
+            self.assertTrue(
+                any(gpu["vendor"] == "amd" for gpu in data["gpus"]),
+                "AMD GPU advertised in system-info but absent from system-stats",
+            )
+        print(f"[OK] /system-stats reported {len(data['gpus'])} GPU(s)")
+
     def test_003_models_list(self):
         """Test listing available models via /models endpoint."""
         # Model is already pulled in setUpClass
@@ -1036,6 +1087,55 @@ class EndpointTests(ServerTestBase):
         )
 
         print(f"[OK] Pull (streaming): received events: {set(events_received)}")
+
+    def test_008b_inference_pulls_missing_model(self):
+        """Inference on a registered model that is not downloaded pulls it first."""
+        delete_response = requests.post(
+            f"{self.base_url}/delete",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertIn(delete_response.status_code, [200, 422])
+
+        models_response = requests.get(
+            f"{self.base_url}/models", timeout=TIMEOUT_DEFAULT
+        )
+        model_ids = [m["id"] for m in models_response.json()["data"]]
+        self.assertNotIn(
+            ENDPOINT_TEST_MODEL,
+            model_ids,
+            "Model should be deleted before the inference request",
+        )
+
+        response = requests.post(
+            f"{self.base_url}/chat/completions",
+            json={
+                "model": ENDPOINT_TEST_MODEL,
+                "messages": [{"role": "user", "content": "hi"}],
+                "max_tokens": 5,
+            },
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertTrue(response.json()["choices"])
+
+        models_response = requests.get(
+            f"{self.base_url}/models", timeout=TIMEOUT_DEFAULT
+        )
+        model_ids = [m["id"] for m in models_response.json()["data"]]
+        self.assertIn(
+            ENDPOINT_TEST_MODEL,
+            model_ids,
+            "Model should be downloaded after the inference request",
+        )
+
+        requests.post(
+            f"{self.base_url}/unload",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_DEFAULT,
+        )
+
+        print(f"[OK] Inference pulled missing model: {ENDPOINT_TEST_MODEL}")
 
     def test_009_load_model_basic(self):
         """Test loading a model into memory."""
@@ -7188,6 +7288,7 @@ class EndpointTests(ServerTestBase):
         repo = "models--lemon-test--Shards-GGUF"
         snap = f"{repo}/snapshots/active"
         first = "Shards-Q4_K_M-00001-of-00002.gguf"
+        second = "Shards-Q4_K_M-00002-of-00002.gguf"
         response = requests.post(
             f"{self.base_url}/models/register",
             json={
@@ -7202,7 +7303,7 @@ class EndpointTests(ServerTestBase):
             with self._extra_models_dir(
                 ggufs=[
                     f"{snap}/{first}",
-                    f"{snap}/Shards-Q4_K_M-00002-of-00002.gguf",
+                    f"{snap}/{second}",
                     f"{snap}/Shards-Q8_0.gguf",
                     f"{snap}/Shards-Q5_K_M.gguf",
                 ],
@@ -7217,11 +7318,45 @@ class EndpointTests(ServerTestBase):
                     },
                 )
 
-            # The first shard alone must never make the registered model downloaded.
+            # Missing shards must not create an extra.* duplicate of the
+            # registered model, while unrelated quantizations remain discoverable.
             with self._extra_models_dir(
-                ggufs=[f"{snap}/{first}"], refs={repo: "active"}
-            ):
+                ggufs=[
+                    f"{snap}/{first}",
+                    f"{snap}/Shards-Q8_0.gguf",
+                    f"{snap}/Shards-Q5_K_M.gguf",
+                ],
+                refs={repo: "active"},
+            ) as extra_dir:
                 self.assertFalse(self._get_model(name)["downloaded"])
+                self.assertExtraModelsListed(
+                    extra_dir,
+                    {
+                        "Shards-Q8_0": f"{snap}/Shards-Q8_0.gguf",
+                        "Shards-Q5_K_M": f"{snap}/Shards-Q5_K_M.gguf",
+                    },
+                )
+
+            # Corrupting either shard must suppress the whole registered family.
+            for damaged in (first, second):
+                with self._extra_models_dir(
+                    ggufs=[
+                        f"{snap}/{first}",
+                        f"{snap}/{second}",
+                        f"{snap}/Shards-Q8_0.gguf",
+                        f"{snap}/Shards-Q5_K_M.gguf",
+                    ],
+                    gguf_sizes={f"{snap}/{damaged}": 1},
+                    refs={repo: "active"},
+                ) as extra_dir:
+                    self.assertFalse(self._get_model(name)["downloaded"])
+                    self.assertExtraModelsListed(
+                        extra_dir,
+                        {
+                            "Shards-Q8_0": f"{snap}/Shards-Q8_0.gguf",
+                            "Shards-Q5_K_M": f"{snap}/Shards-Q5_K_M.gguf",
+                        },
+                    )
         finally:
             # Restore the original extra directory before removing registration.
             response = requests.post(
