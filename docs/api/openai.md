@@ -1000,7 +1000,7 @@ curl http://localhost:13305/v1/models?show_all=true
           "present": true,
           "required": true,
           "registry": "huggingface",
-          "path": "/home/you/.cache/lemonade/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/main/Qwen3-0.6B-Q4_0.gguf"
+          "path": "/home/you/.cache/lemonade/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/8b14a9e8c9db4a52e3f6f07d9086e2e3e0d94d1f/Qwen3-0.6B-Q4_0.gguf"
         }
       ],
       "labels": ["reasoning"]
@@ -1191,7 +1191,7 @@ Returns a single model object with the same fields as described in the [models l
       "present": true,
       "required": true,
       "registry": "huggingface",
-      "path": "/home/you/.cache/lemonade/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/main/Qwen3-0.6B-Q4_0.gguf"
+      "path": "/home/you/.cache/lemonade/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/8b14a9e8c9db4a52e3f6f07d9086e2e3e0d94d1f/Qwen3-0.6B-Q4_0.gguf"
     }
   ],
   "labels": ["reasoning"],
