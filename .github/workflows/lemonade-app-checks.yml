@@ -15,7 +15,7 @@ on:
   workflow_dispatch:
     inputs:
       real_server_smoke:
-        description: 'Build the PR server .deb and run App integration smoke tests'
+        description: 'Reuse the PR server .deb from C++ CI and run App smoke tests'
         type: boolean
         required: false
         default: false
@@ -73,57 +73,69 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
-  build-pr-server-deb:
-    name: Build PR server for App smoke (manual)
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.real_server_smoke }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    outputs:
-      version: ${{ steps.get_version.outputs.version }}
-    container:
-      image: ghcr.io/lemonade-sdk/lemonade/build-environment:ubuntu24.04
-      credentials:
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          clean: true
-          fetch-depth: 0
-      - name: Configure git safe directory
-        run: git config --global --add safe.directory $(pwd)
-      - name: Prepare Debian build
-        id: get_version
-        uses: ./.github/actions/prepare-debian-build
-        with:
-          release: '24.04'
-          codename: 'noble'
-      - name: Build PR server .deb
-        id: build_deb
-        uses: ./.github/actions/build-debian-package
-        with:
-          package-type: binary
-          deb-version: ${{ steps.get_version.outputs.version }}
-      - uses: actions/upload-artifact@v7
-        with:
-          name: lemonade-app-pr-server-deb
-          path: ${{ steps.build_deb.outputs.output-dir }}/*.deb
-          retention-days: 7
-
   app-real-server-smoke:
-    name: App vs PR-built Lemonade Server (manual)
+    name: App vs C++ CI Lemonade Server (manual)
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.real_server_smoke }}
-    needs: [app-tests, build-pr-server-deb]
+    needs: app-tests
+    permissions:
+      contents: read
+      actions: read
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
       LEMONADE_CI_MODE: 'True'
-      LEMONADE_VERSION: ${{ needs.build-pr-server-deb.outputs.version }}
     steps:
       - uses: actions/checkout@v5
         with:
           clean: true
           fetch-depth: 0
+      - name: Find matching C++ CI server package
+        id: server_artifact
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          runs=$(gh api --method GET \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/cpp_server_build_test_release.yml/runs" \
+            -f event=pull_request -f head_sha="$GITHUB_SHA" -f per_page=100)
+          mapfile -t run_ids < <(jq -r --arg branch "$GITHUB_REF_NAME" --arg sha "$GITHUB_SHA" \
+            '.workflow_runs[] | select(.head_sha == $sha and .head_branch == $branch) | .id' <<< "$runs")
+          for run_id in "${run_ids[@]}"; do
+            found=$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/artifacts" \
+              -f name=lemonade-deb \
+              --jq '[.artifacts[] | select(.name == "lemonade-deb" and .expired == false)] | length')
+            if [[ "$found" -gt 0 ]]; then
+              echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+              echo "Reusing lemonade-deb from C++ CI run $run_id"
+              exit 0
+            fi
+          done
+          echo "::error::No unexpired lemonade-deb from C++ CI for $GITHUB_REF_NAME@$GITHUB_SHA. Wait for that commit's C++ CI package build, then retry." >&2
+          exit 1
+
+      - name: Download C++ CI server package
+        uses: actions/download-artifact@v7
+        with:
+          name: lemonade-deb
+          run-id: ${{ steps.server_artifact.outputs.run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Read Debian package version
+        id: deb_version
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          debs=(lemonade-server_*_amd64.deb)
+          if [[ ${#debs[@]} -ne 1 ]]; then
+            echo "::error::Expected one lemonade-server amd64 .deb, found ${#debs[@]}" >&2
+            exit 1
+          fi
+          version=${debs[0]#lemonade-server_}
+          version=${version%_amd64.deb}
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
       - name: Enable PPA for runtime dependencies (not the server binary)
         shell: bash
         run: |
@@ -132,11 +144,11 @@ jobs:
           sudo apt-get install -y software-properties-common
           sudo add-apt-repository -y ppa:lemonade-team/bleeding-edge
 
-      - name: Extract PR-built .deb and start server
+      - name: Extract CI-built .deb and start server
         uses: ./.github/actions/install-lemonade-deb
         with:
-          version: ${{ env.LEMONADE_VERSION }}
-          artifact-name: lemonade-app-pr-server-deb
+          version: ${{ steps.deb_version.outputs.version }}
+          download-artifact: 'false'
 
       - name: Verify PR server health
         run: curl -fsS http://127.0.0.1:13305/api/v1/health
