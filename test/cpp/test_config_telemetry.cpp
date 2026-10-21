@@ -106,6 +106,25 @@ int main() {
     check(snapshot["extensor"]["extensor_preset"] == "balanced",
           "persists descriptor-declared backend option");
 
+    for (const std::string preset : {"exact", "balanced", "fast", "demo"}) {
+        config.set(json{{"extensor", {{"extensor_preset", preset}}}});
+        check(config.snapshot()["extensor"]["extensor_preset"] == preset,
+              ("accepts supported EXTENSOR preset " + preset).c_str());
+    }
+    for (const std::string preset : {"invalid", "", "Balanced", " fast"}) {
+        const json before = config.snapshot();
+        bool rejected = false;
+        try {
+            config.set(json{{"extensor", {{"extensor_preset", preset}}}, {"port", 13306}});
+        } catch (const std::invalid_argument& e) {
+            rejected = true;
+            check(std::string(e.what()).find("extensor.extensor_preset") != std::string::npos,
+                  "invalid preset error identifies the configuration key");
+        }
+        check(rejected, ("rejects unsupported EXTENSOR preset before loading: " + preset).c_str());
+        check(config.snapshot() == before, "rejected preset leaves the entire configuration unchanged");
+    }
+
     bool threw_wrong_extensor_type = false;
     try {
         config.set(json{{"extensor", {{"extensor_preset", 42}}}});

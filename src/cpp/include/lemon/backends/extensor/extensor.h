@@ -6,6 +6,12 @@ namespace lemon {
 namespace backends {
 namespace extensor {
 
+inline const BackendOption preset_option = {
+    "extensor_preset", "--extensor-preset", "balanced", "PRESET",
+    "EXTENSOR runtime preset: exact, balanced, fast, or demo", "EXTENSOR Options",
+    {"exact", "balanced", "fast", "demo"},
+};
+
 inline const BackendDescriptor descriptor = {
     /*recipe*/          "extensor",
     /*display_name*/    "EXTENSOR ROCm",
@@ -19,8 +25,7 @@ inline const BackendDescriptor descriptor = {
     /*options*/ {
         {"extensor_backend", "--extensor", "", "BACKEND",
          "EXTENSOR backend to use", "EXTENSOR Options"},
-        {"extensor_preset", "--extensor-preset", "balanced", "PRESET",
-         "EXTENSOR runtime preset: exact, balanced, fast, or demo", "EXTENSOR Options"},
+        preset_option,
     },
     /*support*/ {
         {"rocm", BackendTier::Experimental, BackendFormat::Native,

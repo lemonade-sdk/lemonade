@@ -65,16 +65,35 @@ static void test_extensor_size_filter_bypass(ModelManager& manager) {
         {"ExtensorTiny", model("extensor", 0.01)},
     };
 
-    const bool supported = lemon::SystemInfo::check_recipe_supported("extensor").empty();
-    std::printf("EXTENSOR supported on this host: %s\n", supported ? "yes" : "no");
-    const auto filtered = manager.filter_models_by_backend(models, true);
-    check("EXTENSOR availability follows hardware support regardless of size",
-          filtered.size() == (supported ? models.size() : 0));
+    lemon::json system_info = {
+        {"Physical Memory", "64 GB"},
+        {"devices", {{"amd_gpu", lemon::json::array({
+            {{"available", true}, {"integrated", true}, {"vram_gb", 8.0}, {"virtual_mem_gb", 56.0}},
+        })}}},
+        {"recipes", {
+            {"extensor", {{"default_backend", "rocm"},
+                {"backends", {{"rocm", {{"state", "not_installed"}, {"tier", "experimental"}}}}}}},
+            {"ds4", {{"default_backend", "rocm"},
+                {"backends", {{"rocm", {{"state", "installed"}, {"tier", "experimental"}}}}}}},
+        }},
+    };
+    const auto filtered = manager.filter_models_by_backend(models, system_info, true);
+    check("EXTENSOR keeps every model on supported hardware regardless of size",
+          filtered.size() == models.size());
     check("EXTENSOR file size does not cause rejection",
-          (filtered.count("ExtensorHuge") == 1) == supported);
+          filtered.count("ExtensorHuge") == 1);
     check("EXTENSOR resident estimate does not cause rejection",
-          (filtered.count("ExtensorHugeResident") == 1) == supported);
+          filtered.count("ExtensorHugeResident") == 1);
     check("EXTENSOR is never hidden by model size",
+          manager.recipes_all_models_filtered_snapshot().count("extensor") == 0);
+
+    check("the same hardware still filters oversized streaming models without the exemption",
+          manager.filter_models_by_backend({{"Ds4Huge", model("ds4", HUGE_GB)}}, system_info).empty());
+
+    system_info["recipes"]["extensor"]["backends"]["rocm"]["state"] = "unsupported";
+    check("EXTENSOR unsupported hardware still rejects every model",
+          manager.filter_models_by_backend(models, system_info, true).empty());
+    check("hardware rejection is not reported as a model-size rejection",
           manager.recipes_all_models_filtered_snapshot().count("extensor") == 0);
 }
 

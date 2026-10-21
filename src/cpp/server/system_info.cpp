@@ -1652,8 +1652,12 @@ json SystemInfo::build_recipes_info(const json& devices) {
 }
 
 SystemInfo::SupportedBackendsResult SystemInfo::get_supported_backends(const std::string& recipe) {
+    return get_supported_backends(recipe, SystemInfoCache::get_system_info_with_cache());
+}
+
+SystemInfo::SupportedBackendsResult SystemInfo::get_supported_backends(
+    const std::string& recipe, const json& system_info) {
     SupportedBackendsResult result;
-    json system_info = SystemInfoCache::get_system_info_with_cache();
 
     if (!system_info.contains("recipes") || !system_info["recipes"].contains(recipe)) {
         result.not_supported_error = "Recipe '" + recipe + "' not found";
@@ -1709,6 +1713,15 @@ SystemInfo::SupportedBackendsResult SystemInfo::get_supported_backends(const std
 }
 
 std::string SystemInfo::check_recipe_supported(const std::string& recipe) {
+    const auto* desc = lemon::backends::descriptor_for(recipe);
+    if (desc && desc->support.empty()) {
+        return "";
+    }
+    return check_recipe_supported(recipe, SystemInfoCache::get_system_info_with_cache());
+}
+
+std::string SystemInfo::check_recipe_supported(const std::string& recipe,
+                                              const json& system_info) {
     // A backend whose descriptor declares no support rows has no local
     // hardware/OS gating (e.g. cloud offload): availability is determined at
     // runtime (provider creds via the CloudProviderRegistry / API key).
@@ -1716,7 +1729,7 @@ std::string SystemInfo::check_recipe_supported(const std::string& recipe) {
     if (desc && desc->support.empty()) {
         return "";
     }
-    auto result = get_supported_backends(recipe);
+    auto result = get_supported_backends(recipe, system_info);
     return result.backends.empty() ? result.not_supported_error : "";
 }
 

@@ -18,6 +18,7 @@ struct BackendOption {
     std::string type_name;            // "ARGS" | "SIZE" | "BACKEND" | "BOOL"
     std::string help;                 // CLI help text
     std::string group;                // CLI help group, e.g. "General Options"
+    std::vector<std::string> choices{};
 };
 
 // How a backend shares the accelerator.

@@ -1205,6 +1205,15 @@ void RuntimeConfig::validate_backend(const std::string& backend, const std::stri
             throw std::invalid_argument(
                 "'" + backend + "." + key + "' has the wrong value type");
         }
+        for (const auto& option : descriptor->options) {
+            if (option.name != key || option.choices.empty()) continue;
+            if (!value.is_string() ||
+                std::find(option.choices.begin(), option.choices.end(), value.get<std::string>()) ==
+                    option.choices.end()) {
+                throw std::invalid_argument(
+                    "'" + backend + "." + key + "' must be one of " + json(option.choices).dump());
+            }
+        }
     }
 }
 

@@ -483,6 +483,15 @@ namespace lemon::backends {
         return version;
     }
 
+    void BackendUtils::install_from_github(const BackendSpec& spec,
+                                          const std::string& expected_version,
+                                          const std::string& repo,
+                                          const std::string& filename,
+                                          const std::string& backend,
+                                          DownloadProgressCallback progress_cb) {
+        install_from_release(spec, expected_version, repo, filename, backend, progress_cb);
+    }
+
     void BackendUtils::install_from_release(const BackendSpec& spec,
                                            const std::string& expected_version,
                                            const std::string& repo,

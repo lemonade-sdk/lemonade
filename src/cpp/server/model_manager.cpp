@@ -4339,6 +4339,16 @@ bool parse_TF_env_var(const char* env_var_name) {
 std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
     const std::map<std::string, ModelInfo>& models,
     bool track_recipe_availability) {
+    const auto* config = RuntimeConfig::global();
+    const json system_info = config && config->disable_model_filtering()
+        ? json::object() : SystemInfoCache::get_system_info_with_cache();
+    return filter_models_by_backend(models, system_info, track_recipe_availability);
+}
+
+std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
+    const std::map<std::string, ModelInfo>& models,
+    const json& system_info,
+    bool track_recipe_availability) {
 
     // Check if model filtering is disabled via config.json
     bool disable_filtering = false;
@@ -4371,7 +4381,6 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
     std::set<std::string> size_filtered_recipes;
     std::set<std::string> visible_recipes;
 
-    json system_info = SystemInfoCache::get_system_info_with_cache();
     json hardware = system_info.contains("devices") ? system_info["devices"] : json::object();
 
     bool npu_available = hardware.contains("amd_npu") &&
@@ -4483,7 +4492,7 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
                                            info.source == "local_upload";
 
         // Check recipe support using the centralized system_info recipes structure
-        std::string unsupported_reason = SystemInfo::check_recipe_supported(recipe);
+        std::string unsupported_reason = SystemInfo::check_recipe_supported(recipe, system_info);
         if (!unsupported_reason.empty()) {
             filter_out = true;
             filter_reason = unsupported_reason + " "

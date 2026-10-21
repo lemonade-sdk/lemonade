@@ -247,6 +247,10 @@ public:
     std::map<std::string, ModelInfo> filter_models_by_backend(
         const std::map<std::string, ModelInfo>& models,
         bool track_recipe_availability = false);
+    std::map<std::string, ModelInfo> filter_models_by_backend(
+        const std::map<std::string, ModelInfo>& models,
+        const json& system_info,
+        bool track_recipe_availability = false);
 
     // Register a user model
     void register_user_model(const std::string& model_name,

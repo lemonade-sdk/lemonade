@@ -8,6 +8,7 @@
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/path_utils.h"
 
+#include <algorithm>
 #include <filesystem>
 #include <memory>
 #include <stdexcept>
@@ -55,9 +56,10 @@ void ExtensorServer::load(const std::string& model_name,
     model_path = utils::path_to_utf8(fs::absolute(model));
 
     std::string preset = options.get_option("extensor_preset");
-    if (preset != "exact" && preset != "balanced" && preset != "fast" && preset != "demo") {
+    const auto& presets = extensor::preset_option.choices;
+    if (std::find(presets.begin(), presets.end(), preset) == presets.end()) {
         throw std::runtime_error(
-            "Invalid EXTENSOR preset '" + preset + "'; expected exact, balanced, fast, or demo");
+            "Invalid EXTENSOR preset '" + preset + "'; expected one of " + json(presets).dump());
     }
 
     backend_manager_->install_backend(extensor::spec()->recipe, backend);
