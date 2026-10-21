@@ -427,7 +427,7 @@ ROUTE_ERROR_USE = re.compile(r"\b(?:ModelLoader::)?(k[A-Z]\w*)\b")
 ROUTE_ARG_DECL = re.compile(
     r'\bconst RouteArg (?:\w+::)*(k[A-Z]\w*)\{\s*"([^"]+)", ArgIn::(\w+),(.*?)\};', re.S
 )
-ROUTE_ARG_ALIASES = re.compile(r'"\s*,\s*\{((?:"[^"]+"\s*,?\s*)+)\}')
+ROUTE_ARG_ALIASES = re.compile(r'"\s*,\s*\{((?:"[^"]+"\s*(?:,\s*)?)+)\}')
 ROUTE_ARG_USE = re.compile(
     r"\breq\.(?:arg|has|value|file)\(\s*((?:\w+::)*k[A-Z]\w*)\b|(?<!::)\b(k[A-Z]\w*)\.name\b"
 )
