@@ -1,5 +1,6 @@
 #pragma once
 
+#include "backend_definition_authorization_internal.h"
 #include "backend_definition_v2_internal.h"
 #include "backend_hook_contracts_internal.h"
 #include "lemon/backends/configured/backend_definition_execution.h"
@@ -10,7 +11,7 @@ namespace lemon::backends::execution {
 
 using Json = nlohmann::json;
 
-inline constexpr unsigned compiler_revision = 2;
+inline constexpr unsigned compiler_revision = 3;
 inline constexpr unsigned defaults_revision = 1;
 inline constexpr unsigned binding_revision = 1;
 inline constexpr unsigned adapter_revision = 1;
@@ -28,10 +29,12 @@ struct Budget {
     void copy(const Json& value);
 };
 
+#ifdef LEMONADE_BINDING_TEST
 struct Counters {
     std::size_t declaration_copies = 0;
 };
 extern thread_local Counters counters;
+#endif
 
 struct InvocationFrame {
     Json values = Json::object();
@@ -47,6 +50,8 @@ struct Expression {
     std::string type;
     std::optional<Json> default_value;
     std::size_t slot = 0;
+    std::optional<std::size_t> producer;
+    std::optional<std::size_t> fact_field;
     std::vector<Expression> children;
     std::optional<Json> evaluate(const InvocationFrame& frame, const std::vector<OptionBinding>& bindings) const;
 };
@@ -142,7 +147,45 @@ struct OperationProgram {
     std::map<std::string, std::string> set;
 };
 
+struct FactInput {
+    typed::Fact fact;
+    std::size_t index;
+    std::optional<std::size_t> producer;
+    bool operator==(const FactInput& other) const {
+        return fact == other.fact && index == other.index && producer == other.producer;
+    }
+};
+
+struct HookShape {
+    typed::Contract contract;
+    const char* id;
+    const char* stage;
+    unsigned abi_revision = 1;
+    unsigned implementation_revision = 1;
+    std::vector<typed::Effect> effects;
+    std::vector<typed::Fact> requires;
+    std::vector<typed::Fact> provides;
+};
+
+struct SymbolicHook {
+    std::size_t grant_ordinal;
+    typed::Contract contract;
+    LogicalHookSlot slot;
+    std::string pointer;
+    std::size_t order;
+    std::string parameter_digest;
+    std::string owner_digest;
+    std::string policy_digest;
+    unsigned abi_revision;
+    unsigned implementation_revision;
+    std::vector<typed::Effect> effects;
+    std::vector<FactInput> inputs;
+    std::vector<typed::Fact> provides;
+    std::vector<std::size_t> dependencies;
+};
+
 struct Program {
+    std::vector<SymbolicHook> hooks;
     Json normalized;
     std::vector<OptionBinding> bindings;
     std::map<std::string, std::size_t> slots;
@@ -158,6 +201,13 @@ using SchemaVisitor = std::function<void(const Json&, const std::string&, const 
 void schema_walk(const Json& value, const Json& rule, const std::string& pointer,
     Budget& budget, const SchemaVisitor& visitor);
 void bind_options(Program& program, Budget& budget);
+HookShape hook_shape(typed::Contract contract);
+void compile_hooks(const AuthorizedDefinition& token, Program& program, Budget& budget);
+bool same_slot(const LogicalHookSlot& left, const LogicalHookSlot& right);
+void verify_symbol(const AuthorizedDefinition& token, const SymbolicHook& hook);
+std::vector<FactInput> fact_inputs(const Program& program, const SymbolicHook& hook);
+std::vector<std::size_t> slot_dependencies(const AuthorizedDefinition& token, const Program& program, const SymbolicHook& hook);
+std::pair<std::size_t, std::size_t> model_fact(const std::string& reference, const Program& program);
 void compile_expressions(Program& program, Budget& budget);
 void compile_programs(Program& program, Budget& budget);
 std::string compilation_identity(const ResolvedDefinition& source, const Program& program,
@@ -168,6 +218,9 @@ void require(bool condition, const std::string& code, const std::string& pointer
 
 struct Inspection {
     static const Program& program(const CompiledDefinition& definition);
+#ifdef LEMONADE_BINDING_TEST
+    static std::shared_ptr<const CompiledDefinition> test_program(const CompiledDefinition& definition, Program program);
+#endif
 };
 
 }

@@ -13,6 +13,19 @@ bool type_matches(const Json& value, const std::string& type) {
         (type == "boolean" && value.is_boolean());
 }
 
+std::pair<std::size_t, std::size_t> model_fact(const std::string& reference, const Program& program) {
+    static const std::vector<std::string> fields = {"hf_load", "embedding", "reranking", "use_mmproj",
+        "mmproj_on_cpu", "use_draft_checkpoint", "context_size"};
+    require(reference.rfind("/launch/hook/", 0) == 0, "unsupported_execution_feature", "");
+    const auto found = std::find(fields.begin(), fields.end(), reference.substr(13));
+    require(found != fields.end(), "unsupported_execution_feature", "");
+    const auto producer = std::find_if(program.hooks.begin(), program.hooks.end(), [](const auto& hook) {
+        return hook.contract == typed::Contract::Prepare && hook.slot.owner_kind == SlotOwnerKind::Root && hook.slot.owner_id == "launch";
+    });
+    require(producer != program.hooks.end(), "phase_dependency", "");
+    return {static_cast<std::size_t>(producer - program.hooks.begin()), static_cast<std::size_t>(found - fields.begin())};
+}
+
 namespace {
 Json typed(const Json& value, const std::string& type) {
     if (!type_matches(value, type)) throw std::invalid_argument("Incorrect expression value type");
@@ -27,7 +40,8 @@ void valid_pointer(const std::string& pointer, const std::string& at) {
     catch (const Json::exception&) { throw Failure{"invalid_reference", at}; }
 }
 
-void phase_reference(const std::string& reference, const std::string& at, const Json& doc) {
+void phase_reference(const std::string& reference, const std::string& at, const Program& program) {
+    const auto& doc = program.normalized;
     const auto root = reference.substr(0, reference.find('/', 1));
     const auto& order = doc["launch"]["prepare_order"];
     const auto rank = [&](const std::string& phase) -> std::size_t {
@@ -54,6 +68,11 @@ void phase_reference(const std::string& reference, const std::string& at, const 
         const auto second = reference.substr(8, reference.find('/', 8) - 8);
         if (second == "log_level") available = 0;
         else if (second == "backend") available = after("backend");
+        else if (second == "hook") {
+            model_fact(reference, program);
+            require(rank("hook") < order.size(), "phase_dependency", at);
+            available = after("hook");
+        }
         else if (second == "ports") available = after("ports");
         else if (second == "executable" || second == "program" || second == "executable_directory") available = after("program");
         else throw Failure{"unsupported_execution_feature", at};
@@ -91,9 +110,19 @@ Expression compile(const Json& value, const std::string& pointer, Program& progr
             result.slot = found->second;
         } else {
             valid_pointer(text, pointer);
-            phase_reference(text, pointer, program.normalized);
-            if (text.rfind("/platform/", 0) == 0 || text.rfind("/install/", 0) == 0 ||
-                text.rfind("/artifacts/", 0) == 0 || text.rfind("/launch/", 0) == 0) {
+            phase_reference(text, pointer, program);
+            const bool produced = text.rfind("/launch/hook/", 0) == 0;
+            if (produced) {
+                const auto fact = model_fact(text, program);
+                result.producer = fact.first;
+                result.fact_field = fact.second;
+                const auto type = fact.second == 6 ? "integer" : "boolean";
+                require(result.type.empty() || result.type == type, "invalid_type", pointer);
+                require(!result.default_value || type_matches(*result.default_value, type), "invalid_type", pointer);
+                result.type = type;
+            }
+            if (!produced && (text.rfind("/platform/", 0) == 0 || text.rfind("/install/", 0) == 0 ||
+                text.rfind("/artifacts/", 0) == 0 || text.rfind("/launch/", 0) == 0)) {
                 budget.work(text.size(), v2::checked_sum(program.bindings.size(), program.normalized["launch"]["ports"].size()));
                 budget.keep(v2::checked_product(v2::checked_sum(text.size(), 128), 4));
                 const auto known = v2::typed_data_reference(text, program.normalized);
@@ -183,7 +212,12 @@ std::optional<Json> Expression::evaluate(const InvocationFrame& frame, const std
 void compile_expressions(Program& program, Budget& budget) {
     schema_walk(program.normalized, v2::schema_document()["$defs"]["Declaration"], "", budget,
         [&](const Json& value, const std::string& pointer, const std::string& ref) {
-            require(ref != "#/$defs/Hook", "unsupported_execution_feature", pointer);
+            if (ref == "#/$defs/Hook") {
+                require(std::any_of(program.hooks.begin(), program.hooks.end(), [&](const auto& hook) {
+                    return hook.pointer == pointer;
+                }), "unsupported_execution_feature", pointer);
+                return;
+            }
             if (!program.expressions.count(pointer)) program.expressions.emplace(pointer, compile(value, pointer, program, budget, 0));
         });
 }

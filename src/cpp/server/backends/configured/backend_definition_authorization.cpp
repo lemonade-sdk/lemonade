@@ -1,4 +1,5 @@
 #include "backend_catalog_admission_internal.h"
+#include "backend_definition_authorization_internal.h"
 #include "backend_definition_policy_internal.h"
 
 #include <algorithm>
@@ -371,17 +372,7 @@ std::vector<LogicalHookSlot> verify_surviving_grants(const ResolvedDefinition& d
 }
 
 struct ResolvedAuthority::Impl {
-    struct GrantIdentity {
-        std::string base_id;
-        std::uint32_t contract_major;
-        std::string source_digest;
-        std::string definition_hash;
-        std::string dependency_digest;
-        LogicalHookSlot slot;
-        std::uint32_t abi_revision;
-        std::string parameter_digest;
-        std::string mutation_policy_digest;
-    };
+    using GrantIdentity = SealedHookGrant;
     std::shared_ptr<const FrozenDefinitionSnapshot> snapshot;
     std::shared_ptr<const ResolvedDefinition> resolved;
     std::shared_ptr<const ResolvedDefinition> base;
@@ -561,6 +552,39 @@ std::string CatalogAdmissionBuilder::authority_identity(const AuthorizedDefiniti
 
 const ResolvedDefinition& AuthorizedDefinition::definition() const noexcept { return *definition_; }
 const ResolvedAuthority& AuthorizedDefinition::authority() const noexcept { return authority_; }
+
+#ifdef LEMON_BACKEND_EXPORT_TESTING
+std::shared_ptr<const AuthorizedDefinition> AuthorityInspection::test_without_grants(const AuthorizedDefinition& token) {
+    auto clone = std::shared_ptr<AuthorizedDefinition>(new AuthorizedDefinition());
+    clone->definition_ = token.definition_;
+    clone->ticket_ = token.ticket_;
+    auto authority = std::make_shared<ResolvedAuthority::Impl>(*token.authority_.impl_);
+    authority->grants.clear();
+    clone->authority_.impl_ = std::move(authority);
+    return clone;
+}
+#endif
+
+std::size_t AuthorityInspection::policy_count(const AuthorizedDefinition& token) noexcept {
+    const auto* contract = token.authority().impl_->contract;
+    return contract ? contract->slots.size() : 0;
+}
+std::size_t AuthorityInspection::grant_count(const AuthorizedDefinition& token) noexcept {
+    return token.authority().impl_->grants.size();
+}
+const SealedHookGrant& AuthorityInspection::grant(const AuthorizedDefinition& token, std::size_t ordinal) {
+    return token.authority().impl_->grants.at(ordinal);
+}
+const ExportSlotPolicy& AuthorityInspection::policy(const AuthorizedDefinition& token, std::size_t ordinal) {
+    const auto& authority = *token.authority().impl_;
+    const auto& slot = authority.grants.at(ordinal).slot;
+    if (authority.contract) for (const auto& policy : authority.contract->slots) {
+        const auto& candidate = policy.slot;
+        if (slot.owner_kind == candidate.owner_kind && slot.owner_id == candidate.owner_id &&
+            slot.stage == candidate.stage && slot.hook_id == candidate.hook_id) return policy;
+    }
+    throw std::logic_error("Sealed grant has no retained policy");
+}
 
 DefinitionAuthorizer::DefinitionAuthorizer(std::shared_ptr<const FrozenDefinitionSnapshot> snapshot) : snapshot_(std::move(snapshot)) {}
 

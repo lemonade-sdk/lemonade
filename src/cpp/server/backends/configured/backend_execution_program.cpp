@@ -132,7 +132,11 @@ void compile_programs(Program& program, Budget& budget) {
         budget.copy(artifact);
         budget.keep(sizeof(ArtifactProgram) + name.size() + p.size() * 2 + 64);
         program.artifacts.push_back({name, artifact["role"], p + "/required_when", p + "/missing_error", artifact});
-        require(artifact["strategy"] == "resolved_path", "unsupported_execution_feature", p);
+        require(artifact["strategy"] == "resolved_path" || (artifact["strategy"] == "hook" &&
+            std::any_of(program.hooks.begin(), program.hooks.end(), [&](const auto& hook) {
+                return hook.slot.owner_kind == SlotOwnerKind::Artifact && hook.slot.owner_id == name &&
+                    hook.contract == typed::Contract::Artifacts;
+            })), "unsupported_execution_feature", p);
         require(artifact.contains("missing_error"), "invalid_artifact", p);
         const auto cache = artifact.value("cache_resolution", "default");
         if (cache == "sentinel_directory" || cache == "sentinel_file" || artifact.value("import_resolution", "default") == "sentinel_directory") {

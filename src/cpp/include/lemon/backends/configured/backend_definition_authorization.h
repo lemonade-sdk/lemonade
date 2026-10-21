@@ -4,6 +4,7 @@
 
 namespace lemon::backends {
 
+struct AuthorityInspection;
 class CatalogAdmissionTicket;
 class BuiltinCatalogLoader;
 class DefinitionAuthorizer;
@@ -31,6 +32,7 @@ class ResolvedAuthority {
 private:
     ResolvedAuthority() = default;
     friend class AuthorizedDefinition;
+    friend struct AuthorityInspection;
     struct Impl;
     std::shared_ptr<const Impl> impl_;
     friend class DefinitionAuthorizer;
@@ -43,6 +45,7 @@ public:
     const ResolvedAuthority& authority() const noexcept;
 
 private:
+    friend struct AuthorityInspection;
     AuthorizedDefinition() = default;
     AuthorizedDefinition(const AuthorizedDefinition&) = delete;
     AuthorizedDefinition& operator=(const AuthorizedDefinition&) = delete;

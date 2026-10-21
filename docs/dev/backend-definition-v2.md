@@ -508,12 +508,10 @@ Test-only constructors are compiled into test executables and are absent from
 the production archive. Loader objects have no target, factory, service or IO
 dependencies.
 
-Unit 4c is still incomplete: the ten typed mutable fragment contracts, expanded
-typed fact references, private callable targets, symbolic compilation, immutable
-binder, admission ticket/membership check and artifact-only HRX capability test
-remain pending. Fresh tokens alone do not implement the transaction membership
-check. The existing scalar/Expression surface and owner sealing stay in force.
-Production exports remain empty, and v2 declarations remain non-executable.
+The mutable contracts, exact admission membership, private typed targets and
+sealed compiler/binder described below complete 4c. Production exports and both
+builtin v2 tables remain empty. Startup still rejects v2 declarations, and
+candidates remain non-executable. Publication and runtime execution belong to 4d.
 
 ### Catalog admission and private candidates
 
@@ -634,10 +632,10 @@ dependency identities, normalized semantics and compiler/default/binding/adapter
 revisions. It is not an execution identity or proof of executable validity.
 The standalone compiler library is not linked into production binaries. Startup
 continues rejecting v2 sources, candidates remain `executable:false`, production
-exports remain empty and the v1 path is unchanged. Hook-bearing authorized input
-is rejected before normalization; typed binding belongs to phase 4c. Phase 4b
-first freezes the existing llama.cpp behavioral oracle. Catalog compilation and
-execution attach later through the retained authority and immutable program.
+exports remain empty and the v1 path is unchanged. The initial 4a compiler
+rejected every hook; 4c now accepts only hooks backed by surviving sealed grants.
+The frozen 4b llama.cpp oracle remains the reference for the later production
+port. Catalog publication and runtime execution attach in 4d and 4e.
 
 ## Typed mutable contracts and admission membership (phase 4c increment)
 
@@ -686,8 +684,10 @@ typed provider symbol; removing the producer invalidates the reference.
 Repository-phase expressions cannot consume asset-phase version facts, and
 install expressions cannot consume launch facts. Compiler revision 2 checks
 named platform/install/artifact/launch fields and types in addition to the
-existing phase checks. The compiler still rejects hook-bearing declarations;
-typed provider execution requires the remaining binding work.
+existing phase checks. Compiler revision 3 also records exact producer and field
+indices for the closed `ModelFacts` fields under `/launch/hook/`, checks scalar
+types and rejects references before their producer phase. Arbitrary hook facts
+remain unsupported. Compilation never obtains a fact value.
 
 Admission now gives each transaction a private `CatalogAdmissionTicket` and
 retains it in its admitted authorization wrappers. Its private membership check
@@ -695,13 +695,76 @@ requires both ticket-object equality and the exact token-object address in that
 catalog's retained maps. Identical deterministic admission digests do not grant
 cross-transaction authority. A wrapper carrying the same ticket but absent from
 the maps also rejects. Standalone authorization has no ticket. The ticket is
-neither serialized nor used as a deterministic digest. The future binder must
-check the token retained by its exact compiled input through this boundary.
+neither serialized nor used as a deterministic digest. The binder checks
+the token retained by its exact compiled input through this boundary.
 
-This increment does not complete unit 4c. The ten-target callable inventory,
-typed adapters, symbolic hook compilation, `ExecutableDefinition`, immutable
-binder and its bounds/boundary suites remain pending. The narrow `ArtifactOps`
-table and artifact-only HRX capability proof also remain pending. No new v2
-callable target is installed, neither production v2 table is populated, startup
-still rejects v2 execution and candidate validation remains `executable:false`.
-The existing v1 artifact provider is not evidence of HRX capability separation.
+## Sealed symbolic compilation and immutable binding (phase 4c)
+
+The compiler reads surviving grants through the server-private
+`AuthorityInspection` seam. Each symbolic slot retains its grant ordinal, closed
+contract enum, owner kind and ID, stage, order, parameter/owner/policy identities,
+ABI and implementation revisions, effects, typed input/fact indices and
+required slot dependencies. Declaration traversal checks correspondence against
+those grants. It cannot create authority. Owner correspondence uses the retained
+authored declaration because execution defaults change normalized owner fields.
+The compiler has no access to the callable inventory.
+
+The separate binder has one public entry point:
+
+```cpp
+ExecutionBindResult bind_execution_definition(
+    std::shared_ptr<const AdmittedCatalog> admitted,
+    std::shared_ptr<const CompiledDefinition> compiled,
+    const ExecutionBindLimits& limits = {});
+```
+
+`ExecutableDefinition` is final, has private construction and exposes only const
+compiled, identity and metric views. Binding retains both exact input shared
+pointers in an actually const implementation. It first charges retained context
+and membership-scan work, then applies `contains_token`. Only after membership
+passes does it inspect symbolic slots and the installed callable inventory.
+Identical admission digests, matching-ticket clones, standalone authorization
+and listed tokens with detached tickets cannot substitute for exact membership.
+
+The ten installed targets are independently audited against their closed C++
+contracts. Binding selects by the sealed slot's contract enum and checks exact
+slot, ABI, implementation, effect and dependency correspondence. It never calls
+the legacy `target(id, stage)` lookup. The result retains typed targets privately;
+there is no public invocation or bound-target accessor. Semantic identities and
+revisions determine the execution digest; addresses and admission tickets do
+not enter it.
+
+Binding defaults cap slots at 4,096, retained logical bytes at 128 MiB, work
+visits at 1,048,576 and diagnostics at 100. Caller limits can only reduce these
+ceilings. Checked arithmetic precharges slot storage, retained catalog/compiled
+context, membership scans, dependency and expression traversal, and identity
+construction. Every failure returns a null definition, including zero diagnostic
+capacity. Accounting is conservative logical storage/work, not measured RSS.
+
+The three CI suites are `BackendDefinitionBindingTest`,
+`BackendDefinitionBindingBoundsTest` and `BackendDefinitionBindingBoundaryTest`.
+They check all ten target kinds, independently authored eleven operation chains,
+transaction and slot attacks, accounting order, immutable retention and API
+exclusions. Dependency inspection covers production compiler/binder/registry
+objects, with installed target-address references permitted only in the registry.
+The same compiler, binder and adapter sources are built separately with test-only
+entry counters and fail-fast effect seams. Hook-bearing success and failure paths
+must satisfy `HookBearingCompileAndBindInvokeNothing`; isolated target-call
+mutants must fail it. Production archives contain no test injection API.
+
+The HRX-shaped positive fixture binds an artifact slot with no runtime-options,
+prepare, environment or system slots or dependent facts. After proving zero calls
+during compilation and binding, it invokes all five real bound `ArtifactOps`
+members with confined fake reads. Metadata and labels, checkpoint validation,
+GGUF validation, quantized path resolution and imported-file selection must work.
+Real recipe options, shared defaults, context and environment stay unchanged,
+with zero runtime/system entry or service sentinels. This establishes useful
+restricted delegation; rejecting a legacy provider symbol alone cannot prove it.
+
+4c does not publish executable catalogs or activate a production v2 backend.
+4d must attach the private runner, runtime consumers, bounded capability services
+and atomic publication of a completely compiled/bound catalog. 4e must attach
+the production llama.cpp definition and descriptor/factory switch, qualify it
+against the frozen oracle and resolve bounded system-probe behavior explicitly.
+Production HRX inheritance, external exports and hardware qualification remain
+later work. The aggregate export pin and all v1 snapshots remain unchanged.

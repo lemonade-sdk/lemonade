@@ -1,10 +1,13 @@
 #include "backend_definition_execution_internal.h"
 
 #include <algorithm>
+#include <type_traits>
 
 namespace lemon::backends::execution {
 
+#ifdef LEMONADE_BINDING_TEST
 thread_local Counters counters;
+#endif
 
 void require(bool condition, const std::string& code, const std::string& pointer) {
     if (!condition) throw Failure{code, pointer};
@@ -130,7 +133,21 @@ std::string compilation_identity(const ResolvedDefinition& source, const Program
     budget.copy(program.normalized);
     budget.keep(v2::checked_sum(budget.metrics.normalized_bytes, 2048));
     budget.work(1024);
-    Json identity = {{"definition", source.definition_hash}, {"dependencies", source.dependency_digest},
+    Json hooks = Json::array();
+    for (const auto& hook : program.hooks) {
+        budget.keep(8192);
+        budget.work(4096);
+        Json inputs = Json::array();
+        for (const auto& input : hook.inputs) inputs.push_back({{"fact", input.index},
+            {"producer", input.producer ? Json(*input.producer) : Json(nullptr)}});
+        hooks.push_back({{"grant", hook.grant_ordinal}, {"contract", static_cast<unsigned>(hook.contract)},
+            {"owner_kind", static_cast<unsigned>(hook.slot.owner_kind)}, {"owner", hook.slot.owner_id},
+            {"stage", hook.slot.stage}, {"id", hook.slot.hook_id}, {"order", hook.order},
+            {"parameters", hook.parameter_digest}, {"owner_semantics", hook.owner_digest},
+            {"policy", hook.policy_digest}, {"abi", hook.abi_revision}, {"implementation", hook.implementation_revision},
+            {"effects", hook.effects}, {"inputs", inputs}, {"provides", hook.provides}, {"dependencies", hook.dependencies}});
+    }
+    Json identity = {{"hooks", hooks}, {"definition", source.definition_hash}, {"dependencies", source.dependency_digest},
         {"compiler", revision}, {"defaults", defaults_revision}, {"bindings", binding_revision},
         {"adapters", adapter_revision}, {"semantics", program.normalized}};
     DefinitionLimits limits;
@@ -166,16 +183,12 @@ public:
         const auto error = [&](const std::string& code, const std::string& pointer) {
             if (budget.limits.diagnostics == 0) { result.diagnostics.truncated = true; return; }
             result.diagnostics.entries.push_back({code, authorized ? authorized->definition().key.id : "", pointer,
-                code == "unsupported_execution_feature" ? "Execution feature is unavailable in the hook-free compiler" : "Execution compilation failed", {}, {}, {}});
+                code == "unsupported_execution_feature" ? "Execution feature is unavailable for the sealed authority" : "Execution compilation failed", {}, {}, {}});
         };
         try {
             if (!authorized) { error("invalid_authority", ""); return result; }
             const auto& source = authorized->definition();
             budget.keep(source.metrics.retained_logical_bytes);
-            execution::schema_walk(source.declaration, v2::schema_document()["$defs"]["Declaration"], "", budget,
-                [&](const auto&, const auto& pointer, const auto& ref) {
-                    execution::require(ref != "#/$defs/Hook", "unsupported_execution_feature", pointer);
-                });
             const auto additions = execution::defaults(source.declaration, budget);
             auto size = execution::measure(source.declaration, budget);
             for (const auto& [pointer, value] : additions) {
@@ -191,19 +204,24 @@ public:
             for (const auto& [pointer, value] : additions) { budget.copy(value); budget.keep(pointer.size() + 128); }
             budget.keep(sizeof(CompiledDefinition::Impl) + sizeof(CompiledDefinition));
             budget.work(size.bytes, size.nodes);
+#ifdef LEMONADE_BINDING_TEST
             ++execution::counters.declaration_copies;
+#endif
             execution::Program staging;
             staging.normalized = source.declaration;
             for (const auto& [pointer, value] : additions) staging.normalized[Json::json_pointer(pointer)] = value;
             execution::bind_options(staging, budget);
+            execution::compile_hooks(*authorized, staging, budget);
             execution::compile_expressions(staging, budget);
             execution::compile_programs(staging, budget);
             const auto identity = execution::compilation_identity(source, staging, budget);
             auto impl = std::make_shared<const CompiledDefinition::Impl>(
                 std::move(authorized), std::move(staging), budget.metrics, identity);
+            static_assert(std::is_const_v<typename decltype(impl)::element_type>, "CompiledDefinitionImplIsActuallyConst");
             result.definition = std::shared_ptr<const CompiledDefinition>(new CompiledDefinition(std::move(impl)));
         } catch (const execution::Failure& failure) { error(failure.code, failure.pointer); }
         catch (const v2::LimitExceeded&) { error("limit_exceeded", ""); }
+        catch (const std::exception&) { error("invalid_execution", ""); }
         return result;
     }
 };
@@ -216,6 +234,14 @@ const std::vector<OperationDescription>& CompiledDefinition::operation_descripti
 const std::string& CompiledDefinition::compilation_id() const noexcept { return impl_->identity; }
 const ExecutionCompileMetrics& CompiledDefinition::metrics() const noexcept { return impl_->metrics; }
 const execution::Program& execution::Inspection::program(const CompiledDefinition& definition) { return definition.impl_->program; }
+
+#ifdef LEMONADE_BINDING_TEST
+std::shared_ptr<const CompiledDefinition> execution::Inspection::test_program(const CompiledDefinition& definition, Program program) {
+    auto impl = std::make_shared<const CompiledDefinition::Impl>(definition.impl_->authorized,
+        std::move(program), definition.impl_->metrics, definition.impl_->identity);
+    return std::shared_ptr<const CompiledDefinition>(new CompiledDefinition(std::move(impl)));
+}
+#endif
 
 ExecutionCompileResult compile_execution_definition(std::shared_ptr<const AuthorizedDefinition> authorized, const ExecutionCompileLimits& limits) {
     return DefinitionExecutionCompiler::compile(std::move(authorized), limits);

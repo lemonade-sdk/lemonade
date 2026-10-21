@@ -1,0 +1,75 @@
+[
+  {
+    "id": "chat.buffered",
+    "request": [
+      "llamacpp.max_tokens_alias",
+      "llamacpp.tool_schema_limits"
+    ],
+    "response": [
+      "llamacpp.client_model"
+    ]
+  },
+  {
+    "id": "completion.buffered",
+    "request": [
+      "llamacpp.max_tokens_alias"
+    ],
+    "response": [
+      "llamacpp.client_model"
+    ]
+  },
+  {
+    "id": "responses.buffered",
+    "request": [
+      "llamacpp.tool_schema_limits"
+    ],
+    "response": [
+      "llamacpp.client_model"
+    ]
+  },
+  {
+    "id": "chat.streaming",
+    "request": [
+      "llamacpp.max_tokens_alias",
+      "llamacpp.tool_schema_limits"
+    ],
+    "response": []
+  },
+  {
+    "id": "completion.streaming",
+    "request": [],
+    "response": []
+  },
+  {
+    "id": "responses.streaming",
+    "request": [
+      "llamacpp.tool_schema_limits"
+    ],
+    "response": []
+  },
+  {
+    "id": "embedding.buffered",
+    "request": [],
+    "response": []
+  },
+  {
+    "id": "reranking.buffered",
+    "request": [],
+    "response": []
+  },
+  {
+    "id": "slots.buffered",
+    "request": [],
+    "response": []
+  },
+  {
+    "id": "slot-action.buffered",
+    "request": [],
+    "response": []
+  },
+  {
+    "id": "tokenize.buffered",
+    "request": [],
+    "response": []
+  }
+]
