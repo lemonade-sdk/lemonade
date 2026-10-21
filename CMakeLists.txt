@@ -1158,6 +1158,12 @@ target_link_libraries(lemonade-backend-definition-v2 PUBLIC nlohmann_json::nlohm
 
 
 
+add_library(lemonade-backend-definition-execution STATIC
+    src/cpp/server/backends/configured/backend_definition_execution.cpp
+    src/cpp/server/backends/configured/backend_execution_expression.cpp
+    src/cpp/server/backends/configured/backend_execution_program.cpp)
+target_link_libraries(lemonade-backend-definition-execution PUBLIC lemonade-backend-definition-v2)
+
 set(LEMON_BACKEND_DEFINITION_DATA_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backend_operation_data.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/configured/backend_definition_store.cpp)
@@ -3931,4 +3937,30 @@ if(BUILD_TESTING)
     add_cpp_ci_test(BackendCatalogNegotiationTest CI ON
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/backend_catalog_negotiation.py $<TARGET_FILE:lemond>
         DEPENDS lemond)
+endif()
+
+if(BUILD_TESTING)
+    foreach(_suite execution execution_bounds execution_boundary)
+        add_executable(test_backend_definition_${_suite}
+            test/cpp/test_backend_definition_${_suite}.cpp
+            src/cpp/server/backend_operation_data.cpp
+            src/cpp/server/backends/backend_option_contract.cpp
+            src/cpp/server/backends/configured/backend_definition_authorization.cpp
+            src/cpp/server/backends/configured/backend_definition_exports.cpp)
+        target_compile_definitions(test_backend_definition_${_suite} PRIVATE
+            LEMON_BACKEND_EXPORT_TESTING
+            LEMON_TEST_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures")
+        target_include_directories(test_backend_definition_${_suite} PRIVATE src/cpp/server/backends/configured)
+        target_link_libraries(test_backend_definition_${_suite} PRIVATE lemonade-backend-definition-execution)
+    endforeach()
+    add_cpp_ci_test(BackendDefinitionExecutionTest CI ON COMMAND test_backend_definition_execution)
+    add_cpp_ci_test(BackendDefinitionExecutionBoundsTest CI ON COMMAND test_backend_definition_execution_bounds)
+    add_cpp_ci_test(BackendDefinitionExecutionBoundaryTest CI ON COMMAND test_backend_definition_execution_boundary)
+endif()
+
+if(BUILD_TESTING AND CMAKE_NM AND NOT MSVC)
+    add_cpp_ci_test(BackendDefinitionExecutionPurityTest CI ON
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/backend_execution_purity.py
+            --nm ${CMAKE_NM} --library $<TARGET_FILE:lemonade-backend-definition-execution>
+        DEPENDS lemonade-backend-definition-execution)
 endif()

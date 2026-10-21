@@ -514,3 +514,55 @@ V2 recipe rows identify the actual input version: `1` for existing definitions
 and `null` for compiled-only recipes. Candidates do not become recipe rows. The
 ETag remains the digest of the exact serialized response, including its selected
 representation and recipe filter. A legacy ETag cannot validate a v2 body.
+
+## Immutable execution compilation (phase 4a)
+
+`compile_execution_definition(shared_ptr<const AuthorizedDefinition>, limits)`
+produces a non-runnable `CompiledDefinition`. Raw JSON, resolver results and v1
+`BackendDefinition` objects cannot enter this API. The result retains the exact
+authorization token and exposes const views of a separate execution copy. It has
+no backend factory, hook target, executable-valid marker or conversion to v1.
+
+The compiler preflights the authored declaration and the additions required for
+normalization before copying the declaration. Hard limits cap normalized bytes
+and nodes, global expression nodes and depth, cumulative work and retained
+logical storage. Caller limits can only reduce those ceilings. Accounting is
+conservative and monotonic, including temporary copies and retained source
+storage; it describes logical allowances rather than allocator RSS. A future
+catalog transaction must share a ledger across admission and compilation rather
+than granting every entry a fresh catalog allowance.
+
+Only the execution copy receives metadata logging defaults, absent option and
+install-case arrays, optional collections, active conditions, flag reservations
+(`always`) and JSON/SSE codec defaults. Stable option IDs map to declaration-order
+slots containing the public name, persisted config key, type and full contract.
+Authored names, absence, provenance and source/definition/dependency hashes stay
+unchanged. Private staging data moves into an actually const implementation;
+no mutable JSON or instruction aliases survive publication.
+
+Expressions compile only at schema-designated positions. `literal` and lookup
+`default` payloads remain opaque. Explicit types do not coerce values. A missing
+option uses its declared default; present empty strings, false, zero and null
+stay present. Reference defaults apply only to absent lookups. `present` tests
+existence and `coalesce` selects the first present value, including null. Launch
+records preserve raw arguments, flag aliases and reservations, custom-default
+stages and merge policies, optional artifacts, canonical model context floors
+and all platform cwd choices. Phase checks reject facts used before their
+producer. The first adapter set supports hook-free buffered JSON and OpenAI SSE;
+other adapter combinations fail explicitly.
+
+The private invocation-frame seam contains option values and runtime facts. A
+frame is supplied to expression evaluation and is never retained in a compiled
+declaration. No model, environment, port or effective context is resolved by
+compilation. The compiler has no filesystem, process, hook, hardware or network
+effects; lexical path expressions only manipulate path strings.
+
+The domain-separated compilation identity includes authored definition and
+dependency identities, normalized semantics and compiler/default/binding/adapter
+revisions. It is not an execution identity or proof of executable validity.
+The standalone compiler library is not linked into production binaries. Startup
+continues rejecting v2 sources, candidates remain `executable:false`, production
+exports remain empty and the v1 path is unchanged. Hook-bearing authorized input
+is rejected before normalization; typed binding belongs to phase 4c. Phase 4b
+first freezes the existing llama.cpp behavioral oracle. Catalog compilation and
+execution attach later through the retained authority and immutable program.
