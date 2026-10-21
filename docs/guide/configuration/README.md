@@ -61,7 +61,6 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
   "enable_dgpu_gtt": false,
   "extensor": {
     "backend": "auto",
-    "extensor_model_path": "",
     "extensor_preset": "balanced",
     "rocm_bin": "builtin"
   },

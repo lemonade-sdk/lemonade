@@ -1,10 +1,13 @@
 #include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_registry.h"
+#include "lemon/config_file.h"
 #include "lemon/model_manager.h"
 #include "lemon/registry_files.h"
+#include "lemon/runtime_config.h"
 #include "lemon/utils/path_utils.h"
 #include "support/test_state_isolation.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -239,6 +242,63 @@ static void test_extensor_download_state(ModelManager& manager, const fs::path& 
     check("EXTENSOR committed image becomes usable", ops->is_downloaded(info, context));
 }
 
+static void test_extensor_model_identity(ModelManager& manager, const fs::path& root,
+                                         const fs::path& hf_root) {
+    const std::string builtin = "Qwen3.6-35B-A3B-EXTENSOR";
+    const std::string filename = builtin + "-ROCmFP4-v1.extensor.gguf";
+    const fs::path repo = hf_root / ("models--amd--" + builtin);
+    const fs::path qwen = repo / "snapshots" / "qwen-identity-test" / filename;
+    const fs::path first = root / "local extensor" / "first.gguf";
+    const fs::path second = root / "local extensor" / "second.gguf";
+    write_file(qwen, "Qwen image");
+    write_file(repo / "refs" / "main", "qwen-identity-test");
+    write_file(first, "First local image");
+    write_file(second, "Second local image");
+    manager.invalidate_models_cache();
+
+    manager.register_model("user.ExtensorFirst", {
+        {"recipe", "extensor"}, {"source", "local_path"},
+        {"checkpoint", path_to_utf8(first)},
+    });
+    manager.register_model("user.ExtensorSecond", {
+        {"recipe", "extensor"}, {"source", "local_path"},
+        {"checkpoint", path_to_utf8(second)},
+        {"labels", {"chat", "reasoning", "tool-calling"}},
+    });
+
+    const auto qwen_info = manager.get_model_info(builtin);
+    const auto first_info = manager.get_model_info("user.ExtensorFirst");
+    const auto second_info = manager.get_model_info("user.ExtensorSecond");
+    check("EXTENSOR built-in keeps its checkpoint despite a legacy global override",
+          qwen_info.resolved_path() == path_to_utf8(qwen));
+    check("EXTENSOR first local registration uses its own file",
+          first_info.source == "local_path" && first_info.resolved_path() == path_to_utf8(first));
+    check("EXTENSOR second local registration uses its own file",
+          second_info.source == "local_path" && second_info.resolved_path() == path_to_utf8(second));
+    check("EXTENSOR registered local files are ready without downloading",
+          first_info.downloaded && second_info.downloaded);
+    for (const std::string label : {"reasoning", "tool-calling"}) {
+        check("EXTENSOR custom models do not inherit model capabilities",
+              std::find(first_info.labels.begin(), first_info.labels.end(), label) == first_info.labels.end());
+        check("EXTENSOR custom models preserve explicitly declared capabilities",
+              std::find(second_info.labels.begin(), second_info.labels.end(), label) != second_info.labels.end());
+        check("EXTENSOR built-in retains its declared capabilities",
+              std::find(qwen_info.labels.begin(), qwen_info.labels.end(), label) != qwen_info.labels.end());
+    }
+
+    ModelManager reloaded;
+    check("EXTENSOR local checkpoint binding survives a registry reload",
+          reloaded.get_model_info("user.ExtensorFirst").resolved_path() == path_to_utf8(first) &&
+          reloaded.get_model_info("user.ExtensorSecond").resolved_path() == path_to_utf8(second));
+
+    fs::remove(first);
+    manager.invalidate_models_cache();
+    check("EXTENSOR missing local file does not fall back to another image",
+          !manager.is_model_downloaded("user.ExtensorFirst"));
+    check("EXTENSOR other models remain available when one local file disappears",
+          manager.is_model_downloaded("user.ExtensorSecond") && manager.is_model_downloaded(builtin));
+}
+
 int main() {
     const fs::path temp = lemon::test::state_dir();
     fs::path hf_root = temp / "hf";
@@ -247,6 +307,13 @@ int main() {
     lemon::utils::set_models_dir(path_to_utf8(hf_root));
 
     RegistryFixtures fixtures = create_registry_fixtures(temp, hf_root);
+    json config_json = lemon::ConfigFile::base_defaults();
+    config_json["offline"] = true;
+    config_json["disable_model_filtering"] = true;
+    config_json["extensor"]["extensor_model_path"] =
+        path_to_utf8(temp / "local extensor" / "second.gguf");
+    lemon::RuntimeConfig config(config_json);
+    lemon::RuntimeConfig::set_global(&config);
 
     {
         ModelManager manager;
@@ -256,7 +323,9 @@ int main() {
         test_variantless_snapshot_commit_state(manager, fixtures);
         test_collection_component_download_state(manager, fixtures);
         test_extensor_download_state(manager, temp);
+        test_extensor_model_identity(manager, temp, hf_root);
     }
+    lemon::RuntimeConfig::set_global(nullptr);
 
     if (g_failures == 0) {
         std::printf("All model download-state tests passed.\n");

@@ -108,7 +108,6 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 |--------|----------|------|---------|-------------|
 | `ctx_size` | `--ctx-size` | SIZE | -1 | Context size for the model |
 | `extensor_backend` | `--extensor` | BACKEND | "" | EXTENSOR backend to use |
-| `extensor_model_path` | `--extensor-model-path` | PATH | "" | Path to an EXTENSOR model image |
 | `extensor_preset` | `--extensor-preset` | PRESET | balanced | EXTENSOR runtime preset: exact, balanced, fast, or demo |
 
 #### `flm` — FastFlowLM NPU

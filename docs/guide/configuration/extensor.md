@@ -56,7 +56,6 @@ Set these overrides in `config.json`, replacing the example path with your model
 For example, `POST /v1/load` with
 `{"model_name":"Qwen3.6-35B-A3B-EXTENSOR"}` downloads and loads Qwen.
 Use the same model name in `/v1/chat/completions` to load it on the first request.
-An optional `extensor.extensor_model_path` selects an existing local image instead.
 
 `builtin` selects the version pinned by Lemonade (currently `v2.3.2`). An explicit
 version such as `v2.3.2` selects that version's AMD archive and requires a matching
@@ -69,6 +68,34 @@ The presets are `exact`, `balanced`, `fast`, and `demo`. Lemonade forwards
 the default) uses 4096 tokens for EXTENSOR because its weight streaming makes a
 full-model memory estimate unsuitable. Explicit context sizes are preserved;
 EXTENSOR checks memory capacity when loading.
+
+## Local model images
+
+Register an existing image as a separate `user.*` model with `source: "local_path"`
+and its absolute filename as the checkpoint. The path must be readable by the
+Lemonade server on the machine where it runs. The file stays in place and is not
+copied or downloaded:
+
+```bash
+curl -X POST http://localhost:13305/v1/models/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model_name": "user.MyExperimentalExtensor",
+    "recipe": "extensor",
+    "source": "local_path",
+    "checkpoint": "/path/to/my-model.extensor.gguf",
+    "labels": ["chat"]
+  }'
+```
+
+Use `user.MyExperimentalExtensor` as the model name in `/v1/load` or
+`/v1/chat/completions`. Each registration has its own checkpoint; selecting a
+built-in model still loads that built-in model's image. Add `reasoning` or
+`tool-calling` labels only when the local model supports those capabilities.
+
+The former `extensor.extensor_model_path` setting and `--extensor-model-path`
+option have been removed. Remove the setting from existing configuration files
+and register the image as above. A leftover setting in an old file is ignored.
 
 ## Download controls
 

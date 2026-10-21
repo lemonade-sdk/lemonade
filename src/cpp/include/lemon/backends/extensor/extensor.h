@@ -19,8 +19,6 @@ inline const BackendDescriptor descriptor = {
     /*options*/ {
         {"extensor_backend", "--extensor", "", "BACKEND",
          "EXTENSOR backend to use", "EXTENSOR Options"},
-        {"extensor_model_path", "--extensor-model-path", "", "PATH",
-         "Path to an EXTENSOR model image", "EXTENSOR Options"},
         {"extensor_preset", "--extensor-preset", "balanced", "PRESET",
          "EXTENSOR runtime preset: exact, balanced, fast, or demo", "EXTENSOR Options"},
     },
@@ -31,7 +29,7 @@ inline const BackendDescriptor descriptor = {
     },
     /*supported_modes*/ {"chat"},
     /*required_checkpoints*/ {"main"},
-    /*default_capabilities*/ {"reasoning", "tool-calling"},
+    /*default_capabilities*/ {},
     /*web_display_name*/ "EXTENSOR ROCm",
     /*rocm_channels*/   {},
     /*exposes_prometheus_metrics*/ false,
@@ -41,7 +39,7 @@ inline const BackendDescriptor descriptor = {
     /*takes_args*/      false,
     /*arg_variants*/    {},
     /*bin_variants*/    {"rocm"},
-    /*config_extra*/    {{"extensor_model_path", ""}, {"extensor_preset", "balanced"}},
+    /*config_extra*/    {{"extensor_preset", "balanced"}},
     /*streams_model_from_storage*/ true,
     /*skip_model_size_filter*/ true,
 };

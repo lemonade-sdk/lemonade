@@ -39,14 +39,11 @@ void ExtensorServer::load(const std::string& model_name,
     std::string backend = options.get_option("extensor_backend");
     RuntimeConfig::validate_backend_choice("extensor", backend);
 
-    std::string model_path = options.get_option("extensor_model_path");
-    if (model_path.empty()) {
-        model_path = model_info.resolved_path();
-    }
-
+    std::string model_path = model_info.resolved_path();
     if (model_path.empty()) {
         throw std::runtime_error(
-            "EXTENSOR model path is not configured; set extensor.extensor_model_path");
+            "No EXTENSOR image found for model '" + model_name +
+            "'; download the model or register a local image with source 'local_path'");
     }
 
     std::error_code ec;
@@ -153,23 +150,6 @@ json ExtensorServer::responses(const json& request) {
     return unsupported_capability_error("responses");
 }
 
-namespace {
-class ExtensorOps : public BackendOps {
-public:
-    std::string resolve_checkpoint_path(const ModelInfo& info,
-                                        const CheckpointResolveContext& ctx) const override {
-        if (auto* config = RuntimeConfig::global()) {
-            RecipeOptions options("extensor", config->recipe_options(""));
-            std::string configured = options.get_option("extensor_model_path");
-            if (!configured.empty()) {
-                return configured;
-            }
-        }
-        return BackendOps::resolve_checkpoint_path(info, ctx);
-    }
-};
-}  // namespace
-
 namespace extensor {
 
 std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
@@ -181,7 +161,7 @@ const BackendSpec* spec() {
 }
 
 const BackendOps* ops() {
-    return single_ops<ExtensorOps>();
+    return default_backend_ops();
 }
 
 }  // namespace extensor

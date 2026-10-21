@@ -98,15 +98,11 @@ int main() {
 
     json extensor_update = {
         {"extensor", {
-            {"extensor_model_path", "/models/deepseek-v4.extensor.gguf"},
             {"extensor_preset", "balanced"}
         }}
     };
     config.set(extensor_update);
     snapshot = config.snapshot();
-    check(snapshot["extensor"]["extensor_model_path"] ==
-              "/models/deepseek-v4.extensor.gguf",
-          "accepts descriptor-declared backend string option");
     check(snapshot["extensor"]["extensor_preset"] == "balanced",
           "persists descriptor-declared backend option");
 
@@ -127,6 +123,19 @@ int main() {
     }
     check(threw_unknown_extensor,
           "rejects undeclared backend option");
+
+    bool threw_extensor_model_path = false;
+    try {
+        config.set(json{{"extensor", {{"extensor_model_path", "/models/local.gguf"}}}});
+    } catch (const std::invalid_argument&) {
+        threw_extensor_model_path = true;
+    }
+    check(threw_extensor_model_path, "rejects the removed global model path override");
+
+    RuntimeConfig legacy_config(json{
+        {"extensor", {{"extensor_model_path", "/models/local.gguf"}}}});
+    check(!legacy_config.recipe_options("").contains("extensor_model_path"),
+          "old config files cannot override the selected model's checkpoint");
 
     // 3. Test CLI dotted key config path parsing logic
     std::vector<std::string> cli_args = {
