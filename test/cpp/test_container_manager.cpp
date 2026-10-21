@@ -410,11 +410,13 @@ void test_halogen_kernel_check() {
     const auto no_svm = lemon::backends::halogen::check_kfd_node(
         "capability 537109120\nsimd_count 80\nctl_stack_size 16384\ncwsr_size 19185664\n");
     check("Halogen refuses a kernel built without SVM",
-          no_svm && no_svm->action == "Install Linux 6.18.4 or newer, built with CONFIG_HSA_AMD_SVM");
+          no_svm && no_svm->steps == std::vector<std::string>(
+                        {"Install Linux 6.18.4 or newer, built with CONFIG_HSA_AMD_SVM"}));
     const auto old_cwsr = lemon::backends::halogen::check_kfd_node(
         "capability 671326848\nsimd_count 80\nctl_stack_size 16384\ncwsr_size 19169280\n");
     check("Halogen refuses a kernel whose CWSR size predates the gfx1151 fixes",
-          old_cwsr && old_cwsr->action == "Install Linux 6.18.4 or newer");
+          old_cwsr && old_cwsr->steps ==
+                          std::vector<std::string>({"Install Linux 6.18.4 or newer"}));
     // The repository as of 2026-10-01, which also carries v2, ngram and mtp checkpoints.
     const auto bundle = lemon::backends::ops_for("halogen")->select_checkpoint_files(
         "qwen38-flash-next-w4b.hgn",
