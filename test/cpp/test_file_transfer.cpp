@@ -291,6 +291,49 @@ int main() {
         fs::remove_all(dir);
     }
 
+    // --- a planned name stays inside its directory ---------------------------
+    {
+        const fs::path dir = make_temp_dir("placement");
+        const std::string content = "bytes a listing asked for";
+        write_file(dir / "source.bin", content);
+
+        std::vector<std::unique_ptr<FileTransfer>> local_transfers;
+        local_transfers.push_back(std::make_unique<LocalCopyFileTransfer>());
+        const ArtifactTransfer local_only(std::move(local_transfers));
+
+        DownloadPlan nested;
+        nested.download_path = lemon::utils::path_to_utf8(dir / "cache");
+        nested.files.push_back(
+            DownloadFile{"sub/dir/model.bin", file_url(dir / "source.bin"), content.size(),
+                         {}, {}, {}});
+        local_only.execute(nested, {}, nullptr, {});
+        check("a relative subdirectory inside the target still lands",
+              read_file(dir / "cache" / "sub" / "dir" / "model.bin") == content);
+
+        for (const std::string& escaped : {"../../escaped.bin", "/escaped.bin", ".", "side/.."}) {
+            DownloadPlan plan;
+            plan.download_path = lemon::utils::path_to_utf8(dir / "other");
+            plan.files.push_back(
+                DownloadFile{escaped, file_url(dir / "source.bin"), content.size(), {}, {}, {}});
+
+            bool threw = false;
+            std::string message;
+            try {
+                local_only.execute(plan, {}, nullptr, {});
+            } catch (const std::exception& e) {
+                threw = true;
+                message = e.what();
+            }
+            check("a name leaving its directory is refused: " + escaped, threw);
+            check("the refusal names the file it refused", message.find(escaped) != std::string::npos);
+        }
+        check("no escaped file was created beside the target",
+              !fs::exists(fs::temp_directory_path() / "escaped.bin") &&
+                  !fs::exists("/escaped.bin"));
+        check("a refused plan opens no directory", !fs::exists(dir / "other"));
+        fs::remove_all(dir);
+    }
+
     // --- the token stops bytes in flight -----------------------------------
     {
         const fs::path dir = make_temp_dir("mid_cancel");

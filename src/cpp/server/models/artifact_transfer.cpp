@@ -42,6 +42,22 @@ std::string path_from_file_url(const std::string& url) {
     return rest;
 }
 
+std::string target_directory_of(const DownloadPlan& plan, const DownloadFile& file) {
+    return file.download_path.empty() ? plan.download_path : file.download_path;
+}
+
+void require_placed_inside(const std::string& target_dir, const std::string& name) {
+    const fs::path name_fs = path_from_utf8(name);
+    const fs::path target = path_from_utf8(target_dir);
+    const fs::path placed = (target / name_fs).lexically_normal();
+    const bool lands_on_the_directory = placed == target || placed.filename().empty();
+    if (name.empty() || name_fs.is_absolute() || lands_on_the_directory ||
+        !path_inside(placed, target)) {
+        throw std::runtime_error("Refusing to write '" + name + "' outside its directory: " +
+                                 target_dir);
+    }
+}
+
 std::string size_in_gb(std::uint64_t bytes) {
     std::ostringstream oss;
     oss << std::fixed << std::setprecision(1) << (bytes / (1024.0 * 1024.0 * 1024.0));
@@ -83,8 +99,7 @@ DownloadPlan download_plan_from_manifest(const nlohmann::json& manifest) {
 std::vector<FilesystemRequirement> plan_filesystem_requirements(const DownloadPlan& plan) {
     std::map<std::string, std::uint64_t> bytes_needed_by_target_path;
     for (const auto& file : plan.files) {
-        const std::string target_dir =
-            file.download_path.empty() ? plan.download_path : file.download_path;
+        const std::string target_dir = target_directory_of(plan, file);
         const std::string output_path = target_dir + "/" + file.name;
         const std::string partial_path = output_path + ".partial";
         const fs::path output_path_fs = path_from_utf8(output_path);
@@ -160,6 +175,7 @@ void ArtifactTransfer::execute(const DownloadPlan& plan,
     std::vector<const FileTransfer*> chosen;
     chosen.reserve(plan.files.size());
     for (const auto& file : plan.files) {
+        require_placed_inside(target_directory_of(plan, file), file.name);
         const FileTransfer* match = nullptr;
         for (const auto& transfer : transfers_) {
             if (transfer->handles(file.url)) {
@@ -213,8 +229,7 @@ void ArtifactTransfer::execute(const DownloadPlan& plan,
             throw TransferError("Download cancelled", true);
         }
 
-        const std::string target_dir =
-            file.download_path.empty() ? plan.download_path : file.download_path;
+        const std::string target_dir = target_directory_of(plan, file);
         const std::string output_path = target_dir + "/" + file.name;
         const std::string partial_path = output_path + ".partial";
 
