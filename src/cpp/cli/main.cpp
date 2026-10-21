@@ -512,12 +512,12 @@ static int handle_export_command(lemonade::LemonadeClient& client, const CliConf
 static const char* kEnableContainersCommand = "lemonade config set enable_containers=true";
 
 static bool confirm_enable_containers() {
-    std::cout << "Container backends run images built by community developers, pinned by "
+    std::cout << "Enabling containers lets Lemonade pull and run container images, pinned by "
               << "digest in each Lemonade release. Once they are enabled, every client that "
-              << "reaches this server's API can install and start them. Keep `host` on "
+              << "reaches this server's API can make it pull and start them. Keep `host` on "
               << "localhost, or set LEMONADE_API_KEY before serving on the network."
               << std::endl;
-    return lemon_cli::prompt_yes_no("Enable container backends?", false);
+    return lemon_cli::prompt_yes_no("Enable containers?", false);
 }
 
 // /system-info's status for `recipe:backend`, with "" naming the recipe's
@@ -569,7 +569,7 @@ static bool ready_container_backend(lemonade::LemonadeClient& client, const std:
     }
 
     if (!yes && !confirm_enable_containers()) {
-        std::cout << "Container backends stay disabled. Run `" << kEnableContainersCommand
+        std::cout << "Containers stay disabled. Run `" << kEnableContainersCommand
                   << "` to enable them later." << std::endl;
         return false;
     }
@@ -577,11 +577,11 @@ static bool ready_container_backend(lemonade::LemonadeClient& client, const std:
         client.make_request("/internal/set", "POST", R"({"enable_containers": true})",
                             "application/json");
     } catch (const lemonade::HttpError& e) {
-        std::cerr << "Error: Could not enable container backends: "
+        std::cerr << "Error: Could not enable containers: "
                   << lemonade::extract_server_error_message(e) << std::endl;
         return false;
     } catch (const std::exception& e) {
-        std::cerr << "Error: Could not enable container backends: " << e.what() << std::endl;
+        std::cerr << "Error: Could not enable containers: " << e.what() << std::endl;
         return false;
     }
 
@@ -1497,7 +1497,7 @@ static int handle_config_set(lemonade::LemonadeClient& client,
 
     if (updates.value("enable_containers", nlohmann::json()) == true && !yes) {
         if (!confirm_enable_containers()) {
-            std::cout << "Container backends stay disabled. Pass --yes to enable them without "
+            std::cout << "Containers stay disabled. Pass --yes to enable them without "
                       << "this prompt." << std::endl;
             return 1;
         }
@@ -1711,7 +1711,7 @@ int main(int argc, char* argv[]) {
     backends_install_cmd->add_option("spec", config.backend_spec, "Backend spec (recipe:backend)")->required()->type_name("SPEC");
     backends_install_cmd->add_flag("--force", config.force, "Bypass hardware filtering when installing a backend");
     backends_install_cmd->add_flag("--yes", config.yes,
-        "Enable container backends without asking when a container backend needs it");
+        "Enable containers without asking when a container backend needs it");
     backends_uninstall_cmd->add_option("spec", config.backend_spec, "Backend spec (recipe:backend)")->required()->type_name("SPEC");
 
     // Cloud provider commands. `cloud` is a subcommand group with install /
