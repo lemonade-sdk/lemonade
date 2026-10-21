@@ -6,7 +6,7 @@ Lemonade provides a marketplace of backends for users and developers to experime
 
 ## Policy
 
-This policy extends the [spec-driven development policy](./spec-driven-dev.md) with specifics for backends. Each backend submitted must name a differentiated user story, a hardware-specific test plan, and maintenance plan that maps into one of our support tiers.
+This policy extends the [spec-driven development policy](./spec-driven-dev.md) with specifics for backends. Each backend submitted must include a user story, a hardware-specific test plan, and maintenance plan that maps into one of our support tiers.
 
 ### User Story
 
