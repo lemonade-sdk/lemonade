@@ -43,3 +43,4 @@ pnpm-lock.yaml
 
 # Playwright test results
 test-results/
+test-results-real-server/

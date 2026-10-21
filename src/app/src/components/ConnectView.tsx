@@ -196,10 +196,6 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
     setError(clearSettingsError);
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') handleConnect();
-  };
-
   const handleInstallCloudProvider = async () => {
     if (!providerName.trim() || !providerBaseUrl.trim()) {
       setCloudError(t('Provider name and base URL are required.'));
@@ -372,7 +368,6 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
                 type="text"
                 value={host}
                 onChange={e => setHost(e.target.value)}
-                onKeyDown={handleKeyDown}
                 placeholder="http://localhost:13305"
                 aria-invalid={Boolean(error)}
               />
@@ -384,10 +379,9 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
               <input
                 className="input"
                 id="key-input"
-                type="text"
+                type="password"
                 value={apiKey}
                 onChange={e => setApiKey(e.target.value)}
-                onKeyDown={handleKeyDown}
                 placeholder="sk-..."
               />
               {canPersistApiKey && (

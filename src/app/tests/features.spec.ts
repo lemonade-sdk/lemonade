@@ -1,6 +1,6 @@
 import { test, expect, Page, type Route } from '@playwright/test';
 
-const realServerRequired = /@(?:real-server|inference)\b/;
+const realServerRequired = /@real-server\b/;
 
 type ModelOptionsState = Map<string, Record<string, unknown>>;
 
@@ -261,7 +261,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
 
     await externalDirectory.fill('/restricted/models');
     await page.getByRole('button', { name: 'Save directories', exact: true }).click();
-    await expect(page.locator('.connect__error')).toContainText('not readable by the Lemonade server');
+    await expect(page.locator('.connect__section--directories > .connect__error')).toContainText('not readable by the Lemonade server');
     await expect(page.locator('.connect__notice')).toHaveCount(0);
   });
 
@@ -584,179 +584,6 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await expect(list.locator('.workspace-list-row--selected').first()).toBeVisible();
     await expect(page.locator('.model-detail-panel').first()).toBeVisible();
     await page.screenshot({ path: 'screenshots/07d-model-detail.png', fullPage: true });
-  });
-
-  test('08 — Chat sends message and receives streaming response @inference', async ({ page }) => {
-    test.setTimeout(120000); // Extended timeout for slow local LLMs
-    await page.goto('/');
-
-    // Wait for connection + model
-    await page.waitForFunction(() => {
-      const dot = document.querySelector('.titlebar__status-dot');
-      return dot?.classList.contains('titlebar__status-dot--connected');
-    }, { timeout: 10000 }).catch(() => {});
-
-    // Wait for model to be loaded (composer placeholder shows model name)
-    await page.waitForFunction(() => {
-      const input = document.querySelector('.composer__input') as HTMLTextAreaElement;
-      return input && input.placeholder && input.placeholder.startsWith('Message ');
-    }, { timeout: 10000 }).catch(() => {});
-
-    const placeholder = await page.locator('.composer__input').getAttribute('placeholder').catch(() => null);
-    if (!placeholder || !placeholder.startsWith('Message ')) {
-      await page.screenshot({ path: 'screenshots/08-no-model.png', fullPage: true });
-    }
-    expect(placeholder ?? '', 'Real-server chat smoke requires a loaded chat model').toMatch(/^Message /);
-
-    // Type and send a message
-    const input = page.locator('.composer__input');
-    await input.fill('Say "Hello World" in exactly 5 words.');
-    await page.locator('.composer__send').click();
-
-    // User message should appear
-    await expect(page.locator('.message--user').first()).toBeVisible();
-
-    // Wait for streaming (stop button or streaming cursor)
-    await page.waitForSelector('.composer__stop, .streaming-cursor', { timeout: 10000 }).catch(() => {});
-
-    await page.screenshot({ path: 'screenshots/08-chat-streaming.png', fullPage: true });
-
-    // Wait for completion (extended for thinking models)
-    await page.waitForFunction(() => {
-      return !document.querySelector('.composer__stop') && !document.querySelector('.streaming-cursor');
-    }, { timeout: 90000 }).catch(() => {});
-
-    // Assistant message should have appeared
-    const assistantMsg = page.locator('.message--assistant').first();
-    if (await assistantMsg.isVisible().catch(() => false)) {
-      // Metrics visible
-      const metrics = page.locator('.message__metrics').first();
-      await expect(metrics).toBeVisible({ timeout: 5000 }).catch(() => {});
-    }
-
-    await page.screenshot({ path: 'screenshots/08-chat-response.png', fullPage: true });
-  });
-
-  test('09 — Markdown rendering with code blocks @inference', async ({ page }) => {
-    await page.goto('/');
-
-    await page.waitForFunction(() => {
-      const dot = document.querySelector('.titlebar__status-dot');
-      return dot?.classList.contains('titlebar__status-dot--connected');
-    }, { timeout: 10000 }).catch(() => {});
-
-    await page.waitForFunction(() => {
-      const input = document.querySelector('.composer__input') as HTMLTextAreaElement;
-      return input && input.placeholder && input.placeholder.startsWith('Message ');
-    }, { timeout: 10000 }).catch(() => {});
-
-    const placeholder09 = await page.locator('.composer__input').getAttribute('placeholder').catch(() => null);
-    if (!placeholder09 || !placeholder09.startsWith('Message ')) {
-      await page.screenshot({ path: 'screenshots/09-no-model.png', fullPage: true });
-    }
-    expect(placeholder09 ?? '', 'Markdown rendering test requires a loaded chat model').toMatch(/^Message /);
-
-    // Ask for code
-    await page.locator('.composer__input').fill('Write a hello world function in Python. Use a code block.');
-    await page.locator('.composer__send').click();
-
-    // Wait for completion
-    await page.waitForFunction(() => {
-      return document.querySelectorAll('.message--assistant').length > 0 &&
-             !document.querySelector('.streaming-cursor');
-    }, { timeout: 60000 }).catch(() => {});
-
-    // Check for code block rendering
-    const codeBlock = page.locator('.code-block');
-    const hasCodeBlock = await codeBlock.count() > 0;
-    console.log(`Code blocks found: ${await codeBlock.count()}`);
-
-    if (hasCodeBlock) {
-      // Copy button should be visible
-      await expect(codeBlock.first().locator('.code-block__copy')).toBeVisible();
-      // Language label
-      await expect(codeBlock.first().locator('.code-block__lang')).toBeVisible();
-    }
-
-    await page.screenshot({ path: 'screenshots/09-markdown-code.png', fullPage: true });
-  });
-
-  test('10 — Thinking model shows reasoning section @inference', async ({ page }) => {
-    await page.goto('/');
-
-    await page.waitForFunction(() => {
-      const dot = document.querySelector('.titlebar__status-dot');
-      return dot?.classList.contains('titlebar__status-dot--connected');
-    }, { timeout: 10000 }).catch(() => {});
-
-    await page.waitForFunction(() => {
-      const input = document.querySelector('.composer__input') as HTMLTextAreaElement;
-      return input && input.placeholder && input.placeholder.startsWith('Message ');
-    }, { timeout: 10000 }).catch(() => {});
-
-    const placeholder10 = await page.locator('.composer__input').getAttribute('placeholder').catch(() => null);
-    if (!placeholder10 || !placeholder10.startsWith('Message ')) {
-      await page.screenshot({ path: 'screenshots/10-no-model.png', fullPage: true });
-    }
-    expect(placeholder10 ?? '', 'Thinking-model test requires a loaded chat model').toMatch(/^Message /);
-
-    // Ask something that triggers reasoning
-    await page.locator('.composer__input').fill('What is 2+2? Think step by step.');
-    await page.locator('.composer__send').click();
-
-    // Wait for any thinking block to appear (or full completion)
-    await page.waitForFunction(() => {
-      return document.querySelector('.message__thinking') !== null ||
-             (document.querySelectorAll('.message--assistant').length > 0 &&
-              !document.querySelector('.streaming-cursor'));
-    }, { timeout: 60000 }).catch(() => {});
-
-    const thinkingBlock = page.locator('.message__thinking');
-    const hasThinking = await thinkingBlock.count() > 0;
-    console.log(`Thinking blocks found: ${await thinkingBlock.count()}`);
-
-    await page.screenshot({ path: 'screenshots/10-thinking-model.png', fullPage: true });
-  });
-
-  test('11 — New Chat button clears conversation @inference', async ({ page }) => {
-    await page.goto('/');
-
-    await page.waitForFunction(() => {
-      const dot = document.querySelector('.titlebar__status-dot');
-      return dot?.classList.contains('titlebar__status-dot--connected');
-    }, { timeout: 10000 }).catch(() => {});
-
-    await page.waitForFunction(() => {
-      const input = document.querySelector('.composer__input') as HTMLTextAreaElement;
-      return input && input.placeholder && input.placeholder.startsWith('Message ');
-    }, { timeout: 10000 }).catch(() => {});
-
-    const placeholder11 = await page.locator('.composer__input').getAttribute('placeholder').catch(() => null);
-    if (!placeholder11 || !placeholder11.startsWith('Message ')) {
-      await page.screenshot({ path: 'screenshots/11-no-model.png', fullPage: true });
-    }
-    expect(placeholder11 ?? '', 'New-chat real-server test requires a loaded chat model').toMatch(/^Message /);
-
-    // Send a message
-    await page.locator('.composer__input').fill('Hi');
-    await page.locator('.composer__send').click();
-
-    // Wait for response
-    await page.waitForFunction(() => {
-      return document.querySelectorAll('.message--assistant').length > 0 &&
-             !document.querySelector('.streaming-cursor');
-    }, { timeout: 60000 }).catch(() => {});
-
-    // Messages visible
-    await expect(page.locator('.message').first()).toBeVisible();
-
-    // Click New Chat button in rail
-    await page.locator('.rail__new').click();
-
-    // Hero should be back (conversation cleared)
-    await expect(page.locator('.hero')).toBeVisible();
-
-    await page.screenshot({ path: 'screenshots/11-new-chat.png', fullPage: true });
   });
 
   test('12 — Responsive layout at different widths', async ({ page }) => {
@@ -1545,7 +1372,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
     const groups = list.locator('.workspace-list-group');
     await expect(groups.first()).toBeVisible();
 
-    // GUI3 groups downloaded/pinned and local catalog rows; remote catalog
+    // The model list groups downloaded/pinned and local catalog rows; remote catalog
     // sections are created only during an active online search.
     const titles = (await groups.locator('.zone__title').allTextContents()).map(s => s.trim());
     expect(titles.length).toBeGreaterThan(0);
@@ -1678,7 +1505,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
     expect(chatReqOn!.headers['x-client-session-id']).toBeDefined();
   });
 
-  test('24 — fallback retry: retries without session headers on fetch preflight/network failure and disables them', async ({ page }) => {
+  test('24 — inspect: ambiguous POST failures are not replayed; explicit header rejection falls back', async ({ page }) => {
     // Mock WebSocket to immediately connect and send auth.ok
     await page.addInitScript(() => {
       class MockWebSocket {
@@ -1719,49 +1546,56 @@ test.describe('Lemonade UI — Feature Parity', () => {
       (window as any).WebSocket = MockWebSocket as any;
     });
 
-    // Mock chat completion: reject requests with session headers, succeed without them
+    let rejectWithHttpResponse = false;
+    const attemptHeaders: boolean[] = [];
     await page.route(/\/api\/v1\/chat\/completions/, async route => {
-      const headers = route.request().headers();
-      if (headers['x-client-session-id']) {
+      const hasSessionHeader = Boolean(route.request().headers()['x-client-session-id']);
+      attemptHeaders.push(hasSessionHeader);
+      if (hasSessionHeader && !rejectWithHttpResponse) {
         await route.abort('failed');
+      } else if (hasSessionHeader) {
+        await route.fulfill({
+          status: 400,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: 'X-Client-Session-Id header not supported' }),
+        });
       } else {
         await route.fulfill({
           status: 200,
           contentType: 'application/json',
-          body: JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'fallback-success' } }] })
+          body: JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'fallback-success' } }] }),
         });
       }
     });
 
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
-
-    // Turn capturing ON
     await page.evaluate(() => {
       (window as any).inspectStore.setState({ capturing: true });
     });
+    await expect.poll(() => page.evaluate(() => (window as any).apiClient.sessionHeadersEnabled)).toBe(true);
 
-    // Wait briefly for WebSocket connection to authenticate and enable headers
-    await page.waitForTimeout(200);
-
-    // Verify sessionHeadersEnabled is true initially
-    const initialEnabled = await page.evaluate(() => (window as any).apiClient.sessionHeadersEnabled);
-    expect(initialEnabled).toBe(true);
-
-    // Call chat completion
-    const result = await page.evaluate(async () => {
+    const chatOnce = () => page.evaluate(async () => {
       try {
-        const resp = await (window as any).apiClient.chatCompletionOnce('mock-model', []);
-        return resp;
+        return await (window as any).apiClient.chatCompletionOnce('mock-model', []);
       } catch (e) {
         return `failed: ${e instanceof Error ? e.message : String(e)}`;
       }
     });
 
-    // Check that we got fallback success and sessionHeadersEnabled was disabled
-    expect(result).toBe('fallback-success');
-    const finalEnabled = await page.evaluate(() => (window as any).apiClient.sessionHeadersEnabled);
-    expect(finalEnabled).toBe(false);
+    // The first POST may already be running on lemond; a network error is not
+    // proof that it is safe to start the same inference a second time.
+    expect(await chatOnce()).toMatch(/^failed: POST .*\/api\/v1\/chat\/completions could not be reached/);
+    expect(attemptHeaders).toEqual([true]);
+    expect(await page.evaluate(() => (window as any).apiClient.sessionHeadersEnabled)).toBe(true);
+
+    // An explicit HTTP rejection naming the custom header is different:
+    // the server has answered, so the supported header-free fallback remains.
+    rejectWithHttpResponse = true;
+    attemptHeaders.length = 0;
+    expect(await chatOnce()).toBe('fallback-success');
+    expect(attemptHeaders).toEqual([true, false]);
+    expect(await page.evaluate(() => (window as any).apiClient.sessionHeadersEnabled)).toBe(false);
   });
 
   test('25 — Configuration tab saves model-specific defaults through lemond', async ({ page }) => {

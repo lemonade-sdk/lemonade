@@ -734,7 +734,7 @@ function parseMatchExpression(expr: unknown, depth = 0): RouterNode {
       throw new Error(`Rule match "${key}" items must be non-empty strings.`);
     }
     if ((value as string[]).some(item => item !== item.trim())) {
-      throw new Error(`Rule match "${key}" items cannot have leading or trailing whitespace in GUI3.`);
+      throw new Error(`Rule match "${key}" items cannot have leading or trailing whitespace in the Lemonade App.`);
     }
     return value as string[];
   };
@@ -818,7 +818,7 @@ function parseMatchExpression(expr: unknown, depth = 0): RouterNode {
         throw new Error('Rule match metadata "any" items must be non-empty strings.');
       }
       if ((metadata.any as string[]).some(item => item !== item.trim())) {
-        throw new Error('Rule match metadata "any" items cannot have leading or trailing whitespace in GUI3.');
+        throw new Error('Rule match metadata "any" items cannot have leading or trailing whitespace in the Lemonade App.');
       }
     }
     if (comparator === 'exists' && typeof metadata.exists !== 'boolean') {
@@ -874,7 +874,7 @@ function parseClassifier(value: unknown, index: number): RouterClassifier {
   const id = requireString(value.id, `Classifier ${index + 1} ID`);
   const type = requireString(value.type, `Classifier ${index + 1} type`);
   if (type !== 'classifier' && type !== 'semantic_similarity' && type !== 'llm') {
-    throw new Error(`Unsupported classifier type "${type}". GUI3 can safely edit classifier, semantic_similarity, and llm classifiers only.`);
+    throw new Error(`Unsupported classifier type "${type}". The Lemonade App can safely edit classifier, semantic_similarity, and llm classifiers only.`);
   }
   const model = requireString(value.model, `Classifier ${index + 1} model`);
   if ('on_error' in value && value.on_error !== 'match_true' && value.on_error !== 'match_false') {
@@ -884,36 +884,36 @@ function parseClassifier(value: unknown, index: number): RouterClassifier {
   const referencePhrases: Record<string, string[]> = {};
   if (type === 'semantic_similarity') {
     if ('labels' in value) throw new Error(`Classifier ${index + 1}: semantic_similarity cannot contain labels.`);
-    if ('prompt' in value) throw new Error(`Classifier ${index + 1}: semantic_similarity prompt is not editable in GUI3.`);
+    if ('prompt' in value) throw new Error(`Classifier ${index + 1}: semantic_similarity prompt is not editable in the Lemonade App.`);
     if (!isRecord(value.reference_phrases) || Object.keys(value.reference_phrases).length === 0) {
       throw new Error(`Classifier ${index + 1}: semantic_similarity requires non-empty reference_phrases.`);
     }
     for (const [label, phrases] of Object.entries(value.reference_phrases)) {
       if (!label.length) throw new Error(`Classifier ${index + 1}: semantic concept names cannot be empty.`);
-      if (label !== label.trim()) throw new Error(`Classifier ${index + 1}: semantic concept names cannot have leading or trailing whitespace in GUI3.`);
+      if (label !== label.trim()) throw new Error(`Classifier ${index + 1}: semantic concept names cannot have leading or trailing whitespace in the Lemonade App.`);
       const parsedPhrases = requireStringArray(phrases, `Classifier ${index + 1} concept "${label}"`);
       if (parsedPhrases.some(phrase => phrase !== phrase.trim())) {
-        throw new Error(`Classifier ${index + 1} concept "${label}" phrases cannot have leading or trailing whitespace in GUI3.`);
+        throw new Error(`Classifier ${index + 1} concept "${label}" phrases cannot have leading or trailing whitespace in the Lemonade App.`);
       }
       referencePhrases[label] = parsedPhrases;
     }
   } else {
-    if ('reference_phrases' in value) throw new Error(`Classifier ${index + 1}: ${type} reference_phrases are not editable in GUI3.`);
+    if ('reference_phrases' in value) throw new Error(`Classifier ${index + 1}: ${type} reference_phrases are not editable in the Lemonade App.`);
     if (type === 'classifier' && 'prompt' in value) {
-      throw new Error(`Classifier ${index + 1}: prompt on a classifier would be lost by GUI3; import is rejected to avoid a lossy save.`);
+      throw new Error(`Classifier ${index + 1}: prompt on a classifier would be lost by the Lemonade App; import is rejected to avoid a lossy save.`);
     }
   }
 
   const labels = 'labels' in value ? requireStringArray(value.labels, `Classifier ${index + 1} labels`, type === 'classifier') : [];
   if (labels.some(label => label !== label.trim())) {
-    throw new Error(`Classifier ${index + 1} labels cannot have leading or trailing whitespace in GUI3.`);
+    throw new Error(`Classifier ${index + 1} labels cannot have leading or trailing whitespace in the Lemonade App.`);
   }
   if (type === 'llm' && labels.length === 0) throw new Error(`Classifier ${index + 1}: LLM classifiers require at least one label.`);
   const prompt = type === 'llm' ? requireString(value.prompt, `Classifier ${index + 1} prompt`) : '';
   const defaultLabel = typeof value.default_label === 'string' ? value.default_label : undefined;
   if ('default_label' in value && !defaultLabel) throw new Error(`Classifier ${index + 1} default_label must be a non-empty string.`);
   if (defaultLabel && defaultLabel !== defaultLabel.trim()) {
-    throw new Error(`Classifier ${index + 1} default_label cannot have leading or trailing whitespace in GUI3.`);
+    throw new Error(`Classifier ${index + 1} default_label cannot have leading or trailing whitespace in the Lemonade App.`);
   }
 
   return {
@@ -937,7 +937,7 @@ export function parseRouterPayload(payload: unknown): RouterDraft {
   if ('model_name' in root && typeof root.model_name !== 'string') throw new Error('Router model_name must be a string.');
   if ('models' in root) {
     if (!Array.isArray(root.models)) throw new Error('Router models must be an array when present.');
-    if (root.models.length > 0) throw new Error('Embedded models are not editable in GUI3; import is rejected to avoid a lossy save.');
+    if (root.models.length > 0) throw new Error('Embedded models are not editable in the Lemonade App; import is rejected to avoid a lossy save.');
   }
   const declaredComponents = 'components' in root
     ? requireStringArray(root.components, 'Router components')
@@ -1024,7 +1024,7 @@ export function routerDraftFromModelInfo(model: ModelInfo): RouterDraft {
     components: Array.isArray((model as any).components) ? (model as any).components : [],
     routing: (model as any).routing,
   };
-  // Preserve embedded component manifests for the strict round-trip guard. GUI3
+  // Preserve embedded component manifests for the strict round-trip guard. The editor
   // cannot safely author them, so silently omitting this field here would let a
   // server-loaded HF redistribution policy lose data on its next save.
   if ('models' in (model as any)) payload.models = (model as any).models;

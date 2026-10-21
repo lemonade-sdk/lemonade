@@ -1805,19 +1805,7 @@ option:checked {
   .composer__toolbar button {
     font-size: var(--text-xs);
     padding: 4px var(--space-2);
-  }.titlebar__right { gap: var(--space-1); }}.mermaid-block__diagram .label,
-.mermaid-block__diagram .nodeLabel,
-.mermaid-block__diagram .edgeLabel,
-.mermaid-block__diagram .label-container {
-  color: var(--text-primary) !important;
-  fill: var(--text-primary) !important;
-}.mermaid-block__diagram .edgePath .path,
-.mermaid-block__diagram .flowchart-link {
-  stroke: var(--text-tertiary) !important;
-}.mermaid-block__diagram .note {
-  fill: var(--accent-soft) !important;
-  stroke: var(--accent-deep) !important;
-}.options-block {
+  }.titlebar__right { gap: var(--space-1); }}.options-block {
   margin: var(--space-3) 0;
   padding: var(--space-3);
   background: var(--bg-secondary);
