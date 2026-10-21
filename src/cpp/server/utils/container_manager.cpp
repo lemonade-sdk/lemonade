@@ -266,6 +266,19 @@ std::optional<SetupFailure> ContainerManager::check_podman() const {
                         {"Run `podman info` and fix the error it prints"}, ""};
 }
 
+std::optional<SetupFailure> ContainerManager::check_selinux() const {
+    // Hosts without SELinux have no /sys/fs/selinux, so both reads come back empty.
+    const bool enforcing = host_.read_file("/sys/fs/selinux/enforce").compare(0, 1, "1") == 0;
+    const bool devices_allowed =
+        host_.read_file("/sys/fs/selinux/booleans/container_use_devices").compare(0, 1, "0") != 0;
+    if (enforcing && !devices_allowed) {
+        return SetupFailure{"selinux",
+                            "SELinux is enforcing and the container_use_devices boolean is off",
+                            {"sudo setsebool -P container_use_devices 1"}, ""};
+    }
+    return std::nullopt;
+}
+
 std::vector<std::string> SetupReport::ids() const {
     std::vector<std::string> ids;
     for (const auto& failure : failures) ids.push_back(failure.id);
