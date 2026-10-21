@@ -3707,13 +3707,13 @@ ${finalText}`
                           ref={thinkingContentRef}
                           onScroll={handleThinkingScroll}
                         >
-                          <MarkdownMessage content={streamingThinking} isComplete={false} />
+                          <MarkdownMessage content={streamingThinking} />
                         </div>
                       </details>
                     )}
                     {streamingToolCalls.length > 0 && <ToolCallsDisplay calls={streamingToolCalls} onOptionSelect={handleOptionSelect} />}
                     {streamingContent ? (
-                      <MarkdownMessage content={streamingContent} isComplete={false} onOptionSelect={handleOptionSelect} />
+                      <MarkdownMessage content={streamingContent} onOptionSelect={handleOptionSelect} />
                     ) : !streamingThinking ? (
                       <div className="message__content">
                         <span className="streaming-cursor" aria-hidden="true" />

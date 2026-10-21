@@ -6,7 +6,7 @@ module.exports = (env, argv) => ({
   mode: argv.mode || 'development',
 
   // Keep the expected renderer.bundle.js entry name while allowing webpack
-  // to emit additional vendor, chart, and markdown chunks.
+  // to emit additional vendor and markdown chunks.
   entry: {
     renderer: './src/index.tsx',
   },
@@ -41,7 +41,7 @@ module.exports = (env, argv) => ({
     filename: '[name].bundle.js',
     chunkFilename: '[name].chunk.js',
 
-    // GUI3/Tauri packaging expects the renderer application here.
+    // Lemonade App/Tauri packaging expects the renderer application here.
     path: path.resolve(__dirname, 'dist/renderer'),
 
     // Resolve lazy-loaded chunks relative to the actual renderer bundle.
@@ -51,18 +51,13 @@ module.exports = (env, argv) => ({
   },
 
   optimization: {
-    // GUI3 contains large visualization and markdown dependencies.
+    // Lemonade App contains large visualization and markdown dependencies.
     // Avoid expensive minification in CI and development builds.
     minimize: false,
 
     splitChunks: {
       chunks: 'all',
       cacheGroups: {
-        charts: {
-          test: /[\\/]node_modules[\\/](d3|d3-.*)[\\/]/,
-          name: 'charts',
-          priority: 20,
-        },
         markdown: {
           test: /[\\/]node_modules[\\/](highlight\.js|markdown-it|katex|markdown-it-texmath)[\\/]/,
           name: 'markdown',

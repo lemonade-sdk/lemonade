@@ -217,15 +217,16 @@ retain its MIT license and copyright (c) 2013-present Cole Bemis.
 ## Vendored model-viewer
 
 `src/app/src/vendor/model-viewer.min.js` comes from `@google/model-viewer`
-4.3.0 (copyright 2019-2026 Google LLC, Apache-2.0). Its bundled dependencies
+4.3.1 (copyright 2019-2026 Google LLC, Apache-2.0). Its bundled dependencies
 include Lit (copyright 2017 Google LLC and The Lit Project Contributors,
-BSD-3-Clause), three.js (copyright 2010-2026 three.js authors, MIT) and
-@monogrid/gainmap-js (copyright 2023 MONOGRID, MIT). The original bundle
-retains upstream license notices; see `src/app/src/vendor/README.md`.
+BSD-3-Clause), three.js (copyright 2010-2026 three.js authors, MIT),
+@monogrid/gainmap-js (copyright 2023 MONOGRID, MIT), and fflate 0.8.2
+(copyright 2023 Arjun Barrett, MIT). See `src/app/src/vendor/README.md`
+for provenance and the third-party notices below.
 
-## GUI3 frontend dependencies and distro fallback stub
+## Lemonade App frontend dependencies
 
-The GUI3 frontend references the following third-party packages through npm or
+The Lemonade App frontend references the following third-party packages through npm or
 system Node.js packages:
 
 - DOMPurify: Apache-2.0
@@ -233,18 +234,11 @@ system Node.js packages:
 - KaTeX: MIT
 - markdown-it: MIT
 - markdown-it-texmath: MIT
-- Mermaid: MIT
 - React and React DOM: MIT
 
-`src/web-app/system-stubs/mermaid.ts` is an original conservative fallback
-for distro system-node builds, licensed under Apache-2.0. It is not copied
-from the upstream Mermaid source tree.
-
-> ISC License
+> ISC License (Lucide 1.25.0)
 >
-> Copyright (c) for portions of Lucide are held by Cole Bemis 2013-2022 as
-> part of Feather (MIT). All other copyright (c) for Lucide are held by
-> Lucide Contributors 2022.
+> Copyright (c) 2026 Lucide Icons and Contributors
 >
 > Permission to use, copy, modify, and/or distribute this software for any
 > purpose with or without fee is hereby granted, provided that the above
@@ -257,6 +251,28 @@ from the upstream Mermaid source tree.
 > WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
 > ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 > OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+> MIT License (Feather-derived Lucide icons)
+>
+> Copyright (c) 2013-present Cole Bemis
+>
+> Permission is hereby granted, free of charge, to any person obtaining a
+> copy of this software and associated documentation files (the "Software"),
+> to deal in the Software without restriction, including without limitation
+> the rights to use, copy, modify, merge, publish, distribute, sublicense,
+> and/or sell copies of the Software, and to permit persons to whom the
+> Software is furnished to do so, subject to the following conditions:
+>
+> The above copyright notice and this permission notice shall be included in
+> all copies or substantial portions of the Software.
+>
+> THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+> IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+> FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+> AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+> LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+> FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+> DEALINGS IN THE SOFTWARE.
 
 > BSD 3-Clause License (Lit)
 >
@@ -286,6 +302,86 @@ from the upstream Mermaid source tree.
 > OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
 > NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 > SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+> MIT License (fflate 0.8.2)
+>
+> Copyright (c) 2023 Arjun Barrett
+>
+> Permission is hereby granted, free of charge, to any person obtaining a
+> copy of this software and associated documentation files (the "Software"),
+> to deal in the Software without restriction, including without limitation
+> the rights to use, copy, modify, merge, publish, distribute, sublicense,
+> and/or sell copies of the Software, and to permit persons to whom the
+> Software is furnished to do so, subject to the following conditions:
+>
+> The above copyright notice and this permission notice shall be included in
+> all copies or substantial portions of the Software.
+>
+> THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+> IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+> FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+> AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+> LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+> FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+> DEALINGS IN THE SOFTWARE.
+
+## Vendored highlighting themes
+
+`src/app/src/styles/hljs-styles.css` contains theme-scoped copies of
+`highlight.js` 11.11.1's GitHub and GitHub Dark styles (BSD-3-Clause). These
+styles incorporate colors and styling from Primer's GitHub syntax themes
+(MIT). The upstream theme headers and attribution are preserved in the CSS.
+
+> BSD 3-Clause License (highlight.js 11.11.1)
+>
+> Copyright (c) 2006, Ivan Sagalaev.
+> All rights reserved.
+>
+> Redistribution and use in source and binary forms, with or without
+> modification, are permitted provided that the following conditions are met:
+>
+> 1. Redistributions of source code must retain the above copyright notice,
+>    this list of conditions and the following disclaimer.
+> 2. Redistributions in binary form must reproduce the above copyright notice,
+>    this list of conditions and the following disclaimer in the documentation
+>    and/or other materials provided with the distribution.
+> 3. Neither the name of the copyright holder nor the names of its
+>    contributors may be used to endorse or promote products derived from
+>    this software without specific prior written permission.
+>
+> THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+> AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+> IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+> ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+> LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+> CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+> SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+> INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+> CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+> ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+> POSSIBILITY OF SUCH DAMAGE.
+
+> MIT License (GitHub syntax themes)
+>
+> Copyright (c) 2016 GitHub, Inc.
+>
+> Permission is hereby granted, free of charge, to any person obtaining a
+> copy of this software and associated documentation files (the "Software"),
+> to deal in the Software without restriction, including without limitation
+> the rights to use, copy, modify, merge, publish, distribute, sublicense,
+> and/or sell copies of the Software, and to permit persons to whom the
+> Software is furnished to do so, subject to the following conditions:
+>
+> The above copyright notice and this permission notice shall be included in
+> all copies or substantial portions of the Software.
+>
+> THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+> IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+> FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+> AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+> LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+> FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+> DEALINGS IN THE SOFTWARE.
 
 ## amdxdna_accel.h
 

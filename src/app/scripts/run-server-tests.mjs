@@ -4,12 +4,12 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 const [mode, ...args] = process.argv.slice(2);
-if (mode !== 'smoke' && mode !== 'inference') {
-  console.error('Usage: run-server-tests.mjs smoke|inference [Playwright options]');
+if (mode !== 'smoke') {
+  console.error('Usage: run-server-tests.mjs smoke [Playwright options]');
   process.exit(1);
 }
-const pattern = mode === 'smoke' ? '@real-server' : '@inference';
-const output = mode === 'smoke' ? 'test-results-real-server' : 'test-results-inference';
+const pattern = '@real-server';
+const output = 'test-results-real-server';
 const result = spawnSync(process.execPath, [
   fileURLToPath(new URL('run-playwright-tests.mjs', import.meta.url)),
   '--project=functional', '--grep', pattern, `--output=${output}`, ...args,

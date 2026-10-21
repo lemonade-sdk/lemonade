@@ -1,0 +1,183 @@
+name: Lemonade App checks
+
+on:
+  pull_request:
+    paths:
+      - 'src/app/**'
+      - 'src/web-app/**'
+      - 'docs/guide/app/**'
+      - 'docs/guide/README.md'
+      - 'docs/dev/app.md'
+      - 'mkdocs.yml'
+      - 'test/app/**'
+      - '.github/workflows/lemonade-app-checks.yml'
+  merge_group:
+  workflow_dispatch:
+    inputs:
+      real_server_smoke:
+        description: 'Build the PR server .deb and run App integration smoke tests'
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  app-tests:
+    name: App docs, typecheck, runtime and UI tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - name: Validate App documentation and links
+        run: python3 test/app/check_app_documentation.py
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: src/app/package-lock.json
+
+      - name: Install App dependencies
+        working-directory: src/app
+        run: npm ci
+
+      - name: Typecheck
+        working-directory: src/app
+        run: npm run typecheck
+
+      - name: Runtime regression tests
+        working-directory: src/app
+        run: npm run test:runtime
+
+      - name: Install Playwright Chromium
+        working-directory: src/app
+        run: npx playwright install --with-deps chromium
+
+      - name: App Playwright tests (no Lemonade server)
+        working-directory: src/app
+        env:
+          CI: true
+        run: npm run test:playwright -- --reporter=list,html
+
+      - name: Upload Playwright artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: lemonade-app-playwright
+          path: |
+            src/app/test-results
+            src/app/playwright-report
+          if-no-files-found: ignore
+          retention-days: 14
+
+  build-pr-server-deb:
+    name: Build PR server for App smoke (manual)
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.real_server_smoke }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
+    container:
+      image: ghcr.io/lemonade-sdk/lemonade/build-environment:ubuntu24.04
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          clean: true
+          fetch-depth: 0
+      - name: Configure git safe directory
+        run: git config --global --add safe.directory $(pwd)
+      - name: Prepare Debian build
+        id: get_version
+        uses: ./.github/actions/prepare-debian-build
+        with:
+          release: '24.04'
+          codename: 'noble'
+      - name: Build PR server .deb
+        id: build_deb
+        uses: ./.github/actions/build-debian-package
+        with:
+          package-type: binary
+          deb-version: ${{ steps.get_version.outputs.version }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: lemonade-app-pr-server-deb
+          path: ${{ steps.build_deb.outputs.output-dir }}/*.deb
+          retention-days: 7
+
+  app-real-server-smoke:
+    name: App vs PR-built Lemonade Server (manual)
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.real_server_smoke }}
+    needs: [app-tests, build-pr-server-deb]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      LEMONADE_CI_MODE: 'True'
+      LEMONADE_VERSION: ${{ needs.build-pr-server-deb.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          clean: true
+          fetch-depth: 0
+      - name: Enable PPA for runtime dependencies (not the server binary)
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y software-properties-common
+          sudo add-apt-repository -y ppa:lemonade-team/bleeding-edge
+
+      - name: Extract PR-built .deb and start server
+        uses: ./.github/actions/install-lemonade-deb
+        with:
+          version: ${{ env.LEMONADE_VERSION }}
+          artifact-name: lemonade-app-pr-server-deb
+
+      - name: Verify PR server health
+        run: curl -fsS http://127.0.0.1:13305/api/v1/health
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: src/app/package-lock.json
+      - name: Install App dependencies
+        working-directory: src/app
+        run: npm ci
+      - name: Build App renderer
+        working-directory: src/app
+        run: npm run build
+      - name: Install Playwright Chromium
+        working-directory: src/app
+        run: npx playwright install --with-deps chromium
+      - name: Run real-server App smoke tests
+        working-directory: src/app
+        env:
+          CI: true
+          LEMONADE_TEST_PORT: '13305'
+        run: npm run test:server
+
+      - name: Upload App integration artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: lemonade-app-real-server-smoke
+          path: |
+            src/app/test-results
+            src/app/test-results-real-server
+            src/app/playwright-report
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Capture server logs
+        if: always()
+        uses: ./.github/actions/capture-server-logs
+        with:
+          artifact-name: lemonade-app-real-server-logs
+      - name: Cleanup server processes
+        if: always()
+        uses: ./.github/actions/cleanup-processes-linux

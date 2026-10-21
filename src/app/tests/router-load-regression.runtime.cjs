@@ -17,7 +17,7 @@ function transpile(sourcePath, outputPath) {
 }
 
 const root = path.resolve(__dirname, '..');
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'gui3-router-runtime-'));
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'app-router-runtime-'));
 try {
   transpile(path.join(root, 'src/features/router/routerTypes.ts'), path.join(tmp, 'routerTypes.js'));
   transpile(path.join(root, 'src/features/router/routerRuntime.ts'), path.join(tmp, 'routerRuntime.js'));
@@ -147,7 +147,7 @@ try {
   assert.match(loadCase.slice(special, runtimeLoad), /status: 'ready'/);
   assert.match(loadCase.slice(special, runtimeLoad), /preflightRouter/);
 
-  console.log('GUI3 Router load regression checks passed.');
+  console.log('Lemonade App Router load regression checks passed.');
 } finally {
   fs.rmSync(tmp, { recursive: true, force: true });
 }

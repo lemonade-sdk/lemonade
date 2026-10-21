@@ -21,7 +21,6 @@
     "test:a11y": "npx playwright test tests/a11y.spec.ts",
     "test:runtime": "node scripts/run-runtime-tests.mjs",
     "test:server": "node scripts/run-server-tests.mjs smoke",
-    "test:inference": "node scripts/run-server-tests.mjs inference",
     "test:model-providers": "node tests/model-provider-search.runtime.cjs",
     "test:chat-audio": "node tests/chat-audio-capability.runtime.cjs",
     "test:chat-streaming-abort": "node tests/chat-streaming-abort.runtime.cjs",
@@ -77,7 +76,6 @@
     "katex": "^0.16.25",
     "markdown-it": "^14.1.0",
     "markdown-it-texmath": "^1.0.0",
-    "mermaid": "^11.15.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },

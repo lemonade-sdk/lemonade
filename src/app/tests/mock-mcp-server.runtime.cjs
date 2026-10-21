@@ -33,7 +33,7 @@ function reader(stream) {
   try {
     child.stdin.write(line({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18' } }));
     const initialized = await next();
-    assert.equal(initialized.result.serverInfo.name, 'lemonade-gui3-echo');
+    assert.equal(initialized.result.serverInfo.name, 'lemonade-app-echo');
     child.stdin.write(line({ jsonrpc: '2.0', method: 'notifications/initialized' }));
     child.stdin.write(line({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} }));
     const listed = await next();

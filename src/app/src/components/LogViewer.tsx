@@ -246,6 +246,7 @@ const LogViewer: React.FC<LogViewerProps> = ({ embedded = false }) => {
       if (!shouldReconnectRef.current) return;
       try {
         await api.health();
+        if (!shouldReconnectRef.current) return;
         connect();
       } catch {
         setConnStatus('error');

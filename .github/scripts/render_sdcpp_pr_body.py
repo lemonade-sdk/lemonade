@@ -104,6 +104,20 @@ def copy_images(records: list[dict[str, Any]], evidence_dir: Path) -> int:
     return copied
 
 
+def gpu_offload_cell(row: dict[str, Any]) -> str:
+    """Render the per-model GPU-offload verdict for the evidence table.
+
+    CPU legs (and any leg without a verified device banner) carry no verdict, so
+    they show N/A. GPU legs record PASS/FAIL from the server-log device banner.
+    """
+    verdict = str(row.get("gpu", "") or "").upper()
+    if verdict == "PASS":
+        return "PASS ✅"
+    if verdict == "FAIL":
+        return "FAIL ❌"
+    return "N/A"
+
+
 def seconds(row: dict[str, Any]) -> float:
     for key in ("request_elapsed_s", "elapsed_s"):
         try:
@@ -247,18 +261,25 @@ def render_body(
         "",
         "## Per-image validation evidence",
         "",
-        "| Backend | Model | Size | Time | Image |",
-        "|---|---|---:|---:|---|",
+        "| Model | Size | Backend | Inference Time | GPU Offload | Generated Image |",
+        "|---|---|---|---:|:---:|---|",
     ]
 
-    for row in sorted(
+    # Group by model, then size, with backends in validated-label order so the
+    # repeated Model/Size cells can be blanked for a merged-cell look.
+    label_order = {label: index for index, label in enumerate(labels)}
+    ordered_rows = sorted(
         records,
         key=lambda r: (
-            str(r.get("label", "")),
             str(r.get("model", "")),
             str(r.get("size", "")),
+            label_order.get(str(r.get("label", "")), len(labels)),
         ),
-    ):
+    )
+
+    prev_model: str | None = None
+    prev_model_size: tuple[str, str] | None = None
+    for row in ordered_rows:
         label = str(row.get("label", ""))
         model = str(row.get("model", ""))
         size = str(row.get("size", ""))
@@ -271,7 +292,16 @@ def render_body(
             image = f"`{row['error']}`"
         else:
             image = "missing image"
-        lines.append(f"| {label} | `{model}` | `{size}` | {elapsed} | {image} |")
+        gpu = gpu_offload_cell(row)
+
+        model_cell = f"`{model}`" if model != prev_model else ""
+        size_cell = f"`{size}`" if (model, size) != prev_model_size else ""
+        prev_model = model
+        prev_model_size = (model, size)
+
+        lines.append(
+            f"| {model_cell} | {size_cell} | {label} | {elapsed} | {gpu} | {image} |"
+        )
 
     lines += [
         "",
