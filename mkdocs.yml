@@ -68,6 +68,12 @@ nav:
       - Docker: guide/install/docker.md
       - macOS: guide/install/macos.md
     - Local Server Concepts: guide/concepts.md
+    - Lemonade App:
+      - Overview: guide/app/README.md
+      - Models: guide/app/models.md
+      - Chat and effective settings: guide/app/chat.md
+      - Audio and 3D: guide/app/audio-and-3d.md
+      - Backends, Apps, Monitor, and Settings: guide/app/operations.md
     - CLI: guide/cli.md
     - Chat in your terminal: guide/cli-chat.md
     - Configuration:
