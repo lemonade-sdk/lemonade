@@ -146,7 +146,7 @@ void WhisperServer::download_npu_compiled_cache(const std::string& model_path,
     try {
         const auto source = model_manager_->source_for(model_info, "npu_cache");
         const auto presence = source->present();
-        if (presence.complete && !do_not_upgrade) {
+        if (presence.complete && do_not_upgrade) {
             LOG(INFO, "WhisperServer") << "NPU cache already exists: " << presence.path << std::endl;
             return;
         }
