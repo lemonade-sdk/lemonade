@@ -121,6 +121,42 @@ python test/test_routing_fixtures.py
 python test/test_schema_lock.py
 ```
 
+### HRX automatic MTP
+
+The HRX LLM suite includes `test_025_automatic_mtp_and_repeated_requests`. Run
+it against a Lemonade server configured with the HRX backend to qualify:
+
+```bash
+python test/server_llm.py --wrapped-server llamacpp-hrx --backend hrx
+```
+
+The fixture defaults to `Qwen3.8-27B-HRX`; override it with
+`LEMONADE_HRX_MTP_MODEL` for another registered, HRX-qualified model with an
+embedded MTP head. The test requires the downloaded model's `mtp` capability
+label, detected from GGUF metadata, rather than inferring support from its
+name. `LEMONADE_HRX_NON_MTP_MODEL` selects the non-MTP control (default
+`Llama-3.2-1B-Instruct-HRX`). Existing downloads are reused; cold runs download
+only the selected fixtures and the LLM suite's usual setup models. Use the
+persistent HF cache on supported GPU runners.
+
+The test checks automatic `--spec-type draft-mtp` in the actual launch command,
+draft generation and acceptance, multi-token acceptance, rejected drafts,
+repeated requests, and a long-prefill arithmetic response. It exercises backend
+defaults and explicit draft lengths 2, 3, and 4, then checks that the non-MTP
+control remains usable without speculative decoding. JSON evidence on stdout
+includes launch commands, backend fingerprints, full responses, and draft
+counters. The model's saved options are restored after each run.
+
+HRX enables embedded MTP automatically when `merge_args` is enabled. Explicit
+`--spec-type` settings override that default; `merge_args=false` suppresses it.
+Do not use a benchmark invocation that disables argument merging to test
+automatic enablement. A configured custom HRX binary is distinct from the
+published backend pin: record its source revision and patches separately from
+the response fingerprint. Passing against a patched backend does not qualify
+the pinned release, and unsupported flags or missing draft counters fail the
+test rather than silently skipping it.
+
+
 ---
 
 ## Writing a Good Test

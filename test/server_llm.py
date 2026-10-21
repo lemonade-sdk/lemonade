@@ -20,6 +20,8 @@ Usage:
 """
 
 import asyncio
+import json
+import re
 import os
 import time
 import requests
@@ -31,6 +33,8 @@ from utils.server_base import (
     ServerTestBase,
     run_server_tests,
     load_model,
+    model_recipe_options,
+    unload_all_models,
     pull_model_with_retry,
     OpenAI,
     AsyncOpenAI,
@@ -38,6 +42,7 @@ from utils.server_base import (
 )
 from utils.capabilities import (
     skip_if_unsupported,
+    requires_backend,
     get_test_model,
     get_capabilities,
     supports,
@@ -1275,6 +1280,145 @@ class LLMTests(ServerTestBase):
                 self.fail(f"Unexpected type for piece: {type(token['piece'])}")
 
         print("[OK] Tokenize response format verified")
+
+    def _mtp_request(self, method, endpoint, **kwargs):
+        response = requests.request(
+            method,
+            f"{self.base_url}/{endpoint}",
+            headers={
+                "Authorization": "Bearer "
+                + (
+                    os.environ.get("LEMONADE_ADMIN_API_KEY")
+                    or os.environ.get("LEMONADE_API_KEY", "lemonade")
+                )
+            },
+            timeout=TIMEOUT_MODEL_OPERATION,
+            **kwargs,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def _mtp_fixture(self, name, mtp):
+        info = self._mtp_request("GET", f"models/{name}")
+        if not info["downloaded"]:
+            pull_model_with_retry(name)
+            info = self._mtp_request("GET", f"models/{name}")
+        self.assertEqual(info["recipe"], "llamacpp-hrx")
+        self.assertEqual("mtp" in info["labels"], mtp, info)
+        return name
+
+    def _mtp_chat(self, model, prompt, max_tokens=128):
+        result = self._mtp_request(
+            "POST",
+            "chat/completions",
+            json={
+                "model": model,
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0,
+                "seed": 123,
+                "max_tokens": max_tokens,
+                "chat_template_kwargs": {"enable_thinking": False},
+            },
+        )
+        text = result["choices"][0]["message"]["content"]
+        self.assertTrue(text.strip(), result)
+        self.assertGreater(result["usage"]["completion_tokens"], 0)
+        print(json.dumps({"model": model, "response": result}), flush=True)
+        return result
+
+    def _mtp_launch(self, model):
+        load_model(model).raise_for_status()
+        health = self._mtp_request("GET", "health")
+        loaded = next(
+            entry
+            for entry in health["all_models_loaded"]
+            if entry["model_name"] == model
+        )
+        print(json.dumps({"loaded": loaded}), flush=True)
+        return loaded["launch_command"]
+
+    @requires_backend("hrx")
+    def test_025_automatic_mtp_and_repeated_requests(self):
+        """Require real multi-token drafting and valid responses after rejection."""
+        model = self._mtp_fixture(
+            os.environ.get("LEMONADE_HRX_MTP_MODEL", "Qwen3.8-27B-HRX"), True
+        )
+        # Fixed batches bound memory and exercise prefill across several batches.
+        runtime_args = "-b 128 -ub 128 --no-spec-draft-backend-sampling"
+        prompts = [
+            "List the integers from 1 to 20 in order, separated by commas. Nothing else.",
+            "Explain in a short paragraph why the sky is blue.",
+            "The following notes are irrelevant. "
+            + "A red box stands beside a blue chair. " * 48
+            + "\nWhat is 12 + 8? Reply with only the number.",
+        ]
+        try:
+            with model_recipe_options(
+                model,
+                ctx_size=2048,
+                hrx_args=f"{runtime_args} --spec-type none",
+                merge_args=True,
+            ):
+                baseline = self._mtp_chat(model, prompts[0])
+                self.assertEqual(baseline.get("timings", {}).get("draft_n", 0), 0)
+
+            for draft_length in (None, 2, 3, 4):
+                args = runtime_args
+                if draft_length is not None:
+                    args += f" --spec-draft-n-max {draft_length}"
+                with self.subTest(draft_length=draft_length):
+                    with model_recipe_options(
+                        model, ctx_size=2048, hrx_args=args, merge_args=True
+                    ):
+                        command = self._mtp_launch(model)
+                        spec_index = command.index("--spec-type")
+                        self.assertEqual(command[spec_index + 1], "draft-mtp")
+                        results = [self._mtp_chat(model, prompt) for prompt in prompts]
+                        counting = results[0]["choices"][0]["message"]["content"]
+                        self.assertEqual(
+                            [int(number) for number in re.findall(r"\d+", counting)],
+                            list(range(1, 21)),
+                        )
+                        self.assertEqual(
+                            counting,
+                            baseline["choices"][0]["message"]["content"],
+                        )
+                        arithmetic = results[-1]["choices"][0]["message"]["content"]
+                        self.assertEqual(arithmetic.strip().rstrip("."), "20")
+                        sky = results[1]["choices"][0]["message"]["content"].lower()
+                        self.assertIn("blue", sky)
+                        self.assertIn("scatter", sky)
+                        timings = [result["timings"] for result in results]
+                        drafted = sum(item["draft_n"] for item in timings)
+                        accepted = sum(item["draft_n_accepted"] for item in timings)
+                        self.assertGreater(accepted, 0, timings)
+                        self.assertGreater(drafted, accepted, timings)
+                        # Each verification produces at most one non-draft token.
+                        # Require a margin on a long response so trimming the last
+                        # speculative batch at EOS cannot masquerade as accepting
+                        # multiple drafts per verification.
+                        multi_token = any(
+                            item["draft_n_accepted"]
+                            > item["predicted_n"] - item["draft_n_accepted"] + 8
+                            for item in timings
+                            if item["predicted_n"] >= 32
+                        )
+                        self.assertTrue(multi_token, timings)
+
+            ordinary = self._mtp_fixture(
+                os.environ.get(
+                    "LEMONADE_HRX_NON_MTP_MODEL", "Llama-3.2-1B-Instruct-HRX"
+                ),
+                False,
+            )
+            with model_recipe_options(
+                ordinary, ctx_size=2048, hrx_args="-b 128 -ub 128", merge_args=True
+            ):
+                self.assertNotIn("--spec-type", self._mtp_launch(ordinary))
+                result = self._mtp_chat(ordinary, "Say hello.", max_tokens=32)
+                self.assertEqual(result.get("timings", {}).get("draft_n", 0), 0)
+        finally:
+            unload_all_models()
 
 
 if __name__ == "__main__":
