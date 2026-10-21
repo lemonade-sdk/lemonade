@@ -70,7 +70,7 @@ Lemonade uses [llama.cpp](https://github.com/ggerganov/llama.cpp) as its primary
 - **Platform**: Linux only
 - **Hardware**: AMD Strix Halo (gfx1151)
 - **Use Case**: The Strix Halo Vulkan performance fork of llama.cpp, running ordinary GGUF models
-- **Tier and format**: experimental, container
+- **Tier and format**: guest, container
 - **Installation**: `lemonade backends install llamacpp:nathanw` pulls the `vulkan-radv-performance` build of `docker.io/kyuz0/amd-strix-halo-toolboxes`, pinned by digest. Podman or Docker is required; see [Container Backends](container-backends.md)
 - **Enable**: `lemonade config set llamacpp.backend=nathanw`, or `--llamacpp nathanw` for one load
 
