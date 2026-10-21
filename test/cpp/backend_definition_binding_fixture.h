@@ -140,7 +140,9 @@ public:
 };
 }
 
+#ifndef LEMONADE_RUNTIME_TEST
 void lemon::backends::typed::observe_entry(const char* entry) {
     ++binding_fixture::calls[entry];
     if (!binding_fixture::allow_entries) throw std::logic_error("HookBearingCompileAndBindInvokeNothing");
 }
+#endif

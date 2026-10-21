@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <functional>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <system_error>
 #include <utility>
@@ -41,6 +42,7 @@ namespace lemon::backends {
         const std::string public_recipe;
         const std::string pin_recipe;
         const std::shared_ptr<const BackendDefinition> definition;
+        const std::shared_ptr<const ExecutableDefinition> executable_definition;
         InstallParamsFn install_params_fn;
 
         BackendSpec(std::string r, std::string b, LegacyInstallParamsFn fn = nullptr,
@@ -58,6 +60,12 @@ namespace lemon::backends {
               definition(std::move(owner)), install_params_fn(std::move(fn)) {}
 
         std::string log_name() const { return recipe + " Server"; };
+
+        BackendSpec(std::string r, std::string b, std::shared_ptr<const ExecutableDefinition> owner)
+            : recipe(r), binary(std::move(b)), supports_split_archive(false), public_recipe(r), pin_recipe(r),
+              executable_definition(std::move(owner)) {
+            if (!executable_definition) throw std::invalid_argument("V2 spec requires an executable definition");
+        }
     };
 
     // Build a backend's install/download spec from its descriptor's recipe/binary

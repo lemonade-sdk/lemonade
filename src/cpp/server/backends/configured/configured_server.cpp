@@ -1,11 +1,13 @@
+#include "backend_definition_runner_internal.h"
 #include "lemon/backends/configured/backend_hook_registry.h"
 #include "lemon/backends/configured/configured_server.h"
+#include "lemon/error_types.h"
 #include "lemon/utils/aixlog.hpp"
 
 namespace lemon::backends {
 namespace {
 std::string effective_level(const ConfiguredBackendEntry& entry, const std::string& level) {
-    return entry.definition->records["metadata"]["log_level_policy"] == "debug_flag" && level != "debug" ? "info" : level;
+    return entry.records()["metadata"]["log_level_policy"] == "debug_flag" && level != "debug" ? "info" : level;
 }
 OperationHandlerIdentity identity(BackendOperation operation, OperationDelivery delivery) {
     OperationHandlerIdentity result;
@@ -46,7 +48,7 @@ std::vector<OperationBinding> configured_operation_bindings(const BackendDefinit
 }
 
 ConfiguredServer::ConfiguredServer(std::shared_ptr<const ConfiguredBackendEntry> entry, const BackendContext& context, ConfiguredServerServices services)
-    : WrappedServer(entry->definition->records["metadata"]["server_name"], effective_level(*entry, context.log_level), context.model_manager, context.backend_manager),
+    : WrappedServer(entry->records()["metadata"]["server_name"], effective_level(*entry, context.log_level), context.model_manager, context.backend_manager),
       entry_(std::move(entry)), services_(std::move(services)),
       transport_(TransportAccess{
           [this](const auto& endpoint, const auto& body, long timeout) { return WrappedServer::forward_request(endpoint, body, timeout); },
@@ -77,8 +79,12 @@ ConfiguredServer::ConfiguredServer(std::shared_ptr<const ConfiguredBackendEntry>
     adapters.streaming_forwarder = [](WrappedServer& server, const std::string& endpoint, const std::string& body, httplib::DataSink& sink, bool sse, long timeout, TelemetryCallback callback) {
         server.forward_streaming_request(endpoint, body, sink, sse, timeout, std::move(callback));
     };
-    for (const auto& program : entry_->definition->operations) {
+    if (entry_->definition) for (const auto& program : entry_->definition->operations) {
         if (program.description.operation <= BackendOperation::Responses) adapters.completion_implementations[static_cast<size_t>(program.description.operation)] = true;
+    }
+    if (entry_->runner_) for (const auto& binding : entry_->bindings) {
+        if (binding.description.operation <= BackendOperation::Responses)
+            adapters.completion_implementations[static_cast<size_t>(binding.description.operation)] = true;
     }
     const bool compatibility = entry_->compatibility == TrustedCompatibility::LegacyNonChatSse;
     bind_operations(OperationBindings(adapters, entry_->bindings, compatibility));
@@ -86,6 +92,17 @@ ConfiguredServer::ConfiguredServer(std::shared_ptr<const ConfiguredBackendEntry>
 }
 
 void ConfiguredServer::load(const std::string& name, const ModelInfo& model, const RecipeOptions& options, bool) {
+    if (entry_->runner_) {
+        auto cancel = current_request_cancel_context();
+        const auto outer = cancel.should_cancel;
+        cancel.should_cancel = [this, outer] { return load_cancelled() || (outer && outer()); };
+        const auto prepared = entry_->runner_->prepare_load({name, model, options, log_level_, {}, {}}, entry_->spec, *services_.launch, cancel);
+        const auto& plan = prepared.plan;
+        configure_backend_watchdog({plan.command.ready_endpoint, plan.watchdog_enabled, true});
+        start_server(services_.make_process(plan.output, plan.working_directory), plan.command, plan.readiness_timeout_seconds);
+        std::atomic_store(&session_, prepared.session);
+        return;
+    }
     const std::string category = entry_->definition->records["metadata"]["log_category"];
     const auto& log = entry_->launch_compatibility.load_log;
     LaunchPlanner planner;
@@ -113,6 +130,7 @@ void ConfiguredServer::load(const std::string& name, const ModelInfo& model, con
     }
 }
 const OperationProgram* ConfiguredServer::program(BackendOperation operation, OperationDelivery delivery) const {
+    if (!entry_->definition) return nullptr;
     const OperationProgram* fallback = nullptr;
     size_t matches = 0;
     for (const auto& program : entry_->definition->operations) {
@@ -134,6 +152,7 @@ json ConfiguredServer::send_json(const MappedRequest& mapped, const json& reques
     return response;
 }
 json ConfiguredServer::send_completion(BackendOperation operation, const json& request) {
+    if (entry_->runner_) return send_v2(operation, request);
     if (const auto* selected = program(operation, OperationDelivery::Buffered)) return send_json(RequestMapper().map(*selected, mapping_, request), request);
     const auto messages = entry_->definition->records.value("unsupported_messages", json::object());
     const std::string name(backend_operation_name(operation));
@@ -145,10 +164,11 @@ json ConfiguredServer::send_completion(BackendOperation operation, const json& r
 json ConfiguredServer::chat_completion(const json& request) { return send_completion(BackendOperation::ChatCompletion, request); }
 json ConfiguredServer::completion(const json& request) { return send_completion(BackendOperation::Completion, request); }
 json ConfiguredServer::responses(const json& request) { return send_completion(BackendOperation::Responses, request); }
-json ConfiguredServer::embeddings(const json& request) { return send_json(RequestMapper().map(bound(BackendOperation::Embeddings), mapping_, request), request); }
-json ConfiguredServer::reranking(const json& request) { return send_json(RequestMapper().map(bound(BackendOperation::Reranking), mapping_, request), request); }
-json ConfiguredServer::get_slots() { return send_json(RequestMapper().map(bound(BackendOperation::Slots), mapping_, json::object()), json::object()); }
+json ConfiguredServer::embeddings(const json& request) { return entry_->runner_ ? send_v2(BackendOperation::Embeddings, request) : send_json(RequestMapper().map(bound(BackendOperation::Embeddings), mapping_, request), request); }
+json ConfiguredServer::reranking(const json& request) { return entry_->runner_ ? send_v2(BackendOperation::Reranking, request) : send_json(RequestMapper().map(bound(BackendOperation::Reranking), mapping_, request), request); }
+json ConfiguredServer::get_slots() { return entry_->runner_ ? send_v2(BackendOperation::Slots, json::object()) : send_json(RequestMapper().map(bound(BackendOperation::Slots), mapping_, json::object()), json::object()); }
 json ConfiguredServer::slots_action(int slot_id, const std::string& action, const json& request_body) {
+    if (entry_->runner_) return send_v2(BackendOperation::SlotAction, request_body, slot_id, action);
     auto mapped = RequestMapper().map(bound(BackendOperation::SlotAction), mapping_, request_body);
     for (const auto& [name, value] : {std::pair<std::string, std::string>{"{slot_id}", std::to_string(slot_id)}, {"{action}", action}}) {
         const auto found = mapped.path.find(name);
@@ -156,7 +176,28 @@ json ConfiguredServer::slots_action(int slot_id, const std::string& action, cons
     }
     return send_json(mapped, request_body);
 }
-json ConfiguredServer::tokenize(const json& request_body) { return send_json(RequestMapper().map(bound(BackendOperation::Tokenize), mapping_, request_body), request_body); }
+json ConfiguredServer::tokenize(const json& request_body) { return entry_->runner_ ? send_v2(BackendOperation::Tokenize, request_body) : send_json(RequestMapper().map(bound(BackendOperation::Tokenize), mapping_, request_body), request_body); }
+
+json ConfiguredServer::send_v2(BackendOperation operation, const json& request, int slot_id, const std::string& action) {
+    const auto session = std::atomic_load(&session_);
+    if (!session) throw std::logic_error("Configured v2 session is not loaded");
+    const auto cancel = current_request_cancel_context();
+    try {
+        auto mapped = entry_->runner_->map_request(operation, OperationDelivery::Buffered, get_model_type(), *session, request, {}, cancel);
+        if (operation == BackendOperation::SlotAction) {
+            if (slot_id < 0 || action.empty() || action.find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-") != std::string::npos)
+                throw std::invalid_argument("Invalid slot action");
+            for (const auto& item : {std::pair<std::string, std::string>{"{slot_id}", std::to_string(slot_id)}, {"{action}", action}}) {
+                const auto found = mapped.path.find(item.first);
+                if (found != std::string::npos) mapped.path.replace(found, item.first.size(), item.second);
+            }
+        }
+        auto response = transport_.send_json(mapped);
+        return entry_->runner_->map_response(operation, get_model_type(), *session, request, std::move(response), cancel);
+    } catch (const utils::HttpClientCancellationException&) {
+        return ErrorResponse::create("Request cancelled by client", ErrorType::INVALID_REQUEST);
+    }
+}
 OperationHookContext ConfiguredServer::hook_context() {
     return {mapping_.values, entry_->definition->records["metadata"]["log_category"].get_ref<const std::string&>(), get_backend_port(), get_base_url(),
         [this](const std::string& endpoint, const json& body, long timeout) { return WrappedServer::forward_request(endpoint, body, timeout); }};
@@ -212,6 +253,20 @@ AudioFormatMetadata ConfiguredServer::audio_format_metadata(const std::string& f
     return {};
 }
 void ConfiguredServer::forward_streaming_request(const std::string& endpoint, const std::string& body, httplib::DataSink& sink, bool sse, long timeout, TelemetryCallback callback) {
+    if (entry_->runner_) {
+        const auto session = std::atomic_load(&session_);
+        if (!session) throw std::logic_error("Configured v2 session is not loaded");
+        for (const auto& [operation, path] : endpoints) if (path == endpoint) {
+            const auto parsed = json::parse(body, nullptr, false);
+            auto mapped = entry_->runner_->map_request(operation, OperationDelivery::Streaming, get_model_type(), *session,
+                parsed.is_discarded() ? json::object() : parsed, body, current_request_cancel_context());
+            if (parsed.is_discarded() && !mapped.original_body) throw std::invalid_argument("Invalid JSON for mapped streaming operation");
+            if (!mapped.timeout_seconds) mapped.timeout_seconds = timeout;
+            transport_.send_stream(mapped, sink, std::move(callback));
+            return;
+        }
+        throw std::invalid_argument("Streaming operation adapter is not bound");
+    }
     for (const auto& [operation, path] : endpoints) {
         if (path != endpoint) continue;
         if (const auto* selected = program(operation, OperationDelivery::Streaming)) {

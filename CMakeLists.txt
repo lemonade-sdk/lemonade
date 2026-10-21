@@ -1184,6 +1184,9 @@ set(LEMON_BACKEND_FACTORY_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/configured/backend_catalog.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/configured/request_mapper.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/configured/backend_transport.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/configured/backend_definition_runner.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/configured/backend_runtime_services.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/configured/configured_v2_backend_ops.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/configured/configured_server.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/configured/launch_planner.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/configured/configured_backend_ops.cpp
@@ -1295,6 +1298,7 @@ endif()
 # ============================================================
 
 target_link_libraries(lemonade-server-core PUBLIC
+    lemonade-backend-definition-binding
     lemonade-backend-typed-hooks
     lemonade-backend-definition-v2
     nlohmann_json::nlohmann_json
@@ -4129,9 +4133,29 @@ if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_backend_d
             lemonade-binding-test lemonade-typed-hook-test lemonade-server-core)
     endforeach()
     add_cpp_ci_test(BackendDefinitionBindingTest CI ON COMMAND test_backend_definition_binding
-        DEPENDS lemonade-backend-definition-binding lemonade-backend-typed-hooks)
+        DEPENDS test_backend_definition_binding lemonade-backend-definition-binding lemonade-backend-typed-hooks)
     add_cpp_ci_test(BackendDefinitionBindingBoundsTest CI ON COMMAND test_backend_definition_binding_bounds
-        DEPENDS lemonade-backend-definition-binding)
+        DEPENDS test_backend_definition_binding_bounds lemonade-backend-definition-binding)
     add_cpp_ci_test(BackendDefinitionBindingBoundaryTest CI ON COMMAND test_backend_definition_binding_boundary
-        DEPENDS lemonade-backend-definition-binding lemonade-backend-definition-execution)
+        DEPENDS test_backend_definition_binding_boundary lemonade-backend-definition-binding lemonade-backend-definition-execution)
+endif()
+
+if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_backend_definition_runner.cpp")
+    foreach(_suite definition_runner runtime_services runtime_boundary)
+        add_executable(test_backend_${_suite}
+            test/cpp/test_backend_${_suite}.cpp
+            src/cpp/server/backends/configured/backend_definition_authorization.cpp
+            src/cpp/server/backends/configured/backend_definition_exports.cpp)
+        target_compile_definitions(test_backend_${_suite} PRIVATE
+            LEMON_BACKEND_EXPORT_TESTING LEMONADE_BINDING_TEST LEMONADE_RUNTIME_TEST LEMONADE_TYPED_HOOK_TEST
+            LEMON_TEST_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures")
+        target_include_directories(test_backend_${_suite} PRIVATE src/cpp/server/backends/configured)
+        target_link_libraries(test_backend_${_suite} PRIVATE lemonade-binding-test lemonade-typed-hook-test lemonade-server-core)
+    endforeach()
+    add_cpp_ci_test(BackendDefinitionRunnerTest CI ON COMMAND test_backend_definition_runner
+        DEPENDS test_backend_definition_runner lemonade-backend-definition-binding lemonade-backend-typed-hooks)
+    add_cpp_ci_test(BackendRuntimeServicesTest CI ON COMMAND test_backend_runtime_services
+        DEPENDS test_backend_runtime_services lemonade-backend-definition-binding lemonade-backend-typed-hooks)
+    add_cpp_ci_test(BackendRuntimeBoundaryTest CI ON COMMAND test_backend_runtime_boundary
+        DEPENDS test_backend_runtime_boundary lemonade-backend-definition-binding lemonade-backend-definition-execution)
 endif()

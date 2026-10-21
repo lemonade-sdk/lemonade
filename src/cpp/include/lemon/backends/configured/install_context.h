@@ -7,6 +7,7 @@
 namespace lemon::backends {
 
 struct BackendDefinition;
+class ExecutableDefinition;
 struct BackendSpec;
 struct PlatformInfo { std::string os, machine_arch, rocm_arch; };
 enum class InstallPhase { Repository, Asset };
@@ -17,6 +18,7 @@ struct InstallContext {
     std::string backend, requested_version, pinned_version, resolved_version;
     PlatformInfo platform;
     InstallPhase phase;
+    std::shared_ptr<const ExecutableDefinition> executable_definition;
 };
 struct InstallPlatformSources {
     std::function<std::string()> os;

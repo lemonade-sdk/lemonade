@@ -768,3 +768,42 @@ the production llama.cpp definition and descriptor/factory switch, qualify it
 against the frozen oracle and resolve bounded system-probe behavior explicitly.
 Production HRX inheritance, external exports and hardware qualification remain
 later work. The aggregate export pin and all v1 snapshots remain unchanged.
+
+### Private runtime increment (partial 4d.1)
+
+The v2 overload of `ConfiguredBackendEntry::make` accepts only a retained bound
+`ExecutableDefinition`. Its private runner selects compiled operation cells and
+dispatches their bound slots by index. Each invocation owns a fresh frame and a
+noncopyable guard carrying executable identity, slot, owner, stage, nonce,
+effects, thread, cancellation and remaining service allowance. Only the runner
+can inspect bound targets in production. The v1 factory and provider remain on
+their existing arm.
+
+Implemented consumers are backend selection/device validation, runtime options,
+model preparation, both request transforms and the response transform. A
+separate private v2 `BackendOps` resolves runtime options without manufacturing a
+v1 definition. Explicit empty/null arguments and `merge_args` are preserved.
+Prepared sessions own their executable; requests copy the session facts into
+independent frames. Buffered JSON, GET and SSE reuse the configured server's
+existing forwarding callbacks, process lifecycle and cancellation scopes.
+Untransformed SSE programs preserve the original body, including raw bodies.
+Response transforms are restricted to the selected buffered operation cell and
+never rewrite transport errors.
+
+This increment is incomplete. Entry construction rejects install-context,
+environment, system and artifact contracts, managed installation, non-inherit
+environment presets and artifact-hook execution. The v2 ops implementation also
+rejects operations that would otherwise inherit ambient checkpoint/download
+effects. These rejections must be replaced by confined consumers before 4d.1 is
+complete. `ProcessManager::read_output` currently returns an empty string, and
+the line-oriented output facility buffers a full line before its callback; a
+version probe needs an actual byte-bounded capture facility. Opaque artifact and
+staging capability lifetimes and repository/asset fact enforcement are also
+unfinished. The ten typed contracts and their pins have not changed.
+
+The three runtime CI registrations are `BackendDefinitionRunnerTest`,
+`BackendRuntimeServicesTest` and `BackendRuntimeBoundaryTest`. Their current
+coverage establishes the implemented subset, not all of 4d.1. Production startup
+still rejects v2, candidates still report `executable:false`, and both production
+authority/export tables remain empty. Shared accounting, complete catalog
+finalization and one-shot publication remain 4d.2 work.

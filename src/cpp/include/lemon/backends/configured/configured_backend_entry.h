@@ -6,6 +6,8 @@
 
 namespace lemon::backends {
 
+class DefinitionRunner;
+class ExecutableDefinition;
 enum class TrustedCompatibility { None, LegacyNonChatSse };
 
 struct BuiltinLoadLog {
@@ -25,8 +27,14 @@ std::vector<OperationBinding> configured_operation_bindings(const BackendDefinit
 struct ConfiguredBackendEntry {
 private:
     struct FactoryState;
+    struct V2FactoryState;
     const std::shared_ptr<FactoryState> factory_state_;
+    const std::shared_ptr<V2FactoryState> v2_factory_state_;
+    explicit ConfiguredBackendEntry(std::shared_ptr<const ExecutableDefinition> executable);
+    const std::shared_ptr<const DefinitionRunner> runner_;
+    friend class ConfiguredServer;
 public:
+    static std::shared_ptr<const ConfiguredBackendEntry> make(std::shared_ptr<const ExecutableDefinition> executable);
     static std::shared_ptr<const ConfiguredBackendEntry> make(std::shared_ptr<const BackendDefinition> definition, TrustedCompatibility compatibility = TrustedCompatibility::None, BuiltinLaunchCompatibility launch_compatibility = {});
     explicit ConfiguredBackendEntry(std::shared_ptr<const BackendDefinition> definition, TrustedCompatibility compatibility = TrustedCompatibility::None, BuiltinLaunchCompatibility launch_compatibility = {});
     ConfiguredBackendEntry(const ConfiguredBackendEntry&) = delete;
@@ -35,6 +43,10 @@ public:
     const BackendDescriptor descriptor;
     const std::vector<OperationBinding> bindings;
     const std::shared_ptr<const ConfiguredBackendOps> ops;
+    const std::shared_ptr<const BackendOps> v2_ops;
+    const std::shared_ptr<const ExecutableDefinition> executable_definition;
+    const BackendOps* backend_ops() const { return v2_ops ? v2_ops.get() : ops.get(); }
+    const json& records() const;
     const BackendSpec spec;
     const TrustedCompatibility compatibility;
     const BuiltinLaunchCompatibility launch_compatibility;

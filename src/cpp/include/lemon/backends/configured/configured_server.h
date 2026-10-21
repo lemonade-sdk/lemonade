@@ -7,6 +7,7 @@
 
 namespace lemon::backends {
 
+struct ExecutionSession;
 struct ConfiguredServerServices {
     std::shared_ptr<LaunchServices> launch;
     std::function<std::unique_ptr<ServerProcess>(ProcessOutput, const std::string&)> make_process;
@@ -45,9 +46,11 @@ private:
     OperationHookContext hook_context();
     json send_json(const MappedRequest& mapped, const json& request);
     json send_completion(BackendOperation operation, const json& request);
+    json send_v2(BackendOperation operation, const json& request, int slot_id = -1, const std::string& action = "");
     const std::shared_ptr<const ConfiguredBackendEntry> entry_;
     ConfiguredServerServices services_;
     MappingContext mapping_;
+    std::shared_ptr<const ExecutionSession> session_;
     const BackendTransport transport_;
 };
 

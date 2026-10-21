@@ -4,6 +4,8 @@
 #include "backend_typed_hook_registry_internal.h"
 #include "lemon/backends/configured/backend_definition_binding.h"
 
+namespace lemon::backends { class DefinitionRunner; }
+
 namespace lemon::backends::binding {
 
 inline constexpr unsigned binder_revision = 1;
@@ -22,6 +24,10 @@ struct Budget {
 std::string execution_identity(const AdmittedCatalog& admitted, const CompiledDefinition& compiled,
     Budget& budget, unsigned revision = binder_revision);
 struct Inspection {
+#ifndef LEMONADE_BINDING_TEST
+private:
+    friend class ::lemon::backends::DefinitionRunner;
+#endif
     static const std::vector<BoundHook>& hooks(const ExecutableDefinition& definition);
     static const AdmittedCatalog& admitted(const ExecutableDefinition& definition);
 };
