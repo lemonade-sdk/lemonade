@@ -44,9 +44,9 @@ All backends must be categorized into one of the following support tiers. These 
 
 | Tier | Recommended for Production? | Maintained By | Update Cadence | Feedback Cadence | Sandbox Required? |
 |------|-----------------------------|---------------|----------------|------------------|-------------------|
-| Core | Yes | A specific Lemonade maintainer | Same week | Triaged daily; high-severity feedback acted upon the same week | No |
+| Core | Yes | A specific Lemonade maintainer | Same week as the upstream release | Triaged daily; high-severity feedback acted upon the same week | No |
 | Experimental | No | A specific Lemonade maintainer | Maintainer's discretion | Triaged weekly; acted upon at the maintainer's discretion | No |
-| Guest | No; use at your own risk | A contributor, without any support guarantee | No guarantee | No guarantee | Industry standard backends trusted entities may run un-sandboxed; all others must be sandboxed |
+| Guest | No; use at your own risk | A contributor, without any support guarantee | No guarantee | No guarantee | Industry standard backends may run un-sandboxed; all others must be sandboxed |
 
 ## Mechanics
 
