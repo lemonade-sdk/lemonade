@@ -42,4 +42,4 @@ Each route lists the errors it answers with in its Errors table. These come from
 | `401` | `{"error": "Invalid or missing API key"}`, or `"Invalid or missing admin API key"` for an internal route | The request lacks the key its route needs |
 | `403` | `{"error": "Origin not allowed"}` | The `Origin` header names an origin that [`allowed_origins`](../guide/configuration/README.md) does not allow |
 | `404` | `{"error": {"message": "The requested endpoint does not exist", "type": "not_found", "path"}}` | No route matches the path |
-| `405` | `{"error": "Method Not Allowed. Use POST for this endpoint"}` | A `GET` reaches a `POST`-only route |
+| `405` | `{"error": "Method Not Allowed. Use POST for this endpoint"}` | A `GET` reaches a `POST`-only route under `/v0/`, `/v1/`, `/api/v0/` or `/api/v1/` |

@@ -388,6 +388,10 @@ void DownloadManager::stream(const Operation& operation, httplib::DataSink& sink
 
     } catch (const lemon::UnknownModelError& e) {
         write_sse_event(sink, "error", {{"error", e.what()}, {"code", lemon::kUnknownModelErrorCode}});
+    } catch (const lemon::RegistryRateLimitError& e) {
+        write_sse_event(sink, "error", {{"error", e.what()},
+                                        {"code", lemon::kRegistryUnavailableErrorCode},
+                                        {"retry_after", e.retry_after_seconds()}});
     } catch (const std::exception& e) {
         std::string error_msg = e.what();
         if (error_msg != "Download cancelled") {

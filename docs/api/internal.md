@@ -673,7 +673,7 @@ A `sync_id` that is neither running nor recorded answers `200` with `status: "no
 
 | Status | When |
 |--------|------|
-| `400` | `sync_id` does not start with a number, or is too large for 64 bits |
+| `400` | `sync_id` is too large for 64 bits |
 | `500` | The request fails unexpectedly |
 <!-- END GENERATED: internal.models_sync_status -->
 

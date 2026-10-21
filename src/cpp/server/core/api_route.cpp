@@ -86,7 +86,7 @@ bool matches_type(const json& value, const std::string& type) {
     return true;
 }
 
-// A query value arrives as a string, so only a numeric type constrains its spelling.
+// A query value arrives as a string, so only a numeric or boolean type constrains its spelling.
 bool matches_query_type(const std::string& value, const std::string& type) {
     if (type == "integer") {
         return !value.empty() && value.find_first_not_of("0123456789") == std::string::npos;
@@ -99,6 +99,9 @@ bool matches_query_type(const std::string& value, const std::string& type) {
         } catch (const std::exception&) {
             return false;
         }
+    }
+    if (type == "boolean") {
+        return value == "true" || value == "false";
     }
     return true;
 }
@@ -508,6 +511,8 @@ void ApiRoute::serve(const RouteSpec& spec, const httplib::Request& http,
         if (!check_args(req, res)) {
             return;
         }
+    } else if (spec.request_format == RequestFormat::Raw && !check_args(req, res, true)) {
+        return;
     }
 
     handle(req, res);
@@ -535,9 +540,9 @@ void drop_empty_spellings(json& body, const std::vector<std::string>& names) {
 
 } // namespace
 
-bool ApiRoute::check_args(RouteRequest& req, httplib::Response& res) const {
+bool ApiRoute::check_args(RouteRequest& req, httplib::Response& res, bool query_only) const {
     for (const auto& arg : req.spec.args) {
-        if (arg.forwarded || arg.in == ArgIn::Path) {
+        if (arg.forwarded || arg.in == ArgIn::Path || (query_only && arg.in != ArgIn::Query)) {
             continue;
         }
         std::vector<std::string> names = {arg.name};
@@ -589,7 +594,7 @@ bool ApiRoute::check_args(RouteRequest& req, httplib::Response& res) const {
                 req.body.erase(alias);
             }
         }
-        if (!present && arg.required) {
+        if (!present && arg.required && !query_only) {
             std::string message = "Missing required argument '" + arg.name + "'";
             for (const auto& alias : arg.aliases) {
                 message += " (or '" + alias + "')";

@@ -11,7 +11,7 @@ using json = nlohmann::json;
 namespace {
 
 const RouteError kInvalidSyncId{
-    400, "", "`sync_id` does not start with a number, or is too large for 64 bits"};
+    400, "", "`sync_id` is too large for 64 bits"};
 
 const RouteArg kSyncId{"sync_id", ArgIn::Query, {{"type", "integer"}}, false, Support::Available,
                        "Sync to report. Defaults to the latest. For a sync that has finished, the answer is "

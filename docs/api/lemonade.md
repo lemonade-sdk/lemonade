@@ -612,6 +612,7 @@ A `progress` event reports one file; a `complete` event follows the last one, an
 | `400` | `unknown_model` | Without `stream`, the model is not registered and its name has no `user.` prefix |
 | `400` |  | Labels or `embedding`/`reranking` flags name a deployment mode the recipe cannot serve, or name two |
 | `500` |  | Another failure occurs, for example a failed download, a model this system cannot run, a new `user.*` model without `recipe` or `checkpoint`, or a GGUF `checkpoint` without a variant; a new definition stays registered |
+| `503` | `registry_unavailable` | Without `stream`, the model registry rate-limits or is temporarily unavailable; the `Retry-After` header and the body's `upstream_status_code` carry the details |
 <!-- END GENERATED: lemonade.pull -->
 
 <!-- BEGIN GENERATED: lemonade.downloads -->
@@ -1838,7 +1839,7 @@ This endpoint does not take any parameters.
 
 `gpu_percent` and `vram_gb` come from the primary GPU: the one with the largest known GPU-accessible memory capacity (ties broken by ID), whatever its current utilization, and not necessarily the GPU a model recipe targets. `vram_gb` keeps its historical name but reports GPU memory usage, which can be shared system memory on AMD APUs.
 
-GPU, VRAM and NPU telemetry depends on the operating system and installed drivers. On Linux, AMD and NVIDIA GPUs are enumerated; on Windows, NVIDIA GPUs through NVML; on macOS `gpus` is empty. NVML does not report whether memory is dedicated or shared, so NVIDIA GPUs report `memory_type` as `unknown`.
+GPU, VRAM and NPU telemetry depends on the operating system and installed drivers. On Linux, AMD and NVIDIA GPUs are enumerated; on Windows, NVIDIA GPUs through NVML and AMD GPUs through DXGI, DXCore and PDH; on macOS `gpus` is empty. NVML does not report whether memory is dedicated or shared, so NVIDIA GPUs report `memory_type` as `unknown`.
 
 ### Example
 
