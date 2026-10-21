@@ -328,6 +328,14 @@ in the base must have exactly one policy. Duplicate hook IDs in one owner/stage,
 uncovered selections, cyclic dependencies and contradictory data policies fail
 the audit.
 
+Every export also pins a complete operation-owner graph, including hook-free
+operations. Each record contains the stable ID, operation kind, delivery, model
+modes, transport, formats and format metadata, explicit request/response/handler
+chains (including empty chains), removal permission, owner dependencies, sealed
+owning fields and collision relationships. Audit checks this graph against the
+pinned base independently of hook-slot coverage. Missing owners, changed chains,
+incomplete collision relationships and dependency cycles reject.
+
 Mutable scalar inputs declare a type, optional range, string byte bound, enum
 and permitted absence. Structured input rules use the audited `Expression`
 schema fragment and explicit reference roots; arbitrary policy expressions are
@@ -342,6 +350,7 @@ Identity domains are distinct:
 |---|---|
 | Parameters | `lemonade.backend-hook-parameters.v1\n` |
 | Owner semantics | `lemonade.backend-hook-owner.v1\n` |
+| Operation-owner graph | `lemonade.backend-operation-owners.v1\n` |
 | Mutation policy | `lemonade.backend-hook-mutation-policy.v1\n` |
 | Export policy | `lemonade.backend-export-policy.v1\n` |
 | Registry | `lemonade.backend-export-registry.v1\n` |
@@ -399,8 +408,8 @@ and dependency digests, logical owner, stage, hook ID, ABI revision, parameter
 digest and mutation policy digest. The original root and policy remain attached
 through external descendants. The next layer receives only its immediate
 parent's surviving grants. Removed mandatory-owner obligations remain in force,
-so renaming an operation or artifact cannot recreate its protected behavior
-without the required hook.
+so protected behavior cannot be recreated under a new or re-authored owner,
+whether or not the hook is retained.
 
 The private authored-value observer is part of the existing edit engine. After
 pure resolution, authorization parses each frozen external envelope again and
@@ -423,11 +432,31 @@ default; the identity fields and rationale are excluded, and operations are
 compared by stable ID. Inserting an unrelated operation preserves existing
 slots. Mutable inputs must satisfy every retained policy that consumes them.
 
-Removing a mandatory hook while its owner remains rejects. Removing an owner
-requires an explicit `WithOwner` policy. Another operation with the same
-operation kind or backend transport endpoint, or artifact with the same role,
-rejects conservatively. This also applies when the original mandatory owner
-remains, so adding a hookless alias cannot bypass its protection.
+Removing a mandatory hook while its owner remains rejects. Removing an operation
+owner requires explicit owner-removal permission and compatible slot policies.
+A colliding inherited sibling is admissible only through its own audited owner
+record, sealed-field provenance from the immediate parent, exact semantics and
+ordered chains. Each retained hook must also retain its own exact slot grant.
+A hook-free sibling needs its owner record and an audited empty chain. Sharing
+a hook name never establishes owner identity.
+
+New owners with the same public operation kind or backend endpoint reject,
+including after the original owner and every hook grant have disappeared.
+Endpoint comparison ignores delivery and HTTP envelope (JSON, SSE, bytes or
+multipart). It establishes disjointness only for fixed, unambiguous HTTP
+method/path/port triples; dynamic paths, noncanonical spellings and other
+uncertain relationships get no permissive exemption. An independently audited
+inherited endpoint may be dynamic. Artifact aliases with the same role continue
+to reject. Owner obligations persist through all external descendants, and an
+owner absent from an immediate parent cannot return.
+
+| Action | Decision |
+|---|---|
+| Retain a same-kind or endpoint-sharing sibling | Allow only its separately audited surviving owner identity and exact retained grants. |
+| Retain a hook-free sibling | Allow only its audited owner identity, sealed provenance and exact empty chains. |
+| Remove an optional owner and retain its independent sibling | Allow when removal permission and dependencies hold. |
+| Remove a protected owner and recreate its behavior under a new or re-authored owner, whether or not the hook is retained | Reject; owner removal cannot authorize a replacement. |
+
 `Independent` slots may disappear only when all retained slot and phase
 dependencies remain satisfied. Hook lists can be cleared when every removed
 slot permits it; replacing a list with retained hooks re-authors those hooks.
@@ -442,6 +471,17 @@ Authorization does not compile expressions, bind functions, apply executable
 defaults, construct entries, validate executable support or publish a catalog.
 Future executable consumers must accept the authorized token. The v1 store,
 legacy metadata projections, schema export and hash domains remain unchanged.
+
+The first 4c increment implements the owner graph and authorization revision 2.
+The single-operation phase-3 fixture and all its negative assertions remain
+unchanged. A separate synthetic sibling fixture audits the eleven frozen
+llama.cpp cells against all four oracle views; streaming completion has empty
+request and response chains. This increment adds no typed callable ABI, mutable
+fragment contracts, builtin-leaf authorization or executable binder. Production
+exports remain empty, and v2 declarations remain non-executable. The installed
+empty-export/12-ABI registry pin remains
+`sha256:283179bf6e03aba5facd47fd9b2538007ecddc2ac9a46473573713694f070899`;
+the remaining 4c ABI expansion must re-pin it after reviewing all 19 records.
 
 ### Catalog admission and private candidates
 

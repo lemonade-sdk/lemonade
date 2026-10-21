@@ -40,6 +40,8 @@ int main() {
     const auto resolved = DefinitionResolver(sources.snapshot).resolve({DefinitionNamespace::Builtin, "test-export", 1}).definition;
     auto policy = contract();
     policy.slots.erase(std::remove_if(policy.slots.begin(), policy.slots.end(), [](const auto& slot) { return slot.slot.owner_kind != SlotOwnerKind::Root; }), policy.slots.end());
+    policy.owners[0].request_hooks.clear();
+    policy.owners[0].response_hooks.clear();
     policy.expected_source_digest = resolved->source_digest;
     policy.expected_definition_hash = resolved->definition_hash;
     policy.expected_dependency_digest = resolved->dependency_digest;

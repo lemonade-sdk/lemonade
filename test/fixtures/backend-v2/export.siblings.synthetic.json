@@ -1,0 +1,366 @@
+{
+  "schema_version": 2,
+  "id": "test-siblings",
+  "recipe": "test-siblings",
+  "merge": {
+    "kind": "local",
+    "metadata": {
+      "display_name": "Synthetic sibling owners",
+      "server_name": "fake-engine",
+      "binary": "fake-engine",
+      "supported_modes": [
+        "chat",
+        "embedding",
+        "reranking"
+      ],
+      "options": [],
+      "support": []
+    },
+    "install": {
+      "strategy": "none"
+    },
+    "artifacts": {},
+    "launch": {
+      "prepare_order": [
+        "backend",
+        "artifacts",
+        "program",
+        "ports"
+      ],
+      "backend": {
+        "fixed": "cpu"
+      },
+      "program": {
+        "source": "managed",
+        "install_policy": "always"
+      },
+      "ports": [
+        {
+          "name": "http",
+          "reject_zero": false,
+          "error": ""
+        }
+      ],
+      "argv": [],
+      "environment": {
+        "preset": "inherit"
+      },
+      "working_directory": {
+        "windows": "executable_directory",
+        "linux": "inherit",
+        "macos": "inherit"
+      },
+      "output": {
+        "inherit_levels": [
+          "info",
+          "debug",
+          "trace"
+        ],
+        "filter": true
+      },
+      "readiness": {
+        "port": "http",
+        "path": "/health",
+        "timeout": 600
+      },
+      "watchdog": {
+        "policy": "standard",
+        "port": "http",
+        "path": "/health"
+      }
+    },
+    "operations": [
+      {
+        "id": "chat.buffered",
+        "operation": "chat_completion",
+        "delivery": "buffered",
+        "model_modes": [
+          "*"
+        ],
+        "transport": {
+          "kind": "http_json",
+          "method": "POST",
+          "path": "/v1/chat/completions",
+          "port": "http",
+          "timeout": 1
+        },
+        "request": {
+          "base": "identity",
+          "hooks": [
+            {
+              "id": "llamacpp.max_tokens_alias",
+              "params": {}
+            },
+            {
+              "id": "llamacpp.tool_schema_limits",
+              "params": {}
+            }
+          ]
+        },
+        "response": {
+          "hooks": [
+            {
+              "id": "llamacpp.client_model",
+              "params": {}
+            }
+          ]
+        }
+      },
+      {
+        "id": "completion.buffered",
+        "operation": "completion",
+        "delivery": "buffered",
+        "model_modes": [
+          "*"
+        ],
+        "transport": {
+          "kind": "http_json",
+          "method": "POST",
+          "path": "/v1/completions",
+          "port": "http",
+          "timeout": 1
+        },
+        "request": {
+          "base": "identity",
+          "hooks": [
+            {
+              "id": "llamacpp.max_tokens_alias",
+              "params": {}
+            }
+          ]
+        },
+        "response": {
+          "hooks": [
+            {
+              "id": "llamacpp.client_model",
+              "params": {}
+            }
+          ]
+        }
+      },
+      {
+        "id": "responses.buffered",
+        "operation": "responses",
+        "delivery": "buffered",
+        "model_modes": [
+          "*"
+        ],
+        "transport": {
+          "kind": "http_json",
+          "method": "POST",
+          "path": "/v1/responses",
+          "port": "http",
+          "timeout": 1
+        },
+        "request": {
+          "base": "identity",
+          "hooks": [
+            {
+              "id": "llamacpp.tool_schema_limits",
+              "params": {}
+            }
+          ]
+        },
+        "response": {
+          "hooks": [
+            {
+              "id": "llamacpp.client_model",
+              "params": {}
+            }
+          ]
+        }
+      },
+      {
+        "id": "chat.streaming",
+        "operation": "chat_completion",
+        "delivery": "streaming",
+        "model_modes": [
+          "*"
+        ],
+        "transport": {
+          "kind": "http_sse",
+          "method": "POST",
+          "path": "/v1/chat/completions",
+          "port": "http",
+          "timeout": 1
+        },
+        "request": {
+          "base": "identity",
+          "hooks": [
+            {
+              "id": "llamacpp.max_tokens_alias",
+              "params": {}
+            },
+            {
+              "id": "llamacpp.tool_schema_limits",
+              "params": {}
+            }
+          ]
+        },
+        "response": {
+          "hooks": []
+        }
+      },
+      {
+        "id": "completion.streaming",
+        "operation": "completion",
+        "delivery": "streaming",
+        "model_modes": [
+          "*"
+        ],
+        "transport": {
+          "kind": "http_sse",
+          "method": "POST",
+          "path": "/v1/completions",
+          "port": "http",
+          "timeout": 1
+        },
+        "request": {
+          "base": "identity",
+          "hooks": []
+        },
+        "response": {
+          "hooks": []
+        }
+      },
+      {
+        "id": "responses.streaming",
+        "operation": "responses",
+        "delivery": "streaming",
+        "model_modes": [
+          "*"
+        ],
+        "transport": {
+          "kind": "http_sse",
+          "method": "POST",
+          "path": "/v1/responses",
+          "port": "http",
+          "timeout": 1
+        },
+        "request": {
+          "base": "identity",
+          "hooks": [
+            {
+              "id": "llamacpp.tool_schema_limits",
+              "params": {}
+            }
+          ]
+        },
+        "response": {
+          "hooks": []
+        }
+      },
+      {
+        "id": "embeddings.buffered",
+        "operation": "embeddings",
+        "delivery": "buffered",
+        "model_modes": [
+          "*"
+        ],
+        "transport": {
+          "kind": "http_json",
+          "method": "POST",
+          "path": "/v1/embeddings",
+          "port": "http",
+          "timeout": 1
+        },
+        "request": {
+          "base": "identity",
+          "hooks": []
+        },
+        "response": {
+          "hooks": []
+        }
+      },
+      {
+        "id": "reranking.buffered",
+        "operation": "reranking",
+        "delivery": "buffered",
+        "model_modes": [
+          "*"
+        ],
+        "transport": {
+          "kind": "http_json",
+          "method": "POST",
+          "path": "/v1/rerank",
+          "port": "http",
+          "timeout": 1
+        },
+        "request": {
+          "base": "identity",
+          "hooks": []
+        },
+        "response": {
+          "hooks": []
+        }
+      },
+      {
+        "id": "slots.buffered",
+        "operation": "slots",
+        "delivery": "buffered",
+        "model_modes": [
+          "*"
+        ],
+        "transport": {
+          "kind": "http_json",
+          "method": "GET",
+          "path": "/slots",
+          "port": "http",
+          "timeout": 1
+        },
+        "request": {
+          "base": "identity",
+          "hooks": []
+        },
+        "response": {
+          "hooks": []
+        }
+      },
+      {
+        "id": "slot_action.buffered",
+        "operation": "slot_action",
+        "delivery": "buffered",
+        "model_modes": [
+          "*"
+        ],
+        "transport": {
+          "kind": "http_json",
+          "method": "POST",
+          "path": "/slots/{slot_id}?action={action}",
+          "port": "http",
+          "timeout": 1
+        },
+        "request": {
+          "base": "identity",
+          "hooks": []
+        },
+        "response": {
+          "hooks": []
+        }
+      },
+      {
+        "id": "tokenize.buffered",
+        "operation": "tokenize",
+        "delivery": "buffered",
+        "model_modes": [
+          "*"
+        ],
+        "transport": {
+          "kind": "http_json",
+          "method": "POST",
+          "path": "/tokenize",
+          "port": "http",
+          "timeout": 1
+        },
+        "request": {
+          "base": "identity",
+          "hooks": []
+        },
+        "response": {
+          "hooks": []
+        }
+      }
+    ],
+    "hooks": {}
+  }
+}

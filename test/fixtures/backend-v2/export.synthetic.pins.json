@@ -2,7 +2,7 @@
   "source": "sha256:4feb0147bfce18c84047608f75ad0f02097b25c67acd6968d1bcad3f3e2f08f5",
   "definition": "sha256:f8477134f16d8ccc1009ce732f6bbae4794f4c4dca16b7b2b4da4809ed64f1d6",
   "dependencies": "sha256:3acb87c8851d6504bf3e83c8656b427b4e8d6414497fd9f2e908432c38e3c85d",
-  "policy": "sha256:f54436637fe904f6825ebb7aa60e4fad05b166de5b62a4b830d57e7b6bd9fae6",
+  "policy": "sha256:8ce96d4d3799253b0e48c593eefe523d00fe0ac47e520cd5da919b284a666472",
   "slots": [
     {
       "slot": {
@@ -232,5 +232,47 @@
       "mutation_policy_digest": "sha256:c0a6dc16afbf095721eaa13dbd370c62a4d9ee028fadf19e36586d9073b5445c"
     }
   ],
-  "registry": "sha256:0a4f0f6c6b55ab2cc71b386fb795ab57d23cd6b0960dd25e083e9eef5629d558"
+  "registry": "sha256:7b5236a6e121057e58a503dcb56c4e1c8ea37db47587823273aaffe830929411",
+  "policy_revision": 2,
+  "owners": [
+    {
+      "allow_removal": true,
+      "collisions": [],
+      "handler_hooks": [],
+      "id": "chat.buffered",
+      "request_hooks": [
+        "llamacpp.max_tokens_alias",
+        "llamacpp.tool_schema_limits"
+      ],
+      "required_owners": [],
+      "response_hooks": [
+        "llamacpp.client_model"
+      ],
+      "sealed_fields": [
+        "id",
+        "operation",
+        "delivery",
+        "model_modes",
+        "transport",
+        "formats",
+        "format_metadata"
+      ],
+      "semantics": {
+        "delivery": "buffered",
+        "id": "chat.buffered",
+        "model_modes": [
+          "chat"
+        ],
+        "operation": "chat_completion",
+        "transport": {
+          "kind": "http_json",
+          "method": "POST",
+          "path": "/chat",
+          "port": "http",
+          "timeout": 1
+        }
+      }
+    }
+  ],
+  "owner_graph_digest": "sha256:8bc69c11150c8fd519452f9f6cf3aac2534a9ed5cec2eff509b9ee690938b195"
 }

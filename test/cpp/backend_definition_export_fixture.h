@@ -17,10 +17,10 @@ inline std::string read_bytes(const std::string& name) {
     return bytes.str();
 }
 
-inline BuiltinExportContract contract() {
-    const auto pins = Json::parse(read_bytes("export.synthetic.pins.json"));
-    BuiltinExportContract result{{"test-export", 1}, pins.at("source"), pins.at("definition"),
-        pins.at("dependencies"), 1, pins.at("policy"), {}};
+inline BuiltinExportContract contract(const std::string& fixture = "export.synthetic", const std::string& id = "test-export") {
+    const auto pins = Json::parse(read_bytes(fixture + ".pins.json"));
+    BuiltinExportContract result{{id, 1}, pins.at("source"), pins.at("definition"),
+        pins.at("dependencies"), pins.at("policy_revision"), pins.at("policy"), {}};
     for (const auto& record : pins.at("slots")) {
         const auto& slot = record.at("slot");
         ExportSlotPolicy policy{{static_cast<SlotOwnerKind>(slot.at("owner_kind").get<unsigned>()), slot.at("owner_id"), slot.at("stage"), slot.at("hook_id")},
@@ -35,16 +35,23 @@ inline BuiltinExportContract contract() {
         policy.ordered_hooks = record.at("ordered_hooks").get<std::vector<std::string>>();
         result.slots.push_back(std::move(policy));
     }
+    for (const auto& record : pins.at("owners")) result.owners.push_back({record.at("id"), record.at("semantics"),
+        record.at("request_hooks").get<std::vector<std::string>>(), record.at("response_hooks").get<std::vector<std::string>>(),
+        record.at("handler_hooks").get<std::vector<std::string>>(), record.at("allow_removal"),
+        record.at("required_owners").get<std::vector<std::string>>(), record.at("sealed_fields").get<std::vector<std::string>>(),
+        record.at("collisions").get<std::vector<std::string>>()});
+    result.owner_graph_digest = pins.at("owner_graph_digest");
     return result;
 }
 
-inline DefinitionSnapshotResult snapshot() {
-    const auto bytes = read_bytes("export.synthetic.json");
-    return make_v2_source_snapshot({{{DefinitionNamespace::Builtin, "test-export", 1}, bytes, "/private/sentinel.json"}});
+inline DefinitionSnapshotResult snapshot(const std::string& fixture = "export.synthetic", const std::string& id = "test-export") {
+    const auto bytes = read_bytes(fixture + ".json");
+    return make_v2_source_snapshot({{{DefinitionNamespace::Builtin, id, 1}, bytes, "/private/sentinel.json"}});
 }
 
 inline void repin(BuiltinExportContract& value) {
     for (auto& policy : value.slots) policy.mutation_policy_digest = v2::mutation_policy_digest(policy);
+    value.owner_graph_digest = v2::owner_graph_digest(value.owners);
     value.policy_digest = v2::export_policy_digest(value);
 }
 

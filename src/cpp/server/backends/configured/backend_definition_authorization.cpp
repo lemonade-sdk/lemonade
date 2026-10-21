@@ -109,9 +109,9 @@ void inspect_owner_value(const Json* value, std::vector<std::string>& path, cons
             if (record && record->object.count("id")) operation_id = record->object.at("id")->scalar.get<std::string>();
         }
     }
-    if (path.size() >= 3 && path[0] == "operations") for (const auto& policy : contract->slots)
-        if (policy.slot.owner_kind == SlotOwnerKind::Operation && policy.slot.owner_id == operation_id)
-            for (const auto* field : {"id", "operation", "delivery", "model_modes", "transport", "formats", "format_metadata"})
+    if (path.size() >= 3 && path[0] == "operations") for (const auto& policy : contract->owners)
+        if (policy.id == operation_id)
+            for (const auto& field : policy.sealed_fields)
                 require(path[2] != field, "authored_owner_change", source);
     if (path.size() >= 3 && path[0] == "artifacts") for (const auto& policy : contract->slots)
         if (policy.slot.owner_kind == SlotOwnerKind::Artifact && policy.slot.owner_id == path[1])
@@ -186,6 +186,8 @@ Json data_projection(const Json& declaration, const Json& base, const ExportSlot
         if (slot.owner_kind == SlotOwnerKind::Operation) result["operations"].erase(slot.owner_id);
         if (slot.owner_kind == SlotOwnerKind::Artifact && result.contains("artifacts")) result["artifacts"].erase(slot.owner_id);
     }
+    for (const auto& removed : contract.owners) if (removed.allow_removal &&
+        !owner(final_declaration, {SlotOwnerKind::Operation, removed.id, "", ""}, budget)) result["operations"].erase(removed.id);
     return result;
 }
 
@@ -193,37 +195,84 @@ bool same_source(const SourceLocation& left, const SourceLocation& right) {
     return key_string(left.document) == key_string(right.document) && left.pointer == right.pointer;
 }
 
-void verify_provenance(const NodePtr& before, const NodePtr& after, const SourceLocation& source, Budget& budget) {
+void verify_provenance(const NodePtr& before, const NodePtr& after, const SourceLocation& source, Budget& budget,
+    const std::string& code = "hook_provenance_changed") {
     budget.work(0, 1);
     require(before && after && before->kind == after->kind && same_source(location(before->origin), location(after->origin)),
-        "hook_provenance_changed", source);
-    require(before->object.size() == after->object.size() && before->array.size() == after->array.size(), "hook_provenance_changed", source);
+        code, source);
+    require(before->object.size() == after->object.size() && before->array.size() == after->array.size(), code, source);
     for (const auto& [name, child] : before->object) {
         const auto found = after->object.find(name);
-        require(found != after->object.end(), "hook_provenance_changed", source);
-        verify_provenance(child, found->second, source, budget);
+        require(found != after->object.end(), code, source);
+        verify_provenance(child, found->second, source, budget, code);
     }
-    for (std::size_t i = 0; i < before->array.size(); ++i) verify_provenance(before->array[i], after->array[i], source, budget);
+    for (std::size_t i = 0; i < before->array.size(); ++i) verify_provenance(before->array[i], after->array[i], source, budget, code);
 }
 
 void verify_owner_aliases(const Json& declaration, const Json& base, const ExportSlotPolicy& policy, Budget& budget, const SourceLocation& source) {
     const auto& slot = policy.slot;
     const auto* original = owner(base, slot, budget);
-    if (slot.owner_kind == SlotOwnerKind::Operation && declaration.contains("operations")) for (const auto& operation : declaration["operations"]) {
-        budget.work(0, 1);
-        if (operation.at("id") == slot.owner_id) continue;
-        const auto compared_bytes = checked_sum(measure(operation, budget).bytes, measure(*original, budget).bytes);
-        budget.work(compared_bytes, 1);
-        budget.keep(compared_bytes);
-        bool same_endpoint = operation.contains("transport") && original->contains("transport");
-        if (same_endpoint) for (const auto* field : {"kind", "method", "path", "port"})
-            same_endpoint = same_endpoint && operation["transport"].value(field, Json()) == original->at("transport").value(field, Json());
-        require(operation.at("operation") != original->at("operation") && !same_endpoint, "protected_owner_recreated", source);
-    }
     if (slot.owner_kind == SlotOwnerKind::Artifact && declaration.contains("artifacts")) for (const auto& [name, artifact] : declaration["artifacts"].items()) {
         budget.work(0, 1);
         if (name == slot.owner_id) continue;
         require(artifact.value("role", Json()) != original->value("role", Json()), "protected_owner_recreated", source);
+    }
+}
+
+NodePtr operation_owner_node(const NodePtr& root, const std::string& id, Budget& budget) {
+    const auto operations = effective_node(root, "/operations", budget.limits);
+    if (!operations) return {};
+    for (const auto& operation : operations->array) {
+        budget.work(0, 1);
+        const auto found = operation->object.find("id");
+        if (found != operation->object.end() && found->second->scalar == id) return operation;
+    }
+    return {};
+}
+
+void verify_operation_owners(const ResolvedDefinition& definition, const ResolvedDefinition& parent,
+    const BuiltinExportContract& contract, const std::set<std::string>& selected,
+    const NodePtr& parent_root, const NodePtr& current_root, Budget& budget) {
+    const SourceLocation source{definition.key, "/operations"};
+    std::set<std::string> surviving;
+    for (const auto& policy : contract.owners) {
+        const LogicalHookSlot slot{SlotOwnerKind::Operation, policy.id, "", ""};
+        const auto* current = owner(definition.declaration, slot, budget);
+        if (!current) continue;
+        require(owner(parent.declaration, slot, budget) != nullptr, "owner_reintroduced", source);
+        require(operation_owner_semantics(*current, budget) == policy.semantics, "owner_semantics_changed", source);
+        const auto before = operation_owner_node(parent_root, policy.id, budget);
+        const auto after = operation_owner_node(current_root, policy.id, budget);
+        require(before && after, "owner_provenance_changed", source);
+        for (const auto& field : policy.sealed_fields) {
+            const auto a = before->object.find(field), b = after->object.find(field);
+            require((a == before->object.end()) == (b == after->object.end()), "owner_provenance_changed", source);
+            if (a != before->object.end()) verify_provenance(a->second, b->second, source, budget, "owner_provenance_changed");
+        }
+        for (const auto& dependency : policy.required_owners)
+            require(owner(definition.declaration, {SlotOwnerKind::Operation, dependency, "", ""}, budget) != nullptr, "required_owner_removed", source);
+        for (const auto* stage : {"request", "response", "handler"}) {
+            const auto& chain = std::string_view(stage) == "request" ? policy.request_hooks :
+                std::string_view(stage) == "response" ? policy.response_hooks : policy.handler_hooks;
+            std::vector<std::string> expected;
+            for (const auto& hook : chain) {
+                const auto abi_stage = std::string_view(stage) != "handler" ? std::string(stage) :
+                    current->at("delivery") == "streaming" ? "sink_operation" :
+                    current->at("delivery") == "realtime" ? "realtime_operation" : "operation";
+                if (selected.count(slot_key({SlotOwnerKind::Operation, policy.id, abi_stage, hook}, budget))) {
+                    budget.keep(checked_sum(sizeof(std::string), hook.size()));
+                    expected.push_back(hook);
+                }
+            }
+            require(operation_hook_chain(*current, stage, budget) == expected, "owner_chain_changed", source);
+        }
+        budget.keep(checked_sum(sizeof(std::string), policy.id.size()));
+        require(surviving.insert(policy.id).second, "ambiguous_authority", source);
+    }
+    for (const auto& operation : definition.declaration.at("operations")) {
+        if (surviving.count(operation.at("id").get<std::string>())) continue;
+        for (const auto& protected_owner : contract.owners)
+            require(!operation_owners_collide(operation, protected_owner.semantics, budget), "protected_owner_recreated", source);
     }
 }
 
@@ -248,6 +297,9 @@ std::vector<LogicalHookSlot> verify_surviving_grants(const ResolvedDefinition& d
     Budget& budget) {
     const auto& key = definition.key;
     const auto& limits = budget.limits;
+    if (contract) for (const auto& policy : contract->owners)
+        require(policy.allow_removal || owner(definition.declaration, {SlotOwnerKind::Operation, policy.id, "", ""}, budget),
+            "mandatory_owner_removed", {key, "/operations"});
     const auto selections = hook_selections(definition.declaration, budget);
     std::set<std::string> selected;
     std::vector<LogicalHookSlot> surviving;
@@ -293,9 +345,10 @@ std::vector<LogicalHookSlot> verify_surviving_grants(const ResolvedDefinition& d
             for (const auto& required : policy.required_slots) require(selected.count(slot_key(required, budget)), "required_slot_removed", source);
             for (const auto& phase : policy.required_phases) require(definition.declaration.value("hooks", Json::object()).contains(phase), "required_phase_removed", source);
         }
-        if (policy.removal != SlotRemoval::Independent && policy.slot.owner_kind != SlotOwnerKind::Root)
+        if (policy.removal != SlotRemoval::Independent && policy.slot.owner_kind == SlotOwnerKind::Artifact)
             verify_owner_aliases(definition.declaration, base.declaration, policy, budget, source);
     }
+    if (contract) verify_operation_owners(definition, parent, *contract, selected, parent_root, current_root, budget);
     return surviving;
 
 }
@@ -319,7 +372,7 @@ struct ResolvedAuthority::Impl {
     std::shared_ptr<const ResolvedDefinition> base;
     const BuiltinExportContract* contract = nullptr;
     std::string registry_digest;
-    std::uint32_t authorization_revision = 1;
+    std::uint32_t authorization_revision = 2;
     std::vector<GrantIdentity> grants;
 };
 

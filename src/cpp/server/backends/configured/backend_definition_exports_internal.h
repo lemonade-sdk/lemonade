@@ -26,6 +26,12 @@ std::vector<HookSelection> hook_selections(const Json& declaration, Budget& budg
 bool accepts_mutable_value(const MutableDataRule& rule, const Json* value, Budget& budget);
 Json slot_json(const LogicalHookSlot& slot);
 Json slot_policy_json(const ExportSlotPolicy& policy);
+const std::vector<std::string>& operation_owner_fields();
+Json operation_owner_semantics(const Json& operation, Budget& budget);
+std::vector<std::string> operation_hook_chain(const Json& operation, std::string_view stage, Budget& budget);
+bool operation_owners_collide(const Json& left, const Json& right, Budget& budget);
+Json owner_graph_json(const std::vector<OperationOwnerPolicy>& owners);
+std::string owner_graph_digest(const std::vector<OperationOwnerPolicy>& owners);
 Json export_policy_json(const BuiltinExportContract& contract);
 Json hook_abi_json(const std::vector<HookAbiDescriptor>& descriptors);
 std::string identity(std::string_view domain, const Json& value);

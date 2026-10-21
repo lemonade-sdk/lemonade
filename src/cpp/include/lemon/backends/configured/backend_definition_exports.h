@@ -56,6 +56,18 @@ struct ExportSlotPolicy {
     std::vector<std::string> ordered_hooks;
 };
 
+struct OperationOwnerPolicy {
+    std::string id;
+    nlohmann::json semantics;
+    std::vector<std::string> request_hooks;
+    std::vector<std::string> response_hooks;
+    std::vector<std::string> handler_hooks;
+    bool allow_removal = false;
+    std::vector<std::string> required_owners;
+    std::vector<std::string> sealed_fields;
+    std::vector<std::string> collisions;
+};
+
 struct BuiltinExportContract {
     BuiltinExportKey key;
     std::string expected_source_digest;
@@ -64,6 +76,8 @@ struct BuiltinExportContract {
     std::uint32_t policy_revision;
     std::string policy_digest;
     std::vector<ExportSlotPolicy> slots;
+    std::vector<OperationOwnerPolicy> owners;
+    std::string owner_graph_digest;
 };
 
 class BuiltinCatalogLoader;

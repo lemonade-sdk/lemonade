@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <set>
 #include <tuple>
 
@@ -53,7 +54,10 @@ bool targets_overlap(const DefinitionTarget& left, const DefinitionTarget& right
     return std::equal(a.begin(), a.begin() + std::min(a.size(), b.size()), b.begin());
 }
 
-bool changes_owner_semantics(const MutableDataRule& rule, const std::vector<HookSelection>& selections, const DefinitionLimits& limits) {
+bool changes_owner_semantics(const MutableDataRule& rule, const std::vector<HookSelection>& selections,
+    const std::vector<OperationOwnerPolicy>& owners, const DefinitionLimits& limits) {
+    for (const auto& owner : owners) for (const auto& field : owner.sealed_fields)
+        if (targets_overlap(rule.target, {"/operations", RecordKey{RecordKey::Field::Id, owner.id}, "/" + field}, limits)) return true;
     for (const auto& selection : selections) {
         if (selection.slot.owner_kind == SlotOwnerKind::Artifact &&
             targets_overlap(rule.target, {selection.owner_pointer, {}, ""}, limits)) return true;
@@ -64,6 +68,37 @@ bool changes_owner_semantics(const MutableDataRule& rule, const std::vector<Hook
         if (selection.pointer == "/install/hook" && targets_overlap(rule.target, {"/install/strategy", {}, ""}, limits)) return true;
     }
     return false;
+}
+
+bool known_endpoint(const Json& operation, Budget& budget) {
+    if (!operation.contains("transport")) return false;
+    const auto& transport = operation.at("transport");
+    for (const auto* field : {"kind", "method", "path", "port"})
+        if (!transport.contains(field) || !transport.at(field).is_string()) return false;
+    const auto& kind = transport.at("kind").get_ref<const std::string&>();
+    if (kind != "http_json" && kind != "http_sse" && kind != "http_bytes" && kind != "multipart") return false;
+    const auto& method = transport.at("method").get_ref<const std::string&>();
+    if (method != "GET" && method != "POST" && method != "PUT" && method != "PATCH" &&
+        method != "DELETE" && method != "HEAD" && method != "OPTIONS") return false;
+    const auto& path = transport.at("path").get_ref<const std::string&>();
+    const auto& port = transport.at("port").get_ref<const std::string&>();
+    budget.work(checked_sum(path.size(), port.size()), 1);
+    if (path.empty() || path.front() != '/' || port.empty()) return false;
+    const auto token = [](char c) {
+        return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_';
+    };
+    if (!std::all_of(port.begin(), port.end(), token)) return false;
+    if (!std::all_of(path.begin(), path.end(), [&](char c) { return token(c) || c == '/' || c == '.' || c == '~'; })) return false;
+    if (path.find("//") != std::string::npos) return false;
+    std::size_t start = 1;
+    while (start < path.size()) {
+        const auto end = path.find('/', start);
+        const auto length = (end == std::string::npos ? path.size() : end) - start;
+        if ((length == 1 && path[start] == '.') || (length == 2 && path[start] == '.' && path[start + 1] == '.')) return false;
+        if (end == std::string::npos) break;
+        start = end + 1;
+    }
+    return true;
 }
 
 NodePtr policy_target(const NodePtr& root, const DefinitionTarget& target, const DefinitionLimits& limits) {
@@ -100,6 +135,66 @@ bool valid_mutable_rule(const MutableDataRule& rule, const DefinitionLimits& lim
     return true;
 }
 
+void audit_owner_graph(const BuiltinExportContract& contract, const Json& declaration, Budget& budget,
+    const std::function<void(const std::string&, const std::string&, const std::string&)>& error) {
+    const auto fail = [&](const std::string& code) { error(contract.key.id, code, "/operations"); };
+    if (owner_graph_digest(contract.owners) != contract.owner_graph_digest) fail("owner_graph_digest_mismatch");
+    const auto& operations = declaration.at("operations");
+    std::set<std::string> covered;
+    for (const auto& owner : contract.owners) {
+        budget.work(owner.id.size(), 1);
+        budget.keep(checked_sum(owner.id.size(), sizeof(OperationOwnerPolicy)));
+        if (!covered.insert(owner.id).second) fail("duplicate_operation_owner");
+        const auto original = std::find_if(operations.begin(), operations.end(), [&](const auto& operation) {
+            budget.work(0, 1);
+            return operation.at("id") == owner.id;
+        });
+        if (original == operations.end()) { fail("missing_operation_owner"); continue; }
+        if (owner.semantics != operation_owner_semantics(*original, budget)) fail("operation_owner_semantics_mismatch");
+        if (owner.sealed_fields != operation_owner_fields()) fail("invalid_owner_fields");
+        if (owner.request_hooks != operation_hook_chain(*original, "request", budget) ||
+            owner.response_hooks != operation_hook_chain(*original, "response", budget) ||
+            owner.handler_hooks != operation_hook_chain(*original, "handler", budget)) fail("owner_chain_mismatch");
+        std::vector<std::string> collisions;
+        for (const auto& sibling : operations) {
+            budget.work(0, 1);
+            if (sibling.at("id") != owner.id && operation_owners_collide(*original, sibling, budget)) {
+                const auto& id = sibling.at("id").get_ref<const std::string&>();
+                budget.keep(checked_sum(sizeof(std::string), id.size()));
+                collisions.push_back(id);
+            }
+        }
+        if (owner.collisions != collisions) fail("owner_collisions_mismatch");
+        std::set<std::string> dependencies;
+        for (const auto& dependency : owner.required_owners) {
+            budget.work(dependency.size(), 1);
+            budget.keep(checked_sum(dependency.size(), sizeof(std::string)));
+            if (dependency == owner.id || !dependencies.insert(dependency).second ||
+                std::none_of(contract.owners.begin(), contract.owners.end(), [&](const auto& item) { return item.id == dependency; }))
+                fail("invalid_owner_dependency");
+        }
+        for (const auto& slot : contract.slots) if (slot.slot.owner_kind == SlotOwnerKind::Operation && slot.slot.owner_id == owner.id &&
+            ((slot.removal == SlotRemoval::Forbidden && owner.allow_removal) || (slot.removal == SlotRemoval::WithOwner && !owner.allow_removal)))
+            fail("invalid_owner_removal");
+    }
+    for (const auto& operation : operations) if (!covered.count(operation.at("id").get<std::string>())) fail("uncovered_operation_owner");
+    std::set<std::string> active, complete;
+    const auto visit = [&](const auto& self, const OperationOwnerPolicy& owner) -> bool {
+        budget.work(0, 1);
+        if (complete.count(owner.id)) return true;
+        budget.keep(checked_product(checked_sum(sizeof(std::string), owner.id.size()), 2));
+        if (!active.insert(owner.id).second) return false;
+        for (const auto& dependency : owner.required_owners) {
+            const auto required = std::find_if(contract.owners.begin(), contract.owners.end(), [&](const auto& item) { return item.id == dependency; });
+            if (required != contract.owners.end() && !self(self, *required)) return false;
+        }
+        active.erase(owner.id);
+        complete.insert(owner.id);
+        return true;
+    };
+    for (const auto& owner : contract.owners) if (!visit(visit, owner)) { fail("owner_dependency_cycle"); break; }
+}
+
 }
 
 std::string identity(std::string_view domain, const Json& value) {
@@ -126,6 +221,58 @@ Json slot_policy_json(const ExportSlotPolicy& policy) {
         {"owner_semantics", policy.owner_semantics_digest}, {"ordered_hooks", policy.ordered_hooks}};
 }
 
+const std::vector<std::string>& operation_owner_fields() {
+    static const std::vector<std::string> fields = {"id", "operation", "delivery", "model_modes", "transport", "formats", "format_metadata"};
+    return fields;
+}
+
+Json operation_owner_semantics(const Json& operation, Budget& budget) {
+    Json result = Json::object();
+    for (const auto& field : operation_owner_fields()) if (operation.contains(field)) {
+        const auto metrics = measure(operation.at(field), budget);
+        budget.keep(checked_sum(field.size(), checked_sum(metrics.bytes, checked_product(metrics.nodes, sizeof(Json)))));
+        result[field] = operation.at(field);
+    }
+    return result;
+}
+
+std::vector<std::string> operation_hook_chain(const Json& operation, std::string_view stage, Budget& budget) {
+    std::vector<std::string> result;
+    const auto append = [&](const Json& hook) {
+        const auto& id = hook.at("id").get_ref<const std::string&>();
+        budget.work(id.size(), 1);
+        budget.keep(checked_sum(sizeof(std::string), id.size()));
+        result.push_back(id);
+    };
+    if (stage == "handler") {
+        if (operation.contains("handler")) append(operation.at("handler"));
+    } else if (operation.contains(stage) && operation.at(stage).contains("hooks"))
+        for (const auto& hook : operation.at(stage).at("hooks")) append(hook);
+    return result;
+}
+
+bool operation_owners_collide(const Json& left, const Json& right, Budget& budget) {
+    budget.work(0, 1);
+    if (left.at("operation") == right.at("operation")) return true;
+    if (!known_endpoint(left, budget) || !known_endpoint(right, budget)) return true;
+    const auto& a = left.at("transport");
+    const auto& b = right.at("transport");
+    return a.at("method") == b.at("method") && a.at("path") == b.at("path") && a.at("port") == b.at("port");
+}
+
+Json owner_graph_json(const std::vector<OperationOwnerPolicy>& owners) {
+    auto result = Json::array();
+    for (const auto& owner : owners) result.push_back({{"id", owner.id}, {"semantics", owner.semantics},
+        {"request_hooks", owner.request_hooks}, {"response_hooks", owner.response_hooks}, {"handler_hooks", owner.handler_hooks},
+        {"allow_removal", owner.allow_removal}, {"required_owners", owner.required_owners},
+        {"sealed_fields", owner.sealed_fields}, {"collisions", owner.collisions}});
+    return result;
+}
+
+std::string owner_graph_digest(const std::vector<OperationOwnerPolicy>& owners) {
+    return identity("lemonade.backend-operation-owners.v1\n", owner_graph_json(owners));
+}
+
 Json export_policy_json(const BuiltinExportContract& contract) {
     auto slots = Json::array();
     for (const auto& policy : contract.slots) {
@@ -133,7 +280,8 @@ Json export_policy_json(const BuiltinExportContract& contract) {
         value["mutation_policy_digest"] = policy.mutation_policy_digest;
         slots.push_back(std::move(value));
     }
-    return {{"builtin", contract.key.id}, {"contract", contract.key.contract}, {"policy_revision", contract.policy_revision}, {"slots", slots}};
+    return {{"builtin", contract.key.id}, {"contract", contract.key.contract}, {"policy_revision", contract.policy_revision},
+        {"slots", slots}, {"owners", owner_graph_json(contract.owners)}, {"owner_graph_digest", contract.owner_graph_digest}};
 }
 
 Json hook_abi_json(const std::vector<HookAbiDescriptor>& descriptors) {
@@ -289,6 +437,7 @@ CompositionDiagnostics audit_export_contracts(const std::vector<BuiltinExportCon
             const auto selections = hook_selections(definition.declaration, budget);
             const auto document = std::make_shared<const DefinitionKey>(definition.key);
             const auto root = authored(definition.declaration, std::make_shared<Origin>(Origin{document, {}, {}}), budget);
+            audit_owner_graph(contract, definition.declaration, budget, error);
             std::set<std::string> selected, policies;
             std::map<std::string, std::vector<std::string>> groups;
             for (const auto& selection : selections) {
@@ -326,7 +475,7 @@ CompositionDiagnostics audit_export_contracts(const std::vector<BuiltinExportCon
                     if (path == "/hooks" || path.rfind("/hooks/", 0) == 0 || path.find("/handler") != std::string::npos || path.find("/hook") != std::string::npos ||
                         (rule.target.path == "/operations" && (!rule.target.match || rule.target.at.empty())) ||
                         (rule.target.path == "/artifacts" && rule.target.at.empty())) error(id, "invalid_data_policy", selection->pointer);
-                    if (changes_owner_semantics(rule, selections, limits)) error(id, "mutable_owner_semantics", selection->pointer);
+                    if (changes_owner_semantics(rule, selections, contract.owners, limits)) error(id, "mutable_owner_semantics", selection->pointer);
                     const auto node = policy_target(root, rule.target, limits);
                     std::optional<Json> value;
                     if (node) value = materialize(node, budget);
