@@ -352,7 +352,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 Pulling an already-downloaded model downloads any newer commit from its registry. Loading a model never checks for updates, and [`POST /v1/models/check-updates`](#post-v1modelscheck-updates) only reports them.
 
-With `stream`, the error event or the job reports an unknown model, and the error event also reports an unavailable registry.
+With `stream`, the error event or the job reports an unknown model.
 
 In offline mode a new definition is still registered, but nothing is downloaded.
 
@@ -597,8 +597,7 @@ A `progress` event reports one file; a `complete` event follows the last one, an
 - `percent` - Share of the current file downloaded, from `0` to `100`.
 - `status` - Only on a complete event for an operation that had nothing to download.
 - `error` - Only on an error event.
-- `code` - `unknown_model` when the model is not in the registry, or `registry_unavailable` when the registry rate-limits or is temporarily unavailable.
-- `retry_after` - With `registry_unavailable`: seconds to wait before retrying.
+- `code` - `unknown_model` when the model is not in the registry.
 
 ### Errors
 
@@ -2432,8 +2431,7 @@ A `progress` event reports one file; a `complete` event follows the last one, an
 - `percent` - Share of the current file downloaded, from `0` to `100`.
 - `status` - Only on a complete event for an operation that had nothing to download.
 - `error` - Only on an error event.
-- `code` - `unknown_model` when the model is not in the registry, or `registry_unavailable` when the registry rate-limits or is temporarily unavailable.
-- `retry_after` - With `registry_unavailable`: seconds to wait before retrying.
+- `code` - `unknown_model` when the model is not in the registry.
 
 ### Errors
 
