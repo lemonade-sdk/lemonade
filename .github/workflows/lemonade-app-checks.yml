@@ -12,13 +12,6 @@ on:
       - 'test/app/**'
       - '.github/workflows/lemonade-app-checks.yml'
   merge_group:
-  workflow_dispatch:
-    inputs:
-      real_server_smoke:
-        description: 'Reuse the PR server .deb from C++ CI and run App smoke tests'
-        type: boolean
-        required: false
-        default: false
 
 permissions:
   contents: read
@@ -74,14 +67,13 @@ jobs:
           retention-days: 14
 
   app-real-server-smoke:
-    name: App vs C++ CI Lemonade Server (manual)
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.real_server_smoke }}
-    needs: app-tests
+    name: App vs C++ CI Lemonade Server
+    if: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}
     permissions:
       contents: read
       actions: read
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 60
     env:
       LEMONADE_CI_MODE: 'True'
     steps:
@@ -89,29 +81,45 @@ jobs:
         with:
           clean: true
           fetch-depth: 0
-      - name: Find matching C++ CI server package
+      - name: Wait for matching C++ CI server package
         id: server_artifact
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          SERVER_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha || github.sha }}
+          SERVER_SOURCE_BRANCH: ${{ github.head_ref }}
+          SERVER_SOURCE_EVENT: ${{ github.event_name }}
         run: |
           set -euo pipefail
-          runs=$(gh api --method GET \
-            "repos/${GITHUB_REPOSITORY}/actions/workflows/cpp_server_build_test_release.yml/runs" \
-            -f event=pull_request -f head_sha="$GITHUB_SHA" -f per_page=100)
-          mapfile -t run_ids < <(jq -r --arg branch "$GITHUB_REF_NAME" --arg sha "$GITHUB_SHA" \
-            '.workflow_runs[] | select(.head_sha == $sha and .head_branch == $branch) | .id' <<< "$runs")
-          for run_id in "${run_ids[@]}"; do
-            found=$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/artifacts" \
-              -f name=lemonade-deb \
-              --jq '[.artifacts[] | select(.name == "lemonade-deb" and .expired == false)] | length')
-            if [[ "$found" -gt 0 ]]; then
-              echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
-              echo "Reusing lemonade-deb from C++ CI run $run_id"
-              exit 0
+          # For PRs, github.sha is a merge commit, not the PR head_sha in workflow runs.
+          if [[ -z "$SERVER_SOURCE_SHA" ]]; then
+            echo "::error::Cannot determine the source SHA for the C++ CI package" >&2
+            exit 1
+          fi
+          for attempt in $(seq 1 90); do
+            runs=$(gh api --method GET \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/cpp_server_build_test_release.yml/runs" \
+              -f event="$SERVER_SOURCE_EVENT" -f head_sha="$SERVER_SOURCE_SHA" -f per_page=100)
+            run_id=$(jq -r --arg sha "$SERVER_SOURCE_SHA" \
+              --arg event "$SERVER_SOURCE_EVENT" --arg branch "$SERVER_SOURCE_BRANCH" \
+              '[.workflow_runs[] | select(.head_sha == $sha and ($event != "pull_request" or .head_branch == $branch))][0].id // empty' \
+              <<< "$runs")
+            if [[ -n "$run_id" ]]; then
+              found=$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/artifacts" \
+                -f name=lemonade-deb \
+                --jq '[.artifacts[] | select(.name == "lemonade-deb" and .expired == false)] | length')
+              if (( found > 0 )); then
+                echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+                echo "Reusing lemonade-deb from C++ CI run $run_id ($SERVER_SOURCE_SHA)"
+                exit 0
+              fi
+            fi
+            if (( attempt < 90 )); then
+              echo "Waiting for C++ CI server artifact ($attempt/90, SHA $SERVER_SOURCE_SHA)..."
+              sleep 20
             fi
           done
-          echo "::error::No unexpired lemonade-deb from C++ CI for $GITHUB_REF_NAME@$GITHUB_SHA. Wait for that commit's C++ CI package build, then retry." >&2
+          echo "::error::No unexpired lemonade-deb was produced by C++ CI for $SERVER_SOURCE_EVENT $SERVER_SOURCE_SHA within 30 minutes" >&2
           exit 1
 
       - name: Download C++ CI server package
