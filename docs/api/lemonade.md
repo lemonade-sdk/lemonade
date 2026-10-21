@@ -1719,9 +1719,10 @@ Example `gpus` entry (all measurement fields can be `null`):
 }
 ```
 
-On Linux, AMD and NVIDIA devices are enumerated separately. On Windows this
-change provides NVIDIA NVML telemetry; other vendors still require their own
-platform implementation. On macOS the new per-GPU list is empty.
+On Linux, AMD and NVIDIA devices are enumerated separately. On Windows, NVIDIA
+telemetry comes from NVML and AMD telemetry from DXGI, DXCore, and PDH; other
+vendors still require their own platform implementation. On macOS the new
+per-GPU list is empty.
 NVML alone does not establish whether memory is dedicated or shared, so
 NVIDIA devices report `memory_type` as `unknown`.
 

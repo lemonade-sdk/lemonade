@@ -316,13 +316,17 @@ class PersistentServerCLIClientTests(unittest.TestCase):
         )
         return result
 
-    def _write_fake_agent(self, directory, agent_name, capture_file):
+    def _write_fake_agent(self, directory, agent_name, capture_file, version=None):
         """Create a tiny fake agent binary that captures argv and selected env vars."""
         exe_path = os.path.join(directory, agent_name)
         script = f"""#!/usr/bin/env python3
 import json
 import os
 import sys
+
+if sys.argv[1:] == ["--version"]:
+    print({(version or "fake-agent-ok")!r})
+    sys.exit(0)
 
 payload = {{
     "argv": sys.argv[1:],
@@ -355,6 +359,8 @@ sys.exit(0)
         # Outranks HOME, so a machine that sets it would have its real junie
         # config rewritten instead of the stub directory.
         env.pop("JUNIE_HOME", None)
+        # Same for pi: it would point launch at the real pi agent directory.
+        env.pop("PI_CODING_AGENT_DIR", None)
         env["PATH"] = stub_dir + os.pathsep + env.get("PATH", "")
         env["HOME"] = stub_dir
         env["XDG_CONFIG_HOME"] = os.path.join(stub_dir, ".config")
@@ -2156,6 +2162,412 @@ sys.exit(0)
             self.assertTrue(
                 os.path.exists(capture_path),
                 "junie.bat was not executed",
+            )
+
+    def _launch_pi(
+        self, temp_dir, extra_args=None, model=ENDPOINT_TEST_MODEL, version=None
+    ):
+        """Launch a fake pi from temp_dir and return its captured argv/env payload and stderr."""
+        capture_path = os.path.join(temp_dir, "pi_capture.json")
+        self._write_fake_agent(temp_dir, "pi", capture_path, version)
+        result = run_cli_command(
+            ["launch", "pi", "--model", model] + (extra_args or []),
+            timeout=TIMEOUT_DEFAULT,
+            env=self._build_stubbed_agent_env(temp_dir),
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        with open(capture_path, "r", encoding="utf-8") as f:
+            payload = json.load(f)
+        payload["stdout"] = result.stdout
+        payload["stderr"] = result.stderr
+        return payload
+
+    def _pi_model_entry(self, temp_dir, model):
+        provider = self._read_pi_agent_json(temp_dir, "models.json")["providers"][
+            "Lemonade"
+        ]
+        return next(m for m in provider["models"] if m["id"] == model)
+
+    def _register_unloadable_model(self, model_name, **labels):
+        # Registration is persisted before the download, so a checkpoint that
+        # does not exist leaves a registered model that never downloads or loads.
+        requests.post(
+            f"http://localhost:{PORT}/api/v1/pull",
+            json={
+                "model_name": f"user.{model_name}",
+                "checkpoint": "lemonade-sdk/pi-launch-label-probe-missing-GGUF:probe.gguf",
+                "recipe": "llamacpp",
+                "stream": False,
+                **labels,
+            },
+            headers=_auth_headers(),
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+
+    def _save_ctx_size(self, ctx_size):
+        response = requests.post(
+            f"http://localhost:{PORT}/api/v1/models/{ENDPOINT_TEST_MODEL}/options",
+            json={"ctx_size": ctx_size},
+            headers=_auth_headers(),
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+
+    def _saved_ctx_size(self):
+        return (
+            requests.get(
+                f"http://localhost:{PORT}/api/v1/models/{ENDPOINT_TEST_MODEL}/options",
+                headers=_auth_headers(),
+                timeout=TIMEOUT_DEFAULT,
+            )
+            .json()["saved"]
+            .get("ctx_size")
+        )
+
+    @staticmethod
+    def _read_pi_agent_json(temp_dir, name, default=None):
+        path = os.path.join(temp_dir, ".pi", "agent", name)
+        if default is not None and not os.path.exists(path):
+            return default
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+
+    def test_128_launch_pi_configures_and_starts_pi(self):
+        """Launch pi should pass the model and flags to pi and write the model's window."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            payload = self._launch_pi(temp_dir, ["--codemode"])
+
+            argv = payload["argv"]
+            self.assertEqual(argv[argv.index("--provider") + 1], "Lemonade")
+            self.assertEqual(argv[argv.index("--model") + 1], ENDPOINT_TEST_MODEL)
+            self.assertEqual(argv[argv.index("--tools") + 1], "+codemode")
+
+            provider = self._read_pi_agent_json(temp_dir, "models.json")["providers"][
+                "Lemonade"
+            ]
+            model = next(
+                m for m in provider["models"] if m["id"] == ENDPOINT_TEST_MODEL
+            )
+            self.assertEqual(model["contextWindow"], ENDPOINT_TEST_MODEL_CTX_SIZE)
+
+            settings = self._read_pi_agent_json(temp_dir, "settings.json")
+            self.assertEqual(settings["defaultProvider"], "Lemonade")
+            self.assertEqual(settings["defaultModel"], ENDPOINT_TEST_MODEL)
+
+    def test_129_launch_pi_keeps_api_key_off_disk(self):
+        """With an API key, pi gets it from the environment, not from models.json."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+        if os.environ.get("LEMONADE_ADMIN_API_KEY"):
+            self.skipTest("LEMONADE_ADMIN_API_KEY overrides --api-key")
+
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            payload = self._launch_pi(temp_dir, ["--api-key", "real-secret-key"])
+            self.assertEqual(payload["env"]["LEMONADE_API_KEY"], "real-secret-key")
+            provider = self._read_pi_agent_json(temp_dir, "models.json")["providers"][
+                "Lemonade"
+            ]
+            self.assertEqual(provider["apiKey"], "${LEMONADE_API_KEY}")
+
+    def test_130_launch_pi_mcp_flags(self):
+        """--mcp adds the lemonade MCP server, later launches keep it, --no-mcp removes it."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
+        def mcp_servers(temp_dir):
+            return self._read_pi_agent_json(temp_dir, "mcp.json", {}).get(
+                "mcpServers", {}
+            )
+
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            self._launch_pi(temp_dir)
+            self.assertNotIn("lemonade", mcp_servers(temp_dir))
+            self._launch_pi(temp_dir, ["--mcp"])
+            self.assertIn("lemonade", mcp_servers(temp_dir))
+            self._launch_pi(temp_dir)
+            self.assertIn("lemonade", mcp_servers(temp_dir))
+            self._launch_pi(temp_dir, ["--no-mcp"])
+            self.assertNotIn("lemonade", mcp_servers(temp_dir))
+
+    def test_131_launch_pi_uses_launch_ctx_size(self):
+        """--ctx-size on launch is the window the model runs with, so pi gets it too."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            payload = self._launch_pi(temp_dir, ["--ctx-size", "4096"])
+            self.assertIn("Loading model in background", payload["stdout"])
+            model = self._pi_model_entry(temp_dir, ENDPOINT_TEST_MODEL)
+            self.assertEqual(model["contextWindow"], 4096)
+            self.assertEqual(model["maxTokens"], 4096)
+
+    def test_132_launch_pi_auto_ctx_size_waits_for_the_load(self):
+        """An auto ctx_size is only known after the load, so pi gets the loaded window."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
+        model_url = f"http://localhost:{PORT}/api/v1/models/{ENDPOINT_TEST_MODEL}"
+        saved = self._saved_ctx_size()
+        self._save_ctx_size(-1)
+        try:
+            run_cli_command(["unload", ENDPOINT_TEST_MODEL], timeout=TIMEOUT_DEFAULT)
+            with tempfile.TemporaryDirectory(
+                prefix="lemonade-launch-stub-"
+            ) as temp_dir:
+                payload = self._launch_pi(temp_dir)
+                # The model is already loaded, so no second load is sent.
+                self.assertNotIn("Loading model in background", payload["stdout"])
+                model = self._pi_model_entry(temp_dir, ENDPOINT_TEST_MODEL)
+                loaded_ctx = requests.get(
+                    model_url, headers=_auth_headers(), timeout=TIMEOUT_DEFAULT
+                ).json()["context_length"]
+                self.assertNotEqual(loaded_ctx, 40960)
+                self.assertEqual(model.get("contextWindow"), loaded_ctx)
+                self.assertEqual(model.get("maxTokens"), loaded_ctx)
+        finally:
+            self._save_ctx_size(saved)
+
+    def test_133_launch_pi_not_downloaded_model_keeps_labels(self):
+        """A model that is not downloaded yet still gets its labels' image and tool settings."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
+        model_name = "PiLaunchLabelProbe-GGUF"
+        try:
+            self._register_unloadable_model(model_name, reasoning=True, vision=True)
+            info = requests.get(
+                f"http://localhost:{PORT}/api/v1/models/{model_name}",
+                headers=_auth_headers(),
+                timeout=TIMEOUT_DEFAULT,
+            ).json()
+            self.assertFalse(info["downloaded"])
+            self.assertIn("vision", info["labels"])
+            self.assertIn("reasoning", info["labels"])
+            self.assertNotIn("tool-calling", info["labels"])
+
+            with tempfile.TemporaryDirectory(
+                prefix="lemonade-launch-stub-"
+            ) as temp_dir:
+                # A known window skips the load for it, which would fail.
+                payload = self._launch_pi(
+                    temp_dir, ["--ctx-size", "4096"], model=model_name
+                )
+                model = self._pi_model_entry(temp_dir, model_name)
+                self.assertEqual(model["input"], ["text", "image"])
+                self.assertNotIn("reasoning", model)
+                self.assertIn(
+                    f"{model_name} is not labeled tool-calling", payload["stderr"]
+                )
+        finally:
+            run_cli_command(["delete", f"user.{model_name}"], timeout=TIMEOUT_DEFAULT)
+
+    def test_134_launch_pi_warns_on_unknown_model(self):
+        """A model name the server does not know gets a warning instead of the tool-calling one."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
+        model_name = "PiLaunchUnknownProbe-GGUF"
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            payload = self._launch_pi(temp_dir, model=model_name)
+            self.assertIn(
+                f"{model_name} is not a model on the Lemonade server", payload["stderr"]
+            )
+            self.assertNotIn("is not labeled tool-calling", payload["stderr"])
+
+    def test_135_launch_pi_no_mcp_stops_when_removal_fails(self):
+        """--no-mcp does not start pi when the lemonade MCP server cannot be removed."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+        if os.geteuid() == 0:
+            self.skipTest("root ignores the read-only directory this test relies on")
+
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            agent_dir = os.path.join(temp_dir, ".pi", "agent")
+            os.makedirs(agent_dir)
+            with open(os.path.join(agent_dir, "mcp.json"), "w", encoding="utf-8") as f:
+                json.dump({"mcpServers": {"lemonade": {"url": "http://x:1/mcp"}}}, f)
+            capture_path = os.path.join(temp_dir, "pi_capture.json")
+            self._write_fake_agent(temp_dir, "pi", capture_path)
+            os.chmod(agent_dir, 0o555)
+            try:
+                result = run_cli_command(
+                    ["launch", "pi", "--model", ENDPOINT_TEST_MODEL, "--no-mcp"],
+                    timeout=TIMEOUT_DEFAULT,
+                    env=self._build_stubbed_agent_env(temp_dir),
+                )
+            finally:
+                os.chmod(agent_dir, 0o755)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("Failed to remove Lemonade MCP from pi", result.stderr)
+            self.assertFalse(os.path.exists(capture_path), "pi was started")
+
+    def test_136_launch_pi_with_key_stops_when_config_cannot_be_updated(self):
+        """With an API key, pi is not started against config still pointing at another server."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+        if os.geteuid() == 0:
+            self.skipTest("root ignores the read-only directory this test relies on")
+
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            agent_dir = os.path.join(temp_dir, ".pi", "agent")
+            os.makedirs(agent_dir)
+            with open(os.path.join(agent_dir, "mcp.json"), "w", encoding="utf-8") as f:
+                json.dump(
+                    {
+                        "mcpServers": {
+                            "lemonade": {
+                                "url": "http://server-a.invalid:1/mcp",
+                                "headers": {
+                                    "Authorization": "Bearer ${LEMONADE_API_KEY}"
+                                },
+                            }
+                        }
+                    },
+                    f,
+                )
+            capture_path = os.path.join(temp_dir, "pi_capture.json")
+            self._write_fake_agent(temp_dir, "pi", capture_path)
+            os.chmod(agent_dir, 0o555)
+            try:
+                result = run_cli_command(
+                    [
+                        "launch",
+                        "pi",
+                        "--model",
+                        ENDPOINT_TEST_MODEL,
+                        "--api-key",
+                        "key-for-this-server",
+                    ],
+                    timeout=TIMEOUT_DEFAULT,
+                    env=self._build_stubbed_agent_env(temp_dir),
+                )
+            finally:
+                os.chmod(agent_dir, 0o755)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse(os.path.exists(capture_path), "pi was started")
+
+    def test_137_launch_pi_with_key_stops_when_mcp_json_is_unreadable(self):
+        """With an API key, pi is not started when launch cannot read pi's mcp.json."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            agent_dir = os.path.join(temp_dir, ".pi", "agent")
+            os.makedirs(agent_dir)
+            # Pi reads this file (Node replaces the invalid byte), so a stale
+            # entry in it would get this server's key.
+            with open(os.path.join(agent_dir, "mcp.json"), "wb") as f:
+                f.write(
+                    b'{"mcpServers": {"lemonade": {"url": "http://server-a.invalid:1/mcp",'
+                    b' "description": "caf\xe9",'
+                    b' "headers": {"Authorization": "Bearer ${LEMONADE_API_KEY}"}}}}'
+                )
+            capture_path = os.path.join(temp_dir, "pi_capture.json")
+            self._write_fake_agent(temp_dir, "pi", capture_path)
+            result = run_cli_command(
+                [
+                    "launch",
+                    "pi",
+                    "--model",
+                    ENDPOINT_TEST_MODEL,
+                    "--api-key",
+                    "key-for-this-server",
+                ],
+                timeout=TIMEOUT_DEFAULT,
+                env=self._build_stubbed_agent_env(temp_dir),
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("mcp.json", result.stderr)
+            self.assertFalse(os.path.exists(capture_path), "pi was started")
+
+    def test_138_launch_pi_missing_binary_does_not_load_the_model(self):
+        """Launch checks that pi is installed before loading a model for its window."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
+        saved = self._saved_ctx_size()
+        self._save_ctx_size(-1)
+        try:
+            run_cli_command(["unload", ENDPOINT_TEST_MODEL], timeout=TIMEOUT_DEFAULT)
+            with tempfile.TemporaryDirectory(
+                prefix="lemonade-launch-stub-"
+            ) as temp_dir:
+                result = run_cli_command(
+                    ["launch", "pi", "--model", ENDPOINT_TEST_MODEL],
+                    timeout=TIMEOUT_DEFAULT,
+                    env=self._build_missing_agent_env(temp_dir),
+                )
+            self.assertNotEqual(result.returncode, 0)
+            health = requests.get(
+                f"http://localhost:{PORT}/api/v1/health",
+                headers=_auth_headers(),
+                timeout=TIMEOUT_DEFAULT,
+            ).json()
+            loaded = [m.get("model_name") for m in health.get("all_models_loaded", [])]
+            self.assertNotIn(ENDPOINT_TEST_MODEL, loaded)
+        finally:
+            self._save_ctx_size(saved)
+
+    def test_139_launch_pi_stops_when_the_model_fails_to_load(self):
+        """Launch waits on the load for pi's window, so a failed load stops it."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
+        model_name = "PiLaunchLoadFailProbe-GGUF"
+        try:
+            self._register_unloadable_model(model_name)
+            with tempfile.TemporaryDirectory(
+                prefix="lemonade-launch-stub-"
+            ) as temp_dir:
+                capture_path = os.path.join(temp_dir, "pi_capture.json")
+                self._write_fake_agent(temp_dir, "pi", capture_path)
+                result = run_cli_command(
+                    ["launch", "pi", "--model", model_name],
+                    timeout=TIMEOUT_DEFAULT,
+                    env=self._build_stubbed_agent_env(temp_dir),
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(f"Failed to load {model_name}", result.stderr)
+                self.assertFalse(os.path.exists(capture_path), "pi was started")
+        finally:
+            run_cli_command(["delete", f"user.{model_name}"], timeout=TIMEOUT_DEFAULT)
+
+    def test_140_launch_pi_codemode_needs_pi_1_1(self):
+        """--codemode on a pi older than 1.1 stops launch instead of breaking pi's tools."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            capture_path = os.path.join(temp_dir, "pi_capture.json")
+            self._write_fake_agent(temp_dir, "pi", capture_path, "1.0.4")
+            result = run_cli_command(
+                ["launch", "pi", "--model", ENDPOINT_TEST_MODEL, "--codemode"],
+                timeout=TIMEOUT_DEFAULT,
+                env=self._build_stubbed_agent_env(temp_dir),
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(
+                "--codemode needs pi 1.1 or newer (found 1.0.4)", result.stderr
+            )
+            self.assertFalse(os.path.exists(capture_path), "pi was started")
+
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            payload = self._launch_pi(temp_dir, ["--codemode"], version="1.1.0")
+            self.assertIn("+codemode", payload["argv"])
+            self.assertNotIn("needs pi", payload["stderr"])
+
+    def test_141_launch_pi_mcp_warns_on_pi_before_1_0(self):
+        """--mcp on a pi older than 1.0 warns, since that pi ignores mcp.json."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            payload = self._launch_pi(temp_dir, ["--mcp"], version="0.99.2")
+            self.assertIn(
+                "--mcp needs pi 1.0 or newer (found 0.99.2)", payload["stderr"]
             )
 
     # =============================================================================
