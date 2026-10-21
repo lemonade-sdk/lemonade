@@ -54,11 +54,13 @@ void ensure_create_directories(const std::filesystem::path& path) {
 }
 #else
 bool safe_exists(const std::filesystem::path& path) {
-    return std::filesystem::exists(path);
+    std::error_code ec;
+    return std::filesystem::exists(path, ec);
 }
 
 bool safe_is_directory(const std::filesystem::path& path) {
-    return std::filesystem::is_directory(path);
+    std::error_code ec;
+    return std::filesystem::is_directory(path, ec);
 }
 
 void ensure_create_directories(const std::filesystem::path& path) {
