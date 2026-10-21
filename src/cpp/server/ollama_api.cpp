@@ -149,8 +149,10 @@ static void map_ollama_options(const json& ollama_request, json& openai_req) {
     }
 }
 
-OllamaApi::OllamaApi(Router* router, ModelManager* model_manager)
-    : router_(router), model_manager_(model_manager) {
+OllamaApi::OllamaApi(Router* router, ModelManager* model_manager,
+                     AliasResolver resolve_alias)
+    : router_(router), model_manager_(model_manager),
+      resolve_alias_(std::move(resolve_alias)) {
 }
 
 void OllamaApi::register_routes(httplib::Server& server) {
@@ -232,6 +234,22 @@ std::string OllamaApi::normalize_model_name(const std::string& name) {
         return name.substr(0, name.size() - suffix.size());
     }
     return name;
+}
+
+// Once per request: a second lookup downstream could see a concurrent alias edit.
+void OllamaApi::resolve_request_model(json& request_json) {
+    if (!resolve_alias_ || !request_json.contains("model") ||
+        !request_json["model"].is_string()) {
+        return;
+    }
+    const std::string normalized = normalize_model_name(request_json["model"].get<std::string>());
+    if (normalized.empty()) {
+        return;
+    }
+    const std::string resolved = resolve_alias_(normalized);
+    if (resolved != request_json["model"].get<std::string>()) {
+        request_json["model"] = resolved;
+    }
 }
 
 // ============================================================================
@@ -710,6 +728,7 @@ void OllamaApi::handle_chat(const httplib::Request& req, httplib::Response& res)
     try {
         auto request_json = json::parse(req.body);
 
+        resolve_request_model(request_json);
         std::string model = normalize_model_name(request_json.value("model", ""));
         if (model.empty()) {
             res.status = 400;
@@ -846,6 +865,7 @@ void OllamaApi::handle_generate(const httplib::Request& req, httplib::Response& 
     try {
         auto request_json = json::parse(req.body);
 
+        resolve_request_model(request_json);
         std::string model = normalize_model_name(request_json.value("model", ""));
         if (model.empty()) {
             res.status = 400;
@@ -1307,6 +1327,7 @@ void OllamaApi::handle_embed(const httplib::Request& req, httplib::Response& res
     try {
         auto request_json = json::parse(req.body);
 
+        resolve_request_model(request_json);
         std::string model = normalize_model_name(request_json.value("model", ""));
         if (model.empty()) {
             res.status = 400;
@@ -1377,6 +1398,7 @@ void OllamaApi::handle_embeddings(const httplib::Request& req, httplib::Response
     try {
         auto request_json = json::parse(req.body);
 
+        resolve_request_model(request_json);
         std::string model = normalize_model_name(request_json.value("model", ""));
         if (model.empty()) {
             res.status = 400;
