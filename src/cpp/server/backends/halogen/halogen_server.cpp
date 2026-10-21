@@ -5,6 +5,7 @@
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backends/halogen/halogen.h"
 #include "lemon/model_manager.h"
+#include "lemon/system_info.h"
 #include "lemon/utils/container_manager.h"
 #include "lemon/utils/http_client.h"
 
@@ -12,6 +13,8 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <map>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -85,34 +88,41 @@ public:
     std::optional<utils::SetupFailure> check_container_host(
         const std::string& backend) const override {
         (void)backend;
-        for (const std::string& properties : utils::ContainerManager::kfd_node_properties()) {
-            if (utils::ContainerManager::parse_kfd_properties(properties)["gfx_target_version"] ==
-                110501) {
-                return halogen::check_kfd_node(properties);
-            }
-        }
-        return std::nullopt;
+        const std::string properties = kfd_gpu_properties("gfx1151");
+        if (properties.empty()) return std::nullopt;
+        return halogen::check_kfd_node(properties);
     }
 };
+
+std::map<std::string, unsigned long long> parse_kfd_properties(const std::string& properties) {
+    std::map<std::string, unsigned long long> values;
+    std::istringstream lines(properties);
+    std::string key;
+    unsigned long long value = 0;
+    while (lines >> key >> value) {
+        values[key] = value;
+    }
+    return values;
+}
 
 }  // namespace
 
 namespace halogen {
 
 std::optional<utils::SetupFailure> check_kfd_node(const std::string& properties) {
-    auto values = utils::ContainerManager::parse_kfd_properties(properties);
+    auto values = parse_kfd_properties(properties);
     if ((values["capability"] & 0x08000000ULL) == 0) {
         return utils::SetupFailure{
-            "capability & 0x08000000 is 0",
-            "Install Linux 6.18.4 or newer, built with CONFIG_HSA_AMD_SVM"};
+            "kernel_svm", "capability & 0x08000000 is 0",
+            {"Install Linux 6.18.4 or newer, built with CONFIG_HSA_AMD_SVM"}, ""};
     }
     const bool reported = values.count("cwsr_size") && values.count("ctl_stack_size") &&
                           values.count("simd_count");
     if (!reported || values["cwsr_size"] !=
                          values["ctl_stack_size"] + (values["simd_count"] / 2) * 479232ULL) {
         return utils::SetupFailure{
-            "cwsr_size is not ctl_stack_size + (simd_count / 2) * 479232",
-            "Install Linux 6.18.4 or newer"};
+            "kernel_cwsr", "cwsr_size is not ctl_stack_size + (simd_count / 2) * 479232",
+            {"Install Linux 6.18.4 or newer"}, ""};
     }
     return std::nullopt;
 }

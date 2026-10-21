@@ -304,6 +304,9 @@ bool needs_gfx1151_cwsr_fix();
 // HIP_VISIBLE_DEVICES for the first GPU of `arch`, or "" when none is present.
 std::string hip_visible_device(const std::string& arch);
 
+// The KFD properties file of the first GPU of `arch`, or "" when none is present.
+std::string kfd_gpu_properties(const std::string& arch);
+
 // FLM status (derived from system-info cache)
 struct FlmStatus {
     std::string state;     // "unsupported","installable","update_required","action_required","installed","update_available"
