@@ -1,8 +1,9 @@
 #pragma once
 
+#include <cstddef>
+#include <functional>
 #include <string>
 #include <vector>
-#include <functional>
 
 namespace lemon {
 namespace utils {
@@ -10,6 +11,14 @@ namespace utils {
 struct ProcessHandle {
     void* handle;
     int pid;
+};
+
+struct CapturedProcess {
+    std::string output;
+    int exit_code = -1;
+    bool byte_limit = false;
+    bool timed_out = false;
+    bool cancelled = false;
 };
 
 // Returns true to continue, false to kill the process
@@ -52,7 +61,8 @@ public:
     // read-only while lifecycle cleanup can reliably remove zombies.
     static int reap_process(ProcessHandle handle);
 
-    static std::string read_output(ProcessHandle handle, int max_bytes = 4096);
+    static CapturedProcess capture_output(const std::string& executable, const std::vector<std::string>& args,
+        std::size_t max_bytes, unsigned timeout_ms, const std::function<bool()>& cancelled = {});
 
     // Kill process forcefully and wait/close owned handles.
     static void kill_process(ProcessHandle handle);

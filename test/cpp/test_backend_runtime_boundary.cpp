@@ -1,8 +1,25 @@
 #include "backend_runtime_fixture.h"
+#include "lemon/config_file.h"
+#include "lemon/router.h"
+#include "lemon/runtime_config.h"
 
 #include <type_traits>
 
 using namespace runtime_fixture;
+
+namespace lemon {
+struct RoutingHelperTestHook {
+    static void add(Router& router, std::unique_ptr<WrappedServer> server) {
+        std::lock_guard<std::mutex> lock(router.load_mutex_);
+        router.loaded_servers_.push_back(std::move(server));
+    }
+    static bool retained(Router& router, WrappedServer* server, std::uint64_t identity) {
+        std::lock_guard<std::mutex> lock(router.load_mutex_);
+        return router.loaded_servers_.size() == 1 && router.loaded_servers_.front().get() == server &&
+            server->get_instance_id() == identity && router.find_lru_server_in_pool(ModelType::LLM, server->get_residency_class(), server->get_model_name()) == server;
+    }
+};
+}
 
 static_assert(!std::is_constructible_v<DefinitionRunner, Json>);
 static_assert(!std::is_constructible_v<DefinitionRunner, std::shared_ptr<const CompiledDefinition>>);
@@ -20,8 +37,8 @@ int main() {
     check(!entry->definition && !entry->ops && entry->v2_ops && entry->executable_definition == bound &&
         !entry->spec.definition && entry->spec.executable_definition == bound, "V2EntryNeverManufacturesV1Definition");
     check(throws([&] { entry->backend_ops()->resolve_checkpoint_path(model(), {}); }, "unavailable") &&
-        throws([&] { entry->backend_ops()->is_downloaded(model(), {}); }, "unavailable") &&
-        throws([&] { entry->backend_ops()->download_model(model(), false, {}, {}); }, "unavailable"),
+        !entry->backend_ops()->is_downloaded(model(), {}) &&
+        throws([&] { entry->backend_ops()->download_model(model(), false, {}, {}); }, "requires model manager"),
         "V2ManagementCannotFallBackToAmbientLegacyEffects");
     const auto& base = ex::Inspection::program(bound->compiled());
     for (int mutation = 0; mutation < 8; ++mutation) {
@@ -86,6 +103,41 @@ int main() {
     check(throws([&] { fixture.server->load("cancelled-load", info, options); }, "cancelled") && fixture.launch->events.size() == before,
         "V2LoadCancellationPerformsNoEffectsOrRetry");
     fixture.server->set_load_cancel_flag(nullptr);
+    auto configuration = ConfigFile::base_defaults();
+    configuration.update(Json{{"offline", true}, {"no_fetch_executables", true}, {"auto_evict", false},
+        {"auto_check_model_updates", false}, {"disable_model_filtering", true}, {"inhibit_suspend", false}, {"log_level", "error"}});
+    RuntimeConfig config(configuration);
+    struct GlobalConfig {
+        RuntimeConfig* previous = RuntimeConfig::global();
+        explicit GlobalConfig(RuntimeConfig& current) { RuntimeConfig::set_global(&current); }
+        ~GlobalConfig() { RuntimeConfig::set_global(previous); }
+    } global_config(config);
+    ModelManager models;
+    Router router(&config, &models, nullptr);
+    ServerFixture routed(upstream.port);
+    auto* resident = routed.server.get();
+    const auto identity = resident->get_instance_id();
+    RoutingHelperTestHook::add(router, std::move(routed.server));
+    std::atomic<bool> router_cancel{false};
+    unsigned entered;
+    { std::lock_guard<std::mutex> lock(upstream.mutex); entered = upstream.entered; }
+    auto routed_request = std::async(std::launch::async, [&] {
+        return router.chat_completion({{"model", "loaded-model"}, {"hold", true}}, &router_cancel);
+    });
+    bool admitted;
+    {
+        std::unique_lock<std::mutex> lock(upstream.mutex);
+        admitted = upstream.condition.wait_for(lock, std::chrono::seconds(3), [&] { return upstream.entered > entered; });
+    }
+    check(admitted && resident->is_busy(), "RouterAcquiresV2InferenceBeforeForwarding");
+    const auto peer = router.chat_completion({{"model", "loaded-model"}, {"marker", 42}});
+    router_cancel = true;
+    const bool cancelled_promptly = routed_request.wait_for(std::chrono::seconds(3)) == std::future_status::ready;
+    const auto cancelled_response = routed_request.get();
+    check(cancelled_promptly && cancelled_response.contains("error") && !resident->is_busy() && peer["marker"] == 42,
+        "V2CancellationDoesNotReenterRouterAndReleasesInference");
+    check(RoutingHelperTestHook::retained(router, resident, identity) && resident->get_state() == ModelState::READY,
+        "V2CancellationRetainsRouterInstanceAndLruEligibility");
     } catch (const std::exception& error) {
         std::printf("Runtime rejection: %s\n", error.what());
         check(false, "RuntimeBoundariesReachNamedChecks");

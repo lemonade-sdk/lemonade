@@ -1,3 +1,4 @@
+#include "lemon/backends/configured/backend_definition_binding.h"
 #include "lemon/backends/configured/backend_hook_registry.h"
 #include "lemon/backends/configured/configured_backend_ops.h"
 #include "lemon/backends/hf_cache_util.h"
@@ -130,6 +131,16 @@ InstallParams ConfiguredBackendOps::install_params(const InstallContext& context
 PlatformInfo install_platform(const BackendSpec& spec, const std::string& backend, const InstallPlatformSources& sources) {
     auto platform = native_platform();
     platform.os = sources.os();
+    if (spec.executable_definition) {
+        const auto& cases = spec.executable_definition->compiled().normalized_declaration()["install"]["cases"];
+        const auto matches = [](const json& record, const char* axis, const std::string& value) {
+            return !record.contains(axis) || std::find(record[axis].begin(), record[axis].end(), value) != record[axis].end();
+        };
+        if (std::any_of(cases.begin(), cases.end(), [&](const auto& record) {
+            return matches(record, "backend", backend) && matches(record, "os", platform.os) &&
+                matches(record, "machine_arch", platform.machine_arch) && record.contains("arch");
+        })) platform.rocm_arch = sources.rocm_arch();
+    }
     if (spec.definition) {
         const auto& cases = spec.definition->records["install"]["cases"];
         const auto matches = [](const json& record, const char* axis, const std::string& value) {

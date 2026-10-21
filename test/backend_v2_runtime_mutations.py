@@ -10,7 +10,7 @@ RUNNER = "src/cpp/server/backends/configured/backend_definition_runner.cpp"
 SERVICES = "src/cpp/server/backends/configured/backend_runtime_services.cpp"
 
 
-def mutations():
+def prior_mutations():
     return [
         (
             "chain-order",
@@ -255,6 +255,447 @@ def mutations():
     ]
 
 
+ARTIFACTS = "src/cpp/server/backends/configured/backend_artifact_services.cpp"
+CAPTURE = "src/cpp/server/utils/process_manager.cpp"
+
+
+def mutations():
+    return prior_mutations() + [
+        (
+            "bounded-header-metadata",
+            ARTIFACTS,
+            'result.context_length = scalar(".context_length");',
+            "result.context_length = 0;",
+            "runtime_services",
+            "BoundedHeaderPopulatesTypedMetadataAndCapabilityLabels",
+        ),
+        (
+            "external-staging-privilege",
+            RUNNER,
+            "executable_->compiled().authorized().definition().key.space == DefinitionNamespace::Builtin",
+            "true",
+            "runtime_services",
+            "ExternalLeafNeverGetsBuiltinExternalStagingAuthority",
+        ),
+        (
+            "external-managed-staging",
+            RUNNER,
+            "!external_program ||\n                    ",
+            "",
+            "runtime_services",
+            "ExternalLeafCanStageItsManagedRoot",
+        ),
+        (
+            "install-phase-dispatch",
+            RUNNER,
+            "services.install_backend(spec.public_recipe, backend);",
+            "(void)0;",
+            "runtime_services",
+            "InstallPhaseUsesLeafIdentityBeforeProgram",
+        ),
+        (
+            "auxiliary-owner",
+            RUNNER,
+            'const auto owner = role == "mmproj" || role == "draft" ? "main" : role;',
+            "const auto owner = role;",
+            "runtime_services",
+            "AuxiliaryResolutionUsesBoundArtifactOwnerAndActiveInventory",
+        ),
+        (
+            "active-snapshot-relative-input",
+            ARTIFACTS,
+            "if (entry.active) relative = relative.substr(relative.find('/', 10) + 1);",
+            "if (false) relative = relative.substr(relative.find('/', 10) + 1);",
+            "runtime_services",
+            "AuxiliaryResolutionUsesBoundArtifactOwnerAndActiveInventory",
+        ),
+        (
+            "install-when-laziness",
+            RUNNER,
+            "if (expression.kind == Kind::When)",
+            "if (false)",
+            "runtime_services",
+            "InstallFactsFollowWhenAndCoalesceBranches:rocm-stable",
+        ),
+        (
+            "install-coalesce-laziness",
+            RUNNER,
+            "if (expression.kind == Kind::Coalesce && child.evaluate(frame.data, program_.bindings)) break;",
+            "if (false) break;",
+            "runtime_services",
+            "InstallFactsFollowWhenAndCoalesceBranches:cuda",
+        ),
+        (
+            "install-all-laziness",
+            RUNNER,
+            "if (expression.kind == Kind::All && !value) break;",
+            "if (false) break;",
+            "runtime_services",
+            "InstallBooleanShortCircuitSkipsFacts:all",
+        ),
+        (
+            "install-any-laziness",
+            RUNNER,
+            "if (expression.kind == Kind::Any && value) break;",
+            "if (false) break;",
+            "runtime_services",
+            "InstallBooleanShortCircuitSkipsFacts:any",
+        ),
+        (
+            "install-fact-caching",
+            RUNNER,
+            " && !frame.data.values.contains(json::json_pointer(name))",
+            "",
+            "runtime_services",
+            "InstallFactIsReadOnceAcrossFilenameReferences",
+        ),
+        (
+            "install-platform-backend",
+            "src/cpp/server/backends/configured/configured_backend_ops.cpp",
+            'return matches(record, "backend", backend) && matches(record, "os", platform.os) &&\n                matches(record, "machine_arch", platform.machine_arch) && record.contains("arch");',
+            'return matches(record, "os", platform.os) &&\n                matches(record, "machine_arch", platform.machine_arch) && record.contains("arch");',
+            "runtime_services",
+            "InstallPlatformFiltersBackendAndOsBeforeArchitecture",
+        ),
+        (
+            "install-platform-os",
+            "src/cpp/server/backends/configured/configured_backend_ops.cpp",
+            'return matches(record, "backend", backend) && matches(record, "os", platform.os) &&\n                matches(record, "machine_arch", platform.machine_arch) && record.contains("arch");',
+            'return matches(record, "backend", backend) && \n                matches(record, "machine_arch", platform.machine_arch) && record.contains("arch");',
+            "runtime_services",
+            "InstallPlatformFiltersBackendAndOsBeforeArchitecture",
+        ),
+        (
+            "install-platform-machine",
+            "src/cpp/server/backends/configured/configured_backend_ops.cpp",
+            'return matches(record, "backend", backend) && matches(record, "os", platform.os) &&\n                matches(record, "machine_arch", platform.machine_arch) && record.contains("arch");',
+            'return matches(record, "backend", backend) && matches(record, "os", platform.os) &&\n                record.contains("arch");',
+            "runtime_services",
+            "InstallPlatformFiltersMachineBeforeArchitecture",
+        ),
+        (
+            "install-platform-eligible",
+            "src/cpp/server/backends/configured/configured_backend_ops.cpp",
+            'return matches(record, "backend", backend) && matches(record, "os", platform.os) &&\n                matches(record, "machine_arch", platform.machine_arch) && record.contains("arch");',
+            "return false;",
+            "runtime_services",
+            "InstallPlatformQueriesArchitectureForEligibleCase",
+        ),
+        (
+            "probe-effect-before-io",
+            SERVICES,
+            "    guard_.check(typed::Effect::SystemProbe);",
+            "",
+            "runtime_services",
+            "ArtifactOnlyHrxCannotObtainRuntimeOrSystemEffects",
+        ),
+        (
+            "parent-effect-before-io",
+            SERVICES,
+            "    guard_.check(typed::Effect::ParentEnvironmentRead);",
+            "",
+            "runtime_services",
+            "ArtifactOnlyHrxCannotObtainRuntimeOrSystemEffects",
+        ),
+        (
+            "runtime-effect-before-io",
+            SERVICES,
+            "    guard_.check(typed::Effect::RuntimeFactRead);",
+            "",
+            "runtime_services",
+            "ArtifactOnlyHrxCannotObtainRuntimeOrSystemEffects",
+        ),
+        (
+            "install-effect-before-io",
+            SERVICES,
+            "    guard_.check(typed::Effect::InstallFactRead);",
+            "",
+            "runtime_services",
+            "InstallAuthorityCheckedBeforeReadingFacts",
+        ),
+        (
+            "artifact-effect-before-open",
+            ARTIFACTS,
+            "    check();\n    if (approved_path.empty()",
+            "    if (approved_path.empty()",
+            "runtime_services",
+            "ArtifactAuthorityCheckedBeforeOpeningInventory",
+        ),
+        (
+            "retained-lifetime-is-not-authority",
+            SERVICES,
+            "return current && current->load(std::memory_order_acquire);",
+            "return bool(current);",
+            "runtime_services",
+            "ExpiredArtifactHandleRejects",
+        ),
+        (
+            "install-filter-backend",
+            "src/cpp/server/backends/configured/backend_definition_runner.cpp",
+            "return found != record->selectors.end() && std::find(found->second.begin(), found->second.end(), value) == found->second.end();",
+            'return axis != "backend" && found != record->selectors.end() && std::find(found->second.begin(), found->second.end(), value) == found->second.end();',
+            "runtime_services",
+            "CaseSelectorsRunBeforeFacts:backend",
+        ),
+        (
+            "install-filter-os",
+            "src/cpp/server/backends/configured/backend_definition_runner.cpp",
+            "return found != record->selectors.end() && std::find(found->second.begin(), found->second.end(), value) == found->second.end();",
+            'return axis != "os" && found != record->selectors.end() && std::find(found->second.begin(), found->second.end(), value) == found->second.end();',
+            "runtime_services",
+            "CaseSelectorsRunBeforeFacts:os",
+        ),
+        (
+            "install-filter-machine_arch",
+            "src/cpp/server/backends/configured/backend_definition_runner.cpp",
+            "return found != record->selectors.end() && std::find(found->second.begin(), found->second.end(), value) == found->second.end();",
+            'return axis != "machine_arch" && found != record->selectors.end() && std::find(found->second.begin(), found->second.end(), value) == found->second.end();',
+            "runtime_services",
+            "CaseSelectorsRunBeforeFacts:machine_arch",
+        ),
+        (
+            "install-filter-arch",
+            "src/cpp/server/backends/configured/backend_definition_runner.cpp",
+            "return found != record->selectors.end() && std::find(found->second.begin(), found->second.end(), value) == found->second.end();",
+            'return axis != "arch" && found != record->selectors.end() && std::find(found->second.begin(), found->second.end(), value) == found->second.end();',
+            "runtime_services",
+            "CaseSelectorsRunBeforeFacts:arch",
+        ),
+        (
+            "manager-context-owner",
+            "src/cpp/server/backends/configured/configured_v2_backend_ops.cpp",
+            "InstallPhase::Repository, spec.executable_definition};",
+            "InstallPhase::Repository, {}};",
+            "runtime_services",
+            "BackendManagerPhaseConsumerUsesRepositoryThenResolvedAsset",
+        ),
+        (
+            "manager-asset-phase",
+            "src/cpp/server/backends/configured/configured_v2_backend_ops.cpp",
+            "context.phase = InstallPhase::Asset;",
+            "context.phase = InstallPhase::Repository;",
+            "runtime_services",
+            "BackendManagerPhaseConsumerUsesRepositoryThenResolvedAsset",
+        ),
+        (
+            "manager-resolved-tag",
+            "src/cpp/server/backends/configured/configured_v2_backend_ops.cpp",
+            "context.resolved_version = resolve_version(repository.repo);",
+            "context.resolved_version = resolve_version(repository.repo); context.resolved_version = context.pinned_version;",
+            "runtime_services",
+            "BackendManagerPhaseConsumerUsesRepositoryThenResolvedAsset",
+        ),
+        (
+            "leaf-pin-owner",
+            "src/cpp/server/backends/configured/configured_v2_backend_ops.cpp",
+            "shipped_pins.value(spec.pin_recipe, json::object())",
+            'shipped_pins.value("other-recipe", json::object())',
+            "runtime_services",
+            "LeafPinOwnershipAndShippedDefaultPrecedence",
+        ),
+        (
+            "artifact-nul-path",
+            "src/cpp/server/backends/configured/backend_artifact_services.cpp",
+            " || approved_path.find('\\0') != std::string::npos",
+            "",
+            "runtime_services",
+            "ArtifactInputCannotHidePathAfterNul",
+        ),
+        (
+            "artifact-entry-limit",
+            "src/cpp/server/backends/configured/backend_artifact_services.cpp",
+            "++visited > 2048",
+            "++visited > 4096",
+            "runtime_services",
+            "ArtifactEntryLimitBoundsEmptyDirectoryTraversal",
+        ),
+        (
+            "artifact-depth-limit",
+            "src/cpp/server/backends/configured/backend_artifact_services.cpp",
+            "iterator.depth() > 16",
+            "iterator.depth() > 32",
+            "runtime_services",
+            "ArtifactDepthIsBounded",
+        ),
+        (
+            "staging-architecture",
+            "src/cpp/server/backends/configured/backend_runtime_services.cpp",
+            " || !architectures_.count(action.architecture)",
+            "",
+            "runtime_services",
+            "StagingRejectsArchitectureOutsideRuntimeQuery",
+        ),
+        (
+            "foreign-artifact",
+            ARTIFACTS,
+            "const auto token = index(file);",
+            "const auto token = [&] { try { return index(file); } catch (...) { return inventory_->entries.at(1).token; } }();",
+            "runtime_services",
+            "ForeignArtifactHandleRejects",
+        ),
+        (
+            "ineligible-system-probe",
+            SERVICES,
+            'if (input_.backend != "system" || (linux_only && (!input_.binary_found || input_.platform != typed::Platform::Linux)))',
+            "if (false)",
+            "runtime_services",
+            "SystemServiceCannotProbeArbitraryBackend",
+        ),
+        (
+            "repository-asset-fact",
+            SERVICES,
+            "input_.phase != typed::InstallPhase::Asset || ",
+            "",
+            "runtime_services",
+            "RepositoryServiceRejectsAssetFact",
+        ),
+        (
+            "unrequested-install-fact",
+            SERVICES,
+            "std::find(input_.requested.begin(), input_.requested.end(), fact) == input_.requested.end()",
+            "false",
+            "runtime_services",
+            "InstallServiceRejectsUnrequestedFact",
+        ),
+        (
+            "eager-repository-expression",
+            RUNNER,
+            "if (context.phase == InstallPhase::Asset) {\n                request",
+            "if (true) {\n                request",
+            "runtime_services",
+            "RepositoryDoesNotEvaluateSelectedAssetExpression",
+        ),
+        (
+            "json-staging-path",
+            RUNNER,
+            "destination = utils::path_to_utf8(executable.parent_path());",
+            'destination = options.value("staging_path", utils::path_to_utf8(executable.parent_path()));',
+            "runtime_services",
+            "JsonPathCannotSupplyStagingAuthority",
+        ),
+        (
+            "foreign-staging",
+            SERVICES,
+            "!owns(action.capability) || ",
+            "",
+            "runtime_services",
+            "ForeignStagingCapabilityRejects",
+        ),
+        (
+            "expired-staging",
+            SERVICES,
+            "if (!invocation_active(plan.lifetime_))",
+            "if (false)",
+            "runtime_services",
+            "ExpiredStagingEnvelopeRejects",
+        ),
+        (
+            "parent-enumeration",
+            SERVICES,
+            "if (key != typed::ParentKey::Path && key != typed::ParentKey::LlamaDevice && key != typed::ParentKey::MetalNoResidency && key != typed::ParentKey::Home)",
+            "if (false)",
+            "runtime_services",
+            "EnvironmentRejectsNonEnumeratedParentKey",
+        ),
+        (
+            "runtime-enumeration",
+            SERVICES,
+            "if (query != typed::RuntimeQuery::RocmArchitecture && query != typed::RuntimeQuery::TheRockDirectory &&\n        query != typed::RuntimeQuery::CudaVisibleDevices && query != typed::RuntimeQuery::HomeDirectory)",
+            "if (false)",
+            "runtime_services",
+            "EnvironmentRejectsNonEnumeratedRuntimeQuery",
+        ),
+        (
+            "probe-read-cap",
+            SERVICES,
+            "sources_.version(65536, 5000,",
+            "sources_.version(std::numeric_limits<std::size_t>::max(), 5000,",
+            "runtime_services",
+            "ProbeReadAndWaitAreBounded",
+        ),
+        (
+            "probe-wait-cap",
+            SERVICES,
+            "sources_.version(65536, 5000,",
+            "sources_.version(65536, std::numeric_limits<unsigned>::max(),",
+            "runtime_services",
+            "ProbeReadAndWaitAreBounded",
+        ),
+        (
+            "expired-artifact",
+            ARTIFACTS,
+            "if (!invocation_active(lifetime_))",
+            "if (false)",
+            "runtime_services",
+            "ExpiredArtifactHandleRejects",
+        ),
+        (
+            "artifact-nonce",
+            ARTIFACTS,
+            'if (found == inventory_->entries.end()) throw std::logic_error("Foreign or expired artifact handle");',
+            "if (found == inventory_->entries.end()) return 0;",
+            "runtime_services",
+            "ReusedServiceCannotAcceptExpiredArtifactHandle",
+        ),
+        (
+            "artifact-prefix-limit",
+            ARTIFACTS,
+            "if (bytes > 262144)",
+            "if (false)",
+            "runtime_services",
+            "ArtifactPrefixIsBounded",
+        ),
+        (
+            "artifact-result-inventory",
+            ARTIFACTS,
+            'throw std::logic_error("Returned artifact path outside approved handle inventory");',
+            "return path;",
+            "runtime_services",
+            "ReturnedPathMustBelongToInventory",
+        ),
+        (
+            "hf-relationship",
+            ARTIFACTS,
+            'if (fs::is_symlink(status) && (relative.rfind("snapshots/", 0) != 0 || target.parent_path() != root / "blobs"))',
+            "if (false)",
+            "runtime_services",
+            "ArtifactLinkRequiresApprovedSnapshotBlobRelationship",
+        ),
+        (
+            "capture-byte-limit",
+            CAPTURE,
+            "result.byte_limit = bytes > max_bytes - result.output.size();",
+            "result.byte_limit = false;",
+            "runtime_services",
+            "ByteCaptureBoundsNewlineFreeCombinedOutput",
+        ),
+        (
+            "capture-deadline",
+            CAPTURE,
+            "result.timed_out = std::chrono::steady_clock::now() >= deadline;",
+            "result.timed_out = false;",
+            "runtime_services",
+            "ByteCaptureWaitIsBounded",
+        ),
+        (
+            "probe-arbitrary-executable",
+            SERVICES,
+            'const char* binary = "llama-server";',
+            'const char* binary = "other-engine";',
+            "runtime_services",
+            "FixedProbeNeverUsesShellOrArbitraryExecutable",
+        ),
+        (
+            "probe-shell-string",
+            SERVICES,
+            'utils::ProcessManager::capture_output(executable, {"--version"}, bytes, wait, cancel)',
+            'utils::ProcessManager::capture_output("/bin/sh", {"-c", executable + " --version"}, bytes, wait, cancel)',
+            "runtime_services",
+            "FixedProbeNeverUsesShellOrArbitraryExecutable",
+        ),
+    ]
+
+
 def run(command, cwd, log, env, timeout=120):
     with log.open("w") as output:
         try:
@@ -341,13 +782,13 @@ def main():
                     [str(directory / target)], root, directory / "run.log", env, 60
                 )
                 record["caught"] = (
-                    record["run"] not in (0, 124)
+                    record["run"] == 1
                     and "FAIL " + assertion in (directory / "run.log").read_text()
                 )
         results.append(record)
         (out / "mutations.json").write_text(
             json.dumps(
-                {"coverage": "partial-4d1-runner", "mutations": results}, indent=2
+                {"coverage": "4d1-runner-and-services", "mutations": results}, indent=2
             )
             + "\n"
         )

@@ -2,6 +2,7 @@
 #include "backend_definition_resources.h"
 #include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/configured/backend_catalog.h"
+#include "lemon/backends/configured/backend_spec_utils.h"
 #include "lemon/recipe_options.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
@@ -317,6 +318,9 @@ const BackendCatalog& frozen_backend_catalog() {
 std::string external_default_version(const std::string& pin_recipe, const std::string& backend, const json& shipped_pins) {
     for (const auto& registration : all_registrations()) {
         const auto* spec = registration.spec;
+        if (spec && spec->executable_definition && spec->pin_recipe == pin_recipe) {
+            return configured_external_default_version(*spec, backend, shipped_pins);
+        }
         if (!spec || (spec->pin_recipe != pin_recipe && registration.descriptor->recipe != pin_recipe) || !spec->definition || spec->definition->origin != DefinitionOrigin::External) continue;
         const auto pinned = shipped_pins.value(spec->pin_recipe, json::object());
         if (pinned.contains(backend) && pinned[backend].is_string()) return pinned[backend].get<std::string>();

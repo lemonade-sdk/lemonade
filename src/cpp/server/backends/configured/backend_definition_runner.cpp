@@ -1,6 +1,7 @@
 #include "backend_definition_runner_internal.h"
 #include "lemon/backends/backend_option_contract.h"
 #include "lemon/utils/custom_args.h"
+#include "lemon/utils/path_utils.h"
 #include "lemon/utils/recipe_arg_resolver.h"
 
 #include <algorithm>
@@ -29,17 +30,9 @@ void remove_pointer(json& body, const std::string& path) {
 
 DefinitionRunner::DefinitionRunner(std::shared_ptr<const ExecutableDefinition> executable)
     : executable_(std::move(executable)), program_(retained_program(executable_)) {
-    for (const auto& hook : program_.hooks) {
-        if (hook.contract == typed::Contract::InstallContext || hook.contract == typed::Contract::Environment ||
-            hook.contract == typed::Contract::System || hook.contract == typed::Contract::Artifacts)
-            throw std::invalid_argument("Configured v2 capability consumer is unavailable");
-    }
-    if ((program_.install.strategy != "none" && program_.install.strategy != "external_only") ||
-        std::find(program_.launch.prepare_order.begin(), program_.launch.prepare_order.end(), "install") != program_.launch.prepare_order.end() ||
-        program_.launch.environment_preset != "inherit")
+    if (program_.launch.environment_preset != "inherit" && program_.launch.environment_preset != "hook")
         throw std::invalid_argument("Configured v2 launch service is unavailable");
-    for (const auto& artifact : program_.artifacts) if (artifact.records.at("strategy") != "resolved_path" ||
-        artifact.records.value("absolute_checkpoint_fallback", false))
+    for (const auto& artifact : program_.artifacts) if (artifact.records.value("absolute_checkpoint_fallback", false))
         throw std::invalid_argument("Configured v2 artifact consumer is unavailable");
     operation_bindings();
 }
@@ -171,8 +164,172 @@ void DefinitionRunner::resolve_runtime_options(const ModelInfo& model, RecipeOpt
     }
 }
 
+InstallParams DefinitionRunner::install_params(const InstallContext& context, runtime::InstallFactSources sources) const {
+    if (context.executable_definition.get() != executable_.get() || context.spec.executable_definition.get() != executable_.get() ||
+        context.definition || context.spec.definition || context.public_recipe != declaration()["recipe"] ||
+        context.pin_recipe != context.public_recipe || context.spec.public_recipe != context.public_recipe || context.spec.pin_recipe != context.pin_recipe)
+        throw std::logic_error("Install definition/spec ownership mismatch");
+    if (program_.install.strategy != "github_release") throw std::logic_error("Backend has no managed release installation");
+    runtime::Frame frame(*executable_);
+    frame.facts = {typed::Fact::BackendOptions, typed::Fact::SelectedBackend, typed::Fact::Platform, typed::Fact::VersionInputs};
+    frame.data.values = {{"platform", {{"os", context.platform.os}, {"machine_arch", context.platform.machine_arch}, {"arch", context.platform.rocm_arch}}},
+        {"install", {{"backend", context.backend}, {"requested_version", context.requested_version}, {"pinned_version", context.pinned_version}}}};
+    if (context.phase == InstallPhase::Asset) {
+        frame.data.values["install"]["version"] = context.resolved_version;
+        frame.data.values["install"]["resolved_version"] = context.resolved_version;
+    }
+    std::vector<const execution::InstallCase*> eligible;
+    for (const auto& record : program_.install.cases) eligible.push_back(&record);
+    for (const auto& [axis, value] : std::vector<std::pair<std::string, std::string>>{
+        {"backend", context.backend}, {"os", context.platform.os}, {"machine_arch", context.platform.machine_arch}, {"arch", context.platform.rocm_arch}}) {
+        eligible.erase(std::remove_if(eligible.begin(), eligible.end(), [&](const auto* record) {
+            const auto found = record->selectors.find(axis);
+            return found != record->selectors.end() && std::find(found->second.begin(), found->second.end(), value) == found->second.end();
+        }), eligible.end());
+        if (eligible.empty()) throw std::invalid_argument("No matching install case: " + axis);
+    }
+    const auto& selected = *eligible.front();
+    for (const auto index : slots(SlotOwnerKind::Root, "backend", "backend"))
+        invoke<typed::BackendSelectionOps>(frame, index, SlotOwnerKind::Root, "backend", "backend", {}, [&](const auto& target, auto& guard) {
+            runtime::SelectionServices services(guard, {context.backend});
+            return target.select_backend({context.backend, "stable", {context.backend}}, services);
+        });
+    typed::InstallFactsInput input{context.phase == InstallPhase::Repository ? typed::InstallPhase::Repository : typed::InstallPhase::Asset,
+        runtime::typed_platform(context.platform.os), context.backend, context.requested_version, context.pinned_version, context.resolved_version, {}};
+    for (const auto index : slots(SlotOwnerKind::Root, "install_context", "install_context")) {
+        invoke<typed::InstallContextHook>(frame, index, SlotOwnerKind::Root, "install_context", "install_context", {}, [&](auto target, auto& guard) {
+            typed::InstallFacts combined;
+            bool invoked = false;
+            const auto read = [&] {
+                runtime::InstallServices services(guard, input, sources);
+                const auto facts = target(input, services);
+                invoked = true;
+                auto& values = frame.data.values["install"];
+                if (facts.therock_version) { combined.therock_version = facts.therock_version; values["therock_version"] = *facts.therock_version; }
+                if (facts.rocm_asset_family) { combined.rocm_asset_family = facts.rocm_asset_family; values["rocm_asset_family"] = *facts.rocm_asset_family; }
+                if (facts.cuda_architecture) { combined.cuda_architecture = facts.cuda_architecture; values["cuda_architecture"] = *facts.cuda_architecture; }
+            };
+            const auto request = [&](const auto& self, const execution::Expression& expression) -> void {
+                using Kind = execution::Expression::Kind;
+                for (const auto& [name, fact] : std::vector<std::pair<std::string, typed::InstallFact>>{
+                    {"/install/therock_version", typed::InstallFact::TheRockVersion}, {"/install/rocm_asset_family", typed::InstallFact::RocmAssetFamily},
+                    {"/install/cuda_architecture", typed::InstallFact::CudaArchitecture}}) {
+                    if (expression.reference == name && !frame.data.values.contains(json::json_pointer(name))) {
+                        input.requested = {fact};
+                        read();
+                    }
+                }
+                if (expression.kind == Kind::When) {
+                    self(self, expression.children.at(0));
+                    if (expression.children.at(0).evaluate(frame.data, program_.bindings).value().template get<bool>()) self(self, expression.children.at(1));
+                    return;
+                }
+                for (const auto& child : expression.children) {
+                    self(self, child);
+                    if (expression.kind == Kind::Coalesce && child.evaluate(frame.data, program_.bindings)) break;
+                    if (expression.kind == Kind::All || expression.kind == Kind::Any) {
+                        const bool value = child.evaluate(frame.data, program_.bindings).value().template get<bool>();
+                        if (expression.kind == Kind::All && !value) break;
+                        if (expression.kind == Kind::Any && value) break;
+                    }
+                }
+            };
+            if (context.phase == InstallPhase::Asset) {
+                request(request, program_.expressions.at(selected.filename));
+                if (selected.version_override) request(request, program_.expressions.at(*selected.version_override));
+            }
+            if (!invoked) { input.requested.clear(); read(); }
+            return combined;
+        });
+    }
+    if (context.phase == InstallPhase::Repository) return {selected.repo, "", "", ""};
+    const auto filename = evaluate(selected.filename, frame);
+    const auto version = selected.version_override ? evaluate(*selected.version_override, frame) : std::optional<json>("");
+    if (!filename || !version) throw std::invalid_argument("Missing selected install fact");
+    return {selected.repo, filename->get<std::string>(), version->get<std::string>(), selected.sha256.value_or("")};
+}
+
+runtime::Frame DefinitionRunner::management_frame(const std::string& backend) const {
+    runtime::Frame frame(*executable_);
+    frame.facts = {typed::Fact::BackendOptions, typed::Fact::Platform, typed::Fact::VersionInputs, typed::Fact::SelectedBackend};
+    for (const auto index : slots(SlotOwnerKind::Root, "backend", "backend"))
+        invoke<typed::BackendSelectionOps>(frame, index, SlotOwnerKind::Root, "backend", "backend", {}, [&](const auto& target, auto& guard) {
+            runtime::SelectionServices services(guard, {backend});
+            return target.select_backend({backend, "stable", {backend}}, services);
+        });
+    return frame;
+}
+std::string DefinitionRunner::resolve_version(const std::string& backend, const std::string& file_version, runtime::ProbeSources sources) const {
+    auto frame = management_frame(backend);
+    auto version = file_version;
+    for (const auto index : slots(SlotOwnerKind::Root, "system", "system"))
+        version = invoke<typed::SystemOps>(frame, index, SlotOwnerKind::Root, "system", "system", {}, [&](const auto& target, auto& guard) {
+            runtime::SystemServices services(guard, {runtime::typed_platform(native_platform().os), backend, true}, sources);
+            return target.resolve_version({backend, file_version}, services);
+        });
+    return version;
+}
+BackendOps::InstallCheck DefinitionRunner::check_install(const std::string& backend, bool found, runtime::ProbeSources sources) const {
+    auto frame = management_frame(backend);
+    typed::SystemInstallCheck result{found, ""};
+    const typed::SystemInstallInput input{runtime::typed_platform(native_platform().os), backend, found};
+    for (const auto index : slots(SlotOwnerKind::Root, "system", "system"))
+        result = invoke<typed::SystemOps>(frame, index, SlotOwnerKind::Root, "system", "system", {}, [&](const auto& target, auto& guard) {
+            runtime::SystemServices services(guard, input, sources);
+            return target.check_install(input, services);
+        });
+    return {result.installed, result.error};
+}
+
+void DefinitionRunner::populate_metadata(ModelInfo& model) const {
+    if (program_.artifacts.empty()) return;
+    const auto path = model.resolved_path("main");
+    if (path.empty()) return;
+    const auto result = artifact("main", [&](const auto& target, auto& guard) {
+        runtime::ArtifactServices reads(guard, path, false);
+        return target.metadata({reads.root(), utils::path_to_utf8(utils::path_from_utf8(path).filename()), model.type, model.labels}, reads);
+    });
+    model.labels = result.labels;
+    if (result.header) {
+        const auto& header = *result.header;
+        model.max_context_window = header.context_length;
+        model.gguf = {header.architecture, header.context_length, header.block_count, header.embedding_length,
+            header.head_count_kv, header.key_length, header.key_length_swa, header.swa_layer_count, header.full_attention_interval,
+            header.capabilities, header.head_count_kv_per_layer, header.sliding_window_pattern, header.head_count_kv_scalar};
+    }
+}
+std::string DefinitionRunner::validate_registration(const std::string& checkpoint) const {
+    if (program_.artifacts.empty()) return "";
+    return artifact("main", [&](const auto& target, auto&) { return target.validate_registration(checkpoint); });
+}
+std::string DefinitionRunner::validate_file(const std::string& path) const {
+    if (program_.artifacts.empty()) return "";
+    return artifact("main", [&](const auto& target, auto& guard) {
+        const bool directory = std::filesystem::is_directory(utils::path_from_utf8(path));
+        runtime::ArtifactServices reads(guard, path, directory);
+        return target.validate_file({reads.root(), utils::path_to_utf8(utils::path_from_utf8(path).filename()), directory}, reads);
+    });
+}
+std::string DefinitionRunner::resolve_artifact(const CheckpointResolveContext& context) const {
+    if (program_.artifacts.empty()) throw std::logic_error("Configured v2 artifact consumer is unavailable");
+    if (context.model_cache_path.empty() || !std::filesystem::is_directory(utils::path_from_utf8(context.model_cache_path))) return "";
+    const auto role = context.type.empty() ? "main" : context.type;
+    const auto owner = role == "mmproj" || role == "draft" ? "main" : role;
+    return artifact(owner, [&](const auto& target, auto& guard) {
+        runtime::ArtifactServices reads(guard, context.model_cache_path, true);
+        return reads.approved_result(target.resolve_path({reads.root(), role, context.variant}, reads));
+    });
+}
+std::string DefinitionRunner::find_imported(const std::string& path) const {
+    if (program_.artifacts.empty()) return "";
+    return artifact("main", [&](const auto& target, auto& guard) {
+        runtime::ArtifactServices reads(guard, path, true);
+        return reads.approved_result(target.find_imported({reads.root()}, reads));
+    });
+}
+
 PreparedExecution DefinitionRunner::prepare_load(const LoadContext& context, const BackendSpec& spec,
-    LaunchServices& services, utils::RequestCancelToken cancel) const {
+    LaunchServices& services, utils::RequestCancelToken cancel, runtime::EnvironmentSources environment) const {
     if (spec.executable_definition.get() != executable_.get() || spec.definition ||
         spec.public_recipe != declaration()["recipe"] || spec.pin_recipe != spec.public_recipe)
         throw std::logic_error("Install definition/spec ownership mismatch");
@@ -207,6 +364,7 @@ PreparedExecution DefinitionRunner::prepare_load(const LoadContext& context, con
     LaunchPlan plan;
     std::string backend;
     bool use_gpu = false;
+    bool external_program = false;
     for (const auto& phase : launch.prepare_order) {
         runtime::check_cancelled(cancel);
         if (phase == "backend") {
@@ -266,17 +424,18 @@ PreparedExecution DefinitionRunner::prepare_load(const LoadContext& context, con
             }
         } else if (phase == "install") {
             if (program_.install.strategy == "external_only") throw std::logic_error("External-only backend cannot be downloaded");
-            throw std::logic_error("Configured v2 installation consumer is unavailable");
+            if (launch.install_policy == "always" || services.external_binary(spec, backend).empty()) services.install_backend(spec.public_recipe, backend);
         } else if (phase == "program") {
             if (launch.program_source == "external_or_managed" || program_.install.strategy == "external_only")
                 plan.command.program = services.external_binary(spec, backend);
+            external_program = !plan.command.program.empty();
             if (plan.command.program.empty()) {
                 if (program_.install.strategy == "external_only") throw std::runtime_error("External backend executable is required");
                 plan.command.program = services.managed_binary(spec, backend);
             }
             if (plan.command.program.empty() || !services.exists(plan.command.program)) throw std::runtime_error("Configured backend executable is missing");
             values["launch"]["executable"] = plan.command.program;
-            values["launch"]["executable_directory"] = std::filesystem::path(plan.command.program).parent_path().string();
+            values["launch"]["executable_directory"] = utils::path_to_utf8(utils::path_from_utf8(plan.command.program).parent_path());
             frame.facts.insert(typed::Fact::ResolvedProgram);
         } else if (phase == "ports") {
             for (const auto& port : launch.ports) {
@@ -321,7 +480,25 @@ PreparedExecution DefinitionRunner::prepare_load(const LoadContext& context, con
     if (!error.empty()) throw std::invalid_argument(records.contains("custom_args") ? records["custom_args"]["error_prefix"].get<std::string>() + error : error);
     const auto tokens = utils::parse_custom_args(custom);
     plan.command.args.insert(plan.command.args.end(), tokens.begin(), tokens.end());
-    plan.command.env = services.environment(launch.environment_preset, plan.command.program, backend, declaration()["metadata"]["log_category"]);
+    for (const auto index : slots(SlotOwnerKind::Root, "environment", "environment")) {
+        plan.command.env = invoke<typed::EnvironmentHook>(frame, index, SlotOwnerKind::Root, "environment", "environment", cancel,
+            [&](auto target, auto& guard) {
+                std::optional<typed::StagingScope> scope;
+                std::string destination;
+                if (host.os == "windows" && backend == "rocm-stable" && (!external_program ||
+                    executable_->compiled().authorized().definition().key.space == DefinitionNamespace::Builtin)) {
+                    std::error_code error;
+                    const auto executable = std::filesystem::canonical(utils::path_from_utf8(plan.command.program), error);
+                    if (error) throw std::runtime_error("Staging requires the selected executable inventory");
+                    destination = utils::path_to_utf8(executable.parent_path());
+                    scope = external_program ? typed::StagingScope::BuiltinExternalTheRock : typed::StagingScope::ManagedTheRock;
+                }
+                runtime::EnvironmentServices service(guard, environment, destination, scope);
+                auto plan = target({runtime::typed_platform(host.os), backend, options.value("device", ""),
+                    values["launch"]["executable_directory"].get<std::string>(), service.capability()}, service);
+                return runtime::StagingConsumer::execute(service.seal(std::move(plan)));
+            });
+    }
     for (const auto& assignment : launch.environment_set) {
         const auto value = evaluate(assignment.expression, frame).value().get<std::string>();
         auto found = std::find_if(plan.command.env.begin(), plan.command.env.end(), [&](const auto& item) { return item.first == assignment.name; });
@@ -333,7 +510,7 @@ PreparedExecution DefinitionRunner::prepare_load(const LoadContext& context, con
     plan.command.ready_endpoint = readiness["path"];
     plan.readiness_timeout_seconds = readiness["timeout"] == "global" ? services.default_timeout_seconds() : readiness["timeout"].get<long>();
     plan.watchdog_enabled = records["watchdog"]["policy"] == "standard";
-    if (launch.working_directory.at(host.os) == "executable_directory") plan.working_directory = std::filesystem::path(plan.command.program).parent_path().string();
+    if (launch.working_directory.at(host.os) == "executable_directory") plan.working_directory = utils::path_to_utf8(utils::path_from_utf8(plan.command.program).parent_path());
     const auto& levels = records["output"]["inherit_levels"];
     plan.output = {std::find(levels.begin(), levels.end(), context.log_level) != levels.end(), records["output"]["filter"].get<bool>()};
     runtime::check_cancelled(cancel);

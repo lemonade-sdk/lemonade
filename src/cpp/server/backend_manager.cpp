@@ -1,8 +1,9 @@
-#include "lemon/backends/configured/backend_catalog.h"
 #include "lemon/backend_manager.h"
 #include "lemon/backend_version_policy.h"
 #include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/backends/configured/backend_catalog.h"
+#include "lemon/backends/configured/backend_spec_utils.h"
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
 #include "lemon/utils/github_api.h"
@@ -542,9 +543,8 @@ std::string BackendManager::get_or_resolve_latest_tag(const std::string& recipe,
         std::string pinned = get_version_from_config(pin_recipe, resolved_backend);
         // First call extracts the repo for this (recipe, backend); filename
         // templating is discarded.
-        auto pinned_params = spec->install_params_fn(backends::InstallContext{
-            *spec, spec->definition, recipe, pin_recipe, resolved_backend,
-            spec->definition ? backends::BackendUtils::get_bin_config_value(recipe, resolved_backend) : "", pinned, "", install_platform(*spec, resolved_backend), backends::InstallPhase::Repository});
+        auto pinned_params = spec->install_params_fn(backends::configured_install_context(*spec, resolved_backend,
+            (spec->definition || spec->executable_definition) ? backends::BackendUtils::get_bin_config_value(recipe, resolved_backend) : "", pinned, install_platform(*spec, resolved_backend)));
         return fetch_latest_github_tag(pinned_params.repo, /*throw_on_failure=*/false);
     } catch (const std::exception& e) {
         LOG(WARNING, "BackendManager") << "get_or_resolve_latest_tag(" << recipe
@@ -567,21 +567,10 @@ BackendManager::InstallParams BackendManager::get_install_params(const std::stri
         throw std::runtime_error("No install params function for recipe: " + recipe);
     }
 
-    // Two-pass: first call gets the repo for resolve_user_version (filename
-    // discarded); second call templates the resolved tag into the real filename.
-    backends::InstallContext context{*spec, spec->definition, recipe, pin_recipe,
-        resolved_backend, spec->definition ? backends::BackendUtils::get_bin_config_value(recipe, resolved_backend) : "", pinned, "", install_platform(*spec, resolved_backend), backends::InstallPhase::Repository};
-    auto pinned_params = spec->install_params_fn(context);
-    std::string resolved_version = resolve_user_version(
-        recipe, resolved_backend, pinned, pinned_params.repo);
-    context.resolved_version = resolved_version;
-    context.phase = backends::InstallPhase::Asset;
-    auto final_params = spec->install_params_fn(context);
-    // Allow backends to override the release tag (e.g. per-GPU-target releases)
-    std::string release_version = final_params.version_override.empty()
-                                      ? resolved_version
-                                      : final_params.version_override;
-    return {final_params.repo, final_params.filename, release_version, final_params.sha256};
+    const auto resolved = backends::configured_install_params(*spec, resolved_backend,
+        (spec->definition || spec->executable_definition) ? backends::BackendUtils::get_bin_config_value(recipe, resolved_backend) : "", pinned,
+        install_platform(*spec, resolved_backend), [&](const std::string& repo) { return resolve_user_version(recipe, resolved_backend, pinned, repo); });
+    return {resolved.asset.repo, resolved.asset.filename, resolved.version, resolved.asset.sha256};
 }
 
 void BackendManager::install_backend(const std::string& recipe, const std::string& backend,
@@ -600,7 +589,7 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
         throw std::runtime_error("[BackendManager] Unknown recipe: " + recipe);
     }
 
-    if (spec->definition && spec->definition->records["install"]["strategy"] == "external_only") throw std::runtime_error("External-only backend cannot be downloaded");
+    if (backends::configured_external_only(*spec)) throw std::runtime_error("External-only backend cannot be downloaded");
 
     const std::string existing_backend_binary =
         installed_backend_binary_path(*spec, resolved_backend);

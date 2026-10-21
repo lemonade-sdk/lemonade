@@ -38,10 +38,11 @@ inline Json runtime_document() {
     return value;
 }
 
-inline std::shared_ptr<const ExecutableDefinition> executable(const Json& document = runtime_document(), bool external = false) {
+inline std::shared_ptr<const ExecutableDefinition> executable(const Json& document = runtime_document(), bool external = false,
+    std::shared_ptr<const FrozenBuiltinCatalog> parents = {}) {
     calls.clear(); allow_entries = false;
-    const auto admitted = external ? admit({document}, empty_builtins()) : admit({}, builtins(false, &document));
-    if (!admitted.catalog) throw std::logic_error("Runtime fixture admission failed");
+    const auto admitted = external ? admit({document}, parents ? std::move(parents) : empty_builtins()) : admit({}, builtins(false, &document));
+    if (!admitted.catalog) { diagnostics(admitted.diagnostics); throw std::logic_error("Runtime fixture admission failed"); }
     const auto token = external ? admitted.catalog->v2_definition(document.at("id")) : admitted.catalog->builtin_v2_definition({DefinitionNamespace::Builtin, document.at("id"), 1});
     const auto compiled = compile_execution_definition(token);
     if (!compiled.definition) { diagnostics(compiled.diagnostics); throw std::logic_error("Runtime fixture compile failed"); }
@@ -60,17 +61,25 @@ inline bool throws(Call call, const std::string& contains = "") {
 class Launch final : public LaunchServices {
 public:
     int port = 1;
+    PlatformInfo host = native_platform();
+    std::vector<std::string> supported = {"cpu"};
+    std::string program = "fake-engine";
+    std::string external_program = "fake-engine";
+    bool allow_install = false;
     mutable std::vector<std::string> events;
     bool exists(const std::string&) const override { events.push_back("exists"); return true; }
-    std::vector<std::string> supported_backends(const std::string& recipe) const override { events.push_back("supported:" + recipe); return {"cpu"}; }
+    std::vector<std::string> supported_backends(const std::string& recipe) const override { events.push_back("supported:" + recipe); return supported; }
     void validate_backend(const std::string& recipe, const std::string& backend) const override { events.push_back("validate:" + recipe + ":" + backend); }
-    std::string external_binary(const BackendSpec&, const std::string&) const override { events.push_back("external"); return "fake-engine"; }
-    void install_backend(const std::string&, const std::string&) override { throw std::logic_error("Unexpected installation"); }
-    std::string managed_binary(const BackendSpec&, const std::string&) const override { events.push_back("program"); return "fake-engine"; }
+    std::string external_binary(const BackendSpec&, const std::string&) const override { events.push_back("external"); return external_program; }
+    void install_backend(const std::string& recipe, const std::string& backend) override {
+        if (!allow_install) throw std::logic_error("Unexpected installation");
+        events.push_back("install:" + recipe + ":" + backend);
+    }
+    std::string managed_binary(const BackendSpec&, const std::string&) const override { events.push_back("program"); return program; }
     int allocate_port() override { events.push_back("port"); return port; }
     int find_free_port(int start) override { return start; }
     std::vector<std::pair<std::string, std::string>> environment(const std::string&, const std::string&, const std::string&, const std::string&) const override { return {}; }
-    PlatformInfo platform() const override { return native_platform(); }
+    PlatformInfo platform() const override { return host; }
     long default_timeout_seconds() const override { return 1; }
 };
 inline ModelInfo model() {
@@ -159,7 +168,7 @@ struct ServerFixture {
         server->load(info.model_name, info, options);
         server->set_state(ModelState::READY);
     }
-    ~ServerFixture() { server->unload(); }
+    ~ServerFixture() { if (server) server->unload(); }
 };
 }
 

@@ -46,7 +46,25 @@ def main():
         "target-inspection": "auto callable = &lemon::backends::binding::Inspection::hooks;",
         "permit-construction": 'using namespace lemon::backends; void escape(runtime::Frame& frame, const ExecutableDefinition& executable, const execution::SymbolicHook& hook) { runtime::InvocationGuard permit(frame, executable, 0, hook, SlotOwnerKind::Root, "backend", "backend", {}); }',
         "entry-construction": "using namespace lemon::backends; void escape(std::shared_ptr<const ExecutableDefinition> executable) { ConfiguredBackendEntry entry(executable); }",
+        "json-staging-authority": 'using namespace lemon::backends; void escape(runtime::InvocationGuard& guard) { runtime::StagingPlan plan(guard, {}, "/json/path", {}); }',
+        "artifact-handle-construction": "using namespace lemon::backends; void escape() { typed::ArtifactHandle handle(nullptr, 0); }",
+        "staging-issuer-construction": 'using namespace lemon::backends; void escape(runtime::InvocationGuard& guard) { runtime::EnvironmentServices issuer(guard, {}, "/json/path", typed::StagingScope::BuiltinExternalTheRock); }',
+        "install-arbitrary-command": (
+            'using namespace lemon::backends; void escape(typed::InstallFactsServices& service) { service.run_command("/json/path"); }',
+            "no member named",
+        ),
+        "install-ambient-file": (
+            'using namespace lemon::backends; void escape(typed::InstallFactsServices& service) { service.read_file("/json/path"); }',
+            "no member named",
+        ),
+        "install-path-as-fact": (
+            'using namespace lemon::backends; void escape(typed::InstallFactsServices& service) { service.therock_version("/json/path"); }',
+            "no matching function",
+        ),
     }.items():
+        diagnostic = "private"
+        if isinstance(statement, tuple):
+            statement, diagnostic = statement
         source = scratch / (name + ".cpp")
         source.write_text(
             '#include "backend_definition_runner_internal.h"\n#include "lemon/backends/configured/configured_backend_entry.h"\n'
@@ -66,9 +84,10 @@ def main():
             check=False,
         )
         (scratch / (name + ".log")).write_text(result.stdout + result.stderr)
-        assert result.returncode != 0 and "private" in result.stderr, name
+        assert result.returncode != 0 and diagnostic in result.stderr, name
     for name in (
         "backend_runtime_services.cpp",
+        "backend_artifact_services.cpp",
         "backend_definition_runner.cpp",
         "configured_server.cpp",
     ):

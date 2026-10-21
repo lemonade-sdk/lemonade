@@ -35,7 +35,7 @@ inline Json document(bool hrx = false) {
     }
     return value;
 }
-inline std::shared_ptr<const FrozenBuiltinCatalog> builtins(bool hrx = false, const Json* replacement = nullptr) {
+inline std::shared_ptr<const FrozenBuiltinCatalog> builtins(bool hrx = false, const Json* replacement = nullptr, bool exported = false) {
     const auto doc = replacement ? *replacement : document(hrx);
     const auto name = doc.at("id").get<std::string>();
     const DefinitionKey key{DefinitionNamespace::Builtin, name, 1};
@@ -70,7 +70,9 @@ inline std::shared_ptr<const FrozenBuiltinCatalog> builtins(bool hrx = false, co
     }
     repin(policy);
     BuiltinExecutionPolicies policies{{policy}, v2::export_registry_digest({policy}, installed_hook_abis())};
-    const auto frozen = BuiltinCatalogLoader::test_freeze_builtins(sources, policies);
+    const auto frozen = exported ? BuiltinCatalogLoader::test_freeze(sources,
+        BuiltinCatalogLoader::test_exports({policy}, snapshot.snapshot, installed_hook_abis(), policies.digest)) :
+        BuiltinCatalogLoader::test_freeze_builtins(sources, policies);
     if (!frozen.snapshot) { diagnostics(frozen.diagnostics); throw std::logic_error("Fixture policy failed"); }
     return CatalogAdmissionBuilder::test_builtins(frozen.snapshot, sources);
 }
