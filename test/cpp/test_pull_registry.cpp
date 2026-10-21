@@ -294,8 +294,6 @@ void test_a_pull_lands_exactly_the_selected_files() {
     std::sort(want.begin(), want.end());
     std::vector<std::string> got = fx.trace.urls;
     std::sort(got.begin(), got.end());
-    if (want != got) {
-    }
     check(want == got, "the pull resolves exactly the selected URLs");
 }
 
@@ -306,11 +304,15 @@ void test_a_second_pull_reselects_but_refetches_nothing() {
     mm.download_model("user.Pull-Char", nlohmann::json::object());
     reset_trace(fx);
 
+    const fs::path main_snapshot = repo_cache(mm, "vendor/repo") / "snapshots" / "snap-main-1";
+    const auto installed_at = fs::last_write_time(main_snapshot / "model.gguf");
+
     mm.download_model("user.Pull-Char", nlohmann::json::object());
 
     check(!fx.trace.listings.empty(), "a re-pull still asks each source for its listing");
-    const fs::path main_snapshot = repo_cache(mm, "vendor/repo") / "snapshots" / "snap-main-1";
     check(fs::exists(main_snapshot / "model.gguf"), "an installed file stays installed");
+    check(fs::last_write_time(main_snapshot / "model.gguf") == installed_at,
+          "a re-pull writes no bytes for an installed file");
     check(read_file(repo_cache(mm, "vendor/repo") / "refs" / "main") == "snap-main-1",
           "the pin stays where it was");
 }
