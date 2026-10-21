@@ -2064,14 +2064,46 @@ static std::string identify_npu_arch_linux() {
 // Check if kernel has CWSR fix for Strix Halo by looking for cwsr_size/ctl_stack_size in sysfs
 // The kernel fix exports these properties; older kernels don't have them
 bool needs_gfx1151_cwsr_fix() {
-    using utils::ContainerManager;
-    for (const std::string& properties : ContainerManager::kfd_node_properties()) {
-        const auto values = ContainerManager::parse_kfd_properties(properties);
-        const auto version = values.find("gfx_target_version");
-        if (version != values.end() && version->second == 110501) {
-            return !values.count("cwsr_size") || !values.count("ctl_stack_size");
+    std::string kfd_path = "/sys/class/kfd/kfd/topology/nodes";
+
+    if (!fs::exists(kfd_path))
+        return false;
+
+    for (const auto& node_entry : fs::directory_iterator(kfd_path)) {
+        if (!node_entry.is_directory()) continue;
+
+        std::string properties_file = node_entry.path().string() + "/properties";
+        if (!fs::exists(properties_file)) continue;
+
+        std::ifstream props(properties_file);
+        if (!props.is_open())
+            continue;
+
+        bool is_gfx1151 = false;
+        bool has_cwsr_size = false;
+        bool has_ctl_stack_size = false;
+
+        std::string line;
+        while (std::getline(props, line)) {
+            if (line.find("gfx_target_version") == 0) {
+                std::string value = line.substr(line.find(" ") + 1);
+                value.erase(value.find_last_not_of(" \t\n\r") + 1);
+                if (value == "110501") {
+                    is_gfx1151 = true;
+                }
+            }
+
+            if (line.find("cwsr_size") == 0)
+                has_cwsr_size = true;
+            if (line.find("ctl_stack_size") == 0)
+                has_ctl_stack_size = true;
+        }
+
+        if (is_gfx1151) {
+            return !has_cwsr_size || !has_ctl_stack_size;
         }
     }
+
     return false;
 }
 

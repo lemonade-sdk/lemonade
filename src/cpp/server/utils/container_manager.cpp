@@ -7,7 +7,6 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
-#include <iterator>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -35,7 +34,6 @@ namespace {
 
 constexpr const char* kLabel = "ai.lemonade";
 constexpr const char* kDockerSocket = "/var/run/docker.sock";
-constexpr const char* kKfdTopologyNodes = "/sys/devices/virtual/kfd/kfd/topology/nodes";
 constexpr int kStopSeconds = 10;
 constexpr int kCommandTimeoutSeconds = 60;
 constexpr int kPullTimeoutSeconds = 3 * 3600;
@@ -233,19 +231,6 @@ std::optional<SetupFailure> ContainerManager::check_podman() const {
     if (tool() != ContainerTool::Podman || podman_info_rootless()) return std::nullopt;
     return SetupFailure{"podman_info", "`podman info` fails",
                         {"Run `podman info` and fix the error it prints"}, ""};
-}
-
-std::optional<SetupFailure> ContainerManager::check_selinux() const {
-    // Hosts without SELinux have no /sys/fs/selinux, so both reads come back empty.
-    const bool enforcing = host_.read_file("/sys/fs/selinux/enforce").compare(0, 1, "1") == 0;
-    const bool devices_allowed =
-        host_.read_file("/sys/fs/selinux/booleans/container_use_devices").compare(0, 1, "0") != 0;
-    if (enforcing && !devices_allowed) {
-        return SetupFailure{"selinux",
-                            "SELinux is enforcing and the container_use_devices boolean is off",
-                            {"sudo setsebool -P container_use_devices 1"}, ""};
-    }
-    return std::nullopt;
 }
 
 std::vector<std::string> SetupReport::ids() const {
@@ -575,72 +560,6 @@ bool ContainerManager::allowed_image(const std::string& image) {
         }
     }
     return false;
-}
-
-std::string ContainerManager::gfx_name(int gfx_target_version) {
-    if (gfx_target_version <= 0) return "";
-    const int major = gfx_target_version / 10000;
-    const int minor = (gfx_target_version / 100) % 100;
-    const int stepping = gfx_target_version % 100;
-    if (minor > 15 || stepping > 15) return "";
-    static const char* hex = "0123456789abcdef";
-    std::string name = "gfx" + std::to_string(major);
-    name.push_back(hex[minor]);
-    name.push_back(hex[stepping]);
-    return name;
-}
-
-std::string ContainerManager::gpu_index(const std::vector<int>& gfx_target_versions,
-                                        const std::string& arch) {
-    if (arch.empty()) return "";
-    int index = 0;
-    for (const int version : gfx_target_versions) {
-        if (version == 0) continue;
-        if (gfx_name(version) == arch) return std::to_string(index);
-        ++index;
-    }
-    return "";
-}
-
-std::string ContainerManager::kfd_gpu_index(const std::string& arch) {
-    std::vector<int> versions;
-    for (const std::string& properties : kfd_node_properties()) {
-        versions.push_back(
-            static_cast<int>(parse_kfd_properties(properties)["gfx_target_version"]));
-    }
-    return gpu_index(versions, arch);
-}
-
-std::vector<std::string> ContainerManager::kfd_node_properties() {
-    std::error_code ec;
-    std::vector<std::pair<long, fs::path>> nodes;
-    for (const auto& entry : fs::directory_iterator(kKfdTopologyNodes, ec)) {
-        try {
-            nodes.emplace_back(std::stol(entry.path().filename().string()), entry.path());
-        } catch (...) {
-        }
-    }
-    std::sort(nodes.begin(), nodes.end());
-    std::vector<std::string> properties;
-    for (const auto& [number, path] : nodes) {
-        (void)number;
-        std::ifstream file(path / "properties");
-        properties.emplace_back(std::istreambuf_iterator<char>(file),
-                                std::istreambuf_iterator<char>());
-    }
-    return properties;
-}
-
-std::map<std::string, unsigned long long> ContainerManager::parse_kfd_properties(
-    const std::string& properties) {
-    std::map<std::string, unsigned long long> values;
-    std::istringstream lines(properties);
-    std::string key;
-    unsigned long long value = 0;
-    while (lines >> key >> value) {
-        values[key] = value;
-    }
-    return values;
 }
 
 std::vector<ContainerMount> ContainerManager::model_mounts(const std::string& host_path,

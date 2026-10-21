@@ -1,6 +1,5 @@
 #include "lemon/server_process.h"
 
-#include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <map>
@@ -9,7 +8,6 @@
 #include <thread>
 
 #include "lemon/backends/backend_ops.h"
-#include "lemon/system_info.h"
 #include "lemon/utils/container_manager.h"
 
 #include <lemon/utils/aixlog.hpp>
@@ -154,11 +152,6 @@ std::string ContainerProcess::start(const ServerCommand& command) {
         return it == inside.end() ? value : it->second;
     };
 
-    if (std::find(policy_.devices.begin(), policy_.devices.end(), "/dev/kfd") !=
-        policy_.devices.end()) {
-        const std::string gpu = ContainerManager::kfd_gpu_index(SystemInfo::get_rocm_arch());
-        if (!gpu.empty()) spec.env.push_back({"HIP_VISIBLE_DEVICES", gpu});
-    }
     for (const auto& [key, value] : command.env) {
         spec.env.push_back({key, rewrite(value)});
     }

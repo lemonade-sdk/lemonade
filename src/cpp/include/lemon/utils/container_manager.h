@@ -1,7 +1,6 @@
 #pragma once
 
 #include <functional>
-#include <map>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -115,9 +114,6 @@ public:
     std::vector<SetupFailure> check_host() const;
     // `podman info`, which runs only once container backends are enabled.
     std::optional<SetupFailure> check_podman() const;
-    // The SELinux check for a backend whose devices include /dev/kfd, or
-    // nullopt when it passes.
-    std::optional<SetupFailure> check_selinux() const;
 
     std::vector<std::string> run_command(const ContainerRunSpec& spec) const;
 
@@ -146,18 +142,6 @@ public:
     // describes, matched on ID, then each word of ID_LIKE.
     static std::string podman_install_command(const std::string& os_release);
     static bool allowed_image(const std::string& image);
-    // "gfx1151" for KFD's gfx_target_version 110501.
-    static std::string gfx_name(int gfx_target_version);
-    // HIP_VISIBLE_DEVICES for the first GPU whose name is `arch`, counting the
-    // GPU nodes (gfx_target_version != 0) in KFD node order; "" when none is.
-    static std::string gpu_index(const std::vector<int>& gfx_target_versions,
-                                 const std::string& arch);
-    // The same, read from /sys/devices/virtual/kfd/kfd/topology/nodes.
-    static std::string kfd_gpu_index(const std::string& arch);
-    // Each KFD topology node's properties file, in node order.
-    static std::vector<std::string> kfd_node_properties();
-    static std::map<std::string, unsigned long long> parse_kfd_properties(
-        const std::string& properties);
     // Read-only mounts that put `host_path` at `destination`, each source
     // resolved through symlinks. A directory becomes one mount per file inside
     // it, because a Hugging Face cache's links point into a blobs/ folder the

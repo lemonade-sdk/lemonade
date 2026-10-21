@@ -2,8 +2,6 @@
 
 #include <algorithm>
 #include <filesystem>
-#include "lemon/backends/backend_descriptor_registry.h"
-#include "lemon/backends/backend_utils.h"
 #include "lemon/backends/hf_cache_util.h"
 #include "lemon/runtime_config.h"
 #include "lemon/utils/path_utils.h"
@@ -146,13 +144,6 @@ std::optional<utils::SetupReport> container_setup_failure(const std::string& rec
     if (report.empty()) {
         if (auto failure = manager.check_podman()) {
             report.failures.push_back(*failure);
-        }
-        const ContainerPolicy* policy = BackendUtils::get_container_policy(recipe, backend);
-        if (policy && std::find(policy->devices.begin(), policy->devices.end(), "/dev/kfd") !=
-                          policy->devices.end()) {
-            if (auto failure = manager.check_selinux()) {
-                report.failures.push_back(*failure);
-            }
         }
     }
     if (report.empty()) return std::nullopt;

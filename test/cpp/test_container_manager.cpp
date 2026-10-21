@@ -290,35 +290,6 @@ void test_helpers() {
           ContainerManager::container_name("llamacpp", "nathanw", "user.My Model:Q4/x") ==
               "lemonade-llamacpp-nathanw-user.My-Model-Q4-x");
 
-    FakeHost ubuntu;
-    check("a host without SELinux passes the SELinux check",
-          !ContainerManager(ubuntu.host()).check_selinux());
-    FakeHost fedora;
-    fedora.files["/sys/fs/selinux/enforce"] = "1";
-    fedora.files["/sys/fs/selinux/booleans/container_use_devices"] = "0 0";
-    const auto selinux = ContainerManager(fedora.host()).check_selinux();
-    check("enforcing SELinux without container_use_devices fails with its fix",
-          selinux &&
-              selinux->message ==
-                  "SELinux is enforcing and the container_use_devices boolean is off" &&
-              selinux->steps ==
-                  std::vector<std::string>({"sudo setsebool -P container_use_devices 1"}));
-    fedora.files["/sys/fs/selinux/booleans/container_use_devices"] = "1 1";
-    check("the SELinux check passes once container_use_devices is on",
-          !ContainerManager(fedora.host()).check_selinux());
-    fedora.files["/sys/fs/selinux/booleans/container_use_devices"] = "0 0";
-    fedora.files["/sys/fs/selinux/enforce"] = "0";
-    check("permissive SELinux passes the SELinux check",
-          !ContainerManager(fedora.host()).check_selinux());
-
-    check("gfx_target_version 110501 is gfx1151", ContainerManager::gfx_name(110501) == "gfx1151");
-    check("gfx_target_version 90010 is gfx90a", ContainerManager::gfx_name(90010) == "gfx90a");
-    check("the GPU index skips CPU nodes",
-          ContainerManager::gpu_index({0, 110501}, "gfx1151") == "0");
-    check("the GPU index counts other GPUs before the match",
-          ContainerManager::gpu_index({0, 120001, 110501}, "gfx1151") == "1");
-    check("no index when no GPU matches", ContainerManager::gpu_index({0, 120001}, "gfx1151").empty());
-
     check("docker.io/kyuz0 is allowed",
           ContainerManager::allowed_image("docker.io/kyuz0/amd-strix-halo-toolboxes"));
     check("ghcr.io/peonist-ai is allowed",
