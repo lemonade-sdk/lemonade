@@ -352,7 +352,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 Pulling an already-downloaded model downloads any newer commit from its registry. Loading a model never checks for updates, and [`POST /v1/models/check-updates`](#post-v1modelscheck-updates) only reports them.
 
-With `stream`, the error event or the job reports an unknown model.
+With `stream`, the error event or the job reports an unknown model or an unavailable registry.
 
 In offline mode a new definition is still registered, but nothing is downloaded.
 
@@ -597,7 +597,8 @@ A `progress` event reports one file; a `complete` event follows the last one, an
 - `percent` - Share of the current file downloaded, from `0` to `100`.
 - `status` - Only on a complete event for an operation that had nothing to download.
 - `error` - Only on an error event.
-- `code` - `unknown_model` when the model is not in the registry.
+- `code` - `unknown_model` when the model is not in the registry, or `registry_unavailable` when the registry rate-limits or is temporarily unavailable.
+- `retry_after` - With `registry_unavailable`: seconds to wait before retrying.
 
 ### Errors
 
@@ -612,6 +613,7 @@ A `progress` event reports one file; a `complete` event follows the last one, an
 | `400` | `unknown_model` | Without `stream`, the model is not registered and its name has no `user.` prefix |
 | `400` |  | Labels or `embedding`/`reranking` flags name a deployment mode the recipe cannot serve, or name two |
 | `500` |  | Another failure occurs, for example a failed download, a model this system cannot run, a new `user.*` model without `recipe` or `checkpoint`, or a GGUF `checkpoint` without a variant; a new definition stays registered |
+| `503` | `registry_unavailable` | Without `stream`, the model registry rate-limits or is temporarily unavailable; the `Retry-After` header and the body's `upstream_status_code` carry the details |
 <!-- END GENERATED: lemonade.pull -->
 
 <!-- BEGIN GENERATED: lemonade.downloads -->
@@ -2430,7 +2432,8 @@ A `progress` event reports one file; a `complete` event follows the last one, an
 - `percent` - Share of the current file downloaded, from `0` to `100`.
 - `status` - Only on a complete event for an operation that had nothing to download.
 - `error` - Only on an error event.
-- `code` - `unknown_model` when the model is not in the registry.
+- `code` - `unknown_model` when the model is not in the registry, or `registry_unavailable` when the registry rate-limits or is temporarily unavailable.
+- `retry_after` - With `registry_unavailable`: seconds to wait before retrying.
 
 ### Errors
 
