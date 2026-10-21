@@ -425,7 +425,7 @@ int main() {
     }();
     check("only the named headers re-export the models layer",
           reexporters == expected_reexporters);
-    if (reexporters != allowed_reexporters) {
+    if (reexporters != expected_reexporters) {
         report_set_diff(reexporters, allowed_reexporters);
         for (const auto& file : reexporters) {
             std::printf("    %s reaches models types into every file that includes it:\n",
