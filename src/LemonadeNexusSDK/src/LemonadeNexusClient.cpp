@@ -102,12 +102,34 @@ struct LemonadeNexusClient::Impl {
     std::string  session_token;
     std::string  node_id;
     std::string  link_token;           // single-use device link token for the next join
+    bool         inference_node{false};  // join as Tier 3 (inference) instead of Tier 4
     std::vector<std::pair<uint16_t, std::string>> exposed_services;  // vport -> target
     std::string  server_seip_fqdn;     // e.g. "<id>.<region>.seip.lemonade-nexus.io" — public API after join
     std::string  server_private_fqdn;  // e.g. "private.<id>.<region>.seip.lemonade-nexus.io"
     std::string  server_tunnel_ip;    // e.g. "10.64.0.1" — HTTPS fallback
     uint16_t     private_port{9101};
     mutable std::mutex mutex;
+
+    // The Dart client calls in from worker isolates, so the public transport is
+    // used from several threads at once. transport_mtx guards server_pool,
+    // current_server, has_discovered, session_token, latency_monitor and
+    // public_clients. It is never held across network I/O and never held while
+    // taking `mutex` (lock order: mutex, then transport_mtx).
+    //
+    // Declared before mesh_orchestrator: members are destroyed in reverse
+    // order, and the orchestrator's thread uses this lock until it is stopped.
+    mutable std::mutex transport_mtx;
+
+    // One keep-alive client per server base URL. A client per request meant a
+    // TCP + TLS handshake every call (about three round trips); reusing the
+    // connection leaves one. httplib::Client is not safe for concurrent
+    // requests, so each pooled client serializes its own users.
+    struct PooledClient {
+        std::mutex      in_use;
+        httplib::Client cli;
+        explicit PooledClient(const std::string& url) : cli(url) {}
+    };
+    std::map<std::string, std::shared_ptr<PooledClient>> public_clients;
 
     // Server pool with health state
     struct ServerState {
@@ -180,25 +202,43 @@ struct LemonadeNexusClient::Impl {
         return "https://" + ep.host + ":" + std::to_string(ep.port);
     }
 
-    // Get the current server's base URL
-    std::string current_base_url() const {
+    // --- Public transport state ---------------------------------------------
+
+    std::string token() const {
+        std::lock_guard lock(transport_mtx);
+        return session_token;
+    }
+
+    void set_token(std::string value) {
+        std::lock_guard lock(transport_mtx);
+        session_token = std::move(value);
+    }
+
+    bool discovered() const {
+        std::lock_guard lock(transport_mtx);
+        return has_discovered;
+    }
+
+    // Get the current server's base URL. Caller holds transport_mtx.
+    std::string current_base_url_locked() const {
         if (server_pool.empty()) return "https://127.0.0.1:9100";
         return base_url(server_pool[current_server].endpoint);
     }
 
-    // Mark the current server as failed, rotate to next healthy
-    void mark_failed() {
+    // Mark the current server as failed, rotate to next healthy.
+    // Caller holds transport_mtx.
+    void mark_failed_locked() {
         if (server_pool.empty()) return;
         auto& s = server_pool[current_server];
         s.consecutive_failures++;
         if (s.consecutive_failures >= 3) {
             s.healthy = false;
         }
-        rotate_server();
+        rotate_server_locked();
     }
 
-    // Move to the next healthy server
-    void rotate_server() {
+    // Move to the next healthy server. Caller holds transport_mtx.
+    void rotate_server_locked() {
         if (server_pool.size() <= 1) return;
         auto start = current_server;
         for (std::size_t i = 1; i < server_pool.size(); ++i) {
@@ -220,8 +260,8 @@ struct LemonadeNexusClient::Impl {
         spdlog::warn("[LemonadeNexusClient] all servers unhealthy, resetting pool");
     }
 
-    // Mark current server as successful
-    void mark_success() {
+    // Mark current server as successful. Caller holds transport_mtx.
+    void mark_success_locked() {
         if (server_pool.empty()) return;
         auto& s = server_pool[current_server];
         s.healthy = true;
@@ -231,97 +271,118 @@ struct LemonadeNexusClient::Impl {
     // Build common headers (including Bearer auth when session token is set)
     httplib::Headers auth_headers() const {
         httplib::Headers hdrs;
-        if (!session_token.empty()) {
-            hdrs.emplace("Authorization", "Bearer " + session_token);
+        auto t = token();
+        if (!t.empty()) {
+            hdrs.emplace("Authorization", "Bearer " + t);
         }
         return hdrs;
     }
 
-    std::optional<json> http_get(const std::string& path, int& status_out) {
-        // Try current server, then failover once
-        for (int attempt = 0; attempt < 2; ++attempt) {
-            try {
-                httplib::Client cli(current_base_url());
-                cli.set_connection_timeout(config.connect_timeout_sec);
-                cli.set_read_timeout(config.read_timeout_sec);
-                cli.set_write_timeout(config.write_timeout_sec);
+    // What one public request targets, captured under transport_mtx so the
+    // request itself runs without the lock.
+    struct Target {
+        std::string      url;
+        std::string      host;
+        uint16_t         port{0};
+        bool             can_fail_over{false};
+        httplib::Headers headers;
+    };
 
-                auto rtt_start = std::chrono::steady_clock::now();
-                auto res = cli.Get(path, auth_headers());
-                auto rtt_end = std::chrono::steady_clock::now();
-
-                if (!res) {
-                    spdlog::warn("[LemonadeNexusClient] GET {} failed: connection error (server {}:{})",
-                                  path, server_pool[current_server].endpoint.host,
-                                  server_pool[current_server].endpoint.port);
-                    mark_failed();
-                    if (attempt == 0 && server_pool.size() > 1) continue;
-                    status_out = 0;
-                    return std::nullopt;
-                }
-
-                // Record RTT for latency monitor
-                double rtt_ms = std::chrono::duration<double, std::milli>(rtt_end - rtt_start).count();
-                if (latency_monitor) {
-                    latency_monitor->record_rtt(rtt_ms);
-                }
-
-                mark_success();
-                status_out = res->status;
-                if (res->status < 200 || res->status >= 300) {
-                    spdlog::warn("[LemonadeNexusClient] GET {} returned status {}", path, res->status);
-                    try {
-                        return json::parse(res->body);
-                    } catch (...) {
-                        return std::nullopt;
-                    }
-                }
-                return json::parse(res->body);
-            } catch (const std::exception& e) {
-                spdlog::error("[LemonadeNexusClient] GET {} exception: {}", path, e.what());
-                mark_failed();
-                if (attempt == 0 && server_pool.size() > 1) continue;
-                status_out = 0;
-                return std::nullopt;
-            }
+    Target current_target() const {
+        std::lock_guard lock(transport_mtx);
+        Target t;
+        t.url = current_base_url_locked();
+        if (!server_pool.empty()) {
+            t.host = server_pool[current_server].endpoint.host;
+            t.port = server_pool[current_server].endpoint.port;
         }
-        status_out = 0;
-        return std::nullopt;
+        t.can_fail_over = server_pool.size() > 1;
+        if (!session_token.empty()) {
+            t.headers.emplace("Authorization", "Bearer " + session_token);
+        }
+        return t;
     }
 
-    std::optional<json> http_post(const std::string& path, const json& body, int& status_out) {
-        // Try current server, then failover once
-        for (int attempt = 0; attempt < 2; ++attempt) {
-            try {
-                httplib::Client cli(current_base_url());
-                cli.set_connection_timeout(config.connect_timeout_sec);
-                cli.set_read_timeout(config.read_timeout_sec);
-                cli.set_write_timeout(config.write_timeout_sec);
+    std::shared_ptr<PooledClient> pooled_client(const std::string& url) {
+        std::lock_guard lock(transport_mtx);
+        auto& slot = public_clients[url];
+        if (!slot) {
+            slot = std::make_shared<PooledClient>(url);
+            slot->cli.set_connection_timeout(config.connect_timeout_sec);
+            slot->cli.set_read_timeout(config.read_timeout_sec);
+            slot->cli.set_write_timeout(config.write_timeout_sec);
+            slot->cli.set_keep_alive(true);
+        }
+        return slot;
+    }
 
+    // A failed or closed connection is discarded so the next call dials fresh.
+    void drop_pooled_client(const std::string& url) {
+        std::lock_guard lock(transport_mtx);
+        public_clients.erase(url);
+    }
+
+    // Record a request's outcome against the server it targeted. Another
+    // thread may have rotated or replaced the pool meanwhile; the outcome then
+    // belongs to a server that is no longer current and is not applied.
+    void report(const Target& t, bool ok, double rtt_ms) {
+        std::lock_guard lock(transport_mtx);
+        if (current_base_url_locked() != t.url) return;
+        if (ok) {
+            mark_success_locked();
+            if (latency_monitor) latency_monitor->record_rtt(rtt_ms);
+        } else {
+            mark_failed_locked();
+        }
+    }
+
+    // GET or POST against the current public server, failing over once.
+    std::optional<json> http_send(bool post, const std::string& path, const json* body,
+                                  int& status_out) {
+        const char* verb = post ? "POST" : "GET";
+        for (int attempt = 0; attempt < 2; ++attempt) {
+            const Target t = current_target();
+            try {
+                auto pooled = pooled_client(t.url);
+                httplib::Result res{nullptr, httplib::Error::Unknown};
                 auto rtt_start = std::chrono::steady_clock::now();
-                auto res = cli.Post(path, auth_headers(), body.dump(), "application/json");
+                {
+                    std::lock_guard use(pooled->in_use);
+                    res = post ? pooled->cli.Post(path, t.headers, body->dump(), "application/json")
+                               : pooled->cli.Get(path, t.headers);
+                }
                 auto rtt_end = std::chrono::steady_clock::now();
 
                 if (!res) {
-                    spdlog::warn("[LemonadeNexusClient] POST {} failed: connection error (server {}:{})",
-                                  path, server_pool[current_server].endpoint.host,
-                                  server_pool[current_server].endpoint.port);
-                    mark_failed();
-                    if (attempt == 0 && server_pool.size() > 1) continue;
+                    spdlog::warn("[LemonadeNexusClient] {} {} failed: connection error (server {}:{})",
+                                  verb, path, t.host, t.port);
+                    drop_pooled_client(t.url);
+                    report(t, false, 0);
+                    if (attempt == 0 && t.can_fail_over) continue;
                     status_out = 0;
                     return std::nullopt;
                 }
 
-                // Record RTT for latency monitor
-                double rtt_ms = std::chrono::duration<double, std::milli>(rtt_end - rtt_start).count();
-                if (latency_monitor) {
-                    latency_monitor->record_rtt(rtt_ms);
-                }
-
-                mark_success();
+                report(t, true,
+                       std::chrono::duration<double, std::milli>(rtt_end - rtt_start).count());
                 status_out = res->status;
                 if (res->status < 200 || res->status >= 300) {
-                    spdlog::warn("[LemonadeNexusClient] POST {} returned status {}", path, res->status);
+                    if (!post) {
+                        spdlog::warn("[LemonadeNexusClient] GET {} returned status {}", path,
+                                     res->status);
+                        try {
+                            return json::parse(res->body);
+                        } catch (...) {
+                            return std::nullopt;
+                        }
+                    }
+                    std::string reason;
+                    try {
+                        auto err = json::parse(res->body);
+                        reason = err.value("error", std::string{});
+                    } catch (...) {}
+                    spdlog::warn("[LemonadeNexusClient] POST {} returned status {}{}{}", path,
+                                 res->status, reason.empty() ? "" : ": ", reason);
                     try {
                         return json::parse(res->body);
                     } catch (...) {
@@ -332,15 +393,24 @@ struct LemonadeNexusClient::Impl {
                 }
                 return json::parse(res->body);
             } catch (const std::exception& e) {
-                spdlog::error("[LemonadeNexusClient] POST {} exception: {}", path, e.what());
-                mark_failed();
-                if (attempt == 0 && server_pool.size() > 1) continue;
+                spdlog::error("[LemonadeNexusClient] {} {} exception: {}", verb, path, e.what());
+                drop_pooled_client(t.url);
+                report(t, false, 0);
+                if (attempt == 0 && t.can_fail_over) continue;
                 status_out = 0;
                 return std::nullopt;
             }
         }
         status_out = 0;
         return std::nullopt;
+    }
+
+    std::optional<json> http_get(const std::string& path, int& status_out) {
+        return http_send(false, path, nullptr, status_out);
+    }
+
+    std::optional<json> http_post(const std::string& path, const json& body, int& status_out) {
+        return http_send(true, path, &body, status_out);
     }
 
     // --- Private API (verified HTTPS over the mesh, by private FQDN) ---
@@ -457,7 +527,7 @@ struct LemonadeNexusClient::Impl {
 
     // Discover additional servers via /api/servers
     void discover_servers() {
-        if (has_discovered) return;
+        if (discovered()) return;
         int status = 0;
         auto resp = http_get("/api/servers", status);
         if (!resp || !resp->is_array()) return;
@@ -476,6 +546,7 @@ struct LemonadeNexusClient::Impl {
             }
 
             // Check if already in pool
+            std::lock_guard lock(transport_mtx);
             bool exists = false;
             for (const auto& s : server_pool) {
                 if (s.endpoint.host == host && s.endpoint.port == port) {
@@ -490,34 +561,43 @@ struct LemonadeNexusClient::Impl {
                 spdlog::info("[LemonadeNexusClient] discovered server {}:{}", host, port);
             }
         }
+        std::lock_guard lock(transport_mtx);
         has_discovered = true;
     }
 
-    // Refresh health of all servers in the pool
+    // Refresh health of all servers in the pool. Probes run without the
+    // transport lock; results apply to the servers still in the pool.
     void refresh_health() {
         auto now_ms = static_cast<uint64_t>(
             std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::steady_clock::now().time_since_epoch()).count());
 
-        for (auto& s : server_pool) {
+        std::vector<ServerEndpoint> endpoints;
+        {
+            std::lock_guard lock(transport_mtx);
+            for (const auto& s : server_pool) endpoints.push_back(s.endpoint);
+        }
+        for (const auto& ep : endpoints) {
+            bool ok = false;
             try {
-                httplib::Client cli(base_url(s.endpoint));
+                httplib::Client cli(base_url(ep));
                 cli.set_connection_timeout(config.connect_timeout_sec);
                 cli.set_read_timeout(config.read_timeout_sec);
-
                 auto res = cli.Get("/api/health");
+                ok = res && res->status == 200;
+            } catch (...) {
+            }
+            std::lock_guard lock(transport_mtx);
+            for (auto& s : server_pool) {
+                if (s.endpoint.host != ep.host || s.endpoint.port != ep.port) continue;
                 s.last_health_check_ms = now_ms;
-                if (res && res->status == 200) {
+                if (ok) {
                     s.healthy = true;
                     s.consecutive_failures = 0;
                 } else {
                     s.consecutive_failures++;
                     if (s.consecutive_failures >= 3) s.healthy = false;
                 }
-            } catch (...) {
-                s.consecutive_failures++;
-                if (s.consecutive_failures >= 3) s.healthy = false;
-                s.last_health_check_ms = now_ms;
             }
         }
     }
@@ -573,13 +653,11 @@ Identity LemonadeNexusClient::identity() const {
 // ---------------------------------------------------------------------------
 
 void LemonadeNexusClient::set_session_token(const std::string& token) {
-    std::lock_guard lock(impl_->mutex);
-    impl_->session_token = token;
+    impl_->set_token(token);
 }
 
 std::string LemonadeNexusClient::session_token() const {
-    std::lock_guard lock(impl_->mutex);
-    return impl_->session_token;
+    return impl_->token();
 }
 
 std::string LemonadeNexusClient::node_id() const {
@@ -595,6 +673,11 @@ void LemonadeNexusClient::set_node_id(const std::string& id) {
 void LemonadeNexusClient::set_link_token(const std::string& token) {
     std::lock_guard lock(impl_->mutex);
     impl_->link_token = token;
+}
+
+void LemonadeNexusClient::set_inference_node(bool inference) {
+    std::lock_guard lock(impl_->mutex);
+    impl_->inference_node = inference;
 }
 
 Result<nlohmann::json> LemonadeNexusClient::create_link_token(uint32_t ttl_sec) {
@@ -679,7 +762,7 @@ Result<HealthStatus> LemonadeNexusClient::check_health() {
     result.value.dns_base_domain = resp->value("dns_base_domain", "");
 
     // Auto-discover additional servers after first successful health check
-    if (result.ok && impl_->config.auto_discover && !impl_->has_discovered) {
+    if (result.ok && impl_->config.auto_discover && !impl_->discovered()) {
         impl_->discover_servers();
     }
 
@@ -692,7 +775,10 @@ Result<HealthStatus> LemonadeNexusClient::check_health() {
 
 void LemonadeNexusClient::discover_servers() {
     std::lock_guard lock(impl_->mutex);
-    impl_->has_discovered = false; // reset so discover_servers() actually runs
+    {
+        std::lock_guard transport(impl_->transport_mtx);
+        impl_->has_discovered = false; // reset so discover_servers() actually runs
+    }
     impl_->discover_servers();
 }
 
@@ -709,32 +795,44 @@ void LemonadeNexusClient::enable_auto_switching(const LatencyConfig& config) {
     std::lock_guard lock(impl_->mutex);
 
     // Stop any existing monitor
-    if (impl_->latency_monitor) {
-        impl_->latency_monitor->stop();
+    std::unique_ptr<LatencyMonitor> previous;
+    {
+        std::lock_guard transport(impl_->transport_mtx);
+        previous = std::move(impl_->latency_monitor);
+    }
+    if (previous) {
+        previous->stop();
     }
 
-    impl_->latency_monitor = std::make_unique<LatencyMonitor>(config);
+    auto monitor = std::make_unique<LatencyMonitor>(config);
 
     // Populate with current server pool
     std::vector<ServerConfig> server_configs;
-    for (const auto& s : impl_->server_pool) {
-        ServerConfig sc;
-        sc.servers = {s.endpoint};
-        server_configs.push_back(sc);
+    std::optional<ServerConfig> current;
+    {
+        std::lock_guard transport(impl_->transport_mtx);
+        for (const auto& s : impl_->server_pool) {
+            ServerConfig sc;
+            sc.servers = {s.endpoint};
+            server_configs.push_back(sc);
+        }
+        if (!impl_->server_pool.empty()) {
+            ServerConfig cur;
+            cur.servers = {impl_->server_pool[impl_->current_server].endpoint};
+            current = cur;
+        }
     }
-    impl_->latency_monitor->set_servers(server_configs);
-
-    // Set the current server
-    if (!impl_->server_pool.empty()) {
-        ServerConfig cur;
-        cur.servers = {impl_->server_pool[impl_->current_server].endpoint};
-        impl_->latency_monitor->set_current_server(cur);
+    monitor->set_servers(server_configs);
+    if (current) {
+        monitor->set_current_server(*current);
     }
 
-    // Set the switch callback
-    impl_->latency_monitor->set_switch_callback(
+    // The callback touches only the transport state, so it takes only the
+    // transport lock: taking `mutex` here could deadlock with a stop() that
+    // waits for this monitor's thread while holding `mutex`.
+    monitor->set_switch_callback(
         [this](const ServerConfig& new_server) {
-            std::lock_guard inner_lock(impl_->mutex);
+            std::lock_guard inner_lock(impl_->transport_mtx);
             if (new_server.servers.empty()) return;
 
             const auto& ep = new_server.servers[0];
@@ -751,7 +849,12 @@ void LemonadeNexusClient::enable_auto_switching(const LatencyConfig& config) {
             }
         });
 
-    impl_->latency_monitor->start();
+    auto* started = monitor.get();
+    {
+        std::lock_guard transport(impl_->transport_mtx);
+        impl_->latency_monitor = std::move(monitor);
+    }
+    started->start();
     spdlog::info("[LemonadeNexusClient] latency-based auto-switching enabled "
                  "(threshold={:.0f}ms, hysteresis={:.0f}%, cooldown={}s)",
                  config.threshold_ms, config.hysteresis * 100.0, config.cooldown_sec);
@@ -759,9 +862,13 @@ void LemonadeNexusClient::enable_auto_switching(const LatencyConfig& config) {
 
 void LemonadeNexusClient::disable_auto_switching() {
     std::lock_guard lock(impl_->mutex);
-    if (impl_->latency_monitor) {
-        impl_->latency_monitor->stop();
-        impl_->latency_monitor.reset();
+    std::unique_ptr<LatencyMonitor> previous;
+    {
+        std::lock_guard transport(impl_->transport_mtx);
+        previous = std::move(impl_->latency_monitor);
+    }
+    if (previous) {
+        previous->stop();
         spdlog::info("[LemonadeNexusClient] latency-based auto-switching disabled");
     }
 }
@@ -852,7 +959,7 @@ Result<AuthResponse> LemonadeNexusClient::authenticate_ed25519() {
     if (result.value.authenticated) {
         result.ok = true;
         std::lock_guard lock(impl_->mutex);
-        impl_->session_token = result.value.session_token;
+        impl_->set_token(result.value.session_token);
     } else {
         result.error = result.value.error;
     }
@@ -888,7 +995,7 @@ Result<AuthResponse> LemonadeNexusClient::authenticate(const std::string& userna
     if (result.value.authenticated) {
         result.ok = true;
         std::lock_guard lock(impl_->mutex);
-        impl_->session_token = result.value.session_token;
+        impl_->set_token(result.value.session_token);
     } else {
         result.error = result.value.error;
     }
@@ -917,7 +1024,7 @@ Result<AuthResponse> LemonadeNexusClient::authenticate_passkey(const nlohmann::j
     if (result.value.authenticated) {
         result.ok = true;
         std::lock_guard lock(impl_->mutex);
-        impl_->session_token = result.value.session_token;
+        impl_->set_token(result.value.session_token);
     } else {
         result.error = result.value.error;
     }
@@ -974,7 +1081,7 @@ Result<AuthResponse> LemonadeNexusClient::authenticate_token(const std::string& 
     if (result.value.authenticated) {
         result.ok = true;
         std::lock_guard lock(impl_->mutex);
-        impl_->session_token = result.value.session_token;
+        impl_->set_token(result.value.session_token);
     } else {
         result.error = result.value.error;
     }
@@ -1034,7 +1141,7 @@ Result<AuthResponse> LemonadeNexusClient::register_passkey_credential(const std:
         result.error = result.value.error;
     } else {
         std::lock_guard lock(impl_->mutex);
-        impl_->session_token = result.value.session_token;
+        impl_->set_token(result.value.session_token);
     }
     return result;
 }
@@ -1530,7 +1637,7 @@ Result<JoinResult> LemonadeNexusClient::join_network(const std::string& username
     {
         std::lock_guard lock(impl_->mutex);
         local_identity = impl_->identity;
-        needs_auth = impl_->session_token.empty();
+        needs_auth = impl_->token().empty();
     }
 
     if (needs_auth) {
@@ -1579,6 +1686,7 @@ Result<JoinResult> LemonadeNexusClient::join_network(const std::string& username
         if (!impl_->link_token.empty()) {
             join_body["link_token"] = impl_->link_token;
         }
+        join_body["is_inference"] = impl_->inference_node;
     }
 
     // Include auth credentials so /api/join can authenticate inline
@@ -1635,7 +1743,7 @@ Result<JoinResult> LemonadeNexusClient::join_network(const std::string& username
     auto token = resp->value("token", std::string{});
     if (!token.empty()) {
         std::lock_guard lock(impl_->mutex);
-        impl_->session_token = token;
+        impl_->set_token(token);
     }
 
     auto node_id   = resp->value("node_id", std::string{});
@@ -1663,6 +1771,7 @@ Result<JoinResult> LemonadeNexusClient::join_network(const std::string& username
         if (!srv_seip_fqdn.empty() && !impl_->config.pin_server) {
             impl_->server_seip_fqdn = srv_seip_fqdn;
             // Switch public API to use the SEIP hostname (proper cert match)
+            std::lock_guard transport(impl_->transport_mtx);
             auto public_port = static_cast<uint16_t>(impl_->server_pool.empty() ? 9100
                 : impl_->server_pool[impl_->current_server].endpoint.port);
             impl_->server_pool.clear();
@@ -1783,65 +1892,40 @@ StatusResult LemonadeNexusClient::leave_network() {
 // Group membership management
 // ---------------------------------------------------------------------------
 
-Result<DeltaResult> LemonadeNexusClient::add_group_member(const std::string& node_id,
-                                                             const GroupMember& member) {
+// The server owns assignment changes: it applies the admin and joined-identity
+// rules and replaces the key's entry in place, so a promotion never leaves a
+// stale duplicate and no client-side copy of the node is written back.
+Result<DeltaResult> LemonadeNexusClient::set_member_permissions(
+        const std::string& node_id, const std::string& pubkey,
+        const std::vector<std::string>& permissions) {
     Result<DeltaResult> result;
 
-    // Step 1: Fetch current node to get existing assignments
-    auto node_result = get_tree_node(node_id);
-    if (!node_result) {
-        result.error = "failed to fetch node: " + node_result.error;
-        result.http_status = node_result.http_status;
+    const json body = {{"pubkey", pubkey}, {"permissions", permissions}};
+    int status = 0;
+    auto resp = impl_->private_http_post("/api/tree/node/assignments/" + node_id, body,
+                                         status);
+    result.http_status = status;
+    if (!resp) {
+        result.error = "server unreachable";
         return result;
     }
 
-    // Step 2: Append the new member as an assignment
-    TreeNode updated = node_result.value;
-    Assignment new_assignment;
-    new_assignment.management_pubkey = member.management_pubkey;
-    new_assignment.permissions       = member.permissions;
-    updated.assignments.push_back(new_assignment);
+    result.value.success = resp->value("success", false);
+    result.value.node_id = resp->value("node_id", "");
+    result.value.error   = resp->value("error", "");
+    result.ok = result.value.success;
+    if (!result.ok) result.error = result.value.error;
+    return result;
+}
 
-    // Step 3: Submit update_assignment delta
-    TreeDelta delta;
-    delta.operation      = "update_assignment";
-    delta.target_node_id = node_id;
-    delta.node_data      = updated;
-
-    return submit_delta(delta);
+Result<DeltaResult> LemonadeNexusClient::add_group_member(const std::string& node_id,
+                                                             const GroupMember& member) {
+    return set_member_permissions(node_id, member.management_pubkey, member.permissions);
 }
 
 Result<DeltaResult> LemonadeNexusClient::remove_group_member(const std::string& node_id,
                                                                 const std::string& pubkey) {
-    Result<DeltaResult> result;
-
-    // Step 1: Fetch current node
-    auto node_result = get_tree_node(node_id);
-    if (!node_result) {
-        result.error = "failed to fetch node: " + node_result.error;
-        result.http_status = node_result.http_status;
-        return result;
-    }
-
-    // Step 2: Remove the assignment matching the pubkey
-    TreeNode updated = node_result.value;
-    auto& assignments = updated.assignments;
-    auto it = std::remove_if(assignments.begin(), assignments.end(),
-        [&pubkey](const Assignment& a) { return a.management_pubkey == pubkey; });
-
-    if (it == assignments.end()) {
-        result.error = "member not found in assignments";
-        return result;
-    }
-    assignments.erase(it, assignments.end());
-
-    // Step 3: Submit update_assignment delta
-    TreeDelta delta;
-    delta.operation      = "update_assignment";
-    delta.target_node_id = node_id;
-    delta.node_data      = updated;
-
-    return submit_delta(delta);
+    return set_member_permissions(node_id, pubkey, {});
 }
 
 Result<std::vector<GroupMember>> LemonadeNexusClient::get_group_members(const std::string& node_id) {
@@ -2012,7 +2096,8 @@ void LemonadeNexusClient::enable_mesh(const MeshConfig& config) {
 
     if (!impl_->meshplane.is_active()) {
         spdlog::warn("[LemonadeNexusClient] enable_mesh: dataplane not up "
-                     "(join the network first)");
+                     "(it failed to start — see the [dataplane] error above — "
+                     "or the network was never joined)");
         return;
     }
 

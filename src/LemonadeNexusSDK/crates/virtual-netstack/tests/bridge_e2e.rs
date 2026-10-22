@@ -209,6 +209,9 @@ fn repeated_connections_and_larger_payload() {
 
 unsafe extern "C" fn discard_packets(_: *mut c_void, _: *const u8, _: usize) {}
 
+// Removing one egress closes that loopback listener and leaves the others
+// serving: a removed or re-addressed peer must not stay reachable through a
+// stale port.
 #[test]
 fn removing_egress_closes_only_its_loopback_listener() {
     let stack = unsafe { ns_create(1420, discard_packets, std::ptr::null_mut()) };
@@ -222,10 +225,14 @@ fn removing_egress_closes_only_its_loopback_listener() {
     assert_eq!(unsafe { ns_remove_tcp_egress(stack, first.as_ptr(), 80) }, 0);
     let mut closed = false;
     for _ in 0..100 {
-        if TcpStream::connect(("127.0.0.1", port_a)).is_err() { closed = true; break; }
+        if TcpStream::connect(("127.0.0.1", port_a)).is_err() {
+            closed = true;
+            break;
+        }
         std::thread::sleep(Duration::from_millis(10));
     }
-    assert!(closed);
+    assert!(closed, "the removed egress listener still accepts connections");
     assert!(TcpStream::connect(("127.0.0.1", port_b)).is_ok());
-    unsafe { ns_destroy(stack); }
+    assert_eq!(unsafe { ns_remove_tcp_egress(std::ptr::null_mut(), first.as_ptr(), 80) }, -1);
+    unsafe { ns_destroy(stack) };
 }

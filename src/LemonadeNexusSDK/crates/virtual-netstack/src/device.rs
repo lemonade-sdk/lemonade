@@ -35,6 +35,15 @@ impl VirtDevice {
     pub fn has_inbound(&self) -> bool {
         !self.rx_queue.is_empty()
     }
+
+    /// Hand an IP packet built outside smoltcp straight to the dataplane.
+    pub fn emit(&self, packet: &[u8]) {
+        (self.output)(packet);
+    }
+
+    pub fn mtu(&self) -> usize {
+        self.mtu
+    }
 }
 
 pub struct VirtRxToken(Vec<u8>);

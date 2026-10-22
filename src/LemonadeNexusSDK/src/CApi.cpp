@@ -1023,6 +1023,12 @@ ln_error_t ln_set_link_token(ln_client_t* client, const char* token) {
     return LN_OK;
 }
 
+ln_error_t ln_set_inference_node(ln_client_t* client, int inference) {
+    if (!client) return LN_ERR_NULL_ARG;
+    client->client.set_inference_node(inference != 0);
+    return LN_OK;
+}
+
 ln_error_t ln_link_token_create(ln_client_t* client, uint32_t ttl_sec, char** out_json) {
     if (!client || !out_json) return LN_ERR_NULL_ARG;
     auto result = client->client.create_link_token(ttl_sec);
@@ -1044,6 +1050,16 @@ ln_error_t ln_mesh_open_egress(ln_client_t* client, const char* dst_ip,
     if (port == 0) return LN_ERR_CONNECT;
     *out_port = port;
     return LN_OK;
+}
+
+ln_error_t ln_mesh_close_egress(ln_client_t* client, const char* dst_ip, uint16_t dst_port) {
+    if (!client || !dst_ip) return LN_ERR_NULL_ARG;
+    client->client.close_egress(dst_ip, dst_port);
+    return LN_OK;
+}
+
+int ln_mesh_is_active(ln_client_t* client) {
+    return client && client->client.is_mesh_active() ? 1 : 0;
 }
 
 char* ln_get_node_id(ln_client_t* client) {
@@ -1202,15 +1218,5 @@ ln_error_t ln_routing_connection_status(ln_client_t* client, const char* connect
               {"data_path", r.value.data_path}, {"created_at", r.value.created_at},
               {"expires_at", r.value.expires_at}};
     *out_json = strdup_json(j);
-    return LN_OK;
-}
-
-extern "C" int ln_mesh_is_active(ln_client_t* client) {
-    return client && client->client.is_mesh_active() ? 1 : 0;
-}
-
-extern "C" ln_error_t ln_mesh_close_egress(ln_client_t* client, const char* dst_ip, uint16_t dst_port) {
-    if (!client || !dst_ip) return LN_ERR_NULL_ARG;
-    client->client.close_egress(dst_ip, dst_port);
     return LN_OK;
 }

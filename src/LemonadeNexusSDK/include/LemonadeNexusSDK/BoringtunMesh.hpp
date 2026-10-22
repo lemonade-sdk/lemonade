@@ -46,11 +46,15 @@ public:
     /// destination reuses one listener.
     uint16_t tcp_egress(const std::string& dst_ip, uint16_t dst_port);
 
+    /// Close the loopback egress to dst_ip:dst_port and abort its open
+    /// connections, so a removed or re-addressed peer is no longer reachable
+    /// through a stale listener. No-op when inactive.
+    void close_egress(const std::string& dst_ip, uint16_t dst_port);
+
     /// Publish a local service at our mesh IP: virtual <mesh_ip>:vport is
     /// bridged to `target` ("tcp:127.0.0.1:PORT" or "unix:/path"), making it
     /// reachable by authorized mesh peers. Returns false if inactive / failed.
     bool tcp_ingress(uint16_t vport, const std::string& target);
-    void close_egress(const std::string& dst_ip, uint16_t dst_port);
 
     /// The dataplane's bound local UDP port (0 when inactive).
     [[nodiscard]] uint16_t bound_port() const;

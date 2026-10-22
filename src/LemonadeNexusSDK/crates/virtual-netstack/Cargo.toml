@@ -18,6 +18,13 @@ smoltcp = { version = "=0.11.0", default-features = false, features = [
     "socket-tcp",
     "socket-udp",
     "socket-icmp",
+    # Inbound UDP datagrams up to the IPv4 maximum, like a kernel socket:
+    # fragments are reassembled, up to 16 datagrams at once. Outbound UDP is
+    # fragmented by the stack itself (stack.rs send_udp).
+    "proto-ipv4-fragmentation",
+    "reassembly-buffer-size-65536",
+    "reassembly-buffer-count-16",
+    "assembler-max-segment-count-32",
 ] }
 mio = { version = "=1.0.3", features = ["os-poll", "net", "os-ext"] }
 log = "0.4"

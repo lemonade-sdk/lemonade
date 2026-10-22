@@ -22,6 +22,6 @@ source dependencies are the fallback. Rust and Cargo 1.85 or newer are required.
 Override dependency sources through the usual `FETCHCONTENT_SOURCE_DIR_*`
 variables for builds without network access.
 
-Local SDK extensions expose dataplane activity and close an individual egress
-listener when a group member leaves. The transport has an end-to-end test for
-selective listener teardown.
+The SDK reports dataplane activity, closes an individual egress listener when a
+group member leaves, and can join as an inference node. The transport has
+end-to-end tests for selective listener teardown and UDP forwarding.

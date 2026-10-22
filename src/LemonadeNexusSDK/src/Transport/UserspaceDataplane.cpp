@@ -7,6 +7,7 @@
 #include <spdlog/spdlog.h>
 
 #include <array>
+#include <cerrno>
 #include <chrono>
 #include <cstdio>
 #include <cstring>
@@ -155,7 +156,17 @@ bool UserspaceDataplane::start(const Config& config) {
     bind_addr.sin_addr.s_addr = htonl(INADDR_ANY);
     bind_addr.sin_port        = htons(config.listen_port);
     if (bind(sock, reinterpret_cast<const sockaddr*>(&bind_addr), sizeof(bind_addr)) != 0) {
-        spdlog::error("[dataplane] failed to bind UDP port {}", config.listen_port);
+#ifdef _WIN32
+        const int err = WSAGetLastError();
+        spdlog::error("[dataplane] failed to bind UDP port {} (WSA error {})",
+                      config.listen_port, err);
+#else
+        // EPERM here on macOS means the App Sandbox lacks the
+        // com.apple.security.network.server entitlement.
+        const int err = errno;
+        spdlog::error("[dataplane] failed to bind UDP port {}: {}",
+                      config.listen_port, std::strerror(err));
+#endif
         close_socket(sock);
         return false;
     }

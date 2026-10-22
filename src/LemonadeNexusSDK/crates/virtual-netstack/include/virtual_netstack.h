@@ -49,7 +49,39 @@ int ns_add_tcp_forward(NsHandle* handle, const char* vip, uint16_t vport,
 uint16_t ns_add_tcp_egress(NsHandle* handle, const char* dst_ip,
                            uint16_t dst_port, const char* src_ip);
 
+/// Close the egress listeners to `dst_ip:dst_port` and abort the virtual TCP
+/// connections already open to it. Returns 0, or -1 for a null handle, an
+/// invalid address, or a stopped stack.
 int ns_remove_tcp_egress(NsHandle* handle, const char* dst_ip, uint16_t dst_port);
+
+/// Callback invoked on the stack thread with each datagram received on a
+/// bound virtual UDP port. Addresses are IPv4 in host byte order
+/// (10.0.0.1 == 0x0A000001). `data` is valid only for the duration of the
+/// call; copy it to keep it. The callback must not call ns_destroy.
+typedef void (*ns_udp_recv_fn)(void* ctx, uint32_t src_ip, uint16_t src_port,
+                               uint32_t dst_ip, uint16_t dst_port,
+                               const uint8_t* data, size_t len);
+
+/// Bind virtual UDP `vip:vport` (one of our virtual addresses). Each datagram
+/// addressed to it is passed to `recv` with `ctx`. `ctx` must outlive the
+/// stack. Binding the same endpoint twice keeps the first binding. Returns 0
+/// on success, -1 on error.
+int ns_udp_bind(NsHandle* handle, const char* vip, uint16_t vport,
+                ns_udp_recv_fn recv, void* ctx);
+
+/// Largest UDP payload ns_udp_send accepts (65535 - 20 IPv4 - 8 UDP).
+#define NS_MAX_UDP_PAYLOAD 65507
+
+/// Send one datagram from a bound virtual endpoint `src_ip:src_port` to
+/// `dst_ip:dst_port`. Thread-safe; never blocks. Like a kernel UDP socket,
+/// a datagram larger than the MTU is sent as IPv4 fragments and reassembled
+/// by the receiving stack; `len` may be up to NS_MAX_UDP_PAYLOAD. Any number
+/// of datagrams may be sent in series. A datagram from an unbound endpoint,
+/// or one that still finds the send queue full after a flush, is dropped.
+/// Returns 0 when queued, -1 on a parameter error.
+int ns_udp_send(NsHandle* handle, const char* src_ip, uint16_t src_port,
+                const char* dst_ip, uint16_t dst_port,
+                const uint8_t* data, size_t len);
 
 #ifdef __cplusplus
 }

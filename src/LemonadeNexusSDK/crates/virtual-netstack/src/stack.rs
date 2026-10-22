@@ -1,6 +1,7 @@
 //! The in-process netstack run loop. Owns the smoltcp interface and bridges
 //! virtual TCP connections to/from real local sockets, driven by a single
-//! dedicated thread and a mio event loop.
+//! dedicated thread and a mio event loop. Virtual UDP ports deliver datagrams
+//! to an in-process callback instead of a socket bridge.
 
 use std::collections::HashMap;
 use std::io;
@@ -13,9 +14,13 @@ use mio::net::TcpListener;
 use mio::{Events, Interest, Poll, Token, Waker};
 
 use smoltcp::iface::{Config, Interface, SocketHandle, SocketSet};
-use smoltcp::socket::tcp;
+use smoltcp::socket::{tcp, udp};
 use smoltcp::time::Instant;
-use smoltcp::wire::{IpAddress, IpCidr, IpEndpoint, IpListenEndpoint, Ipv4Address};
+use smoltcp::phy::ChecksumCapabilities;
+use smoltcp::wire::{
+    IpAddress, IpCidr, IpEndpoint, IpListenEndpoint, IpProtocol, Ipv4Address, Ipv4Packet,
+    UdpPacket, UdpRepr,
+};
 
 use crate::bridge::{Bridge, BridgeTarget};
 use crate::device::VirtDevice;
@@ -23,6 +28,16 @@ use crate::device::VirtDevice;
 const WAKER_TOKEN: Token = Token(0);
 const SOCK_BUF: usize = 65536;
 const MAX_INNER_ITERS: usize = 32;
+// Inbound only: bursts of a few hundred datagrams, or a handful of
+// maximum-size ones, wait here until pump_udp hands them over.
+const UDP_QUEUE_DATAGRAMS: usize = 512;
+const UDP_BUF: usize = 512 * 1024;
+const IPV4_HEADER_LEN: usize = 20;
+const UDP_HEADER_LEN: usize = 8;
+
+/// Receiver for datagrams that arrive on a bound virtual UDP port. Called on
+/// the stack thread with (source, destination, payload).
+pub type UdpDeliver = Box<dyn Fn(IpEndpoint, IpEndpoint, &[u8]) + Send>;
 
 /// Commands sent from FFI callers to the stack thread.
 pub enum Command {
@@ -39,8 +54,27 @@ pub enum Command {
         dst: IpEndpoint,
         src_ip: Ipv4Address,
     },
+    /// Close every egress listener to `dst` and abort the virtual TCP
+    /// connections already open to it.
     RemoveTcpEgress(IpEndpoint),
+    /// Bind virtual UDP `local`; each received datagram goes to `deliver`.
+    UdpBind {
+        local: IpEndpoint,
+        deliver: UdpDeliver,
+    },
+    /// Send one datagram from a bound virtual UDP endpoint.
+    UdpSend {
+        src: IpEndpoint,
+        dst: IpEndpoint,
+        data: Vec<u8>,
+    },
     Shutdown,
+}
+
+struct UdpBinding {
+    local: IpEndpoint,
+    handle: SocketHandle,
+    deliver: UdpDeliver,
 }
 
 struct Listener {
@@ -74,6 +108,8 @@ pub struct Stack {
     listeners: Vec<Listener>,
     egress: HashMap<Token, EgressListener>,
     conns: HashMap<Token, Conn>,
+    udp: Vec<UdpBinding>,
+    next_ip_ident: u16,
     next_token: usize,
     next_ephemeral: u16,
     base: StdInstant,
@@ -106,6 +142,8 @@ impl Stack {
                 listeners: Vec::new(),
                 egress: HashMap::new(),
                 conns: HashMap::new(),
+                udp: Vec::new(),
+                next_ip_ident: 1,
                 next_token: 1,
                 next_ephemeral: 49152,
                 base: StdInstant::now(),
@@ -204,16 +242,24 @@ impl Stack {
                 }
             }
             Command::RemoveTcpEgress(dst) => {
-                let listeners: Vec<Token> = self.egress.iter()
-                    .filter_map(|(token, listener)| (listener.dst == dst).then_some(*token)).collect();
+                let listeners: Vec<Token> = self
+                    .egress
+                    .iter()
+                    .filter_map(|(token, eg)| (eg.dst == dst).then_some(*token))
+                    .collect();
                 for token in listeners {
-                    if let Some(mut listener) = self.egress.remove(&token) {
-                        let _ = listener.listener.deregister(self.poll.registry());
+                    if let Some(mut eg) = self.egress.remove(&token) {
+                        let _ = eg.listener.deregister(self.poll.registry());
                     }
                 }
-                let connections: Vec<Token> = self.conns.iter().filter_map(|(token, conn)| {
-                    (self.sockets.get::<tcp::Socket>(conn.tcp).remote_endpoint() == Some(dst)).then_some(*token)
-                }).collect();
+                let connections: Vec<Token> = self
+                    .conns
+                    .iter()
+                    .filter_map(|(token, conn)| {
+                        (self.sockets.get::<tcp::Socket>(conn.tcp).remote_endpoint() == Some(dst))
+                            .then_some(*token)
+                    })
+                    .collect();
                 for token in connections {
                     if let Some(mut conn) = self.conns.remove(&token) {
                         self.sockets.get_mut::<tcp::Socket>(conn.tcp).abort();
@@ -221,10 +267,121 @@ impl Stack {
                         self.sockets.remove(conn.tcp);
                     }
                 }
+                log::info!("virtual-netstack: egress to {dst} removed");
+            }
+            Command::UdpBind { local, deliver } => {
+                if self.udp.iter().any(|b| b.local == local) {
+                    log::warn!("virtual-netstack: udp {local} already bound");
+                    return true;
+                }
+                let mut socket = Self::make_udp_socket();
+                let endpoint = IpListenEndpoint {
+                    addr: Some(local.addr),
+                    port: local.port,
+                };
+                if socket.bind(endpoint).is_err() {
+                    log::error!("virtual-netstack: failed to bind udp {local}");
+                    return true;
+                }
+                let handle = self.sockets.add(socket);
+                self.udp.push(UdpBinding {
+                    local,
+                    handle,
+                    deliver,
+                });
+                log::info!("virtual-netstack: udp bound on {local}");
+            }
+            Command::UdpSend { src, dst, data } => {
+                if self.udp.iter().any(|b| b.local == src) {
+                    self.send_udp(src, dst, &data);
+                } else {
+                    log::warn!("virtual-netstack: udp send from unbound {src}");
+                }
             }
             Command::Shutdown => return false,
         }
         true
+    }
+
+    fn make_udp_socket() -> udp::Socket<'static> {
+        let rx = udp::PacketBuffer::new(
+            vec![udp::PacketMetadata::EMPTY; UDP_QUEUE_DATAGRAMS],
+            vec![0u8; UDP_BUF],
+        );
+        // Sends bypass the socket (see send_udp), so its transmit queue stays empty.
+        let tx = udp::PacketBuffer::new(vec![udp::PacketMetadata::EMPTY; 1], vec![0u8; 1]);
+        udp::Socket::new(rx, tx)
+    }
+
+    /// Build one UDP datagram and emit it as IPv4 packets no larger than the
+    /// MTU, fragmenting like a kernel UDP socket. Built here rather than by
+    /// the smoltcp socket because smoltcp 0.11 keeps a single fragmentation
+    /// buffer and overwrites it when a second oversized datagram is
+    /// dispatched before the first finishes; emitting directly lets any
+    /// number of datagrams of any size go out in series, with no send queue.
+    fn send_udp(&mut self, src: IpEndpoint, dst: IpEndpoint, data: &[u8]) {
+        let (IpAddress::Ipv4(src_ip), IpAddress::Ipv4(dst_ip)) = (src.addr, dst.addr);
+        let udp_len = UDP_HEADER_LEN + data.len();
+        if udp_len > u16::MAX as usize - IPV4_HEADER_LEN {
+            log::warn!("virtual-netstack: udp datagram of {} bytes exceeds the IPv4 limit", data.len());
+            return;
+        }
+
+        let mut datagram = vec![0u8; udp_len];
+        UdpRepr { src_port: src.port, dst_port: dst.port }.emit(
+            &mut UdpPacket::new_unchecked(&mut datagram[..]),
+            &src.addr,
+            &dst.addr,
+            data.len(),
+            |payload| payload.copy_from_slice(data),
+            &ChecksumCapabilities::default(),
+        );
+
+        let ident = self.next_ip_ident;
+        self.next_ip_ident = self.next_ip_ident.wrapping_add(1);
+        // Every fragment but the last carries a multiple of 8 payload bytes.
+        let max_chunk = (self.device.mtu() - IPV4_HEADER_LEN) & !7;
+        let mut offset = 0;
+        while offset < datagram.len() {
+            let chunk = (datagram.len() - offset).min(max_chunk);
+            let more = offset + chunk < datagram.len();
+            let mut buf = vec![0u8; IPV4_HEADER_LEN + chunk];
+            let mut ip = Ipv4Packet::new_unchecked(&mut buf[..]);
+            ip.set_version(4);
+            ip.set_header_len(IPV4_HEADER_LEN as u8);
+            ip.set_total_len((IPV4_HEADER_LEN + chunk) as u16);
+            ip.set_ident(ident);
+            ip.set_dont_frag(false);
+            ip.set_more_frags(more);
+            ip.set_frag_offset(offset as u16);
+            ip.set_hop_limit(64);
+            ip.set_next_header(IpProtocol::Udp);
+            ip.set_src_addr(src_ip);
+            ip.set_dst_addr(dst_ip);
+            ip.payload_mut()[..chunk].copy_from_slice(&datagram[offset..offset + chunk]);
+            ip.fill_checksum();
+            self.device.emit(&buf);
+            offset += chunk;
+        }
+    }
+
+    /// Hand every queued datagram on a bound UDP socket to its receiver.
+    /// Returns true if any datagram was delivered.
+    fn pump_udp(&mut self) -> bool {
+        let mut progressed = false;
+        for binding in &self.udp {
+            let socket = self.sockets.get_mut::<udp::Socket>(binding.handle);
+            while socket.can_recv() {
+                match socket.recv() {
+                    Ok((data, meta)) => {
+                        (binding.deliver)(meta.endpoint, binding.local, data);
+                        progressed = true;
+                    }
+                    Err(_) => break,
+                }
+            }
+        }
+        progressed
     }
 
     /// Promote any listener whose socket accepted a connection, then bring up
@@ -479,7 +636,8 @@ impl Stack {
                 let polled_changed = self.iface.poll(now, &mut self.device, &mut self.sockets);
                 self.manage_listeners();
                 let pumped = self.pump_conns();
-                if !polled_changed && !pumped && !self.device.has_inbound() {
+                let delivered = self.pump_udp();
+                if !polled_changed && !pumped && !delivered && !self.device.has_inbound() {
                     break;
                 }
             }

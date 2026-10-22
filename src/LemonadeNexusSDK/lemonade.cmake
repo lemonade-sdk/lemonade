@@ -38,6 +38,9 @@ set_target_properties(lemonade-nexus-sdk PROPERTIES IMPORTED_LOCATION "${_nexus_
     INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_SOURCE_DIR}/src/LemonadeNexusSDK/include")
 if(WIN32)
     set_target_properties(lemonade-nexus-sdk PROPERTIES IMPORTED_IMPLIB "${_nexus_link_dir}/lemonade_nexus_sdk.lib")
+elseif(APPLE)
+    # The library is built after configuration, so CMake cannot read its install name to add a build RPATH.
+    set_target_properties(lemonade-nexus-sdk PROPERTIES IMPORTED_SONAME "@rpath/liblemonade_nexus_sdk.dylib")
 endif()
 add_dependencies(lemonade-nexus-sdk nexus-sdk-build)
 target_compile_definitions(lemonade-server-core PUBLIC LEMONADE_WITH_NEXUS=1)

@@ -236,14 +236,17 @@ ln_error_t ln_register_passkey(ln_client_t* client,
 /* Group membership                                                    */
 /* ------------------------------------------------------------------ */
 
-/** Add a member to a group node's assignments. permissions_json is a JSON array of strings. */
+/** Set a member's permissions on a node, replacing its entry. permissions_json
+ *  is a JSON array of permission names. The caller must hold "admin" on the node
+ *  or an ancestor, and pubkey must belong to a device that joined inside that
+ *  admin's group; the server refuses anything else. */
 ln_error_t ln_add_group_member(ln_client_t* client,
                                 const char* node_id,
                                 const char* pubkey,
                                 const char* permissions_json,
                                 char** out_json);
 
-/** Remove a member from a group node's assignments by pubkey. */
+/** Remove a member's entry from a node. Same rules as ln_add_group_member. */
 ln_error_t ln_remove_group_member(ln_client_t* client,
                                    const char* node_id,
                                    const char* pubkey,
@@ -476,6 +479,11 @@ char* ln_get_node_id(ln_client_t* client);
 /** Set a single-use device link token to include in the next ln_join_network. */
 ln_error_t ln_set_link_token(ln_client_t* client, const char* token);
 
+/** Join as an inference node (Tier 3, nonzero) or a client (Tier 4, zero, the
+ *  default). Applies to the next ln_join_network; the server records it when it
+ *  creates this device's endpoint. */
+ln_error_t ln_set_inference_node(ln_client_t* client, int inference);
+
 /** Mint a device link token for adding another device to this account's group.
  *  Requires an established mesh session. Returns {link_token, group_node_id,
  *  expires_at} JSON. ln_free(*out_json). */
@@ -490,8 +498,12 @@ ln_error_t ln_mesh_expose_service(ln_client_t* client, uint16_t vport, const cha
 ln_error_t ln_mesh_open_egress(ln_client_t* client, const char* dst_ip,
                                uint16_t dst_port, uint16_t* out_port);
 
-int ln_mesh_is_active(ln_client_t* client);
+/** Close the loopback bridge to a mesh peer's dst_ip:dst_port and abort its
+ *  open connections (for example after the peer is removed or re-addressed). */
 ln_error_t ln_mesh_close_egress(ln_client_t* client, const char* dst_ip, uint16_t dst_port);
+
+/** 1 when this client's mesh dataplane is up, 0 otherwise (or for NULL). */
+int ln_mesh_is_active(ln_client_t* client);
 
 #if defined(__GNUC__) || defined(__clang__)
 #  pragma GCC visibility pop
