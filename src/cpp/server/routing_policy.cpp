@@ -263,10 +263,6 @@ public:
     }
 };
 
-// A zero-shot encoder: the declared labels are written into the text the model
-// reads rather than being a property of its export, so they travel with every
-// call. The full score distribution is reported unchanged, so conditions band
-// it exactly as they band a `classifier`.
 class ZeroShotClassifier final : public Classifier {
 public:
     ZeroShotClassifier(std::string id, std::string type, std::string model, OnError on_error,

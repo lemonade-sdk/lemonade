@@ -171,9 +171,7 @@ struct ClassifierServices {
                                                 const std::string& text)> run_classifier;
 
     // Score `text` against a caller-supplied `labels` list; returns label ->
-    // score. Powers the `zero_shot` type, whose model has no per-label head: the
-    // labels are an input to the graph, not a property of the export, so they
-    // cannot be read off the model the way `run_classifier`'s are.
+    // score. Powers the `zero_shot` type.
     std::function<std::map<std::string, double>(const std::string& model,
                                                 const std::string& text,
                                                 const std::vector<std::string>& labels)>

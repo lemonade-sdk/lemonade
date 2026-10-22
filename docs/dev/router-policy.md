@@ -162,24 +162,7 @@ and every entry's `model` must be one of `components`:
   LLM-as-classifier via chat).
 - `zero_shot` sends your `labels` to the model on every request, because the
   model has no per-label head to read them off, the label list is an input to
-  the graph:
-
-  ```json
-  {
-    "id": "route",
-    "type": "zero_shot",
-    "model": "Prompt-Router-ONNX",
-    "labels": ["coding", "math", "creative writing"]
-  }
-  ```
-
-  ```json
-  { "id": "code-to-big", "match": { "classifier": "route", "label": "coding", "min_score": 0.5 }, "route_to": "Big-GGUF" }
-  ```
-
-  Unlike `classifier`, there is no LLM-as-classifier fallback: the `model` must be a
-  classification model, checked when the policy is registered rather than on the
-  first request.
+  the graph.
 - `llm` shows the request to an LLM and asks it to choose one of `labels` (the
   chosen label scores `1.0`). Because it produces a plain label, it's a
   **composable signal** — combine it with any other condition, as in
