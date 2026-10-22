@@ -784,9 +784,11 @@ class LemonadeAPI {
   private _pollTimer: ReturnType<typeof setInterval> | null = null;
   private _sessionApiKey = '';
   private _sessionAdminApiKey = '';
-  // Key for a mesh peer reached through this server's Nexus relay. The relay sends it
-  // only to that peer; Authorization keeps authenticating this server.
+  // Key for a mesh peer reached through this server's Nexus relay, sent only with
+  // requests under _peerRelayBase. The relay forwards it to that peer alone;
+  // Authorization keeps authenticating this server.
   private _peerApiKey = '';
+  private _peerRelayBase = '';
   private _hostBaseUrl: string | null = null;
   private _connectionSettingsPromise: Promise<void> | null = null;
   public readonly clientSessionId: string = createSecureClientSessionId();
@@ -824,6 +826,7 @@ class LemonadeAPI {
   set baseUrl(url: string) {
     const normalized = normalizeBaseUrl(url);
     this._peerApiKey = '';
+    this._peerRelayBase = '';
     this._hostBaseUrl = normalized;
     safeSetLocalStorage(LS_BASE_URL, normalized);
   }
@@ -910,6 +913,8 @@ class LemonadeAPI {
 
   async saveConnectionSettings(baseUrl: string, apiKey: string, rememberApiKey: boolean): Promise<ConnectionSettingsSaveResult> {
     const normalized = normalizeBaseUrl(baseUrl);
+    this._peerApiKey = '';
+    this._peerRelayBase = '';
     this._hostBaseUrl = normalized;
     this._sessionApiKey = apiKey;
     safeSetLocalStorage(LS_BASE_URL, normalized);
@@ -927,6 +932,8 @@ class LemonadeAPI {
   }
 
   async clearConnectionSettings(): Promise<void> {
+    this._peerApiKey = '';
+    this._peerRelayBase = '';
     this._hostBaseUrl = null;
     this._sessionApiKey = '';
     this._sessionAdminApiKey = '';
@@ -1051,11 +1058,14 @@ class LemonadeAPI {
     extra?: Record<string, string>,
     includeSessionHeaders?: boolean,
     auth: 'api' | 'admin' | 'none' = 'api',
+    url = '',
   ): Record<string, string> {
     const h: Record<string, string> = { ...(extra || {}) };
     const credential = auth === 'admin' ? this.adminApiKey : auth === 'api' ? this.apiKey : '';
     if (credential) h['Authorization'] = `Bearer ${credential}`;
-    if (this._peerApiKey) h['X-Lemonade-Peer-Authorization'] = `Bearer ${this._peerApiKey}`;
+    if (this._peerApiKey && this._peerRelayBase && url.startsWith(`${this._peerRelayBase}/`)) {
+      h['X-Lemonade-Peer-Authorization'] = `Bearer ${this._peerApiKey}`;
+    }
 
     if (includeSessionHeaders && this.sessionHeadersEnabled) {
       h['X-Client-Session-Id'] = this.clientSessionId;
@@ -1072,7 +1082,7 @@ class LemonadeAPI {
     const extraHeaders = requestOpts.headers instanceof Headers
       ? Object.fromEntries(requestOpts.headers.entries())
       : (Array.isArray(requestOpts.headers) ? Object.fromEntries(requestOpts.headers) : (requestOpts.headers as Record<string, string> | undefined));
-    const headers = this._headers(extraHeaders, includeSessionHeaders, auth);
+    const headers = this._headers(extraHeaders, includeSessionHeaders, auth, url);
     const method = (requestOpts.method || 'GET').toUpperCase();
 
     let processedOpts: Omit<LemonadeRequestInit, 'includeSessionHeaders' | 'auth'> = { ...requestOpts };
@@ -1094,7 +1104,7 @@ class LemonadeAPI {
       if (includeSessionHeaders && this.sessionHeadersEnabled
           && (method === 'GET' || method === 'HEAD' || method === 'OPTIONS')) {
         try {
-          const fallbackHeaders = this._headers(extraHeaders, false, auth);
+          const fallbackHeaders = this._headers(extraHeaders, false, auth, url);
           if (processedOpts.body && headers['Content-Type'] === 'application/json') {
             fallbackHeaders['Content-Type'] = 'application/json';
           }
@@ -1126,7 +1136,7 @@ class LemonadeAPI {
       const errorBody = await resp.clone().text().catch(() => '');
       if (/x[-_]client[-_]session[-_]id|client[-_]session[-_]id/i.test(errorBody)) {
         try {
-          const fallbackHeaders = this._headers(extraHeaders, false, auth);
+          const fallbackHeaders = this._headers(extraHeaders, false, auth, url);
           if (processedOpts.body && headers['Content-Type'] === 'application/json') {
             fallbackHeaders['Content-Type'] = 'application/json';
           }
@@ -2588,6 +2598,7 @@ class LemonadeAPI {
     this._hostBaseUrl = normalizeBaseUrl(endpoint);
     this._sessionAdminApiKey = '';
     this._peerApiKey = peerApiKey;
+    this._peerRelayBase = peerApiKey ? this._hostBaseUrl : '';
     this.setSessionApiKey(apiKey);
     this._healthData = null;
     this._healthDataSignature = '';
@@ -2624,10 +2635,12 @@ class LemonadeAPI {
    * in Models/Connect appear to refresh periodically.
    */
   private async _pollConnection(): Promise<boolean> {
+    const endpoint = this.baseUrl;
     try {
       await this.health();
       return true;
     } catch (err) {
+      if (endpoint !== this.baseUrl) return true;
       this._lastConnectionError = friendlyErrorMessage(err);
       this._healthData = null;
       this._healthDataSignature = '';

@@ -124,14 +124,15 @@ export function isLoopbackUrl(value: string): boolean {
 async function controller(): Promise<Controller> {
   const { default: api } = await import('../../api');
   await api.loadConnectionSettings();
-  if (home && !api.baseUrl.startsWith(`${home.endpoint}/api/v1/nexus/peers/`)) {
+  if (home && !state.switchingServer && !api.baseUrl.startsWith(`${home.endpoint}/api/v1/nexus/peers/`)) {
     home = undefined;
     if (state.selectedServerId) publish({ ...state, selectedServerId: undefined });
   }
   const base = home?.endpoint ?? api.baseUrl;
   const baseKey = home ? home.key : api.apiKey;
   if (!isLoopbackUrl(base)) return { mode: 'remote', source: base, endpoint: base, key: baseKey };
-  if (localController?.source === base) localController.key = baseKey;
+  if (localController && localController.source !== base) localController = undefined;
+  if (localController) localController.key = baseKey;
   if (!localController) {
     const endpoint = base;
     const key = baseKey;
@@ -145,16 +146,27 @@ async function controller(): Promise<Controller> {
   return localController;
 }
 export async function nexusRequest<T>(path: string, body?: unknown): Promise<T> {
-  const target = await controller();
-  if (state.mode !== target.mode) publish({ ...state, mode: target.mode });
-  const response = await fetch(`${target.endpoint}/api/v1/nexus/${path}`, {
-    method: body === undefined ? 'GET' : 'POST',
-    headers: { ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
-      ...(target.key ? { Authorization: `Bearer ${target.key}` } : {}) },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    cache: 'no-store',
-    signal: AbortSignal.timeout(35000),
-  });
+  const send = async () => {
+    const target = await controller();
+    if (state.mode !== target.mode) publish({ ...state, mode: target.mode });
+    return { target, response: await fetch(`${target.endpoint}/api/v1/nexus/${path}`, {
+      method: body === undefined ? 'GET' : 'POST',
+      headers: { ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+        ...(target.key ? { Authorization: `Bearer ${target.key}` } : {}) },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      cache: 'no-store',
+      signal: AbortSignal.timeout(35000),
+    }) };
+  };
+  let response: Response;
+  try {
+    ({ response } = await send());
+  } catch (error) {
+    // lemond picks a new management port each time it starts; rediscover it once.
+    if (!localController) throw error;
+    localController = undefined;
+    ({ response } = await send());
+  }
   const data = await response.json();
   if (!response.ok) throw new Error(typeof data?.error === 'string' ? data.error : `Network request failed (${response.status}).`);
   return data as T;
