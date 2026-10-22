@@ -1,3 +1,4 @@
+#include "../backend_builtin_seeds_internal.h"
 #include "backend_catalog_admission_internal.h"
 #include "backend_catalog_ledger_internal.h"
 #include "backend_definition_resources.h"
@@ -136,8 +137,10 @@ std::shared_ptr<const FrozenBuiltinCatalog> CatalogAdmissionBuilder::freeze() {
     for (const auto* key : {"no_broadcast"}) { reserve(frozen->sections_, key, retained, limits); reserve(frozen->options_, key, retained, limits); }
     for (const auto& [key, value] : frozen->defaults_.items()) { reserve(frozen->sections_, key, retained, limits); reserve(frozen->options_, key, retained, limits); }
     for (const auto& [key, value] : RecipeOptions::common_option_defaults().items()) reserve(frozen->options_, key, retained, limits);
-    for (const auto& registration : builtin_registrations()) {
-        const auto& descriptor = *registration.descriptor;
+    frozen->seeds_ = &builtin_registration_seeds();
+    for (const auto& seed : *frozen->seeds_) {
+        const auto& registration = seed.legacy;
+        const auto& descriptor = *seed.descriptor;
         reserve(frozen->ids_, descriptor.recipe, retained, limits);
         reserve(frozen->ids_, descriptor.effective_config_section(), retained, limits);
         reserve(frozen->recipes_, descriptor.recipe, retained, limits);
@@ -155,8 +158,11 @@ std::shared_ptr<const FrozenBuiltinCatalog> CatalogAdmissionBuilder::freeze() {
             keep(retained, checked_product(logical_json(definition.records), 32), limits);
         }
     }
-    frozen->definitions_ = k_backend_definition_source_count;
-    frozen->source_bytes_ = k_backend_definition_source_bytes;
+    if (k_backend_definition_v1_source_count + k_backend_definition_v2_source_count != k_backend_definition_source_count ||
+        k_backend_definition_v1_source_bytes + k_backend_definition_v2_source_bytes != k_backend_definition_source_bytes)
+        throw std::logic_error("Embedded builtin source inventory is not a partition");
+    frozen->definitions_ = k_backend_definition_v1_source_count;
+    frozen->source_bytes_ = k_backend_definition_v1_source_bytes;
     frozen->authority_ = BuiltinCatalogLoader::freeze_embedded().snapshot;
     if (!frozen->authority_) throw std::logic_error("Installed builtin authority is invalid");
     for (const auto& source : embedded_v2_sources()) {
@@ -164,6 +170,8 @@ std::shared_ptr<const FrozenBuiltinCatalog> CatalogAdmissionBuilder::freeze() {
         charge(frozen->definitions_, 1, limits.snapshot_documents);
         charge(frozen->source_bytes_, source.bytes.size(), limits.snapshot_source_bytes);
     }
+    if (frozen->definitions_ != k_backend_definition_source_count || frozen->source_bytes_ != k_backend_definition_source_bytes)
+        throw std::logic_error("Embedded builtin source accounting partition mismatch");
     for (const auto& definition : builtin_definitions(*frozen->authority_)) {
         const auto& declaration = definition->declaration;
         const auto recipe = declaration.at("recipe").get<std::string>();

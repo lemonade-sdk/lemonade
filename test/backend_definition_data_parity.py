@@ -3,6 +3,7 @@
 import argparse
 import difflib
 import json
+import re
 from pathlib import Path
 import shlex
 import subprocess
@@ -55,13 +56,81 @@ def compiler_inputs(build):
     return command[0], includes, libraries
 
 
+def baseline_generated_header(args):
+    folder = args.out / "baseline-codegen"
+    folder.mkdir(parents=True, exist_ok=True)
+    generator = "cmake/BackendDescriptorFromDefinition.cmake"
+    old_generator = baseline(args.baseline_commit, generator)
+    current_generator = (REPO / generator).read_text()
+    v1_end = "function(lemon_backend_descriptor_v2_initializer"
+    assert (
+        old_generator.split(v1_end)[0] == current_generator.split(v1_end)[0]
+    ), "V1MetadataEmitterUnchanged"
+    for name in ("BackendDescriptorFromDefinition.cmake", "CxxStringLiterals.cmake"):
+        (folder / name).write_text(baseline(args.baseline_commit, "cmake/" + name))
+    template_path = "src/cpp/server/backends/backend_descriptors_generated.h.in"
+    (folder / "descriptors.h.in").write_text(
+        baseline(args.baseline_commit, template_path)
+    )
+    cmake = baseline(args.baseline_commit, "CMakeLists.txt")
+    block = cmake.split("set(LEMON_BACKENDS\n", 1)[1].split("\n)", 1)[0]
+    pairs = re.findall(r'"([a-z0-9-]+)\|([a-z0-9_]+)"', block)
+    assert len(pairs) == 17
+    script = [
+        "cmake_minimum_required(VERSION 3.19)",
+        f'include("{folder}/BackendDescriptorFromDefinition.cmake")',
+    ]
+    for recipe, stem in pairs:
+        source = REPO / f"src/cpp/resources/backends/{stem}.json"
+        if source.exists():
+            script.extend(
+                [
+                    f'lemon_backend_descriptor_from_definition(value {stem} {recipe} "{source}")',
+                    'string(APPEND LEMON_DESCRIPTOR_DEFINITIONS "${value}")',
+                ]
+            )
+        else:
+            header = f"src/cpp/include/lemon/backends/{stem}/{stem}.h"
+            assert (
+                baseline(args.baseline_commit, header) == (REPO / header).read_text()
+            ), header
+            script.append(
+                f'string(APPEND LEMON_DESCRIPTOR_INCLUDES "#include \\"lemon/backends/{stem}/{stem}.h\\"\\n")'
+            )
+        script.append(
+            f'string(APPEND LEMON_DESCRIPTOR_ENTRIES "        &lemon::backends::{stem}::descriptor,\\n")'
+        )
+    script.append(
+        f'configure_file("{folder}/descriptors.h.in" "{folder}/backend_descriptors_generated.h" @ONLY)'
+    )
+    (folder / "generate.cmake").write_text("\n".join(script) + "\n")
+    subprocess.run(
+        ["cmake", "-P", str(folder / "generate.cmake")],
+        check=True,
+        capture_output=True,
+        timeout=30,
+    )
+    return folder
+
+
 def compile_views(args):
     protected = [
-        "cmake/BackendDescriptorFromDefinition.cmake",
         "src/cpp/include/lemon/backends/backend_descriptor.h",
         "src/cpp/server/backends/configured/configured_backend_entry.cpp",
         "src/cpp/server/backends/backend_option_contract.cpp",
-        "src/cpp/resources/backends",
+        *[
+            f"src/cpp/resources/backends/{stem}.json"
+            for stem in (
+                "ds4",
+                "hrx",
+                "kokoro",
+                "moonshine",
+                "onnxruntime",
+                "ryzenai",
+                "thinksound",
+                "trellis",
+            )
+        ],
     ]
     subprocess.run(
         ["git", "diff", "--exit-code", args.baseline_commit, "--", *protected],
@@ -69,6 +138,17 @@ def compile_views(args):
         check=True,
         capture_output=True,
     )
+    assert {p.stem for p in (REPO / "src/cpp/resources/backends").glob("*.json")} == {
+        "ds4",
+        "hrx",
+        "kokoro",
+        "moonshine",
+        "onnxruntime",
+        "ryzenai",
+        "thinksound",
+        "trellis",
+    }
+    before_include = baseline_generated_header(args)
     compiler, includes, libraries = compiler_inputs(args.build_dir)
     runtime = baseline(
         args.baseline_commit, str(CONFIGURED / "configured_backend_entry.cpp")
@@ -156,6 +236,7 @@ int main(int argc, char** argv) {
             command = [
                 compiler,
                 "-O1",
+                *(["-I" + str(before_include)] if side == "before" else []),
                 *includes,
                 *flags[view],
                 "-I" + str(REPO / CONFIGURED),

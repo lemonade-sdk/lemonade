@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../backend_builtin_seeds_internal.h"
 #include "backend_definition_exports_internal.h"
 #include "lemon/backends/configured/backend_catalog_admission.h"
 
@@ -27,6 +28,7 @@ CatalogInputHeader inspect_catalog_input(std::string_view bytes, const Definitio
 class FrozenBuiltinCatalog {
 private:
     FrozenBuiltinCatalog() = default;
+    const std::vector<BuiltinRegistrationSeed>* seeds_ = nullptr;
     std::set<std::string> ids_, recipes_, sections_, options_;
     std::map<std::string, std::set<std::string>> persisted_;
     std::shared_ptr<const FrozenDefinitionSnapshot> authority_;
@@ -69,6 +71,8 @@ struct CatalogAdmissionBuilder {
         std::shared_ptr<const AuthorizedDefinition> token, std::shared_ptr<const CatalogAdmissionTicket> ticket);
     static std::vector<std::shared_ptr<const ResolvedDefinition>> builtin_definitions(const FrozenDefinitionSnapshot& snapshot);
 #ifdef LEMON_BACKEND_EXPORT_TESTING
+    static std::shared_ptr<const FrozenBuiltinCatalog> test_with_seeds(
+        std::shared_ptr<const FrozenBuiltinCatalog> builtins, const std::vector<BuiltinRegistrationSeed>& seeds);
     static void test_detach_ticket(const AuthorizedDefinition& token);
     static std::shared_ptr<const AuthorizedDefinition> test_clone_token(const AuthorizedDefinition& token);
 #endif

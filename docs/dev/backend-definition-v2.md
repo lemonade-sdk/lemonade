@@ -887,3 +887,45 @@ tables remain empty, and aggregate pin
 is unchanged. The production llama.cpp definition/factory port and frozen-oracle
 comparison belong to 4e; HRX inheritance and native/model/hardware/export
 qualification remain later work.
+
+## Builtin source cache and inert mixed generation (4e.1)
+
+`builtin_resolved_source(DefinitionKey)` is data-only. It retains an immutable
+resolved declaration from the generated embedded v2 source index and requires an
+exact builtin namespace, identifier and contract major. Its function-local cache
+uses only the bounded source snapshot and resolver. It never reads a catalog,
+consumes publication state, constructs registration seeds, installs authority or
+invokes runtime services. Descriptor initializers can therefore use the accessor
+before server startup, including in the CLI and across translation units.
+
+CMake dispatches matching definitions by their envelope version. Version 1 keeps
+the existing metadata emitter; version 2 maps the cached resolved declaration
+into the named `inline const BackendDescriptor`. Unknown envelope versions fail
+configuration. Both resource arms use the shared 8,000-byte literal splitter.
+Generated source counts and byte totals partition v1 and v2, with an authoritative
+union. Admission charges the v1 partition plus each indexed v2 source once and
+checks equality with that union. Retained resolver, authority, compiler and binder
+copies keep their independent ledger allowances.
+
+The private builtin seed inventory carries a canonical descriptor and either a
+legacy registration or a logical v2 definition identifier. Freezing and entry
+finalization use those seeds without calling the public registration accessor.
+A v2 seed is not a usable factory. The builtin-only fallback must finalize a
+complete catalog before returning registrations. Entry construction checks every
+descriptor field, including nested option/support data and JSON number types,
+then borrows the canonical inline descriptor. `published_descriptor()` supplies
+that address to catalog registrations and `ConfiguredServer`; external entries
+continue publishing their own descriptor. Publication remains startup-only.
+
+`BackendBuiltinSourceCacheTest` uses separate generated test resources and checks
+fresh-process first-access orders, two translation units, complete fallback,
+source accounting, field equality and address preservation through publication.
+A separate minimal executable and the CLI are checked for server and typed-target
+dependencies. `test/backend_v2_4e_audit.py` also runs version dispatch, literal and
+isolated compiled mutation gates. Baseline descriptor headers are regenerated
+from the pinned old generator for all three compiler views.
+
+All eight production definitions, including HRX, remain v1; production llama.cpp
+keeps its wrapper. Production embedded v2 sources, builtin leaf policies and
+exports remain empty. Unit 4e.2 owns candidate semantics and frozen-oracle parity;
+4e.3 owns production authority, capability advertisement and atomic activation.

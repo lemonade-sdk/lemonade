@@ -88,7 +88,7 @@ ConfiguredServer::ConfiguredServer(std::shared_ptr<const ConfiguredBackendEntry>
     }
     const bool compatibility = entry_->compatibility == TrustedCompatibility::LegacyNonChatSse;
     bind_operations(OperationBindings(adapters, entry_->bindings, compatibility));
-    set_descriptor(&entry_->descriptor);
+    set_descriptor(&entry_->published_descriptor());
 }
 
 void ConfiguredServer::load(const std::string& name, const ModelInfo& model, const RecipeOptions& options, bool) {

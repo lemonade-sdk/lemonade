@@ -30,7 +30,9 @@ private:
     struct V2FactoryState;
     const std::shared_ptr<FactoryState> factory_state_;
     const std::shared_ptr<V2FactoryState> v2_factory_state_;
-    explicit ConfiguredBackendEntry(std::shared_ptr<const ExecutableDefinition> executable);
+    explicit ConfiguredBackendEntry(std::shared_ptr<const ExecutableDefinition> executable, const BackendDescriptor* canonical = nullptr);
+    const BackendDescriptor* canonical_descriptor_ = nullptr;
+    friend struct BuiltinEntryBuilder;
     const std::shared_ptr<const DefinitionRunner> runner_;
     friend class ConfiguredServer;
 public:
@@ -41,6 +43,7 @@ public:
     ConfiguredBackendEntry& operator=(const ConfiguredBackendEntry&) = delete;
     const std::shared_ptr<const BackendDefinition> definition;
     const BackendDescriptor descriptor;
+    const BackendDescriptor& published_descriptor() const { return canonical_descriptor_ ? *canonical_descriptor_ : descriptor; }
     const std::vector<OperationBinding> bindings;
     const std::shared_ptr<const ConfiguredBackendOps> ops;
     const std::shared_ptr<const BackendOps> v2_ops;

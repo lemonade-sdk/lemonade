@@ -6,6 +6,8 @@
 //
 #include <vector>
 #include "lemon/backends/backend_descriptor.h"
+#include "lemon/backends/configured/backend_builtin_sources.h"
+#include "lemon/backends/configured/backend_definition_descriptor.h"
 @LEMON_DESCRIPTOR_INCLUDES@
 @LEMON_DESCRIPTOR_DEFINITIONS@namespace lemon {
 namespace backends {

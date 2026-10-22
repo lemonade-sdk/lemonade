@@ -1,6 +1,7 @@
 #include "backend_catalog_execution_fixture.h"
 #include "backend_catalog_publication_internal.h"
 #include "backend_runtime_fixture.h"
+#include "lemon/backends/configured/backend_definition_descriptor.h"
 
 using namespace catalog_execution_fixture;
 using namespace lemon;
@@ -80,7 +81,14 @@ int main() {
     binding_fixture::calls.clear();
     binding_fixture::allow_entries = false;
     const auto builtin = runtime_fixture::runtime_document();
-    const auto trusted = build({}, {}, binding_fixture::builtins(false, &builtin));
+    const auto trusted_builtins = binding_fixture::builtins(false, &builtin);
+    const auto trusted_admission = admit({}, trusted_builtins);
+    const auto trusted_token = trusted_admission.catalog->builtin_v2_definition({DefinitionNamespace::Builtin, "binding-fixture", 1});
+    const auto trusted_descriptor = descriptor_from_declaration(trusted_token->definition().declaration,
+        DefinitionNamespace::Builtin, DescriptorPlatform::native());
+    auto trusted_seeds = builtin_registration_seeds();
+    trusted_seeds.push_back({&trusted_descriptor, "binding-fixture", {}});
+    const auto trusted = build({}, {}, CatalogAdmissionBuilder::test_with_seeds(trusted_builtins, trusted_seeds));
     check(trusted.catalog && trusted.stages.executable && binding_fixture::calls.empty(), "HookBearingWholeGraphFinalizationInvokesNothing");
     if (!trusted.catalog) dump_errors(trusted);
 

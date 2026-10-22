@@ -1135,12 +1135,15 @@ lemon_backend_definition_resources(LEMON_DEFINITION_RESOURCES
     ${LEMON_BACKEND_DEFINITION_FILES})
 configure_file(src/cpp/server/backends/configured/backend_definition_resources.h.in
     "${CMAKE_CURRENT_BINARY_DIR}/include/backend_definition_resources.h" @ONLY)
+lemon_backend_builtin_source_resources(_builtin_source_resources ${LEMON_BACKEND_DEFINITION_FILES})
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/include/backend_builtin_source_resources.h" "${_builtin_source_resources}")
 set(LEMON_BACKEND_DEFINITION_V2_SCHEMA ${CMAKE_CURRENT_SOURCE_DIR}/schemas/backend-definition-v2.schema.json)
 lemon_backend_definition_v2_resources(LEMON_DEFINITION_V2_RESOURCES
     ${LEMON_BACKEND_DEFINITION_V2_SCHEMA})
 configure_file(src/cpp/server/backends/configured/backend_definition_v2_resources.h.in
     "${CMAKE_CURRENT_BINARY_DIR}/include/backend_definition_v2_resources.h" @ONLY)
 add_library(lemonade-backend-definition-v2 STATIC
+    src/cpp/server/backends/configured/backend_builtin_sources.cpp
     src/cpp/server/backends/configured/backend_definition_v2_contract.cpp
     src/cpp/server/backends/configured/backend_definition_v2_parse.cpp
     src/cpp/server/backends/configured/backend_catalog_ledger.cpp
@@ -1176,6 +1179,7 @@ set(LEMON_TYPED_HOOK_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/configured/typed/llamacpp_artifacts.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/configured/typed/llamacpp_hooks.cpp)
 set(LEMON_BACKEND_FACTORY_SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/backend_builtin_seeds.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/backend_registry.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/backend_effects.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/backend_load_helpers.cpp
@@ -1209,9 +1213,11 @@ foreach(_backend_entry ${LEMON_BACKENDS})
     file(GLOB _backend_srcs CONFIGURE_DEPENDS
         ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/${_backend_stem}/*.cpp)
     list(APPEND LEMON_BACKEND_FACTORY_SOURCES ${_backend_srcs})
+    set(_backend_version 0)
     set(_backend_definition ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/${_backend_stem}.json)
     if(_backend_definition IN_LIST LEMON_BACKEND_DEFINITION_FILES)
-        lemon_backend_descriptor_from_definition(_backend_descriptor
+        lemon_backend_definition_version(_backend_version "${_backend_definition}")
+        lemon_backend_descriptor_dispatch(_backend_descriptor
             ${_backend_stem} ${_backend_recipe} ${_backend_definition})
         string(APPEND LEMON_DESCRIPTOR_DEFINITIONS "${_backend_descriptor}")
     else()
@@ -1220,16 +1226,11 @@ foreach(_backend_entry ${LEMON_BACKENDS})
     endif()
     string(APPEND LEMON_DESCRIPTOR_ENTRIES
         "        &lemon::backends::${_backend_stem}::descriptor,\n")
-    string(APPEND LEMON_FACTORY_INCLUDES
-        "#include \"lemon/backends/${_backend_stem}/${_backend_stem}_server.h\"\n")
-    set(_configured_entry "nullptr")
-    if(_backend_definition IN_LIST LEMON_BACKEND_DEFINITION_FILES)
-        set(_configured_entry "lemon::backends::${_backend_stem}::configured_entry().get()")
-    endif()
-    string(APPEND LEMON_FACTORY_ENTRIES
-        "        { &lemon::backends::${_backend_stem}::descriptor, &lemon::backends::${_backend_stem}::create, lemon::backends::${_backend_stem}::spec(), lemon::backends::${_backend_stem}::ops(), ${_configured_entry} },\n")
-    string(APPEND LEMON_CAPABILITY_ENTRIES
-        "        { &lemon::backends::${_backend_stem}::descriptor, lemon::backends::${_backend_stem}::capabilities() },\n")
+    lemon_backend_registration_seed(_seed_includes _seed_entry _seed_capability
+        ${_backend_stem} "${_backend_definition}")
+    string(APPEND LEMON_FACTORY_INCLUDES "${_seed_includes}")
+    string(APPEND LEMON_FACTORY_ENTRIES "${_seed_entry}")
+    string(APPEND LEMON_CAPABILITY_ENTRIES "${_seed_capability}")
 endforeach()
 
 configure_file(
@@ -4187,4 +4188,51 @@ if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_backend_c
         DEPENDS test_backend_catalog_accounting lemonade-backend-definition-binding lemonade-backend-definition-execution)
     add_cpp_ci_test(BackendCatalogPublicationTest CI ON COMMAND test_backend_catalog_publication
         DEPENDS test_backend_catalog_publication lemonade-backend-definition-binding lemonade-backend-definition-execution)
+endif()
+
+if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_backend_builtin_source_cache.cpp")
+    set(_cache_include "${CMAKE_CURRENT_BINARY_DIR}/test/source-cache")
+    file(MAKE_DIRECTORY "${_cache_include}")
+    set(_cache_fixture "${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures/backend-v2/source_cache.json")
+    lemon_backend_definition_resources(LEMON_DEFINITION_RESOURCES
+        ${LEMON_BACKEND_DEFINITION_SCHEMA} ${LEMON_BACKEND_DEFINITION_FILES} "${_cache_fixture}")
+    configure_file(src/cpp/server/backends/configured/backend_definition_resources.h.in
+        "${_cache_include}/backend_definition_resources.h" @ONLY)
+    lemon_backend_builtin_source_resources(_cache_resources ${LEMON_BACKEND_DEFINITION_FILES} "${_cache_fixture}")
+    file(WRITE "${_cache_include}/backend_builtin_source_resources.h" "${_cache_resources}")
+    lemon_backend_descriptor_dispatch(_cache_descriptor source_cache_fixture source-cache-fixture "${_cache_fixture}")
+    file(WRITE "${_cache_include}/backend_builtin_source_test_descriptor.h"
+        "#pragma once\n#include \"lemon/backends/configured/backend_builtin_sources.h\"\n#include \"lemon/backends/configured/backend_definition_descriptor.h\"\n${_cache_descriptor}")
+    string(APPEND LEMON_FACTORY_INCLUDES "#include \"backend_builtin_source_test_descriptor.h\"\n")
+    lemon_backend_registration_seed(_cache_includes _cache_seed _cache_capability source_cache_fixture "${_cache_fixture}")
+    string(APPEND LEMON_FACTORY_ENTRIES "${_cache_seed}")
+    configure_file(src/cpp/server/backends/backend_factories_generated.h.in
+        "${_cache_include}/backend_factories_generated.h" @ONLY)
+    add_library(lemonade-source-cache-test-base STATIC
+        $<FILTER:$<TARGET_OBJECTS:lemonade-server-core>,EXCLUDE,(backend_builtin_seeds|backend_catalog_admission).cpp.(o|obj)$>)
+    target_link_libraries(lemonade-source-cache-test-base PUBLIC
+        $<TARGET_GENEX_EVAL:lemonade-server-core,$<TARGET_PROPERTY:lemonade-server-core,INTERFACE_LINK_LIBRARIES>>)
+    add_executable(test_backend_builtin_source_cache
+        test/cpp/test_backend_builtin_source_cache.cpp
+        test/cpp/backend_builtin_source_cache_peer.cpp
+        src/cpp/server/backends/backend_builtin_seeds.cpp
+        src/cpp/server/backends/configured/backend_builtin_sources.cpp
+        src/cpp/server/backends/configured/backend_catalog_admission.cpp)
+    target_include_directories(test_backend_builtin_source_cache BEFORE PRIVATE "${_cache_include}")
+    target_include_directories(test_backend_builtin_source_cache PRIVATE src/cpp/server/backends src/cpp/server/backends/configured)
+    target_compile_definitions(test_backend_builtin_source_cache PRIVATE
+        LEMON_TEST_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures")
+    target_link_libraries(test_backend_builtin_source_cache PRIVATE lemonade-source-cache-test-base lemonade-test-isolation)
+    add_executable(test_backend_builtin_source_data
+        test/cpp/test_backend_builtin_source_cache.cpp
+        test/cpp/backend_builtin_source_cache_peer.cpp
+        src/cpp/server/backends/configured/backend_builtin_sources.cpp)
+    target_include_directories(test_backend_builtin_source_data BEFORE PRIVATE "${_cache_include}")
+    target_include_directories(test_backend_builtin_source_data PRIVATE src/cpp/server/backends src/cpp/server/backends/configured)
+    target_compile_definitions(test_backend_builtin_source_data PRIVATE LEMON_SOURCE_CACHE_DATA_ONLY)
+    target_link_libraries(test_backend_builtin_source_data PRIVATE lemonade-backend-definition-v2)
+    add_cpp_ci_test(BackendBuiltinSourceCacheTest CI ON
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/backend_v2_4e_audit.py
+            initialization --build "${CMAKE_CURRENT_BINARY_DIR}"
+        DEPENDS test_backend_builtin_source_cache test_backend_builtin_source_data)
 endif()

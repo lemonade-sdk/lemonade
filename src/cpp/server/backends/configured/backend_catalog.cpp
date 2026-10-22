@@ -1,3 +1,4 @@
+#include "../backend_builtin_seeds_internal.h"
 #include "../backend_catalog_publication_internal.h"
 #include "backend_catalog_admission_internal.h"
 #include "backend_catalog_ledger_internal.h"
@@ -98,13 +99,23 @@ BackendCatalog::BackendCatalog(const std::vector<DefinitionSource>& sources) {
 
 void BackendCatalog::finalize() {
     data_ = std::make_shared<BackendCatalogData>();
-    registrations_ = builtin_registrations();
+    const auto& seeds = builtins_->seeds_ ? *builtins_->seeds_ : builtin_registration_seeds();
+    for (const auto& seed : seeds) {
+        if (seed.definition_id.empty()) { registrations_.push_back(seed.legacy); continue; }
+        const auto found = std::find_if(entries_.begin(), entries_.end(), [&](const auto& entry) {
+            if (!entry->executable_definition) return false;
+            const auto& key = entry->executable_definition->compiled().authorized().definition().key;
+            return key.space == DefinitionNamespace::Builtin && key.id == seed.definition_id;
+        });
+        if (found == entries_.end() || &(*found)->published_descriptor() != seed.descriptor)
+            throw std::logic_error("Builtin seed has no finalized canonical entry");
+        const auto& entry = *found;
+        registrations_.push_back({&entry->published_descriptor(), entry->factory, &entry->spec, entry->backend_ops(), entry.get()});
+    }
     for (const auto& entry : entries_) {
         if (!entry->executable_definition || entry->executable_definition->compiled().authorized().definition().key.space != DefinitionNamespace::Builtin) continue;
-        const BackendRegistration registration{&entry->descriptor, entry->factory, &entry->spec, entry->backend_ops(), entry.get()};
-        auto found = std::find_if(registrations_.begin(), registrations_.end(), [&](const auto& row) { return row.descriptor->recipe == entry->descriptor.recipe; });
-        if (found == registrations_.end()) registrations_.push_back(registration);
-        else *found = registration;
+        const auto found = std::find_if(registrations_.begin(), registrations_.end(), [&](const auto& row) { return row.configured_entry == entry.get(); });
+        if (found == registrations_.end()) throw std::logic_error("Unregistered builtin executable entry");
     }
     std::set<std::string> ids, recipes, sections{"no_broadcast"}, option_names{"no_broadcast"};
     const auto& defaults = builtins_->defaults_;

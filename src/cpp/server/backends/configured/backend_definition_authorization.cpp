@@ -513,6 +513,13 @@ std::shared_ptr<const AuthorizedDefinition> CatalogAdmissionBuilder::test_clone_
     return copy;
 }
 
+std::shared_ptr<const FrozenBuiltinCatalog> CatalogAdmissionBuilder::test_with_seeds(
+    std::shared_ptr<const FrozenBuiltinCatalog> builtins, const std::vector<BuiltinRegistrationSeed>& seeds) {
+    auto copy = std::shared_ptr<FrozenBuiltinCatalog>(new FrozenBuiltinCatalog(*builtins));
+    copy->seeds_ = &seeds;
+    return copy;
+}
+
 std::shared_ptr<const FrozenBuiltinCatalog> CatalogAdmissionBuilder::test_builtins(
     std::shared_ptr<const FrozenDefinitionSnapshot> authority, const std::vector<DefinitionSourceView>& sources) {
     auto value = std::shared_ptr<FrozenBuiltinCatalog>(new FrozenBuiltinCatalog());

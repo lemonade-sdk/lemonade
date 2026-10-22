@@ -1,3 +1,5 @@
+#include "../backend_builtin_seeds_internal.h"
+#include "backend_builtin_entry_internal.h"
 #include "backend_catalog_admission_internal.h"
 #include "backend_catalog_ledger_internal.h"
 #include "lemon/backends/configured/backend_catalog.h"
@@ -123,6 +125,16 @@ struct CatalogExecutionBuilder {
                     accounting::owned(v2::checked_sum(v2::checked_product(bytes, 4), sizeof(ConfiguredBackendEntry) + 4096));
                     accounting::work(bytes, 1);
                     accounting::Temporary temporary(v2::checked_sum(v2::checked_product(bytes, 2), 8192));
+                    if constexpr (std::is_same_v<typename std::decay_t<decltype(definition)>::element_type, const ExecutableDefinition>) {
+                        const auto& key = definition->compiled().authorized().definition().key;
+                        if (key.space == DefinitionNamespace::Builtin) {
+                            const auto& seeds = candidate->builtins_->seeds_ ? *candidate->builtins_->seeds_ : builtin_registration_seeds();
+                            const auto seed = std::find_if(seeds.begin(), seeds.end(), [&](const auto& value) { return value.definition_id == key.id; });
+                            if (seed == seeds.end()) throw std::logic_error("Builtin executable has no canonical descriptor seed");
+                            candidate->entries_.push_back(BuiltinEntryBuilder::make(definition, *seed->descriptor));
+                            return;
+                        }
+                    }
                     candidate->entries_.push_back(ConfiguredBackendEntry::make(definition));
                 };
                 for (const auto& executable : executables) finalize(executable);
