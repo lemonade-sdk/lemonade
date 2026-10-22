@@ -3018,6 +3018,32 @@ class EndpointTests(ServerTestBase):
 
         print(f"[OK] Unloaded specific model: {ENDPOINT_TEST_MODEL}")
 
+    def test_013b_unload_latest_tag_under_either_spelling(self):
+        """An Ollama-style `:latest` name unloads the model, sent as `model` or `model_name`."""
+        for field in ("model", "model_name"):
+            requests.post(
+                f"{self.base_url}/load",
+                json={"model_name": ENDPOINT_TEST_MODEL},
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            response = requests.post(
+                f"{self.base_url}/unload",
+                json={field: f"{ENDPOINT_TEST_MODEL}:latest"},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(response.status_code, 200, f"{field}: {response.text}")
+            self.assertEqual(response.json().get("model_name"), ENDPOINT_TEST_MODEL)
+
+            health_data = requests.get(
+                f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
+            ).json()
+            loaded_models = [
+                m["model_name"] for m in health_data.get("all_models_loaded", [])
+            ]
+            self.assertNotIn(ENDPOINT_TEST_MODEL, loaded_models, field)
+
+        print("[OK] :latest names unload the model under model and model_name")
+
     def test_014_unload_nonexistent_model(self):
         """Test that unloading a model that isn't loaded returns 404."""
         response = requests.post(

@@ -63,12 +63,15 @@ void relay_http(uint16_t port, const std::string& path, const httplib::Request& 
 
 class NexusManager {
 public:
-    /// `ingress_port` is the port of the NexusListener::MeshIngress listener (see there).
-    /// Zero means that listener is not running, and joining fails.
-    /// `apply_listener_policy` installs lemond's origin, CORS and API-key handling on the
-    /// management listener before it starts, the same handling as the public listener.
-    NexusManager(const std::string& config_dir, int ingress_port,
-                 const std::function<void(httplib::Server&)>& apply_listener_policy);
+    /// Starts the management and mesh ingress listeners on loopback ports.
+    /// `install_policy` installs lemond's request middleware (origin, CORS, API keys) on the
+    /// management listener. `install_api` installs the middleware and lemond's API routes on
+    /// the mesh ingress listener; NexusManager registers its refusing Nexus routes first.
+    /// Both run once, before the listener starts. If the mesh listener cannot bind, joining
+    /// fails.
+    NexusManager(const std::string& config_dir,
+                 const std::function<void(httplib::Server&)>& install_policy,
+                 const std::function<void(httplib::Server&)>& install_api);
     ~NexusManager();
     void register_routes(httplib::Server& server, NexusListener listener = NexusListener::Public);
     void stop();
@@ -86,7 +89,7 @@ private:
     void relay(const httplib::Request& req, httplib::Response& res);
     std::pair<int, json> control(const std::string& method, const std::string& path, const json& body);
     std::string data_root_;
-    int ingress_port_;
+    int ingress_port_{0};
     std::unique_ptr<Session> session_;
     mutable std::mutex mutex_;
     // Serializes Session (SDK) work. Lock before mutex_ when both are needed.
@@ -102,5 +105,7 @@ private:
     httplib::Server management_server_;
     std::thread management_thread_;
     int management_port_{0};
+    httplib::Server mesh_server_;
+    std::thread mesh_thread_;
 };
 }

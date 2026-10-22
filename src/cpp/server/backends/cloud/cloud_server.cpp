@@ -550,7 +550,7 @@ json CloudServer::post_with_auth(const std::string& path, const json& request,
             creds.policy,
             cancel_token);
         if (response.status_code == 200) {
-            // Return the body unchanged so the server.cpp handler picks up the
+            // Return the body unchanged so the chat/completions route picks up the
             // `usage` telemetry like every other backend.
             return json::parse(response.body);
         }
@@ -1152,7 +1152,7 @@ public:
                 continue;
             }
             // Don't send the API key to a plaintext http:// endpoint unless the
-            // provider explicitly opted in (AGENTS.md invariant #11).
+            // provider explicitly opted in.
             if (CloudProviderRegistry::is_http_base_url(rec.base_url) && !rec.allow_insecure_http) {
                 LOG(WARNING, "CloudOps") << "Skipping cloud discovery for '" << rec.name
                                          << "': http:// with API key requires allow_insecure_http=true"

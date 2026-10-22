@@ -187,7 +187,7 @@ void check_listener_isolation(const std::filesystem::path& root, const std::func
     set_environment("LEMONADE_ADMIN_API_KEY", "");
     set_environment("LEMONADE_API_KEY", "remote-test-key");
     {
-        lemon::NexusManager manager((root / "isolation").string(), 13305, listener_policy);
+        lemon::NexusManager manager((root / "isolation").string(), listener_policy, listener_policy);
         httplib::Server mesh;
         manager.register_routes(mesh, lemon::NexusListener::MeshIngress);
         const int mesh_port = mesh.bind_to_any_port("127.0.0.1");
@@ -344,7 +344,7 @@ int main() {
         check_relay_stream(check);
         check_listener_isolation(root, check);
         {
-            lemon::NexusManager manager(root.string(), 13305, listener_policy);
+            lemon::NexusManager manager(root.string(), listener_policy, listener_policy);
             httplib::Server server;
             manager.register_routes(server);
             const int port = server.bind_to_any_port("127.0.0.1");
@@ -417,14 +417,14 @@ int main() {
         }
 #ifdef LEMONADE_WITH_NEXUS
         {
-            lemon::NexusManager restored(root.string(), 13305, listener_policy);
+            lemon::NexusManager restored(root.string(), listener_policy, listener_policy);
             const auto status = restored.status();
             check(status.at("enabled") && status.at("locked") && !status.at("mesh_up"), "Restarts enabled and locked");
             check(status.at("device_name") == "My laptop", "Name survives restart");
             restored.disable();
         }
         {
-            lemon::NexusManager disabled(root.string(), 13305, listener_policy);
+            lemon::NexusManager disabled(root.string(), listener_policy, listener_policy);
             check(!disabled.status().at("enabled"), "Disable survives restart");
         }
 #endif

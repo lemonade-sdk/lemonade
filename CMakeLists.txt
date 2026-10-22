@@ -1030,9 +1030,17 @@ include_directories(
 # ============================================================
 # Server core sources (everything except entry points)
 # ============================================================
+# Globbed so a new route or service needs no CMake edit.
+file(GLOB_RECURSE HTTP_SERVER_SOURCES CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/core/*.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/services/*.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/routes/*.cpp
+)
+
 set(SOURCES_CORE
     src/cpp/server/server.cpp
     src/cpp/server/nexus_manager.cpp
+    ${HTTP_SERVER_SOURCES}
     src/cpp/server/collection_orchestrator.cpp
     src/cpp/server/jobs/job_ops.cpp
     src/cpp/server/jobs/job_manager.cpp
@@ -1077,8 +1085,6 @@ set(SOURCES_CORE
     src/cpp/server/utils/tcp_jsonl_client.cpp
     src/cpp/server/backends/backend_utils.cpp
     src/cpp/server/backend_manager.cpp
-    src/cpp/server/ollama_api.cpp
-    src/cpp/server/anthropic_api.cpp
     src/cpp/server/mcp_server.cpp
     src/cpp/server/streaming_audio_buffer.cpp
     src/cpp/server/vad.cpp

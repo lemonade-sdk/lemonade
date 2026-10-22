@@ -4,6 +4,7 @@
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
+#include <lemon/utils/aixlog.hpp>
 
 #include <algorithm>
 #include <filesystem>
@@ -716,9 +717,22 @@ struct NexusManager::Session {
 struct NexusManager::Session {};
 #endif
 
-NexusManager::NexusManager(const std::string& config_dir, int ingress_port,
-                           const std::function<void(httplib::Server&)>& apply_listener_policy)
-    : data_root_(utils::path_to_utf8(utils::path_from_utf8(config_dir) / "nexus")), ingress_port_(ingress_port) {
+NexusManager::NexusManager(const std::string& config_dir,
+                           const std::function<void(httplib::Server&)>& install_policy,
+                           const std::function<void(httplib::Server&)>& install_api)
+    : data_root_(utils::path_to_utf8(utils::path_from_utf8(config_dir) / "nexus")) {
+    // Built once and never rebound: a main-port rebind leaves the mesh listener alone.
+    register_routes(mesh_server_, NexusListener::MeshIngress);
+    install_api(mesh_server_);
+    mesh_server_.set_read_timeout(30, 0);
+    mesh_server_.set_write_timeout(300, 0);
+    ingress_port_ = std::max(mesh_server_.bind_to_any_port("127.0.0.1"), 0);
+    if (ingress_port_ > 0) {
+        mesh_thread_ = std::thread([this] { mesh_server_.listen_after_bind(); });
+        mesh_server_.wait_until_ready();
+    } else {
+        LOG(WARNING, "Nexus") << "Cannot bind the mesh listener; mesh peers cannot reach this server" << std::endl;
+    }
 #ifdef LEMONADE_WITH_NEXUS
     std::ifstream input(utils::path_from_utf8(data_root_) / "preferences.json");
     auto saved = json::parse(input, nullptr, false);
@@ -729,7 +743,7 @@ NexusManager::NexusManager(const std::string& config_dir, int ingress_port,
     worker_ = std::thread(&NexusManager::supervise, this);
 #endif
     register_routes(management_server_, NexusListener::Management);
-    apply_listener_policy(management_server_);
+    install_policy(management_server_);
     management_port_ = management_server_.bind_to_any_port("127.0.0.1");
     if (management_port_ < 0) { stop(); throw std::runtime_error("Cannot bind local network management listener"); }
     management_thread_ = std::thread([this] { management_server_.listen_after_bind(); });
@@ -745,6 +759,8 @@ void NexusManager::stop() {
     if (worker_.joinable()) worker_.join();
     management_server_.stop();
     if (management_thread_.joinable()) management_thread_.join();
+    mesh_server_.stop();
+    if (mesh_thread_.joinable()) mesh_thread_.join();
     std::lock_guard<std::mutex> session_lock(session_mutex_);
     std::lock_guard<std::mutex> lock(mutex_);
     session_.reset();

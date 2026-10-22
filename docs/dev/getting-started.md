@@ -20,7 +20,6 @@ This guide covers everything you need to build, test, and contribute to Lemonade
 - [Architecture Overview](#architecture-overview)
   - [Overview](#overview)
   - [Client-Server Communication](#client-server-communication)
-  - [Internal Endpoints](#internal-endpoints)
   - [Dependencies](#dependencies)
 - [Usage](#usage)
   - [lemond (Server Only)](#lemond-server-only)
@@ -469,7 +468,10 @@ src/cpp/
 │
 ├── server/                     # Server implementation
 │   ├── main.cpp                # Entry point, CLI routing
-│   ├── server.cpp              # HTTP server (cpp-httplib)
+│   ├── server.cpp              # HTTP server: builds and starts the parts below
+│   ├── core/                   # Listener, middleware, route registry, route base classes
+│   ├── services/               # Model loading, model JSON, downloads, shared helpers
+│   ├── routes/                 # One file per HTTP route, one folder per docs/api page
 │   ├── router.cpp              # Routes requests to backends
 │   ├── model_manager.cpp       # Model registry, downloads, caching
 │   ├── cli_parser.cpp          # Command-line argument parsing (CLI11)
@@ -617,114 +619,6 @@ The client automatically:
 - Uses machine hostname as broadcast name.
 - The custom flag --no-broadcast is available in the command line to disable.
 - Auto protection, doesnt broadcast on non RFC1918 Networks.
-
-### Internal Endpoints
-
-> **These endpoints are for first-party Lemonade software only** (CLI, tray app, desktop app). They are not part of the public API, may change without notice, and must not be relied upon by third-party integrations.
-
-Internal endpoints accept connections from any address, so first-party clients on other machines can manage a shared `lemond`. When `LEMONADE_ADMIN_API_KEY` is set (or `LEMONADE_API_KEY`, which the admin key defaults to), internal endpoints require the admin key as a Bearer token; with no keys set they are unauthenticated.
-
-> **Warning:** If `lemond` is bound to a non-loopback host (e.g. `0.0.0.0`), these control endpoints — including shutdown and config — are reachable from the network. `LEMONADE_API_KEY` secures all endpoints; `LEMONADE_ADMIN_API_KEY` on its own secures only `/internal/*` and leaves the inference and model-management endpoints (`/api`, `/v0`, `/v1`) open, so set `LEMONADE_API_KEY` to protect those too. `lemond` logs a startup warning when bound to a non-loopback host without the regular key.
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/internal/shutdown` | Unloads all models and shuts down the server |
-| `POST` | `/internal/set` | Unified config setter (see below) |
-| `GET`  | `/internal/config` | Returns the full runtime config snapshot |
-| `GET`  | `/internal/config/defaults` | Returns the canonical default config (factory defaults) |
-| `POST` | `/internal/cleanup-cache` | Cleans up orphaned files in the Hugging Face cache |
-| `POST` | `/internal/pin` | Pin or unpin a loaded model |
-| `POST` | `/internal/models/sync` | Sync/update downloaded models to the latest version (async or dry-run) |
-| `GET`  | `/internal/models/sync/status` | Retrieve status/progress of background model synchronization |
-| `POST` | `/internal/simulate-vram-pressure` | Test/admin hook: synchronously simulate a VRAM-pressure callback |
-
-#### `POST /internal/set`
-
-Accepts a JSON object with one or more keys to update atomically. Returns `{"status":"success","updated":{...}}` on success, or `400` with an error message on validation failure.
-
-**Server-level keys** (trigger immediate side effects):
-
-| Key | Type | Side Effect |
-|-----|------|-------------|
-| `port` | int (1–65535) | HTTP rebind |
-| `host` | string | HTTP rebind |
-| `log_level` | string (`trace`, `debug`, `info`, `warning`, `error`, `fatal`, `none`) | Reconfigures log filter |
-| `global_timeout` | int (positive) | Updates default HTTP client timeout |
-| `download_rate_limit` | string (`0`/`""` = unlimited) | Sets the active download-rate cap (curl-style byte rate) |
-| `broadcast` | bool | Starts or stops UDP beacon |
-| `extra_models_dir` | string | Updates model manager search path |
-
-**Deferred keys** (affect the next model load or eviction decision, no immediate side effect):
-
-| Key | Type |
-|-----|------|
-| `max_loaded_models` | int (-1 or positive) |
-| `ctx_size` | int (positive) |
-| `llamacpp_backend` | string |
-| `llamacpp_args` | string |
-| `llamacpp_device` | string |
-| `sdcpp_backend` | string |
-| `whispercpp_backend` | string |
-| `whispercpp_args` | string |
-| `steps` | int (positive) |
-| `cfg_scale` | number |
-| `width` | int (positive) |
-| `height` | int (positive) |
-
-**Example:**
-```bash
-curl -X POST http://localhost:13305/internal/set \
-  -H "Content-Type: application/json" \
-  -d '{"ctx_size": 8192, "max_loaded_models": 3, "log_level": "debug"}'
-```
-
-#### `GET /internal/config`
-
-Returns the full runtime configuration as a flat JSON object containing all server-level and recipe option keys with their current values.
-
-**Example:**
-```bash
-curl http://localhost:13305/internal/config
-```
-
-#### `GET /internal/config/defaults`
-
-Returns the canonical default configuration — the values a brand-new `config.json` is seeded with, independent of this instance's current config or deployment overrides. The per-recipe sections come from the backend descriptors (each descriptor's `config_defaults()`), making this the authoritative source of the factory defaults. `docs/tools/gen_backend_boilerplate.py` reads this endpoint to regenerate the committed `src/cpp/resources/defaults.json`, and a CI `--check` fails if that file drifts from the descriptors.
-
-**Example:**
-```bash
-curl http://localhost:13305/internal/config/defaults
-```
-
-#### `POST /internal/simulate-vram-pressure`
-
-Test/admin hook for the [dynamic VRAM management](../guide/configuration/multi-model.md) path. Fires the VRAM pressure callback the eviction engine registers, synchronously and on the calling thread, without waiting for — or depending on — a real VRAM reading. The response returns only after the callback and any resulting eviction-engine evaluation have finished. When `pct` triggers an evaluation, a test can therefore assert on the outcome immediately instead of polling.
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `pct` | number | No | Simulated VRAM utilization. Pressure simulations normally use a fraction in `[0, 1]`; numeric values are not range-validated. Defaults to `0.0`. Exactly `-1` requests an idle-only evaluation instead. |
-
-Behavior by `pct`:
-
-- **`pct >= auto_evict_threshold_pct`** — runs one evaluation with pressure eviction enabled. The first eligible model encountered in loaded-model order that is already past its `evict_idle_timeout` is selected immediately; if none has reached that timeout, the highest-scoring eligible pressure candidate is selected.
-- **`0 <= pct < auto_evict_threshold_pct`** — the callback returns without running an eviction-engine evaluation, so this does not force an idle-timeout sweep.
-- **`pct == -1`** — runs one idle-only evaluation, the same sweep used by the engine's background timer. Models past `evict_idle_timeout` can be evicted, while ready models past `downsize_idle_timeout` can be downsized.
-- **Other negative numeric values** — are accepted by the HTTP handler but do not trigger an evaluation.
-
-Eligibility starts with the global `auto_evict` setting and is overridden by a model's boolean `auto_evict` option when present. A per-model `false` therefore excludes that model even when the global setting is on; a per-model `true` can opt that model in even when the global setting is off.
-
-For pressure selection, the eviction score is `idle_time_ms / (load_duration_ms * evict_weight_factor)`. Higher scores are more disposable: longer-idle and faster-loading models rank higher, while a larger `evict_weight_factor` protects a model. If the recorded load duration is not positive, the engine uses `1000 ms`; a non-positive weight factor is treated as `1.0`.
-
-Pinned models are never auto-evicted or downsized, and models currently in use are not selected for eviction. If an exclusive job session is active when an evaluation begins, the evaluation is skipped and the hook does not reschedule it. The endpoint still returns `200`, so a successful response means the callback completed, not necessarily that an evaluation ran.
-
-**Example:**
-```bash
-curl -X POST http://localhost:13305/internal/simulate-vram-pressure \
-  -H "Content-Type: application/json" \
-  -d '{"pct": 0.95}'
-```
-
-Returns `{"status": "ok"}` after the callback completes for a valid JSON object when `pct` is absent or numeric, including when no evaluation ran or nothing was evicted. Returns `400` with an `error` field if the body is invalid JSON, is not a JSON object, or contains a non-numeric `pct`.
 
 ### Dependencies
 

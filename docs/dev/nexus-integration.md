@@ -101,9 +101,11 @@ owner. Restart leaves an enabled device locked. A long supervisor pause locks
 the mesh. Transient failures reconnect with bounded backoff after a successful
 join, without replaying consumed invite tokens.
 
-Virtual TCP port `13305` forwards to a separate loopback listener in `lemond`.
-That listener serves the normal API with normal API-key authentication, but it
-refuses every Nexus route. Relayed peers get an SDK egress listener on
+Virtual TCP port `13305` forwards to a separate loopback listener that
+`NexusManager` starts once; a main-port rebind does not touch it. That listener
+gets `lemond`'s request middleware, API routes and web UI, so it serves the
+normal API with normal API-key authentication, but it refuses every Nexus route.
+It does not accept WebSocket upgrades. Relayed peers get an SDK egress listener on
 `127.0.0.1`. Member removal and address changes close that listener and
 existing forwarded connections. Remote HTTP requests retain normal API-key
 authentication.
@@ -186,9 +188,8 @@ and reports `remote_management`.
 The desktop discovers the management listener through `status` and sends the
 local API key directly. It rediscovers the listener once when a request cannot
 reach it, because `lemond` picks a new port each time it starts. The management
-listener accepts only loopback clients and applies the same origin, CORS and
-API-key handling as the public listener (`Server::route_request_policy`, which
-uses `utils::is_origin_allowed` and `authenticate_request`). Mesh traffic never
+listener accepts only loopback clients and gets the same origin, CORS and
+API-key handling as the public listener: `RequestMiddleware::install`. Mesh traffic never
 reaches the public or management listener: userspace ingress arrives on
 loopback and cannot safely be treated as a desktop control request, so it has a
 listener of its own. Browser views on this device show device information

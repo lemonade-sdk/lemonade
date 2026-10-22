@@ -7,10 +7,7 @@ Contents:
 - [Launching](#launching)
 - [Authenticating Requests](#authenticating-requests)
 - [Runtime Model and Backend Management](#runtime-model-and-backend-management)
-- [Runtime Settings Management](#runtime-settings-management)
-  - [`GET /internal/config`](#get-internalconfig)
-  - [`POST /internal/set`](#post-internalset)
-  - [`POST /internal/pin`](#post-internalpin)
+- [Runtime Settings and Shutdown](#runtime-settings-and-shutdown)
 
 ## Launching
 
@@ -106,142 +103,16 @@ This matches the existing CLI, tray, app, and test implementations in this repo.
 
 See the [Endpoints Spec](../api/README.md) for full request/response details.
 
-## Runtime Settings Management
+## Runtime Settings and Shutdown
 
-Your app can manage its `lemond` instance at runtime by using `/internal` endpoints.
+Your app can manage its `lemond` instance at runtime by using `/internal` endpoints. See the [Internal API](../api/internal.md) for their request and response formats.
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/internal/set` | Unified config setter (see below) |
-| `GET`  | `/internal/config` | Returns the full runtime config snapshot |
-| `GET`  | `/internal/config/defaults` | Returns the canonical default config (factory defaults) |
-| `POST` | `/internal/pin` | Pin or unpin a loaded model (prevents auto-eviction) |
+| Endpoint | Description |
+|----------|-------------|
+| [`POST /internal/set`](../api/internal.md#post-internalset) | Change `config.json` settings without restarting `lemond` |
+| [`GET /internal/config`](../api/internal.md#get-internalconfig) | Read the current settings |
+| [`GET /internal/config/defaults`](../api/internal.md#get-internalconfigdefaults) | Read the factory default settings |
+| [`POST /internal/pin`](../api/internal.md#post-internalpin) | Pin or unpin a loaded model so eviction skips it |
+| [`POST /internal/shutdown`](../api/internal.md#post-internalshutdown) | Unload every model and stop `lemond` |
 
-The settings defined in `config.json` can all be changed at runtime without restarting `lemond` with the `/internal/set` endpoint. See the [Configuration Guide](../guide/configuration/README.md) for details on all settings.
-
-> Note: The `lemonade` CLI uses `/internal/set` and `/internal/config` internally for the `lemonade config` commands.
-
-#### `GET /internal/config`
-
-Returns the full runtime configuration as a flat JSON object containing all server-level and recipe option keys with their current values.
-
-**Example:**
-=== "Windows (cmd.exe)"
-
-    ```cmd
-    curl http://localhost:8000/internal/config
-    ```
-
-=== "Linux (bash)"
-
-    ```bash
-    curl http://localhost:8000/internal/config
-    ```
-
-#### `GET /internal/config/defaults`
-
-Returns the canonical default configuration baked into the release, independent of this instance's current config or any deployment override. The per-recipe sections are derived from the backend descriptors, so this is the authoritative source for "what are the factory defaults." It is what `docs/tools/gen_backend_boilerplate.py` reads to regenerate `src/cpp/resources/defaults.json`.
-
-**Example:**
-=== "Windows (cmd.exe)"
-
-    ```cmd
-    curl http://localhost:8000/internal/config/defaults
-    ```
-
-=== "Linux (bash)"
-
-    ```bash
-    curl http://localhost:8000/internal/config/defaults
-    ```
-
-#### `POST /internal/set`
-
-Accepts a JSON object with one or more keys to update atomically. Returns `{"status":"success","updated":{...}}` on success, or `400` with an error message on validation failure.
-
-**Server-level keys** (trigger immediate side effects):
-
-| Key | Type | Side Effect |
-|-----|------|-------------|
-| `port` | int (1–65535) | HTTP rebind |
-| `host` | string | HTTP rebind |
-| `log_level` | string (`trace`, `debug`, `info`, `warning`, `error`, `fatal`, `none`) | Reconfigures log filter |
-| `global_timeout` | int (positive) | Updates default HTTP client timeout |
-| `download_rate_limit` | string (`0`/`""` = unlimited) | Sets the active download-rate cap (curl-style byte rate) |
-| `broadcast` | bool | Starts or stops UDP beacon |
-| `models_dir` | string (`"auto"` or path) | Updates the primary model cache location |
-| `extra_models_dir` | string | Validates access and updates the external GGUF search path |
-
-When `extra_models_dir` points to an existing path, `lemond` validates that it is a readable directory before applying the update. A path that does not exist yet is accepted so the directory watcher can pick it up if it is created later. Because `/internal/set` validates all supplied keys before applying any of them, a directory validation error rejects the whole request with `400`.
-
-**Deferred keys** (affect the next model load or eviction decision, no immediate side effect):
-
-| Key | Type |
-|-----|------|
-| `max_loaded_models` | int (-1 or positive) |
-| `ctx_size` | int (positive) |
-| `llamacpp_backend` | string |
-| `llamacpp_args` | string |
-| `sdcpp_backend` | string |
-| `whispercpp_backend` | string |
-| `whispercpp_args` | string |
-| `vllm_backend` | string |
-| `vllm_args` | string |
-| `steps` | int (positive) |
-| `cfg_scale` | number |
-| `width` | int (positive) |
-| `height` | int (positive) |
-
-**Example:**
-=== "Windows (cmd.exe)"
-
-    ```cmd
-    curl -X POST http://localhost:8000/internal/set ^
-      -H "Content-Type: application/json" ^
-      -d "{\"ctx_size\": 8192, \"max_loaded_models\": 3, \"log_level\": \"debug\"}"
-    ```
-
-=== "Linux (bash)"
-
-    ```bash
-    curl -X POST http://localhost:8000/internal/set \
-      -H "Content-Type: application/json" \
-      -d '{"ctx_size": 8192, "max_loaded_models": 3, "log_level": "debug"}'
-    ```
-
-#### `POST /internal/pin`
-
-Pin or unpin a loaded model in memory. Pinned models are excluded from the Least Recently Used (LRU) eviction policy.
-
-**Parameters:**
-
-| Parameter | Required | Description |
-|-----------|----------|-------------|
-| `model_name` | Yes | Name of the loaded model to pin or unpin. |
-| `pinned` | Yes | Boolean. Set to `true` to pin the model, or `false` to unpin it. |
-
-**Example:**
-=== "Windows (cmd.exe)"
-
-    ```cmd
-    curl -X POST http://localhost:8000/internal/pin ^
-      -H "Content-Type: application/json" ^
-      -d "{\"model_name\": \"Qwen3-0.6B-GGUF\", \"pinned\": true}"
-    ```
-
-=== "Linux (bash)"
-
-    ```bash
-    curl -X POST http://localhost:8000/internal/pin \
-      -H "Content-Type: application/json" \
-      -d '{"model_name": "Qwen3-0.6B-GGUF", "pinned": true}'
-    ```
-
-**Response format:**
-```json
-{
-  "status": "success",
-  "model_name": "Qwen3-0.6B-GGUF",
-  "pinned": true
-}
-```
+See the [Configuration Guide](../guide/configuration/README.md) for every setting.
