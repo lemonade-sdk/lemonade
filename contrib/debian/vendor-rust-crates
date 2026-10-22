@@ -29,11 +29,22 @@ rm -rf "$out"
     --quiet "$out" >/dev/null
 
 # Windows import libraries are most of the vendored size and are never linked on
-# Linux. Cargo verifies only the files listed in .cargo-checksum.json.
+# Linux. Cargo verifies the files listed in .cargo-checksum.json, so only the
+# entries of the deleted files are dropped.
 for dir in "$out"/winapi-*-pc-windows-gnu-* "$out"/windows_*; do
     [ -d "$dir/lib" ] || continue
     rm -rf "$dir/lib"
     mkdir "$dir/lib"
-    sed -i 's/"files":{[^}]*}/"files":{}/' "$dir/.cargo-checksum.json"
+    python3 - "$dir/.cargo-checksum.json" <<'PY'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path) as stream:
+    checksum = json.load(stream)
+checksum["files"] = {name: digest for name, digest in checksum["files"].items() if not name.startswith("lib/")}
+with open(path, "w") as stream:
+    json.dump(checksum, stream)
+PY
 done
 du -sh "$out"
