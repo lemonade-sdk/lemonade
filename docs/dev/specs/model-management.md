@@ -72,7 +72,7 @@ This section shows the two axes, the components that sit on each, and the one di
 ```mermaid
 %%{init: {"flowchart": {"curve": "linear"}}}%%
 flowchart TD
-  CONS["Consumers<br/>server.cpp · ollama_api<br/>anthropic_api · mcp_server · routing"]
+  CONS["Consumers<br/>route classes · gateways<br/>router · jobs · services"]
 
   subgraph L1["Composition root and facade"]
     FAC["ModelManager"]
@@ -295,7 +295,7 @@ private:
 | Every method delegates to one component or composes at most two | a method that needs a third is a missing use case, added to the component that owns the data |
 | No branch on a registry id, recipe, checkpoint type or source token | that branch is a capability method on the component instead |
 | The read verbs stay, and `store()` is const | rule 6b: composing is a write, so a gateway holding the store would hold the writer |
-| Only callers include its header; four leaf headers are what everyone else includes | The translation units that call the orchestrator — `server.cpp`, `ollama_api.cpp`, `anthropic_api.cpp`, `mcp_server.cpp`, the router, each backend's `.cpp` — include `lemon/model_manager.h`. No **header** does: one that merely names the orchestrator takes `model_manager_types.h`, and one that reads a row takes `model_info.h`, `registry_types.h`, `store_snapshot.h` or `download_progress.h` from `lemon/models/`. Every other models header reaching a consumer is named by `FacadeShapeTest` and retires by deletion |
+| Only callers include its header; four leaf headers are what everyone else includes | The translation units that call the orchestrator — the route classes, the Ollama and Anthropic gateways, the jobs operations, the router, each backend's `.cpp` — include `lemon/model_manager.h`. No **header** does: one that merely names the orchestrator takes `model_manager_types.h`, and one that reads a row takes `model_info.h`, `registry_types.h`, `store_snapshot.h` or `download_progress.h` from `lemon/models/`. Every other models header reaching a consumer is named by `FacadeShapeTest` and retires by deletion |
 | No component includes it | the dependency graph stays a DAG with the facade on top |
 | It declares no test hook and holds no override member | substitution arrives through `ModelManagerConfig` or a component's own deps; the gate names the first `_for_test` anywhere in product code |
 
@@ -593,7 +593,7 @@ Rules:
 one-line delegations to the store's composing reads, and composing is the point: each asks for a
 current set, so an invalidation costs one rebuild and every read behind it is a lookup. Moving
 those verbs onto the gateways was rejected — a gateway that composes needs the writer, and a
-`ModelStore&` handed to `server.cpp` to save a delegation is a `ModelStore::Write` waiting to
+`ModelStore&` handed to a route class to save a delegation is a `ModelStore::Write` waiting to
 happen. `ModelManager::store()` is const, offering `read()`, `find()`, `generation()`,
 `descriptors()` and `resolved_paths_for()` — everything that answers from the published snapshot
 without waiting.
@@ -1720,7 +1720,7 @@ with a notes region beneath carrying each `notes` entry as a bullet, the `exampl
 
 ### Model Object Fields
 
-There is no generated model-object pass. Serialization lives in the HTTP layer (`model_info_to_json`) and `docs/api/openai.md` describes each field beside its example; both are edited in the same change that changes the field. A new field names its source row or facade call in this table, and the endpoint pin in `test/server_endpoints.py` plus the export-strip check in the app regression suite are what catch drift — `checkpoint_status` is the worked example: a row of `CheckpointStatus` structs, documented entries (`type`, `present`, `required`, `registry`, `path`), pinned against a live server, and refused by the export allowlist because the opt-in `path` belongs to one machine.
+One object serializes for every surface: `ModelJson::to_json` builds the row, and `ModelJson::schema()` describes it. Each model route's `RouteSpec` points at that schema, so the field list in `docs/api` is generated rather than hand-kept, and a new field is added by naming its source row or facade call in `to_json` and its sentence in `schema()`. The endpoint pins in `test/server_endpoints.py` are what catch drift — `checkpoint_status` is the worked example: a row of `CheckpointStatus` structs, documented entries (`type`, `present`, `required`, `registry`, `path`), pinned against a live server, with `path` behind `include_paths` because it belongs to one machine and so never reaches a listing that travels.
 
 ### Drift Check
 
