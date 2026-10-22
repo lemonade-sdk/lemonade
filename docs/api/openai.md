@@ -1754,7 +1754,7 @@ With cloud providers configured, their models are listed too, with `recipe: "clo
 
 Labels describe what a model can do. A model may carry multiple labels.
 
-**Deployment labels:** determine which backend endpoint the model is routed to.
+**Deployment labels**: determine which backend endpoint the model is routed to.
 Every model names exactly one deployment mode, and a model is never given two
 labels that name different modes:
 
@@ -1791,7 +1791,7 @@ repaired:
 A stored `user_models.json` entry that breaks these rules is skipped at startup with
 an error naming it; the file is left for you to correct.
 
-**Input-modality labels:** the model accepts additional input types in `/chat/completions`:
+**Input-modality labels**: the model accepts additional input types in `/chat/completions`:
 
 | Label | Description |
 |-------|-------------|

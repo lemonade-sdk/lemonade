@@ -2895,6 +2895,10 @@ This endpoint does not take any parameters.
 - `status` - Always `ok`.
 <!-- END GENERATED: lemonade.live -->
 
+## Job Engine API
+
+The endpoints below create and manage persistent server-side jobs.
+
 <!-- BEGIN GENERATED: lemonade.jobs_create -->
 ## `POST /v1/jobs`
 <sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
