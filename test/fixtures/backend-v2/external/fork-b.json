@@ -1,0 +1,33 @@
+{
+  "schema_version": 2,
+  "id": "fork-b",
+  "recipe": "fork-b",
+  "extends": {
+    "external": "research-llama"
+  },
+  "merge": {
+    "metadata": {
+      "display_name": "Fork B CPU",
+      "server_name": "fork-b-server",
+      "log_category": "ForkB",
+      "web_display_name": "Fork B",
+      "config_section": "fork-b",
+      "binary": {
+        "windows": "fork-b-server.exe",
+        "linux": "fork-b-server",
+        "macos": "fork-b-server"
+      }
+    },
+    "install": {
+      "install_recipe": "fork-b",
+      "pin_recipe": "fork-b"
+    }
+  },
+  "edits": [
+    {"op": "replace", "path": "/metadata/options", "match": {"id": "backend"}, "at": "/name", "value": "fork_b_backend"},
+    {"op": "replace", "path": "/metadata/options", "match": {"id": "device"}, "at": "/name", "value": "fork_b_device"},
+    {"op": "replace", "path": "/metadata/options", "match": {"id": "args"}, "at": "/name", "value": "fork_b_args"},
+    {"op": "remove", "path": "/operations", "match": {"id": "responses.buffered"}},
+    {"op": "remove", "path": "/operations", "match": {"id": "responses.streaming"}}
+  ]
+}

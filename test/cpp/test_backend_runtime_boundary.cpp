@@ -2,6 +2,7 @@
 #include "lemon/config_file.h"
 #include "lemon/router.h"
 #include "lemon/runtime_config.h"
+#include "llamacpp_external_catalog_fixture.h"
 
 #include <type_traits>
 
@@ -138,6 +139,44 @@ int main() {
         "V2CancellationDoesNotReenterRouterAndReleasesInference");
     check(RoutingHelperTestHook::retained(router, resident, identity) && resident->get_state() == ModelState::READY,
         "V2CancellationRetainsRouterInstanceAndLruEligibility");
+    {
+        namespace external = lemon::backends::external_fixture;
+        allow_entries = false;
+        const auto external_entry = ConfiguredBackendEntry::make(external::bound());
+        allow_entries = true;
+        auto launch = std::make_shared<Launch>();
+        launch->port = upstream.port;
+        ServerCommand command;
+        ConfiguredServer external_server(external_entry, {"error"}, {launch,
+            [&](auto, const auto&) { return std::make_unique<Process>(command); }});
+        auto info = model();
+        info.recipe = "research-llama";
+        info.resolved_paths["main"] = "external-model.bin";
+        RecipeOptions options;
+        options.set_option("research_llama_backend", "cpu");
+        external_server.set_model_metadata(info.model_name, "external", ModelType::LLM, DEVICE_CPU, options);
+        external_server.load(info.model_name, info, options);
+        external_server.set_state(ModelState::READY);
+        std::atomic<bool> cancel{false};
+        unsigned before, prior_aborts;
+        { std::lock_guard<std::mutex> lock(upstream.mutex); upstream.release = false; before = upstream.entered; prior_aborts = upstream.aborted; }
+        auto inference = std::async(std::launch::async, [&] {
+            WrappedServer::RequestCancelScope scope({nullptr, [&] { return cancel.load(); }});
+            return external_server.chat_completion({{"model", "external"}, {"hold", true}});
+        });
+        bool reached;
+        { std::unique_lock<std::mutex> lock(upstream.mutex);
+            reached = upstream.condition.wait_for(lock, std::chrono::seconds(3), [&] { return upstream.entered > before; }); }
+        cancel = true;
+        const bool prompt = inference.wait_for(std::chrono::seconds(3)) == std::future_status::ready;
+        bool aborted;
+        { std::unique_lock<std::mutex> lock(upstream.mutex);
+            aborted = upstream.condition.wait_for(lock, std::chrono::seconds(2), [&] { return upstream.aborted > prior_aborts; });
+            upstream.release = true; upstream.condition.notify_all(); }
+        const auto response = inference.get();
+        check(reached && prompt && aborted && response.contains("error"), "ExternalCancellationAbortsUpstream");
+        external_server.unload();
+    }
     } catch (const std::exception& error) {
         std::printf("Runtime rejection: %s\n", error.what());
         check(false, "RuntimeBoundariesReachNamedChecks");

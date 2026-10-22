@@ -45,7 +45,7 @@ struct MutableDataRule {
 enum class MutableFragmentKind {
     OptionPresentationV1, OptionDefaultV1, ArgvSpellingsV1, ReservedFlagsV1,
     CustomDefaultsV1, DeviceSelectionV1, EnvironmentEntriesV1, SupportRowsV1,
-    InstallCasesV1, ContextFloorsV1
+    InstallCasesV1, ContextFloorsV1, LocalExecutableV1
 };
 
 enum class ReferencePhase { Input, RuntimeOptions, InstallRepository, InstallAsset, Artifacts, Prepare, Launch, Request };

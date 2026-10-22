@@ -432,11 +432,19 @@ FrozenDefinitionSnapshotResult BuiltinCatalogLoader::freeze(const std::vector<De
     }
 }
 
+const BuiltinExportRegistry& BuiltinCatalogLoader::selected_exports() {
+#ifdef LEMON_BACKEND_FORK_TESTING
+    return test_selected_builtin_exports();
+#else
+    return installed_exports();
+#endif
+}
+
 FrozenDefinitionSnapshotResult BuiltinCatalogLoader::freeze_embedded(const DefinitionLimits& limits) {
     for (const auto& source : embedded_v2_sources())
         require(source.key.space == DefinitionNamespace::Builtin && source.key.contract != 0,
             "invalid_builtin_source", {source.key, ""});
-    return freeze_sources(embedded_v2_sources(), std::make_shared<const BuiltinExportRegistry>(installed_exports()),
+    return freeze_sources(embedded_v2_sources(), std::make_shared<const BuiltinExportRegistry>(selected_exports()),
         limits, nullptr, std::make_shared<const BuiltinExecutionPolicies>(embedded_v2_policies()));
 }
 

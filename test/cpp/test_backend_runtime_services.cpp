@@ -1,6 +1,7 @@
 #include "backend_runtime_fixture.h"
 #include "lemon/backends/configured/backend_spec_utils.h"
 #include "lemon/utils/path_utils.h"
+#include "llamacpp_external_catalog_fixture.h"
 #include "llamacpp_v2_oracle.h"
 
 #include <filesystem>
@@ -737,6 +738,83 @@ int main(int argc, char** argv) {
     llamacpp_runtime_parity(candidate_executable);
     llamacpp_protocol_parity(candidate_executable, candidate_entry);
     llamacpp_loopback(candidate_entry);
+    {
+        namespace external = lemon::backends::external_fixture;
+        auto leaf = external::fork();
+        auto& edits = leaf["edits"];
+        edits.erase(std::remove_if(edits.begin(), edits.end(), [](const auto& edit) {
+            return edit.at("path") == "/hooks/environment";
+        }), edits.end());
+        leaf["merge"]["launch"]["environment"]["preset"] = "hook";
+        allow_entries = false;
+        const auto external_bound = external::bound(leaf);
+        const auto external_entry = ConfiguredBackendEntry::make(external_bound);
+        allow_entries = true;
+        Launch external_launch;
+        external_launch.host.os = "windows";
+        external_launch.supported = {"rocm-stable"};
+        external_launch.external_program = (external_root / "selected-engine").string();
+        RecipeOptions external_options;
+        external_options.set_option("research_llama_backend", "rocm-stable");
+        auto external_model = model();
+        external_model.resolved_paths["main"] = external_launch.external_program;
+        const auto before = stages;
+        DefinitionRunner(external_bound).prepare_load({"external", external_model, external_options, "error", {}, {}},
+            external_entry->spec, external_launch, {}, environment_sources);
+        check(stages == before, "RealExternalLeafNeverGetsBuiltinExternalStagingAuthority");
+        const auto& external_program = ex::Inspection::program(external_bound->compiled());
+        const auto& hook = external_program.hooks.front();
+        rt::Frame external_frame(*external_bound);
+        for (const auto& input : hook.inputs) external_frame.facts.insert(input.fact);
+        auto external_guard = rt::TestAccess::guard(external_frame, *external_bound, 0, hook, hook.slot.owner_kind, hook.slot.owner_id, hook.slot.stage);
+        rt::SelectionServices external_service(*external_guard, {"cpu"});
+        auto foreign_thread = std::async(std::launch::async, [&] { return throws([&] { external_service.supports("cpu"); }, "Inactive"); });
+        check(foreign_thread.get(), "ExternalConsumersEnforceInvocation:thread");
+        external_frame.active_slot.reset();
+        check(throws([&] { external_service.supports("cpu"); }, "Inactive"), "ExternalConsumersEnforceInvocation:slot");
+        external_guard.reset();
+        const auto guard_for = [&](rt::Frame& frame, typed::Contract contract) {
+            const auto found = std::find_if(external_program.hooks.begin(), external_program.hooks.end(), [&](const auto& hook) { return hook.contract == contract; });
+            for (const auto& input : found->inputs) { frame.facts.insert(input.fact); if (input.producer) frame.produced.insert(*input.producer); }
+            const auto& slot = found->slot;
+            for (const auto dependency : found->dependencies) {
+                if (!frame.produced.count(dependency)) check(throws([&] {
+                    rt::TestAccess::guard(frame, *external_bound, static_cast<std::size_t>(found - external_program.hooks.begin()), *found,
+                        slot.owner_kind, slot.owner_id, slot.stage);
+                }, "Missing bound slot dependency"), "ExternalConsumersEnforceInvocation:missingDependency");
+                frame.produced.insert(dependency);
+            }
+            return rt::TestAccess::guard(frame, *external_bound, static_cast<std::size_t>(found - external_program.hooks.begin()), *found, slot.owner_kind, slot.owner_id, slot.stage);
+        };
+        rt::Frame artifacts(*external_bound);
+        auto artifact_scope = guard_for(artifacts, typed::Contract::Artifacts);
+        rt::ArtifactServices inventory(*artifact_scope, (scratch / "blobs" / "hash").string(), false);
+        const auto handle = inventory.root();
+        rt::ArtifactServices foreign(*artifact_scope, (scratch / "blobs" / "hash").string(), false);
+        check(throws([&] { foreign.entries(handle); }, "another service"), "ExternalArtifactInventoryConfined:foreignHandle");
+        check(throws([&] { inventory.approved_result((scratch / "outside-inventory").string()); }, "inventory"),
+            "ExternalArtifactInventoryConfined:unapprovedPath");
+        artifact_scope.reset();
+        check(throws([&] { inventory.entries(handle); }, "Expired"), "ExternalArtifactInventoryConfined:expiredInvocation");
+        auto probe_leaf = leaf;
+        auto& probe_edits = probe_leaf["edits"];
+        probe_edits.erase(std::remove_if(probe_edits.begin(), probe_edits.end(), [](const auto& edit) {
+            return edit.at("path") == "/hooks/system";
+        }), probe_edits.end());
+        allow_entries = false;
+        const auto probe_bound = external::bound(probe_leaf);
+        allow_entries = true;
+        const DefinitionRunner probe_runner(probe_bound);
+        unsigned calls = 0;
+        rt::ProbeSources fixed{
+            [&](std::size_t bytes, unsigned wait, const auto&) {
+                ++calls;
+                check(bytes == 65536 && wait == 5000, "ExternalProbeIsFixedAndBounded:limits");
+                return utils::CapturedProcess{"version: 1234", 0, true, false, false};
+            }, [] { return false; }, [] { return false; }};
+        check(throws([&] { probe_runner.resolve_version("system", "", fixed); }, "Bounded") && calls == 1,
+            "ExternalProbeIsFixedAndBounded:truncation");
+    }
     std::filesystem::remove_all(scratch);
     } catch (const std::exception& error) {
         std::printf("Runtime rejection: %s\n", error.what());

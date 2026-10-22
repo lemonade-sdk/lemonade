@@ -1,4 +1,5 @@
 #include "backend_definition_export_fixture.h"
+#include "llamacpp_external_fixture.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -194,6 +195,7 @@ int main() {
         check(has_code(v2::audit_export_contracts({alleged}, promoted_snapshot.snapshot, installed_hook_abis(),
             v2::export_registry_digest({alleged}, installed_hook_abis())), "external_export_dependency"), "compiled exports cannot inherit external authority");
     }
+    lemon::backends::external_fixture::export_checks(check);
     std::printf("%d checks, %d failures\n", checks, failures);
     return failures ? 1 : 0;
 }

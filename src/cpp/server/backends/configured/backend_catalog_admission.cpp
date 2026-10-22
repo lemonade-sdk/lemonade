@@ -165,6 +165,8 @@ std::shared_ptr<const FrozenBuiltinCatalog> CatalogAdmissionBuilder::freeze() {
     frozen->source_bytes_ = k_backend_definition_v1_source_bytes;
     frozen->authority_ = BuiltinCatalogLoader::freeze_embedded().snapshot;
     if (!frozen->authority_) throw std::logic_error("Installed builtin authority is invalid");
+    for (const auto& contract : BuiltinCatalogLoader::selected_exports().exports())
+        keep(retained, logical_json(export_policy_json(contract)), limits);
     for (const auto& source : embedded_v2_sources()) {
         reserve(frozen->ids_, source.key.id, retained, limits);
         charge(frozen->definitions_, 1, limits.snapshot_documents);
@@ -189,7 +191,7 @@ std::shared_ptr<const FrozenBuiltinCatalog> CatalogAdmissionBuilder::freeze() {
     }
     frozen->identity_ = identity("lemonade.backend-builtin-context.v1\n", {{"ids", frozen->ids_}, {"recipes", frozen->recipes_},
         {"sections", frozen->sections_}, {"options", frozen->options_}, {"persisted", frozen->persisted_},
-        {"defaults", frozen->defaults_}, {"pins", frozen->pins_}, {"exports", installed_builtin_exports().digest()}});
+        {"defaults", frozen->defaults_}, {"pins", frozen->pins_}, {"exports", BuiltinCatalogLoader::selected_exports().digest()}});
     return frozen;
 }
 

@@ -1,4 +1,5 @@
 #include "backend_definition_binding_fixture.h"
+#include "llamacpp_external_catalog_fixture.h"
 
 #include "lemon/recipe_options.h"
 
@@ -171,5 +172,43 @@ int main() {
         check(!weak_catalog.expired() && !weak_compiled.expired() && &result.definition->compiled() == original_compiled &&
             &result.definition->compiled().authorized() == original_token, "BoundObjectRetainsExactInputs");
     } catch (const std::exception& error) { check(false, std::string("HookBearingCompileAndBindInvokeNothing:unexpected ") + error.what()); }
+    {
+        namespace external = lemon::backends::external_fixture;
+        const auto admitted = external::admit({external::fork(), external::fork("fork-b")});
+        check(bool(admitted.catalog), "ExternalBindingFixtureAdmitted");
+        if (admitted.catalog) {
+            const auto token = admitted.catalog->v2_definition("fork-b");
+            const auto compiled = compile_execution_definition(token);
+            check(bool(compiled.definition), "ExternalBindingFixtureCompiled");
+            if (compiled.definition) {
+                const auto bound = bind_execution_definition(admitted.catalog, compiled.definition);
+                check(bool(bound.definition), "ExternalBindingUsesInstalledTargets");
+                zero("ExternalCandidateHasZeroEffects");
+                const auto clone = CatalogAdmissionBuilder::test_clone_token(*token);
+                const auto rejected = bind_execution_definition(admitted.catalog, compile_execution_definition(clone).definition);
+                check(!rejected.definition && has_code(rejected.diagnostics, "token_not_admitted"), "ExternalBindingRequiresExactAdmittedToken");
+                auto program = ex::Inspection::program(*compiled.definition);
+                ++program.hooks[0].grant_ordinal;
+                const auto mismatch = bind_execution_definition(admitted.catalog, ex::Inspection::test_program(*compiled.definition, program));
+                check(!mismatch.definition && has_code(mismatch.diagnostics, "sealed_slot_mismatch"), "ExternalBindingRejectsSealedMismatch");
+                const std::vector<std::function<void(ex::SymbolicHook&)>> mutations{
+                    [](auto& h) { ++h.abi_revision; }, [](auto& h) { ++h.implementation_revision; },
+                    [](auto& h) { h.slot.hook_id = "llamacpp.system.v1"; },
+                    [](auto& h) { h.effects.push_back(typed::Effect::SystemProbe); },
+                    [](auto& h) { h.parameter_digest.back() ^= 1; },
+                    [](auto& h) { h.policy_digest.back() ^= 1; },
+                    [](auto& h) { h.owner_digest.back() ^= 1; }
+                };
+                for (std::size_t i = 0; i < mutations.size(); ++i) {
+                    auto sealed = ex::Inspection::program(*compiled.definition);
+                    mutations[i](sealed.hooks[0]);
+                    const auto result = bind_execution_definition(admitted.catalog, ex::Inspection::test_program(*compiled.definition, sealed));
+                    check(!result.definition && has_code(result.diagnostics, "sealed_slot_mismatch"),
+                        "ExternalBindingRejectsSealedMismatch:field" + std::to_string(i));
+                }
+
+            }
+        }
+    }
     return finish();
 }

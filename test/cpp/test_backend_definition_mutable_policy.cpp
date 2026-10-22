@@ -1,4 +1,5 @@
 #include "backend_definition_mutable_fixture.h"
+#include "llamacpp_external_fixture.h"
 
 #include <cstdio>
 #include <functional>
@@ -211,6 +212,7 @@ int main() {
         catch (const v2::LimitExceeded&) { rejected = true; }
         check(rejected, "FragmentRetentionPreflight");
     }
+    lemon::backends::external_fixture::mutable_checks(check);
     std::printf("%d checks, %d failures\n", checks, failures);
     return failures ? 1 : 0;
 }

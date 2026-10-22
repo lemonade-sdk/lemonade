@@ -122,7 +122,7 @@ public:
     }
     Upstream() {
         http.Get("/health", [](const auto&, auto& response) { response.set_content("{}", "application/json"); });
-        http.Post(R"(/fake/.*)", [this](const auto& request, auto& response) {
+        http.Post(R"(/(fake/.*|v1/chat/completions))", [this](const auto& request, auto& response) {
             const auto value = Json::parse(request.body);
             if (value.value("hold", false)) {
                 if (value.value("partial", false)) {

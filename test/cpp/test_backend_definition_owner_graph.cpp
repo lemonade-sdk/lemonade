@@ -1,4 +1,5 @@
 #include "backend_definition_export_fixture.h"
+#include "llamacpp_external_catalog_fixture.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -333,6 +334,7 @@ int main(int argc, char** argv) {
     }
     auto tight = limits; tight.work_nodes = 1;
     check(!authorize({child()}, policy, read_bytes("export.siblings.synthetic.json"), tight).definition, "OwnerGraphWorkBoundFailsClosed");
+    lemon::backends::external_fixture::owner_checks(check);
     std::printf("%d checks, %d failures\n", checks, failures);
     return failures ? 1 : 0;
 }

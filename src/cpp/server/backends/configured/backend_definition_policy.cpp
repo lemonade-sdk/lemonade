@@ -282,7 +282,44 @@ void validate_record(const Json& record, const MutableFragmentRule& rule, const 
     }
 }
 
-void validate_rule(const MutableFragmentRule& rule, const Json& doc, const Json& base, Budget& budget) {
+const std::vector<std::string>& local_install_fields() {
+    static const std::vector<std::string> names = {"strategy", "install_recipe", "pin_recipe",
+        "supports_split_archive", "asset_backend", "cases", "repository_result", "fact_timing",
+        "repository_facts", "unmanaged_backends", "backend_fallback", "errors"};
+    return names;
+}
+
+void local_executable(const Json& doc, const Json& base, bool auditing) {
+    if (auditing) {
+        require_policy(doc == base && base.at("id") == "llamacpp" && base.at("recipe") == "llamacpp" &&
+            base.at("install").at("strategy") == "github_release" &&
+            base.at("launch").at("program") == Json{{"source", "managed"}, {"install_policy", "always"}} &&
+            base.at("launch").at("prepare_order") == Json::array({"backend", "install", "hook", "artifacts", "ports", "program"}) &&
+            base.at("launch").at("direct_stream_policy") == "llamacpp_legacy", "invalid_local_executable_profile");
+        return;
+    }
+    const auto recipe = doc.at("recipe").get<std::string>();
+    require_policy(doc.at("id") != base.at("id") && recipe != base.at("recipe") &&
+        doc.at("install") == Json{{"strategy", "external_only"}, {"install_recipe", recipe},
+            {"pin_recipe", recipe}, {"cases", Json::array()}} &&
+        doc.at("launch").at("program") == Json{{"source", "external_or_managed"}, {"install_policy", "always"}} &&
+        doc.at("launch").at("prepare_order") == Json::array({"backend", "hook", "artifacts", "ports", "program"}) &&
+        doc.at("launch").at("direct_stream_policy") == "bound_passthrough" &&
+        !doc.value("hooks", Json::object()).contains("install_context"), "invalid_local_executable_profile");
+    for (const auto& option : optional_array(doc.at("metadata"), "options"))
+        require_policy(!option.contains("cli_flag"), "external_named_flag");
+    for (const auto& [os, binary] : doc.at("metadata").at("binary").items()) {
+        const auto name = binary.get<std::string>();
+        require_policy(identifier(name) && name != "." && name != "..", "invalid_local_executable_profile");
+    }
+}
+
+void validate_rule(const MutableFragmentRule& rule, const Json& doc, const Json& base, Budget& budget, bool auditing = false) {
+    if (rule.kind == Kind::LocalExecutableV1) {
+        budget.work(0, 1);
+        local_executable(doc, base, auditing);
+        return;
+    }
     const auto* value = value_at(doc, rule.target, budget);
     require_policy(value != nullptr, "missing_mutable_fragment");
     bounded_value(*value, rule, budget);
@@ -399,7 +436,7 @@ void audit_fragment_rules(const std::vector<MutableFragmentRule>& rules, const J
         budget.work(0, 1);
         require_policy(rule.maximum_records > 0 && rule.maximum_records <= 1024 && rule.maximum_length > 0 && rule.maximum_length <= 65536 &&
             std::isfinite(rule.minimum) && std::isfinite(rule.maximum) && rule.minimum <= rule.maximum);
-        require_policy(static_cast<unsigned>(rule.kind) <= static_cast<unsigned>(Kind::ContextFloorsV1));
+        require_policy(static_cast<unsigned>(rule.kind) <= static_cast<unsigned>(Kind::LocalExecutableV1));
         require_policy(rule.target.at.empty());
         const auto permitted = fields(rule.kind);
         if (!permitted.empty()) {
@@ -413,6 +450,9 @@ void audit_fragment_rules(const std::vector<MutableFragmentRule>& rules, const J
             if (!collection_path(rule.kind).empty()) require_policy(rule.target.path == collection_path(rule.kind) || (rule.kind == Kind::InstallCasesV1 && rule.target.path == "/install/default_versions"));
             else if (rule.kind == Kind::ReservedFlagsV1) require_policy(rule.target.path == "/launch/custom_args/reserved");
             else if (rule.kind == Kind::ContextFloorsV1) require_policy(rule.target.path == "/launch/context_floor");
+            else if (rule.kind == Kind::LocalExecutableV1) require_policy(rule.target.path == "/install" &&
+                !rule.collection.add && !rule.collection.remove && !rule.collection.clear && rule.domains.empty() &&
+                rule.references.empty() && rule.required_records.empty());
             else require_policy(rule.target.path == "/launch/backend/fixed" || rule.target.path == "/metadata/default_device" || rule.target.path == "/metadata/rocm_channels");
         }
         const auto key = rule.target.path + (rule.target.match ? ":" + rule.target.match->value : "");
@@ -430,7 +470,7 @@ void audit_fragment_rules(const std::vector<MutableFragmentRule>& rules, const J
             std::set<std::string> seen;
             for (const auto& value : values) require_policy(value.size() <= rule.maximum_length && seen.insert(value).second);
         }
-        validate_rule(rule, declaration, declaration, budget);
+        validate_rule(rule, declaration, declaration, budget, true);
     }
 }
 
@@ -465,6 +505,11 @@ void validate_fragments(const std::vector<MutableFragmentRule>& rules, const Jso
 void mask_fragments(Json& declaration, const std::vector<MutableFragmentRule>& rules, Budget& budget) {
     for (const auto& rule : rules) {
         budget.work(0, 1);
+        if (rule.kind == Kind::LocalExecutableV1) {
+            for (const auto& name : local_install_fields()) declaration.at("install").erase(name);
+            for (const auto* name : {"prepare_order", "program", "direct_stream_policy"}) declaration.at("launch").erase(name);
+            continue;
+        }
         const auto* found = value_at(declaration, rule.target, budget);
         if (!found) continue;
         auto& value = const_cast<Json&>(*found);

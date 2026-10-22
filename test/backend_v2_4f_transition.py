@@ -679,8 +679,8 @@ def main():
         SimpleNamespace(
             build=args.build,
             baseline=baseline,
-            expected_count=151,
-            no_additions=True,
+            expected_count=152,
+            no_additions=False,
             out=args.out,
         )
     )

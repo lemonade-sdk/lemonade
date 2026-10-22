@@ -67,9 +67,14 @@ const std::vector<DefinitionSourceView>& embedded_v2_sources();
 const BuiltinExecutionPolicies& fixed_builtin_v2_policies();
 const BuiltinExecutionPolicies& embedded_v2_policies();
 
+#ifdef LEMON_BACKEND_FORK_TESTING
+const BuiltinExportRegistry& test_selected_builtin_exports();
+#endif
+
 class BuiltinCatalogLoader {
 public:
     static const BuiltinExportRegistry& installed_exports();
+    static const BuiltinExportRegistry& selected_exports();
     static FrozenDefinitionSnapshotResult freeze(
         const std::vector<DefinitionSourceView>& external_sources, const DefinitionLimits& limits);
     static FrozenDefinitionSnapshotResult compose(std::shared_ptr<const FrozenDefinitionSnapshot> builtins,

@@ -4249,3 +4249,23 @@ if(BUILD_TESTING)
             --scratch "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/backend-v2-4f/transition"
         DEPENDS test_llamacpp_v2_production_switch llamacpp-frozen-control-build)
 endif()
+
+if(BUILD_TESTING)
+    add_executable(test_external_fake_engine test/cpp/external_fake_engine.cpp)
+    target_link_libraries(test_external_fake_engine PRIVATE httplib::httplib nlohmann_json::nlohmann_json lemonade-digest-crypto)
+    add_executable(test_llamacpp_external_fork
+        test/cpp/test_llamacpp_external_fork.cpp
+        src/cpp/server/backends/configured/backend_definition_authorization.cpp
+        src/cpp/server/backends/configured/backend_definition_exports.cpp)
+    target_compile_definitions(test_llamacpp_external_fork PRIVATE
+        LEMON_BACKEND_EXPORT_TESTING LEMON_BACKEND_FORK_TESTING
+        LEMON_FAKE_ENGINE="$<TARGET_FILE:test_external_fake_engine>"
+        LEMON_TEST_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures")
+    target_include_directories(test_llamacpp_external_fork PRIVATE
+        src/cpp/server/backends src/cpp/server/backends/configured ${CMAKE_CURRENT_BINARY_DIR}/include)
+    target_link_libraries(test_llamacpp_external_fork PRIVATE lemonade-server-core)
+    add_cpp_ci_test(LlamaCppExternalForkTest CI ON
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/llamacpp_external_fork.py
+            --build ${CMAKE_CURRENT_BINARY_DIR}
+        DEPENDS test_llamacpp_external_fork test_external_fake_engine lemond)
+endif()

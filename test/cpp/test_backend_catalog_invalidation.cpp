@@ -1,4 +1,5 @@
 #include "catalog_admission_fixture.h"
+#include "llamacpp_external_catalog_fixture.h"
 
 using namespace admission_fixture;
 namespace {
@@ -88,5 +89,6 @@ int main() {
     const auto twice = admit_catalog(snap.snapshot);
     check(once.catalog && twice.catalog && once.catalog->metrics().retained_logical_bytes == twice.catalog->metrics().retained_logical_bytes &&
         once.catalog->admission_id() == twice.catalog->admission_id(), "repeat admission has bounded independent accounting");
+    lemon::backends::external_fixture::admission_checks(check);
     return finish();
 }

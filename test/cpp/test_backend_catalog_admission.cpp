@@ -1,4 +1,5 @@
 #include "catalog_admission_fixture.h"
+#include "llamacpp_external_catalog_fixture.h"
 
 #include <type_traits>
 
@@ -122,5 +123,6 @@ int main() {
     for (std::size_t i = 0; i < before["recipes"].size(); ++i)
         check(v2["recipes"][i]["input_schema_version"] == ((before["recipes"][i]["recipe"] == "llamacpp" || before["recipes"][i]["recipe"] == "llamacpp-hrx") ? Json(2) : before["recipes"][i]["definition_id"].is_null() ? Json() : Json(1)), "honest recipe source version " + std::to_string(i));
     check(active.export_schema("", 1) == before && !before.contains("catalog_v2_id") && !installed_definition_features().contains("accepted_definition_versions"), "legacy projection remains isolated");
+    lemon::backends::external_fixture::admission_checks(check);
     return finish();
 }

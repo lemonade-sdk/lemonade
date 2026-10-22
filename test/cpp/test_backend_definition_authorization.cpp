@@ -1,4 +1,5 @@
 #include "backend_definition_export_fixture.h"
+#include "llamacpp_external_fixture.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -330,6 +331,7 @@ int main() {
     check(compiled == 0 && bound == 0 && validated == 0 && published == 0, "rejection precedes executable consumers");
     if (inherited.definition) execute(*inherited.definition);
     check(compiled == 1 && bound == 1 && validated == 1 && published == 1, "authorized token gates test consumers");
+    lemon::backends::external_fixture::authorization_checks(check);
     std::printf("%d checks, %d failures\n", checks, failures);
     return failures ? 1 : 0;
 }

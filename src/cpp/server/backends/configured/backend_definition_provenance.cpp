@@ -250,7 +250,7 @@ CompositionDiagnostics relationships(const Json& doc, const LayerState& state, B
     const bool install = position("install") != order.end();
     if (position("backend") == order.end() || position("artifacts") == order.end() || position("program") == order.end() || position("ports") == order.end() ||
         position("backend") >= position("program") ||
-        (install ? position("backend") >= position("install") || position("install") >= position("program") || position("install") >= position("ports") : position("program") >= position("ports"))) error("invalid_relationship", "/launch/prepare_order");
+        (install ? position("backend") >= position("install") || position("install") >= position("program") || position("install") >= position("ports") : (doc["install"]["strategy"] != "external_only" && position("program") >= position("ports")))) error("invalid_relationship", "/launch/prepare_order");
     if (install && (launch["program"]["source"] != "managed" || doc["install"]["strategy"] != "github_release")) error("invalid_relationship", "/launch/prepare_order", "/install");
     if ((position("hook") != order.end()) != hooks.contains("launch")) error("invalid_relationship", "/launch/prepare_order", "/hooks");
     if (position("custom_args") != order.end() && !launch.contains("custom_args")) error("invalid_relationship", "/launch/prepare_order");
