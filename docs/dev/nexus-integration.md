@@ -39,16 +39,21 @@ access list. Removing a device requires `delete_node` on the device node.
 
 The header's **Inference server** selector chooses this device or a linked mesh
 device without leaving Chat. It works in the desktop app and in a browser, on
-this device or on another machine. It lists this device and the group's Tier 3
-devices that are online. Health and models reload from the selected server.
-Failed switches restore the previous connection.
+this device or on another machine. It always offers **Local Server**, also
+without Nexus support, with the mesh off or without inference devices, and adds
+the group's Tier 3 devices that are online. On screens 768 px wide or less it is
+hidden like the Nexus shortcut unless a mesh device is selected; the connection
+settings still reach the local server. Health and models reload from the
+selected server. Failed switches restore the previous connection, and choosing
+Local Server restores the normal connection and drops the peer key.
 
 The client keeps talking to its own `lemond`, which relays the requests to the
 selected device over the mesh (see [Inference relay](#inference-relay)). The
 selection lives in that client only; other clients of the same `lemond` keep
 their own server. Enter the peer's API key when prompted, or in Devices & mesh.
-The client holds peer keys in memory and sends them only in the relay header,
-which `lemond` forwards to that peer alone. Relay URLs are not saved as
+The client holds peer keys in memory and sends them in the relay header only with
+requests to that relay URL, and `lemond` forwards them to that peer alone. Any
+change to the connection settings drops the peer key. Relay URLs are not saved as
 connection settings.
 
 Native passkeys use FIDO2 USB security keys with required user presence and user
@@ -109,9 +114,14 @@ authentication.
 `/api/v1/nexus/peers/{node_id}/<path>` (also the other route prefixes) to
 `<path>` on that device's virtual port `13305`. GUI3 uses
 `<server>/api/v1/nexus/peers/{node_id}` as its base URL, so health, models,
-chat completions and other HTTP routes reach the peer unchanged. Responses
-stream through as they arrive, so SSE works; status and `Content-Type` are kept.
-Multipart uploads are rebuilt for the peer. WebSocket routes are not relayed.
+chat completions and other HTTP routes reach the peer unchanged. The relay uses
+lemond's backend HTTP client (`utils::HttpClient`) for `GET` and `POST`. A
+`POST` whose JSON body sets `"stream": true` goes through
+`StreamingProxy::forward_byte_stream`, the path streamed backend responses use:
+chunks are written to the client as they arrive, a slow client slows the
+transfer instead of buffering it, and a peer error becomes a JSON error in the
+stream. Other requests return the peer's status and body. Multipart uploads are
+rebuilt for the peer. Other methods and WebSocket routes are not relayed.
 
 - `Authorization` authenticates the caller to this `lemond` and is never
   forwarded.
@@ -125,7 +135,7 @@ Multipart uploads are rebuilt for the peer. WebSocket routes are not relayed.
 - The target must be another group member that is a Tier 3 inference node,
   online and with a mesh address. Otherwise the relay returns 400 (this
   device), 404 (not in the group) or 409 (offline or not an inference node).
-  An unreachable peer returns 502.
+  An unreachable peer returns 502, or a JSON error inside a streamed response.
 
 ## Control API
 
@@ -174,8 +184,11 @@ listener's origin checks still apply. Remote `status` omits `controller_url`
 and reports `remote_management`.
 
 The desktop discovers the management listener through `status` and sends the
-local API key directly. The management listener rejects nonlocal clients and
-untrusted browser origins and enforces `LEMONADE_API_KEY`. Mesh traffic never
+local API key directly. It rediscovers the listener once when a request cannot
+reach it, because `lemond` picks a new port each time it starts. The management
+listener accepts only loopback clients and applies the same origin, CORS and
+API-key handling as the public listener (`Server::route_request_policy`, which
+uses `utils::is_origin_allowed` and `authenticate_request`). Mesh traffic never
 reaches the public or management listener: userspace ingress arrives on
 loopback and cannot safely be treated as a desktop control request, so it has a
 listener of its own. Browser views on this device show device information
