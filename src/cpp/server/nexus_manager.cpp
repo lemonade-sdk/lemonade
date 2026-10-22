@@ -376,13 +376,18 @@ struct NexusManager::Session {
         const auto self = find_member(devices, node_id);
         return self.is_object() && self.value("is_admin", false);
     }
+    // Reads the group's devices as raw JSON because the vendored SDK's TreeNode has no is_inference
+    // field. Replace this with ln_tree_get_children once the SDK TreeNode carries is_inference.
+    json group_children() {
+        auto children = private_call("GET", "/api/tree/children/" + group_id);
+        if (!children.is_array()) throw NexusError(502, "The network returned invalid data");
+        return children;
+    }
     void refresh_devices() {
         const auto own = sdk_call([&](auto out) { return ln_tree_get_node(client.get(), node_id.c_str(), out); });
         group_id = own.at("parent_id").get<std::string>();
         const auto group = sdk_call([&](auto out) { return ln_tree_get_node(client.get(), group_id.c_str(), out); });
-        // The SDK's typed tree nodes drop is_inference, so read the group's devices as raw JSON.
-        const auto children = private_call("GET", "/api/tree/children/" + group_id);
-        if (!children.is_array()) throw NexusError(502, "The network returned invalid data");
+        const auto children = group_children();
         const auto peers = sdk_call([&](auto out) { return ln_mesh_peers(client.get(), out); });
         auto next = nexus_access::merge_members(group, children, peers, pubkey, node_id);
         for (auto it = egress_ips.begin(); it != egress_ips.end();) {
