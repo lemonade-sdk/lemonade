@@ -5,7 +5,7 @@ import { useI18n } from '../i18n';
 import { Icon } from './Icon';
 import { WorkspaceActionButton, WorkspaceActionGroup } from './WorkspacePanels';
 import { isNexusDesktop, nexusRequest, nexusStatusLabel, prepareNexus, refreshNexus,
-  cancelNexusPasskey, sendNexusPasskeyPin, unlockNexus, useNexusNetwork, type PasskeyPrompt, type NexusDevice, type NexusInvite,
+  cancelNexusPasskey, sendNexusPasskeyPin, useNexusNetwork, type PasskeyPrompt, type NexusDevice, type NexusInvite,
   NEXUS_GROUP_PERMISSIONS, getNexusDeviceAccess, hasNexusPermission, nexusTierLabel, setNexusDeviceAccess,
   setNexusMemberPermissions, setNexusMemberRole, type NexusDeviceAccess } from '../features/nexus/nexus';
 import '../styles/nexus.css';
@@ -59,8 +59,7 @@ const NexusPanel: React.FC<Props> = ({ isActive, onConnect }) => {
   };
   const rememberFocus = () => { returnFocus.current = document.activeElement as HTMLElement; };
   const closeDialog = () => { setDialog(null); setRemoving(null); setInvite(null); setManaging(null); setDeviceAccess(null); setAccessDraft({}); };
-  const createInvite = () => run(remote ? 'Creating invite…' : 'Confirming passkey…', async () => {
-    if (!remote) await unlockNexus();
+  const createInvite = () => run('Creating invite…', async () => {
     const result = await nexusRequest<NexusInvite>('invites', { device_name: inviteName.trim(), ttl_sec: 600 });
     if (!result.link_token) throw new Error('The network did not return an invite token.');
     setNow(Date.now()); setInvite(result);
@@ -217,7 +216,7 @@ const NexusPanel: React.FC<Props> = ({ isActive, onConnect }) => {
         </> : <form onSubmit={event => { event.preventDefault(); void createInvite(); }}>
           <label className="form-field__label" htmlFor="nexus-invite-name">Device you’re inviting</label><input className="input" id="nexus-invite-name" value={inviteName} maxLength={128} placeholder="Alex’s laptop" onChange={event => setInviteName(event.target.value)} />
           {inviteName.trim() && <p>Would you like “{inviteName.trim()}” to join your group?</p>}
-          <WorkspaceActionButton type="submit" appearance="primary" disabled={Boolean(busy) || !inviteName.trim()}>{remote ? 'Create invite' : 'Confirm with passkey'}</WorkspaceActionButton>
+          <WorkspaceActionButton type="submit" appearance="primary" disabled={Boolean(busy) || !inviteName.trim()}>Create invite</WorkspaceActionButton>
         </form>}
       </div>
     </div>}

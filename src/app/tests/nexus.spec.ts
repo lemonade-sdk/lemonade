@@ -70,7 +70,7 @@ test('invitation dialog traps focus and restores it when dismissed', async ({ pa
   await expect(dialog).toBeVisible();
   await expect(dialog.getByRole('button', { name: 'Close dialog' })).toBeFocused();
   await page.keyboard.press('Shift+Tab');
-  await expect(dialog.getByRole('button', { name: 'Confirm with passkey' })).not.toBeFocused();
+  await expect(dialog.getByRole('button', { name: 'Create invite' })).not.toBeFocused();
   await page.keyboard.press('Escape');
   await expect(dialog).toHaveCount(0);
   await expect(trigger).toBeFocused();

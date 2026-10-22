@@ -284,7 +284,6 @@ struct NexusManager::Session {
     std::string detail{"locked"};
     std::string error;
     json devices = json::array();
-    std::chrono::steady_clock::time_point confirmed_at{};
     std::chrono::system_clock::time_point last_poll{std::chrono::system_clock::now()};
 
     Session(const std::string& data_root, int port) : root(utils::path_from_utf8(data_root)), ingress_port(port) {
@@ -464,7 +463,7 @@ struct NexusManager::Session {
             retry_delay = std::min(retry_delay * 2, std::chrono::seconds(60));
         }
     }
-    json request(const std::string& method, const std::string& path, const json& body, bool remote) {
+    json request(const std::string& method, const std::string& path, const json& body) {
         if (path == "/status") return status();
         if (path == "/device") {
             const auto name = body.at("device_name").get<std::string>();
@@ -514,7 +513,6 @@ struct NexusManager::Session {
             }
             authenticate_identity();
             locked = false;
-            confirmed_at = std::chrono::steady_clock::now();
             last_poll = std::chrono::system_clock::now();
             detail = joined ? "running" : "ready";
             if (!body.value("defer_join", false) && !joined) join("");
@@ -538,10 +536,6 @@ struct NexusManager::Session {
             return {{"group_node_id", group_id}, {"can_manage", group_admin()}, {"members", devices}};
         }
         if (path == "/link-token") {
-            // A remote client cannot touch this device's security key; its API key authorizes the invite.
-            if (!remote && std::chrono::steady_clock::now() - confirmed_at > std::chrono::seconds(60)) {
-                throw NexusError(423, "Confirm with your passkey before inviting a device");
-            }
             const auto ttl = body.value("ttl_sec", 600);
             if (ttl < 60 || ttl > 600) throw NexusError(400, "Invite lifetime must be 60 to 600 seconds");
             const auto name = body.at("device_name").get<std::string>();
@@ -732,11 +726,11 @@ void NexusManager::disable() {
     update_snapshot_locked({{"status", "disabled"}, {"locked", true}, {"mesh_up", false}, {"members", json::array()}});
     persist_enabled_locked();
 }
-std::pair<int, NexusManager::json> NexusManager::control_locked(const std::string& method, const std::string& path, const json& body, bool remote) {
+std::pair<int, NexusManager::json> NexusManager::control_locked(const std::string& method, const std::string& path, const json& body) {
 #ifdef LEMONADE_WITH_NEXUS
     if (!enabled_ || !session_) return {409, {{"error", "Enable mesh first"}}};
     std::pair<int, json> result;
-    try { result = {200, session_->request(method, path, body, remote)}; }
+    try { result = {200, session_->request(method, path, body)}; }
     catch (const NexusError& e) { result = {e.status, {{"error", e.what()}}}; }
     catch (const json::exception&) { result = {400, {{"error", "Invalid request fields"}}}; }
     catch (const std::exception& e) { result = {502, {{"error", e.what()}}}; }
@@ -865,7 +859,7 @@ void NexusManager::handle(const httplib::Request& req, httplib::Response& res,
         else if (operation == "members/role") path = "/members/" + req.matches[1].str() + "/role";
         else if (operation == "members/permissions") path = "/members/" + req.matches[1].str() + "/permissions";
         else path = "/" + operation;
-        auto result = control_locked(req.method, path, body, remote);
+        auto result = control_locked(req.method, path, body);
         if (result.first == 200) {
             if (operation == "invites") active_invite_ = result.second;
             if (operation == "invites/cancel" || operation == "lock") active_invite_ = nullptr;

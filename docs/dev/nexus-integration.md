@@ -62,9 +62,12 @@ the reason.
 Some actions need the desktop app on the server itself: passkey registration
 and unlock, turning the mesh on or off, locking, renaming the device, live
 events and mesh inference selection. Unlock the server locally before you manage
-it remotely. A remote invite does not ask for a fresh passkey confirmation; the
-API key authorizes it. A remote join works only when the server is unlocked and
+it remotely. A remote join works only when the server is unlocked and
 not yet in a group.
+
+An unlocked device creates and cancels invites without another passkey check.
+The local controller rules or the API key authorize the request. A locked device
+refuses invites.
 
 Invites come from the federation. Eight-digit codes work when the deployed
 federation supports them; older versions return full `lnk_…` tokens, which the

@@ -66,7 +66,7 @@ private:
     void update_snapshot_locked(const json& snapshot);
     void emit_locked(const std::string& type, const json& data);
     void handle(const httplib::Request& req, httplib::Response& res, const std::string& operation, bool remote);
-    std::pair<int, json> control_locked(const std::string& method, const std::string& path, const json& body, bool remote);
+    std::pair<int, json> control_locked(const std::string& method, const std::string& path, const json& body);
     std::string data_root_;
     int ingress_port_;
     std::unique_ptr<Session> session_;
