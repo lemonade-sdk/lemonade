@@ -33,7 +33,7 @@
 .nexus-dialog p { color: var(--text-secondary); line-height: 1.6; }
 .nexus-dialog__code { font-size: clamp(32px, 7vw, 48px); font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: .08em; color: var(--text-primary); padding: 16px 0; white-space: nowrap; }
 .nexus-dialog__code-input { font-size: 24px; font-variant-numeric: tabular-nums; letter-spacing: .12em; }
-.nexus-shortcut { display: inline-flex; align-items: center; gap: 7px; padding: 7px 10px; background: transparent; color: var(--text-secondary); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; font: inherit; font-size: 12px; }
+.nexus-shortcut { display: inline-flex; flex: 0 1 auto; min-width: 0; overflow: hidden; align-items: center; gap: 7px; padding: 7px 10px; background: transparent; color: var(--text-secondary); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; font: inherit; font-size: 12px; }
 .nexus-shortcut__dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-tertiary); }
 .nexus-shortcut__dot.is-online { background: var(--success); }
 .nexus-toast { position: fixed; top: 64px; right: 24px; z-index: 900; max-width: min(420px, calc(100vw - 48px)); display: flex; align-items: center; gap: 12px; padding: 16px; color: var(--text-primary); background: var(--surface-raised); border: 1px solid var(--border); border-radius: 8px; }
@@ -58,3 +58,7 @@
 .nexus-access__table th, .nexus-access__table td { padding: 8px 4px; border-bottom: 1px solid var(--border); text-align: left; font-weight: 400; }
 .nexus-access__table thead th { font-size: 12px; color: var(--text-tertiary); }
 .nexus-access__table td { width: 72px; }
+
+.titlebar__right:has(.nexus-shortcut) .titlebar__window-btn { flex-shrink: 0; }
+@media (max-width: 1400px) { .nexus-shortcut__label { display: none; } }
+@media (max-width: 768px) { .titlebar__right > .nexus-shortcut { display: none; } }
