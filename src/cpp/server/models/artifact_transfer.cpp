@@ -58,9 +58,8 @@ void require_placed_inside(const std::string& target_dir, const std::string& nam
     }
 }
 
-// A link standing where bytes are going takes the write to whatever it points at.
-// Resolving the final name catches a link there; the staged twin beside it is another
-// path, and no plan needs either one to be a link.
+// Resolving the final name catches a link standing there; the staged `.partial` beside
+// it is another path, and a link in either takes the write wherever it points.
 void require_no_link_in_place(const fs::path& placed) {
     std::error_code ec;
     const fs::file_status status = fs::symlink_status(placed, ec);

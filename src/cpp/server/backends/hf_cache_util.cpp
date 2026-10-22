@@ -48,9 +48,7 @@ std::string read_ref_main(const fs::path& model_cache_path) {
         return "";
     }
     ref.erase(last + 1);
-    // Read back as a path component, so it is held to the same grammar as one written
-    // here: a refs/main that traverses resolves to nothing instead of to a directory
-    // outside the repository cache.
+    // Read back as a path component, so held to the grammar one written here obeys.
     return lemon::utils::is_safe_path_component(ref) ? ref : std::string();
 }
 

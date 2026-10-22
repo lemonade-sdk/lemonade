@@ -91,8 +91,7 @@ bool path_inside(const std::filesystem::path& path, const std::filesystem::path&
 }
 
 bool is_safe_path_component(const std::string& name) {
-    // 255 is the longest name any supported filesystem holds, so a longer string is a
-    // malformed value rather than a file nobody asked for.
+    // 255 is the longest name any supported filesystem holds.
     if (name.empty() || name.size() > 255 || name == "." || name == "..") {
         return false;
     }

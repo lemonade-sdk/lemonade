@@ -259,10 +259,9 @@ void AliasManager::load() {
 }
 
 void AliasManager::save() {
-    // Snapshotting the map and renaming the file are one operation. A save that copied
-    // first and wrote second can land newest-first, and the older file then wins the
-    // rename - which is a registered alias vanishing at the next restart. Both callers
-    // arrive holding no lock, so taking the exclusive one here cannot recurse.
+    // The map snapshot and the rename are one operation: a save that copied first and
+    // wrote second can land after a newer one, and the older file wins the rename. Both
+    // callers arrive holding no lock.
     std::unique_lock lock(mutex_);
     if (cache_dir_.empty()) {
         return;
@@ -275,8 +274,7 @@ void AliasManager::save() {
     }
 
     fs::path target_path = cache_path / "aliases.json";
-    // One temp name per save: a file another writer abandoned cannot be renamed into
-    // place, and two processes sharing a cache directory never write the same file.
+    // Unique per save, so an abandoned temp is never the one renamed into place.
     const fs::path temp_path =
         cache_path / ("aliases.json." + std::to_string(++save_sequence_) + ".tmp");
     const std::map<std::string, std::string> aliases_copy = aliases_;

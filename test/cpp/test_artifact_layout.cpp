@@ -142,9 +142,8 @@ static void test_the_snapshot_directory_names_the_revision() {
           hf_hub_layout().target(placement, "/etc/passwd").empty());
 }
 
-// A revision becomes one directory name, and it arrives from a registry document, from
-// refs/main written on an earlier run, and from the request itself. Pointing the client
-// at a mirror or gateway is a supported configuration, so none of the three is trusted.
+// A revision becomes one directory name, and it arrives from a fetched document, from
+// refs/main, and from the request.
 static void test_a_revision_that_is_not_one_component_places_nothing() {
     const fs::path cache = scratch_dir("bad_revision");
     for (const char* revision : {"../../escape", "..", ".", "a/b", "a\\b", "C:evil",
@@ -170,7 +169,6 @@ static void test_a_revision_that_is_not_one_component_places_nothing() {
     check("a traversal inside a nested name is refused",
           hf_hub_layout().target(revision, "assets/../../outside.gguf").empty());
 
-    // refs/main is written by an earlier run and read back as a path component.
     const fs::path poisoned = scratch_dir("poisoned_ref");
     write(poisoned / "refs" / "main", "../escape");
     check("a refs/main that is not one component resolves to nothing",

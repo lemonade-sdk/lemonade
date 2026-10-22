@@ -39,8 +39,8 @@ static void check(const std::string& name, bool ok) {
     if (!ok) ++g_failures;
 }
 
-// A symlink is the one thing this suite cannot make portable: Windows needs a
-// privilege for it, and a run without that privilege pins nothing silently.
+// Windows needs a privilege to make a symlink; a run without one says so rather than
+// passing a containment check it never ran.
 static bool make_symlink(const fs::path& target, const fs::path& link, std::string& why) {
     std::error_code ec;
     fs::create_symlink(target, link, ec);
@@ -359,8 +359,6 @@ int main() {
         local_transfers.push_back(std::make_unique<LocalCopyFileTransfer>());
         const ArtifactTransfer local_only(std::move(local_transfers));
 
-        // The final name is contained by resolving it; the staged name beside it is a
-        // different path and needs the same refusal.
         for (const std::string& suffix : {std::string(), std::string(".partial")}) {
             const std::string which = suffix.empty() ? "final" : "staged";
             const fs::path cache = dir / ("cache_" + which);

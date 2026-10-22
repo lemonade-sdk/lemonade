@@ -172,9 +172,8 @@ static void test_alias_listing_is_sorted() {
     check("reloaded listing is sorted too", again == listed);
 }
 
-// Every alias a client registered must be on disk when the registrations return.
-// One round proves nothing about a race, so the round is repeated and the assertion
-// is that no round loses an alias or leaves a file that will not parse.
+// A race is not caught by one round, so the round repeats and no round may lose an
+// alias or leave a file that will not parse.
 static void test_concurrent_saves_lose_nothing() {
     constexpr int kWriters = 8;
     constexpr int kPerWriter = 8;

@@ -208,8 +208,6 @@ static void test_one_row_read_outlives_the_snapshot() {
                     (found->second != "first.gguf" && found->second != "second.gguf")) {
                     torn.store(true);
                 }
-                // Held across whatever the publisher does next: a row the caller keeps is a
-                // row the store keeps.
                 const std::shared_ptr<const ModelInfo> row = store.find(id);
                 if (!row || row->model_name != id || row->resolved_paths.size() != 1) {
                     torn.store(true);

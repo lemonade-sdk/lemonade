@@ -109,7 +109,6 @@ std::shared_ptr<const ModelInfo> ModelStore::find(const std::string& canonical_i
     if (row == nullptr) {
         return {};
     }
-    // Aliasing constructor: the row and the set it lives in share one lifetime.
     return std::shared_ptr<const ModelInfo>(snapshot, row);
 }
 

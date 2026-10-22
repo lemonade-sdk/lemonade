@@ -339,9 +339,7 @@ private:
     // `depth` tracks collection-component nesting; embedding stops past
     // kMaxCollectionEmbedDepth so a cyclic collection registration cannot
     // recurse unboundedly.
-    // `include_paths` is the client's opt-in to absolute filesystem paths, the same query
-    // parameter `/models/{id}/files` uses: otherwise a row says where a checkpoint sits in
-    // words that name one machine's user directory.
+    // `include_paths` is the opt-in to absolute paths, as in /models/{id}/files.
     nlohmann::json model_info_to_json(const std::string& model_id, const ModelInfo& info,
                                       int depth = 0, bool include_paths = false);
 
