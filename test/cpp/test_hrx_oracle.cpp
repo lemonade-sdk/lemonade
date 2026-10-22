@@ -1,4 +1,5 @@
 #include "backend_capabilities_generated.h"
+#include "backend_definition_runner_internal.h"
 #include "backend_typed_hook_registry_internal.h"
 #include "lemon/backends/hrx/hrx_server.h"
 #include "llm_configured_fixture.h"
@@ -15,23 +16,31 @@ void operator delete(void* memory, size_t) noexcept { std::free(memory); }
 void operator delete[](void* memory, size_t) noexcept { std::free(memory); }
 
 namespace {
-unsigned v2_entries = 0, runner_entries = 0, service_entries = 0;
-bool poison_v2 = false;
+unsigned v2_entries = 0, runner_entries = 0, service_entries = 0, forbidden_entries = 0;
+bool poison_forbidden = false;
 }
 
-void lemon::backends::typed::observe_entry(const char*) {
+void lemon::backends::typed::observe_entry(const char* name) {
     ++v2_entries;
-    if (poison_v2) throw std::logic_error("HrxGainedNothing:poisoned v2 target");
+    const std::string entry(name);
+    const bool allowed = entry.rfind("artifacts.", 0) == 0 || entry == "max_tokens_alias" ||
+        entry == "tool_schema_limits" || entry == "client_model";
+    if (!allowed) {
+        ++forbidden_entries;
+        if (poison_forbidden) throw std::logic_error("HrxGainedNothing:forbidden vanilla target");
+    }
 }
 
 #ifdef LEMON_HRX_WRAP_V2
-extern "C" void __wrap__ZN5lemon8backends7runtime5FrameC1ERKNS0_20ExecutableDefinitionE(...) {
+extern "C" void __real__ZN5lemon8backends7runtime5FrameC1ERKNS0_20ExecutableDefinitionE(void*, const ExecutableDefinition&);
+extern "C" void __wrap__ZN5lemon8backends7runtime5FrameC1ERKNS0_20ExecutableDefinitionE(void* self, const ExecutableDefinition& executable) {
     ++runner_entries;
-    throw std::logic_error("HrxGainedNothing:v2 runner frame");
+    __real__ZN5lemon8backends7runtime5FrameC1ERKNS0_20ExecutableDefinitionE(self, executable);
 }
-extern "C" void __wrap__ZN5lemon8backends7runtime16ArtifactServicesC1ERNS1_15InvocationGuardERKNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEEb(...) {
+extern "C" void __real__ZN5lemon8backends7runtime16ArtifactServicesC1ERNS1_15InvocationGuardERKNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEEb(void*, runtime::InvocationGuard&, const std::string&, bool);
+extern "C" void __wrap__ZN5lemon8backends7runtime16ArtifactServicesC1ERNS1_15InvocationGuardERKNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEEb(void* self, runtime::InvocationGuard& guard, const std::string& root, bool directory) {
     ++service_entries;
-    throw std::logic_error("HrxGainedNothing:v2 artifact service");
+    __real__ZN5lemon8backends7runtime16ArtifactServicesC1ERNS1_15InvocationGuardERKNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEEb(self, guard, root, directory);
 }
 #endif
 
@@ -127,6 +136,21 @@ void check_launch(Upstream& upstream) {
         check(arm.fixture.events == std::vector<std::string>{"install:llamacpp-hrx:hrx", "port", "managed:llamacpp-hrx:hrx", "process", "start"}, "HRX install, port, managed lookup and start order without an existence probe");
         check(arm.fixture.command.ready_endpoint == "/health" && arm.fixture.cwd.empty() && arm.fixture.output.filter_health_logs && arm.server->get_device_type() == DEVICE_NPU, "HRX readiness, cwd, health-log filter and untouched device");
     }
+    {
+        Arm arm(upstream.port);
+        auto options = hrx_options("--threads 7");
+        options.set_option("merge_args", false);
+        check(load(arm, options).empty() && arm.fixture.command.args == argv(upstream.port, {"--threads", "7", "--parallel", "1"}),
+            "HRX launch parallel remains independent of merge_args");
+    }
+    {
+        Arm arm(upstream.port);
+        const RecipeOptions options("llamacpp-hrx", {});
+        auto expected = argv(upstream.port, {"--parallel", "1"});
+        expected[3] = "-1";
+        check(load(arm, options).empty() && arm.fixture.command.args == expected,
+            "HRX implicit common context retains its default");
+    }
     for (const char* level : {"info", "debug", "trace", "warning", "error"}) {
         Arm arm(upstream.port, level);
         load(arm);
@@ -152,7 +176,14 @@ void check_launch(Upstream& upstream) {
 void check_admission(Upstream& upstream) {
     const std::set<std::string> reserved = {"-c", "-dev", "-dr", "-hf", "-hff", "-hfr", "-m", "-mu", "--ctx-size", "--device", "--docker-repo",
         "--hf-file", "--hf-repo", "--jinja", "--metrics", "--model", "--model-url", "--no-jinja", "--port"};
-    check(hrx::configured_entry()->definition->records["launch"]["custom_args"]["reserved"].get<std::set<std::string>>() == reserved, "HRX reserves exactly its managed flags and aliases");
+    const DefinitionRunner runner(hrx::spec()->executable_definition);
+    const auto& launch = runner.declaration().at("launch");
+    auto effective = launch.at("custom_args").at("reserved").get<std::set<std::string>>();
+    for (const auto& record : launch.at("argv")) {
+        effective.insert(record.at("flag"));
+        for (const auto& alias : record.value("aliases", json::array())) effective.insert(alias);
+    }
+    check(effective == reserved && effective.size() == 19, "HRX reserves exactly its managed flags and aliases");
     for (const auto& flag : reserved) {
         for (const auto& form : {flag + " replacement", flag + "=replacement"}) {
             Arm arm(upstream.port);
@@ -167,11 +198,11 @@ void check_install() {
     const auto* spec = hrx::spec();
     check(spec->recipe == "llamacpp-hrx" && spec->binary == "llama-server" && spec->pin_recipe == "llamacpp-hrx" && !spec->supports_split_archive, "HRX install identities");
     for (const auto phase : {InstallPhase::Repository, InstallPhase::Asset}) {
-        const InstallContext context{*spec, spec->definition, "llamacpp-hrx", spec->pin_recipe, "hrx", "", "hrx-b99", "hrx-b99", {"linux", "x86_64", ""}, phase};
+        const InstallContext context{*spec, spec->definition, "llamacpp-hrx", spec->pin_recipe, "hrx", "", "hrx-b99", "hrx-b99", {"linux", "x86_64", ""}, phase, spec->executable_definition};
         const auto params = spec->install_params_fn(context);
         check(params.repo == "ROCm/ggml-staging-automation" && params.filename == "llama-hrx-b99-bin-manylinux-hrx-x64.tar.gz" && params.version_override.empty() && params.sha256.empty(), "HRX installer maps the version to the exact release asset");
     }
-    const InstallContext split{*spec, spec->definition, "llamacpp-hrx", spec->pin_recipe, "hrx", "", "pinned", "resolved", {"linux", "x86_64", ""}, InstallPhase::Repository};
+    const InstallContext split{*spec, spec->definition, "llamacpp-hrx", spec->pin_recipe, "hrx", "", "pinned", "resolved", {"linux", "x86_64", ""}, InstallPhase::Repository, spec->executable_definition};
     check(spec->install_params_fn(split).filename == "llama-pinned-bin-manylinux-hrx-x64.tar.gz", "repository phase uses the pinned version");
     auto asset = split;
     asset.phase = InstallPhase::Asset;
@@ -184,7 +215,7 @@ void check_install() {
         {"hrx", {"linux", "aarch64", ""}, "The HRX backend is available on Linux x86-64 only"},
     };
     for (const auto& [backend, platform, expected] : rejected) {
-        const InstallContext context{*spec, spec->definition, "llamacpp-hrx", spec->pin_recipe, backend, "", "hrx-b99", "hrx-b99", platform, InstallPhase::Asset};
+        const InstallContext context{*spec, spec->definition, "llamacpp-hrx", spec->pin_recipe, backend, "", "hrx-b99", "hrx-b99", platform, InstallPhase::Asset, spec->executable_definition};
         std::string message;
         try { spec->install_params_fn(context); } catch (const std::exception& error) { message = error.what(); }
         check(message == expected, "HRX installer rejects backend before host: " + backend + "/" + platform.os + "/" + platform.machine_arch);
@@ -197,8 +228,19 @@ void check_install() {
 void check_logging(Upstream& upstream) {
     Arm arm(upstream.port, "debug");
     LogCapture capture("HRX");
+    arm.fixture.on_install = [&] {
+        check(capture.records.size() == 2 && capture.records[0] == "Info Loading model: fixture" &&
+            capture.records[1].rfind("Debug Per-model settings:", 0) == 0, "HRX exact load logs precede installation");
+    };
     load(arm, hrx_options("--threads 7"));
     check(capture.records == std::vector<std::string>{"Info Loading model: fixture", "Debug Per-model settings: ctx_size=32768, hrx_args=--threads 7, merge_args=true, auto_evict=(none), evict_idle_timeout=300, downsize_idle_timeout=60, evict_weight_factor=1.000000, pinned=false, auto_update=(none)"}, "HRX keeps its loading and per-model settings lines and has no startup line");
+    const auto expected = capture.records;
+    capture.records.clear();
+    Arm failing(upstream.port, "debug");
+    failing.fixture.install_fails = true;
+    check(load(failing, hrx_options("--threads 7")) == "install witness" && capture.records == expected &&
+        failing.fixture.events == std::vector<std::string>{"install:llamacpp-hrx:hrx"},
+        "HRX keeps exactly two load logs when installation fails");
 }
 
 void check_operations(Upstream& upstream) {
@@ -240,8 +282,10 @@ void check_operations(Upstream& upstream) {
     };
     for (const auto& [operation, path, input, expected] : streaming) {
         Capture output;
-        server.dispatch_streaming_operation(operation, input, output.sink);
-        check(upstream.last("target") == path && upstream.last("body") == expected && output.bytes == k_sse, "HRX streaming request codec on " + path + ": " + expected);
+        bool forwarded = true;
+        try { server.dispatch_streaming_operation(operation, input, output.sink); }
+        catch (const std::invalid_argument&) { forwarded = false; }
+        check(forwarded && upstream.last("target") == path && upstream.last("body") == expected && output.bytes == k_sse, "HRX streaming request codec on " + path + ": " + expected);
     }
     {
         Capture output;
@@ -249,6 +293,25 @@ void check_operations(Upstream& upstream) {
         streamed["stream"] = true;
         server.dispatch_streaming_operation(BackendOperation::ChatCompletion, streamed.dump(), output.sink);
         check(!json::parse(upstream.last("body"))["tools"][0]["function"]["parameters"].contains("maxLength"), "HRX streaming chat sanitizes tool schemas");
+    }
+    {
+        Capture output;
+        bool rejected = false;
+        try { server.forward_streaming_request("/unbound", "{invalid", output.sink, false, 1); }
+        catch (const std::invalid_argument&) { rejected = true; }
+        check(rejected && output.bytes.empty(), "HrxGainedNothing:unbound streaming endpoint rejected");
+    }
+    const auto executable = hrx::spec()->executable_definition;
+    const DefinitionRunner stream_runner(executable);
+    const ExecutionSession stream_session{executable, {}, {}, {}, "fixture"};
+    for (const auto& path : {"/v1/chat/completions", "/v1/completions", "/v1/responses"}) {
+        for (const bool sse : {false, true}) {
+            for (const auto& body : {"{invalid", "{\"stream\":true}"}) {
+                const auto mapped = stream_runner.map_stream(path, ModelType::LLM, stream_session, body, sse, 17);
+                check(mapped.sse == sse && mapped.timeout_seconds == 17,
+                    "HRX bound streaming preserves caller SSE and timeout");
+            }
+        }
     }
     const json plain = {{"model", "client-fixture"}, {"input", "text"}};
     operation_adapter<IEmbeddingsServer>(server, BackendOperation::Embeddings, OperationDelivery::Buffered, ModelType::LLM)->embeddings(plain);
@@ -341,6 +404,19 @@ void check_hrx_gained_nothing(Upstream& upstream) {
         ++artifacts;
     }
     check(artifacts == 30, "HrxGainedNothing:all thirty frozen artifact cases");
+    const auto metadata_root = fs::temp_directory_path() / ("hrx-metadata-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    fs::create_directories(metadata_root / "directory.gguf");
+    std::ofstream(metadata_root / "model.txt") << "GGUF";
+    for (const auto& path : {metadata_root, metadata_root / "directory.gguf", metadata_root / "model.txt"}) {
+        auto model = hrx_model(path.string());
+        const auto before = v2_entries;
+        bool unchanged = true;
+        try { ops->populate_metadata(model, {}); }
+        catch (const std::exception&) { unchanged = false; }
+        check(unchanged && model.max_context_window == 0 && v2_entries == before,
+            "HrxGainedNothing:non-GGUF metadata paths require no artifact read");
+    }
+    fs::remove_all(metadata_root);
     for (const auto& labels : {std::vector<std::string>{"dflash", "mtp"}, std::vector<std::string>{"mtp"}}) {
         auto model = hrx_model();
         model.labels = labels;
@@ -352,6 +428,15 @@ void check_hrx_gained_nothing(Upstream& upstream) {
             ops->resolve_runtime_options(model, options);
             check(options.to_json() == before, "HrxGainedNothing:no vanilla DFlash/MTP/parallel runtime defaults or llamacpp_args mutation");
         }
+    }
+    for (const auto& value : {json(), json(7), json(false), json(""), json("--threads 7")}) {
+        auto options = hrx_options();
+        options.set_option("hrx_args", value);
+        const auto before = options.to_json();
+        const auto frames = runner_entries;
+        ops->resolve_runtime_options(hrx_model(), options);
+        check(options.to_json() == before && runner_entries == frames,
+            "HrxGainedNothing:runtime resolution short circuits without normalization or writes");
     }
     for (const auto& type : {ModelType::EMBEDDING, ModelType::RERANKING}) {
         Arm arm(upstream.port);
@@ -365,6 +450,16 @@ void check_hrx_gained_nothing(Upstream& upstream) {
         expected[3] = "512";
         check(args == expected && options.get_option("ctx_size") == 512, "HrxGainedNothing:no embedding context floor, own launch parallel retained");
         check(arm.server->get_device_type() == DEVICE_NPU, "HrxGainedNothing:preassigned device unchanged");
+    }
+    {
+        Arm arm(upstream.port);
+        auto model = hrx_model();
+        model.labels = {"dflash", "mtp", "vision", "embedding", "reranking"};
+        model.checkpoints["draft"] = "repo/DFlash-draft.gguf";
+        model.resolved_paths["draft"] = "/models/draft.gguf";
+        model.resolved_paths["mmproj"] = "/models/mmproj.gguf";
+        check(load(arm, hrx_options(), model).empty() && arm.fixture.command.args == argv(upstream.port, {"--parallel", "1"}),
+            "HrxGainedNothing:no optional model launch despite populated fields and labels");
     }
     for (const auto* hf : {"--hf-repo owner/model --hf-file model.gguf", "--model-url https://invalid.example/model.gguf"}) {
         Arm arm(upstream.port);
@@ -382,10 +477,35 @@ void check_hrx_gained_nothing(Upstream& upstream) {
         check(ops->resolve_version("system", "file-version") == "file-version" &&
             result.installed == found && result.error.empty(), "HrxGainedNothing:base system behavior without probe");
     }
-    check(!hrx::spec()->executable_definition && hrx::configured_entry()->definition->records.at("schema_version") == 1,
-        "HrxGainedNothing:legacy definition has no executable runner");
-    check(v2_entries == 0 && runner_entries == 0 && service_entries == 0,
-        "HrxGainedNothing:zero v2 target, runner and service entries");
+    check(hrx::spec()->executable_definition && !hrx::configured_entry()->definition,
+        "HrxGainedNothing:canonical v2 executable has no legacy bypass");
+    const DefinitionRunner runner(hrx::spec()->executable_definition);
+    unsigned probes = 0;
+    const runtime::ProbeSources sources{
+        [&](std::size_t, unsigned, const std::function<bool()>&) { ++probes; return utils::CapturedProcess{}; },
+        [&] { ++probes; return false; }, [&] { ++probes; return false; }};
+    for (const auto& backend : {"hrx", "system"}) {
+        check(runner.resolve_version(backend, "file-version", sources) == "file-version",
+            "HrxGainedNothing:instrumented version preserves supplied value");
+        for (const bool found : {false, true}) {
+            const auto result = runner.check_install(backend, found, sources);
+            check(result.installed == found && result.error.empty(), "HrxGainedNothing:instrumented install preserves found");
+        }
+    }
+    check(probes == 0, "HrxGainedNothing:system probe count zero");
+    const auto& declaration = runner.declaration();
+    check(declaration.at("hooks").empty() && declaration.at("artifacts").size() == 1 &&
+        declaration.at("artifacts").at("main").at("required_when") == true &&
+        !declaration.at("launch").contains("context_floor") && declaration.at("operations").size() == 11,
+        "HrxGainedNothing:exact root artifact and operation sets");
+    const auto& program = execution::Inspection::program(hrx::spec()->executable_definition->compiled());
+    check(program.hooks.size() == 11 && std::none_of(program.hooks.begin(), program.hooks.end(),
+        [](const auto& hook) { return hook.slot.owner_kind == SlotOwnerKind::Root; }),
+        "HrxGainedNothing:eleven restricted occurrences and zero vanilla root slots");
+    check(v2_entries > 0 && forbidden_entries == 0, "HrxGainedNothing:positive v2 execution and zero forbidden vanilla targets");
+#ifdef LEMON_HRX_WRAP_V2
+    check(runner_entries > 0 && service_entries > 0, "HrxGainedNothing:bound runner and artifact service entries");
+#endif
 }
 
 void check_registration() {
@@ -396,7 +516,7 @@ void check_registration() {
     check(d.recipe == "llamacpp-hrx" && d.display_name == "HRX GPU" && d.binary == "llama-server" && d.config_section == "hrx" && d.default_device == DEVICE_GPU && d.uses_ctx_size && d.exposes_prometheus_metrics && d.takes_args && d.bin_variants == std::vector<std::string>{"hrx"}, "independent HRX descriptor identities");
     check(d.support.size() == 1 && d.support[0].arch_gates.size() == 2 && d.support[0].arch_gates.at("gfx1100").os == std::set<std::string>{"linux"} && d.support[0].arch_gates.at("gfx1151").channels.empty() &&
           compiled.support[0].arch_gates.size() == 2 && compiled.support[0].arch_gates.at("gfx1151").os == std::set<std::string>{"linux"}, "HRX arch gates match the compiled descriptor");
-    check(entry->compatibility == TrustedCompatibility::None && !entry->launch_compatibility.device_on_backend_selection && !entry->launch_compatibility.posix_executable_loader_path && entry->launch_compatibility.load_log, "HRX carries only the load-log attachment");
+    check(entry->compatibility == TrustedCompatibility::None && !entry->launch_compatibility.device_on_backend_selection && !entry->launch_compatibility.posix_executable_loader_path && !entry->launch_compatibility.load_log && entry->executable_definition, "HRX load diagnostics are selected by its v2 data policy");
     uint32_t vanilla_capabilities = CAP_ALL;
     for (const auto& entry : lemon::backends::all_backend_capabilities())
         if (entry.descriptor->recipe == "llamacpp") vanilla_capabilities = entry.capabilities;
@@ -432,11 +552,12 @@ void check_registration() {
 
 int main() {
     try {
-        poison_v2 = true;
-        try { typed::llamacpp::validate_registration("repo/model-GGUF"); }
+        poison_forbidden = true;
+        try { (void)typed::llamacpp::runtime_options({}); }
         catch (const std::logic_error&) {}
-        check(v2_entries == 1, "HrxGainedNothing:poisoned v2 target canary is live");
-        v2_entries = 0;
+        check(forbidden_entries == 1, "HrxGainedNothing:forbidden vanilla target canary is live");
+        (void)typed::llamacpp::validate_registration("repo/model-GGUF");
+        v2_entries = forbidden_entries = 0;
         Upstream upstream;
         check_registration();
         check_install();

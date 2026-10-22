@@ -656,6 +656,27 @@ int main(int argc, char** argv) {
     const ExecutionSession strict_session{all, {}, {}, {}, "fixture"};
     check(throws([&] { runner.map_stream("/unknown", ModelType::LLM, strict_session, "raw", false, 1); }, "not bound"),
         "DefaultDirectStreamingStillRejectsUnknownEndpoints");
+    auto passthrough_document = runtime_document();
+    passthrough_document["merge"]["launch"]["direct_stream_policy"] = "bound_passthrough";
+    const auto passthrough_executable = runtime_fixture::executable(passthrough_document);
+    const DefinitionRunner passthrough_runner(passthrough_executable);
+    const ExecutionSession passthrough_session{passthrough_executable, {}, {}, {}, "fixture"};
+    for (const bool sse : {false, true}) {
+        const auto mapped = passthrough_runner.map_stream("/v1/chat/completions", ModelType::LLM, passthrough_session, "{invalid", sse, 17);
+        check(mapped.original_body == "{invalid" && mapped.sse == sse && mapped.timeout_seconds == 10,
+            "BoundPassthroughPreservesMalformedBodyCallerSseAndBoundTimeout");
+    }
+    check(throws([&] { passthrough_runner.map_stream("/unknown", ModelType::LLM, passthrough_session, "raw", false, 1); }, "not bound"),
+        "BoundPassthroughRejectsUnknownEndpoints");
+    for (const auto& control : {"device_assignment", "load_log_policy", "direct_stream_policy"}) {
+        auto invalid = runtime_document();
+        invalid["merge"]["launch"][control] = "unrecognized";
+        const std::string bytes = invalid.dump();
+        const DefinitionKey key{DefinitionNamespace::Builtin, "binding-fixture", 1};
+        const auto snapshot = make_v2_source_snapshot({{key, bytes, ""}});
+        const auto resolved = DefinitionResolver(snapshot.snapshot).resolve(key);
+        check(!resolved.definition && has_code(resolved.diagnostics, "invalid_value"), "ClosedRunnerPolicyRejectsUnknownValue:" + std::string(control));
+    }
     auto invalid_runtime = candidate_document;
     invalid_runtime["merge"]["launch"]["custom_args"]["defaults"][0]["when"] = {{"ref", "/runtime/draft"}};
     reject_install(invalid_runtime, "invalid_reference", "RuntimeFactsCannotInventFields");

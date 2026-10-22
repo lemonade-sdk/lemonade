@@ -1,10 +1,12 @@
+#include "backend_definition_resources.h"
 #include "lemon/backends/configured/backend_definition_store.h"
 #include "lemon/backends/configured/backend_hook_registry.h"
 #include "lemon/backends/configured/request_mapper.h"
-#include "backend_definition_resources.h"
+#include "lemon/backends/hrx/hrx_server.h"
 #include "thinksound_oracle.h"
 
 #include <algorithm>
+#include <fstream>
 #include <functional>
 #include <set>
 #include <tuple>
@@ -247,9 +249,14 @@ int main() {
                 check(only(doc, origin, "unknown_hook", {std::string("/hooks/") + stage + "/id"}), std::string("hook stage without an implementation is refused for every origin: ") + stage);
             }
         }
+        std::ifstream historical_hrx(std::string(LEMON_TEST_FIXTURES) + "/backend-v1-compat/hrx.v1.json");
+        const std::string historical_hrx_bytes{std::istreambuf_iterator<char>(historical_hrx), {}};
+        check(hrx::spec()->executable_definition && !hrx::spec()->definition &&
+            !store.validate({"hrx.json", k_hrx_definition, DefinitionOrigin::External}).definition,
+            "HRX v2 hooks require finalized builtin authority rather than the v1 parser");
         const std::vector<std::tuple<std::string, std::string, std::vector<std::string>>> definitions = {
             {"thinksound", k_thinksound_definition, {}}, {"ds4", k_ds4_definition, {}}, {"ryzenai", k_ryzenai_definition, {}},
-            {"hrx", k_hrx_definition, {"/artifacts/main/hook/id", "/operations/0/request/hooks/0/id", "/operations/0/request/hooks/1/id", "/operations/0/response/hooks/0/id",
+            {"hrx", historical_hrx_bytes, {"/artifacts/main/hook/id", "/operations/0/request/hooks/0/id", "/operations/0/request/hooks/1/id", "/operations/0/response/hooks/0/id",
                 "/operations/1/request/hooks/0/id", "/operations/1/response/hooks/0/id", "/operations/2/request/hooks/0/id", "/operations/2/response/hooks/0/id",
                 "/operations/3/request/hooks/0/id", "/operations/3/request/hooks/1/id", "/operations/5/request/hooks/0/id"}},
             {"kokoro", k_kokoro_definition, {"/hooks/launch/id"}},

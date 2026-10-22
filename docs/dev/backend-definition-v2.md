@@ -1,10 +1,16 @@
 # Backend definition v2 composition contract
 
-V2 is a data contract for resolving one immutable source snapshot. It is not
-currently admitted by the production catalog, CLI validator, or configured server.
-V1 remains authoritative for all shipped definitions, descriptors, feature output,
-and the default `/v1/backends/schema` export. Successful v2 structural checking or
-resolution does not authorize hooks or establish executable support.
+V2 resolves and executes definitions from an immutable startup snapshot. The
+production catalog, CLI validator and configured server admit hook-free external
+v2 definitions. The two separately authorized builtin v2 leaves are `llamacpp`
+and its `hrx` child; the other seven configured definitions remain v1. Structural
+checking or resolution alone cannot authorize hooks or establish execution.
+Representation 1 remains the default public schema projection.
+
+The sections below retain the implementation history by phase. Their statements
+about pending activation describe those historical boundaries. The current 4f
+status is recorded at the end and in
+[Runtime local backends](runtime-backends.md#builtin-v2-inheritance).
 
 ## Schema and declaration boundary
 
@@ -1054,3 +1060,30 @@ tables remain empty, and HRX retains its current definition. Atomic production
 activation, HRX legacy artifact isolation and the catalog transition gate remain
 4e.3 work. These CPU fake and macro-view checks do not qualify native
 Windows/macOS or real model execution.
+
+## Qualified builtin inheritance (unit 4f)
+
+Unit 4e.3 activated the qualified llama.cpp declaration with fixed builtin
+execution authority, isolated frozen controls and the immutable 171-record
+catalog transition. Unit 4f converts HRX to a 129-line v2 child of that exact
+parent. Its separate `builtin:hrx@1` policy restricts the parent's slots to the
+ten protocol occurrences and main artifact occurrence, retains the eleven
+operation owners, and repins the required-main owner and mutation semantics.
+The parent leaf pins remain unchanged; the two-entry registry changes both
+leaves' authority identities. Production exports remain empty at
+`sha256:b2e770dfdb68a27db72cbe2fdad29f26c3eeb7ab2ca5ea136d325bfe4a5dfa8a`.
+
+The closed device, load-log and bound-stream controls are documented in the
+runtime guide. Compiler and runner/service revisions advance from 4 to 5.
+`test/fixtures/backend-v2/hrx.catalog-transition.json` discloses the exact schema
+controls and independently recomputed identities, rows and ETags.
+`LlamaCppV2ProductionSwitchTest` now verifies both transition stages, including
+byte replay of the historical snapshot and the new 141-record stage. The
+151-registration census is unchanged. Seven live v1 sources and their compiled
+fingerprints remain exact; the old HRX source still compiles against the
+unchanged historical eight-entry fixture.
+
+Unit 4g must attach and qualify a reviewed external export contract with explicit
+mutable inputs, parent-slot attenuation and external-origin confinement. A
+builtin leaf execution policy cannot substitute for that contract. Native model
+and hardware qualification remains 4h.

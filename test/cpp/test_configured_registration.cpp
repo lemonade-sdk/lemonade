@@ -80,7 +80,7 @@ int main() {
             auto server = create_server(backend.recipe, BackendContext{"error"});
             check(dynamic_cast<ConfiguredServer*>(server.get()) != nullptr, backend.recipe + " factory constructs the configured server");
             check(server && server->get_descriptor() == descriptor_for(backend.recipe), backend.recipe + " server carries the registry's descriptor object");
-            check(backend.spec == &backend.entry->spec && backend.spec->definition == backend.entry->definition && backend.ops == backend.entry->ops.get(), backend.recipe + " spec/ops are the configured entry's");
+            check(backend.spec == &backend.entry->spec && backend.spec->definition == backend.entry->definition && backend.ops == backend.entry->backend_ops(), backend.recipe + " spec/ops are the configured entry's");
             check(spec_for(backend.recipe) == backend.spec && ops_for(backend.recipe) == backend.ops, backend.recipe + " registry lookups return the configured spec/ops");
             check(backend.capabilities == (implemented_capabilities(*backend.entry) & mode_capabilities(*backend.entry)), backend.recipe + " capability export matches the definition's implemented bindings within its declared modes");
         }

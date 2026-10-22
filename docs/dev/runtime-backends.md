@@ -5,7 +5,7 @@
 `.json` selection and UTF-8 lexicographic ordering. Other files and subdirectories
 are ignored. Selected symlinks, nonregular files, unreadable files, invalid
 objects, and definitions larger than 1 MiB fail startup. Each file holds one
-schema-v1 object. A missing directory is allowed.
+schema-v1 object or a hook-free schema-v2 definition. A missing directory is allowed.
 
 The catalog freezes immediately before configuration loading in both standalone
 and embedded Windows startup. Editing definitions or sending SIGHUP has no effect
@@ -34,6 +34,49 @@ not cover their pin identity. Shipped pins and existing user version/path choice
 retain precedence. `external_only` requires a configured executable and never
 falls through to downloading one. Definitions and model registrations are local
 administrator inputs; schema discovery does not install or replace them.
+
+## Builtin v2 inheritance
+
+The builtin v2 leaves are exactly `llamacpp` and `hrx`. HRX extends
+`{"builtin":"llamacpp","contract":1}` and inherits the eleven operation records,
+ten protocol hook occurrences, main GGUF artifact hook and common launch records.
+Its 129-line source uses merge records for HRX metadata and launch policy, and
+keyed edits to remove vanilla options, root hooks, optional artifacts and argv.
+It keeps capability mask zero while all eleven callable bindings remain available.
+
+Inheritance supplies data; it does not authorize execution. `builtin:hrx@1` has
+fixed source, resolved and dependency pins, including the exact llama parent.
+Its eleven selected slots retain the parent ABI, parameters, order, effects and
+mutation restrictions. The main artifact's `required_when:true` changes owner
+semantics, so its owner and mutation policy digests are pinned separately. Both
+leaves retain the same eleven-operation owner graph. The two-entry builtin
+registry is separately pinned. Authority is never derived from the candidate
+being admitted.
+
+Compiler revision 5 and runner/service policy 5 add three closed launch controls:
+`device_assignment` (`select_backend`, `preserve`), `load_log_policy` (`none`,
+`loading_and_options`) and `direct_stream_policy` (`strict`, `llamacpp_legacy`,
+`bound_passthrough`). Existing defaults retain their meanings. Runtime option
+resolution returns without constructing a frame or writing an option when no
+runtime hook, default or normalization is selected. Launch preparation supplies
+the common context default, and metadata preparation skips non-GGUF/nonregular
+paths before acquiring a read handle.
+
+`test/backend_v2_4f_transition.py` retains the immutable 171-record llama
+activation, then independently derives the 141-record HRX stage from
+`85788f7872514e29598a6244021464643e9342ec`. It checks exact typed values,
+all seventeen recipe filters in both representations, every affected identity
+and ETag, whole-snapshot byte replay and the unchanged seven v1 sources. The
+historical v1 HRX source still compiles against the original eight-entry fixture.
+`test/backend_v2_4f_mutations.py` compiles one regression at a time outside the
+production tree.
+
+Exports remain empty at
+`sha256:b2e770dfdb68a27db72cbe2fdad29f26c3eeb7ab2ca5ea136d325bfe4a5dfa8a`.
+Unit 4g must attach a reviewed external export contract, explicit allowed mutable
+inputs, parent-slot attenuation and origin confinement, then qualify that
+contract's admission, binding and publication failures. It must not reuse a
+builtin leaf policy as external authority. Real-engine qualification remains 4h.
 
 ## Built-in configured backends
 
@@ -113,7 +156,7 @@ external definitions can never request:
 | `thinksound` | `TrustedCompatibility::LegacyNonChatSse` | Keeps the legacy-forwarding streaming bindings for chat completion, completion and responses next to buffered audio generation. |
 | `ds4` | `BuiltinLaunchCompatibility{DEVICE_GPU, true, load_log}` | Sets the GPU device once the backend is selected, before installation, and prepends the bundled executable directory to `LD_LIBRARY_PATH` on every host. Its load log drops the generic loading line, logs custom arguments at DEBUG and logs the executable and model path in the INFO startup line. |
 | `ryzenai-llm` | `BuiltinLaunchCompatibility{{}, false, load_log}` | Its load log keeps the loading line, the resolved executable, the model path and the quoted command at DEBUG, with no INFO lines. |
-| `llamacpp-hrx` | `BuiltinLaunchCompatibility{{}, false, load_log}` | Its load log keeps the INFO loading line, adds the DEBUG per-model settings line and has no startup line. |
+| `llamacpp-hrx` | v2 `device_assignment:preserve`, `load_log_policy:loading_and_options`, `direct_stream_policy:bound_passthrough` | Keeps the router device and the two load diagnostics before installation. Bound streams preserve malformed bodies and the caller's SSE and timeout settings; unbound endpoints fail. |
 | `kokoro` | `TrustedCompatibility::LegacyNonChatSse` and `BuiltinLaunchCompatibility{{}, false, load_log}` | Keeps the legacy-forwarding chat streams next to speech. Its load log keeps the loading line and logs the port once it is allocated and the POSIX loader path once the environment is resolved, at INFO. |
 | `moonshine` | `TrustedCompatibility::LegacyNonChatSse` and `BuiltinLaunchCompatibility{DEVICE_CPU, false, load_log}` | Keeps the legacy-forwarding chat streams, sets the CPU device before installation, and logs the per-model settings, model, executable and both ports at INFO and the custom arguments at DEBUG. |
 | `onnxruntime` | `TrustedCompatibility::LegacyNonChatSse` and `BuiltinLaunchCompatibility{DEVICE_CPU, false, load_log}` | Keeps the legacy-forwarding chat streams, sets the CPU device before installation, and logs the per-model settings, the servable directory and the executable at INFO. |

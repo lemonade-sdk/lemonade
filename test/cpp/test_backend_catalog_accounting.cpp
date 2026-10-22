@@ -123,7 +123,7 @@ int main() {
         metrics.retained_bytes, metrics.peak_temporary_bytes, metrics.peak_bytes, metrics.work_bytes, metrics.work_visits, metrics.dependency_references);
     std::size_t owned = 0, bytes = 0, visits = 0;
     for (const auto& stage : metrics.stages) { owned += stage.owned_bytes; bytes += stage.work_bytes; visits += stage.work_visits; }
-    check(owned == metrics.retained_bytes && bytes == metrics.work_bytes && visits == metrics.work_visits && metrics.dependency_references == 10,
+    check(owned == metrics.retained_bytes && bytes == metrics.work_bytes && visits == metrics.work_visits && metrics.dependency_references == 13,
         "StageTotalsDescribeUniqueOwnershipAndCumulativeWork");
     check(metrics.peak_temporary_bytes > 0 && metrics.peak_bytes >= metrics.retained_bytes && metrics.stages[3].owned_bytes > 0, "AllFinalizationAndTemporaryStorageIsCharged");
     const auto empty = build({});

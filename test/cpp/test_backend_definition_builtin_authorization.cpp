@@ -1,7 +1,9 @@
 #include "catalog_admission_fixture.h"
 #include "lemon/backends/configured/backend_definition_execution.h"
 
+#include <algorithm>
 #include <functional>
+#include <set>
 #include <type_traits>
 
 using namespace admission_fixture;
@@ -50,11 +52,43 @@ int main() {
     static_assert(!std::is_constructible_v<AuthorizedDefinition, ResolvedDefinition>);
     static_assert(!std::is_constructible_v<AuthorizedDefinition, DefinitionKey>);
     static_assert(!std::is_constructible_v<ResolvedAuthority, ResolvedDefinition>);
-    check(embedded_v2_sources().size() == 1 && embedded_v2_policies().leaves.size() == 1 &&
-        embedded_v2_sources()[0].key.id == "llamacpp" && embedded_v2_policies().leaves[0].key.id == "llamacpp", "ProductionBuiltinV2TableExactlyLlama");
+    std::set<std::string> source_ids, policy_ids, authorized_ids;
+    for (const auto& source : embedded_v2_sources()) source_ids.insert(source.key.id);
+    for (const auto& policy : embedded_v2_policies().leaves) policy_ids.insert(policy.key.id);
+    check(source_ids == std::set<std::string>{"hrx", "llamacpp"} && policy_ids == source_ids,
+        "ProductionBuiltinV2TableExactlyHrxAndLlama");
     const auto production = BuiltinCatalogLoader::freeze_embedded();
-    check(production.snapshot && BuiltinCatalogLoader::builtin_leaves(*production.snapshot).size() == 1 &&
-        BuiltinCatalogLoader::builtin_leaves(*production.snapshot)[0].id == "llamacpp", "ProductionMintsOnlyReviewedLlamaLeaf");
+    if (production.snapshot) for (const auto& key : BuiltinCatalogLoader::builtin_leaves(*production.snapshot)) authorized_ids.insert(key.id);
+    check(production.snapshot && authorized_ids == source_ids, "ProductionMintsOnlyReviewedHrxAndLlamaLeaves");
+    const auto& parent = embedded_v2_policies().leaves.at(0);
+    const auto& hrx = embedded_v2_policies().leaves.at(1);
+    check(parent.key.id == "llamacpp" && hrx.key.id == "hrx" && hrx.key.contract == 1 &&
+        hrx.expected_source_digest != parent.expected_source_digest && hrx.expected_definition_hash != parent.expected_definition_hash &&
+        hrx.expected_dependency_digest != parent.expected_dependency_digest && hrx.policy_digest != parent.policy_digest &&
+        hrx.slots.size() == 11 && hrx.owners.size() == 11 && hrx.mutable_fragments.empty(),
+        "HrxHasIndependentFixedLeafPins");
+    check(v2::owner_graph_json(hrx.owners) == v2::owner_graph_json(parent.owners) && hrx.owner_graph_digest == parent.owner_graph_digest,
+        "HrxPreservesParentElevenOperationOwnerGraph");
+    for (const auto& slot : hrx.slots) {
+        const auto found = std::find_if(parent.slots.begin(), parent.slots.end(), [&](const auto& candidate) { return v2::slot_json(candidate.slot) == v2::slot_json(slot.slot); });
+        check(found != parent.slots.end() && slot.slot.owner_kind != SlotOwnerKind::Root, "HrxSlotIsRestrictedParentOccurrence");
+        if (found == parent.slots.end()) continue;
+        auto expected = *found;
+        if (slot.slot.owner_kind == SlotOwnerKind::Artifact) {
+            check(slot.slot.owner_id == "main" && slot.owner_semantics_digest != found->owner_semantics_digest &&
+                slot.mutation_policy_digest != found->mutation_policy_digest, "HrxMainRequiredSemanticsAreRepinned");
+            expected.owner_semantics_digest = "sha256:6e0097ab682dbe72aaae22f86d944afc77cabd89b8819b55d25a5107f3577103";
+            expected.mutation_policy_digest = v2::mutation_policy_digest(expected);
+        }
+        auto a = hrx, b = hrx;
+        a.slots = {slot}; b.slots = {expected};
+        check(v2::export_policy_json(a) == v2::export_policy_json(b), "HrxSlotCannotWidenParentAbiParametersEffectsOrMutationPermissions");
+    }
+    auto reused = embedded_v2_policies();
+    reused.leaves[1] = parent;
+    reused.leaves[1].key.id = "hrx";
+    reused.digest = v2::export_registry_digest(reused.leaves, installed_hook_abis());
+    check(!BuiltinCatalogLoader::test_freeze_builtins(embedded_v2_sources(), reused).snapshot, "HrxRejectsReusedParentPolicy");
     const auto frozen = freeze();
     check(bool(frozen.snapshot), "LoaderAuditsPinnedBuiltinClosure");
     if (!frozen.snapshot) {

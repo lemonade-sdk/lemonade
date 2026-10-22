@@ -198,7 +198,23 @@ const BuiltinExecutionPolicies& fixed_builtin_v2_policies() {
                 {"id", "operation", "delivery", "model_modes", "transport", "formats", "format_metadata"}, {"slot-action.buffered"}},
         };
         policy.owner_graph_digest = "sha256:6bc3f2b40d73e44ceb384564fbc403b1f58cf22c91de863f0746c5f22713e0f8";
-        return BuiltinExecutionPolicies{{std::move(policy)}, "sha256:d2c4eaea8d0f6a3f5128dfd2430b9521a2ff3f5c9bb87b8f463802f71da424cf"};
+        BuiltinExportContract hrx{{"hrx", 1},
+            "sha256:78063d3875c9aecd65057024597a8cf23418d5b6da4b2f1447c59c915af5fda6",
+            "sha256:ee73dc63ecaaa4f9d6b1b731043343374870a11774f9c30978b6401db46371f8",
+            "sha256:b66479f8db00a65498d36f0a306ead473678e9cc8f631151d214c28e5808d0c6",
+            1, "sha256:36dd27c1b1cb774af2bd66e92de5ede08ddff7b336c61c22e04ee175da6b4a49", {}};
+        for (const auto& slot : policy.slots) {
+            if (slot.slot.owner_kind == SlotOwnerKind::Root) continue;
+            auto restricted = slot;
+            if (slot.slot.owner_kind == SlotOwnerKind::Artifact) {
+                restricted.owner_semantics_digest = "sha256:6e0097ab682dbe72aaae22f86d944afc77cabd89b8819b55d25a5107f3577103";
+                restricted.mutation_policy_digest = "sha256:5401c8c0736179a6a42051d030a65000dd63d5bafa344724f0a4886e1e7626a3";
+            }
+            hrx.slots.push_back(std::move(restricted));
+        }
+        hrx.owners = policy.owners;
+        hrx.owner_graph_digest = policy.owner_graph_digest;
+        return BuiltinExecutionPolicies{{std::move(policy), std::move(hrx)}, "sha256:825b372899c818ecf43a42529ccc9e254632721dfda84e661396474bcecb6f61"};
     }();
     return policies;
 }

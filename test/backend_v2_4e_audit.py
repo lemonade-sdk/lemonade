@@ -78,7 +78,7 @@ def dispatch(args):
     work.mkdir(parents=True, exist_ok=True)
     script = work / "probe.cmake"
     fixture = REPO / "test/fixtures/backend-v2/source_cache.json"
-    v1 = REPO / "src/cpp/resources/backends/hrx.json"
+    v1 = REPO / "src/cpp/resources/backends/ds4.json"
     prefix = (
         "cmake_minimum_required(VERSION 3.19)\n"
         f'include("{REPO}/cmake/BackendDefinitionResources.cmake")\n'
@@ -86,7 +86,7 @@ def dispatch(args):
     )
     script.write_text(
         prefix
-        + f'lemon_backend_descriptor_dispatch(v1 hrx llamacpp-hrx "{v1}")\n'
+        + f'lemon_backend_descriptor_dispatch(v1 ds4 ds4 "{v1}")\n'
         + f'lemon_backend_descriptor_dispatch(v2 fixture source-cache-fixture "{fixture}")\n'
         + 'if(v1 MATCHES "builtin_resolved_source" OR NOT v1 MATCHES "d.recipe")\n'
         + ' message(FATAL_ERROR "V1DefinitionSelectsOnlyMetadataEmitter")\nendif()\n'
@@ -147,6 +147,8 @@ def census(args):
     )
     if args.expected_count == 151:
         additions = {"LlamaCppV2ProductionSwitchTest"}
+    if getattr(args, "no_additions", False):
+        additions = set()
     assert args.expected_count in (145, 150, 151)
     assert len(new) == args.expected_count and len(old) == args.expected_count - len(
         additions
@@ -166,6 +168,17 @@ def census(args):
     )
     if args.expected_count == 151:
         targets = {"test_llamacpp_v2_production_switch"}
+    if getattr(args, "no_additions", False):
+        targets |= {
+            Path(row["command"][0]).name
+            for row in current["tests"]
+            if row.get("command") and Path(row["command"][0]).name.startswith("test_")
+        } | {
+            "test_backend_builtin_source_data",
+            "lemond",
+            "lemonade",
+            "llamacpp-frozen-control-build",
+        }
     assert all(
         target in dependencies.split() for target in targets
     ), "CppCiExecutableDependencies"
@@ -423,6 +436,7 @@ def main():
     parser.add_argument(
         "--baseline-commit", default="789ca434131bde84e2c55e35bec3c0818f35900f"
     )
+    parser.add_argument("--no-additions", action="store_true")
     parser.add_argument("--expected-count", type=int, default=150)
     parser.add_argument(
         "--views",

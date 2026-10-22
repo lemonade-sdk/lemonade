@@ -24,7 +24,7 @@ struct BuiltinLaunchCompatibility {
 
 std::vector<OperationBinding> configured_operation_bindings(const BackendDefinition& definition, TrustedCompatibility trusted);
 
-struct ConfiguredBackendEntry {
+struct ConfiguredBackendEntry : std::enable_shared_from_this<ConfiguredBackendEntry> {
 private:
     struct FactoryState;
     struct V2FactoryState;

@@ -3,6 +3,8 @@
 #include "backend_runtime_fixture.h"
 #include "lemon/backends/configured/backend_definition_descriptor.h"
 
+#include <set>
+
 using namespace catalog_execution_fixture;
 using namespace lemon;
 
@@ -51,7 +53,7 @@ int main() {
     binding::counters = {};
     const auto binding_failure = build({parent, larger_leaf}, binding_limit);
     check(!binding_failure.catalog && binding_failure.stages.compiled && !binding_failure.stages.bound &&
-        binding::counters.membership_scans == 2 && has_code(binding_failure.diagnostics, "limit_exceeded") && !backend_catalog(),
+        binding::counters.membership_scans == 3 && has_code(binding_failure.diagnostics, "limit_exceeded") && !backend_catalog(),
         "FailingDescendantBindingRejectsAlreadyBoundParent");
     auto invalid_adapter = leaf;
     invalid_adapter["merge"]["launch"]["readiness"]["path"] = "//remote/health";
@@ -81,8 +83,9 @@ int main() {
     auto foreign = parent;
     foreign["merge"]["hooks"]["backend"] = {{"id", "llamacpp.backend"}};
     check(!build({foreign}).catalog, "ExternalDeclarationsCannotMintHookAuthority");
-    check(installed_builtin_exports().exports().empty() && embedded_v2_sources().size() == 1 &&
-        embedded_v2_sources()[0].key.id == "llamacpp", "ProductionV2LlamaOnlyAndExportsStayEmpty");
+    check(installed_builtin_exports().exports().empty() && embedded_v2_sources().size() == 2 &&
+        std::set<std::string>{embedded_v2_sources()[0].key.id, embedded_v2_sources()[1].key.id} ==
+            std::set<std::string>{"hrx", "llamacpp"}, "ProductionV2HrxAndLlamaOnlyAndExportsStayEmpty");
     const auto rich = good.catalog->export_schema("catalog-leaf", 2);
     check(rich["recipes"][0]["input_schema_version"] == 2 && rich["executable_definition_versions"] == Json::array({1, 2}), "ExecutableV2PublicProjectionUsesLeafVersion");
     check(before["catalog_id"] == build({parent, leaf, legacy()}).catalog->export_schema()["catalog_id"], "ExecutionCatalogIdentityIsDeterministic");
@@ -99,7 +102,7 @@ int main() {
     trusted_seeds.push_back({&trusted_descriptor, "binding-fixture", {}});
     check(!build({}, {}, CatalogAdmissionBuilder::test_with_seeds(trusted_builtins, trusted_seeds)).catalog,
         "SyntheticAuthorityCannotServeProductionLlamaSeed");
-    trusted_seeds.erase(std::remove_if(trusted_seeds.begin(), trusted_seeds.end(), [](const auto& seed) { return seed.definition_id == "llamacpp"; }), trusted_seeds.end());
+    trusted_seeds.erase(std::remove_if(trusted_seeds.begin(), trusted_seeds.end(), [](const auto& seed) { return seed.definition_id == "llamacpp" || seed.definition_id == "hrx"; }), trusted_seeds.end());
     const auto trusted = build({}, {}, CatalogAdmissionBuilder::test_with_seeds(trusted_builtins, trusted_seeds));
     check(trusted.catalog && trusted.stages.executable && binding_fixture::calls.empty(), "HookBearingWholeGraphFinalizationInvokesNothing");
     if (!trusted.catalog) dump_errors(trusted);

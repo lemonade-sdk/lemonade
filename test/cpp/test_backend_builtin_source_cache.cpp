@@ -119,7 +119,7 @@ int run_test(int argc, char** argv) {
         check(rejected, "ResolvedCacheRejectsUnknownExactKey");
     }
     check(catalog_publication().state() == CatalogPublication::State::Empty, "DataOnlyAccessKeepsPublicationEmpty");
-    check(k_backend_definition_v1_source_count == 8 && k_backend_definition_v2_source_count == 2 &&
+    check(k_backend_definition_v1_source_count == 7 && k_backend_definition_v2_source_count == 3 &&
         k_backend_definition_source_count == 10 &&
         k_backend_definition_v1_source_bytes + k_backend_definition_v2_source_bytes == k_backend_definition_source_bytes,
         "SourceInventoryIsExactPartition");

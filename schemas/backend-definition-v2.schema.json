@@ -1212,10 +1212,17 @@
           "required": [],
           "additionalProperties": false
         },
+        "device_assignment": {
+          "enum": ["select_backend", "preserve"]
+        },
+        "load_log_policy": {
+          "enum": ["none", "loading_and_options"]
+        },
         "direct_stream_policy": {
           "enum": [
             "strict",
-            "llamacpp_legacy"
+            "llamacpp_legacy",
+            "bound_passthrough"
           ]
         }
       },

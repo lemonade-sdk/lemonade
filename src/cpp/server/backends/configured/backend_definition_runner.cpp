@@ -1,10 +1,12 @@
 #include "backend_definition_runner_internal.h"
 #include "lemon/backends/backend_option_contract.h"
+#include "lemon/utils/aixlog.hpp"
 #include "lemon/utils/custom_args.h"
 #include "lemon/utils/path_utils.h"
 #include "lemon/utils/recipe_arg_resolver.h"
 
 #include <algorithm>
+#include <cctype>
 #include <filesystem>
 #include <limits>
 
@@ -120,7 +122,9 @@ TransportRequest DefinitionRunner::map_stream(const std::string& path, ModelType
     const std::string& body, bool sse, long timeout, utils::RequestCancelToken cancel) const {
     runtime::check_cancelled(cancel);
     if (session.executable.get() != executable_.get()) throw std::logic_error("Foreign execution session");
-    const bool legacy = program_.launch.records.value("direct_stream_policy", "strict") == "llamacpp_legacy";
+    const auto policy = program_.launch.records.value("direct_stream_policy", "strict");
+    const bool legacy = policy == "llamacpp_legacy";
+    const bool passthrough = legacy || policy == "bound_passthrough";
     BackendOperation operation = BackendOperation::Count;
     if (path == "/v1/chat/completions") operation = BackendOperation::ChatCompletion;
     if (path == "/v1/completions") operation = BackendOperation::Completion;
@@ -131,13 +135,13 @@ TransportRequest DefinitionRunner::map_stream(const std::string& path, ModelType
     }
     const auto& op = cell(operation, OperationDelivery::Streaming, model_type);
     const auto parsed = json::parse(body, nullptr, false);
-    if (legacy && parsed.is_discarded()) return {op.kind, op.method, op.codec, op.path, {}, body,
+    if (passthrough && parsed.is_discarded()) return {op.kind, op.method, op.codec, op.path, {}, body,
         op.timeout_seconds ? static_cast<long>(op.timeout_seconds) : timeout, sse};
     auto mapped = map_request(operation, OperationDelivery::Streaming, model_type, session,
         parsed.is_discarded() ? json::object() : parsed, body, cancel);
     if (parsed.is_discarded() && !mapped.original_body) throw std::invalid_argument("Invalid JSON for mapped streaming operation");
     if (!mapped.timeout_seconds) mapped.timeout_seconds = timeout;
-    if (legacy) mapped.sse = sse;
+    if (passthrough) mapped.sse = sse;
     return mapped;
 }
 json DefinitionRunner::map_response(BackendOperation operation, ModelType model_type, const ExecutionSession& session,
@@ -172,6 +176,12 @@ void DefinitionRunner::defaults(runtime::Frame& frame, const std::string& stage)
     frame.data.values["options"] = frame.data.options;
 }
 void DefinitionRunner::resolve_runtime_options(const ModelInfo& model, RecipeOptions& options) const {
+    const bool runtime_hook = !slots(SlotOwnerKind::Root, "runtime_options", "runtime_options").empty();
+    const bool runtime_default = std::any_of(program_.launch.defaults.begin(), program_.launch.defaults.end(),
+        [](const auto& item) { return item.stage == "runtime_options"; });
+    const bool normalize = program_.launch.custom_args_slot &&
+        program_.launch.records.at("custom_args").value("runtime_input", "preserve") != "preserve";
+    if (!runtime_hook && !runtime_default && !normalize) return;
     runtime::Frame frame(*executable_);
     frame.data.options = options.to_json();
     for (const auto& binding : program_.bindings) {
@@ -345,7 +355,11 @@ BackendOps::InstallCheck DefinitionRunner::check_install(const std::string& back
 void DefinitionRunner::populate_metadata(ModelInfo& model) const {
     if (program_.artifacts.empty()) return;
     const auto path = model.resolved_path("main");
-    if (path.empty() || !std::filesystem::exists(utils::path_from_utf8(path))) return;
+    const auto file = utils::path_from_utf8(path);
+    auto extension = file.extension().string();
+    std::transform(extension.begin(), extension.end(), extension.begin(), [](unsigned char value) { return std::tolower(value); });
+    std::error_code error;
+    if (extension != ".gguf" || !std::filesystem::is_regular_file(file, error)) return;
     const auto result = artifact("main", [&](const auto& target, auto& guard) {
         runtime::ArtifactServices reads(guard, path, false);
         return target.metadata({reads.root(), utils::path_to_utf8(utils::path_from_utf8(path).filename()), model.type, model.labels}, reads);
@@ -401,6 +415,7 @@ PreparedExecution DefinitionRunner::prepare_load(const LoadContext& context, con
     auto& values = frame.data.values;
     auto& options = frame.data.options;
     options = context.options.to_json();
+    if (!options.contains("ctx_size")) options["ctx_size"] = context.options.get_option("ctx_size");
     for (const auto& binding : program_.bindings) {
         if (context.options.has_explicit_option(binding.public_name)) frame.explicit_options.insert(binding.public_name);
         const auto value = context.options.has_explicit_option(binding.public_name) ? context.options.get_explicit_option(binding.public_name) :
@@ -419,6 +434,11 @@ PreparedExecution DefinitionRunner::prepare_load(const LoadContext& context, con
         for (const auto& axis : {std::pair<std::string, std::string>{"os", host.os}, {"machine_arch", host.machine_arch}})
             if (required.contains(axis.first) && std::find(required[axis.first].begin(), required[axis.first].end(), axis.second) == required[axis.first].end())
                 throw std::runtime_error(required.at("error"));
+    }
+    if (records.value("load_log_policy", "none") == "loading_and_options") {
+        const auto category = program_.normalized.at("metadata").at("log_category").get<std::string>();
+        LOG(INFO, category.c_str()) << "Loading model: " << context.model_name << std::endl;
+        LOG(DEBUG, category.c_str()) << "Per-model settings: " << context.options.to_log_string() << std::endl;
     }
     values = {{"options", options}, {"model", {{"name", context.model_name}, {"checkpoint", context.model_info.checkpoint()}}},
         {"platform", {{"os", host.os}, {"machine_arch", host.machine_arch}, {"rocm_arch", host.rocm_arch}}},
@@ -453,12 +473,13 @@ PreparedExecution DefinitionRunner::prepare_load(const LoadContext& context, con
                     if (supported.empty()) throw std::runtime_error("No supported configured backend");
                     backend = supported.front();
                 }
-                services.validate_backend(spec.effective_public_recipe(), backend);
+                if (launch.backend_slot || records.value("device_assignment", "select_backend") != "preserve") services.validate_backend(spec.effective_public_recipe(), backend);
                 use_gpu = backend != "cpu";
                 frame.facts.insert(typed::Fact::SelectedBackend);
             }
             values["launch"]["backend"] = backend;
-            if (context.device_selected) context.device_selected(use_gpu ? DEVICE_GPU : DEVICE_CPU);
+            if (records.value("device_assignment", "select_backend") == "select_backend" && context.device_selected)
+                context.device_selected(use_gpu ? DEVICE_GPU : DEVICE_CPU);
             if (context.backend_selected) context.backend_selected();
         } else if (phase == "hook") {
             auto context_size = options.contains("ctx_size") && options["ctx_size"].is_number_integer() && options["ctx_size"].get<std::int64_t>() > 0 ? options["ctx_size"].get<std::uint64_t>() : 0;

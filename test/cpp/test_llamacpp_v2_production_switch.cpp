@@ -45,12 +45,46 @@ void authority_failures() {
         {"uncovered_operation_owner", [](auto& p) { p.leaves[0].owners.pop_back(); repin(p.leaves[0]); }}
     };
     for (const auto& [code, mutate] : mutations) {
-        auto stale = embedded_v2_policies();
-        mutate(stale);
-        stale.digest = v2::export_registry_digest(stale.leaves, installed_hook_abis());
-        const auto rejected = BuiltinCatalogLoader::test_freeze_builtins(sources, stale);
-        check(!rejected.snapshot && has_code(rejected.diagnostics, code), "FixedBuiltinPolicyRejects:" + code);
+        for (std::size_t leaf = 0; leaf < embedded_v2_policies().leaves.size(); ++leaf) {
+            auto stale = embedded_v2_policies();
+            std::swap(stale.leaves[0], stale.leaves[leaf]);
+            mutate(stale);
+            std::swap(stale.leaves[0], stale.leaves[leaf]);
+            stale.digest = v2::export_registry_digest(stale.leaves, installed_hook_abis());
+            const auto rejected = BuiltinCatalogLoader::test_freeze_builtins(sources, stale);
+            check(!rejected.snapshot && has_code(rejected.diagnostics, code), "FixedBuiltinPolicyRejects:" + stale.leaves[leaf].key.id + ":" + code);
+        }
     }
+}
+
+Json leaf_evidence(const ExecutableDefinition& executable, const BuiltinExportContract& policy) {
+    const auto& token = executable.compiled().authorized();
+    Json evidence{{"builtin_policy", v2::export_policy_json(policy)},
+        {"source", token.definition().source_digest}, {"definition", token.definition().definition_hash},
+        {"dependencies", token.definition().dependency_digest},
+        {"authority", CatalogAdmissionBuilder::authority_identity(token)},
+        {"compilation", executable.compiled().compilation_id()}, {"execution", executable.execution_id()},
+        {"declaration", token.definition().declaration}};
+    evidence["hooks"] = Json::array();
+    evidence["grants"] = Json::array();
+    const auto& program = ex::Inspection::program(executable.compiled());
+    evidence["normalized"] = program.normalized;
+    for (const auto& hook : program.hooks) {
+        Json inputs = Json::array();
+        for (const auto& input : hook.inputs) inputs.push_back({{"fact", input.index},
+        {"producer", input.producer ? Json(*input.producer) : Json(nullptr)}});
+        evidence["hooks"].push_back({{"grant", hook.grant_ordinal}, {"contract", static_cast<unsigned>(hook.contract)},
+        {"owner_kind", static_cast<unsigned>(hook.slot.owner_kind)}, {"owner", hook.slot.owner_id},
+        {"stage", hook.slot.stage}, {"id", hook.slot.hook_id}, {"order", hook.order},
+        {"parameters", hook.parameter_digest}, {"owner_semantics", hook.owner_digest},
+        {"policy", hook.policy_digest}, {"abi", hook.abi_revision}, {"implementation", hook.implementation_revision},
+        {"effects", hook.effects}, {"inputs", inputs}, {"provides", hook.provides}, {"dependencies", hook.dependencies}});
+    }
+    for (std::size_t i = 0; i < AuthorityInspection::grant_count(token); ++i) {
+        const auto& grant = AuthorityInspection::grant(token, i);
+        evidence["grants"].push_back({{"builtin", grant.base_id}, {"contract", grant.contract_major}, {"slot", v2::slot_json(grant.slot)}});
+    }
+    return evidence;
 }
 
 void identity_evidence(const BackendCatalog& catalog, const AdmittedCatalog& admitted, const ExecutableDefinition& executable) {
@@ -94,6 +128,13 @@ void identity_evidence(const BackendCatalog& catalog, const AdmittedCatalog& adm
             const auto& grant = AuthorityInspection::grant(token, i);
             evidence["grants"].push_back({{"builtin", grant.base_id}, {"contract", grant.contract_major}, {"slot", v2::slot_json(grant.slot)}});
         }
+        for (const auto& row : catalog.registrations()) if (row.descriptor->recipe == "llamacpp-hrx") {
+            const auto* entry = row.configured_entry;
+            check(entry && entry->executable_definition && !entry->definition && row.spec == &entry->spec &&
+                row.ops == entry->backend_ops() && row.descriptor == &entry->published_descriptor(),
+                "HrxCanonicalDescriptorSpecOpsFactoryOwnFinalizedExecutable");
+            evidence["hrx"] = leaf_evidence(*entry->executable_definition, embedded_v2_policies().leaves.at(1));
+        }
         std::ofstream(out) << evidence.dump(2) << '\n';
     }
 }
@@ -122,17 +163,17 @@ int main(int argc, char** argv) {
     try {
         allow_entries = false;
         const auto& policy = embedded_v2_policies();
-        check(policy.leaves.size() == 1 && policy.leaves[0].key.id == "llamacpp" && policy.leaves[0].key.contract == 1,
-            "ExactlyOneFixedBuiltinPolicy");
-        if (policy.leaves.size() != 1) return finish();
+        check(policy.leaves.size() == 2 && policy.leaves[0].key.id == "llamacpp" && policy.leaves[0].key.contract == 1,
+            "ExactlyTwoFixedBuiltinPolicies");
+        if (policy.leaves.size() != 2) return finish();
         check(policy.leaves[0].slots.size() == 17 && policy.leaves[0].owners.size() == 11 &&
             policy.digest == v2::export_registry_digest(policy.leaves, installed_hook_abis()), "FixedPolicySeventeenOccurrencesElevenOwners");
         check(installed_builtin_exports().exports().empty() && installed_builtin_exports().digest() ==
             "sha256:b2e770dfdb68a27db72cbe2fdad29f26c3eeb7ab2ca5ea136d325bfe4a5dfa8a", "BuiltinPolicyDoesNotAuthorizeExport");
         std::ifstream file(std::string(LEMON_PRODUCTION_DEFINITIONS) + "/llamacpp.json", std::ios::binary);
         const std::string production_bytes{std::istreambuf_iterator<char>(file), {}};
-        check(production_bytes == read_bytes("llamacpp.candidate.json") && embedded_v2_sources().size() == 1 &&
-            embedded_v2_sources()[0].bytes == production_bytes, "ProductionBytesEqualImmutableQualifiedCandidate");
+        check(production_bytes == read_bytes("llamacpp.candidate.json") && embedded_v2_sources().size() == 2 &&
+            std::any_of(embedded_v2_sources().begin(), embedded_v2_sources().end(), [&](const auto& source) { return source.key.id == "llamacpp" && source.bytes == production_bytes; }), "ProductionBytesEqualImmutableQualifiedCandidate");
         const auto nested = installed_definition_admission_features();
         check(nested.at("acceptance_stage") == "execution_finalization" &&
             nested.at("executable_definition_versions") == Json::array({1, 2}), "NestedAdmissionManifestReportsFinalizationAndVersions");
@@ -140,7 +181,7 @@ int main(int argc, char** argv) {
         const auto frozen = freeze_builtin_catalog();
         const auto snapshot = make_catalog_source_snapshot(frozen, {});
         const auto admitted = admit_catalog(snapshot.snapshot);
-        check(admitted.catalog && admitted.catalog->metrics().definitions == 9, "ProductionSourcesEightV1OneV2ChargedOnce");
+        check(admitted.catalog && admitted.catalog->metrics().definitions == 9, "ProductionSourcesSevenV1TwoV2ChargedOnce");
         const auto complete = build_backend_catalog(frozen, {});
         check(complete.catalog && complete.stages.executable, "ProductionGraphFinalizesPrivately");
         if (!complete.catalog || !admitted.catalog) { diagnostics(complete.diagnostics); return finish(); }
@@ -156,7 +197,7 @@ int main(int argc, char** argv) {
         seeds.push_back(duplicate_definition);
         failed(build_backend_catalog(CatalogAdmissionBuilder::test_with_seeds(frozen, seeds), {}), "duplicate-definition");
         seeds = builtin_registration_seeds();
-        seeds.front().legacy = seeds.at(1).legacy;
+        seeds.front().legacy = seeds.at(2).legacy;
         failed(build_backend_catalog(CatalogAdmissionBuilder::test_with_seeds(frozen, seeds), {}), "ambiguous-legacy-arm");
         seeds = builtin_registration_seeds();
         seeds.erase(seeds.begin());

@@ -42,6 +42,14 @@ Json snapshot() {
         const auto name = path.substr(path.find_last_of('/') + 1);
         const auto stem = name.substr(0, name.size() - 5);
         if (!seen.insert(stem).second) throw std::runtime_error("ExactMixedDefinitionSources:duplicate");
+        std::string source = resource.data;
+        if (stem == "hrx" && Json::parse(source).at("schema_version") == 2) {
+            const auto child = Json::parse(source);
+            if (child.at("extends") != Json{{"builtin", "llamacpp"}, {"contract", 1}})
+                throw std::runtime_error("ExactHrxBuiltinChild");
+            std::ifstream historical(std::string(LEMON_TEST_FIXTURES) + "/backend-v1-compat/hrx.v1.json");
+            source.assign(std::istreambuf_iterator<char>(historical), std::istreambuf_iterator<char>());
+        }
         if (stem == "llamacpp") {
             std::ifstream input(std::string(LEMON_TEST_FIXTURES) + "/backend-v2/llamacpp.candidate.json");
             const std::string candidate((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
@@ -50,7 +58,7 @@ Json snapshot() {
             continue;
         }
         if (!v1_names.count(stem)) throw std::runtime_error("ExplicitEightV1Definitions:foreign source");
-        const auto validated = BackendDefinitionStore().validate({"", resource.data, DefinitionOrigin::Builtin});
+        const auto validated = BackendDefinitionStore().validate({"", source, DefinitionOrigin::Builtin});
         if (!validated.definition || !validated.diagnostics.empty()) throw std::runtime_error("Invalid baseline definition");
         const auto& definition = *validated.definition;
         Json expressions = Json::object(), operations = Json::array();
@@ -69,7 +77,7 @@ Json snapshot() {
                 {"request_hooks", operation.request_hooks}, {"response_hooks", operation.response_hooks}});
         }
         Json rejected = Json::object();
-        const auto original = Json::parse(resource.data);
+        const auto original = Json::parse(source);
         for (const auto* mutation : {"version", "unknown", "required", "duplicate", "external"}) {
             auto value = original;
             if (std::string(mutation) == "version") value["schema_version"] = 2;
@@ -81,7 +89,7 @@ Json snapshot() {
                 std::string(mutation) == "external" ? DefinitionOrigin::External : DefinitionOrigin::Builtin}));
         }
         result["definitions"][definition.id] = {{"digest", definition.digest},
-            {"source_bytes", schema_digest(resource.data)}, {"records", schema_digest(definition.records.dump())},
+            {"source_bytes", schema_digest(source)}, {"records", schema_digest(definition.records.dump())},
             {"expressions", schema_digest(expressions.dump())}, {"programs", schema_digest(operations.dump())},
             {"diagnostics", rejected}};
     }

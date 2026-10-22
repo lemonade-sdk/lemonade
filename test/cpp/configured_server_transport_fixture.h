@@ -29,11 +29,12 @@ struct ConfiguredServerTestAccess {
         auto& configured = dynamic_cast<ConfiguredServer&>(server);
         configured.services_ = {std::make_shared<Launch>(port),
             [process](ProcessOutput, const std::string&) { return process(); }};
-        RecipeOptions options("llamacpp", {});
+        const auto recipe = server.get_descriptor()->recipe;
+        RecipeOptions options(recipe, {});
         options.set_option("llamacpp_backend", "");
         ModelInfo model;
         model.model_name = name;
-        model.recipe = "llamacpp";
+        model.recipe = recipe;
         model.type = mode;
         model.checkpoints["main"] = "fixture/repo:main.gguf";
         model.resolved_paths["main"] = "fake-main.gguf";

@@ -1,364 +1,129 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "hrx",
   "recipe": "llamacpp-hrx",
-  "kind": "local",
-  "metadata": {
-    "display_name": "HRX GPU",
-    "server_name": "llama-server",
-    "log_category": "HRX",
-    "log_level_policy": "passthrough",
-    "binary": "llama-server",
-    "config_section": "hrx",
-    "default_device": "gpu",
-    "slot_policy": "standard",
-    "selectable_backend": false,
-    "uses_ctx_size": true,
-    "dynamic_models": false,
-    "options": [
-      {
-        "name": "hrx_args",
-        "cli_flag": "--hrx-args",
-        "default_value": "",
-        "type_name": "ARGS",
-        "value_type": "string",
-        "help": "Custom arguments to pass to the HRX llama-server",
-        "group": "HRX Options",
-        "unset_values": [null, -1, "", "auto"]
-      }
-    ],
-    "support": [
-      {
-        "backend": "hrx",
-        "tier": "experimental",
-        "format": "native",
-        "supported_os": ["linux"],
-        "devices": {"amd_gpu": ["gfx1100", "gfx1151"]},
-        "device_summary": "AMD GPUs (gfx1100, gfx1151)",
-        "arch_gates": {
-          "gfx1100": {
-            "os": ["linux"],
-            "channels": []
-          },
-          "gfx1151": {
-            "os": ["linux"],
-            "channels": []
+  "extends": {"builtin": "llamacpp", "contract": 1},
+  "merge": {
+    "metadata": {
+      "display_name": "HRX GPU",
+      "log_category": "HRX",
+      "binary": "llama-server",
+      "config_section": "hrx",
+      "selectable_backend": false,
+      "support": [
+        {
+          "id": "hrx-linux",
+          "backend": "hrx",
+          "tier": "experimental",
+          "format": "native",
+          "supported_os": ["linux"],
+          "devices": {"amd_gpu": ["gfx1100", "gfx1151"]},
+          "device_summary": "AMD GPUs (gfx1100, gfx1151)",
+          "arch_gates": {
+            "gfx1100": {"os": ["linux"], "channels": []},
+            "gfx1151": {"os": ["linux"], "channels": []}
           }
         }
-      }
-    ],
-    "supported_modes": ["chat"],
-    "required_checkpoints": ["main"],
-    "default_capabilities": [],
-    "web_display_name": "",
-    "rocm_channels": [],
-    "exposes_prometheus_metrics": true,
-    "rocm_requires_cwsr_fix": false,
-    "version_policy": "exact",
-    "self_manages_downloads": false,
-    "takes_args": true,
-    "arg_variants": [],
-    "bin_variants": ["hrx"],
-    "config_extra": {},
-    "streams_model_from_storage": false
-  },
-  "install": {
-    "strategy": "github_release",
-    "install_recipe": "llamacpp-hrx",
-    "pin_recipe": "llamacpp-hrx",
-    "supports_split_archive": false,
-    "asset_backend": "identity",
-    "cases": [
-      {
-        "backend": ["hrx"],
+      ],
+      "supported_modes": ["chat"],
+      "web_display_name": "",
+      "rocm_channels": [],
+      "rocm_requires_cwsr_fix": false,
+      "arg_variants": [],
+      "bin_variants": ["hrx"]
+    },
+    "artifacts": {
+      "main": {"required_when": true}
+    },
+    "launch": {
+      "prepare_order": ["backend", "install", "artifacts", "ports", "program"],
+      "requires": {
         "os": ["linux"],
         "machine_arch": ["x86_64"],
-        "repo": "ROCm/ggml-staging-automation",
-        "filename": {
-          "concat": ["llama-", {"ref": "/install/version"}, "-bin-manylinux-hrx-x64.tar.gz"]
-        }
-      }
-    ],
-    "errors": {
-      "backend": {
-        "concat": ["Unsupported HRX backend '", {"ref": "/install/backend"}, "'; expected 'hrx'"]
+        "error": "The HRX backend is available on Linux x86-64 only"
       },
-      "os": "The HRX backend is available on Linux x86-64 only",
-      "machine_arch": "The HRX backend is available on Linux x86-64 only"
-    }
-  },
-  "artifacts": {
-    "main": {
-      "role": "main",
-      "strategy": "hook",
-      "hook": {"id": "llamacpp.gguf", "params": {}},
-      "check": "nonempty",
-      "missing_error": {"concat": ["GGUF file not found for checkpoint: ", {"ref": "/model/checkpoint"}]}
-    }
-  },
-  "launch": {
-    "prepare_order": ["backend", "install", "artifacts", "ports", "program"],
-    "requires": {
-      "os": ["linux"],
-      "machine_arch": ["x86_64"],
-      "error": "The HRX backend is available on Linux x86-64 only"
+      "custom_args": {
+        "option": "args",
+        "error_prefix": "Invalid custom HRX llama-server arguments:\n",
+        "reserved": ["-dr", "-hf", "-hff", "-hfr", "-mu", "--docker-repo", "--hf-file", "--hf-repo", "--model-url"],
+        "defaults": [
+          {
+            "id": "parallel",
+            "args": "--parallel 1",
+            "flag": "--parallel",
+            "aliases": ["-np"],
+            "stage": "launch",
+            "respect_merge_args": false
+          }
+        ],
+        "runtime_input": "preserve"
+      },
+      "working_directory": "inherit",
+      "device_assignment": "preserve",
+      "load_log_policy": "loading_and_options",
+      "direct_stream_policy": "bound_passthrough"
     },
-    "backend": {"fixed": "hrx"},
-    "program": {"source": "managed", "install_policy": "always"},
-    "ports": [{"name": "http", "reject_zero": false, "error": ""}],
-    "argv": [
+    "rationale": [
       {
-        "args": [
-          "-m",
-          {"ref": "/artifacts/main"},
-          "--ctx-size",
-          {"string": {"ref": "/options/ctx_size"}},
-          "--device",
-          "HRX0",
-          "--port",
-          {"string": {"ref": "/launch/ports/http"}},
-          "--jinja",
-          "--metrics"
-        ]
+        "subject": "/launch/requires",
+        "text": "The HRX bundle is Linux x86-64 only; reject other hosts before model work.",
+        "source": "410b5b4e:src/cpp/resources/backends/hrx.json",
+        "tests": ["hrx_platform_requirement"]
+      },
+      {
+        "subject": "/launch/custom_args/defaults",
+        "match": {"id": "parallel"},
+        "text": "One slot keeps ctx_size equal to the context a request actually gets.",
+        "source": "410b5b4e:src/cpp/resources/backends/hrx.json",
+        "tests": ["hrx_parallel_default"]
+      },
+      {
+        "subject": "/operations",
+        "text": "HRX keeps llama-server protocol bindings while advertising only local-GGUF chat startup.",
+        "source": "410b5b4e:src/cpp/resources/backends/hrx.json",
+        "tests": ["hrx_operation_matrix"]
+      },
+      {
+        "subject": "/launch",
+        "text": "Preserve the router device, the two load diagnostics and bound stream passthrough; runtime options have no vanilla defaults.",
+        "source": "85788f787:src/cpp/resources/backends/hrx.json",
+        "tests": ["hrx_device_preserved", "hrx_load_logs", "hrx_bound_streams", "hrx_runtime_noop"]
       }
-    ],
-    "custom_args": {
-      "option": "hrx_args",
-      "reserved": [
-        "-c",
-        "-dev",
-        "-dr",
-        "-hf",
-        "-hff",
-        "-hfr",
-        "-m",
-        "-mu",
-        "--ctx-size",
-        "--device",
-        "--docker-repo",
-        "--hf-file",
-        "--hf-repo",
-        "--jinja",
-        "--metrics",
-        "--model",
-        "--model-url",
-        "--no-jinja",
-        "--port"
-      ],
-      "error_prefix": "Invalid custom HRX llama-server arguments:\n",
-      "defaults": [{"args": "--parallel 1", "flag": "--parallel", "aliases": ["-np"]}]
-    },
-    "environment": {
-      "preset": "inherit",
-      "set": [{"name": "GGML_DISABLE_VULKAN", "value": "1"}]
-    },
-    "working_directory": "inherit",
-    "output": {
-      "inherit_levels": ["info", "debug", "trace"],
-      "filter": true
-    },
-    "readiness": {"port": "http", "path": "/health", "timeout": 600},
-    "watchdog": {"policy": "standard", "port": "http", "path": "/health"}
+    ]
   },
-  "operations": [
-    {
-      "operation": "chat_completion",
-      "delivery": "buffered",
-      "model_modes": ["*"],
-      "transport": {
-        "kind": "http_json",
-        "method": "POST",
-        "path": "/v1/chat/completions",
-        "port": "http",
-        "timeout": "global",
-        "response_codec": "json.v1"
-      },
-      "request": {
-        "base": "identity",
-        "hooks": [
-          {"id": "llamacpp.max_tokens_alias", "params": {}},
-          {"id": "llamacpp.tool_schema_limits", "params": {}}
-        ]
-      },
-      "response": {"hooks": [{"id": "llamacpp.client_model", "params": {}}]}
-    },
-    {
-      "operation": "completion",
-      "delivery": "buffered",
-      "model_modes": ["*"],
-      "transport": {
-        "kind": "http_json",
-        "method": "POST",
-        "path": "/v1/completions",
-        "port": "http",
-        "timeout": "global",
-        "response_codec": "json.v1"
-      },
-      "request": {
-        "base": "identity",
-        "hooks": [{"id": "llamacpp.max_tokens_alias", "params": {}}]
-      },
-      "response": {"hooks": [{"id": "llamacpp.client_model", "params": {}}]}
-    },
-    {
-      "operation": "responses",
-      "delivery": "buffered",
-      "model_modes": ["*"],
-      "transport": {
-        "kind": "http_json",
-        "method": "POST",
-        "path": "/v1/responses",
-        "port": "http",
-        "timeout": "global",
-        "response_codec": "json.v1"
-      },
-      "request": {
-        "base": "identity",
-        "hooks": [{"id": "llamacpp.tool_schema_limits", "params": {}}]
-      },
-      "response": {"hooks": [{"id": "llamacpp.client_model", "params": {}}]}
-    },
-    {
-      "operation": "chat_completion",
-      "delivery": "streaming",
-      "model_modes": ["*"],
-      "transport": {
-        "kind": "http_sse",
-        "method": "POST",
-        "path": "/v1/chat/completions",
-        "port": "http",
-        "timeout": "global",
-        "stream_codec": "openai_sse.v1"
-      },
-      "request": {
-        "base": "identity",
-        "hooks": [
-          {"id": "llamacpp.max_tokens_alias", "params": {}},
-          {"id": "llamacpp.tool_schema_limits", "params": {}}
-        ]
+  "edits": [
+    {"op": "remove", "path": "/metadata/options", "match": {"id": "backend"}},
+    {"op": "remove", "path": "/metadata/options", "match": {"id": "device"}},
+    {"op": "merge", "path": "/metadata/options", "match": {"id": "args"}, "value": {"name": "hrx_args", "cli_flag": "--hrx-args", "help": "Custom arguments to pass to the HRX llama-server", "group": "HRX Options"}},
+    {"op": "clear", "path": "/metadata/config_extra"},
+    {"op": "replace", "path": "/install", "value": {
+      "strategy": "github_release", "install_recipe": "llamacpp-hrx", "pin_recipe": "llamacpp-hrx",
+      "supports_split_archive": false, "asset_backend": "identity", "repository_result": "full_params",
+      "cases": [
+        {"id": "hrx-linux", "backend": ["hrx"], "os": ["linux"], "machine_arch": ["x86_64"], "repo": "ROCm/ggml-staging-automation", "filename": {"concat": ["llama-", {"ref": "/install/version"}, "-bin-manylinux-hrx-x64.tar.gz"]}}
+      ],
+      "errors": {
+        "backend": {"concat": ["Unsupported HRX backend '", {"ref": "/install/backend"}, "'; expected 'hrx'"]},
+        "os": "The HRX backend is available on Linux x86-64 only",
+        "machine_arch": "The HRX backend is available on Linux x86-64 only"
       }
-    },
-    {
-      "operation": "completion",
-      "delivery": "streaming",
-      "model_modes": ["*"],
-      "transport": {
-        "kind": "http_sse",
-        "method": "POST",
-        "path": "/v1/completions",
-        "port": "http",
-        "timeout": "global",
-        "stream_codec": "openai_sse.v1"
-      },
-      "request": {"base": "identity"}
-    },
-    {
-      "operation": "responses",
-      "delivery": "streaming",
-      "model_modes": ["*"],
-      "transport": {
-        "kind": "http_sse",
-        "method": "POST",
-        "path": "/v1/responses",
-        "port": "http",
-        "timeout": "global",
-        "stream_codec": "openai_sse.v1"
-      },
-      "request": {
-        "base": "identity",
-        "hooks": [{"id": "llamacpp.tool_schema_limits", "params": {}}]
-      }
-    },
-    {
-      "operation": "embeddings",
-      "delivery": "buffered",
-      "model_modes": ["*"],
-      "transport": {
-        "kind": "http_json",
-        "method": "POST",
-        "path": "/v1/embeddings",
-        "port": "http",
-        "timeout": "global",
-        "response_codec": "json.v1"
-      },
-      "request": {"base": "identity"}
-    },
-    {
-      "operation": "reranking",
-      "delivery": "buffered",
-      "model_modes": ["*"],
-      "transport": {
-        "kind": "http_json",
-        "method": "POST",
-        "path": "/v1/rerank",
-        "port": "http",
-        "timeout": "global",
-        "response_codec": "json.v1"
-      },
-      "request": {"base": "identity"}
-    },
-    {
-      "operation": "slots",
-      "delivery": "buffered",
-      "model_modes": ["*"],
-      "transport": {
-        "kind": "http_json",
-        "method": "GET",
-        "path": "/slots",
-        "port": "http",
-        "timeout": "global",
-        "response_codec": "json.v1"
-      },
-      "request": {"base": "identity"}
-    },
-    {
-      "operation": "slot_action",
-      "delivery": "buffered",
-      "model_modes": ["*"],
-      "transport": {
-        "kind": "http_json",
-        "method": "POST",
-        "path": "/slots/{slot_id}?action={action}",
-        "port": "http",
-        "timeout": "global",
-        "response_codec": "json.v1"
-      },
-      "request": {"base": "identity"}
-    },
-    {
-      "operation": "tokenize",
-      "delivery": "buffered",
-      "model_modes": ["*"],
-      "transport": {
-        "kind": "http_json",
-        "method": "POST",
-        "path": "/tokenize",
-        "port": "http",
-        "timeout": "global",
-        "response_codec": "json.v1"
-      },
-      "request": {"base": "identity"}
-    }
-  ],
-  "hooks": {},
-  "rationale": [
-    {
-      "subject": "/launch/requires",
-      "text": "The qualified HRX bundle is published for Linux x86-64 only; the host is rejected before any model work.",
-      "source": "7fb46ce0e:src/cpp/server/backends/hrx/hrx_server.cpp:30",
-      "tests": ["hrx_platform_requirement"]
-    },
-    {
-      "subject": "/launch/custom_args/defaults",
-      "text": "An automatic slot count enables the unified KV buffer, which advertises the full ctx_size to every slot; pinning one slot keeps ctx_size the context a request actually gets.",
-      "source": "7fb46ce0e:src/cpp/server/backends/hrx/hrx_server.cpp:64",
-      "tests": ["hrx_parallel_default"]
-    },
-    {
-      "subject": "/operations",
-      "text": "HRX reuses llama-server's protocol but supports only its local-GGUF chat startup branch, so it keeps llama.cpp's request codecs and callable embeddings, reranking, slots and tokenize bindings while advertising chat only.",
-      "source": "7fb46ce0e:src/cpp/server/backends/hrx/hrx_server.cpp:1",
-      "tests": ["hrx_operation_matrix"]
-    }
+    }},
+    {"op": "remove", "path": "/artifacts/mmproj"},
+    {"op": "remove", "path": "/artifacts/draft"},
+    {"op": "clear", "path": "/hooks"},
+    {"op": "remove", "path": "/launch/context_floor"},
+    {"op": "replace", "path": "/launch/backend", "value": {"fixed": "hrx"}},
+    {"op": "remove", "path": "/launch/argv", "match": {"id": "model-hf"}},
+    {"op": "remove", "path": "/launch/argv", "match": {"id": "model-local"}, "at": "/when"},
+    {"op": "replace", "path": "/launch/argv", "match": {"id": "ctx"}, "at": "/value", "value": {"string": {"ref": "/options/ctx_size"}}},
+    {"op": "merge", "path": "/launch/argv", "match": {"id": "device"}, "value": {"when": true, "value": "HRX0"}},
+    {"op": "remove", "path": "/launch/argv", "match": {"id": "debug"}},
+    {"op": "remove", "path": "/launch/argv", "match": {"id": "vision"}},
+    {"op": "remove", "path": "/launch/argv", "match": {"id": "vision-cpu"}},
+    {"op": "remove", "path": "/launch/argv", "match": {"id": "draft"}},
+    {"op": "remove", "path": "/launch/argv", "match": {"id": "embedding"}},
+    {"op": "remove", "path": "/launch/argv", "match": {"id": "reranking"}},
+    {"op": "replace", "path": "/launch/environment", "value": {"preset": "inherit", "set": []}},
+    {"op": "add", "path": "/launch/environment/set", "value": {"name": "GGML_DISABLE_VULKAN", "value": "1"}}
   ]
 }

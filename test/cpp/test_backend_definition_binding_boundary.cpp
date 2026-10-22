@@ -1,5 +1,6 @@
 #include "backend_definition_binding_fixture.h"
 
+#include <set>
 #include <type_traits>
 
 using namespace binding_fixture;
@@ -52,9 +53,11 @@ int main() {
             "BoundObjectRetainsExactInputs");
         check(!bind_execution_definition({}, {}).definition && !bind_execution_definition(catalog.lock(), {}).definition &&
             !bind_execution_definition({}, compiled.lock()).definition, "NullInputsFailClosed");
-        check(embedded_v2_sources().size() == 1 && embedded_v2_sources()[0].key.id == "llamacpp" &&
-            embedded_v2_policies().leaves.size() == 1 && embedded_v2_policies().leaves[0].key.id == "llamacpp" && installed_builtin_exports().exports().empty(),
-            "ProductionV2ExecutionTablesExactlyLlamaAndExportsEmpty");
+        check(embedded_v2_sources().size() == 2 &&
+            std::set<std::string>{embedded_v2_sources()[0].key.id, embedded_v2_sources()[1].key.id} == std::set<std::string>{"hrx", "llamacpp"} &&
+            embedded_v2_policies().leaves.size() == 2 &&
+            std::set<std::string>{embedded_v2_policies().leaves[0].key.id, embedded_v2_policies().leaves[1].key.id} == std::set<std::string>{"hrx", "llamacpp"} && installed_builtin_exports().exports().empty(),
+            "ProductionV2ExecutionTablesExactlyHrxAndLlamaAndExportsEmpty");
         zero("boundary success and failure");
     } catch (const std::exception& error) { check(false, error.what()); }
     return finish();

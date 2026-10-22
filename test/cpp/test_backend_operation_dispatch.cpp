@@ -154,7 +154,7 @@ public:
     }
     bool is_backend_alive() const override { return true; }
     static void attach_transport(WrappedServer& server, int port, ModelType mode = ModelType::LLM) {
-        if (dynamic_cast<backends::ConfiguredServer*>(&server) && server.get_descriptor()->recipe == "llamacpp") {
+        if (dynamic_cast<backends::ConfiguredServer*>(&server) && (server.get_descriptor()->recipe == "llamacpp" || server.get_descriptor()->recipe == "llamacpp-hrx")) {
             backends::ConfiguredServerTestAccess::load(server, port, "client-fixture", [] { return std::make_unique<RunningFakeProcess>(); }, mode);
             return;
         }

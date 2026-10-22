@@ -36,13 +36,13 @@ int main() {
         check(changed->definition().definition_hash == original->definition().definition_hash, "overridden transitive data retains effective hash");
         check(changed->definition().dependency_digest != original->definition().dependency_digest, "transitive dependency identity changes behind unchanged middle");
         check(changed.get() != original.get() && &changed->authority() != &original->authority(), "fresh authority for every descendant snapshot");
-        check(updated.catalog->metrics().authorized_definitions == 4, "all descendants reauthorized after parent change");
+        check(updated.catalog->metrics().authorized_definitions == 5, "all descendants reauthorized after parent change");
         check(updated.catalog->admission_id() != identity, "changed graph identity invalidates admission");
     }
     leaf["extends"]["expected_digest"] = active.catalog->v2_definition("middle")->definition().definition_hash;
     check(admit({base, middle, leaf}, builtin).catalog != nullptr, "immediate parent pin permits overridden grandparent change");
     const auto private_replacement = validate_candidate_definition(active.catalog, base.dump());
-    check(private_replacement.admission.catalog && private_replacement.admission.catalog->metrics().authorized_definitions == 4 &&
+    check(private_replacement.admission.catalog && private_replacement.admission.catalog->metrics().authorized_definitions == 5 &&
         private_replacement.admission.catalog->v2_definition("leaf")->definition().dependency_digest != original->definition().dependency_digest,
         "private base candidate revalidates all descendants");
     middle["extends"]["expected_digest"] = active.catalog->v2_definition("root")->definition().definition_hash;

@@ -3774,6 +3774,7 @@ endif()
 
 if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_backend_definition.cpp")
     add_executable(test_backend_definition test/cpp/test_backend_definition.cpp)
+    target_compile_definitions(test_backend_definition PRIVATE LEMON_TEST_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures")
     target_link_libraries(test_backend_definition PRIVATE lemonade-server-core)
     add_cpp_ci_test(BackendDefinitionTest CI ON COMMAND test_backend_definition)
 endif()
@@ -4242,9 +4243,9 @@ if(BUILD_TESTING)
     target_link_libraries(test_llamacpp_v2_production_switch PRIVATE
         lemonade-binding-test lemonade-typed-hook-test lemonade-server-core lemonade-test-isolation)
     add_cpp_ci_test(LlamaCppV2ProductionSwitchTest CI ON
-        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/backend_v2_4e3b_transition.py run
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/backend_v2_4f_transition.py run
             --build "${CMAKE_CURRENT_BINARY_DIR}"
-            --out "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/artifacts/backend-v2-4e3b/transition"
-            --scratch "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/backend-v2-4e3b/transition"
+            --out "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/artifacts/backend-v2-4f/transition"
+            --scratch "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/backend-v2-4f/transition"
         DEPENDS test_llamacpp_v2_production_switch llamacpp-frozen-control-build)
 endif()

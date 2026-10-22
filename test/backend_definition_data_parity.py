@@ -156,6 +156,14 @@ def compile_views(args):
             )
         ],
     ]
+    hrx = "src/cpp/resources/backends/hrx.json"
+    if json.loads((REPO / hrx).read_bytes())["schema_version"] == 2:
+        assert (
+            REPO / "test/fixtures/backend-v1-compat/hrx.v1.json"
+        ).read_bytes() == subprocess.check_output(
+            ["git", "show", f"{args.baseline_commit}:{hrx}"], cwd=REPO
+        ), "HistoricalHrxSourcePreservedForDescriptorBaseline"
+        protected.remove(hrx)
     subprocess.run(
         ["git", "diff", "--exit-code", args.baseline_commit, "--", *protected],
         cwd=REPO,
