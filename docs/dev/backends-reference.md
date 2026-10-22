@@ -11,6 +11,7 @@ the generator instead. Prose outside the markers is preserved. -->
 |--------|------|--------------------|---------------|----------|
 | `acestep` | ACE-Step | yes | no | cuda, rocm, vulkan |
 | `ds4` | DwarfStar4 | no | yes | rocm |
+| `extensor` | EXTENSOR ROCm | yes | yes | rocm |
 | `flm` | FastFlowLM NPU | no | yes | npu |
 | `kokoro` | Kokoro | no | no | cpu, metal |
 | `llamacpp` | Llama.cpp GPU | yes | yes | cpu, cuda, metal, rocm, system, vulkan |
@@ -38,6 +39,7 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 | `acestep` | vulkan | experimental | native | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `acestep` | rocm | experimental | native | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
 | `ds4` | rocm | guest | native | linux | amd_gpu (gfx1151) |
+| `extensor` | rocm | experimental | native | linux | amd_gpu (gfx1151, gfx1152, gfx1201) |
 | `flm` | npu | core | native | linux, windows | amd_npu (XDNA2) |
 | `kokoro` | metal | core | native | macos | metal |
 | `kokoro` | cpu | core | native | linux, windows | cpu (x86_64) |
@@ -99,6 +101,14 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 |--------|----------|------|---------|-------------|
 | `ctx_size` | `--ctx-size` | SIZE | -1 | Context size for the model |
 | `ds4_args` | `--ds4-args` | ARGS | "" | Custom arguments to pass to ds4-server |
+
+#### `extensor` — EXTENSOR ROCm
+
+| Option | CLI flag | Type | Default | Description |
+|--------|----------|------|---------|-------------|
+| `ctx_size` | `--ctx-size` | SIZE | -1 | Context size for the model |
+| `extensor_backend` | `--extensor` | BACKEND | "" | EXTENSOR backend to use |
+| `extensor_preset` | `--extensor-preset` | PRESET | balanced | EXTENSOR runtime preset: exact, balanced, fast, or demo |
 
 #### `flm` — FastFlowLM NPU
 

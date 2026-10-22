@@ -27,7 +27,7 @@ public:
     // List all recipes with their backends and install status
     json get_all_backends_status();
 
-    // Get GitHub release URL for a recipe/backend
+    // Get the release page or direct asset URL for a recipe/backend
     std::string get_release_url(const std::string& recipe, const std::string& backend);
 
     // Get the platform-specific download filename for a recipe/backend (empty if N/A)
@@ -43,11 +43,12 @@ public:
     // Get all enrichment data for a backend in one call (avoids repeated config lookups)
     BackendEnrichment get_backend_enrichment(const std::string& recipe, const std::string& backend);
 
-    // Install parameters for a backend (repo + filename + version)
+    // Install parameters for a backend (GitHub repo or direct asset URL)
     struct InstallParams {
         std::string repo;
         std::string filename;
         std::string version;
+        std::string download_url;
     };
 
     // Unlike the enrichment helpers above, this returns the repo and lets

@@ -181,7 +181,7 @@ runs:
             # Targeted cleanup: only kill processes tied to this workspace to prevent resource leaks (like vllm or resource_tracker)
             if [ -n "${GITHUB_WORKSPACE:-}" ]; then
                 echo "Performing workspace-targeted cleanup for self-hosted runner..."
-                kill_targeted_by_cmdline "vllm|resource_tracker|python[0-9.]*|lemond|lemonade|llama-server" "$GITHUB_WORKSPACE"
+                kill_targeted_by_cmdline "vllm|resource_tracker|python[0-9.]*|lemond|lemonade|llama-server|extensor-server" "$GITHUB_WORKSPACE"
             fi
         else
             echo "Running on GitHub-hosted runner. Proceeding with global cleanup fallback..."

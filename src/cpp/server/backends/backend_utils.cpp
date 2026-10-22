@@ -484,11 +484,21 @@ namespace lemon::backends {
     }
 
     void BackendUtils::install_from_github(const BackendSpec& spec,
+                                          const std::string& expected_version,
+                                          const std::string& repo,
+                                          const std::string& filename,
+                                          const std::string& backend,
+                                          DownloadProgressCallback progress_cb) {
+        install_from_release(spec, expected_version, repo, filename, backend, progress_cb);
+    }
+
+    void BackendUtils::install_from_release(const BackendSpec& spec,
                                            const std::string& expected_version,
                                            const std::string& repo,
                                            const std::string& asset_pattern,
                                            const std::string& backend,
-                                           DownloadProgressCallback progress_cb) {
+                                           DownloadProgressCallback progress_cb,
+                                           const std::string& download_url) {
         std::string install_dir;
         std::string version_file;
         std::string exe_path = find_external_backend_binary(spec.recipe, backend);
@@ -537,8 +547,9 @@ namespace lemon::backends {
             // Resolve any '*' wildcard in the asset name (e.g. the macOS runner
             // version in sd-cpp's Darwin asset) to the concrete published name
             // before building any download URL. No-op when there is no wildcard.
-            const std::string filename =
-                resolve_asset_wildcard(repo, expected_version, asset_pattern, spec);
+            const std::string filename = download_url.empty()
+                ? resolve_asset_wildcard(repo, expected_version, asset_pattern, spec)
+                : asset_pattern;
 
             // Stage the new install in a sibling directory so the currently
             // installed (working) binary is left untouched until the download is
@@ -621,7 +632,7 @@ namespace lemon::backends {
 
             bool is_split = false;
             std::vector<std::string> part_assets;
-            if (spec.supports_split_archive) {
+            if (download_url.empty() && spec.supports_split_archive) {
                 const std::string partcount_url = base_download_url + base + ".partcount";
                 auto resp = utils::HttpClient::get(partcount_url);
                 if (resp.status_code == 200) {
@@ -660,7 +671,7 @@ namespace lemon::backends {
                 // 404 = no manifest = single-file release; fall through.
             }
             if (!is_split) {
-                std::string url = base_download_url + filename;
+                const std::string url = release_asset_url(repo, expected_version, filename, download_url);
                 LOG(DEBUG, spec.log_name()) << "Downloading from: " << url << std::endl;
 
                 utils::ProgressCallback http_progress_cb;
@@ -683,6 +694,18 @@ namespace lemon::backends {
                 utils::DownloadOptions archive_download_opts;
                 archive_download_opts.expected_hash = lookup_expected_asset_hash(
                     spec.recipe, backend, expected_version, repo, filename);
+                if (!download_url.empty()) {
+                    std::string digest = archive_download_opts.expected_hash;
+                    if (digest.compare(0, 7, "sha256:") == 0) {
+                        digest.erase(0, 7);
+                    }
+                    if (digest.size() != 64 || !std::all_of(digest.begin(), digest.end(),
+                            [](unsigned char ch) { return std::isxdigit(ch); })) {
+                        throw std::runtime_error(
+                            "A pinned SHA-256 digest in backend_versions.json is required for " +
+                            spec.recipe + " archive " + filename);
+                    }
+                }
                 archive_download_opts.resume_partial = false;
 
                 auto download_result = utils::HttpClient::download_file(

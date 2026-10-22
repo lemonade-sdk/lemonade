@@ -96,6 +96,66 @@ int main() {
     }
     check(threw_unknown_otlp, "rejects unknown telemetry.otlp subkey");
 
+    json extensor_update = {
+        {"extensor", {
+            {"extensor_preset", "balanced"}
+        }}
+    };
+    config.set(extensor_update);
+    snapshot = config.snapshot();
+    check(snapshot["extensor"]["extensor_preset"] == "balanced",
+          "persists descriptor-declared backend option");
+
+    for (const std::string preset : {"exact", "balanced", "fast", "demo"}) {
+        config.set(json{{"extensor", {{"extensor_preset", preset}}}});
+        check(config.snapshot()["extensor"]["extensor_preset"] == preset,
+              ("accepts supported EXTENSOR preset " + preset).c_str());
+    }
+    for (const std::string preset : {"invalid", "", "Balanced", " fast"}) {
+        const json before = config.snapshot();
+        bool rejected = false;
+        try {
+            config.set(json{{"extensor", {{"extensor_preset", preset}}}, {"port", 13306}});
+        } catch (const std::invalid_argument& e) {
+            rejected = true;
+            check(std::string(e.what()).find("extensor.extensor_preset") != std::string::npos,
+                  "invalid preset error identifies the configuration key");
+        }
+        check(rejected, ("rejects unsupported EXTENSOR preset before loading: " + preset).c_str());
+        check(config.snapshot() == before, "rejected preset leaves the entire configuration unchanged");
+    }
+
+    bool threw_wrong_extensor_type = false;
+    try {
+        config.set(json{{"extensor", {{"extensor_preset", 42}}}});
+    } catch (const std::invalid_argument&) {
+        threw_wrong_extensor_type = true;
+    }
+    check(threw_wrong_extensor_type,
+          "rejects wrong type for descriptor-declared backend option");
+
+    bool threw_unknown_extensor = false;
+    try {
+        config.set(json{{"extensor", {{"unknown_option", "value"}}}});
+    } catch (const std::invalid_argument&) {
+        threw_unknown_extensor = true;
+    }
+    check(threw_unknown_extensor,
+          "rejects undeclared backend option");
+
+    bool threw_extensor_model_path = false;
+    try {
+        config.set(json{{"extensor", {{"extensor_model_path", "/models/local.gguf"}}}});
+    } catch (const std::invalid_argument&) {
+        threw_extensor_model_path = true;
+    }
+    check(threw_extensor_model_path, "rejects the removed global model path override");
+
+    RuntimeConfig legacy_config(json{
+        {"extensor", {{"extensor_model_path", "/models/local.gguf"}}}});
+    check(!legacy_config.recipe_options("").contains("extensor_model_path"),
+          "old config files cannot override the selected model's checkpoint");
+
     // 3. Test CLI dotted key config path parsing logic
     std::vector<std::string> cli_args = {
         "telemetry.otlp.endpoint=http://127.0.0.1:5555/v1/traces",

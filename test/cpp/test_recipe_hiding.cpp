@@ -6,7 +6,10 @@
 //     availability side table, so incremental single-model updates cannot
 //     clobber it.
 
+#include "lemon/config_file.h"
 #include "lemon/model_manager.h"
+#include "lemon/runtime_config.h"
+#include "lemon/system_info.h"
 
 #include <cstdio>
 #include <map>
@@ -50,9 +53,49 @@ static void test_pure_set_difference() {
           ModelManager::recipes_missing_all_models({"ds4"}, {"ds4", "llamacpp"}) == S{});
 }
 
-// A size so large no real machine can hold it, so the model is always
-// memory-filtered regardless of where the test runs.
+// Exceed any real machine's memory so filtering checks are independent of host RAM.
 static constexpr double HUGE_GB = 1.0e6;
+
+static void test_extensor_size_filter_bypass(ModelManager& manager) {
+    ModelInfo huge_resident = model("extensor", HUGE_GB);
+    huge_resident.min_resident_gb = HUGE_GB;
+    const std::map<std::string, ModelInfo> models = {
+        {"ExtensorHuge", model("extensor", HUGE_GB)},
+        {"ExtensorHugeResident", huge_resident},
+        {"ExtensorTiny", model("extensor", 0.01)},
+    };
+
+    lemon::json system_info = {
+        {"Physical Memory", "64 GB"},
+        {"devices", {{"amd_gpu", lemon::json::array({
+            {{"available", true}, {"integrated", true}, {"vram_gb", 8.0}, {"virtual_mem_gb", 56.0}},
+        })}}},
+        {"recipes", {
+            {"extensor", {{"default_backend", "rocm"},
+                {"backends", {{"rocm", {{"state", "not_installed"}, {"tier", "experimental"}}}}}}},
+            {"ds4", {{"default_backend", "rocm"},
+                {"backends", {{"rocm", {{"state", "installed"}, {"tier", "experimental"}}}}}}},
+        }},
+    };
+    const auto filtered = manager.filter_models_by_backend(models, system_info, true);
+    check("EXTENSOR keeps every model on supported hardware regardless of size",
+          filtered.size() == models.size());
+    check("EXTENSOR file size does not cause rejection",
+          filtered.count("ExtensorHuge") == 1);
+    check("EXTENSOR resident estimate does not cause rejection",
+          filtered.count("ExtensorHugeResident") == 1);
+    check("EXTENSOR is never hidden by model size",
+          manager.recipes_all_models_filtered_snapshot().count("extensor") == 0);
+
+    check("the same hardware still filters oversized streaming models without the exemption",
+          manager.filter_models_by_backend({{"Ds4Huge", model("ds4", HUGE_GB)}}, system_info).empty());
+
+    system_info["recipes"]["extensor"]["backends"]["rocm"]["state"] = "unsupported";
+    check("EXTENSOR unsupported hardware still rejects every model",
+          manager.filter_models_by_backend(models, system_info, true).empty());
+    check("hardware rejection is not reported as a model-size rejection",
+          manager.recipes_all_models_filtered_snapshot().count("extensor") == 0);
+}
 
 // The memory heuristic only sees models that already cleared the hardware/OS
 // gate (check_recipe_supported) and only runs when system RAM is readable, so
@@ -123,9 +166,15 @@ static void test_incremental_pass_does_not_clobber(ModelManager& manager,
 }
 
 int main() {
+    lemon::RuntimeConfig config(lemon::ConfigFile::base_defaults());
+    config.set({{"offline", true}, {"no_fetch_executables", false},
+                {"disable_model_filtering", false}});
+    lemon::RuntimeConfig::set_global(&config);
+
     test_pure_set_difference();
 
     ModelManager manager;
+    test_extensor_size_filter_bypass(manager);
     // A vacuous pass is exactly what this test guards against, so a host where
     // no recipe reaches the memory heuristic is reported as a failure rather
     // than skipped silently.
@@ -137,6 +186,8 @@ int main() {
         test_full_pass_commits_and_recomputes(manager, probe);
         test_incremental_pass_does_not_clobber(manager, probe);
     }
+
+    lemon::RuntimeConfig::set_global(nullptr);
 
     if (g_failures == 0) {
         std::printf("All recipe hiding tests passed.\n");

@@ -207,6 +207,7 @@ set(LEMON_BACKENDS
     "flm|fastflowlm"
     "ryzenai-llm|ryzenai"
     "vllm|vllm"
+    "extensor|extensor"
     "thenoise|thenoise"
     "ds4|ds4"
     "cloud|cloud"
@@ -3124,6 +3125,12 @@ if(BUILD_TESTING AND EXISTS "${_AUTO_TUNE_TEST_SRC}")
     add_cpp_ci_test(AutoTuneTest CI ON COMMAND test_auto_tune)
 endif()
 
+if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_auto_context_resolution.cpp")
+    add_executable(test_auto_context_resolution test/cpp/test_auto_context_resolution.cpp)
+    target_link_libraries(test_auto_context_resolution PRIVATE lemonade-server-core)
+    add_cpp_ci_test(AutoContextResolutionTest CI ON COMMAND test_auto_context_resolution)
+endif()
+
 set(_GPU_MEMORY_SELECTION_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_gpu_memory_selection.cpp"
 )
@@ -3372,6 +3379,21 @@ if(BUILD_TESTING AND EXISTS "${_DS4_INSTALL_TEST_SRC}")
     add_executable(test_ds4_install_params test/cpp/test_ds4_install_params.cpp)
     target_link_libraries(test_ds4_install_params PRIVATE lemonade-server-core)
     add_cpp_ci_test(Ds4InstallParamsTest CI ON COMMAND test_ds4_install_params)
+endif()
+
+set(_EXTENSOR_INSTALL_PARAMS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_extensor_install_params.cpp")
+if(BUILD_TESTING AND EXISTS "${_EXTENSOR_INSTALL_PARAMS_TEST_SRC}")
+    add_executable(test_extensor_install_params test/cpp/test_extensor_install_params.cpp)
+    target_include_directories(test_extensor_install_params PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include)
+    add_cpp_ci_test(ExtensorInstallParamsTest CI ON COMMAND test_extensor_install_params)
+endif()
+
+set(_EXTENSOR_BACKEND_INSTALL_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_extensor_backend_install.cpp")
+if(BUILD_TESTING AND EXISTS "${_EXTENSOR_BACKEND_INSTALL_TEST_SRC}")
+    add_executable(test_extensor_backend_install test/cpp/test_extensor_backend_install.cpp)
+    target_link_libraries(test_extensor_backend_install PRIVATE lemonade-server-core)
+    add_cpp_ci_test(ExtensorBackendInstallTest CI ON COMMAND test_extensor_backend_install)
 endif()
 
 # llamacpp gfx950 (MI350) install gate: only the Linux + stable-channel asset is

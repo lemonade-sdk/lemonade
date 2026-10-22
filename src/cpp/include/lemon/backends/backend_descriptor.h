@@ -18,6 +18,7 @@ struct BackendOption {
     std::string type_name;            // "ARGS" | "SIZE" | "BACKEND" | "BOOL"
     std::string help;                 // CLI help text
     std::string group;                // CLI help group, e.g. "General Options"
+    std::vector<std::string> choices{};
 };
 
 // How a backend shares the accelerator.
@@ -117,6 +118,10 @@ struct BackendDescriptor {
     // fully resident (ds4 --ssd-streaming); changes how it is size-filtered (see
     // filter_models_by_backend in model_manager.cpp).
     bool streams_model_from_storage = false;
+
+    // Adaptive backends without a reliable static footprint decide memory fit
+    // during loading; OS and hardware compatibility checks still apply.
+    bool skip_model_size_filter = false;
 
     // The config.json section name for this backend, falling back to the recipe.
     std::string effective_config_section() const {

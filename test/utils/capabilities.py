@@ -38,6 +38,22 @@ def get_current_config():
 
 CAPABILITIES = {
     "llm": {
+        "extensor": {
+            "backends": ["rocm"],
+            "supports": {
+                "chat_completions": True,
+                "chat_completions_streaming": True,
+                "chat_completions_async": True,
+                "tool_calls": True,
+                "tool_calls_streaming": True,
+                "stop_parameter": True,
+            },
+            "test_models": {
+                "llm": "Qwen3.6-35B-A3B-EXTENSOR",
+            },
+            # Short answer tests must not exhaust their token budget on reasoning.
+            "chat_extra_body": {"chat_template_kwargs": {"enable_thinking": False}},
+        },
         "llamacpp": {
             "backends": [
                 "vulkan",

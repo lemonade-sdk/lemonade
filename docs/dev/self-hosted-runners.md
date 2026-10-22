@@ -72,6 +72,32 @@ Capability and hardware labels must be present on each runner for the workflow t
 | Strix Halo | `lemon-prod`, `xdna2`, `rocm`, `stx-halo` |
 | DGX Spark (ARM64 + CUDA) | `lemon-prod`, `cuda` |
 
+### Devlab Dispatch
+
+Devlab Dispatch is a separate pool of ephemeral Strix Halo Linux runners. Jobs
+select it with `[self-hosted, Linux, X64, devlab-dispatch, strix-halo]`.
+`devlab-dispatch` identifies this pool in place of `lemon-prod`; its hardware
+label is `strix-halo`, distinct from the fixed pool's `stx-halo` label above.
+The repository must be granted access to the pool by its administrators.
+Adding labels to workflow YAML does not register a runner or grant that access.
+
+Native Extensor testing requires ROCm 7, hipBLAS, hipBLASLt, OpenMP, and liburing
+(including `liburing-ffi.so.2`) available to the dynamic linker. Provision the
+GPU driver, ROCm stack, and OpenMP in the runner environment. The job downloads
+`liburing2` through apt and extracts it into a temporary directory without sudo;
+the runner's apt package lists must offer a version containing the FFI library.
+It sets `LD_LIBRARY_PATH` before starting Lemonade so Extensor inherits it.
+The runner account needs access to `/dev/kfd` and the GPU render node under
+`/dev/dri`. A working container backend on the same pool does not establish
+that the runner environment has the native backend's libraries.
+
+Run one GPU inference job at a time per machine. Give the job sufficient local
+disk for the approximately 18 GB Qwen model plus the backend and package, and
+network access to apt package downloads, GitHub Actions artifacts, AMD's Extensor
+downloads, Python package dependencies, and Hugging Face model downloads. The
+job uses a temporary model cache. See [the test workflow](./testing.md#extensor-on-devlab-dispatch)
+for PR triggers and diagnostics.
+
 ## New Runner Setup
 
 This guide will help you set up a computer as a GitHub self-hosted runner.

@@ -1,7 +1,12 @@
 {
   "comment": "This configuration file controls which llama.cpp, whisper.cpp, sd.cpp, ryzenai-llm, and FLM versions are downloaded for each backend. You can modify these values to pin specific versions without rebuilding the application.",
   "checksums": {
-    "comment": "Expected SHA-256 of downloaded GitHub release assets, verified after download (see BackendUtils::lookup_expected_asset_hash). Keyed by checksums.github.<owner/repo>.<tag>.<asset>. Values are the sha256:<hex> digests GitHub publishes for each asset. Update alongside the matching version pin below.",
+    "comment": "Expected SHA-256 of executable archives, verified before extraction. GitHub assets use checksums.github.<owner/repo>.<tag>.<asset>. Direct-download assets can use checksums.<recipe>.<asset> when filenames include the version. Values use sha256:<hex>. Explicit asset URLs require a valid pinned digest. Update alongside the matching version pin below.",
+    "extensor": {
+      "extensor-v2.3.2-linux-x86_64-rocm7-gfx1151.zip": "sha256:e81278d24bb70adfed25a7d862bb069400ff0505556d01fdebd7f83f0123b900",
+      "extensor-v2.3.2-linux-x86_64-rocm7-gfx1152.zip": "sha256:9945bdab3b91d538541e86cf3a569e0fc7ceb957d9251f322ff5ba1c7f18a2f0",
+      "extensor-v2.3.2-linux-x86_64-rocm7-gfx1201.zip": "sha256:50df89ce65989771e5b9cb4d9d97af7bd6c88fafa9ad587bb6f38d9e176dc946"
+    },
     "github": {
       "pwilkin/openmoss": {
         "v0.3.0": {
@@ -161,6 +166,9 @@
   "thenoise": {
     "comment": "TheNoise release tag. The portable bundle publishes per-GPU-target archives (<tag>-gfxNNNN-x64.tar.gz) under this tag; the host arch picks the matching archive.",
     "rocm": "thenoise-0.10.1-rocm10.1.0"
+  },
+  "extensor": {
+    "rocm": "v2.3.2"
   },
   "rocm_asset_families": {
     "comment": "Maps a concrete ROCm ISA (as detected on the device) to the family target name the GitHub release repos publish assets under. ISAs not listed here (e.g. gfx908, gfx90a, which ship as individual assets) are used verbatim. Add a new GPU's ISA here when its release asset is published under a family name.",
