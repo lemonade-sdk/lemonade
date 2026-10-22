@@ -197,4 +197,5 @@ Match `decision.matched_rule` against this document: a policy written with only 
 | `400` | `missing_argument` | A required argument is missing |
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | `policy` is invalid or internally inconsistent |
+| `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
 <!-- END GENERATED: router.routing_validate -->

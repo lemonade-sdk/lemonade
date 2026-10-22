@@ -2,6 +2,7 @@
 #include <optional>
 #include <string>
 
+#include "lemon/error_types.h"
 #include "lemon/model_residency.h"
 #include "lemon/route_decision_response.h"
 #include "lemon/routing_classifier_services.h"
@@ -152,7 +153,8 @@ public:
             "prompt": "please write a def to reverse a list"
         })");
         s.examples = {example};
-        s.errors = {kBodyNotJson, kArgMissing, kArgInvalid, kInvalidPolicy};
+        s.errors = {kBodyNotJson, kArgMissing, kArgInvalid, kInvalidPolicy,
+                    ModelLoader::kRouterResidencyConflict};
         s.request_format = RequestFormat::Json;
         return s;
     }
@@ -213,6 +215,12 @@ public:
                 {"normalized_policy", std::move(normalized_policy)},
             };
             res.set_content(response.dump(), "application/json");
+        } catch (const RouterResidencyConflictException& e) {
+            // The policy document is well-formed; the hardware just cannot host its
+            // classifier right now. Reporting that as 400 would send the caller off
+            // to debug a document that has nothing wrong with it.
+            write_openai_error(res, ModelLoader::kRouterResidencyConflict, e.what(),
+                               ErrorType::ROUTER_RESIDENCY_CONFLICT);
         } catch (const std::exception& e) {
             write_plain_error(res, kInvalidPolicy, std::string("Invalid routing policy: ") + e.what());
         }
