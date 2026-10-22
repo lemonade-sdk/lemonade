@@ -145,7 +145,9 @@ def census(args):
         }
         | {"LlamaCppV2DeliberateDiffTest"}
     )
-    assert args.expected_count in (145, 150)
+    if args.expected_count == 151:
+        additions = {"LlamaCppV2ProductionSwitchTest"}
+    assert args.expected_count in (145, 150, 151)
     assert len(new) == args.expected_count and len(old) == args.expected_count - len(
         additions
     ), "CppCiCountExact"
@@ -162,6 +164,8 @@ def census(args):
         }
         | {"test_llamacpp_v2_deliberate_diff"}
     )
+    if args.expected_count == 151:
+        targets = {"test_llamacpp_v2_production_switch"}
     assert all(
         target in dependencies.split() for target in targets
     ), "CppCiExecutableDependencies"
@@ -235,6 +239,11 @@ def census_mutations(args):
     dependencies = subprocess.check_output(
         ["ninja", "-C", str(args.build), "-t", "query", "cpp-ci-tests"], text=True
     )
+    executable = (
+        "test_llamacpp_v2_production_switch"
+        if args.expected_count == 151
+        else "test_llamacpp_v2_deliberate_diff"
+    )
     cases = []
     missing = copy.deepcopy(current)
     missing["tests"].remove(
@@ -261,7 +270,7 @@ def census_mutations(args):
         (
             "missing-executable-dependency",
             current,
-            dependencies.replace("test_llamacpp_v2_deliberate_diff", "omitted"),
+            dependencies.replace(executable, "omitted"),
             "CppCiExecutableDependencies",
         )
     )
@@ -400,6 +409,7 @@ def main():
             "data-parity",
             "oracle-controls",
             "synthetic-codegen",
+            "catalog-transition",
         ],
     )
     parser.add_argument("--build", type=Path, default=REPO / "build")
@@ -429,7 +439,22 @@ def main():
     os.environ.update(TMPDIR=str(temp), TMP=str(temp), TEMP=str(temp))
     if args.out:
         args.out.mkdir(parents=True, exist_ok=True)
-    if args.gate == "mutations":
+    if args.gate == "catalog-transition":
+        assert args.out, "catalog-transition requires --out"
+        run(
+            [
+                "python3",
+                str(REPO / "test/backend_v2_4e3b_transition.py"),
+                "run",
+                "--build",
+                str(args.build),
+                "--out",
+                str(args.out),
+                "--scratch",
+                str(args.scratch),
+            ]
+        )
+    elif args.gate == "mutations":
         from backend_v2_4e_mutations import mutations
 
         assert args.out, "mutations requires --out"

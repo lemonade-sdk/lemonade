@@ -50,9 +50,11 @@ int main() {
     static_assert(!std::is_constructible_v<AuthorizedDefinition, ResolvedDefinition>);
     static_assert(!std::is_constructible_v<AuthorizedDefinition, DefinitionKey>);
     static_assert(!std::is_constructible_v<ResolvedAuthority, ResolvedDefinition>);
-    check(embedded_v2_sources().empty() && embedded_v2_policies().leaves.empty(), "ProductionBuiltinV2TableEmpty");
+    check(embedded_v2_sources().size() == 1 && embedded_v2_policies().leaves.size() == 1 &&
+        embedded_v2_sources()[0].key.id == "llamacpp" && embedded_v2_policies().leaves[0].key.id == "llamacpp", "ProductionBuiltinV2TableExactlyLlama");
     const auto production = BuiltinCatalogLoader::freeze_embedded();
-    check(production.snapshot && BuiltinCatalogLoader::builtin_leaves(*production.snapshot).empty(), "ProductionCannotMintV2Leaf");
+    check(production.snapshot && BuiltinCatalogLoader::builtin_leaves(*production.snapshot).size() == 1 &&
+        BuiltinCatalogLoader::builtin_leaves(*production.snapshot)[0].id == "llamacpp", "ProductionMintsOnlyReviewedLlamaLeaf");
     const auto frozen = freeze();
     check(bool(frozen.snapshot), "LoaderAuditsPinnedBuiltinClosure");
     if (!frozen.snapshot) {

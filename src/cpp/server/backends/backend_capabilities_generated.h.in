@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <vector>
 #include "lemon/backends/backend_descriptor.h"
+#include "lemon/server_capabilities.h"
 #include "backend_descriptors_generated.h"
 @LEMON_FACTORY_INCLUDES@
 namespace lemon {

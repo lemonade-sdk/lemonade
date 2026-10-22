@@ -1,4 +1,4 @@
-set(_llama_control_root "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/backend-v2-4e3a/frozen-control")
+set(_llama_control_root "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/backend-v2-4e3b/frozen-control")
 add_custom_target(llamacpp-frozen-control-build
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/llamacpp_frozen_control.py build
         --root ${_llama_control_root} --dependencies ${FETCHCONTENT_BASE_DIR}

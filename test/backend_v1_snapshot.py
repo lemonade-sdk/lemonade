@@ -19,14 +19,16 @@ REPO = Path(__file__).resolve().parents[1]
 SOURCE_SHA = "410b5b4e9f9c7bdfcd1031ea6911795a8cce09ae"
 
 
-def capture(lemond, cli):
+def capture(lemond, cli, source_root=REPO):
     result = {"source_sha": SOURCE_SHA, "platform": platform.system()}
     result["file_sha256"] = {
-        str(path.relative_to(REPO)): hashlib.sha256(path.read_bytes()).hexdigest()
+        str(path.relative_to(source_root)): hashlib.sha256(
+            path.read_bytes()
+        ).hexdigest()
         for path in [
-            REPO / "schemas/backend-definition-v1.schema.json",
-            REPO / "src/cpp/resources/defaults.json",
-            *sorted((REPO / "src/cpp/resources/backends").glob("*.json")),
+            source_root / "schemas/backend-definition-v1.schema.json",
+            source_root / "src/cpp/resources/defaults.json",
+            *sorted((source_root / "src/cpp/resources/backends").glob("*.json")),
         ]
     }
     with tempfile.TemporaryDirectory(prefix="lemon-v1-snapshot-") as temporary:
@@ -50,8 +52,8 @@ def capture(lemond, cli):
                 for row in schema["recipes"]
                 if row["definition_id"] is not None
             }
-            assert (
-                set(result["definitions"]) == production_inventory()
+            assert set(result["definitions"]) == production_inventory(
+                source_root
             ), "ExactMixedDefinitionSet"
             result["filtered"] = {
                 row["recipe"]: api("/v1/backends/schema?recipe=" + quote(row["recipe"]))

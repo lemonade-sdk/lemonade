@@ -367,6 +367,7 @@ int main(int argc, char** argv) {
     check(throws([&] { reads.prefix(snapshot->handle, 262145); }, "limit"), "ArtifactPrefixIsBounded");
     rt::ArtifactServices foreign(*artifact_guard, scratch.string(), true);
     check(throws([&] { foreign.prefix(snapshot->handle, 4); }, "another service"), "ForeignArtifactHandleRejects");
+    check(throws([&] { foreign.header(snapshot->handle); }, "another service"), "ForeignArtifactHeaderHandleStillRejects");
     check(throws([&] { reads.approved_result((scratch / "unknown").string()); }, "inventory"), "ReturnedPathMustBelongToInventory");
     const auto artifact_hook = std::find_if(all_program.hooks.begin(), all_program.hooks.end(), [](const auto& hook) { return hook.contract == typed::Contract::Artifacts; });
     const auto retained_lifetime = artifact_guard->lifetime().lock();
@@ -389,12 +390,31 @@ int main(int argc, char** argv) {
     check(!throws([&] {
         if (runner.resolve_artifact(auxiliary) != (scratch / "snapshots" / "active" / "mmproj.gguf").string()) throw std::logic_error("wrong auxiliary");
     }), "AuxiliaryResolutionUsesBoundArtifactOwnerAndActiveInventory");
+    auxiliary.type = "vae";
+    check(!throws([&] {
+        if (runner.resolve_artifact(auxiliary) != (scratch / "snapshots" / "active" / "mmproj.gguf").string()) throw std::logic_error("wrong auxiliary");
+    }), "RegistryAuxiliaryRolesUseTheBoundMainArtifactInventory");
+    auxiliary.type = "npu_cache";
+    check(runner.resolve_artifact(auxiliary).empty(), "NpuSideCacheHasNoLocalArtifactResolution");
     auto artifact_model = model(); artifact_model.resolved_paths["main"] = snapshot->resolved_path; artifact_model.labels.clear();
     all_entry->backend_ops()->populate_metadata(artifact_model, {});
     check(artifact_model.max_context_window == 65536 && artifact_model.gguf.architecture == "qwen3" && artifact_model.gguf.head_count_kv == 10 &&
         artifact_model.gguf.head_count_kv_per_layer == std::vector<std::int64_t>{4, 6} && artifact_model.gguf.swa_layer_count == 1 &&
         artifact_model.gguf.embedding_length == 128 && artifact_model.gguf.key_length == 32 && artifact_model.labels == std::vector<std::string>{"mtp"},
         "BoundedHeaderPopulatesTypedMetadataAndCapabilityLabels");
+    std::string oversized_header = "GGUF";
+    const auto append_header = [&](auto value) { oversized_header.append(reinterpret_cast<const char*>(&value), sizeof(value)); };
+    append_header(std::uint32_t{3}); append_header(std::uint64_t{0}); append_header(std::uint64_t{4097});
+    for (const auto& bytes : {std::string("GGUF_dummy_content"), std::string("GGUF"), oversized_header}) {
+        const auto malformed = scratch / "malformed.gguf";
+        { std::ofstream file(malformed, std::ios::binary); file << bytes; }
+        auto unchanged = artifact_model;
+        unchanged.resolved_paths["main"] = malformed.string();
+        const bool skipped = !throws([&] { all_entry->backend_ops()->populate_metadata(unchanged, {}); });
+        check(skipped && unchanged.max_context_window == artifact_model.max_context_window &&
+            unchanged.labels == artifact_model.labels && unchanged.gguf.architecture == artifact_model.gguf.architecture,
+            "MalformedOptionalMetadataRetainsLegacySkipBehavior");
+    }
     check(all_entry->backend_ops()->validate_checkpoint_file(snapshot->resolved_path).empty() &&
         !all_entry->backend_ops()->validate_registration_checkpoint("owner/model-GGUF").empty(), "ArtifactMetadataAndValidationConsumeTypedMembers");
     std::filesystem::create_symlink(capture_binary, scratch / "snapshots" / "active" / "escape.gguf");

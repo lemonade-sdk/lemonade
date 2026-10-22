@@ -15,6 +15,7 @@ const std::vector<BackendRegistration>& all_registrations() {
 }
 
 const std::vector<BackendRegistration>& builtin_registrations() {
+    catalog_publication().server();
     const auto& seeds = builtin_registration_seeds();
     const bool has_v2 = std::any_of(seeds.begin(), seeds.end(), [](const auto& seed) { return !seed.definition_id.empty(); });
     if (!has_v2) {

@@ -1,8 +1,9 @@
+#include "configured_server_transport_fixture.h"
 #include "lemon/backends/cloud/cloud_server.h"
+#include "lemon/backends/configured/configured_server.h"
 #include "lemon/backends/fastflowlm/fastflowlm_server.h"
 #include "lemon/backends/hrx/hrx_server.h"
 #include "lemon/backends/kokoro/kokoro_server.h"
-#include "lemon/backends/llamacpp/llamacpp_server.h"
 #include "lemon/backends/moonshine/moonshine_server.h"
 #include "lemon/backends/openmoss/openmoss_server.h"
 #include "lemon/backends/sdcpp/sdcpp_server.h"
@@ -91,6 +92,7 @@ public:
         server_.Get("/slots", [](const httplib::Request&, httplib::Response& response) {
             response.set_content("{\"slots\":[2]}", "application/json");
         });
+        server_.Get("/health", [](const auto&, auto& response) { response.set_content("{}", "application/json"); });
         port_ = server_.bind_to_any_port("127.0.0.1");
         if (port_ <= 0) throw std::runtime_error("Could not bind CPU-only fake HTTP backend");
         thread_ = std::thread([this] { server_.listen_after_bind(); });
@@ -151,22 +153,28 @@ public:
         this->set_state(ModelState::READY);
     }
     bool is_backend_alive() const override { return true; }
-    // The factory fallback keeps its concrete type; attach a fake process without loading a model.
     static void attach_transport(WrappedServer& server, int port, ModelType mode = ModelType::LLM) {
+        if (dynamic_cast<backends::ConfiguredServer*>(&server) && server.get_descriptor()->recipe == "llamacpp") {
+            backends::ConfiguredServerTestAccess::load(server, port, "client-fixture", [] { return std::make_unique<RunningFakeProcess>(); }, mode);
+            return;
+        }
         server.*(&LocalServer::port_) = port;
         server.*(&LocalServer::process_) = std::make_unique<RunningFakeProcess>();
-        server.set_model_metadata("client-fixture", "upstream-fixture", mode, DEVICE_CPU, RecipeOptions{});
+        RecipeOptions options;
+        options.set_option("llamacpp_backend", "");
+        server.set_model_metadata("client-fixture", "upstream-fixture", mode, DEVICE_CPU, options);
         server.set_state(ModelState::READY);
     }
 };
 
 std::unique_ptr<WrappedServer> configured(std::unique_ptr<WrappedServer> server, int port = 0, ModelType mode = ModelType::LLM) {
-    if (port) LocalServer<backends::LlamaCppServer>::attach_transport(*server, port, mode);
+    if (port) LocalServer<backends::WhisperServer>::attach_transport(*server, port, mode);
     return server;
 }
 
 void check_llama_dispatch(FakeHttpBackend& upstream) {
-    LocalServer<backends::LlamaCppServer> server(upstream.port());
+    auto owner = configured(backends::create_server("llamacpp", {"error"}), upstream.port());
+    auto& server = *owner;
     const json request = {{"model", "client-fixture"}, {"max_completion_tokens", 7}};
     const std::vector<std::pair<Op, std::string>> paths = {
         {Op::ChatCompletion, "/v1/chat/completions"}, {Op::Completion, "/v1/completions"}, {Op::Responses, "/v1/responses"}
@@ -475,9 +483,9 @@ void check_router_fallback_dispatch(FakeHttpBackend& upstream) {
     ModelInfo model;
     model.recipe = "unknown-operation-fixture";
     auto fallback = RoutingHelperTestHook::create_backend(router, model);
-    check(dynamic_cast<backends::LlamaCppServer*>(fallback.get()) != nullptr && fallback->get_descriptor() == nullptr,
-          "actual router factory retains the direct llama.cpp fallback for an unknown recipe");
-    LocalServer<backends::LlamaCppServer>::attach_transport(*fallback, upstream.port());
+    check(dynamic_cast<backends::ConfiguredServer*>(fallback.get()) != nullptr && fallback->get_descriptor() == backends::descriptor_for("llamacpp"),
+          "actual router factory uses the canonical finalized llama.cpp fallback for an unknown recipe");
+    LocalServer<backends::WhisperServer>::attach_transport(*fallback, upstream.port());
     for (const auto operation : {Op::ChatCompletion, Op::Completion, Op::Responses}) {
         const auto before = upstream.request_count();
         const auto response = fallback->dispatch_completion_operation(operation, json{{"model", "client-fixture"}});

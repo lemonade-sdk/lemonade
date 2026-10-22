@@ -287,7 +287,7 @@ int main() {
     const auto pure_result = pure.resolve({DefinitionNamespace::External, "plain", 0});
     DefinitionLimits shared;
     shared.work_nodes = pure_result.definition->metrics.work_nodes;
-    const auto bounded = load_v2_authority_snapshot({{{DefinitionNamespace::External, "plain", 0}, plain_source, ""}}, shared);
+    const auto bounded = BuiltinCatalogLoader::test_freeze({{{DefinitionNamespace::External, "plain", 0}, plain_source, ""}}, std::make_shared<const BuiltinExportRegistry>(installed_builtin_exports()), shared);
     const auto exhausted = DefinitionAuthorizer(bounded.snapshot).authorize({DefinitionNamespace::External, "plain", 0});
     check(bounded.snapshot && !exhausted.definition && has_code(exhausted.diagnostics, "limit_exceeded"), "inspection shares resolver work budget");
     check(graph_error([](auto& d, auto& c, auto&) { d.declaration["hooks"].erase("launch"); c.slots[0].removal = SlotRemoval::Independent; d.declaration["artifacts"]["other"] = d.declaration["artifacts"]["main"]; d.declaration["artifacts"].erase("main"); }) == "grant_growth", "final artifact relocation");
@@ -298,7 +298,7 @@ int main() {
     check(silent_snapshot.snapshot && !silent_result.definition && silent_result.diagnostics.truncated && silent_result.diagnostics.entries.empty(), "diagnostic bound remains fail closed");
     DefinitionLimits retention;
     retention.retained_logical_bytes = pure_result.definition->metrics.retained_logical_bytes;
-    const auto retained_snapshot = load_v2_authority_snapshot({{{DefinitionNamespace::External, "plain", 0}, plain_source, ""}}, retention);
+    const auto retained_snapshot = BuiltinCatalogLoader::test_freeze({{{DefinitionNamespace::External, "plain", 0}, plain_source, ""}}, std::make_shared<const BuiltinExportRegistry>(installed_builtin_exports()), retention);
     const auto retained_result = DefinitionAuthorizer(retained_snapshot.snapshot).authorize({DefinitionNamespace::External, "plain", 0});
     check(retained_snapshot.snapshot && !retained_result.definition && has_code(retained_result.diagnostics, "limit_exceeded"), "inspection shares retention budget");
     check(graph_error([](auto& d, auto& c, auto&) {

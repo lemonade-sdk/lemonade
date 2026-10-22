@@ -1156,6 +1156,7 @@ add_library(lemonade-backend-definition-v2 STATIC
     src/cpp/server/backends/configured/backend_definition_policy.cpp
     src/cpp/server/backends/configured/backend_definition_authorization.cpp
     src/cpp/server/backends/configured/backend_builtin_authorization.cpp
+    src/cpp/server/backends/configured/backend_llamacpp_policy.cpp
     src/cpp/server/backends/configured/backend_hook_abi.cpp)
 target_include_directories(lemonade-backend-definition-v2 PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
@@ -1212,6 +1213,9 @@ foreach(_backend_entry ${LEMON_BACKENDS})
     # above so a whole new backend is never silently missed.)
     file(GLOB _backend_srcs CONFIGURE_DEPENDS
         ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/${_backend_stem}/*.cpp)
+    if(_backend_stem STREQUAL "llamacpp")
+        list(FILTER _backend_srcs EXCLUDE REGEX "/llamacpp_server\\.cpp$")
+    endif()
     list(APPEND LEMON_BACKEND_FACTORY_SOURCES ${_backend_srcs})
     set(_backend_version 0)
     set(_backend_definition ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/${_backend_stem}.json)
@@ -2771,6 +2775,7 @@ if(BUILD_TESTING AND EXISTS "${_BACKEND_MODE_CONTRACT_TEST_SRC}")
     target_link_libraries(test_backend_mode_contract PRIVATE
         nlohmann_json::nlohmann_json
         lemonade-httplib
+        lemonade-backend-definition-v2
     )
 
     include(CTest)
@@ -4221,4 +4226,25 @@ if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_backend_b
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/backend_v2_4e_audit.py
             initialization --build "${CMAKE_CURRENT_BINARY_DIR}"
         DEPENDS test_backend_builtin_source_cache test_backend_builtin_source_data)
+endif()
+
+if(BUILD_TESTING)
+    add_executable(test_llamacpp_v2_production_switch
+        test/cpp/test_llamacpp_v2_production_switch.cpp
+        src/cpp/server/backends/configured/backend_definition_authorization.cpp
+        src/cpp/server/backends/configured/backend_definition_exports.cpp)
+    target_compile_definitions(test_llamacpp_v2_production_switch PRIVATE
+        LEMON_BACKEND_EXPORT_TESTING LEMONADE_BINDING_TEST LEMONADE_RUNTIME_TEST LEMONADE_TYPED_HOOK_TEST
+        LEMON_TEST_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures"
+        LEMON_PRODUCTION_DEFINITIONS="${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends")
+    target_include_directories(test_llamacpp_v2_production_switch PRIVATE
+        src/cpp/server/backends src/cpp/server/backends/configured)
+    target_link_libraries(test_llamacpp_v2_production_switch PRIVATE
+        lemonade-binding-test lemonade-typed-hook-test lemonade-server-core lemonade-test-isolation)
+    add_cpp_ci_test(LlamaCppV2ProductionSwitchTest CI ON
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/backend_v2_4e3b_transition.py run
+            --build "${CMAKE_CURRENT_BINARY_DIR}"
+            --out "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/artifacts/backend-v2-4e3b/transition"
+            --scratch "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/backend-v2-4e3b/transition"
+        DEPENDS test_llamacpp_v2_production_switch llamacpp-frozen-control-build)
 endif()

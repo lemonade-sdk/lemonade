@@ -40,6 +40,7 @@ public:
     void forward_streaming_request(const std::string& endpoint, const std::string& request_body,
         httplib::DataSink& sink, bool sse = true, long timeout_seconds = 0, TelemetryCallback telemetry_callback = nullptr) override;
 private:
+    friend struct ConfiguredServerTestAccess;
     const OperationProgram* program(BackendOperation operation, OperationDelivery delivery) const;
     const OperationProgram& bound(BackendOperation operation) const;
     const OperationProgram* media(OperationDelivery delivery) const;

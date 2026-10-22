@@ -260,7 +260,12 @@ std::string ArtifactServices::prefix(typed::ArtifactHandle file, std::size_t byt
     }
     return read->prefix(bytes);
 }
-std::optional<typed::ArtifactHeader> ArtifactServices::header(typed::ArtifactHandle file) { return read_header(prefix(file, 262144)); }
+std::optional<typed::ArtifactHeader> ArtifactServices::header(typed::ArtifactHandle file) {
+    const auto bytes = prefix(file, 262144);
+    try { return read_header(bytes); }
+    catch (const std::invalid_argument&) { return {}; }
+    catch (const std::length_error&) { return {}; }
+}
 std::vector<typed::ArtifactEntry> ArtifactServices::entries(typed::ArtifactHandle root) {
     if (lookup(root) != 0 || !inventory_->directory) throw std::logic_error("Artifact handle is not the approved root");
     std::vector<typed::ArtifactEntry> result;

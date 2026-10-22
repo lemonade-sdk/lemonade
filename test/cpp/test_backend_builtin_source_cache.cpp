@@ -63,7 +63,8 @@ const BuiltinExecutionPolicies& embedded_v2_policies() {
                 {}, {}, {}, false, {}, v2::operation_owner_fields(), {}});
         policy.owner_graph_digest = v2::owner_graph_digest(policy.owners);
         policy.policy_digest = v2::export_policy_digest(policy);
-        BuiltinExecutionPolicies result{{policy}, ""};
+        auto result = fixed_builtin_v2_policies();
+        result.leaves.push_back(std::move(policy));
         result.digest = v2::export_registry_digest(result.leaves, installed_hook_abis());
         return result;
     }();
@@ -118,15 +119,15 @@ int run_test(int argc, char** argv) {
         check(rejected, "ResolvedCacheRejectsUnknownExactKey");
     }
     check(catalog_publication().state() == CatalogPublication::State::Empty, "DataOnlyAccessKeepsPublicationEmpty");
-    check(k_backend_definition_v1_source_count == 8 && k_backend_definition_v2_source_count == 1 &&
-        k_backend_definition_source_count == 9 &&
+    check(k_backend_definition_v1_source_count == 8 && k_backend_definition_v2_source_count == 2 &&
+        k_backend_definition_source_count == 10 &&
         k_backend_definition_v1_source_bytes + k_backend_definition_v2_source_bytes == k_backend_definition_source_bytes,
         "SourceInventoryIsExactPartition");
 #ifndef LEMON_SOURCE_CACHE_DATA_ONLY
     const auto frozen = freeze_builtin_catalog();
     const auto snapshot_catalog = make_catalog_source_snapshot(frozen, {});
     const auto admission = snapshot_catalog.snapshot ? admit_catalog(snapshot_catalog.snapshot) : CatalogAdmissionResult{};
-    check(admission.catalog && admission.catalog->metrics().definitions == 9 &&
+    check(admission.catalog && admission.catalog->metrics().definitions == 10 &&
         admission.catalog->metrics().source_bytes == k_backend_definition_source_bytes, "BuiltinSourceChargedExactlyOnce");
     const auto built = build_backend_catalog(frozen, {});
     check(bool(built.catalog), "BuiltinCandidateFinalizes");

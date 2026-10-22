@@ -1,4 +1,6 @@
-#include "lemon/backends/llamacpp/llamacpp_server.h"
+#include "configured_server_transport_fixture.h"
+#include "lemon/backends/backend_registry.h"
+#include "lemon/backends/configured/configured_server.h"
 #include "lemon/utils/aixlog.hpp"
 #include "lemon/utils/http_client.h"
 
@@ -89,31 +91,30 @@ private:
     std::shared_ptr<ProcessState> state_;
 };
 
-class Transport : public LlamaCppServer {
+class FixtureTransportAccess : public WrappedServer {
 public:
-    explicit Transport(int port) : LlamaCppServer("error", nullptr, nullptr) {
-        port_ = port;
-        set_model_metadata("loaded-model", "fixture/repo", ModelType::LLM, DEVICE_CPU, RecipeOptions("llamacpp", {}));
-        set_state(ModelState::READY);
+    static void attach(WrappedServer& server, int port) {
+        auto state = std::make_shared<ProcessState>();
+        ConfiguredServerTestAccess::load(server, port, "loaded-model", [state] { return std::make_unique<FakeProcess>(state); });
     }
-    bool is_backend_alive() const override { return true; }
-    void start_fake(std::shared_ptr<ProcessState> state, int port) {
+    static void start_fake(WrappedServer& server, std::shared_ptr<ProcessState> state, int port) {
         ServerCommand command;
         command.program = "never-executed";
         command.port = port;
-        start_server(std::make_unique<FakeProcess>(std::move(state)), command, 1);
+        (server.*(&FixtureTransportAccess::start_server))(std::make_unique<FakeProcess>(std::move(state)), command, 1);
     }
-    void stop_fake() { stop_server(); }
+    static void stop_fake(WrappedServer& server) { (server.*(&FixtureTransportAccess::stop_server))(); }
 };
 
-json buffered(Transport& server, int operation, const json& input) {
+json buffered(WrappedServer& server, int operation, const json& input) {
     if (operation <= 2) return server.dispatch_completion_operation(static_cast<BackendOperation>(operation), input);
-    if (operation == 3) return server.embeddings(input);
-    if (operation == 4) return server.reranking(input);
-    if (operation == 15) return server.get_slots();
-    if (operation == 16) return server.slots_action(2, "save", input);
-    return server.tokenize(input);
+    if (operation == 3) return dynamic_cast<IEmbeddingsServer&>(server).embeddings(input);
+    if (operation == 4) return dynamic_cast<IRerankingServer&>(server).reranking(input);
+    if (operation == 15) return dynamic_cast<ISlotsServer&>(server).get_slots();
+    if (operation == 16) return dynamic_cast<ISlotsServer&>(server).slots_action(2, "save", input);
+    return dynamic_cast<ITokenizerServer&>(server).tokenize(input);
 }
+
 }
 
 int main() {
@@ -122,7 +123,11 @@ int main() {
         std::ifstream file(std::filesystem::path(LEMON_ORACLE_FIXTURES) / "linux_x64.json");
         const json protocol = json::parse(file).at("protocol");
         Upstream upstream;
-        Transport server(upstream.port);
+        auto owner = create_server("llamacpp", {"error"});
+        check(dynamic_cast<ConfiguredServer*>(owner.get()) && owner->get_descriptor() == descriptor_for("llamacpp"),
+            "actual finalized production factory owns transport");
+        auto& server = *owner;
+        FixtureTransportAccess::attach(server, upstream.port);
         for (const auto& [name, record] : protocol["buffered"].items()) {
             const auto separator = name.find(':');
             const int operation = std::stoi(name.substr(0, separator));
@@ -154,15 +159,15 @@ int main() {
                   "cancelled before forwarding " + std::to_string(operation));
         }
         auto live = std::make_shared<ProcessState>();
-        server.start_fake(live, upstream.port);
+        FixtureTransportAccess::start_fake(server, live, upstream.port);
         check(live->starts == 1 && live->command.ready_endpoint == "/health" && upstream.health_requests > 0,
               "fake launch uses the actual readiness and watchdog endpoint");
-        server.stop_fake();
+        FixtureTransportAccess::stop_fake(server);
         check(live->stops == 1, "fake process stopped once");
         auto dead = std::make_shared<ProcessState>();
         dead->running = false;
         std::string error;
-        try { server.start_fake(dead, upstream.port); }
+        try { FixtureTransportAccess::start_fake(server, dead, upstream.port); }
         catch (const std::runtime_error& exception) { error = exception.what(); }
         check(error == "llama-server failed to start" && dead->starts == 1 && dead->stops == 1,
               "terminated fake process fails readiness and is stopped");

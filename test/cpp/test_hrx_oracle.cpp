@@ -1,6 +1,6 @@
+#include "backend_capabilities_generated.h"
 #include "backend_typed_hook_registry_internal.h"
 #include "lemon/backends/hrx/hrx_server.h"
-#include "lemon/backends/llamacpp/llamacpp_server.h"
 #include "llm_configured_fixture.h"
 
 #include <filesystem>
@@ -397,7 +397,10 @@ void check_registration() {
     check(d.support.size() == 1 && d.support[0].arch_gates.size() == 2 && d.support[0].arch_gates.at("gfx1100").os == std::set<std::string>{"linux"} && d.support[0].arch_gates.at("gfx1151").channels.empty() &&
           compiled.support[0].arch_gates.size() == 2 && compiled.support[0].arch_gates.at("gfx1151").os == std::set<std::string>{"linux"}, "HRX arch gates match the compiled descriptor");
     check(entry->compatibility == TrustedCompatibility::None && !entry->launch_compatibility.device_on_backend_selection && !entry->launch_compatibility.posix_executable_loader_path && entry->launch_compatibility.load_log, "HRX carries only the load-log attachment");
-    check(hrx::capabilities() == 0 && hrx::capabilities() == (llamacpp::capabilities() & ~(CAP_EMBEDDINGS | CAP_RERANKING)), "HRX advertised capability mask stays chat-only");
+    uint32_t vanilla_capabilities = CAP_ALL;
+    for (const auto& entry : lemon::backends::all_backend_capabilities())
+        if (entry.descriptor->recipe == "llamacpp") vanilla_capabilities = entry.capabilities;
+    check(hrx::capabilities() == 0 && hrx::capabilities() == (vanilla_capabilities & ~(CAP_EMBEDDINGS | CAP_RERANKING)), "HRX advertised capability mask stays chat-only");
     const auto* ops = hrx::ops();
     const auto root = std::filesystem::temp_directory_path() / ("hrx-oracle-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
     std::filesystem::create_directories(root / "snapshots/abc");

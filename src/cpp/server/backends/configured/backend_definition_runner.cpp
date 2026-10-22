@@ -374,11 +374,14 @@ std::string DefinitionRunner::validate_file(const std::string& path) const {
 std::string DefinitionRunner::resolve_artifact(const CheckpointResolveContext& context) const {
     if (program_.artifacts.empty()) throw std::logic_error("Configured v2 artifact consumer is unavailable");
     if (context.model_cache_path.empty()) return "";
+    if (context.type == "npu_cache") return "";
     const auto role = context.type.empty() ? "main" : context.type;
-    const auto owner = role == "mmproj" || role == "draft" ? "main" : role;
+    const bool declared = std::any_of(program_.artifacts.begin(), program_.artifacts.end(), [&](const auto& item) { return item.role == role; });
+    const auto owner = declared ? role : "main";
+    const auto resolved_role = !declared && role != "main" ? "mmproj" : role;
     return artifact(owner, [&](const auto& target, auto& guard) {
         runtime::ArtifactServices reads(guard, context.model_cache_path, true);
-        return reads.approved_result(target.resolve_path({reads.root(), role, context.variant}, reads));
+        return reads.approved_result(target.resolve_path({reads.root(), resolved_role, context.variant}, reads));
     });
 }
 std::string DefinitionRunner::find_imported(const std::string& path) const {

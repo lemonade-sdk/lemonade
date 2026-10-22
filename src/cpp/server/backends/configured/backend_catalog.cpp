@@ -100,7 +100,12 @@ BackendCatalog::BackendCatalog(const std::vector<DefinitionSource>& sources) {
 void BackendCatalog::finalize() {
     data_ = std::make_shared<BackendCatalogData>();
     const auto& seeds = builtins_->seeds_ ? *builtins_->seeds_ : builtin_registration_seeds();
+    std::set<std::string> seed_recipes;
     for (const auto& seed : seeds) {
+        if (!seed.descriptor || !seed_recipes.insert(seed.descriptor->recipe).second ||
+            (!seed.definition_id.empty() &&
+                (seed.legacy.create || seed.legacy.spec || seed.legacy.ops || seed.legacy.configured_entry)))
+            throw std::logic_error("Duplicate or ambiguous builtin registration seed");
         if (seed.definition_id.empty()) { registrations_.push_back(seed.legacy); continue; }
         const auto found = std::find_if(entries_.begin(), entries_.end(), [&](const auto& entry) {
             if (!entry->executable_definition) return false;
@@ -131,9 +136,12 @@ void BackendCatalog::finalize() {
         sections.insert(descriptor->effective_config_section());
         for (const auto& option : descriptor->options) option_names.insert(option.name);
         const auto* definition = registration.spec && registration.spec->definition ? registration.spec->definition.get() : nullptr;
-        arms.push_back({descriptor->recipe, definition ? "D" : "A"});
+        if (!registration.create || !registration.ops ||
+            (registration.configured_entry && !registration.spec))
+            throw std::logic_error("Incomplete finalized backend registration");
         const auto* entry = registration.configured_entry;
         const auto* executable = entry ? entry->executable_definition.get() : nullptr;
+        arms.push_back({descriptor->recipe, executable ? "D2" : definition ? "D" : "A"});
         auto row = descriptor_row(*descriptor, definition, false, executable);
         if (definition) {
             ids.insert(definition->id);

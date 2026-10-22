@@ -217,7 +217,9 @@ int main(int argc, char** argv) {
     std::size_t definitions = 0;
     for (const auto& file : std::filesystem::directory_iterator(LEMON_PRODUCTION_DEFINITIONS)) {
         if (file.path().extension() != ".json") continue;
-        const auto declaration = read(file.path());
+        const auto source = read(file.path());
+        const auto declaration = source.at("schema_version") == 2 ?
+            builtin_resolved_source({DefinitionNamespace::Builtin, "llamacpp", 1}).declaration : source;
         const auto recipe = declaration["recipe"].get<std::string>();
         const BackendDescriptor* expected = nullptr;
         for (const auto* descriptor : descriptors) if (descriptor->recipe == recipe) expected = descriptor;
@@ -237,7 +239,7 @@ int main(int argc, char** argv) {
     const std::string fixture_bytes{std::istreambuf_iterator<char>(fixture_stream), std::istreambuf_iterator<char>()};
     check(std::string(k_fixture_source) == fixture_bytes,"synthetic embedded bytes match fixture exactly");
     check(Json::parse(k_fixture_source) == read(fixture_path),"synthetic embedded source matches fixture");
-    check(definitions == 8,"all eight definitions exercised");
+    check(definitions == 9,"all nine definitions exercised");
     check(fixture_descriptor_peer() == &v2_fixture::descriptor,"named inline descriptor address equal across translation units");
     auto declaration = fixture_resolved_definition().declaration;
     check(dump(v2_fixture::descriptor) == dump(descriptor_from_declaration(declaration,DefinitionNamespace::Builtin,DescriptorPlatform::native())),"generated v2 initializer uses pure resolver and mapper");

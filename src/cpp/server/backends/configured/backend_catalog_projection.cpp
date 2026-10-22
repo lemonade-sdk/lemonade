@@ -39,7 +39,7 @@ nlohmann::json installed_definition_admission_features() {
     const auto& schema = v2::schema_document();
     return {{"manifest_version", 1}, {"definition_schema_version", 2},
         {"schema_id", schema_digest(schema.dump())}, {"accepted_definition_versions", {1, 2}},
-        {"acceptance_stage", "declaration_authorization"}, {"executable_definition_versions", {1}},
+        {"acceptance_stage", "execution_finalization"}, {"executable_definition_versions", {1, 2}},
         {"resolver_revision", 1}, {"authorizer_revision", 1}, {"grant_policy_revision", 1},
         {"export_registry_id", installed_builtin_exports().digest()},
         {"hook_abi_id", v2::identity("lemonade.backend-hook-abi.v1\n", v2::hook_abi_json(installed_hook_abis()))},

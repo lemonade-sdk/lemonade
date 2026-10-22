@@ -64,6 +64,7 @@ struct BuiltinExecutionPolicies {
 };
 
 const std::vector<DefinitionSourceView>& embedded_v2_sources();
+const BuiltinExecutionPolicies& fixed_builtin_v2_policies();
 const BuiltinExecutionPolicies& embedded_v2_policies();
 
 class BuiltinCatalogLoader {

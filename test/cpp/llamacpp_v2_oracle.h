@@ -68,8 +68,8 @@ inline Json scoped_case(const Json& input, const DefinitionRunner& runner) {
     return {{"args", options.get_option("llamacpp_args")}, {"error", ""}, {"events", Json::array()}, {"command", nullptr}};
 }
 
-inline Json capture(const std::string& view) {
-    const auto executable = runtime_fixture::executable(Json::parse(read_bytes("llamacpp.candidate.json")));
+inline Json capture(const std::string& view, std::shared_ptr<const ExecutableDefinition> executable = {}) {
+    if (!executable) executable = runtime_fixture::executable(Json::parse(read_bytes("llamacpp.candidate.json")));
     const auto entry = ConfiguredBackendEntry::make(executable);
     const DefinitionRunner runner(executable);
     Json results = Json::object(), counts = Json::object();

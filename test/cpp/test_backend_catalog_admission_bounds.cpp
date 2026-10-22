@@ -19,7 +19,7 @@ int main() {
     values.resize(1008);
     const auto rows_over = admit(values);
     check(!rows_over.catalog && has_code(rows_over.diagnostics, "limit_exceeded"), "public row bound includes compiled-only recipes");
-    for (int i = 1008; i < 1016; ++i) values.push_back({{"schema_version", 2}, {"id", "node-" + std::to_string(i)}, {"recipe", "node-" + std::to_string(i)}});
+    for (int i = 1008; i < 1015; ++i) values.push_back({{"schema_version", 2}, {"id", "node-" + std::to_string(i)}, {"recipe", "node-" + std::to_string(i)}});
     check(snapshot(values).snapshot != nullptr, "builtin sources charged once in 1024 count");
     values.push_back({{"schema_version", 2}, {"id", "node-over"}, {"recipe", "node-over"}});
     check(!snapshot(values).snapshot, "builtin sources cannot bypass definition count");

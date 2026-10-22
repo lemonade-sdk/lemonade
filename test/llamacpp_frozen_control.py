@@ -10,7 +10,7 @@ import tarfile
 
 REPO = Path(__file__).resolve().parents[1]
 BASE = "ab3946f6cf45632b019b5380872b14baa3027e7e"
-ROOT = REPO / ".synagent/scratch/backend-v2-4e3a/frozen-control"
+ROOT = REPO / ".synagent/scratch/backend-v2-4e3b/frozen-control"
 CONTROL_VERSION = "2026.45.0~1777.ab3946f6"
 GENERATED_SHA256 = {
     "lemon/version.h": "f8e2957d359cf72c88c8f2d02c2501a05319bd7187efbe45553c67dbd4cfac1d",

@@ -34,16 +34,24 @@ int main() {
         has_code(compiled_failure.diagnostics, "unsupported_execution_feature") && !backend_catalog(), "FailingDescendantCompilationRejectsWholeProposal");
     auto larger_leaf = leaf;
     larger_leaf["merge"]["launch"]["argv"] = Json::array();
-    for (unsigned i = 0; i < 64; ++i) larger_leaf["merge"]["launch"]["argv"].push_back({{"id", "extra-" + std::to_string(i)}, {"args", {std::string(128, 'x')}}});
+    for (unsigned i = 0; i < 128; ++i) larger_leaf["merge"]["launch"]["argv"].push_back({{"id", "extra-" + std::to_string(i)}, {"args", {std::string(2048, 'x')}}});
     const auto binding_graph = build({parent, larger_leaf});
     check(bool(binding_graph.catalog), "DescendantBindingFixtureFinalizesBeforeReducingLimits");
     if (!binding_graph.catalog) { dump_errors(binding_graph); return finish(); }
     CatalogExecutionLimits binding_limit;
-    binding_limit.binding.retained_bytes = binding_graph.catalog->registrations()[17].spec->executable_definition->metrics().retained_bytes;
+    binding_limit.binding.retained_bytes = 0;
+    for (const auto& row : binding_graph.catalog->registrations()) {
+        if (row.descriptor->recipe == "catalog-leaf") continue;
+        if (row.spec && row.spec->executable_definition)
+            binding_limit.binding.retained_bytes = std::max(binding_limit.binding.retained_bytes,
+                row.spec->executable_definition->metrics().retained_bytes);
+    }
+    check(binding_graph.catalog->registrations().back().spec->executable_definition->metrics().retained_bytes > binding_limit.binding.retained_bytes,
+        "BindingFailureFixtureExceedsEveryPrecedingEntry");
     binding::counters = {};
     const auto binding_failure = build({parent, larger_leaf}, binding_limit);
     check(!binding_failure.catalog && binding_failure.stages.compiled && !binding_failure.stages.bound &&
-        binding::counters.membership_scans > 0 && has_code(binding_failure.diagnostics, "limit_exceeded") && !backend_catalog(),
+        binding::counters.membership_scans == 2 && has_code(binding_failure.diagnostics, "limit_exceeded") && !backend_catalog(),
         "FailingDescendantBindingRejectsAlreadyBoundParent");
     auto invalid_adapter = leaf;
     invalid_adapter["merge"]["launch"]["readiness"]["path"] = "//remote/health";
@@ -73,7 +81,8 @@ int main() {
     auto foreign = parent;
     foreign["merge"]["hooks"]["backend"] = {{"id", "llamacpp.backend"}};
     check(!build({foreign}).catalog, "ExternalDeclarationsCannotMintHookAuthority");
-    check(installed_builtin_exports().exports().empty() && embedded_v2_sources().empty(), "ProductionV2TablesAndExportsStayEmpty");
+    check(installed_builtin_exports().exports().empty() && embedded_v2_sources().size() == 1 &&
+        embedded_v2_sources()[0].key.id == "llamacpp", "ProductionV2LlamaOnlyAndExportsStayEmpty");
     const auto rich = good.catalog->export_schema("catalog-leaf", 2);
     check(rich["recipes"][0]["input_schema_version"] == 2 && rich["executable_definition_versions"] == Json::array({1, 2}), "ExecutableV2PublicProjectionUsesLeafVersion");
     check(before["catalog_id"] == build({parent, leaf, legacy()}).catalog->export_schema()["catalog_id"], "ExecutionCatalogIdentityIsDeterministic");
@@ -88,6 +97,9 @@ int main() {
         DefinitionNamespace::Builtin, DescriptorPlatform::native());
     auto trusted_seeds = builtin_registration_seeds();
     trusted_seeds.push_back({&trusted_descriptor, "binding-fixture", {}});
+    check(!build({}, {}, CatalogAdmissionBuilder::test_with_seeds(trusted_builtins, trusted_seeds)).catalog,
+        "SyntheticAuthorityCannotServeProductionLlamaSeed");
+    trusted_seeds.erase(std::remove_if(trusted_seeds.begin(), trusted_seeds.end(), [](const auto& seed) { return seed.definition_id == "llamacpp"; }), trusted_seeds.end());
     const auto trusted = build({}, {}, CatalogAdmissionBuilder::test_with_seeds(trusted_builtins, trusted_seeds));
     check(trusted.catalog && trusted.stages.executable && binding_fixture::calls.empty(), "HookBearingWholeGraphFinalizationInvokesNothing");
     if (!trusted.catalog) dump_errors(trusted);

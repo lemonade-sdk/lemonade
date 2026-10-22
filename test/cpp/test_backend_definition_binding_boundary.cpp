@@ -52,8 +52,9 @@ int main() {
             "BoundObjectRetainsExactInputs");
         check(!bind_execution_definition({}, {}).definition && !bind_execution_definition(catalog.lock(), {}).definition &&
             !bind_execution_definition({}, compiled.lock()).definition, "NullInputsFailClosed");
-        check(embedded_v2_sources().empty() && embedded_v2_policies().leaves.empty() && installed_builtin_exports().exports().empty(),
-            "ProductionV2ExecutionTablesStillEmpty");
+        check(embedded_v2_sources().size() == 1 && embedded_v2_sources()[0].key.id == "llamacpp" &&
+            embedded_v2_policies().leaves.size() == 1 && embedded_v2_policies().leaves[0].key.id == "llamacpp" && installed_builtin_exports().exports().empty(),
+            "ProductionV2ExecutionTablesExactlyLlamaAndExportsEmpty");
         zero("boundary success and failure");
     } catch (const std::exception& error) { check(false, error.what()); }
     return finish();

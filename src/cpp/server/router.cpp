@@ -3,7 +3,6 @@
 #include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/cloud/cloud_server.h"
-#include "lemon/backends/llamacpp/llamacpp_server.h"
 #include "lemon/backends/fastflowlm/fastflowlm_server.h"
 #include "lemon/backends/whispercpp/whispercpp_server.h"
 #include "lemon/backends/sdcpp/sdcpp_server.h"
@@ -737,7 +736,9 @@ std::unique_ptr<WrappedServer> Router::create_backend_server(const ModelInfo& mo
     // Unknown recipe: fall back to llamacpp, preserving the historical default.
     LOG(DEBUG, "Router") << "No registered backend for recipe '" << model_info.recipe
                          << "', defaulting to LlamaCpp" << std::endl;
-    return std::make_unique<backends::LlamaCppServer>(log_level, model_manager_, backend_manager_);
+    auto fallback = backends::create_server("llamacpp", ctx);
+    if (!fallback) throw std::logic_error("Finalized llama.cpp backend unavailable");
+    return fallback;
 }
 
 bool Router::begin_exclusive(std::atomic<bool>* cancel) {

@@ -40,7 +40,7 @@ inline Json legacy(const std::string& id = "legacy") {
     return value;
 }
 inline std::shared_ptr<const FrozenBuiltinCatalog> empty_builtins() {
-    return CatalogAdmissionBuilder::test_builtins(load_v2_authority_snapshot({}).snapshot, {});
+    return CatalogAdmissionBuilder::test_builtins(BuiltinCatalogLoader::test_freeze({}, std::make_shared<const BuiltinExportRegistry>(installed_builtin_exports())).snapshot, {});
 }
 inline CatalogSnapshotResult snapshot(const std::vector<Json>& values, std::shared_ptr<const FrozenBuiltinCatalog> builtins = {}, DefinitionLimits limits = {}) {
     std::vector<std::string> bytes;

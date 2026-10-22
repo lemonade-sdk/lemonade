@@ -1,6 +1,6 @@
+#include "backend_capabilities_generated.h"
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/hrx/hrx_server.h"
-#include "lemon/backends/llamacpp/llamacpp_server.h"
 #include "lemon/wrapped_server.h"
 
 #include <algorithm>
@@ -189,11 +189,14 @@ void check_complete_matrix() {
         check(!server->supports_operation(Op::ChatCompletion, Delivery::Buffered, static_cast<ModelType>(100)), "invalid model enum");
     }
     check(seen.size() == k_expected_backends.size(), "all hand-authored fixtures are exercised");
-    backends::LlamaCppServer fallback("error", nullptr, nullptr);
-    check(fallback.supports_operation(Op::Embeddings, Delivery::Buffered, ModelType::LLM), "direct llama.cpp fallback constructor binds adapters");
+    auto fallback = backends::create_server("llamacpp", {"error"});
+    check(fallback && fallback->supports_operation(Op::Embeddings, Delivery::Buffered, ModelType::LLM), "finalized llama.cpp fallback factory binds adapters");
     check(backends::create_server("unknown-fixture", {}) == nullptr, "unknown recipe retains registry miss");
     check(!(backends::hrx::capabilities() & CAP_EMBEDDINGS), "HRX advertised mask remains narrow");
-    check(backends::hrx::capabilities() == (backends::llamacpp::capabilities() & ~(CAP_EMBEDDINGS | CAP_RERANKING)),
+    uint32_t vanilla_capabilities = CAP_ALL;
+    for (const auto& entry : lemon::backends::all_backend_capabilities())
+        if (entry.descriptor->recipe == "llamacpp") vanilla_capabilities = entry.capabilities;
+    check(backends::hrx::capabilities() == (vanilla_capabilities & ~(CAP_EMBEDDINGS | CAP_RERANKING)),
           "HRX entire advertised set differs only by embeddings and reranking");
 }
 
