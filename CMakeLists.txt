@@ -1469,8 +1469,10 @@ if(WIN32 AND LEMON_AMICA_ROOT)
 
     add_executable(amica-engine
         src/cpp/amica_engine/amica_engine.cpp
+        src/cpp/amica_engine/app_manifest.cpp
         src/cpp/amica_engine/bundle.cpp
         src/cpp/amica_engine/chat_frontend.cpp
+        src/cpp/amica_engine/graph_abi.cpp
         src/cpp/amica_engine/openai_api.cpp
         src/cpp/amica_engine/tokenizer.cpp)
     target_include_directories(amica-engine PRIVATE "${LEMON_AMICA_ROOT}/include")

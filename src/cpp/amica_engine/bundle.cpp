@@ -1,5 +1,8 @@
 #include "bundle.h"
 
+#include "app_manifest.h"
+#include "graph_abi.h"
+
 #include <algorithm>
 #include <cctype>
 #include <cstring>
@@ -21,16 +24,6 @@ namespace fs = std::filesystem;
 // one copy of each instead of embedding their own.
 constexpr std::uint64_t kExternalWeightsMinBytes = 1ull << 20;
 
-std::string read_text(const fs::path& path) {
-    std::ifstream file(path, std::ios::binary);
-    if (!file) {
-        throw std::runtime_error("cannot open " + path.u8string());
-    }
-    std::ostringstream text;
-    text << file.rdbuf();
-    return text.str();
-}
-
 bool truthy(const json& value) {
     if (value.is_null()) return false;
     if (value.is_boolean()) return value.get<bool>();
@@ -40,113 +33,10 @@ bool truthy(const json& value) {
     return true;
 }
 
-std::string without_whitespace(std::string text) {
-    text.erase(std::remove_if(text.begin(), text.end(), [](unsigned char c) { return std::isspace(c); }),
-               text.end());
-    return text;
-}
-
 std::string trim(const std::string& text) {
     const auto first = text.find_first_not_of(" \t\r\n");
     if (first == std::string::npos) return "";
     return text.substr(first, text.find_last_not_of(" \t\r\n") - first + 1);
-}
-
-// Reads "!cgc.tensor<...>" or "!cgc.null" at text[i]; returns its length, or 0.
-std::size_t match_type(const std::string& text, std::size_t i) {
-    static const std::string kTensor = "!cgc.tensor<";
-    static const std::string kNull = "!cgc.null";
-    if (text.compare(i, kTensor.size(), kTensor) == 0) {
-        const std::size_t close = text.find('>', i + kTensor.size());
-        if (close == std::string::npos || close == i + kTensor.size()) return 0;
-        return close + 1 - i;
-    }
-    if (text.compare(i, kNull.size(), kNull) == 0) return kNull.size();
-    return 0;
-}
-
-struct EntryPoint {
-    std::vector<std::string> inputs;
-    std::vector<std::string> outputs;
-};
-
-// The parameter and result types of a CGC graph's entry point, as
-// "!cgc.tensor<...>" strings without whitespace.
-EntryPoint entry_point(const std::string& graph) {
-    const std::string text = read_text(fs::u8path(graph));
-    const auto fail = [&]() -> EntryPoint { throw std::runtime_error("Cannot read entry-point ABI: " + graph); };
-    const std::size_t keyword = text.find("cgc.entry_point");
-    if (keyword == std::string::npos) return fail();
-    const std::size_t open = text.find('(', text.find('@', keyword));
-    if (open == std::string::npos) return fail();
-    std::size_t close = text.find(')', open + 1);
-    std::size_t arrow = std::string::npos;
-    while (close != std::string::npos) {
-        std::size_t k = close + 1;
-        while (k < text.size() && std::isspace(static_cast<unsigned char>(text[k]))) ++k;
-        if (text.compare(k, 2, "->") == 0) {
-            arrow = k + 2;
-            break;
-        }
-        close = text.find(')', close + 1);
-    }
-    if (arrow == std::string::npos) return fail();
-    const std::size_t body = text.find('{', arrow);
-    if (body == std::string::npos) return fail();
-
-    EntryPoint result;
-    const std::string arguments = text.substr(open + 1, close - open - 1);
-    for (std::size_t i = 0; i < arguments.size(); ++i) {
-        if (arguments[i] != '%') continue;
-        std::size_t k = i + 1;
-        while (k < arguments.size() &&
-               (std::isalnum(static_cast<unsigned char>(arguments[k])) || std::strchr("_.$-", arguments[k]))) {
-            ++k;
-        }
-        if (k == i + 1) continue;
-        while (k < arguments.size() && std::isspace(static_cast<unsigned char>(arguments[k]))) ++k;
-        if (k >= arguments.size() || arguments[k] != ':') continue;
-        ++k;
-        while (k < arguments.size() && std::isspace(static_cast<unsigned char>(arguments[k]))) ++k;
-        const std::size_t length = match_type(arguments, k);
-        if (length == 0) continue;
-        result.inputs.push_back(without_whitespace(arguments.substr(k, length)));
-        i = k + length - 1;
-    }
-    const std::string results = text.substr(arrow, body - arrow);
-    for (std::size_t i = 0; i < results.size(); ++i) {
-        const std::size_t length = match_type(results, i);
-        if (length == 0) continue;
-        result.outputs.push_back(without_whitespace(results.substr(i, length)));
-        i += length - 1;
-    }
-    if (result.inputs.empty() || result.outputs.empty()) {
-        throw std::runtime_error("Entry-point ABI has no inputs or outputs: " + graph);
-    }
-    return result;
-}
-
-std::vector<std::size_t> tensor_dims(const std::string& type) {
-    const std::size_t open = type.find('<');
-    const std::size_t close = type.rfind('>');
-    std::vector<std::size_t> dims;
-    if (open == std::string::npos || close == std::string::npos || close <= open) return dims;
-    std::stringstream inner(type.substr(open + 1, close - open - 1));
-    std::string part;
-    while (std::getline(inner, part, 'x')) {
-        if (!part.empty() && std::all_of(part.begin(), part.end(), [](unsigned char c) { return std::isdigit(c); })) {
-            dims.push_back(std::stoull(part));
-        }
-    }
-    return dims;
-}
-
-std::size_t parameter_index(const std::string& name) {
-    if (name.size() < 4 || name.compare(0, 3, "arg") != 0 ||
-        !std::all_of(name.begin() + 3, name.end(), [](unsigned char c) { return std::isdigit(c); })) {
-        throw std::runtime_error("Expected an argN graph parameter name, got '" + name + "'");
-    }
-    return std::stoull(name.substr(3));
 }
 
 // Binds prefill cache outputs to the decoder inputs with identical types, as
@@ -197,15 +87,16 @@ Bundle::Bundle(const std::string& model_dir) {
     const fs::path dir = fs::u8path(model_dir);
     const fs::path manifest_path = dir / "amica_app.json";
     manifest_path_ = path_string(manifest_path);
-    if (!fs::is_regular_file(manifest_path)) {
-        throw std::runtime_error(manifest_path_ +
-                                 " was not found. Prepare the bundle once with the AMICA ChatApp (for example "
-                                 "Chatapp.ps1 --model <name>) to create it.");
+    if (fs::is_regular_file(manifest_path)) {
+        std::string text = read_text_file(manifest_path_);
+        // PowerShell writes the manifest with a byte order mark.
+        if (text.compare(0, 3, "\xEF\xBB\xBF") == 0) text.erase(0, 3);
+        manifest_ = json::parse(text);
+        manifest_derived_ = false;
+    } else {
+        manifest_ = derive_app_manifest(model_dir);
+        manifest_derived_ = true;
     }
-    std::string text = read_text(manifest_path);
-    // PowerShell writes the manifest with a byte order mark.
-    if (text.compare(0, 3, "\xEF\xBB\xBF") == 0) text.erase(0, 3);
-    manifest_ = json::parse(text);
 
     source_dir_ = path_string(fs::weakly_canonical(dir / fs::u8path(manifest_.value("source_model_dir", "."))));
     generation_ = manifest_.value("generation", json());

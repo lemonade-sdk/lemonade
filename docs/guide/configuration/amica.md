@@ -2,6 +2,8 @@
 
 The `amica` recipe runs AMICA ChatApp model bundles (precompiled CGC MLIR graphs plus safetensors weights) on AMD GPUs through the public AMICA API and DirectX 12. It serves `chat/completions` and `completions`, streaming included.
 
+For a step-by-step setup, including building AMICA and Lemonade and testing the result, see [`src/cpp/amica_engine/README.md`](https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/amica_engine/README.md).
+
 ## How it runs
 
 A loaded model is served by **`amica-engine`**, a native program built with Lemonade against the AMICA API (`amica.h`, `amica.dll`). No Python is involved.
@@ -16,7 +18,7 @@ Prompt and context length are fixed by the bundle's graphs: the largest prefill 
 
 Both bundle layouts that `amica-driver` runs are supported:
 
-- **LM-head bundles** (`decoder_append` in `amica_app.json`, such as Qwen2.5-0.5B, Qwen3-0.6B, and Llama 3.2 1B): prefill and decoder take FP32 embedding rows, and a separate LM-head graph produces logits.
+- **LM-head bundles** (such as Qwen2.5-0.5B, Qwen3-0.6B, and Llama 3.2 1B): prefill and decoder take FP32 embedding rows, and a separate LM-head graph produces logits.
 - **Self-contained bundles** (`self_contained_logits`, such as gpt-oss-20b and qwen3.8-flash-next): prefill and decoder take token IDs and an attention mask and produce logits themselves. The context length is the decoder's attention-mask length.
 
 Bundles that need `amica_optimizations` or `parameter_resources` are rejected when the model loads, because the public AMICA API cannot apply them.
@@ -37,7 +39,7 @@ On a discrete GPU, weights in system memory are read over PCIe on every token. O
 
 - Windows 10 version 1903 or later (for the system ICU library) with an AMD RDNA3 or RDNA4 GPU.
 - An AMICA install: a `tools` directory containing `amica-driver.exe`, next to the `amica/` directory containing `amica.dll`.
-- A prepared model bundle, meaning a bundle directory that contains `amica_app.json`. Running `Chatapp.ps1 --model <name>` once prepares it.
+- An AMICA ChatApp model bundle: the CGC MLIR graphs, the safetensors weights, `tokenizer.json`, and the model's config files. A bundle needs no preparation: when it has no `amica_app.json`, `amica-engine` derives that manifest from the bundle's files the way the AMICA ChatApp does.
 
 ## Build
 

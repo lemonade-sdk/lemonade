@@ -1596,7 +1596,8 @@ int main(int argc, char** argv) {
         const auto context = bundle.context_capacity();
         log("model=" + model_dir + " " + engine.summary() +
             " context=" + (context ? std::to_string(*context) : std::string("unknown")) +
-            " padding=" + bundle.prompt_padding());
+            " padding=" + bundle.prompt_padding() +
+            " manifest=" + (bundle.manifest_derived() ? "derived" : "amica_app.json"));
         return amica_engine::serve(host, port, model_name, bundle, frontend, engine);
     } catch (const std::exception& error) {
         log(std::string("failed to load the model: ") + error.what());

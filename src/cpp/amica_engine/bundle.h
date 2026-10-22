@@ -9,7 +9,8 @@
 
 namespace amica_engine {
 
-// A prepared AMICA ChatApp bundle: amica_app.json and the graphs it names.
+// An AMICA ChatApp bundle: its graphs, weights and tokenizer, described by
+// amica_app.json when ChatApp has prepared one and derived otherwise.
 class Bundle {
 public:
     explicit Bundle(const std::string& model_dir);
@@ -25,6 +26,10 @@ public:
     bool chat_template() const { return chat_template_; }
 
     const std::string& prompt_padding() const { return prompt_padding_; }
+
+    // True when the bundle had no amica_app.json and its manifest was derived
+    // from the bundle's own files.
+    bool manifest_derived() const { return manifest_derived_; }
     std::size_t max_prompt_tokens() const { return prefill_.back().capacity; }
 
     // The most tokens, prompt plus generated, one request can hold; unknown
@@ -44,6 +49,7 @@ private:
     void build_plan();
 
     nlohmann::json manifest_;
+    bool manifest_derived_ = false;
     nlohmann::json generation_;
     std::string manifest_path_;
     std::string source_dir_;
