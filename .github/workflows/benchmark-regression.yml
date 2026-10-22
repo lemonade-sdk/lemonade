@@ -737,7 +737,10 @@ jobs:
             if not isinstance(model_entries, list):
               model_entries = [data]
             for me in model_entries:
-              mdl = me.get("model", data.get("model", "unknown"))
+              raw_mdl = me.get("model", data.get("model", "unknown"))
+              if fid == "llamacpp-hrx" and raw_mdl not in MODEL_ALIASES:
+                continue
+              mdl = MODEL_ALIASES.get(raw_mdl, raw_mdl)
               quant = quant_from_checkpoint(me, data)
               for br in me.get("results", []):
                 for sc in br.get("scenarios", []):
