@@ -63,7 +63,8 @@ public:
         const std::string& request_body,
         httplib::DataSink& sink,
         long timeout_seconds = 300,
-        std::function<void()> on_chunk = nullptr
+        std::function<void()> on_chunk = nullptr,
+        const std::map<std::string, std::string>& headers = {}
     );
 
     // Splits on all three SSE line terminators (LF, CRLF, CR). A trailing CR is

@@ -53,8 +53,9 @@ extern const char* const kPeerAuthorizationHeader;
 /// prefix length} or an HTTP error status and message.
 std::pair<int, std::string> relay_target(const nlohmann::json& members, const std::string& self_node_id,
     const std::string& node_id);
-/// Sends `req` to http://127.0.0.1:`port``path` and streams the reply into `res`, keeping
-/// status and Content-Type. Blocks until the upstream reply headers arrive.
+/// Sends a GET or POST `req` to http://127.0.0.1:`port``path` with lemond's HTTP client.
+/// A POST whose JSON body sets "stream": true is streamed like a backend response;
+/// other replies keep the peer's status and body.
 void relay_http(uint16_t port, const std::string& path, const httplib::Request& req, httplib::Response& res);
 }
 

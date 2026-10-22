@@ -1,17 +1,17 @@
 #include "lemon/nexus_manager.h"
+#include "lemon/error_types.h"
+#include "lemon/streaming_proxy.h"
+#include "lemon/utils/http_client.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
 
 #include <algorithm>
-#include <condition_variable>
-#include <deque>
 #include <filesystem>
 #include <fstream>
 #include <functional>
 #include <map>
 #include <random>
 #include <stdexcept>
-#include <thread>
 #ifdef LEMONADE_WITH_NEXUS
 #include <LemonadeNexusSDK/lemonade_nexus.h>
 #endif
@@ -78,30 +78,6 @@ void reply_error(httplib::Response& res, int status, const std::string& message)
     res.status = status;
     res.set_content(json{{"error", message}}.dump(), "application/json");
 }
-
-// Hands a relayed reply from the upstream client thread to the content provider, so the
-// caller sees status and Content-Type first and then each chunk as it arrives.
-struct RelayStream {
-    std::mutex mutex;
-    std::condition_variable changed;
-    bool headers{false};
-    bool done{false};
-    bool cancelled{false};
-    int status{502};
-    std::string content_type;
-    std::deque<std::string> chunks;
-    std::unique_ptr<httplib::Client> client;
-    std::thread worker;
-    void finish() {
-        {
-            std::lock_guard<std::mutex> lock(mutex);
-            cancelled = true;
-        }
-        changed.notify_all();
-        if (client) client->stop();
-        if (worker.joinable()) worker.join();
-    }
-};
 
 std::string multipart_body(const httplib::MultipartFormData& form, const std::string& boundary) {
     std::string body;
@@ -306,83 +282,52 @@ std::pair<int, std::string> relay_target(const json& members, const std::string&
 }
 
 void relay_http(uint16_t port, const std::string& path, const httplib::Request& req, httplib::Response& res) {
-    auto stream = std::make_shared<RelayStream>();
-    httplib::Request upstream;
-    upstream.method = req.method;
-    upstream.path = path;
-    for (const auto* name : {"Accept", "Content-Type", "X-Client-Session-Id"}) {
-        if (req.has_header(name)) upstream.set_header(name, req.get_header_value(name));
-    }
+    const auto url = "http://127.0.0.1:" + std::to_string(port) + path;
+    std::map<std::string, std::string> headers;
     const auto peer_key = req.get_header_value(kPeerAuthorizationHeader);
-    if (!peer_key.empty()) upstream.set_header("Authorization", peer_key);
-    if (req.is_multipart_form_data()) {
-        std::random_device random;
-        const auto boundary = "lemonade-relay-" + std::to_string(random()) + std::to_string(random()) + std::to_string(random());
-        upstream.headers.erase("Content-Type");
-        upstream.set_header("Content-Type", "multipart/form-data; boundary=" + boundary);
-        upstream.body = multipart_body(req.form, boundary);
-    } else {
-        upstream.body = req.body;
-    }
-    upstream.response_handler = [stream](const httplib::Response& response) {
-        {
-            std::lock_guard<std::mutex> lock(stream->mutex);
-            stream->status = response.status;
-            stream->content_type = response.get_header_value("Content-Type");
-            stream->headers = true;
-        }
-        stream->changed.notify_all();
-        return true;
-    };
-    upstream.content_receiver = [stream](const char* data, size_t length, auto, auto) {
-        {
-            std::lock_guard<std::mutex> lock(stream->mutex);
-            if (stream->cancelled) return false;
-            stream->chunks.emplace_back(data, length);
-        }
-        stream->changed.notify_all();
-        return true;
-    };
-    stream->client = std::make_unique<httplib::Client>("127.0.0.1", port);
-    stream->client->set_connection_timeout(10, 0);
-    stream->client->set_read_timeout(300, 0);
-    stream->client->set_write_timeout(300, 0);
-    stream->worker = std::thread([stream, upstream = std::move(upstream)]() mutable {
-        httplib::Response response;
-        auto error = httplib::Error::Success;
-        stream->client->send(upstream, response, error);
-        {
-            std::lock_guard<std::mutex> lock(stream->mutex);
-            stream->done = true;
-        }
-        stream->changed.notify_all();
-    });
-
-    std::unique_lock<std::mutex> lock(stream->mutex);
-    stream->changed.wait(lock, [&] { return stream->headers || stream->done; });
-    if (!stream->headers) {
-        lock.unlock();
-        stream->finish();
-        reply_error(res, 502, "Cannot reach that device's server through the mesh");
-        return;
-    }
-    res.status = stream->status;
-    const auto type = stream->content_type.empty() ? std::string("application/octet-stream") : stream->content_type;
-    lock.unlock();
+    if (!peer_key.empty()) headers["Authorization"] = peer_key;
+    if (req.has_header("X-Client-Session-Id")) headers["X-Client-Session-Id"] = req.get_header_value("X-Client-Session-Id");
     res.set_header("Cache-Control", "no-store");
-    res.set_chunked_content_provider(type, [stream](size_t, httplib::DataSink& sink) {
-        std::unique_lock<std::mutex> lock(stream->mutex);
-        stream->changed.wait(lock, [&] { return !stream->chunks.empty() || stream->done; });
-        while (!stream->chunks.empty()) {
-            auto chunk = std::move(stream->chunks.front());
-            stream->chunks.pop_front();
-            lock.unlock();
-            if (!sink.write(chunk.data(), chunk.size())) return false;
-            lock.lock();
+    try {
+        if (req.method == "GET") {
+            const auto reply = utils::HttpClient::get(url, headers, 0, utils::HttpSecurityPolicy::TrustedLoopback);
+            res.status = reply.status_code;
+            res.set_content(reply.body, "application/json");
+            return;
         }
-        if (stream->done) sink.done();
-        return true;
-    }, [stream](bool) { stream->finish(); });
+        auto body = req.body;
+        if (req.is_multipart_form_data()) {
+            std::random_device random;
+            const auto boundary = "lemonade-relay-" + std::to_string(random()) + std::to_string(random()) + std::to_string(random());
+            headers["Content-Type"] = "multipart/form-data; boundary=" + boundary;
+            body = multipart_body(req.form, boundary);
+        } else {
+            headers["Content-Type"] = req.has_header("Content-Type") ? req.get_header_value("Content-Type") : "application/json";
+        }
+        const auto request = json::parse(body, nullptr, false);
+        if (request.is_object() && request.value("stream", false)) {
+            // Same path as streamed backend responses: writes block on the client socket.
+            res.set_chunked_content_provider("text/event-stream",
+                [url, body, headers](size_t offset, httplib::DataSink& sink) {
+                    if (offset > 0) return false;
+                    try {
+                        StreamingProxy::forward_byte_stream(url, body, sink, 300, nullptr, headers);
+                    } catch (const std::exception& e) {
+                        const auto error = "data: " + ErrorResponse::create(e.what(), "streaming_error").dump() + "\n\n";
+                        sink.write(error.data(), error.size());
+                        sink.done();
+                    }
+                    return false;
+                });
+            return;
+        }
+        const auto reply = utils::HttpClient::post(url, body, headers, 300, utils::HttpSecurityPolicy::TrustedLoopback);
+        const auto type = reply.headers.find("content-type");
+        res.status = reply.status_code;
+        res.set_content(reply.body, type != reply.headers.end() ? type->second : "application/json");
+    } catch (const std::exception&) {
+        reply_error(res, 502, "Cannot reach that device's server through the mesh");
+    }
 }
 }
 
@@ -1086,9 +1031,6 @@ void NexusManager::register_routes(httplib::Server& server, NexusListener listen
         };
         server.Get(relayed, relay_route);
         server.Post(relayed, relay_route);
-        server.Put(relayed, relay_route);
-        server.Patch(relayed, relay_route);
-        server.Delete(relayed, relay_route);
     }
 }
 }

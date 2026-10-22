@@ -378,7 +378,8 @@ void StreamingProxy::forward_byte_stream(
     const std::string& request_body,
     httplib::DataSink& sink,
     long timeout_seconds,
-    std::function<void()> on_chunk) {
+    std::function<void()> on_chunk,
+    const std::map<std::string, std::string>& headers) {
 
     bool stream_error = false;
 
@@ -410,7 +411,7 @@ void StreamingProxy::forward_byte_stream(
 
             return true;
         },
-        {},
+        headers,
         timeout_seconds,
         [&backend_status](int status) { backend_status = status; },
         utils::HttpSecurityPolicy::TrustedLoopback

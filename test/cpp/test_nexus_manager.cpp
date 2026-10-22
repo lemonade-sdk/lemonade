@@ -104,6 +104,10 @@ void check_relay_stream(const std::function<void(bool, const char*)>& check) {
     httplib::Server peer;
     std::string seen_authorization;
     std::string seen_body;
+    peer.Get("/api/v1/health", [&](const httplib::Request& req, httplib::Response& res) {
+        seen_authorization = req.get_header_value("Authorization");
+        res.set_content(R"({"status":"ok"})", "application/json");
+    });
     peer.Post("/api/v1/chat/completions", [&](const httplib::Request& req, httplib::Response& res) {
         seen_authorization = req.get_header_value("Authorization");
         seen_body = req.body;
@@ -127,9 +131,11 @@ void check_relay_stream(const std::function<void(bool, const char*)>& check) {
     peer.wait_until_ready();
 
     httplib::Server front;
-    front.Post(R"(/relay(/.*))", [&](const httplib::Request& req, httplib::Response& res) {
+    const auto relay = [&](const httplib::Request& req, httplib::Response& res) {
         access::relay_http(static_cast<uint16_t>(peer_port), req.matches[1].str(), req, res);
-    });
+    };
+    front.Get(R"(/relay(/.*))", relay);
+    front.Post(R"(/relay(/.*))", relay);
     front.Post(R"(/closed(/.*))", [&](const httplib::Request& req, httplib::Response& res) {
         access::relay_http(1, req.matches[1].str(), req, res);
     });
@@ -146,6 +152,9 @@ void check_relay_stream(const std::function<void(bool, const char*)>& check) {
     check(seen_authorization == "Bearer peer-key" && seen_body == R"({"stream":true})", "Relay sends only the peer key and the body");
     auto unauthorized = client.Post("/relay/api/v1/chat/completions", httplib::Headers{{"Authorization", "Bearer local-key"}}, "{}", "application/json");
     check(unauthorized && unauthorized->status == 401 && seen_authorization.empty(), "Relay never forwards the caller's own key");
+    auto health = client.Get("/relay/api/v1/health", keys);
+    check(health && health->status == 200 && health->body == R"({"status":"ok"})" && seen_authorization == "Bearer peer-key",
+        "Relay forwards a GET with the peer key");
     auto unreachable = client.Post("/closed/api/v1/chat/completions", keys, "{}", "application/json");
     check(unreachable && unreachable->status == 502, "Relay reports an unreachable peer");
     front.stop(); front_worker.join();
