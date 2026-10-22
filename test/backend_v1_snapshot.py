@@ -12,6 +12,7 @@ import tempfile
 from urllib.parse import quote
 
 from backend_catalog_http import Server, definition, prepare, request
+from backend_definition_inventory import production_inventory
 from backend_schema_cli import Fixture
 
 REPO = Path(__file__).resolve().parents[1]
@@ -49,7 +50,9 @@ def capture(lemond, cli):
                 for row in schema["recipes"]
                 if row["definition_id"] is not None
             }
-            assert len(result["definitions"]) == 8
+            assert (
+                set(result["definitions"]) == production_inventory()
+            ), "ExactMixedDefinitionSet"
             result["filtered"] = {
                 row["recipe"]: api("/v1/backends/schema?recipe=" + quote(row["recipe"]))
                 for row in schema["recipes"]

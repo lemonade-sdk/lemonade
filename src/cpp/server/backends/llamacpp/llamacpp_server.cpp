@@ -27,6 +27,7 @@
 #include "lemon/utils/path_utils.h"
 #include "lemon/utils/process_manager.h"
 #include "lemon/utils/recipe_arg_resolver.h"
+#include "legacy_llamacpp_artifact_ops.h"
 #include "llamacpp_system_utils.h"
 #include <regex>
 #include <set>
@@ -757,7 +758,7 @@ bool is_ggml_hip_plugin_available() {
 
 
 // llamacpp model-management behavior: GGUF metadata + capability labels.
-class LlamaCppOps : public BackendOps {
+class LlamaCppOps : public LegacyLlamaCppArtifactOps {
 public:
     void resolve_runtime_options(const ModelInfo& info, RecipeOptions& options) const override {
         const json merge_args_value = options.get_option("merge_args");
@@ -769,84 +770,6 @@ public:
         options.set_option(
             "llamacpp_args",
             resolve_llamacpp_runtime_args(info, custom_args, merge_args));
-    }
-
-    void populate_metadata(ModelInfo& info, const BackendOpsContext&) const override {
-        const std::string gguf_path = info.resolved_path();
-        if (gguf_path.size() < 5) {
-            return;
-        }
-        std::string ext = gguf_path.substr(gguf_path.size() - 5);
-        std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
-        if (ext != ".gguf") {
-            return;
-        }
-        std::error_code ec;
-        if (!std::filesystem::exists(lemon::utils::path_from_utf8(gguf_path), ec)) {
-            return;
-        }
-        GgufMetadata meta;
-        if (!read_gguf_metadata(meta, gguf_path)) {
-            return;
-        }
-        info.max_context_window = meta.context_length;
-        info.gguf = std::move(meta);
-        // GGUF vision/tool metadata are LLM capabilities. Don't apply them to
-        // embedding/reranking models, or labels like tool-calling would
-        // reclassify the model away from its endpoint type.
-        if (info.type == ModelType::LLM) {
-            apply_gguf_capability_labels(info.labels, info.gguf.caps);
-        }
-    }
-
-    std::string resolve_checkpoint_path(const ModelInfo& info,
-                                        const CheckpointResolveContext& ctx) const override {
-        // The main checkpoint is a GGUF file (with sharding/variant resolution);
-        // auxiliary checkpoints (mmproj, …) use the shared default.
-        if (ctx.type == "main") {
-            return resolve_gguf_path(ctx.model_cache_path, ctx.variant);
-        }
-        return BackendOps::resolve_checkpoint_path(info, ctx);
-    }
-
-    std::string find_imported_checkpoint(const std::string& import_dir) const override {
-        // The primary artifact is the (non-mmproj) GGUF file.
-        return resolve_gguf_path(import_dir, "");
-    }
-
-    std::string validate_registration_checkpoint(const std::string& checkpoint) const override {
-        // A GGUF checkpoint must name its quant via CHECKPOINT:VARIANT.
-        std::string lower = checkpoint;
-        std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
-        if (lower.find("gguf") != std::string::npos &&
-            checkpoint.find(':') == std::string::npos) {
-            return "You are required to provide a 'variant' in the checkpoint field when "
-                   "registering a GGUF model. The variant is provided as CHECKPOINT:VARIANT. "
-                   "For example: Qwen/Qwen2.5-Coder-3B-Instruct-GGUF:Q4_0 or "
-                   "Qwen/Qwen2.5-Coder-3B-Instruct-GGUF:qwen2.5-coder-3b-instruct-q4_0.gguf";
-        }
-        return "";
-    }
-
-    std::string validate_checkpoint_file(const std::string& resolved_path) const override {
-        // A .gguf file in the cache must start with the GGUF magic, else it's a
-        // truncated/corrupt download and the model is not really present.
-        std::error_code ec;
-        std::filesystem::path p = lemon::utils::path_from_utf8(resolved_path);
-        if (std::filesystem::is_directory(p, ec)) {
-            return "";
-        }
-        std::string ext = resolved_path.size() >= 5 ? resolved_path.substr(resolved_path.size() - 5) : "";
-        std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
-        if (ext != ".gguf") {
-            return "";
-        }
-        std::ifstream in(p, std::ios::binary);
-        char magic[4] = {};
-        in.read(magic, sizeof(magic));
-        bool ok = in.gcount() == static_cast<std::streamsize>(sizeof(magic)) &&
-                  magic[0] == 'G' && magic[1] == 'G' && magic[2] == 'U' && magic[3] == 'F';
-        return ok ? "" : "Invalid GGUF cache file";
     }
 
     std::string resolve_version(const std::string& backend,

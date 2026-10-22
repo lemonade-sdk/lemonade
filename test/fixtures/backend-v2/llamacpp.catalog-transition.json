@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "stage": "inert-preparation",
+  "base_commit": "ab3946f6cf45632b019b5380872b14baa3027e7e",
+  "base_tree": "6f3a0d3370989a794e7393ed0dbbc9d310ea85d7",
+  "snapshot_sha256": "4a17cde8ce2ba86a436a6a1246f6697166905cf72d8fe77074474a33273de4e7",
+  "snapshot_bytes": 370357,
+  "candidate_sha256": "a74d8c2c10376775870f6b098a0b5dd8afcab98782ad125b2962298b5b93e353",
+  "v1_sources": {
+    "ds4": "dd85fbc54c8c747b26685dfe496146fd49af347d9b8876e2976c54176384bd17",
+    "hrx": "64c3fe332d2581a9c87ba4fffcd535d741f58a1fd570156a84423246b7ae781f",
+    "kokoro": "cbab01721de1f5bdacffef4e835bd5dd035be3355f341640cd9d2611f7a0bbb3",
+    "moonshine": "9777cdeb27e63151c74da9bae47003caa1804ba0de8970c523a4c00952b8bb25",
+    "onnxruntime": "4c117e1c2c86fc4becf10c84c1ef11cb04ad2cc94e993c25eee33e8c291ecbd6",
+    "ryzenai": "562afd89be991c9281d679e1f596b39ed417a21150d6d12f9961f0bffca12b6f",
+    "thinksound": "be23d5316a254c75e457120b9593a9afb2c0eaaf7cec6621a141900e2f820982",
+    "trellis": "d61c2a60b67e999e05d749e0a7e59364813cd86ec71ebf9dc08fe300cb6da690"
+  },
+  "recipes": [
+    "llamacpp",
+    "llamacpp-hrx",
+    "whispercpp",
+    "moonshine",
+    "kokoro",
+    "sd-cpp",
+    "flm",
+    "ryzenai-llm",
+    "vllm",
+    "thenoise",
+    "ds4",
+    "cloud",
+    "thinksound",
+    "acestep",
+    "onnxruntime",
+    "trellis",
+    "openmoss"
+  ],
+  "changes": []
+}

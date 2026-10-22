@@ -1,3 +1,4 @@
+#include "backend_typed_hook_registry_internal.h"
 #include "lemon/backends/hrx/hrx_server.h"
 #include "lemon/backends/llamacpp/llamacpp_server.h"
 #include "llm_configured_fixture.h"
@@ -14,6 +15,28 @@ void operator delete(void* memory, size_t) noexcept { std::free(memory); }
 void operator delete[](void* memory, size_t) noexcept { std::free(memory); }
 
 namespace {
+unsigned v2_entries = 0, runner_entries = 0, service_entries = 0;
+bool poison_v2 = false;
+}
+
+void lemon::backends::typed::observe_entry(const char*) {
+    ++v2_entries;
+    if (poison_v2) throw std::logic_error("HrxGainedNothing:poisoned v2 target");
+}
+
+#ifdef LEMON_HRX_WRAP_V2
+extern "C" void __wrap__ZN5lemon8backends7runtime5FrameC1ERKNS0_20ExecutableDefinitionE(...) {
+    ++runner_entries;
+    throw std::logic_error("HrxGainedNothing:v2 runner frame");
+}
+extern "C" void __wrap__ZN5lemon8backends7runtime16ArtifactServicesC1ERNS1_15InvocationGuardERKNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEEb(...) {
+    ++service_entries;
+    throw std::logic_error("HrxGainedNothing:v2 artifact service");
+}
+#endif
+
+namespace {
+namespace fs = std::filesystem;
 const std::string k_sse = "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\ndata: [DONE]\n\n";
 
 class Upstream {
@@ -240,6 +263,131 @@ void check_operations(Upstream& upstream) {
     check(upstream.last("target") == "/tokenize" && json::parse(upstream.last("body")) == plain, "HRX tokenize retains POST dispatch");
 }
 
+template <typename T>
+void write_number(std::ostream& output, T value) {
+    for (size_t i = 0; i < sizeof(T); ++i) output.put(static_cast<char>((value >> (8 * i)) & 255));
+}
+
+void write_string(std::ostream& output, const std::string& value) {
+    write_number<std::uint64_t>(output, value.size());
+    output.write(value.data(), value.size());
+}
+
+json hrx_gguf(const json& input) {
+    const auto root = std::filesystem::temp_directory_path() / ("hrx-artifacts-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    fs::create_directories(root);
+    const fs::path cache = root / "cache";
+    if (input.value("create_cache", true)) fs::create_directory(cache);
+    const json file_values = input.value("files", json::object());
+    for (const auto& [name, content] : file_values.items()) {
+        const auto path = cache / name;
+        fs::create_directories(path.parent_path());
+        std::ofstream file(path, std::ios::binary);
+        if (content.is_object()) {
+            file.write("GGUF", 4);
+            write_number<std::uint32_t>(file, 3);
+            write_number<std::uint64_t>(file, 0);
+            write_number<std::uint64_t>(file, content.size());
+            for (const auto& [key, value] : content.items()) {
+                write_string(file, key);
+                write_number<std::uint32_t>(file, value.is_string() ? 8 : 4);
+                if (value.is_string()) write_string(file, value.get<std::string>());
+                else write_number<std::uint32_t>(file, value.get<std::uint32_t>());
+            }
+        } else file << content.get<std::string>();
+    }
+    json result;
+    const std::string variant = input.value("variant", "");
+    result["resolved"] = hrx::ops()->resolve_checkpoint_path(ModelInfo{}, CheckpointResolveContext{"", cache.string(), "", "", variant, "main"});
+    result["imported"] = hrx::ops()->find_imported_checkpoint(cache.string());
+    CheckpointResolveContext context;
+    context.model_cache_path = cache.string();
+    context.variant = variant;
+    context.type = "main";
+    const auto input_model = input.value("model", json::object());
+    ModelInfo info;
+    info.labels = input_model.value("labels", std::vector<std::string>{});
+    const auto type = input_model.value("type", "llm");
+    info.type = type == "embedding" ? ModelType::EMBEDDING : type == "reranking" ? ModelType::RERANKING : ModelType::LLM;
+    result["checkpoint"] = hrx::ops()->resolve_checkpoint_path(info, context);
+    result["files"] = json::object();
+    for (const auto& [name, content] : file_values.items()) {
+        (void)content;
+        result["files"][name] = hrx::ops()->validate_checkpoint_file((cache / name).string());
+    }
+    result["directory"] = hrx::ops()->validate_checkpoint_file(cache.string());
+    result["registration"] = hrx::ops()->validate_registration_checkpoint(input.value("registration", "repo/model-GGUF"));
+    info.resolved_paths["main"] = (cache / input.value("metadata_file", "missing.gguf")).string();
+    hrx::ops()->populate_metadata(info, {});
+    result["metadata"] = {{"architecture", info.gguf.architecture}, {"context", info.max_context_window},
+        {"vision", info.gguf.caps.vision}, {"tool_calling", info.gguf.caps.tool_calling}, {"mtp", info.gguf.caps.mtp}, {"labels", info.labels}};
+    auto bytes = result.dump();
+    const auto prefix = root.string();
+    for (auto at = bytes.find(prefix); at != std::string::npos; at = bytes.find(prefix, at + 6)) bytes.replace(at, prefix.size(), "<TEMP>");
+    fs::remove_all(root);
+    return json::parse(bytes);
+}
+
+void check_hrx_gained_nothing(Upstream& upstream) {
+    const auto* ops = hrx::ops();
+    const auto fixtures = fs::path(LEMON_ORACLE_FIXTURES);
+    const auto cases = json::parse(std::ifstream(fixtures / "cases.json"));
+    const auto expected = json::parse(std::ifstream(fixtures / "linux_x64.json"));
+    unsigned artifacts = 0;
+    for (const auto& input : cases) if (input.at("kind") == "gguf") {
+        const auto actual = hrx_gguf(input);
+        check(actual == expected.at("cases").at(input.at("id").get<std::string>()).at("gguf"),
+            "HrxGainedNothing:exact frozen artifact result:" + input.at("id").get<std::string>());
+        ++artifacts;
+    }
+    check(artifacts == 30, "HrxGainedNothing:all thirty frozen artifact cases");
+    for (const auto& labels : {std::vector<std::string>{"dflash", "mtp"}, std::vector<std::string>{"mtp"}}) {
+        auto model = hrx_model();
+        model.labels = labels;
+        model.checkpoints["draft"] = "repo/DFlash-draft.gguf";
+        for (const auto& args : {json(), json("--threads 7"), json(7)}) {
+            auto options = hrx_options("--threads 3", 512);
+            options.set_option("llamacpp_args", args);
+            const auto before = options.to_json();
+            ops->resolve_runtime_options(model, options);
+            check(options.to_json() == before, "HrxGainedNothing:no vanilla DFlash/MTP/parallel runtime defaults or llamacpp_args mutation");
+        }
+    }
+    for (const auto& type : {ModelType::EMBEDDING, ModelType::RERANKING}) {
+        Arm arm(upstream.port);
+        auto model = hrx_model();
+        model.type = type;
+        const auto options = hrx_options(nullptr, 512);
+        arm.server->set_model_metadata("fixture", "fixture/repo", type, DEVICE_NPU, options);
+        arm.server->load("fixture", model, options, false);
+        const auto& args = arm.fixture.command.args;
+        auto expected = argv(upstream.port, {"--parallel", "1"});
+        expected[3] = "512";
+        check(args == expected && options.get_option("ctx_size") == 512, "HrxGainedNothing:no embedding context floor, own launch parallel retained");
+        check(arm.server->get_device_type() == DEVICE_NPU, "HrxGainedNothing:preassigned device unchanged");
+    }
+    for (const auto* hf : {"--hf-repo owner/model --hf-file model.gguf", "--model-url https://invalid.example/model.gguf"}) {
+        Arm arm(upstream.port);
+        auto options = hrx_options();
+        options.set_option("hf_load", true);
+        options.set_option("llamacpp_args", hf);
+        auto model = hrx_model("");
+        model.extras["hf_load"] = true;
+        check(load(arm, options, model) == "GGUF file not found for checkpoint: fixture/repo" &&
+            arm.fixture.events == std::vector<std::string>{"install:llamacpp-hrx:hrx"},
+            "HrxGainedNothing:HF options cannot bypass missing-main failure after installation");
+    }
+    for (const bool found : {false, true}) {
+        const auto result = ops->check_install("system", found);
+        check(ops->resolve_version("system", "file-version") == "file-version" &&
+            result.installed == found && result.error.empty(), "HrxGainedNothing:base system behavior without probe");
+    }
+    check(!hrx::spec()->executable_definition && hrx::configured_entry()->definition->records.at("schema_version") == 1,
+        "HrxGainedNothing:legacy definition has no executable runner");
+    check(v2_entries == 0 && runner_entries == 0 && service_entries == 0,
+        "HrxGainedNothing:zero v2 target, runner and service entries");
+}
+
 void check_registration() {
     const auto entry = hrx::configured_entry();
     const auto& compiled = registered_descriptor("llamacpp-hrx");
@@ -268,6 +416,10 @@ void check_registration() {
     info.resolved_paths["main"] = (root / "snapshots/abc/corrupt.gguf").string();
     ops->populate_metadata(info, {});
     check(info.max_context_window == ModelInfo{}.max_context_window, "HRX metadata probing ignores an unreadable GGUF");
+    std::filesystem::create_directories(root / "import");
+    std::ofstream(root / "import/model-Q4_K_M.gguf") << "GGUF";
+    check(ops->find_imported_checkpoint((root / "import").string()) == (root / "import/model-Q4_K_M.gguf").string(),
+        "HrxGainedNothing:legacy imported checkpoint result");
     RecipeOptions runtime("llamacpp-hrx", {{"hrx_args", "--threads 7"}});
     ops->resolve_runtime_options(ModelInfo{}, runtime);
     check(runtime.get_option("hrx_args") == "--threads 7" && ops->resolve_version("system", "file") == "file" && ops->check_install("system", true).installed, "HRX keeps the default runtime-option, version and install checks");
@@ -276,13 +428,21 @@ void check_registration() {
 }
 
 int main() {
-    Upstream upstream;
-    check_registration();
-    check_install();
-    check_launch(upstream);
-    check_admission(upstream);
-    check_logging(upstream);
-    check_operations(upstream);
+    try {
+        poison_v2 = true;
+        try { typed::llamacpp::validate_registration("repo/model-GGUF"); }
+        catch (const std::logic_error&) {}
+        check(v2_entries == 1, "HrxGainedNothing:poisoned v2 target canary is live");
+        v2_entries = 0;
+        Upstream upstream;
+        check_registration();
+        check_install();
+        check_launch(upstream);
+        check_admission(upstream);
+        check_logging(upstream);
+        check_operations(upstream);
+        check_hrx_gained_nothing(upstream);
+    } catch (const std::exception& error) { check(false, std::string("HrxGainedNothing:unexpected ") + error.what()); }
     std::printf("%d/%d checks passed\n", checks - failures, checks);
     return failures ? 1 : 0;
 }

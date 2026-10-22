@@ -1,9 +1,9 @@
+#include "../llamacpp/legacy_llamacpp_artifact_ops.h"
 #include "lemon/backends/configured/backend_definition_exports.h"
 #include "lemon/backends/configured/backend_hook_abi.h"
 #include "lemon/backends/configured/backend_hook_registry.h"
 #include "lemon/backends/kokoro/kokoro_hooks.h"
 #include "lemon/backends/llamacpp/llamacpp_request.h"
-#include "lemon/backends/llamacpp/llamacpp_server.h"
 #include "lemon/backends/moonshine/moonshine_hooks.h"
 #include "lemon/backends/onnxruntime/onnxruntime_hooks.h"
 #include "lemon/backends/trellis/trellis_hooks.h"
@@ -53,7 +53,7 @@ void audit_hook_abi_metadata(const BackendHookRegistry& registry) {
 const BackendHookRegistry& installed_backend_hooks() {
     static const BackendHookRegistry registry = [] {
         BackendHookRegistry value({
-        {"llamacpp.gguf", HookStage::Artifacts, ArtifactHook(&llamacpp::ops)},
+        {"llamacpp.gguf", HookStage::Artifacts, ArtifactHook(&llamacpp::legacy_llamacpp_artifact_ops)},
         {"llamacpp.max_tokens_alias", HookStage::Request, RequestHook(&llamacpp::with_max_tokens_alias)},
         {"llamacpp.tool_schema_limits", HookStage::Request, RequestHook(&llamacpp::sanitize_tool_schema_limits)},
         {"llamacpp.client_model", HookStage::Response, ResponseHook(&llamacpp::normalize_response_model)},

@@ -2818,7 +2818,16 @@ endif()
 
 if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_hrx_oracle.cpp")
     add_executable(test_hrx_oracle test/cpp/test_hrx_oracle.cpp)
-    target_link_libraries(test_hrx_oracle PRIVATE lemonade-server-core)
+    target_compile_definitions(test_hrx_oracle PRIVATE LEMONADE_TYPED_HOOK_TEST
+        LEMON_ORACLE_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures/llamacpp-oracle")
+    target_include_directories(test_hrx_oracle PRIVATE src/cpp/server/backends/configured)
+    target_link_libraries(test_hrx_oracle PRIVATE lemonade-typed-hook-test lemonade-server-core)
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_definitions(test_hrx_oracle PRIVATE LEMON_HRX_WRAP_V2)
+        target_link_options(test_hrx_oracle PRIVATE
+            "-Wl,--wrap=_ZN5lemon8backends7runtime5FrameC1ERKNS0_20ExecutableDefinitionE"
+            "-Wl,--wrap=_ZN5lemon8backends7runtime16ArtifactServicesC1ERNS1_15InvocationGuardERKNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEEb")
+    endif()
     add_cpp_ci_test(HrxOracleTest CI ON COMMAND test_hrx_oracle)
 endif()
 
@@ -4059,39 +4068,7 @@ if(BUILD_TESTING AND CMAKE_NM AND NOT MSVC)
 endif()
 
 if(BUILD_TESTING AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    add_library(lemonade-llamacpp-oracle-base STATIC
-        $<FILTER:$<TARGET_OBJECTS:lemonade-server-core>,EXCLUDE,(llamacpp_server|llamacpp_request|backend_utils|runtime_config).cpp.o$>)
-    target_link_libraries(lemonade-llamacpp-oracle-base PUBLIC
-        $<TARGET_GENEX_EVAL:lemonade-server-core,$<TARGET_PROPERTY:lemonade-server-core,INTERFACE_LINK_LIBRARIES>>)
-    foreach(_view linux_x64 linux_arm64 windows_x64 macos_arm64)
-        if(_view MATCHES "^linux")
-            set(_oracle_os 1)
-        elseif(_view MATCHES "^windows")
-            set(_oracle_os 2)
-        else()
-            set(_oracle_os 3)
-        endif()
-        if(_view MATCHES "arm64$")
-            set(_oracle_arm64 1)
-        else()
-            set(_oracle_arm64 0)
-        endif()
-        add_executable(test_llamacpp_oracle_${_view}
-            test/cpp/test_llamacpp_oracle.cpp
-            src/cpp/server/backends/llamacpp/llamacpp_server.cpp
-            src/cpp/server/backends/llamacpp/llamacpp_request.cpp
-            src/cpp/server/backends/backend_utils.cpp
-            src/cpp/server/runtime_config.cpp)
-        target_compile_definitions(test_llamacpp_oracle_${_view} PRIVATE
-            LEMONADE_LLAMACPP_ORACLE
-            LEMONADE_LLAMACPP_ORACLE_OS=${_oracle_os}
-            LEMONADE_LLAMACPP_ORACLE_ARM64=${_oracle_arm64}
-            LEMON_ORACLE_VIEW="${_view}"
-            LEMON_ORACLE_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures/llamacpp-oracle")
-        target_include_directories(test_llamacpp_oracle_${_view} PRIVATE src/cpp/server)
-        target_link_libraries(test_llamacpp_oracle_${_view} PRIVATE lemonade-llamacpp-oracle-base lemonade-test-isolation)
-        add_cpp_ci_test(LlamaCppOracle_${_view}Test CI ON COMMAND test_llamacpp_oracle_${_view})
-    endforeach()
+    include(cmake/LlamaCppFrozenControl.cmake)
 endif()
 
 if(BUILD_TESTING AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
@@ -4102,22 +4079,6 @@ if(BUILD_TESTING AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
     add_cpp_ci_test(LlamaCppOracleTransportTest CI ON COMMAND test_llamacpp_oracle_transport)
 endif()
 
-if(BUILD_TESTING AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    foreach(_view linux windows macos)
-        if(_view STREQUAL "windows")
-            set(_oracle_descriptor_os 2)
-        else()
-            set(_oracle_descriptor_os 1)
-        endif()
-        add_executable(test_llamacpp_oracle_descriptor_${_view} test/cpp/test_llamacpp_oracle_descriptor.cpp)
-        target_compile_definitions(test_llamacpp_oracle_descriptor_${_view} PRIVATE
-            LEMON_ORACLE_DESCRIPTOR_OS=${_oracle_descriptor_os}
-            LEMON_ORACLE_VIEW="${_view}"
-            LEMON_ORACLE_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures/llamacpp-oracle")
-        target_link_libraries(test_llamacpp_oracle_descriptor_${_view} PRIVATE nlohmann_json::nlohmann_json)
-        add_cpp_ci_test(LlamaCppOracleDescriptor_${_view}Test CI ON COMMAND test_llamacpp_oracle_descriptor_${_view})
-    endforeach()
-endif()
 
 if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_backend_definition_binding.cpp")
     add_library(lemonade-binding-test STATIC

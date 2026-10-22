@@ -203,13 +203,15 @@ def data_parity(args):
 
 
 def oracle_controls(args):
+    from llamacpp_frozen_control import ROOT
+
     run(
         [
             "python3",
             str(REPO / "test/llamacpp_oracle_audit.py"),
             "equality",
             "--build",
-            str(args.build),
+            str(ROOT / "build"),
             "--out",
             str(args.scratch / "oracle-controls"),
         ]

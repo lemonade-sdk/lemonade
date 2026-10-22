@@ -7,7 +7,10 @@ from pathlib import Path
 import shlex
 import subprocess
 
+from llamacpp_frozen_control import BASE, ROOT, verify
+
 REPO = Path(__file__).resolve().parents[1]
+
 BASELINE = "cc73edbeb800589a62478b963e8a0cf2d920357d"
 SERVER = "src/cpp/server/backends/llamacpp/llamacpp_server.cpp"
 SOURCES = [
@@ -61,7 +64,18 @@ def equality(args, database):
             subprocess.check_output(["git", "show", f"{BASELINE}:{path}"], cwd=REPO)
         )
     replacements = {}
-    result = {"baseline": BASELINE, "objects": {}, "binaries": {}}
+    instrumented = "48999e344fd8f7bc39e5eb618d4dd318b2ad93f6"
+    for path in SOURCES:
+        assert (REPO / path).read_bytes() == subprocess.check_output(
+            ["git", "show", f"{instrumented}:{path}"], cwd=REPO
+        ), f"FrozenInstrumentedSource:{path}"
+    result = {
+        "baseline": BASELINE,
+        "instrumented": instrumented,
+        "control_base": BASE,
+        "objects": {},
+        "binaries": {},
+    }
     for path in SOURCES:
         entry = next(
             row
@@ -113,7 +127,7 @@ def equality(args, database):
         for item in result[group].values()
     ):
         raise RuntimeError(
-            "Production code generation differs from the frozen baseline"
+            "Frozen-control code generation differs from the original baseline"
         )
 
 
@@ -183,7 +197,9 @@ def mutations(args, database):
         process = run(command, args.build, directory / "link.log")
         if process.returncode:
             raise RuntimeError(f"Mutation failed to link: {name}")
-        process = run([str(binary)], args.build, directory / "test.log")
+        process = run(
+            ["timeout", "120", str(binary)], args.build, directory / "test.log"
+        )
         results[name] = {
             "returncode": process.returncode,
             "caught": process.returncode == 1,
@@ -196,12 +212,17 @@ def mutations(args, database):
 
 
 def main():
+    global REPO
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("mode", choices=["equality", "mutations"])
-    parser.add_argument("--build", type=Path, default=REPO / "build")
+    parser.add_argument("--build", type=Path, default=ROOT / "build")
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
-    args.build = args.build.resolve()
+    control_build = args.build.resolve()
+    control_source = control_build.parent / "source"
+    verify(control_source, control_build)
+    REPO = control_source
+    args.build = control_build
     args.out = args.out.resolve()
     args.out.mkdir(parents=True, exist_ok=True)
     database = json.loads((args.build / "compile_commands.json").read_text())

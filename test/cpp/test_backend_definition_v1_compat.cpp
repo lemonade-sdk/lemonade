@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <fstream>
 #include <iostream>
+#include <set>
 #include <type_traits>
 
 using namespace lemon;
@@ -33,9 +34,22 @@ Json diagnostics_data(const DefinitionValidationResult& result) {
 Json snapshot() {
     Json result = {{"source_sha", "410b5b4e9f9c7bdfcd1031ea6911795a8cce09ae"},
         {"features", installed_definition_features()}, {"definitions", Json::object()}};
+    const std::set<std::string> v1_names = {"ds4", "hrx", "kokoro", "moonshine", "onnxruntime", "ryzenai", "thinksound", "trellis"};
+    std::set<std::string> seen;
     for (const auto& resource : k_embedded_resource_files) {
         const std::string path(resource.path);
         if (path.find("/resources/backends/") == std::string::npos) continue;
+        const auto name = path.substr(path.find_last_of('/') + 1);
+        const auto stem = name.substr(0, name.size() - 5);
+        if (!seen.insert(stem).second) throw std::runtime_error("ExactMixedDefinitionSources:duplicate");
+        if (stem == "llamacpp") {
+            std::ifstream input(std::string(LEMON_TEST_FIXTURES) + "/backend-v2/llamacpp.candidate.json");
+            const std::string candidate((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
+            if (candidate != resource.data || Json::parse(candidate).at("schema_version") != 2)
+                throw std::runtime_error("SoleAdditionalSourceIsQualifiedLlamaCandidate");
+            continue;
+        }
+        if (!v1_names.count(stem)) throw std::runtime_error("ExplicitEightV1Definitions:foreign source");
         const auto validated = BackendDefinitionStore().validate({"", resource.data, DefinitionOrigin::Builtin});
         if (!validated.definition || !validated.diagnostics.empty()) throw std::runtime_error("Invalid baseline definition");
         const auto& definition = *validated.definition;
@@ -71,6 +85,9 @@ Json snapshot() {
             {"expressions", schema_digest(expressions.dump())}, {"programs", schema_digest(operations.dump())},
             {"diagnostics", rejected}};
     }
+    auto expected = v1_names;
+    if (seen.count("llamacpp")) expected.insert("llamacpp");
+    if (seen != expected) throw std::runtime_error("ExplicitEightV1Definitions:missing source");
     return result;
 }
 }

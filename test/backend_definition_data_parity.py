@@ -8,6 +8,8 @@ from pathlib import Path
 import shlex
 import subprocess
 
+from backend_definition_inventory import V1_NAMES, production_inventory
+
 REPO = Path(__file__).resolve().parents[1]
 CONFIGURED = Path("src/cpp/server/backends/configured")
 
@@ -80,9 +82,33 @@ def baseline_generated_header(args):
         "cmake_minimum_required(VERSION 3.19)",
         f'include("{folder}/BackendDescriptorFromDefinition.cmake")',
     ]
+    tree = folder / "tree"
+    files = subprocess.check_output(
+        [
+            "git",
+            "ls-tree",
+            "-r",
+            "--name-only",
+            args.baseline_commit,
+            "--",
+            "src/cpp/include",
+            "src/cpp/resources/backends",
+        ],
+        cwd=REPO,
+        text=True,
+    ).splitlines()
+    for path in files:
+        destination = tree / path
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(
+            subprocess.check_output(
+                ["git", "show", f"{args.baseline_commit}:{path}"], cwd=REPO
+            )
+        )
     for recipe, stem in pairs:
-        source = REPO / f"src/cpp/resources/backends/{stem}.json"
-        if source.exists():
+        relative = f"src/cpp/resources/backends/{stem}.json"
+        source = tree / relative
+        if relative in files:
             script.extend(
                 [
                     f'lemon_backend_descriptor_from_definition(value {stem} {recipe} "{source}")',
@@ -91,9 +117,7 @@ def baseline_generated_header(args):
             )
         else:
             header = f"src/cpp/include/lemon/backends/{stem}/{stem}.h"
-            assert (
-                baseline(args.baseline_commit, header) == (REPO / header).read_text()
-            ), header
+            assert header in files, header
             script.append(
                 f'string(APPEND LEMON_DESCRIPTOR_INCLUDES "#include \\"lemon/backends/{stem}/{stem}.h\\"\\n")'
             )
@@ -138,16 +162,7 @@ def compile_views(args):
         check=True,
         capture_output=True,
     )
-    assert {p.stem for p in (REPO / "src/cpp/resources/backends").glob("*.json")} == {
-        "ds4",
-        "hrx",
-        "kokoro",
-        "moonshine",
-        "onnxruntime",
-        "ryzenai",
-        "thinksound",
-        "trellis",
-    }
+    production_inventory()
     before_include = baseline_generated_header(args)
     compiler, includes, libraries = compiler_inputs(args.build_dir)
     runtime = baseline(
@@ -204,7 +219,10 @@ int main(int argc, char** argv) {
     (args.out / "before-mapper.cpp").write_text(old_mapper)
     inputs = [
         {"declaration": json.loads(path.read_text()), "external": False}
-        for path in sorted((REPO / "src/cpp/resources/backends").glob("*.json"))
+        for path in sorted(
+            (before_include / "tree/src/cpp/resources/backends").glob("*.json")
+        )
+        if path.stem in V1_NAMES
     ]
     for value in (None, 1.25, [True, {"a": 'quote"\\é'}]):
         inputs.append(
@@ -236,7 +254,14 @@ int main(int argc, char** argv) {
             command = [
                 compiler,
                 "-O1",
-                *(["-I" + str(before_include)] if side == "before" else []),
+                *(
+                    [
+                        "-I" + str(before_include),
+                        "-I" + str(before_include / "tree/src/cpp/include"),
+                    ]
+                    if side == "before"
+                    else []
+                ),
                 *includes,
                 *flags[view],
                 "-I" + str(REPO / CONFIGURED),
