@@ -17,7 +17,7 @@
     <img src="https://img.shields.io/badge/Star%20History-View-brightgreen" alt="Star History Chart" /></a>
 </p>
 <p align="center">
-  <img src="https://github.com/lemonade-sdk/assets/blob/main/docs/banner_02.png?raw=true" alt="Lemonade Banner" />
+  <img src="https://github.com/lemonade-sdk/assets/blob/main/docs/banner_03.png?raw=true" alt="Lemonade Banner" />
 </p>
 <h3 align="center">
   <a href="./docs/guide/install/README.md">Download</a> |
@@ -120,7 +120,7 @@ For hybrid setups, Lemonade can also route to any OpenAI-compatible cloud provid
 
 ## Model Library
 
-<img align="right" src="https://github.com/lemonade-sdk/assets/blob/main/docs/model_manager_02.png?raw=true" alt="Model Manager" width="280" />
+<img align="right" src="https://github.com/lemonade-sdk/assets/blob/main/docs/model_manager_03.png?raw=true" alt="Model Manager" width="280" />
 
 Lemonade supports a wide variety of LLMs (**GGUF**, **FLM**, and **ONNX**), whisper, stable diffusion, etc. models across CPU, GPU, and NPU.
 
