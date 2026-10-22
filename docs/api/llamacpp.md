@@ -1,40 +1,36 @@
 # llama.cpp-Specific API
 
-This page documents Lemonade's llama.cpp-specific compatibility surface.
+This page documents Lemonade's llama.cpp-specific compatibility surface. Lemonade forwards each of these requests to a llama.cpp server: rerank to the model it names, and slots and tokenize, which name no model, to the most recently used loaded model.
 
-## Summary
-
+<!-- BEGIN GENERATED: llamacpp.summary -->
 | Method | Endpoint | Description | Modality |
 |--------|----------|-------------|----------|
-| `POST` | [`/v1/rerank`](#post-v1rerank) | Reranking | query + documents -> relevance-scored documents |
-| `GET` | [`/v1/slots`](#get-v1slots) | Returns the current slots processing state | slots state |
-| `POST` | [`/v1/slots/{id}?action=save`](#post-v1slotsidactionsave) | Save the prompt cache of the specified slot to a file | prompt cache |
-| `POST` | [`/v1/slots/{id}?action=restore`](#post-v1slotsidactionrestore) | Restore the prompt cache of the specified slot from a file | prompt cache |
-| `POST` | [`/v1/slots/{id}?action=erase`](#post-v1slotsidactionerase) | Erase the prompt cache of the specified slot | prompt cache |
-| `POST` | [`/v1/tokenize`](#post-v1tokenize) | Tokenize a given text | tokenization |
+| `POST` | [`/v1/rerank`](#post-v1rerank) | Score documents against a query | query + documents -> relevance-scored documents |
+| `GET` | [`/v1/slots`](#get-v1slots) | Read each slot's processing state | slots state |
+| `POST` | [`/v1/slots/{id}?action=save`](#post-v1slotsid) | Save the prompt cache of the specified slot to a file | prompt cache |
+| `POST` | [`/v1/slots/{id}?action=restore`](#post-v1slotsid) | Restore the prompt cache of the specified slot from a file | prompt cache |
+| `POST` | [`/v1/slots/{id}?action=erase`](#post-v1slotsid) | Erase the prompt cache of the specified slot | prompt cache |
+| `POST` | [`/v1/tokenize`](#post-v1tokenize) | Tokenize text | tokenization |
+<!-- END GENERATED: llamacpp.summary -->
 
+<!-- BEGIN GENERATED: llamacpp.rerank -->
 ## `POST /v1/rerank`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Reranking API for llama.cpp-compatible reranker models. You provide a query and a list of documents, and receive relevance scores for each document. Lemonade will load the requested model automatically if it is not already loaded.
+Scores each document against a query. Only llama.cpp reranker models, such as `bge-reranker-v2-m3-GGUF`, serve this endpoint.
 
-> **Note:** This endpoint is part of Lemonade's llama.cpp compatibility layer. Internally, Lemonade forwards the request to llama.cpp's `/v1/rerank` endpoint.
-
-> **Note:** Lemonade also accepts `/reranking` and `/reranker` as aliases — all three route to the same handler and behave identically.
-
-> **Note:** The endpoint is available under all four path prefixes: `/api/v0/`, `/api/v1/`, `/v0/`, and `/v1/`.
-
-> **Note:** This endpoint is only available for reranker-specific models using the `llamacpp` recipe, such as `bge-reranker-v2-m3-GGUF`.
+Also served at `/v1/reranking` and `/v1/reranker`. Requires `LEMONADE_API_KEY` when it is set.
 
 ### Parameters
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
 | `query` | Yes | The search query text. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `documents` | Yes | Array of document strings to score against the query. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `model` | Yes | The reranking model to use. If not already loaded, Lemonade loads it before forwarding the request. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `documents` | Yes | Documents to score against the query. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `model` | Yes | The model to run; loaded on first use. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `ctx_size` | No | Lemonade extension: context size to load the model with, when this request loads it. Ignored when the model is already loaded. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-### Example request
+### Example
 
 === "PowerShell"
 
@@ -44,95 +40,89 @@ Reranking API for llama.cpp-compatible reranker models. You provide a query and 
       -Method POST `
       -Headers @{ "Content-Type" = "application/json" } `
       -Body '{
-        "model": "bge-reranker-v2-m3-GGUF",
-        "query": "What is the capital of France?",
-        "documents": [
-          "Paris is the capital of France.",
-          "Berlin is the capital of Germany.",
-          "Madrid is the capital of Spain."
-        ]
-      }' -UseBasicParsing
+          "model": "bge-reranker-v2-m3-GGUF",
+          "query": "What is the capital of France?",
+          "documents": [
+            "Paris is the capital of France.",
+            "Berlin is the capital of Germany.",
+            "Madrid is the capital of Spain."
+          ]
+        }'
     ```
 
 === "Bash"
 
     ```bash
-    curl -X POST http://localhost:13305/v1/rerank \
+    curl http://localhost:13305/v1/rerank \
       -H "Content-Type: application/json" \
       -d '{
-            "model": "bge-reranker-v2-m3-GGUF",
-            "query": "What is the capital of France?",
-            "documents": [
-              "Paris is the capital of France.",
-              "Berlin is the capital of Germany.",
-              "Madrid is the capital of Spain."
-            ]
-          }'
+          "model": "bge-reranker-v2-m3-GGUF",
+          "query": "What is the capital of France?",
+          "documents": [
+            "Paris is the capital of France.",
+            "Berlin is the capital of Germany.",
+            "Madrid is the capital of Spain."
+          ]
+        }'
     ```
 
-### Response format
+**Response:** `200 OK`
 
 ```json
 {
   "model": "bge-reranker-v2-m3-GGUF",
   "object": "list",
-  "results": [
-    {
-      "index": 0,
-      "relevance_score": 8.60673713684082
-    },
-    {
-      "index": 1,
-      "relevance_score": -5.3886260986328125
-    },
-    {
-      "index": 2,
-      "relevance_score": -3.555561065673828
-    }
-  ],
-  "usage": {
-    "prompt_tokens": 51,
-    "total_tokens": 51
-  }
+  "results": [{"index": 0, "relevance_score": 8.634263038635254}, ... 2 more],
+  "usage": {"prompt_tokens": 51, "total_tokens": 51}
 }
 ```
 
-**Field Descriptions:**
+### Response format
 
-- `model` - Model identifier used for reranking
-- `object` - Type of response object, always `"list"`
-- `results` - Array of all input documents with relevance scores
-  - `index` - Original index of the document in the input array
-  - `relevance_score` - Relevance score assigned by the model; higher means more relevant
-- `usage` - Token usage statistics
-  - `prompt_tokens` - Number of tokens in the input
-  - `total_tokens` - Total tokens processed
+- `model` - The model that scored the documents.
+- `object` - Always `"list"`.
+- `results` - Every input document with its score, sorted by `relevance_score`, highest first.
+  - `index` - The document's position in `documents`.
+  - `relevance_score` - How relevant the model rates the document; higher is more relevant.
+- `usage` - Tokens processed.
+  - `prompt_tokens` - Tokens in the query and documents.
+  - `total_tokens` - All tokens processed.
 
-> **Note:** Results are returned in input order. To rank documents by relevance, sort `results` by `relevance_score` in descending order on the client side.
+### Errors
 
+| Status | Code | When |
+|--------|------|------|
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `missing_argument` | A required argument is missing |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
+| `400` |  | `model` is not a llama.cpp model |
+| `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
+| `404` | `model_not_found` | The requested model is not in the registry |
+| `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
+| `409` | `slots_pinned_error` | Every loaded model of the requested model's type is pinned, so none can be unloaded to make room |
+| `500` |  | The backend reports an error; the backend's own status replaces this one when it sends one |
+| `500` |  | The request fails unexpectedly |
+| `500` | `model_load_error` | Loading the requested model fails for another reason, such as a failed download or a backend that does not start |
+<!-- END GENERATED: llamacpp.rerank -->
+
+<!-- BEGIN GENERATED: llamacpp.slots -->
 ## `GET /v1/slots`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Returns the current state of all processing slots in the llama.cpp server. Slots are parallel processing contexts that can handle multiple requests concurrently.
+Returns the state of each processing slot in the llama.cpp server. Slots are the parallel contexts that serve concurrent requests.
 
-> **Note:** This endpoint is part of Lemonade's llama.cpp compatibility layer. Internally, Lemonade forwards the request to llama.cpp's `/slots` endpoint.
-
-> **Note:** This endpoint is only available when a llama.cpp model is loaded.
-
-> **Note:** This endpoint supports all four path prefixes: `/api/v0/slots`, `/api/v1/slots`, `/v0/slots`, and `/v1/slots`.
+Requires `LEMONADE_API_KEY` when it is set.
 
 ### Parameters
 
-This endpoint accepts no parameters.
+This endpoint does not take any parameters.
 
-### Example request
+### Example
 
 === "PowerShell"
 
     ```powershell
-    Invoke-WebRequest `
-      -Uri "http://localhost:13305/v1/slots" `
-      -Method GET -UseBasicParsing
+    Invoke-WebRequest -Uri "http://localhost:13305/v1/slots"
     ```
 
 === "Bash"
@@ -141,70 +131,129 @@ This endpoint accepts no parameters.
     curl http://localhost:13305/v1/slots
     ```
 
-### Response format
+**Response:** `200 OK`
 
 ```json
 [
   {
     "id": 0,
-    "state": "idle",
-    "next_token": {
-      "has_next_token": false,
-      "n_remain": 0,
-      "n_decoded": 0
+    "next_token": [
+      {"has_next_token": false, "has_new_line": false, "n_remain": -1, "n_decoded": 0}
+    ],
+    "id_task": 212,
+    "n_ctx": 40960,
+    "is_processing": false,
+    "n_prompt_tokens": 224,
+    "n_prompt_tokens_cache": 0,
+    "n_prompt_tokens_processed": 0,
+    "params": {
+      "adaptive_decay": 0.8999999761581421,
+      "adaptive_target": -1.0,
+      "backend_sampling": false,
+      "chat_format": "peg-native",
+      "dry_allowed_length": 2,
+      "dry_base": 1.75,
+      "dry_multiplier": 0.0,
+      "dry_penalty_last_n": 64,
+      "dynatemp_exponent": 1.0,
+      "dynatemp_range": 0.0,
+      "frequency_penalty": 0.0,
+      "generation_prompt": "<|im_start|>assistant\n",
+      "ignore_eos": false,
+      "lora": [],
+      "max_tokens": -1,
+      "min_keep": 0,
+      "min_p": 0.0,
+      "mirostat": 0,
+      "mirostat_eta": 0.10000000149011612,
+      "mirostat_tau": 5.0,
+      "n_discard": 0,
+      "n_keep": 0,
+      "n_predict": -1,
+      "n_probs": 0,
+      "post_sampling_probs": false,
+      "presence_penalty": 0.0,
+      "reasoning_format": "deepseek",
+      "reasoning_in_content": false,
+      "repeat_last_n": 64,
+      "repeat_penalty": 1.0,
+      "samplers": [
+        "penalties",
+        "dry",
+        "top_n_sigma",
+        "top_k",
+        "typ_p",
+        "top_p",
+        "min_p",
+        "xtc",
+        "temperature"
+      ],
+      "seed": 4294967295,
+      "speculative.types": "none",
+      "stream": false,
+      "temperature": 0.0,
+      "timings_per_token": false,
+      "top_k": 20,
+      "top_n_sigma": -1.0,
+      "top_p": 0.8500000238418579,
+      "typical_p": 1.0,
+      "xtc_probability": 0.0,
+      "xtc_threshold": 0.10000000149011612
     },
-    "task_id": -1,
-    "cache_tokens": 1024
-  },
-  {
-    "id": 1,
-    "state": "processing",
-    "next_token": {
-      "has_next_token": true,
-      "n_remain": 42,
-      "n_decoded": 15
-    },
-    "task_id": 123,
-    "cache_tokens": 512
+    "speculative": false
   }
 ]
 ```
 
-**Field Descriptions:**
+### Response format
 
-- `id` - Unique identifier for the slot
-- `state` - Current processing state ("idle", "processing", etc.)
-- `next_token` - Information about token generation state
+- `id` - The slot's ID.
+- `next_token` - Generation state of the slot's current request.
   - `has_next_token` - Whether more tokens are expected
+  - `has_new_line` - Whether the request's generated text contains a newline.
   - `n_remain` - Number of tokens remaining to generate
   - `n_decoded` - Number of tokens already decoded
-- `task_id` - Identifier of the current task being processed (-1 if idle)
-- `cache_tokens` - Number of cached tokens in the slot's prompt cache
+- `id_task` - The task the slot is processing, or processed last when idle.
+- `n_ctx` - Context size of the slot.
+- `is_processing` - Whether the slot is serving a request.
+- `n_prompt_tokens` - Tokens in the slot's current prompt.
+- `n_prompt_tokens_cache` - Prompt tokens reused from the slot's cache instead of processed again.
+- `n_prompt_tokens_processed` - Prompt tokens processed for the current request.
+- `params` - Sampling parameters of the slot's last request.
+- `speculative` - Whether the slot uses speculative decoding.
 
-## `POST /v1/slots/{id}?action=save`
+### Errors
+
+| Status | When |
+|--------|------|
+| `400` | No model is loaded |
+| `400` | The most recently used model is not a llama.cpp model |
+| `404` | The model is unloaded while the request waits for it |
+| `500` | The backend reports an error; the backend's own status replaces this one when it sends one |
+| `500` | The request fails unexpectedly |
+<!-- END GENERATED: llamacpp.slots -->
+
+<!-- BEGIN GENERATED: llamacpp.slots_action -->
+## `POST /v1/slots/{id}`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Save the prompt cache of a specific slot to a file. This allows you to persist the current context state for later restoration.
+Saves a slot's prompt cache to a file, restores it from one, or erases it, so a conversation can resume where it left off.
 
-> **Note:** This endpoint is part of Lemonade's llama.cpp compatibility layer. Internally, Lemonade forwards the request to llama.cpp's `/slots/{id}?action=save` endpoint.
-
-> **Note:** The llama.cpp server must be started with the `--slot-save-path` argument for save operations to work. See [Server Configuration](../guide/configuration/README.md) for details on configuring backend arguments.
->
-> Example configuration:
-> ```bash
-> lemonade config set llamacpp.args="--slot-save-path /path/to/slot/saves"
-> ```
-
-> **Note:** This endpoint supports all four path prefixes: `/api/v0/slots/{id}`, `/api/v1/slots/{id}`, `/v0/slots/{id}`, and `/v1/slots/{id}`.
+Requires `LEMONADE_API_KEY` when it is set.
 
 ### Parameters
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
-| `id` | Yes | The slot ID to save (path parameter). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `filename` | Yes | The filename where the slot cache should be saved (JSON body). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `id` (path) | Yes | The slot to act on. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `filename` | No | File to save to or restore from, relative to `--slot-save-path`. Required for `save` and `restore`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `action` (query) | Yes | `save` writes the slot's prompt cache to `filename`, `restore` reads it back from `filename`, and `erase` clears the slot. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-### Example request
+Every action needs llama.cpp started with `--slot-save-path`. Set it for every load with `lemonade config set llamacpp.args="--slot-save-path /path/to/slot/saves"` (see [Server Configuration](../guide/configuration/README.md)), or for one load with `llamacpp_args` on [`POST /v1/load`](./lemonade.md#post-v1load).
+
+### Examples
+
+#### Save
 
 === "PowerShell"
 
@@ -213,62 +262,30 @@ Save the prompt cache of a specific slot to a file. This allows you to persist t
       -Uri "http://localhost:13305/v1/slots/0?action=save" `
       -Method POST `
       -Headers @{ "Content-Type" = "application/json" } `
-      -Body '{"filename": "my_conversation_cache.bin"}' -UseBasicParsing
-    ```
-
-=== "PowerShell (/api/v1)"
-
-    ```powershell
-    Invoke-WebRequest `
-      -Uri "http://localhost:13305/api/v1/slots/0?action=save" `
-      -Method POST `
-      -Headers @{ "Content-Type" = "application/json" } `
-      -Body '{"filename": "my_conversation_cache.bin"}' -UseBasicParsing
+      -Body '{"filename": "my_conversation_cache.bin"}'
     ```
 
 === "Bash"
 
     ```bash
-    curl -X POST "http://localhost:13305/v1/slots/0?action=save" \
+    curl "http://localhost:13305/v1/slots/0?action=save" \
       -H "Content-Type: application/json" \
       -d '{"filename": "my_conversation_cache.bin"}'
     ```
 
-### Response format
+**Response:** `200 OK`
 
 ```json
 {
   "id_slot": 0,
   "filename": "my_conversation_cache.bin",
-  "n_saved": 1024
+  "n_saved": 46,
+  "n_written": 5277100,
+  "timings": {"save_ms": 3.777}
 }
 ```
 
-**Field Descriptions:**
-
-- `id_slot` - The slot ID that was saved
-- `filename` - The filename where the cache was saved
-- `n_saved` - Number of tokens saved to the cache file
-
-## `POST /v1/slots/{id}?action=restore`
-<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
-
-Restore the prompt cache of a specific slot from a previously saved file. This allows you to resume a conversation or context from where you left off.
-
-> **Note:** This endpoint is part of Lemonade's llama.cpp compatibility layer. Internally, Lemonade forwards the request to llama.cpp's `/slots/{id}?action=restore` endpoint.
-
-> **Note:** The llama.cpp server must be started with the `--slot-save-path` argument for restore operations to work.
-
-> **Note:** This endpoint supports all four path prefixes: `/api/v0/slots/{id}`, `/api/v1/slots/{id}`, `/v0/slots/{id}`, and `/v1/slots/{id}`.
-
-### Parameters
-
-| Parameter | Required | Description | Status |
-|-----------|----------|-------------|--------|
-| `id` | Yes | The slot ID to restore to (path parameter). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `filename` | Yes | The filename from which to restore the slot cache (JSON body). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-
-### Example request
+#### Restore
 
 === "PowerShell"
 
@@ -277,74 +294,37 @@ Restore the prompt cache of a specific slot from a previously saved file. This a
       -Uri "http://localhost:13305/v1/slots/0?action=restore" `
       -Method POST `
       -Headers @{ "Content-Type" = "application/json" } `
-      -Body '{"filename": "my_conversation_cache.bin"}' -UseBasicParsing
-    ```
-
-=== "PowerShell (/api/v1)"
-
-    ```powershell
-    Invoke-WebRequest `
-      -Uri "http://localhost:13305/api/v1/slots/0?action=restore" `
-      -Method POST `
-      -Headers @{ "Content-Type" = "application/json" } `
-      -Body '{"filename": "my_conversation_cache.bin"}' -UseBasicParsing
+      -Body '{"filename": "my_conversation_cache.bin"}'
     ```
 
 === "Bash"
 
     ```bash
-    curl -X POST "http://localhost:13305/v1/slots/0?action=restore" \
+    curl "http://localhost:13305/v1/slots/0?action=restore" \
       -H "Content-Type: application/json" \
       -d '{"filename": "my_conversation_cache.bin"}'
     ```
 
-### Response format
+**Response:** `200 OK`
 
 ```json
 {
   "id_slot": 0,
   "filename": "my_conversation_cache.bin",
-  "n_restored": 1024
+  "n_restored": 46,
+  "n_read": 5277100,
+  "timings": {"restore_ms": 0.879}
 }
 ```
 
-**Field Descriptions:**
-
-- `id_slot` - The slot ID that was restored
-- `filename` - The filename from which the cache was restored
-- `n_restored` - Number of tokens restored from the cache file
-
-## `POST /v1/slots/{id}?action=erase`
-<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
-
-Erase (clear) the prompt cache of a specific slot. This removes all cached context from the slot, resetting it to an empty state.
-
-> **Note:** This endpoint is part of Lemonade's llama.cpp compatibility layer. Internally, Lemonade forwards the request to llama.cpp's `/slots/{id}?action=erase` endpoint.
-
-> **Note:** This endpoint supports all four path prefixes: `/api/v0/slots/{id}`, `/api/v1/slots/{id}`, `/v0/slots/{id}`, and `/v1/slots/{id}`.
-
-### Parameters
-
-| Parameter | Required | Description | Status |
-|-----------|----------|-------------|--------|
-| `id` | Yes | The slot ID to erase (path parameter). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-
-### Example request
+#### Erase
 
 === "PowerShell"
 
     ```powershell
     Invoke-WebRequest `
       -Uri "http://localhost:13305/v1/slots/0?action=erase" `
-      -Method POST -UseBasicParsing
-    ```
-
-=== "PowerShell (/api/v1)"
-
-    ```powershell
-    Invoke-WebRequest `
-      -Uri "http://localhost:13305/api/v1/slots/0?action=erase" `
-      -Method POST -UseBasicParsing
+      -Method POST
     ```
 
 === "Bash"
@@ -353,41 +333,56 @@ Erase (clear) the prompt cache of a specific slot. This removes all cached conte
     curl -X POST "http://localhost:13305/v1/slots/0?action=erase"
     ```
 
-### Response format
+**Response:** `200 OK`
 
 ```json
-{
-  "id_slot": 0
-}
+{"id_slot": 0, "n_erased": 224}
 ```
 
-**Field Descriptions:**
+### Response format
 
-- `id_slot` - The slot ID that was erased
+- `id_slot` - The slot acted on.
+- `filename` - `save` and `restore`: the file written or read.
+- `n_saved` - `save`: tokens written.
+- `n_restored` - `restore`: tokens read.
+- `n_written` - `save`: bytes written.
+- `n_read` - `restore`: bytes read.
+- `n_erased` - `erase`: tokens cleared.
+- `timings` - `save` and `restore`: how long the file operation took.
 
-> **Note:** If the server returns an error, it may indicate that the slot was not found or that the operation failed.
+### Errors
 
+| Status | Code | When |
+|--------|------|------|
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `missing_argument` | A required argument is missing |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
+| `400` |  | `id` is too large for a 32-bit integer |
+| `400` |  | No model is loaded |
+| `400` |  | The most recently used model is not a llama.cpp model |
+| `404` |  | The model is unloaded while the request waits for it |
+| `500` |  | The backend reports an error; the backend's own status replaces this one when it sends one |
+| `500` |  | The request fails unexpectedly |
+<!-- END GENERATED: llamacpp.slots_action -->
+
+<!-- BEGIN GENERATED: llamacpp.tokenize -->
 ## `POST /v1/tokenize`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Tokenize a given text. Does not count towards the current model's context window.
+Tokenizes text without using the model's context window. After a request to a reranker, for example, the reranker's tokenizer answers.
 
-> **Note:** This endpoint is part of Lemonade's llama.cpp compatibility layer. Internally, Lemonade forwards the request to llama.cpp's `/tokenize` endpoint.
-
-> **Note:** This endpoint supports all four path prefixes: `/api/v0/tokenize`, `/api/v1/tokenize`, `/v0/tokenize`, and `/v1/tokenize`.
-
-> **Note:** Actual response values may vary for the same string across different models if the models do not share the same tokenizer.
+Requires `LEMONADE_API_KEY` when it is set.
 
 ### Parameters
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
 | `content` | Yes | The text to tokenize. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `add_special` | No | Boolean indicating if special tokens, i.e. `BOS`, should be inserted. Default: `false` | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `parse_special` | No | Boolean indicating if special tokens should be tokenized. When `false` special tokens are treated as plaintext. Default: `true` | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `with_pieces` | No | Boolean indicating whether to return token pieces along with IDs. Default: `false` | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `add_special` | No | Insert special tokens, such as `BOS`. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `parse_special` | No | Tokenize special tokens; `false` treats them as plain text. Defaults to `true`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `with_pieces` | No | Return each token's text piece with its ID. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-### Example request
+### Example
 
 === "PowerShell"
 
@@ -396,47 +391,37 @@ Tokenize a given text. Does not count towards the current model's context window
       -Uri "http://localhost:13305/v1/tokenize" `
       -Method POST `
       -Headers @{ "Content-Type" = "application/json" } `
-      -Body '{"content": "This is a string to tokenize"}' -UseBasicParsing
-    ```
-
-=== "PowerShell (/api/v1)"
-
-    ```powershell
-    Invoke-WebRequest `
-      -Uri "http://localhost:13305/api/v1/tokenize" `
-      -Method POST `
-      -Headers @{ "Content-Type" = "application/json" } `
-      -Body '{"content": "This is a string to tokenize"}' -UseBasicParsing
+      -Body '{"content": "This is a string to tokenize"}'
     ```
 
 === "Bash"
 
     ```bash
-    curl -X POST "http://localhost:13305/v1/tokenize" \
+    curl http://localhost:13305/v1/tokenize \
       -H "Content-Type: application/json" \
       -d '{"content": "This is a string to tokenize"}'
     ```
 
+**Response:** `200 OK`
+
+```json
+{"tokens": [1986, 374, 264, 914, 311, 77651]}
+```
+
 ### Response format
 
-```json
-{
-  "tokens": [1919,369,264,886,310,74995]
-}
-```
+- `tokens` - Token IDs, or `{"id", "piece"}` objects when `with_pieces` is `true`.
 
-If `with_pieces` is `true`:
+### Errors
 
-```json
-{
-  "tokens": [
-    {"id": 123, "piece": "Hello"},
-    {"id": 456, "piece": " world"},
-    {"id": 789, "piece": "!"}
-  ]
-}
-```
-
-**Field Descriptions:**
-
-- `tokens` - Array of token IDs
+| Status | Code | When |
+|--------|------|------|
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `missing_argument` | A required argument is missing |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
+| `400` |  | No model is loaded |
+| `400` |  | The most recently used model is not a llama.cpp model |
+| `404` |  | The model is unloaded while the request waits for it |
+| `500` |  | The backend reports an error; the backend's own status replaces this one when it sends one |
+| `500` |  | The request fails unexpectedly |
+<!-- END GENERATED: llamacpp.tokenize -->
