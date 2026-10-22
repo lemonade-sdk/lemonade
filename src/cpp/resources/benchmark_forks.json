@@ -87,14 +87,9 @@
       "binary_exe_linux": "llama-server",
       "runner_os": "linux",
       "arch": "gfx1151",
-      "experimental": true,
+      "experimental": false,
       "tracked": true,
-      "notes": "Experimental HRX backend. Linux gfx1151 only. Runs only HRX counterparts of hot llamacpp models.",
-      "model_filter": [
-        "Qwen3.8-27B-HRX",
-        "MiniCPM-V-4.6-HRX",
-        "MiniCPM5-1B-HRX"
-      ]
+      "notes": "HRX backend. Only models with both a 'hot' label and a MODEL_ALIAS (\u2192 GGUF counterpart) are profiled and merged into the matching GGUF row."
     },
     {
       "fork_id": "halo-box-strix",
