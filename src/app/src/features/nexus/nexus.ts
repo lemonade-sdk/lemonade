@@ -69,6 +69,7 @@ export interface NexusStatus {
   members: NexusDevice[];
   error?: string;
   event_sequence?: number;
+  remote_management?: boolean;
 }
 export interface NexusInvite {
   code?: string;
@@ -84,7 +85,8 @@ interface PasskeyChallenge {
   registration: boolean;
 }
 export interface PasskeyPrompt { message: string; needs_pin: boolean; rp_id: string }
-interface NetworkState { selectedServerId?: string; switchingServer?: boolean; passkey?: PasskeyPrompt; status: NexusStatus | null; error: string | null; notice: string | null }
+export type NexusManagementMode = 'local' | 'remote';
+interface NetworkState { mode?: NexusManagementMode; selectedServerId?: string; switchingServer?: boolean; passkey?: PasskeyPrompt; status: NexusStatus | null; error: string | null; notice: string | null }
 let state: NetworkState = { status: null, error: null, notice: null };
 const listeners = new Set<() => void>();
 const peerKeys = new Map<string, string>();
@@ -92,7 +94,8 @@ let subscribers = 0;
 let timer: ReturnType<typeof setTimeout> | undefined;
 let pollRunning = false;
 let eventStream: AbortController | undefined;
-let localController: { source: string; endpoint: string; key: string } | undefined;
+interface Controller { mode: NexusManagementMode; source: string; endpoint: string; key: string }
+let localController: Controller | undefined;
 let lastMemberIds: Set<string> | undefined;
 const publish = (next: NetworkState) => { state = next; listeners.forEach(listener => listener()); };
 
@@ -106,15 +109,18 @@ export function decodeBase64Url(value: string): Uint8Array<ArrayBuffer> {
   const encoded = value.replace(/-/g, '+').replace(/_/g, '/');
   return Uint8Array.from(atob(encoded + '='.repeat((4 - encoded.length % 4) % 4)), c => c.charCodeAt(0));
 }
-async function controller() {
+export function isLoopbackUrl(value: string): boolean {
+  return ['localhost', '127.0.0.1', '[::1]'].includes(new URL(value).hostname);
+}
+// A nonloopback server is managed through its public listener with the API key. Loopback
+// URLs reach the local management listener; mesh egress endpoints are loopback too and
+// keep using the controller discovered before the switch.
+async function controller(): Promise<Controller> {
   const { default: api } = await import('../../api');
   await api.loadConnectionSettings();
+  if (!isLoopbackUrl(api.baseUrl)) return { mode: 'remote', source: api.baseUrl, endpoint: api.baseUrl, key: api.apiKey };
   if (localController?.source === api.baseUrl) localController.key = api.apiKey;
   if (!localController) {
-    const url = new URL(api.baseUrl);
-    if (!['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)) {
-      throw new Error('Connect to this device’s local Lemonade server to manage its network.');
-    }
     const endpoint = api.baseUrl;
     const key = api.apiKey;
     const response = await fetch(`${endpoint}/api/v1/nexus/status`, { headers: key ? { Authorization: `Bearer ${key}` } : {}, signal: AbortSignal.timeout(10000) });
@@ -122,16 +128,17 @@ async function controller() {
     const status = await response.json() as NexusStatus;
     const control = new URL(status.controller_url || endpoint);
     if (control.protocol !== 'http:' || control.hostname !== '127.0.0.1') throw new Error('The server returned an invalid local network controller.');
-    localController = { source: endpoint, endpoint: control.origin, key };
+    localController = { mode: 'local', source: endpoint, endpoint: control.origin, key };
   }
   return localController;
 }
 export async function nexusRequest<T>(path: string, body?: unknown): Promise<T> {
-  const local = await controller();
-  const response = await fetch(`${local.endpoint}/api/v1/nexus/${path}`, {
+  const target = await controller();
+  if (state.mode !== target.mode) publish({ ...state, mode: target.mode });
+  const response = await fetch(`${target.endpoint}/api/v1/nexus/${path}`, {
     method: body === undefined ? 'GET' : 'POST',
     headers: { ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
-      ...(local.key ? { Authorization: `Bearer ${local.key}` } : {}) },
+      ...(target.key ? { Authorization: `Bearer ${target.key}` } : {}) },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     cache: 'no-store',
     signal: AbortSignal.timeout(35000),
@@ -161,6 +168,7 @@ async function streamEvents() {
   eventStream = abort;
   try {
     const local = await controller();
+    if (local.mode === 'remote') return;
     const response = await fetch(`${local.endpoint}/api/v1/nexus/events?after=${state.status?.event_sequence || 0}`, {
       headers: local.key ? { Authorization: `Bearer ${local.key}` } : {}, signal: abort.signal,
     });
@@ -300,6 +308,7 @@ export function nexusStatusLabel(status: NexusStatus | null): string {
 export async function selectNexusInferenceServer(nodeId: string, suppliedKey?: string): Promise<void> {
   if (state.switchingServer) throw new Error('A server switch is already in progress.');
   const local = await controller();
+  if (local.mode === 'remote') throw new Error('Choose a mesh inference server from the desktop app on that device.');
   const { default: api } = await import('../../api');
   const previousEndpoint = api.baseUrl;
   const previousKey = api.apiKey;

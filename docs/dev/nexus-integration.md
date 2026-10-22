@@ -50,6 +50,22 @@ Windows and macOS. Linux requires libudev and working hidraw permissions.
 Windows Hello and macOS Touch ID are not native backends in this integration.
 A matching-origin webview can also use WebAuthn.
 
+### Remote management
+
+GUI3 can manage a `lemond` on another machine. Connect to the server's address
+with its API key, then open **Devices & mesh**. The panel uses the server's
+public listener for status, devices, members, roles, group permissions, device
+access, invites, joining and device removal. The server must have
+`LEMONADE_API_KEY` set; otherwise it refuses these routes and the panel shows
+the reason.
+
+Some actions need the desktop app on the server itself: passkey registration
+and unlock, turning the mesh on or off, locking, renaming the device, live
+events and mesh inference selection. Unlock the server locally before you manage
+it remotely. A remote invite does not ask for a fresh passkey confirmation; the
+API key authorizes it. A remote join works only when the server is unlocked and
+not yet in a group.
+
 Invites come from the federation. Eight-digit codes work when the deployed
 federation supports them; older versions return full `lnk_…` tokens, which the
 UI can copy and join with. Closing an invite does not revoke it: it remains
@@ -71,8 +87,10 @@ owner. Restart leaves an enabled device locked. A long supervisor pause locks
 the mesh. Transient failures reconnect with bounded backoff after a successful
 join, without replaying consumed invite tokens.
 
-Virtual TCP port `13305` exposes Lemonade's actual HTTP port. Selected peers get
-an SDK egress listener on `127.0.0.1`. Member removal and address changes close
+Virtual TCP port `13305` forwards to a separate loopback listener in `lemond`.
+That listener serves the normal API with normal API-key authentication, but it
+refuses every Nexus route. Selected peers get an SDK egress listener on
+`127.0.0.1`. Member removal and address changes close
 that listener and existing forwarded connections. Remote HTTP requests retain
 normal API-key authentication.
 
@@ -105,14 +123,29 @@ permission names before it calls the federation. It maps federation refusals to
 403 (not an admin, own admin entry, device outside the group), 400 (unknown
 permission) and 404 (missing node).
 
-The public listener returns status directly and redirects other Nexus routes
-with HTTP 307 to a separate loopback management listener. The desktop discovers
-this listener through `status` and sends the local API key directly. It is
-never exposed through the mesh: userspace ingress itself arrives on loopback
-and cannot safely be treated as a desktop control request. The listener rejects
-nonlocal clients and untrusted browser origins and enforces `LEMONADE_API_KEY`.
-Browser views show device information without management controls. Live events
-have a five-second polling fallback.
+Each listener applies its own rules:
+
+| Listener | Client | Nexus routes |
+| --- | --- | --- |
+| Public | Loopback | `status` directly; every other route redirects with HTTP 307 to the management listener |
+| Public | Other machines | `status`, `join/status`, `devices`, `members`, `members/{id}/role`, `members/{id}/permissions`, `devices/{id}/access`, `devices/{id}/remove`, `invites`, `invites/cancel` and `join`, only with `LEMONADE_API_KEY` set and `Authorization: Bearer <key>` |
+| Management (`127.0.0.1`, ephemeral port) | Local desktop | All routes |
+| Mesh ingress (`127.0.0.1`, ephemeral port) | Mesh peers | None (HTTP 403) |
+
+On the public listener, a remote request gets HTTP 403 when no
+`LEMONADE_API_KEY` is set, HTTP 401 for a missing or wrong key, and HTTP 403 for
+a local-only route. `LEMONADE_ADMIN_API_KEY` is also accepted once
+`LEMONADE_API_KEY` is set. Keys are compared in constant time. The public
+listener's origin checks still apply. Remote `status` omits `controller_url`
+and reports `remote_management`.
+
+The desktop discovers the management listener through `status` and sends the
+local API key directly. The management listener rejects nonlocal clients and
+untrusted browser origins and enforces `LEMONADE_API_KEY`. Mesh traffic never
+reaches the public or management listener: userspace ingress arrives on
+loopback and cannot safely be treated as a desktop control request, so it has a
+listener of its own. Browser views on this device show device information
+without management controls. Live events have a five-second polling fallback.
 
 ## Building and verification
 
@@ -132,8 +165,8 @@ Dependency sources can be provided with `FETCHCONTENT_SOURCE_DIR_*`. These
 settings do not require a sibling Nexus checkout.
 
 Checks cover SDK compilation on macOS and Ubuntu 24.04 amd64, userspace TCP forwarding and teardown, server
-routing/lock/persistence/control isolation, member and access permission
-mapping, desktop Rust compilation and tests, and browser management, access
+routing/lock/persistence/control isolation, remote management authorization and
+mesh ingress refusal, member and access permission mapping, desktop Rust compilation and tests, and browser management, access
 control and mesh inference switching. Real pairing requires a
 deployed federation with matching RP configuration, security keys and two
 machines. Windows installers and Debian packages require target-platform

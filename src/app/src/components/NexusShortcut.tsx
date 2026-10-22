@@ -36,7 +36,7 @@ const NexusShortcut: React.FC<{ onOpen: () => void }> = ({ onOpen }) => {
       <span className={`nexus-shortcut__dot${status?.mesh_up ? ' is-online' : ''}`} aria-hidden="true" />
       <span className="nexus-shortcut__label">Nexus</span>
     </button>
-    {(peers.length > 0 || network.selectedServerId && network.selectedServerId !== 'local') && <select ref={selector} className="nexus-server-select" aria-label="Inference server" title="Inference server" data-tauri-drag-region="false"
+    {network.mode !== 'remote' && (peers.length > 0 || network.selectedServerId && network.selectedServerId !== 'local') && <select ref={selector} className="nexus-server-select" aria-label="Inference server" title="Inference server" data-tauri-drag-region="false"
       value={network.selectedServerId || 'local'} disabled={network.switchingServer} onChange={event => void choose(event.target.value)}>
       <option value="local">This device</option>
       {peers.map(device => <option key={device.node_id} value={device.node_id} disabled={!status?.mesh_up || device.is_online === false}>{device.device_name || 'Mesh device'}{device.is_online === false ? ' (offline)' : ''}</option>)}

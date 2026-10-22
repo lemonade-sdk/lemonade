@@ -13,6 +13,15 @@
 #include <vector>
 
 namespace lemon {
+/// The listener a Nexus route is registered on.
+/// Public: lemond's normal port. Loopback clients read status and are redirected to
+/// Management for every other route. Nonloopback clients may call the group operations
+/// accepted by nexus_access::remote_operation, only with LEMONADE_API_KEY configured.
+/// Management: the loopback listener owned by NexusManager for the local desktop.
+/// MeshIngress: the loopback listener behind Nexus virtual port 13305. Mesh peers arrive
+/// from loopback, so every Nexus route on it is refused.
+enum class NexusListener { Public, Management, MeshIngress };
+
 namespace nexus_access {
 extern const std::vector<std::string> kPermissions;
 bool same_key(const std::string& a, const std::string& b);
@@ -25,13 +34,26 @@ nlohmann::json role_permissions(const nlohmann::json& current, bool admin);
 nlohmann::json group_permissions(const nlohmann::json& requested, bool admin);
 nlohmann::json device_permissions(const nlohmann::json& current, bool see, bool connect);
 std::pair<int, std::string> assignment_error(const std::string& reason);
+/// Compares two secrets in time that depends only on the length of `expected`.
+bool constant_time_equals(const std::string& candidate, const std::string& expected);
+/// True when `authorization` is "Bearer <key>" for `api_key` or a nonempty `admin_key`.
+bool bearer_matches(const std::string& authorization, const std::string& api_key, const std::string& admin_key);
+/// True for the group operations a nonloopback client may call on the public listener.
+bool remote_operation(const std::string& operation);
+/// Decides whether a Nexus route may run on a listener other than Management.
+/// Returns {0, ""} to run the route, {307, ""} to redirect it to the management listener,
+/// or an HTTP error status and message. An empty `api_key` turns remote management off.
+std::pair<int, std::string> route_access(NexusListener listener, bool loopback, const std::string& operation,
+    const std::string& authorization, const std::string& api_key, const std::string& admin_key);
 }
 
 class NexusManager {
 public:
-    NexusManager(const std::string& config_dir, int server_port);
+    /// `ingress_port` is the port of the NexusListener::MeshIngress listener (see there).
+    /// Zero means that listener is not running, and joining fails.
+    NexusManager(const std::string& config_dir, int ingress_port);
     ~NexusManager();
-    void register_routes(httplib::Server& server, bool management = false);
+    void register_routes(httplib::Server& server, NexusListener listener = NexusListener::Public);
     void stop();
     nlohmann::json status() const;
     bool enable(std::string& error);
@@ -43,10 +65,10 @@ private:
     void persist_enabled_locked();
     void update_snapshot_locked(const json& snapshot);
     void emit_locked(const std::string& type, const json& data);
-    void handle(const httplib::Request& req, httplib::Response& res, const std::string& operation);
-    std::pair<int, json> control_locked(const std::string& method, const std::string& path, const json& body);
+    void handle(const httplib::Request& req, httplib::Response& res, const std::string& operation, bool remote);
+    std::pair<int, json> control_locked(const std::string& method, const std::string& path, const json& body, bool remote);
     std::string data_root_;
-    int server_port_;
+    int ingress_port_;
     std::unique_ptr<Session> session_;
     mutable std::mutex mutex_;
     std::condition_variable wake_;

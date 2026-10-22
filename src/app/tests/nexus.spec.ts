@@ -5,29 +5,33 @@ const self = { node_id: 'self', device_name: 'My laptop', tunnel_ip: '10.8.0.2/3
 const peer = { node_id: 'peer', device_name: 'Kitchen PC', tunnel_ip: '10.8.0.3/32', management_pubkey: 'peer-key', permissions: ['read', 'write'], permissions_known: true, is_admin: false, is_owner: false, is_inference: false, tier: 4, access_known: true, can_remove: true };
 const tablet = { node_id: 'tablet', device_name: 'Tablet', tunnel_ip: '10.8.0.4/32', management_pubkey: 'tablet-key', permissions: ['read'], permissions_known: true, is_admin: false, is_owner: false, is_inference: false, tier: 4, access_known: true, can_remove: true };
 const memberSelf = { ...self, permissions: ['read'], is_admin: false, is_owner: false, can_remove: false };
-interface Options { members?: typeof self[]; accessKnown?: boolean }
+interface Options { members?: typeof self[]; accessKnown?: boolean; baseUrl?: string; apiKey?: string; remoteManagement?: boolean; refuse?: { status: number; error: string } }
 async function setup(page: Page, desktop = true, locked = false, options: Options = {}) {
   const members = options.members ?? [self, peer];
-  const state = { available: true, controller_url: 'http://127.0.0.1:15555', enabled: true, registered: true, locked, mesh_up: !locked, status: locked ? 'locked' : 'running', node_id: 'self', group_node_id: 'group', device_name: 'My laptop', tunnel_ip: '10.8.0.2', peer_count: 1, members: locked ? [] : members };
+  const baseUrl = options.baseUrl ?? 'http://127.0.0.1:13305';
+  const apiKey = options.apiKey ?? 'local-secret';
+  const state = { available: true, controller_url: 'http://127.0.0.1:15555', remote_management: options.remoteManagement ?? false, enabled: true, registered: true, locked, mesh_up: !locked, status: locked ? 'locked' : 'running', node_id: 'self', group_node_id: 'group', device_name: 'My laptop', tunnel_ip: '10.8.0.2', peer_count: 1, members: locked ? [] : members };
   const access = (nodeId: string) => ({ node_id: nodeId, device_name: state.members.find(member => member.node_id === nodeId)?.device_name, access_known: options.accessKnown ?? true, can_manage: true,
     members: state.members.filter(member => member.node_id !== nodeId && member.node_id !== 'self').map(member => ({ node_id: member.node_id, device_name: member.device_name, is_admin: member.is_admin, tier: member.tier, see: member.node_id === 'peer', connect: false, editable: options.accessKnown ?? true })) });
-  const calls: { path: string; body: unknown; authorization?: string }[] = [];
-  await page.addInitScript(({ desktop }) => {
+  const calls: { url: string; path: string; body: unknown; authorization?: string }[] = [];
+  await page.addInitScript(({ desktop, baseUrl, apiKey }) => {
     (window as any).api = {
       isWebApp: !desktop,
-      getSettings: async () => ({ baseURL: { value: 'http://127.0.0.1:13305', type: 'string' }, apiKey: { value: 'local-secret', type: 'string' } }),
+      getSettings: async () => ({ baseURL: { value: baseUrl, type: 'string' }, apiKey: { value: apiKey, type: 'string' } }),
       saveSettings: async () => true,
       getPlatform: async () => 'darwin',
-      getServerBaseUrl: async () => 'http://127.0.0.1:13305',
+      getServerBaseUrl: async () => baseUrl,
     };
-  }, { desktop });
+  }, { desktop, baseUrl, apiKey });
   await page.route('**/api/v1/**', async route => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
     if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
     if (path.includes('/nexus/')) {
-      calls.push({ path, body: request.postDataJSON(), authorization: request.headers().authorization });
+      calls.push({ url: request.url(), path, body: request.postDataJSON(), authorization: request.headers().authorization });
+      if (options.refuse) return route.fulfill({ status: options.refuse.status, headers, json: { error: options.refuse.error } });
       if (path.endsWith('/remove')) state.members = [self];
+      if (path.endsWith('/invites')) return route.fulfill({ headers, json: { code: '12345678', link_token: `lnk_${'a'.repeat(64)}`, expires_at: Math.floor(Date.now() / 1000) + 600, device_name: request.postDataJSON().device_name } });
       const target = path.match(/\/(?:devices|members)\/([^/]+)\/(?:access|role|permissions)$/)?.[1];
       const json = path.endsWith('/egress') ? { endpoint: 'http://127.0.0.1:16666' }
         : path.endsWith('/access') ? access(target!)
@@ -247,4 +251,44 @@ test('members without admin cannot manage access', async ({ page }) => {
   await expect(page.locator('.nexus-panel__device-list li', { hasText: 'Kitchen PC' }).locator('.nexus-panel__badge')).toHaveText('Admin');
   await expect(page.getByRole('button', { name: /^Manage access for/ })).toHaveCount(0);
   await expect(page.locator('.nexus-panel__details')).toContainText('Member');
+});
+
+test('remote GUI manages the group through the server API key without local-only controls', async ({ page }) => {
+  const { calls } = await setup(page, true, false, { baseUrl: 'http://192.168.1.50:13305', apiKey: 'remote-secret', remoteManagement: true });
+  await expect(page.getByText('You are managing this server remotely.', { exact: false })).toBeVisible();
+  for (const name of ['Turn mesh off', 'Lock network', 'Save name', 'Unlock with passkey', 'Connect to server']) {
+    await expect(page.getByRole('button', { name, exact: true })).toHaveCount(0);
+  }
+  await expect(page.getByRole('combobox', { name: 'Inference server', exact: true })).toHaveCount(0);
+  await expect(page.getByLabel('Remote server API key (if required)')).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Manage access for Kitchen PC' }).click();
+  const access = page.getByRole('dialog', { name: 'Manage access' });
+  await access.getByLabel('Admin', { exact: true }).check();
+  await access.getByRole('button', { name: 'Save access', exact: true }).click();
+  await expect(access).toHaveCount(0);
+  expect(calls.find(call => call.path.endsWith('/members/peer/role'))?.body).toEqual({ role: 'admin' });
+
+  await page.getByRole('button', { name: 'Add a device', exact: true }).click();
+  const invite = page.getByRole('dialog', { name: 'Invite a device' });
+  await invite.getByLabel('Device you’re inviting').fill('Office PC');
+  await invite.getByRole('button', { name: 'Create invite', exact: true }).click();
+  await expect(invite).toContainText('1234 5678');
+  expect(calls.find(call => call.path.endsWith('/invites'))?.body).toEqual({ device_name: 'Office PC', ttl_sec: 600 });
+
+  expect(calls.length).toBeGreaterThan(0);
+  for (const call of calls) {
+    expect(new URL(call.url).host).toBe('192.168.1.50:13305');
+    expect(call.authorization).toBe('Bearer remote-secret');
+  }
+  expect(calls.some(call => /\/(passkey|events|enable|lock|device)(\/|$)/.test(call.path.replace(/^.*\/nexus\//, '/')))).toBe(false);
+});
+
+test('remote GUI explains when the server has no API key for remote management', async ({ page }) => {
+  await setup(page, false, false, { baseUrl: 'http://192.168.1.50:13305', apiKey: '',
+    refuse: { status: 403, error: 'Remote network management is off. Set LEMONADE_API_KEY on this server to turn it on.' } });
+  await expect(page.getByRole('alert')).toContainText('LEMONADE_API_KEY');
+  await expect(page.getByRole('button', { name: 'Add a device' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Join a group' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /^Manage access for/ })).toHaveCount(0);
 });

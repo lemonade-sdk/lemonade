@@ -15,7 +15,11 @@ const NexusPanel: React.FC<Props> = ({ isActive, onConnect }) => {
   const { t } = useI18n();
   const network = useNexusNetwork(isActive);
   const status = network.status;
-  const desktop = isNexusDesktop();
+  const remote = network.mode === 'remote';
+  // Passkeys, mesh on/off, lock, the device name and mesh egress belong to the desktop app
+  // on this device. Group management also works remotely when the server has an API key.
+  const desktop = isNexusDesktop() && !remote;
+  const manage = desktop || (remote && Boolean(status?.remote_management));
   const [deviceName, setDeviceName] = useState('My Lemonade device');
   const [inviteName, setInviteName] = useState('');
   const [code, setCode] = useState('');
@@ -55,14 +59,14 @@ const NexusPanel: React.FC<Props> = ({ isActive, onConnect }) => {
   };
   const rememberFocus = () => { returnFocus.current = document.activeElement as HTMLElement; };
   const closeDialog = () => { setDialog(null); setRemoving(null); setInvite(null); setManaging(null); setDeviceAccess(null); setAccessDraft({}); };
-  const createInvite = () => run('Confirming passkey…', async () => {
-    await unlockNexus();
+  const createInvite = () => run(remote ? 'Creating invite…' : 'Confirming passkey…', async () => {
+    if (!remote) await unlockNexus();
     const result = await nexusRequest<NexusInvite>('invites', { device_name: inviteName.trim(), ttl_sec: 600 });
     if (!result.link_token) throw new Error('The network did not return an invite token.');
     setNow(Date.now()); setInvite(result);
   });
   const join = () => run('Joining your group…', async () => {
-    await prepareNexus(deviceName.trim(), true);
+    if (!remote) await prepareNexus(deviceName.trim(), true);
     await nexusRequest('join', { code });
     closeDialog(); setNotice(t('Joined your group. Choose a device below to connect to its server.'));
   });
@@ -100,6 +104,8 @@ const NexusPanel: React.FC<Props> = ({ isActive, onConnect }) => {
   const self = members.find(member => member.node_id === status?.node_id);
   const canManage = Boolean(self?.is_admin);
   const managingSelf = managing?.node_id === status?.node_id;
+  const addDevice = manage && status?.mesh_up ? <WorkspaceActionButton appearance="primary" icon="plus" disabled={Boolean(busy) || !hasNexusPermission(self?.permissions, 'add_child')} onClick={() => { rememberFocus(); setInviteName(''); setInvite(null); setDialog('invite'); }}>Add a device</WorkspaceActionButton> : null;
+  const joinGroup = manage && !status?.mesh_up && (desktop || (status?.enabled && !status.locked)) ? <WorkspaceActionButton appearance="secondary" disabled={!status?.available || Boolean(busy)} onClick={() => { rememberFocus(); setCode(''); setDialog('join'); }}>Join a group</WorkspaceActionButton> : null;
   return <section className="nexus-panel" aria-label="Devices and mesh">
     <div className="nexus-panel__overview">
       <div className="nexus-panel__identity">
@@ -107,7 +113,8 @@ const NexusPanel: React.FC<Props> = ({ isActive, onConnect }) => {
         <div><h2>Your Lemonade network</h2><p role="status">{nexusStatusLabel(status)}</p></div>
       </div>
       <p className="nexus-panel__intro">Link your devices to reach a Lemonade server from anywhere. Pair with a passkey and an 8-digit code.</p>
-      {!desktop && <p className="form-field__hint">Open the Lemonade desktop app to add devices or manage your network.</p>}
+      {!desktop && !remote && <p className="form-field__hint">Open the Lemonade desktop app to add devices or manage your network.</p>}
+      {remote && status?.remote_management && <p className="form-field__hint">You are managing this server remotely. Passkeys, locking and turning the mesh on or off need the desktop app on the server.</p>}
       {status && !status.available && <p className="connect__error">This installation does not include the network service. Install a build with Nexus support.</p>}
       <dl className="nexus-panel__facts">
         <div><dt>This device</dt><dd>{status?.device_name || deviceName}</dd></div>
@@ -126,12 +133,13 @@ const NexusPanel: React.FC<Props> = ({ isActive, onConnect }) => {
         <WorkspaceActionGroup>
           {!status?.enabled && <WorkspaceActionButton appearance="primary" icon="router" disabled={!status?.available || Boolean(busy) || !deviceName.trim()} onClick={() => void run('Creating your network…', async () => { await prepareNexus(deviceName.trim(), false); setNotice(t('Your group is ready. Invite another device to get started.')); })}>Create a group</WorkspaceActionButton>}
           {status?.enabled && status.locked && <WorkspaceActionButton appearance="primary" icon="eye-off" disabled={Boolean(busy)} onClick={() => void run('Unlocking…', async () => { await prepareNexus(deviceName.trim(), false); })}>Unlock with passkey</WorkspaceActionButton>}
-          {status?.mesh_up && <WorkspaceActionButton appearance="primary" icon="plus" disabled={Boolean(busy) || !hasNexusPermission(self?.permissions, 'add_child')} onClick={() => { rememberFocus(); setInviteName(''); setInvite(null); setDialog('invite'); }}>Add a device</WorkspaceActionButton>}
-          {!status?.mesh_up && <WorkspaceActionButton appearance="secondary" disabled={!status?.available || Boolean(busy)} onClick={() => { rememberFocus(); setCode(''); setDialog('join'); }}>Join a group</WorkspaceActionButton>}
+          {addDevice}
+          {joinGroup}
           {status?.enabled && !status.locked && <WorkspaceActionButton appearance="quiet" disabled={Boolean(busy)} onClick={() => void run('Locking…', async () => { await nexusRequest('lock', {}); })}>Lock network</WorkspaceActionButton>}
           {status?.enabled && <WorkspaceActionButton appearance="quiet" disabled={Boolean(busy)} onClick={() => void run('Turning mesh off…', async () => { await nexusRequest('disable', {}); })}>Turn mesh off</WorkspaceActionButton>}
         </WorkspaceActionGroup>
       </>}
+      {remote && manage && (addDevice || joinGroup) && <WorkspaceActionGroup>{addDevice}{joinGroup}</WorkspaceActionGroup>}
     </div>
     {(error || network.error || status?.error) && <p className="connect__error" role="alert">{error || network.error || status?.error}</p>}
     {(notice || busy) && <p className="nexus-panel__notice" role="status">{busy || notice}</p>}
@@ -141,8 +149,8 @@ const NexusPanel: React.FC<Props> = ({ isActive, onConnect }) => {
       <ul className="nexus-panel__device-list">{members.map(device => <li key={device.node_id}>
         <Icon name="hard-drive" size={24} />
         <div className="nexus-panel__device"><strong>{device.device_name || 'Unnamed device'}{device.is_admin && <span className="nexus-panel__badge">Admin</span>}{device.node_id === status?.node_id && <span className="nexus-panel__self">This device</span>}</strong><span>{nexusTierLabel(device)} · {device.tunnel_ip || 'No mesh address'}{device.is_online !== undefined && ` · ${device.is_online ? 'Online' : 'Offline'}`}{Boolean(device.is_online && device.latency_ms) && ` · ${Math.round(device.latency_ms!)} ms`}</span></div>
-        {desktop && (device.node_id !== status?.node_id || (canManage && status?.mesh_up)) && <WorkspaceActionGroup>
-          {device.node_id !== status?.node_id && <WorkspaceActionButton appearance="secondary" size="small" icon="plug" disabled={Boolean(busy) || !status?.mesh_up} onClick={() => void connect(device)}>Connect to server</WorkspaceActionButton>}
+        {manage && (desktop || canManage || device.can_remove) && (device.node_id !== status?.node_id || (canManage && status?.mesh_up)) && <WorkspaceActionGroup>
+          {desktop && device.node_id !== status?.node_id && <WorkspaceActionButton appearance="secondary" size="small" icon="plug" disabled={Boolean(busy) || !status?.mesh_up} onClick={() => void connect(device)}>Connect to server</WorkspaceActionButton>}
           {canManage && status?.mesh_up && <WorkspaceActionButton appearance="quiet" size="small" icon="user-round-cog" disabled={Boolean(busy)} onClick={() => manageAccess(device)} aria-label={`Manage access for ${device.device_name || 'this device'}`}>Manage access</WorkspaceActionButton>}
           {device.can_remove && <WorkspaceActionButton appearance="danger" size="small" icon="trash" disabled={Boolean(busy)} onClick={() => { rememberFocus(); setRemoving(device); }} aria-label={`Remove ${device.device_name}`}>Remove</WorkspaceActionButton>}
         </WorkspaceActionGroup>}
@@ -159,7 +167,7 @@ const NexusPanel: React.FC<Props> = ({ isActive, onConnect }) => {
         : dialog === 'join' ? <form onSubmit={event => { event.preventDefault(); void join(); }}>
           <p>Ask a group owner to add this device, then enter their pairing code or invite token.</p><label className="form-field__label" htmlFor="nexus-join-code">Pairing code or invite token</label>
           <input id="nexus-join-code" className={`input nexus-dialog__code-input${code.length > 8 ? ' is-token' : ''}`} autoComplete="off" maxLength={68} value={code} onChange={event => setCode(event.target.value.trim())} />
-          <WorkspaceActionButton type="submit" appearance="primary" disabled={Boolean(busy) || !(/^(?:[0-9]{8}|lnk_[0-9a-f]{64})$/.test(code)) || !deviceName.trim()}>Confirm with passkey and join</WorkspaceActionButton>
+          <WorkspaceActionButton type="submit" appearance="primary" disabled={Boolean(busy) || !(/^(?:[0-9]{8}|lnk_[0-9a-f]{64})$/.test(code)) || !deviceName.trim()}>{remote ? 'Join group' : 'Confirm with passkey and join'}</WorkspaceActionButton>
         </form> : dialog === 'access' && managing ? <form onSubmit={event => { event.preventDefault(); void saveAccess(managing); }}>
           <p>{managing.device_name || 'Unnamed device'} · {nexusTierLabel(managing)}</p>
           <fieldset className="nexus-access__section" disabled={Boolean(busy) || managingSelf} aria-describedby={managingSelf || managing.is_owner ? 'nexus-role-hint' : undefined}>
@@ -209,7 +217,7 @@ const NexusPanel: React.FC<Props> = ({ isActive, onConnect }) => {
         </> : <form onSubmit={event => { event.preventDefault(); void createInvite(); }}>
           <label className="form-field__label" htmlFor="nexus-invite-name">Device you’re inviting</label><input className="input" id="nexus-invite-name" value={inviteName} maxLength={128} placeholder="Alex’s laptop" onChange={event => setInviteName(event.target.value)} />
           {inviteName.trim() && <p>Would you like “{inviteName.trim()}” to join your group?</p>}
-          <WorkspaceActionButton type="submit" appearance="primary" disabled={Boolean(busy) || !inviteName.trim()}>Confirm with passkey</WorkspaceActionButton>
+          <WorkspaceActionButton type="submit" appearance="primary" disabled={Boolean(busy) || !inviteName.trim()}>{remote ? 'Create invite' : 'Confirm with passkey'}</WorkspaceActionButton>
         </form>}
       </div>
     </div>}

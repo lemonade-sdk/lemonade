@@ -760,7 +760,15 @@ Server::Server(std::shared_ptr<RuntimeConfig> config,
         admin_api_key_ = api_key_;
     }
 
-    nexus_manager_ = std::make_unique<NexusManager>(config_dir, config_->port());
+    mesh_ingress_server_ = std::make_unique<RoutedHttpServer>();
+    mesh_ingress_front_ = std::make_unique<UpgradableFrontServer>(mesh_ingress_server_.get(), websocket_upgrade_handler());
+    mesh_ingress_port_ = std::max(mesh_ingress_front_->bind_to_any_port("127.0.0.1"), 0);
+    if (mesh_ingress_port_ > 0) {
+        mesh_ingress_server_->set_listen_socket(mesh_ingress_front_->listen_socket());
+    } else {
+        LOG(WARNING, "Server") << "Cannot bind the Nexus mesh listener; mesh peers cannot reach this server" << std::endl;
+    }
+    nexus_manager_ = std::make_unique<NexusManager>(config_dir, mesh_ingress_port_);
     setup_http_servers();
 
     // Initialize WebSocket server for realtime API and log streaming
@@ -836,22 +844,23 @@ template struct lemon::detail::PrivateMemberInit<
     lemon::detail::ProcessAndCloseSocketTag,
     &httplib::Server::process_and_close_socket>;
 
-void Server::setup_http_servers() {
-    http_server_ = std::make_unique<RoutedHttpServer>();
-    http_server_v6_ = std::make_unique<RoutedHttpServer>();
-
-    // Front listeners for the main port: WebSocket upgrades for /realtime and
-    // /logs/stream are adopted by the libwebsockets server; everything else is
-    // processed by the routed servers above. The dedicated websocket_port
-    // listener keeps running unchanged.
-    auto upgrade_handler = [this](socket_t sock) -> bool {
+// Front listeners: WebSocket upgrades for /realtime and /logs/stream are
+// adopted by the libwebsockets server; everything else is processed by the
+// routed servers. The dedicated websocket_port listener keeps running unchanged.
+std::function<bool(socket_t)> Server::websocket_upgrade_handler() {
+    return [this](socket_t sock) -> bool {
         if (websocket_server_ && websocket_server_->is_running()) {
             return websocket_server_->adopt_socket(static_cast<intptr_t>(sock));
         }
         return false;
     };
-    http_front_ = std::make_unique<UpgradableFrontServer>(http_server_.get(), upgrade_handler);
-    http_front_v6_ = std::make_unique<UpgradableFrontServer>(http_server_v6_.get(), upgrade_handler);
+}
+
+void Server::setup_http_servers() {
+    http_server_ = std::make_unique<RoutedHttpServer>();
+    http_server_v6_ = std::make_unique<RoutedHttpServer>();
+    http_front_ = std::make_unique<UpgradableFrontServer>(http_server_.get(), websocket_upgrade_handler());
+    http_front_v6_ = std::make_unique<UpgradableFrontServer>(http_server_v6_.get(), websocket_upgrade_handler());
 
     // Keep cpp-httplib's default socket options here. httplib binds IPv6 with
     // IPV6_V6ONLY=0, so "::" overlaps the IPv4 wildcard "0.0.0.0" and only the
@@ -878,6 +887,8 @@ void Server::setup_http_servers() {
     http_front_v6_->new_task_queue = task_queue_factory;
     http_server_->new_task_queue = task_queue_factory;
     http_server_v6_->new_task_queue = task_queue_factory;
+    mesh_ingress_front_->new_task_queue = task_queue_factory;
+    mesh_ingress_server_->new_task_queue = task_queue_factory;
 
     // Bound how long a single connection can tie up a worker thread. Without a
     // read timeout a client that opens a socket and never finishes its request
@@ -889,7 +900,9 @@ void Server::setup_http_servers() {
     for (httplib::Server* srv : {static_cast<httplib::Server*>(http_front_.get()),
                                  static_cast<httplib::Server*>(http_front_v6_.get()),
                                  static_cast<httplib::Server*>(http_server_.get()),
-                                 static_cast<httplib::Server*>(http_server_v6_.get())}) {
+                                 static_cast<httplib::Server*>(http_server_v6_.get()),
+                                 static_cast<httplib::Server*>(mesh_ingress_front_.get()),
+                                 static_cast<httplib::Server*>(mesh_ingress_server_.get())}) {
         srv->set_read_timeout(30, 0);
         srv->set_write_timeout(300, 0);
         srv->set_keep_alive_max_count(100);
@@ -897,6 +910,7 @@ void Server::setup_http_servers() {
 
     setup_routes(*http_server_);
     setup_routes(*http_server_v6_);
+    setup_routes(*mesh_ingress_server_, NexusListener::MeshIngress);
 }
 
 void Server::stop_http_listeners() {
@@ -1114,8 +1128,8 @@ httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Req
 }
 
 
-void Server::setup_routes(httplib::Server &web_server) {
-    nexus_manager_->register_routes(web_server);
+void Server::setup_routes(httplib::Server &web_server, NexusListener nexus_listener) {
+    nexus_manager_->register_routes(web_server, nexus_listener);
     // Add pre-routing handler to log ALL incoming requests (except health checks)
     web_server.set_pre_routing_handler([this](const httplib::Request& req, httplib::Response& res) {
         this->log_request(req);
@@ -2141,6 +2155,11 @@ void Server::run() {
         }
     }
 
+    if (mesh_ingress_port_ > 0 && !mesh_ingress_thread_.joinable()) {
+        setup_http_logger(*mesh_ingress_server_);
+        mesh_ingress_thread_ = std::thread([this] { mesh_ingress_front_->listen_after_bind(); });
+    }
+
     while (true) {
         // Check for shutdown signal from the main thread
         if (shutdown_requested_.load()) {
@@ -2322,6 +2341,11 @@ bool Server::startup_failed() const {
 
 void Server::stop() {
     if (nexus_manager_) nexus_manager_->stop();
+    if (mesh_ingress_front_) {
+        mesh_ingress_server_->set_listen_socket(INVALID_SOCKET);
+        mesh_ingress_front_->stop();
+    }
+    if (mesh_ingress_thread_.joinable()) mesh_ingress_thread_.join();
     if (running_) {
         LOG(INFO, "Server") << "Stopping HTTP server..." << std::endl;
         udp_beacon_.stopBroadcasting();

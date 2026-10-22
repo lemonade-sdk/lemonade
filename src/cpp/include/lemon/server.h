@@ -82,7 +82,7 @@ public:
 private:
     std::unique_ptr<NexusManager> nexus_manager_;
     std::string resolve_host_to_ip(int ai_family, const std::string& host);
-    void setup_routes(httplib::Server &web_server);
+    void setup_routes(httplib::Server &web_server, NexusListener nexus_listener = NexusListener::Public);
     void setup_static_files(httplib::Server &web_server);
     void setup_cors(httplib::Server &web_server);
     void setup_http_logger(httplib::Server &web_server);
@@ -91,6 +91,7 @@ private:
 
     // Setup HTTP servers (create httplib::Server instances, routes, CORS, thread pool)
     void setup_http_servers();
+    std::function<bool(socket_t)> websocket_upgrade_handler();
 
     // Stop the main-port listeners (fronts) and detach the routed servers
     void stop_http_listeners();
@@ -381,6 +382,11 @@ private:
     std::unique_ptr<RoutedHttpServer> http_server_v6_;
     std::unique_ptr<UpgradableFrontServer> http_front_;
     std::unique_ptr<UpgradableFrontServer> http_front_v6_;
+    // The NexusListener::MeshIngress listener; see its description.
+    std::unique_ptr<RoutedHttpServer> mesh_ingress_server_;
+    std::unique_ptr<UpgradableFrontServer> mesh_ingress_front_;
+    std::thread mesh_ingress_thread_;
+    int mesh_ingress_port_ = 0;
 
     std::unique_ptr<Router> router_;
     std::unique_ptr<AliasManager> alias_manager_;

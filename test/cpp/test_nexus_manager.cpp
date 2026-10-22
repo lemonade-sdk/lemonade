@@ -1,10 +1,12 @@
 #include "lemon/nexus_manager.h"
+#include "lemon/utils/path_utils.h"
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <functional>
 #include <iostream>
+#include <string>
 #include <thread>
 
 namespace {
@@ -14,6 +16,138 @@ namespace access = lemon::nexus_access;
 bool throws(const std::function<void()>& action) {
     try { action(); } catch (const std::runtime_error&) { return true; }
     return false;
+}
+
+void set_environment(const char* name, const std::string& value) {
+#ifdef _WIN32
+    _putenv_s(name, value.c_str());
+#else
+    if (value.empty()) unsetenv(name); else setenv(name, value.c_str(), 1);
+#endif
+}
+
+// The address this host uses toward a nonlocal network, so a test client can reach a test
+// listener without arriving from loopback. Empty when the host has no such route.
+std::string non_loopback_ipv4() {
+    const auto sock = ::socket(AF_INET, SOCK_DGRAM, 0);
+    if (sock == INVALID_SOCKET) return "";
+    sockaddr_in target{};
+    target.sin_family = AF_INET;
+    target.sin_port = htons(9);
+    inet_pton(AF_INET, "192.0.2.1", &target.sin_addr);
+    std::string result;
+    if (::connect(sock, reinterpret_cast<sockaddr*>(&target), sizeof(target)) == 0) {
+        sockaddr_in local{};
+        socklen_t length = sizeof(local);
+        char text[INET_ADDRSTRLEN] = {};
+        if (::getsockname(sock, reinterpret_cast<sockaddr*>(&local), &length) == 0 &&
+            inet_ntop(AF_INET, &local.sin_addr, text, sizeof(text))) {
+            const std::string address = text;
+            if (address != "0.0.0.0" && address.rfind("127.", 0) != 0) result = address;
+        }
+    }
+    httplib::detail::close_socket(sock);
+    return result;
+}
+
+void check_route_access(const std::function<void(bool, const char*)>& check) {
+    using lemon::NexusListener;
+    const auto access = [](NexusListener listener, bool loopback, const std::string& operation,
+                           const std::string& authorization, const std::string& key, const std::string& admin = "") {
+        return access::route_access(listener, loopback, operation, authorization, key, admin);
+    };
+    check(access::constant_time_equals("secret", "secret"), "Equal secrets match");
+    check(!access::constant_time_equals("secre", "secret") && !access::constant_time_equals("secrets", "secret"), "Length differences never match");
+    check(!access::constant_time_equals("secreT", "secret") && !access::constant_time_equals("", "secret"), "Different secrets never match");
+    check(!access::bearer_matches("Bearer ", "", ""), "An empty bearer never matches an unset key");
+    check(!access::bearer_matches("Basic secret", "secret", ""), "Only bearer credentials are accepted");
+
+    for (const auto* operation : {"status", "members", "enable", "passkey/unlock", "members/role", "devices/access", "events"}) {
+        check(access(NexusListener::MeshIngress, true, operation, "Bearer key", "key").first == 403, "Mesh ingress refuses every Nexus route");
+    }
+    check(access(NexusListener::Public, true, "status", "", "").first == 0, "Local clients read status on the public listener");
+    check(access(NexusListener::Public, true, "members", "Bearer key", "key").first == 307, "Local clients are redirected to the management listener");
+
+    const auto off = access(NexusListener::Public, false, "members", "Bearer key", "");
+    check(off.first == 403 && off.second.find("LEMONADE_API_KEY") != std::string::npos, "Remote management is off without an API key");
+    check(access(NexusListener::Public, false, "status", "Bearer admin", "", "admin").first == 403, "An admin key alone does not turn on remote management");
+    check(access(NexusListener::Public, false, "members", "", "key").first == 401, "Remote management requires a bearer key");
+    check(access(NexusListener::Public, false, "members", "Bearer wrong", "key").first == 401, "Remote management rejects a wrong key");
+    check(access(NexusListener::Public, false, "members", "Bearer keyx", "key").first == 401, "Remote management rejects a longer key");
+    check(access(NexusListener::Public, false, "members", "Bearer admin", "key", "admin").first == 0, "The admin key also authorizes remote management");
+    for (const auto* operation : {"status", "join/status", "devices", "members", "members/role", "members/permissions",
+                                  "devices/access", "devices/remove", "invites", "invites/cancel", "join"}) {
+        check(access(NexusListener::Public, false, operation, "Bearer key", "key").first == 0, "Group operations are available remotely");
+    }
+    for (const auto* operation : {"passkey/challenge", "passkey/register", "passkey/unlock", "enable", "disable", "lock", "device", "events", "egress"}) {
+        check(access(NexusListener::Public, false, operation, "Bearer key", "key").first == 403, "Local device operations stay local");
+    }
+}
+
+void check_listener_isolation(const std::filesystem::path& root, const std::function<void(bool, const char*)>& check) {
+    const auto saved_key = lemon::utils::get_environment_variable_utf8("LEMONADE_API_KEY");
+    const auto saved_admin = lemon::utils::get_environment_variable_utf8("LEMONADE_ADMIN_API_KEY");
+    set_environment("LEMONADE_ADMIN_API_KEY", "");
+    set_environment("LEMONADE_API_KEY", "remote-test-key");
+    {
+        lemon::NexusManager manager((root / "isolation").string(), 13305);
+        httplib::Server mesh;
+        manager.register_routes(mesh, lemon::NexusListener::MeshIngress);
+        const int mesh_port = mesh.bind_to_any_port("127.0.0.1");
+        std::thread mesh_worker([&] { mesh.listen_after_bind(); });
+        mesh.wait_until_ready();
+        httplib::Client peer("127.0.0.1", mesh_port);
+        peer.set_default_headers({{"Authorization", "Bearer remote-test-key"}});
+        auto status = peer.Get("/api/v1/nexus/status");
+        check(status && status->status == 403, "Mesh peers cannot read Nexus status");
+        auto enable = peer.Post("/api/v1/nexus/enable", "{}", "application/json");
+        check(enable && enable->status == 403 && !manager.status().at("enabled"), "Mesh peers cannot enable Nexus");
+        auto role = peer.Post("/api/v1/nexus/members/peer/role", R"({"role":"admin"})", "application/json");
+        check(role && role->status == 403, "Mesh peers cannot change member roles");
+        mesh.stop(); mesh_worker.join();
+
+        const auto address = non_loopback_ipv4();
+        if (address.empty()) {
+            std::cout << "Skipping remote listener checks: no nonloopback IPv4 address\n";
+        } else {
+            httplib::Server server;
+            manager.register_routes(server);
+            const int port = server.bind_to_any_port(address);
+            check(port > 0, "Remote test listener binds");
+            std::thread worker([&] { server.listen_after_bind(); });
+            server.wait_until_ready();
+            httplib::Client remote(address, port);
+            auto missing = remote.Get("/api/v1/nexus/members");
+            check(missing && missing->status == 401, "Remote members need the API key");
+            auto wrong = remote.Get("/api/v1/nexus/members", httplib::Headers{{"Authorization", "Bearer wrong"}});
+            check(wrong && wrong->status == 401, "Remote members reject a wrong key");
+            const httplib::Headers valid = {{"Authorization", "Bearer remote-test-key"}};
+            auto status = remote.Get("/api/v1/nexus/status", valid);
+            check(status && status->status == 200, "Remote status is available with the API key");
+            if (status && status->status == 200) {
+                const auto body = nlohmann::json::parse(status->body);
+                check(body.at("remote_management") == true && !body.contains("controller_url"), "Remote status hides the loopback controller");
+            }
+            auto members = remote.Get("/api/v1/nexus/members", valid);
+#ifdef LEMONADE_WITH_NEXUS
+            check(members && members->status == 409, "Remote members reach the network controller");
+#else
+            check(members && members->status == 503, "Remote members reach the network controller");
+#endif
+            auto unlock = remote.Post("/api/v1/nexus/passkey/unlock", valid, "{}", "application/json");
+            check(unlock && unlock->status == 403, "Remote clients cannot use the passkey");
+            auto enable_remote = remote.Post("/api/v1/nexus/enable", valid, "{}", "application/json");
+            check(enable_remote && enable_remote->status == 403 && !manager.status().at("enabled"), "Remote clients cannot enable Nexus");
+            set_environment("LEMONADE_API_KEY", "");
+            auto refused = remote.Get("/api/v1/nexus/members", valid);
+            check(refused && refused->status == 403 && refused->body.find("LEMONADE_API_KEY") != std::string::npos,
+                "Remote management is refused without a configured API key");
+            server.stop(); worker.join();
+        }
+        manager.stop();
+    }
+    set_environment("LEMONADE_API_KEY", saved_key);
+    set_environment("LEMONADE_ADMIN_API_KEY", saved_admin);
 }
 
 void check_access_rules(const std::function<void(bool, const char*)>& check) {
@@ -97,6 +231,8 @@ int main() {
     const auto cleanup = [&] { std::error_code ec; std::filesystem::remove_all(root, ec); };
     try {
         check_access_rules(check);
+        check_route_access(check);
+        check_listener_isolation(root, check);
         {
             lemon::NexusManager manager(root.string(), 13305);
             httplib::Server server;
