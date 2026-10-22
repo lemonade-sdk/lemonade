@@ -1,5 +1,6 @@
 #include "lemon_cli/bench.h"
 #include "lemon_cli/bench_comparison.h"
+#include "lemon_cli/bench_context.h"
 #include "lemon_cli/bench_output.h"
 #include "lemon_cli/bench_sysinfo.h"
 #include "lemon_cli/lemonade_client.h"
@@ -258,6 +259,8 @@ static std::vector<BenchScenario> parse_scenario_file(const std::string& path) {
             scenario.max_tokens = item.value("max_tokens", 128);
             scenario.warmup_runs = item.value("warmup_runs", 0);
             if (item.contains("context") && item["context"].is_object()) {
+                scenario.minimum_ctx_size = bench_context_for_target_tokens(
+                    item["context"].value("target_tokens", 0));
                 std::string expanded = expand_context(item["context"], scenario.messages);
                 for (auto& msg : scenario.messages) {
                     if (msg.contains("role") && msg["role"] == "user" &&
@@ -1209,16 +1212,26 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
 
         auto backends = backends_by_model[model];
 
-        // Determine context sizes
-        std::vector<int> ctx_sizes = config.ctx_sizes;
-        if (ctx_sizes.empty()) {
-            int default_ctx = 4096;
-            if (model_info.contains("recipe_options") && model_info["recipe_options"].is_object()) {
-                auto& opts = model_info["recipe_options"];
-                if (opts.contains("ctx_size") && opts["ctx_size"].is_number())
-                    default_ctx = opts["ctx_size"].get<int>();
-            }
-            ctx_sizes = {default_ctx};
+        int default_ctx = 4096;
+        if (model_info.contains("recipe_options") && model_info["recipe_options"].is_object()) {
+            const auto& opts = model_info["recipe_options"];
+            if (opts.contains("ctx_size") && opts["ctx_size"].is_number())
+                default_ctx = opts["ctx_size"].get<int>();
+        }
+        std::vector<int> required_ctx_sizes;
+        required_ctx_sizes.reserve(scenarios.size());
+        for (const auto& scenario : scenarios)
+            required_ctx_sizes.push_back(scenario.minimum_ctx_size);
+        const auto context_plan = plan_bench_contexts(config.ctx_sizes, default_ctx,
+                                                       required_ctx_sizes);
+        for (const auto& [ctx, index] : context_plan.skipped) {
+            std::cerr << "Skipping scenario " << scenarios[index].name
+                      << " at --ctx-size " << ctx << " (needs at least "
+                      << scenarios[index].minimum_ctx_size << ")" << std::endl;
+        }
+        if (context_plan.batches.empty()) {
+            std::cerr << "Error: No scenarios fit the requested context size(s)." << std::endl;
+            return 1;
         }
 
         std::vector<BenchBackendResult> all_results;
@@ -1231,7 +1244,7 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
             else
                 recipe_args_list = {""};
 
-            for (int ctx_size : ctx_sizes) {
+            for (const auto& [ctx_size, scenario_indices] : context_plan.batches) {
                 for (const auto& recipe_args : recipe_args_list) {
                     BenchBackendResult tmp;
                     tmp.recipe = recipe;
@@ -1246,7 +1259,8 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
                     backend_result.ctx_size = ctx_size;
                     backend_result.backend_args = recipe_args;
 
-                    for (const auto& scenario : scenarios) {
+                    for (std::size_t scenario_index : scenario_indices) {
+                        const auto& scenario = scenarios[scenario_index];
                         std::cout << "  Scenario: " << scenario.name << " (" << scenario.category << ")" << std::endl;
 
                         // Filter backends based on scenario category

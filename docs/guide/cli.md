@@ -914,7 +914,7 @@ lemonade bench [options] MODEL_NAME [MODEL_NAME ...]
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--backend BACKEND` | Backend to test (e.g., `vulkan`, `metal`, `cpu`). Repeat for multiple backends. | All installed backends |
-| `--ctx-size SIZE` | Context size to test. Repeat for multiple sizes. | Model's default context size |
+| `--ctx-size SIZE` | Context size to test. Repeat for multiple sizes. | Model default, raised per scenario when a context target requires more |
 | `--runs N` | Number of measurement runs per scenario | `3` |
 | `--warmup N` | Number of warmup runs per scenario (not included in stats) | `0` |
 | `--scenarios NAME\|CATEGORY` | Scenario name(s) or category (e.g. `chat`, `coding`, `long-context`). Use `all` to include every scenario. Repeat for multiple. | All scenarios except `long-context` |
@@ -964,7 +964,7 @@ The optional `context` block generates large input contexts by repeating a fille
 | `target_tokens` | int | Target token count (~4 chars per token for English) |
 | `position` | string | Where to place the question relative to filler: `"end"` (default), `"start"`, or `"middle"` |
 
-When `context` is present, the user message content is replaced with the expanded text. The question (extracted from the user message) is positioned relative to the filler according to `position`.
+When `context` is present, the user message content is replaced with the expanded text. The question (extracted from the user message) is positioned relative to the filler according to `position`. Without an explicit `--ctx-size`, bench rounds the target up to a suitable context size for that scenario. With an explicit `--ctx-size` sweep, scenarios needing more context are skipped at smaller sizes. Token counts are approximate and depend on the model tokenizer.
 
 #### Default Scenarios
 
