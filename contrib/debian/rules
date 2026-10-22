@@ -8,7 +8,9 @@ DEB_BUILD_DIR := obj-$(DEB_HOST_GNU_TYPE)
 override_dh_auto_configure:
 	# BUILD_TESTING=OFF: override_dh_auto_test is a no-op and no test binary is
 	# packaged, so the unit-test targets would be built and discarded.
-	dh_auto_configure -- -DCMAKE_INSTALL_PREFIX=/usr -DBUILD_WEB_APP=ON -DUSE_SYSTEM_NODEJS_MODULES=ON -DBUILD_TESTING=OFF
+	# LEMONADE_WITH_NEXUS=OFF: the SDK's Rust crates are fetched from crates.io,
+	# which offline package builders cannot reach.
+	dh_auto_configure -- -DCMAKE_INSTALL_PREFIX=/usr -DBUILD_WEB_APP=ON -DUSE_SYSTEM_NODEJS_MODULES=ON -DBUILD_TESTING=OFF -DLEMONADE_WITH_NEXUS=OFF
 
 override_dh_auto_test:
 	# No tests configured

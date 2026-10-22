@@ -27,6 +27,7 @@ ExternalProject_Add(nexus-sdk-build
         -DCMAKE_MSVC_RUNTIME_LIBRARY=${CMAKE_MSVC_RUNTIME_LIBRARY}
         -DCMAKE_OSX_ARCHITECTURES=${CMAKE_OSX_ARCHITECTURES}
         -DCMAKE_OSX_DEPLOYMENT_TARGET=${_nexus_deployment_target}
+        -DNEXUS_CARGO_EXECUTABLE=${LEMONADE_CARGO_EXECUTABLE}
         ${LEMONADE_NEXUS_CMAKE_ARGS}
     BUILD_COMMAND ${CMAKE_COMMAND} --build <BINARY_DIR> --config Release --target lemonade_nexus_sdk
     INSTALL_COMMAND ""
@@ -45,22 +46,30 @@ endif()
 add_dependencies(lemonade-nexus-sdk nexus-sdk-build)
 target_compile_definitions(lemonade-server-core PUBLIC LEMONADE_WITH_NEXUS=1)
 target_link_libraries(lemonade-server-core PUBLIC lemonade-nexus-sdk)
+set(LEMONADE_NEXUS_RUNTIME "${_nexus_runtime}")
+# lemond, LemonadeServer (defined in src/cpp/tray) and the tests all build into the
+# top-level output directory, so one copy there serves every executable.
+set(_nexus_runtime_dir "${CMAKE_BINARY_DIR}")
+if(CMAKE_CONFIGURATION_TYPES)
+    set(_nexus_runtime_dir "${CMAKE_BINARY_DIR}/$<CONFIG>")
+endif()
+add_custom_target(nexus-sdk-runtime
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${_nexus_runtime_dir}"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different "${_nexus_runtime}" "${_nexus_runtime_dir}/"
+    VERBATIM)
+add_dependencies(nexus-sdk-runtime nexus-sdk-build)
 foreach(_server lemond LemonadeServer)
     if(TARGET ${_server})
-        add_custom_command(TARGET ${_server} POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different "${_nexus_runtime}" "$<TARGET_FILE_DIR:${_server}>/"
-            VERBATIM)
+        add_dependencies(${_server} nexus-sdk-runtime)
+        if(APPLE)
+            set_property(TARGET ${_server} APPEND PROPERTY BUILD_RPATH "@loader_path")
+            set_property(TARGET ${_server} APPEND PROPERTY INSTALL_RPATH "@loader_path")
+        elseif(UNIX)
+            set_property(TARGET ${_server} APPEND PROPERTY BUILD_RPATH "$ORIGIN")
+            set_property(TARGET ${_server} APPEND PROPERTY INSTALL_RPATH "$ORIGIN/../lib/lemonade")
+        endif()
     endif()
 endforeach()
-if(APPLE)
-    foreach(_server lemond LemonadeServer)
-        if(TARGET ${_server})
-            set_property(TARGET ${_server} APPEND PROPERTY INSTALL_RPATH "@loader_path")
-        endif()
-    endforeach()
-elseif(UNIX)
-    set_property(TARGET lemond APPEND PROPERTY INSTALL_RPATH "$ORIGIN/../lib/lemonade")
-endif()
 if(WIN32 OR APPLE)
     install(PROGRAMS "${_nexus_runtime}" DESTINATION bin COMPONENT Runtime)
 else()

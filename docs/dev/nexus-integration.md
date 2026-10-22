@@ -116,8 +116,11 @@ have a five-second polling fallback.
 
 ## Building and verification
 
-`LEMONADE_WITH_NEXUS=ON` is the default. `OFF` builds without SDK dependencies and
-reports Nexus unavailable. The SDK uses C++20 separately from Lemonade's C++17
+`LEMONADE_WITH_NEXUS` defaults to `ON` when Cargo 1.85 or newer is in `PATH`,
+and to `OFF` otherwise. An explicit `ON` without that toolchain fails at
+configuration. `OFF` builds without SDK dependencies and reports Nexus
+unavailable. The Debian package builds with `OFF` because its builders cannot
+download the Rust crates. The SDK uses C++20 separately from Lemonade's C++17
 core, CMake 3.25.1+, and Rust/Cargo 1.85+. Linux can use system OpenSSL,
 libsodium, JSON, spdlog and cpp-httplib 0.18.3+; pinned sources are the fallback.
 Windows and macOS bundle SDK dependencies. Linux desktop builds additionally
