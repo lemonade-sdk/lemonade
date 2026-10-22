@@ -35,6 +35,18 @@ class CollectTests(unittest.TestCase):
         blocks, _ = slop.collect(diff(("a.cpp", 1, ["// one", "int x = 1;", "// two"])))
         self.assertEqual(len(blocks), 2)
 
+    def test_vendored_sources_are_ignored(self):
+        blocks, code = slop.collect(
+            diff(
+                ("src/LemonadeNexusSDK/src/CApi.cpp", 1, ["// one", "int x = 1;"]),
+                ("src/cpp/server/LemonadeNexusSDK.cpp", 1, ["// two"]),
+            )
+        )
+        self.assertEqual(
+            [b.path for b in blocks], ["src/cpp/server/LemonadeNexusSDK.cpp"]
+        )
+        self.assertEqual(code, 0)
+
     def test_non_source_files_are_ignored(self):
         blocks, code = slop.collect(diff(("README.md", 1, ["# heading", "text"])))
         self.assertEqual(blocks, [])
