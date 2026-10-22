@@ -311,7 +311,7 @@ int main(int argc, char** argv) {
     check(final_chain_error() == "owner_chain_changed", "FinalOwnerChainMustMatchGraph");
     auto changed_abis = installed_hook_abis();
     ++changed_abis[0].implementation_revision;
-    check(has_code(v2::audit_export_contracts({}, nullptr, changed_abis, installed_builtin_exports().digest()), "registry_digest_mismatch"), "EmptyExportRegistryStillPinsAbiMetadata");
+    check(has_code(v2::audit_export_contracts({}, nullptr, changed_abis, v2::export_registry_digest({}, installed_hook_abis())), "registry_digest_mismatch"), "EmptyExportRegistryStillPinsAbiMetadata");
     {
         DefinitionLimits bounded;
         bounded.retained_logical_bytes = 0;

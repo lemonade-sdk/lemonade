@@ -56,7 +56,7 @@ int main() {
         check(embedded_v2_sources().size() == 2 &&
             std::set<std::string>{embedded_v2_sources()[0].key.id, embedded_v2_sources()[1].key.id} == std::set<std::string>{"hrx", "llamacpp"} &&
             embedded_v2_policies().leaves.size() == 2 &&
-            std::set<std::string>{embedded_v2_policies().leaves[0].key.id, embedded_v2_policies().leaves[1].key.id} == std::set<std::string>{"hrx", "llamacpp"} && installed_builtin_exports().exports().empty(),
+            std::set<std::string>{embedded_v2_policies().leaves[0].key.id, embedded_v2_policies().leaves[1].key.id} == std::set<std::string>{"hrx", "llamacpp"} && installed_builtin_exports().exports().size() == 1,
             "ProductionV2ExecutionTablesExactlyHrxAndLlamaAndExportsEmpty");
         zero("boundary success and failure");
     } catch (const std::exception& error) { check(false, error.what()); }

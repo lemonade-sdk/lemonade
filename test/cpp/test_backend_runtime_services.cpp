@@ -750,6 +750,8 @@ int main(int argc, char** argv) {
         const auto external_bound = external::bound(leaf);
         const auto external_entry = ConfiguredBackendEntry::make(external_bound);
         allow_entries = true;
+        check(!throws([&] { (void)DefinitionRunner(external_bound).validate_registration("test/fake"); }),
+            "ExternalArtifactManagementInvokesBoundDependencies");
         Launch external_launch;
         external_launch.host.os = "windows";
         external_launch.supported = {"rocm-stable"};
@@ -762,7 +764,16 @@ int main(int argc, char** argv) {
         DefinitionRunner(external_bound).prepare_load({"external", external_model, external_options, "error", {}, {}},
             external_entry->spec, external_launch, {}, environment_sources);
         check(stages == before, "RealExternalLeafNeverGetsBuiltinExternalStagingAuthority");
-        const auto& external_program = ex::Inspection::program(external_bound->compiled());
+        auto& external_program = const_cast<ex::Program&>(ex::Inspection::program(external_bound->compiled()));
+        const auto artifact_slot = std::find_if(external_program.hooks.begin(), external_program.hooks.end(),
+            [](const auto& item) { return item.contract == typed::Contract::Artifacts; });
+        const auto backend_slot = std::find_if(external_program.hooks.begin(), external_program.hooks.end(),
+            [](const auto& item) { return item.contract == typed::Contract::Backend; });
+        const auto dependencies = artifact_slot->dependencies;
+        artifact_slot->dependencies = {static_cast<std::size_t>(backend_slot - external_program.hooks.begin())};
+        check(throws([&] { (void)DefinitionRunner(external_bound).validate_registration("test/fake"); },
+            "Unsupported artifact management dependency"), "ArtifactManagementRejectsForeignDependency");
+        artifact_slot->dependencies = dependencies;
         const auto& hook = external_program.hooks.front();
         rt::Frame external_frame(*external_bound);
         for (const auto& input : hook.inputs) external_frame.facts.insert(input.fact);

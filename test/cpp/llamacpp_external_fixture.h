@@ -16,7 +16,7 @@ inline Json fork(const std::string& name = "research-llama") {
 inline bool code(const CompositionDiagnostics& diagnostics, const std::string& expected) {
     return std::any_of(diagnostics.entries.begin(), diagnostics.entries.end(), [&](const auto& row) { return row.code == expected; });
 }
-inline DefinitionAuthorizationResult authorize(const std::vector<Json>& leaves, BuiltinExportContract policy = contract()) {
+inline DefinitionAuthorizationResult authorize(const std::vector<Json>& leaves, BuiltinExportContract policy) {
     const auto input = make_v2_source_snapshot(embedded_v2_sources());
     const auto exports = BuiltinCatalogLoader::test_exports({policy}, input.snapshot, installed_hook_abis(),
         v2::export_registry_digest({policy}, installed_hook_abis()));
@@ -25,6 +25,16 @@ inline DefinitionAuthorizationResult authorize(const std::vector<Json>& leaves, 
     auto sources = embedded_v2_sources();
     for (std::size_t i = 0; i < leaves.size(); ++i) sources.push_back({{DefinitionNamespace::External, leaves[i].at("id"), 0}, bytes[i], ""});
     const auto frozen = BuiltinCatalogLoader::test_freeze(sources, exports);
+    if (!frozen.snapshot) return {nullptr, frozen.diagnostics};
+    return DefinitionAuthorizer(frozen.snapshot).authorize({DefinitionNamespace::External, leaves.back().at("id"), 0});
+}
+inline DefinitionAuthorizationResult authorize(const std::vector<Json>& leaves) {
+    std::vector<std::string> bytes;
+    for (const auto& leaf : leaves) bytes.push_back(leaf.dump());
+    std::vector<DefinitionSourceView> sources;
+    for (std::size_t i = 0; i < leaves.size(); ++i)
+        sources.push_back({{DefinitionNamespace::External, leaves[i].at("id"), 0}, bytes[i], ""});
+    const auto frozen = load_v2_authority_snapshot(sources);
     if (!frozen.snapshot) return {nullptr, frozen.diagnostics};
     return DefinitionAuthorizer(frozen.snapshot).authorize({DefinitionNamespace::External, leaves.back().at("id"), 0});
 }
@@ -47,6 +57,12 @@ inline Json edit(const std::string& op, const std::string& path, Json value = nu
 }
 inline void export_checks(const Check& check) {
     auto policy = contract();
+    const auto& production = installed_builtin_exports();
+    const auto* installed = production.find("llamacpp", 1);
+    check(production.exports().size() == 1 && installed &&
+        v2::export_policy_json(*installed).dump() == v2::export_policy_json(policy).dump() &&
+        production.digest() == nlohmann::json::parse(export_fixture::read_bytes("external/llamacpp.pins.json")).at("registry"),
+        "ProductionContractEqualsQualifiedLiteral");
     const auto sources = make_v2_source_snapshot(embedded_v2_sources());
     const auto audit = [&](const BuiltinExportContract& p, std::string digest = "") {
         return v2::audit_export_contracts({p}, sources.snapshot, installed_hook_abis(),
@@ -132,6 +148,11 @@ inline void authorization_checks(const Check& check) {
             found |= child_tuple == tuple(AuthorityInspection::grant(*a.definition, j));
         check(found && child_tuple.at("base") == "llamacpp", "GrantTuplesOnlyAttenuate:completeTuple");
     }
+    auto growing = fork("fork-b");
+    growing["edits"].push_back(edit("add", "/hooks/system", {{"id", "llamacpp.system.v1"}, {"params", Json::object()}}));
+    const auto denied_growth = authorize({fork(), growing});
+    check(!denied_growth.definition && code(denied_growth.diagnostics, "authored_hook_selection"),
+        "DescendantCannotRegainRemovedHook");
     auto authored = fork(); authored["merge"]["origin"] = "builtin";
     reject(check, authored, "unknown_key", "ExternalLeafNeverBuiltin");
     authored = fork(); authored["merge"]["compatibility"] = "legacy_non_chat_sse";

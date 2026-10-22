@@ -64,12 +64,9 @@ struct BuiltinExecutionPolicies {
 };
 
 const std::vector<DefinitionSourceView>& embedded_v2_sources();
+BuiltinExportContract llamacpp_external_contract();
 const BuiltinExecutionPolicies& fixed_builtin_v2_policies();
 const BuiltinExecutionPolicies& embedded_v2_policies();
-
-#ifdef LEMON_BACKEND_FORK_TESTING
-const BuiltinExportRegistry& test_selected_builtin_exports();
-#endif
 
 class BuiltinCatalogLoader {
 public:

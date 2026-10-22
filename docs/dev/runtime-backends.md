@@ -5,7 +5,8 @@
 `.json` selection and UTF-8 lexicographic ordering. Other files and subdirectories
 are ignored. Selected symlinks, nonregular files, unreadable files, invalid
 objects, and definitions larger than 1 MiB fail startup. Each file holds one
-schema-v1 object or a hook-free schema-v2 definition. A missing directory is allowed.
+schema-v1 object or a schema-v2 definition. V2 can be hook-free or inherit the
+compiled `llamacpp@1` external contract described below. A missing directory is allowed.
 
 The catalog freezes immediately before configuration loading in both standalone
 and embedded Windows startup. Editing definitions or sending SIGHUP has no effect
@@ -15,13 +16,14 @@ External definitions cannot replace a compiled recipe, including a built-in
 that runs from an embedded definition. Definition IDs, external recipes, configuration sections,
 and external option ownership must be unique. Built-in/common options, request
 control fields, and global configuration keys are reserved. External definitions
-receive no compiled compatibility attachment, compiled hook or named CLI flag.
+receive no compiled compatibility attachment or named CLI flag. They cannot author
+hook selections; inherited hook authority requires an installed export contract.
 
 Use `schemas/backend-definition-v1.schema.json` as the structural contract. Only
 installed primitives are accepted; definitions do not install hooks or code. Only
-built-in definitions can select an installed compiled hook (see
-[Installed hooks](#installed-hooks)); an external definition expresses its
-behavior through data primitives alone.
+built-in definitions can author a compiled hook selection (see
+[Installed hooks](#installed-hooks)). External v2 children can retain only the
+original grants inherited through the reviewed export contract.
 External scalar options retain their JSON types, enum/range constraints and
 `unset_values` (default `[null]`). Values such as `false`, `0`, `""`, and `-1` are
 preserved unless declared unset. Existing REST null clearing semantics apply.
@@ -71,12 +73,72 @@ historical v1 HRX source still compiles against the original eight-entry fixture
 `test/backend_v2_4f_mutations.py` compiles one regression at a time outside the
 production tree.
 
-Exports remain empty at
-`sha256:b2e770dfdb68a27db72cbe2fdad29f26c3eeb7ab2ca5ea136d325bfe4a5dfa8a`.
-Unit 4g must attach a reviewed external export contract, explicit allowed mutable
-inputs, parent-slot attenuation and origin confinement, then qualify that
-contract's admission, binding and publication failures. It must not reuse a
-builtin leaf policy as external authority. Real-engine qualification remains 4h.
+## Activated llama.cpp external contract
+
+Production installs exactly `llamacpp@1`, independently of the two fixed builtin
+execution policies. The registry identity is
+`sha256:d644387f2d2838a76ace64304318e673244e8cd117e496ae4394dc0792e2b9fa`.
+The reviewed contract lives in `backend_llamacpp_export.cpp`; it is compiled data,
+with no registry setter, environment/CLI switch or serialized authority.
+Source, resolved-definition, dependency, ABI, parameter, owner, slot-policy and
+aggregate pins are checked before the installed registry can be used.
+
+| Inherited occurrences | Removal policy |
+|---|---|
+| Root backend and launch/prepare; main artifact | Mandatory, forbidden to remove; main requires prepare |
+| Root install-context, runtime-options, environment and system | Independently removable when remaining dependencies compile |
+| Ten protocol hook occurrences | Retain the ordered chain with its operation owner |
+| Eleven sealed operation owners | Whole-owner removal allowed; no recreation or laundering |
+
+The bounded mutable surface covers identity/presentation strings, exact option
+presentation scalars, finite support rows, typed custom defaults and the finite
+child environment domain. Stable option IDs/types/defaults/unset sentinels,
+protocol mappings, model/port/device bindings and owner semantics remain sealed.
+Permissions intersect across retained slots and the contract envelope. External
+children cannot author, replace, relocate or re-author hooks, even with the same
+ID or an overwritten edit. Origin promotion, compatibility attachment, builtin
+shadowing and grant growth through descendants are rejected.
+
+`LocalExecutableV1` requires the complete coordinated local profile:
+`external_only`, leaf-owned install and pin identities, empty install cases,
+`external_or_managed` program selection, no install phase, exact
+backend/prepare/artifact/port/program ordering, executable basenames, absent
+named CLI flags and bound-passthrough streaming. A configured executable path
+comes from the leaf's normal config section. Missing paths fail without managed
+fallback or download. Arbitrary managed-release repackaging requires another
+reviewed policy and CPU qualification.
+
+The `research-llama` and `fork-b` examples in `test/fixtures/backend-v2/external/`
+retain 13 and 10 of the base's 17 grants. They demonstrate compatible local builds,
+not qualification of a named upstream fork. Their Linux x86-64 CPU support row
+is metadata, not evidence for the contract's other allowed backend domains.
+
+| Surface | Qualified evidence |
+|---|---|
+| Linux x86-64 CPU fake engines | Production discovery, full admission/binding/finalization, HTTP load/request/unload, own NativeProcess executable/PID/hash/argv/environment, inherited protocol transforms |
+| Security | Production-registry lower-level suites and production HTTP rejection matrix; hook-edit startup rejects before publication |
+| Binary invariance | Production `lemond` and `lemonade` SHA-256 unchanged before/after declaration installation and execution |
+| Windows/macOS and Linux arm64 | Macro/oracle views only; native build and process behavior unqualified |
+| Real vanilla llama, HRX and third-party fork models | Unqualified; need native real GGUF loading and protocol results |
+| GPU/NPU and backend/accelerator combinations | Unqualified; need separately queued real hardware runs |
+
+`LlamaCppV2ProductionSwitchTest` runs `test/backend_v2_4h_transition.py`: the
+171- and 141-record stages remain immutable, and the third stage discloses the
+registry-dependent builtin context, authority, admission, execution, catalog,
+feature-manifest, CLI bytes and ETags for both representations and all seventeen
+filters. Accepted/executable definition versions remain `[1,2]` and acceptance
+remains `execution_finalization`; these unchanged values are explicit in stage 3.
+Runner/service policy advances from 5 to 6 to execute required bound producers
+for artifact management outside a load session; compiler remains 5. No invocation
+guard or required-slot check is bypassed.
+No undisclosed or unused transition record is accepted. The only new registration
+is `LlamaCppProductionForkTest` (152 to 153), whose production-process linkage and
+startup lifecycle differ from the existing internal fork harness.
+
+The old uninjected rejection control is replaced: a valid inherited fork now
+starts, while an otherwise identical declaration that authors a protected backend
+hook must fail authorization and prevent startup publication. Materialized JSON
+never carries authority to another binary.
 
 ## Built-in configured backends
 

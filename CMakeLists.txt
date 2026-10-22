@@ -1156,6 +1156,7 @@ add_library(lemonade-backend-definition-v2 STATIC
     src/cpp/server/backends/configured/backend_definition_policy.cpp
     src/cpp/server/backends/configured/backend_definition_authorization.cpp
     src/cpp/server/backends/configured/backend_builtin_authorization.cpp
+    src/cpp/server/backends/configured/backend_llamacpp_export.cpp
     src/cpp/server/backends/configured/backend_llamacpp_policy.cpp
     src/cpp/server/backends/configured/backend_hook_abi.cpp)
 target_include_directories(lemonade-backend-definition-v2 PUBLIC
@@ -4243,10 +4244,10 @@ if(BUILD_TESTING)
     target_link_libraries(test_llamacpp_v2_production_switch PRIVATE
         lemonade-binding-test lemonade-typed-hook-test lemonade-server-core lemonade-test-isolation)
     add_cpp_ci_test(LlamaCppV2ProductionSwitchTest CI ON
-        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/backend_v2_4f_transition.py run
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/backend_v2_4h_transition.py run
             --build "${CMAKE_CURRENT_BINARY_DIR}"
-            --out "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/artifacts/backend-v2-4f/transition"
-            --scratch "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/backend-v2-4f/transition"
+            --out "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/artifacts/backend-v2-4h/transition"
+            --scratch "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/backend-v2-4h/transition"
         DEPENDS test_llamacpp_v2_production_switch llamacpp-frozen-control-build)
 endif()
 
@@ -4258,7 +4259,7 @@ if(BUILD_TESTING)
         src/cpp/server/backends/configured/backend_definition_authorization.cpp
         src/cpp/server/backends/configured/backend_definition_exports.cpp)
     target_compile_definitions(test_llamacpp_external_fork PRIVATE
-        LEMON_BACKEND_EXPORT_TESTING LEMON_BACKEND_FORK_TESTING
+        LEMON_BACKEND_EXPORT_TESTING
         LEMON_FAKE_ENGINE="$<TARGET_FILE:test_external_fake_engine>"
         LEMON_TEST_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures")
     target_include_directories(test_llamacpp_external_fork PRIVATE
@@ -4267,5 +4268,16 @@ if(BUILD_TESTING)
     add_cpp_ci_test(LlamaCppExternalForkTest CI ON
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/llamacpp_external_fork.py
             --build ${CMAKE_CURRENT_BINARY_DIR}
+            --out "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/artifacts/backend-v2-4h"
+            --scratch "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/backend-v2-4h"
         DEPENDS test_llamacpp_external_fork test_external_fake_engine lemond)
+endif()
+
+if(BUILD_TESTING)
+    add_cpp_ci_test(LlamaCppProductionForkTest CI ON
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/llamacpp_production_fork.py
+            --build "${CMAKE_CURRENT_BINARY_DIR}"
+            --out "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/artifacts/backend-v2-4h/production"
+            --scratch "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/backend-v2-4h/production"
+        DEPENDS lemond lemonade test_external_fake_engine)
 endif()

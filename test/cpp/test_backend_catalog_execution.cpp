@@ -83,9 +83,9 @@ int main() {
     auto foreign = parent;
     foreign["merge"]["hooks"]["backend"] = {{"id", "llamacpp.backend"}};
     check(!build({foreign}).catalog, "ExternalDeclarationsCannotMintHookAuthority");
-    check(installed_builtin_exports().exports().empty() && embedded_v2_sources().size() == 2 &&
+    check(installed_builtin_exports().exports().size() == 1 && embedded_v2_sources().size() == 2 &&
         std::set<std::string>{embedded_v2_sources()[0].key.id, embedded_v2_sources()[1].key.id} ==
-            std::set<std::string>{"hrx", "llamacpp"}, "ProductionV2HrxAndLlamaOnlyAndExportsStayEmpty");
+            std::set<std::string>{"hrx", "llamacpp"}, "ProductionV2HrxAndLlamaOnlyAndSingleReviewedExport");
     const auto rich = good.catalog->export_schema("catalog-leaf", 2);
     check(rich["recipes"][0]["input_schema_version"] == 2 && rich["executable_definition_versions"] == Json::array({1, 2}), "ExecutableV2PublicProjectionUsesLeafVersion");
     check(before["catalog_id"] == build({parent, leaf, legacy()}).catalog->export_schema()["catalog_id"], "ExecutionCatalogIdentityIsDeterministic");

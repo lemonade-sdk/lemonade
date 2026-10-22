@@ -164,11 +164,6 @@ void product(const std::filesystem::path& directory) {
 }
 }
 
-const BuiltinExportRegistry& lemon::backends::test_selected_builtin_exports() {
-    static const auto registry = external_fixture::registry();
-    return *registry;
-}
-
 int main(int argc, char** argv) {
     if (argc == 2 && std::string(argv[1]) == "--dump-pins") {
         auto policy = external_fixture::contract();
@@ -180,8 +175,8 @@ int main(int argc, char** argv) {
         return 0;
     }
     try {
-        check(installed_builtin_exports().exports().empty() && installed_builtin_exports().digest() ==
-            "sha256:b2e770dfdb68a27db72cbe2fdad29f26c3eeb7ab2ca5ea136d325bfe4a5dfa8a", "ProductionExportsRemainEmpty");
+        check(installed_builtin_exports().exports().size() == 1 && installed_builtin_exports().digest() ==
+            "sha256:d644387f2d2838a76ace64304318e673244e8cd117e496ae4394dc0792e2b9fa", "ProductionExportsMatchQualifiedContract");
         const auto& selected = BuiltinCatalogLoader::selected_exports();
         check(selected.exports().size() == 1 && selected.exports()[0].slots.size() == 17, "All17BaseSlotsCovered");
         finalization_controls();

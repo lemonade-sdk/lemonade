@@ -33,8 +33,8 @@ void reject(const std::string& label, const std::string& code, const std::functi
 
 int main() {
     static_assert(!std::is_default_constructible_v<BuiltinExportRegistry>);
-    check(installed_builtin_exports().exports().empty(), "production export set is empty");
-    check(!installed_builtin_exports().find("llamacpp", 1), "llamacpp is not exported");
+    check(installed_builtin_exports().exports().size() == 1, "production export set has one reviewed contract");
+    check(installed_builtin_exports().find("llamacpp", 1) && !installed_builtin_exports().find("hrx", 1), "only llamacpp contract one is exported");
     const auto input = snapshot();
     check(input.snapshot != nullptr, "complete synthetic source snapshot");
     DefinitionResolver resolver(input.snapshot);
@@ -114,14 +114,14 @@ int main() {
     const auto* prepare = find_hook_abi("llamacpp.prepare.v1");
     check(prepare && prepare->stage == "launch" && prepare->revision == 1 && prepare->implementation_revision == 1 &&
         prepare->operations.empty(), "PrepareAbiUsesLaunchSlot");
-    check(installed_builtin_exports().digest() == inventory.at("registry_digest"), "ReviewedProductionAggregatePin");
+    check(installed_builtin_exports().digest() == Json::parse(read_bytes("external/llamacpp.pins.json")).at("registry"), "ReviewedProductionAggregatePin");
     auto stale_abis = installed_hook_abis();
     ++stale_abis.back().implementation_revision;
-    check(has_code(v2::audit_export_contracts({}, nullptr, stale_abis, installed_builtin_exports().digest()),
+    check(has_code(v2::audit_export_contracts({}, nullptr, stale_abis, inventory.at("registry_digest").get<std::string>()),
         "registry_digest_mismatch"), "EmptyExportsStillPinAbiImplementation");
     stale_abis = installed_hook_abis();
     ++stale_abis.back().revision;
-    check(has_code(v2::audit_export_contracts({}, nullptr, stale_abis, installed_builtin_exports().digest()),
+    check(has_code(v2::audit_export_contracts({}, nullptr, stale_abis, inventory.at("registry_digest").get<std::string>()),
         "registry_digest_mismatch"), "EmptyExportsStillPinAbiRevision");
     check(has_code(v2::audit_export_contracts({}, nullptr, installed_hook_abis(),
         "sha256:283179bf6e03aba5facd47fd9b2538007ecddc2ac9a46473573713694f070899"),

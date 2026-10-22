@@ -2,13 +2,13 @@
 
 V2 resolves and executes definitions from an immutable startup snapshot. The
 production catalog, CLI validator and configured server admit hook-free external
-v2 definitions. The two separately authorized builtin v2 leaves are `llamacpp`
+v2 definitions and confined children of the activated `llamacpp@1` export. The two separately authorized builtin v2 leaves are `llamacpp`
 and its `hrx` child; the other seven configured definitions remain v1. Structural
 checking or resolution alone cannot authorize hooks or establish execution.
 Representation 1 remains the default public schema projection.
 
 The sections below retain the implementation history by phase. Their statements
-about pending activation describe those historical boundaries. The current 4f
+about pending activation describe those historical boundaries. The current 4h activation
 status is recorded at the end and in
 [Runtime local backends](runtime-backends.md#builtin-v2-inheritance).
 
@@ -1074,7 +1074,7 @@ leaves' authority identities. Production exports remain empty at
 `sha256:b2e770dfdb68a27db72cbe2fdad29f26c3eeb7ab2ca5ea136d325bfe4a5dfa8a`.
 
 The closed device, load-log and bound-stream controls are documented in the
-runtime guide. Compiler and runner/service revisions advance from 4 to 5.
+runtime guide. Compiler and runner/service revisions advanced from 4 to 5 in 4f.
 `test/fixtures/backend-v2/hrx.catalog-transition.json` discloses the exact schema
 controls and independently recomputed identities, rows and ETags.
 `LlamaCppV2ProductionSwitchTest` now verifies both transition stages, including
@@ -1087,3 +1087,31 @@ Unit 4g must attach and qualify a reviewed external export contract with explici
 mutable inputs, parent-slot attenuation and external-origin confinement. A
 builtin leaf execution policy cannot substitute for that contract. Native model
 and hardware qualification remains 4h.
+
+## Production external export activation (unit 4h-activation)
+
+Production installs the exact 17-occurrence contract qualified in 4g, with registry
+`sha256:d644387f2d2838a76ace64304318e673244e8cd117e496ae4394dc0792e2b9fa`.
+The source/resolved/dependency, owner graph, policy and per-slot pins are unchanged
+from the independent 4g fixture. The two builtin policies, all nineteen ABI records,
+seven v1 definitions and both previous transition manifests remain unchanged.
+The test-only registry-selection seam has been removed.
+
+The precise removal and mutation contract, closed `LocalExecutableV1` profile,
+qualified support matrix and remaining native/model/hardware gaps are documented
+in [Activated llama.cpp external contract](runtime-backends.md#activated-llamacpp-external-contract).
+`test/fixtures/backend-v2/exports.catalog-transition.json` is the third disclosure;
+it changes no historical record and grants no general diff exemption. Every raw
+snapshot change must equal a necessary exact typed record, followed by complete
+byte replay across all three stages. Compiler remains 5; runner/service policy advances from 5 to 6. Artifact
+management has no load session, so it now invokes the bound backend and prepare
+producers required by the external main-artifact grant in a separate confined
+frame. It never synthesizes completion or bypasses invocation guards. Unsupported
+management dependency kinds fail closed.
+The acceptance stage and accepted/executable version arrays remain unchanged.
+
+CPU qualification uses the installed registry and production executables. The
+production-process fork test hashes both Lemonade binaries before and after
+adding `backends.d` declarations and retains a protected-hook negative control.
+The subprocess is a fake engine with a synthetic artifact; this establishes no
+real inference, model correctness, accelerator performance or native portability.

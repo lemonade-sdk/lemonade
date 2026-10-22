@@ -325,10 +325,15 @@ def run_views(args):
     inventory = json.loads(
         (REPO / "test/fixtures/backend-v2/hook-abi.inventory.json").read_text()
     )
-    assert registry["exports"] == 0 and len(registry["abis"]) == 19
+    assert registry["exports"] == 1 and len(registry["abis"]) == 19
     assert registry["abis"] == inventory["abis"]
     assert registry["abi_digest"] == inventory["abi_digest"]
-    assert registry["digest"] == inventory["registry_digest"]
+    assert (
+        registry["digest"]
+        == json.loads(
+            (REPO / "test/fixtures/backend-v2/external/llamacpp.pins.json").read_bytes()
+        )["registry"]
+    )
     (args.out / "registry.json").write_text(json.dumps(registry, indent=2) + "\n")
 
 

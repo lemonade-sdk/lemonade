@@ -57,8 +57,20 @@ private:
         if (found == program_.artifacts.end()) throw std::logic_error("No bound artifact consumer");
         const auto schedule = slots(SlotOwnerKind::Artifact, found->name, "artifacts");
         if (schedule.size() != 1) throw std::logic_error("No bound artifact consumer");
-        runtime::Frame frame(*executable_);
-        frame.facts = {typed::Fact::ModelArtifacts, typed::Fact::ModelLabels};
+        auto frame = program_.hooks.at(schedule.front()).dependencies.empty() ? runtime::Frame(*executable_) : management_frame("cpu");
+        frame.facts.insert({typed::Fact::ModelArtifacts, typed::Fact::ModelLabels});
+        if (!program_.hooks.at(schedule.front()).dependencies.empty()) {
+            frame.facts.insert({typed::Fact::ModelArtifacts, typed::Fact::ModelLabels,
+                typed::Fact::DraftCheckpoint, typed::Fact::ContextSize});
+            for (const auto dependency : program_.hooks.at(schedule.front()).dependencies) {
+                const auto& slot = program_.hooks.at(dependency);
+                if (slot.contract != typed::Contract::Prepare || slot.slot.owner_kind != SlotOwnerKind::Root ||
+                    slot.slot.owner_id != "launch" || slot.slot.stage != "launch")
+                    throw std::logic_error("Unsupported artifact management dependency");
+                invoke<typed::PrepareHook>(frame, dependency, SlotOwnerKind::Root, "launch", "launch", {},
+                    [](auto target, auto&) { return target(typed::PrepareInput{}); });
+            }
+        }
         return invoke<typed::ArtifactOps>(frame, schedule.front(), SlotOwnerKind::Artifact, found->name, "artifacts", {}, call);
     }
     template<class Target, class Call>

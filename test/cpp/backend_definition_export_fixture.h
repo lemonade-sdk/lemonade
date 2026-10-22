@@ -49,6 +49,11 @@ inline DefinitionSnapshotResult snapshot(const std::string& fixture = "export.sy
     return make_v2_source_snapshot({{{DefinitionNamespace::Builtin, id, 1}, bytes, "/private/sentinel.json"}});
 }
 
+inline std::shared_ptr<const BuiltinExportRegistry> empty_exports() {
+    return BuiltinCatalogLoader::test_exports({}, nullptr, installed_hook_abis(),
+        v2::export_registry_digest({}, installed_hook_abis()));
+}
+
 inline void repin(BuiltinExportContract& value) {
     for (auto& policy : value.slots) policy.mutation_policy_digest = v2::mutation_policy_digest(policy);
     value.owner_graph_digest = v2::owner_graph_digest(value.owners);

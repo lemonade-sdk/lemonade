@@ -5,12 +5,15 @@
 #include "llamacpp_external_fixture.h"
 
 namespace lemon::backends::external_fixture {
-inline std::shared_ptr<const FrozenBuiltinCatalog> builtins(BuiltinExportContract policy = contract()) {
+inline std::shared_ptr<const FrozenBuiltinCatalog> builtins(BuiltinExportContract policy) {
     const auto sources = make_v2_source_snapshot(embedded_v2_sources());
     const auto registry = BuiltinCatalogLoader::test_exports({policy}, sources.snapshot, installed_hook_abis(),
         v2::export_registry_digest({policy}, installed_hook_abis()));
     const auto authority = BuiltinCatalogLoader::test_freeze(embedded_v2_sources(), registry);
     return CatalogAdmissionBuilder::test_builtins(authority.snapshot, embedded_v2_sources());
+}
+inline std::shared_ptr<const FrozenBuiltinCatalog> builtins() {
+    return freeze_builtin_catalog();
 }
 inline CatalogAdmissionResult admit(const std::vector<Json>& leaves, std::shared_ptr<const FrozenBuiltinCatalog> builtin = builtins(),
     const DefinitionLimits& limits = {}) {
@@ -44,9 +47,10 @@ inline void admission_checks(const Check& check) {
     auto changed = contract(); ++changed.policy_revision; export_fixture::repin(changed);
     const auto second = admit({fork(), fork("fork-b")}, builtins(changed));
     check(accepted.catalog && second.catalog && accepted.catalog->admission_id() != second.catalog->admission_id(), "ExternalPolicyInvalidatesAdmissionIdentity");
-    DefinitionLimits limits; limits.chain_documents = 1;
+    DefinitionLimits limits; limits.chain_documents = 2;
     const auto bounded = admit({fork(), fork("fork-b")}, builtins(), limits);
     check(!bounded.catalog && code(bounded.diagnostics, "limit_exceeded"), "ExternalGraphBoundsFailClosed");
+    if (bounded.catalog || !code(bounded.diagnostics, "limit_exceeded")) diagnose(bounded.diagnostics);
 }
 inline void owner_checks(const Check& check) {
     for (const auto& owner : contract().owners) {

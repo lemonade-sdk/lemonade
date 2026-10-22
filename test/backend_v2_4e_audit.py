@@ -149,9 +149,11 @@ def census(args):
         additions = {"LlamaCppV2ProductionSwitchTest"}
     if args.expected_count == 152:
         additions = {"LlamaCppExternalForkTest"}
+    if args.expected_count == 153:
+        additions = {"LlamaCppProductionForkTest"}
     if getattr(args, "no_additions", False):
         additions = set()
-    assert args.expected_count in (145, 150, 151, 152)
+    assert args.expected_count in (145, 150, 151, 152, 153)
     assert len(new) == args.expected_count and len(old) == args.expected_count - len(
         additions
     ), "CppCiCountExact"
@@ -172,6 +174,14 @@ def census(args):
         targets = {"test_llamacpp_v2_production_switch"}
     if args.expected_count == 152:
         targets = {"test_llamacpp_external_fork", "test_external_fake_engine", "lemond"}
+    if args.expected_count == 153:
+        targets = {
+            "test_llamacpp_external_fork",
+            "test_external_fake_engine",
+            "lemond",
+            "lemonade",
+            "llamacpp-frozen-control-build",
+        }
     if getattr(args, "no_additions", False):
         targets |= {
             Path(row["command"][0]).name

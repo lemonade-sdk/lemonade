@@ -100,6 +100,7 @@ void identity_evidence(const BackendCatalog& catalog, const AdmittedCatalog& adm
             {"catalog", catalog.export_schema().at("catalog_id")}, {"catalog_v2", catalog.export_schema("", 2).at("catalog_v2_id")},
             {"arms", arms}, {"declaration", token.definition().declaration}, {"exports", installed_builtin_exports().digest()},
             {"abi", v2::hook_abi_json(installed_hook_abis())}};
+        evidence["export_contract"] = v2::export_policy_json(installed_builtin_exports().exports().at(0));
         evidence["descriptors"] = Json::array();
         evidence["spec_aliases"] = Json::array();
         evidence["v1_ids"] = Json::array();
@@ -168,8 +169,8 @@ int main(int argc, char** argv) {
         if (policy.leaves.size() != 2) return finish();
         check(policy.leaves[0].slots.size() == 17 && policy.leaves[0].owners.size() == 11 &&
             policy.digest == v2::export_registry_digest(policy.leaves, installed_hook_abis()), "FixedPolicySeventeenOccurrencesElevenOwners");
-        check(installed_builtin_exports().exports().empty() && installed_builtin_exports().digest() ==
-            "sha256:b2e770dfdb68a27db72cbe2fdad29f26c3eeb7ab2ca5ea136d325bfe4a5dfa8a", "BuiltinPolicyDoesNotAuthorizeExport");
+        check(installed_builtin_exports().exports().size() == 1 && installed_builtin_exports().digest() ==
+            "sha256:d644387f2d2838a76ace64304318e673244e8cd117e496ae4394dc0792e2b9fa", "BuiltinPolicyDoesNotAuthorizeExport");
         std::ifstream file(std::string(LEMON_PRODUCTION_DEFINITIONS) + "/llamacpp.json", std::ios::binary);
         const std::string production_bytes{std::istreambuf_iterator<char>(file), {}};
         check(production_bytes == read_bytes("llamacpp.candidate.json") && embedded_v2_sources().size() == 2 &&

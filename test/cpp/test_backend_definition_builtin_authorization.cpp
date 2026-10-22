@@ -95,7 +95,8 @@ int main() {
         for (const auto& error : frozen.diagnostics.entries) std::printf("%s %s\n", error.code.c_str(), error.pointer.c_str());
         return 1;
     }
-    check(installed_builtin_exports().exports().empty(), "BuiltinPolicyDoesNotExportBase");
+    check(!installed_builtin_exports().find("builtin-leaf", 1) && !installed_builtin_exports().find("test-export", 1) &&
+        !installed_builtin_exports().find("hrx", 1), "BuiltinPolicyDoesNotExportBase");
     const auto builtin = builtin_catalog(frozen.snapshot);
     const auto first = admit({}, builtin), second = admit({}, builtin);
     check(first.catalog && second.catalog, "BuiltinLeafAdmittedWithoutExport");

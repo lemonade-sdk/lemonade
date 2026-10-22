@@ -247,7 +247,7 @@ int main() {
     auto missing_bytes = missing.dump();
     const auto stock = load_v2_authority_snapshot({{{DefinitionNamespace::External, "child", 0}, missing_bytes, ""}});
     check(stock.snapshot && has_code(DefinitionAuthorizer(stock.snapshot).authorize({DefinitionNamespace::External, "child", 0}).diagnostics,
-        "unexported_builtin"), "stock llamacpp export remains unavailable");
+        "invalid_local_executable_profile"), "stock llama export requires confined external profile");
     value = child();
     value["edits"] = Json::array({edit("merge", "/operations", Json{{"delivery", "streaming"}}, "/" )});
     value["edits"][0].erase("at");
@@ -288,7 +288,7 @@ int main() {
     const auto pure_result = pure.resolve({DefinitionNamespace::External, "plain", 0});
     DefinitionLimits shared;
     shared.work_nodes = pure_result.definition->metrics.work_nodes;
-    const auto bounded = BuiltinCatalogLoader::test_freeze({{{DefinitionNamespace::External, "plain", 0}, plain_source, ""}}, std::make_shared<const BuiltinExportRegistry>(installed_builtin_exports()), shared);
+    const auto bounded = BuiltinCatalogLoader::test_freeze({{{DefinitionNamespace::External, "plain", 0}, plain_source, ""}}, export_fixture::empty_exports(), shared);
     const auto exhausted = DefinitionAuthorizer(bounded.snapshot).authorize({DefinitionNamespace::External, "plain", 0});
     check(bounded.snapshot && !exhausted.definition && has_code(exhausted.diagnostics, "limit_exceeded"), "inspection shares resolver work budget");
     check(graph_error([](auto& d, auto& c, auto&) { d.declaration["hooks"].erase("launch"); c.slots[0].removal = SlotRemoval::Independent; d.declaration["artifacts"]["other"] = d.declaration["artifacts"]["main"]; d.declaration["artifacts"].erase("main"); }) == "grant_growth", "final artifact relocation");
@@ -299,7 +299,7 @@ int main() {
     check(silent_snapshot.snapshot && !silent_result.definition && silent_result.diagnostics.truncated && silent_result.diagnostics.entries.empty(), "diagnostic bound remains fail closed");
     DefinitionLimits retention;
     retention.retained_logical_bytes = pure_result.definition->metrics.retained_logical_bytes;
-    const auto retained_snapshot = BuiltinCatalogLoader::test_freeze({{{DefinitionNamespace::External, "plain", 0}, plain_source, ""}}, std::make_shared<const BuiltinExportRegistry>(installed_builtin_exports()), retention);
+    const auto retained_snapshot = BuiltinCatalogLoader::test_freeze({{{DefinitionNamespace::External, "plain", 0}, plain_source, ""}}, export_fixture::empty_exports(), retention);
     const auto retained_result = DefinitionAuthorizer(retained_snapshot.snapshot).authorize({DefinitionNamespace::External, "plain", 0});
     check(retained_snapshot.snapshot && !retained_result.definition && has_code(retained_result.diagnostics, "limit_exceeded"), "inspection shares retention budget");
     check(graph_error([](auto& d, auto& c, auto&) {

@@ -197,7 +197,7 @@ void BackendCatalog::finalize() {
         registrations_.push_back({&entry->descriptor, entry->factory, &entry->spec, entry->backend_ops(), entry.get()});
     }
     json identity = {{"export", schema_}, {"arms", arms}};
-    if (!executions.empty()) { identity["executions"] = executions; identity["runner_service_policy"] = 5; }
+    if (!executions.empty()) { identity["executions"] = executions; identity["runner_service_policy"] = 6; }
     schema_["catalog_id"] = schema_digest(identity.dump());
 }
 

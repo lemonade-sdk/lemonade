@@ -433,11 +433,7 @@ FrozenDefinitionSnapshotResult BuiltinCatalogLoader::freeze(const std::vector<De
 }
 
 const BuiltinExportRegistry& BuiltinCatalogLoader::selected_exports() {
-#ifdef LEMON_BACKEND_FORK_TESTING
-    return test_selected_builtin_exports();
-#else
     return installed_exports();
-#endif
 }
 
 FrozenDefinitionSnapshotResult BuiltinCatalogLoader::freeze_embedded(const DefinitionLimits& limits) {
@@ -498,7 +494,9 @@ FrozenDefinitionSnapshotResult BuiltinCatalogLoader::test_freeze_builtins(const 
     for (const auto& source : sources) if (source.key.space != DefinitionNamespace::Builtin || source.key.contract == 0)
         return {nullptr, {limits.diagnostics ? std::vector<CompositionDiagnostic>{{"invalid_builtin_source", source.key.id, "", "Invalid embedded source", {}, {}, {}}} :
             std::vector<CompositionDiagnostic>{}, limits.diagnostics == 0}};
-    return freeze_sources(sources, std::make_shared<const BuiltinExportRegistry>(installed_exports()), limits,
+    const auto empty = test_exports({}, nullptr, installed_hook_abis(),
+        v2::export_registry_digest({}, installed_hook_abis()));
+    return freeze_sources(sources, empty, limits,
         nullptr, std::make_shared<const BuiltinExecutionPolicies>(policies));
 }
 #endif

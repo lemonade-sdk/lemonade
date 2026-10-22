@@ -92,7 +92,7 @@ int main() {
     reject({child("child", "absent")}, "missing_parent", "missing external dependency explicit");
     reject({legacy(), child("child", "legacy")}, "unsupported_parent_version", "existing v1 parent distinguished");
     value = child("child", "unused"); value["extends"] = {{"builtin", "llamacpp"}, {"contract", 1}};
-    reject({value}, "unexported_builtin", "production exports remain empty");
+    reject({value}, "invalid_local_executable_profile", "production export rejects an unconfined inherited profile");
     reject({child("a", "b"), child("b", "a")}, "dependency_cycle", "ambiguous cyclic graph rejects");
     BackendCatalog active({});
     const auto before = active.export_schema();

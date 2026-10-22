@@ -1,4 +1,4 @@
-"""CPU startup-to-subprocess proof with an uninjected production control."""
+"""CPU startup-to-subprocess proof with the installed production registry."""
 
 import argparse
 import hashlib
@@ -6,7 +6,6 @@ import json
 import os
 from pathlib import Path
 import signal
-import socket
 import subprocess
 import time
 
@@ -72,39 +71,11 @@ def main():
     assert process["process"]["path"] == str(
         scratch / "external-fork/research-llama-server"
     ), "ExternalForkNeverUsesBuiltinExecutable"
-    directory = scratch / "external-fork"
-    with socket.socket() as bound:
-        bound.bind(("127.0.0.1", 0))
-        port = bound.getsockname()[1]
-    result, output = run(
-        [
-            str(args.build / "lemond"),
-            str(scratch / "cache"),
-            str(directory),
-            "--host",
-            "127.0.0.1",
-            "--port",
-            str(port),
-            "--no-broadcast",
-            "--log-file",
-            "disabled",
-        ],
-        env,
-        args.out / "uninjected-production.log",
-        timeout=15,
-    )
-    assert result != 0 and "unexported_builtin" in output, (
-        "ProductionIdenticalForkIsUnexported",
-        result,
-        output[-3000:],
-    )
     database = json.loads((args.build / "compile_commands.json").read_bytes())
     injected = [
         row for row in database if "LEMON_BACKEND_FORK_TESTING" in row["command"]
     ]
-    assert len(injected) == 3 and all(
-        "test_llamacpp_external_fork.dir" in row["command"] for row in injected
-    ), "ProductionCompileDefinitionsExcludeInjection"
+    assert len(injected) == 0, "ProductionCompileDefinitionsExcludeInjection"
     symbols = subprocess.check_output(
         [
             "nm",
@@ -126,9 +97,9 @@ def main():
         cpu_only=True,
         hardware_queue_acquired=False,
         process=process,
-        uninjected_result=result,
+        production_registry=True,
         identical_fork_sha256=hashlib.sha256(
-            (directory / "backends.d/research-llama.json").read_bytes()
+            (scratch / "external-fork/backends.d/research-llama.json").read_bytes()
         ).hexdigest(),
         production_injection_symbols=False,
         injection_definitions=len(injected),
