@@ -1458,7 +1458,7 @@ jobs:
       inputs.enable_signing != true &&
       inputs.disable_macos_signing != true &&
       (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:backends'))
-    timeout-minutes: 240
+    timeout-minutes: 45
     strategy:
       fail-fast: ${{ github.event_name == 'merge_group' }}
       matrix:
