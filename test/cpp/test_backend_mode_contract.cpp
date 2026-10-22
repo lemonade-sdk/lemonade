@@ -42,6 +42,8 @@ const std::vector<std::pair<uint32_t, std::string>> kModeInterfaces = {
     {lemon::CAP_AUDIO_GENERATION, "audio-generation"},
     {lemon::CAP_MODEL_3D, "3d"},
     {lemon::CAP_DETECTION, "detection"},
+    {lemon::CAP_POSE, "pose"},
+    {lemon::CAP_HANDS, "hands"},
 };
 
 // Capabilities that name no deployment mode, so kModeInterfaces omits them by
@@ -252,6 +254,12 @@ int main() {
         {"ryzenai-vision bare", "ryzenai-vision", {}, true, {"detection"},
          ModelType::DETECTION},
         {"llamacpp + detection", "llamacpp", {"detection"}, false, {}, {}},
+        {"ryzenai-vision + pose", "ryzenai-vision", {"pose"}, true, {"pose"},
+         ModelType::POSE},
+        {"ryzenai-vision + detection + pose", "ryzenai-vision", {"detection", "pose"},
+         false, {}, {}},
+        {"mediapipe bare", "mediapipe", {}, true, {"hands"}, ModelType::HANDS},
+        {"mediapipe + pose", "mediapipe", {"pose"}, false, {}, {}},
         // Aliases of one mode are one claim, not two.
         {"llamacpp + embedding alias", "llamacpp", {"embedding", "embeddings"}, true,
          {"embedding", "embeddings"}, ModelType::EMBEDDING},

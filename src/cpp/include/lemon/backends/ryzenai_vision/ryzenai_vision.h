@@ -21,7 +21,7 @@ inline const BackendDescriptor descriptor = {
 #endif
     /*config_section*/  "ryzenaivision",
     /*default_device*/  DEVICE_NPU,
-    /*slot_policy*/     SlotPolicy::ExclusiveNpu,
+    /*slot_policy*/     SlotPolicy::CoexistByType,  // a detector and a pose model share the NPU
     /*selectable_backend*/ false,
     /*uses_ctx_size*/   false,
     /*dynamic_models*/  false,
@@ -33,7 +33,7 @@ inline const BackendDescriptor descriptor = {
         {"npu", BackendTier::Experimental, BackendFormat::Python, {"windows", "linux"},
          {{"amd_npu", {"XDNA2"}}}, "XDNA2 NPU"},
     },
-    /*supported_modes*/ {"detection"},
+    /*supported_modes*/ {"detection", "pose"},
     /*required_checkpoints*/ {"main"},
     /*default_capabilities*/ {},
     /*web_display_name*/ "Ryzen AI SW Vision NPU",

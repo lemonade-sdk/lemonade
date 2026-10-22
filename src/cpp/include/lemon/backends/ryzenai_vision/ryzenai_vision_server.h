@@ -9,9 +9,10 @@
 namespace lemon {
 namespace backends {
 
-// Runs an ONNX object detector on the Ryzen AI NPU as a ryzenai_vision_server.py
-// subprocess, launched with the Ryzen AI Software environment's Python.
-class RyzenAIVisionServer : public WrappedServer, public IDetectionServer {
+// Runs an ONNX object detector or pose model on the Ryzen AI NPU as a
+// ryzenai_vision_server.py subprocess, launched with the Ryzen AI Software
+// environment's Python.
+class RyzenAIVisionServer : public WrappedServer, public IDetectionServer, public IPoseServer {
 public:
     static InstallParams get_install_params(const std::string& backend, const std::string& version);
 
@@ -25,6 +26,7 @@ public:
               bool do_not_upgrade = false) override;
 
     json detect(const json& request) override;
+    json pose(const json& request) override;
 };
 
 namespace ryzenai_vision {

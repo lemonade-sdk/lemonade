@@ -92,6 +92,10 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
   "log_max_file_size_mb": 10,
   "log_max_files": 5,
   "max_loaded_models": 1,
+  "mediapipe": {
+    "args": "",
+    "cpu_bin": "builtin"
+  },
   "models_dir": "auto",
   "moonshine": {
     "args": "",

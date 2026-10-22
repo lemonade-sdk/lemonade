@@ -467,6 +467,12 @@ The following options are available depending on the recipe being used:
 |--------|-------------|---------|
 | `--ryzenaivision-args ARGS` | Custom arguments to pass to ryzenai_vision_server.py | `""` |
 
+#### MediaPipe (`mediapipe` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--mediapipe-args ARGS` | Custom arguments to pass to mediapipe_server.py | `""` |
+
 #### TRELLIS.2 (`trellis` recipe)
 
 | Option | Description | Default |

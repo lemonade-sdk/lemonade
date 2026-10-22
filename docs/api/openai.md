@@ -17,6 +17,8 @@ This page documents Lemonade's implementation of the [OpenAI API](https://develo
 | `POST` | [`/v1/images/detections`](#post-v1imagesdetections) | Detect objects in images | image -> labeled bounding boxes |
 | `POST` | [`/v1/audio/speech`](#post-v1audiospeech) | Generate speech from text | text -> audio |
 | `WS` | [`/realtime`](#ws-realtime) | Realtime Audio Transcription, OpenAI SDK compatible | streaming audio -> text |
+| `POST` | [`/v1/images/poses`](#post-v1imagesposes) | Estimate human poses in images | image -> people with body keypoints |
+| `POST` | [`/v1/images/hands`](#post-v1imageshands) | Track hands in images | image -> hands with landmarks |
 | `GET` | [`/v1/models`](#get-v1models) | List the server's models | n/a |
 | `GET` | [`/v1/models/{id}`](#get-v1modelsid) | Read one model | n/a |
 | `GET` | [`/v1/models/{id}/files`](#get-v1modelsidfiles) | List one model's local files | n/a |
@@ -1556,7 +1558,7 @@ A malformed request, such as one whose `image` is not an image, is rejected befo
 
 The `ryzenai-vision` backend runs on a separately installed [Ryzen AI Software](https://ryzenai.docs.amd.com/en/latest/inst.html) environment. Point Lemonade at it once with `lemonade config set ryzenaivision.npu_bin=<env dir or its python>`; on Linux, starting `lemond` from an activated Ryzen AI venv also works through `RYZEN_AI_INSTALLATION_PATH`.
 
-The first load of a model compiles it for the NPU, about 15 minutes for YOLO26s on a Strix Halo machine. The result is cached under `<cache_dir>/ryzenai-vision/npu-cache` and later loads take about a second. Like `ryzenai-llm`, loading a detection model unloads the other NPU models; GPU and CPU models stay loaded.
+The first load of a model compiles it for the NPU, about 15 minutes for YOLO26s on a Strix Halo machine. The result is cached under `<cache_dir>/ryzenai-vision/npu-cache` and later loads take about a second. One detection model and one pose model can be loaded on the NPU together, alongside FastFlowLM models; loading `ryzenai-llm` or whisper.cpp on the NPU unloads them. GPU and CPU models stay loaded.
 
 ### Supported Models
 
@@ -1787,6 +1789,245 @@ Accepted `response_format` values depend on the backend: `kokoro-v1` encodes `mp
 | `500` | `model_load_error` | Loading the requested model fails for another reason, such as a failed download or a backend that does not start |
 | `502` |  | The backend produces no output, for example after it crashes or runs out of GPU memory |
 <!-- END GENERATED: openai.audio_speech -->
+
+<!-- BEGIN GENERATED: openai.images_poses -->
+## `POST /v1/images/poses`
+<sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
+
+Finds people in one or more images and returns, for each, a score, a bounding box and named body keypoints (the 17 COCO keypoints: nose, eyes, ears, shoulders, elbows, wrists, hips, knees and ankles). It follows the conventions of [`POST /v1/images/detections`](#post-v1imagesdetections) and serves `ryzenai-vision` pose models, which run on the Ryzen AI NPU.
+
+Requires `LEMONADE_API_KEY` when it is set.
+
+### Parameters
+
+| Parameter | Required | Description | Status |
+|-----------|----------|-------------|--------|
+| `model` | No | The pose model, such as `YOLO26s-Pose-NPU`. Optional when exactly one pose model is loaded; that model is used. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `image` or `images` | Yes | The image or images to analyze, PNG, JPEG, BMP or WebP. Each is a base64 string, a `data:image/...;base64,` URL, or an `{"image_url": "..."}` / `{"image_url": {"url": "..."}}` object as in OpenAI's image inputs; send an array of up to 16 for a batch. Remote `http(s)` URLs are rejected rather than fetched. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `confidence` | No | Minimum person score a pose needs to be returned. Defaults to `0.25`. Keypoints are returned whatever their own score. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `max_poses` | No | Maximum poses returned per image, highest score first. Defaults to `20`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+
+A malformed request, such as one whose `image` is not an image, is rejected before any model loads.
+
+### Setup
+
+Pose models use the `ryzenai-vision` backend; see [`POST /v1/images/detections`](#post-v1imagesdetections) for its one-time setup and the first-load NPU compile. A pose model and a detection model can be loaded on the NPU together.
+
+### Supported Models
+
+Ultralytics YOLO26-pose end-to-end exports (`[1, N, 6 + 3K]` output) and their Hugging Face exports such as `onnx-community/yolo26s-pose-ONNX`.
+
+### Example
+
+=== "PowerShell"
+
+    ```powershell
+    $image = [Convert]::ToBase64String([IO.File]::ReadAllBytes("image.png"))
+    $body = @"
+    {"model": "YOLO26s-Pose-NPU", "image": "data:image/png;base64,$image"}
+    "@
+    Invoke-WebRequest `
+      -Uri "http://localhost:13305/v1/images/poses" `
+      -Method POST `
+      -Headers @{ "Content-Type" = "application/json" } `
+      -Body $body
+    ```
+
+=== "Bash"
+
+    ```bash
+    curl http://localhost:13305/v1/images/poses \
+      -H "Content-Type: application/json" \
+      -d "{\"model\": \"YOLO26s-Pose-NPU\", \"image\": \"data:image/png;base64,$(base64 -w0 image.png)\"}"
+    ```
+
+**Response:** `200 OK`
+
+```json
+{
+  "object": "list",
+  "created": 1792697340,
+  "model": "YOLO26s-Pose-NPU",
+  "data": [{"object": "image.poses", "index": 0, "width": 256, "height": 256, "poses": []}],
+  "usage": {"images": 1, "poses": 0, "inference_ms": 22.46}
+}
+```
+
+### Response format
+
+- `object` - Always `list`.
+- `created` - Unix timestamp of the response.
+- `model` - The model that ran, including one chosen because it was the only one loaded.
+- `data` - One entry per input image, in request order.
+  - `object` - Always `image.poses`.
+  - `index` - Position of the image in the request.
+  - `width` - Width of the decoded image in pixels.
+  - `height` - Height of the decoded image in pixels.
+  - `poses` - The people found, highest score first.
+    - `object` - Always `pose`.
+    - `label` - What was found, `person` for COCO pose models.
+    - `score` - Confidence that this is a person, in `[0, 1]`.
+    - `box` - Corners in pixels of the original image: `x1,y1` top-left, `x2,y2` bottom-right.
+      - `x1` - Left edge.
+      - `y1` - Top edge.
+      - `x2` - Right edge.
+      - `y2` - Bottom edge.
+    - `keypoints` - Every keypoint of the model, in its order.
+      - `name` - Keypoint name, such as `left_wrist`.
+      - `x` - Horizontal position in pixels of the original image.
+      - `y` - Vertical position in pixels of the original image.
+      - `score` - Confidence that the keypoint is visible, in `[0, 1]`.
+- `usage` - What the request processed.
+  - `images` - Images analyzed.
+  - `poses` - Poses returned across all images.
+  - `inference_ms` - Time spent decoding, preprocessing and running the model for all images.
+
+### Errors
+
+| Status | Code | When |
+|--------|------|------|
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `missing_argument` | A required argument is missing |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
+| `400` |  | An `image` is not a PNG, JPEG, BMP or WebP image, is a remote URL, or there are more than 16 |
+| `400` |  | `model` is omitted and not exactly one pose model is loaded |
+| `400` |  | The backend rejects the request, for example because `model` is not a pose model, which is found only after it loads |
+| `404` |  | The model is unloaded while the request waits for it |
+| `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
+| `404` | `model_not_found` | The requested model is not in the registry |
+| `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
+| `409` | `slots_pinned_error` | Every loaded model of the requested model's type is pinned, so none can be unloaded to make room |
+| `500` |  | The backend reports an error; the backend's own status replaces this one when it sends one |
+| `500` |  | The backend's response lacks a field the route returns, such as `choices` or `labels` |
+| `500` |  | The request fails unexpectedly |
+| `500` | `model_load_error` | Loading the requested model fails for another reason, such as a failed download or a backend that does not start |
+<!-- END GENERATED: openai.images_poses -->
+
+<!-- BEGIN GENERATED: openai.images_hands -->
+## `POST /v1/images/hands`
+<sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
+
+Finds hands in one or more images and returns, for each, its handedness, a score, a bounding box and the 21 MediaPipe hand landmarks (wrist and four joints per finger). It follows the conventions of [`POST /v1/images/detections`](#post-v1imagesdetections) and serves `mediapipe` models, which run on the CPU.
+
+Requires `LEMONADE_API_KEY` when it is set.
+
+### Parameters
+
+| Parameter | Required | Description | Status |
+|-----------|----------|-------------|--------|
+| `model` | No | The hand-tracking model, such as `MediaPipe-Hands-CPU`. Optional when exactly one hand-tracking model is loaded; that model is used. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `image` or `images` | Yes | The image or images to analyze, PNG, JPEG, BMP or WebP. Each is a base64 string, a `data:image/...;base64,` URL, or an `{"image_url": "..."}` / `{"image_url": {"url": "..."}}` object as in OpenAI's image inputs; send an array of up to 16 for a batch. Remote `http(s)` URLs are rejected rather than fetched. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `confidence` | No | Minimum hand detection and presence score. Defaults to `0.5`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `max_hands` | No | Maximum hands returned per image. Defaults to `2`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `mirrored` | No | `true` when the images are mirrored, as a selfie camera preview is. `handedness` is the person's own hand either way. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+
+A malformed request, such as one whose `image` is not an image, is rejected before any model loads.
+
+### Setup
+
+The `mediapipe` backend runs in a Python venv that Lemonade builds with the pinned `mediapipe` wheel the first time a model loads, or with `lemonade backends install mediapipe:cpu`; it needs Python 3.9 or newer with venv support on `PATH`. To use an existing environment that has `mediapipe` instead, run `lemonade config set mediapipe.cpu_bin=<env dir or its python>`.
+
+### Example
+
+=== "PowerShell"
+
+    ```powershell
+    $hand = [Convert]::ToBase64String([IO.File]::ReadAllBytes("hand.jpg"))
+    $body = @"
+    {"model": "MediaPipe-Hands-CPU", "image": "data:image/jpeg;base64,$hand"}
+    "@
+    Invoke-WebRequest `
+      -Uri "http://localhost:13305/v1/images/hands" `
+      -Method POST `
+      -Headers @{ "Content-Type" = "application/json" } `
+      -Body $body
+    ```
+
+=== "Bash"
+
+    ```bash
+    curl http://localhost:13305/v1/images/hands \
+      -H "Content-Type: application/json" \
+      -d "{\"model\": \"MediaPipe-Hands-CPU\", \"image\": \"data:image/jpeg;base64,$(base64 -w0 hand.jpg)\"}"
+    ```
+
+**Response:** `200 OK`
+
+```json
+{
+  "object": "list",
+  "created": 1792697439,
+  "model": "MediaPipe-Hands-CPU",
+  "data": [
+    {
+      "object": "image.hands",
+      "index": 0,
+      "width": 382,
+      "height": 406,
+      "hands": [
+        {
+          "object": "hand",
+          "handedness": "left",
+          "score": 0.98395,
+          "box": {"x1": 128.77, "y1": 102.06, "x2": 244.04, "y2": 283.69},
+          "landmarks": [{"name": "wrist", "x": 244.04, "y": 272.51, "z": -0.0}, ... 20 more]
+        }
+      ]
+    }
+  ],
+  "usage": {"images": 1, "hands": 1, "inference_ms": 12.58}
+}
+```
+
+### Response format
+
+- `object` - Always `list`.
+- `created` - Unix timestamp of the response.
+- `model` - The model that ran, including one chosen because it was the only one loaded.
+- `data` - One entry per input image, in request order.
+  - `object` - Always `image.hands`.
+  - `index` - Position of the image in the request.
+  - `width` - Width of the decoded image in pixels.
+  - `height` - Height of the decoded image in pixels.
+  - `hands` - The hands found, highest score first.
+    - `object` - Always `hand`.
+    - `handedness` - Which of the person's hands it is.
+    - `score` - Handedness confidence, in `[0, 1]`.
+    - `box` - Bounds of the landmarks in pixels of the original image: `x1,y1` top-left, `x2,y2` bottom-right.
+      - `x1` - Left edge.
+      - `y1` - Top edge.
+      - `x2` - Right edge.
+      - `y2` - Bottom edge.
+    - `landmarks` - The 21 landmarks, wrist first.
+      - `name` - Landmark name, such as `index_finger_tip`.
+      - `x` - Horizontal position in pixels of the original image.
+      - `y` - Vertical position in pixels of the original image.
+      - `z` - Depth relative to the wrist, in the same pixel scale as `x`; smaller is closer to the camera.
+- `usage` - What the request processed.
+  - `images` - Images analyzed.
+  - `hands` - Hands returned across all images.
+  - `inference_ms` - Time spent decoding and running the model for all images.
+
+### Errors
+
+| Status | Code | When |
+|--------|------|------|
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `missing_argument` | A required argument is missing |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
+| `400` |  | An `image` is not a PNG, JPEG, BMP or WebP image, is a remote URL, or there are more than 16 |
+| `400` |  | `model` is omitted and not exactly one hand-tracking model is loaded |
+| `400` |  | The backend rejects the request, for example because `model` is not a hand-tracking model, which is found only after it loads |
+| `404` |  | The model is unloaded while the request waits for it |
+| `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
+| `404` | `model_not_found` | The requested model is not in the registry |
+| `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
+| `409` | `slots_pinned_error` | Every loaded model of the requested model's type is pinned, so none can be unloaded to make room |
+| `500` |  | The backend reports an error; the backend's own status replaces this one when it sends one |
+| `500` |  | The backend's response lacks a field the route returns, such as `choices` or `labels` |
+| `500` |  | The request fails unexpectedly |
+| `500` | `model_load_error` | Loading the requested model fails for another reason, such as a failed download or a backend that does not start |
+<!-- END GENERATED: openai.images_hands -->
 
 <!-- BEGIN GENERATED: openai.models -->
 ## `GET /v1/models`

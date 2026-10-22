@@ -1,0 +1,37 @@
+#pragma once
+
+#include "lemon/backends/backend_registry.h"
+#include "lemon/backends/backend_utils.h"
+#include "lemon/server_capabilities.h"
+#include "lemon/wrapped_server.h"
+#include <string>
+
+namespace lemon {
+namespace backends {
+
+// Runs a MediaPipe hand landmarker on the CPU as a mediapipe_server.py
+// subprocess, launched with the backend's Python venv.
+class MediaPipeServer : public WrappedServer, public IHandsServer {
+public:
+    static InstallParams get_install_params(const std::string& backend, const std::string& version);
+
+    explicit MediaPipeServer(const std::string& log_level,
+                             ModelManager* model_manager,
+                             BackendManager* backend_manager);
+
+    void load(const std::string& model_name,
+              const ModelInfo& model_info,
+              const RecipeOptions& options,
+              bool do_not_upgrade = false) override;
+
+    json hands(const json& request) override;
+};
+
+namespace mediapipe {
+std::unique_ptr<WrappedServer> create(const BackendContext& ctx);
+const BackendSpec* spec();
+const BackendOps* ops();
+constexpr uint32_t capabilities() { return capability_mask_of<MediaPipeServer>(); }
+}  // namespace mediapipe
+}  // namespace backends
+}  // namespace lemon

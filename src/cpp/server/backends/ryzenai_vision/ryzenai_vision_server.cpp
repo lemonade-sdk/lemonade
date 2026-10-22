@@ -291,6 +291,14 @@ json RyzenAIVisionServer::detect(const json& request) {
     return forward_request("/detect", body, kDetectTimeoutSeconds);
 }
 
+json RyzenAIVisionServer::pose(const json& request) {
+    json body = {{"images", request.value("image", json::array())}};
+    for (const char* key : {"confidence", "max_poses"}) {
+        if (request.contains(key)) body[key] = request[key];
+    }
+    return forward_request("/pose", body, kDetectTimeoutSeconds);
+}
+
 }  // namespace backends
 }  // namespace lemon
 

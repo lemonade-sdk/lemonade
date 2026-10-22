@@ -134,6 +134,7 @@
             <Directory Id="StaticDir" Name="static" />
             <Directory Id="WebAppDir" Name="web-app" />
             <Directory Id="RyzenAIVisionDir" Name="ryzenai_vision" />
+            <Directory Id="MediaPipeDir" Name="mediapipe" />
           </Directory>
         </Directory>
 <?if $(var.IncludeTauriApp) = 1 ?>
@@ -233,6 +234,10 @@
 
       <Component Id="RyzenAIVisionVaipConfig" Directory="RyzenAIVisionDir" Guid="0e7b3c95-2a1d-4f86-9d4e-5b8a6c1f2e70">
         <File Id="ryzenai_vision_vaiep_config.json" Source="$(var.BuildDir)\Release\resources\ryzenai_vision\vaiep_config.json" KeyPath="yes" />
+      </Component>
+
+      <Component Id="MediaPipeServerPy" Directory="MediaPipeDir" Guid="3b9e1f52-7d4a-4c08-a6e3-91f2c5d7b840">
+        <File Id="mediapipe_server.py" Source="$(var.BuildDir)\Release\resources\mediapipe\mediapipe_server.py" KeyPath="yes" />
       </Component>
     </ComponentGroup>
 

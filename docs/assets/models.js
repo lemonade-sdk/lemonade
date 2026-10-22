@@ -10,6 +10,7 @@ const RECIPE_PRIORITY = [
   'llamacpp-hrx',
   'kokoro',
   'llamacpp',
+  'mediapipe',
   'moonshine',
   'onnxruntime',
   'openmoss',
@@ -37,6 +38,7 @@ const RECIPE_DISPLAY_NAMES = {
   acestep: 'ACE-Step',
   onnxruntime: 'ONNX Runtime',
   'ryzenai-vision': 'Ryzen AI SW Vision NPU',
+  mediapipe: 'MediaPipe',
   trellis: 'TRELLIS.2',
   openmoss: 'OpenMOSS TTS'
 };

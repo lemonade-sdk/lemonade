@@ -8,8 +8,8 @@
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/model_loader.h"
-#include "lemon/utils/image_sniff.h"
-#include "lemon/utils/json_utils.h"
+#include "lemon/server/shared_args.h"
+#include "lemon/server/vision_inputs.h"
 
 namespace lemon {
 
@@ -18,13 +18,8 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
-constexpr size_t kMaxImages = 16;
-
 const RouteError kNoSoleDetector{
     400, "", "`model` is omitted and not exactly one detection model is loaded"};
-const RouteError kImageInvalid{
-    400, "", "An `image` is not a PNG, JPEG, BMP or WebP image, is a remote URL, or there are more "
-             "than 16"};
 const RouteError kBackendRejected{
     400, "",
     "The backend rejects the request, for example because `model` is not a detection model, "
@@ -33,13 +28,6 @@ const RouteError kBackendRejected{
 const RouteArg kModel{"model", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
                       "The detection model, such as `YOLO26s-Detection-NPU`. Optional when exactly one "
                       "detection model is loaded; that model is used."};
-const RouteArg kImage{
-    "image", ArgIn::JsonBody, {{"type", json::array({"string", "object", "array"})}}, true, Support::Available,
-    "The image or images to analyze, PNG, JPEG, BMP or WebP. Each is a base64 string, a "
-    "`data:image/...;base64,` URL, or an `{\"image_url\": \"...\"}` / "
-    "`{\"image_url\": {\"url\": \"...\"}}` object as in OpenAI's image inputs; send an array of "
-    "up to 16 for a batch. Remote `http(s)` URLs are rejected rather than fetched.",
-    {"images"}};
 const RouteArg kConfidence{"confidence", ArgIn::JsonBody,
                            {{"type", "number"}, {"minimum", 0}, {"maximum", 1}}, false,
                            Support::Available,
@@ -56,50 +44,6 @@ const RouteArg kMaxDetections{
     "max_detections", ArgIn::JsonBody, {{"type", "integer"}, {"minimum", 1}, {"maximum", 1000}},
     false, Support::Available,
     "Maximum detections returned per image, highest score first. Defaults to `100`."};
-
-bool is_detectable_image(const std::string& head) {
-    const auto sniffed = utils::sniff_image(head);
-    // GIF is left out: OpenCV older than 4.11 cannot decode it.
-    if (sniffed.ok()) return sniffed.mime != "image/gif";
-    return head.size() >= 12 && head.compare(0, 4, "RIFF") == 0 && head.compare(8, 4, "WEBP") == 0;
-}
-
-// Returns the bare base64 payload of one image input, or "" with `error` set.
-std::string image_payload(const json& item, std::string& error) {
-    std::string value;
-    if (item.is_string()) {
-        value = item.get<std::string>();
-    } else if (item.is_object() && item.contains("image_url")) {
-        const json& url = item["image_url"];
-        if (url.is_string()) {
-            value = url.get<std::string>();
-        } else if (url.is_object() && url.contains("url") && url["url"].is_string()) {
-            value = url["url"].get<std::string>();
-        }
-    }
-    if (value.empty()) {
-        error = "must be a base64 string, a data URL, or {\"image_url\": ...}";
-        return "";
-    }
-    // Never fetched, so the server makes no outbound request on a client's behalf.
-    if (value.rfind("http://", 0) == 0 || value.rfind("https://", 0) == 0) {
-        error = "is a remote URL; send the image as base64 or a data URL";
-        return "";
-    }
-    if (value.rfind("data:", 0) == 0) {
-        const size_t comma = value.find(',');
-        if (comma == std::string::npos || value.substr(0, comma).find(";base64") == std::string::npos) {
-            error = "is a data URL without a base64 payload";
-            return "";
-        }
-        value = value.substr(comma + 1);
-    }
-    if (!is_detectable_image(utils::JsonUtils::base64_decode(value.substr(0, 16)))) {
-        error = "is not a PNG, JPEG, BMP or WebP image";
-        return "";
-    }
-    return value;
-}
 
 class ImagesDetectionsRoute : public ModelRoute {
 public:
@@ -130,8 +74,9 @@ public:
             "activated Ryzen AI venv also works through `RYZEN_AI_INSTALLATION_PATH`.\n\n"
             "The first load of a model compiles it for the NPU, about 15 minutes for YOLO26s on a "
             "Strix Halo machine. The result is cached under `<cache_dir>/ryzenai-vision/npu-cache` "
-            "and later loads take about a second. Like `ryzenai-llm`, loading a detection model "
-            "unloads the other NPU models; GPU and CPU models stay loaded.",
+            "and later loads take about a second. One detection model and one pose model can be "
+            "loaded on the NPU together, alongside FastFlowLM models; loading `ryzenai-llm` or "
+            "whisper.cpp on the NPU unloads them. GPU and CPU models stay loaded.",
             "### Supported Models\n\n"
             "Ultralytics YOLO26 and YOLOv10 end-to-end exports (`[1, N, 6]` output), YOLOv8 to "
             "YOLO12 exports (`[1, 4 + C, A]`, NMS is applied by the server), and RT-DETR-style "
@@ -144,7 +89,7 @@ public:
             "Class names come from the model's `config.json` (`id2label`) or the Ultralytics "
             "`names` metadata in the ONNX file, falling back to the 80 COCO classes.",
         };
-        s.args = {kModel, kImage, kConfidence, kClasses, kMaxDetections};
+        s.args = {kModel, openai::vision::kImage, kConfidence, kClasses, kMaxDetections};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -221,7 +166,7 @@ public:
             "confidence": 0.05
         })");
         s.examples = {example};
-        s.errors = join_errors({{kBodyNotJson, kArgMissing, kArgInvalid, kImageInvalid,
+        s.errors = join_errors({{kBodyNotJson, kArgMissing, kArgInvalid, kVisionImageInvalid,
                                  kNoSoleDetector, kBackendRejected, kModelUnloaded, kBackendError,
                                  kMalformedBackendResponse, kUnexpectedException},
                                 ModelLoader::errors()});
@@ -236,24 +181,7 @@ protected:
     bool validate(RouteRequest& req, httplib::Response& res) override {
         LOG(INFO, "Server") << "POST /api/v1/images/detections" << std::endl;
 
-        const json& raw = req.arg(kImage);
-        const json inputs = raw.is_array() ? raw : json::array({raw});
-        if (inputs.empty() || inputs.size() > kMaxImages) {
-            write_openai_error(res, kImageInvalid,
-                               "'image' must hold 1 to " + std::to_string(kMaxImages) + " images");
-            return false;
-        }
-        json images = json::array();
-        for (size_t i = 0; i < inputs.size(); ++i) {
-            std::string error;
-            std::string payload = image_payload(inputs[i], error);
-            if (payload.empty()) {
-                write_openai_error(res, kImageInvalid, "image[" + std::to_string(i) + "] " + error);
-                return false;
-            }
-            images.push_back(std::move(payload));
-        }
-        req.body[kImage.name] = std::move(images);
+        if (!normalize_vision_images(req, res)) return false;
 
         if (req.has(kMaxDetections)) {
             // The validator accepts 2.0 as an integer; the backend expects 2.
@@ -264,24 +192,15 @@ protected:
             req.body[kClasses.name] = json::array({req.arg(kClasses)});
         }
 
-        // The router requires a model on every request, so an omitted one is resolved
-        // here, which is only possible when exactly one detector is loaded.
         if (!req.has(kModel)) {
-            req.model = ctx_.router->get_sole_loaded_model_of_type(ModelType::DETECTION);
-            if (req.model.empty()) {
-                write_openai_error(res, kNoSoleDetector,
-                    "No 'model' specified and no single detection model is loaded "
-                    "(load one, or name it in the request)");
-                return false;
-            }
+            if (!resolve_sole_vision_model(ctx_, req, res, ModelType::DETECTION, kNoSoleDetector)) return false;
             req.body[kModel.name] = req.model;
-            req.model_already_loaded = true;
         }
         return true;
     }
 
     void run(RouteRequest& req, httplib::Response& res) override {
-        const size_t image_count = req.arg(kImage).size();
+        const size_t image_count = req.arg(openai::vision::kImage).size();
         auto response = ctx_.router->image_detections(req.body);
         if (response.contains("error")) {
             set_error_response(response, res, kBackendError);

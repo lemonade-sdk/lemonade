@@ -1,4 +1,4 @@
-"""Object detection on the AMD Ryzen AI NPU, served to lemond over HTTP.
+"""Object detection and pose estimation on the AMD Ryzen AI NPU, served to lemond.
 
 lemond launches this script with the Python interpreter of a Ryzen AI Software
 installation (the environment whose onnxruntime ships the
@@ -9,6 +9,11 @@ VitisAIExecutionProvider) and speaks a small HTTP contract with it:
                    "classes": ["ball", ...], "max_detections": 100}
                   -> 200 {"data": [{"index", "width", "height", "detections"}],
                           "unresolved_classes": [...], "inference_ms": 7.1}
+    POST /pose    {"images": [...], "confidence": 0.25, "max_poses": 20}
+                  -> 200 {"data": [{"index", "width", "height", "poses"}],
+                          "inference_ms": 9.3}
+
+A model serves one of the two: /detect for detectors, /pose for pose models.
 
 Supported ONNX detector layouts (picked from the graph outputs):
 
@@ -17,6 +22,9 @@ Supported ONNX detector layouts (picked from the graph outputs):
              cxcywh boxes (RT-DETR and YOLO26 Hugging Face exports; not the
              softmax + no-object head of the original DETR)
     anchors  [1, 4 + C, A]   cxcywh + class scores (YOLOv8-12), NMS applied here
+    pose     [1, N, 6 + 3K]  xyxy, score, class, K x (x, y, visibility)
+             (Ultralytics YOLO26-pose; the Hugging Face export named `logits`
+             divides every column but score and class by the input size)
 
 Inputs are letterboxed to the model size with gray padding and scaled to [0, 1],
 the Ultralytics preprocessing.
@@ -129,6 +137,13 @@ SYNONYMS = {
     "controller": "remote",
 }
 
+COCO_KEYPOINTS = [
+    "nose", "left_eye", "right_eye", "left_ear", "right_ear",
+    "left_shoulder", "right_shoulder", "left_elbow", "right_elbow",
+    "left_wrist", "right_wrist", "left_hip", "right_hip",
+    "left_knee", "right_knee", "left_ankle", "right_ankle",
+]  # fmt: skip
+
 PAD_VALUE = 114
 NMS_IOU = 0.7
 
@@ -186,7 +201,8 @@ def _indexed_labels(mapping) -> list[str] | None:
     return [indexed.get(i, f"class_{i}") for i in range(max(indexed) + 1)]
 
 
-def load_labels(onnx_path: Path, session_meta: dict[str, str]) -> list[str]:
+def config_labels(onnx_path: Path) -> list[str] | None:
+    """`id2label` of the config.json next to the model, if any."""
     for config in (
         onnx_path.parent / "config.json",
         onnx_path.parent.parent / "config.json",
@@ -201,15 +217,26 @@ def load_labels(onnx_path: Path, session_meta: dict[str, str]) -> list[str]:
             labels = _indexed_labels(id2label)
             if labels:
                 return labels
+    return None
+
+
+def metadata_labels(session_meta: dict[str, str]) -> list[str] | None:
+    """The Ultralytics `names` metadata of the ONNX file, if any."""
     names = session_meta.get("names")
-    if names:
-        try:
-            labels = _indexed_labels(ast.literal_eval(names))
-        except (ValueError, SyntaxError):
-            labels = None
-        if labels:
-            return labels
-    return list(COCO80)
+    if not names:
+        return None
+    try:
+        return _indexed_labels(ast.literal_eval(names))
+    except (ValueError, SyntaxError):
+        return None
+
+
+def load_labels(onnx_path: Path, session_meta: dict[str, str]) -> list[str]:
+    return config_labels(onnx_path) or metadata_labels(session_meta) or list(COCO80)
+
+
+def snake_case(name: str) -> str:
+    return "_".join(name.replace("-", " ").lower().split())
 
 
 def decode_image(b64: str) -> np.ndarray:
@@ -291,9 +318,25 @@ class Detector:
         spatial = [d for d in inp.shape[2:4] if isinstance(d, int) and d > 0]
         self.imgsz = spatial[0] if spatial else int(args.imgsz)
         self.layout = self._detect_layout(probe)
-        self.labels = load_labels(
-            self.onnx_path, probe.get_modelmeta().custom_metadata_map
-        )
+        meta = probe.get_modelmeta().custom_metadata_map
+        self.task = "pose" if self.layout == "pose" else "detect"
+        self.keypoint_names: list[str] = []
+        if self.task == "pose":
+            self.num_keypoints = (probe.get_outputs()[0].shape[-1] - 6) // 3
+            # A Hugging Face pose export's id2label names the keypoints, not classes.
+            names = config_labels(self.onnx_path)
+            if names and len(names) == self.num_keypoints:
+                self.keypoint_names = [snake_case(n) for n in names]
+            elif self.num_keypoints == len(COCO_KEYPOINTS):
+                self.keypoint_names = list(COCO_KEYPOINTS)
+            else:
+                self.keypoint_names = [
+                    f"keypoint_{i}" for i in range(self.num_keypoints)
+                ]
+            self.labels = metadata_labels(meta) or ["person"]
+            self.normalized = probe.get_outputs()[0].name == "logits"
+        else:
+            self.labels = load_labels(self.onnx_path, meta)
         if self.layout == "anchors":
             num_classes = probe.get_outputs()[0].shape[1] - 4
             if num_classes != len(self.labels):
@@ -354,7 +397,7 @@ class Detector:
         t0 = time.perf_counter()
         self.session.run(None, {self.input_name: warm})
         log(
-            f"ready: {self.onnx_path} layout={self.layout} imgsz={self.imgsz} "
+            f"ready: {self.onnx_path} task={self.task} layout={self.layout} imgsz={self.imgsz} "
             f"classes={len(self.labels)} providers={self.providers} "
             f"warmup={1000 * (time.perf_counter() - t0):.0f}ms"
         )
@@ -385,13 +428,23 @@ class Detector:
         shape = outs[0].shape
         if len(shape) == 3 and shape[-1] == 6:
             return "end2end"
+        if (
+            len(outs) == 1
+            and len(shape) == 3
+            and isinstance(shape[-1], int)
+            and shape[-1] > 6
+            and (shape[-1] - 6) % 3 == 0
+            and isinstance(shape[-2], (int, str))
+            and not (isinstance(shape[-2], int) and shape[-2] < shape[-1])
+        ):
+            return "pose"
         if len(shape) == 3 and isinstance(shape[1], int) and isinstance(shape[2], int):
             if shape[1] > 4 and shape[2] > shape[1]:
                 return "anchors"
         raise RuntimeError(
             "unsupported detector outputs "
             + ", ".join(f"{o.name}{o.shape}" for o in outs)
-            + "; expected [1,N,6], logits+pred_boxes, or [1,4+C,A]"
+            + "; expected [1,N,6], logits+pred_boxes, [1,4+C,A] or [1,N,6+3K]"
         )
 
     def _raw_predictions(
@@ -460,12 +513,50 @@ class Detector:
             )
         return {"width": int(w), "height": int(h), "detections": detections}
 
+    def pose(self, frame_bgr: np.ndarray, conf: float, limit: int):
+        h, w = frame_bgr.shape[:2]
+        nchw, ratio, pad_x, pad_y = letterbox(frame_bgr, self.imgsz)
+        with self.lock:
+            p = self.session.run(None, {self.input_name: nchw})[0][0].astype(np.float64)
+        if self.normalized:
+            p[:, :4] *= self.imgsz
+            p[:, 6:] *= self.imgsz
+        scores = p[:, 4]
+        keep = np.flatnonzero((scores >= conf) & (scores > 0))
+        keep = keep[scores[keep].argsort()[::-1]][:limit]
+        poses = []
+        for i in keep:
+            x1, y1, x2, y2 = p[i, :4]
+            kpts = p[i, 6:].reshape(-1, 3)
+            poses.append(
+                {
+                    "label": self.labels[0] if self.labels else "person",
+                    "score": round(float(scores[i]), 5),
+                    "box": {
+                        "x1": round(float(np.clip((x1 - pad_x) / ratio, 0, w)), 2),
+                        "y1": round(float(np.clip((y1 - pad_y) / ratio, 0, h)), 2),
+                        "x2": round(float(np.clip((x2 - pad_x) / ratio, 0, w)), 2),
+                        "y2": round(float(np.clip((y2 - pad_y) / ratio, 0, h)), 2),
+                    },
+                    "keypoints": [
+                        {
+                            "name": self.keypoint_names[k],
+                            "x": round(float((kx - pad_x) / ratio), 2),
+                            "y": round(float((ky - pad_y) / ratio), 2),
+                            "score": round(float(kv), 5),
+                        }
+                        for k, (kx, ky, kv) in enumerate(kpts)
+                    ],
+                }
+            )
+        return {"width": int(w), "height": int(h), "poses": poses}
+
 
 class BadRequest(ValueError):
     pass
 
 
-def handle_detect(detector: Detector, body: dict) -> dict:
+def request_images(body: dict) -> list[str]:
     images = body.get("images")
     if isinstance(images, str):
         images = [images]
@@ -475,6 +566,20 @@ def handle_detect(detector: Detector, body: dict) -> dict:
         or not all(isinstance(i, str) for i in images)
     ):
         raise BadRequest("'images' must be a non-empty list of base64 strings")
+    return images
+
+
+def decode_request_image(index: int, encoded: str) -> np.ndarray:
+    try:
+        return decode_image(encoded)
+    except (ValueError, binascii.Error, OSError) as e:
+        raise BadRequest(f"images[{index}] is not a decodable image: {e}") from e
+
+
+def handle_detect(detector: Detector, body: dict) -> dict:
+    if detector.task != "detect":
+        raise BadRequest("this is a pose model; use POST /pose")
+    images = request_images(body)
     conf = float(body.get("confidence", 0.25))
     limit = int(body.get("max_detections", 100))
     allowed = None
@@ -491,11 +596,9 @@ def handle_detect(detector: Detector, body: dict) -> dict:
     t0 = time.perf_counter()
     data = []
     for index, encoded in enumerate(images):
-        try:
-            frame = decode_image(encoded)
-        except (ValueError, binascii.Error, OSError) as e:
-            raise BadRequest(f"images[{index}] is not a decodable image: {e}") from e
-        result = detector.detect(frame, conf, allowed, limit)
+        result = detector.detect(
+            decode_request_image(index, encoded), conf, allowed, limit
+        )
         result["index"] = index
         data.append(result)
     return {
@@ -503,6 +606,21 @@ def handle_detect(detector: Detector, body: dict) -> dict:
         "unresolved_classes": unresolved,
         "inference_ms": round(1000 * (time.perf_counter() - t0), 2),
     }
+
+
+def handle_pose(detector: Detector, body: dict) -> dict:
+    if detector.task != "pose":
+        raise BadRequest("this is a detection model; use POST /detect")
+    images = request_images(body)
+    conf = float(body.get("confidence", 0.25))
+    limit = int(body.get("max_poses", 20))
+    t0 = time.perf_counter()
+    data = []
+    for index, encoded in enumerate(images):
+        result = detector.pose(decode_request_image(index, encoded), conf, limit)
+        result["index"] = index
+        data.append(result)
+    return {"data": data, "inference_ms": round(1000 * (time.perf_counter() - t0), 2)}
 
 
 def make_handler(detector: Detector):
@@ -527,6 +645,7 @@ def make_handler(detector: Detector):
                     {
                         "status": "ok",
                         "model": str(detector.onnx_path),
+                        "task": detector.task,
                         "layout": detector.layout,
                         "imgsz": detector.imgsz,
                         "classes": len(detector.labels),
@@ -539,7 +658,9 @@ def make_handler(detector: Detector):
                 )
 
         def do_POST(self):
-            if self.path.rstrip("/") != "/detect":
+            handlers = {"/detect": handle_detect, "/pose": handle_pose}
+            handler = handlers.get(self.path.rstrip("/"))
+            if handler is None:
                 self._send(
                     404, {"error": {"message": "not found", "type": "not_found"}}
                 )
@@ -549,13 +670,13 @@ def make_handler(detector: Detector):
                 body = json.loads(self.rfile.read(length) or b"{}")
                 if not isinstance(body, dict):
                     raise BadRequest("request body must be a JSON object")
-                self._send(200, handle_detect(detector, body))
+                self._send(200, handler(detector, body))
             except (BadRequest, ValueError, TypeError) as e:
                 self._send(
                     400, {"error": {"message": str(e), "type": "invalid_request_error"}}
                 )
             except Exception as e:  # noqa: BLE001
-                log(f"detect failed: {e!r}")
+                log(f"{self.path} failed: {e!r}")
                 self._send(500, {"error": {"message": str(e), "type": "server_error"}})
 
     return Handler
@@ -563,7 +684,7 @@ def make_handler(detector: Detector):
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Ryzen AI NPU object detection server", allow_abbrev=False
+        description="Ryzen AI NPU detection and pose server", allow_abbrev=False
     )
     parser.add_argument(
         "--model-path", required=True, help=".onnx file or directory holding one"

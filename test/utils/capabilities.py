@@ -273,6 +273,28 @@ CAPABILITIES = {
             },
         },
     },
+    "pose": {
+        "ryzenai-vision": {
+            "backends": ["npu"],
+            "supports": {
+                "pose": True,
+            },
+            "test_models": {
+                "pose": "YOLO26s-Pose-NPU",
+            },
+        },
+    },
+    "hands": {
+        "mediapipe": {
+            "backends": ["cpu"],
+            "supports": {
+                "hands": True,
+            },
+            "test_models": {
+                "hands": "MediaPipe-Hands-CPU",
+            },
+        },
+    },
     "tts": {
         "openmoss": {
             "backends": ["vulkan", "cuda"],

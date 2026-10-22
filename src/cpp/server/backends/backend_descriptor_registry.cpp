@@ -82,6 +82,8 @@ std::string modality_display_for(const BackendDescriptor& descriptor) {
         {ModelType::CLASSIFICATION, "Text classification"},
         {ModelType::MESH, "3D generation"},
         {ModelType::DETECTION, "Object detection"},
+        {ModelType::POSE, "Pose estimation"},
+        {ModelType::HANDS, "Hand tracking"},
     };
     if (descriptor.supported_modes.empty()) return "";
     ModelType mode = ModelType::LLM;

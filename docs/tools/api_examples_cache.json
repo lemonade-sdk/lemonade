@@ -8994,6 +8994,222 @@
       }
     }
   },
+  "56907404ed9d15bc61fd7d640feaf5c8fbd48627b83e11c580aba80e06fad09b": {
+    "route": "openai.images_hands",
+    "format": "Json",
+    "request": {
+      "method": "POST",
+      "path": "/v1/images/hands",
+      "query": {},
+      "json": {
+        "model": "MediaPipe-Hands-CPU",
+        "image": "data:image/jpeg;base64,@fixtures/hand.jpg"
+      },
+      "form": {},
+      "files": {}
+    },
+    "response": {
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "created": 1792697439,
+        "data": [
+          {
+            "hands": [
+              {
+                "box": {
+                  "x1": 128.77,
+                  "x2": 244.04,
+                  "y1": 102.06,
+                  "y2": 283.69
+                },
+                "handedness": "left",
+                "landmarks": [
+                  {
+                    "name": "wrist",
+                    "x": 244.04,
+                    "y": 272.51,
+                    "z": -0.0
+                  },
+                  {
+                    "name": "thumb_cmc",
+                    "x": 242.42,
+                    "y": 217.8,
+                    "z": -26.68
+                  },
+                  {
+                    "name": "thumb_mcp",
+                    "x": 219.44,
+                    "y": 167.64,
+                    "z": -35.85
+                  },
+                  {
+                    "name": "thumb_ip",
+                    "x": 190.74,
+                    "y": 132.29,
+                    "z": -41.2
+                  },
+                  {
+                    "name": "thumb_tip",
+                    "x": 180.92,
+                    "y": 102.06,
+                    "z": -40.3
+                  },
+                  {
+                    "name": "index_finger_mcp",
+                    "x": 155.71,
+                    "y": 191.28,
+                    "z": -17.71
+                  },
+                  {
+                    "name": "index_finger_pip",
+                    "x": 128.77,
+                    "y": 189.82,
+                    "z": -38.06
+                  },
+                  {
+                    "name": "index_finger_dip",
+                    "x": 168.78,
+                    "y": 206.98,
+                    "z": -42.66
+                  },
+                  {
+                    "name": "index_finger_tip",
+                    "x": 183.58,
+                    "y": 210.59,
+                    "z": -42.4
+                  },
+                  {
+                    "name": "middle_finger_mcp",
+                    "x": 149.91,
+                    "y": 223.06,
+                    "z": -10.76
+                  },
+                  {
+                    "name": "middle_finger_pip",
+                    "x": 130.08,
+                    "y": 225.86,
+                    "z": -31.27
+                  },
+                  {
+                    "name": "middle_finger_dip",
+                    "x": 176.33,
+                    "y": 236.81,
+                    "z": -32.15
+                  },
+                  {
+                    "name": "middle_finger_tip",
+                    "x": 179.75,
+                    "y": 229.03,
+                    "z": -30.28
+                  },
+                  {
+                    "name": "ring_finger_mcp",
+                    "x": 149.92,
+                    "y": 251.11,
+                    "z": -8.1
+                  },
+                  {
+                    "name": "ring_finger_pip",
+                    "x": 131.12,
+                    "y": 254.96,
+                    "z": -30.89
+                  },
+                  {
+                    "name": "ring_finger_dip",
+                    "x": 171.98,
+                    "y": 261.08,
+                    "z": -23.64
+                  },
+                  {
+                    "name": "ring_finger_tip",
+                    "x": 177.24,
+                    "y": 252.51,
+                    "z": -14.78
+                  },
+                  {
+                    "name": "pinky_mcp",
+                    "x": 149.74,
+                    "y": 276.75,
+                    "z": -7.37
+                  },
+                  {
+                    "name": "pinky_pip",
+                    "x": 136.86,
+                    "y": 283.52,
+                    "z": -19.66
+                  },
+                  {
+                    "name": "pinky_dip",
+                    "x": 163.3,
+                    "y": 283.69,
+                    "z": -14.1
+                  },
+                  {
+                    "name": "pinky_tip",
+                    "x": 169.82,
+                    "y": 279.04,
+                    "z": -7.45
+                  }
+                ],
+                "object": "hand",
+                "score": 0.98395
+              }
+            ],
+            "height": 406,
+            "index": 0,
+            "object": "image.hands",
+            "width": 382
+          }
+        ],
+        "model": "MediaPipe-Hands-CPU",
+        "object": "list",
+        "usage": {
+          "hands": 1,
+          "images": 1,
+          "inference_ms": 12.58
+        }
+      }
+    }
+  },
+  "8384c413f66d3a5a776981646e3acc1232891387c90db15916ba4731b3d508b9": {
+    "route": "openai.images_poses",
+    "format": "Json",
+    "request": {
+      "method": "POST",
+      "path": "/v1/images/poses",
+      "query": {},
+      "json": {
+        "model": "YOLO26s-Pose-NPU",
+        "image": "data:image/png;base64,@fixtures/image.png"
+      },
+      "form": {},
+      "files": {}
+    },
+    "response": {
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "created": 1792697340,
+        "data": [
+          {
+            "height": 256,
+            "index": 0,
+            "object": "image.poses",
+            "poses": [],
+            "width": 256
+          }
+        ],
+        "model": "YOLO26s-Pose-NPU",
+        "object": "list",
+        "usage": {
+          "images": 1,
+          "inference_ms": 22.46,
+          "poses": 0
+        }
+      }
+    }
+  },
   "73f3fa9994c6f7fb6979be7c5c30056fd53053d04b4b2292a69a46c98a3a6b70": {
     "route": "openai.images_upscale",
     "format": "Json",
