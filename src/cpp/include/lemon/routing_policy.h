@@ -170,6 +170,24 @@ struct ClassifierServices {
     std::function<std::map<std::string, double>(const std::string& model,
                                                 const std::string& text)> run_classifier;
 
+    // Score `text` against a caller-supplied `labels` list; returns label ->
+    // score. Powers the `zero_shot` type, whose model has no per-label head: the
+    // labels are an input to the graph, not a property of the export, so they
+    // cannot be read off the model the way `run_classifier`'s are.
+    std::function<std::map<std::string, double>(const std::string& model,
+                                                const std::string& text,
+                                                const std::vector<std::string>& labels)>
+        run_zero_shot_classifier;
+
+    // Ask `model` one `question` (type, instructions, criteria) about `text`;
+    // returns the answer object for it. Powers the `systemone` type (see
+    // ISystemOneServer). Maps to Router::systemone. The question is
+    // ordered_json because the order of a choice question's options changes the
+    // model's scores.
+    std::function<json(const std::string& model,
+                       const std::string& text,
+                       const nlohmann::ordered_json& question)> run_systemone;
+
     // Run a chat `model` with a system `prompt` over `input`; returns the raw
     // assistant text. Powers the `llm` router / L0a on-ramp. Maps to
     // Router::chat_completion.

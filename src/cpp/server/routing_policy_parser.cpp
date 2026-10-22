@@ -437,6 +437,14 @@ json parse_classifier_configs(const json& routing,
                         "', which cannot serve as a classifier (needs an LLM or "
                         "classification model)");
                 }
+
+                if ((type == "zero_shot" || type == "systemone") &&
+                    model_type != ModelType::CLASSIFICATION) {
+                    throw std::invalid_argument(
+                        path + ".model '" + original + "' has type '" +
+                        model_type_to_string(model_type) + "', which cannot serve " + type +
+                        " (needs a classification model)");
+                }
                 if (type == "semantic_similarity" && model_type != ModelType::EMBEDDING) {
                     throw std::invalid_argument(
                         path + ".model '" + original + "' has type '" +
@@ -538,7 +546,7 @@ const std::set<std::string>& routing_router_keys() {
 const std::set<std::string>& routing_classifier_keys() {
     static const std::set<std::string> keys = {
         "id", "type", "model", "prompt", "labels", "default_label",
-        "reference_phrases", "on_error"};
+        "reference_phrases", "question", "on_error"};
     return keys;
 }
 

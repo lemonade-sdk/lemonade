@@ -20,6 +20,12 @@
 //   - embed(model, text)          -> a fixed vector (per (model, text), else a
 //                                    per-model default).
 //   - run_classifier(model, text) -> a fixed label->score map per model.
+//   - run_zero_shot_classifier(model, text, labels)
+//                                 -> a fixed label->score map per model; the
+//                                    labels it was handed are recorded.
+//   - run_systemone(model, text, question)
+//                                 -> a fixed answer object per model; the
+//                                    question it was handed is recorded.
 //   - chat(model, prompt, input)  -> a fixed reply per model.
 //
 // A model can also be marked as failing, so callers can exercise on_error.
@@ -117,6 +123,29 @@ public:
         return unused;
     }
 
+    // Configure a fixed label->score map returned by run_zero_shot_classifier
+    // for `model`. Kept separate from set_classifier_scores so a test can tell
+    // which of the two services a classifier actually reached.
+    void set_zero_shot_scores(const std::string& model,
+                              std::map<std::string, double> scores) {
+        zero_shot_scores_[model] = std::move(scores);
+    }
+
+    // The labels passed to the most recent run_zero_shot_classifier call.
+    const std::vector<std::string>& last_zero_shot_labels() const {
+        return last_zero_shot_labels_;
+    }
+
+    // Configure the answer object run_systemone returns for `model`.
+    void set_systemone_answer(const std::string& model, json answer) {
+        systemone_answers_[model] = std::move(answer);
+    }
+
+    // The question passed to the most recent run_systemone call.
+    const nlohmann::ordered_json& last_systemone_question() const {
+        return last_systemone_question_;
+    }
+
     // Build a ClassifierServices wired to this fake. The returned struct copies
     // `this` by pointer, so keep the FakeClassifierServices alive for the
     // services' lifetime.
@@ -161,6 +190,20 @@ public:
             }
             self->record_unexpected("run_classifier", model);
             return std::map<std::string, double>{};
+        };
+        svc.run_zero_shot_classifier = [self](const std::string& model, const std::string&,
+                                              const std::vector<std::string>& labels) {
+            self->last_zero_shot_labels_ = labels;
+            auto it = self->zero_shot_scores_.find(model);
+            if (it != self->zero_shot_scores_.end()) return it->second;
+            return std::map<std::string, double>{};
+        };
+        svc.run_systemone = [self](const std::string& model, const std::string&,
+                                   const nlohmann::ordered_json& question) {
+            self->last_systemone_question_ = question;
+            auto it = self->systemone_answers_.find(model);
+            if (it != self->systemone_answers_.end()) return it->second;
+            return json::object();
         };
         svc.chat = [self](const std::string& model, const std::string&,
                           const std::string&) {
@@ -209,6 +252,10 @@ private:
     std::map<std::string, int> embed_calls_;
     int total_embed_calls_ = 0;
     std::map<std::string, std::map<std::string, double>> classifier_scores_;
+    std::map<std::string, std::map<std::string, double>> zero_shot_scores_;
+    std::vector<std::string> last_zero_shot_labels_;
+    std::map<std::string, json> systemone_answers_;
+    nlohmann::ordered_json last_systemone_question_;
     std::map<std::string, std::string> chat_replies_;
     std::set<std::pair<std::string, std::string>> failing_embeds_;
     std::set<std::string> failing_classifiers_;

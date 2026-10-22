@@ -1,28 +1,36 @@
+#include <set>
+
+#include "lemon/model_manager.h"
 #include "lemon/model_types.h"
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/model_loader.h"
+#include "lemon/server/shared_args.h"
 
 namespace lemon {
 namespace {
 
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
+using classification::kModel;
 
 const RouteError kNoSoleClassifier{
     400, "", "`model` is omitted and not exactly one classification model is loaded"};
+const RouteError kNotClassifier{
+    400, "", "`model` lacks the `classification` label, checked before it loads"};
 const RouteError kBackendRejected{
     400, "",
-    "The backend rejects the request, for example because `model` is not a classification "
-    "model, which is found only after it loads"};
+    "The backend rejects the request, for example `labels` sent to a fixed-label model or left "
+    "out for a zero-shot one"};
 
-const RouteArg kModel{"model", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-                      "The classifier model. Optional when exactly one classification model is loaded; that "
-                      "model is used."};
 const RouteArg kInput{"input", ArgIn::JsonBody, {{"type", "string"}, {"pattern", "\\S"}}, true, Support::Available,
                       "Text to classify.", {"text"}};
 const RouteArg kTopK{"top_k", ArgIn::JsonBody, {{"type", "integer"}, {"minimum", 1}, {"maximum", 1000000}}, false, Support::Available,
                      "Return only the highest-scoring `k` labels. Defaults to every label."};
+const RouteArg kLabels{"labels", ArgIn::JsonBody, {{"type", "array"}, {"items", {{"type", "string"}, {"pattern", "\\S"}}}},
+                       false, Support::Available,
+                       "The labels to score `input` against. Required by a zero-shot model, and refused by "
+                       "every other model. The entries are unique and not blank."};
 
 class ClassifyRoute : public ModelRoute {
 public:
@@ -37,12 +45,22 @@ public:
         s.experimental = true;
         s.description =
             "Runs an encoder text classifier, such as a PII, prompt-safety or domain classifier, on "
-            "a string and returns a score for each label. It serves `onnxruntime` models, both "
-            "sequence classifiers (one label set) and token classifiers (aggregated span labels), "
-            "and provides the classification that the router's `classifier` condition uses.";
+            "a string and returns a score for each label. It serves `onnxruntime` sequence "
+            "classifiers (one label set), token classifiers (aggregated span labels) and zero-shot "
+            "models (labels sent with each request), and llama.cpp decision models, which are "
+            "zero-shot. It provides the classification that the router's `classifier` and "
+            "`zero_shot` conditions use.";
         s.notes = {
-            "A malformed request, such as one with a blank `input` or a non-positive `top_k`, is "
-            "rejected before any model loads.",
+            "A malformed request, such as one with a blank `input`, a non-positive `top_k`, or an "
+            "empty or repeated `labels` entry, is rejected before any model loads.",
+            "### Zero-Shot Classification\n\n"
+            "A zero-shot model has no per-label head. It reads the label list as part of its input, "
+            "so each request sends the labels, and the response keys are those labels, with scores "
+            "that sum to `1`. Zero-shot `onnxruntime` models are a separate family (LFM2) with their "
+            "own input convention. A llama.cpp decision model answers one `choice` question whose "
+            "options are the labels, with the fixed instruction \"Which category does this text "
+            "belong to?\", through [`POST /v1/systemone`](./llamacpp.md#post-v1systemone). To ask "
+            "a question in your own words, use that endpoint.",
             "### Supported Models\n\n"
             "Single-sequence encoder families: BERT, DistilBERT, RoBERTa, XLM-RoBERTa, DeBERTa "
             "(v1/v2), ELECTRA, ALBERT and CamemBERT. A stock `optimum-cli export onnx` directory of "
@@ -58,7 +76,7 @@ public:
             "Some upstream models declare only generic `LABEL_<n>` label names; their model card "
             "explains them.",
         };
-        s.args = {kModel, kInput, kTopK};
+        s.args = {kModel, kInput, kTopK, kLabels};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -78,14 +96,24 @@ public:
         s.responses = {response};
 
         RouteExample example;
+        example.name = "fixed labels";
         example.format = ResponseFormat::Json;
         example.args = ordered_json::parse(R"({
             "model": "Phishing-Email-Detection-ONNX",
             "input": "Please verify your account at http://secure-login.example now."
         })");
-        s.examples = {example};
+        RouteExample zero_shot;
+        zero_shot.name = "zero-shot";
+        zero_shot.description = "Scores a label list with the llama.cpp decision model `Laya-GGUF`.";
+        zero_shot.format = ResponseFormat::Json;
+        zero_shot.args = ordered_json::parse(R"({
+            "model": "Laya-GGUF",
+            "input": "I want to learn about baking so that I can make a cheesecake",
+            "labels": ["coding", "pii", "cooking", "eating"]
+        })");
+        s.examples = {example, zero_shot};
         s.errors = join_errors({{kBodyNotJson, kArgMissing, kArgInvalid,
-                                 kNoSoleClassifier,
+                                 kNoSoleClassifier, kNotClassifier,
                                  kBackendRejected, kModelUnloaded, kBackendError,
                                  kMalformedBackendResponse, kUnexpectedException},
                                 ModelLoader::errors()});
@@ -104,6 +132,22 @@ protected:
             req.body[kTopK.name] = static_cast<long long>(top_k);
         }
 
+        if (req.has(kLabels)) {
+            const json& labels = req.arg(kLabels);
+            if (labels.empty()) {
+                write_openai_error(res, kArgInvalid, "'labels' must contain at least one label");
+                return false;
+            }
+            std::set<std::string> seen;
+            for (const auto& label : labels) {
+                if (!seen.insert(label.get<std::string>()).second) {
+                    write_openai_error(res, kArgInvalid,
+                        "'labels' contains a duplicate entry: '" + label.get<std::string>() + "'");
+                    return false;
+                }
+            }
+        }
+
         // The router requires a model on every request, so an omitted one is resolved
         // here, which is only possible when exactly one classifier is loaded.
         if (!req.has(kModel)) {
@@ -116,6 +160,16 @@ protected:
             }
             req.body[kModel.name] = req.model;
             req.model_already_loaded = true;
+        }
+
+        // Refused before the load: loading a chat model would take an LLM slot (and
+        // evict a loaded chat model) only to fail.
+        if (ctx_.model_manager->model_exists(req.model) &&
+            ctx_.model_manager->get_model_info(req.model).type != ModelType::CLASSIFICATION) {
+            write_openai_error(res, kNotClassifier,
+                "model '" + req.model + "' is not a classification model "
+                "(it has no 'classification' label)");
+            return false;
         }
         return true;
     }

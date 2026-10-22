@@ -72,10 +72,12 @@
       "properties": {
         "id": { "type": "string" },
         "type": {
-          "description": "v1: semantic_similarity, classifier, llm. Reserved vLLM-SR presets ship post-v1 as thin presets over `classifier`.",
+          "description": "v1: semantic_similarity, classifier, zero_shot, systemone, llm. Reserved vLLM-SR presets ship post-v1 as thin presets over `classifier`.",
           "enum": [
             "semantic_similarity",
             "classifier",
+            "zero_shot",
+            "systemone",
             "llm",
             "pii_detection",
             "prompt_safety",
@@ -106,6 +108,19 @@
             "items": { "type": "string" }
           }
         },
+        "question": {
+          "description": "systemone only: one TypeSafe System One question for a llama.cpp decision model. Its options are the classifier's labels: the criteria keys of a choice, \"true\"/\"false\" for noul, the level strings of a score.",
+          "type": "object",
+          "required": ["type", "instructions"],
+          "properties": {
+            "type": { "enum": ["choice", "noul", "score"] },
+            "instructions": {},
+            "criteria": {
+              "description": "choice: an object {option: description or null}, read by the model in sorted option order, or an array of option names and one-key {option: description} objects, read in array order. noul: optional {\"true\": ..., \"false\": ...}. score: an array of 2 to 10 level strings, lowest first."
+            }
+          },
+          "additionalProperties": false
+        },
         "on_error": {
           "description": "Behavior when the classifier fails to evaluate. match_true = fail-closed authoring. Frozen v1 default when omitted: match_false (fail-open).",
           "enum": ["match_true", "match_false"],
@@ -118,9 +133,21 @@
           "then": { "required": ["model", "reference_phrases"], "not": { "required": ["labels"] } } },
         { "if":   { "required": ["type"], "properties": { "type": { "const": "classifier" } } },
           "then": { "required": ["model"] } },
+        { "if":   { "required": ["type"], "properties": { "type": { "const": "zero_shot" } } },
+          "then": { "required": ["model", "labels"],
+                    "properties": { "labels": { "minItems": 1 } },
+                    "not": { "anyOf": [{ "required": ["prompt"] },
+                                       { "required": ["reference_phrases"] }] } } },
+        { "if":   { "required": ["type"], "properties": { "type": { "const": "systemone" } } },
+          "then": { "required": ["model", "question"],
+                    "not": { "anyOf": [{ "required": ["prompt"] },
+                                       { "required": ["labels"] },
+                                       { "required": ["reference_phrases"] }] } } },
         { "if":   { "required": ["type"], "properties": { "type": { "const": "llm" } } },
           "then": { "required": ["model", "prompt", "labels"],
-                    "properties": { "labels": { "minItems": 1 } } } }
+                    "properties": { "labels": { "minItems": 1 } } } },
+        { "if":   { "required": ["question"] },
+          "then": { "properties": { "type": { "const": "systemone" } } } }
       ]
     },
     "rule": {

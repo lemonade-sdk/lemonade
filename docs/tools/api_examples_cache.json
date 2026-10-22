@@ -826,6 +826,41 @@
       "bytes": 884780
     }
   },
+  "6d4652e1eba38b3e4c550e9ebac586983b2d8f6c582ddb4ad43309b15e533cd1": {
+    "route": "lemonade.classify",
+    "format": "Json",
+    "request": {
+      "method": "POST",
+      "path": "/v1/classify",
+      "query": {},
+      "json": {
+        "model": "Laya-GGUF",
+        "input": "I want to learn about baking so that I can make a cheesecake",
+        "labels": [
+          "coding",
+          "pii",
+          "cooking",
+          "eating"
+        ]
+      },
+      "form": {},
+      "files": {}
+    },
+    "response": {
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "labels": {
+          "coding": 0.03821098309211258,
+          "cooking": 0.6907043425909527,
+          "eating": 0.20328362225606947,
+          "pii": 0.06780105206086524
+        },
+        "model": "Laya-GGUF",
+        "object": "classification"
+      }
+    }
+  },
   "d882ab2725e2de9614b742d512074747aa05bceeabb9b5c771e9ed81b287541b": {
     "route": "lemonade.classify",
     "format": "Json",
@@ -4684,6 +4719,90 @@
         "n_written": 5277100,
         "timings": {
           "save_ms": 3.777
+        }
+      }
+    }
+  },
+  "e04e21b642572d64f3b76b0413fd7f39bf507b28a4adb79914ced330bd4b48e8": {
+    "route": "llamacpp.systemone",
+    "format": "Json",
+    "request": {
+      "method": "POST",
+      "path": "/v1/systemone",
+      "query": {},
+      "json": {
+        "model": "Laya-GGUF",
+        "state": "Customer message: I was charged twice for my order last week and nobody has replied.",
+        "questions": {
+          "route": {
+            "type": "choice",
+            "instructions": "Which team should handle this?",
+            "criteria": {
+              "billing": null,
+              "shipping": null,
+              "technical": null
+            }
+          },
+          "angry": {
+            "type": "noul",
+            "instructions": "Is the customer angry?"
+          },
+          "urgency": {
+            "type": "score",
+            "instructions": "How urgent is this?",
+            "criteria": [
+              "can wait",
+              "this week",
+              "today",
+              "right now"
+            ]
+          }
+        }
+      },
+      "form": {},
+      "files": {}
+    },
+    "response": {
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "model": "Laya-GGUF",
+        "answers": {
+          "route": {
+            "type": "choice",
+            "choice": "billing",
+            "probabilities": {
+              "billing": 0.9913013343012844,
+              "shipping": 0.006005912036234934,
+              "technical": 0.0026927536624805643
+            },
+            "confidence": 0.9869520014519266
+          },
+          "angry": {
+            "type": "noul",
+            "noul": 0.7875428224553009
+          },
+          "urgency": {
+            "type": "score",
+            "score": 1.8999467173363715,
+            "legend": {
+              "0": "can wait",
+              "1": "this week",
+              "2": "today",
+              "3": "right now"
+            },
+            "probabilities": {
+              "0": 0.036243120784383284,
+              "1": 0.4717091453935498,
+              "2": 0.047905629523379026,
+              "3": 0.44414210429868795
+            },
+            "confidence": 0.027567041094861855
+          }
+        },
+        "usage": {
+          "input_tokens": 136,
+          "output_tokens": 0
         }
       }
     }
