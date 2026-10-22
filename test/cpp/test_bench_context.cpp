@@ -20,6 +20,8 @@ int main() {
     check(bench_context_for_target_tokens(64000) == 65536, "context-64k gets 64k");
     check(bench_context_for_target_tokens(128000) == 131072, "context-128k gets 128k");
     check(bench_context_for_target_tokens(5000) == 8192, "custom target is rounded up");
+    check(lemon_cli::BENCH_DEFAULT_TARGET_TOKENS == 2000,
+          "expansion and planning agree when target_tokens is missing");
 
     const std::vector<int> required = {0, 4096, 32768, 65536, 131072};
     const auto defaults = plan_bench_contexts({}, 4096, required);
@@ -53,9 +55,15 @@ int main() {
     const auto too_small = plan_bench_contexts({4096}, 4096, {32768});
     check(too_small.batches.empty() && too_small.skipped.size() == 1,
           "undersized explicit-only request fails preflight");
-    const auto server_auto = plan_bench_contexts({-1}, 4096, {32768});
-    check(server_auto.batches.count(-1) == 1 && server_auto.skipped.empty(),
-          "explicit nonpositive context delegates to server defaults");
+    const auto saved_small_auto = plan_bench_contexts({-1}, 4096, {32768});
+    check(saved_small_auto.batches.empty() && saved_small_auto.skipped.size() == 1,
+          "explicit server auto skips 32k when saved context is known to be 4k");
+    const auto unknown_auto = plan_bench_contexts({-1}, -1, {32768});
+    check(unknown_auto.batches.count(-1) == 1 && unknown_auto.skipped.empty(),
+          "unknown server auto is preserved rather than falsely skipped");
+    const auto fixed_4k = plan_bench_contexts({4096}, 4096, {4096});
+    check(fixed_4k.batches.count(4096) == 1 && fixed_4k.skipped.empty(),
+          "regression 4k scenario still runs at the required 4k window");
 
     std::printf("bench context regression: %s\n", failed ? "FAIL" : "PASS");
     return failed ? 1 : 0;

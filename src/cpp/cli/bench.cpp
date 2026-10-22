@@ -186,7 +186,7 @@ static std::string extract_user_content(const std::vector<json>& messages) {
 
 std::string expand_context(const json& context_block, const std::vector<json>& messages) {
     std::string filler = context_block.value("filler", "");
-    int target_tokens = context_block.value("target_tokens", 2000);
+    int target_tokens = context_block.value("target_tokens", BENCH_DEFAULT_TARGET_TOKENS);
     std::string position = context_block.value("position", "end");
     if (filler.empty()) return "";
 
@@ -260,7 +260,7 @@ static std::vector<BenchScenario> parse_scenario_file(const std::string& path) {
             scenario.warmup_runs = item.value("warmup_runs", 0);
             if (item.contains("context") && item["context"].is_object()) {
                 scenario.minimum_ctx_size = bench_context_for_target_tokens(
-                    item["context"].value("target_tokens", 0));
+                    item["context"].value("target_tokens", BENCH_DEFAULT_TARGET_TOKENS));
                 std::string expanded = expand_context(item["context"], scenario.messages);
                 for (auto& msg : scenario.messages) {
                     if (msg.contains("role") && msg["role"] == "user" &&
@@ -1212,7 +1212,7 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
 
         auto backends = backends_by_model[model];
 
-        int default_ctx = 4096;
+        int default_ctx = config.ctx_sizes.empty() ? 4096 : -1;
         if (model_info.contains("recipe_options") && model_info["recipe_options"].is_object()) {
             const auto& opts = model_info["recipe_options"];
             if (opts.contains("ctx_size") && opts["ctx_size"].is_number())

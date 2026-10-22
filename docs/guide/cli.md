@@ -964,7 +964,7 @@ The optional `context` block generates large input contexts by repeating a fille
 | `target_tokens` | int | Target token count (~4 chars per token for English) |
 | `position` | string | Where to place the question relative to filler: `"end"` (default), `"start"`, or `"middle"` |
 
-When `context` is present, the user message content is replaced with the expanded text. The question (extracted from the user message) is positioned relative to the filler according to `position`. Without an explicit `--ctx-size`, bench rounds the target up to a suitable context size for that scenario. With an explicit `--ctx-size` sweep, scenarios needing more context are skipped at smaller sizes. Token counts are approximate and depend on the model tokenizer.
+When `context` is present, the user message content is replaced with the expanded text. The question (extracted from the user message) is positioned relative to the filler according to `position`. Without an explicit `--ctx-size`, bench rounds the target up to a suitable context size for that scenario. With an explicit `--ctx-size` sweep, scenarios needing more context are skipped at smaller sizes. Token counts are approximate and depend on the model tokenizer. If server-managed context selection is explicitly requested, the effective size may be unknown until the model is loaded.
 
 #### Default Scenarios
 
