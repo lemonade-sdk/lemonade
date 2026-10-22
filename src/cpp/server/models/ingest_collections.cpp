@@ -456,9 +456,6 @@ void IngestCollections::populate_from_cached_manifest(ModelInfo& info) {
         info.size = manifest["size"].get<double>();
     }
 
-    // Same lift-from-manifest pattern for the optional per-collection system
-    // prompt: the registry entry wins when it sets one, otherwise the published
-    // remote manifest acts as the source of truth.
     if (info.system_prompt.empty() && manifest.contains("system_prompt") &&
         manifest["system_prompt"].is_string()) {
         info.system_prompt = manifest["system_prompt"].get<std::string>();
