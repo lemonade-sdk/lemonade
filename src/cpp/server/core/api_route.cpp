@@ -775,13 +775,17 @@ void attach_route_decision(json& response, httplib::Response& res,
     attach_route_header(res, decision->decision);
 }
 
-void ApiRoute::record_usage(const json& response, const RouteRequest& req) const {
+void ApiRoute::record_usage(const json& response, const RouteRequest& req,
+                            std::optional<double> wall_clock_seconds) const {
     if (!response.is_object() ||
         (!response.contains("timings") && !response.contains("usage"))) {
         return;
     }
 
     StreamingProxy::TelemetryData telemetry = StreamingProxy::extract_telemetry(response);
+    if (wall_clock_seconds && *wall_clock_seconds > 0.0) {
+        StreamingProxy::apply_wall_clock_fallback(telemetry, *wall_clock_seconds);
+    }
     LOG(INFO, "Telemetry") << "Inference completed: model=" << req.model
                            << ", tokens=" << (telemetry.input_tokens + telemetry.output_tokens)
                            << " (in=" << telemetry.input_tokens

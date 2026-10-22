@@ -1799,8 +1799,8 @@ This endpoint does not take any parameters.
 
 ### Response format
 
-- `time_to_first_token` - Time in seconds until the first token was generated
-- `tokens_per_second` - Generation speed in tokens per second
+- `time_to_first_token` - Time in seconds until the first token was generated. For a non-streaming request whose backend reports no positive timing value (OpenAI-compatible cloud providers; a non-positive reported value is treated as unmeasured), this is the request wall clock — a conservative upper bound, since prefill and the network round trip cannot be separated from decode
+- `tokens_per_second` - Generation speed in tokens per second. For a non-streaming request whose backend reports no positive timing value, this is the output tokens divided by the request wall clock
 - `input_tokens` - Number of tokens processed
 - `output_tokens` - Number of tokens generated
 - `prompt_tokens` - Total prompt tokens including cached tokens

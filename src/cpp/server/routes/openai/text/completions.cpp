@@ -1,3 +1,5 @@
+#include <chrono>
+
 #include <lemon/utils/aixlog.hpp>
 
 #include "lemon/router.h"
@@ -185,7 +187,10 @@ protected:
         }
 
         auto cancel = cancel_on_disconnect(req);
+        const auto inference_start = std::chrono::steady_clock::now();
         auto response = ctx_.router->completion(req.body);
+        const double inference_seconds =
+            std::chrono::duration<double>(std::chrono::steady_clock::now() - inference_start).count();
         if (response.contains("error")) {
             LOG(ERROR, "Server") << "Backend returned error response: " << response["error"].dump() << std::endl;
             set_error_response(response, res, kBackendError);
@@ -200,7 +205,7 @@ protected:
 
         attach_route_decision(response, res, req.route_decision);
         res.set_content(response.dump(), "application/json");
-        record_usage(response, req);
+        record_usage(response, req, inference_seconds);
     }
 
     LoadSpan load_span() const override { return {"LLM", "completions"}; }

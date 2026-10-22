@@ -81,6 +81,18 @@ public:
     // cached-token details) and llama.cpp timings.
     static TelemetryData extract_telemetry(const nlohmann::json& payload);
 
+    // Fill in the unmeasured timing fields of a non-streaming request, using
+    // the wall clock measured around the request. Backends without a timing
+    // block (OpenAI-compatible upstreams) emit none, so the total duration
+    // bounds the time to first token from above, and the output tokens over
+    // it is the end-to-end throughput. Prefill and decode cannot be separated
+    // in a non-streaming response, so both values are conservative. Positive
+    // values the backend reported are left untouched; non-positive values are
+    // treated as unmeasured — a reported zero is indistinguishable from an
+    // absent field in the extracted telemetry, and zero is precisely the
+    // ambiguous sentinel false-zero telemetry is about.
+    static void apply_wall_clock_fallback(TelemetryData& telemetry, double wall_clock_seconds);
+
     static void accumulate_responses_delta(const nlohmann::json& parsed, std::string& accumulated_text);
 
 private:

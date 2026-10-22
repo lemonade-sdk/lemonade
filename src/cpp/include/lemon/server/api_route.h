@@ -131,7 +131,13 @@ public:
                                 const std::string& content_type = "text/event-stream");
 
 protected:
-    void record_usage(const nlohmann::json& response, const RouteRequest& req) const;
+    // wall_clock_seconds is the duration of the non-streaming inference call.
+    // When the extracted ttft/tps is non-positive (unmeasured — OpenAI-compatible
+    // cloud upstreams report no timing fields), the wall clock fills in
+    // conservative values so the recorded telemetry never reports a
+    // measured-looking zero (see StreamingProxy::apply_wall_clock_fallback).
+    void record_usage(const nlohmann::json& response, const RouteRequest& req,
+                      std::optional<double> wall_clock_seconds = std::nullopt) const;
 
     bool check_args(RouteRequest& req, httplib::Response& res, bool query_only = false) const;
 

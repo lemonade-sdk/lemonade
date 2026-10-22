@@ -7,7 +7,11 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include "lemon/backends/cloud/cloud_server.h"
 #include "lemon/backends/vllm/vllm_server.h"
+#include "lemon/cloud_provider_registry.h"
+#include "lemon/model_manager.h"
+#include "lemon/recipe_options.h"
 #include "lemon/runtime_config.h"
 #include "lemon/streaming_proxy.h"
 #include "lemon/utils/conversation_fingerprint.h"
@@ -653,6 +657,150 @@ int main() {
         lemon::RuntimeConfig::set_global(nullptr);
         lemon::telemetry::flush();
         lemon::telemetry::shutdown();
+    }
+
+        // --- apply_wall_clock_fallback (non-streaming cloud telemetry) ---
+    auto check_double_near = [](const char* name, double actual, double expected, double tol) {
+        bool ok = std::abs(actual - expected) <= tol;
+        std::printf("[%s] %s\n", ok ? "PASS" : "FAIL", name);
+        if (!ok) {
+            std::printf("      Expected: ~%f (tol %g), Actual: %f\n", expected, tol, actual);
+            ++g_failures;
+        }
+    };
+    {
+
+        // Unmeasured timing: the wall clock fills both fields.
+        {
+            lemon::StreamingProxy::TelemetryData telemetry;
+            telemetry.output_tokens = 100;
+            telemetry.time_to_first_token = 0.0;
+            telemetry.tokens_per_second = 0.0;
+            lemon::StreamingProxy::apply_wall_clock_fallback(telemetry, 2.0);
+            check_double_near("fallback: unmeasured ttft becomes wall clock", telemetry.time_to_first_token, 2.0, 1e-9);
+            check_double_near("fallback: unmeasured tps becomes tokens/wall", telemetry.tokens_per_second, 50.0, 1e-9);
+        }
+
+        // A non-positive reported value is indistinguishable from an absent
+        // field in the extracted telemetry: it is treated as unmeasured and
+        // replaced (zero is the ambiguous sentinel false-zero telemetry is
+        // about; a negative value is never a valid measurement).
+        {
+            lemon::StreamingProxy::TelemetryData telemetry;
+            telemetry.output_tokens = 100;
+            telemetry.time_to_first_token = -1.0;
+            telemetry.tokens_per_second = 0.0;
+            lemon::StreamingProxy::apply_wall_clock_fallback(telemetry, 2.0);
+            check_double_near("fallback: negative ttft is replaced", telemetry.time_to_first_token, 2.0, 1e-9);
+            check_double_near("fallback: zero tps is replaced with tokens/wall", telemetry.tokens_per_second, 50.0, 1e-9);
+        }
+
+        // Backend reported ttft but not tps: only tps is filled in.
+        {
+            lemon::StreamingProxy::TelemetryData telemetry;
+            telemetry.output_tokens = 100;
+            telemetry.time_to_first_token = 0.25;
+            telemetry.tokens_per_second = 0.0;
+            lemon::StreamingProxy::apply_wall_clock_fallback(telemetry, 2.0);
+            check_double_near("fallback: reported ttft is preserved", telemetry.time_to_first_token, 0.25, 1e-9);
+            check_double_near("fallback: unmeasured tps becomes tokens/wall", telemetry.tokens_per_second, 50.0, 1e-9);
+        }
+
+        // Backend reported both: nothing changes.
+        {
+            lemon::StreamingProxy::TelemetryData telemetry;
+            telemetry.output_tokens = 100;
+            telemetry.time_to_first_token = 0.25;
+            telemetry.tokens_per_second = 40.0;
+            lemon::StreamingProxy::apply_wall_clock_fallback(telemetry, 2.0);
+            check_double_near("fallback: reported ttft untouched", telemetry.time_to_first_token, 0.25, 1e-9);
+            check_double_near("fallback: reported tps untouched", telemetry.tokens_per_second, 40.0, 1e-9);
+        }
+
+        // No output tokens: ttft is filled, tps stays 0 (no division by tokens).
+        {
+            lemon::StreamingProxy::TelemetryData telemetry;
+            telemetry.output_tokens = 0;
+            telemetry.time_to_first_token = 0.0;
+            telemetry.tokens_per_second = 0.0;
+            lemon::StreamingProxy::apply_wall_clock_fallback(telemetry, 2.0);
+            check_double_near("fallback: ttft filled without output tokens", telemetry.time_to_first_token, 2.0, 1e-9);
+            check_double_near("fallback: tps stays 0 without output tokens", telemetry.tokens_per_second, 0.0, 1e-9);
+        }
+
+        // Non-positive wall clock: no-op.
+        {
+            lemon::StreamingProxy::TelemetryData telemetry;
+            telemetry.output_tokens = 100;
+            lemon::StreamingProxy::apply_wall_clock_fallback(telemetry, 0.0);
+            check_double_near("fallback: zero wall clock leaves ttft 0", telemetry.time_to_first_token, 0.0, 1e-9);
+            check_double_near("fallback: zero wall clock leaves tps 0", telemetry.tokens_per_second, 0.0, 1e-9);
+        }
+    }
+
+    // --- non-streaming cloud completion: wall clock is the only timing ---
+    // A mock OpenAI-compatible backend that reports usage but no timing fields
+    // (the sglang/vllm case). extract_telemetry yields zeros; the wall clock
+    // measured around the request fills them in.
+    {
+        httplib::Server backend;
+        backend.Post("/v1/chat/completions",
+            [&](const httplib::Request&, httplib::Response& res) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(300));
+                res.set_content(
+                    R"({"id":"cmpl-1","object":"chat.completion","model":"test-model",)"
+                    R"("choices":[{"index":0,"message":{"role":"assistant","content":"hello"},"finish_reason":"stop"}],)"
+                    R"("usage":{"prompt_tokens":10,"completion_tokens":50,"total_tokens":60}})",
+                    "application/json");
+            });
+        const int port = backend.bind_to_any_port("127.0.0.1");
+        if (port <= 0) {
+            std::printf("[FAIL] wall clock: failed to bind mock cloud backend\n");
+            ++g_failures;
+        } else {
+            std::thread backend_thread([&backend]() {
+                backend.listen_after_bind();
+            });
+            backend.wait_until_ready();
+
+            lemon::CloudProviderRegistry registry;
+            lemon::CloudProviderRegistry::InstallOptions options;
+            options.allow_insecure_http = true;
+            registry.install("test-cloud", "http://127.0.0.1:" + std::to_string(port) + "/v1", options);
+            registry.set_runtime_key("test-cloud", "sk-test-key");
+
+            lemon::backends::CloudServer cloud_server("test-cloud", "INFO", nullptr, nullptr, &registry);
+            lemon::ModelInfo model_info;
+            model_info.cloud_provider = "test-cloud";
+            model_info.checkpoints["main"] = "test-model";
+            lemon::RecipeOptions opts;
+            cloud_server.load("test-cloud-model", model_info, opts);
+
+            const lemon::json request = lemon::json::parse(
+                R"({"model":"test-cloud-model","messages":[{"role":"user","content":"hi"}]})");
+
+            const auto start = std::chrono::steady_clock::now();
+            const lemon::json response = cloud_server.chat_completion(request);
+            const double wall_clock =
+                std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+
+            backend.stop();
+            backend_thread.join();
+
+            check_bool("cloud non-streaming: response has no error", response.contains("error"), false);
+            check_bool("cloud non-streaming: response has choices", response.contains("choices"), true);
+
+            lemon::StreamingProxy::TelemetryData telemetry = lemon::StreamingProxy::extract_telemetry(response);
+            check_bool("cloud non-streaming: usage tokens extracted", telemetry.input_tokens == 10 && telemetry.output_tokens == 50, true);
+            check_double_near("cloud non-streaming: backend reported no ttft", telemetry.time_to_first_token, 0.0, 1e-9);
+            check_double_near("cloud non-streaming: backend reported no tps", telemetry.tokens_per_second, 0.0, 1e-9);
+
+            lemon::StreamingProxy::apply_wall_clock_fallback(telemetry, wall_clock);
+            check_double_near("cloud non-streaming: ttft becomes wall clock", telemetry.time_to_first_token, wall_clock, 1e-9);
+            check_double_near("cloud non-streaming: tps becomes tokens/wall", telemetry.tokens_per_second,
+                         static_cast<double>(telemetry.output_tokens) / wall_clock, 1e-9);
+            check_bool("cloud non-streaming: wall clock exceeds the backend sleep", wall_clock >= 0.3, true);
+        }
     }
 
     std::printf("===========================================\n");

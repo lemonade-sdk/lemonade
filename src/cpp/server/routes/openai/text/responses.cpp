@@ -1,3 +1,5 @@
+#include <chrono>
+
 #include <lemon/utils/aixlog.hpp>
 
 #include "lemon/router.h"
@@ -168,7 +170,10 @@ protected:
 
         LOG(INFO, "Server") << "POST /api/v1/responses - Non-streaming" << std::endl;
         auto cancel = cancel_on_disconnect(req);
+        const auto inference_start = std::chrono::steady_clock::now();
         auto response = ctx_.router->responses(req.body);
+        const double inference_seconds =
+            std::chrono::duration<double>(std::chrono::steady_clock::now() - inference_start).count();
         if (response.contains("error")) {
             LOG(ERROR, "Server") << "Responses backend error: " << response["error"].dump() << std::endl;
             set_error_response(response, res, kBackendError);
@@ -177,7 +182,7 @@ protected:
 
         attach_route_decision(response, res, req.route_decision);
         res.set_content(response.dump(), "application/json");
-        record_usage(response, req);
+        record_usage(response, req, inference_seconds);
     }
 };
 

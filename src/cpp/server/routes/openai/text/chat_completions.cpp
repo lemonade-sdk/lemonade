@@ -1,3 +1,5 @@
+#include <chrono>
+
 #include <lemon/utils/aixlog.hpp>
 
 #include "lemon/router.h"
@@ -308,7 +310,10 @@ protected:
 
         LOG(INFO, "Server") << "POST /api/v1/chat/completions - 200 OK" << std::endl;
         auto cancel = cancel_on_disconnect(req);
+        const auto inference_start = std::chrono::steady_clock::now();
         auto response = ctx_.router->chat_completion(req.body);
+        const double inference_seconds =
+            std::chrono::duration<double>(std::chrono::steady_clock::now() - inference_start).count();
         if (response.contains("error")) {
             LOG(ERROR, "Server") << "Backend returned error response: " << response["error"].dump() << std::endl;
             set_error_response(response, res, kBackendError);
@@ -332,7 +337,7 @@ protected:
         }
 
         res.set_content(response.dump(), "application/json");
-        record_usage(response, req);
+        record_usage(response, req, inference_seconds);
     }
 
     LoadSpan load_span() const override { return {"LLM", "chat.completions"}; }

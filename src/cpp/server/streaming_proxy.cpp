@@ -499,6 +499,18 @@ StreamingProxy::TelemetryData StreamingProxy::extract_telemetry(const nlohmann::
     return telemetry;
 }
 
+void StreamingProxy::apply_wall_clock_fallback(TelemetryData& telemetry, double wall_clock_seconds) {
+    if (wall_clock_seconds <= 0.0) {
+        return;
+    }
+    if (telemetry.time_to_first_token <= 0.0) {
+        telemetry.time_to_first_token = wall_clock_seconds;
+    }
+    if (telemetry.tokens_per_second <= 0.0 && telemetry.output_tokens > 0) {
+        telemetry.tokens_per_second = static_cast<double>(telemetry.output_tokens) / wall_clock_seconds;
+    }
+}
+
 StreamingProxy::TelemetryData StreamingProxy::parse_telemetry(const std::string& buffer) {
     TelemetryData telemetry;
 
