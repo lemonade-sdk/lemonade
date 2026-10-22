@@ -57,6 +57,10 @@ void to_json(json& j, const TreeNode& n) {
         {"mgmt_pubkey",              n.mgmt_pubkey},
         {"wrapped_mgmt_privkey",     n.wrapped_mgmt_privkey},
         {"mesh_pubkey",              n.mesh_pubkey},
+        {"endpoint_identifier",      n.endpoint_identifier},
+        {"cpu_id",                   n.cpu_id},
+        {"net_mac",                  n.net_mac},
+        {"is_inference",             n.is_inference},
         {"assignments",              n.assignments},
         {"signature",                n.signature},
         {"listen_endpoint",          n.listen_endpoint},
@@ -81,6 +85,10 @@ void from_json(const json& j, TreeNode& n) {
     n.mgmt_pubkey              = j.value("mgmt_pubkey", "");
     n.wrapped_mgmt_privkey     = j.value("wrapped_mgmt_privkey", "");
     n.mesh_pubkey              = j.value("mesh_pubkey", "");
+    n.endpoint_identifier      = j.value("endpoint_identifier", "");
+    n.cpu_id                   = j.value("cpu_id", "");
+    n.net_mac                  = j.value("net_mac", "");
+    n.is_inference             = j.value("is_inference", false);
     if (j.contains("assignments") && j["assignments"].is_array()) {
         j["assignments"].get_to(n.assignments);
     }

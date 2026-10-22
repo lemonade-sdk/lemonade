@@ -253,8 +253,9 @@ json sdk_call(const std::function<ln_error_t(char**)>& operation) {
     auto value = output ? json::parse(output, nullptr, false) : json::object();
     if (value.is_discarded()) throw NexusError(502, "The network returned invalid data");
     if (code != LN_OK) {
+        const auto fallback = "Network request failed (SDK error " + std::to_string(code) + ")";
         throw NexusError(code == LN_ERR_AUTH ? 403 : code == LN_ERR_NOT_FOUND ? 404 : 502,
-            value.value("error", std::string("Network request failed (SDK error ") + std::to_string(code) + ")"));
+            value.is_object() ? value.value("error", fallback) : fallback);
     }
     return value;
 }
@@ -375,10 +376,8 @@ struct NexusManager::Session {
         const auto self = find_member(devices, node_id);
         return self.is_object() && self.value("is_admin", false);
     }
-    // Reads the group's devices as raw JSON because the vendored SDK's TreeNode has no is_inference
-    // field. Replace this with ln_tree_get_children once the SDK TreeNode carries is_inference.
     json group_children() {
-        auto children = private_call("GET", "/api/tree/children/" + group_id);
+        auto children = sdk_call([&](auto out) { return ln_tree_get_children(client.get(), group_id.c_str(), out); });
         if (!children.is_array()) throw NexusError(502, "The network returned invalid data");
         return children;
     }

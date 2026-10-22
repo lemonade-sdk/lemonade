@@ -122,6 +122,13 @@ struct TreeNode {
     std::string              wrapped_mgmt_privkey;
     std::string              mesh_pubkey;
 
+    // Endpoint identity, as the server records it. is_inference marks a
+    // Tier 3 inference node; false is a Tier 4 client.
+    std::string              endpoint_identifier;
+    std::string              cpu_id;
+    std::string              net_mac;
+    bool                     is_inference{false};
+
     // Assignments
     std::vector<Assignment>  assignments;
 
