@@ -110,7 +110,7 @@ public:
     static void set_global(RuntimeConfig* instance);
     static RuntimeConfig* global();
 
-    // Log format string — shared between main.cpp and apply_config_side_effects
+    // Log format string — shared between main.cpp and ConfigEffects
     static constexpr const char* LOG_FORMAT =
         "%Y-%m-%d %H:%M:%S.#ms [#severity] (#tag_func) #message";
 

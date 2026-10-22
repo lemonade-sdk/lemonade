@@ -916,7 +916,7 @@ static std::string format_namespaced_session(const std::string& client, const st
 InferenceSpan::InferenceSpan(const std::string& span_kind, const std::string& name, const std::string& model_name, const nlohmann::json& request_json)
     : span_kind_(span_kind), name_(name), model_name_(model_name), start_time_(std::chrono::steady_clock::now()) {
     // When the caller supplies a valid W3C trace context (gated behind
-    // telemetry.trust_incoming_trace_context in server.cpp), adopt its trace id
+    // telemetry.trust_incoming_trace_context in request_middleware.cpp), adopt its trace id
     // and treat its span id as this span's parent so the request joins the
     // caller's distributed trace. Otherwise start a fresh root trace.
     if (!g_incoming_trace_id.empty()) {
