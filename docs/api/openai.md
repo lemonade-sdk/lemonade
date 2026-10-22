@@ -964,7 +964,7 @@ When `lemond` is configured with cloud providers, cloud-routed models appear her
 | Parameter | Required | Description |
 |-----------|----------|-------------|
 | `show_all` | No | If set to `true`, returns all models from the catalog including those not yet downloaded. Defaults to `false`. |
-| `include_paths` | No | If set to `true`, each present checkpoint in `checkpoint_status` also carries its absolute `path`. Defaults to `false`, because a path names a local username and cache layout. Same parameter as [`/models/{id}/files`](lemonade.md#list-model-files). |
+| `include_paths` | No | If set to `true`, each present checkpoint in `checkpoint_status` also carries its absolute `path`. Defaults to `false`, because a path names a local username and cache layout. Same parameter as [`GET /v1/models/{id}/files`](./lemonade.md#get-v1modelsidfiles). |
 
 ### Example request
 
