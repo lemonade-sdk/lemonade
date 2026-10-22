@@ -964,6 +964,7 @@ When `lemond` is configured with cloud providers, cloud-routed models appear her
 | Parameter | Required | Description |
 |-----------|----------|-------------|
 | `show_all` | No | If set to `true`, returns all models from the catalog including those not yet downloaded. Defaults to `false`. |
+| `include_paths` | No | If set to `true`, each present checkpoint in `checkpoint_status` also carries its absolute `path`. Defaults to `false`, because a path names a local username and cache layout. Same parameter as [`/models/{id}/files`](lemonade.md#list-model-files). |
 
 ### Example request
 
@@ -973,6 +974,9 @@ curl http://localhost:13305/v1/models
 
 # Show all models including not-yet-downloaded (extended usage)
 curl http://localhost:13305/v1/models?show_all=true
+
+# Report where each present checkpoint's bytes are (trusted local clients only)
+curl 'http://localhost:13305/v1/models?include_paths=true'
 ```
 
 ### Response format
@@ -999,8 +1003,7 @@ curl http://localhost:13305/v1/models?show_all=true
           "type": "main",
           "present": true,
           "required": true,
-          "registry": "huggingface",
-          "path": "/home/you/.cache/lemonade/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/8b14a9e8c9db4a52e3f6f07d9086e2e3e0d94d1f/Qwen3-0.6B-Q4_0.gguf"
+          "registry": "huggingface"
         }
       ],
       "labels": ["reasoning"]
@@ -1056,12 +1059,12 @@ curl http://localhost:13305/v1/models?show_all=true
   - `max_completion_tokens` - Optional integer alias for `max_output_tokens` adhering to OpenAI convention, when reported by cloud providers.
   - `downloaded` - Boolean indicating if the model is downloaded and available locally
   - `update_available` - Boolean indicating a newer commit exists on HuggingFace for this model. Only set for downloaded HF-backed models. `false` otherwise.
-  - `checkpoint_status` - Array with one entry per checkpoint of the model, answering where its bytes are:
+  - `checkpoint_status` - Array with one entry per checkpoint of the model, answering whether its bytes are there:
     - `type` - Checkpoint slot, e.g. `"main"`, `"mmproj"`, `"vae"`
-    - `present` - Boolean; `true` only when the checkpoint's bytes are complete at `path`
+    - `present` - Boolean; `true` only when the checkpoint's bytes are complete and readable
     - `required` - Boolean; a missing required checkpoint keeps the model undownloaded, an optional one (loaded lazily) does not
     - `registry` - Registry hosting the checkpoint (empty for local files and directories)
-    - `path` - Absolute path to the checkpoint file, empty when `present` is `false` or the backend owns the bytes itself
+    - `path` - Absolute path to the checkpoint file. **Only present when the request asked `?include_paths=true` and `present` is `true`** — an omitted key, not an empty string. A backend that fetches and removes its own weights answers `path` only as well as it answers `present`.
   - `suggested` - Boolean indicating if the model is recommended for general use
   - `labels` - Array of tags describing the model's capabilities and characteristics. See [Model Labels](#model-labels) for the full list.
   - `image_defaults` - (Image models only) Default generation parameters for the model:
@@ -1190,8 +1193,7 @@ Returns a single model object with the same fields as described in the [models l
       "type": "main",
       "present": true,
       "required": true,
-      "registry": "huggingface",
-      "path": "/home/you/.cache/lemonade/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/8b14a9e8c9db4a52e3f6f07d9086e2e3e0d94d1f/Qwen3-0.6B-Q4_0.gguf"
+      "registry": "huggingface"
     }
   ],
   "labels": ["reasoning"],

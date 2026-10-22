@@ -2930,6 +2930,8 @@ void Server::handle_models(const httplib::Request& req, httplib::Response& res) 
 
     // Check if we should show all models (for CLI list command) or only downloaded (OpenAI API behavior)
     bool show_all = req.has_param("show_all") && req.get_param_value("show_all") == "true";
+    const bool include_paths =
+        req.has_param("include_paths") && req.get_param_value("include_paths") == "true";
 
     // OPTIMIZATION: For OpenAI API mode, use get_downloaded_models() which filters first
     // Only use get_supported_models() when we need to show ALL models
@@ -2945,7 +2947,7 @@ void Server::handle_models(const httplib::Request& req, httplib::Response& res) 
     response["object"] = "list";
 
     for (const auto& [row_id, model_info] : model_manager_->listing_rows(models)) {
-        response["data"].push_back(model_info_to_json(row_id, *model_info));
+        response["data"].push_back(model_info_to_json(row_id, *model_info, 0, include_paths));
     }
 
     res.set_content(response.dump(), "application/json");
@@ -3216,7 +3218,7 @@ int64_t Server::resolve_context_length(const std::string& model_id, const ModelI
 static constexpr int kMaxCollectionEmbedDepth = 3;
 
 nlohmann::json Server::model_info_to_json(const std::string& model_id, const ModelInfo& info,
-                                          int depth) {
+                                          int depth, bool include_paths) {
     std::vector<std::string> public_components;
     public_components.reserve(info.components.size());
     for (const auto& component : info.components) {
@@ -3246,7 +3248,7 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
 
     nlohmann::json checkpoint_status = nlohmann::json::array();
     for (const auto& status : model_manager_->checkpoint_status(info)) {
-        checkpoint_status.push_back({
+        nlohmann::json entry{
             {"type", status.type},
             {"present", status.present},
             {"required", status.required},
@@ -3254,8 +3256,11 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
                 ? std::string()
                 : remote_registry_source_name(
                     parse_remote_registry_source(status.registry.str()))},
-            {"path", status.present ? status.path : std::string()},
-        });
+        };
+        if (include_paths && status.present) {
+            entry["path"] = status.path;
+        }
+        checkpoint_status.push_back(std::move(entry));
     }
     model_json["checkpoint_status"] = std::move(checkpoint_status);
 
@@ -3351,7 +3356,8 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
             }
             auto comp_info = model_manager_->get_model_info(component);
             component_models.push_back(model_info_to_json(
-                model_manager_->get_public_model_name(component), comp_info, depth + 1));
+                model_manager_->get_public_model_name(component), comp_info, depth + 1,
+                include_paths));
         }
         model_json["models"] = component_models;
     }
@@ -3363,8 +3369,11 @@ void Server::handle_model_by_id(const httplib::Request& req, httplib::Response& 
     std::string model_id = utils::normalize_model_name(req.matches[1]);
 
     if (auto resolved = model_manager_->resolve(model_id)) {
-        res.set_content(model_info_to_json(resolved->wire_id, *resolved->info).dump(),
-                        "application/json");
+        const bool include_paths =
+            req.has_param("include_paths") && req.get_param_value("include_paths") == "true";
+        res.set_content(
+            model_info_to_json(resolved->wire_id, *resolved->info, 0, include_paths).dump(),
+            "application/json");
         return;
     }
     res.status = 404;

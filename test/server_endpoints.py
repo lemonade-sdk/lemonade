@@ -746,10 +746,27 @@ class EndpointTests(ServerTestBase):
                 entry.get("type") == "main"
                 and entry.get("present") is True
                 and entry.get("required") is True
-                and entry.get("path")
                 for entry in pulled["checkpoint_status"]
             ),
             f"downloaded model reports its main checkpoint: {pulled['checkpoint_status']}",
+        )
+        # Filesystem paths are opt-in on every listing surface, as they are on
+        # /models/{id}/files.
+        self.assertFalse(
+            any("path" in entry for entry in pulled["checkpoint_status"]),
+            f"the default listing discloses paths: {pulled['checkpoint_status']}",
+        )
+        opted_in = requests.get(
+            f"{self.base_url}/models/{ENDPOINT_TEST_MODEL}?include_paths=true",
+            timeout=TIMEOUT_DEFAULT,
+        ).json()
+        self.assertTrue(
+            any(
+                entry.get("type") == "main" and entry.get("path")
+                for entry in opted_in.get("checkpoint_status", [])
+            ),
+            f"include_paths=true answers where the checkpoint is: "
+            f"{opted_in.get('checkpoint_status')}",
         )
         self.assertIsInstance(pulled.get("update_available"), bool)
 

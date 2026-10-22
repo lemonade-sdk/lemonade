@@ -313,11 +313,13 @@ table of the same facts would only drift from the store:
 | `registry_source` | `ArtifactRef::registry` of the `main` checkpoint, empty when the model has no registry checkpoint |
 | `downloaded` | every checkpoint with `ArtifactRef::required` present, per [Artifact Sources](#artifact-sources) |
 | `update_available` | any required checkpoint's repository reports newer content, per [Two Kinds Of Staleness](#two-kinds-of-staleness) |
-| `checkpoint_status[]` | per checkpoint: `type`, `present`, `required`, `registry`, `path` |
+| `checkpoint_status[]` | per checkpoint: `type`, `present`, `required`, `registry` — and `path` only for a request that asked `?include_paths=true` |
 | `size` | the sum over present required checkpoints, in GB |
 | `cloud_provider` | set only for a model from a `ListedCatalog` |
 
 Serialization to a response body is the HTTP layer's job. `checkpoint_status` is additive.
+
+`path` is the one entry a client asks for. It is an absolute path on the serving host, so it is absent unless `include_paths=true` is on the query string, and absent rather than empty when there is nothing to say — the same policy `/models/{id}/files` documents. `present`, `required` and `registry` answer every question a remote client has about whether a model can run.
 
 ## Model Catalogs
 
@@ -1718,7 +1720,7 @@ with a notes region beneath carrying each `notes` entry as a bullet, the `exampl
 
 ### Model Object Fields
 
-There is no generated model-object pass. Serialization lives in the HTTP layer (`model_info_to_json`) and `docs/api/openai.md` describes each field beside its example; both are edited in the same change that changes the field. A new field names its source row or facade call in this table, and the endpoint pin in `test/server_endpoints.py` plus the export-strip check in the app regression suite are what catch drift — `checkpoint_status` is the worked example: a row of `CheckpointStatus` structs, documented entries (`type`, `present`, `required`, `registry`, `path`), pinned against a live server, and refused by the export allowlist because its paths belong to one machine.
+There is no generated model-object pass. Serialization lives in the HTTP layer (`model_info_to_json`) and `docs/api/openai.md` describes each field beside its example; both are edited in the same change that changes the field. A new field names its source row or facade call in this table, and the endpoint pin in `test/server_endpoints.py` plus the export-strip check in the app regression suite are what catch drift — `checkpoint_status` is the worked example: a row of `CheckpointStatus` structs, documented entries (`type`, `present`, `required`, `registry`, `path`), pinned against a live server, and refused by the export allowlist because the opt-in `path` belongs to one machine.
 
 ### Drift Check
 
