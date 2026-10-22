@@ -12,6 +12,7 @@ const RECIPE_PRIORITY = [
   'onnxruntime',
   'openmoss',
   'ryzenai-llm',
+  'ryzenai-vision',
   'sd-cpp',
   'thenoise',
   'thinksound',
@@ -31,6 +32,7 @@ const RECIPE_DISPLAY_NAMES = {
   thinksound: 'ThinkSound',
   acestep: 'ACE-Step',
   onnxruntime: 'ONNX Runtime',
+  'ryzenai-vision': 'Ryzen AI SW Vision NPU',
   trellis: 'TRELLIS.2',
   openmoss: 'OpenMOSS TTS'
 };

@@ -17,6 +17,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `onnxruntime` | ONNX Runtime | no | no | cpu |
 | `openmoss` | OpenMOSS TTS | yes | no | cuda, rocm, vulkan |
 | `ryzenai-llm` | Ryzen AI LLM | no | yes | npu |
+| `ryzenai-vision` | Ryzen AI Vision | no | no | npu |
 | `sd-cpp` | StableDiffusion.cpp | yes | no | cpu, cuda, metal, rocm, vulkan |
 | `thenoise` | TheNoise ROCm (experimental) | yes | no | rocm |
 | `thinksound` | ThinkSound | yes | no | cuda, rocm, vulkan |
@@ -52,6 +53,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `openmoss` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `openmoss` | rocm | linux, windows | amd_gpu |
 | `ryzenai-llm` | npu | windows | amd_npu (XDNA2) |
+| `ryzenai-vision` | npu | linux, windows | amd_npu (XDNA2) |
 | `sd-cpp` | metal | macos | metal |
 | `sd-cpp` | cuda | linux, windows | nvidia_gpu (sm_100, sm_120, sm_121, sm_75, sm_80, sm_86, sm_89, sm_90) |
 | `sd-cpp` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
@@ -121,6 +123,12 @@ the generator instead. Prose outside the markers is preserved. -->
 | Option | CLI flag | Type | Default | Description |
 |--------|----------|------|---------|-------------|
 | `openmoss_backend` | `--openmoss` | BACKEND | "" | OpenMOSS TTS backend to use |
+
+#### `ryzenai-vision` — Ryzen AI Vision
+
+| Option | CLI flag | Type | Default | Description |
+|--------|----------|------|---------|-------------|
+| `ryzenaivision_args` | `--ryzenaivision-args` | ARGS | "" | Custom arguments to pass to ryzenai_vision_server.py |
 
 #### `sd-cpp` — StableDiffusion.cpp
 

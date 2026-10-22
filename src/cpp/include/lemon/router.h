@@ -236,6 +236,7 @@ public:
     json image_generations(const json& request);
     json image_edits(const json& request);
     json image_variations(const json& request);
+    json image_detections(const json& request);
 
     void audio_generations(const json& request, httplib::DataSink& sink);
     std::vector<std::string> audio_generation_supported_formats(const std::string& model_name);

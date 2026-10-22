@@ -132,6 +132,7 @@
           <Directory Id="ResourcesDir" Name="resources">
             <Directory Id="StaticDir" Name="static" />
             <Directory Id="WebAppDir" Name="web-app" />
+            <Directory Id="RyzenAIVisionDir" Name="ryzenai_vision" />
           </Directory>
         </Directory>
 <?if $(var.IncludeTauriApp) = 1 ?>
@@ -223,6 +224,14 @@
 
       <Component Id="IndexHtml" Directory="StaticDir" Guid="f3a4b5c6-d7e8-4f9a-0b1c-2d3e4f5a6b7c">
         <File Id="index.html" Source="$(var.BuildDir)\Release\resources\static\index.html" KeyPath="yes" />
+      </Component>
+
+      <Component Id="RyzenAIVisionServerPy" Directory="RyzenAIVisionDir" Guid="6d2f8a41-93c7-4e5b-b1a0-7c4e2d9f8b13">
+        <File Id="ryzenai_vision_server.py" Source="$(var.BuildDir)\Release\resources\ryzenai_vision\ryzenai_vision_server.py" KeyPath="yes" />
+      </Component>
+
+      <Component Id="RyzenAIVisionVaipConfig" Directory="RyzenAIVisionDir" Guid="0e7b3c95-2a1d-4f86-9d4e-5b8a6c1f2e70">
+        <File Id="ryzenai_vision_vaiep_config.json" Source="$(var.BuildDir)\Release\resources\ryzenai_vision\vaiep_config.json" KeyPath="yes" />
       </Component>
     </ComponentGroup>
 

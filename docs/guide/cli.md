@@ -446,6 +446,12 @@ The following options are available depending on the recipe being used:
 |--------|-------------|---------|
 | `--onnxruntime-args ARGS` | Custom arguments to pass to ort-server | `""` |
 
+#### Ryzen AI Vision (`ryzenai-vision` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--ryzenaivision-args ARGS` | Custom arguments to pass to ryzenai_vision_server.py | `""` |
+
 #### TRELLIS.2 (`trellis` recipe)
 
 | Option | Description | Default |

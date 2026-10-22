@@ -1361,7 +1361,8 @@ json Router::get_max_model_limits() const {
         {"transcription", max},
         {"image", max},
         {"tts", max},
-        {"classification", max}
+        {"classification", max},
+        {"detection", max}
     };
 }
 
@@ -2185,6 +2186,18 @@ json Router::image_variations(const json& request) {
     });
 }
 
+json Router::image_detections(const json& request) {
+    return execute_inference(request, [&](WrappedServer* server) {
+        auto detection_server = dynamic_cast<IDetectionServer*>(server);
+        if (!detection_server) {
+            return ErrorResponse::from_exception(
+                UnsupportedOperationException("Object detection", device_type_to_string(server->get_device_type()))
+            );
+        }
+        return detection_server->detect(request);
+    });
+}
+
 void Router::audio_generations(const json& request, httplib::DataSink& sink) {
     execute_streaming(request.dump(), sink, [&](WrappedServer* server) {
         auto audio_server = dynamic_cast<IAudioGenerationServer*>(server);
@@ -2774,7 +2787,8 @@ json Router::get_pinned_model_counts() const {
         {"transcription", count_pinned_servers_in_pool(ModelType::TRANSCRIPTION, ResidencyClass::Standard)},
         {"image", count_pinned_servers_in_pool(ModelType::IMAGE, ResidencyClass::Standard)},
         {"tts", count_pinned_servers_in_pool(ModelType::TTS, ResidencyClass::Standard)},
-        {"classification", count_pinned_servers_in_pool(ModelType::CLASSIFICATION, ResidencyClass::Standard)}
+        {"classification", count_pinned_servers_in_pool(ModelType::CLASSIFICATION, ResidencyClass::Standard)},
+        {"detection", count_pinned_servers_in_pool(ModelType::DETECTION, ResidencyClass::Standard)}
     };
 }
 
@@ -2787,7 +2801,8 @@ json Router::get_pinned_helper_counts() const {
         {"transcription", count_pinned_servers_in_pool(ModelType::TRANSCRIPTION, ResidencyClass::RoutingHelper)},
         {"image", count_pinned_servers_in_pool(ModelType::IMAGE, ResidencyClass::RoutingHelper)},
         {"tts", count_pinned_servers_in_pool(ModelType::TTS, ResidencyClass::RoutingHelper)},
-        {"classification", count_pinned_servers_in_pool(ModelType::CLASSIFICATION, ResidencyClass::RoutingHelper)}
+        {"classification", count_pinned_servers_in_pool(ModelType::CLASSIFICATION, ResidencyClass::RoutingHelper)},
+        {"detection", count_pinned_servers_in_pool(ModelType::DETECTION, ResidencyClass::RoutingHelper)}
     };
 }
 

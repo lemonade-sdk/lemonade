@@ -166,6 +166,7 @@ set(LEMON_BACKENDS
     "thinksound|thinksound"
     "acestep|acestep"
     "onnxruntime|onnxruntime"
+    "ryzenai-vision|ryzenai_vision"
     "trellis|trellis"
     "openmoss|openmoss"
 )
@@ -2198,6 +2199,9 @@ add_custom_target(embeddable
     COMMAND ${CMAKE_COMMAND} -E copy
         "$<TARGET_FILE_DIR:lemond>/resources/toolDefinitions.json"
         "${EMBEDDABLE_STAGING_DIR}/resources/"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "$<TARGET_FILE_DIR:lemond>/resources/ryzenai_vision"
+        "${EMBEDDABLE_STAGING_DIR}/resources/ryzenai_vision"
 
     # Create archive
     COMMAND ${CMAKE_COMMAND} -E chdir "${CMAKE_BINARY_DIR}" ${EMBEDDABLE_TAR_CMD}

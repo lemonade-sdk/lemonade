@@ -99,6 +99,10 @@ Values set in the user's `config.json` always take precedence over these seeded 
   "ryzenai": {
     "server_bin": "builtin"
   },
+  "ryzenaivision": {
+    "args": "",
+    "npu_bin": "builtin"
+  },
   "sdcpp": {
     "args": "",
     "backend": "auto",

@@ -29,8 +29,9 @@ Lemonade is a local LLM server providing GPU and NPU acceleration for running la
 | stable-diffusion.cpp | `SdServer` | Image | CPU | Image generation, editing, variations |
 | Kokoro | `KokoroServer` | TTS | CPU | Text-to-speech |
 | Moonshine | `MoonshineServer` | Audio | CPU | Streaming speech-to-text (ONNX-based) |
+| Ryzen AI Vision | `RyzenAIVisionServer` | Detection | NPU | ONNX object detection (YOLO26 etc.) via the VitisAI EP of a separately installed Ryzen AI Software env; subprocess is `resources/ryzenai_vision/ryzenai_vision_server.py`. **Experimental** |
 
-Capability interfaces: `ICompletionServer`, `IEmbeddingsServer`, `IRerankingServer`, `ITranscriptionServer`, `IImageServer`, `ITextToSpeechServer` (defined in `server_capabilities.h`). Use `supports_capability<T>(server)` template for runtime checks.
+Capability interfaces: `ICompletionServer`, `IEmbeddingsServer`, `IRerankingServer`, `ITranscriptionServer`, `IImageServer`, `ITextToSpeechServer`, `IDetectionServer` (defined in `server_capabilities.h`). Use `supports_capability<T>(server)` template for runtime checks.
 
 ### Router & Multi-Model Support
 
@@ -48,7 +49,7 @@ All core endpoints are registered under **4 path prefixes**:
 - `/v0/` — Legacy short
 - `/v1/` — OpenAI SDK / LiteLLM compatibility
 
-**Core endpoints:** `chat/completions`, `completions`, `embeddings`, `reranking`, `models`, `models/{id}`, `health`, `pull`, `pull/variants`, `registry/search`, `load`, `unload`, `delete`, `params`, `install`, `uninstall`, `audio/transcriptions`, `audio/speech`, `images/generations`, `images/edits`, `images/variations`, `responses`, `stats`, `system-info`, `system-stats`, `log-level`, `logs/stream`, `jobs`, `jobs/{id}`, `jobs/{id}/pause`, `jobs/{id}/interrupt`, `jobs/{id}/resume`
+**Core endpoints:** `chat/completions`, `completions`, `embeddings`, `reranking`, `models`, `models/{id}`, `health`, `pull`, `pull/variants`, `registry/search`, `load`, `unload`, `delete`, `params`, `install`, `uninstall`, `audio/transcriptions`, `audio/speech`, `images/generations`, `images/edits`, `images/variations`, `images/detections`, `responses`, `stats`, `system-info`, `system-stats`, `log-level`, `logs/stream`, `jobs`, `jobs/{id}`, `jobs/{id}/pause`, `jobs/{id}/interrupt`, `jobs/{id}/resume`
 
 **Job engine** (`POST jobs`, `GET jobs`, `GET/DELETE jobs/{id}`, `POST jobs/{id}/{pause,interrupt,resume}`): server-side sequences of ops (`system_info`, `system_stats`, `models`, `sleep`, `load`, `unload`, `chat`) with data passing, forward-only branching, and a pause/interrupt/resume lifecycle persisted across restart. Exclusive ops hold a Router slot so normal traffic queues. See `docs/dev/job-system.md` and `docs/dev/job-expression-language.md`.
 
@@ -225,9 +226,9 @@ Pass `DEPENDS` only when the CI build needs targets beyond the `COMMAND` executa
 These MUST be maintained in all changes:
 
 1. **Quad-prefix registration** — Every new endpoint MUST be registered under `/api/v0/`, `/api/v1/`, `/v0/`, AND `/v1/`. Documented exceptions: Ollama (`/api/*` without version prefix), Anthropic (`POST /v1/messages` only), and MCP (`POST /mcp`) — each of those protocols mandates a fixed URL shape that conflicts with the quad-prefix scheme.
-2. **NPU exclusivity** — Exclusive-NPU recipes (`ryzenai-llm`, `whispercpp` on NPU) evict ALL other NPU models before loading. FastFlowLM (`flm`) can coexist with other FLM types (max 1 per FLM type) but not with exclusive-NPU recipes.
+2. **NPU exclusivity** — Exclusive-NPU recipes (`ryzenai-llm`, `ryzenai-vision`, `whispercpp` on NPU) evict ALL other NPU models before loading. FastFlowLM (`flm`) can coexist with other FLM types (max 1 per FLM type) but not with exclusive-NPU recipes.
 3. **WrappedServer contract** — New backends MUST implement all core virtual methods: `load()`, `unload()`, `chat_completion()`, `completion()`, `responses()`.
-4. **Subprocess model** — Backends run as subprocesses (llama-server, whisper-server, sd-server, koko, flm, ryzenai-server, moonshine-server). They must NOT run in-process.
+4. **Subprocess model** — Backends run as subprocesses (llama-server, whisper-server, sd-server, koko, flm, ryzenai-server, moonshine-server, ryzenai_vision_server.py). They must NOT run in-process.
 5. **Recipe integrity** — Changes to `server_models.json` must have valid recipes referencing backends in `backend_versions.json`. When adding or updating `vllm` models, also update `src/cpp/resources/vllm_model_config.json` if the model family needs vLLM-specific args such as tool-call parser settings.
 6. **Cross-platform** — Code must compile on Windows (MSVC), Linux (GCC/Clang), macOS (AppleClang). Platform-specific code must use `#ifdef` guards.
 7. **No hardcoded paths** — Use path utilities. Windows/Linux/macOS paths differ.

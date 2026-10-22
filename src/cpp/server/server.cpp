@@ -1185,6 +1185,9 @@ void Server::setup_routes(httplib::Server &web_server) {
     register_post("images/upscale", [this](const httplib::Request& req, httplib::Response& res) {
         handle_image_upscale(req, res);
     });
+    register_post("images/detections", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_image_detections(req, res);
+    });
     // Generative-audio endpoint: text -> audio clip (music, sound effects)
     register_post("audio/generations", [this](const httplib::Request& req, httplib::Response& res) {
         handle_audio_generations(req, res);
@@ -5115,6 +5118,293 @@ void Server::handle_image_variations(const httplib::Request& req, httplib::Respo
             {"type", "server_error"}
         }}};
         res.set_content(error.dump(), "application/json");
+    }
+}
+
+namespace {
+
+constexpr size_t kMaxDetectionImages = 16;
+constexpr long long kMaxDetectionsPerImage = 1000;
+
+nlohmann::json detection_request_error(const std::string& message) {
+    return {{"error", {{"message", message}, {"type", "invalid_request_error"}}}};
+}
+
+// GIF is left out: OpenCV older than 4.11 cannot decode it.
+bool is_detectable_image(const std::string& head) {
+    const auto sniffed = utils::sniff_image(head);
+    if (sniffed.ok()) return sniffed.mime != "image/gif";
+    return head.size() >= 12 && head.compare(0, 4, "RIFF") == 0 && head.compare(8, 4, "WEBP") == 0;
+}
+
+// Accepts the image shapes the OpenAI APIs use: bare base64, a base64 data URL,
+// or {"image_url": "<url>"} / {"image_url": {"url": "<url>"}}. Returns the bare
+// base64 payload, or "" with `error` set. Remote URLs are refused rather than
+// fetched so the server never makes outbound requests on a client's behalf.
+std::string detection_image_payload(const nlohmann::json& item, std::string& error) {
+    std::string value;
+    if (item.is_string()) {
+        value = item.get<std::string>();
+    } else if (item.is_object() && item.contains("image_url")) {
+        const auto& url = item["image_url"];
+        if (url.is_string()) {
+            value = url.get<std::string>();
+        } else if (url.is_object() && url.contains("url") && url["url"].is_string()) {
+            value = url["url"].get<std::string>();
+        }
+    }
+    if (value.empty()) {
+        error = "must be a base64 string, a data URL, or {\"image_url\": ...}";
+        return "";
+    }
+    if (value.rfind("http://", 0) == 0 || value.rfind("https://", 0) == 0) {
+        error = "is a remote URL; send the image as base64 or a data URL";
+        return "";
+    }
+    if (value.rfind("data:", 0) == 0) {
+        const size_t comma = value.find(',');
+        if (comma == std::string::npos || value.substr(0, comma).find(";base64") == std::string::npos) {
+            error = "is a data URL without a base64 payload";
+            return "";
+        }
+        value = value.substr(comma + 1);
+    }
+    if (!is_detectable_image(utils::JsonUtils::base64_decode(value.substr(0, 16)))) {
+        error = "is not a PNG, JPEG, BMP or WebP image";
+        return "";
+    }
+    return value;
+}
+
+}  // namespace
+
+void Server::handle_image_detections(const httplib::Request& req, httplib::Response& res) {
+    auto reject = [&res](int status, const nlohmann::json& body) {
+        res.status = status;
+        res.set_content(body.dump(), "application/json");
+    };
+
+    try {
+        LOG(INFO, "Server") << "POST /api/v1/images/detections" << std::endl;
+
+        nlohmann::json request_json;
+        nlohmann::json raw_images = nlohmann::json::array();
+
+        if (req.is_multipart_form_data()) {
+            if (req.form.has_field("model")) request_json["model"] = req.form.get_field("model");
+            for (const char* key : {"confidence", "max_detections"}) {
+                if (!req.form.has_field(key)) continue;
+                const std::string& val = req.form.get_field(key);
+                try {
+                    size_t pos = 0;
+                    if (std::string(key) == "max_detections") {
+                        const long long parsed = std::stoll(val, &pos);
+                        if (pos != val.size()) throw std::invalid_argument("trailing characters");
+                        request_json[key] = parsed;
+                    } else {
+                        const double parsed = std::stod(val, &pos);
+                        if (pos != val.size() || !std::isfinite(parsed)) {
+                            throw std::invalid_argument("not a finite number");
+                        }
+                        request_json[key] = parsed;
+                    }
+                } catch (const std::exception&) {
+                    reject(400, detection_request_error(std::string("Invalid value for '") + key + "'"));
+                    return;
+                }
+            }
+            nlohmann::json classes = nlohmann::json::array();
+            for (const char* key : {"classes", "classes[]"}) {
+                for (const auto& value : req.form.get_fields(key)) {
+                    std::stringstream parts(value);
+                    std::string part;
+                    while (std::getline(parts, part, ',')) {
+                        const size_t b = part.find_first_not_of(" \t");
+                        if (b == std::string::npos) continue;
+                        classes.push_back(part.substr(b, part.find_last_not_of(" \t") - b + 1));
+                    }
+                }
+            }
+            if (!classes.empty()) request_json["classes"] = classes;
+            for (const char* key : {"image", "image[]"}) {
+                for (const auto& file : req.form.get_files(key)) {
+                    raw_images.push_back(utils::JsonUtils::base64_encode(file.content));
+                }
+            }
+        } else {
+            try {
+                request_json = nlohmann::json::parse(req.body);
+            } catch (const nlohmann::json::parse_error& e) {
+                reject(400, detection_request_error(std::string("Invalid JSON in request body: ") + e.what()));
+                return;
+            }
+            if (!request_json.is_object()) {
+                reject(400, detection_request_error("Request body must be a JSON object"));
+                return;
+            }
+            if (request_json.contains("image")) {
+                raw_images = request_json["image"].is_array() ? request_json["image"]
+                                                              : nlohmann::json::array({request_json["image"]});
+                request_json.erase("image");
+            }
+        }
+
+        normalize_client_model_name(request_json);
+        normalize_and_resolve_request_model(request_json);
+
+        // Reject malformed requests before any model gets loaded.
+        if (request_json.contains("model") && !request_json["model"].is_string()) {
+            reject(400, detection_request_error("'model' must be a string"));
+            return;
+        }
+        if (raw_images.empty()) {
+            reject(400, detection_request_error("Missing 'image' field in request"));
+            return;
+        }
+        if (raw_images.size() > kMaxDetectionImages) {
+            reject(400, detection_request_error("At most " + std::to_string(kMaxDetectionImages) +
+                                                " images per request"));
+            return;
+        }
+        nlohmann::json images = nlohmann::json::array();
+        for (size_t i = 0; i < raw_images.size(); ++i) {
+            std::string error;
+            std::string payload = detection_image_payload(raw_images[i], error);
+            if (payload.empty()) {
+                reject(400, detection_request_error("image[" + std::to_string(i) + "] " + error));
+                return;
+            }
+            images.push_back(std::move(payload));
+        }
+        if (request_json.contains("confidence") &&
+            (!request_json["confidence"].is_number() || request_json["confidence"].get<double>() < 0.0 ||
+             request_json["confidence"].get<double>() > 1.0)) {
+            reject(400, detection_request_error("'confidence' must be a number between 0 and 1"));
+            return;
+        }
+        if (request_json.contains("max_detections") &&
+            (!request_json["max_detections"].is_number_integer() ||
+             request_json["max_detections"].get<long long>() < 1 ||
+             request_json["max_detections"].get<long long>() > kMaxDetectionsPerImage)) {
+            reject(400, detection_request_error("'max_detections' must be an integer between 1 and " +
+                                                std::to_string(kMaxDetectionsPerImage)));
+            return;
+        }
+        if (request_json.contains("classes")) {
+            auto& classes = request_json["classes"];
+            if (classes.is_string()) classes = nlohmann::json::array({classes});
+            bool valid = classes.is_array() && !classes.empty();
+            for (const auto& c : classes) {
+                if (!c.is_string() || c.get<std::string>().find_first_not_of(" \t") == std::string::npos) {
+                    valid = false;
+                }
+            }
+            if (!valid) {
+                reject(400, detection_request_error("'classes' must be a non-empty list of class names"));
+                return;
+            }
+        }
+
+        std::string requested_model;
+        if (request_json.contains("model")) {
+            requested_model = request_json["model"].get<std::string>();
+            try {
+                auto_load_model_if_needed(requested_model, extract_auto_load_options(request_json));
+            } catch (const std::exception& e) {
+                LOG(ERROR, "Server") << "Failed to load detection model: " << e.what() << std::endl;
+                auto error_response = create_model_error(requested_model, e.what());
+                reject(get_http_status_from_error(error_response["error"]["code"].get<std::string>()),
+                       error_response);
+                return;
+            }
+        } else {
+            // "model" may be omitted only when exactly one detection model is
+            // loaded; the router needs a model on every request.
+            requested_model = router_->get_sole_loaded_model_of_type(ModelType::DETECTION);
+            if (requested_model.empty()) {
+                reject(400, detection_request_error(
+                    "No 'model' specified and no single detection model is loaded "
+                    "(load one, or name it in the request)"));
+                return;
+            }
+            request_json["model"] = requested_model;
+        }
+
+        const size_t image_count = images.size();
+        request_json["images"] = std::move(images);
+        auto response = router_->image_detections(request_json);
+
+        if (response.contains("error") && response["error"].is_object()) {
+            const auto& err = response["error"];
+            int status = 500;
+            if (err.contains("status_code") && err["status_code"].is_number_integer()) {
+                status = err["status_code"].get<int>();
+            } else if (err.contains("code") && err["code"].is_string()) {
+                status = get_http_status_from_error(err["code"].get<std::string>());
+            } else if (err.contains("type") && err["type"].is_string()) {
+                const std::string type = err["type"].get<std::string>();
+                if (type == "invalid_request" || type == "invalid_request_error" ||
+                    type == "unsupported_operation") {
+                    status = 400;
+                } else if (type == "model_not_loaded") {
+                    status = 404;
+                }
+            }
+            reject(status, response);
+            return;
+        }
+
+        // The envelope pins the public API shape; the subprocess's raw output is
+        // not the contract.
+        if (!response.contains("data") || !response["data"].is_array() ||
+            response["data"].size() != image_count) {
+            reject(500, {{"error", {
+                {"message", "Detection backend returned an unexpected response"},
+                {"type", "server_error"}}}});
+            return;
+        }
+        nlohmann::json data = nlohmann::json::array();
+        size_t total = 0;
+        for (const auto& item : response["data"]) {
+            nlohmann::json detections = nlohmann::json::array();
+            for (const auto& det : item.value("detections", nlohmann::json::array())) {
+                detections.push_back({
+                    {"object", "detection"},
+                    {"label", det.value("label", "")},
+                    {"class_id", det.value("class_id", -1)},
+                    {"score", det.value("score", 0.0)},
+                    {"box", det.value("box", nlohmann::json::object())},
+                });
+            }
+            total += detections.size();
+            data.push_back({
+                {"object", "image.detections"},
+                {"index", item.value("index", static_cast<int>(data.size()))},
+                {"width", item.value("width", 0)},
+                {"height", item.value("height", 0)},
+                {"detections", std::move(detections)},
+            });
+        }
+        nlohmann::json enveloped = {
+            {"object", "list"},
+            {"created", static_cast<long long>(std::time(nullptr))},
+            {"model", requested_model},
+            {"data", std::move(data)},
+            {"usage", {
+                {"images", image_count},
+                {"detections", total},
+                {"inference_ms", response.value("inference_ms", 0.0)},
+            }},
+        };
+        if (response.contains("unresolved_classes") && response["unresolved_classes"].is_array() &&
+            !response["unresolved_classes"].empty()) {
+            enveloped["unresolved_classes"] = response["unresolved_classes"];
+        }
+        res.set_content(enveloped.dump(), "application/json");
+
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Server") << "ERROR in handle_image_detections: " << e.what() << std::endl;
+        reject(500, {{"error", {{"message", e.what()}, {"type", "server_error"}}}});
     }
 }
 

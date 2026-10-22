@@ -2379,5 +2379,13 @@
             "classification"
         ],
         "size": 0.27
+    },
+    "YOLO26s-Detection-NPU": {
+        "checkpoint": "onnx-community/yolo26s-ONNX:onnx/model.onnx",
+        "recipe": "ryzenai-vision",
+        "labels": [
+            "detection"
+        ],
+        "size": 0.04
     }
 }

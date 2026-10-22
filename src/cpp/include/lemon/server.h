@@ -290,6 +290,7 @@ private:
     void handle_image_edits(const httplib::Request& req, httplib::Response& res);
     void handle_image_variations(const httplib::Request& req, httplib::Response& res);
     void handle_image_upscale(const httplib::Request& req, httplib::Response& res);
+    void handle_image_detections(const httplib::Request& req, httplib::Response& res);
 
     // Generative-audio endpoint handler (text -> audio clip: music, SFX)
     void handle_audio_generations(const httplib::Request& req, httplib::Response& res);

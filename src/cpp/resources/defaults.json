@@ -64,6 +64,10 @@
   "ryzenai": {
     "server_bin": "builtin"
   },
+  "ryzenaivision": {
+    "args": "",
+    "npu_bin": "builtin"
+  },
   "sdcpp": {
     "args": "",
     "backend": "auto",

@@ -15,6 +15,7 @@ This spec defines Lemonade's implementation of the [OpenAI API](https://develope
 | `POST` | [`/v1/images/edits`](#post-v1imagesedits) | Image Editing | image + prompt -> edited image |
 | `POST` | [`/v1/images/variations`](#post-v1imagesvariations) | Image Variations | image -> varied image |
 | `POST` | [`/v1/images/upscale`](#post-v1imagesupscale) | Image Upscaling | image + ESRGAN model -> upscaled image |
+| `POST` | [`/v1/images/detections`](#post-v1imagesdetections) | Object Detection | image -> labeled bounding boxes |
 | `GET` | [`/v1/models`](#get-v1models) | List models available locally | n/a |
 | `GET` | [`/v1/models/{model_id}`](#get-v1modelsmodel_id) | Retrieve a specific model by ID | n/a |
 
@@ -907,6 +908,138 @@ A typical workflow is to generate an image first, then upscale it:
 | 400 | Missing `model` field | `{"error": {"message": "Missing 'model' field", "type": "invalid_request_error"}}` |
 | 404 | Unknown model name | `{"error": {"message": "Upscale model not found: bad-model", "type": "invalid_request_error"}}` |
 | 500 | Upscale failed | `{"error": {"message": "ESRGAN upscale failed", "type": "server_error"}}` |
+
+---
+
+## `POST /v1/images/detections`
+<sub>![Status](https://img.shields.io/badge/status-lemonade_extension-blue)</sub>
+
+Object Detection API. You send one or more images and receive labeled bounding boxes for each. OpenAI has no detection endpoint, so this one follows the conventions of its `images/*` family: same image inputs, a `list` envelope with one `data` entry per input image, and the standard error shape. It is served by the `ryzenai-vision` backend, which runs ONNX detectors on the Ryzen AI NPU: Ultralytics YOLO26/YOLOv10 end-to-end exports, YOLOv8-12 exports (NMS is applied by the server), and RT-DETR-style `logits`/`pred_boxes` exports with sigmoid scores, such as `onnx-community/yolo26*-ONNX`.
+
+> **Note:** The `ryzenai-vision` backend uses a separately installed [Ryzen AI Software](https://ryzenai.docs.amd.com/en/latest/inst.html) environment. Point Lemonade at it once with `lemonade config set ryzenaivision.npu_bin=<env dir or its python>` (on Linux, starting `lemond` from an activated Ryzen AI venv also works via `RYZEN_AI_INSTALLATION_PATH`).
+>
+> **Performance:** The first load of a model compiles it for the NPU (about 15 minutes for YOLO26s on a Strix Halo board); the result is cached under `<cache_dir>/ryzenai-vision/npu-cache` and later loads take about a second. On that machine a 1080p JPEG round trip is ~35 ms, of which ~24 ms is the NPU.
+>
+> **NPU sharing:** like `ryzenai-llm`, loading a detection model unloads the other NPU models (FastFlowLM, whisper.cpp on NPU, Ryzen AI LLM). GPU and CPU models stay loaded.
+
+Any ONNX detector in one of those layouts can be registered as a custom model, for example a different YOLO26 size:
+
+```bash
+lemonade pull user.YOLO26n --checkpoint main onnx-community/yolo26n-ONNX:onnx/model.onnx --recipe ryzenai-vision
+```
+
+Class names come from the model's `config.json` (`id2label`) or the Ultralytics `names` metadata in the ONNX file, falling back to the 80 COCO classes.
+
+The endpoint accepts either a JSON body or `multipart/form-data`.
+
+### Parameters
+
+| Parameter | Required | Description | Status |
+|-----------|----------|-------------|--------|
+| `model` | Conditional | The detection model to use (e.g., `YOLO26s-Detection-NPU`). May be omitted only when exactly one detection model is loaded. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `image` | Yes | The image(s) to analyze, PNG/JPEG/BMP/WebP. JSON: a base64 string, a `data:image/...;base64,` URL, an `{"image_url": "..."}` / `{"image_url": {"url": "..."}}` object, or an array of up to 16 of these. Multipart: one or more `image` (or `image[]`) files. Remote `http(s)` URLs are rejected rather than fetched. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `confidence` | No | Minimum score to keep a detection, between 0 and 1. Default: `0.25`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `classes` | No | Only return these classes. Accepts model class names (`"sports ball"`) and everyday names that map onto them (`"ball"`, `"phone"`, `"mug"`). Names that match no class are listed in `unresolved_classes`. Multipart: repeat the field or send a comma-separated list. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `max_detections` | No | Maximum detections returned per image, highest score first. Integer from 1 to 1000. Default: `100`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+
+### Example request
+
+=== "Bash"
+
+    ```bash
+    curl -X POST http://localhost:13305/v1/images/detections \
+      -F "model=YOLO26s-Detection-NPU" \
+      -F "confidence=0.35" \
+      -F "image=@/path/to/frame.jpg"
+    ```
+
+=== "Python (requests)"
+
+    ```python
+    import base64
+    import requests
+
+    with open("frame.jpg", "rb") as f:
+        image = "data:image/jpeg;base64," + base64.b64encode(f.read()).decode()
+
+    response = requests.post(
+        "http://localhost:13305/v1/images/detections",
+        json={
+            "model": "YOLO26s-Detection-NPU",
+            "image": image,
+            "classes": ["ball", "cup"],
+        },
+    )
+    for det in response.json()["data"][0]["detections"]:
+        print(det["label"], det["score"], det["box"])
+    ```
+
+=== "Python (OpenAI client)"
+
+    ```python
+    import base64
+    from openai import OpenAI
+
+    client = OpenAI(base_url="http://localhost:13305/api/v1", api_key="not-needed")
+    with open("frame.jpg", "rb") as f:
+        image = base64.b64encode(f.read()).decode()
+
+    result = client.post(
+        "/images/detections",
+        body={"model": "YOLO26s-Detection-NPU", "image": image},
+        cast_to=object,
+    )
+    ```
+
+### Response format
+
+```json
+{
+  "object": "list",
+  "created": 1792690000,
+  "model": "YOLO26s-Detection-NPU",
+  "data": [
+    {
+      "object": "image.detections",
+      "index": 0,
+      "width": 810,
+      "height": 1080,
+      "detections": [
+        {
+          "object": "detection",
+          "label": "bus",
+          "class_id": 5,
+          "score": 0.97,
+          "box": {"x1": 6.3, "y1": 229.6, "x2": 803.1, "y2": 741.5}
+        }
+      ]
+    }
+  ],
+  "usage": {"images": 1, "detections": 1, "inference_ms": 9.8}
+}
+```
+
+**Field Descriptions:**
+
+- `data` - One entry per input image, in request order
+  - `index` - Position of the image in the request
+  - `width`, `height` - Size of the decoded input image in pixels
+  - `detections` - Sorted by `score`, highest first
+    - `label` / `class_id` - Class name and index from the model's label map
+    - `score` - Confidence in `[0, 1]`
+    - `box` - Corners in pixels of the original image (`x1,y1` top-left, `x2,y2` bottom-right)
+- `usage.inference_ms` - Time spent decoding, preprocessing, and running the model for all images
+- `unresolved_classes` - Present only when some requested `classes` matched nothing in the model
+
+### Error responses
+
+| Status Code | Condition | Example |
+|-------------|-----------|---------|
+| 400 | No image | `{"error": {"message": "Missing 'image' field in request", "type": "invalid_request_error"}}` |
+| 400 | Image is not decodable or is a remote URL | `{"error": {"message": "image[0] is a remote URL; send the image as base64 or a data URL", "type": "invalid_request_error"}}` |
+| 400 | Bad `confidence` / `max_detections` / `classes` | `{"error": {"message": "'confidence' must be a number between 0 and 1", "type": "invalid_request_error"}}` |
+| 400 | Model is not a detection model | `{"error": {"message": "Object detection not supported by gpu", "type": "unsupported_operation"}}` |
+| 404 | Unknown model name | `{"error": {"message": "Model 'bad-model' was not found. ...", "type": "model_not_found", "code": "model_not_found", "param": "model"}}` |
 
 ---
 

@@ -39,6 +39,7 @@ DEPLOYMENT_LABELS = {
     "classification": "CLASSIFICATION",
     "classifier": "CLASSIFICATION",
     "3d": "MESH",
+    "detection": "DETECTION",
 }
 
 RECIPE_FIELD = re.compile(r"/\*recipe\*/\s*\"([^\"]*)\"")

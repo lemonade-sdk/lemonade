@@ -236,6 +236,17 @@ CAPABILITIES = {
             },
         },
     },
+    "detection": {
+        "ryzenai-vision": {
+            "backends": ["npu"],
+            "supports": {
+                "detect": True,
+            },
+            "test_models": {
+                "detection": "YOLO26s-Detection-NPU",
+            },
+        },
+    },
     "tts": {
         "openmoss": {
             "backends": ["vulkan", "rocm", "cuda"],

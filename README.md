@@ -341,6 +341,13 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
       <td>Windows, Linux</td>
     </tr>
     <tr>
+      <td rowspan="1"><strong>Object detection</strong></td>
+      <td rowspan="1"><code>ryzenai-vision</code> (experimental)</td>
+      <td><code>npu</code></td>
+      <td>XDNA2 NPU</td>
+      <td>Windows, Linux</td>
+    </tr>
+    <tr>
       <td rowspan="3"><strong>Text classification</strong></td>
       <td rowspan="3"><code>onnxruntime</code> (experimental)</td>
       <td><code>cpu</code></td>
