@@ -1,10 +1,16 @@
 import { expect, test, type Page } from '@playwright/test';
 
 const headers = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Authorization, Content-Type', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS' };
-const self = { node_id: 'self', device_name: 'My laptop', tunnel_ip: '10.8.0.2/32', management_pubkey: 'self-key', permissions: ['add_child', 'delete_node'], can_remove: false };
-const peer = { node_id: 'peer', device_name: 'Kitchen PC', tunnel_ip: '10.8.0.3/32', management_pubkey: 'peer-key', permissions: [], can_remove: true };
-async function setup(page: Page, desktop = true, locked = false) {
-  const state = { available: true, controller_url: 'http://127.0.0.1:15555', enabled: true, registered: true, locked, mesh_up: !locked, status: locked ? 'locked' : 'running', node_id: 'self', group_node_id: 'group', device_name: 'My laptop', tunnel_ip: '10.8.0.2', peer_count: 1, members: locked ? [] : [self, peer] };
+const self = { node_id: 'self', device_name: 'My laptop', tunnel_ip: '10.8.0.2/32', management_pubkey: 'self-key', permissions: ['read', 'write', 'add_child', 'edit_node', 'delete_node', 'admin'], permissions_known: true, is_admin: true, is_owner: true, is_inference: true, tier: 3, access_known: true, can_remove: false };
+const peer = { node_id: 'peer', device_name: 'Kitchen PC', tunnel_ip: '10.8.0.3/32', management_pubkey: 'peer-key', permissions: ['read', 'write'], permissions_known: true, is_admin: false, is_owner: false, is_inference: false, tier: 4, access_known: true, can_remove: true };
+const tablet = { node_id: 'tablet', device_name: 'Tablet', tunnel_ip: '10.8.0.4/32', management_pubkey: 'tablet-key', permissions: ['read'], permissions_known: true, is_admin: false, is_owner: false, is_inference: false, tier: 4, access_known: true, can_remove: true };
+const memberSelf = { ...self, permissions: ['read'], is_admin: false, is_owner: false, can_remove: false };
+interface Options { members?: typeof self[]; accessKnown?: boolean }
+async function setup(page: Page, desktop = true, locked = false, options: Options = {}) {
+  const members = options.members ?? [self, peer];
+  const state = { available: true, controller_url: 'http://127.0.0.1:15555', enabled: true, registered: true, locked, mesh_up: !locked, status: locked ? 'locked' : 'running', node_id: 'self', group_node_id: 'group', device_name: 'My laptop', tunnel_ip: '10.8.0.2', peer_count: 1, members: locked ? [] : members };
+  const access = (nodeId: string) => ({ node_id: nodeId, device_name: state.members.find(member => member.node_id === nodeId)?.device_name, access_known: options.accessKnown ?? true, can_manage: true,
+    members: state.members.filter(member => member.node_id !== nodeId && member.node_id !== 'self').map(member => ({ node_id: member.node_id, device_name: member.device_name, is_admin: member.is_admin, tier: member.tier, see: member.node_id === 'peer', connect: false, editable: options.accessKnown ?? true })) });
   const calls: { path: string; body: unknown; authorization?: string }[] = [];
   await page.addInitScript(({ desktop }) => {
     (window as any).api = {
@@ -22,7 +28,10 @@ async function setup(page: Page, desktop = true, locked = false) {
     if (path.includes('/nexus/')) {
       calls.push({ path, body: request.postDataJSON(), authorization: request.headers().authorization });
       if (path.endsWith('/remove')) state.members = [self];
-      const json = path.endsWith('/egress') ? { endpoint: 'http://127.0.0.1:16666' } : state;
+      const target = path.match(/\/(?:devices|members)\/([^/]+)\/(?:access|role|permissions)$/)?.[1];
+      const json = path.endsWith('/egress') ? { endpoint: 'http://127.0.0.1:16666' }
+        : path.endsWith('/access') ? access(target!)
+        : target ? state.members.find(member => member.node_id === target) : state;
       return route.fulfill({ headers, json });
     }
     if (path.endsWith('/health')) return route.fulfill({ headers, json: { status: 'ok', version: 'test', all_models_loaded: [] } });
@@ -80,6 +89,7 @@ test('browser device overview exposes no desktop management actions', async ({ p
   await expect(page.getByRole('button', { name: 'Add a device' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Remove Kitchen PC' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Connect to server', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /^Manage access for/ })).toHaveCount(0);
 });
 
 test('remote server key stays separate from local network controls', async ({ page }) => {
@@ -165,4 +175,76 @@ test('selector requests a protected peer key and keeps it separate when returnin
   expect(remoteKeys).toContain('Bearer peer-secret');
   expect(remoteKeys).not.toContain('Bearer local-secret');
   expect(calls.filter(call => call.path.endsWith('/egress')).every(call => call.authorization === 'Bearer local-secret')).toBe(true);
+});
+
+test('member list shows admins and device tiers', async ({ page }) => {
+  await setup(page);
+  const list = page.locator('.nexus-panel__device-list');
+  const own = list.locator('li', { hasText: 'My laptop' });
+  await expect(own.locator('.nexus-panel__badge')).toHaveText('Admin');
+  await expect(own).toContainText('Tier 3 · Inference server');
+  const kitchen = list.locator('li', { hasText: 'Kitchen PC' });
+  await expect(kitchen.locator('.nexus-panel__badge')).toHaveCount(0);
+  await expect(kitchen).toContainText('Tier 4 · Client');
+});
+
+test('admin promotes a member and grants another member access to its device', async ({ page }) => {
+  const { calls } = await setup(page, true, false, { members: [self, peer, tablet] });
+  await page.getByRole('button', { name: 'Manage access for Kitchen PC' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Manage access' });
+  await expect(dialog).toContainText('Kitchen PC · Tier 4 · Client');
+  await expect(dialog.getByRole('checkbox', { name: 'Tablet can see this device' })).toBeEnabled();
+  await dialog.getByRole('radio', { name: 'Admin' }).check();
+  await expect(dialog.getByRole('checkbox', { name: 'Invite devices' })).toBeDisabled();
+  await dialog.getByRole('checkbox', { name: 'Tablet can connect to this device' }).check();
+  await expect(dialog.getByRole('checkbox', { name: 'Tablet can see this device' })).toBeChecked();
+  await dialog.getByRole('button', { name: 'Save access' }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByText('Access updated for Kitchen PC.')).toBeVisible();
+  expect(calls.find(call => call.path.endsWith('/members/peer/role'))?.body).toEqual({ role: 'admin' });
+  expect(calls.some(call => call.path.endsWith('/members/peer/permissions'))).toBe(false);
+  expect(calls.find(call => call.path.endsWith('/devices/peer/access') && call.body)?.body).toEqual({ member_node_id: 'tablet', see: true, connect: true });
+  expect(calls.filter(call => call.path.includes('/members/') || call.path.includes('/access')).every(call => call.authorization === 'Bearer local-secret')).toBe(true);
+});
+
+test('admin changes a member group permission without changing its role', async ({ page }) => {
+  const { calls } = await setup(page);
+  await page.getByRole('button', { name: 'Manage access for Kitchen PC' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Manage access' });
+  await expect(dialog.getByRole('checkbox', { name: 'See the group' })).toBeDisabled();
+  await dialog.getByRole('checkbox', { name: 'Invite devices' }).check();
+  await dialog.getByRole('button', { name: 'Save access' }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(calls.find(call => call.path.endsWith('/members/peer/permissions'))?.body).toEqual({ permissions: ['read', 'write', 'add_child'] });
+  expect(calls.some(call => call.path.endsWith('/members/peer/role'))).toBe(false);
+});
+
+test('admin cannot change its own role but controls who uses this device', async ({ page }) => {
+  const { calls } = await setup(page);
+  await page.getByRole('button', { name: 'Manage access for My laptop' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Manage access' });
+  await expect(dialog.getByRole('radio', { name: 'Member' })).toBeDisabled();
+  await expect(dialog.getByRole('radio', { name: 'Admin' })).toBeDisabled();
+  await expect(dialog).toContainText('You can’t change your own role or group permissions. Ask another admin.');
+  await expect(dialog.getByRole('checkbox', { name: 'Invite devices' })).toBeDisabled();
+  await dialog.getByRole('checkbox', { name: 'Kitchen PC can connect to this device' }).check();
+  await dialog.getByRole('button', { name: 'Save access' }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(calls.some(call => call.path.endsWith('/members/self/role') || call.path.endsWith('/members/self/permissions'))).toBe(false);
+  expect(calls.find(call => call.path.endsWith('/devices/self/access') && call.body)?.body).toEqual({ member_node_id: 'peer', see: true, connect: true });
+});
+
+test('hidden device access lists explain why they cannot be edited', async ({ page }) => {
+  await setup(page, true, false, { accessKnown: false });
+  await page.getByRole('button', { name: 'Manage access for Kitchen PC' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Manage access' });
+  await expect(dialog).toContainText('You can’t see this device’s access list. Ask the admin who invited it.');
+  await expect(dialog.getByRole('checkbox', { name: 'My laptop can see this device' })).toHaveCount(0);
+});
+
+test('members without admin cannot manage access', async ({ page }) => {
+  await setup(page, true, false, { members: [memberSelf, { ...peer, is_admin: true, is_owner: true }] });
+  await expect(page.locator('.nexus-panel__device-list li', { hasText: 'Kitchen PC' }).locator('.nexus-panel__badge')).toHaveText('Admin');
+  await expect(page.getByRole('button', { name: /^Manage access for/ })).toHaveCount(0);
+  await expect(page.locator('.nexus-panel__details')).toContainText('Member');
 });

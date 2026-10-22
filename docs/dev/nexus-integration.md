@@ -8,10 +8,34 @@ interface isolates SDK OpenSSL from Lemonade's HTTP implementation.
 ## GUI3
 
 Open **Settings → Devices & mesh**, or **Nexus** in the header. The panel shows
-your network, device name, mesh address, members, online state, permissions and
-latency where available. Group members represent devices and people. Create or
-join a group, invite devices, remove devices as an owner, and lock or disable
-network access.
+your network, device name, mesh address, members, online state, tier and
+latency where available. Each group member is one device. Create or join a
+group, invite devices, remove devices, and lock or disable network access.
+
+### Tiers and roles
+
+`lemond` joins as a Tier 3 inference node. It calls `ln_set_inference_node`
+before `ln_join_network`. Other client devices join as Tier 4 clients. The
+federation records the tier when it creates the device's endpoint node, so a
+device that joined before this change keeps its recorded tier. The panel reads
+the tier from each device node's `is_inference` field.
+
+An admin holds `admin` on the group node. The group creator is always an admin;
+the federation restores that grant on the creator's next join. Admins see an
+ADMIN badge and a **Manage access** action on each device:
+
+- **Role** promotes a member to admin or demotes an admin to member. An admin
+  cannot change its own role; the control is disabled with an explanation.
+- **Group permissions** sets the member's permissions on the group node. `read`
+  is always kept. Admins hold every permission.
+- **Who can use this device** sets **See** (`read`) and **Connect**
+  (`connect_private`) on the device node for each other member. Connect implies
+  See.
+
+The federation returns a node's full assignment list only to a caller with
+`edit_node` on that node. Members without it see only their own entry, and an
+admin without `edit_node` on a device sees a notice instead of that device's
+access list. Removing a device requires `delete_node` on the device node.
 
 The header's **Inference server** selector chooses this device or a linked mesh
 device without leaving Chat. Health and models reload from the selected server.
@@ -64,10 +88,22 @@ Routes are available under `/api/v0/nexus/`, `/api/v1/nexus/`, `/v0/nexus/`,
 | POST | `passkey/register`, `passkey/unlock` | Register or verify the device's credential |
 | POST | `enable`, `disable`, `lock`, `device` | Local state and device name |
 | POST | `invites`, `invites/cancel`, `join` | Invite or join a group |
-| GET | `devices` | Group devices |
-| POST | `devices/{node_id}/remove` | Owner-authorized removal |
+| GET | `devices` | Group devices with tier, admin flag and permissions |
+| GET | `members` | Devices plus `can_manage` (this device is an admin) |
+| POST | `members/{node_id}/role` | `{"role": "admin" \| "member"}` |
+| POST | `members/{node_id}/permissions` | `{"permissions": [...]}` on the group node |
+| GET, POST | `devices/{node_id}/access` | Device access list; POST `{"member_node_id", "see", "connect"}` |
+| POST | `devices/{node_id}/remove` | Removal; needs `delete_node` on the device |
 | POST | `egress` | Loopback endpoint for a selected group member |
 | GET | `events` | SSE mesh/membership/lock events; `after` cursor, `once=1` snapshot |
+
+Member and access routes send one change at a time to the federation's
+`POST /api/tree/node/assignments/{node_id}` through `ln_add_group_member`, which
+replaces the member's entry on that node. `lemond` rejects a change to its own
+role or group entry, an `admin` name in the permission list, and unknown
+permission names before it calls the federation. It maps federation refusals to
+403 (not an admin, own admin entry, device outside the group), 400 (unknown
+permission) and 404 (missing node).
 
 The public listener returns status directly and redirects other Nexus routes
 with HTTP 307 to a separate loopback management listener. The desktop discovers
@@ -93,8 +129,9 @@ Dependency sources can be provided with `FETCHCONTENT_SOURCE_DIR_*`. These
 settings do not require a sibling Nexus checkout.
 
 Checks cover SDK compilation on macOS and Ubuntu 24.04 amd64, userspace TCP forwarding and teardown, server
-routing/lock/persistence/control isolation, desktop Rust compilation and tests,
-and browser management and mesh inference switching. Real pairing requires a
+routing/lock/persistence/control isolation, member and access permission
+mapping, desktop Rust compilation and tests, and browser management, access
+control and mesh inference switching. Real pairing requires a
 deployed federation with matching RP configuration, security keys and two
 machines. Windows installers and Debian packages require target-platform
 validation.

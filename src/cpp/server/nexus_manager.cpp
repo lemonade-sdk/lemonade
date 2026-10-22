@@ -14,18 +14,201 @@
 
 namespace lemon {
 namespace {
+using json = nlohmann::json;
 bool local_request(const httplib::Request& req) {
     return req.remote_addr == "127.0.0.1" || req.remote_addr == "::1" || req.remote_addr == "::ffff:127.0.0.1";
 }
-}
-#ifdef LEMONADE_WITH_NEXUS
-namespace {
 class NexusError : public std::runtime_error {
 public:
     NexusError(int status, const std::string& message) : std::runtime_error(message), status(status) {}
     int status;
 };
-using json = nlohmann::json;
+std::string text(const json& object, const char* key) {
+    const auto it = object.find(key);
+    return it != object.end() && it->is_string() ? it->get<std::string>() : "";
+}
+bool flag(const json& object, const char* key) {
+    const auto it = object.find(key);
+    return it != object.end() && it->is_boolean() && it->get<bool>();
+}
+json string_list(const json& value) {
+    json result = json::array();
+    if (!value.is_array()) return result;
+    for (const auto& item : value) {
+        if (item.is_string() && std::find(result.begin(), result.end(), item) == result.end()) result.push_back(item);
+    }
+    return result;
+}
+bool contains(const json& list, const std::string& value) {
+    return list.is_array() && std::find(list.begin(), list.end(), value) != list.end();
+}
+json ordered(const json& permissions) {
+    json result = json::array();
+    for (const auto& name : nexus_access::kPermissions) {
+        if (contains(permissions, name)) result.push_back(name);
+    }
+    for (const auto& name : permissions) {
+        if (!contains(result, name.get<std::string>())) result.push_back(name);
+    }
+    return result;
+}
+json permissions_for(const json& assignments, const std::string& key) {
+    if (!assignments.is_array()) return json::array();
+    for (const auto& entry : assignments) {
+        if (entry.is_object() && nexus_access::same_key(text(entry, "management_pubkey"), key)) {
+            return string_list(entry.value("permissions", json::array()));
+        }
+    }
+    return json::array();
+}
+json find_member(const json& members, const std::string& node_id) {
+    for (const auto& member : members) {
+        if (member.value("node_id", "") == node_id) return member;
+    }
+    return nullptr;
+}
+}
+
+namespace nexus_access {
+const std::vector<std::string> kPermissions = {"read", "write", "add_child", "edit_node", "delete_node",
+    "expand_subnet", "connect_private", "connect_shared", "relay_forward", "routing_coordinate",
+    "stun_respond", "relay_register", "allocate_ip", "admin"};
+
+bool same_key(const std::string& a, const std::string& b) {
+    // The federation accepts either base64 spelling of a key, with or without the ed25519: prefix.
+    const auto canonical = [](std::string key) {
+        if (key.rfind("ed25519:", 0) == 0) key.erase(0, 8);
+        std::replace(key.begin(), key.end(), '-', '+');
+        std::replace(key.begin(), key.end(), '_', '/');
+        while (!key.empty() && key.back() == '=') key.pop_back();
+        return key;
+    };
+    const auto left = canonical(a);
+    return !left.empty() && left == canonical(b);
+}
+
+bool grants(const json& permissions, const std::string& permission) {
+    return contains(permissions, permission) || contains(permissions, "admin");
+}
+
+json merge_members(const json& group, const json& children, const json& peers,
+                   const std::string& self_key, const std::string& self_node_id) {
+    const auto group_acl = group.value("assignments", json::array());
+    // The federation returns a node's full assignment list only to callers with edit_node on it.
+    const bool group_acl_known = grants(permissions_for(group_acl, self_key), "edit_node");
+    const auto creator = text(group, "mgmt_pubkey");
+    json members = json::array();
+    if (!children.is_array()) return members;
+    for (const auto& child : children) {
+        if (!child.is_object() || text(child, "type") != "endpoint") continue;
+        const auto id = text(child, "id");
+        if (id.empty()) continue;
+        const auto key = text(child, "mgmt_pubkey");
+        const bool self = id == self_node_id;
+        const bool permissions_known = group_acl_known || self;
+        const auto permissions = permissions_known ? permissions_for(group_acl, key) : json::array();
+        const bool owner = same_key(key, creator);
+        const auto device_acl = child.value("assignments", json::array());
+        const auto own_device = permissions_for(device_acl, self_key);
+        const bool access_known = grants(own_device, "edit_node");
+        json access = json::array();
+        if (access_known && device_acl.is_array()) {
+            for (const auto& entry : device_acl) {
+                if (!entry.is_object()) continue;
+                access.push_back({{"management_pubkey", text(entry, "management_pubkey")},
+                    {"permissions", string_list(entry.value("permissions", json::array()))}});
+            }
+        }
+        const bool is_inference = flag(child, "is_inference");
+        json peer = json::object();
+        if (peers.is_array()) {
+            for (const auto& candidate : peers) {
+                if (candidate.is_object() && text(candidate, "node_id") == id) { peer = candidate; break; }
+            }
+        }
+        members.push_back({{"node_id", id}, {"device_name", text(child, "hostname")},
+            {"tunnel_ip", text(child, "tunnel_ip")}, {"management_pubkey", key},
+            {"permissions", ordered(permissions)}, {"permissions_known", permissions_known},
+            {"is_admin", permissions_known ? contains(permissions, "admin") : owner}, {"is_owner", owner},
+            {"is_inference", is_inference}, {"tier", is_inference ? 3 : 4},
+            {"access", access}, {"access_known", access_known},
+            {"can_remove", !self && grants(own_device, "delete_node")},
+            {"is_online", self || flag(peer, "is_online")},
+            {"latency_ms", peer.contains("latency_ms") && peer["latency_ms"].is_number() ? peer["latency_ms"].get<double>() : 0.0}});
+    }
+    return members;
+}
+
+json device_access(const json& members, const std::string& device_id, const std::string& self_node_id) {
+    const auto target = find_member(members, device_id);
+    if (target.is_null()) return nullptr;
+    const auto self = find_member(members, self_node_id);
+    const bool can_manage = self.is_object() && self.value("is_admin", false);
+    const bool access_known = target.value("access_known", false);
+    json rows = json::array();
+    for (const auto& member : members) {
+        const auto id = member.value("node_id", "");
+        if (id == device_id || id == self_node_id) continue;
+        const auto permissions = permissions_for(target.value("access", json::array()), member.value("management_pubkey", ""));
+        rows.push_back({{"node_id", id}, {"device_name", member.value("device_name", "")},
+            {"is_admin", member.value("is_admin", false)}, {"tier", member.value("tier", 4)},
+            {"see", grants(permissions, "read")}, {"connect", grants(permissions, "connect_private")},
+            {"editable", can_manage && access_known && !contains(permissions, "admin")}});
+    }
+    return {{"node_id", device_id}, {"device_name", target.value("device_name", "")},
+        {"access_known", access_known}, {"can_manage", can_manage}, {"members", rows}};
+}
+
+json role_permissions(const json& current, bool admin) {
+    json result = json::array({"read"});
+    for (const auto& name : string_list(current)) {
+        if (name != "admin" && !contains(result, name.get<std::string>())) result.push_back(name);
+    }
+    if (admin) result.push_back("admin");
+    return ordered(result);
+}
+
+json group_permissions(const json& requested, bool admin) {
+    if (!requested.is_array()) throw NexusError(400, "Send permissions as a list of names");
+    json result = json::array({"read"});
+    for (const auto& name : requested) {
+        if (!name.is_string()) throw NexusError(400, "Send permissions as a list of names");
+        const auto value = name.get<std::string>();
+        if (value == "admin") throw NexusError(400, "Change the member's role to grant or remove admin");
+        if (std::find(kPermissions.begin(), kPermissions.end(), value) == kPermissions.end()) {
+            throw NexusError(400, "Unknown permission: " + value);
+        }
+        if (!contains(result, value)) result.push_back(value);
+    }
+    if (admin) result.push_back("admin");
+    return ordered(result);
+}
+
+json device_permissions(const json& current, bool see, bool connect) {
+    json result = json::array();
+    for (const auto& name : string_list(current)) {
+        if (name != "read" && name != "connect_private") result.push_back(name);
+    }
+    if (see || connect) result.push_back("read");
+    if (connect) result.push_back("connect_private");
+    return ordered(result);
+}
+
+std::pair<int, std::string> assignment_error(const std::string& reason) {
+    if (reason.find("only an admin") != std::string::npos) return {403, "Only a group admin can change member access"};
+    if (reason.find("cannot change its own entry") != std::string::npos) return {403, "You cannot change your own admin access"};
+    if (reason.find("has not joined") != std::string::npos) return {403, "That device has not joined your group"};
+    if (reason.rfind("unknown permission", 0) == 0) return {400, "The network does not recognize that permission"};
+    if (reason == "invalid principal") return {400, "That member has an invalid device key"};
+    if (reason == "node not found") return {404, "That group or device no longer exists"};
+    if (reason == "failed to persist node") return {502, "The network could not save the change. Try again."};
+    if (reason == "server unreachable" || reason.empty()) return {502, "Cannot reach the network. Try again."};
+    return {502, "The network refused the change: " + reason};
+}
+}
+
+#ifdef LEMONADE_WITH_NEXUS
+namespace {
 json sdk_call(const std::function<ln_error_t(char**)>& operation) {
     char* output = nullptr;
     const auto code = operation(&output);
@@ -127,34 +310,44 @@ struct NexusManager::Session {
         account["user_id"] = result.at("user_id");
         return result;
     }
+    json private_call(const char* method, const std::string& path, const std::string& body = "") {
+        auto value = sdk_call([&](auto out) { return ln_private_api_call(client.get(), method, path.c_str(), body.c_str(), out); });
+        // The private API returns refusals as a JSON body rather than an SDK error code.
+        if (value.is_object() && value.contains("error")) {
+            const auto reason = text(value, "error");
+            if (reason.rfind("no ", 0) == 0 && reason.find("permission") != std::string::npos) {
+                throw NexusError(403, "This device does not have permission for that change");
+            }
+            if (reason.find("not found") != std::string::npos) throw NexusError(404, "That group or device no longer exists");
+            throw NexusError(502, reason.empty() ? "Network request failed" : reason);
+        }
+        return value;
+    }
+    void set_assignment(const std::string& target, const std::string& key, const json& permissions) {
+        const auto list = permissions.dump();
+        char* output = nullptr;
+        const auto code = permissions.empty()
+            ? ln_remove_group_member(client.get(), target.c_str(), key.c_str(), &output)
+            : ln_add_group_member(client.get(), target.c_str(), key.c_str(), list.c_str(), &output);
+        std::unique_ptr<char, decltype(&ln_free)> owned(output, ln_free);
+        if (code == LN_OK) return;
+        const auto reply = output ? json::parse(output, nullptr, false) : json();
+        const auto refusal = nexus_access::assignment_error(reply.is_object() ? text(reply, "error") : "");
+        throw NexusError(refusal.first, refusal.second);
+    }
+    bool group_admin() const {
+        const auto self = find_member(devices, node_id);
+        return self.is_object() && self.value("is_admin", false);
+    }
     void refresh_devices() {
         const auto own = sdk_call([&](auto out) { return ln_tree_get_node(client.get(), node_id.c_str(), out); });
         group_id = own.at("parent_id").get<std::string>();
-        const auto members = sdk_call([&](auto out) { return ln_get_group_members(client.get(), group_id.c_str(), out); });
-        const auto children = sdk_call([&](auto out) { return ln_tree_get_children(client.get(), group_id.c_str(), out); });
+        const auto group = sdk_call([&](auto out) { return ln_tree_get_node(client.get(), group_id.c_str(), out); });
+        // The SDK's typed tree nodes drop is_inference, so read the group's devices as raw JSON.
+        const auto children = private_call("GET", "/api/tree/children/" + group_id);
+        if (!children.is_array()) throw NexusError(502, "The network returned invalid data");
         const auto peers = sdk_call([&](auto out) { return ln_mesh_peers(client.get(), out); });
-        auto assignment = std::find_if(members.begin(), members.end(), [&](const json& member) {
-            return member.value("management_pubkey", "") == pubkey;
-        });
-        bool owner = false;
-        if (assignment != members.end()) {
-            const auto permissions = assignment->value("permissions", std::vector<std::string>{});
-            owner = std::find(permissions.begin(), permissions.end(), "delete_node") != permissions.end();
-        }
-        json next = json::array();
-        for (const auto& child : children) {
-            if (child.value("type", "") != "endpoint") continue;
-            auto member = std::find_if(members.begin(), members.end(), [&](const json& m) {
-                return m.value("management_pubkey", "") == child.value("mgmt_pubkey", "");
-            });
-            const auto id = child.at("id").get<std::string>();
-            auto peer = std::find_if(peers.begin(), peers.end(), [&](const json& p) { return p.value("node_id", "") == id; });
-            next.push_back({{"node_id", id}, {"device_name", child.value("hostname", "")},
-                {"tunnel_ip", child.value("tunnel_ip", "")}, {"management_pubkey", child.value("mgmt_pubkey", "")},
-                {"permissions", member == members.end() ? json::array() : member->value("permissions", json::array())}, {"can_remove", owner && id != node_id},
-                {"is_online", id == node_id || (peer != peers.end() && peer->value("is_online", false))},
-                {"latency_ms", peer == peers.end() ? 0.0 : peer->value("latency_ms", 0.0)}});
-        }
+        auto next = nexus_access::merge_members(group, children, peers, pubkey, node_id);
         for (auto it = egress_ips.begin(); it != egress_ips.end();) {
             const auto present = std::find_if(next.begin(), next.end(), [&](const json& device) {
                 auto ip = device.value("tunnel_ip", "");
@@ -180,6 +373,7 @@ struct NexusManager::Session {
         if (locked) throw NexusError(423, "Unlock with your passkey before joining");
         detail = "joining";
         ln_set_link_token(client.get(), code.c_str());
+        if (ln_set_inference_node(client.get(), 1) != LN_OK) throw NexusError(500, "Cannot join as an inference node");
         json joined_result;
         try { joined_result = sdk_call([&](auto out) { return ln_join_network(client.get(), device_name().c_str(), "", out); }); }
         catch (const std::exception& e) {
@@ -227,7 +421,7 @@ struct NexusManager::Session {
             retry_delay = std::min(retry_delay * 2, std::chrono::seconds(60));
         }
     }
-    json request(const std::string& path, const json& body) {
+    json request(const std::string& method, const std::string& path, const json& body) {
         if (path == "/status") return status();
         if (path == "/device") {
             const auto name = body.at("device_name").get<std::string>();
@@ -296,6 +490,10 @@ struct NexusManager::Session {
         }
         if (!joined) throw NexusError(409, "Join the network first");
         if (path == "/devices") { refresh_devices(); return devices; }
+        if (path == "/members") {
+            refresh_devices();
+            return {{"group_node_id", group_id}, {"can_manage", group_admin()}, {"members", devices}};
+        }
         if (path == "/link-token") {
             if (std::chrono::steady_clock::now() - confirmed_at > std::chrono::seconds(60)) throw NexusError(423, "Confirm with your passkey before inviting a device");
             const auto ttl = body.value("ttl_sec", 600);
@@ -307,24 +505,71 @@ struct NexusManager::Session {
             return result;
         }
         refresh_devices();
-        const auto id = path == "/egress" ? body.at("node_id").get<std::string>() : path.substr(9, path.size() - 16);
-        auto target = std::find_if(devices.begin(), devices.end(), [&](const json& d) { return d.at("node_id") == id; });
-        if (target == devices.end() || id == node_id) throw NexusError(404, "Choose another member of your group");
         if (path == "/egress") {
-            auto ip = target->at("tunnel_ip").get<std::string>();
+            const auto id = body.at("node_id").get<std::string>();
+            const auto target = find_member(devices, id);
+            if (target.is_null() || id == node_id) throw NexusError(404, "Choose another member of your group");
+            auto ip = target.at("tunnel_ip").get<std::string>();
             if (auto slash = ip.find('/'); slash != std::string::npos) ip.resize(slash);
             uint16_t port = 0;
             if (ln_mesh_open_egress(client.get(), ip.c_str(), 13305, &port) != LN_OK || !port) throw NexusError(502, "Remote server connection failed");
             egress_ips[id] = ip;
             return {{"node_id", id}, {"loopback_port", port}, {"endpoint", "http://127.0.0.1:" + std::to_string(port)}};
         }
-        if (path.rfind("/devices/", 0) == 0 && path.size() > 16) {
-            if (!target->at("can_remove").get<bool>()) throw NexusError(403, "Only a group owner can remove this device");
-            const auto removed_key = target->at("management_pubkey").get<std::string>();
-            sdk_call([&](auto out) { return ln_private_api_call(client.get(), "POST", ("/api/tree/node/delete/" + id).c_str(), "{}", out); });
-            sdk_call([&](auto out) { return ln_remove_group_member(client.get(), group_id.c_str(), removed_key.c_str(), out); });
+        const auto first = path.find('/', 1);
+        const auto second = first == std::string::npos ? std::string::npos : path.find('/', first + 1);
+        if (second == std::string::npos) throw NexusError(404, "Unknown network operation");
+        const auto collection = path.substr(0, first);
+        const auto id = path.substr(first + 1, second - first - 1);
+        const auto action = path.substr(second + 1);
+        const auto target = find_member(devices, id);
+        if (target.is_null()) throw NexusError(404, "That device is not in your group");
+        if (collection == "/devices" && action == "remove") {
+            if (id == node_id) throw NexusError(404, "Choose another member of your group");
+            if (!target.at("can_remove").get<bool>()) throw NexusError(403, "This device does not have permission to remove that device");
+            const auto removed_key = target.at("management_pubkey").get<std::string>();
+            private_call("POST", "/api/tree/node/delete/" + id, "{}");
+            if (group_admin()) set_assignment(group_id, removed_key, json::array());
             refresh_devices();
             return {{"removed", true}};
+        }
+        if (collection == "/devices" && action == "access") {
+            if (method == "POST") {
+                if (!group_admin()) throw NexusError(403, "Only a group admin can change device access");
+                if (!target.at("access_known").get<bool>()) {
+                    throw NexusError(409, "This device's access list is not visible to you. Ask the admin who invited it.");
+                }
+                const auto member_id = body.at("member_node_id").get<std::string>();
+                const bool connect = body.at("connect").get<bool>();
+                const bool see = body.at("see").get<bool>() || connect;
+                if (member_id == node_id) throw NexusError(403, "You cannot change your own access");
+                const auto member = find_member(devices, member_id);
+                if (member.is_null() || member_id == id) throw NexusError(404, "Choose another member of your group");
+                const auto key = member.at("management_pubkey").get<std::string>();
+                const auto current = permissions_for(target.at("access"), key);
+                if (contains(current, "admin")) throw NexusError(409, "That member administers this device; change its role instead");
+                set_assignment(id, key, nexus_access::device_permissions(current, see, connect));
+                refresh_devices();
+            }
+            return nexus_access::device_access(devices, id, node_id);
+        }
+        if (collection == "/members" && (action == "role" || action == "permissions")) {
+            if (!group_admin()) throw NexusError(403, "Only a group admin can change member access");
+            if (id == node_id) throw NexusError(403, action == "role" ? "You cannot change your own role. Ask another admin." : "You cannot change your own access. Ask another admin.");
+            const auto key = target.at("management_pubkey").get<std::string>();
+            const bool admin = target.at("is_admin").get<bool>();
+            json permissions;
+            if (action == "role") {
+                const auto role = body.at("role").get<std::string>();
+                if (role != "admin" && role != "member") throw NexusError(400, "Choose the admin or member role");
+                if (role == "member" && target.at("is_owner").get<bool>()) throw NexusError(403, "The group creator always administers the group");
+                permissions = nexus_access::role_permissions(target.at("permissions"), role == "admin");
+            } else {
+                permissions = nexus_access::group_permissions(body.at("permissions"), admin);
+            }
+            set_assignment(group_id, key, permissions);
+            refresh_devices();
+            return find_member(devices, id);
         }
         throw NexusError(404, "Unknown network operation");
     }
@@ -442,11 +687,11 @@ void NexusManager::disable() {
     update_snapshot_locked({{"status", "disabled"}, {"locked", true}, {"mesh_up", false}, {"members", json::array()}});
     persist_enabled_locked();
 }
-std::pair<int, NexusManager::json> NexusManager::control_locked(const std::string&, const std::string& path, const json& body) {
+std::pair<int, NexusManager::json> NexusManager::control_locked(const std::string& method, const std::string& path, const json& body) {
 #ifdef LEMONADE_WITH_NEXUS
     if (!enabled_ || !session_) return {409, {{"error", "Enable mesh first"}}};
     std::pair<int, json> result;
-    try { result = {200, session_->request(path, body)}; }
+    try { result = {200, session_->request(method, path, body)}; }
     catch (const NexusError& e) { result = {e.status, {{"error", e.what()}}}; }
     catch (const json::exception&) { result = {400, {{"error", "Invalid request fields"}}}; }
     catch (const std::exception& e) { result = {502, {{"error", e.what()}}}; }
@@ -570,6 +815,9 @@ void NexusManager::handle(const httplib::Request& req, httplib::Response& res,
         else if (operation == "invites") path = "/link-token";
         else if (operation == "invites/cancel") path = "/link-token/cancel";
         else if (operation == "devices/remove") path = "/devices/" + req.matches[1].str() + "/remove";
+        else if (operation == "devices/access") path = "/devices/" + req.matches[1].str() + "/access";
+        else if (operation == "members/role") path = "/members/" + req.matches[1].str() + "/role";
+        else if (operation == "members/permissions") path = "/members/" + req.matches[1].str() + "/permissions";
         else path = "/" + operation;
         auto result = control_locked(req.method, path, body);
         if (result.first == 200) {
@@ -591,7 +839,7 @@ void NexusManager::register_routes(httplib::Server& server, bool management) {
         res.set_redirect("http://127.0.0.1:" + std::to_string(management_port_) + req.target, 307);
     };
     for (const auto* prefix : {"/api/v0/nexus/", "/api/v1/nexus/", "/v0/nexus/", "/v1/nexus/", "/api/nexus/"}) {
-        for (const auto* operation : {"status", "passkey/challenge", "devices", "join/status", "events"}) {
+        for (const auto* operation : {"status", "passkey/challenge", "devices", "members", "join/status", "events"}) {
             server.Get(std::string(prefix) + operation, [dispatch, operation](const auto& req, auto& res) { dispatch(req, res, operation); });
         }
         for (const auto* operation : {"enable", "disable", "passkey/register", "passkey/unlock", "invites", "invites/cancel", "join", "egress", "lock", "device"}) {
@@ -599,6 +847,14 @@ void NexusManager::register_routes(httplib::Server& server, bool management) {
         }
         server.Post(std::string(prefix) + R"(devices/([A-Za-z0-9_-]+)/remove)",
             [dispatch](const auto& req, auto& res) { dispatch(req, res, "devices/remove"); });
+        server.Get(std::string(prefix) + R"(devices/([A-Za-z0-9_-]+)/access)",
+            [dispatch](const auto& req, auto& res) { dispatch(req, res, "devices/access"); });
+        server.Post(std::string(prefix) + R"(devices/([A-Za-z0-9_-]+)/access)",
+            [dispatch](const auto& req, auto& res) { dispatch(req, res, "devices/access"); });
+        server.Post(std::string(prefix) + R"(members/([A-Za-z0-9_-]+)/role)",
+            [dispatch](const auto& req, auto& res) { dispatch(req, res, "members/role"); });
+        server.Post(std::string(prefix) + R"(members/([A-Za-z0-9_-]+)/permissions)",
+            [dispatch](const auto& req, auto& res) { dispatch(req, res, "members/permissions"); });
     }
 }
 }

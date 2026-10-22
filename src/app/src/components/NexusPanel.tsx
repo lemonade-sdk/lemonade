@@ -1,14 +1,18 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { friendlyErrorMessage } from '../api';
 import { useFocusTrap } from '../hooks/useFocusTrap';
+import { useI18n } from '../i18n';
 import { Icon } from './Icon';
 import { WorkspaceActionButton, WorkspaceActionGroup } from './WorkspacePanels';
 import { isNexusDesktop, nexusRequest, nexusStatusLabel, prepareNexus, refreshNexus,
-  cancelNexusPasskey, sendNexusPasskeyPin, unlockNexus, useNexusNetwork, type PasskeyPrompt, type NexusDevice, type NexusInvite } from '../features/nexus/nexus';
+  cancelNexusPasskey, sendNexusPasskeyPin, unlockNexus, useNexusNetwork, type PasskeyPrompt, type NexusDevice, type NexusInvite,
+  NEXUS_GROUP_PERMISSIONS, getNexusDeviceAccess, hasNexusPermission, nexusTierLabel, setNexusDeviceAccess,
+  setNexusMemberPermissions, setNexusMemberRole, type NexusDeviceAccess } from '../features/nexus/nexus';
 import '../styles/nexus.css';
 
 interface Props { isActive: boolean; onConnect: (nodeId: string, apiKey: string) => Promise<void> }
 const NexusPanel: React.FC<Props> = ({ isActive, onConnect }) => {
+  const { t } = useI18n();
   const network = useNexusNetwork(isActive);
   const status = network.status;
   const desktop = isNexusDesktop();
@@ -19,7 +23,12 @@ const NexusPanel: React.FC<Props> = ({ isActive, onConnect }) => {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [dialog, setDialog] = useState<'invite' | 'join' | null>(null);
+  const [dialog, setDialog] = useState<'invite' | 'join' | 'access' | null>(null);
+  const [managing, setManaging] = useState<NexusDevice | null>(null);
+  const [role, setRole] = useState<'admin' | 'member'>('member');
+  const [groupPermissions, setGroupPermissions] = useState<string[]>([]);
+  const [deviceAccess, setDeviceAccess] = useState<NexusDeviceAccess | null>(null);
+  const [accessDraft, setAccessDraft] = useState<Record<string, { see: boolean; connect: boolean }>>({});
   const [invite, setInvite] = useState<NexusInvite | null>(null);
   const [removing, setRemoving] = useState<NexusDevice | null>(null);
   const [now, setNow] = useState(Date.now());
@@ -45,7 +54,7 @@ const NexusPanel: React.FC<Props> = ({ isActive, onConnect }) => {
     finally { setBusy(null); }
   };
   const rememberFocus = () => { returnFocus.current = document.activeElement as HTMLElement; };
-  const closeDialog = () => { setDialog(null); setRemoving(null); setInvite(null); };
+  const closeDialog = () => { setDialog(null); setRemoving(null); setInvite(null); setManaging(null); setDeviceAccess(null); setAccessDraft({}); };
   const createInvite = () => run('Confirming passkey…', async () => {
     await unlockNexus();
     const result = await nexusRequest<NexusInvite>('invites', { device_name: inviteName.trim(), ttl_sec: 600 });
@@ -55,16 +64,42 @@ const NexusPanel: React.FC<Props> = ({ isActive, onConnect }) => {
   const join = () => run('Joining your group…', async () => {
     await prepareNexus(deviceName.trim(), true);
     await nexusRequest('join', { code });
-    closeDialog(); setNotice('Joined your group. Choose a device below to connect to its server.');
+    closeDialog(); setNotice(t('Joined your group. Choose a device below to connect to its server.'));
   });
   const connect = (device: NexusDevice) => run(`Connecting to ${device.device_name}…`, async () => {
     await onConnect(device.node_id, remoteKey);
     setRemoteKey('');
   });
+  const manageAccess = (device: NexusDevice) => {
+    rememberFocus();
+    setManaging(device); setRole(device.is_admin ? 'admin' : 'member');
+    setGroupPermissions(device.permissions.filter(permission => permission !== 'admin'));
+    setDeviceAccess(null); setAccessDraft({}); setDialog('access');
+    void run('Loading access…', async () => {
+      const access = await getNexusDeviceAccess(device.node_id);
+      setDeviceAccess(access);
+      setAccessDraft(Object.fromEntries(access.members.map(entry => [entry.node_id, { see: entry.see, connect: entry.connect }])));
+    });
+  };
+  const saveAccess = (device: NexusDevice) => run('Saving access…', async () => {
+    const isSelf = device.node_id === status?.node_id;
+    if (!isSelf && role !== (device.is_admin ? 'admin' : 'member')) await setNexusMemberRole(device.node_id, role);
+    const current = device.permissions.filter(permission => permission !== 'admin');
+    const changed = current.length !== groupPermissions.length || current.some(permission => !groupPermissions.includes(permission));
+    if (!isSelf && role === 'member' && changed) await setNexusMemberPermissions(device.node_id, groupPermissions);
+    for (const entry of deviceAccess?.members || []) {
+      const next = accessDraft[entry.node_id];
+      if (entry.editable && next && (next.see !== entry.see || next.connect !== entry.connect)) {
+        await setNexusDeviceAccess(device.node_id, entry.node_id, next.see || next.connect, next.connect);
+      }
+    }
+    closeDialog(); setNotice(t('Access updated for {device}.', { device: device.device_name || 'the device' }));
+  });
   const seconds = invite ? Math.max(0, Math.ceil((invite.expires_at * 1000 - now) / 1000)) : 0;
   const members = status?.members || [];
   const self = members.find(member => member.node_id === status?.node_id);
-  const owner = self?.permissions.includes('delete_node');
+  const canManage = Boolean(self?.is_admin);
+  const managingSelf = managing?.node_id === status?.node_id;
   return <section className="nexus-panel" aria-label="Devices and mesh">
     <div className="nexus-panel__overview">
       <div className="nexus-panel__identity">
@@ -81,7 +116,7 @@ const NexusPanel: React.FC<Props> = ({ isActive, onConnect }) => {
         <div><dt>Connected peers</dt><dd>{status?.peer_count ?? 0}</dd></div>
       </dl>
       {status?.group_node_id && <details className="nexus-panel__details"><summary>Network details</summary>
-        <dl><dt>Group ID</dt><dd>{status.group_node_id}</dd><dt>Device ID</dt><dd>{status.node_id}</dd><dt>Role</dt><dd>{owner ? 'Group owner' : 'Member'}</dd></dl>
+        <dl><dt>Group ID</dt><dd>{status.group_node_id}</dd><dt>Device ID</dt><dd>{status.node_id}</dd><dt>Role</dt><dd>{canManage ? 'Admin' : 'Member'}</dd>{self && <><dt>Tier</dt><dd>{nexusTierLabel(self)}</dd></>}</dl>
       </details>}
       {desktop && <>
         <div className="form-field nexus-panel__name"><label className="form-field__label" htmlFor="nexus-device-name">Device name</label>
@@ -89,9 +124,9 @@ const NexusPanel: React.FC<Props> = ({ isActive, onConnect }) => {
           {status?.enabled && <WorkspaceActionButton appearance="quiet" disabled={Boolean(busy) || !deviceName.trim()} onClick={() => void run('Saving name…', async () => { await nexusRequest('device', { device_name: deviceName.trim() }); })}>Save name</WorkspaceActionButton>}
         </div>
         <WorkspaceActionGroup>
-          {!status?.enabled && <WorkspaceActionButton appearance="primary" icon="router" disabled={!status?.available || Boolean(busy) || !deviceName.trim()} onClick={() => void run('Creating your network…', async () => { await prepareNexus(deviceName.trim(), false); setNotice('Your group is ready. Invite another device to get started.'); })}>Create a group</WorkspaceActionButton>}
+          {!status?.enabled && <WorkspaceActionButton appearance="primary" icon="router" disabled={!status?.available || Boolean(busy) || !deviceName.trim()} onClick={() => void run('Creating your network…', async () => { await prepareNexus(deviceName.trim(), false); setNotice(t('Your group is ready. Invite another device to get started.')); })}>Create a group</WorkspaceActionButton>}
           {status?.enabled && status.locked && <WorkspaceActionButton appearance="primary" icon="eye-off" disabled={Boolean(busy)} onClick={() => void run('Unlocking…', async () => { await prepareNexus(deviceName.trim(), false); })}>Unlock with passkey</WorkspaceActionButton>}
-          {status?.mesh_up && <WorkspaceActionButton appearance="primary" icon="plus" disabled={Boolean(busy) || !self?.permissions.includes('add_child')} onClick={() => { rememberFocus(); setInviteName(''); setInvite(null); setDialog('invite'); }}>Add a device</WorkspaceActionButton>}
+          {status?.mesh_up && <WorkspaceActionButton appearance="primary" icon="plus" disabled={Boolean(busy) || !hasNexusPermission(self?.permissions, 'add_child')} onClick={() => { rememberFocus(); setInviteName(''); setInvite(null); setDialog('invite'); }}>Add a device</WorkspaceActionButton>}
           {!status?.mesh_up && <WorkspaceActionButton appearance="secondary" disabled={!status?.available || Boolean(busy)} onClick={() => { rememberFocus(); setCode(''); setDialog('join'); }}>Join a group</WorkspaceActionButton>}
           {status?.enabled && !status.locked && <WorkspaceActionButton appearance="quiet" disabled={Boolean(busy)} onClick={() => void run('Locking…', async () => { await nexusRequest('lock', {}); })}>Lock network</WorkspaceActionButton>}
           {status?.enabled && <WorkspaceActionButton appearance="quiet" disabled={Boolean(busy)} onClick={() => void run('Turning mesh off…', async () => { await nexusRequest('disable', {}); })}>Turn mesh off</WorkspaceActionButton>}
@@ -105,9 +140,10 @@ const NexusPanel: React.FC<Props> = ({ isActive, onConnect }) => {
       {!members.length && <p className="nexus-panel__empty">{status?.locked && status.enabled ? 'Unlock to see your group’s devices.' : 'Create a group or enter an invite code to link your first device.'}</p>}
       <ul className="nexus-panel__device-list">{members.map(device => <li key={device.node_id}>
         <Icon name="hard-drive" size={24} />
-        <div className="nexus-panel__device"><strong>{device.device_name || 'Unnamed device'}{device.node_id === status?.node_id && <span className="nexus-panel__self">This device</span>}</strong><span>{device.tunnel_ip || 'No mesh address'}{device.is_online !== undefined && ` · ${device.is_online ? 'Online' : 'Offline'}`}{Boolean(device.is_online && device.latency_ms) && ` · ${Math.round(device.latency_ms!)} ms`}</span></div>
-        {desktop && device.node_id !== status?.node_id && <WorkspaceActionGroup>
-          <WorkspaceActionButton appearance="secondary" size="small" icon="plug" disabled={Boolean(busy) || !status?.mesh_up} onClick={() => void connect(device)}>Connect to server</WorkspaceActionButton>
+        <div className="nexus-panel__device"><strong>{device.device_name || 'Unnamed device'}{device.is_admin && <span className="nexus-panel__badge">Admin</span>}{device.node_id === status?.node_id && <span className="nexus-panel__self">This device</span>}</strong><span>{nexusTierLabel(device)} · {device.tunnel_ip || 'No mesh address'}{device.is_online !== undefined && ` · ${device.is_online ? 'Online' : 'Offline'}`}{Boolean(device.is_online && device.latency_ms) && ` · ${Math.round(device.latency_ms!)} ms`}</span></div>
+        {desktop && (device.node_id !== status?.node_id || (canManage && status?.mesh_up)) && <WorkspaceActionGroup>
+          {device.node_id !== status?.node_id && <WorkspaceActionButton appearance="secondary" size="small" icon="plug" disabled={Boolean(busy) || !status?.mesh_up} onClick={() => void connect(device)}>Connect to server</WorkspaceActionButton>}
+          {canManage && status?.mesh_up && <WorkspaceActionButton appearance="quiet" size="small" icon="user-round-cog" disabled={Boolean(busy)} onClick={() => manageAccess(device)} aria-label={`Manage access for ${device.device_name || 'this device'}`}>Manage access</WorkspaceActionButton>}
           {device.can_remove && <WorkspaceActionButton appearance="danger" size="small" icon="trash" disabled={Boolean(busy)} onClick={() => { rememberFocus(); setRemoving(device); }} aria-label={`Remove ${device.device_name}`}>Remove</WorkspaceActionButton>}
         </WorkspaceActionGroup>}
       </li>)}</ul>
@@ -115,20 +151,59 @@ const NexusPanel: React.FC<Props> = ({ isActive, onConnect }) => {
     </div>
     {network.passkey && <PasskeyDialog prompt={network.passkey} />}
     {(dialog || removing) && <div className="nexus-dialog__backdrop" onClick={event => { if (event.target === event.currentTarget && !busy) closeDialog(); }}>
-      <div ref={dialogRef} className="nexus-dialog" role="dialog" aria-modal="true" aria-labelledby="nexus-dialog-title">
-        <div className="nexus-dialog__heading"><h2 id="nexus-dialog-title">{removing ? 'Remove a device' : dialog === 'join' ? 'Join a group' : 'Invite a device'}</h2><WorkspaceActionButton appearance="quiet" icon="x" aria-label="Close dialog" disabled={Boolean(busy)} onClick={closeDialog} /></div>
+      <div ref={dialogRef} className={`nexus-dialog${dialog === 'access' ? ' nexus-dialog--wide' : ''}`} role="dialog" aria-modal="true" aria-labelledby="nexus-dialog-title">
+        <div className="nexus-dialog__heading"><h2 id="nexus-dialog-title">{removing ? 'Remove a device' : dialog === 'join' ? 'Join a group' : dialog === 'access' ? 'Manage access' : 'Invite a device'}</h2><WorkspaceActionButton appearance="quiet" icon="x" aria-label="Close dialog" disabled={Boolean(busy)} onClick={closeDialog} /></div>
         {error && <p className="connect__error" role="alert">{error}</p>}
         {busy && <p role="status">{busy}</p>}
-        {removing ? <><p>Remove {removing.device_name} from your group? Its network access will end.</p><WorkspaceActionButton appearance="danger" disabled={Boolean(busy)} onClick={() => void run('Removing device…', async () => { await nexusRequest(`devices/${encodeURIComponent(removing.node_id)}/remove`, {}); closeDialog(); setNotice('Device removed from your group.'); })}>Remove device</WorkspaceActionButton></>
+        {removing ? <><p>Remove {removing.device_name} from your group? Its network access will end.</p><WorkspaceActionButton appearance="danger" disabled={Boolean(busy)} onClick={() => void run('Removing device…', async () => { await nexusRequest(`devices/${encodeURIComponent(removing.node_id)}/remove`, {}); closeDialog(); setNotice(t('Device removed from your group.')); })}>Remove device</WorkspaceActionButton></>
         : dialog === 'join' ? <form onSubmit={event => { event.preventDefault(); void join(); }}>
           <p>Ask a group owner to add this device, then enter their pairing code or invite token.</p><label className="form-field__label" htmlFor="nexus-join-code">Pairing code or invite token</label>
           <input id="nexus-join-code" className={`input nexus-dialog__code-input${code.length > 8 ? ' is-token' : ''}`} autoComplete="off" maxLength={68} value={code} onChange={event => setCode(event.target.value.trim())} />
           <WorkspaceActionButton type="submit" appearance="primary" disabled={Boolean(busy) || !(/^(?:[0-9]{8}|lnk_[0-9a-f]{64})$/.test(code)) || !deviceName.trim()}>Confirm with passkey and join</WorkspaceActionButton>
+        </form> : dialog === 'access' && managing ? <form onSubmit={event => { event.preventDefault(); void saveAccess(managing); }}>
+          <p>{managing.device_name || 'Unnamed device'} · {nexusTierLabel(managing)}</p>
+          <fieldset className="nexus-access__section" disabled={Boolean(busy) || managingSelf} aria-describedby={managingSelf || managing.is_owner ? 'nexus-role-hint' : undefined}>
+            <legend className="form-field__label">Role</legend>
+            <div className="nexus-access__choices">
+              <label><input type="radio" name="nexus-role" value="member" checked={role === 'member'} disabled={managing.is_owner} onChange={() => setRole('member')} /> Member</label>
+              <label><input type="radio" name="nexus-role" value="admin" checked={role === 'admin'} onChange={() => setRole('admin')} /> Admin</label>
+            </div>
+            {managingSelf ? <p id="nexus-role-hint" className="form-field__hint">You can’t change your own role or group permissions. Ask another admin.</p>
+              : managing.is_owner && <p id="nexus-role-hint" className="form-field__hint">The group creator always administers the group.</p>}
+          </fieldset>
+          <fieldset className="nexus-access__section" disabled={Boolean(busy) || managingSelf || role === 'admin'}>
+            <legend className="form-field__label">Group permissions</legend>
+            {role === 'admin' && <p className="form-field__hint">Admins hold every permission and can manage members.</p>}
+            <div className="nexus-access__permissions">{NEXUS_GROUP_PERMISSIONS.map(permission => <label key={permission.name}>
+              <input type="checkbox" checked={role === 'admin' || permission.name === 'read' || groupPermissions.includes(permission.name)} disabled={permission.name === 'read'}
+                onChange={event => setGroupPermissions(current => event.target.checked ? [...current, permission.name] : current.filter(name => name !== permission.name))} /> {permission.label}
+            </label>)}</div>
+          </fieldset>
+          <fieldset className="nexus-access__section" disabled={Boolean(busy)}>
+            <legend className="form-field__label">Who can use {managing.device_name || 'this device'}</legend>
+            {!deviceAccess ? <p role="status">Loading access…</p>
+              : !deviceAccess.access_known ? <p className="form-field__hint">You can’t see this device’s access list. Ask the admin who invited it.</p>
+              : !deviceAccess.members.length ? <p className="form-field__hint">No other members yet.</p>
+              : <table className="nexus-access__table"><thead><tr><th scope="col">Member</th><th scope="col">See</th><th scope="col">Connect</th></tr></thead><tbody>
+                {deviceAccess.members.map(entry => {
+                  const draft = accessDraft[entry.node_id] || entry;
+                  const name = entry.device_name || 'Unnamed device';
+                  const update = (next: { see: boolean; connect: boolean }) => setAccessDraft(current => ({ ...current, [entry.node_id]: next }));
+                  return <tr key={entry.node_id}>
+                    <th scope="row">{name}{entry.is_admin && <span className="nexus-panel__badge">Admin</span>}</th>
+                    <td><input type="checkbox" aria-label={`${name} can see this device`} checked={draft.see || draft.connect} disabled={!entry.editable || draft.connect} onChange={event => update({ see: event.target.checked, connect: false })} /></td>
+                    <td><input type="checkbox" aria-label={`${name} can connect to this device`} checked={draft.connect} disabled={!entry.editable} onChange={event => update({ see: event.target.checked || draft.see, connect: event.target.checked })} /></td>
+                  </tr>;
+                })}
+              </tbody></table>}
+            <p className="form-field__hint">Connect lets a member reach this device’s server through the mesh.</p>
+          </fieldset>
+          <WorkspaceActionButton type="submit" appearance="primary" disabled={Boolean(busy) || !deviceAccess}>Save access</WorkspaceActionButton>
         </form> : invite ? <>
           <p>Give this invite to {invite.device_name}.</p>{invite.code && <div className="nexus-dialog__code" aria-label={`Pairing code ${invite.code}`}>{invite.code.slice(0, 4)} {invite.code.slice(4)}</div>}
           {!invite.code && <p>This federation uses full invite tokens. Copy the token and paste it on the other device.</p>}
           <p role="timer">{seconds ? `Expires in ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}` : 'This code has expired.'}</p>
-          <WorkspaceActionGroup>{invite.code && <WorkspaceActionButton appearance="primary" disabled={!seconds} onClick={() => void run('Copying…', async () => { await navigator.clipboard.writeText(invite.code!); setNotice('Pairing code copied.'); })}>Copy code</WorkspaceActionButton>}<WorkspaceActionButton appearance="quiet" disabled={!seconds} onClick={() => void run('Copying…', async () => { await navigator.clipboard.writeText(invite.link_token); setNotice('Full invite token copied.'); })}>Copy full token</WorkspaceActionButton></WorkspaceActionGroup>
+          <WorkspaceActionGroup>{invite.code && <WorkspaceActionButton appearance="primary" disabled={!seconds} onClick={() => void run('Copying…', async () => { await navigator.clipboard.writeText(invite.code!); setNotice(t('Pairing code copied.')); })}>Copy code</WorkspaceActionButton>}<WorkspaceActionButton appearance="quiet" disabled={!seconds} onClick={() => void run('Copying…', async () => { await navigator.clipboard.writeText(invite.link_token); setNotice(t('Full invite token copied.')); })}>Copy full token</WorkspaceActionButton></WorkspaceActionGroup>
           <p className="form-field__hint">The code works once. Closing this dialog does not revoke it; it expires after 10 minutes.</p>
           <WorkspaceActionButton appearance="quiet" disabled={Boolean(busy)} onClick={() => void run('Closing invite…', async () => { await nexusRequest('invites/cancel', {}); closeDialog(); })}>Close invite</WorkspaceActionButton>
         </> : <form onSubmit={event => { event.preventDefault(); void createInvite(); }}>

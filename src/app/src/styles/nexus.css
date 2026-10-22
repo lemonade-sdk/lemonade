@@ -22,6 +22,7 @@
 .nexus-panel__device { display: grid; gap: 6px; flex: 1; min-width: 150px; overflow-wrap: anywhere; }
 .nexus-panel__device > span { color: var(--text-tertiary); font-size: 12px; }
 .nexus-panel__self { font-size: 11px; color: var(--text-tertiary); font-weight: 400; margin-left: 12px; }
+.nexus-panel__badge { display: inline-block; margin-left: 10px; padding: 1px 6px; font-size: 10px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--success); border: 1px solid var(--success); border-radius: 4px; vertical-align: middle; }
 .nexus-panel__remote-key { margin-top: 24px; max-width: 420px; display: grid; gap: 8px; }
 .nexus-panel__notice { color: var(--text-secondary); }
 .nexus-dialog__backdrop { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 24px; background: var(--surface-overlay); }
@@ -46,3 +47,14 @@
 @media (max-width: 700px) { .nexus-server-select { max-width: 120px; min-width: 80px; } }
 
 .nexus-server-select { appearance: auto; }
+
+.nexus-dialog--wide { width: min(100%, 560px); }
+.nexus-access__section { display: grid; gap: 10px; margin: 0; padding: 0; border: 0; min-width: 0; }
+.nexus-access__section:disabled label { color: var(--text-tertiary); }
+.nexus-access__choices { display: flex; gap: 20px; }
+.nexus-access__permissions { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px 16px; }
+.nexus-access__choices label, .nexus-access__permissions label { display: flex; align-items: center; gap: 8px; }
+.nexus-access__table { width: 100%; border-collapse: collapse; }
+.nexus-access__table th, .nexus-access__table td { padding: 8px 4px; border-bottom: 1px solid var(--border); text-align: left; font-weight: 400; }
+.nexus-access__table thead th { font-size: 12px; color: var(--text-tertiary); }
+.nexus-access__table td { width: 72px; }

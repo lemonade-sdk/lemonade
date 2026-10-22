@@ -6,9 +6,52 @@ export interface NexusDevice {
   tunnel_ip: string;
   management_pubkey: string;
   permissions: string[];
+  permissions_known?: boolean;
+  is_admin?: boolean;
+  is_owner?: boolean;
+  is_inference?: boolean;
+  tier?: 3 | 4;
+  access_known?: boolean;
   can_remove: boolean;
   is_online?: boolean;
   latency_ms?: number;
+}
+export interface NexusAccessEntry {
+  node_id: string;
+  device_name: string;
+  is_admin: boolean;
+  tier: 3 | 4;
+  see: boolean;
+  connect: boolean;
+  editable: boolean;
+}
+export interface NexusDeviceAccess {
+  node_id: string;
+  device_name: string;
+  access_known: boolean;
+  can_manage: boolean;
+  members: NexusAccessEntry[];
+}
+export const NEXUS_GROUP_PERMISSIONS: { name: string; label: string }[] = [
+  { name: 'read', label: 'See the group' },
+  { name: 'write', label: 'Write' },
+  { name: 'add_child', label: 'Invite devices' },
+  { name: 'edit_node', label: 'Edit the group' },
+  { name: 'delete_node', label: 'Delete the group' },
+  { name: 'connect_private', label: 'Connect privately' },
+  { name: 'connect_shared', label: 'Connect to shared services' },
+  { name: 'allocate_ip', label: 'Allocate addresses' },
+  { name: 'expand_subnet', label: 'Expand the subnet' },
+  { name: 'relay_forward', label: 'Forward relay traffic' },
+  { name: 'relay_register', label: 'Register relays' },
+  { name: 'stun_respond', label: 'Answer STUN requests' },
+  { name: 'routing_coordinate', label: 'Coordinate routing' },
+];
+export function hasNexusPermission(permissions: string[] | undefined, name: string): boolean {
+  return Boolean(permissions?.includes(name) || permissions?.includes('admin'));
+}
+export function nexusTierLabel(device: NexusDevice): string {
+  return device.is_inference ? 'Tier 3 · Inference server' : 'Tier 4 · Client';
 }
 export interface NexusStatus {
   controller_url?: string;
@@ -272,4 +315,17 @@ export async function selectNexusInferenceServer(nodeId: string, suppliedKey?: s
     await api.switchServer(previousEndpoint, previousKey);
     throw error;
   } finally { publish({ ...state, switchingServer: false }); }
+}
+
+export function setNexusMemberRole(nodeId: string, role: 'admin' | 'member'): Promise<NexusDevice> {
+  return nexusRequest(`members/${encodeURIComponent(nodeId)}/role`, { role });
+}
+export function setNexusMemberPermissions(nodeId: string, permissions: string[]): Promise<NexusDevice> {
+  return nexusRequest(`members/${encodeURIComponent(nodeId)}/permissions`, { permissions });
+}
+export function getNexusDeviceAccess(nodeId: string): Promise<NexusDeviceAccess> {
+  return nexusRequest(`devices/${encodeURIComponent(nodeId)}/access`);
+}
+export function setNexusDeviceAccess(nodeId: string, memberNodeId: string, see: boolean, connect: boolean): Promise<NexusDeviceAccess> {
+  return nexusRequest(`devices/${encodeURIComponent(nodeId)}/access`, { member_node_id: memberNodeId, see, connect });
 }

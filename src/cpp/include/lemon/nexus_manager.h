@@ -9,8 +9,24 @@
 #include <nlohmann/json.hpp>
 #include <string>
 #include <thread>
+#include <utility>
+#include <vector>
 
 namespace lemon {
+namespace nexus_access {
+extern const std::vector<std::string> kPermissions;
+bool same_key(const std::string& a, const std::string& b);
+bool grants(const nlohmann::json& permissions, const std::string& permission);
+nlohmann::json merge_members(const nlohmann::json& group, const nlohmann::json& children,
+    const nlohmann::json& peers, const std::string& self_key, const std::string& self_node_id);
+nlohmann::json device_access(const nlohmann::json& members, const std::string& device_id,
+    const std::string& self_node_id);
+nlohmann::json role_permissions(const nlohmann::json& current, bool admin);
+nlohmann::json group_permissions(const nlohmann::json& requested, bool admin);
+nlohmann::json device_permissions(const nlohmann::json& current, bool see, bool connect);
+std::pair<int, std::string> assignment_error(const std::string& reason);
+}
+
 class NexusManager {
 public:
     NexusManager(const std::string& config_dir, int server_port);

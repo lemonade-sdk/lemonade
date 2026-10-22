@@ -1360,6 +1360,12 @@ const ZH_CN: Record<string, string> = {
   'Exported custom model JSON.': '已导出自定义模型 JSON。',
   'No compatible recipe/backend is available for this capability on the connected Lemonade server.': '已连接的 Lemonade 服务器上没有适用于此能力的兼容配方／后端。',
   'Please select a model': '请选择一个模型',
+  'Joined your group. Choose a device below to connect to its server.': '已加入你的群组。请在下方选择设备以连接其服务器。',
+  'Your group is ready. Invite another device to get started.': '你的群组已就绪。邀请另一台设备即可开始。',
+  'Device removed from your group.': '设备已从你的群组中移除。',
+  'Pairing code copied.': '配对码已复制。',
+  'Full invite token copied.': '完整邀请令牌已复制。',
+  'Access updated for {device}.': '已更新 {device} 的访问权限。',
 };
 
 export function translate(key: string, locale: Locale = 'en-US', values?: TranslationValues): string {
