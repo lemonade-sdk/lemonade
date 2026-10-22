@@ -101,7 +101,7 @@ jobs:
   bench:
     name: Bench ${{ matrix.fork_id }}
     needs: [setup]
-    runs-on: [self-hosted, stx-halo, Linux, X64, lemon-prod]
+    runs-on: [self-hosted, Linux, strix-halo, devlab-dispatch]
     timeout-minutes: 180
     strategy:
       fail-fast: false
@@ -592,6 +592,13 @@ jobs:
           # per-fork replacement means the newest run per fork wins.
           results_dir = Path("bench-history/results")
           leaderboard = {}
+          MODEL_ALIASES = {
+            "Qwen3.8-27B-HRX": "Qwen3.8-27B-GGUF",
+            "MiniCPM-V-4.6-HRX": "MiniCPM-V-4.6-GGUF",
+            "MiniCPM5-1B-HRX": "MiniCPM5-1B-GGUF",
+            "Qwen3-30B-A3B-Instruct-2507-HRX": "Qwen3-30B-A3B-Instruct-2507-GGUF",
+            "Meta-Llama-3.1-8B-Instruct-HRX": "Meta-Llama-3.1-8B-Instruct-GGUF",
+          }
           systems = {}          # hw fingerprint -> hardware block (dedup across runs)
           lemonade_versions = set()
           # Active scenario -> required ctx; other ctx/scenarios not rendered.
@@ -667,7 +674,7 @@ jobs:
             if not isinstance(model_entries, list):
               model_entries = [data]
             for me in model_entries:
-              model = me.get("model", data.get("model", "unknown"))
+              model = MODEL_ALIASES.get(me.get("model", data.get("model", "unknown")), me.get("model", data.get("model", "unknown")))
               for br in me.get("results", []):
                 for sc in br.get("scenarios", []):
                   want_ctx = SCENARIO_CTX.get(sc["name"])
