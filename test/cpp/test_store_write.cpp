@@ -713,6 +713,60 @@ static void test_a_collection_follows_its_component() {
           f.store.read()->find("RouterKit")->downloaded);
 }
 
+static ModelInfo collection(const std::string& key, std::vector<std::string> components) {
+    ModelInfo kit = row(key, lemon::COLLECTION_ROUTER_MODEL_RECIPE);
+    kit.components = std::move(components);
+    return kit;
+}
+
+// Both writers have to be inside patch_download at once to lose the collection's state, so
+// they start together and the round repeats: the window is filesystem work wide.
+static void test_two_components_landing_together() {
+    constexpr int kRounds = 20;
+    int rounds_left_behind = 0;
+
+    for (int round = 0; round < kRounds; ++round) {
+        Fixture f;
+        publish(f.store, {
+            {"coll", collection("coll", {"comp.A", "comp.B"})},
+            {"comp.A", row("comp.A")},
+            {"comp.B", row("comp.B")},
+        });
+
+        std::mutex gate_mutex;
+        std::condition_variable gate;
+        int arrived = 0;
+        auto enter_gate = [&] {
+            std::unique_lock<std::mutex> lock(gate_mutex);
+            if (++arrived == 2) {
+                gate.notify_all();
+            } else {
+                gate.wait(lock, [&] { return arrived == 2; });
+            }
+        };
+
+        std::thread first([&] {
+            enter_gate();
+            f.store.patch_download(f.artifacts, "comp.A", true);
+        });
+        std::thread second([&] {
+            enter_gate();
+            f.store.patch_download(f.artifacts, "comp.B", true);
+        });
+        first.join();
+        second.join();
+
+        const auto published = f.store.read();
+        if (!published->find("comp.A")->downloaded || !published->find("comp.B")->downloaded ||
+            !published->find("coll")->downloaded) {
+            ++rounds_left_behind;
+        }
+    }
+
+    check("a collection whose two components landed together says it is here",
+          rounds_left_behind == 0);
+}
+
 static void test_what_a_delete_takes_and_leaves() {
     Fixture f;
     ModelInfo tool = row("user.Tool");
@@ -778,6 +832,7 @@ int main() {
     store_patch::test_a_download_moves_its_row();
     store_patch::test_a_model_that_is_not_here();
     store_patch::test_a_collection_follows_its_component();
+    store_patch::test_two_components_landing_together();
     store_patch::test_what_a_delete_takes_and_leaves();
     store_patch::test_options_land_on_the_live_row();
 

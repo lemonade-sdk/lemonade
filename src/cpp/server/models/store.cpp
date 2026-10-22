@@ -398,21 +398,24 @@ void ModelStore::patch_download(const ModelArtifactStore& artifacts,
         ModelArtifactStore::refresh_on_disk_size(patched);
     }
 
-    // Collections carrying this model follow it without a full rebuild.
-    const auto dependents =
-        collection_states_after_component(view->models, model_name, downloaded);
     const std::string resolved = patched.resolved_path();
 
     ModelStore::Write store_write(*this);
     if (!store_write.cache_valid()) {
         return;  // Something else rebuilt while this ran, and it read the disk again
     }
+    bool component_in_set = false;
     if (auto it = store_write.draft().find(model_name); it != store_write.draft().end()) {
         // Options are patched into the live row without invalidating, so a save that
         // landed while this read the disk keeps its answer.
         patched.recipe_options = it->second.recipe_options;
         it->second = std::move(patched);
+        component_in_set = true;
     }
+    // Settled from this writer's draft, not the view it read: two components finishing at
+    // once would each see the other absent there and leave their collection down.
+    const auto dependents = collection_states_after_component(
+        store_write.draft(), model_name, downloaded && component_in_set);
     for (const auto& [name, state] : dependents) {
         auto it = store_write.draft().find(name);
         if (it == store_write.draft().end() || it->second.downloaded == state) continue;
