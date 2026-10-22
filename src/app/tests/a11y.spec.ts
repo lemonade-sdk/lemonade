@@ -134,6 +134,42 @@ test.describe('Accessibility — axe-core automated scans', () => {
     expect(critical, formatViolations(critical)).toHaveLength(0);
   });
 
+  for (const theme of ['dark', 'light'] as const) {
+    test(`A03 — ${theme} theme passes text contrast checks in primary views`, async ({ page }) => {
+      await page.addInitScript(value => localStorage.setItem('lemonade_theme', value), theme);
+      await page.goto('/');
+      await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+
+      const views = [
+        { label: 'Chat', selector: '.chat' },
+        { label: 'Models', selector: '.manager' },
+        { label: 'Backends', selector: '.backends--workspace' },
+        { label: 'Monitor', selector: '.monitor-workspace[data-view="dashboard"]' },
+        { label: 'Settings', selector: '.connect' },
+      ] as const;
+
+      for (const view of views) {
+        if (view.label === 'Monitor') {
+          await navigateToMonitorSection(page, 'Performance');
+          await page.waitForTimeout(500);
+        } else if (view.label !== 'Chat') {
+          await navigateToView(page, view.label);
+        }
+        await expect(page.locator(view.selector)).toBeVisible();
+
+        const results = await new AxeBuilder({ page })
+          .withRules(['color-contrast'])
+          .analyze();
+        const failures = results.violations.flatMap(violation =>
+          violation.nodes.map(node =>
+            `${view.label}: ${node.target.join(', ')} - ${node.failureSummary ?? violation.description}`,
+          ),
+        );
+        expect(failures, `${theme} theme text contrast violations`).toEqual([]);
+      }
+    });
+  }
+
   test('A04 — Connect view passes WCAG 2.1 AA', async ({ page }) => {
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
