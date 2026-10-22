@@ -5,8 +5,6 @@
 #include "lemon/backends/backend_utils.h"
 #include "lemon/utils/custom_args.h"
 #include "lemon/utils/path_utils.h"
-#include <algorithm>
-#include <cctype>
 #include <filesystem>
 #include <set>
 #include <stdexcept>
@@ -23,15 +21,16 @@ namespace {
 const char* kToolsNotConfigured =
     "AMICA is not distributed with Lemonade. Point it at an AMICA install with "
     "`lemonade config set amica.dx12_bin=<AMICA install>\\tools`, the directory "
-    "containing amica-driver.exe and chatapp\\.";
+    "containing amica-driver.exe next to the amica\\ directory with amica.dll.";
 
 const char* kEngineNotBuilt =
     "amica-engine was not built with this Lemonade. Configure Lemonade with "
     "-DLEMON_AMICA_ROOT=<AMICA install> and rebuild.";
 
-// amica_server.py supplies the AMICA package folder itself.
+// Lemonade supplies these to amica-engine itself.
 const std::set<std::string>& reserved_engine_flags() {
-    static const std::set<std::string> kReserved = {"--amica-dir"};
+    static const std::set<std::string> kReserved = {"--model-dir", "--amica-dir", "--model-name",
+                                                    "--port", "--host"};
     return kReserved;
 }
 
@@ -74,21 +73,19 @@ void AmicaServer::load(const std::string& model_name,
                                  model_info.checkpoint());
     }
 
-    const std::string script = get_resource_path("resources/amica/amica_server.py");
-    if (!fs::exists(path_from_utf8(script))) {
-        throw std::runtime_error("amica_server.py was not found: " + script);
+    const std::string amica_dir = path_to_utf8(path_from_utf8(tools_dir).parent_path() / "amica");
+    if (!fs::is_regular_file(path_from_utf8(amica_dir) / "amica.dll")) {
+        throw std::runtime_error("amica.dll was not found in " + amica_dir + ". " + kToolsNotConfigured);
     }
 
     port_ = choose_port();
     ServerCommand command;
-    command.program = amica::find_python(tools_dir);
-    command.args = amica::build_server_argv(script, model_dir, tools_dir, engine, model_name, port_,
+    command.program = engine;
+    command.args = amica::build_engine_argv(model_dir, amica_dir, model_name, port_,
                                             options.get_option("amica_args"));
-    command.env = {{"PYTHONNOUSERSITE", "1"}, {"PYTHONUNBUFFERED", "1"}};
     command.port = port_;
 
-    LOG(INFO, "AMICA") << "Using AMICA tools: " << tools_dir << std::endl;
-    LOG(DEBUG, "AMICA") << "Using Python: " << command.program << std::endl;
+    LOG(INFO, "AMICA") << "Using AMICA: " << amica_dir << std::endl;
 
     const bool inherit_output = log_level_ == "info" || is_debug();
     start_server(std::make_unique<NativeProcess>(ProcessOutput{inherit_output, true}), command);
@@ -113,52 +110,14 @@ std::string engine_path() {
     return path_to_utf8(path_from_utf8(get_executable_dir()) / name);
 }
 
-std::string find_python(const std::string& tools_dir) {
-    const std::string override_path = get_environment_variable_utf8("LEMONADE_AMICA_PYTHON");
-    if (!override_path.empty()) {
-        if (!fs::is_regular_file(path_from_utf8(override_path))) {
-            throw std::runtime_error("LEMONADE_AMICA_PYTHON does not name a file: " +
-                                     override_path);
-        }
-        return override_path;
-    }
-
-    // Matches the machine tag Chatapp.ps1 gives the environment it bootstraps;
-    // the venv records an absolute interpreter path, so it is never shared.
-    std::string machine = get_environment_variable_utf8("COMPUTERNAME");
-    std::transform(machine.begin(), machine.end(), machine.begin(),
-                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    if (machine.empty()) {
-        machine = "local";
-    }
-
-    fs::path venv = path_from_utf8(tools_dir) / "chatapp" / ".venv" / ("frontend-" + machine);
-#ifdef _WIN32
-    fs::path python = venv / "Scripts" / "python.exe";
-#else
-    fs::path python = venv / "bin" / "python";
-#endif
-    if (!fs::is_regular_file(python)) {
-        throw std::runtime_error(
-            "The AMICA ChatApp Python environment was not found at " + path_to_utf8(python) +
-            ". Run Chatapp.ps1 from the AMICA tools directory once to create it, or set "
-            "LEMONADE_AMICA_PYTHON to a Python with the ChatApp frontend requirements.");
-    }
-    return path_to_utf8(python);
-}
-
-std::vector<std::string> build_server_argv(const std::string& script_path,
-                                           const std::string& model_dir,
-                                           const std::string& tools_dir,
-                                           const std::string& engine,
+std::vector<std::string> build_engine_argv(const std::string& model_dir,
+                                           const std::string& amica_dir,
                                            const std::string& model_name,
                                            int port,
                                            const std::string& amica_args) {
     std::vector<std::string> argv = {
-        script_path,
         "--model-dir", model_dir,
-        "--tools-dir", tools_dir,
-        "--engine", engine,
+        "--amica-dir", amica_dir,
         "--model-name", model_name,
         "--port", std::to_string(port),
     };
@@ -168,10 +127,8 @@ std::vector<std::string> build_server_argv(const std::string& script_path,
         if (!error.empty()) {
             throw std::invalid_argument("Invalid custom amica-engine arguments:\n" + error);
         }
-        // The --engine-arg=VALUE form keeps argparse from reading a dashed
-        // engine flag as one of amica_server.py's own options.
         for (const auto& arg : parse_custom_args(amica_args)) {
-            argv.push_back("--engine-arg=" + arg);
+            argv.push_back(arg);
         }
     }
     return argv;

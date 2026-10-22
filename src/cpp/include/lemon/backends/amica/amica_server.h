@@ -36,18 +36,12 @@ const BackendOps* ops();
 constexpr uint32_t capabilities() { return capability_mask_of<AmicaServer>(); }
 
 // amica-engine, built beside lemond when Lemonade is configured with
-// LEMON_AMICA_ROOT. It keeps the model resident and runs it through amica.dll.
+// LEMON_AMICA_ROOT. It keeps the model resident, runs it through amica.dll and
+// serves the OpenAI-compatible API Lemonade forwards to.
 std::string engine_path();
 
-// The Python interpreter that runs amica_server.py: LEMONADE_AMICA_PYTHON when
-// set, otherwise the machine-local ChatApp frontend environment in the AMICA
-// tools directory.
-std::string find_python(const std::string& tools_dir);
-
-std::vector<std::string> build_server_argv(const std::string& script_path,
-                                           const std::string& model_dir,
-                                           const std::string& tools_dir,
-                                           const std::string& engine,
+std::vector<std::string> build_engine_argv(const std::string& model_dir,
+                                           const std::string& amica_dir,
                                            const std::string& model_name,
                                            int port,
                                            const std::string& amica_args);

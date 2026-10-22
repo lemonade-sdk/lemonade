@@ -1,12 +1,9 @@
 // amica-engine: keeps an AMICA ChatApp bundle resident on a D3D12 GPU and
-// serves greedy generation for amica_server.py.
+// serves it through an OpenAI-compatible HTTP API (openai_api.cpp).
 //
-// Protocol (UTF-8 JSON, one object per line):
-//   stdin  line 1: the generation plan amica_server.py derives from amica_app.json
-//   stdin  then:   {"prompt_ids": [...], "max_new_tokens": N, "stop_ids": [...]}
-//   stdout:        "@@amica-engine " + {"ready": ...} once, then per request
-//                  {"token": id}... and {"done": true, ...}, or {"error": "..."}
-// The prefix exists because amica.dll may write stray lines to stdout.
+//   amica-engine --model-dir <bundle> --amica-dir <AMICA install>\amica --port N
+//                [--host 127.0.0.1] [--model-name NAME] [--adapter <index|name>]
+//                [--arch gfxNNNN] [--weights-vram-mib N]
 
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -19,6 +16,10 @@
 
 #include <amica/amica.hpp>
 #include <nlohmann/json.hpp>
+
+#include "bundle.h"
+#include "chat_frontend.h"
+#include "openai_api.h"
 
 #include <algorithm>
 #include <cctype>
@@ -43,8 +44,6 @@ namespace {
 using Microsoft::WRL::ComPtr;
 using json = nlohmann::json;
 
-constexpr const char* kProtocolPrefix = "@@amica-engine ";
-
 // Upper bounds for one command list, as the AMICA API recommends, so a long
 // graph never runs as a single submission long enough to trip the GPU timeout.
 constexpr std::size_t kMaxDispatchesPerList = 32;
@@ -61,11 +60,6 @@ constexpr std::uint64_t kSystemHeapBytes = 2ull << 30;
 
 // D3D12 maps reserved buffers in 64 KiB tiles.
 constexpr std::uint64_t kTileBytes = 64ull << 10;
-
-void emit(const json& event) {
-    std::cout << kProtocolPrefix << event.dump() << "\n";
-    std::cout.flush();
-}
 
 void log(const std::string& message) {
     std::cerr << "[amica-engine] " << message << "\n";
@@ -736,7 +730,7 @@ struct InputNames {
     std::string sequence;
 };
 
-class Engine {
+class Engine : public amica_engine::Generator {
 public:
     Engine(const json& plan, const std::string& adapter, const std::string& arch, std::int64_t weights_vram_mib)
         : gpu_(adapter, arch) {
@@ -812,26 +806,30 @@ public:
         load_ms_ = milliseconds_since(started);
     }
 
-    json ready_event() const {
-        json capacities = json::array();
-        for (const auto& variant : prefill_) capacities.push_back(variant->capacity);
-        return {{"ready", true},
-                {"adapter", gpu_.adapter_name()},
-                {"arch", gpu_.gfx_arch()},
-                {"prefill_capacities", capacities},
-                {"vocabulary", vocabulary_},
-                {"weights_vram_bytes", weights_vram_bytes_},
-                {"weights_system_bytes", weights_system_bytes_},
-                {"load_ms", load_ms_}};
+    std::string summary() const {
+        std::string capacities;
+        for (const auto& variant : prefill_) {
+            capacities += (capacities.empty() ? "" : ",") + std::to_string(variant->capacity);
+        }
+        return "adapter='" + gpu_.adapter_name() + "' arch=" + gpu_.gfx_arch() + " prefill_capacity=[" + capacities +
+               "] load_ms=" + std::to_string(static_cast<long long>(load_ms_));
     }
 
-    void generate(const std::vector<std::size_t>& prompt, std::size_t max_new_tokens,
-                  const std::set<std::size_t>& stop_ids) {
-        if (prompt.empty()) {
-            throw std::runtime_error("prompt_ids is empty");
+    amica_engine::Generation generate(const std::vector<std::int64_t>& prompt_ids, std::size_t max_new_tokens,
+                                      const std::set<std::int64_t>& stop_ids,
+                                      const std::function<bool(std::int64_t)>& on_token) override {
+        if (prompt_ids.empty()) {
+            throw std::runtime_error("the prompt is empty");
         }
         if (max_new_tokens == 0) {
             throw std::runtime_error("max_new_tokens must be at least 1");
+        }
+        std::vector<std::size_t> prompt;
+        for (const std::int64_t id : prompt_ids) {
+            if (id < 0 || static_cast<std::size_t>(id) >= vocabulary_) {
+                throw std::runtime_error("prompt token " + std::to_string(id) + " is outside the vocabulary");
+            }
+            prompt.push_back(static_cast<std::size_t>(id));
         }
         PrefillVariant* variant = nullptr;
         for (auto& candidate : prefill_) {
@@ -846,29 +844,28 @@ public:
                                      std::to_string(prefill_.back()->capacity));
         }
 
+        amica_engine::Generation result;
         const auto started = std::chrono::steady_clock::now();
         std::size_t token = prefill(*variant, prompt);
-        const double ttft_ms = milliseconds_since(started);
-        std::vector<std::size_t> generated{token};
-        emit({{"token", token}});
+        result.ttft_ms = milliseconds_since(started);
+        result.ids.push_back(static_cast<std::int64_t>(token));
+        bool keep_going = on_token(static_cast<std::int64_t>(token));
 
         const auto decode_started = std::chrono::steady_clock::now();
-        while (generated.size() < max_new_tokens && stop_ids.count(token) == 0) {
-            const auto position = static_cast<std::int64_t>(prompt.size() + generated.size() - 1);
+        while (keep_going && result.ids.size() < max_new_tokens &&
+               stop_ids.count(static_cast<std::int64_t>(token)) == 0) {
+            const auto position = static_cast<std::int64_t>(prompt.size() + result.ids.size() - 1);
             token = decode(token, position);
-            generated.push_back(token);
-            emit({{"token", token}});
+            result.ids.push_back(static_cast<std::int64_t>(token));
+            keep_going = on_token(static_cast<std::int64_t>(token));
         }
-        const double decode_ms = generated.size() > 1 ? milliseconds_since(decode_started) : 0.0;
-        const double tps = decode_ms > 0.0 ? (generated.size() - 1) * 1000.0 / decode_ms : 0.0;
-        emit({{"done", true},
-              {"ids", generated},
-              {"ttft_ms", ttft_ms},
-              {"decode_ms", decode_ms},
-              {"tps", tps}});
+        result.decode_ms = result.ids.size() > 1 ? milliseconds_since(decode_started) : 0.0;
+        result.tokens_per_second =
+            result.decode_ms > 0.0 ? (result.ids.size() - 1) * 1000.0 / result.decode_ms : 0.0;
+        return result;
     }
 
-    bool device_removed() {
+    bool device_removed() override {
         return amica_->execution->get_device_removed_reason(gpu_.device()) == AMICA_ERROR_DEVICE_REMOVED;
     }
 
@@ -1527,15 +1524,20 @@ private:
 };
 
 int usage() {
-    std::cerr << "usage: amica-engine --amica-dir <AMICA install>\\amica [--adapter <index|name>] "
-                 "[--arch gfxNNNN] [--weights-vram-mib N]\n";
+    std::cerr << "usage: amica-engine --model-dir <bundle> --amica-dir <AMICA install>\\amica --port N "
+                 "[--host 127.0.0.1] [--model-name NAME] [--adapter <index|name>] [--arch gfxNNNN] "
+                 "[--weights-vram-mib N]\n";
     return 2;
 }
 
 }  // namespace
 
 int main(int argc, char** argv) {
+    std::string model_dir;
     std::string amica_dir;
+    std::string host = "127.0.0.1";
+    std::string model_name = "amica";
+    int port = 0;
     std::string adapter;
     std::string arch;
     std::int64_t weights_vram_mib = -1;
@@ -1543,8 +1545,21 @@ int main(int argc, char** argv) {
         const std::string option = argv[i];
         if (i + 1 >= argc) return usage();
         const std::string value = argv[++i];
-        if (option == "--amica-dir") {
+        if (option == "--model-dir") {
+            model_dir = value;
+        } else if (option == "--amica-dir") {
             amica_dir = value;
+        } else if (option == "--host") {
+            host = value;
+        } else if (option == "--model-name") {
+            model_name = value;
+        } else if (option == "--port") {
+            try {
+                port = std::stoi(value);
+            } catch (const std::exception&) {
+                return usage();
+            }
+            if (port <= 0 || port > 65535) return usage();
         } else if (option == "--adapter") {
             adapter = value;
         } else if (option == "--arch") {
@@ -1561,9 +1576,8 @@ int main(int argc, char** argv) {
             return usage();
         }
     }
-    if (amica_dir.empty()) return usage();
+    if (model_dir.empty() || amica_dir.empty() || port == 0) return usage();
 
-    std::unique_ptr<Engine> engine;
     try {
         // amica.dll is delay-loaded; it and the DLLs it depends on load from
         // the package's amica folder.
@@ -1574,33 +1588,18 @@ int main(int argc, char** argv) {
         if (GetFileAttributesW(widen(amica_dir + "\\amica.dll").c_str()) == INVALID_FILE_ATTRIBUTES) {
             throw std::runtime_error("amica.dll was not found in " + amica_dir);
         }
-        std::string line;
-        if (!std::getline(std::cin, line)) {
-            throw std::runtime_error("no generation plan on stdin");
-        }
-        engine = std::make_unique<Engine>(json::parse(line), adapter, arch, weights_vram_mib);
-        emit(engine->ready_event());
+        // The bundle and its tokenizer load first: they fail in seconds, while
+        // the GPU load can take minutes.
+        const amica_engine::Bundle bundle(model_dir);
+        const amica_engine::ChatFrontend frontend(bundle.source_dir());
+        Engine engine(bundle.plan(), adapter, arch, weights_vram_mib);
+        const auto context = bundle.context_capacity();
+        log("model=" + model_dir + " " + engine.summary() +
+            " context=" + (context ? std::to_string(*context) : std::string("unknown")) +
+            " padding=" + bundle.prompt_padding());
+        return amica_engine::serve(host, port, model_name, bundle, frontend, engine);
     } catch (const std::exception& error) {
-        emit({{"error", error.what()}});
+        log(std::string("failed to load the model: ") + error.what());
         return 1;
     }
-
-    std::string line;
-    while (std::getline(std::cin, line)) {
-        if (line.empty()) continue;
-        try {
-            const auto request = json::parse(line);
-            const auto stop = request.value("stop_ids", std::vector<std::size_t>());
-            engine->generate(request.at("prompt_ids").get<std::vector<std::size_t>>(),
-                             request.at("max_new_tokens").get<std::size_t>(),
-                             std::set<std::size_t>(stop.begin(), stop.end()));
-        } catch (const std::exception& error) {
-            emit({{"error", error.what()}});
-            if (engine->device_removed()) {
-                log("the GPU device was removed; exiting so Lemonade reloads the model");
-                return 3;
-            }
-        }
-    }
-    return 0;
 }

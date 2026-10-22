@@ -26,7 +26,7 @@ inline const BackendDescriptor descriptor = {
          "AMICA Options"},
     },
     /*support*/ {
-        {"dx12", BackendTier::Experimental, BackendFormat::Python, {"windows"},
+        {"dx12", BackendTier::Experimental, BackendFormat::Native, {"windows"},
          {{"amd_gpu", {"gfx110X", "gfx1150", "gfx1151", "gfx120X"}}},
          "AMD RDNA3/RDNA4 GPUs (DX12)"},
     },

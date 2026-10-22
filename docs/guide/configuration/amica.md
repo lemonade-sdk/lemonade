@@ -4,10 +4,11 @@ The `amica` recipe runs AMICA ChatApp model bundles (precompiled CGC MLIR graphs
 
 ## How it runs
 
-Two processes serve a loaded model:
+A loaded model is served by **`amica-engine`**, a native program built with Lemonade against the AMICA API (`amica.h`, `amica.dll`). No Python is involved.
 
-- **`amica-engine`** is a native program built with Lemonade against the AMICA API (`amica.h`, `amica.dll`). When the model loads, it compiles the bundle's graphs, creates their pipeline state objects, and uploads the weights once. Weight tensors of 1 MiB or more are kept out of the compiled graphs and uploaded into one buffer each that prefill and decoder share, so a model's weights are in memory once rather than once per graph. Each request uploads only the prompt, runs prefill and then one decoder step per token, and reads back one row of logits per token.
-- **`amica_server.py`** (shipped in Lemonade's `resources/amica/`) is the HTTP server Lemonade talks to. It renders the conversation with the bundle's chat template, tokenizes it with the AMICA ChatApp frontend (`chatapp/amdmlcompiler_app/frontend.py` in the AMICA tools directory), and streams the engine's tokens back as text.
+- When the model loads, it compiles the bundle's graphs, creates their pipeline state objects, and uploads the weights once. Weight tensors of 1 MiB or more are kept out of the compiled graphs and uploaded into one buffer each that prefill and decoder share, so a model's weights are in memory once rather than once per graph.
+- It serves the OpenAI-compatible API Lemonade forwards to. Each request is rendered with the bundle's Jinja chat template (through [minja](https://github.com/google/minja)) and tokenized with the bundle's `tokenizer.json`, matching the AMICA ChatApp frontend. The tokenizer supports the byte-level BPE tokenizers ChatApp bundles use (Qwen, Llama 3, gpt-oss); a `tokenizer.json` that needs anything else is rejected when the model loads.
+- Each request uploads only the prompt, runs prefill and then one decoder step per token, and reads back one row of logits per token. Tokens stream back as text as they are generated. For gpt-oss's Harmony format, the analysis channel is returned as `reasoning_content` and the final channel as `content`.
 
 Generation is greedy: `temperature`, `top_p`, and the other sampling parameters are ignored. Requests run one at a time.
 
@@ -34,9 +35,8 @@ On a discrete GPU, weights in system memory are read over PCIe on every token. O
 
 ## Requirements
 
-- Windows with an AMD RDNA3 or RDNA4 GPU.
-- An AMICA install: a `tools` directory containing `amica-driver.exe` and `chatapp/`, next to the `amica/` directory containing `amica.dll`.
-- The ChatApp Python environment. Running `Chatapp.ps1` from the AMICA tools directory once creates it at `tools/chatapp/.venv/frontend-<computer name>`. To use another interpreter, set `LEMONADE_AMICA_PYTHON` to a Python that has the packages in `chatapp/amdmlcompiler_app/requirements.txt`.
+- Windows 10 version 1903 or later (for the system ICU library) with an AMD RDNA3 or RDNA4 GPU.
+- An AMICA install: a `tools` directory containing `amica-driver.exe`, next to the `amica/` directory containing `amica.dll`.
 - A prepared model bundle, meaning a bundle directory that contains `amica_app.json`. Running `Chatapp.ps1 --model <name>` once prepares it.
 
 ## Build
