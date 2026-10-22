@@ -67,10 +67,6 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 A malformed request, such as one with a blank `input`, a non-positive `top_k`, or an empty or repeated `labels` entry, is rejected before any model loads.
 
-### Zero-Shot Classification
-
-A zero-shot model has no per-label head. It reads the label list as part of its input, so each request sends the labels in `labels`, and the response keys are those labels, with scores that sum to `1`. Zero-shot models are a separate family (LFM2 routers, such as LiquidAI's prompt router) with their own input convention, and `id2label` is refused for them.
-
 ### Supported Models
 
 Single-sequence encoder families: BERT, DistilBERT, RoBERTa, XLM-RoBERTa, DeBERTa (v1/v2), ELECTRA, ALBERT and CamemBERT. A stock `optimum-cli export onnx` directory of one of these works as is.
