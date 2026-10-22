@@ -3446,6 +3446,15 @@ if(BUILD_TESTING AND EXISTS "${_CLOUD_PROVIDER_REGISTRY_CONFIG_TEST_SRC}")
     add_cpp_ci_test(CloudProviderRegistryConfigTest CI ON COMMAND test_cloud_provider_registry_config)
 endif()
 
+# HTTP response robustness (#3928): verify Anthropic fallback SSE without a model backend.
+set(_ANTHROPIC_STREAM_FALLBACK_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_anthropic_stream_fallback.cpp")
+if(BUILD_TESTING AND EXISTS "${_ANTHROPIC_STREAM_FALLBACK_TEST_SRC}")
+    add_executable(test_anthropic_stream_fallback ${_ANTHROPIC_STREAM_FALLBACK_TEST_SRC})
+    target_link_libraries(test_anthropic_stream_fallback PRIVATE lemonade-server-core)
+    add_cpp_ci_test(AnthropicStreamFallbackTest CI ON COMMAND test_anthropic_stream_fallback)
+endif()
+
 set(_ANTHROPIC_ERROR_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_anthropic_error.cpp")
 if(BUILD_TESTING AND EXISTS "${_ANTHROPIC_ERROR_TEST_SRC}")
     add_executable(test_anthropic_error test/cpp/test_anthropic_error.cpp)
