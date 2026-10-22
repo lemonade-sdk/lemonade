@@ -392,6 +392,7 @@ const App: React.FC = () => {
   const customModelInfos = useMemo(() => serverModels.filter(model => (model as any).custom === true), [serverModels]);
   const rawLoadedModels = serverModelState.health?.all_models_loaded ?? EMPTY_LOADED_MODELS;
   const [currentModel, setCurrentModel] = useState<string | null>(null);
+  const [dictationTarget, setDictationTarget] = useState<string | null>(null);
   const [modelSelectionEpoch, setModelSelectionEpoch] = useState(0);
   const [composerFocusEpoch, setComposerFocusEpoch] = useState(0);
   const [theme, setTheme] = useState<Theme>(loadTheme);
@@ -693,6 +694,7 @@ const App: React.FC = () => {
       );
     };
     setCurrentModel(current => {
+      if (current && current === dictationTarget) return current;
       if (current && loadedModels.some(m => m.model_name === current && (modelHelpers.canSelectInComposer(m) || infoSelectable(m.model_name)))) return current;
       if (current) {
         const info = modelHelpers.findModelInfoByName(knownInfos, current);
@@ -707,7 +709,7 @@ const App: React.FC = () => {
         || loadedModels.find(m => infoSelectable(m.model_name))?.model_name
         || null;
     });
-  }, [loadedModelViewState, loadedModels, modelHelpers, rawLoadedModels]);
+  }, [dictationTarget, loadedModelViewState, loadedModels, modelHelpers, rawLoadedModels]);
 
   const navigateToRoute = useCallback((nextRoute: AppRoute) => {
     if (nextRoute.view === 'dashboard') lastWorkspaceSectionsRef.current.dashboard = nextRoute.section;
@@ -944,7 +946,13 @@ const App: React.FC = () => {
     await api.refresh();
   }, []);
 
+  const handleDictationStart = useCallback((model: string) => {
+    setDictationTarget(model);
+    setCurrentModel(model);
+  }, []);
+
   const handleModelSelect = useCallback((modelName: string) => {
+    setDictationTarget(null);
     setCurrentModel(modelName);
     setModelSelectionEpoch(epoch => epoch + 1);
     setView('chat');
@@ -1202,6 +1210,8 @@ const App: React.FC = () => {
                 serverModels={serverModels}
                 connectionStatus={status}
                 onModelSelect={handleModelSelect}
+                dictationTarget={dictationTarget}
+                onDictationStart={handleDictationStart}
                 onOpenModelDetails={openModelDetails}
                 onRefresh={handleRefreshModels}
               />

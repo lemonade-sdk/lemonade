@@ -35,11 +35,13 @@ function loadTypeScriptModule(filename) {
 
 const capabilitiesPath = path.join(root, 'src/modelCapabilities.ts');
 const chatViewPath = path.join(root, 'src/components/ChatView.tsx');
+const appPath = path.join(root, 'src/App.tsx');
 const apiPath = path.join(root, 'src/api.ts');
 const stylesPath = path.join(root, 'src/styles/styles.css');
 
 const capabilitiesSource = fs.readFileSync(capabilitiesPath, 'utf8');
 const chatViewSource = fs.readFileSync(chatViewPath, 'utf8');
+const appSource = fs.readFileSync(appPath, 'utf8');
 const apiSource = fs.readFileSync(apiPath, 'utf8');
 const stylesSource = fs.readFileSync(stylesPath, 'utf8');
 
@@ -235,8 +237,15 @@ assert.equal(selectDictationModel([], [{ model_name: 'Whisper-Tiny', type: 'tran
 assert.equal(updateDraftWithDictation('Draft', '', 'speaking'), 'Draft speaking');
 assert.equal(updateDraftWithDictation('Draft speaking', 'speaking', 'spoken words'), 'Draft spoken words');
 assert.equal(updateDraftWithDictation('Draft spoken words !', 'spoken words', 'final words'), 'Draft final words !');
-assert.match(chatViewSource, /const supportsDictation = currentCapability === 'chat' && canUseMicrophone\(\)/);
+assert.match(chatViewSource, /const supportsDictation = canUseMicrophone\(\)/);
+assert.match(chatViewSource, /'chat', 'image', 'audio-generation', 'tts'/);
+assert.match(chatViewSource, /currentCapability === 'model3d' && model3dSettings.sourceMode === 'text'/);
+assert.match(chatViewSource, /const dictating = supportsDictation;/);
 assert.match(chatViewSource, /selectDictationModel\(/);
-assert.match(chatViewSource, /Icon name=\{isLiveRecording \? 'stop' : currentCapability === 'chat' \? 'mic' : 'audio'\}/);
+assert.match(chatViewSource, /if \(dictating\) onDictationStart\(currentModel\);/);
+assert.match(chatViewSource, /if \(selectedModel && selectedModel === dictationTarget\) return;/);
+assert.match(appSource, /if \(current && current === dictationTarget\) return current;/);
+assert.match(appSource, /setDictationTarget\(null\);\s*setCurrentModel\(modelName\)/);
+assert.match(chatViewSource, /Icon name=\{isLiveRecording \? 'stop' : supportsDictation \? 'mic' : 'audio'\}/);
 
 console.log('Chat + audio capability contract checks passed.');

@@ -512,12 +512,14 @@ function timeAgo(ts: number): string {
 
 interface ChatViewProps {
   currentModel: string | null;
+  dictationTarget: string | null;
   modelSelectionEpoch: number;
   composerFocusEpoch: number;
   loadedModels: LoadedModel[];
   serverModels: ModelInfo[];
   connectionStatus: ConnectionStatus;
   onModelSelect: (model: string) => void;
+  onDictationStart: (model: string) => void;
   onOpenModelDetails: (model: string) => void;
   onRefresh: () => void | Promise<void>;
 }
@@ -881,12 +883,14 @@ function friendlyRouterChatError(message: string): string {
 
 const ChatView: React.FC<ChatViewProps> = ({
   currentModel: selectedModel,
+  dictationTarget,
   modelSelectionEpoch,
   composerFocusEpoch,
   loadedModels,
   serverModels,
   connectionStatus,
   onModelSelect,
+  onDictationStart,
   onOpenModelDetails,
   onRefresh,
 }) => {
@@ -1405,7 +1409,10 @@ const ChatView: React.FC<ChatViewProps> = ({
     () => canUseMicrophone() && hasRealtimeAudio,
     [hasRealtimeAudio],
   );
-  const supportsDictation = currentCapability === 'chat' && canUseMicrophone();
+  const supportsDictation = canUseMicrophone() && (
+    ['chat', 'image', 'audio-generation', 'tts'].includes(currentCapability)
+    || (currentCapability === 'model3d' && model3dSettings.sourceMode === 'text')
+  );
   const supportsChatAudioInput = useMemo(
     () => modelSupportsChatAudioInput(currentKnownModelInfo, currentLoadedModel),
     [currentKnownModelInfo, currentLoadedModel],
@@ -1748,6 +1755,7 @@ const ChatView: React.FC<ChatViewProps> = ({
   }, [modelPickerOpen]);
 
   useEffect(() => {
+    if (selectedModel && selectedModel === dictationTarget) return;
     const selectedInfo = selectedModel ? findModelInfoByName(knownModelInfos, selectedModel) : null;
     const selectedStillUsable = Boolean(selectedModel) && (
       loadedModels.some(m => m.model_name === selectedModel && canSelectInComposer(m))
@@ -1757,7 +1765,7 @@ const ChatView: React.FC<ChatViewProps> = ({
     if (selectedStillUsable || selectedDefault || !selectedModel || loadedModels.length === 0) return;
     const preferred = selectPreferredLoadedModel(loadedModels);
     if (preferred && canSelectInComposer(preferred)) onModelSelect(preferred.model_name);
-  }, [knownModelInfos, loadedModels, onModelSelect, selectedModel]);
+  }, [dictationTarget, knownModelInfos, loadedModels, onModelSelect, selectedModel]);
 
   const updateConversation = useCallback((id: string, updater: (c: Conversation) => Conversation) => {
     setConversations(prev => prev.map(c => c.id === id ? updater(c) : c));
@@ -2446,7 +2454,7 @@ ${finalText}`
 
   const handleMicStart = useCallback(async () => {
     if (!currentModel || !currentModelSnapshot || micPreparation !== null || isStreaming || capabilityBusy
-      || (currentCapability === 'chat' ? !supportsDictation : !supportsRealtimeAudio)) return;
+      || (!supportsDictation && !supportsRealtimeAudio)) return;
     if (liveFinalizeTimerRef.current) {
       window.clearTimeout(liveFinalizeTimerRef.current);
       liveFinalizeTimerRef.current = null;
@@ -2458,8 +2466,9 @@ ${finalText}`
     setLiveTranscript('');
     liveTranscriptRef.current = '';
     lastDictationTextRef.current = '';
-    const dictating = currentCapability === 'chat';
+    const dictating = supportsDictation;
     micSessionRef.current = dictating ? 'dictation' : 'transcription';
+    if (dictating) onDictationStart(currentModel);
     setMicPreparation(dictating ? t('Preparing dictation...') : t('Connecting microphone…'));
     try {
       const api = await getApiClient();
@@ -2520,6 +2529,7 @@ ${finalText}`
     loadedModels,
     micPreparation,
     onRefresh,
+    onDictationStart,
     startRecording,
     stopRecording,
     supportsDictation,
@@ -4307,7 +4317,7 @@ ${finalText}`
             <div className="composer__live-head">
               <span className={`composer__live-dot${isSpeaking ? ' composer__live-dot--speaking' : ''}`} />
               <span>{micPreparation || (micSessionRef.current === 'dictation'
-                ? t('Dictation to chat draft')
+                ? (currentCapability === 'chat' ? t('Dictation to chat draft') : t('Dictate message'))
                 : isLiveRecording ? (isLiveConnected ? t('Live microphone') : t('Connecting microphone…')) : t('Microphone'))}</span>
               {isLiveRecording && <span className="composer__live-meter"><span style={{ width: `${Math.round(audioLevel * 100)}%` }} /></span>}
             </div>
@@ -4595,13 +4605,15 @@ ${finalText}`
               className={`composer__mic${isLiveRecording ? ' composer__mic--recording' : ''}`}
               onClick={isLiveRecording ? handleMicStop : handleMicStart}
               disabled={!currentModel || !!micPreparation || (!supportsDictation && !supportsRealtimeAudio && !isLiveRecording) || ((isStreaming || capabilityBusy) && !isLiveRecording)}
-              title={isLiveRecording ? t('Stop microphone') : currentCapability === 'chat'
-                ? t('Dictate speech into the chat draft (uses a transcription model)')
+              title={isLiveRecording ? t('Stop microphone') : supportsDictation
+                ? (currentCapability === 'chat'
+                  ? t('Dictate speech into the chat draft (uses a transcription model)')
+                  : t('Dictate message'))
                 : t('Start live audio transcription')}
-              aria-label={isLiveRecording ? t('Stop microphone') : currentCapability === 'chat' ? t('Dictate message') : t('Start live audio transcription')}
+              aria-label={isLiveRecording ? t('Stop microphone') : supportsDictation ? t('Dictate message') : t('Start live audio transcription')}
               aria-pressed={isLiveRecording}
             >
-              <Icon name={isLiveRecording ? 'stop' : currentCapability === 'chat' ? 'mic' : 'audio'} size={16} />
+              <Icon name={isLiveRecording ? 'stop' : supportsDictation ? 'mic' : 'audio'} size={16} />
             </button>
           )}
           {isStreaming ? (
