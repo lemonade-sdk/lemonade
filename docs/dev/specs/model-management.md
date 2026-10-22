@@ -541,12 +541,13 @@ public:
 ```cpp
 // The read side. Each entry point asks for a current set first, so a request that
 // arrives after an invalidation waits for the one rebuild that follows it and every read
-// behind that is a lookup. `read()` and `resolved_paths_for()` are the exceptions: they
-// answer from the published snapshot without waiting on a writer.
+// behind that is a lookup. `read()`, `find()` and `resolved_paths_for()` are the exceptions:
+// they answer from the published snapshot without waiting on a writer.
 std::shared_ptr<const StoreSnapshot> current();
 std::optional<ResolvedModel> resolve(const std::string& requested);   // the six steps below
 bool exists(const std::string& requested);
 std::shared_ptr<const ModelInfo> info(const std::string& name);       // aliasing, see below
+std::shared_ptr<const ModelInfo> find(const std::string& canonical_id) const;  // nullable, aliasing
 std::string resolve_name(const std::string& name);          // the key, or the name given
 std::string public_name_for(const std::string& canonical_id);
 std::string rejection_reason(const std::string& canonical_id);
@@ -556,7 +557,9 @@ std::map<std::string, std::filesystem::path> resolved_paths_for(const std::strin
 bool is_downloaded(const ModelArtifactStore&, const std::string& name);   // rule 6
 ```
 
-`info()` throws for a name no row answers, which is what the facade's lookup has always said; the nullable question is `read()->find()`. It returns an aliasing `shared_ptr` into the published snapshot, so a caller holding a `ModelInfo` across a request keeps a valid object after the next swap.
+`info()` throws for a name no row answers, which is what the facade's lookup has always said; the nullable question is `find()`, whose argument is already canonical. Both return an aliasing `shared_ptr` into the published snapshot, so a caller holding a `ModelInfo` across a request keeps a valid object after the next swap.
+
+Holding one is the only way to hold a row. `StoreSnapshot::find()` hands back a raw pointer into the map, which is the right shape for a lookup that ends inside the expression that took the snapshot and the wrong one for anything else: `read()->find(name)` releases the set before the pointer is used, and a publish landing in between frees what the caller then reads. A verb that borrows a row answers through `find()` instead.
 
 The composer that a stale set triggers is installed by the owner, because composing reads catalogs, registries, the machine probe and saved options -- everything behind `ModelComposition`. A store with no composer answers from what it has published and never builds, which is what a test that patches rows directly wants.
 
@@ -589,8 +592,9 @@ one-line delegations to the store's composing reads, and composing is the point:
 current set, so an invalidation costs one rebuild and every read behind it is a lookup. Moving
 those verbs onto the gateways was rejected — a gateway that composes needs the writer, and a
 `ModelStore&` handed to `server.cpp` to save a delegation is a `ModelStore::Write` waiting to
-happen. `ModelManager::store()` is const, offering `read()`, `generation()`, `descriptors()` and
-`resolved_paths_for()` — everything that answers from the published snapshot without waiting.
+happen. `ModelManager::store()` is const, offering `read()`, `find()`, `generation()`,
+`descriptors()` and `resolved_paths_for()` — everything that answers from the published snapshot
+without waiting.
 
 7. The store lock covers the commit, not the computation. Catalog reads, hardware filtering, artifact status and metadata population run over a candidate that the published set cannot see, and one builder runs at a time. On a warm host with 141 models, 52 ms of a 53 ms rebuild needs no lock at all; holding it across the whole build made every other writer — a download completing, a delete, a config write that changes the set — wait for work that touches none of its state.
 8. A download landing patches the rows it changed rather than rebuilding the set: the model, and the collections that carry it. It decides from the published snapshot, so the filesystem walk — resolved paths, the header a backend reads for metadata, the on-disk size — happens outside the store lock, and it keeps any options another writer committed while it worked. Held this way the patch costs 15 µs of store lock against 2.0 ms when it did its work inside the lock.

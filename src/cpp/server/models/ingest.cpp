@@ -73,16 +73,17 @@ bool ModelIngest::registered_anywhere(const std::string& name) const {
 }
 
 void ModelIngest::persist_size(const std::string& canonical_model_name) const {
-    const ModelInfo* model = deps_.store->read()->find(canonical_model_name);
+    const std::shared_ptr<const ModelInfo> model = deps_.store->find(canonical_model_name);
     if (model == nullptr) {
         return;
     }
+    const double size = model->size;
     const bool wrote = deps_.registries->update_user([&](json& user_models) {
         auto entry = user_models.find(strip_user_model_prefix(canonical_model_name));
         if (entry == user_models.end()) {
             return false;
         }
-        (*entry)["size"] = model->size;
+        (*entry)["size"] = size;
         return true;
     });
     if (wrote) {

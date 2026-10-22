@@ -103,6 +103,16 @@ std::shared_ptr<const ModelInfo> ModelStore::info(const std::string& name) {
     return std::shared_ptr<const ModelInfo>(snapshot, found);
 }
 
+std::shared_ptr<const ModelInfo> ModelStore::find(const std::string& canonical_id) const {
+    const auto snapshot = read();
+    const ModelInfo* row = snapshot->find(canonical_id);
+    if (row == nullptr) {
+        return {};
+    }
+    // Aliasing constructor: the row and the set it lives in share one lifetime.
+    return std::shared_ptr<const ModelInfo>(snapshot, row);
+}
+
 std::string ModelStore::resolve_name(const std::string& name) {
     auto snapshot = current();
     return key_for(*snapshot, name);
@@ -144,7 +154,7 @@ std::map<std::string, std::filesystem::path> ModelStore::resolved_paths_for(
     const std::string& canonical_id) const {
     // Does not ensure: callers compare paths across a fetch on one snapshot and must not
     // wait behind a writer for a question about a row they already hold.
-    const ModelInfo* row = read()->find(canonical_id);
+    const std::shared_ptr<const ModelInfo> row = find(canonical_id);
     std::map<std::string, std::filesystem::path> paths;
     if (row == nullptr) {
         return paths;

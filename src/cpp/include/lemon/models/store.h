@@ -46,15 +46,21 @@ public:
     ~ModelStore();
 
     // Reads, all of which take a current set first: a request arriving after an
-    // invalidation waits for the one rebuild behind it. `read()` and `resolved_paths_for()`
-    // are the two that never wait.
+    // invalidation waits for the one rebuild behind it. `read()`, `find()` and
+    // `resolved_paths_for()` are the three that never wait.
     std::shared_ptr<const StoreSnapshot> current();
 
     // The only place a requested name becomes a model.
     std::optional<ResolvedModel> resolve(const std::string& requested);
     bool exists(const std::string& requested);
-    // Throws when no row answers; the nullable question is `read()->find()`.
+    // Throws when no row answers; the nullable question is `find()`.
     std::shared_ptr<const ModelInfo> info(const std::string& name);
+    // The nullable question, answered from what is published without waiting. The
+    // shared_ptr aliases the set the row lives in, so the row stays valid for as long as
+    // the caller holds it - which is the only way a row can be held across a publish.
+    // `canonical_id` is canonical: no alias or public-name lookup, which is what
+    // `info()` and `exists()` answer.
+    std::shared_ptr<const ModelInfo> find(const std::string& canonical_id) const;
     std::string resolve_name(const std::string& name);
     std::string public_name_for(const std::string& canonical_id);
     std::string rejection_reason(const std::string& canonical_id);

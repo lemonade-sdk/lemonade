@@ -1,4 +1,6 @@
 #include "lemon/model_manager.h"
+#include "lemon/models/alias_manager.h"
+#include "lemon/models/store.h"
 #include "lemon/models/store_snapshot.h"
 #include "lemon/utils/path_utils.h"
 #include "support/server_wired_manager.h"
@@ -170,6 +172,62 @@ static void test_repair_publishes(ModelManager& manager, const fs::path& models_
           listing_name_of(manager.get_downloaded_models(), "zzorg/zzvanishing").empty());
 }
 
+// A question about one row has to outlive the set that row lives in. `resolved_paths_for`
+// used to borrow the row from a `read()` temporary, so a publish landing before the answer
+// was finished left the loop reading memory the store had already freed - invisible to an
+// assertion, fatal under a sanitizer.
+static void test_one_row_read_outlives_the_snapshot() {
+    lemon::models::AliasManager aliases{""};
+    lemon::models::ModelStore store{aliases};
+    const std::string id = "user.Raced";
+    {
+        lemon::models::ModelStore::Write write(store);
+        ModelInfo& row = write.draft()[id];
+        row.model_name = id;
+        row.resolved_paths["main"] = "first.gguf";
+    }
+
+    std::atomic<bool> stop{false};
+    std::atomic<bool> torn{false};
+    std::atomic<long> answers{0};
+
+    std::thread publisher([&] {
+        while (!stop.load()) {
+            lemon::models::ModelStore::Write write(store);
+            write.draft()[id].resolved_paths["main"] = "second.gguf";
+        }
+    });
+
+    std::vector<std::thread> readers;
+    for (int i = 0; i < 4; ++i) {
+        readers.emplace_back([&] {
+            while (!stop.load()) {
+                const auto paths = store.resolved_paths_for(id);
+                const auto found = paths.find("main");
+                if (paths.size() != 1 || found == paths.end() ||
+                    (found->second != "first.gguf" && found->second != "second.gguf")) {
+                    torn.store(true);
+                }
+                // Held across whatever the publisher does next: a row the caller keeps is a
+                // row the store keeps.
+                const std::shared_ptr<const ModelInfo> row = store.find(id);
+                if (!row || row->model_name != id || row->resolved_paths.size() != 1) {
+                    torn.store(true);
+                }
+                ++answers;
+            }
+        });
+    }
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    stop.store(true);
+    publisher.join();
+    for (auto& reader : readers) reader.join();
+
+    check("one-row reads were answered throughout republication", answers.load() > 0);
+    check("a one-row read never saw a torn answer", !torn.load());
+}
+
 // Readers run against the published snapshot while a writer keeps replacing it.
 // Nothing is asserted mid-race: which generation a reader sees is timing.
 static void test_republish_while_reading(ModelManager& manager) {
@@ -232,6 +290,7 @@ int main() {
     test_republish_after_replacement(manager);
     test_in_place_update_publishes(manager);
     test_repair_publishes(manager, models_dir);
+    test_one_row_read_outlives_the_snapshot();
     test_republish_while_reading(manager);
 
     fs::remove_all(temp);
