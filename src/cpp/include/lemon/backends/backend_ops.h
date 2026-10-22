@@ -116,6 +116,18 @@ public:
     // model. Default: false.
     virtual bool invalidates_cache_after_download() const { return false; }
 
+    // Install a backend variant that is built on this machine (e.g. a Python
+    // venv) rather than downloaded as a release archive. Returns false when the
+    // backend has nothing to build locally, so the GitHub release flow runs.
+    // Default: false.
+    virtual bool install_locally(const std::string& backend, bool force,
+                                 DownloadProgressCallback progress) const {
+        (void)backend;
+        (void)force;
+        (void)progress;
+        return false;
+    }
+
     // Resolve a backend's installed version for a given backend variant. The
     // caller passes the version read from the on-disk version.txt (or "" if
     // absent); the default returns it unchanged.

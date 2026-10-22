@@ -42,6 +42,10 @@ namespace openai::models {
 extern const RouteArg kId;
 } // namespace openai::models
 
+namespace openai::vision {
+extern const RouteArg kImage;
+} // namespace openai::vision
+
 namespace gateway {
 extern const RouteArg kModel;
 } // namespace gateway

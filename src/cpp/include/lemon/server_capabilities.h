@@ -84,6 +84,27 @@ public:
     virtual json classify(const json& request) = 0;
 };
 
+// Object-detection capability. Images in -> labeled bounding boxes per image.
+class IDetectionServer : public virtual ICapability {
+public:
+    virtual ~IDetectionServer() = default;
+    virtual json detect(const json& request) = 0;
+};
+
+// Pose-estimation capability. Images in -> people with body keypoints.
+class IPoseServer : public virtual ICapability {
+public:
+    virtual ~IPoseServer() = default;
+    virtual json pose(const json& request) = 0;
+};
+
+// Hand-tracking capability. Images in -> hands with landmarks and handedness.
+class IHandsServer : public virtual ICapability {
+public:
+    virtual ~IHandsServer() = default;
+    virtual json hands(const json& request) = 0;
+};
+
 class IImageServer : public virtual ICapability {
 public:
     virtual ~IImageServer() = default;
@@ -154,9 +175,12 @@ enum CapabilityMask : uint32_t {
     CAP_AUDIO_GENERATION        = 1u << 7,
     CAP_MODEL_3D                = 1u << 8,
     CAP_UPSCALE                 = 1u << 9,
+    CAP_DETECTION               = 1u << 10,
+    CAP_POSE                    = 1u << 11,
+    CAP_HANDS                   = 1u << 12,
     // Every bit above. BackendModeContractTest sweeps this so a capability added
     // without being classified fails the test instead of going unchecked.
-    CAP_ALL                     = (1u << 10) - 1,
+    CAP_ALL                     = (1u << 13) - 1,
 };
 
 template<typename T>
@@ -171,7 +195,10 @@ constexpr uint32_t capability_mask_of() {
            (std::is_base_of<IImageServer, T>::value ? CAP_IMAGE : 0u) |
            (std::is_base_of<IAudioGenerationServer, T>::value ? CAP_AUDIO_GENERATION : 0u) |
            (std::is_base_of<IModel3DServer, T>::value ? CAP_MODEL_3D : 0u) |
-           (std::is_base_of<IUpscaleServer, T>::value ? CAP_UPSCALE : 0u);
+           (std::is_base_of<IUpscaleServer, T>::value ? CAP_UPSCALE : 0u) |
+           (std::is_base_of<IDetectionServer, T>::value ? CAP_DETECTION : 0u) |
+           (std::is_base_of<IPoseServer, T>::value ? CAP_POSE : 0u) |
+           (std::is_base_of<IHandsServer, T>::value ? CAP_HANDS : 0u);
 }
 
 } // namespace lemon

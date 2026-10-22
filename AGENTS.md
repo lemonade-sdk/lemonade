@@ -186,7 +186,7 @@ These MUST be maintained in all changes:
 
 1. **Many-clients-one-server topology** — A single `lemond` can be driven by multiple desktop/tray/CLI clients, potentially on different machines. Per-client UI state (layout, zoom, view selection, the client's own base URL and API key) MUST live locally in the client, never in `lemond`. Do not move `app_settings.json` behind an HTTP endpoint. **Shared infrastructure config** (cloud provider URLs, backend version pins) lives in `lemond`'s `config.json` so it's visible to every client and to the CLI. **Cloud API keys** specifically MUST NOT be written to disk: they live in `LEMONADE_<PROVIDER>_API_KEY` env vars (persistent) or in `lemond`'s process memory via `POST /v1/cloud/auth` (ephemeral, dies on restart).
 2. **API key passthrough** — When `LEMONADE_API_KEY` is set, all API routes must enforce authentication.
-3. **Subprocess model** — Backends run as subprocesses (llama-server, whisper-server, sd-server, koko, flm, ryzenai-server, moonshine-server). They must NOT run in-process.
+3. **Subprocess model** — Backends run as subprocesses (llama-server, whisper-server, sd-server, koko, flm, ryzenai-server, moonshine-server, ryzenai_vision_server.py). They must NOT run in-process.
 4. **Recipe integrity** — Changes to `server_models.json` must have valid recipes referencing backends in `backend_versions.json`.
 5. **Cross-platform** — Code must compile on Windows (MSVC), Linux (GCC/Clang), macOS (AppleClang). Platform-specific code must use `#ifdef` guards.
 6. **No hardcoded paths** — Use path utilities. Windows/Linux/macOS paths differ.

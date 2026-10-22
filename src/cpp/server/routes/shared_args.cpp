@@ -67,6 +67,17 @@ const RouteArg kId{"id", ArgIn::Path, {{"type", "string"}, {"pattern", ".+"}}, t
                    "Model id, as listed by [`GET /v1/models`](#get-v1models), or an alias."};
 } // namespace openai::models
 
+namespace openai::vision {
+const RouteArg kImage{
+    "image", ArgIn::JsonBody, {{"type", json::array({"string", "object", "array"})}}, true,
+    Support::Available,
+    "The image or images to analyze, PNG, JPEG, BMP or WebP. Each is a base64 string, a "
+    "`data:image/...;base64,` URL, or an `{\"image_url\": \"...\"}` / "
+    "`{\"image_url\": {\"url\": \"...\"}}` object as in OpenAI's image inputs; send an array of "
+    "up to 16 for a batch. Remote `http(s)` URLs are rejected rather than fetched.",
+    {"images"}};
+} // namespace openai::vision
+
 namespace gateway {
 const RouteArg kModel{"model", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
                       "The model to run; loaded on first use."};

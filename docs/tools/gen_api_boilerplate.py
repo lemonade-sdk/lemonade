@@ -494,6 +494,24 @@ DISTINCT_ARGUMENTS = {
             ],
         ),
         (
+            "Omitted, each falls back to the sole loaded model of its own type: "
+            "classification, detection, hand tracking or pose",
+            [
+                "routes/lemonade/inference/classify.cpp:kModel",
+                "routes/openai/images/images_detections.cpp:kModel",
+                "routes/openai/images/images_hands.cpp:kModel",
+                "routes/openai/images/images_poses.cpp:kModel",
+            ],
+        ),
+        (
+            "Detections and poses default to 0.25; hands to MediaPipe's 0.5",
+            [
+                "routes/openai/images/images_detections.cpp:kConfidence",
+                "routes/openai/images/images_hands.cpp:kConfidence",
+                "routes/openai/images/images_poses.cpp:kConfidence",
+            ],
+        ),
+        (
             "Register takes only user.* names; load takes any registered model",
             [
                 "routes/lemonade/load/load.cpp:kModelName",

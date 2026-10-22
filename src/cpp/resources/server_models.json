@@ -2888,5 +2888,29 @@
         ],
         "size": 81.0,
         "min_resident_gb": 16.0
+    },
+    "YOLO26s-Detection-NPU": {
+        "checkpoint": "onnx-community/yolo26s-ONNX:onnx/model.onnx",
+        "recipe": "ryzenai-vision",
+        "labels": [
+            "detection"
+        ],
+        "size": 0.04
+    },
+    "YOLO26s-Pose-NPU": {
+        "checkpoint": "onnx-community/yolo26s-pose-ONNX:onnx/model.onnx",
+        "recipe": "ryzenai-vision",
+        "labels": [
+            "pose"
+        ],
+        "size": 0.04
+    },
+    "MediaPipe-Hands-CPU": {
+        "checkpoint": "Leo-TX/mediapipe-hand:hand_landmarker.task",
+        "recipe": "mediapipe",
+        "labels": [
+            "hands"
+        ],
+        "size": 0.01
     }
 }

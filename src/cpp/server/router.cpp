@@ -955,8 +955,8 @@ void Router::load_model(const std::string& model_name,
         // NPU EXCLUSIVITY CHECK — driven by the backend's slot policy (descriptor).
         //   ExclusiveNpu (ryzenai-llm, whisper-on-npu): lock the entire NPU,
         //                evicting ALL NPU servers first.
-        //   CoexistByType (flm): coexist with other FLM types (max 1 per type),
-        //                but evict exclusive-NPU peers.
+        //   CoexistByType (flm, ryzenai-vision): coexist with each other (max 1
+        //                per model type), but evict exclusive-NPU peers.
         // Standard/Unmetered backends share no device exclusivity.
         switch (slot_policy_for_recipe(model_info.recipe)) {
             case SlotPolicy::ExclusiveNpu: {
@@ -983,7 +983,7 @@ void Router::load_model(const std::string& model_name,
                 break;
             }
             case SlotPolicy::CoexistByType: {
-                // 1. Evict every NPU holder that is not itself a coexisting (FLM)
+                // 1. Evict every NPU holder that is not itself a coexisting
                 //    backend — i.e. exclusive-NPU peers like ryzenai-llm and
                 //    whisper-on-npu. Collect first; evict_server mutates loaded_servers_.
                 std::vector<WrappedServer*> exclusive_peers;
@@ -997,32 +997,33 @@ void Router::load_model(const std::string& model_name,
                             throw RouterResidencyConflictException(
                                 canonical_model_name,
                                 server->get_model_name(),
-                                "FLM cannot coexist with the resident exclusive-NPU backend");
+                                model_info.recipe + " cannot coexist with the resident exclusive-NPU backend");
                         }
                         exclusive_peers.push_back(server.get());
                     }
                 }
                 for (auto* peer : exclusive_peers) {
-                    LOG(INFO, "Router") << "FLM cannot coexist with "
+                    LOG(INFO, "Router") << model_info.recipe << " cannot coexist with "
                               << peer->get_recipe_options().get_recipe()
                               << ", evicting: " << peer->get_model_name() << std::endl;
                     evict_server(peer);
                 }
-                // 2. Evict FLM of the SAME model type (max 1 per type: 1 LLM, 1 transcription, 1 embed)
-                WrappedServer* same_type_flm = find_coexisting_server_by_type(model_type);
-                if (same_type_flm) {
+                // 2. Evict the coexisting server of the SAME model type (max 1 per
+                //    type, e.g. 1 LLM, 1 transcription, 1 detection).
+                WrappedServer* same_type = find_coexisting_server_by_type(model_type);
+                if (same_type) {
                     if (should_reject_residency_displacement(
                             requested_residency_class,
-                            same_type_flm->get_residency_class())) {
+                            same_type->get_residency_class())) {
                         throw RouterResidencyConflictException(
                             canonical_model_name,
-                            same_type_flm->get_model_name(),
-                            "FLM supports only one resident model per ModelType");
+                            same_type->get_model_name(),
+                            "Only one coexisting NPU model per ModelType can be resident");
                     }
-                    LOG(INFO, "Router") << "FLM " << model_type_to_string(model_type)
-                              << " slot occupied by: " << same_type_flm->get_model_name()
+                    LOG(INFO, "Router") << "NPU " << model_type_to_string(model_type)
+                              << " slot occupied by: " << same_type->get_model_name()
                               << ", evicting..." << std::endl;
-                    evict_server(same_type_flm);
+                    evict_server(same_type);
                 }
                 break;
             }
@@ -1448,7 +1449,10 @@ json Router::get_max_model_limits() const {
         {"transcription", max},
         {"image", max},
         {"tts", max},
-        {"classification", max}
+        {"classification", max},
+        {"detection", max},
+        {"pose", max},
+        {"hands", max}
     };
 }
 
@@ -2367,6 +2371,42 @@ json Router::image_variations(const json& request) {
     });
 }
 
+json Router::image_detections(const json& request) {
+    return execute_inference(request, [&](WrappedServer* server) {
+        auto detection_server = dynamic_cast<IDetectionServer*>(server);
+        if (!detection_server) {
+            return ErrorResponse::from_exception(
+                UnsupportedOperationException("Object detection", device_type_to_string(server->get_device_type()))
+            );
+        }
+        return detection_server->detect(request);
+    });
+}
+
+json Router::image_poses(const json& request) {
+    return execute_inference(request, [&](WrappedServer* server) {
+        auto pose_server = dynamic_cast<IPoseServer*>(server);
+        if (!pose_server) {
+            return ErrorResponse::from_exception(
+                UnsupportedOperationException("Pose estimation", device_type_to_string(server->get_device_type()))
+            );
+        }
+        return pose_server->pose(request);
+    });
+}
+
+json Router::image_hands(const json& request) {
+    return execute_inference(request, [&](WrappedServer* server) {
+        auto hands_server = dynamic_cast<IHandsServer*>(server);
+        if (!hands_server) {
+            return ErrorResponse::from_exception(
+                UnsupportedOperationException("Hand tracking", device_type_to_string(server->get_device_type()))
+            );
+        }
+        return hands_server->hands(request);
+    });
+}
+
 void Router::audio_generations(const json& request, httplib::DataSink& sink) {
     execute_streaming(request.dump(), sink, [&](WrappedServer* server) {
         if (server->get_model_type() != ModelType::AUDIO_GENERATION) {
@@ -3006,7 +3046,10 @@ json Router::get_pinned_model_counts() const {
         {"transcription", count_pinned_servers_in_pool(ModelType::TRANSCRIPTION, ResidencyClass::Standard)},
         {"image", count_pinned_servers_in_pool(ModelType::IMAGE, ResidencyClass::Standard)},
         {"tts", count_pinned_servers_in_pool(ModelType::TTS, ResidencyClass::Standard)},
-        {"classification", count_pinned_servers_in_pool(ModelType::CLASSIFICATION, ResidencyClass::Standard)}
+        {"classification", count_pinned_servers_in_pool(ModelType::CLASSIFICATION, ResidencyClass::Standard)},
+        {"detection", count_pinned_servers_in_pool(ModelType::DETECTION, ResidencyClass::Standard)},
+        {"pose", count_pinned_servers_in_pool(ModelType::POSE, ResidencyClass::Standard)},
+        {"hands", count_pinned_servers_in_pool(ModelType::HANDS, ResidencyClass::Standard)}
     };
 }
 
@@ -3019,7 +3062,10 @@ json Router::get_pinned_helper_counts() const {
         {"transcription", count_pinned_servers_in_pool(ModelType::TRANSCRIPTION, ResidencyClass::RoutingHelper)},
         {"image", count_pinned_servers_in_pool(ModelType::IMAGE, ResidencyClass::RoutingHelper)},
         {"tts", count_pinned_servers_in_pool(ModelType::TTS, ResidencyClass::RoutingHelper)},
-        {"classification", count_pinned_servers_in_pool(ModelType::CLASSIFICATION, ResidencyClass::RoutingHelper)}
+        {"classification", count_pinned_servers_in_pool(ModelType::CLASSIFICATION, ResidencyClass::RoutingHelper)},
+        {"detection", count_pinned_servers_in_pool(ModelType::DETECTION, ResidencyClass::RoutingHelper)},
+        {"pose", count_pinned_servers_in_pool(ModelType::POSE, ResidencyClass::RoutingHelper)},
+        {"hands", count_pinned_servers_in_pool(ModelType::HANDS, ResidencyClass::RoutingHelper)}
     };
 }
 

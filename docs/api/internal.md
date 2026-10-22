@@ -205,6 +205,7 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 | `log_max_file_size_mb` | No | Defaults to `10`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `log_max_files` | No | Defaults to `5`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `max_loaded_models` | No | Defaults to `1`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `mediapipe` | No | `mediapipe` settings; send only the keys to change. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `models_dir` | No | Defaults to `"auto"`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `moonshine` | No | `moonshine` settings; send only the keys to change. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `no_fetch_executables` | No | Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
@@ -215,6 +216,7 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 | `rocm_channel` | No | Defaults to `"stable"`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `rocm_install_method` | No | Defaults to `"auto"`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `ryzenai` | No | `ryzenai` settings; send only the keys to change. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `ryzenaivision` | No | `ryzenaivision` settings; send only the keys to change. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `sdcpp` | No | `sdcpp` settings; send only the keys to change. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `telemetry` | No | `telemetry` settings; send only the keys to change. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `thenoise` | No | `thenoise` settings; send only the keys to change. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |

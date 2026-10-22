@@ -1,6 +1,8 @@
 #include "lemon/backend_manager.h"
 #include "lemon/backend_version_policy.h"
 #include "lemon/backends/backend_descriptor_registry.h"
+#include "lemon/backends/backend_ops.h"
+#include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
@@ -605,6 +607,10 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
                 recipe + ":" + resolved_backend +
                 (offline ? ": offline mode" : ""));
         }
+    }
+
+    if (backends::ops_for(recipe)->install_locally(resolved_backend, force, progress_cb)) {
+        return;
     }
 
     if (!force && has_existing_backend && !github_download_service_reachable()) {
