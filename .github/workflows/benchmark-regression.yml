@@ -671,7 +671,10 @@ jobs:
             if not isinstance(model_entries, list):
               model_entries = [data]
             for me in model_entries:
-              model = MODEL_ALIASES.get(me.get("model", data.get("model", "unknown")), me.get("model", data.get("model", "unknown")))
+              raw_model = me.get("model", data.get("model", "unknown"))
+              if fork_id == "llamacpp-hrx" and raw_model not in MODEL_ALIASES:
+                continue
+              model = MODEL_ALIASES.get(raw_model, raw_model)
               for br in me.get("results", []):
                 for sc in br.get("scenarios", []):
                   want_ctx = SCENARIO_CTX.get(sc["name"])
