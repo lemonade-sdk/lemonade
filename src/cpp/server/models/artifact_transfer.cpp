@@ -51,8 +51,10 @@ void require_placed_inside(const std::string& target_dir, const std::string& nam
     const fs::path target = path_from_utf8(target_dir);
     const fs::path placed = (target / name_fs).lexically_normal();
     const bool lands_on_the_directory = placed == target || placed.filename().empty();
-    if (name.empty() || name_fs.is_absolute() || lands_on_the_directory ||
-        !path_inside(placed, target)) {
+    // The grammar first: `is_absolute()` misses a drive-relative name, which Windows
+    // appends by replacing the target, and only a name check sees the separator in `\`.
+    if (name.empty() || !utils::is_safe_relative_path(name) || name_fs.is_absolute() ||
+        lands_on_the_directory || !path_inside(placed, target)) {
         throw std::runtime_error("Refusing to write '" + name + "' outside its directory: " +
                                  target_dir);
     }

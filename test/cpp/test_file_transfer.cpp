@@ -39,6 +39,23 @@ static void check(const std::string& name, bool ok) {
     if (!ok) ++g_failures;
 }
 
+// Names carrying a control character are unreadable in a check label.
+static std::string display(const std::string& text) {
+    std::string out;
+    for (const char raw : text) {
+        const unsigned char c = static_cast<unsigned char>(raw);
+        if (c < 0x20 || c == 0x7f) {
+            out += "\\x";
+            static const char* hex = "0123456789abcdef";
+            out += hex[c >> 4];
+            out += hex[c & 0x0f];
+        } else {
+            out += raw;
+        }
+    }
+    return out;
+}
+
 // Windows needs a privilege to make a symlink; a run without one says so rather than
 // passing a containment check it never ran.
 static bool make_symlink(const fs::path& target, const fs::path& link, std::string& why) {
@@ -338,6 +355,44 @@ int main() {
             }
             check("a name leaving its directory is refused: " + escaped, threw);
             check("the refusal names the file it refused", message.find(escaped) != std::string::npos);
+        }
+
+        // Grammar, not only containment. `C:evil` is not absolute on Windows yet replaces
+        // the target when appended; `a\b` is one legal name on POSIX and two components on
+        // Windows; a control character names nothing. All are refused on every platform.
+        for (const std::string& unusable : {"C:evil", "name\n.gguf", "model\tx", "nul:name"}) {
+            DownloadPlan plan;
+            plan.download_path = lemon::utils::path_to_utf8(dir / "other");
+            plan.files.push_back(
+                DownloadFile{unusable, file_url(dir / "source.bin"), content.size(), {}, {}, {}});
+
+            bool threw = false;
+            std::string message;
+            try {
+                local_only.execute(plan, {}, nullptr, {});
+            } catch (const std::exception& e) {
+                threw = true;
+                message = e.what();
+            }
+            check("an unusable name is refused: " + display(unusable), threw);
+            check("the refusal names the unusable name", display(message).find(display(unusable)) !=
+                                                            std::string::npos);
+        }
+
+        // A backslash is a separator, not an illegal character: `a\b` means the same nested
+        // name `a/b` on the platform that reads it that way, and nested names are placed.
+        {
+            const std::string nested = "back\\slash/model.bin";
+            DownloadPlan plan;
+            plan.download_path = lemon::utils::path_to_utf8(dir / "slashes");
+            plan.files.push_back(
+                DownloadFile{nested, file_url(dir / "source.bin"), content.size(), {}, {}, {}});
+            local_only.execute(plan, {}, nullptr, {});
+            const bool as_one_name = fs::exists(dir / "slashes" / nested);
+            const bool as_two_levels = fs::exists(dir / "slashes" / "back" / "slash" / "model.bin");
+            check("a backslash nests rather than escaping", as_one_name || as_two_levels);
+            check("and it stays under the target",
+                  !fs::exists(dir / "back") && !fs::exists(dir / "back\\slash"));
         }
         check("no escaped file was created beside the target",
               !fs::exists(fs::temp_directory_path() / "escaped.bin") &&
