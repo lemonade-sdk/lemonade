@@ -157,7 +157,19 @@ std::unique_ptr<ArtifactSource> ArtifactSourceResolver::source_for(
     if (policy == backends::DownloadPolicy::SelfManaged) {
         ArtifactRef ref = ref_for(info, checkpoint_type, required);
         ref.repo_id = checkpoint;
-        return std::make_unique<SelfManagedArtifactSource>(std::move(ref), info.recipe);
+        // The delegate answers for the model and composition already asked it; a probe
+        // here would run the delegate's tool once per checkpoint per listing.
+        const bool recorded = info.downloaded;
+        const std::string recorded_path = info.resolved_path(checkpoint_type);
+        const std::string delegate = info.recipe;
+        SelfManagedArtifactSource::PresenceProbe probe =
+            [recorded, recorded_path, delegate](const ArtifactRef&) {
+                return Presence{recorded, recorded_path,
+                                recorded ? std::string()
+                                         : delegate + " reports the model as not installed"};
+            };
+        return std::make_unique<SelfManagedArtifactSource>(std::move(ref), info.recipe,
+                                                          std::move(probe));
     }
 
     if (const auto origin = origin_of(info.source)) {

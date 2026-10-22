@@ -867,7 +867,7 @@ A binding to no source is a broken registration, not an absent model, so `source
 For each entry of `ModelInfo::checkpoints`, the resolver picks the first matching rule:
 
 1. `BackendOps::plan_download()` returns `None`: `NoArtifactsSource`.
-2. `plan_download()` returns `SelfManaged`: `SelfManagedArtifactSource`, carrying the recipe as its delegate.
+2. `plan_download()` returns `SelfManaged`: `SelfManagedArtifactSource`, carrying the recipe as its delegate. The delegate answers presence for the whole model and composition is where it is asked, so the resolver hands the source a probe over the row: every checkpoint of that model reports `ModelInfo::downloaded` and the path the row recorded, at the model's granularity rather than the checkpoint's. A probe that asked the delegate again would run its tool once per checkpoint per listing; a source built without one answers `false` beside a row that says `downloaded: true`.
 3. The entry's origin is `local_path`, `local_upload` or `extra_models_dir`: `LocalPathArtifactSource` with that `Origin`.
 4. The checkpoint names a registered host scheme (`hf://`, `ms://`): that host's repository, with the scheme stripped and the variant split off.
 5. The checkpoint names `file://`: `LocalPathArtifactSource`, `LocalPath` origin, at the named path.

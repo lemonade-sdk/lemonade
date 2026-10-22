@@ -133,6 +133,35 @@ static void test_a_backend_that_owns_its_weights_delegates_both() {
           source->deletion().kind == Deletion::Kind::Delegate);
 }
 
+// Before this, the source answered `false` beside a row that said `downloaded: true`.
+static void test_a_self_managed_checkpoint_carries_the_rows_answer() {
+    const ArtifactSourceResolver resolver(base_hooks());
+
+    ModelInfo installed = model("flm", "gemma3:4b");
+    installed.downloaded = true;
+    installed.resolved_paths["main"] = "/flm/store/gemma3-4b";
+    const std::unique_ptr<ArtifactSource> placed = resolver.source_for(installed, "main");
+    const Presence present = placed->present();
+    check("a model the delegate installed answers present", present.complete);
+    check("and says where the delegate keeps it",
+          present.path == "/flm/store/gemma3-4b" && placed->resolve() == present.path);
+    check("a present answer carries no complaint", present.reason.empty());
+
+    ModelInfo absent = model("flm", "gemma3:4b");
+    absent.downloaded = false;
+    const Presence missing = resolver.source_for(absent, "main")->present();
+    check("a delegate without the model answers absent", !missing.complete);
+    check("and the reason names the delegate, not a wire nobody plugged in",
+          missing.reason.find("flm") != std::string::npos &&
+              missing.reason.find("no presence probe") == std::string::npos);
+
+    ModelInfo second = model("flm", "gemma3:4b");
+    second.downloaded = true;
+    second.checkpoints["mmproj"] = "gemma3:4b-mmproj";
+    check("a second checkpoint of that model agrees with the first",
+          resolver.source_for(second, "mmproj")->present().complete);
+}
+
 static void test_the_origin_decides_whose_bytes_they_are() {
     const ArtifactSourceResolver resolver(base_hooks());
 
@@ -277,6 +306,7 @@ static void test_a_missing_org_repo_still_binds_to_its_host() {
 int main() {
     test_a_cloud_entry_has_no_bytes();
     test_a_backend_that_owns_its_weights_delegates_both();
+    test_a_self_managed_checkpoint_carries_the_rows_answer();
     test_the_origin_decides_whose_bytes_they_are();
     test_an_explicit_scheme_outranks_the_default_host();
     test_the_host_of_a_repository_comes_from_the_entry_then_the_config();
