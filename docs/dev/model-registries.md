@@ -77,7 +77,7 @@ Both providers use the configured `models_dir` and the same runtime structure:
   .lemonade_registry.json
 ```
 
-`<snapshot-id>` is one path component and nothing more: no separator, no drive specifier, not `.` or `..`, no control character, at most 255 bytes. `utils::is_safe_path_component()` is the single gate, applied where a snapshot id arrives from a registry document, where `refs/main` is read back, and before either is written. `HF_ENDPOINT` points the client at a mirror or gateway and that is a supported configuration, so the identifier comes from a host the operator chose and the local code does not control.
+`<snapshot-id>` is one path component and nothing more: no separator, no drive specifier, not `.` or `..`, no control character, at most 255 bytes. `utils::is_safe_path_component()` is the single gate, applied where a snapshot id arrives from a registry document, where `refs/main` is read back, before either is written, and again when a pull plans its download — a refused id throws there, so nothing is created and nothing is fetched into nowhere. `HF_ENDPOINT` points the client at a mirror or gateway and that is a supported configuration, so the identifier comes from a host the operator chose and the local code does not control.
 
 A name inside a snapshot is held to the same rule component by component (`utils::is_safe_relative_path()`). A plan whose final name, or whose staged `<name>.partial` beside it, is already a symlink is refused before a byte moves: writing through the link would put the download wherever the link points.
 

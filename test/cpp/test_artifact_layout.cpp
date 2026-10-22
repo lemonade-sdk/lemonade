@@ -64,8 +64,8 @@ class ListingRepository : public FetchableRepository {
     RepoListing list(const std::string&, const std::string&) const override {
         RepoListing listing;
         listing.repo_id = "org/repo";
-        listing.revision = Revision{"snapshot-1", true};
-        listing.download_revision = "rev-sha";
+        listing.revision = revision;
+        listing.download_revision = download_revision;
         listing.files = {
             {"model-Q4_K_M.gguf", 100, "sha256", "beef", false},
             {"model-Q8_0.gguf", 200, "", "", false},
@@ -87,6 +87,9 @@ class ListingRepository : public FetchableRepository {
     Staleness compare(const LocalRef&, const RepoListing&) const override { return Staleness{}; }
     void commit(const LocalRef&, const Revision&) override {}
     std::string cache_dir_name(const std::string& repo_id) const override { return repo_id; }
+
+    Revision revision{"snapshot-1", true};
+    std::string download_revision = "rev-sha";
 };
 
 ArtifactRef ref(const std::string& variant) {
@@ -144,6 +147,39 @@ static void test_the_snapshot_directory_names_the_revision() {
 
 // A revision becomes one directory name, and it arrives from a fetched document, from
 // refs/main, and from the request.
+// A pull composes the snapshot directory itself, from this listing, and creates it before
+// any transfer runs. The plan is built first, so refusing it here is what keeps an id
+// that is not one component from reaching ensure_create_directories.
+static void test_a_plan_refuses_a_snapshot_id_that_is_not_one_component() {
+    const fs::path cache = scratch_dir("unsafe_snapshot_id");
+    for (const char* id : {"../../escape", "..", ".", "a/b", "C:evil", "rev\nname"}) {
+        ListingRepository repository(ref("model-Q4_K_M.gguf"), policy("llamacpp"));
+        repository.revision = Revision{id, false};
+        const RepoListing listing = repository.list("org/repo", "");
+
+        Placement where;
+        where.cache_dir = lemon::utils::path_to_utf8(cache / "models--org--repo");
+        where.revision = listing.revision.id.empty() ? listing.download_revision
+                                                     : listing.revision.id;
+        bool threw = false;
+        std::string message;
+        try {
+            registry_download_plan(repository, ref("model-Q4_K_M.gguf"), hf_hub_layout(), where,
+                                   listing);
+        } catch (const std::exception& e) {
+            threw = true;
+            message = e.what();
+        }
+        check(std::string("a plan into '") + id + "' is refused", threw);
+        check(std::string("the refusal names the id '") + id + "'",
+              threw && message.find(id) != std::string::npos);
+    }
+    // scratch_dir creates `cache`, so the question is whether the plan went a level deeper.
+    check("a refused plan created no snapshot directory",
+          !fs::exists(cache / "models--org--repo" / "snapshots"));
+    fs::remove_all(cache);
+}
+
 static void test_a_revision_that_is_not_one_component_places_nothing() {
     const fs::path cache = scratch_dir("bad_revision");
     for (const char* revision : {"../../escape", "..", ".", "a/b", "a\\b", "C:evil",
@@ -426,6 +462,7 @@ int main() {
     lemon::utils::set_models_dir((fixture / "hf").string());
 
     test_the_snapshot_directory_names_the_revision();
+    test_a_plan_refuses_a_snapshot_id_that_is_not_one_component();
     test_a_revision_that_is_not_one_component_places_nothing();
     test_activating_records_the_revision();
     test_a_sibling_lands_beside_the_file_it_belongs_to();

@@ -66,6 +66,14 @@ DownloadPlan registry_download_plan(const FetchableRepository& repository, const
 
     DownloadPlan plan;
     plan.download_path = layout.directory(placement);
+    // An empty destination is a placement the layout refused, most often a revision that is
+    // not one path component. Passing it on would either create a directory outside the
+    // repository cache — the pull makes its own from the same value — or plan a download
+    // that quietly lands nowhere.
+    if (plan.download_path.empty()) {
+        throw std::runtime_error("Refusing to plan a download into '" + placement.revision +
+                                 "' for repository " + ref.repo_id);
+    }
     const Revision revision{listing.download_revision.empty() ? listing.revision.id
                                                               : listing.download_revision,
                             listing.revision.pinned};
