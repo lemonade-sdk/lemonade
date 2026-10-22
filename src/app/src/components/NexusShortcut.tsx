@@ -36,12 +36,12 @@ const NexusShortcut: React.FC<{ onOpen: () => void }> = ({ onOpen }) => {
       <span className={`nexus-shortcut__dot${status?.mesh_up ? ' is-online' : ''}`} aria-hidden="true" />
       <span className="nexus-shortcut__label">Nexus</span>
     </button>
-    {(peers.length > 0 || network.selectedServerId && network.selectedServerId !== 'local') && <select ref={selector} className="nexus-server-select" aria-label="Inference server" title="Inference server" data-tauri-drag-region="false"
+    <select ref={selector} className={`nexus-server-select${network.selectedServerId && network.selectedServerId !== 'local' ? ' is-relayed' : ''}`} aria-label="Inference server" title="Inference server" data-tauri-drag-region="false"
       value={network.selectedServerId || 'local'} disabled={network.switchingServer} onChange={event => void choose(event.target.value)}>
-      <option value="local">This device</option>
+      <option value="local">Local Server</option>
       {peers.map(device => <option key={device.node_id} value={device.node_id}>{device.device_name || 'Mesh device'} · Tier 3 · Online</option>)}
       {network.selectedServerId && network.selectedServerId !== 'local' && !peers.some(peer => peer.node_id === network.selectedServerId) && <option value={network.selectedServerId} disabled>Mesh server disconnected</option>}
-    </select>}
+    </select>
     {(notice || error) && !needsKey && <div className="nexus-toast" role={error ? 'alert' : 'status'}><span>{error || notice}</span><WorkspaceActionButton appearance="quiet" size="small" onClick={onOpen}>View devices</WorkspaceActionButton><WorkspaceActionButton appearance="quiet" size="small" icon="x" aria-label="Dismiss notification" onClick={() => { setError(''); dismissNexusNotice(); }} /></div>}
     {needsKey && <div className="nexus-dialog__backdrop" data-tauri-drag-region="false"><div ref={dialogRef} className="nexus-dialog" role="dialog" aria-modal="true" aria-labelledby="nexus-server-key-title">
       <h2 id="nexus-server-key-title">Server API key</h2><p>{peers.find(peer => peer.node_id === needsKey)?.device_name || 'This server'} requires an API key.</p>

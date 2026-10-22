@@ -61,4 +61,4 @@
 
 .titlebar__right:has(.nexus-shortcut) .titlebar__window-btn { flex-shrink: 0; }
 @media (max-width: 1400px) { .nexus-shortcut__label { display: none; } }
-@media (max-width: 768px) { .titlebar__right > .nexus-shortcut { display: none; } }
+@media (max-width: 768px) { .titlebar__right > .nexus-shortcut, .titlebar__right > .nexus-server-select:not(.is-relayed) { display: none; } }

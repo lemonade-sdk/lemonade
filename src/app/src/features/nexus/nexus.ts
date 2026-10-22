@@ -333,10 +333,18 @@ export function nexusStatusLabel(status: NexusStatus | null): string {
 // mesh. The selection lives only in this client; other clients of the server are unaffected.
 export async function selectNexusInferenceServer(nodeId: string, suppliedKey?: string): Promise<void> {
   if (state.switchingServer) throw new Error('A server switch is already in progress.');
-  const origin = await controller();
   const { default: api } = await import('../../api');
+  if (nodeId === 'local' && !home) {
+    publish({ ...state, selectedServerId: 'local' });
+    return;
+  }
+  let server: { endpoint: string; key: string };
+  if (home) server = home;
+  else {
+    const origin = await controller();
+    server = { endpoint: origin.source, key: origin.key };
+  }
   const previous = { endpoint: api.baseUrl, key: api.apiKey, peerKey: api.peerApiKey, home };
-  const server = home ?? { endpoint: origin.source, key: origin.key };
   if (state.switchingServer) throw new Error('A server switch is already in progress.');
   publish({ ...state, switchingServer: true });
   try {
