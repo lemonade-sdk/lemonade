@@ -1,0 +1,238 @@
+{
+  "schema_version": 1,
+  "id": "kokoro",
+  "recipe": "kokoro",
+  "kind": "local",
+  "metadata": {
+    "display_name": "Kokoro",
+    "server_name": "kokoro-server",
+    "log_category": "KokoroServer",
+    "log_level_policy": "passthrough",
+    "binary": {"windows": "koko.exe", "linux": "koko", "macos": "koko"},
+    "config_section": "",
+    "default_device": "cpu",
+    "slot_policy": "standard",
+    "selectable_backend": false,
+    "uses_ctx_size": false,
+    "dynamic_models": false,
+    "options": [],
+    "support": [
+      {
+        "backend": "metal",
+        "tier": "core",
+        "format": "native",
+        "supported_os": ["macos"],
+        "devices": {"metal": []},
+        "device_summary": "Apple Silicon GPU",
+        "arch_gates": {}
+      },
+      {
+        "backend": "cpu",
+        "tier": "core",
+        "format": "native",
+        "supported_os": ["windows", "linux"],
+        "devices": {"cpu": ["x86_64"]},
+        "device_summary": "x86_64 CPU",
+        "arch_gates": {}
+      }
+    ],
+    "supported_modes": ["tts"],
+    "required_checkpoints": ["main"],
+    "default_capabilities": [],
+    "web_display_name": "",
+    "rocm_channels": [],
+    "exposes_prometheus_metrics": false,
+    "rocm_requires_cwsr_fix": false,
+    "version_policy": "exact",
+    "self_manages_downloads": false,
+    "takes_args": false,
+    "arg_variants": [],
+    "bin_variants": ["cpu"],
+    "config_extra": {},
+    "streams_model_from_storage": false
+  },
+  "install": {
+    "strategy": "github_release",
+    "install_recipe": "kokoro",
+    "pin_recipe": "kokoro",
+    "supports_split_archive": false,
+    "asset_backend": "identity",
+    "cases": [
+      {
+        "backend": ["cpu"],
+        "os": ["windows"],
+        "repo": "lemonade-sdk/Kokoros",
+        "filename": "kokoros-windows-x86_64.tar.gz"
+      },
+      {
+        "backend": ["cpu"],
+        "os": ["linux"],
+        "repo": "lemonade-sdk/Kokoros",
+        "filename": "kokoros-linux-x86_64.tar.gz"
+      },
+      {
+        "backend": ["cpu"],
+        "os": ["macos"],
+        "repo": "lemonade-sdk/Kokoros",
+        "filename": ""
+      },
+      {
+        "backend": ["metal"],
+        "os": ["macos"],
+        "repo": "lemonade-sdk/Kokoros",
+        "filename": "kokoros-darwin-arm64-metal.tar.gz"
+      },
+      {
+        "backend": ["metal"],
+        "os": ["windows", "linux"],
+        "repo": "lemonade-sdk/Kokoros",
+        "filename": ""
+      }
+    ],
+    "errors": {
+      "backend": {
+        "concat": ["[KokoroServer] Unknown kokoros backend: ", {"ref": "/install/backend"}]
+      }
+    }
+  },
+  "artifacts": {
+    "main": {
+      "role": "main",
+      "strategy": "resolved_path",
+      "cache_resolution": "sentinel_file",
+      "import_resolution": "default",
+      "sentinel": "index.json",
+      "selection": "first_existing",
+      "missing_error": {
+        "concat": ["Model file not found for checkpoint: ", {"ref": "/model/checkpoint"}]
+      }
+    }
+  },
+  "launch": {
+    "prepare_order": ["backend", "install", "artifacts", "hook", "program", "ports"],
+    "backend": {"fixed": {"windows": "cpu", "linux": "cpu", "macos": "metal"}},
+    "program": {"source": "managed", "install_policy": "always"},
+    "ports": [{"name": "http", "reject_zero": true, "error": "Failed to find an available port"}],
+    "argv": [
+      {
+        "args": [
+          "-m",
+          {
+            "path_join": [{"parent_path": {"ref": "/artifacts/main"}}, {"ref": "/launch/hook/model"}]
+          },
+          "-d",
+          {
+            "path_join": [
+              {"parent_path": {"ref": "/artifacts/main"}},
+              {"ref": "/launch/hook/voices"}
+            ]
+          },
+          "openai",
+          "--ip",
+          "127.0.0.1",
+          "--port",
+          {"string": {"ref": "/launch/ports/http"}}
+        ]
+      }
+    ],
+    "environment": {
+      "preset": "posix_executable_loader_path",
+      "order": "set_first",
+      "set": [
+        {
+          "name": "ESPEAK_DATA_PATH",
+          "value": {
+            "path_join": [{"parent_path": {"ref": "/launch/executable"}}, "espeak-ng-data"]
+          }
+        }
+      ]
+    },
+    "working_directory": "inherit",
+    "output": {
+      "inherit_levels": ["debug", "trace"],
+      "filter": false
+    },
+    "readiness": {"port": "http", "path": "/", "timeout": 600},
+    "watchdog": {"policy": "standard", "port": "http", "path": "/"}
+  },
+  "operations": [
+    {
+      "operation": "text_to_speech",
+      "delivery": "buffered",
+      "model_modes": ["tts"],
+      "transport": {
+        "kind": "http_bytes",
+        "method": "POST",
+        "path": "/v1/audio/speech",
+        "port": "http",
+        "timeout": "global",
+        "stream_codec": "raw_bytes.v1"
+      },
+      "formats": ["mp3", "wav", "opus", "pcm"],
+      "format_metadata": {},
+      "request": {
+        "base": "identity",
+        "omit_missing": true,
+        "set": {
+          "/model": "kokoro",
+          "/stream": {"when": [{"present": {"ref": "/request/stream_format"}}, true]}
+        }
+      }
+    },
+    {
+      "operation": "text_to_speech",
+      "delivery": "streaming",
+      "model_modes": ["tts"],
+      "transport": {
+        "kind": "http_bytes",
+        "method": "POST",
+        "path": "/v1/audio/speech",
+        "port": "http",
+        "timeout": "global",
+        "stream_codec": "raw_bytes.v1"
+      },
+      "formats": ["pcm"],
+      "format_metadata": {},
+      "request": {
+        "base": "identity",
+        "omit_missing": true,
+        "set": {
+          "/model": "kokoro",
+          "/stream": {"when": [{"present": {"ref": "/request/stream_format"}}, true]}
+        }
+      }
+    }
+  ],
+  "unsupported_messages": {
+    "chat_completion": "Kokoro does not support text completion. Use audio speech endpoints instead.",
+    "completion": "Kokoro does not support text completion. Use audio speech endpoints instead.",
+    "responses": "Kokoro does not support text completion. Use audio speech endpoints instead."
+  },
+  "hooks": {"launch": {"id": "kokoro.voice_index", "params": {}}},
+  "rationale": [
+    {
+      "subject": "/artifacts/main",
+      "text": "A Kokoro model is a directory; its index.json names the network and voices files that koko loads.",
+      "source": "7fb46ce0e:src/cpp/server/backends/kokoro/kokoro_server.cpp:192",
+      "tests": ["kokoro_index_resolution"]
+    },
+    {
+      "subject": "/operations/0/formats",
+      "text": "Kokoros deserializes all six OpenAI formats but implements four; aac and flac fall back to MP3 bytes, so they are not advertised.",
+      "source": "7fb46ce0e:src/cpp/include/lemon/backends/kokoro/kokoro_server.h:34",
+      "tests": ["kokoro_formats"]
+    },
+    {
+      "subject": "/operations/1/formats",
+      "text": "The streaming path returns headerless s16le whatever response_format asks for, so only pcm is served under a matching Content-Type.",
+      "source": "7fb46ce0e:src/cpp/include/lemon/backends/kokoro/kokoro_server.h:39",
+      "tests": ["kokoro_formats"]
+    },
+    {
+      "subject": "/operations/0/request/set/~1stream",
+      "text": "OpenAI defines only stream_format for speech; Kokoros needs the stream boolean.",
+      "source": "7fb46ce0e:src/cpp/server/backends/kokoro/kokoro_server.cpp:167",
+      "tests": ["kokoro_speech_wire"]
+    }
+  ]
+}

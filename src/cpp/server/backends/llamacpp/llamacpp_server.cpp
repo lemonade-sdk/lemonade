@@ -1,37 +1,37 @@
-#include "lemon/backends/llamacpp/llamacpp_server.h"
-#include "lemon/backends/llamacpp/llamacpp.h"
-#include "lemon/backends/llamacpp/llamacpp_gguf.h"
-#include "lemon/backends/llamacpp/llamacpp_request.h"
-#include "llamacpp_system_utils.h"
-#include "lemon/backends/backend_registry.h"
-#include "lemon/backends/backend_ops.h"
-#include "lemon/backends/backend_utils.h"
-#include "lemon/gguf_capabilities.h"
-#include "lemon/gguf_reader.h"
-#include "lemon/model_manager.h"
+#include <algorithm>
 #include <algorithm>
 #include <cctype>
-#include <filesystem>
-#include <regex>
-#include <system_error>
-#include <utility>
-#include "lemon/auto_tune.h"
-#include "lemon/backend_manager.h"
-#include "lemon/runtime_config.h"
-#include "lemon/utils/custom_args.h"
-#include "lemon/utils/recipe_arg_resolver.h"
-#include "lemon/utils/process_manager.h"
-#include "lemon/utils/json_utils.h"
-#include "lemon/utils/path_utils.h"
-#include "lemon/error_types.h"
-#include "lemon/system_info.h"
-#include <algorithm>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <filesystem>
 #include <iostream>
+#include "lemon/auto_tune.h"
+#include "lemon/backend_manager.h"
+#include "lemon/backends/backend_ops.h"
+#include "lemon/backends/backend_registry.h"
+#include "lemon/backends/backend_utils.h"
+#include "lemon/backends/llamacpp/llamacpp.h"
+#include "lemon/backends/llamacpp/llamacpp_gguf.h"
+#include "lemon/backends/llamacpp/llamacpp_request.h"
+#include "lemon/backends/llamacpp/llamacpp_server.h"
+#include "lemon/error_types.h"
+#include "lemon/gguf_capabilities.h"
+#include "lemon/gguf_reader.h"
+#include "lemon/model_manager.h"
+#include "lemon/runtime_config.h"
+#include "lemon/system_info.h"
 #include <lemon/utils/aixlog.hpp>
+#include "lemon/utils/custom_args.h"
+#include "lemon/utils/json_utils.h"
+#include "lemon/utils/path_utils.h"
+#include "lemon/utils/process_manager.h"
+#include "lemon/utils/recipe_arg_resolver.h"
+#include "llamacpp_system_utils.h"
+#include <regex>
 #include <set>
+#include <system_error>
+#include <utility>
 #ifdef __APPLE__
 #include <pwd.h>
 #include <unistd.h>
@@ -47,6 +47,10 @@
     #include <unistd.h>
 #endif
 
+#include "llamacpp_effects.h"
+
+// Keep production log source locations stable while freezing the wrapper.
+#line 50
 namespace fs = std::filesystem;
 using namespace lemon::utils;
 
@@ -85,9 +89,10 @@ static std::string resolve_llamacpp_backend(const std::string& backend) {
     if (backend == "rocm") {
         // Map "rocm" to the appropriate channel based on config
         std::string channel = "stable";  // default to stable for now
-        if (auto* cfg = RuntimeConfig::global()) {
+        if (auto* cfg = LLAMA_EFFECT(RuntimeConfig::global(), llamacpp::oracle::effects().runtime_config())) {
             channel = cfg->rocm_channel();
         }
+#line 91
         return "rocm-" + channel;
     }
     return backend;
@@ -160,7 +165,7 @@ static std::string trim_to_major_minor(const std::string& version) {
 }
 
 static std::string get_therock_version() {
-    auto config = JsonUtils::load_from_file(utils::get_resource_path("resources/backend_versions.json"));
+    auto config = LLAMA_EFFECT(JsonUtils::load_from_file(utils::get_resource_path("resources/backend_versions.json")), llamacpp::oracle::effects().versions());
     if (!config.contains("therock") || !config["therock"].is_object() ||
         !config["therock"].contains("version") || !config["therock"]["version"].is_string()) {
         throw std::runtime_error("backend_versions.json is missing 'therock.version'");
@@ -180,9 +185,9 @@ InstallParams LlamaCppServer::get_install_params(const std::string& backend, con
     if (resolved_backend == "rocm-stable") {
         params.repo = "lemonade-sdk/llama.cpp";
         std::string therock_ver = get_therock_version();
-#ifdef _WIN32
+#if LLAMA_WINDOWS
         params.filename = "llama-" + version + "-bin-win-rocm-" + therock_ver + "-x64.zip";
-#elif defined(__linux__)
+#elif LLAMA_LINUX
         params.filename = "llama-" + version + "-bin-ubuntu-rocm-" + therock_ver + "-x64.tar.gz";
 #else
         throw std::runtime_error("ROCm stable llamacpp is currently supported on Windows and Linux only");
@@ -190,34 +195,34 @@ InstallParams LlamaCppServer::get_install_params(const std::string& backend, con
     } else if (resolved_backend == "rocm-nightly") {
         params.repo = "lemonade-sdk/llamacpp-rocm";
         std::string target_arch =
-            SystemInfo::rocm_asset_family(SystemInfo::get_rocm_arch());
+            SystemInfo::rocm_asset_family(LLAMA_EFFECT(SystemInfo::get_rocm_arch(), llamacpp::oracle::effects().rocm_arch()));
         if (target_arch.empty()) {
             throw std::runtime_error(
-                SystemInfo::get_unsupported_backend_error("llamacpp", "rocm-nightly")
+                LLAMA_EFFECT(SystemInfo::get_unsupported_backend_error("llamacpp", "rocm-nightly"), llamacpp::oracle::effects().unsupported("rocm-nightly"))
             );
         }
-#ifdef _WIN32
+#if LLAMA_WINDOWS
         params.filename = "llama-" + version + "-windows-rocm-" + target_arch + "-x64.zip";
-#elif defined(__linux__)
+#elif LLAMA_LINUX
         params.filename = "llama-" + version + "-ubuntu-rocm-" + target_arch + "-x64.zip";
 #else
         throw std::runtime_error("ROCm nightly llamacpp only supported on Windows and Linux");
 #endif
     } else if (resolved_backend == "cuda") {
         params.repo = "lemonade-sdk/llama.cpp";
-        std::string target_arch = SystemInfo::get_cuda_arch();
+        std::string target_arch = LLAMA_EFFECT(SystemInfo::get_cuda_arch(), llamacpp::oracle::effects().cuda_arch());
         if (target_arch.empty()) {
             throw std::runtime_error(
-                SystemInfo::get_unsupported_backend_error("llamacpp", "cuda")
+                LLAMA_EFFECT(SystemInfo::get_unsupported_backend_error("llamacpp", "cuda"), llamacpp::oracle::effects().unsupported("cuda"))
             );
         }
         // lemonade-sdk/llama.cpp releases publish per-Compute-Capability binaries
         // and embed the build tag in the asset filename, e.g.
         // llama-b1011-ubuntu-cuda-sm_120-x64.tar.xz.
-#ifdef _WIN32
+#if LLAMA_WINDOWS
         params.filename = "llama-" + version + "-windows-cuda-" + target_arch + "-x64.7z";
-#elif defined(__linux__)
-#if defined(__aarch64__)
+#elif LLAMA_LINUX
+#if LLAMA_ARM64
         params.filename = "llama-" + version + "-ubuntu-cuda-" + target_arch + "-arm64.tar.xz";
 #else
         params.filename = "llama-" + version + "-ubuntu-cuda-" + target_arch + "-x64.tar.xz";
@@ -227,17 +232,17 @@ InstallParams LlamaCppServer::get_install_params(const std::string& backend, con
 #endif
     } else if (resolved_backend == "metal") {
         params.repo = "ggml-org/llama.cpp";
-#ifdef __APPLE__
+#if LLAMA_MACOS
         params.filename = "llama-" + version + "-bin-macos-arm64.tar.gz";
 #else
         throw std::runtime_error("Metal llamacpp only supported on macOS");
 #endif
     } else if (resolved_backend == "cpu") {
         params.repo = "ggml-org/llama.cpp";
-#ifdef _WIN32
+#if LLAMA_WINDOWS
         params.filename = "llama-" + version + "-bin-win-cpu-x64.zip";
-#elif defined(__linux__)
-#if defined(__aarch64__)
+#elif LLAMA_LINUX
+#if LLAMA_ARM64
         params.filename = "llama-" + version + "-bin-ubuntu-arm64.tar.gz";
 #else
         params.filename = "llama-" + version + "-bin-ubuntu-x64.tar.gz";
@@ -247,10 +252,10 @@ InstallParams LlamaCppServer::get_install_params(const std::string& backend, con
 #endif
     } else {  // vulkan
         params.repo = "ggml-org/llama.cpp";
-#ifdef _WIN32
+#if LLAMA_WINDOWS
         params.filename = "llama-" + version + "-bin-win-vulkan-x64.zip";
-#elif defined(__linux__)
-#if defined(__aarch64__)
+#elif LLAMA_LINUX
+#if LLAMA_ARM64
         params.filename = "llama-" + version + "-bin-ubuntu-vulkan-arm64.tar.gz";
 #else
         params.filename = "llama-" + version + "-bin-ubuntu-vulkan-x64.tar.gz";
@@ -265,6 +270,7 @@ InstallParams LlamaCppServer::get_install_params(const std::string& backend, con
 
 LlamaCppServer::LlamaCppServer(const std::string& log_level, ModelManager* model_manager, BackendManager* backend_manager)
     : WrappedServer("llama-server", log_level, model_manager, backend_manager) {
+    bind_legacy_operations(LegacyOperationProfile::LlamaCpp, *this);
 }
 
 void LlamaCppServer::load(const std::string& model_name,
@@ -292,7 +298,7 @@ void LlamaCppServer::load(const std::string& model_name,
     device_type_ = use_gpu ? DEVICE_GPU : DEVICE_CPU;
 
     // Install llama-server if needed (use per-model backend)
-    backend_manager_->install_backend(llamacpp::spec()->recipe, llamacpp_backend);
+    LLAMA_EFFECT(backend_manager_->install_backend(llamacpp::spec()->recipe, llamacpp_backend), llamacpp::oracle::effects().install(llamacpp::spec()->recipe, llamacpp_backend));
 
     // Use pre-resolved GGUF path. Skipped for hf_load models because llama-server
     // sources the weights itself via -hf; those models may not have local files.
@@ -309,7 +315,7 @@ void LlamaCppServer::load(const std::string& model_name,
     std::string mmproj_path = model_info.resolved_path("mmproj");
     std::string draft_path = model_info.resolved_path("draft");
 
-    port_ = choose_port();
+    port_ = LLAMA_EFFECT(choose_port(), llamacpp::oracle::effects().port());
 
     std::string executable = BackendUtils::get_backend_binary_path(*llamacpp::spec(), llamacpp_backend);
 
@@ -415,17 +421,17 @@ void LlamaCppServer::load(const std::string& model_name,
 
     // For ROCm on Linux, set LD_LIBRARY_PATH to include the ROCm library directory
     std::vector<std::pair<std::string, std::string>> env_vars;
-#ifndef _WIN32
+#if !LLAMA_WINDOWS
     if (is_llamacpp_rocm_backend(llamacpp_backend)) {
         // Get the directory containing the executable (where ROCm .so files are)
         fs::path exe_dir = fs::path(executable).parent_path();
         std::string lib_path = exe_dir.string();
 
         if (llamacpp_backend == "rocm-stable") {
-            std::string rocm_arch = SystemInfo::get_rocm_arch();
+            std::string rocm_arch = LLAMA_EFFECT(SystemInfo::get_rocm_arch(), llamacpp::oracle::effects().rocm_arch());
             if (!rocm_arch.empty()) {
                 std::string therock_dirs = BackendUtils::join_runtime_dirs(
-                    BackendUtils::get_therock_lib_paths(rocm_arch));
+                    LLAMA_EFFECT(BackendUtils::get_therock_lib_paths(rocm_arch), llamacpp::oracle::effects().runtime_paths(rocm_arch)));
                 if (!therock_dirs.empty()) {
                     lib_path = therock_dirs + ":" + lib_path;
                 }
@@ -433,7 +439,7 @@ void LlamaCppServer::load(const std::string& model_name,
         }
 
         // Preserve existing LD_LIBRARY_PATH if it exists
-        const char* existing_ld_path = std::getenv("LD_LIBRARY_PATH");
+        const char* existing_ld_path = LLAMA_EFFECT(std::getenv("LD_LIBRARY_PATH"), llamacpp::oracle::effects().environment("LD_LIBRARY_PATH"));
         if (existing_ld_path && strlen(existing_ld_path) > 0) {
             lib_path = lib_path + ":" + std::string(existing_ld_path);
         }
@@ -447,7 +453,7 @@ void LlamaCppServer::load(const std::string& model_name,
         fs::path exe_dir = fs::path(executable).parent_path();
         std::string lib_path = exe_dir.string();
 
-        const char* existing_ld_path = std::getenv("LD_LIBRARY_PATH");
+        const char* existing_ld_path = LLAMA_EFFECT(std::getenv("LD_LIBRARY_PATH"), llamacpp::oracle::effects().environment("LD_LIBRARY_PATH"));
         if (existing_ld_path && strlen(existing_ld_path) > 0) {
             lib_path = lib_path + ":" + std::string(existing_ld_path);
         }
@@ -462,12 +468,12 @@ void LlamaCppServer::load(const std::string& model_name,
         std::string new_path;
 
         if (llamacpp_backend == "rocm-stable") {
-            std::string rocm_arch = SystemInfo::get_rocm_arch();
+            std::string rocm_arch = LLAMA_EFFECT(SystemInfo::get_rocm_arch(), llamacpp::oracle::effects().rocm_arch());
             if (!rocm_arch.empty()) {
                 // Prepend ALL TheRock runtime dirs (not just _rocm_sdk_core/bin) so
                 // HIP + BLAS DLLs resolve; _rocm_sdk_core/bin alone → STATUS_DLL_NOT_FOUND.
                 std::string therock_dirs = BackendUtils::join_runtime_dirs(
-                    BackendUtils::get_therock_lib_paths(rocm_arch));
+                    LLAMA_EFFECT(BackendUtils::get_therock_lib_paths(rocm_arch), llamacpp::oracle::effects().runtime_paths(rocm_arch)));
                 if (!therock_dirs.empty()) {
                     new_path = therock_dirs;
                 }
@@ -475,7 +481,7 @@ void LlamaCppServer::load(const std::string& model_name,
         }
 
         if (!new_path.empty()) {
-            const char* existing_path = std::getenv("PATH");
+            const char* existing_path = LLAMA_EFFECT(std::getenv("PATH"), llamacpp::oracle::effects().environment("PATH"));
             if (existing_path && strlen(existing_path) > 0) {
                 new_path += ";" + std::string(existing_path);
             }
@@ -486,14 +492,14 @@ void LlamaCppServer::load(const std::string& model_name,
         // System32 amdhip64_7.dll shadows the TheRock runtime on PATH. Copying
         // to the exe directory overrides both.
         if (llamacpp_backend == "rocm-stable") {
-            std::string rocm_arch = SystemInfo::get_rocm_arch();
+            std::string rocm_arch = LLAMA_EFFECT(SystemInfo::get_rocm_arch(), llamacpp::oracle::effects().rocm_arch());
             if (!rocm_arch.empty()) {
-                BackendUtils::stage_therock_hip_runtime(
-                    rocm_arch, fs::path(executable).parent_path());
+                LLAMA_EFFECT(BackendUtils::stage_therock_hip_runtime(
+                    rocm_arch, fs::path(executable).parent_path()), llamacpp::oracle::effects().stage(rocm_arch, fs::path(executable).parent_path()));
             }
         }
 
-        std::string arch = lemon::SystemInfo::get_rocm_arch();
+        std::string arch = LLAMA_EFFECT(SystemInfo::get_rocm_arch(), llamacpp::oracle::effects().rocm_arch());
         if ((arch == "gfx1151") || (arch == "gfx1152")){
             env_vars.push_back({"OCL_SET_SVM_SIZE", "262144"});
             LOG(DEBUG, "LlamaCpp") << "Setting OCL_SET_SVM_SIZE=262144 for gfx1151/gfx1152 (enables loading larger models)" << std::endl;
@@ -505,7 +511,7 @@ void LlamaCppServer::load(const std::string& model_name,
         fs::path exe_dir = fs::absolute(fs::path(executable)).parent_path();
         std::string new_path = path_to_utf8(exe_dir);
 
-        const char* existing_path = std::getenv("PATH");
+        const char* existing_path = LLAMA_EFFECT(std::getenv("PATH"), llamacpp::oracle::effects().environment("PATH"));
         if (existing_path && strlen(existing_path) > 0) {
             new_path += ";" + std::string(existing_path);
         }
@@ -515,7 +521,7 @@ void LlamaCppServer::load(const std::string& model_name,
 #endif
 
     if (is_llamacpp_cuda_backend(llamacpp_backend)) {
-        std::string existing_llama_device = utils::get_environment_variable_utf8("LLAMA_ARG_DEVICE");
+        std::string existing_llama_device = LLAMA_EFFECT(utils::get_environment_variable_utf8("LLAMA_ARG_DEVICE"), llamacpp::oracle::effects().environment_string("LLAMA_ARG_DEVICE"));
         const bool has_llama_device_override = !existing_llama_device.empty();
 
         bool skip_visible_devices = false;
@@ -533,11 +539,11 @@ void LlamaCppServer::load(const std::string& model_name,
         BackendUtils::apply_cuda_env_vars(env_vars, "LlamaCpp", skip_visible_devices);
     }
 
-#ifdef __APPLE__
+#if LLAMA_MACOS
     // Forward GGML_METAL_NO_RESIDENCY to llama-server if set in the parent
     // environment. Metal residency sets crash on paravirtualized GPUs (e.g.
     // GitHub Actions macOS runners with MTLGPUFamilyApple5).
-    const char* no_residency = std::getenv("GGML_METAL_NO_RESIDENCY");
+    const char* no_residency = LLAMA_EFFECT(std::getenv("GGML_METAL_NO_RESIDENCY"), llamacpp::oracle::effects().environment("GGML_METAL_NO_RESIDENCY"));
     if (no_residency) {
         env_vars.push_back({"GGML_METAL_NO_RESIDENCY", no_residency});
         LOG(DEBUG, "LlamaCpp") << "Forwarding GGML_METAL_NO_RESIDENCY=" << no_residency << std::endl;
@@ -556,20 +562,26 @@ void LlamaCppServer::load(const std::string& model_name,
     // Once that PR merges and lemonade's pinned llama.cpp version (in
     // src/cpp/resources/backend_versions.json) includes it, this HOME
     // fallback can be deleted.
-    const char* home = std::getenv("HOME");
+    const char* home = LLAMA_EFFECT(std::getenv("HOME"), llamacpp::oracle::effects().environment("HOME"));
     if (!home || home[0] == '\0') {
+#ifdef LEMONADE_LLAMACPP_ORACLE
+        std::string fallback_home = llamacpp::oracle::effects().home();
+#else
         struct passwd* pw = getpwuid(getuid());
         std::string fallback_home = (pw && pw->pw_dir) ? pw->pw_dir : "/var/root";
+#endif
+#line 564
         env_vars.push_back({"HOME", fallback_home});
         LOG(DEBUG, "LlamaCpp") << "Parent HOME unset; setting child HOME=" << fallback_home << std::endl;
     }
 #endif
+#line 568
 
     // Start process (inherit output if debug logging enabled, filter health check spam)
     // Keep llama-server output visible at info log level.
     std::string process_executable = executable;
     std::string working_dir;
-#ifdef _WIN32
+#if LLAMA_WINDOWS
     // Avoid inheriting a protected launcher cwd while keeping Linux/macOS behavior unchanged.
     fs::path executable_path = fs::absolute(fs::path(executable));
     process_executable = path_to_utf8(executable_path);
@@ -583,58 +595,51 @@ void LlamaCppServer::load(const std::string& model_name,
     command.port = port_;
 
     bool inherit_llama_output = (log_level_ == "info") || is_debug();
-    start_server(
+    LLAMA_EFFECT((start_server(
         std::make_unique<NativeProcess>(ProcessOutput{inherit_llama_output, true}, working_dir),
-        command);
-}
-
-json LlamaCppServer::normalize_response_model(json response, const json& request) const {
-    if (response.is_object() && response.contains("model")) {
-        response["model"] = request.value("model", get_model_name());
-    }
-    return response;
+        command)), llamacpp::oracle::effects().start(command, {inherit_llama_output, true}, working_dir));
 }
 
 json LlamaCppServer::chat_completion(const json& request) {
-    return normalize_response_model(
-        forward_request("/v1/chat/completions",
+    return llamacpp::normalize_response_model(
+        LLAMA_POST("/v1/chat/completions",
                         llamacpp::sanitize_tool_schema_limits(
-                            JsonUtils::with_legacy_max_tokens_alias(request))),
-        request);
+                            llamacpp::with_max_tokens_alias(request))),
+        request, get_model_name());
 }
 
 json LlamaCppServer::completion(const json& request) {
-    return normalize_response_model(
-        forward_request("/v1/completions",
-                        JsonUtils::with_legacy_max_tokens_alias(request)),
-        request);
+    return llamacpp::normalize_response_model(
+        LLAMA_POST("/v1/completions",
+                        llamacpp::with_max_tokens_alias(request)),
+        request, get_model_name());
 }
 
 json LlamaCppServer::embeddings(const json& request) {
-    return forward_request("/v1/embeddings", request);
+    return LLAMA_POST("/v1/embeddings", request);
 }
 
 json LlamaCppServer::reranking(const json& request) {
-    return forward_request("/v1/rerank", request);
+    return LLAMA_POST("/v1/rerank", request);
 }
 
 json LlamaCppServer::get_slots() {
-    return forward_get_request("/slots");
+    return LLAMA_GET("/slots");
 }
 
 json LlamaCppServer::slots_action(int slot_id, const std::string& action, const json& request_body) {
-    return forward_request("/slots/" + std::to_string(slot_id) + "?action=" + action, request_body);
+    return LLAMA_POST("/slots/" + std::to_string(slot_id) + "?action=" + action, request_body);
 }
 
 json LlamaCppServer::tokenize(const json& request_body) {
-    return forward_request("/tokenize", request_body);
+    return LLAMA_POST("/tokenize", request_body);
 }
 
 json LlamaCppServer::responses(const json& request) {
-    return normalize_response_model(
-        forward_request("/v1/responses",
+    return llamacpp::normalize_response_model(
+        LLAMA_POST("/v1/responses",
                         llamacpp::sanitize_tool_schema_limits(request)),
-        request);
+        request, get_model_name());
 }
 
 void LlamaCppServer::forward_streaming_request(const std::string& endpoint,
@@ -648,14 +653,15 @@ void LlamaCppServer::forward_streaming_request(const std::string& endpoint,
         json request = json::parse(request_body, nullptr, false);
         if (!request.is_discarded()) {
             if (endpoint == "/v1/chat/completions") {
-                JsonUtils::add_legacy_max_tokens_alias(request);
+                request = llamacpp::with_max_tokens_alias(std::move(request));
             }
             body = llamacpp::sanitize_tool_schema_limits(std::move(request)).dump();
         }
     }
 
-    WrappedServer::forward_streaming_request(
-        endpoint, body, sink, sse, timeout_seconds, telemetry_callback);
+    LLAMA_EFFECT((WrappedServer::forward_streaming_request(
+        endpoint, body, sink, sse, timeout_seconds, telemetry_callback)),
+        llamacpp::oracle::effects().stream(endpoint, body, sink, sse, timeout_seconds, telemetry_callback));
 }
 
 } // namespace backends
@@ -672,11 +678,11 @@ std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
 namespace {
 std::string system_llamacpp_version() {
     std::string output;
-    #ifdef _WIN32
+    #if LLAMA_WINDOWS
     std::string command = "llama-server --version 2>NUL";
-    int rc = lemon::utils::ProcessManager::run_command(command, output);
+    int rc = LLAMA_EFFECT(lemon::utils::ProcessManager::run_command(command, output), oracle::effects().version_command(command, output));
     #else
-    FILE* pipe = popen("llama-server --version 2>/dev/null", "r");
+    FILE* pipe = LLAMA_EFFECT(popen("llama-server --version 2>/dev/null", "r"), oracle::effects().version_pipe("llama-server --version 2>/dev/null"));
     if (!pipe) {
         return "unknown";
     }
@@ -686,7 +692,7 @@ std::string system_llamacpp_version() {
         output = buffer;
     }
 
-    pclose(pipe);
+    LLAMA_EFFECT(pclose(pipe), oracle::effects().close_version_pipe(pipe));
     #endif
 
     // Parse version from output like "version: 3432 (e2b2a632)" or "llama.cpp version b3432"
@@ -709,7 +715,7 @@ std::string system_llamacpp_version() {
 
 
 bool is_ggml_hip_plugin_available() {
-#ifdef __linux__
+#if LLAMA_LINUX
     // Allow distros/packagers that install outside the FHS paths below
     // (e.g. NixOS, custom prefixes) to point directly at libggml-hip.so.
     if (detail::ggml_hip_env_override_available()) {
@@ -720,7 +726,7 @@ bool is_ggml_hip_plugin_available() {
     // the binary (build tree) or in a sibling lib/ directory (installed tree).
     // find_executable_in_path() returns the bare name on POSIX, so walk PATH
     // here to recover the directory the binary actually lives in.
-    if (const char* path_env = std::getenv("PATH"); path_env && *path_env) {
+    if (const char* path_env = LLAMA_EFFECT(std::getenv("PATH"), llamacpp::oracle::effects().environment("PATH")); path_env && *path_env) {
         if (detail::ggml_hip_plugin_near_llama_server(path_env)) {
             return true;
         }
@@ -740,7 +746,7 @@ bool is_ggml_hip_plugin_available() {
     };
 
     for (const auto& path : possible_paths) {
-        if (fs::exists(path)) {
+        if (LLAMA_EFFECT(fs::exists(path), oracle::effects().exists(path))) {
             return true;
         }
     }
@@ -856,8 +862,8 @@ public:
         // The system llama-server also needs the ggml HIP plugin for ROCm GPU
         // acceleration when an AMD GPU (KFD) is present.
         if (binary_found && backend == "system") {
-#ifdef __linux__
-            if (std::filesystem::exists("/sys/class/kfd") && !is_ggml_hip_plugin_available()) {
+#if LLAMA_LINUX
+            if (LLAMA_EFFECT(std::filesystem::exists("/sys/class/kfd"), oracle::effects().exists("/sys/class/kfd")) && !is_ggml_hip_plugin_available()) {
                 return {false, "HIP plugin libggml-hip.so not installed"};
             }
 #endif

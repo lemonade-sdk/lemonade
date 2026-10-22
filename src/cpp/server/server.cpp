@@ -1,3 +1,4 @@
+#include "lemon/backends/configured/backend_catalog.h"
 #include "lemon/server.h"
 #include "lemon/api_docs.h"
 #include "lemon/audio_types.h"
@@ -1202,6 +1203,50 @@ void Server::setup_routes(httplib::Server &web_server) {
         }
     };
 
+    register_get("backends/schema", [](const httplib::Request& req, httplib::Response& res) {
+        size_t count = 0, representation_count = 0;
+        const auto query_start = req.target.find('?');
+        if (query_start != std::string::npos) {
+            // httplib collapses identical query pairs; the original target preserves them.
+            std::istringstream query(req.target.substr(query_start + 1));
+            std::string field;
+            while (std::getline(query, field, '&')) {
+                httplib::Params params;
+                httplib::detail::parse_query_text(field, params);
+                count += params.count("recipe");
+                representation_count += params.count("representation");
+            }
+        }
+        const auto representation = req.get_param_value("representation");
+        if (representation_count > 1 || (representation_count && representation != "1" && representation != "2")) {
+            res.status = 400;
+            res.set_content(json{{"error", {{"message", "Expected one supported catalog representation"}, {"type", "invalid_request_error"}, {"code", "invalid_representation"}}}}.dump(), "application/json");
+            return;
+        }
+        if (count > 1 || (count == 1 && req.get_param_value("recipe").empty())) {
+            res.status = 400;
+            res.set_content(json{{"error", {{"message", "Expected one nonempty recipe filter"}, {"type", "invalid_request_error"}, {"code", "invalid_recipe_filter"}}}}.dump(), "application/json");
+            return;
+        }
+        const auto recipe = req.get_param_value("recipe");
+        const auto schema = backends::frozen_backend_catalog().export_schema(recipe, representation == "2" ? 2 : 1);
+        if (count && schema["recipes"].empty()) {
+            res.status = 404;
+            res.set_content(json{{"error", {{"message", "Unknown backend recipe: " + recipe}, {"type", "invalid_request_error"}, {"code", "unknown_recipe"}}}}.dump(), "application/json");
+            return;
+        }
+        const auto etag = "\"" + backends::schema_digest(schema.dump()) + "\"";
+        res.set_header("ETag", etag);
+        res.set_header("Cache-Control", "private, no-cache");
+        if (req.get_header_value("If-None-Match") == etag) { res.status = 304; return; }
+        res.set_content(schema.dump(), "application/json");
+    });
+    register_post("backends/validate", [](const httplib::Request& req, httplib::Response& res) {
+        const auto result = backends::frozen_backend_catalog().validate(req.body);
+        res.status = req.body.size() > 1024 * 1024 ? 413 : result["valid"].get<bool>() ? 200 : 400;
+        res.set_content(result.dump(), "application/json");
+    });
+
     // Health check
     register_get("health", [this](const httplib::Request& req, httplib::Response& res) {
         handle_health(req, res);
@@ -1678,6 +1723,16 @@ void Server::setup_static_files(httplib::Server &web_server) {
             // Inject mock window.api for web compatibility with the shared Tauri app renderer
             std::string mock_api = R"(
 <script>
+const settingsListeners = new Set();
+const connectionListeners = new Set();
+const notifyLocalSettings = async () => {
+    const settings = await window.api.getSettings();
+    settingsListeners.forEach(listener => listener(settings));
+    connectionListeners.forEach(listener => listener(window.location.origin, settings.apiKey?.value || ''));
+};
+window.addEventListener('storage', event => {
+    if (event.key === 'lemonade-settings' || event.key === null) void notifyLocalSettings();
+});
 // Mock window.api for web compatibility (the Tauri shim is skipped in pure-web mode)
 window.api = {
     isWebApp: true,  // Explicit flag to indicate web mode
@@ -1711,9 +1766,17 @@ window.api = {
     },
     saveSettings: async (settings) => {
         localStorage.setItem('lemonade-settings', JSON.stringify(settings));
+        await notifyLocalSettings();
         return settings;
     },
-    onSettingsUpdated: () => {},
+    onSettingsUpdated: (listener) => {
+        settingsListeners.add(listener);
+        return () => settingsListeners.delete(listener);
+    },
+    onConnectionSettingsUpdated: (listener) => {
+        connectionListeners.add(listener);
+        return () => connectionListeners.delete(listener);
+    },
     getServerPort: () => parseInt(window.location.port) || 13305,
     onServerPortUpdated: () => {},
     getServerAPIKey: async () => {
@@ -3668,6 +3731,16 @@ void Server::handle_model_options_post(const httplib::Request& req, httplib::Res
                     changes[key] = nullptr;
                     continue;
                 }
+                if (const auto* contract = backends::external_option_contract(info.recipe, key)) {
+                    const auto error = backends::validate_option_contract(*contract, value);
+                    if (!error.empty()) {
+                        r.status = 400;
+                        r.set_content(json{{"error", "Invalid option " + key + ": " + error}}.dump(), "application/json");
+                        return false;
+                    }
+                    changes[key] = value;
+                    continue;
+                }
                 const nlohmann::json expected = unset.get_option(key);
                 if (!option_type_matches(expected, value)) {
                     r.status = 400;
@@ -4930,6 +5003,7 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
             }
         }
 
+        const auto delivery = is_streaming ? OperationDelivery::Streaming : OperationDelivery::Buffered;
         const std::string speech_model = request_json["model"].get<std::string>();
         // A backend's streaming encoder is often narrower than its buffered one, so
         // which constraint applies depends on the transport in play.
@@ -4985,7 +5059,7 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
             return;
         }
         const auto format_metadata =
-            router_->audio_speech_format_metadata(speech_model, response_format);
+            router_->audio_speech_format_metadata(speech_model, response_format, delivery);
         std::string mime_type = format_metadata.content_type.empty()
             ? MIME_TYPES[response_format].get<std::string>()
             : format_metadata.content_type;
@@ -5000,7 +5074,7 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
         // Log the HTTP request
         LOG(INFO, "Server") << "POST /api/v1/audio/speech" << std::endl;
 
-        auto audio_source = [this, request_json](size_t offset, httplib::DataSink& sink) {
+        auto audio_source = [this, request_json, delivery](size_t offset, httplib::DataSink& sink) {
             // For chunked responses, offset tracks bytes sent so far
             // We only want to stream once when offset is 0
             if (offset > 0) {
@@ -5008,7 +5082,7 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
             }
 
             // Use unified Router path for streaming
-            router_->audio_speech(request_json, sink);
+            router_->audio_speech(request_json, sink, delivery);
 
             return false;
         };
@@ -5021,8 +5095,8 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
             // Use cpp-httplib's chunked content provider for streaming
             res.set_chunked_content_provider(mime_type, audio_source);
         } else {
-            serve_media_or_error(res, mime_type, [this, request_json](httplib::DataSink& sink) {
-                router_->audio_speech(request_json, sink);
+            serve_media_or_error(res, mime_type, [this, request_json, delivery](httplib::DataSink& sink) {
+                router_->audio_speech(request_json, sink, delivery);
             });
         }
 
@@ -5747,7 +5821,7 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
         context.cloud_registry = cloud_registry_.get();
         context.model_info = &info;
         auto server = backends::create_server(info.recipe, context);
-        if (!server || !supports_capability<IUpscaleServer>(server.get())) {
+        if (!server || !server->supports_operation(BackendOperation::Upscale, OperationDelivery::Buffered, info.type)) {
             res.status = 400;
             nlohmann::json error = {{"error", {
                 {"message", "Upscale is not supported by recipe: " + info.recipe},
@@ -5756,7 +5830,7 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
             res.set_content(error.dump(), "application/json");
             return;
         }
-        auto* upscale_server = dynamic_cast<IUpscaleServer*>(server.get());
+        auto* upscale_server = operation_adapter<IUpscaleServer>(*server, BackendOperation::Upscale, OperationDelivery::Buffered, info.type);
         std::string upscaled = upscale_server->upscale_via_cli(b64_image, info.resolved_path("main"));
 
         if (upscaled.empty()) {
@@ -6291,6 +6365,9 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
             }
         }
 
+        if (const auto* spec = backends::spec_for(info.recipe)) {
+            if (spec->definition && spec->definition->origin == backends::DefinitionOrigin::External) router_->resolve_effective_options(info, options);
+        }
         bool save_options = request_json.value("save_options", false);
         std::optional<bool> pinned_opt = std::nullopt;
         if (request_json.contains("pinned") && request_json["pinned"].is_boolean()) {
@@ -7286,7 +7363,9 @@ void Server::handle_shutdown(const httplib::Request& req, httplib::Response& res
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
         cancel_download_jobs();
         stop();
-        std::exit(0);
+        std::cout.flush();
+        std::cerr.flush();
+        std::_Exit(0);
     }).detach();
 }
 

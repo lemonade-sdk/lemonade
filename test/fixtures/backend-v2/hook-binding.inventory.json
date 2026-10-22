@@ -1,0 +1,170 @@
+{
+  "targets": [
+    {
+      "contract": 6,
+      "id": "llamacpp.artifacts.v1",
+      "stage": "artifacts",
+      "abi": 1,
+      "implementation": 1,
+      "effects": [
+        7
+      ],
+      "requires": [
+        5,
+        3
+      ],
+      "provides": [
+        17
+      ]
+    },
+    {
+      "contract": 0,
+      "id": "llamacpp.backend.v1",
+      "stage": "backend",
+      "abi": 1,
+      "implementation": 1,
+      "effects": [
+        0,
+        1
+      ],
+      "requires": [
+        0
+      ],
+      "provides": [
+        7
+      ]
+    },
+    {
+      "contract": 9,
+      "id": "llamacpp.client_model",
+      "stage": "response",
+      "abi": 1,
+      "implementation": 1,
+      "effects": [],
+      "requires": [
+        9,
+        10
+      ],
+      "provides": [
+        10
+      ]
+    },
+    {
+      "contract": 4,
+      "id": "llamacpp.environment.v1",
+      "stage": "environment",
+      "abi": 1,
+      "implementation": 1,
+      "effects": [
+        3,
+        4,
+        5
+      ],
+      "requires": [
+        1,
+        7,
+        8
+      ],
+      "provides": [
+        15
+      ]
+    },
+    {
+      "contract": 1,
+      "id": "llamacpp.install_context.v1",
+      "stage": "install_context",
+      "abi": 1,
+      "implementation": 1,
+      "effects": [
+        2
+      ],
+      "requires": [
+        7,
+        1,
+        2
+      ],
+      "provides": [
+        12
+      ]
+    },
+    {
+      "contract": 7,
+      "id": "llamacpp.max_tokens_alias",
+      "stage": "request",
+      "abi": 1,
+      "implementation": 1,
+      "effects": [],
+      "requires": [
+        9
+      ],
+      "provides": [
+        9
+      ]
+    },
+    {
+      "contract": 3,
+      "id": "llamacpp.prepare.v1",
+      "stage": "launch",
+      "abi": 1,
+      "implementation": 1,
+      "effects": [],
+      "requires": [
+        5,
+        3,
+        4,
+        6,
+        7
+      ],
+      "provides": [
+        14
+      ]
+    },
+    {
+      "contract": 2,
+      "id": "llamacpp.runtime_options.v1",
+      "stage": "runtime_options",
+      "abi": 1,
+      "implementation": 1,
+      "effects": [],
+      "requires": [
+        3,
+        4
+      ],
+      "provides": [
+        13
+      ]
+    },
+    {
+      "contract": 5,
+      "id": "llamacpp.system.v1",
+      "stage": "system",
+      "abi": 1,
+      "implementation": 1,
+      "effects": [
+        6
+      ],
+      "requires": [
+        1,
+        7,
+        2
+      ],
+      "provides": [
+        16
+      ]
+    },
+    {
+      "contract": 8,
+      "id": "llamacpp.tool_schema_limits",
+      "stage": "request",
+      "abi": 1,
+      "implementation": 1,
+      "effects": [],
+      "requires": [
+        9
+      ],
+      "provides": [
+        9
+      ]
+    }
+  ]
+}

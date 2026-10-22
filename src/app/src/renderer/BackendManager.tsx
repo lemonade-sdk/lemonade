@@ -2,7 +2,7 @@ import React, { useState, useCallback, useEffect } from 'react';
 
 import { useSystem } from './hooks/useSystem';
 import { Recipe, BackendInfo } from './utils/systemData';
-import { RECIPE_DISPLAY_NAMES } from './utils/recipeNames';
+import { useRecipeDisplayNames } from './utils/recipeNames';
 import ConnectedBackendRow from './components/ConnectedBackendRow';
 import CloudProvidersSection from './CloudProvidersSection';
 
@@ -38,6 +38,7 @@ interface BackendManagerProps {
 }
 
 const BackendManager: React.FC<BackendManagerProps> = ({ searchQuery, showError, showSuccess, showWarning }) => {
+  const recipeDisplayNames = useRecipeDisplayNames();
   const { systemInfo, isLoading, refresh } = useSystem();
   const [backendAssetSizes, setBackendAssetSizes] = useState<Record<string, number>>({});
 
@@ -214,7 +215,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ searchQuery, showError,
       {visibleGroups.map(([recipeName, backends]) => (
         <div key={recipeName} className="model-category">
           <div className="model-category-header static">
-            <span className="category-label">{RECIPE_DISPLAY_NAMES[recipeName] || recipeName}</span>
+            <span className="category-label">{recipeDisplayNames[recipeName] || recipeName}</span>
             <span className="category-count">({backends.length})</span>
           </div>
           <div className="model-list">

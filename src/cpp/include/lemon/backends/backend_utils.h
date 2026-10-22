@@ -3,11 +3,13 @@
 #include <filesystem>
 #include <functional>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <system_error>
 #include <utility>
 #include <vector>
 #include "lemon/backends/backend_descriptor.h"
+#include "lemon/backends/configured/install_context.h"
 
 namespace fs = std::filesystem;
 
@@ -22,6 +24,7 @@ namespace lemon::backends {
         std::string repo;      // GitHub "org/repo"
         std::string filename;  // Release asset filename
         std::string version_override;  // If set, use this as the release tag instead of backend_versions.json value
+        std::string sha256;
     };
 
     struct BackendSpec {
@@ -34,15 +37,35 @@ namespace lemon::backends {
         // requests and no spurious 404 lines in install logs.
         const bool supports_split_archive;
 
-        using InstallParamsFn = InstallParams(*)(const std::string& backend, const std::string& version);
-        InstallParamsFn install_params_fn;  // nullptr for backends with no auto-install
+        using InstallParamsFn = std::function<InstallParams(const InstallContext&)>;
+        using LegacyInstallParamsFn = InstallParams(*)(const std::string&, const std::string&);
+        const std::string public_recipe;
+        const std::string pin_recipe;
+        const std::shared_ptr<const BackendDefinition> definition;
+        const std::shared_ptr<const ExecutableDefinition> executable_definition;
+        InstallParamsFn install_params_fn;
 
-        BackendSpec(std::string r, std::string b, InstallParamsFn fn = nullptr,
+        BackendSpec(std::string r, std::string b, LegacyInstallParamsFn fn = nullptr,
                     bool split = false)
-            : recipe(std::move(r)), binary(std::move(b)),
-              supports_split_archive(split), install_params_fn(fn) {}
+            : recipe(std::move(r)), binary(std::move(b)), supports_split_archive(split),
+              install_params_fn(fn ? InstallParamsFn([fn](const InstallContext& context) {
+                  return fn(context.backend, context.phase == InstallPhase::Repository
+                      ? context.pinned_version : context.resolved_version);
+              }) : InstallParamsFn()) {}
+
+        BackendSpec(std::string r, std::string b, bool split, std::string public_id,
+                    std::string pin_id, std::shared_ptr<const BackendDefinition> owner, InstallParamsFn fn)
+            : recipe(std::move(r)), binary(std::move(b)), supports_split_archive(split),
+              public_recipe(std::move(public_id)), pin_recipe(std::move(pin_id)),
+              definition(std::move(owner)), install_params_fn(std::move(fn)) {}
 
         std::string log_name() const { return recipe + " Server"; };
+
+        BackendSpec(std::string r, std::string b, std::shared_ptr<const ExecutableDefinition> owner, InstallParamsFn fn = {}, bool split = false)
+            : recipe(r), binary(std::move(b)), supports_split_archive(split), public_recipe(r), pin_recipe(r),
+              executable_definition(std::move(owner)), install_params_fn(std::move(fn)) {
+            if (!executable_definition) throw std::invalid_argument("V2 spec requires an executable definition");
+        }
     };
 
     // Build a backend's install/download spec from its descriptor's recipe/binary
@@ -103,7 +126,8 @@ namespace lemon::backends {
                                         const std::string& repo,
                                         const std::string& filename,
                                         const std::string& backend,
-                                        DownloadProgressCallback progress_cb = nullptr);
+                                        DownloadProgressCallback progress_cb = nullptr,
+                                        const std::string& expected_hash = "");
 
         /** Get the latest version number for the given recipe/backend */
         static std::string get_backend_version(const std::string& recipe, const std::string& backend);

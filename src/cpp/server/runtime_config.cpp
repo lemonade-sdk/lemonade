@@ -13,6 +13,9 @@
 #include <unordered_set>
 #include <utility>
 
+#include "backends/llamacpp/llamacpp_effects.h"
+
+#line 16
 namespace fs = std::filesystem;
 
 namespace lemon {
@@ -224,7 +227,7 @@ void RuntimeConfig::validate_backend_choice(const std::string& config_section,
 
     if (value == "system") {
         const auto* desc = lemon::backends::descriptor_for(recipe);
-        const std::string current_os = get_current_os();
+        const std::string current_os = LLAMA_EFFECT(get_current_os(), backends::llamacpp::oracle::effects().os());
         if (desc) {
             auto supported = std::find_if(
                 desc->support.begin(), desc->support.end(),
@@ -235,7 +238,7 @@ void RuntimeConfig::validate_backend_choice(const std::string& config_section,
         }
     }
 
-    auto result = SystemInfo::get_supported_backends(recipe);
+    auto result = LLAMA_EFFECT(SystemInfo::get_supported_backends(recipe), backends::llamacpp::oracle::effects().supported_backends(recipe));
 
     if (std::find(result.backends.begin(), result.backends.end(), value)
         == result.backends.end()) {
@@ -310,6 +313,15 @@ RuntimeConfig::RuntimeConfig(const json& config)
     }
     if (config_.contains("log_level")) {
         validate("log_level", config_["log_level"]);
+    }
+
+    for (const auto* descriptor : backends::all_descriptors()) {
+        const auto section = descriptor->effective_config_section();
+        if (!config_.contains(section)) continue;
+        for (const auto& option : descriptor->options) if (backends::external_option_contract(descriptor->recipe, option.name)) {
+            const auto key = backends::backend_option_config_key(option.name);
+            if (config_[section].contains(key)) validate_backend(section, key, config_[section][key]);
+        }
     }
 
     // In CI mode, override log level to debug for easier diagnostics
@@ -1136,6 +1148,18 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
 
 void RuntimeConfig::validate_backend(const std::string& backend, const std::string& key,
                                       const json& value) const {
+    for (const auto* descriptor : backends::all_descriptors()) {
+        if (descriptor->effective_config_section() != backend) continue;
+        for (const auto& option : descriptor->options) {
+            const auto config_key = backends::backend_option_config_key(option.name);
+            if (config_key != key) continue;
+            if (const auto* contract = backends::external_option_contract(descriptor->recipe, option.name)) {
+                const auto error = backends::validate_option_contract(*contract, value);
+                if (!error.empty()) throw std::invalid_argument("Invalid option " + option.name + ": " + error);
+                return;
+            }
+        }
+    }
     if (key == "backend") {
         if (!value.is_string()) {
             throw std::invalid_argument("'" + backend + "." + key + "' must be a string");

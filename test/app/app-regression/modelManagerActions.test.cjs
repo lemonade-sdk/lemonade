@@ -55,17 +55,18 @@ const tests = [
     name: 'normal options submit still closes the modal and preserves model/options data flow',
     run() {
       const source = normalizeWhitespace(readSource(MODEL_MANAGER));
-      const submitStart = source.indexOf('onSubmit={(modelName, options) => {');
+      const submitStart = source.indexOf('onSubmit={async (modelName, submission) => {');
       assert.notEqual(submitStart, -1, 'ModelOptionsModal submit should receive the selected model name and option state.');
 
       const submitBlock = source.slice(submitStart, submitStart + 1200);
       assertIncludes(submitBlock, 'setShowModelOptionsModal(false)', 'Submitting normal Model Options should close the modal.');
       assertMatches(
         submitBlock,
-        /modelName[\s\S]{0,700}(?:options|recipeOptionsToApi)|(?:options|recipeOptionsToApi)[\s\S]{0,700}modelName/,
+        /modelName[\s\S]{0,700}submission/,
         'Submitting normal Model Options should keep both the selected model name and submitted options in the load path.',
       );
       assertIncludes(source, 'recipeOptionsToApi', 'Submitted frontend options should still be converted to API format somewhere in ModelManager.');
+      assertIncludes(source, "submission?.kind === 'catalog' ? submission.options", 'Catalog submissions must bypass legacy aliases.');
     },
   },
   {

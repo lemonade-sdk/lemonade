@@ -17,6 +17,8 @@ endif()
 # Common sources
 set(COMMON_SOURCES
     main.cpp
+    backend_schema.cpp
+    ${LEMON_BACKEND_DEFINITION_DATA_SOURCES}
     lemonade_client.cpp
     model_selection.cpp
     recipe_import.cpp
@@ -28,6 +30,7 @@ set(COMMON_SOURCES
     chat_repl.cpp
     ../server/recipe_options.cpp
     ../server/utils/process_manager.cpp
+    ../server/utils/windows_args.cpp
     ../server/utils/path_utils.cpp
     ../server/utils/url_utils.cpp
     ../server/utils/json_utils.cpp
@@ -73,6 +76,7 @@ add_executable(lemonade
 )
 
 target_link_libraries(lemonade PRIVATE
+    lemonade-backend-definition-v2
     nlohmann_json::nlohmann_json
     lemonade-digest-crypto
     lemonade-httplib

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <map>
 #include <nlohmann/json.hpp>
 #ifdef LEMONADE_CLI
 #include <CLI/CLI.hpp>
@@ -28,10 +29,11 @@ public:
 
 #ifdef LEMONADE_CLI
     /// Add recipe options as CLI flags (used by lemonade CLI client only)
-    static void add_cli_options(CLI::App& app, json& storage);
+    static void add_cli_options(CLI::App& app, json& storage, std::map<std::string, CLI::Option*>* named_options = nullptr);
 #endif
     static std::vector<std::string> to_cli_options(const json& raw_options);
     static std::vector<std::string> known_keys();
+    static const json& common_option_defaults();
 
     /// Option names this recipe accepts, in declaration order.
     static std::vector<std::string> keys_for_recipe(const std::string& recipe);

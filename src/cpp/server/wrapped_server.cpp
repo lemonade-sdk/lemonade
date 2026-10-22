@@ -1,19 +1,62 @@
-#include <lemon/wrapped_server.h>
-#include <lemon/utils/process_manager.h>
-#include <lemon/utils/url_utils.h>
-#include <lemon/utils/http_client.h>
-#include <lemon/streaming_proxy.h>
-#include <lemon/error_types.h>
-#include <httplib.h>
 #include <algorithm>
 #include <cctype>
-#include <thread>
 #include <chrono>
-#include <iostream>
 #include <cstdlib>
+#include <httplib.h>
+#include <iostream>
+#include <lemon/error_types.h>
+#include <lemon/streaming_proxy.h>
 #include <lemon/utils/aixlog.hpp>
+#include <lemon/utils/http_client.h>
+#include <lemon/utils/process_manager.h>
+#include <lemon/utils/url_utils.h>
+#include <lemon/wrapped_server.h>
+#include <thread>
 
 namespace lemon {
+
+json WrappedServer::dispatch_completion_operation(BackendOperation operation, const json& request) {
+    const bool supported = supports_operation(operation, OperationDelivery::Buffered, get_model_type());
+    if (supported && operation != BackendOperation::Responses) {
+        auto* adapter = operation_adapter<ICompletionServer>(*this, operation, OperationDelivery::Buffered, get_model_type());
+        return operation == BackendOperation::ChatCompletion
+            ? adapter->chat_completion(request) : adapter->completion(request);
+    }
+    if (operation == BackendOperation::Responses && supported) {
+        return operation_bindings_->adapters().responses(*this, request);
+    }
+    if (operation_bindings_ && operation <= BackendOperation::Responses) {
+        return operation_bindings_->adapters().completion_rejections[static_cast<size_t>(operation)](*this, request);
+    }
+    switch (operation) {
+        case BackendOperation::ChatCompletion: return chat_completion(request);
+        case BackendOperation::Completion: return completion(request);
+        case BackendOperation::Responses: return responses(request);
+        default: throw std::invalid_argument("Not a completion operation");
+    }
+}
+
+void WrappedServer::dispatch_streaming_operation(BackendOperation operation, const std::string& request_body,
+                                                httplib::DataSink& sink, bool sse, long timeout_seconds,
+                                                TelemetryCallback telemetry_callback) {
+    const char* endpoint = nullptr;
+    switch (operation) {
+        case BackendOperation::ChatCompletion: endpoint = "/v1/chat/completions"; break;
+        case BackendOperation::Completion: endpoint = "/v1/completions"; break;
+        case BackendOperation::Responses: endpoint = "/v1/responses"; break;
+        default: throw std::invalid_argument("Not a streaming completion operation");
+    }
+    if (!supports_operation(operation, OperationDelivery::Streaming, get_model_type()) &&
+        (!operation_bindings_ || !operation_bindings_->has_rejection({operation, OperationDelivery::Streaming, get_model_type()}))) {
+        const auto error = unsupported_capability_error("streaming completion");
+        const std::string frame = "data: " + error.dump() + "\n\n";
+        sink.write(frame.data(), frame.size());
+        sink.done();
+        return;
+    }
+    operation_bindings_->adapters().streaming_forwarder(
+        *this, endpoint, request_body, sink, sse, timeout_seconds, std::move(telemetry_callback));
+}
 
 static thread_local utils::RequestCancelToken t_request_cancel_ctx{};
 

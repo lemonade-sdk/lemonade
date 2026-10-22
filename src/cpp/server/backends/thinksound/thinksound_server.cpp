@@ -1,200 +1,25 @@
-#include "lemon/backends/thinksound/thinksound_server.h"
-#include "lemon/backends/thinksound/thinksound.h"
-#include "lemon/backends/backend_registry.h"
-#include "lemon/backends/backend_ops.h"
+#include "backend_definition_resources.h"
 #include "lemon/backends/backend_utils.h"
-#include "lemon/backends/hf_cache_util.h"
-#include "lemon/backend_manager.h"
-#include "lemon/error_types.h"
-#include "lemon/model_manager.h"
-#include "lemon/runtime_config.h"
-#include "lemon/system_info.h"
-#include "lemon/utils/path_utils.h"
-#include <lemon/utils/aixlog.hpp>
-#include <algorithm>
-#include <cstdlib>
-#include <filesystem>
-#include <optional>
-#include <stdexcept>
-#include <string>
+#include "lemon/backends/configured/backend_definition_store.h"
+#include "lemon/backends/configured/configured_backend_entry.h"
+#include "lemon/backends/thinksound/thinksound_server.h"
+#include "lemon/wrapped_server.h"
+
 #include <utility>
-#include <vector>
 
-namespace lemon {
-namespace backends {
+namespace lemon::backends::thinksound {
 
-InstallParams ThinkSoundServer::get_install_params(const std::string& backend, const std::string& version) {
-    (void)version;
-    InstallParams params;
-    params.repo = "pwilkin/thinksound.cpp";
-    const std::string variant = (backend.rfind("rocm", 0) == 0) ? "rocm" : backend;
-#ifdef _WIN32
-    params.filename = "thinksound-" + variant + "-windows-x64.zip";
-#else
-    params.filename = "thinksound-" + variant + "-linux-x64.tar.gz";
-#endif
-    return params;
+std::shared_ptr<const ConfiguredBackendEntry> configured_entry() {
+    static const auto entry = [] {
+        auto result = BackendDefinitionStore().validate({"embedded:thinksound.json", k_thinksound_definition, DefinitionOrigin::Builtin});
+        if (!result.definition) throw DefinitionValidationError(std::move(result.diagnostics));
+        return ConfiguredBackendEntry::make(result.definition, TrustedCompatibility::LegacyNonChatSse);
+    }();
+    return entry;
 }
 
-ThinkSoundServer::ThinkSoundServer(const std::string& log_level,
-                                   ModelManager* model_manager,
-                                   BackendManager* backend_manager)
-    : WrappedServer("thinksound-server", log_level, model_manager, backend_manager) {}
+std::unique_ptr<WrappedServer> create(const BackendContext& ctx) { return configured_entry()->factory(ctx); }
+const BackendSpec* spec() { return &configured_entry()->spec; }
+const BackendOps* ops() { return configured_entry()->ops.get(); }
 
-std::string ThinkSoundServer::resolve_binary_path(const std::string& backend) {
-    const BackendSpec* spec = thinksound::spec();
-    std::string external = BackendUtils::find_external_backend_binary(spec->recipe, backend);
-    if (!external.empty() && std::filesystem::exists(external)) {
-        return external;
-    }
-    backend_manager_->install_backend(spec->recipe, backend);
-    return BackendUtils::get_backend_binary_path(*spec, backend);
 }
-
-void ThinkSoundServer::load(const std::string& model_name,
-                            const ModelInfo& model_info,
-                            const RecipeOptions& options,
-                            bool /*do_not_upgrade*/) {
-    LOG(INFO, "thinksound-server") << "Loading model: " << model_name << std::endl;
-
-    const std::string model_path = model_info.resolved_path();
-    if (model_path.empty() || !std::filesystem::exists(model_path)) {
-        throw std::runtime_error("Model path not found for checkpoint: " + model_info.checkpoint());
-    }
-
-    std::string backend = options.get_option("thinksound_backend");
-    if (backend.empty()) {
-        auto supported = SystemInfo::get_supported_backends("thinksound");
-        if (supported.backends.empty()) {
-            throw UnsupportedOperationException(
-                "ThinkSound audio generation", "this system: no supported GPU backend (Vulkan, ROCm, or CUDA) detected");
-        }
-        backend = supported.backends[0];
-    }
-    RuntimeConfig::validate_backend_choice("thinksound", backend);
-    const std::string exe_path = resolve_binary_path(backend);
-
-    port_ = choose_port();
-    if (port_ == 0) {
-        throw std::runtime_error("Failed to find an available port");
-    }
-
-    // The checkpoint is the directory of ThinkSound GGUFs; ts-server resolves the
-    // individual networks (dit/t5/clip/vae/tokenizers) within it.
-    std::vector<std::string> args = {
-        "--dir", model_path,
-        "--host", "127.0.0.1",
-        "--port", std::to_string(port_),
-    };
-
-    // ROCm/CUDA: the slim binary finds its runtime in the shared TheRock SDK
-    // (ROCm) or bundled next to the exe (CUDA), plus the colocated ggml library.
-    // Prepend those dirs to the loader path (mirrors sd-cpp / llama.cpp). Vulkan
-    // needs no special env.
-    std::vector<std::pair<std::string, std::string>> env_vars;
-    const std::string exe_dir = std::filesystem::path(exe_path).parent_path().string();
-    auto prepend_loader_path = [&env_vars, &exe_dir](const std::string& extra_dirs) {
-#ifdef _WIN32
-        std::string path = extra_dirs.empty() ? exe_dir : (extra_dirs + ";" + exe_dir);
-        if (const char* p = std::getenv("PATH")) path += std::string(";") + p;
-        env_vars.push_back({"PATH", path});
-#else
-        std::string ld = extra_dirs.empty() ? exe_dir : (extra_dirs + ":" + exe_dir);
-        if (const char* p = std::getenv("LD_LIBRARY_PATH")) ld += std::string(":") + p;
-        env_vars.push_back({"LD_LIBRARY_PATH", ld});
-#endif
-    };
-    if (backend == "rocm") {
-        const std::string arch = SystemInfo::get_rocm_arch();
-        std::string dirs;
-        if (!arch.empty()) {
-            dirs = BackendUtils::join_runtime_dirs(
-                BackendUtils::get_therock_lib_paths(arch));
-        }
-        prepend_loader_path(dirs);
-    } else if (backend == "cuda") {
-        prepend_loader_path("");
-        BackendUtils::apply_cuda_env_vars(env_vars, "thinksound-server");
-    }
-
-    LOG(INFO, "thinksound-server") << "Starting " << exe_path << " on port " << port_ << std::endl;
-    ServerCommand command;
-    command.program = exe_path;
-    command.args = std::move(args);
-    command.env = std::move(env_vars);
-    command.port = port_;
-    start_server(std::make_unique<NativeProcess>(ProcessOutput{is_debug(), false}), command);
-}
-
-void ThinkSoundServer::audio_generations(const json& request, httplib::DataSink& sink) {
-    // Map the Lemonade /audio/generations request onto ts-server's /generate, then
-    // stream the wav bytes back. On failure the sink receives ts-server's JSON
-    // error body (or nothing) — the endpoint handler maps both to an HTTP error.
-    json body;
-    body["caption"] = request.value("prompt", std::string());
-    body["description"] = request.contains("description") ? request["description"]
-                        : request.contains("cot") ? request["cot"]
-                        : body["caption"];
-    if (request.contains("duration")) body["duration"] = request["duration"];
-    if (request.contains("steps"))    body["steps"]    = request["steps"];
-    if (request.contains("cfg"))      body["cfg"]      = request["cfg"];
-    if (request.contains("seed"))     body["seed"]     = request["seed"];
-    forward_streaming_request("/generate", body.dump(), sink, /*sse=*/false, /*timeout_seconds=*/600);
-}
-
-}  // namespace backends
-
-namespace backends {
-
-namespace {
-// The checkpoint is a directory of ThinkSound GGUFs; resolve to the active
-// Hugging Face snapshot directory (ts-server scans it via --dir).
-class ThinkSoundOps : public BackendOps {
-public:
-    // The repo also carries q8 variants of the dit/t5 networks, but ts-server
-    // loads the bf16 set by default; skip the redundant ~5 GB.
-    std::optional<std::vector<std::string>> select_checkpoint_files(
-        const std::string& main_variant, const std::vector<std::string>& repo_files) const override {
-        (void)main_variant;
-        static const std::vector<std::string> kWanted = {
-            "dit-bf16.gguf",
-            "t5-bf16.gguf",
-            "metaclip-text-f32.gguf",
-            "vae-f32.gguf",
-            "t5-tokenizer.gguf",
-            "clip-tokenizer.gguf",
-        };
-        std::vector<std::string> want;
-        for (const auto& f : kWanted) {
-            if (std::find(repo_files.begin(), repo_files.end(), f) != repo_files.end()) {
-                want.push_back(f);
-            }
-        }
-        return want;
-    }
-
-    std::string resolve_checkpoint_path(const ModelInfo& info,
-                                        const CheckpointResolveContext& ctx) const override {
-        (void)info;
-        std::filesystem::path root = lemon::utils::path_from_utf8(ctx.model_cache_path);
-        std::filesystem::path snap = hf_cache::active_snapshot_path(root);
-        if (!snap.empty() && hf_cache::exists(snap)) {
-            return lemon::utils::path_to_utf8(snap);
-        }
-        return ctx.model_cache_path;
-    }
-};
-}  // namespace
-
-namespace thinksound {
-
-std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
-    return make_server<ThinkSoundServer>(ctx);
-}
-
-const BackendSpec* spec() { return make_spec<ThinkSoundServer>(descriptor); }
-const BackendOps* ops() { return single_ops<ThinkSoundOps>(); }
-
-}  // namespace thinksound
-}  // namespace backends
-}  // namespace lemon

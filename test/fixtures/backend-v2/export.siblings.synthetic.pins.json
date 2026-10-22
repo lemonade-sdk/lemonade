@@ -1,0 +1,885 @@
+{
+  "definition": "sha256:effefb8d015e2919dbb9e6b55b4d14d03c11785f8a3ea27e704c5b797f285d5b",
+  "dependencies": "sha256:e09c068a784033e4df950d0783f42a2471d336b36e43a0c3dbabd8736b828c76",
+  "owner_graph_digest": "sha256:376072409f7ba17f958b690f5f03ad5b92b71192d7c6263f70633c166ac78a97",
+  "owners": [
+    {
+      "allow_removal": true,
+      "collisions": [
+        "chat.streaming",
+        "slot_action.buffered"
+      ],
+      "handler_hooks": [],
+      "id": "chat.buffered",
+      "request_hooks": [
+        "llamacpp.max_tokens_alias",
+        "llamacpp.tool_schema_limits"
+      ],
+      "required_owners": [],
+      "response_hooks": [
+        "llamacpp.client_model"
+      ],
+      "sealed_fields": [
+        "id",
+        "operation",
+        "delivery",
+        "model_modes",
+        "transport",
+        "formats",
+        "format_metadata"
+      ],
+      "semantics": {
+        "delivery": "buffered",
+        "id": "chat.buffered",
+        "model_modes": [
+          "*"
+        ],
+        "operation": "chat_completion",
+        "transport": {
+          "kind": "http_json",
+          "method": "POST",
+          "path": "/v1/chat/completions",
+          "port": "http",
+          "timeout": 1
+        }
+      }
+    },
+    {
+      "allow_removal": true,
+      "collisions": [
+        "completion.streaming",
+        "slot_action.buffered"
+      ],
+      "handler_hooks": [],
+      "id": "completion.buffered",
+      "request_hooks": [
+        "llamacpp.max_tokens_alias"
+      ],
+      "required_owners": [],
+      "response_hooks": [
+        "llamacpp.client_model"
+      ],
+      "sealed_fields": [
+        "id",
+        "operation",
+        "delivery",
+        "model_modes",
+        "transport",
+        "formats",
+        "format_metadata"
+      ],
+      "semantics": {
+        "delivery": "buffered",
+        "id": "completion.buffered",
+        "model_modes": [
+          "*"
+        ],
+        "operation": "completion",
+        "transport": {
+          "kind": "http_json",
+          "method": "POST",
+          "path": "/v1/completions",
+          "port": "http",
+          "timeout": 1
+        }
+      }
+    },
+    {
+      "allow_removal": true,
+      "collisions": [
+        "responses.streaming",
+        "slot_action.buffered"
+      ],
+      "handler_hooks": [],
+      "id": "responses.buffered",
+      "request_hooks": [
+        "llamacpp.tool_schema_limits"
+      ],
+      "required_owners": [],
+      "response_hooks": [
+        "llamacpp.client_model"
+      ],
+      "sealed_fields": [
+        "id",
+        "operation",
+        "delivery",
+        "model_modes",
+        "transport",
+        "formats",
+        "format_metadata"
+      ],
+      "semantics": {
+        "delivery": "buffered",
+        "id": "responses.buffered",
+        "model_modes": [
+          "*"
+        ],
+        "operation": "responses",
+        "transport": {
+          "kind": "http_json",
+          "method": "POST",
+          "path": "/v1/responses",
+          "port": "http",
+          "timeout": 1
+        }
+      }
+    },
+    {
+      "allow_removal": true,
+      "collisions": [
+        "chat.buffered",
+        "slot_action.buffered"
+      ],
+      "handler_hooks": [],
+      "id": "chat.streaming",
+      "request_hooks": [
+        "llamacpp.max_tokens_alias",
+        "llamacpp.tool_schema_limits"
+      ],
+      "required_owners": [],
+      "response_hooks": [],
+      "sealed_fields": [
+        "id",
+        "operation",
+        "delivery",
+        "model_modes",
+        "transport",
+        "formats",
+        "format_metadata"
+      ],
+      "semantics": {
+        "delivery": "streaming",
+        "id": "chat.streaming",
+        "model_modes": [
+          "*"
+        ],
+        "operation": "chat_completion",
+        "transport": {
+          "kind": "http_sse",
+          "method": "POST",
+          "path": "/v1/chat/completions",
+          "port": "http",
+          "timeout": 1
+        }
+      }
+    },
+    {
+      "allow_removal": true,
+      "collisions": [
+        "completion.buffered",
+        "slot_action.buffered"
+      ],
+      "handler_hooks": [],
+      "id": "completion.streaming",
+      "request_hooks": [],
+      "required_owners": [],
+      "response_hooks": [],
+      "sealed_fields": [
+        "id",
+        "operation",
+        "delivery",
+        "model_modes",
+        "transport",
+        "formats",
+        "format_metadata"
+      ],
+      "semantics": {
+        "delivery": "streaming",
+        "id": "completion.streaming",
+        "model_modes": [
+          "*"
+        ],
+        "operation": "completion",
+        "transport": {
+          "kind": "http_sse",
+          "method": "POST",
+          "path": "/v1/completions",
+          "port": "http",
+          "timeout": 1
+        }
+      }
+    },
+    {
+      "allow_removal": true,
+      "collisions": [
+        "responses.buffered",
+        "slot_action.buffered"
+      ],
+      "handler_hooks": [],
+      "id": "responses.streaming",
+      "request_hooks": [
+        "llamacpp.tool_schema_limits"
+      ],
+      "required_owners": [],
+      "response_hooks": [],
+      "sealed_fields": [
+        "id",
+        "operation",
+        "delivery",
+        "model_modes",
+        "transport",
+        "formats",
+        "format_metadata"
+      ],
+      "semantics": {
+        "delivery": "streaming",
+        "id": "responses.streaming",
+        "model_modes": [
+          "*"
+        ],
+        "operation": "responses",
+        "transport": {
+          "kind": "http_sse",
+          "method": "POST",
+          "path": "/v1/responses",
+          "port": "http",
+          "timeout": 1
+        }
+      }
+    },
+    {
+      "allow_removal": true,
+      "collisions": [
+        "slot_action.buffered"
+      ],
+      "handler_hooks": [],
+      "id": "embeddings.buffered",
+      "request_hooks": [],
+      "required_owners": [],
+      "response_hooks": [],
+      "sealed_fields": [
+        "id",
+        "operation",
+        "delivery",
+        "model_modes",
+        "transport",
+        "formats",
+        "format_metadata"
+      ],
+      "semantics": {
+        "delivery": "buffered",
+        "id": "embeddings.buffered",
+        "model_modes": [
+          "*"
+        ],
+        "operation": "embeddings",
+        "transport": {
+          "kind": "http_json",
+          "method": "POST",
+          "path": "/v1/embeddings",
+          "port": "http",
+          "timeout": 1
+        }
+      }
+    },
+    {
+      "allow_removal": true,
+      "collisions": [
+        "slot_action.buffered"
+      ],
+      "handler_hooks": [],
+      "id": "reranking.buffered",
+      "request_hooks": [],
+      "required_owners": [],
+      "response_hooks": [],
+      "sealed_fields": [
+        "id",
+        "operation",
+        "delivery",
+        "model_modes",
+        "transport",
+        "formats",
+        "format_metadata"
+      ],
+      "semantics": {
+        "delivery": "buffered",
+        "id": "reranking.buffered",
+        "model_modes": [
+          "*"
+        ],
+        "operation": "reranking",
+        "transport": {
+          "kind": "http_json",
+          "method": "POST",
+          "path": "/v1/rerank",
+          "port": "http",
+          "timeout": 1
+        }
+      }
+    },
+    {
+      "allow_removal": true,
+      "collisions": [
+        "slot_action.buffered"
+      ],
+      "handler_hooks": [],
+      "id": "slots.buffered",
+      "request_hooks": [],
+      "required_owners": [],
+      "response_hooks": [],
+      "sealed_fields": [
+        "id",
+        "operation",
+        "delivery",
+        "model_modes",
+        "transport",
+        "formats",
+        "format_metadata"
+      ],
+      "semantics": {
+        "delivery": "buffered",
+        "id": "slots.buffered",
+        "model_modes": [
+          "*"
+        ],
+        "operation": "slots",
+        "transport": {
+          "kind": "http_json",
+          "method": "GET",
+          "path": "/slots",
+          "port": "http",
+          "timeout": 1
+        }
+      }
+    },
+    {
+      "allow_removal": true,
+      "collisions": [
+        "chat.buffered",
+        "completion.buffered",
+        "responses.buffered",
+        "chat.streaming",
+        "completion.streaming",
+        "responses.streaming",
+        "embeddings.buffered",
+        "reranking.buffered",
+        "slots.buffered",
+        "tokenize.buffered"
+      ],
+      "handler_hooks": [],
+      "id": "slot_action.buffered",
+      "request_hooks": [],
+      "required_owners": [],
+      "response_hooks": [],
+      "sealed_fields": [
+        "id",
+        "operation",
+        "delivery",
+        "model_modes",
+        "transport",
+        "formats",
+        "format_metadata"
+      ],
+      "semantics": {
+        "delivery": "buffered",
+        "id": "slot_action.buffered",
+        "model_modes": [
+          "*"
+        ],
+        "operation": "slot_action",
+        "transport": {
+          "kind": "http_json",
+          "method": "POST",
+          "path": "/slots/{slot_id}?action={action}",
+          "port": "http",
+          "timeout": 1
+        }
+      }
+    },
+    {
+      "allow_removal": true,
+      "collisions": [
+        "slot_action.buffered"
+      ],
+      "handler_hooks": [],
+      "id": "tokenize.buffered",
+      "request_hooks": [],
+      "required_owners": [],
+      "response_hooks": [],
+      "sealed_fields": [
+        "id",
+        "operation",
+        "delivery",
+        "model_modes",
+        "transport",
+        "formats",
+        "format_metadata"
+      ],
+      "semantics": {
+        "delivery": "buffered",
+        "id": "tokenize.buffered",
+        "model_modes": [
+          "*"
+        ],
+        "operation": "tokenize",
+        "transport": {
+          "kind": "http_json",
+          "method": "POST",
+          "path": "/tokenize",
+          "port": "http",
+          "timeout": 1
+        }
+      }
+    }
+  ],
+  "policy": "sha256:7928300e8aff4da341ac9a95334b5b5f136f17d5106a955ed444b156bdd14653",
+  "policy_revision": 2,
+  "registry": "sha256:15a3d94130a39beda6076d61e0e9cda0c4cdab1cb5f468ae7a850e8c1925b2bc",
+  "slots": [
+    {
+      "abi": 1,
+      "dependencies": [],
+      "effects": [
+        0
+      ],
+      "mutable_inputs": [
+        {
+          "allow_absent": false,
+          "maximum": null,
+          "maximum_length": 128,
+          "minimum": null,
+          "reference_roots": [],
+          "schema_fragment": "",
+          "target": {
+            "at": "",
+            "match": null,
+            "path": "/metadata/display_name"
+          },
+          "type": 3,
+          "values": []
+        }
+      ],
+      "mutation_policy_digest": "sha256:65c7c94db9c54809fc3be5db6336588773fe1b3d6e0d72b19e8729282cec3162",
+      "ordered_hooks": [
+        "llamacpp.max_tokens_alias",
+        "llamacpp.tool_schema_limits"
+      ],
+      "owner_semantics": "sha256:b4023f783a9d19e85e82cd48b3f50fc6cf51263a4f2ba546cdc25d80eb568d4e",
+      "parameters": "sha256:6d693d6f53d8a4cf83131c975c7332b76757260037939107fb0d48576143e5e3",
+      "removal": 1,
+      "required_phases": [],
+      "sealed_inputs": [
+        {
+          "at": "",
+          "match": null,
+          "path": "/launch/program"
+        }
+      ],
+      "slot": {
+        "hook_id": "llamacpp.max_tokens_alias",
+        "owner_id": "chat.buffered",
+        "owner_kind": 1,
+        "stage": "request"
+      }
+    },
+    {
+      "abi": 1,
+      "dependencies": [],
+      "effects": [
+        0
+      ],
+      "mutable_inputs": [
+        {
+          "allow_absent": false,
+          "maximum": null,
+          "maximum_length": 128,
+          "minimum": null,
+          "reference_roots": [],
+          "schema_fragment": "",
+          "target": {
+            "at": "",
+            "match": null,
+            "path": "/metadata/display_name"
+          },
+          "type": 3,
+          "values": []
+        }
+      ],
+      "mutation_policy_digest": "sha256:d731e13e8642d8c05c32d0559b0aafc2a1ce59570f5727eaa798eac38237ff66",
+      "ordered_hooks": [
+        "llamacpp.max_tokens_alias",
+        "llamacpp.tool_schema_limits"
+      ],
+      "owner_semantics": "sha256:b4023f783a9d19e85e82cd48b3f50fc6cf51263a4f2ba546cdc25d80eb568d4e",
+      "parameters": "sha256:6d693d6f53d8a4cf83131c975c7332b76757260037939107fb0d48576143e5e3",
+      "removal": 1,
+      "required_phases": [],
+      "sealed_inputs": [
+        {
+          "at": "",
+          "match": null,
+          "path": "/launch/program"
+        }
+      ],
+      "slot": {
+        "hook_id": "llamacpp.tool_schema_limits",
+        "owner_id": "chat.buffered",
+        "owner_kind": 1,
+        "stage": "request"
+      }
+    },
+    {
+      "abi": 1,
+      "dependencies": [],
+      "effects": [
+        0
+      ],
+      "mutable_inputs": [
+        {
+          "allow_absent": false,
+          "maximum": null,
+          "maximum_length": 128,
+          "minimum": null,
+          "reference_roots": [],
+          "schema_fragment": "",
+          "target": {
+            "at": "",
+            "match": null,
+            "path": "/metadata/display_name"
+          },
+          "type": 3,
+          "values": []
+        }
+      ],
+      "mutation_policy_digest": "sha256:34397cde4579e684139898b3536578bb93a2548c322fc53dcd713a1fd588a751",
+      "ordered_hooks": [
+        "llamacpp.client_model"
+      ],
+      "owner_semantics": "sha256:b4023f783a9d19e85e82cd48b3f50fc6cf51263a4f2ba546cdc25d80eb568d4e",
+      "parameters": "sha256:6d693d6f53d8a4cf83131c975c7332b76757260037939107fb0d48576143e5e3",
+      "removal": 1,
+      "required_phases": [],
+      "sealed_inputs": [
+        {
+          "at": "",
+          "match": null,
+          "path": "/launch/program"
+        }
+      ],
+      "slot": {
+        "hook_id": "llamacpp.client_model",
+        "owner_id": "chat.buffered",
+        "owner_kind": 1,
+        "stage": "response"
+      }
+    },
+    {
+      "abi": 1,
+      "dependencies": [],
+      "effects": [
+        0
+      ],
+      "mutable_inputs": [
+        {
+          "allow_absent": false,
+          "maximum": null,
+          "maximum_length": 128,
+          "minimum": null,
+          "reference_roots": [],
+          "schema_fragment": "",
+          "target": {
+            "at": "",
+            "match": null,
+            "path": "/metadata/display_name"
+          },
+          "type": 3,
+          "values": []
+        }
+      ],
+      "mutation_policy_digest": "sha256:93d3ee980a1d33a240ecb3b18afc29d59a325356e23e5da632168c571b1f915e",
+      "ordered_hooks": [
+        "llamacpp.max_tokens_alias"
+      ],
+      "owner_semantics": "sha256:de92601075c529fff513b3978d1312d940edd8ae1da0c4fa20ce7e0572fffc1b",
+      "parameters": "sha256:6d693d6f53d8a4cf83131c975c7332b76757260037939107fb0d48576143e5e3",
+      "removal": 1,
+      "required_phases": [],
+      "sealed_inputs": [
+        {
+          "at": "",
+          "match": null,
+          "path": "/launch/program"
+        }
+      ],
+      "slot": {
+        "hook_id": "llamacpp.max_tokens_alias",
+        "owner_id": "completion.buffered",
+        "owner_kind": 1,
+        "stage": "request"
+      }
+    },
+    {
+      "abi": 1,
+      "dependencies": [],
+      "effects": [
+        0
+      ],
+      "mutable_inputs": [
+        {
+          "allow_absent": false,
+          "maximum": null,
+          "maximum_length": 128,
+          "minimum": null,
+          "reference_roots": [],
+          "schema_fragment": "",
+          "target": {
+            "at": "",
+            "match": null,
+            "path": "/metadata/display_name"
+          },
+          "type": 3,
+          "values": []
+        }
+      ],
+      "mutation_policy_digest": "sha256:f698a0029d55de1114965cd3ff610023464b1795617f539c4fb2406653ad8c36",
+      "ordered_hooks": [
+        "llamacpp.client_model"
+      ],
+      "owner_semantics": "sha256:de92601075c529fff513b3978d1312d940edd8ae1da0c4fa20ce7e0572fffc1b",
+      "parameters": "sha256:6d693d6f53d8a4cf83131c975c7332b76757260037939107fb0d48576143e5e3",
+      "removal": 1,
+      "required_phases": [],
+      "sealed_inputs": [
+        {
+          "at": "",
+          "match": null,
+          "path": "/launch/program"
+        }
+      ],
+      "slot": {
+        "hook_id": "llamacpp.client_model",
+        "owner_id": "completion.buffered",
+        "owner_kind": 1,
+        "stage": "response"
+      }
+    },
+    {
+      "abi": 1,
+      "dependencies": [],
+      "effects": [
+        0
+      ],
+      "mutable_inputs": [
+        {
+          "allow_absent": false,
+          "maximum": null,
+          "maximum_length": 128,
+          "minimum": null,
+          "reference_roots": [],
+          "schema_fragment": "",
+          "target": {
+            "at": "",
+            "match": null,
+            "path": "/metadata/display_name"
+          },
+          "type": 3,
+          "values": []
+        }
+      ],
+      "mutation_policy_digest": "sha256:cf9fe3d99b12b17e7e092b5da9059dbe3fa178a8165c8ebf30b423dd7abe31d6",
+      "ordered_hooks": [
+        "llamacpp.tool_schema_limits"
+      ],
+      "owner_semantics": "sha256:de72ba711d0790810e958b678b00c467f653f156c9f91f207c48e1060e768b54",
+      "parameters": "sha256:6d693d6f53d8a4cf83131c975c7332b76757260037939107fb0d48576143e5e3",
+      "removal": 1,
+      "required_phases": [],
+      "sealed_inputs": [
+        {
+          "at": "",
+          "match": null,
+          "path": "/launch/program"
+        }
+      ],
+      "slot": {
+        "hook_id": "llamacpp.tool_schema_limits",
+        "owner_id": "responses.buffered",
+        "owner_kind": 1,
+        "stage": "request"
+      }
+    },
+    {
+      "abi": 1,
+      "dependencies": [],
+      "effects": [
+        0
+      ],
+      "mutable_inputs": [
+        {
+          "allow_absent": false,
+          "maximum": null,
+          "maximum_length": 128,
+          "minimum": null,
+          "reference_roots": [],
+          "schema_fragment": "",
+          "target": {
+            "at": "",
+            "match": null,
+            "path": "/metadata/display_name"
+          },
+          "type": 3,
+          "values": []
+        }
+      ],
+      "mutation_policy_digest": "sha256:3ef77c09b7784ee6a5a4f6a0154c8aa64149135833970f06c87afc9b44f30a66",
+      "ordered_hooks": [
+        "llamacpp.client_model"
+      ],
+      "owner_semantics": "sha256:de72ba711d0790810e958b678b00c467f653f156c9f91f207c48e1060e768b54",
+      "parameters": "sha256:6d693d6f53d8a4cf83131c975c7332b76757260037939107fb0d48576143e5e3",
+      "removal": 1,
+      "required_phases": [],
+      "sealed_inputs": [
+        {
+          "at": "",
+          "match": null,
+          "path": "/launch/program"
+        }
+      ],
+      "slot": {
+        "hook_id": "llamacpp.client_model",
+        "owner_id": "responses.buffered",
+        "owner_kind": 1,
+        "stage": "response"
+      }
+    },
+    {
+      "abi": 1,
+      "dependencies": [],
+      "effects": [
+        0
+      ],
+      "mutable_inputs": [
+        {
+          "allow_absent": false,
+          "maximum": null,
+          "maximum_length": 128,
+          "minimum": null,
+          "reference_roots": [],
+          "schema_fragment": "",
+          "target": {
+            "at": "",
+            "match": null,
+            "path": "/metadata/display_name"
+          },
+          "type": 3,
+          "values": []
+        }
+      ],
+      "mutation_policy_digest": "sha256:df6a20c2eeb80b1617e6e9d4b6ade25b40eeffe8f05f93cd4619cfa2f698facc",
+      "ordered_hooks": [
+        "llamacpp.max_tokens_alias",
+        "llamacpp.tool_schema_limits"
+      ],
+      "owner_semantics": "sha256:0d4025cf86dedb76dd60cdb04aacaaca67ecd1ce4330cc8e1f08654a2c894859",
+      "parameters": "sha256:6d693d6f53d8a4cf83131c975c7332b76757260037939107fb0d48576143e5e3",
+      "removal": 1,
+      "required_phases": [],
+      "sealed_inputs": [
+        {
+          "at": "",
+          "match": null,
+          "path": "/launch/program"
+        }
+      ],
+      "slot": {
+        "hook_id": "llamacpp.max_tokens_alias",
+        "owner_id": "chat.streaming",
+        "owner_kind": 1,
+        "stage": "request"
+      }
+    },
+    {
+      "abi": 1,
+      "dependencies": [],
+      "effects": [
+        0
+      ],
+      "mutable_inputs": [
+        {
+          "allow_absent": false,
+          "maximum": null,
+          "maximum_length": 128,
+          "minimum": null,
+          "reference_roots": [],
+          "schema_fragment": "",
+          "target": {
+            "at": "",
+            "match": null,
+            "path": "/metadata/display_name"
+          },
+          "type": 3,
+          "values": []
+        }
+      ],
+      "mutation_policy_digest": "sha256:e7cefd0e8c617bc8e7e9de5ebcb5f0662ad0a3bfe52a04fc94a94f97920b3496",
+      "ordered_hooks": [
+        "llamacpp.max_tokens_alias",
+        "llamacpp.tool_schema_limits"
+      ],
+      "owner_semantics": "sha256:0d4025cf86dedb76dd60cdb04aacaaca67ecd1ce4330cc8e1f08654a2c894859",
+      "parameters": "sha256:6d693d6f53d8a4cf83131c975c7332b76757260037939107fb0d48576143e5e3",
+      "removal": 1,
+      "required_phases": [],
+      "sealed_inputs": [
+        {
+          "at": "",
+          "match": null,
+          "path": "/launch/program"
+        }
+      ],
+      "slot": {
+        "hook_id": "llamacpp.tool_schema_limits",
+        "owner_id": "chat.streaming",
+        "owner_kind": 1,
+        "stage": "request"
+      }
+    },
+    {
+      "abi": 1,
+      "dependencies": [],
+      "effects": [
+        0
+      ],
+      "mutable_inputs": [
+        {
+          "allow_absent": false,
+          "maximum": null,
+          "maximum_length": 128,
+          "minimum": null,
+          "reference_roots": [],
+          "schema_fragment": "",
+          "target": {
+            "at": "",
+            "match": null,
+            "path": "/metadata/display_name"
+          },
+          "type": 3,
+          "values": []
+        }
+      ],
+      "mutation_policy_digest": "sha256:5ba8f2dc5f8c45591730f434f22e5459d7e91eac1d933df7dce7daf4daeda4a5",
+      "ordered_hooks": [
+        "llamacpp.tool_schema_limits"
+      ],
+      "owner_semantics": "sha256:5f777c3bbabbe119e7c96a04bfdcc5d9aa5be496975e6e733ca356b2e36043eb",
+      "parameters": "sha256:6d693d6f53d8a4cf83131c975c7332b76757260037939107fb0d48576143e5e3",
+      "removal": 1,
+      "required_phases": [],
+      "sealed_inputs": [
+        {
+          "at": "",
+          "match": null,
+          "path": "/launch/program"
+        }
+      ],
+      "slot": {
+        "hook_id": "llamacpp.tool_schema_limits",
+        "owner_id": "responses.streaming",
+        "owner_kind": 1,
+        "stage": "request"
+      }
+    }
+  ],
+  "source": "sha256:411843e94b04a4635c8f4074fa94fac355bd1307e5aa6f30f5d142641a837938"
+}

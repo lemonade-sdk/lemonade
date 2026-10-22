@@ -1,26 +1,27 @@
-#include "lemon/backends/openmoss/openmoss_server.h"
-#include "lemon/backends/openmoss/openmoss.h"
-#include "lemon/backends/backend_registry.h"
-#include "lemon/backends/backend_ops.h"
-#include "lemon/backends/backend_utils.h"
-#include "lemon/backend_manager.h"
-#include "lemon/error_types.h"
-#include "lemon/model_manager.h"
-#include "lemon/runtime_config.h"
-#include "lemon/system_info.h"
-#include "lemon/utils/http_client.h"
-#include "lemon/utils/json_utils.h"
-#include "lemon/utils/process_manager.h"
-#include "lemon/utils/url_utils.h"
-#include <lemon/utils/aixlog.hpp>
 #include <algorithm>
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
-#include <thread>
+#include "lemon/backend_manager.h"
+#include "lemon/backends/backend_load_helpers.h"
+#include "lemon/backends/backend_ops.h"
+#include "lemon/backends/backend_registry.h"
+#include "lemon/backends/backend_utils.h"
+#include "lemon/backends/openmoss/openmoss.h"
+#include "lemon/backends/openmoss/openmoss_server.h"
+#include "lemon/error_types.h"
+#include "lemon/model_manager.h"
+#include "lemon/runtime_config.h"
+#include "lemon/system_info.h"
+#include <lemon/utils/aixlog.hpp>
+#include "lemon/utils/http_client.h"
+#include "lemon/utils/json_utils.h"
+#include "lemon/utils/process_manager.h"
+#include "lemon/utils/url_utils.h"
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -90,7 +91,9 @@ InstallParams OpenMossServer::get_install_params(const std::string& backend, con
 OpenMossServer::OpenMossServer(const std::string& log_level,
                                ModelManager* model_manager,
                                BackendManager* backend_manager)
-    : WrappedServer("openmoss-server", log_level, model_manager, backend_manager) {}
+    : WrappedServer("openmoss-server", log_level, model_manager, backend_manager) {
+    bind_legacy_operations(LegacyOperationProfile::OpenMoss, *this);
+}
 
 OpenMossServer::~OpenMossServer() {
     unload();
@@ -120,16 +123,6 @@ AudioFormatMetadata OpenMossServer::audio_format_metadata(
     return metadata;
 }
 
-std::string OpenMossServer::resolve_binary_path(const std::string& backend) {
-    const BackendSpec* spec = openmoss::spec();
-    std::string external = BackendUtils::find_external_backend_binary(spec->recipe, backend);
-    if (!external.empty() && std::filesystem::exists(external)) {
-        return external;
-    }
-    backend_manager_->install_backend(spec->recipe, backend);
-    return BackendUtils::get_backend_binary_path(*spec, backend);
-}
-
 void OpenMossServer::load(const std::string& model_name,
                           const ModelInfo& model_info,
                           const RecipeOptions& options,
@@ -144,27 +137,26 @@ void OpenMossServer::load(const std::string& model_name,
     std::string backend = options.get_option("openmoss_backend");
     if (backend.empty()) {
         auto supported = SystemInfo::get_supported_backends("openmoss");
-        if (supported.backends.empty()) {
-            throw UnsupportedOperationException(
-                "OpenMOSS TTS", "this system: no supported GPU backend (Vulkan or CUDA) detected");
-        }
-        backend = supported.backends[0];
+        backend = first_supported_backend(
+            supported.backends, "OpenMOSS TTS", "this system: no supported GPU backend (Vulkan or CUDA) detected");
     }
     RuntimeConfig::validate_backend_choice("openmoss", backend);
-    const std::string exe_path = resolve_binary_path(backend);
+    const std::string exe_path = resolve_external_or_managed_binary(
+        *openmoss::spec(), backend, backend_binary_services(*backend_manager_));
 
     std::vector<std::pair<std::string, std::string>> env_vars;
     const std::string exe_dir = std::filesystem::path(exe_path).parent_path().string();
     auto prepend_loader_path = [&env_vars, &exe_dir](const std::string& extra_dirs) {
 #ifdef _WIN32
-        std::string path = extra_dirs.empty() ? exe_dir : (extra_dirs + ";" + exe_dir);
-        if (const char* p = std::getenv("PATH")) path += std::string(";") + p;
-        env_vars.push_back({"PATH", path});
+        const char* inherited = std::getenv("PATH");
+        constexpr bool windows = true;
 #else
-        std::string ld = extra_dirs.empty() ? exe_dir : (extra_dirs + ":" + exe_dir);
-        if (const char* p = std::getenv("LD_LIBRARY_PATH")) ld += std::string(":") + p;
-        env_vars.push_back({"LD_LIBRARY_PATH", ld});
+        const char* inherited = std::getenv("LD_LIBRARY_PATH");
+        constexpr bool windows = false;
 #endif
+        env_vars.push_back(make_loader_path_override(
+            exe_dir, extra_dirs,
+            inherited ? std::optional<std::string>(inherited) : std::nullopt, windows));
     };
     if (backend == "cuda") {
         prepend_loader_path("");

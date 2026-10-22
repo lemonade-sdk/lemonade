@@ -1,36 +1,28 @@
-#include "lemon/backends/whispercpp/whispercpp_server.h"
-#include "lemon/backends/whispercpp/whispercpp.h"
-#include "lemon/backends/backend_registry.h"
+#include "lemon/audio_types.h"
+#include "lemon/backend_manager.h"
 #include "lemon/backends/backend_ops.h"
+#include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backends/hf_cache_util.h"
+#include "lemon/backends/whispercpp/whispercpp.h"
+#include "lemon/backends/whispercpp/whispercpp_server.h"
 #include "lemon/model_manager.h"
-#include "lemon/backend_manager.h"
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
-#include "lemon/audio_types.h"
+#include "lemon/utils/audio_mime.h"
 #include "lemon/utils/custom_args.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/path_utils.h"
-#include "lemon/error_types.h"
 #include "whispercpp_multipart_fields.h"
-#include <iostream>
-#include <chrono>
+
+#include <algorithm>
+#include <cstdlib>
+#include <cstring>
 #include <filesystem>
-#include <fstream>
-#include <random>
-#include <sstream>
-#include <iomanip>
+#include <iostream>
+#include <lemon/utils/aixlog.hpp>
 #include <set>
 #include <vector>
-#include <lemon/utils/aixlog.hpp>
-
-#ifdef _WIN32
-#include <windows.h>
-#else
-#include <sys/stat.h>
-#include <unistd.h>
-#endif
 
 namespace fs = std::filesystem;
 using namespace lemon::utils;
@@ -40,42 +32,11 @@ namespace backends {
 
 WhisperServer::WhisperServer(const std::string& log_level, ModelManager* model_manager, BackendManager* backend_manager)
     : WrappedServer("whisper-server", log_level, model_manager, backend_manager) {
-    fs::path runtime_base = path_from_utf8(get_runtime_dir());
-
-    std::random_device rd;
-    std::uniform_int_distribution<unsigned int> dis(0, 0xFFFFFF);
-
-    std::error_code ec;
-    for (int attempt = 0; attempt < 8; ++attempt) {
-        auto nonce = static_cast<unsigned long long>(
-            std::chrono::steady_clock::now().time_since_epoch().count());
-        std::ostringstream suffix;
-        suffix << "whisper-audio-" << nonce << "-" << std::hex << dis(rd);
-        fs::path candidate = runtime_base / suffix.str();
-
-        ec.clear();
-        if (fs::create_directory(candidate, ec)) {
-            temp_dir_ = candidate;
-            break;
-        }
-    }
-
-    if (temp_dir_.empty()) {
-        throw std::runtime_error("Failed to create temporary directory for WhisperServer");
-    }
+    bind_legacy_operations(LegacyOperationProfile::Whisper, *this);
 }
 
 WhisperServer::~WhisperServer() {
     stop_server();
-
-    try {
-        if (fs::exists(temp_dir_)) {
-            fs::remove_all(temp_dir_);
-        }
-    } catch (const std::exception& e) {
-        LOG(WARNING, "WhisperServer") << "Could not clean up temp directory: "
-                  << e.what() << std::endl;
-    }
 }
 
 InstallParams WhisperServer::get_install_params(const std::string& backend, const std::string& version) {
@@ -360,160 +321,6 @@ json WhisperServer::responses(const json& request) {
     };
 }
 
-// Audio file handling helpers
-std::string WhisperServer::save_audio_to_temp(const std::string& audio_data,
-                                              const std::string& filename) {
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_int_distribution<> dis(0, 999999);
-
-    std::string ext = fs::path(filename).extension().string();
-    if (ext.empty()) {
-        ext = ".audio";
-    }
-
-    std::stringstream ss;
-    ss << "audio_" << std::setfill('0') << std::setw(6) << dis(gen) << ext;
-
-    fs::path temp_file = temp_dir_ / ss.str();
-
-    std::ofstream outfile(temp_file, std::ios::binary);
-    if (!outfile) {
-        throw std::runtime_error("Failed to create temporary audio file: " + temp_file.string());
-    }
-
-    outfile.write(audio_data.data(), audio_data.size());
-    outfile.close();
-
-    LOG(DEBUG, "WhisperServer") << "Saved audio to temp file: " << temp_file << std::endl;
-
-    return temp_file.string();
-}
-
-void WhisperServer::cleanup_temp_file(const std::string& path) {
-    try {
-        if (fs::exists(path)) {
-            fs::remove(path);
-            LOG(DEBUG, "WhisperServer") << "Cleaned up temp file: " << path << std::endl;
-        }
-    } catch (const std::exception& e) {
-        LOG(WARNING, "WhisperServer") << "Could not delete temp file " << path
-                  << ": " << e.what() << std::endl;
-    }
-}
-
-void WhisperServer::validate_audio_file(const std::string& path) {
-    if (!fs::exists(path)) {
-        throw std::runtime_error("Audio file does not exist: " + path);
-    }
-
-    std::uintmax_t file_size = fs::file_size(path);
-    if (file_size > audio::Limits::MAX_FILE_SIZE_BYTES) {
-        throw std::runtime_error("Audio file exceeds maximum size of 25MB");
-    }
-
-    if (file_size == 0) {
-        throw std::runtime_error("Audio file is empty");
-    }
-}
-
-json WhisperServer::build_transcription_request(const json& request, bool translate) {
-    json whisper_req;
-
-    if (request.contains("file_path")) {
-        whisper_req["file"] = request["file_path"];
-    }
-
-    if (request.contains("language") && !translate) {
-        // For transcription, respect language hint
-        whisper_req["language"] = request["language"];
-    }
-    // For translation, don't specify language (always translates to English)
-
-    if (request.contains("prompt")) {
-        whisper_req["prompt"] = request["prompt"];
-    }
-
-    if (request.contains("temperature")) {
-        whisper_req["temperature"] = request["temperature"];
-    }
-
-    if (request.contains("response_format")) {
-        whisper_req["response_format"] = request["response_format"];
-    } else {
-        whisper_req["response_format"] = "json";
-    }
-
-    if (translate) {
-        whisper_req["translate"] = true;
-    }
-
-    return whisper_req;
-}
-
-json WhisperServer::forward_multipart_audio_request(const std::string& file_path,
-                                                    const json& params,
-                                                    bool translate) {
-    std::ifstream file(file_path, std::ios::binary);
-    if (!file) {
-        throw std::runtime_error("Could not open audio file: " + file_path);
-    }
-
-    std::ostringstream oss;
-    oss << file.rdbuf();
-    std::string file_content = oss.str();
-    file.close();
-
-    LOG(DEBUG, "WhisperServer") << "Audio file size: " << file_content.size() << " bytes" << std::endl;
-
-    fs::path filepath(file_path);
-    std::string ext = filepath.extension().string();
-    std::string content_type = "audio/wav";
-
-    if (ext == ".mp3") content_type = "audio/mpeg";
-    else if (ext == ".wav") content_type = "audio/wav";
-    else if (ext == ".m4a") content_type = "audio/mp4";
-    else if (ext == ".ogg") content_type = "audio/ogg";
-    else if (ext == ".flac") content_type = "audio/flac";
-    else if (ext == ".webm") content_type = "audio/webm";
-
-    utils::MultipartField audio_file;
-    audio_file.name = "file";
-    audio_file.data = file_content;
-    audio_file.filename = filepath.filename().string();
-    audio_file.content_type = content_type;
-
-    std::string response_format = params.value("response_format", "json");
-    std::vector<utils::MultipartField> fields =
-        whispercpp::detail::build_multipart_fields(std::move(audio_file), params, translate);
-
-    const std::string url = "http://127.0.0.1:" + std::to_string(get_backend_port()) + "/inference";
-    LOG(DEBUG, "WhisperServer") << "Sending multipart request to " << url << std::endl;
-
-    // Pass 0 so HttpClient falls back to its default timeout, which is kept in
-    // sync with `global_timeout` in config.json (see server.cpp). Hard-coding 300
-    // caused long-form audio (~35+ min on slower backends) to fail regardless of
-    // the user's configuration.
-    utils::HttpResponse res;
-    {
-        std::lock_guard<std::mutex> lock(inference_mutex_);
-        res = utils::HttpClient::post_multipart(
-            url,
-            fields,
-            0,
-            utils::HttpSecurityPolicy::TrustedLoopback);
-    }
-
-    LOG(DEBUG, "WhisperServer") << "Response status: " << res.status_code << std::endl;
-    LOG(DEBUG, "WhisperServer") << "Response body: " << res.body << std::endl;
-
-    if (res.status_code != 200) {
-        throw std::runtime_error("whisper-server returned status " +
-                                std::to_string(res.status_code) + ": " + res.body);
-    }
-
-    return audio::interpret_transcription_body(res.body, response_format);
-}
 
 json WhisperServer::forward_multipart_audio_data(const std::string& audio_data,
                                                   const std::string& filename,
@@ -527,14 +334,7 @@ json WhisperServer::forward_multipart_audio_data(const std::string& audio_data,
 
     fs::path filepath(filename);
     std::string ext = filepath.extension().string();
-    std::string content_type = "audio/wav";
-
-    if (ext == ".mp3") content_type = "audio/mpeg";
-    else if (ext == ".wav") content_type = "audio/wav";
-    else if (ext == ".m4a") content_type = "audio/mp4";
-    else if (ext == ".ogg") content_type = "audio/ogg";
-    else if (ext == ".flac") content_type = "audio/flac";
-    else if (ext == ".webm") content_type = "audio/webm";
+    std::string content_type = utils::audio_mime_for_extension(ext);
 
     utils::MultipartField audio_file;
     audio_file.name = "file";
@@ -549,8 +349,7 @@ json WhisperServer::forward_multipart_audio_data(const std::string& audio_data,
     const std::string url = "http://127.0.0.1:" + std::to_string(get_backend_port()) + "/inference";
     LOG(DEBUG, "WhisperServer") << "Sending multipart request to " << url << " (direct data)" << std::endl;
 
-    // See the note on the file-path variant above: 0 inherits the configured
-    // global timeout so long transcriptions aren't artificially capped at 300s.
+    // Zero inherits the configured global timeout for long transcriptions.
     utils::HttpResponse res;
     {
         std::lock_guard<std::mutex> lock(inference_mutex_);

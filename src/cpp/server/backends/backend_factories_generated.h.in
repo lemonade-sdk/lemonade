@@ -6,7 +6,7 @@
 //
 #include <vector>
 #include "lemon/backends/backend_registry.h"
-@LEMON_DESCRIPTOR_INCLUDES@
+#include "backend_descriptors_generated.h"
 @LEMON_FACTORY_INCLUDES@
 namespace lemon {
 namespace backends {

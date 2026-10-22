@@ -1,0 +1,4910 @@
+[
+  {
+    "facts": {
+      "channel": "stable"
+    },
+    "id": "backend-system-stable",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "system"
+    }
+  },
+  {
+    "facts": {
+      "channel": "stable"
+    },
+    "id": "backend-cpu-stable",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "cpu"
+    }
+  },
+  {
+    "facts": {
+      "channel": "stable"
+    },
+    "id": "backend-vulkan-stable",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "vulkan"
+    }
+  },
+  {
+    "facts": {
+      "channel": "stable"
+    },
+    "id": "backend-cuda-stable",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "cuda"
+    }
+  },
+  {
+    "facts": {
+      "channel": "stable"
+    },
+    "id": "backend-metal-stable",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "metal"
+    }
+  },
+  {
+    "facts": {
+      "channel": "stable"
+    },
+    "id": "backend-rocm-stable",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "rocm"
+    }
+  },
+  {
+    "facts": {
+      "channel": "nightly"
+    },
+    "id": "backend-rocm-nightly",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "rocm"
+    }
+  },
+  {
+    "facts": {
+      "channel": "stable"
+    },
+    "id": "backend-rocm-stable-stable",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "rocm-stable"
+    }
+  },
+  {
+    "facts": {
+      "channel": "stable"
+    },
+    "id": "backend-rocm-nightly-stable",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "rocm-nightly"
+    }
+  },
+  {
+    "facts": {
+      "channel": "stable"
+    },
+    "id": "backend-auto-stable",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "auto"
+    }
+  },
+  {
+    "facts": {
+      "channel": "stable"
+    },
+    "id": "backend-empty-stable",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": ""
+    }
+  },
+  {
+    "facts": {
+      "channel": "stable"
+    },
+    "id": "backend-invalid-stable",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "invalid"
+    }
+  },
+  {
+    "id": "level-info",
+    "kind": "load",
+    "level": "info"
+  },
+  {
+    "id": "level-debug",
+    "kind": "load",
+    "level": "debug"
+  },
+  {
+    "id": "level-trace",
+    "kind": "load",
+    "level": "trace"
+  },
+  {
+    "id": "level-warning",
+    "kind": "load",
+    "level": "warning"
+  },
+  {
+    "id": "level-error",
+    "kind": "load",
+    "level": "error"
+  },
+  {
+    "id": "level-none",
+    "kind": "load",
+    "level": "none"
+  },
+  {
+    "id": "context-llm-0",
+    "kind": "load",
+    "model": {
+      "type": "llm"
+    },
+    "options": {
+      "ctx_size": 0
+    }
+  },
+  {
+    "id": "context-llm-4096",
+    "kind": "load",
+    "model": {
+      "type": "llm"
+    },
+    "options": {
+      "ctx_size": 4096
+    }
+  },
+  {
+    "id": "context-llm-8192",
+    "kind": "load",
+    "model": {
+      "type": "llm"
+    },
+    "options": {
+      "ctx_size": 8192
+    }
+  },
+  {
+    "id": "context-llm-16384",
+    "kind": "load",
+    "model": {
+      "type": "llm"
+    },
+    "options": {
+      "ctx_size": 16384
+    }
+  },
+  {
+    "id": "context-embedding-0",
+    "kind": "load",
+    "model": {
+      "type": "embedding"
+    },
+    "options": {
+      "ctx_size": 0
+    }
+  },
+  {
+    "id": "context-embedding-4096",
+    "kind": "load",
+    "model": {
+      "type": "embedding"
+    },
+    "options": {
+      "ctx_size": 4096
+    }
+  },
+  {
+    "id": "context-embedding-8192",
+    "kind": "load",
+    "model": {
+      "type": "embedding"
+    },
+    "options": {
+      "ctx_size": 8192
+    }
+  },
+  {
+    "id": "context-embedding-16384",
+    "kind": "load",
+    "model": {
+      "type": "embedding"
+    },
+    "options": {
+      "ctx_size": 16384
+    }
+  },
+  {
+    "id": "context-reranking-0",
+    "kind": "load",
+    "model": {
+      "type": "reranking"
+    },
+    "options": {
+      "ctx_size": 0
+    }
+  },
+  {
+    "id": "context-reranking-4096",
+    "kind": "load",
+    "model": {
+      "type": "reranking"
+    },
+    "options": {
+      "ctx_size": 4096
+    }
+  },
+  {
+    "id": "context-reranking-8192",
+    "kind": "load",
+    "model": {
+      "type": "reranking"
+    },
+    "options": {
+      "ctx_size": 8192
+    }
+  },
+  {
+    "id": "context-reranking-16384",
+    "kind": "load",
+    "model": {
+      "type": "reranking"
+    },
+    "options": {
+      "ctx_size": 16384
+    }
+  },
+  {
+    "id": "artifacts-30",
+    "kind": "load",
+    "model": {
+      "hf_load": false,
+      "main": "",
+      "mmproj": ""
+    },
+    "options": {
+      "llamacpp_backend": "cpu"
+    }
+  },
+  {
+    "id": "artifacts-31",
+    "kind": "load",
+    "model": {
+      "hf_load": false,
+      "main": "",
+      "mmproj": ""
+    },
+    "options": {
+      "llamacpp_backend": "vulkan"
+    }
+  },
+  {
+    "id": "artifacts-32",
+    "kind": "load",
+    "model": {
+      "hf_load": false,
+      "main": "",
+      "mmproj": "/oracle/models/mmproj.gguf"
+    },
+    "options": {
+      "llamacpp_backend": "cpu"
+    }
+  },
+  {
+    "id": "artifacts-33",
+    "kind": "load",
+    "model": {
+      "hf_load": false,
+      "main": "",
+      "mmproj": "/oracle/models/mmproj.gguf"
+    },
+    "options": {
+      "llamacpp_backend": "vulkan"
+    }
+  },
+  {
+    "id": "artifacts-34",
+    "kind": "load",
+    "model": {
+      "hf_load": false,
+      "main": "/oracle/models/main.gguf",
+      "mmproj": ""
+    },
+    "options": {
+      "llamacpp_backend": "cpu"
+    }
+  },
+  {
+    "id": "artifacts-35",
+    "kind": "load",
+    "model": {
+      "hf_load": false,
+      "main": "/oracle/models/main.gguf",
+      "mmproj": ""
+    },
+    "options": {
+      "llamacpp_backend": "vulkan"
+    }
+  },
+  {
+    "id": "artifacts-36",
+    "kind": "load",
+    "model": {
+      "hf_load": false,
+      "main": "/oracle/models/main.gguf",
+      "mmproj": "/oracle/models/mmproj.gguf"
+    },
+    "options": {
+      "llamacpp_backend": "cpu"
+    }
+  },
+  {
+    "id": "artifacts-37",
+    "kind": "load",
+    "model": {
+      "hf_load": false,
+      "main": "/oracle/models/main.gguf",
+      "mmproj": "/oracle/models/mmproj.gguf"
+    },
+    "options": {
+      "llamacpp_backend": "vulkan"
+    }
+  },
+  {
+    "id": "artifacts-38",
+    "kind": "load",
+    "model": {
+      "hf_load": true,
+      "main": "",
+      "mmproj": ""
+    },
+    "options": {
+      "llamacpp_backend": "cpu"
+    }
+  },
+  {
+    "id": "artifacts-39",
+    "kind": "load",
+    "model": {
+      "hf_load": true,
+      "main": "",
+      "mmproj": ""
+    },
+    "options": {
+      "llamacpp_backend": "vulkan"
+    }
+  },
+  {
+    "id": "artifacts-40",
+    "kind": "load",
+    "model": {
+      "hf_load": true,
+      "main": "",
+      "mmproj": "/oracle/models/mmproj.gguf"
+    },
+    "options": {
+      "llamacpp_backend": "cpu"
+    }
+  },
+  {
+    "id": "artifacts-41",
+    "kind": "load",
+    "model": {
+      "hf_load": true,
+      "main": "",
+      "mmproj": "/oracle/models/mmproj.gguf"
+    },
+    "options": {
+      "llamacpp_backend": "vulkan"
+    }
+  },
+  {
+    "id": "artifacts-42",
+    "kind": "load",
+    "model": {
+      "hf_load": true,
+      "main": "/oracle/models/main.gguf",
+      "mmproj": ""
+    },
+    "options": {
+      "llamacpp_backend": "cpu"
+    }
+  },
+  {
+    "id": "artifacts-43",
+    "kind": "load",
+    "model": {
+      "hf_load": true,
+      "main": "/oracle/models/main.gguf",
+      "mmproj": ""
+    },
+    "options": {
+      "llamacpp_backend": "vulkan"
+    }
+  },
+  {
+    "id": "artifacts-44",
+    "kind": "load",
+    "model": {
+      "hf_load": true,
+      "main": "/oracle/models/main.gguf",
+      "mmproj": "/oracle/models/mmproj.gguf"
+    },
+    "options": {
+      "llamacpp_backend": "cpu"
+    }
+  },
+  {
+    "id": "artifacts-45",
+    "kind": "load",
+    "model": {
+      "hf_load": true,
+      "main": "/oracle/models/main.gguf",
+      "mmproj": "/oracle/models/mmproj.gguf"
+    },
+    "options": {
+      "llamacpp_backend": "vulkan"
+    }
+  },
+  {
+    "id": "draft-46",
+    "kind": "load",
+    "model": {
+      "draft": "",
+      "draft_checkpoint": "",
+      "labels": []
+    }
+  },
+  {
+    "id": "draft-47",
+    "kind": "load",
+    "model": {
+      "draft": "",
+      "draft_checkpoint": "",
+      "labels": [
+        "dflash"
+      ]
+    }
+  },
+  {
+    "id": "draft-48",
+    "kind": "load",
+    "model": {
+      "draft": "",
+      "draft_checkpoint": "",
+      "labels": [
+        "mtp"
+      ]
+    }
+  },
+  {
+    "id": "draft-49",
+    "kind": "load",
+    "model": {
+      "draft": "",
+      "draft_checkpoint": "",
+      "labels": [
+        "dflash",
+        "mtp"
+      ]
+    }
+  },
+  {
+    "id": "draft-50",
+    "kind": "load",
+    "model": {
+      "draft": "",
+      "draft_checkpoint": "",
+      "labels": [
+        "DFLASH"
+      ]
+    }
+  },
+  {
+    "id": "draft-51",
+    "kind": "load",
+    "model": {
+      "draft": "/oracle/models/draft.gguf",
+      "draft_checkpoint": "",
+      "labels": []
+    }
+  },
+  {
+    "id": "draft-52",
+    "kind": "load",
+    "model": {
+      "draft": "/oracle/models/draft.gguf",
+      "draft_checkpoint": "",
+      "labels": [
+        "dflash"
+      ]
+    }
+  },
+  {
+    "id": "draft-53",
+    "kind": "load",
+    "model": {
+      "draft": "/oracle/models/draft.gguf",
+      "draft_checkpoint": "",
+      "labels": [
+        "mtp"
+      ]
+    }
+  },
+  {
+    "id": "draft-54",
+    "kind": "load",
+    "model": {
+      "draft": "/oracle/models/draft.gguf",
+      "draft_checkpoint": "",
+      "labels": [
+        "dflash",
+        "mtp"
+      ]
+    }
+  },
+  {
+    "id": "draft-55",
+    "kind": "load",
+    "model": {
+      "draft": "/oracle/models/draft.gguf",
+      "draft_checkpoint": "",
+      "labels": [
+        "DFLASH"
+      ]
+    }
+  },
+  {
+    "id": "draft-56",
+    "kind": "load",
+    "model": {
+      "draft": "",
+      "draft_checkpoint": "repo/draft.gguf",
+      "labels": []
+    }
+  },
+  {
+    "id": "draft-57",
+    "kind": "load",
+    "model": {
+      "draft": "",
+      "draft_checkpoint": "repo/draft.gguf",
+      "labels": [
+        "dflash"
+      ]
+    }
+  },
+  {
+    "id": "draft-58",
+    "kind": "load",
+    "model": {
+      "draft": "",
+      "draft_checkpoint": "repo/draft.gguf",
+      "labels": [
+        "mtp"
+      ]
+    }
+  },
+  {
+    "id": "draft-59",
+    "kind": "load",
+    "model": {
+      "draft": "",
+      "draft_checkpoint": "repo/draft.gguf",
+      "labels": [
+        "dflash",
+        "mtp"
+      ]
+    }
+  },
+  {
+    "id": "draft-60",
+    "kind": "load",
+    "model": {
+      "draft": "",
+      "draft_checkpoint": "repo/draft.gguf",
+      "labels": [
+        "DFLASH"
+      ]
+    }
+  },
+  {
+    "id": "draft-61",
+    "kind": "load",
+    "model": {
+      "draft": "/oracle/models/draft.gguf",
+      "draft_checkpoint": "repo/draft.gguf",
+      "labels": []
+    }
+  },
+  {
+    "id": "draft-62",
+    "kind": "load",
+    "model": {
+      "draft": "/oracle/models/draft.gguf",
+      "draft_checkpoint": "repo/draft.gguf",
+      "labels": [
+        "dflash"
+      ]
+    }
+  },
+  {
+    "id": "draft-63",
+    "kind": "load",
+    "model": {
+      "draft": "/oracle/models/draft.gguf",
+      "draft_checkpoint": "repo/draft.gguf",
+      "labels": [
+        "mtp"
+      ]
+    }
+  },
+  {
+    "id": "draft-64",
+    "kind": "load",
+    "model": {
+      "draft": "/oracle/models/draft.gguf",
+      "draft_checkpoint": "repo/draft.gguf",
+      "labels": [
+        "dflash",
+        "mtp"
+      ]
+    }
+  },
+  {
+    "id": "draft-65",
+    "kind": "load",
+    "model": {
+      "draft": "/oracle/models/draft.gguf",
+      "draft_checkpoint": "repo/draft.gguf",
+      "labels": [
+        "DFLASH"
+      ]
+    }
+  },
+  {
+    "id": "draft-66",
+    "kind": "load",
+    "model": {
+      "draft": "",
+      "draft_checkpoint": "repo/DfLaSh-Q4.gguf",
+      "labels": []
+    }
+  },
+  {
+    "id": "draft-67",
+    "kind": "load",
+    "model": {
+      "draft": "",
+      "draft_checkpoint": "repo/DfLaSh-Q4.gguf",
+      "labels": [
+        "dflash"
+      ]
+    }
+  },
+  {
+    "id": "draft-68",
+    "kind": "load",
+    "model": {
+      "draft": "",
+      "draft_checkpoint": "repo/DfLaSh-Q4.gguf",
+      "labels": [
+        "mtp"
+      ]
+    }
+  },
+  {
+    "id": "draft-69",
+    "kind": "load",
+    "model": {
+      "draft": "",
+      "draft_checkpoint": "repo/DfLaSh-Q4.gguf",
+      "labels": [
+        "dflash",
+        "mtp"
+      ]
+    }
+  },
+  {
+    "id": "draft-70",
+    "kind": "load",
+    "model": {
+      "draft": "",
+      "draft_checkpoint": "repo/DfLaSh-Q4.gguf",
+      "labels": [
+        "DFLASH"
+      ]
+    }
+  },
+  {
+    "id": "draft-71",
+    "kind": "load",
+    "model": {
+      "draft": "/oracle/models/draft.gguf",
+      "draft_checkpoint": "repo/DfLaSh-Q4.gguf",
+      "labels": []
+    }
+  },
+  {
+    "id": "draft-72",
+    "kind": "load",
+    "model": {
+      "draft": "/oracle/models/draft.gguf",
+      "draft_checkpoint": "repo/DfLaSh-Q4.gguf",
+      "labels": [
+        "dflash"
+      ]
+    }
+  },
+  {
+    "id": "draft-73",
+    "kind": "load",
+    "model": {
+      "draft": "/oracle/models/draft.gguf",
+      "draft_checkpoint": "repo/DfLaSh-Q4.gguf",
+      "labels": [
+        "mtp"
+      ]
+    }
+  },
+  {
+    "id": "draft-74",
+    "kind": "load",
+    "model": {
+      "draft": "/oracle/models/draft.gguf",
+      "draft_checkpoint": "repo/DfLaSh-Q4.gguf",
+      "labels": [
+        "dflash",
+        "mtp"
+      ]
+    }
+  },
+  {
+    "id": "draft-75",
+    "kind": "load",
+    "model": {
+      "draft": "/oracle/models/draft.gguf",
+      "draft_checkpoint": "repo/DfLaSh-Q4.gguf",
+      "labels": [
+        "DFLASH"
+      ]
+    }
+  },
+  {
+    "id": "draft-76",
+    "kind": "load",
+    "model": {
+      "draft": "",
+      "draft_checkpoint": "C:\\repo\\dflash.gguf",
+      "labels": []
+    }
+  },
+  {
+    "id": "draft-77",
+    "kind": "load",
+    "model": {
+      "draft": "",
+      "draft_checkpoint": "C:\\repo\\dflash.gguf",
+      "labels": [
+        "dflash"
+      ]
+    }
+  },
+  {
+    "id": "draft-78",
+    "kind": "load",
+    "model": {
+      "draft": "",
+      "draft_checkpoint": "C:\\repo\\dflash.gguf",
+      "labels": [
+        "mtp"
+      ]
+    }
+  },
+  {
+    "id": "draft-79",
+    "kind": "load",
+    "model": {
+      "draft": "",
+      "draft_checkpoint": "C:\\repo\\dflash.gguf",
+      "labels": [
+        "dflash",
+        "mtp"
+      ]
+    }
+  },
+  {
+    "id": "draft-80",
+    "kind": "load",
+    "model": {
+      "draft": "",
+      "draft_checkpoint": "C:\\repo\\dflash.gguf",
+      "labels": [
+        "DFLASH"
+      ]
+    }
+  },
+  {
+    "id": "draft-81",
+    "kind": "load",
+    "model": {
+      "draft": "/oracle/models/draft.gguf",
+      "draft_checkpoint": "C:\\repo\\dflash.gguf",
+      "labels": []
+    }
+  },
+  {
+    "id": "draft-82",
+    "kind": "load",
+    "model": {
+      "draft": "/oracle/models/draft.gguf",
+      "draft_checkpoint": "C:\\repo\\dflash.gguf",
+      "labels": [
+        "dflash"
+      ]
+    }
+  },
+  {
+    "id": "draft-83",
+    "kind": "load",
+    "model": {
+      "draft": "/oracle/models/draft.gguf",
+      "draft_checkpoint": "C:\\repo\\dflash.gguf",
+      "labels": [
+        "mtp"
+      ]
+    }
+  },
+  {
+    "id": "draft-84",
+    "kind": "load",
+    "model": {
+      "draft": "/oracle/models/draft.gguf",
+      "draft_checkpoint": "C:\\repo\\dflash.gguf",
+      "labels": [
+        "dflash",
+        "mtp"
+      ]
+    }
+  },
+  {
+    "id": "draft-85",
+    "kind": "load",
+    "model": {
+      "draft": "/oracle/models/draft.gguf",
+      "draft_checkpoint": "C:\\repo\\dflash.gguf",
+      "labels": [
+        "DFLASH"
+      ]
+    }
+  },
+  {
+    "id": "draft-86",
+    "kind": "load",
+    "model": {
+      "draft": "",
+      "draft_checkpoint": "repo/dflash_no.gguf",
+      "labels": []
+    }
+  },
+  {
+    "id": "draft-87",
+    "kind": "load",
+    "model": {
+      "draft": "",
+      "draft_checkpoint": "repo/dflash_no.gguf",
+      "labels": [
+        "dflash"
+      ]
+    }
+  },
+  {
+    "id": "draft-88",
+    "kind": "load",
+    "model": {
+      "draft": "",
+      "draft_checkpoint": "repo/dflash_no.gguf",
+      "labels": [
+        "mtp"
+      ]
+    }
+  },
+  {
+    "id": "draft-89",
+    "kind": "load",
+    "model": {
+      "draft": "",
+      "draft_checkpoint": "repo/dflash_no.gguf",
+      "labels": [
+        "dflash",
+        "mtp"
+      ]
+    }
+  },
+  {
+    "id": "draft-90",
+    "kind": "load",
+    "model": {
+      "draft": "",
+      "draft_checkpoint": "repo/dflash_no.gguf",
+      "labels": [
+        "DFLASH"
+      ]
+    }
+  },
+  {
+    "id": "draft-91",
+    "kind": "load",
+    "model": {
+      "draft": "/oracle/models/draft.gguf",
+      "draft_checkpoint": "repo/dflash_no.gguf",
+      "labels": []
+    }
+  },
+  {
+    "id": "draft-92",
+    "kind": "load",
+    "model": {
+      "draft": "/oracle/models/draft.gguf",
+      "draft_checkpoint": "repo/dflash_no.gguf",
+      "labels": [
+        "dflash"
+      ]
+    }
+  },
+  {
+    "id": "draft-93",
+    "kind": "load",
+    "model": {
+      "draft": "/oracle/models/draft.gguf",
+      "draft_checkpoint": "repo/dflash_no.gguf",
+      "labels": [
+        "mtp"
+      ]
+    }
+  },
+  {
+    "id": "draft-94",
+    "kind": "load",
+    "model": {
+      "draft": "/oracle/models/draft.gguf",
+      "draft_checkpoint": "repo/dflash_no.gguf",
+      "labels": [
+        "dflash",
+        "mtp"
+      ]
+    }
+  },
+  {
+    "id": "draft-95",
+    "kind": "load",
+    "model": {
+      "draft": "/oracle/models/draft.gguf",
+      "draft_checkpoint": "repo/dflash_no.gguf",
+      "labels": [
+        "DFLASH"
+      ]
+    }
+  },
+  {
+    "id": "runtime-96",
+    "kind": "runtime",
+    "model": {
+      "draft_checkpoint": "repo/DFLASH.gguf",
+      "labels": [
+        "dflash",
+        "mtp"
+      ]
+    },
+    "options": {
+      "llamacpp_args": "",
+      "merge_args": true
+    }
+  },
+  {
+    "id": "runtime-97",
+    "kind": "runtime",
+    "model": {
+      "draft_checkpoint": "repo/DFLASH.gguf",
+      "labels": [
+        "dflash",
+        "mtp"
+      ]
+    },
+    "options": {
+      "llamacpp_args": "",
+      "merge_args": false
+    }
+  },
+  {
+    "id": "runtime-98",
+    "kind": "runtime",
+    "model": {
+      "draft_checkpoint": "repo/DFLASH.gguf",
+      "labels": [
+        "dflash",
+        "mtp"
+      ]
+    },
+    "options": {
+      "llamacpp_args": "",
+      "merge_args": "yes"
+    }
+  },
+  {
+    "id": "runtime-99",
+    "kind": "runtime",
+    "model": {
+      "draft_checkpoint": "repo/DFLASH.gguf",
+      "labels": [
+        "dflash",
+        "mtp"
+      ]
+    },
+    "options": {
+      "llamacpp_args": "-np 2",
+      "merge_args": true
+    }
+  },
+  {
+    "id": "runtime-100",
+    "kind": "runtime",
+    "model": {
+      "draft_checkpoint": "repo/DFLASH.gguf",
+      "labels": [
+        "dflash",
+        "mtp"
+      ]
+    },
+    "options": {
+      "llamacpp_args": "-np 2",
+      "merge_args": false
+    }
+  },
+  {
+    "id": "runtime-101",
+    "kind": "runtime",
+    "model": {
+      "draft_checkpoint": "repo/DFLASH.gguf",
+      "labels": [
+        "dflash",
+        "mtp"
+      ]
+    },
+    "options": {
+      "llamacpp_args": "-np 2",
+      "merge_args": "yes"
+    }
+  },
+  {
+    "id": "runtime-102",
+    "kind": "runtime",
+    "model": {
+      "draft_checkpoint": "repo/DFLASH.gguf",
+      "labels": [
+        "dflash",
+        "mtp"
+      ]
+    },
+    "options": {
+      "llamacpp_args": "--parallel=3",
+      "merge_args": true
+    }
+  },
+  {
+    "id": "runtime-103",
+    "kind": "runtime",
+    "model": {
+      "draft_checkpoint": "repo/DFLASH.gguf",
+      "labels": [
+        "dflash",
+        "mtp"
+      ]
+    },
+    "options": {
+      "llamacpp_args": "--parallel=3",
+      "merge_args": false
+    }
+  },
+  {
+    "id": "runtime-104",
+    "kind": "runtime",
+    "model": {
+      "draft_checkpoint": "repo/DFLASH.gguf",
+      "labels": [
+        "dflash",
+        "mtp"
+      ]
+    },
+    "options": {
+      "llamacpp_args": "--parallel=3",
+      "merge_args": "yes"
+    }
+  },
+  {
+    "id": "runtime-105",
+    "kind": "runtime",
+    "model": {
+      "draft_checkpoint": "repo/DFLASH.gguf",
+      "labels": [
+        "dflash",
+        "mtp"
+      ]
+    },
+    "options": {
+      "llamacpp_args": "--spec-type none",
+      "merge_args": true
+    }
+  },
+  {
+    "id": "runtime-106",
+    "kind": "runtime",
+    "model": {
+      "draft_checkpoint": "repo/DFLASH.gguf",
+      "labels": [
+        "dflash",
+        "mtp"
+      ]
+    },
+    "options": {
+      "llamacpp_args": "--spec-type none",
+      "merge_args": false
+    }
+  },
+  {
+    "id": "runtime-107",
+    "kind": "runtime",
+    "model": {
+      "draft_checkpoint": "repo/DFLASH.gguf",
+      "labels": [
+        "dflash",
+        "mtp"
+      ]
+    },
+    "options": {
+      "llamacpp_args": "--spec-type none",
+      "merge_args": "yes"
+    }
+  },
+  {
+    "id": "runtime-108",
+    "kind": "runtime",
+    "model": {
+      "draft_checkpoint": "repo/DFLASH.gguf",
+      "labels": [
+        "dflash",
+        "mtp"
+      ]
+    },
+    "options": {
+      "llamacpp_args": "--spec-type=draft-custom",
+      "merge_args": true
+    }
+  },
+  {
+    "id": "runtime-109",
+    "kind": "runtime",
+    "model": {
+      "draft_checkpoint": "repo/DFLASH.gguf",
+      "labels": [
+        "dflash",
+        "mtp"
+      ]
+    },
+    "options": {
+      "llamacpp_args": "--spec-type=draft-custom",
+      "merge_args": false
+    }
+  },
+  {
+    "id": "runtime-110",
+    "kind": "runtime",
+    "model": {
+      "draft_checkpoint": "repo/DFLASH.gguf",
+      "labels": [
+        "dflash",
+        "mtp"
+      ]
+    },
+    "options": {
+      "llamacpp_args": "--spec-type=draft-custom",
+      "merge_args": "yes"
+    }
+  },
+  {
+    "id": "runtime-111",
+    "kind": "runtime",
+    "model": {
+      "draft_checkpoint": "repo/DFLASH.gguf",
+      "labels": [
+        "dflash",
+        "mtp"
+      ]
+    },
+    "options": {
+      "llamacpp_args": "--x '' --x 'a b'",
+      "merge_args": true
+    }
+  },
+  {
+    "id": "runtime-112",
+    "kind": "runtime",
+    "model": {
+      "draft_checkpoint": "repo/DFLASH.gguf",
+      "labels": [
+        "dflash",
+        "mtp"
+      ]
+    },
+    "options": {
+      "llamacpp_args": "--x '' --x 'a b'",
+      "merge_args": false
+    }
+  },
+  {
+    "id": "runtime-113",
+    "kind": "runtime",
+    "model": {
+      "draft_checkpoint": "repo/DFLASH.gguf",
+      "labels": [
+        "dflash",
+        "mtp"
+      ]
+    },
+    "options": {
+      "llamacpp_args": "--x '' --x 'a b'",
+      "merge_args": "yes"
+    }
+  },
+  {
+    "id": "runtime-114",
+    "kind": "runtime",
+    "model": {
+      "draft_checkpoint": "repo/DFLASH.gguf",
+      "labels": [
+        "dflash",
+        "mtp"
+      ]
+    },
+    "options": {
+      "llamacpp_args": "--x \"unterminated",
+      "merge_args": true
+    }
+  },
+  {
+    "id": "runtime-115",
+    "kind": "runtime",
+    "model": {
+      "draft_checkpoint": "repo/DFLASH.gguf",
+      "labels": [
+        "dflash",
+        "mtp"
+      ]
+    },
+    "options": {
+      "llamacpp_args": "--x \"unterminated",
+      "merge_args": false
+    }
+  },
+  {
+    "id": "runtime-116",
+    "kind": "runtime",
+    "model": {
+      "draft_checkpoint": "repo/DFLASH.gguf",
+      "labels": [
+        "dflash",
+        "mtp"
+      ]
+    },
+    "options": {
+      "llamacpp_args": "--x \"unterminated",
+      "merge_args": "yes"
+    }
+  },
+  {
+    "id": "runtime-117",
+    "kind": "runtime",
+    "model": {
+      "draft_checkpoint": "repo/DFLASH.gguf",
+      "labels": [
+        "dflash",
+        "mtp"
+      ]
+    },
+    "options": {
+      "llamacpp_args": "--x -2.5e-3",
+      "merge_args": true
+    }
+  },
+  {
+    "id": "runtime-118",
+    "kind": "runtime",
+    "model": {
+      "draft_checkpoint": "repo/DFLASH.gguf",
+      "labels": [
+        "dflash",
+        "mtp"
+      ]
+    },
+    "options": {
+      "llamacpp_args": "--x -2.5e-3",
+      "merge_args": false
+    }
+  },
+  {
+    "id": "runtime-119",
+    "kind": "runtime",
+    "model": {
+      "draft_checkpoint": "repo/DFLASH.gguf",
+      "labels": [
+        "dflash",
+        "mtp"
+      ]
+    },
+    "options": {
+      "llamacpp_args": "--x -2.5e-3",
+      "merge_args": "yes"
+    }
+  },
+  {
+    "id": "runtime-typed-120",
+    "kind": "runtime",
+    "options": {
+      "llamacpp_args": null,
+      "merge_args": null
+    }
+  },
+  {
+    "id": "runtime-typed-121",
+    "kind": "runtime",
+    "options": {
+      "llamacpp_args": 3,
+      "merge_args": null
+    }
+  },
+  {
+    "id": "runtime-typed-122",
+    "kind": "runtime",
+    "options": {
+      "llamacpp_args": false,
+      "merge_args": null
+    }
+  },
+  {
+    "id": "runtime-typed-123",
+    "kind": "runtime",
+    "options": {
+      "llamacpp_args": [],
+      "merge_args": null
+    }
+  },
+  {
+    "id": "runtime-typed-124",
+    "kind": "runtime",
+    "options": {
+      "llamacpp_args": {},
+      "merge_args": null
+    }
+  },
+  {
+    "id": "reserved-125",
+    "kind": "load",
+    "model": {
+      "hf_load": false
+    },
+    "options": {
+      "llamacpp_args": "-m value"
+    }
+  },
+  {
+    "id": "reserved-126",
+    "kind": "load",
+    "model": {
+      "hf_load": false
+    },
+    "options": {
+      "llamacpp_args": "-m=value"
+    }
+  },
+  {
+    "id": "reserved-127",
+    "kind": "load",
+    "model": {
+      "hf_load": false
+    },
+    "options": {
+      "llamacpp_args": "--model value"
+    }
+  },
+  {
+    "id": "reserved-128",
+    "kind": "load",
+    "model": {
+      "hf_load": false
+    },
+    "options": {
+      "llamacpp_args": "--model=value"
+    }
+  },
+  {
+    "id": "reserved-129",
+    "kind": "load",
+    "model": {
+      "hf_load": false
+    },
+    "options": {
+      "llamacpp_args": "--ctx-size value"
+    }
+  },
+  {
+    "id": "reserved-130",
+    "kind": "load",
+    "model": {
+      "hf_load": false
+    },
+    "options": {
+      "llamacpp_args": "--ctx-size=value"
+    }
+  },
+  {
+    "id": "reserved-131",
+    "kind": "load",
+    "model": {
+      "hf_load": false
+    },
+    "options": {
+      "llamacpp_args": "-c value"
+    }
+  },
+  {
+    "id": "reserved-132",
+    "kind": "load",
+    "model": {
+      "hf_load": false
+    },
+    "options": {
+      "llamacpp_args": "-c=value"
+    }
+  },
+  {
+    "id": "reserved-133",
+    "kind": "load",
+    "model": {
+      "hf_load": false
+    },
+    "options": {
+      "llamacpp_args": "--device value"
+    }
+  },
+  {
+    "id": "reserved-134",
+    "kind": "load",
+    "model": {
+      "hf_load": false
+    },
+    "options": {
+      "llamacpp_args": "--device=value"
+    }
+  },
+  {
+    "id": "reserved-135",
+    "kind": "load",
+    "model": {
+      "hf_load": false
+    },
+    "options": {
+      "llamacpp_args": "-dev value"
+    }
+  },
+  {
+    "id": "reserved-136",
+    "kind": "load",
+    "model": {
+      "hf_load": false
+    },
+    "options": {
+      "llamacpp_args": "-dev=value"
+    }
+  },
+  {
+    "id": "reserved-137",
+    "kind": "load",
+    "model": {
+      "hf_load": false
+    },
+    "options": {
+      "llamacpp_args": "--port value"
+    }
+  },
+  {
+    "id": "reserved-138",
+    "kind": "load",
+    "model": {
+      "hf_load": false
+    },
+    "options": {
+      "llamacpp_args": "--port=value"
+    }
+  },
+  {
+    "id": "reserved-139",
+    "kind": "load",
+    "model": {
+      "hf_load": false
+    },
+    "options": {
+      "llamacpp_args": "--jinja value"
+    }
+  },
+  {
+    "id": "reserved-140",
+    "kind": "load",
+    "model": {
+      "hf_load": false
+    },
+    "options": {
+      "llamacpp_args": "--jinja=value"
+    }
+  },
+  {
+    "id": "reserved-141",
+    "kind": "load",
+    "model": {
+      "hf_load": false
+    },
+    "options": {
+      "llamacpp_args": "--no-jinja value"
+    }
+  },
+  {
+    "id": "reserved-142",
+    "kind": "load",
+    "model": {
+      "hf_load": false
+    },
+    "options": {
+      "llamacpp_args": "--no-jinja=value"
+    }
+  },
+  {
+    "id": "reserved-143",
+    "kind": "load",
+    "model": {
+      "hf_load": false
+    },
+    "options": {
+      "llamacpp_args": "--metrics value"
+    }
+  },
+  {
+    "id": "reserved-144",
+    "kind": "load",
+    "model": {
+      "hf_load": false
+    },
+    "options": {
+      "llamacpp_args": "--metrics=value"
+    }
+  },
+  {
+    "id": "reserved-145",
+    "kind": "load",
+    "model": {
+      "hf_load": false
+    },
+    "options": {
+      "llamacpp_args": "--mmproj value"
+    }
+  },
+  {
+    "id": "reserved-146",
+    "kind": "load",
+    "model": {
+      "hf_load": false
+    },
+    "options": {
+      "llamacpp_args": "--mmproj=value"
+    }
+  },
+  {
+    "id": "reserved-147",
+    "kind": "load",
+    "model": {
+      "hf_load": false
+    },
+    "options": {
+      "llamacpp_args": "-mm value"
+    }
+  },
+  {
+    "id": "reserved-148",
+    "kind": "load",
+    "model": {
+      "hf_load": false
+    },
+    "options": {
+      "llamacpp_args": "-mm=value"
+    }
+  },
+  {
+    "id": "reserved-149",
+    "kind": "load",
+    "model": {
+      "hf_load": false
+    },
+    "options": {
+      "llamacpp_args": "-mmu value"
+    }
+  },
+  {
+    "id": "reserved-150",
+    "kind": "load",
+    "model": {
+      "hf_load": false
+    },
+    "options": {
+      "llamacpp_args": "-mmu=value"
+    }
+  },
+  {
+    "id": "reserved-151",
+    "kind": "load",
+    "model": {
+      "hf_load": false
+    },
+    "options": {
+      "llamacpp_args": "--mmproj-url value"
+    }
+  },
+  {
+    "id": "reserved-152",
+    "kind": "load",
+    "model": {
+      "hf_load": false
+    },
+    "options": {
+      "llamacpp_args": "--mmproj-url=value"
+    }
+  },
+  {
+    "id": "reserved-153",
+    "kind": "load",
+    "model": {
+      "hf_load": false
+    },
+    "options": {
+      "llamacpp_args": "--no-mmproj value"
+    }
+  },
+  {
+    "id": "reserved-154",
+    "kind": "load",
+    "model": {
+      "hf_load": false
+    },
+    "options": {
+      "llamacpp_args": "--no-mmproj=value"
+    }
+  },
+  {
+    "id": "reserved-155",
+    "kind": "load",
+    "model": {
+      "hf_load": false
+    },
+    "options": {
+      "llamacpp_args": "--mmproj-auto value"
+    }
+  },
+  {
+    "id": "reserved-156",
+    "kind": "load",
+    "model": {
+      "hf_load": false
+    },
+    "options": {
+      "llamacpp_args": "--mmproj-auto=value"
+    }
+  },
+  {
+    "id": "reserved-157",
+    "kind": "load",
+    "model": {
+      "hf_load": false
+    },
+    "options": {
+      "llamacpp_args": "--no-mmproj-auto value"
+    }
+  },
+  {
+    "id": "reserved-158",
+    "kind": "load",
+    "model": {
+      "hf_load": false
+    },
+    "options": {
+      "llamacpp_args": "--no-mmproj-auto=value"
+    }
+  },
+  {
+    "id": "reserved-159",
+    "kind": "load",
+    "model": {
+      "hf_load": false
+    },
+    "options": {
+      "llamacpp_args": "--model-draft value"
+    }
+  },
+  {
+    "id": "reserved-160",
+    "kind": "load",
+    "model": {
+      "hf_load": false
+    },
+    "options": {
+      "llamacpp_args": "--model-draft=value"
+    }
+  },
+  {
+    "id": "reserved-161",
+    "kind": "load",
+    "model": {
+      "hf_load": false
+    },
+    "options": {
+      "llamacpp_args": "-md value"
+    }
+  },
+  {
+    "id": "reserved-162",
+    "kind": "load",
+    "model": {
+      "hf_load": false
+    },
+    "options": {
+      "llamacpp_args": "-md=value"
+    }
+  },
+  {
+    "id": "reserved-163",
+    "kind": "load",
+    "model": {
+      "hf_load": false
+    },
+    "options": {
+      "llamacpp_args": "--spec-draft-model value"
+    }
+  },
+  {
+    "id": "reserved-164",
+    "kind": "load",
+    "model": {
+      "hf_load": false
+    },
+    "options": {
+      "llamacpp_args": "--spec-draft-model=value"
+    }
+  },
+  {
+    "id": "reserved-165",
+    "kind": "load",
+    "model": {
+      "hf_load": false
+    },
+    "options": {
+      "llamacpp_args": "--embeddings value"
+    }
+  },
+  {
+    "id": "reserved-166",
+    "kind": "load",
+    "model": {
+      "hf_load": false
+    },
+    "options": {
+      "llamacpp_args": "--embeddings=value"
+    }
+  },
+  {
+    "id": "reserved-167",
+    "kind": "load",
+    "model": {
+      "hf_load": false
+    },
+    "options": {
+      "llamacpp_args": "--embedding value"
+    }
+  },
+  {
+    "id": "reserved-168",
+    "kind": "load",
+    "model": {
+      "hf_load": false
+    },
+    "options": {
+      "llamacpp_args": "--embedding=value"
+    }
+  },
+  {
+    "id": "reserved-169",
+    "kind": "load",
+    "model": {
+      "hf_load": false
+    },
+    "options": {
+      "llamacpp_args": "--reranking value"
+    }
+  },
+  {
+    "id": "reserved-170",
+    "kind": "load",
+    "model": {
+      "hf_load": false
+    },
+    "options": {
+      "llamacpp_args": "--reranking=value"
+    }
+  },
+  {
+    "id": "reserved-171",
+    "kind": "load",
+    "model": {
+      "hf_load": false
+    },
+    "options": {
+      "llamacpp_args": "--rerank value"
+    }
+  },
+  {
+    "id": "reserved-172",
+    "kind": "load",
+    "model": {
+      "hf_load": false
+    },
+    "options": {
+      "llamacpp_args": "--rerank=value"
+    }
+  },
+  {
+    "id": "reserved-173",
+    "kind": "load",
+    "model": {
+      "hf_load": false
+    },
+    "options": {
+      "llamacpp_args": "-hf value"
+    }
+  },
+  {
+    "id": "reserved-174",
+    "kind": "load",
+    "model": {
+      "hf_load": false
+    },
+    "options": {
+      "llamacpp_args": "-hf=value"
+    }
+  },
+  {
+    "id": "reserved-175",
+    "kind": "load",
+    "model": {
+      "hf_load": false
+    },
+    "options": {
+      "llamacpp_args": "--hf-repo value"
+    }
+  },
+  {
+    "id": "reserved-176",
+    "kind": "load",
+    "model": {
+      "hf_load": false
+    },
+    "options": {
+      "llamacpp_args": "--hf-repo=value"
+    }
+  },
+  {
+    "id": "reserved-177",
+    "kind": "load",
+    "model": {
+      "hf_load": false
+    },
+    "options": {
+      "llamacpp_args": "-mr value"
+    }
+  },
+  {
+    "id": "reserved-178",
+    "kind": "load",
+    "model": {
+      "hf_load": false
+    },
+    "options": {
+      "llamacpp_args": "-mr=value"
+    }
+  },
+  {
+    "id": "reserved-179",
+    "kind": "load",
+    "model": {
+      "hf_load": false
+    },
+    "options": {
+      "llamacpp_args": "--hf-file value"
+    }
+  },
+  {
+    "id": "reserved-180",
+    "kind": "load",
+    "model": {
+      "hf_load": false
+    },
+    "options": {
+      "llamacpp_args": "--hf-file=value"
+    }
+  },
+  {
+    "id": "reserved-181",
+    "kind": "load",
+    "model": {
+      "hf_load": false
+    },
+    "options": {
+      "llamacpp_args": "-mf value"
+    }
+  },
+  {
+    "id": "reserved-182",
+    "kind": "load",
+    "model": {
+      "hf_load": false
+    },
+    "options": {
+      "llamacpp_args": "-mf=value"
+    }
+  },
+  {
+    "id": "reserved-183",
+    "kind": "load",
+    "model": {
+      "hf_load": false
+    },
+    "options": {
+      "llamacpp_args": "--no-mmproj-offload value"
+    }
+  },
+  {
+    "id": "reserved-184",
+    "kind": "load",
+    "model": {
+      "hf_load": false
+    },
+    "options": {
+      "llamacpp_args": "--no-mmproj-offload=value"
+    }
+  },
+  {
+    "id": "reserved-185",
+    "kind": "load",
+    "model": {
+      "hf_load": false
+    },
+    "options": {
+      "llamacpp_args": "-lv value"
+    }
+  },
+  {
+    "id": "reserved-186",
+    "kind": "load",
+    "model": {
+      "hf_load": false
+    },
+    "options": {
+      "llamacpp_args": "-lv=value"
+    }
+  },
+  {
+    "id": "reserved-187",
+    "kind": "load",
+    "model": {
+      "hf_load": true
+    },
+    "options": {
+      "llamacpp_args": "-m value"
+    }
+  },
+  {
+    "id": "reserved-188",
+    "kind": "load",
+    "model": {
+      "hf_load": true
+    },
+    "options": {
+      "llamacpp_args": "-m=value"
+    }
+  },
+  {
+    "id": "reserved-189",
+    "kind": "load",
+    "model": {
+      "hf_load": true
+    },
+    "options": {
+      "llamacpp_args": "--model value"
+    }
+  },
+  {
+    "id": "reserved-190",
+    "kind": "load",
+    "model": {
+      "hf_load": true
+    },
+    "options": {
+      "llamacpp_args": "--model=value"
+    }
+  },
+  {
+    "id": "reserved-191",
+    "kind": "load",
+    "model": {
+      "hf_load": true
+    },
+    "options": {
+      "llamacpp_args": "--ctx-size value"
+    }
+  },
+  {
+    "id": "reserved-192",
+    "kind": "load",
+    "model": {
+      "hf_load": true
+    },
+    "options": {
+      "llamacpp_args": "--ctx-size=value"
+    }
+  },
+  {
+    "id": "reserved-193",
+    "kind": "load",
+    "model": {
+      "hf_load": true
+    },
+    "options": {
+      "llamacpp_args": "-c value"
+    }
+  },
+  {
+    "id": "reserved-194",
+    "kind": "load",
+    "model": {
+      "hf_load": true
+    },
+    "options": {
+      "llamacpp_args": "-c=value"
+    }
+  },
+  {
+    "id": "reserved-195",
+    "kind": "load",
+    "model": {
+      "hf_load": true
+    },
+    "options": {
+      "llamacpp_args": "--device value"
+    }
+  },
+  {
+    "id": "reserved-196",
+    "kind": "load",
+    "model": {
+      "hf_load": true
+    },
+    "options": {
+      "llamacpp_args": "--device=value"
+    }
+  },
+  {
+    "id": "reserved-197",
+    "kind": "load",
+    "model": {
+      "hf_load": true
+    },
+    "options": {
+      "llamacpp_args": "-dev value"
+    }
+  },
+  {
+    "id": "reserved-198",
+    "kind": "load",
+    "model": {
+      "hf_load": true
+    },
+    "options": {
+      "llamacpp_args": "-dev=value"
+    }
+  },
+  {
+    "id": "reserved-199",
+    "kind": "load",
+    "model": {
+      "hf_load": true
+    },
+    "options": {
+      "llamacpp_args": "--port value"
+    }
+  },
+  {
+    "id": "reserved-200",
+    "kind": "load",
+    "model": {
+      "hf_load": true
+    },
+    "options": {
+      "llamacpp_args": "--port=value"
+    }
+  },
+  {
+    "id": "reserved-201",
+    "kind": "load",
+    "model": {
+      "hf_load": true
+    },
+    "options": {
+      "llamacpp_args": "--jinja value"
+    }
+  },
+  {
+    "id": "reserved-202",
+    "kind": "load",
+    "model": {
+      "hf_load": true
+    },
+    "options": {
+      "llamacpp_args": "--jinja=value"
+    }
+  },
+  {
+    "id": "reserved-203",
+    "kind": "load",
+    "model": {
+      "hf_load": true
+    },
+    "options": {
+      "llamacpp_args": "--no-jinja value"
+    }
+  },
+  {
+    "id": "reserved-204",
+    "kind": "load",
+    "model": {
+      "hf_load": true
+    },
+    "options": {
+      "llamacpp_args": "--no-jinja=value"
+    }
+  },
+  {
+    "id": "reserved-205",
+    "kind": "load",
+    "model": {
+      "hf_load": true
+    },
+    "options": {
+      "llamacpp_args": "--metrics value"
+    }
+  },
+  {
+    "id": "reserved-206",
+    "kind": "load",
+    "model": {
+      "hf_load": true
+    },
+    "options": {
+      "llamacpp_args": "--metrics=value"
+    }
+  },
+  {
+    "id": "reserved-207",
+    "kind": "load",
+    "model": {
+      "hf_load": true
+    },
+    "options": {
+      "llamacpp_args": "--mmproj value"
+    }
+  },
+  {
+    "id": "reserved-208",
+    "kind": "load",
+    "model": {
+      "hf_load": true
+    },
+    "options": {
+      "llamacpp_args": "--mmproj=value"
+    }
+  },
+  {
+    "id": "reserved-209",
+    "kind": "load",
+    "model": {
+      "hf_load": true
+    },
+    "options": {
+      "llamacpp_args": "-mm value"
+    }
+  },
+  {
+    "id": "reserved-210",
+    "kind": "load",
+    "model": {
+      "hf_load": true
+    },
+    "options": {
+      "llamacpp_args": "-mm=value"
+    }
+  },
+  {
+    "id": "reserved-211",
+    "kind": "load",
+    "model": {
+      "hf_load": true
+    },
+    "options": {
+      "llamacpp_args": "-mmu value"
+    }
+  },
+  {
+    "id": "reserved-212",
+    "kind": "load",
+    "model": {
+      "hf_load": true
+    },
+    "options": {
+      "llamacpp_args": "-mmu=value"
+    }
+  },
+  {
+    "id": "reserved-213",
+    "kind": "load",
+    "model": {
+      "hf_load": true
+    },
+    "options": {
+      "llamacpp_args": "--mmproj-url value"
+    }
+  },
+  {
+    "id": "reserved-214",
+    "kind": "load",
+    "model": {
+      "hf_load": true
+    },
+    "options": {
+      "llamacpp_args": "--mmproj-url=value"
+    }
+  },
+  {
+    "id": "reserved-215",
+    "kind": "load",
+    "model": {
+      "hf_load": true
+    },
+    "options": {
+      "llamacpp_args": "--no-mmproj value"
+    }
+  },
+  {
+    "id": "reserved-216",
+    "kind": "load",
+    "model": {
+      "hf_load": true
+    },
+    "options": {
+      "llamacpp_args": "--no-mmproj=value"
+    }
+  },
+  {
+    "id": "reserved-217",
+    "kind": "load",
+    "model": {
+      "hf_load": true
+    },
+    "options": {
+      "llamacpp_args": "--mmproj-auto value"
+    }
+  },
+  {
+    "id": "reserved-218",
+    "kind": "load",
+    "model": {
+      "hf_load": true
+    },
+    "options": {
+      "llamacpp_args": "--mmproj-auto=value"
+    }
+  },
+  {
+    "id": "reserved-219",
+    "kind": "load",
+    "model": {
+      "hf_load": true
+    },
+    "options": {
+      "llamacpp_args": "--no-mmproj-auto value"
+    }
+  },
+  {
+    "id": "reserved-220",
+    "kind": "load",
+    "model": {
+      "hf_load": true
+    },
+    "options": {
+      "llamacpp_args": "--no-mmproj-auto=value"
+    }
+  },
+  {
+    "id": "reserved-221",
+    "kind": "load",
+    "model": {
+      "hf_load": true
+    },
+    "options": {
+      "llamacpp_args": "--model-draft value"
+    }
+  },
+  {
+    "id": "reserved-222",
+    "kind": "load",
+    "model": {
+      "hf_load": true
+    },
+    "options": {
+      "llamacpp_args": "--model-draft=value"
+    }
+  },
+  {
+    "id": "reserved-223",
+    "kind": "load",
+    "model": {
+      "hf_load": true
+    },
+    "options": {
+      "llamacpp_args": "-md value"
+    }
+  },
+  {
+    "id": "reserved-224",
+    "kind": "load",
+    "model": {
+      "hf_load": true
+    },
+    "options": {
+      "llamacpp_args": "-md=value"
+    }
+  },
+  {
+    "id": "reserved-225",
+    "kind": "load",
+    "model": {
+      "hf_load": true
+    },
+    "options": {
+      "llamacpp_args": "--spec-draft-model value"
+    }
+  },
+  {
+    "id": "reserved-226",
+    "kind": "load",
+    "model": {
+      "hf_load": true
+    },
+    "options": {
+      "llamacpp_args": "--spec-draft-model=value"
+    }
+  },
+  {
+    "id": "reserved-227",
+    "kind": "load",
+    "model": {
+      "hf_load": true
+    },
+    "options": {
+      "llamacpp_args": "--embeddings value"
+    }
+  },
+  {
+    "id": "reserved-228",
+    "kind": "load",
+    "model": {
+      "hf_load": true
+    },
+    "options": {
+      "llamacpp_args": "--embeddings=value"
+    }
+  },
+  {
+    "id": "reserved-229",
+    "kind": "load",
+    "model": {
+      "hf_load": true
+    },
+    "options": {
+      "llamacpp_args": "--embedding value"
+    }
+  },
+  {
+    "id": "reserved-230",
+    "kind": "load",
+    "model": {
+      "hf_load": true
+    },
+    "options": {
+      "llamacpp_args": "--embedding=value"
+    }
+  },
+  {
+    "id": "reserved-231",
+    "kind": "load",
+    "model": {
+      "hf_load": true
+    },
+    "options": {
+      "llamacpp_args": "--reranking value"
+    }
+  },
+  {
+    "id": "reserved-232",
+    "kind": "load",
+    "model": {
+      "hf_load": true
+    },
+    "options": {
+      "llamacpp_args": "--reranking=value"
+    }
+  },
+  {
+    "id": "reserved-233",
+    "kind": "load",
+    "model": {
+      "hf_load": true
+    },
+    "options": {
+      "llamacpp_args": "--rerank value"
+    }
+  },
+  {
+    "id": "reserved-234",
+    "kind": "load",
+    "model": {
+      "hf_load": true
+    },
+    "options": {
+      "llamacpp_args": "--rerank=value"
+    }
+  },
+  {
+    "id": "reserved-235",
+    "kind": "load",
+    "model": {
+      "hf_load": true
+    },
+    "options": {
+      "llamacpp_args": "-hf value"
+    }
+  },
+  {
+    "id": "reserved-236",
+    "kind": "load",
+    "model": {
+      "hf_load": true
+    },
+    "options": {
+      "llamacpp_args": "-hf=value"
+    }
+  },
+  {
+    "id": "reserved-237",
+    "kind": "load",
+    "model": {
+      "hf_load": true
+    },
+    "options": {
+      "llamacpp_args": "--hf-repo value"
+    }
+  },
+  {
+    "id": "reserved-238",
+    "kind": "load",
+    "model": {
+      "hf_load": true
+    },
+    "options": {
+      "llamacpp_args": "--hf-repo=value"
+    }
+  },
+  {
+    "id": "reserved-239",
+    "kind": "load",
+    "model": {
+      "hf_load": true
+    },
+    "options": {
+      "llamacpp_args": "-mr value"
+    }
+  },
+  {
+    "id": "reserved-240",
+    "kind": "load",
+    "model": {
+      "hf_load": true
+    },
+    "options": {
+      "llamacpp_args": "-mr=value"
+    }
+  },
+  {
+    "id": "reserved-241",
+    "kind": "load",
+    "model": {
+      "hf_load": true
+    },
+    "options": {
+      "llamacpp_args": "--hf-file value"
+    }
+  },
+  {
+    "id": "reserved-242",
+    "kind": "load",
+    "model": {
+      "hf_load": true
+    },
+    "options": {
+      "llamacpp_args": "--hf-file=value"
+    }
+  },
+  {
+    "id": "reserved-243",
+    "kind": "load",
+    "model": {
+      "hf_load": true
+    },
+    "options": {
+      "llamacpp_args": "-mf value"
+    }
+  },
+  {
+    "id": "reserved-244",
+    "kind": "load",
+    "model": {
+      "hf_load": true
+    },
+    "options": {
+      "llamacpp_args": "-mf=value"
+    }
+  },
+  {
+    "id": "reserved-245",
+    "kind": "load",
+    "model": {
+      "hf_load": true
+    },
+    "options": {
+      "llamacpp_args": "--no-mmproj-offload value"
+    }
+  },
+  {
+    "id": "reserved-246",
+    "kind": "load",
+    "model": {
+      "hf_load": true
+    },
+    "options": {
+      "llamacpp_args": "--no-mmproj-offload=value"
+    }
+  },
+  {
+    "id": "reserved-247",
+    "kind": "load",
+    "model": {
+      "hf_load": true
+    },
+    "options": {
+      "llamacpp_args": "-lv value"
+    }
+  },
+  {
+    "id": "reserved-248",
+    "kind": "load",
+    "model": {
+      "hf_load": true
+    },
+    "options": {
+      "llamacpp_args": "-lv=value"
+    }
+  },
+  {
+    "id": "parse-249",
+    "kind": "load",
+    "options": {
+      "llamacpp_args": "--port 1 --model x"
+    }
+  },
+  {
+    "id": "parse-250",
+    "kind": "load",
+    "options": {
+      "llamacpp_args": "--model x --port 1"
+    }
+  },
+  {
+    "id": "parse-251",
+    "kind": "load",
+    "options": {
+      "llamacpp_args": "--foo \"\" --bar 'two words' --x=-1"
+    }
+  },
+  {
+    "id": "parse-252",
+    "kind": "load",
+    "options": {
+      "llamacpp_args": "--foo \"unfinished"
+    }
+  },
+  {
+    "id": "parse-253",
+    "kind": "load",
+    "options": {
+      "llamacpp_args": "--foo 'unfinished"
+    }
+  },
+  {
+    "id": "parse-254",
+    "kind": "load",
+    "options": {
+      "llamacpp_args": "--foo a\\ b"
+    }
+  },
+  {
+    "id": "parse-255",
+    "kind": "load",
+    "options": {
+      "llamacpp_args": "--foo\tbar"
+    }
+  },
+  {
+    "id": "parse-256",
+    "kind": "load",
+    "options": {
+      "llamacpp_args": "--foo \"--port\""
+    }
+  },
+  {
+    "id": "parse-257",
+    "kind": "load",
+    "options": {
+      "llamacpp_args": "--no-mmproj-offload"
+    }
+  },
+  {
+    "id": "parse-258",
+    "kind": "load",
+    "options": {
+      "llamacpp_args": "-lv 9"
+    }
+  },
+  {
+    "id": "device-cpu-empty",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "cpu",
+      "llamacpp_device": ""
+    }
+  },
+  {
+    "id": "device-cpu-Vulkan0",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "cpu",
+      "llamacpp_device": "Vulkan0"
+    }
+  },
+  {
+    "id": "device-cpu-ROCm0",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "cpu",
+      "llamacpp_device": "ROCm0"
+    }
+  },
+  {
+    "id": "device-cpu-CUDA0",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "cpu",
+      "llamacpp_device": "CUDA0"
+    }
+  },
+  {
+    "id": "device-cpu-all",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "cpu",
+      "llamacpp_device": "all"
+    }
+  },
+  {
+    "id": "device-cpu-none",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "cpu",
+      "llamacpp_device": "none"
+    }
+  },
+  {
+    "id": "device-vulkan-empty",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "vulkan",
+      "llamacpp_device": ""
+    }
+  },
+  {
+    "id": "device-vulkan-Vulkan0",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "vulkan",
+      "llamacpp_device": "Vulkan0"
+    }
+  },
+  {
+    "id": "device-vulkan-ROCm0",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "vulkan",
+      "llamacpp_device": "ROCm0"
+    }
+  },
+  {
+    "id": "device-vulkan-CUDA0",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "vulkan",
+      "llamacpp_device": "CUDA0"
+    }
+  },
+  {
+    "id": "device-vulkan-all",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "vulkan",
+      "llamacpp_device": "all"
+    }
+  },
+  {
+    "id": "device-vulkan-none",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "vulkan",
+      "llamacpp_device": "none"
+    }
+  },
+  {
+    "id": "device-cuda-empty",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "cuda",
+      "llamacpp_device": ""
+    }
+  },
+  {
+    "id": "device-cuda-Vulkan0",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "cuda",
+      "llamacpp_device": "Vulkan0"
+    }
+  },
+  {
+    "id": "device-cuda-ROCm0",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "cuda",
+      "llamacpp_device": "ROCm0"
+    }
+  },
+  {
+    "id": "device-cuda-CUDA0",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "cuda",
+      "llamacpp_device": "CUDA0"
+    }
+  },
+  {
+    "id": "device-cuda-all",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "cuda",
+      "llamacpp_device": "all"
+    }
+  },
+  {
+    "id": "device-cuda-none",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "cuda",
+      "llamacpp_device": "none"
+    }
+  },
+  {
+    "id": "device-rocm-empty",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "rocm",
+      "llamacpp_device": ""
+    }
+  },
+  {
+    "id": "device-rocm-Vulkan0",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "rocm",
+      "llamacpp_device": "Vulkan0"
+    }
+  },
+  {
+    "id": "device-rocm-ROCm0",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "rocm",
+      "llamacpp_device": "ROCm0"
+    }
+  },
+  {
+    "id": "device-rocm-CUDA0",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "rocm",
+      "llamacpp_device": "CUDA0"
+    }
+  },
+  {
+    "id": "device-rocm-all",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "rocm",
+      "llamacpp_device": "all"
+    }
+  },
+  {
+    "id": "device-rocm-none",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "rocm",
+      "llamacpp_device": "none"
+    }
+  },
+  {
+    "id": "device-system-empty",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "system",
+      "llamacpp_device": ""
+    }
+  },
+  {
+    "id": "device-system-Vulkan0",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "system",
+      "llamacpp_device": "Vulkan0"
+    }
+  },
+  {
+    "id": "device-system-ROCm0",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "system",
+      "llamacpp_device": "ROCm0"
+    }
+  },
+  {
+    "id": "device-system-CUDA0",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "system",
+      "llamacpp_device": "CUDA0"
+    }
+  },
+  {
+    "id": "device-system-all",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "system",
+      "llamacpp_device": "all"
+    }
+  },
+  {
+    "id": "device-system-none",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "system",
+      "llamacpp_device": "none"
+    }
+  },
+  {
+    "facts": {
+      "env": {}
+    },
+    "id": "env-rocm-289",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "rocm"
+    }
+  },
+  {
+    "facts": {
+      "env": {
+        "LD_LIBRARY_PATH": ""
+      }
+    },
+    "id": "env-rocm-290",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "rocm"
+    }
+  },
+  {
+    "facts": {
+      "env": {
+        "LD_LIBRARY_PATH": "/oracle/inherited/lib"
+      }
+    },
+    "id": "env-rocm-291",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "rocm"
+    }
+  },
+  {
+    "facts": {
+      "env": {
+        "PATH": ""
+      }
+    },
+    "id": "env-rocm-292",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "rocm"
+    }
+  },
+  {
+    "facts": {
+      "env": {
+        "PATH": "/oracle/inherited/bin"
+      }
+    },
+    "id": "env-rocm-293",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "rocm"
+    }
+  },
+  {
+    "facts": {
+      "env": {
+        "LLAMA_ARG_DEVICE": ""
+      }
+    },
+    "id": "env-rocm-294",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "rocm"
+    }
+  },
+  {
+    "facts": {
+      "env": {
+        "LLAMA_ARG_DEVICE": "CUDA1"
+      }
+    },
+    "id": "env-rocm-295",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "rocm"
+    }
+  },
+  {
+    "facts": {
+      "env": {
+        "CUDA_VISIBLE_DEVICES": "2"
+      }
+    },
+    "id": "env-rocm-296",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "rocm"
+    }
+  },
+  {
+    "facts": {
+      "env": {
+        "CUDA_VISIBLE_DEVICES": ""
+      }
+    },
+    "id": "env-rocm-297",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "rocm"
+    }
+  },
+  {
+    "facts": {
+      "env": {
+        "__NV_PRIME_RENDER_OFFLOAD": "0"
+      }
+    },
+    "id": "env-rocm-298",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "rocm"
+    }
+  },
+  {
+    "facts": {
+      "rocm_arch": ""
+    },
+    "id": "env-rocm-empty",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "rocm"
+    }
+  },
+  {
+    "facts": {
+      "rocm_arch": "gfx1150"
+    },
+    "id": "env-rocm-gfx1150",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "rocm"
+    }
+  },
+  {
+    "facts": {
+      "rocm_arch": "gfx1151"
+    },
+    "id": "env-rocm-gfx1151",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "rocm"
+    }
+  },
+  {
+    "facts": {
+      "rocm_arch": "gfx1152"
+    },
+    "id": "env-rocm-gfx1152",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "rocm"
+    }
+  },
+  {
+    "facts": {
+      "rocm_arch": "gfx942"
+    },
+    "id": "env-rocm-gfx942",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "rocm"
+    }
+  },
+  {
+    "facts": {
+      "env": {}
+    },
+    "id": "cuda-precedence-304",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "cuda",
+      "llamacpp_device": ""
+    }
+  },
+  {
+    "facts": {
+      "env": {
+        "LLAMA_ARG_DEVICE": "CUDA2"
+      }
+    },
+    "id": "cuda-precedence-305",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "cuda",
+      "llamacpp_device": ""
+    }
+  },
+  {
+    "facts": {
+      "env": {
+        "LLAMA_ARG_DEVICE": ""
+      }
+    },
+    "id": "cuda-precedence-306",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "cuda",
+      "llamacpp_device": ""
+    }
+  },
+  {
+    "facts": {
+      "env": {}
+    },
+    "id": "cuda-precedence-307",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "cuda",
+      "llamacpp_device": "CUDA1"
+    }
+  },
+  {
+    "facts": {
+      "env": {
+        "LLAMA_ARG_DEVICE": "CUDA2"
+      }
+    },
+    "id": "cuda-precedence-308",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "cuda",
+      "llamacpp_device": "CUDA1"
+    }
+  },
+  {
+    "facts": {
+      "env": {
+        "LLAMA_ARG_DEVICE": ""
+      }
+    },
+    "id": "cuda-precedence-309",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "cuda",
+      "llamacpp_device": "CUDA1"
+    }
+  },
+  {
+    "facts": {
+      "env": {}
+    },
+    "id": "env-cuda-310",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "cuda"
+    }
+  },
+  {
+    "facts": {
+      "env": {
+        "LD_LIBRARY_PATH": ""
+      }
+    },
+    "id": "env-cuda-311",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "cuda"
+    }
+  },
+  {
+    "facts": {
+      "env": {
+        "LD_LIBRARY_PATH": "/oracle/inherited/lib"
+      }
+    },
+    "id": "env-cuda-312",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "cuda"
+    }
+  },
+  {
+    "facts": {
+      "env": {
+        "PATH": ""
+      }
+    },
+    "id": "env-cuda-313",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "cuda"
+    }
+  },
+  {
+    "facts": {
+      "env": {
+        "PATH": "/oracle/inherited/bin"
+      }
+    },
+    "id": "env-cuda-314",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "cuda"
+    }
+  },
+  {
+    "facts": {
+      "env": {
+        "LLAMA_ARG_DEVICE": ""
+      }
+    },
+    "id": "env-cuda-315",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "cuda"
+    }
+  },
+  {
+    "facts": {
+      "env": {
+        "LLAMA_ARG_DEVICE": "CUDA1"
+      }
+    },
+    "id": "env-cuda-316",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "cuda"
+    }
+  },
+  {
+    "facts": {
+      "env": {
+        "CUDA_VISIBLE_DEVICES": "2"
+      }
+    },
+    "id": "env-cuda-317",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "cuda"
+    }
+  },
+  {
+    "facts": {
+      "env": {
+        "CUDA_VISIBLE_DEVICES": ""
+      }
+    },
+    "id": "env-cuda-318",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "cuda"
+    }
+  },
+  {
+    "facts": {
+      "env": {
+        "__NV_PRIME_RENDER_OFFLOAD": "0"
+      }
+    },
+    "id": "env-cuda-319",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "cuda"
+    }
+  },
+  {
+    "facts": {
+      "rocm_arch": ""
+    },
+    "id": "env-cuda-empty",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "cuda"
+    }
+  },
+  {
+    "facts": {
+      "rocm_arch": "gfx1150"
+    },
+    "id": "env-cuda-gfx1150",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "cuda"
+    }
+  },
+  {
+    "facts": {
+      "rocm_arch": "gfx1151"
+    },
+    "id": "env-cuda-gfx1151",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "cuda"
+    }
+  },
+  {
+    "facts": {
+      "rocm_arch": "gfx1152"
+    },
+    "id": "env-cuda-gfx1152",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "cuda"
+    }
+  },
+  {
+    "facts": {
+      "rocm_arch": "gfx942"
+    },
+    "id": "env-cuda-gfx942",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "cuda"
+    }
+  },
+  {
+    "facts": {
+      "env": {}
+    },
+    "id": "cuda-precedence-325",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "cuda",
+      "llamacpp_device": ""
+    }
+  },
+  {
+    "facts": {
+      "env": {
+        "LLAMA_ARG_DEVICE": "CUDA2"
+      }
+    },
+    "id": "cuda-precedence-326",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "cuda",
+      "llamacpp_device": ""
+    }
+  },
+  {
+    "facts": {
+      "env": {
+        "LLAMA_ARG_DEVICE": ""
+      }
+    },
+    "id": "cuda-precedence-327",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "cuda",
+      "llamacpp_device": ""
+    }
+  },
+  {
+    "facts": {
+      "env": {}
+    },
+    "id": "cuda-precedence-328",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "cuda",
+      "llamacpp_device": "CUDA1"
+    }
+  },
+  {
+    "facts": {
+      "env": {
+        "LLAMA_ARG_DEVICE": "CUDA2"
+      }
+    },
+    "id": "cuda-precedence-329",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "cuda",
+      "llamacpp_device": "CUDA1"
+    }
+  },
+  {
+    "facts": {
+      "env": {
+        "LLAMA_ARG_DEVICE": ""
+      }
+    },
+    "id": "cuda-precedence-330",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "cuda",
+      "llamacpp_device": "CUDA1"
+    }
+  },
+  {
+    "facts": {
+      "env": {}
+    },
+    "id": "macos-env-331",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "metal"
+    }
+  },
+  {
+    "facts": {
+      "env": {
+        "HOME": ""
+      }
+    },
+    "id": "macos-env-332",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "metal"
+    }
+  },
+  {
+    "facts": {
+      "env": {
+        "HOME": "/oracle/home"
+      }
+    },
+    "id": "macos-env-333",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "metal"
+    }
+  },
+  {
+    "facts": {
+      "env": {
+        "GGML_METAL_NO_RESIDENCY": ""
+      }
+    },
+    "id": "macos-env-334",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "metal"
+    }
+  },
+  {
+    "facts": {
+      "env": {
+        "GGML_METAL_NO_RESIDENCY": "1"
+      }
+    },
+    "id": "macos-env-335",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "metal"
+    }
+  },
+  {
+    "facts": {
+      "runtime_paths": []
+    },
+    "id": "runtime-dirs-empty",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "rocm"
+    }
+  },
+  {
+    "facts": {
+      "install_error": "injected install failure"
+    },
+    "id": "failure-order-337",
+    "kind": "load",
+    "model": {
+      "main": ""
+    },
+    "options": {
+      "llamacpp_args": "--port 1"
+    }
+  },
+  {
+    "facts": {},
+    "id": "failure-order-338",
+    "kind": "load",
+    "model": {
+      "main": ""
+    },
+    "options": {
+      "llamacpp_args": "--port 1",
+      "llamacpp_backend": "bad"
+    }
+  },
+  {
+    "facts": {},
+    "id": "failure-order-339",
+    "kind": "load",
+    "model": {},
+    "options": {
+      "llamacpp_args": "--port 1",
+      "llamacpp_device": "CUDA0"
+    }
+  },
+  {
+    "facts": {
+      "binary_error": "injected binary failure"
+    },
+    "id": "failure-order-340",
+    "kind": "load",
+    "model": {},
+    "options": {
+      "llamacpp_device": "CUDA0"
+    }
+  },
+  {
+    "facts": {},
+    "id": "failure-order-341",
+    "kind": "load",
+    "model": {
+      "main": ""
+    },
+    "options": {
+      "llamacpp_args": "--port 1"
+    }
+  },
+  {
+    "backend": "system",
+    "facts": {
+      "channel": "stable"
+    },
+    "id": "install-system-stable-repository",
+    "kind": "install",
+    "phase": "repository"
+  },
+  {
+    "backend": "system",
+    "facts": {
+      "channel": "stable"
+    },
+    "id": "install-system-stable-asset",
+    "kind": "install",
+    "phase": "asset"
+  },
+  {
+    "backend": "system",
+    "facts": {
+      "channel": "nightly"
+    },
+    "id": "install-system-nightly-repository",
+    "kind": "install",
+    "phase": "repository"
+  },
+  {
+    "backend": "system",
+    "facts": {
+      "channel": "nightly"
+    },
+    "id": "install-system-nightly-asset",
+    "kind": "install",
+    "phase": "asset"
+  },
+  {
+    "backend": "cpu",
+    "facts": {
+      "channel": "stable"
+    },
+    "id": "install-cpu-stable-repository",
+    "kind": "install",
+    "phase": "repository"
+  },
+  {
+    "backend": "cpu",
+    "facts": {
+      "channel": "stable"
+    },
+    "id": "install-cpu-stable-asset",
+    "kind": "install",
+    "phase": "asset"
+  },
+  {
+    "backend": "cpu",
+    "facts": {
+      "channel": "nightly"
+    },
+    "id": "install-cpu-nightly-repository",
+    "kind": "install",
+    "phase": "repository"
+  },
+  {
+    "backend": "cpu",
+    "facts": {
+      "channel": "nightly"
+    },
+    "id": "install-cpu-nightly-asset",
+    "kind": "install",
+    "phase": "asset"
+  },
+  {
+    "backend": "vulkan",
+    "facts": {
+      "channel": "stable"
+    },
+    "id": "install-vulkan-stable-repository",
+    "kind": "install",
+    "phase": "repository"
+  },
+  {
+    "backend": "vulkan",
+    "facts": {
+      "channel": "stable"
+    },
+    "id": "install-vulkan-stable-asset",
+    "kind": "install",
+    "phase": "asset"
+  },
+  {
+    "backend": "vulkan",
+    "facts": {
+      "channel": "nightly"
+    },
+    "id": "install-vulkan-nightly-repository",
+    "kind": "install",
+    "phase": "repository"
+  },
+  {
+    "backend": "vulkan",
+    "facts": {
+      "channel": "nightly"
+    },
+    "id": "install-vulkan-nightly-asset",
+    "kind": "install",
+    "phase": "asset"
+  },
+  {
+    "backend": "cuda",
+    "facts": {
+      "channel": "stable"
+    },
+    "id": "install-cuda-stable-repository",
+    "kind": "install",
+    "phase": "repository"
+  },
+  {
+    "backend": "cuda",
+    "facts": {
+      "channel": "stable"
+    },
+    "id": "install-cuda-stable-asset",
+    "kind": "install",
+    "phase": "asset"
+  },
+  {
+    "backend": "cuda",
+    "facts": {
+      "channel": "nightly"
+    },
+    "id": "install-cuda-nightly-repository",
+    "kind": "install",
+    "phase": "repository"
+  },
+  {
+    "backend": "cuda",
+    "facts": {
+      "channel": "nightly"
+    },
+    "id": "install-cuda-nightly-asset",
+    "kind": "install",
+    "phase": "asset"
+  },
+  {
+    "backend": "metal",
+    "facts": {
+      "channel": "stable"
+    },
+    "id": "install-metal-stable-repository",
+    "kind": "install",
+    "phase": "repository"
+  },
+  {
+    "backend": "metal",
+    "facts": {
+      "channel": "stable"
+    },
+    "id": "install-metal-stable-asset",
+    "kind": "install",
+    "phase": "asset"
+  },
+  {
+    "backend": "metal",
+    "facts": {
+      "channel": "nightly"
+    },
+    "id": "install-metal-nightly-repository",
+    "kind": "install",
+    "phase": "repository"
+  },
+  {
+    "backend": "metal",
+    "facts": {
+      "channel": "nightly"
+    },
+    "id": "install-metal-nightly-asset",
+    "kind": "install",
+    "phase": "asset"
+  },
+  {
+    "backend": "rocm",
+    "facts": {
+      "channel": "stable"
+    },
+    "id": "install-rocm-stable-repository",
+    "kind": "install",
+    "phase": "repository"
+  },
+  {
+    "backend": "rocm",
+    "facts": {
+      "channel": "stable"
+    },
+    "id": "install-rocm-stable-asset",
+    "kind": "install",
+    "phase": "asset"
+  },
+  {
+    "backend": "rocm",
+    "facts": {
+      "channel": "nightly"
+    },
+    "id": "install-rocm-nightly-repository",
+    "kind": "install",
+    "phase": "repository"
+  },
+  {
+    "backend": "rocm",
+    "facts": {
+      "channel": "nightly"
+    },
+    "id": "install-rocm-nightly-asset",
+    "kind": "install",
+    "phase": "asset"
+  },
+  {
+    "backend": "rocm-stable",
+    "facts": {
+      "channel": "stable"
+    },
+    "id": "install-rocm-stable-stable-repository",
+    "kind": "install",
+    "phase": "repository"
+  },
+  {
+    "backend": "rocm-stable",
+    "facts": {
+      "channel": "stable"
+    },
+    "id": "install-rocm-stable-stable-asset",
+    "kind": "install",
+    "phase": "asset"
+  },
+  {
+    "backend": "rocm-stable",
+    "facts": {
+      "channel": "nightly"
+    },
+    "id": "install-rocm-stable-nightly-repository",
+    "kind": "install",
+    "phase": "repository"
+  },
+  {
+    "backend": "rocm-stable",
+    "facts": {
+      "channel": "nightly"
+    },
+    "id": "install-rocm-stable-nightly-asset",
+    "kind": "install",
+    "phase": "asset"
+  },
+  {
+    "backend": "rocm-nightly",
+    "facts": {
+      "channel": "stable"
+    },
+    "id": "install-rocm-nightly-stable-repository",
+    "kind": "install",
+    "phase": "repository"
+  },
+  {
+    "backend": "rocm-nightly",
+    "facts": {
+      "channel": "stable"
+    },
+    "id": "install-rocm-nightly-stable-asset",
+    "kind": "install",
+    "phase": "asset"
+  },
+  {
+    "backend": "rocm-nightly",
+    "facts": {
+      "channel": "nightly"
+    },
+    "id": "install-rocm-nightly-nightly-repository",
+    "kind": "install",
+    "phase": "repository"
+  },
+  {
+    "backend": "rocm-nightly",
+    "facts": {
+      "channel": "nightly"
+    },
+    "id": "install-rocm-nightly-nightly-asset",
+    "kind": "install",
+    "phase": "asset"
+  },
+  {
+    "backend": "unknown",
+    "facts": {
+      "channel": "stable"
+    },
+    "id": "install-unknown-stable-repository",
+    "kind": "install",
+    "phase": "repository"
+  },
+  {
+    "backend": "unknown",
+    "facts": {
+      "channel": "stable"
+    },
+    "id": "install-unknown-stable-asset",
+    "kind": "install",
+    "phase": "asset"
+  },
+  {
+    "backend": "unknown",
+    "facts": {
+      "channel": "nightly"
+    },
+    "id": "install-unknown-nightly-repository",
+    "kind": "install",
+    "phase": "repository"
+  },
+  {
+    "backend": "unknown",
+    "facts": {
+      "channel": "nightly"
+    },
+    "id": "install-unknown-nightly-asset",
+    "kind": "install",
+    "phase": "asset"
+  },
+  {
+    "backend": "rocm-stable",
+    "facts": {
+      "versions": {}
+    },
+    "id": "install-facts-378",
+    "kind": "install",
+    "phase": "asset"
+  },
+  {
+    "backend": "rocm-stable",
+    "facts": {
+      "versions": {
+        "therock": {
+          "version": 3
+        }
+      }
+    },
+    "id": "install-facts-379",
+    "kind": "install",
+    "phase": "asset"
+  },
+  {
+    "backend": "rocm-stable",
+    "facts": {
+      "versions": {
+        "therock": {
+          "version": "v7.12.0"
+        }
+      }
+    },
+    "id": "install-facts-380",
+    "kind": "install",
+    "phase": "asset"
+  },
+  {
+    "backend": "rocm-stable",
+    "facts": {
+      "versions": {
+        "therock": {
+          "version": "7"
+        }
+      }
+    },
+    "id": "install-facts-381",
+    "kind": "install",
+    "phase": "asset"
+  },
+  {
+    "backend": "rocm-stable",
+    "facts": {
+      "rocm_arch": ""
+    },
+    "id": "install-facts-382",
+    "kind": "install",
+    "phase": "asset"
+  },
+  {
+    "backend": "rocm-stable",
+    "facts": {
+      "rocm_arch": "gfx1151"
+    },
+    "id": "install-facts-383",
+    "kind": "install",
+    "phase": "asset"
+  },
+  {
+    "backend": "rocm-stable",
+    "facts": {
+      "rocm_arch": "gfx950"
+    },
+    "id": "install-facts-384",
+    "kind": "install",
+    "phase": "asset"
+  },
+  {
+    "backend": "rocm-stable",
+    "facts": {
+      "rocm_arch": "gfx942"
+    },
+    "id": "install-facts-385",
+    "kind": "install",
+    "phase": "asset"
+  },
+  {
+    "backend": "rocm-stable",
+    "facts": {
+      "cuda_arch": ""
+    },
+    "id": "install-facts-386",
+    "kind": "install",
+    "phase": "asset"
+  },
+  {
+    "backend": "rocm-stable",
+    "facts": {
+      "cuda_arch": "sm_120"
+    },
+    "id": "install-facts-387",
+    "kind": "install",
+    "phase": "asset"
+  },
+  {
+    "backend": "rocm-nightly",
+    "facts": {
+      "versions": {}
+    },
+    "id": "install-facts-388",
+    "kind": "install",
+    "phase": "asset"
+  },
+  {
+    "backend": "rocm-nightly",
+    "facts": {
+      "versions": {
+        "therock": {
+          "version": 3
+        }
+      }
+    },
+    "id": "install-facts-389",
+    "kind": "install",
+    "phase": "asset"
+  },
+  {
+    "backend": "rocm-nightly",
+    "facts": {
+      "versions": {
+        "therock": {
+          "version": "v7.12.0"
+        }
+      }
+    },
+    "id": "install-facts-390",
+    "kind": "install",
+    "phase": "asset"
+  },
+  {
+    "backend": "rocm-nightly",
+    "facts": {
+      "versions": {
+        "therock": {
+          "version": "7"
+        }
+      }
+    },
+    "id": "install-facts-391",
+    "kind": "install",
+    "phase": "asset"
+  },
+  {
+    "backend": "rocm-nightly",
+    "facts": {
+      "rocm_arch": ""
+    },
+    "id": "install-facts-392",
+    "kind": "install",
+    "phase": "asset"
+  },
+  {
+    "backend": "rocm-nightly",
+    "facts": {
+      "rocm_arch": "gfx1151"
+    },
+    "id": "install-facts-393",
+    "kind": "install",
+    "phase": "asset"
+  },
+  {
+    "backend": "rocm-nightly",
+    "facts": {
+      "rocm_arch": "gfx950"
+    },
+    "id": "install-facts-394",
+    "kind": "install",
+    "phase": "asset"
+  },
+  {
+    "backend": "rocm-nightly",
+    "facts": {
+      "rocm_arch": "gfx942"
+    },
+    "id": "install-facts-395",
+    "kind": "install",
+    "phase": "asset"
+  },
+  {
+    "backend": "rocm-nightly",
+    "facts": {
+      "cuda_arch": ""
+    },
+    "id": "install-facts-396",
+    "kind": "install",
+    "phase": "asset"
+  },
+  {
+    "backend": "rocm-nightly",
+    "facts": {
+      "cuda_arch": "sm_120"
+    },
+    "id": "install-facts-397",
+    "kind": "install",
+    "phase": "asset"
+  },
+  {
+    "backend": "cuda",
+    "facts": {
+      "versions": {}
+    },
+    "id": "install-facts-398",
+    "kind": "install",
+    "phase": "asset"
+  },
+  {
+    "backend": "cuda",
+    "facts": {
+      "versions": {
+        "therock": {
+          "version": 3
+        }
+      }
+    },
+    "id": "install-facts-399",
+    "kind": "install",
+    "phase": "asset"
+  },
+  {
+    "backend": "cuda",
+    "facts": {
+      "versions": {
+        "therock": {
+          "version": "v7.12.0"
+        }
+      }
+    },
+    "id": "install-facts-400",
+    "kind": "install",
+    "phase": "asset"
+  },
+  {
+    "backend": "cuda",
+    "facts": {
+      "versions": {
+        "therock": {
+          "version": "7"
+        }
+      }
+    },
+    "id": "install-facts-401",
+    "kind": "install",
+    "phase": "asset"
+  },
+  {
+    "backend": "cuda",
+    "facts": {
+      "rocm_arch": ""
+    },
+    "id": "install-facts-402",
+    "kind": "install",
+    "phase": "asset"
+  },
+  {
+    "backend": "cuda",
+    "facts": {
+      "rocm_arch": "gfx1151"
+    },
+    "id": "install-facts-403",
+    "kind": "install",
+    "phase": "asset"
+  },
+  {
+    "backend": "cuda",
+    "facts": {
+      "rocm_arch": "gfx950"
+    },
+    "id": "install-facts-404",
+    "kind": "install",
+    "phase": "asset"
+  },
+  {
+    "backend": "cuda",
+    "facts": {
+      "rocm_arch": "gfx942"
+    },
+    "id": "install-facts-405",
+    "kind": "install",
+    "phase": "asset"
+  },
+  {
+    "backend": "cuda",
+    "facts": {
+      "cuda_arch": ""
+    },
+    "id": "install-facts-406",
+    "kind": "install",
+    "phase": "asset"
+  },
+  {
+    "backend": "cuda",
+    "facts": {
+      "cuda_arch": "sm_120"
+    },
+    "id": "install-facts-407",
+    "kind": "install",
+    "phase": "asset"
+  },
+  {
+    "facts": {
+      "version_output": ""
+    },
+    "id": "version-408",
+    "kind": "system-version"
+  },
+  {
+    "facts": {
+      "version_output": "version: 3432 (abcdef)\n"
+    },
+    "id": "version-409",
+    "kind": "system-version"
+  },
+  {
+    "facts": {
+      "version_output": "llama.cpp version b3432\n"
+    },
+    "id": "version-410",
+    "kind": "system-version"
+  },
+  {
+    "facts": {
+      "version_output": "llama.cpp version 9876\n"
+    },
+    "id": "version-411",
+    "kind": "system-version"
+  },
+  {
+    "facts": {
+      "version_output": "version: nope\n"
+    },
+    "id": "version-412",
+    "kind": "system-version"
+  },
+  {
+    "facts": {
+      "version_output": "diagnostic\nversion: 42\n"
+    },
+    "id": "version-413",
+    "kind": "system-version"
+  },
+  {
+    "facts": {
+      "version_output": "version: 1\nversion: 2\n"
+    },
+    "id": "version-414",
+    "kind": "system-version"
+  },
+  {
+    "binary_found": false,
+    "facts": {
+      "env": {},
+      "executable": [],
+      "exists": [
+        "/sys/class/kfd"
+      ],
+      "regular": []
+    },
+    "id": "hip-415",
+    "kind": "system-install"
+  },
+  {
+    "binary_found": true,
+    "facts": {
+      "env": {},
+      "executable": [],
+      "exists": [],
+      "regular": []
+    },
+    "id": "hip-416",
+    "kind": "system-install"
+  },
+  {
+    "binary_found": true,
+    "facts": {
+      "env": {},
+      "executable": [],
+      "exists": [
+        "/sys/class/kfd"
+      ],
+      "regular": []
+    },
+    "id": "hip-417",
+    "kind": "system-install"
+  },
+  {
+    "binary_found": true,
+    "facts": {
+      "env": {
+        "LEMONADE_GGML_HIP_PATH": "/oracle/hip/libggml-hip.so"
+      },
+      "executable": [],
+      "exists": [
+        "/sys/class/kfd"
+      ],
+      "regular": [
+        "/oracle/hip/libggml-hip.so"
+      ]
+    },
+    "id": "hip-418",
+    "kind": "system-install"
+  },
+  {
+    "binary_found": true,
+    "facts": {
+      "env": {
+        "LEMONADE_GGML_HIP_PATH": "/oracle/hip/not-hip.so"
+      },
+      "executable": [],
+      "exists": [
+        "/sys/class/kfd"
+      ],
+      "regular": [
+        "/oracle/hip/not-hip.so"
+      ]
+    },
+    "id": "hip-419",
+    "kind": "system-install"
+  },
+  {
+    "binary_found": true,
+    "facts": {
+      "env": {
+        "PATH": "/oracle/bin"
+      },
+      "executable": [
+        "/oracle/bin/llama-server"
+      ],
+      "exists": [
+        "/oracle/bin/libggml-hip.so",
+        "/sys/class/kfd"
+      ],
+      "regular": [
+        "/oracle/bin/llama-server"
+      ]
+    },
+    "id": "hip-420",
+    "kind": "system-install"
+  },
+  {
+    "binary_found": true,
+    "facts": {
+      "env": {
+        "PATH": "/oracle/bin"
+      },
+      "executable": [
+        "/oracle/bin/llama-server"
+      ],
+      "exists": [
+        "/oracle/lib/libggml-hip.so",
+        "/sys/class/kfd"
+      ],
+      "regular": [
+        "/oracle/bin/llama-server"
+      ]
+    },
+    "id": "hip-421",
+    "kind": "system-install"
+  },
+  {
+    "binary_found": true,
+    "facts": {
+      "env": {
+        "PATH": "/oracle/first:/oracle/second"
+      },
+      "executable": [
+        "/oracle/first/llama-server",
+        "/oracle/second/llama-server"
+      ],
+      "exists": [
+        "/oracle/second/libggml-hip.so",
+        "/sys/class/kfd"
+      ],
+      "regular": [
+        "/oracle/first/llama-server",
+        "/oracle/second/llama-server"
+      ]
+    },
+    "id": "hip-422",
+    "kind": "system-install"
+  },
+  {
+    "binary_found": true,
+    "facts": {
+      "exists": [
+        "/sys/class/kfd",
+        "/usr/lib/x86_64-linux-gnu/ggml/backends0/libggml-hip.so"
+      ]
+    },
+    "id": "hip-system-423",
+    "kind": "system-install"
+  },
+  {
+    "binary_found": true,
+    "facts": {
+      "exists": [
+        "/sys/class/kfd",
+        "/usr/lib/libggml-hip.so"
+      ]
+    },
+    "id": "hip-system-424",
+    "kind": "system-install"
+  },
+  {
+    "binary_found": true,
+    "facts": {
+      "exists": [
+        "/sys/class/kfd",
+        "/usr/lib/ggml/libggml-hip.so"
+      ]
+    },
+    "id": "hip-system-425",
+    "kind": "system-install"
+  },
+  {
+    "binary_found": true,
+    "facts": {
+      "exists": [
+        "/sys/class/kfd",
+        "/usr/lib64/ggml/libggml-hip.so"
+      ]
+    },
+    "id": "hip-system-426",
+    "kind": "system-install"
+  },
+  {
+    "binary_found": true,
+    "facts": {
+      "exists": [
+        "/sys/class/kfd",
+        "/usr/lib/ggml/backends0/libggml-hip.so"
+      ]
+    },
+    "id": "hip-system-427",
+    "kind": "system-install"
+  },
+  {
+    "binary_found": true,
+    "facts": {
+      "exists": [
+        "/sys/class/kfd",
+        "/usr/lib64/ggml/backends0/libggml-hip.so"
+      ]
+    },
+    "id": "hip-system-428",
+    "kind": "system-install"
+  },
+  {
+    "id": "scoped-omitted-true",
+    "kind": "scoped",
+    "merge_args": true,
+    "request_state": "omitted"
+  },
+  {
+    "id": "scoped-omitted-false",
+    "kind": "scoped",
+    "merge_args": false,
+    "request_state": "omitted"
+  },
+  {
+    "id": "scoped-tombstone-true",
+    "kind": "scoped",
+    "merge_args": true,
+    "request_state": "tombstone"
+  },
+  {
+    "id": "scoped-tombstone-false",
+    "kind": "scoped",
+    "merge_args": false,
+    "request_state": "tombstone"
+  },
+  {
+    "id": "scoped-value-true",
+    "kind": "scoped",
+    "merge_args": true,
+    "request_state": "value"
+  },
+  {
+    "id": "scoped-value-false",
+    "kind": "scoped",
+    "merge_args": false,
+    "request_state": "value"
+  },
+  {
+    "facts": {
+      "path_executable": ""
+    },
+    "id": "path-435",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "system"
+    }
+  },
+  {
+    "facts": {
+      "external_binary": "/oracle/custom/llama-server"
+    },
+    "id": "path-436",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "cpu"
+    }
+  },
+  {
+    "facts": {
+      "installed_binary": ""
+    },
+    "id": "path-437",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "cpu"
+    }
+  },
+  {
+    "facts": {
+      "cuda_visible_devices": ""
+    },
+    "id": "path-438",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "cuda"
+    }
+  },
+  {
+    "facts": {
+      "cuda_arch": ""
+    },
+    "id": "path-439",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "cuda"
+    }
+  },
+  {
+    "create_cache": false,
+    "id": "gguf-missing",
+    "kind": "gguf"
+  },
+  {
+    "id": "gguf-flat-no-files",
+    "kind": "gguf"
+  },
+  {
+    "files": {
+      "snapshots/one/a.gguf": "GGUF"
+    },
+    "id": "gguf-snapshots-without-ref",
+    "kind": "gguf"
+  },
+  {
+    "files": {
+      "a-Q4_0.gguf": "GGUF",
+      "a.partial": "GGUF",
+      "b-Q8_0.gguf": "GGUF",
+      "incomplete.gguf.partial": "GGUF",
+      "mmproj.gguf": "GGUF"
+    },
+    "id": "gguf-flat-empty",
+    "kind": "gguf",
+    "variant": ""
+  },
+  {
+    "files": {
+      "a-Q4_0.gguf": "GGUF",
+      "a.partial": "GGUF",
+      "b-Q8_0.gguf": "GGUF",
+      "incomplete.gguf.partial": "GGUF",
+      "mmproj.gguf": "GGUF"
+    },
+    "id": "gguf-flat-*",
+    "kind": "gguf",
+    "variant": "*"
+  },
+  {
+    "files": {
+      "a-Q4_0.gguf": "GGUF",
+      "a.partial": "GGUF",
+      "b-Q8_0.gguf": "GGUF",
+      "incomplete.gguf.partial": "GGUF",
+      "mmproj.gguf": "GGUF"
+    },
+    "id": "gguf-flat-Q4_0",
+    "kind": "gguf",
+    "variant": "Q4_0"
+  },
+  {
+    "files": {
+      "a-Q4_0.gguf": "GGUF",
+      "a.partial": "GGUF",
+      "b-Q8_0.gguf": "GGUF",
+      "incomplete.gguf.partial": "GGUF",
+      "mmproj.gguf": "GGUF"
+    },
+    "id": "gguf-flat-Q8_0",
+    "kind": "gguf",
+    "variant": "Q8_0"
+  },
+  {
+    "files": {
+      "a-Q4_0.gguf": "GGUF",
+      "a.partial": "GGUF",
+      "b-Q8_0.gguf": "GGUF",
+      "incomplete.gguf.partial": "GGUF",
+      "mmproj.gguf": "GGUF"
+    },
+    "id": "gguf-flat-a-Q4_0.gguf",
+    "kind": "gguf",
+    "variant": "a-Q4_0.gguf"
+  },
+  {
+    "files": {
+      "a-Q4_0.gguf": "GGUF",
+      "a.partial": "GGUF",
+      "b-Q8_0.gguf": "GGUF",
+      "incomplete.gguf.partial": "GGUF",
+      "mmproj.gguf": "GGUF"
+    },
+    "id": "gguf-flat-q4_0.gguf",
+    "kind": "gguf",
+    "variant": "q4_0.gguf"
+  },
+  {
+    "files": {
+      "a-Q4_0.gguf": "GGUF",
+      "a.partial": "GGUF",
+      "b-Q8_0.gguf": "GGUF",
+      "incomplete.gguf.partial": "GGUF",
+      "mmproj.gguf": "GGUF"
+    },
+    "id": "gguf-flat-missing",
+    "kind": "gguf",
+    "variant": "missing"
+  },
+  {
+    "files": {
+      "model-Q4_K_M-00001-of-00002.gguf": "GGUF",
+      "model-Q4_K_M-00002-of-00002.gguf": "GGUF"
+    },
+    "id": "gguf-shards",
+    "kind": "gguf",
+    "variant": "Q4_K_M"
+  },
+  {
+    "files": {
+      "Q4_K_M/model-00001-of-00002.gguf": "GGUF",
+      "Q4_K_M/model-00002-of-00002.gguf": "GGUF"
+    },
+    "id": "gguf-folder",
+    "kind": "gguf",
+    "variant": "Q4_K_M"
+  },
+  {
+    "files": {
+      "model-IQ4_XS-Q8nextn.gguf": "GGUF"
+    },
+    "id": "gguf-token",
+    "kind": "gguf",
+    "variant": "IQ4_XS"
+  },
+  {
+    "files": {
+      "a-IQ4_XS-Q8nextn.gguf": "GGUF",
+      "b-IQ4_XS-Q8nextn.gguf": "GGUF"
+    },
+    "id": "gguf-ambiguous-token",
+    "kind": "gguf",
+    "variant": "IQ4_XS"
+  },
+  {
+    "files": {
+      "refs/main": "two",
+      "snapshots/one/model-Q4_0.gguf": "GGUF",
+      "snapshots/two/model-Q4_0.gguf": "GGUF"
+    },
+    "id": "gguf-snapshot-active",
+    "kind": "gguf",
+    "variant": "Q4_0"
+  },
+  {
+    "files": {
+      "refs/main": "two",
+      "snapshots/one/model-Q4_0.gguf": "GGUF",
+      "snapshots/two/model-Q8_0.gguf": "GGUF"
+    },
+    "id": "gguf-snapshot-older-variant",
+    "kind": "gguf",
+    "variant": "Q4_0"
+  },
+  {
+    "files": {
+      "refs/main": "one",
+      "snapshots/one/.download_manifest.json": "{}",
+      "snapshots/one/model-Q4_0.gguf": "GGUF"
+    },
+    "id": "gguf-snapshot-manifest",
+    "kind": "gguf",
+    "variant": "Q4_0"
+  },
+  {
+    "files": {
+      "refs/main": "two",
+      "snapshots/one/model-Q4_0.gguf": "GGUF",
+      "snapshots/two/model-Q4_0.gguf.partial": "GGUF"
+    },
+    "id": "gguf-snapshot-partial-active",
+    "kind": "gguf",
+    "variant": "Q4_0"
+  },
+  {
+    "files": {
+      "refs/main": "three",
+      "snapshots/one/model-IQ4_XS-Q8nextn.gguf": "GGUF",
+      "snapshots/three/README.md": "readme",
+      "snapshots/two/model-IQ4_XS-Q8nextn.gguf": "GGUF"
+    },
+    "id": "gguf-snapshot-dedup",
+    "kind": "gguf",
+    "variant": "IQ4_XS"
+  },
+  {
+    "files": {
+      "refs/main": "two",
+      "snapshots/one/.download_manifest.json": "{}",
+      "snapshots/one/model-Q4_0.gguf": "GGUF",
+      "snapshots/two/README.md": "readme"
+    },
+    "id": "gguf-snapshot-uncommitted-older",
+    "kind": "gguf",
+    "variant": "Q4_0"
+  },
+  {
+    "files": {
+      "model.gguf": {
+        "general.architecture": "qwen3vl",
+        "qwen3vl.context_length": 32768,
+        "qwen3vl.nextn_predict_layers": 1,
+        "tokenizer.chat_template": "<tool_call>"
+      }
+    },
+    "id": "gguf-metadata-llm",
+    "kind": "gguf",
+    "metadata_file": "model.gguf",
+    "model": {
+      "type": "llm"
+    }
+  },
+  {
+    "files": {
+      "model.gguf": {
+        "general.architecture": "qwen3vl",
+        "qwen3vl.context_length": 32768,
+        "qwen3vl.nextn_predict_layers": 1,
+        "tokenizer.chat_template": "<tool_call>"
+      }
+    },
+    "id": "gguf-metadata-embedding",
+    "kind": "gguf",
+    "metadata_file": "model.gguf",
+    "model": {
+      "type": "embedding"
+    }
+  },
+  {
+    "files": {
+      "model.gguf": {
+        "general.architecture": "qwen3vl",
+        "qwen3vl.context_length": 32768,
+        "qwen3vl.nextn_predict_layers": 1,
+        "tokenizer.chat_template": "<tool_call>"
+      }
+    },
+    "id": "gguf-metadata-reranking",
+    "kind": "gguf",
+    "metadata_file": "model.gguf",
+    "model": {
+      "type": "reranking"
+    }
+  },
+  {
+    "files": {
+      "README.md": "text",
+      "model.GGUF": "NOPE"
+    },
+    "id": "gguf-validation-corrupt",
+    "kind": "gguf",
+    "registration": "repo/GGUF"
+  },
+  {
+    "files": {
+      "README.md": "text",
+      "model.GGUF": "GG"
+    },
+    "id": "gguf-validation-truncated",
+    "kind": "gguf",
+    "registration": "repo/GGUF:Q4_0"
+  },
+  {
+    "files": {
+      "README.md": "text",
+      "model.GGUF": "GGUF"
+    },
+    "id": "gguf-validation-case",
+    "kind": "gguf",
+    "registration": "repo/plain"
+  },
+  {
+    "files": {
+      "README.md": "text",
+      "model.GGUF": "text"
+    },
+    "id": "gguf-validation-text",
+    "kind": "gguf",
+    "registration": "repo/GGUF:q4.gguf"
+  },
+  {
+    "files": {
+      "model.gguf": {
+        "general.architecture": "qwen3vl",
+        "general.name": "Vision multimodal fixture",
+        "qwen3vl.context_length": 32768,
+        "qwen3vl.nextn_predict_layers": 1,
+        "tokenizer.chat_template": "<tool_call>"
+      }
+    },
+    "id": "gguf-vision-metadata-llm",
+    "kind": "gguf",
+    "metadata_file": "model.gguf",
+    "model": {
+      "type": "llm"
+    }
+  },
+  {
+    "files": {
+      "model.gguf": {
+        "general.architecture": "qwen3vl",
+        "general.name": "Vision multimodal fixture",
+        "qwen3vl.context_length": 32768,
+        "qwen3vl.nextn_predict_layers": 1,
+        "tokenizer.chat_template": "<tool_call>"
+      }
+    },
+    "id": "gguf-vision-metadata-embedding",
+    "kind": "gguf",
+    "metadata_file": "model.gguf",
+    "model": {
+      "type": "embedding"
+    }
+  },
+  {
+    "files": {
+      "model.gguf": {
+        "general.architecture": "qwen3vl",
+        "general.name": "Vision multimodal fixture",
+        "qwen3vl.context_length": 32768,
+        "qwen3vl.nextn_predict_layers": 1,
+        "tokenizer.chat_template": "<tool_call>"
+      }
+    },
+    "id": "gguf-vision-metadata-reranking",
+    "kind": "gguf",
+    "metadata_file": "model.gguf",
+    "model": {
+      "type": "reranking"
+    }
+  },
+  {
+    "facts": {
+      "no_config": true
+    },
+    "id": "system-no-global-config",
+    "kind": "load",
+    "options": {
+      "llamacpp_backend": "rocm"
+    }
+  },
+  {
+    "facts": {
+      "probe_failure": true
+    },
+    "id": "version-open-failure",
+    "kind": "system-version"
+  },
+  {
+    "facts": {
+      "version_output": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxversion: 42\n"
+    },
+    "id": "version-line-limit",
+    "kind": "system-version"
+  },
+  {
+    "facts": {
+      "probe_status": 1,
+      "version_output": "version: 1234\n"
+    },
+    "id": "version-nonzero-status",
+    "kind": "system-version"
+  },
+  {
+    "id": "mmproj-offload-reservation",
+    "kind": "load",
+    "model": {
+      "mmproj": "/oracle/models/mmproj.gguf"
+    },
+    "options": {
+      "llamacpp_args": "--no-mmproj-offload",
+      "llamacpp_backend": "cpu"
+    }
+  },
+  {
+    "id": "debug-raw-verbosity",
+    "kind": "load",
+    "level": "debug",
+    "options": {
+      "llamacpp_args": "-lv 9"
+    }
+  }
+]

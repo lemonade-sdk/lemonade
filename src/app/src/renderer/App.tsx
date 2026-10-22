@@ -1,3 +1,4 @@
+import { BackendCatalogProvider } from './hooks/useBackendCatalog';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronLeft } from './components/Icons';
@@ -761,11 +762,13 @@ const WindowResizeHandles: React.FC = () => {
 // Providers Wrapper
 const App: React.FC = () => {
   return (
+    <BackendCatalogProvider>
     <SystemProvider>
       <ModelsProvider>
         <AppContent />
       </ModelsProvider>
     </SystemProvider>
+    </BackendCatalogProvider>
   );
 };
 

@@ -1,0 +1,347 @@
+[
+  {
+    "name": "merge-and-explicit-container-operations",
+    "input": {
+      "metadata": {
+        "config_extra": {
+          "keep": true,
+          "nested": {
+            "left": 1,
+            "right": 2
+          },
+          "list": [
+            1,
+            2
+          ],
+          "nullable": "old",
+          "erase_me": 7,
+          "clear_me": {
+            "old": true
+          },
+          "replace_me": {
+            "old": true
+          },
+          "kind_change": {
+            "old": true
+          }
+        }
+      }
+    },
+    "merge": {
+      "metadata": {
+        "config_extra": {
+          "nested": {
+            "right": 3
+          },
+          "list": [],
+          "nullable": null,
+          "kind_change": false
+        }
+      }
+    },
+    "edits": [
+      {
+        "op": "merge",
+        "path": "/metadata/config_extra/nested",
+        "value": {}
+      },
+      {
+        "op": "clear",
+        "path": "/metadata/config_extra/clear_me"
+      },
+      {
+        "op": "replace",
+        "path": "/metadata/config_extra/replace_me",
+        "value": {
+          "new": 4
+        }
+      },
+      {
+        "op": "remove",
+        "path": "/metadata/config_extra/erase_me"
+      },
+      {
+        "op": "add",
+        "path": "/metadata/config_extra/added",
+        "value": 0
+      }
+    ],
+    "expected": {
+      "metadata": {
+        "config_extra": {
+          "keep": true,
+          "nested": {
+            "left": 1,
+            "right": 3
+          },
+          "list": [],
+          "nullable": null,
+          "clear_me": {},
+          "replace_me": {
+            "new": 4
+          },
+          "kind_change": false,
+          "added": 0
+        }
+      }
+    }
+  },
+  {
+    "name": "keyed-record-insertion-and-public-option-rename",
+    "input": {
+      "metadata": {
+        "options": [
+          {
+            "id": "args",
+            "name": "base_args",
+            "value_type": "string",
+            "default_value": ""
+          }
+        ]
+      },
+      "launch": {
+        "argv": [
+          {
+            "id": "model",
+            "args": [
+              "-m",
+              "model.gguf"
+            ]
+          },
+          {
+            "id": "metrics",
+            "args": [
+              "--metrics"
+            ]
+          }
+        ],
+        "environment": {
+          "preset": "inherit",
+          "set": [
+            {
+              "name": "OLD",
+              "value": "1"
+            }
+          ]
+        }
+      }
+    },
+    "merge": {},
+    "edits": [
+      {
+        "op": "merge",
+        "path": "/metadata/options",
+        "match": {
+          "id": "args"
+        },
+        "value": {
+          "name": "fork_args"
+        }
+      },
+      {
+        "op": "add",
+        "path": "/launch/argv",
+        "before": {
+          "id": "metrics"
+        },
+        "value": {
+          "id": "ctx",
+          "args": [
+            "--ctx-size",
+            "4096"
+          ]
+        }
+      },
+      {
+        "op": "add",
+        "path": "/launch/argv",
+        "after": {
+          "id": "ctx"
+        },
+        "value": {
+          "id": "port",
+          "args": [
+            "--port",
+            "8080"
+          ]
+        }
+      },
+      {
+        "op": "replace",
+        "path": "/launch/argv",
+        "match": {
+          "id": "model"
+        },
+        "at": "/args",
+        "value": [
+          "-m",
+          "fork.gguf"
+        ]
+      },
+      {
+        "op": "remove",
+        "path": "/launch/environment/set",
+        "match": {
+          "name": "OLD"
+        }
+      },
+      {
+        "op": "add",
+        "path": "/launch/environment/set",
+        "value": {
+          "name": "NEW",
+          "value": "2"
+        }
+      }
+    ],
+    "expected": {
+      "metadata": {
+        "options": [
+          {
+            "id": "args",
+            "name": "fork_args",
+            "value_type": "string",
+            "default_value": ""
+          }
+        ]
+      },
+      "launch": {
+        "argv": [
+          {
+            "id": "model",
+            "args": [
+              "-m",
+              "fork.gguf"
+            ]
+          },
+          {
+            "id": "ctx",
+            "args": [
+              "--ctx-size",
+              "4096"
+            ]
+          },
+          {
+            "id": "port",
+            "args": [
+              "--port",
+              "8080"
+            ]
+          },
+          {
+            "id": "metrics",
+            "args": [
+              "--metrics"
+            ]
+          }
+        ],
+        "environment": {
+          "preset": "inherit",
+          "set": [
+            {
+              "name": "NEW",
+              "value": "2"
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "numeric-array-traversal-is-forbidden",
+    "input": {
+      "launch": {
+        "argv": [
+          {
+            "id": "model",
+            "args": [
+              "-m",
+              "model.gguf"
+            ]
+          }
+        ]
+      }
+    },
+    "merge": {},
+    "edits": [
+      {
+        "op": "replace",
+        "path": "/launch/argv/0/args",
+        "value": [
+          "-m",
+          "other.gguf"
+        ]
+      }
+    ],
+    "expected_error": {
+      "code": "array_index_forbidden",
+      "pointer": "/edits/0/path"
+    },
+    "expected_result_present": false
+  },
+  {
+    "name": "replace-after-remove-fails",
+    "input": {
+      "metadata": {
+        "config_extra": {
+          "x": 1
+        }
+      }
+    },
+    "merge": {},
+    "edits": [
+      {
+        "op": "remove",
+        "path": "/metadata/config_extra/x"
+      },
+      {
+        "op": "replace",
+        "path": "/metadata/config_extra/x",
+        "value": 2
+      }
+    ],
+    "expected_error": {
+      "code": "missing_target",
+      "pointer": "/edits/1/path",
+      "related_pointer": "/edits/0"
+    },
+    "expected_result_present": false
+  },
+  {
+    "name": "missing-insertion-anchor-fails",
+    "input": {
+      "launch": {
+        "argv": [
+          {
+            "id": "model",
+            "args": [
+              "-m",
+              "model.gguf"
+            ]
+          }
+        ]
+      }
+    },
+    "merge": {},
+    "edits": [
+      {
+        "op": "add",
+        "path": "/launch/argv",
+        "before": {
+          "id": "absent"
+        },
+        "value": {
+          "id": "metrics",
+          "args": [
+            "--metrics"
+          ]
+        }
+      }
+    ],
+    "expected_error": {
+      "code": "missing_anchor",
+      "pointer": "/edits/0/before"
+    },
+    "expected_result_present": false
+  }
+]

@@ -1,0 +1,2158 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "backend-definition-v2.schema.json",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 2
+    },
+    "id": {
+      "$ref": "#/$defs/Identifier"
+    },
+    "recipe": {
+      "$ref": "#/$defs/Identifier"
+    },
+    "extends": {
+      "$ref": "#/$defs/BaseReference"
+    },
+    "merge": {
+      "$ref": "#/$defs/MergePayload"
+    },
+    "edits": {
+      "type": "array",
+      "maxItems": 1024,
+      "items": {
+        "$ref": "#/$defs/Edit"
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "id",
+    "recipe"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "Hook": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "params": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "id",
+        "params"
+      ],
+      "additionalProperties": false
+    },
+    "Expression": {
+      "anyOf": [
+        {
+          "type": [
+            "string",
+            "number",
+            "boolean",
+            "null"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "literal": {}
+          },
+          "required": [
+            "literal"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "ref": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "string",
+                "integer",
+                "number",
+                "boolean"
+              ]
+            },
+            "default": {}
+          },
+          "required": [
+            "ref"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "concat": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Expression"
+              },
+              "minItems": 1
+            }
+          },
+          "required": [
+            "concat"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "string": {
+              "$ref": "#/$defs/Expression"
+            }
+          },
+          "required": [
+            "string"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "coalesce": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Expression"
+              },
+              "minItems": 1
+            }
+          },
+          "required": [
+            "coalesce"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "present": {
+              "$ref": "#/$defs/Expression"
+            }
+          },
+          "required": [
+            "present"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "eq": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Expression"
+              },
+              "minItems": 2,
+              "maxItems": 2
+            }
+          },
+          "required": [
+            "eq"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "gt": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Expression"
+              },
+              "minItems": 2,
+              "maxItems": 2
+            }
+          },
+          "required": [
+            "gt"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "all": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Expression"
+              },
+              "minItems": 1
+            }
+          },
+          "required": [
+            "all"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "any": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Expression"
+              },
+              "minItems": 1
+            }
+          },
+          "required": [
+            "any"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "not": {
+              "$ref": "#/$defs/Expression"
+            }
+          },
+          "required": [
+            "not"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "when": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Expression"
+              },
+              "minItems": 2,
+              "maxItems": 2
+            }
+          },
+          "required": [
+            "when"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "parent_path": {
+              "$ref": "#/$defs/Expression"
+            }
+          },
+          "required": [
+            "parent_path"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "path_join": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Expression"
+              },
+              "minItems": 1
+            }
+          },
+          "required": [
+            "path_join"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "option": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "type": {
+              "enum": [
+                "string",
+                "integer",
+                "number",
+                "boolean"
+              ]
+            },
+            "default": {}
+          },
+          "required": [
+            "option"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "Ui": {
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "control": {
+          "enum": [
+            "text",
+            "textarea",
+            "number",
+            "checkbox",
+            "select"
+          ]
+        },
+        "order": {
+          "type": "integer"
+        },
+        "choices": {
+          "enum": [
+            "supported_backends"
+          ]
+        }
+      },
+      "required": [
+        "label",
+        "control",
+        "order"
+      ],
+      "additionalProperties": false
+    },
+    "Option": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "cli_flag": {
+          "type": "string"
+        },
+        "default_value": {},
+        "type_name": {
+          "type": "string"
+        },
+        "value_type": {
+          "enum": [
+            "string",
+            "integer",
+            "number",
+            "boolean"
+          ]
+        },
+        "help": {
+          "type": "string"
+        },
+        "group": {
+          "type": "string"
+        },
+        "enum": {
+          "type": "array",
+          "items": {}
+        },
+        "minimum": {
+          "type": "number"
+        },
+        "maximum": {
+          "type": "number"
+        },
+        "unset_values": {
+          "type": "array",
+          "items": {}
+        },
+        "ui": {
+          "$ref": "#/$defs/Ui"
+        },
+        "id": {
+          "$ref": "#/$defs/Identifier"
+        }
+      },
+      "required": [
+        "name",
+        "default_value",
+        "value_type",
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "Support": {
+      "type": "object",
+      "properties": {
+        "backend": {
+          "type": "string"
+        },
+        "tier": {
+          "enum": [
+            "core",
+            "experimental",
+            "guest"
+          ]
+        },
+        "format": {
+          "enum": [
+            "native",
+            "python",
+            "container"
+          ]
+        },
+        "supported_os": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "windows",
+              "linux",
+              "macos"
+            ]
+          }
+        },
+        "devices": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "device_summary": {
+          "type": "string"
+        },
+        "arch_gates": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "os": {
+                "type": "array",
+                "items": {
+                  "enum": [
+                    "windows",
+                    "linux",
+                    "macos"
+                  ]
+                }
+              },
+              "channels": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "os",
+              "channels"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "id": {
+          "$ref": "#/$defs/Identifier"
+        }
+      },
+      "required": [
+        "backend",
+        "tier",
+        "format",
+        "supported_os",
+        "devices",
+        "device_summary",
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "Metadata": {
+      "type": "object",
+      "properties": {
+        "display_name": {
+          "type": "string"
+        },
+        "server_name": {
+          "type": "string"
+        },
+        "log_category": {
+          "type": "string"
+        },
+        "log_level_policy": {
+          "enum": [
+            "passthrough",
+            "debug_flag"
+          ]
+        },
+        "binary": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "windows": {
+                  "type": "string"
+                },
+                "linux": {
+                  "type": "string"
+                },
+                "macos": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "windows",
+                "linux",
+                "macos"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "config_section": {
+          "type": "string"
+        },
+        "default_device": {
+          "enum": [
+            "cpu",
+            "gpu",
+            "npu",
+            "none"
+          ]
+        },
+        "slot_policy": {
+          "enum": [
+            "standard",
+            "exclusive_npu",
+            "coexist_by_type",
+            "unmetered"
+          ]
+        },
+        "selectable_backend": {
+          "type": "boolean"
+        },
+        "uses_ctx_size": {
+          "type": "boolean"
+        },
+        "dynamic_models": {
+          "type": "boolean"
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Option"
+          }
+        },
+        "support": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Support"
+          }
+        },
+        "supported_modes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "required_checkpoints": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "default_capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "web_display_name": {
+          "type": "string"
+        },
+        "rocm_channels": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "exposes_prometheus_metrics": {
+          "type": "boolean"
+        },
+        "rocm_requires_cwsr_fix": {
+          "type": "boolean"
+        },
+        "version_policy": {
+          "enum": [
+            "exact",
+            "at_least"
+          ]
+        },
+        "self_manages_downloads": {
+          "type": "boolean"
+        },
+        "takes_args": {
+          "type": "boolean"
+        },
+        "arg_variants": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "bin_variants": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "config_extra": {
+          "type": "object"
+        },
+        "streams_model_from_storage": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "display_name",
+        "server_name",
+        "binary"
+      ],
+      "additionalProperties": false
+    },
+    "InstallCase": {
+      "type": "object",
+      "properties": {
+        "backend": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "os": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "windows",
+              "linux",
+              "macos"
+            ]
+          }
+        },
+        "arch": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "machine_arch": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "x86_64",
+              "aarch64",
+              ""
+            ]
+          }
+        },
+        "repo": {
+          "type": "string",
+          "minLength": 1
+        },
+        "filename": {
+          "$ref": "#/$defs/Expression"
+        },
+        "version_override": {
+          "$ref": "#/$defs/Expression"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{64}$"
+        },
+        "id": {
+          "$ref": "#/$defs/Identifier"
+        }
+      },
+      "required": [
+        "repo",
+        "filename",
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "Install": {
+      "type": "object",
+      "properties": {
+        "strategy": {
+          "enum": [
+            "github_release",
+            "external_only",
+            "none",
+            "hook"
+          ]
+        },
+        "install_recipe": {
+          "type": "string"
+        },
+        "pin_recipe": {
+          "type": "string"
+        },
+        "supports_split_archive": {
+          "type": "boolean"
+        },
+        "asset_backend": {
+          "enum": [
+            "identity",
+            "collapse_rocm_prefix"
+          ]
+        },
+        "default_versions": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "cases": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/InstallCase"
+          }
+        },
+        "errors": {
+          "type": "object",
+          "properties": {
+            "backend": {
+              "$ref": "#/$defs/Expression"
+            },
+            "os": {
+              "$ref": "#/$defs/Expression"
+            },
+            "missing_arch": {
+              "$ref": "#/$defs/Expression"
+            },
+            "arch": {
+              "$ref": "#/$defs/Expression"
+            },
+            "machine_arch": {
+              "$ref": "#/$defs/Expression"
+            },
+            "no_case": {
+              "$ref": "#/$defs/Expression"
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        },
+        "hook": {
+          "$ref": "#/$defs/Hook"
+        }
+      },
+      "required": [
+        "strategy"
+      ],
+      "additionalProperties": false
+    },
+    "Artifact": {
+      "type": "object",
+      "properties": {
+        "role": {
+          "type": "string"
+        },
+        "strategy": {
+          "enum": [
+            "resolved_path",
+            "hook"
+          ]
+        },
+        "cache_resolution": {
+          "enum": [
+            "default",
+            "active_snapshot",
+            "sentinel_directory",
+            "sentinel_file"
+          ]
+        },
+        "import_resolution": {
+          "enum": [
+            "default",
+            "sentinel_directory"
+          ]
+        },
+        "absolute_checkpoint_fallback": {
+          "type": "boolean"
+        },
+        "check": {
+          "enum": [
+            "exists",
+            "nonempty"
+          ]
+        },
+        "sentinel": {
+          "type": "string"
+        },
+        "selection": {
+          "enum": [
+            "first_existing",
+            "unique"
+          ]
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "files_from": {
+          "enum": [
+            "variant_directory"
+          ]
+        },
+        "files_error": {
+          "$ref": "#/$defs/Expression"
+        },
+        "missing_error": {
+          "$ref": "#/$defs/Expression"
+        },
+        "hook": {
+          "$ref": "#/$defs/Hook"
+        },
+        "required_when": {
+          "$ref": "#/$defs/Expression"
+        }
+      },
+      "required": [
+        "role",
+        "strategy"
+      ],
+      "additionalProperties": false
+    },
+    "Launch": {
+      "type": "object",
+      "properties": {
+        "prepare_order": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "artifacts",
+              "custom_args",
+              "backend",
+              "install",
+              "hook",
+              "program",
+              "ports"
+            ]
+          },
+          "minItems": 4,
+          "maxItems": 7,
+          "uniqueItems": true
+        },
+        "requires": {
+          "type": "object",
+          "properties": {
+            "os": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "windows",
+                  "linux",
+                  "macos"
+                ]
+              }
+            },
+            "machine_arch": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "x86_64",
+                  "aarch64"
+                ]
+              }
+            },
+            "error": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "error"
+          ],
+          "additionalProperties": false
+        },
+        "backend": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "fixed": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "windows": {
+                          "type": "string"
+                        },
+                        "linux": {
+                          "type": "string"
+                        },
+                        "macos": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "windows",
+                        "linux",
+                        "macos"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "fixed"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "option": {
+                  "$ref": "#/$defs/Identifier"
+                },
+                "fallback": {
+                  "enum": [
+                    "first_supported"
+                  ]
+                },
+                "on_empty": {
+                  "type": "object",
+                  "properties": {
+                    "operation": {
+                      "type": "string"
+                    },
+                    "target": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "operation",
+                    "target"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "option",
+                "fallback",
+                "on_empty"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "program": {
+          "type": "object",
+          "properties": {
+            "source": {
+              "enum": [
+                "managed",
+                "external_or_managed"
+              ]
+            },
+            "install_policy": {
+              "enum": [
+                "always"
+              ]
+            },
+            "missing_error": {
+              "$ref": "#/$defs/Expression"
+            }
+          },
+          "required": [
+            "source",
+            "install_policy"
+          ],
+          "additionalProperties": false
+        },
+        "ports": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Port"
+          },
+          "minItems": 1
+        },
+        "argv": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ArgvRecord"
+          }
+        },
+        "custom_args": {
+          "type": "object",
+          "properties": {
+            "option": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "reserved": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "error_prefix": {
+              "type": "string"
+            },
+            "defaults": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/CustomArgDefault"
+              }
+            }
+          },
+          "required": [
+            "option",
+            "reserved",
+            "error_prefix"
+          ],
+          "additionalProperties": false
+        },
+        "environment": {
+          "type": "object",
+          "properties": {
+            "preset": {
+              "enum": [
+                "inherit",
+                "executable_loader_path",
+                "posix_executable_loader_path",
+                "bundled_accelerator_runtime",
+                "hook"
+              ]
+            },
+            "order": {
+              "enum": [
+                "preset_first",
+                "set_first"
+              ]
+            },
+            "set": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/EnvironmentSet"
+              }
+            }
+          },
+          "required": [
+            "preset"
+          ],
+          "additionalProperties": false
+        },
+        "working_directory": {
+          "$ref": "#/$defs/WorkingDirectory"
+        },
+        "output": {
+          "type": "object",
+          "properties": {
+            "inherit_levels": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "filter": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "inherit_levels",
+            "filter"
+          ],
+          "additionalProperties": false
+        },
+        "readiness": {
+          "type": "object",
+          "properties": {
+            "port": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            },
+            "timeout": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                {
+                  "enum": [
+                    "global"
+                  ]
+                }
+              ]
+            }
+          },
+          "required": [
+            "port",
+            "path",
+            "timeout"
+          ],
+          "additionalProperties": false
+        },
+        "watchdog": {
+          "type": "object",
+          "properties": {
+            "policy": {
+              "enum": [
+                "standard",
+                "none"
+              ]
+            },
+            "port": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "policy",
+            "port",
+            "path"
+          ],
+          "additionalProperties": false
+        },
+        "context_floor": {
+          "type": "object",
+          "properties": {
+            "llm": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "embedding": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "reranking": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "transcription": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "image": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "tts": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "audio-generation": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "classification": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "mesh": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "prepare_order",
+        "backend",
+        "program",
+        "ports",
+        "argv",
+        "environment",
+        "working_directory",
+        "output",
+        "readiness",
+        "watchdog"
+      ],
+      "additionalProperties": false
+    },
+    "Transport": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "enum": [
+            "http_json",
+            "http_sse",
+            "http_bytes",
+            "multipart",
+            "realtime"
+          ]
+        },
+        "method": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "port": {
+          "type": "string"
+        },
+        "timeout": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1
+            },
+            {
+              "enum": [
+                "global"
+              ]
+            }
+          ]
+        },
+        "response_codec": {
+          "type": "string"
+        },
+        "stream_codec": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "method",
+        "path",
+        "port",
+        "timeout"
+      ],
+      "additionalProperties": false
+    },
+    "Request": {
+      "type": "object",
+      "properties": {
+        "base": {
+          "enum": [
+            "identity",
+            "empty"
+          ]
+        },
+        "remove": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "set": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/Expression"
+          }
+        },
+        "omit_missing": {
+          "type": "boolean"
+        },
+        "hooks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Hook"
+          }
+        }
+      },
+      "required": [
+        "base"
+      ],
+      "additionalProperties": false
+    },
+    "Operation": {
+      "type": "object",
+      "properties": {
+        "operation": {
+          "type": "string"
+        },
+        "delivery": {
+          "enum": [
+            "buffered",
+            "streaming",
+            "realtime"
+          ]
+        },
+        "model_modes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "transport": {
+          "$ref": "#/$defs/Transport"
+        },
+        "handler": {
+          "$ref": "#/$defs/Hook"
+        },
+        "formats": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "format_metadata": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "content_type": {
+                "type": "string"
+              },
+              "headers": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        "request": {
+          "$ref": "#/$defs/Request"
+        },
+        "response": {
+          "type": "object",
+          "properties": {
+            "hooks": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Hook"
+              }
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        },
+        "id": {
+          "$ref": "#/$defs/Identifier"
+        }
+      },
+      "required": [
+        "operation",
+        "delivery",
+        "model_modes",
+        "request",
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "Rationale": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "subject": {
+              "anyOf": [
+                {
+                  "const": ""
+                },
+                {
+                  "$ref": "#/$defs/Pointer"
+                }
+              ]
+            },
+            "text": {
+              "type": "string"
+            },
+            "source": {
+              "type": "string"
+            },
+            "tests": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "subject",
+            "text",
+            "source",
+            "tests"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "subject": {
+              "anyOf": [
+                {
+                  "const": ""
+                },
+                {
+                  "$ref": "#/$defs/Pointer"
+                }
+              ]
+            },
+            "text": {
+              "type": "string"
+            },
+            "source": {
+              "type": "string"
+            },
+            "tests": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "match": {
+              "$ref": "#/$defs/RecordKey"
+            },
+            "at": {
+              "$ref": "#/$defs/Pointer"
+            }
+          },
+          "required": [
+            "subject",
+            "text",
+            "source",
+            "tests",
+            "match"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "Identifier": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9._-]*$"
+    },
+    "Sha256Digest": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "Pointer": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "pattern": "^(?:/(?:[^~/]|~[01])*)+$"
+    },
+    "RecordKey": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/Identifier"
+            }
+          },
+          "required": [
+            "id"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "BaseReference": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "builtin": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "contract": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 4294967295
+            },
+            "expected_digest": {
+              "$ref": "#/$defs/Sha256Digest"
+            }
+          },
+          "required": [
+            "builtin",
+            "contract"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "external": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "expected_digest": {
+              "$ref": "#/$defs/Sha256Digest"
+            }
+          },
+          "required": [
+            "external"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "MergePayload": {
+      "type": "object",
+      "properties": {
+        "kind": {},
+        "metadata": {},
+        "install": {},
+        "artifacts": {},
+        "launch": {},
+        "operations": {},
+        "hooks": {},
+        "unsupported_messages": {},
+        "rationale": {}
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "MergeEdit": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "const": "merge"
+            },
+            "path": {
+              "$ref": "#/$defs/Pointer"
+            },
+            "value": {
+              "type": "object"
+            }
+          },
+          "required": [
+            "op",
+            "path",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "const": "merge"
+            },
+            "path": {
+              "$ref": "#/$defs/Pointer"
+            },
+            "value": {
+              "type": "object"
+            },
+            "match": {
+              "$ref": "#/$defs/RecordKey"
+            },
+            "at": {
+              "$ref": "#/$defs/Pointer"
+            }
+          },
+          "required": [
+            "op",
+            "path",
+            "value",
+            "match"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "ReplaceEdit": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "const": "replace"
+            },
+            "path": {
+              "$ref": "#/$defs/Pointer"
+            },
+            "value": {}
+          },
+          "required": [
+            "op",
+            "path",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "const": "replace"
+            },
+            "path": {
+              "$ref": "#/$defs/Pointer"
+            },
+            "value": {},
+            "match": {
+              "$ref": "#/$defs/RecordKey"
+            },
+            "at": {
+              "$ref": "#/$defs/Pointer"
+            }
+          },
+          "required": [
+            "op",
+            "path",
+            "value",
+            "match"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "ClearEdit": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "const": "clear"
+            },
+            "path": {
+              "$ref": "#/$defs/Pointer"
+            }
+          },
+          "required": [
+            "op",
+            "path"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "const": "clear"
+            },
+            "path": {
+              "$ref": "#/$defs/Pointer"
+            },
+            "match": {
+              "$ref": "#/$defs/RecordKey"
+            },
+            "at": {
+              "$ref": "#/$defs/Pointer"
+            }
+          },
+          "required": [
+            "op",
+            "path",
+            "match"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "RemoveEdit": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "const": "remove"
+            },
+            "path": {
+              "$ref": "#/$defs/Pointer"
+            }
+          },
+          "required": [
+            "op",
+            "path"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "const": "remove"
+            },
+            "path": {
+              "$ref": "#/$defs/Pointer"
+            },
+            "match": {
+              "$ref": "#/$defs/RecordKey"
+            },
+            "at": {
+              "$ref": "#/$defs/Pointer"
+            }
+          },
+          "required": [
+            "op",
+            "path",
+            "match"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "AddEdit": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "const": "add"
+            },
+            "path": {
+              "$ref": "#/$defs/Pointer"
+            },
+            "value": {}
+          },
+          "required": [
+            "op",
+            "path",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "const": "add"
+            },
+            "path": {
+              "$ref": "#/$defs/Pointer"
+            },
+            "value": {},
+            "match": {
+              "$ref": "#/$defs/RecordKey"
+            },
+            "at": {
+              "$ref": "#/$defs/Pointer"
+            }
+          },
+          "required": [
+            "op",
+            "path",
+            "value",
+            "match",
+            "at"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "const": "add"
+            },
+            "path": {
+              "$ref": "#/$defs/Pointer"
+            },
+            "value": {},
+            "before": {
+              "$ref": "#/$defs/RecordKey"
+            }
+          },
+          "required": [
+            "op",
+            "path",
+            "value",
+            "before"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "const": "add"
+            },
+            "path": {
+              "$ref": "#/$defs/Pointer"
+            },
+            "value": {},
+            "after": {
+              "$ref": "#/$defs/RecordKey"
+            }
+          },
+          "required": [
+            "op",
+            "path",
+            "value",
+            "after"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "Edit": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/MergeEdit"
+        },
+        {
+          "$ref": "#/$defs/ReplaceEdit"
+        },
+        {
+          "$ref": "#/$defs/ClearEdit"
+        },
+        {
+          "$ref": "#/$defs/RemoveEdit"
+        },
+        {
+          "$ref": "#/$defs/AddEdit"
+        }
+      ]
+    },
+    "Port": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reject_zero": {
+          "type": "boolean"
+        },
+        "error": {
+          "type": "string"
+        },
+        "strategy": {
+          "enum": [
+            "standard",
+            "probe",
+            "offset"
+          ]
+        },
+        "span": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16
+        },
+        "attempts": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        },
+        "base": {
+          "type": "string",
+          "minLength": 1
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 15
+        }
+      },
+      "required": [
+        "name",
+        "reject_zero",
+        "error"
+      ],
+      "additionalProperties": false
+    },
+    "EnvironmentSet": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "value": {
+          "$ref": "#/$defs/Expression"
+        }
+      },
+      "required": [
+        "name",
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "CustomArgDefault": {
+      "type": "object",
+      "properties": {
+        "args": {
+          "type": "string",
+          "minLength": 1
+        },
+        "flag": {
+          "type": "string",
+          "minLength": 1
+        },
+        "aliases": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "when": {
+          "$ref": "#/$defs/Expression"
+        },
+        "stage": {
+          "enum": [
+            "runtime_options",
+            "launch"
+          ]
+        },
+        "respect_merge_args": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "args",
+        "flag",
+        "id",
+        "stage",
+        "respect_merge_args"
+      ],
+      "additionalProperties": false
+    },
+    "WorkingDirectory": {
+      "anyOf": [
+        {
+          "enum": [
+            "inherit",
+            "executable_directory"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "windows": {
+              "enum": [
+                "inherit",
+                "executable_directory"
+              ]
+            },
+            "linux": {
+              "enum": [
+                "inherit",
+                "executable_directory"
+              ]
+            },
+            "macos": {
+              "enum": [
+                "inherit",
+                "executable_directory"
+              ]
+            }
+          },
+          "required": [
+            "windows",
+            "linux",
+            "macos"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "ArgvRecord": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "args": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Expression"
+              }
+            },
+            "when": {
+              "$ref": "#/$defs/Expression"
+            }
+          },
+          "required": [
+            "id",
+            "args"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "flag": {
+              "type": "string",
+              "minLength": 1
+            },
+            "value": {
+              "$ref": "#/$defs/Expression"
+            },
+            "when": {
+              "$ref": "#/$defs/Expression"
+            },
+            "aliases": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "uniqueItems": true
+            },
+            "reserve": {
+              "enum": [
+                "always",
+                "when_active",
+                "never"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "flag"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "Hooks": {
+      "type": "object",
+      "properties": {
+        "install": {
+          "$ref": "#/$defs/Hook"
+        },
+        "artifacts": {
+          "$ref": "#/$defs/Hook"
+        },
+        "launch": {
+          "$ref": "#/$defs/Hook"
+        },
+        "start_failure": {
+          "$ref": "#/$defs/Hook"
+        },
+        "availability": {
+          "$ref": "#/$defs/Hook"
+        },
+        "model_discovery": {
+          "$ref": "#/$defs/Hook"
+        },
+        "model_download": {
+          "$ref": "#/$defs/Hook"
+        },
+        "remote_context": {
+          "$ref": "#/$defs/Hook"
+        },
+        "backend": {
+          "$ref": "#/$defs/Hook"
+        },
+        "install_context": {
+          "$ref": "#/$defs/Hook"
+        },
+        "runtime_options": {
+          "$ref": "#/$defs/Hook"
+        },
+        "environment": {
+          "$ref": "#/$defs/Hook"
+        },
+        "system": {
+          "$ref": "#/$defs/Hook"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "Declaration": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "type": "integer",
+          "const": 2
+        },
+        "id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "recipe": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "kind": {
+          "const": "local"
+        },
+        "metadata": {
+          "$ref": "#/$defs/Metadata"
+        },
+        "install": {
+          "$ref": "#/$defs/Install"
+        },
+        "artifacts": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/Artifact"
+          }
+        },
+        "launch": {
+          "$ref": "#/$defs/Launch"
+        },
+        "operations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Operation"
+          },
+          "minItems": 1
+        },
+        "hooks": {
+          "$ref": "#/$defs/Hooks"
+        },
+        "unsupported_messages": {
+          "type": "object",
+          "properties": {
+            "chat_completion": {
+              "type": "string"
+            },
+            "completion": {
+              "type": "string"
+            },
+            "responses": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        },
+        "rationale": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Rationale"
+          }
+        }
+      },
+      "required": [
+        "schema_version",
+        "id",
+        "recipe",
+        "kind",
+        "metadata",
+        "install",
+        "launch",
+        "operations"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

@@ -1,3 +1,4 @@
+#include "lemon_cli/backend_schema.h"
 #include "lemon_cli/lemonade_client.h"
 #include "lemon_cli/model_selection.h"
 #include "lemon_cli/recipe_import.h"
@@ -161,6 +162,8 @@ struct CliConfig {
     std::vector<std::string> labels;
     std::vector<std::string> components;
     nlohmann::json recipe_options;
+    nlohmann::json generic_options = nlohmann::json::object();
+    std::vector<std::string> option_assignments;
     bool save_options = false;
     std::optional<bool> pinned = std::nullopt;
     std::string backend_spec;  // Format: "recipe:backend"
@@ -509,6 +512,7 @@ static int handle_export_command(lemonade::LemonadeClient& client, const CliConf
 }
 
 static int handle_load_command(lemonade::LemonadeClient& client, const CliConfig& config) {
+    if (const auto result = lemon_cli::preflight_generic_options(client, config.model, config.generic_options)) return result;
     // First, check if the model is downloaded
     nlohmann::json model_info = client.get_model_info(config.model);
 
@@ -568,6 +572,7 @@ static int handle_load_command(lemonade::LemonadeClient& client, const CliConfig
 static int handle_chat_command(lemonade::LemonadeClient& client, const CliConfig& config) {
     lemon_cli::ChatOptions options;
     options.initial_model = config.model;
+    options.initial_model_options = config.generic_options;
     options.system_prompt = config.chat_system_prompt;
     options.stream = !config.chat_no_stream;
     return lemon_cli::run_chat_repl(client, options);
@@ -975,9 +980,11 @@ static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& co
     }
 
     const bool model_was_missing = config.model.empty();
-    if (!lemon_cli::resolve_model_if_missing(client, config.model, "launch", true, config.agent)) {
+    if (!lemon_cli::resolve_model_if_missing(client, config.model, "launch", true, config.agent, config.generic_options.empty())) {
         return 1;
     }
+
+    if (const auto result = lemon_cli::preflight_generic_options(client, config.model, config.generic_options)) return result;
 
     if (model_was_missing) {
         // Interactive model resolution for launch already handled recipe selection/import choices.
@@ -1586,6 +1593,16 @@ int main(int argc, char* argv[]) {
 
 
 
+    std::optional<std::string> schema_recipe;
+    std::string definition_file;
+    std::string definition_bytes;
+    bool offline_validation = false;
+    auto* backends_schema_cmd = backends_cmd->add_subcommand("schema", "Print the connected server's public backend schema");
+    backends_schema_cmd->add_option("recipe", schema_recipe, "Exact server recipe (optional)");
+    auto* backends_validate_cmd = backends_cmd->add_subcommand("validate", "Validate a backend definition");
+    backends_validate_cmd->add_option("file", definition_file, "Backend definition JSON file")->required();
+    backends_validate_cmd->add_flag("--offline", offline_validation, "Validate provisionally with embedded schema; skip server discovery and network");
+
     // Backend management options
     backends_install_cmd->add_option("spec", config.backend_spec, "Backend spec (recipe:backend)")->required()->type_name("SPEC");
     backends_install_cmd->add_flag("--force", config.force, "Bypass hardware filtering when installing a backend");
@@ -1696,19 +1713,23 @@ int main(int argc, char* argv[]) {
     // Delete options
     delete_cmd->add_option("model", config.model, "Model name to delete")->required()->type_name("MODEL");
 
+    std::map<std::string, CLI::Option*> load_named_options, run_named_options, launch_named_options;
+
     // Load options
     static bool load_pinned_flag = false;
-    load_cmd->add_option("model", config.model, "Model name to load")->required()->type_name("MODEL");
-    lemon::RecipeOptions::add_cli_options(*load_cmd, config.recipe_options);
-    load_cmd->add_flag("--save-options", config.save_options, "Save model options for future loads");
-    load_cmd->add_flag("--pinned", load_pinned_flag, "Pin the model to prevent auto-eviction");
+    load_named_options["model_name"] = load_cmd->add_option("model", config.model, "Model name to load")->required()->type_name("MODEL");
+    lemon::RecipeOptions::add_cli_options(*load_cmd, config.recipe_options, &load_named_options);
+    load_cmd->add_option("--option", config.option_assignments, "Set a typed server option as KEY=JSON_VALUE")->type_name("KEY=JSON_VALUE")->expected(1)->allow_extra_args(false)->take_all();
+    load_named_options["save_options"] = load_cmd->add_flag("--save-options", config.save_options, "Save model options for future loads");
+    load_named_options["pinned"] = load_cmd->add_flag("--pinned", load_pinned_flag, "Pin the model to prevent auto-eviction");
 
     // Run options (same as load)
     static bool run_pinned_flag = false;
-    run_cmd->add_option("model", config.model, "Model name to run")->type_name("MODEL");
-    lemon::RecipeOptions::add_cli_options(*run_cmd, config.recipe_options);
-    run_cmd->add_flag("--save-options", config.save_options, "Save model options for future runs");
-    run_cmd->add_flag("--pinned", run_pinned_flag, "Pin the model to prevent auto-eviction");
+    run_named_options["model_name"] = run_cmd->add_option("model", config.model, "Model name to run")->type_name("MODEL");
+    lemon::RecipeOptions::add_cli_options(*run_cmd, config.recipe_options, &run_named_options);
+    run_cmd->add_option("--option", config.option_assignments, "Set a typed server option as KEY=JSON_VALUE")->type_name("KEY=JSON_VALUE")->expected(1)->allow_extra_args(false)->take_all();
+    run_named_options["save_options"] = run_cmd->add_flag("--save-options", config.save_options, "Save model options for future runs");
+    run_named_options["pinned"] = run_cmd->add_flag("--pinned", run_pinned_flag, "Pin the model to prevent auto-eviction");
     run_cmd->add_flag("--chat-cli", config.chat_cli,
         "After loading, open an interactive chat REPL in the terminal instead of the browser");
 
@@ -1732,8 +1753,9 @@ int main(int argc, char* argv[]) {
     export_cmd->add_option("--output", config.output_file, "Output file path (prints to stdout if not specified)")->type_name("PATH");
 
     // Launch options
-    auto add_common_launch_options = [&config](CLI::App& cmd) {
-        cmd.add_option("--model,-m", config.model, "Model name to load")->type_name("MODEL");
+    std::vector<CLI::Option*> launch_model_options;
+    auto add_common_launch_options = [&config, &launch_model_options](CLI::App& cmd) {
+        launch_model_options.push_back(cmd.add_option("--model,-m", config.model, "Model name to load")->type_name("MODEL"));
         cmd.add_option("--directory", config.repo_dir,
             "Remote recipe directory used only if you choose recipe import at prompt")
             ->type_name("DIR");
@@ -1746,7 +1768,8 @@ int main(int argc, char* argv[]) {
     };
 
     add_common_launch_options(*launch_cmd);
-    lemon::RecipeOptions::add_cli_options(*launch_cmd, config.recipe_options);
+    lemon::RecipeOptions::add_cli_options(*launch_cmd, config.recipe_options, &launch_named_options);
+    launch_cmd->add_option("--option", config.option_assignments, "Set a typed server option as KEY=JSON_VALUE")->type_name("KEY=JSON_VALUE")->expected(1)->allow_extra_args(false)->take_all();
     hide_all_options_except_help(*launch_cmd);
 
     CLI::Option* codex_provider_opt = nullptr;
@@ -1792,6 +1815,24 @@ int main(int argc, char* argv[]) {
             return 1;
         }
         return app.exit(e);
+    }
+
+    try {
+        if (!config.option_assignments.empty()) {
+            const auto& named = load_cmd->count() ? load_named_options : run_cmd->count() ? run_named_options : launch_named_options;
+            std::set<std::string> explicit_names;
+            for (const auto& [name, option] : named) if (option->count() > 0) explicit_names.insert(name);
+            if (launch_cmd->count()) for (const auto* option : launch_model_options) if (option->count() > 0) explicit_names.insert("model_name");
+            config.generic_options = lemon_cli::parse_generic_options(config.option_assignments, explicit_names);
+            for (const auto& [key, value] : config.generic_options.items()) config.recipe_options[key] = value;
+        }
+        if (backends_validate_cmd->count()) {
+            definition_bytes = lemon_cli::read_backend_definition_file(definition_file);
+            if (offline_validation) return lemon_cli::validate_backend_definition_offline(definition_bytes);
+        }
+    } catch (const std::exception& error) {
+        std::cerr << error.what() << '\n';
+        return 2;
     }
 
     config.model_source_explicit = pull_source_opt->count() > 0;
@@ -1889,6 +1930,8 @@ int main(int argc, char* argv[]) {
     } else if (export_cmd->count() > 0) {
         return handle_export_command(client, config);
     } else if (backends_cmd->count() > 0) {
+        if (backends_schema_cmd->count()) return lemon_cli::print_backend_schema(client, schema_recipe);
+        if (backends_validate_cmd->count()) return lemon_cli::validate_backend_definition(client, definition_bytes);
         return handle_backends_command(client, config,
                                        backends_install_cmd->count() > 0,
                                        backends_uninstall_cmd->count() > 0);

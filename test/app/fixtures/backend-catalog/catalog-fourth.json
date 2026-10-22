@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "control_version": 1,
+  "definition_schema_version": 1,
+  "catalog_id": "sha256:fourth-fixture",
+  "feature_manifest_id": "sha256:independent-fixture",
+  "recipes": [{
+    "recipe": "catalog-fourth",
+    "source": "external",
+    "display_name": "Catalog Fourth",
+    "backend_option": null,
+    "options": [{
+      "name": "catalog_fourth_batch",
+      "value_type": "integer",
+      "default_value": 2,
+      "minimum": 1,
+      "maximum": 8,
+      "help": "Batch size for the external fixture",
+      "group": "Catalog Fourth",
+      "ui": {"label": "Batch size", "control": "number", "order": 10},
+      "unset_values": [null]
+    }],
+    "support": []
+  }]
+}

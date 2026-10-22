@@ -1,4 +1,5 @@
 #include "lemon/backends/backend_registry.h"
+#include "lemon/backends/configured/backend_catalog.h"
 #include "lemon/wrapped_server.h"
 
 // Generated from LEMON_BACKENDS at configure time. Defines
@@ -10,6 +11,12 @@ namespace lemon {
 namespace backends {
 
 const std::vector<BackendRegistration>& all_registrations() {
+    if (const auto* catalog = backend_catalog()) return catalog->registrations();
+    all_descriptors();
+    return builtin_registrations();
+}
+
+const std::vector<BackendRegistration>& builtin_registrations() {
     static const std::vector<BackendRegistration> kRegistrations = generated_registrations();
     return kRegistrations;
 }
@@ -37,6 +44,9 @@ std::unique_ptr<WrappedServer> create_server(const std::string& recipe, const Ba
         if (reg.descriptor->recipe == recipe) {
             std::unique_ptr<WrappedServer> server = reg.create(ctx);
             if (server) {
+                if (!server->operation_bindings()) {
+                    throw std::logic_error("Backend factory returned an instance without operation bindings");
+                }
                 server->set_descriptor(reg.descriptor);
             }
             return server;

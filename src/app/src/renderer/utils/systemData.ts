@@ -1,3 +1,5 @@
+import { ConnectionSnapshot, serverConfig, serverFetch } from './serverConfig';
+
 export interface SystemInfo {
   os_version: string;
   physical_memory: string;
@@ -82,11 +84,10 @@ export interface SystemData {
   info?: SystemInfo;
 }
 
-const fetchSystemInfoFromAPI = async (): Promise<SystemData> => {
-  const { serverFetch } = await import('./serverConfig');
+const fetchSystemInfoFromAPI = async (connection?: ConnectionSnapshot): Promise<SystemData> => {
 
   try {
-    const response = await serverFetch('/system-info');
+    const response = await (connection ? serverConfig.fetchForConnection(connection, '/system-info') : serverFetch('/system-info'));
     if (!response.ok) {
       throw new Error(`Failed to fetch system info: ${response.status} ${response.statusText}`);
     }
@@ -94,18 +95,16 @@ const fetchSystemInfoFromAPI = async (): Promise<SystemData> => {
     const data = await response.json();
     const systemInfo: SystemInfo = { ...data };
 
-    // Seed recipe display names from the descriptor-generated /system-info data
-    // so the UI doesn't hardcode per-recipe names.
-    const { updateRecipeDisplayNames } = await import('./recipeNames');
-    updateRecipeDisplayNames(systemInfo.recipes);
+    if (connection) serverConfig.assertCurrent(connection);
 
     return { info: systemInfo };
   } catch (error) {
+    if (connection) throw error;
     console.error('Failed to fetch supported inference data from API:', error);
     return {};
   }
 };
 
-export const fetchSystemInfoData = async (): Promise<SystemData> => {
-  return fetchSystemInfoFromAPI();
+export const fetchSystemInfoData = async (connection?: ConnectionSnapshot): Promise<SystemData> => {
+  return fetchSystemInfoFromAPI(connection);
 };

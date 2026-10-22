@@ -1,22 +1,23 @@
-#include "lemon/backends/acestep/acestep_server.h"
-#include "lemon/backends/acestep/acestep.h"
-#include "lemon/backends/backend_registry.h"
-#include "lemon/backends/backend_ops.h"
-#include "lemon/backends/backend_utils.h"
-#include "lemon/backends/hf_cache_util.h"
-#include "lemon/backend_manager.h"
-#include "lemon/error_types.h"
-#include "lemon/model_manager.h"
-#include "lemon/runtime_config.h"
-#include "lemon/system_info.h"
-#include "lemon/utils/http_client.h"
-#include "lemon/utils/path_utils.h"
-#include <lemon/utils/aixlog.hpp>
 #include <algorithm>
 #include <cctype>
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
+#include "lemon/backend_manager.h"
+#include "lemon/backends/acestep/acestep.h"
+#include "lemon/backends/acestep/acestep_server.h"
+#include "lemon/backends/backend_load_helpers.h"
+#include "lemon/backends/backend_ops.h"
+#include "lemon/backends/backend_registry.h"
+#include "lemon/backends/backend_utils.h"
+#include "lemon/backends/hf_cache_util.h"
+#include "lemon/error_types.h"
+#include "lemon/model_manager.h"
+#include "lemon/runtime_config.h"
+#include "lemon/system_info.h"
+#include <lemon/utils/aixlog.hpp>
+#include "lemon/utils/http_client.h"
+#include "lemon/utils/path_utils.h"
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -69,16 +70,8 @@ InstallParams AceStepServer::get_install_params(const std::string& backend, cons
 AceStepServer::AceStepServer(const std::string& log_level,
                              ModelManager* model_manager,
                              BackendManager* backend_manager)
-    : WrappedServer("acestep-server", log_level, model_manager, backend_manager) {}
-
-std::string AceStepServer::resolve_binary_path(const std::string& backend) {
-    const BackendSpec* spec = acestep::spec();
-    std::string external = BackendUtils::find_external_backend_binary(spec->recipe, backend);
-    if (!external.empty() && std::filesystem::exists(external)) {
-        return external;
-    }
-    backend_manager_->install_backend(spec->recipe, backend);
-    return BackendUtils::get_backend_binary_path(*spec, backend);
+    : WrappedServer("acestep-server", log_level, model_manager, backend_manager) {
+    bind_legacy_operations(LegacyOperationProfile::AceStep, *this);
 }
 
 void AceStepServer::load(const std::string& model_name,
@@ -95,14 +88,12 @@ void AceStepServer::load(const std::string& model_name,
     std::string backend = options.get_option("acestep_backend");
     if (backend.empty()) {
         auto supported = SystemInfo::get_supported_backends("acestep");
-        if (supported.backends.empty()) {
-            throw UnsupportedOperationException(
-                "ACE-Step audio generation", "this system: no supported GPU backend (Vulkan, ROCm, or CUDA) detected");
-        }
-        backend = supported.backends[0];
+        backend = first_supported_backend(
+            supported.backends, "ACE-Step audio generation", "this system: no supported GPU backend (Vulkan, ROCm, or CUDA) detected");
     }
     RuntimeConfig::validate_backend_choice("acestep", backend);
-    const std::string exe_path = resolve_binary_path(backend);
+    const std::string exe_path = resolve_external_or_managed_binary(
+        *acestep::spec(), backend, backend_binary_services(*backend_manager_));
 
     port_ = choose_port();
     if (port_ == 0) {
@@ -126,14 +117,15 @@ void AceStepServer::load(const std::string& model_name,
     const std::string exe_dir = std::filesystem::path(exe_path).parent_path().string();
     auto prepend_loader_path = [&env_vars, &exe_dir](const std::string& extra_dirs) {
 #ifdef _WIN32
-        std::string path = extra_dirs.empty() ? exe_dir : (extra_dirs + ";" + exe_dir);
-        if (const char* p = std::getenv("PATH")) path += std::string(";") + p;
-        env_vars.push_back({"PATH", path});
+        const char* inherited = std::getenv("PATH");
+        constexpr bool windows = true;
 #else
-        std::string ld = extra_dirs.empty() ? exe_dir : (extra_dirs + ":" + exe_dir);
-        if (const char* p = std::getenv("LD_LIBRARY_PATH")) ld += std::string(":") + p;
-        env_vars.push_back({"LD_LIBRARY_PATH", ld});
+        const char* inherited = std::getenv("LD_LIBRARY_PATH");
+        constexpr bool windows = false;
 #endif
+        env_vars.push_back(make_loader_path_override(
+            exe_dir, extra_dirs,
+            inherited ? std::optional<std::string>(inherited) : std::nullopt, windows));
     };
     if (backend == "rocm") {
         const std::string arch = SystemInfo::get_rocm_arch();
@@ -284,12 +276,7 @@ public:
     std::string resolve_checkpoint_path(const ModelInfo& info,
                                         const CheckpointResolveContext& ctx) const override {
         (void)info;
-        std::filesystem::path root = lemon::utils::path_from_utf8(ctx.model_cache_path);
-        std::filesystem::path snap = hf_cache::active_snapshot_path(root);
-        if (!snap.empty() && hf_cache::exists(snap)) {
-            return lemon::utils::path_to_utf8(snap);
-        }
-        return ctx.model_cache_path;
+        return hf_cache::active_snapshot_or_cache_path(ctx.model_cache_path);
     }
 
     std::optional<std::vector<std::string>> select_checkpoint_files(

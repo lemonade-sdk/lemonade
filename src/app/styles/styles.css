@@ -7952,3 +7952,38 @@ input::-webkit-calendar-picker-indicator {
     color: var(--text-primary);
     margin: 0;
 }
+.schema-recipe-options .form-section {
+  margin-bottom: 18px;
+}
+
+.schema-recipe-options .form-label {
+  display: block;
+  margin-bottom: 6px;
+  text-transform: none;
+}
+
+.schema-recipe-options textarea {
+  min-height: 80px;
+  resize: vertical;
+}
+
+.schema-group {
+  color: var(--text-secondary);
+  font-size: 11px;
+  margin-bottom: 4px;
+}
+
+.schema-error {
+  color: var(--error-color, #ff8a80);
+  overflow-wrap: anywhere;
+}
+
+.schema-notice {
+  color: var(--text-secondary);
+  padding: 8px 0;
+  overflow-wrap: anywhere;
+}
+
+.schema-recipe-options [aria-invalid="true"] {
+  border-color: var(--error-color, #ff8a80);
+}

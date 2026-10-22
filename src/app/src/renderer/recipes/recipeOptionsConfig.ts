@@ -1,13 +1,3 @@
-/**
- * Recipe Options Configuration
- *
- * This is the SINGLE SOURCE OF TRUTH for what options are available to each recipe.
- * It mirrors the C++ implementation in src/cpp/server/recipe_options.cpp
- *
- * All recipe option types, defaults, and utilities are defined here.
- * The per-recipe files have been eliminated to avoid duplication.
- */
-
 // =============================================================================
 // Base Option Types
 // =============================================================================
@@ -126,7 +116,8 @@ export interface OpenMossOptions {
 }
 
 // Union type of all recipe options
-export type RecipeOptions = LlamaOptions | WhisperOptions | MoonshineOptions | FlmOptions | RyzenAIOptions | StableDiffusionOptions | VLLMOptions | ThinkSoundOptions | AceStepOptions | TrellisOptions | OpenMossOptions;
+export type LegacyRecipeOptions = LlamaOptions | WhisperOptions | MoonshineOptions | FlmOptions | RyzenAIOptions | StableDiffusionOptions | VLLMOptions | ThinkSoundOptions | AceStepOptions | TrellisOptions | OpenMossOptions;
+export type RecipeOptions = LegacyRecipeOptions;
 
 // =============================================================================
 // Recipe Constants
@@ -356,7 +347,8 @@ export const OPTION_DEFINITIONS: Record<string, OptionDef> = {
 // Recipe Configuration - Maps recipes to their available options
 // =============================================================================
 
-export type RecipeName = 'llamacpp' | 'whispercpp' | 'moonshine' | 'flm' | 'ryzenai-llm' | 'sd-cpp' | 'vllm' | 'thinksound' | 'acestep' | 'trellis' | 'openmoss';
+export type LegacyRecipeName = 'llamacpp' | 'whispercpp' | 'moonshine' | 'flm' | 'ryzenai-llm' | 'sd-cpp' | 'vllm' | 'thinksound' | 'acestep' | 'trellis' | 'openmoss';
+export type RecipeName = LegacyRecipeName;
 
 /**
  * Maps recipe names to the option keys they support.
@@ -380,17 +372,21 @@ export const RECIPE_OPTIONS_MAP: Record<RecipeName, string[]> = {
  * Gets the option keys for a given recipe
  */
 export function getOptionsForRecipe(recipe: string): string[] {
-  if (recipe in RECIPE_OPTIONS_MAP) {
+  if (isLegacyRecipe(recipe)) {
     return RECIPE_OPTIONS_MAP[recipe as RecipeName];
   }
   return [];
+}
+
+export function isLegacyRecipe(recipe: string): recipe is LegacyRecipeName {
+  return Object.prototype.hasOwnProperty.call(RECIPE_OPTIONS_MAP, recipe);
 }
 
 /**
  * Gets the option definition for a given option key
  */
 export function getOptionDefinition(key: string): OptionDef | undefined {
-  return OPTION_DEFINITIONS[key];
+  return Object.prototype.hasOwnProperty.call(OPTION_DEFINITIONS, key) ? OPTION_DEFINITIONS[key] : undefined;
 }
 
 // =============================================================================
@@ -421,11 +417,11 @@ const API_TO_FRONTEND_MAP: Record<string, string> = Object.fromEntries(
 );
 
 export function toApiOptionName(frontendName: string): string {
-  return FRONTEND_TO_API_MAP[frontendName] ?? frontendName;
+  return Object.prototype.hasOwnProperty.call(FRONTEND_TO_API_MAP, frontendName) ? FRONTEND_TO_API_MAP[frontendName] : frontendName;
 }
 
 export function toFrontendOptionName(apiName: string): string {
-  return API_TO_FRONTEND_MAP[apiName] ?? apiName;
+  return Object.prototype.hasOwnProperty.call(API_TO_FRONTEND_MAP, apiName) ? API_TO_FRONTEND_MAP[apiName] : apiName;
 }
 
 // =============================================================================

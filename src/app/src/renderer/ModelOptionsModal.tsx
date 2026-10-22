@@ -6,18 +6,25 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { serverFetch } from "./utils/serverConfig";
+import { ConnectionSnapshot, serverConfig, serverFetch } from "./utils/serverConfig";
 import { ModelInfo, downloadModelExportFile } from "./utils/modelData";
 import { useSystem } from "./hooks/useSystem";
 import { writeClipboard } from "./utils/clipboardUtils";
 import {
   RecipeOptions,
+  RecipeSubmission,
+  isLegacyRecipe,
   getOptionsForRecipe,
   getOptionDefinition,
   clampOptionValue,
   createDefaultOptions,
   apiToRecipeOptions,
 } from './recipes/recipeOptions';
+import { useBackendCatalog } from './hooks/useBackendCatalog';
+import { BackendRecipe, own } from './recipes/backendSchema';
+import { RecipeForm, createForm, formErrors, mutationPayload, parseModelOptions, reconcileForm } from './recipes/recipeForm';
+import { SchemaRecipeOptions } from './components/SchemaRecipeOptions';
+import { fetchSystemInfoData } from './utils/systemData';
 
 // Display names for backend options
 const BACKEND_DISPLAY_NAMES: Record<string, string> = {
@@ -79,13 +86,26 @@ const sliderValueToContextSize = (sliderValue: number, maxContextWindow: number)
 
 interface SettingsModalProps {
   isOpen: boolean;
-  onSubmit: (modelName: string, options: RecipeOptions) => void;
+  onSubmit: (modelName: string, submission: RecipeSubmission) => void | Promise<void>;
   onCancel: () => void;
   model: string | null;
 }
 
 const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onSubmit, model }) => {
-  const { supportedRecipes, ensureSystemInfoLoaded } = useSystem();
+  const { supportedRecipes, systemInfo, ensureSystemInfoLoaded } = useSystem();
+  const catalog = useBackendCatalog();
+  const [catalogForm, setCatalogForm] = useState<RecipeForm>();
+  const [pinned, setPinned] = useState(false);
+  const [formMessage, setFormMessage] = useState<string>();
+  const catalogId = catalog.state.status === 'ready' ? catalog.state.catalog.catalog_id : undefined;
+
+  const fetchSnapshot = async (connection: ConnectionSnapshot, recipe: BackendRecipe, signal?: AbortSignal) => {
+    const response = await serverConfig.fetchForConnection(connection, `/models/${encodeURIComponent(model!)}/options`, { signal });
+    if (!response.ok) throw new Error(`Cannot read saved model options (${response.status}).`);
+    const snapshot = parseModelOptions(await response.json(), recipe.recipe, model!);
+    serverConfig.assertCurrent(connection);
+    return snapshot;
+  };
   const [modelInfo, setModelInfo] = useState<ModelInfo>();
   const [modelName, setModelName] = useState("");
   const [modelUrl, setModelUrl] = useState<string>("");
@@ -103,7 +123,11 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
   useEffect(() => {
     if (!isOpen) return;
     let isMounted = true;
+    const controller = new AbortController();
     setNumericDrafts({});
+    setCatalogForm(undefined);
+    setFormMessage(undefined);
+    setPinned(false);
     setIsModelNameCopied(false);
     if (modelNameCopyTimeoutIdRef.current) {
       clearTimeout(modelNameCopyTimeoutIdRef.current);
@@ -111,7 +135,7 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
     }
     setLoadError(null);
     setExportError(null);
-    setModelInfo(undefined);
+    setModelInfo(previous => model === modelName && previous ? { recipe: previous.recipe, checkpoint: '', suggested: false } : undefined);
     setModelName(model ?? "");
     setModelUrl("");
     setOptions(undefined);
@@ -128,12 +152,17 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
       }
 
       try {
+        await serverConfig.waitForInit();
+        const connection = serverConfig.getSnapshot();
+        const serverFetch = (endpoint: string) => serverConfig.fetchForConnection(connection, endpoint, { signal: controller.signal });
         const response = await serverFetch(`/models/${encodeURIComponent(model)}`);
         if (!response.ok) {
+          if (response.status === 401 || response.status === 403) throw new Error('Authentication failed for the selected server.');
           throw new Error(`Failed to load model options (${response.status})`);
         }
         const data = await response.json();
 
+        serverConfig.assertCurrent(connection);
         if (!isMounted) return;
 
         setModelName(model);
@@ -152,11 +181,23 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
 
         const recipe = data.recipe as string;
         const recipeOptions = data.recipe_options ?? {};
-        setOptions(apiToRecipeOptions(recipe, recipeOptions));
+        if (isLegacyRecipe(recipe)) {
+          setOptions(apiToRecipeOptions(recipe, recipeOptions));
+          void catalog.refresh().catch(() => {});
+        } else {
+          const result = await catalog.refresh();
+          serverConfig.assertCurrent(connection);
+          if (!isMounted) return;
+          const row = result.status === 'ready' ? result.catalog.recipes.find(item => item.recipe === recipe) : undefined;
+          if (row?.source === 'external' && result.status === 'ready') {
+            const snapshot = await fetchSnapshot(connection, row, controller.signal);
+            if (isMounted) setCatalogForm(createForm(row, snapshot, result.catalog.catalog_id, connection.generation));
+          } else if (row?.source === 'builtin') setOptions(apiToRecipeOptions(recipe, recipeOptions));
+        }
       } catch (error) {
         console.error('Failed to load options:', error);
         if (isMounted) {
-          setLoadError('Failed to load model options.');
+          setLoadError(error instanceof Error ? error.message : 'Failed to load model options.');
         }
       } finally {
         if (isMounted) setIsLoading(false);
@@ -164,8 +205,68 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
     };
 
     fetchOptions();
-    return () => { isMounted = false; };
-  }, [isOpen, model, ensureSystemInfoLoaded]);
+    return () => { isMounted = false; controller.abort(); };
+  }, [isOpen, model, ensureSystemInfoLoaded, catalog.state.connection.generation]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const refresh = () => { void catalog.refresh().catch(() => {}); };
+    window.addEventListener('focus', refresh);
+    return () => window.removeEventListener('focus', refresh);
+  }, [isOpen, catalog.refresh]);
+
+  useEffect(() => {
+    if (!isOpen || !catalogForm || !catalogId || catalogForm.catalogId === catalogId) return;
+    let active = true;
+    const connection = catalog.state.connection;
+    const row = catalog.recipe(catalogForm.recipe.recipe);
+    if (!row || row.source !== 'external') { setFormMessage('Recipe is no longer available in this server catalog.'); return; }
+    void fetchSnapshot(connection, row).then(snapshot => {
+      if (active) setCatalogForm(previous => previous && reconcileForm(previous, row, snapshot, catalogId));
+    }).catch(error => { if (active) setFormMessage(error.message); });
+    return () => { active = false; };
+  }, [isOpen, catalogId, catalogForm?.catalogId]);
+
+  const submitCatalog = async (action: 'save' | 'load') => {
+    if (!catalogForm || !model) return;
+    setIsSubmitting(true);
+    setFormMessage(undefined);
+    try {
+      const connection = catalog.state.connection;
+      serverConfig.assertCurrent(connection);
+      if (catalogForm.connectionGeneration !== connection.generation) throw new Error('Server connection changed; reopen its options.');
+      const result = await catalog.refresh();
+      if (result.status !== 'ready') throw new Error('message' in result ? result.message : 'Backend schema is not ready.');
+      const row = result.catalog.recipes.find(item => item.recipe === catalogForm.recipe.recipe);
+      if (!row || row.source !== 'external' || row.incompatibility) throw new Error(row?.incompatibility ?? 'Unknown recipe on the selected server.');
+      if (result.catalog.catalog_id !== catalogForm.catalogId) {
+        const snapshot = await fetchSnapshot(connection, row);
+        setCatalogForm(reconcileForm(catalogForm, row, snapshot, result.catalog.catalog_id));
+        return;
+      }
+      const system = await fetchSystemInfoData(connection);
+      const backends = Object.entries(own(system.info?.recipes, row.recipe)?.backends ?? {})
+        .filter(([, info]) => info.state && info.state !== 'unsupported').map(([name]) => name);
+      const payload = mutationPayload(catalogForm, backends);
+      serverConfig.assertCurrent(connection);
+      const response = await serverConfig.fetchForConnection(connection, `/models/${encodeURIComponent(model)}/options`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(action === 'save' ? payload : { ...payload, dry_run: true }),
+      });
+      if (!response.ok) throw new Error(`The server rejected model options (${response.status}).`);
+      const snapshot = parseModelOptions(await response.json(), row.recipe, model);
+      serverConfig.assertCurrent(connection);
+      if (action === 'save') {
+        setCatalogForm(createForm(row, snapshot, catalogForm.catalogId, connection.generation));
+        window.dispatchEvent(new CustomEvent('modelsUpdated'));
+        setFormMessage('Options saved.');
+      } else {
+        await onSubmit(model, { kind: 'catalog', options: { ...payload, pinned }, context: { connection, recipe: row, effective: snapshot.effective } });
+      }
+    } catch (error) {
+      setFormMessage(error instanceof Error ? error.message : 'Model options request failed.');
+    } finally { setIsSubmitting(false); }
+  };
 
   useEffect(() => {
     return () => {
@@ -365,7 +466,7 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
       } as RecipeOptions;
     }
 
-    onSubmit(modelName, submitOptions);
+    void onSubmit(modelName, { kind: 'legacy', options: submitOptions });
   };
 
   const renderHeader = () => (
@@ -380,6 +481,34 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
   );
 
   if (!isOpen) return null;
+
+  const catalogRecipe = modelInfo?.recipe ? catalog.recipe(modelInfo.recipe) : undefined;
+  const external = modelInfo?.recipe && !isLegacyRecipe(modelInfo.recipe) && catalogRecipe?.source !== 'builtin';
+  if (external) {
+    const backends = own(supportedRecipes, modelInfo.recipe) ?? [];
+    const serverRecipe = own(systemInfo?.recipes, modelInfo.recipe);
+    const availability = Object.values(serverRecipe?.backends ?? {}).filter(info => info.state !== 'installed').map(info => info.message).filter(Boolean).join(' ');
+    const stateMessage = catalog.state.status === 'ready' ? (!catalogRecipe ? 'Unknown recipe on the selected server.' : catalogRecipe.incompatibility) :
+      'message' in catalog.state ? catalog.state.message : 'Loading backend schema...';
+    const blocked = isLoading || isSubmitting || !!loadError || !!stateMessage || !catalogForm ||
+      catalogForm.catalogId !== catalogId || formErrors(catalogForm, backends).size > 0;
+    return <div className="settings-overlay"><div className="settings-modal" ref={cardRef} onMouseDown={event => event.stopPropagation()}>
+      {renderHeader()}
+      <div className="model-options-content">
+        <h3>{modelName}</h3>
+        {stateMessage && <p role="alert" className="schema-error">{stateMessage}</p>}
+        {loadError && <p role="alert" className="schema-error">{loadError}</p>}
+        {catalogForm && <SchemaRecipeOptions form={catalogForm} backends={backends} availability={availability} disabled={isSubmitting || !!stateMessage} onChange={setCatalogForm} />}
+        <label className="settings-checkbox-label"><input type="checkbox" checked={pinned} disabled={isSubmitting} onChange={event => setPinned(event.target.checked)} />Pin Model (Load only)</label>
+        {formMessage && <p role="status" className="schema-notice">{formMessage}</p>}
+      </div>
+      <div className="settings-footer">
+        <button className="settings-save-button" onClick={handleCancel} disabled={isSubmitting}>Cancel</button>
+        <button className="settings-save-button" onClick={() => void submitCatalog('save')} disabled={blocked}>Save</button>
+        <button className="settings-save-button" onClick={() => void submitCatalog('load')} disabled={blocked}>Load</button>
+      </div>
+    </div></div>;
+  }
 
   if (!options) {
     return (
@@ -699,6 +828,7 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
               </h5>
             </div>
 
+            {catalog.state.status === 'missing' && <p className="schema-notice">Legacy options: this server has no backend schema endpoint.</p>}
             {renderOptions()}
           </div>
         )}

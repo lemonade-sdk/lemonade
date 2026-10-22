@@ -1,5 +1,6 @@
 #include <lemon/server.h>
 
+#include <lemon/backends/configured/backend_catalog.h>
 #include <lemon/cli_parser.h>
 #include <lemon/config_file.h>
 #include <lemon/logging_config.h>
@@ -172,6 +173,7 @@ int main(int argc, char** argv) {
         utils::set_cache_dir(cli_config.cache_dir);
         utils::set_config_dir(cli_config.config_dir);
         utils::migrate_legacy_paths(cli_config.cache_dir, cli_config.config_dir);
+        backends::bootstrap_backend_catalog(cli_config.config_dir, cli_config.builtin_backends_only);
         json config_json = ConfigFile::load(cli_config.cache_dir,
                                             cli_config.config_dir);
 

@@ -10,6 +10,7 @@ struct ChatOptions {
     std::string initial_model;
     std::string system_prompt;
     bool stream = true;
+    nlohmann::json initial_model_options = nlohmann::json::object();
 };
 
 int run_chat_repl(lemonade::LemonadeClient& client, const ChatOptions& options);

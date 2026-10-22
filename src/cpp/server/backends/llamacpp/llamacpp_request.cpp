@@ -1,4 +1,6 @@
 #include "lemon/backends/llamacpp/llamacpp_request.h"
+#include "lemon/utils/json_utils.h"
+#include "llamacpp_effects.h"
 
 #include <cmath>
 #include <cstdint>
@@ -96,6 +98,7 @@ void sanitize_schema(nlohmann::json& schema) {
 }  // namespace
 
 nlohmann::json sanitize_tool_schema_limits(nlohmann::json request) {
+    LLAMA_OBSERVE("sanitizer");
     auto tools = request.find("tools");
     if (tools == request.end() || !tools->is_array()) return request;
 
@@ -117,6 +120,20 @@ nlohmann::json sanitize_tool_schema_limits(nlohmann::json request) {
     }
 
     return request;
+}
+
+nlohmann::json with_max_tokens_alias(nlohmann::json request) {
+    LLAMA_OBSERVE("alias");
+    utils::JsonUtils::add_legacy_max_tokens_alias(request);
+    return request;
+}
+
+nlohmann::json normalize_response_model(nlohmann::json response, const nlohmann::json& request, const std::string& model_name) {
+    LLAMA_OBSERVE("normalization");
+    if (response.is_object() && response.contains("model")) {
+        response["model"] = request.value("model", model_name);
+    }
+    return response;
 }
 
 }  // namespace llamacpp

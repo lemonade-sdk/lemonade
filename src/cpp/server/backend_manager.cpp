@@ -2,6 +2,8 @@
 #include "lemon/backend_version_policy.h"
 #include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/backends/configured/backend_catalog.h"
+#include "lemon/backends/configured/backend_spec_utils.h"
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
 #include "lemon/utils/github_api.h"
@@ -25,6 +27,10 @@ namespace fs = std::filesystem;
 namespace lemon {
 
 namespace {
+
+backends::PlatformInfo install_platform(const backends::BackendSpec& spec, const std::string& backend) {
+    return backends::install_platform(spec, backend, {[] { return backends::native_platform().os; }, SystemInfo::get_rocm_arch});
+}
 
 std::string normalize_backend_name(const std::string& recipe, const std::string& backend) {
     if (backends::recipe_has_rocm_channels(recipe) && backend == "rocm") {
@@ -370,6 +376,10 @@ std::string BackendManager::get_version_from_config(const std::string& recipe, c
         return "";
     }
 
+    if (!backend_versions_.contains(recipe) || !backend_versions_[recipe].contains(resolved_backend)) {
+        const auto fallback = backends::external_default_version(recipe, resolved_backend, backend_versions_);
+        if (!fallback.empty()) return fallback;
+    }
     if (!backend_versions_.contains(recipe) || !backend_versions_[recipe].is_object()) {
         throw std::runtime_error("backend_versions.json is missing '" + recipe + "' section");
     }
@@ -529,10 +539,12 @@ std::string BackendManager::get_or_resolve_latest_tag(const std::string& recipe,
         std::string resolved_backend = normalize_backend_name(recipe, backend);
         auto* spec = backends::try_get_spec_for_recipe(recipe);
         if (!spec || !spec->install_params_fn) return "";
-        std::string pinned = get_version_from_config(recipe, resolved_backend);
+        const std::string pin_recipe = spec->pin_recipe.empty() ? recipe : spec->pin_recipe;
+        std::string pinned = get_version_from_config(pin_recipe, resolved_backend);
         // First call extracts the repo for this (recipe, backend); filename
         // templating is discarded.
-        auto pinned_params = spec->install_params_fn(resolved_backend, pinned);
+        auto pinned_params = spec->install_params_fn(backends::configured_install_context(*spec, resolved_backend,
+            (spec->definition || spec->executable_definition) ? backends::BackendUtils::get_bin_config_value(recipe, resolved_backend) : "", pinned, install_platform(*spec, resolved_backend)));
         return fetch_latest_github_tag(pinned_params.repo, /*throw_on_failure=*/false);
     } catch (const std::exception& e) {
         LOG(WARNING, "BackendManager") << "get_or_resolve_latest_tag(" << recipe
@@ -548,23 +560,17 @@ BackendManager::InstallParams BackendManager::get_install_params(const std::stri
     if (!spec) {
         throw std::runtime_error("[BackendManager] Unknown recipe: " + recipe);
     }
-    std::string pinned = get_version_from_config(recipe, resolved_backend);
+    const std::string pin_recipe = spec->pin_recipe.empty() ? recipe : spec->pin_recipe;
+    std::string pinned = get_version_from_config(pin_recipe, resolved_backend);
 
     if (!spec->install_params_fn) {
         throw std::runtime_error("No install params function for recipe: " + recipe);
     }
 
-    // Two-pass: first call gets the repo for resolve_user_version (filename
-    // discarded); second call templates the resolved tag into the real filename.
-    auto pinned_params = spec->install_params_fn(resolved_backend, pinned);
-    std::string resolved_version = resolve_user_version(
-        recipe, resolved_backend, pinned, pinned_params.repo);
-    auto final_params = spec->install_params_fn(resolved_backend, resolved_version);
-    // Allow backends to override the release tag (e.g. per-GPU-target releases)
-    std::string release_version = final_params.version_override.empty()
-                                      ? resolved_version
-                                      : final_params.version_override;
-    return {final_params.repo, final_params.filename, release_version};
+    const auto resolved = backends::configured_install_params(*spec, resolved_backend,
+        (spec->definition || spec->executable_definition) ? backends::BackendUtils::get_bin_config_value(recipe, resolved_backend) : "", pinned,
+        install_platform(*spec, resolved_backend), [&](const std::string& repo) { return resolve_user_version(recipe, resolved_backend, pinned, repo); });
+    return {resolved.asset.repo, resolved.asset.filename, resolved.version, resolved.asset.sha256};
 }
 
 void BackendManager::install_backend(const std::string& recipe, const std::string& backend,
@@ -582,6 +588,8 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
     if (!spec) {
         throw std::runtime_error("[BackendManager] Unknown recipe: " + recipe);
     }
+
+    if (backends::configured_external_only(*spec)) throw std::runtime_error("External-only backend cannot be downloaded");
 
     const std::string existing_backend_binary =
         installed_backend_binary_path(*spec, resolved_backend);
@@ -755,7 +763,8 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
 
     try {
         backends::BackendUtils::install_from_github(
-            *spec, params.version, params.repo, params.filename, resolved_backend, backend_progress_cb);
+            *spec, params.version, params.repo, params.filename, resolved_backend, backend_progress_cb,
+            params.sha256.empty() ? "" : "sha256:" + params.sha256);
         // install_from_github only returns after atomically swapping the new
         // backend into place; from here on the working install is the new one.
         backend_committed = true;

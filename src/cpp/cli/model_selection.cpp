@@ -588,14 +588,15 @@ bool resolve_model_if_missing(lemonade::LemonadeClient& client,
                               std::string& model_out,
                               const std::string& command_name,
                               bool show_all,
-                              const std::string& agent_name) {
+                              const std::string& agent_name,
+                              bool allow_recipe_import) {
     if (!model_out.empty()) {
         return true;
     }
 
     std::cout << "No model specified for '" << command_name << "'." << std::endl;
 
-    if (command_name == "launch") {
+    if (command_name == "launch" && allow_recipe_import) {
         return prompt_launch_recipe_first(client, model_out, agent_name);
     }
 

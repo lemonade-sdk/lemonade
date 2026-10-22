@@ -12,7 +12,20 @@ import { tauriReady } from '../tauriShim';
 type PortChangeListener = (port: number) => void;
 type UrlChangeListener = (url: string, apiKey: string) => void;
 
-class ServerConfig {
+export interface ConnectionSnapshot {
+  readonly apiUrl: string;
+  readonly authenticationGeneration: number;
+  readonly generation: number;
+}
+
+export class ObsoleteConnectionError extends Error {
+  constructor() { super('Server connection changed; reopen the model options.'); }
+}
+
+export class ServerConfig {
+  private generation = 0;
+  private authenticationGeneration = 0;
+  private connectionListeners = new Set<(snapshot: ConnectionSnapshot) => void>();
   private port: number = 13305;
   private explicitBaseUrl: string | null = null;
   private apiKey: string | null = null;
@@ -39,6 +52,16 @@ class ServerConfig {
     // check below sees undefined, and we fall through to localhost:13305
     // with no API key.
     await tauriReady;
+    if (typeof window !== 'undefined') {
+      window.api?.onServerPortUpdated?.((port: number) => {
+        if (!this.explicitBaseUrl) this.setPort(port);
+      });
+      window.api?.onConnectionSettingsUpdated?.((baseURL: string, apiKey: string) => {
+        this.setUpdatedURL(window.api?.isWebApp ? window.location.origin : baseURL);
+        this.setUpdatedAPIKey(apiKey);
+      });
+    }
+
 
     try {
       // Get API Key if available
@@ -63,7 +86,7 @@ class ServerConfig {
         const baseUrl = await window.api.getServerBaseUrl();
         if (baseUrl) {
           console.log('Using explicit server base URL:', baseUrl);
-          this.explicitBaseUrl = baseUrl;
+          this.explicitBaseUrl = baseUrl.replace(/\/+$/, '');
           this.initialized = true;
           return;
         }
@@ -84,27 +107,6 @@ class ServerConfig {
       this.initialized = true;
     }
 
-    // Register event listeners AFTER the first await-cycle so window.api is
-    // guaranteed to be installed. tauriShim.ts installs window.api via a
-    // fire-and-forget async call that completes on the microtask queue; the
-    // constructor runs synchronously during module-graph evaluation and would
-    // see window.api as undefined if we registered there.
-    if (typeof window !== 'undefined' && window.api?.onServerPortUpdated && window.api?.onConnectionSettingsUpdated) {
-      window.api.onServerPortUpdated((port: number) => {
-        if (!this.explicitBaseUrl) {
-          this.setPort(port);
-        }
-      });
-
-      window.api.onConnectionSettingsUpdated((baseURL: string, apiKey: string) => {
-        if (this.explicitBaseUrl != baseURL) {
-          this.setUpdatedURL(baseURL);
-        }
-        if (this.apiKey != apiKey) {
-          this.setUpdatedAPIKey(apiKey);
-        }
-      });
-    }
   }
 
   /**
@@ -134,7 +136,11 @@ class ServerConfig {
    * Get the full API base URL
    */
   getApiBaseUrl(): string {
-    return `${this.getServerBaseUrl()}/api/v1`;
+    const url = new URL(this.getServerBaseUrl());
+    url.pathname = url.pathname.replace(/\/+$/, '') + '/api/v1';
+    url.search = '';
+    url.hash = '';
+    return url.toString().replace(/\/+$/, '');
   }
 
   /**
@@ -193,7 +199,7 @@ class ServerConfig {
   }
 
   private setUpdatedURL(baseURL: string | null) {
-    const nextBaseUrl = baseURL?.trim() || null;
+    const nextBaseUrl = baseURL?.trim().replace(/\/+$/, '') || null;
 
     if (this.explicitBaseUrl !== nextBaseUrl) {
       console.log(`Base URL updated: ${this.explicitBaseUrl} -> ${nextBaseUrl}`);
@@ -207,6 +213,7 @@ class ServerConfig {
     if (this.apiKey != apiKey) {
       console.log('API Key updated');
       this.apiKey = apiKey;
+      this.authenticationGeneration += 1;
       this.notifyPortListeners();
       this.notifyUrlListeners();
     }
@@ -297,6 +304,9 @@ class ServerConfig {
   }
 
   private notifyUrlListeners() {
+    this.generation += 1;
+    const snapshot = this.getSnapshot();
+    this.connectionListeners.forEach(listener => listener(snapshot));
     const url = this.getServerBaseUrl();
     const apiKey = this.getAPIKey();
 
@@ -307,6 +317,30 @@ class ServerConfig {
         console.error('Error in URL change listener:', error);
       }
     });
+  }
+
+  getSnapshot(): ConnectionSnapshot {
+    return Object.freeze({ apiUrl: this.getApiBaseUrl(), authenticationGeneration: this.authenticationGeneration, generation: this.generation });
+  }
+
+  assertCurrent(snapshot: ConnectionSnapshot): void {
+    if (snapshot.generation !== this.generation || snapshot.apiUrl !== this.getApiBaseUrl() ||
+        snapshot.authenticationGeneration !== this.authenticationGeneration) throw new ObsoleteConnectionError();
+  }
+
+  onConnectionChange(listener: (snapshot: ConnectionSnapshot) => void): () => void {
+    this.connectionListeners.add(listener);
+    return () => { this.connectionListeners.delete(listener); };
+  }
+
+  async fetchForConnection(snapshot: ConnectionSnapshot, endpoint: string, options?: RequestInit): Promise<Response> {
+    await this.waitForInit();
+    this.assertCurrent(snapshot);
+    const headers = new Headers(options?.headers);
+    if (this.apiKey) headers.set('Authorization', `Bearer ${this.apiKey}`);
+    const response = await fetch(`${snapshot.apiUrl}/${endpoint.replace(/^\/+/, '')}`, { ...options, headers });
+    this.assertCurrent(snapshot);
+    return response;
   }
 
   /**

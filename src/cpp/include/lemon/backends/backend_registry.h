@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <memory>
 #include <string>
 #include "lemon/backends/backend_descriptor.h"
@@ -27,7 +28,7 @@ struct BackendContext {
     const ModelInfo* model_info = nullptr;  // for per-create setup (cloud provider, ryzenai model path)
 };
 
-using BackendCreateFn = std::unique_ptr<WrappedServer> (*)(const BackendContext&);
+using BackendCreateFn = std::function<std::unique_ptr<WrappedServer>(const BackendContext&)>;
 
 // Convenience for the common create(): construct a server class from the
 // standard (log_level, model_manager, backend_manager) context fields.
@@ -57,6 +58,7 @@ struct BackendRegistration {
 };
 
 // All registered (descriptor, create, spec, ops) entries, in LEMON_BACKENDS order.
+const std::vector<BackendRegistration>& builtin_registrations();
 const std::vector<BackendRegistration>& all_registrations();
 
 // Install/download spec for a recipe, or nullptr if the recipe has none.

@@ -19,6 +19,8 @@ That covers the backend's wiring. You still write an integration test ([Testing]
 
 Everything for one backend lives in `lemon::backends::<stem>`. The descriptor is header-only so it links into **both** the `lemonade` CLI and `lemond`; the server class and `create()` are server-only (compiled into `lemond`).
 
+A backend that runs from a definition in `src/cpp/resources/backends/<stem>.json` (see [Runtime local backends](runtime-backends.md)) has no `<stem>.h` and no server class: CMake embeds the definition as `k_<stem>_definition` and generates its descriptor from the definition's `metadata` block, with no CMake edit beyond the `LEMON_BACKENDS` line, and `<stem>_server.cpp` only registers the definition. The descriptor header below is for backends without a definition.
+
 ## The descriptor — `<stem>/<stem>.h`
 
 Plain data. The single object the registry, CLI, `/system-info`, and docs all read.

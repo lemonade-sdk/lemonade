@@ -1,9 +1,11 @@
 import { downloadTracker } from './downloadTracker';
 import type { DownloadProgressEvent } from './downloadTracker';
-import { serverFetch } from './serverConfig';
+import { ConnectionSnapshot, serverConfig, serverFetch } from './serverConfig';
+import { BackendRecipe, Scalar, backendSelector, isUnset, own, validateValue } from '../recipes/backendSchema';
+import { parseModelOptions } from '../recipes/recipeForm';
 import { fetchSystemInfoData, Recipes, SystemData } from './systemData';
 import { ModelsData } from './modelData';
-import { toFrontendOptionName, OPTION_DEFINITIONS } from '../recipes/recipeOptionsConfig';
+import { isLegacyRecipe, toFrontendOptionName, OPTION_DEFINITIONS } from '../recipes/recipeOptionsConfig';
 import { getCollectionComponents, isCollectionModel, isRouterCollection } from './collectionModels';
 
 function extractServerErrorMessage(errorText: string, fallback: string): string {
@@ -141,12 +143,14 @@ async function waitForServerDownloadTerminal(
   abortController: AbortController,
   getAbortReason: () => 'paused' | 'cancelled' | undefined,
   initialJobSeen = false,
+  connection?: ConnectionSnapshot,
 ): Promise<void> {
   let sawServerJob = initialJobSeen;
   let consecutiveMissingSnapshots = 0;
   let snapshotErrorsStartedAt: number | undefined;
 
   while (true) {
+    if (connection) serverConfig.assertCurrent(connection);
     if (abortController.signal.aborted) {
       throw new DownloadAbortError(getAbortReason() ?? 'paused');
     }
@@ -167,6 +171,7 @@ async function waitForServerDownloadTerminal(
       continue;
     }
 
+    if (connection) serverConfig.assertCurrent(connection);
     snapshotErrorsStartedAt = undefined;
 
     if (!snapshot) {
@@ -207,12 +212,14 @@ async function waitForBackendDownloadTerminal(
   recipe: string,
   backend: string,
   abortController: AbortController,
+  connection?: ConnectionSnapshot,
 ): Promise<void> {
   let sawServerJob = false;
   let consecutiveMissingSnapshots = 0;
   let snapshotErrorsStartedAt: number | undefined;
 
   while (true) {
+    if (connection) serverConfig.assertCurrent(connection);
     if (abortController.signal.aborted) {
       throw new DownloadAbortError('paused');
     }
@@ -233,6 +240,7 @@ async function waitForBackendDownloadTerminal(
       continue;
     }
 
+    if (connection) serverConfig.assertCurrent(connection);
     snapshotErrorsStartedAt = undefined;
 
     if (!snapshot) {
@@ -320,8 +328,10 @@ async function consumeLegacyPullStream(response: Response, downloadId: string): 
 export async function installBackend(
   recipe: string,
   backend: string,
-  showInDownloadManager: boolean = true
+  showInDownloadManager: boolean = true,
+  connection?: ConnectionSnapshot
 ): Promise<string | void> {
+  if (connection) serverConfig.assertCurrent(connection);
   const displayName = `${recipe}:${backend}`;
   const abortController = new AbortController();
   const downloadId = downloadTracker.getStableDownloadId(displayName, 'backend');
@@ -333,7 +343,7 @@ export async function installBackend(
   }
 
   try {
-    const response = await serverFetch('/install', {
+    const response = await (connection ? serverConfig.fetchForConnection.bind(serverConfig, connection) : serverFetch)('/install', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ recipe, backend, stream: true, subscribe: false }),
@@ -347,6 +357,7 @@ export async function installBackend(
     }
 
     const data = await response.json();
+    if (connection) serverConfig.assertCurrent(connection);
     if (data.action) {
       if (showInDownloadManager) {
         downloadTracker.completeDownload(downloadId);
@@ -357,11 +368,11 @@ export async function installBackend(
 
     if (showInDownloadManager) {
       downloadTracker.applyServerDownload(data);
-      await waitForBackendDownloadTerminal(downloadId, displayName, recipe, backend, abortController);
+      await waitForBackendDownloadTerminal(downloadId, displayName, recipe, backend, abortController, connection);
       // Backend completion is applied through the server snapshot; downloadTracker
       // emits backendsUpdated once for backend jobs when the terminal snapshot arrives.
     } else {
-      await waitForBackendDownloadTerminal(downloadId, displayName, recipe, backend, abortController);
+      await waitForBackendDownloadTerminal(downloadId, displayName, recipe, backend, abortController, connection);
     }
   } catch (error: any) {
     if (error instanceof DownloadAbortError) {
@@ -391,15 +402,14 @@ export async function ensureBackendForRecipe(
   recipes?: Recipes,
   options?: { autoOpenGuide?: boolean }
 ): Promise<boolean> {
-  if (!recipes || !recipes[recipe]) return false;
-
-  const recipeInfo = recipes[recipe];
+  const recipeInfo = own(recipes, recipe);
+  if (!recipeInfo) return false;
   const defaultBackend = recipeInfo.default_backend;
   if (!defaultBackend) {
     throw new Error(`No supported backend available for recipe ${recipe}.`);
   }
 
-  const backendInfo = recipeInfo.backends[defaultBackend];
+  const backendInfo = own(recipeInfo.backends, defaultBackend);
   if (!backendInfo) {
     throw new Error(`Default backend '${defaultBackend}' not found for recipe ${recipe}.`);
   }
@@ -486,6 +496,7 @@ export async function deleteModel(modelName: string): Promise<void> {
 export async function pullModel(
   modelName: string,
   options?: {
+    connection?: ConnectionSnapshot;
     registrationData?: ModelRegistrationData;
     showInDownloadManager?: boolean;
     collectionComponents?: string[];
@@ -504,6 +515,9 @@ export async function pullModel(
     registrationOnly?: boolean;
   }
 ): Promise<void> {
+  const connection = options?.connection;
+  if (connection) serverConfig.assertCurrent(connection);
+  const request = connection ? serverConfig.fetchForConnection.bind(serverConfig, connection) : serverFetch;
   // Registration-only fast path: persist the definition with a synchronous,
   // non-streaming pull. No Download Manager entry or SSE progress, because
   // nothing is downloaded. Stays cache-first unless the caller opts into upgrade.
@@ -515,7 +529,7 @@ export async function pullModel(
       subscribe: false,
       do_not_upgrade: options.upgrade !== true,
     };
-    const response = await serverFetch('/pull', {
+    const response = await request('/pull', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(requestBody),
@@ -585,7 +599,7 @@ export async function pullModel(
     // Set after registrationData so the helper's decision is authoritative.
     requestBody.do_not_upgrade = options?.upgrade !== true;
 
-    const response = await serverFetch('/pull', {
+    const response = await request('/pull', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(requestBody),
@@ -606,6 +620,7 @@ export async function pullModel(
     }
 
     const startedSnapshot = await response.json();
+    if (connection) serverConfig.assertCurrent(connection);
     downloadTracker.applyServerDownload(startedSnapshot);
 
     await waitForServerDownloadTerminal(
@@ -614,6 +629,7 @@ export async function pullModel(
       abortController,
       () => isCancelled ? 'cancelled' : (isPaused ? 'paused' : undefined),
       true,
+      connection,
     );
 
     // The terminal server snapshot is applied inside waitForServerDownloadTerminal,
@@ -692,9 +708,100 @@ export async function ensureModelReady(
     onModelLoading?: () => void;
     skipHealthCheck?: boolean;
     loadBody?: Record<string, unknown>;
+    catalog?: CatalogLoadContext;
   },
 ): Promise<void> {
+  if (options?.catalog) {
+    await ensureCatalogModelReady(modelName, modelsData, options.loadBody ?? {}, options.catalog);
+    return;
+  }
+  const recipeName = own(modelsData, modelName)?.recipe;
+  if (recipeName && !isLegacyRecipe(recipeName) && !isCollectionModel(own(modelsData, modelName))) {
+    await serverConfig.waitForInit();
+    const { backendCatalogClient } = await import('./backendCatalog');
+    const state = await backendCatalogClient.refresh();
+    const recipe = state.status === 'ready' ? state.catalog.recipes.find(row => row.recipe === recipeName) : undefined;
+    if (recipe?.source === 'external') {
+      if (!options?.skipHealthCheck) {
+        const health = await serverConfig.fetchForConnection(state.connection, '/health');
+        if (health.ok) {
+          const snapshot = await health.json();
+          serverConfig.assertCurrent(state.connection);
+          if (snapshot.all_models_loaded?.some((model: { model_name: string }) => model.model_name === modelName)) return;
+        }
+      }
+      const response = await serverConfig.fetchForConnection(state.connection, `/models/${encodeURIComponent(modelName)}/options`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...options?.loadBody, pinned: undefined, save_options: undefined, dry_run: true }),
+      });
+      if (!response.ok) throw new Error('The server rejected model options.');
+      const snapshot = parseModelOptions(await response.json(), recipeName, modelName);
+      serverConfig.assertCurrent(state.connection);
+      options?.onModelLoading?.();
+      await ensureCatalogModelReady(modelName, modelsData, options?.loadBody ?? {}, { connection: state.connection, recipe, effective: snapshot.effective });
+      return;
+    }
+  }
   await ensureModelReadyInternal(modelName, modelsData, options, new Set<string>());
+}
+
+export interface CatalogLoadContext {
+  connection: ConnectionSnapshot;
+  recipe: BackendRecipe;
+  effective: Record<string, Scalar>;
+}
+
+export function catalogBackend(context: CatalogLoadContext, recipes?: Recipes): string | null {
+  const selector = backendSelector(context.recipe);
+  if (!selector) return null;
+  const value = own(context.effective, selector);
+  const option = context.recipe.options.find(item => item.name === selector);
+  if (value !== undefined && option && !isUnset(option, value)) {
+    if (typeof value !== 'string') throw new Error('Invalid backend selector value.');
+    return value;
+  }
+  return own(recipes, context.recipe.recipe)?.default_backend ?? null;
+}
+
+async function ensureCatalogModelReady(modelName: string, models: ModelsData, body: Record<string, unknown>, context: CatalogLoadContext): Promise<void> {
+  const { connection, recipe } = context;
+  const guard = () => serverConfig.assertCurrent(connection);
+  guard();
+  if (recipe.incompatibility || own(models, modelName)?.recipe !== recipe.recipe) throw new Error('Model recipe or option contract changed.');
+  for (const [key, value] of Object.entries(body)) {
+    if (key === 'pinned' && typeof value === 'boolean') continue;
+    if (key === 'save_options' && value === false) continue;
+    const option = recipe.options.find(item => item.name === key);
+    if (!option || (value !== null && validateValue(option, value as Scalar))) throw new Error(`Invalid option: ${key}`);
+  }
+  const request = serverConfig.fetchForConnection.bind(serverConfig, connection);
+  const system = await fetchSystemInfoData(connection);
+  guard();
+  const backend = catalogBackend(context, system.info?.recipes);
+  if (backend) {
+    const info = own(own(system.info?.recipes, recipe.recipe)?.backends, backend);
+    if (!info) throw new Error('Selected backend is unavailable on the selected server.');
+    if (info.state === 'installable' || info.state === 'update_required') {
+      guard();
+      const result = await installBackend(recipe.recipe, backend, true, connection);
+      guard();
+      if (result === 'action') throw new Error('Complete the server backend setup before loading.');
+    } else if (info.state !== 'installed' && info.state !== 'update_available') throw new Error(info.message || 'Backend setup is required on the selected server.');
+  }
+  const response = await request(`/models/${encodeURIComponent(modelName)}`);
+  if (!response.ok) throw new Error('Cannot verify the selected model.');
+  const model = await response.json();
+  guard();
+  if (model.recipe !== recipe.recipe) throw new Error('Model recipe changed; reopen its options.');
+  if (!model.downloaded) {
+    guard();
+    await pullModel(modelName, { connection, declaredSizeGB: own(models, modelName)?.size });
+  }
+  guard();
+  const load = await request('/load', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...body, model_name: modelName, save_options: false }) });
+  if (!load.ok) throw new Error('The selected server rejected the model load.');
+  guard();
 }
 
 interface PreflightShared {

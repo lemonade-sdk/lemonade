@@ -1,27 +1,28 @@
-#include "lemon/backends/fastflowlm/fastflowlm_server.h"
+#include <algorithm>
+#include <chrono>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include <iostream>
+#include "lemon/audio_types.h"
+#include "lemon/backends/backend_ops.h"
+#include "lemon/backends/backend_registry.h"
+#include "lemon/backends/backend_utils.h"
 #include "lemon/backends/fastflowlm/fastflowlm.h"
 #include "lemon/backends/fastflowlm/fastflowlm_models.h"
+#include "lemon/backends/fastflowlm/fastflowlm_server.h"
 #include "lemon/backends/fastflowlm/flm_arg_resolver.h"
-#include "lemon/backends/backend_registry.h"
-#include "lemon/backends/backend_ops.h"
-#include "lemon/backends/backend_utils.h"
-#include "lemon/audio_types.h"
+#include "lemon/error_types.h"
 #include "lemon/model_manager.h"
 #include "lemon/system_info.h"
-#include "lemon/error_types.h"
-#include "lemon/utils/process_manager.h"
+#include <lemon/utils/aixlog.hpp>
+#include "lemon/utils/audio_mime.h"
 #include "lemon/utils/http_client.h"
-#include "lemon/utils/path_utils.h"
 #include "lemon/utils/json_utils.h"
-#include <iostream>
-#include <filesystem>
-#include <cstdlib>
+#include "lemon/utils/path_utils.h"
+#include "lemon/utils/process_manager.h"
 #include <optional>
 #include <thread>
-#include <chrono>
-#include <fstream>
-#include <algorithm>
-#include <lemon/utils/aixlog.hpp>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -64,6 +65,7 @@ InstallParams FastFlowLMServer::get_install_params(const std::string& backend, c
 FastFlowLMServer::FastFlowLMServer(const std::string& log_level, ModelManager* model_manager,
                                    BackendManager* backend_manager)
     : WrappedServer("FastFlowLM", log_level, model_manager, backend_manager) {
+    bind_legacy_operations(LegacyOperationProfile::FastFlowLM, *this);
 }
 
 std::string FastFlowLMServer::download_model(const std::string& checkpoint, bool do_not_upgrade,
@@ -302,12 +304,7 @@ json FastFlowLMServer::audio_transcriptions(const json& request) {
 
         std::filesystem::path filepath(filename);
         std::string ext = filepath.extension().string();
-        std::string content_type = "audio/wav";
-        if (ext == ".mp3") content_type = "audio/mpeg";
-        else if (ext == ".m4a") content_type = "audio/mp4";
-        else if (ext == ".ogg") content_type = "audio/ogg";
-        else if (ext == ".flac") content_type = "audio/flac";
-        else if (ext == ".webm") content_type = "audio/webm";
+        std::string content_type = utils::audio_mime_for_extension(ext);
 
         std::vector<utils::MultipartField> fields;
 

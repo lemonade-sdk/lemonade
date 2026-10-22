@@ -1,0 +1,17 @@
+{
+  "schema_version": 2,
+  "id": "builtin-leaf",
+  "recipe": "builtin-leaf",
+  "extends": {
+    "builtin": "test-export",
+    "contract": 1
+  },
+  "merge": {
+    "hooks": {
+      "launch": {
+        "id": "llamacpp.prepare.v1",
+        "params": {}
+      }
+    }
+  }
+}
