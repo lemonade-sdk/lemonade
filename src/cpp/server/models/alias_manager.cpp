@@ -259,26 +259,27 @@ void AliasManager::load() {
 }
 
 void AliasManager::save() {
-    std::string current_cache_dir;
-    std::map<std::string, std::string> aliases_copy;
-    {
-        std::shared_lock lock(mutex_);
-        current_cache_dir = cache_dir_;
-        aliases_copy = aliases_;
-    }
-
-    if (current_cache_dir.empty()) {
+    // Snapshotting the map and renaming the file are one operation. A save that copied
+    // first and wrote second can land newest-first, and the older file then wins the
+    // rename - which is a registered alias vanishing at the next restart. Both callers
+    // arrive holding no lock, so taking the exclusive one here cannot recurse.
+    std::unique_lock lock(mutex_);
+    if (cache_dir_.empty()) {
         return;
     }
 
-    fs::path cache_path = utils::path_from_utf8(current_cache_dir);
+    fs::path cache_path = utils::path_from_utf8(cache_dir_);
     if (!fs::exists(cache_path)) {
         std::error_code ec;
         fs::create_directories(cache_path, ec);
     }
 
     fs::path target_path = cache_path / "aliases.json";
-    fs::path temp_path = cache_path / "aliases.json.tmp";
+    // One temp name per save: a file another writer abandoned cannot be renamed into
+    // place, and two processes sharing a cache directory never write the same file.
+    const fs::path temp_path =
+        cache_path / ("aliases.json." + std::to_string(++save_sequence_) + ".tmp");
+    const std::map<std::string, std::string> aliases_copy = aliases_;
 
     // Scope output file stream so handle closes before rename/copy
     {

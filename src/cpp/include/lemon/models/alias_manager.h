@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <filesystem>
 #include <map>
 #include <optional>
@@ -52,13 +53,19 @@ public:
 
     /**
      * Save current aliases to cache_dir / "aliases.json".
+     *
+     * Holds the exclusive lock from the snapshot of the map through the rename, so a
+     * save can never land after a newer one. Callers must hold no lock when calling it.
      */
     void save();
 
 private:
     std::string cache_dir_;
+    // Guards the map and, with it, the order saves reach the file: a save holds this
+    // from the copy of the map through the rename.
     mutable std::shared_mutex mutex_;
     std::map<std::string, std::string> aliases_;
+    uint64_t save_sequence_ = 0;
 };
 
 }  // namespace models

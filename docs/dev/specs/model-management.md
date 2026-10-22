@@ -677,7 +677,7 @@ struct ResolvedModel {
 Rules:
 
 1. The snapshot wins over an alias, and `POST /internal/aliases` rejects an alias that collides with a canonical model name with 409, so a colliding pair cannot be created.
-2. `AliasManager` lives at `src/cpp/include/lemon/models/alias_manager.h` with its implementation in `src/cpp/server/models/alias_manager.cpp`. It owns `<cache_dir>/aliases.json` in mode `0600`, writes it on every mutation, prunes cyclic chains at load, and guards its map with one `std::shared_mutex`. `ModelManager` constructs the one instance from `ModelManagerConfig.cache_dir`; the alias routes and `lemonade alias` reach it through `ModelManager::set_alias()` and `ModelManager::remove_alias()`, which delegate to that instance.
+2. `AliasManager` lives at `src/cpp/include/lemon/models/alias_manager.h` with its implementation in `src/cpp/server/models/alias_manager.cpp`. It owns `<cache_dir>/aliases.json` in mode `0600`, writes it on every mutation, prunes cyclic chains at load, and guards its map with one `std::shared_mutex`. A save holds that lock exclusively from the snapshot of the map through the rename, and names its temporary file `aliases.json.<n>.tmp` with a counter under it: two mutations that each copied the map and then wrote would otherwise land newest-first, and the older file renaming last is a registered alias gone by the next restart. Both call sites arrive holding no lock. `ModelManager` constructs the one instance from `ModelManagerConfig.cache_dir`; the alias routes and `lemonade alias` reach it through `ModelManager::set_alias()` and `ModelManager::remove_alias()`, which delegate to that instance.
 3. Aliases are consulted at resolution time, never folded into the snapshot. An alias mutation takes effect on the next request with no store rebuild and no generation bump.
 4. `ModelStore` holds a `const AliasManager&` — the one instance `ModelManager` constructs — with no interface between them.
 5. `get_all_aliases()` returns a `std::map`, so `/internal/aliases` and the alias rows of `/v1/models` come out in a stable order and a golden test is reproducible.
@@ -1475,7 +1475,7 @@ This section assigns each piece of state to one owner and one synchronization st
 | Recipe options map | `RecipeOptionsStore` | one mutex for reads, one for rewrites |
 | Sync queue, worker and sync state | `SyncService` | one worker thread, its own mutex and condition variable |
 | Per-repository download locks | `ModelIngest` | one map of mutexes behind one guard |
-| Alias map | `AliasManager` | one `std::shared_mutex` |
+| Alias map, and the order saves of `aliases.json` reach the disk | `AliasManager` | one `std::shared_mutex`, taken exclusively across a whole save |
 | Notifier callbacks | `ModelChangeNotifier` | one mutex held only to read the stored callback; the callback runs unlocked, after the swap |
 
 Rules:

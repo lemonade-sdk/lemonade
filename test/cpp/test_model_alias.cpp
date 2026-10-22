@@ -9,6 +9,7 @@
 #include <iostream>
 #include <memory>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace fs = std::filesystem;
@@ -18,6 +19,11 @@ static int g_failures = 0;
 
 static void check(const char* name, bool ok) {
     std::printf("[%s] %s\n", ok ? "PASS" : "FAIL", name);
+    if (!ok) ++g_failures;
+}
+
+static void check(const char* name, bool ok, const std::string& detail) {
+    std::printf("[%s] %s -- %s\n", ok ? "PASS" : "FAIL", name, detail.c_str());
     if (!ok) ++g_failures;
 }
 
@@ -166,9 +172,68 @@ static void test_alias_listing_is_sorted() {
     check("reloaded listing is sorted too", again == listed);
 }
 
+// Every alias a client registered must be on disk when the registrations return.
+// One round proves nothing about a race, so the round is repeated and the assertion
+// is that no round loses an alias or leaves a file that will not parse.
+static void test_concurrent_saves_lose_nothing() {
+    constexpr int kWriters = 8;
+    constexpr int kPerWriter = 8;
+    constexpr int kRounds = 12;
+
+    int lost_in_round = -1;
+    size_t lost_found = 0;
+    int corrupted_in_round = -1;
+    for (int round = 0; round < kRounds; ++round) {
+        fs::path temp_dir = make_temp_dir();
+        AliasManager mgr(temp_dir.string());
+
+        std::vector<std::thread> writers;
+        writers.reserve(kWriters);
+        for (int w = 0; w < kWriters; ++w) {
+            writers.emplace_back([&mgr, w] {
+                std::string err;
+                for (int i = 0; i < kPerWriter; ++i) {
+                    mgr.set_alias("w" + std::to_string(w) + "-" + std::to_string(i),
+                                  "Tiny-Test-Model-GGUF", err);
+                }
+            });
+        }
+        for (std::thread& writer : writers) {
+            writer.join();
+        }
+
+        const bool quarantined = fs::exists(temp_dir / "aliases.json.corrupted");
+        AliasManager reloaded(temp_dir.string());
+        if (quarantined && corrupted_in_round < 0) {
+            corrupted_in_round = round;
+        }
+        const size_t reloaded_count = reloaded.get_all_aliases().size();
+        if (reloaded_count != kWriters * kPerWriter && lost_in_round < 0) {
+            lost_in_round = round;
+            lost_found = reloaded_count;
+        }
+        std::error_code ec;
+        fs::remove_all(temp_dir, ec);
+    }
+
+    check("concurrent saves keep every alias", lost_in_round < 0,
+          lost_in_round < 0
+              ? "all " + std::to_string(kWriters * kPerWriter) + " aliases reloaded in all " +
+                    std::to_string(kRounds) + " rounds"
+              : "round " + std::to_string(lost_in_round) + " reloaded " +
+                    std::to_string(lost_found) + " of " +
+                    std::to_string(kWriters * kPerWriter));
+    check("concurrent saves leave a file that parses", corrupted_in_round < 0,
+          corrupted_in_round < 0
+              ? "nothing quarantined"
+              : "round " + std::to_string(corrupted_in_round) +
+                    " was quarantined as aliases.json.corrupted");
+}
+
 int main() {
     std::printf("Running Standalone AliasManager Unit Tests...\n");
 
+    test_concurrent_saves_lose_nothing();
     test_alias_manager_basic();
     test_alias_manager_validation_and_cycles();
     test_alias_corrupted_json_recovery();
