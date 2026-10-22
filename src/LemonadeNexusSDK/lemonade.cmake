@@ -3,6 +3,7 @@ if(NOT LEMONADE_WITH_NEXUS)
 endif()
 include(ExternalProject)
 set(LEMONADE_NEXUS_CMAKE_ARGS "" CACHE STRING "Additional client SDK CMake arguments")
+set(LEMONADE_NEXUS_CARGO_VENDOR_DIR "" CACHE PATH "Directory from cargo vendor; builds the Rust transport offline")
 set(_nexus_deployment_target "${CMAKE_OSX_DEPLOYMENT_TARGET}")
 if(APPLE AND NOT _nexus_deployment_target)
     set(_nexus_deployment_target "10.15")
@@ -28,6 +29,7 @@ ExternalProject_Add(nexus-sdk-build
         -DCMAKE_OSX_ARCHITECTURES=${CMAKE_OSX_ARCHITECTURES}
         -DCMAKE_OSX_DEPLOYMENT_TARGET=${_nexus_deployment_target}
         -DNEXUS_CARGO_EXECUTABLE=${LEMONADE_CARGO_EXECUTABLE}
+        -DNEXUS_CARGO_VENDOR_DIR=${LEMONADE_NEXUS_CARGO_VENDOR_DIR}
         ${LEMONADE_NEXUS_CMAKE_ARGS}
     BUILD_COMMAND ${CMAKE_COMMAND} --build <BINARY_DIR> --config Release --target lemonade_nexus_sdk
     INSTALL_COMMAND ""

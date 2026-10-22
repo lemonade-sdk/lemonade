@@ -183,20 +183,35 @@ without management controls. Live events have a five-second polling fallback.
 
 ## Building and verification
 
-`LEMONADE_WITH_NEXUS` defaults to `ON` when Cargo 1.85 or newer is in `PATH`,
-and to `OFF` otherwise. An explicit `ON` without that toolchain fails at
-configuration. `OFF` builds without SDK dependencies and reports Nexus
-unavailable. The Debian package builds with `OFF` because its builders cannot
-download the Rust crates. The SDK uses C++20 separately from Lemonade's C++17
+`LEMONADE_WITH_NEXUS` defaults to `ON` when Cargo 1.85 or newer is found, and
+to `OFF` otherwise. CMake looks in `PATH`, then in `/usr/lib/rust-1.*/bin`,
+where Ubuntu's versioned `cargo-1.xx` packages install. Set
+`LEMONADE_CARGO_EXECUTABLE` to choose one. An explicit `ON` without that
+toolchain fails at configuration. `OFF` builds without SDK dependencies and
+reports Nexus unavailable.
+
+Rust 1.85 is a real minimum: the locked `zeroize` 1.9 uses edition 2024, and
+Cargo 1.75 cannot read the version 4 lockfiles. Ubuntu 24.04's `cargo` is 1.75;
+its `cargo-1.85` package from noble-updates builds both crates. Debian 13 ships
+Cargo 1.85 and Ubuntu 26.04 ships 1.93 as `cargo`.
+
+The SDK uses C++20 separately from Lemonade's C++17
 core, CMake 3.25.1+, and Rust/Cargo 1.85+. Linux can use system OpenSSL,
 libsodium, JSON, spdlog and cpp-httplib 0.18.3+; pinned sources are the fallback.
 Windows and macOS bundle SDK dependencies. Linux desktop builds additionally
 need `libudev-dev`.
 
-Offline distro builds must supply locked Rust crates through a local Cargo
-registry, then pass `-DNEXUS_CARGO_OFFLINE=ON` in `LEMONADE_NEXUS_CMAKE_ARGS`.
-Dependency sources can be provided with `FETCHCONTENT_SOURCE_DIR_*`. These
-settings do not require a sibling Nexus checkout.
+Offline builds set `LEMONADE_NEXUS_CARGO_VENDOR_DIR` to a `cargo vendor`
+directory that holds every locked crate; Cargo then runs with `--offline`.
+The Debian package does this: `debian/vendor-rust-crates` vendors both crates
+into `debian/rust-vendor` after the build dependencies are installed and before
+`dpkg-buildpackage`, so the source package carries them for Launchpad. The
+directory is about 120 MB (18 MB compressed) after the script drops the Windows
+import libraries, and it is never committed. The Debian build uses the system
+OpenSSL, libsodium, spdlog, JSON and cpp-httplib packages, so it needs no other
+downloads. Other dependency sources can be provided with
+`FETCHCONTENT_SOURCE_DIR_*`. These settings do not require a sibling Nexus
+checkout.
 
 Checks cover SDK compilation on macOS and Ubuntu 24.04 amd64, userspace TCP forwarding and teardown, server
 routing/lock/persistence/control isolation, remote management authorization and

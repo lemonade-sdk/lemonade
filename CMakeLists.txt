@@ -34,22 +34,13 @@ set(LEMONADE_MSI_VERSION
 message(STATUS "Lemonade version: ${PROJECT_VERSION}")
 
 include(CTest)
-# The SDK's Rust transport needs Cargo 1.85+. Builders without it (distro
-# containers, offline packaging) default to OFF instead of failing at build time.
-find_program(LEMONADE_CARGO_EXECUTABLE cargo)
-set(_nexus_toolchain_found OFF)
-if(LEMONADE_CARGO_EXECUTABLE)
-    execute_process(COMMAND "${LEMONADE_CARGO_EXECUTABLE}" --version
-        OUTPUT_VARIABLE _cargo_version_output ERROR_QUIET RESULT_VARIABLE _cargo_version_result)
-    string(REGEX MATCH "[0-9]+\\.[0-9]+\\.[0-9]+" _cargo_version "${_cargo_version_output}")
-    if(_cargo_version_result EQUAL 0 AND _cargo_version VERSION_GREATER_EQUAL 1.85)
-        set(_nexus_toolchain_found ON)
-    endif()
-endif()
+# Builders without Cargo 1.85+ default to OFF instead of failing at build time.
+include(${CMAKE_SOURCE_DIR}/cmake/NexusRustToolchain.cmake)
 option(LEMONADE_WITH_NEXUS "Build the Nexus client SDK (requires Cargo 1.85+)" ${_nexus_toolchain_found})
 if(LEMONADE_WITH_NEXUS AND NOT _nexus_toolchain_found)
-    message(FATAL_ERROR "LEMONADE_WITH_NEXUS=ON requires Cargo 1.85 or newer in PATH. "
-        "Install Rust with rustup or configure with -DLEMONADE_WITH_NEXUS=OFF.")
+    message(FATAL_ERROR "LEMONADE_WITH_NEXUS=ON requires Cargo 1.85 or newer, in PATH or as "
+        "/usr/lib/rust-1.*/bin/cargo. Install Rust with rustup or the cargo-1.85 package, "
+        "set LEMONADE_CARGO_EXECUTABLE, or configure with -DLEMONADE_WITH_NEXUS=OFF.")
 endif()
 message(STATUS "Nexus client SDK: ${LEMONADE_WITH_NEXUS}")
 
