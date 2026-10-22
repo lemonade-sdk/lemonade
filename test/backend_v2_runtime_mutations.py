@@ -688,8 +688,8 @@ def mutations():
         (
             "probe-shell-string",
             SERVICES,
-            'utils::ProcessManager::capture_output(executable, {"--version"}, bytes, wait, cancel)',
-            'utils::ProcessManager::capture_output("/bin/sh", {"-c", executable + " --version"}, bytes, wait, cancel)',
+            'utils::ProcessManager::capture_output(executable, {"--version"}, bytes, wait, cancel, utils::CaptureOutput::Stdout)',
+            'utils::ProcessManager::capture_output("/bin/sh", {"-c", executable + " --version"}, bytes, wait, cancel, utils::CaptureOutput::Stdout)',
             "runtime_services",
             "FixedProbeNeverUsesShellOrArbitraryExecutable",
         ),

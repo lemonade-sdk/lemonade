@@ -8,64 +8,95 @@
 
 namespace runtime_fixture {
 
+inline Json llamacpp_install_case(const Json& input, const std::string& view,
+    const std::shared_ptr<const ExecutableDefinition>& executable, const ConfiguredBackendEntry& entry) {
+    std::ifstream pins_file(std::string(LEMON_TEST_FIXTURES) + "/llamacpp-oracle/pins.json");
+    const auto pins = Json::parse(pins_file);
+    const DefinitionRunner runner(executable);
+    const std::string os = view.rfind("windows", 0) == 0 ? "windows" : view.rfind("macos", 0) == 0 ? "macos" : "linux";
+    const std::string machine = view.find("arm64") == std::string::npos ? "x86_64" : "aarch64";
+    Json events = Json::array(), actual = Json::object();
+    const auto facts = input.value("facts", Json::object());
+    const auto unsupported = [&](const std::string& backend) -> std::string {
+        events.push_back("unsupported:" + backend);
+        throw std::runtime_error("injected unsupported backend: " + backend);
+    };
+    rt::InstallFactSources sources{
+        [&] {
+            events.push_back("versions:resources/backend_versions.json");
+            const auto config = facts.value("versions", pins);
+            if (!config.contains("therock") || !config["therock"].is_object() || !config["therock"].contains("version") || !config["therock"]["version"].is_string())
+                throw std::runtime_error("backend_versions.json is missing 'therock.version'");
+            return config["therock"]["version"].get<std::string>();
+        },
+        [&] {
+            events.push_back("rocm-arch");
+            const auto family = SystemInfo::rocm_asset_family(facts.value("rocm_arch", "gfx1151"));
+            return family.empty() ? unsupported("rocm-nightly") : family;
+        },
+        [&] {
+            events.push_back("cuda-arch");
+            const auto architecture = facts.value("cuda_arch", "sm_120");
+            return architecture.empty() ? unsupported("cuda") : architecture;
+        },
+        [&] { events.push_back("runtime-config"); return facts.value("no_config", false) ? "stable" : facts.value("channel", "stable"); }
+    };
+    const auto phase = input.at("phase") == "repository" ? InstallPhase::Repository : InstallPhase::Asset;
+    InstallContext context{entry.spec, {}, "llamacpp", "llamacpp", input.at("backend"), "", "b1111", "b2222", {os, machine, ""}, phase, executable};
+    try {
+        const auto params = runner.install_params(context, sources);
+        actual["params"] = {{"repo", params.repo}, {"filename", params.filename}, {"version_override", params.version_override}, {"sha256", params.sha256}};
+        actual["spec"] = {{"recipe", entry.spec.recipe}, {"binary", entry.spec.binary}, {"pin_recipe", entry.spec.pin_recipe},
+            {"public_recipe", entry.spec.public_recipe}, {"split_archive", entry.spec.supports_split_archive}};
+        actual["error"] = "";
+    } catch (const std::invalid_argument& error) {
+        actual["error"] = error.what(); actual["exception"] = "invalid_argument";
+    } catch (const std::exception& error) {
+        actual["error"] = error.what(); actual["exception"] = "exception";
+    }
+    actual["events"] = events;
+    actual["command"] = nullptr;
+    return actual;
+}
+
+inline Json llamacpp_runtime_case(const Json& input, const std::string& view,
+    const std::shared_ptr<const ExecutableDefinition>& executable) {
+    const DefinitionRunner runner(executable);
+    RecipeOptions options("llamacpp", {{"ctx_size", 4096}, {"llamacpp_backend", view == "macos_arm64" ? "metal" : "cpu"}});
+    options.set_option("llamacpp_device", ""); options.set_option("llamacpp_args", "");
+    const auto option_values = input.value("options", Json::object());
+    for (const auto& [key, value] : option_values.items()) options.set_option(key, value);
+    const auto model_input = input.value("model", Json::object());
+    ModelInfo info;
+    info.labels = model_input.value("labels", std::vector<std::string>{});
+    info.checkpoints["draft"] = model_input.value("draft_checkpoint", "");
+    Json actual = {{"requested_options", options.to_json()}, {"events", Json::array()}, {"command", nullptr}};
+    try {
+        runner.resolve_runtime_options(info, options);
+        actual["resolved_options"] = options.to_json(); actual["error"] = "";
+    } catch (const std::invalid_argument& error) {
+        actual["error"] = error.what(); actual["exception"] = "invalid_argument";
+    } catch (const std::exception& error) {
+        actual["error"] = error.what(); actual["exception"] = "exception";
+    }
+    return actual;
+}
+
 inline void llamacpp_install_parity(const std::shared_ptr<const ExecutableDefinition>& executable,
     const ConfiguredBackendEntry& entry) {
     const auto load = [](const std::string& name) {
         std::ifstream input(std::string(LEMON_TEST_FIXTURES) + "/llamacpp-oracle/" + name + ".json");
         return Json::parse(input);
     };
-    const auto cases = load("cases"), pins = load("pins");
-    const DefinitionRunner runner(executable);
+    const auto cases = load("cases");
     unsigned matched = 0;
     for (const auto& view : std::array<std::string, 4>{"linux_x64", "linux_arm64", "windows_x64", "macos_arm64"}) {
         const auto expected = load(view);
-        const std::string os = view.rfind("windows", 0) == 0 ? "windows" : view.rfind("macos", 0) == 0 ? "macos" : "linux";
-        const std::string machine = view.find("arm64") == std::string::npos ? "x86_64" : "aarch64";
         unsigned count = 0;
         for (const auto& input : cases) {
             if (input.at("kind") != "install") continue;
             ++count;
-            Json events = Json::array(), actual = Json::object();
-            const auto facts = input.value("facts", Json::object());
-            const auto unsupported = [&](const std::string& backend) -> std::string {
-                events.push_back("unsupported:" + backend);
-                throw std::runtime_error("injected unsupported backend: " + backend);
-            };
-            rt::InstallFactSources sources{
-                [&] {
-                    events.push_back("versions:resources/backend_versions.json");
-                    const auto config = facts.value("versions", pins);
-                    if (!config.contains("therock") || !config["therock"].is_object() || !config["therock"].contains("version") || !config["therock"]["version"].is_string())
-                        throw std::runtime_error("backend_versions.json is missing 'therock.version'");
-                    return config["therock"]["version"].get<std::string>();
-                },
-                [&] {
-                    events.push_back("rocm-arch");
-                    const auto family = SystemInfo::rocm_asset_family(facts.value("rocm_arch", "gfx1151"));
-                    return family.empty() ? unsupported("rocm-nightly") : family;
-                },
-                [&] {
-                    events.push_back("cuda-arch");
-                    const auto architecture = facts.value("cuda_arch", "sm_120");
-                    return architecture.empty() ? unsupported("cuda") : architecture;
-                },
-                [&] { events.push_back("runtime-config"); return facts.value("no_config", false) ? "stable" : facts.value("channel", "stable"); }
-            };
-            const auto phase = input.at("phase") == "repository" ? InstallPhase::Repository : InstallPhase::Asset;
-            InstallContext context{entry.spec, {}, "llamacpp", "llamacpp", input.at("backend"), "", "b1111", "b2222", {os, machine, ""}, phase, executable};
-            try {
-                const auto params = runner.install_params(context, sources);
-                actual["params"] = {{"repo", params.repo}, {"filename", params.filename}, {"version_override", params.version_override}, {"sha256", params.sha256}};
-                actual["spec"] = {{"recipe", entry.spec.recipe}, {"binary", entry.spec.binary}, {"pin_recipe", entry.spec.pin_recipe},
-                    {"public_recipe", entry.spec.public_recipe}, {"split_archive", entry.spec.supports_split_archive}};
-                actual["error"] = "";
-            } catch (const std::invalid_argument& error) {
-                actual["error"] = error.what(); actual["exception"] = "invalid_argument";
-            } catch (const std::exception& error) {
-                actual["error"] = error.what(); actual["exception"] = "exception";
-            }
-            actual["events"] = events;
-            actual["command"] = nullptr;
+            const auto actual = llamacpp_install_case(input, view, executable, entry);
             const auto id = input.at("id").get<std::string>();
             const auto difference = Json::diff(expected.at("cases").at(id), actual);
             check(difference.empty(), "FrozenInstallParity:" + view + ":" + id);
@@ -83,7 +114,6 @@ inline void llamacpp_runtime_parity(const std::shared_ptr<const ExecutableDefini
         return Json::parse(input);
     };
     const auto cases = load("cases");
-    const DefinitionRunner runner(executable);
     unsigned matched = 0;
     for (const auto& view : std::array<std::string, 4>{"linux_x64", "linux_arm64", "windows_x64", "macos_arm64"}) {
         const auto expected = load(view);
@@ -91,23 +121,7 @@ inline void llamacpp_runtime_parity(const std::shared_ptr<const ExecutableDefini
         for (const auto& input : cases) {
             if (input.at("kind") != "runtime") continue;
             ++count;
-            RecipeOptions options("llamacpp", {{"ctx_size", 4096}, {"llamacpp_backend", view == "macos_arm64" ? "metal" : "cpu"}});
-            options.set_option("llamacpp_device", ""); options.set_option("llamacpp_args", "");
-            const auto option_values = input.value("options", Json::object());
-            for (const auto& [key, value] : option_values.items()) options.set_option(key, value);
-            const auto model_input = input.value("model", Json::object());
-            ModelInfo info;
-            info.labels = model_input.value("labels", std::vector<std::string>{});
-            info.checkpoints["draft"] = model_input.value("draft_checkpoint", "");
-            Json actual = {{"requested_options", options.to_json()}, {"events", Json::array()}, {"command", nullptr}};
-            try {
-                runner.resolve_runtime_options(info, options);
-                actual["resolved_options"] = options.to_json(); actual["error"] = "";
-            } catch (const std::invalid_argument& error) {
-                actual["error"] = error.what(); actual["exception"] = "invalid_argument";
-            } catch (const std::exception& error) {
-                actual["error"] = error.what(); actual["exception"] = "exception";
-            }
+            const auto actual = llamacpp_runtime_case(input, view, executable);
             const auto id = input.at("id").get<std::string>();
             const auto difference = Json::diff(expected.at("cases").at(id), actual);
             check(difference.empty(), "FrozenRuntimeParity:" + view + ":" + id);

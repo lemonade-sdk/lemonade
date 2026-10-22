@@ -344,15 +344,18 @@ def main():
             raise ValueError(f"Mutation anchor must be unique: {name}")
         copied = directory / source.name
         copied.write_text(original.replace(before, after, 1))
-        target = "test_backend_" + suite
+        target = suite if suite.startswith("test_") else "test_backend_" + suite
         candidates = [row for row in commands if Path(row["file"]) == source]
         entry = next(
-            (
-                row
-                for row in candidates
-                if "lemonade-typed-hook-test.dir" in row["command"]
+            (row for row in candidates if target + ".dir" in row["command"]),
+            next(
+                (
+                    row
+                    for row in candidates
+                    if "lemonade-typed-hook-test.dir" in row["command"]
+                ),
+                candidates[0],
             ),
-            candidates[0],
         )
         compile_command = shlex.split(entry["command"])
         old_object = compile_command[compile_command.index("-o") + 1]

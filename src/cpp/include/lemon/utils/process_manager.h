@@ -13,6 +13,8 @@ struct ProcessHandle {
     int pid;
 };
 
+enum class CaptureOutput { Combined, Stdout };
+
 struct CapturedProcess {
     std::string output;
     int exit_code = -1;
@@ -62,7 +64,7 @@ public:
     static int reap_process(ProcessHandle handle);
 
     static CapturedProcess capture_output(const std::string& executable, const std::vector<std::string>& args,
-        std::size_t max_bytes, unsigned timeout_ms, const std::function<bool()>& cancelled = {});
+        std::size_t max_bytes, unsigned timeout_ms, const std::function<bool()>& cancelled = {}, CaptureOutput output = CaptureOutput::Combined);
 
     // Kill process forcefully and wait/close owned handles.
     static void kill_process(ProcessHandle handle);

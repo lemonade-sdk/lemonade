@@ -92,7 +92,14 @@ struct ProbeSources {
     std::function<bool()> kfd;
     std::function<bool()> hip_plugin;
 };
-ProbeSources probe_sources();
+struct ProbeFiles {
+    std::function<std::optional<std::string>(const std::string&)> environment;
+    std::function<bool(const std::string&)> regular;
+    std::function<bool(const std::string&)> executable;
+    std::function<bool(const std::string&)> exists;
+};
+ProbeFiles probe_files();
+ProbeSources probe_sources(ProbeFiles files = probe_files());
 class SystemServices final : public typed::SystemProbeServices {
 public:
     SystemServices(InvocationGuard& guard, typed::SystemInstallInput input, ProbeSources sources);

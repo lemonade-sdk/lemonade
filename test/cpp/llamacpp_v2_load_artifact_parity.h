@@ -1,6 +1,7 @@
 #pragma once
 
 #include "llamacpp_v2_parity.h"
+#include "support/test_state_isolation.h"
 
 #include <filesystem>
 
@@ -172,9 +173,8 @@ void write_string(std::ostream& output, const std::string& value) {
 }
 
 inline Json artifact_case(const Json& input, const DefinitionRunner& runner) {
-    const auto temp_path = fs::temp_directory_path() / "llamacpp-v2-artifacts";
-    fs::remove_all(temp_path); fs::create_directories(temp_path);
-    struct Cleanup { fs::path path; ~Cleanup() { fs::remove_all(path); } } temp{temp_path};
+    const auto temp_path = test::make_scratch_dir("llamacpp-v2-artifacts");
+    struct Cleanup { fs::path path; ~Cleanup() { std::error_code error; fs::remove_all(path, error); } } temp{temp_path};
     const fs::path cache = temp.path / "cache";
     if (input.value("create_cache", true)) fs::create_directory(cache);
     const Json file_values = input.value("files", Json::object());

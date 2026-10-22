@@ -175,7 +175,7 @@ def main():
         f"{len(results)}/{len(results)} declaration mutants caught by named assertions; control passed"
     )
     print(
-        "This declaration audit does not cover runtime behavior; use backend_v2_llamacpp_runtime_mutations.py for the implemented runtime rules. The deliberate-diff gate remains unimplemented."
+        "This declaration audit does not cover runtime behavior; use backend_v2_llamacpp_runtime_mutations.py for the implemented runtime rules. Use backend_v2_llamacpp_diff_mutations.py for the deliberate-diff gate."
     )
 
 

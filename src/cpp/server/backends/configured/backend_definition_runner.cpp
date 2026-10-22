@@ -320,20 +320,20 @@ runtime::Frame DefinitionRunner::management_frame(const std::string& backend) co
         });
     return frame;
 }
-std::string DefinitionRunner::resolve_version(const std::string& backend, const std::string& file_version, runtime::ProbeSources sources) const {
+std::string DefinitionRunner::resolve_version(const std::string& backend, const std::string& file_version, runtime::ProbeSources sources, PlatformInfo platform) const {
     auto frame = management_frame(backend);
     auto version = file_version;
     for (const auto index : slots(SlotOwnerKind::Root, "system", "system"))
         version = invoke<typed::SystemOps>(frame, index, SlotOwnerKind::Root, "system", "system", {}, [&](const auto& target, auto& guard) {
-            runtime::SystemServices services(guard, {runtime::typed_platform(native_platform().os), backend, true}, sources);
+            runtime::SystemServices services(guard, {runtime::typed_platform(platform.os), backend, true}, sources);
             return target.resolve_version({backend, file_version}, services);
         });
     return version;
 }
-BackendOps::InstallCheck DefinitionRunner::check_install(const std::string& backend, bool found, runtime::ProbeSources sources) const {
+BackendOps::InstallCheck DefinitionRunner::check_install(const std::string& backend, bool found, runtime::ProbeSources sources, PlatformInfo platform) const {
     auto frame = management_frame(backend);
     typed::SystemInstallCheck result{found, ""};
-    const typed::SystemInstallInput input{runtime::typed_platform(native_platform().os), backend, found};
+    const typed::SystemInstallInput input{runtime::typed_platform(platform.os), backend, found};
     for (const auto index : slots(SlotOwnerKind::Root, "system", "system"))
         result = invoke<typed::SystemOps>(frame, index, SlotOwnerKind::Root, "system", "system", {}, [&](const auto& target, auto& guard) {
             runtime::SystemServices services(guard, input, sources);

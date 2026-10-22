@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <cstdlib>
 #include <filesystem>
 #include <limits>
@@ -81,10 +82,9 @@ std::string InstallServices::rocm_asset_family() { return read(typed::InstallFac
 std::string InstallServices::cuda_architecture() { return read(typed::InstallFact::CudaArchitecture, "cuda", sources_.cuda_architecture); }
 
 namespace {
-std::string system_executable() {
-    const auto* path = std::getenv("PATH");
+std::string system_executable(const ProbeFiles& files) {
+    const auto path = files.environment("PATH");
     if (!path) return "";
-    const std::string paths(path);
 #ifdef _WIN32
     const char separator = ';';
     const char* binary = "llama-server.exe";
@@ -94,52 +94,76 @@ std::string system_executable() {
 #endif
     std::size_t start = 0;
     do {
-        const auto end = paths.find(separator, start);
-        const auto directory = utils::path_from_utf8(paths.substr(start, end - start));
-        if (directory.is_absolute()) {
-            std::error_code error;
-            const auto candidate = std::filesystem::canonical(directory / binary, error);
-            if (!error && std::filesystem::is_regular_file(candidate, error)) return utils::path_to_utf8(candidate);
+        const auto end = path->find(separator, start);
+        const auto directory = path->substr(start, end - start);
+        if (!directory.empty()) {
+            const auto candidate = utils::path_to_utf8(utils::path_from_utf8(directory) / binary);
+            if (files.regular(candidate) && files.executable(candidate))
+                return utils::path_to_utf8(std::filesystem::absolute(utils::path_from_utf8(candidate)));
         }
         if (end == std::string::npos) break;
         start = end + 1;
     } while (true);
     return "";
 }
+bool hip_plugin(const ProbeFiles& files) {
+    const auto override = files.environment("LEMONADE_GGML_HIP_PATH");
+    if (override && !override->empty()) {
+        auto name = utils::path_from_utf8(*override).filename().string();
+        std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) { return std::tolower(c); });
+        if (name.rfind("libggml-hip", 0) == 0 && name.find(".so") != std::string::npos && files.regular(*override)) return true;
+    }
+    const auto path = files.environment("PATH");
+    if (path && !path->empty()) {
+        std::size_t start = 0;
+        do {
+            const auto end = path->find(':', start);
+            const auto directory = path->substr(start, end - start);
+            if (!directory.empty()) {
+                const auto bin = utils::path_from_utf8(directory);
+                const auto executable = utils::path_to_utf8(bin / "llama-server");
+                if (files.regular(executable) && files.executable(executable)) {
+                    if (files.exists(utils::path_to_utf8(bin / "libggml-hip.so")) ||
+                        files.exists(utils::path_to_utf8(bin.parent_path() / "lib" / "libggml-hip.so"))) return true;
+                    break;
+                }
+            }
+            if (end == std::string::npos) break;
+            start = end + 1;
+        } while (true);
+    }
+    for (const auto* path : {"/usr/lib/x86_64-linux-gnu/ggml/backends0/libggml-hip.so", "/usr/lib/libggml-hip.so",
+        "/usr/lib/ggml/libggml-hip.so", "/usr/lib64/ggml/libggml-hip.so", "/usr/lib/ggml/backends0/libggml-hip.so",
+        "/usr/lib64/ggml/backends0/libggml-hip.so"}) if (files.exists(path)) return true;
+    return false;
 }
-ProbeSources probe_sources() {
+}
+ProbeFiles probe_files() {
     return {
-        [](std::size_t bytes, unsigned wait, const std::function<bool()>& cancel) {
-            const auto executable = system_executable();
-            return executable.empty() ? utils::CapturedProcess{} : utils::ProcessManager::capture_output(executable, {"--version"}, bytes, wait, cancel);
+        [](const std::string& key) -> std::optional<std::string> {
+            return std::getenv(key.c_str()) ? std::optional<std::string>(utils::get_environment_variable_utf8(key)) : std::nullopt;
         },
-        [] {
-#ifdef __linux__
+        [](const std::string& path) { std::error_code error; return std::filesystem::is_regular_file(utils::path_from_utf8(path), error); },
+        [](const std::string& path) {
+#ifdef _WIN32
             std::error_code error;
-            return std::filesystem::exists("/sys/class/kfd", error);
+            return std::filesystem::is_regular_file(utils::path_from_utf8(path), error);
 #else
-            return false;
+            return access(path.c_str(), X_OK) == 0;
 #endif
         },
-        [] {
-#ifdef __linux__
-            std::vector<std::filesystem::path> paths{
-                "/usr/lib/x86_64-linux-gnu/ggml/backends0/libggml-hip.so", "/usr/lib/libggml-hip.so",
-                "/usr/lib/ggml/libggml-hip.so", "/usr/lib64/ggml/libggml-hip.so", "/usr/lib/ggml/backends0/libggml-hip.so",
-                "/usr/lib64/ggml/backends0/libggml-hip.so"};
-            const auto binary = system_executable();
-            if (!binary.empty()) {
-                const auto directory = utils::path_from_utf8(binary).parent_path();
-                paths.push_back(directory / "libggml-hip.so");
-                paths.push_back(directory.parent_path() / "lib" / "libggml-hip.so");
-            }
-            for (const auto& path : paths) {
-                std::error_code error;
-                if (std::filesystem::is_regular_file(path, error)) return true;
-            }
-#endif
-            return false;
-        }
+        [](const std::string& path) { std::error_code error; return std::filesystem::exists(utils::path_from_utf8(path), error); }
+    };
+}
+ProbeSources probe_sources(ProbeFiles files) {
+    return {
+        [files](std::size_t bytes, unsigned wait, const std::function<bool()>& cancel) {
+            const auto executable = system_executable(files);
+            if (executable.empty()) return utils::CapturedProcess{};
+            return utils::ProcessManager::capture_output(executable, {"--version"}, bytes, wait, cancel, utils::CaptureOutput::Stdout);
+        },
+        [files] { return files.exists("/sys/class/kfd"); },
+        [files] { return hip_plugin(files); }
     };
 }
 SystemServices::SystemServices(InvocationGuard& guard, typed::SystemInstallInput input, ProbeSources sources)
@@ -153,11 +177,17 @@ std::string SystemServices::llama_version() {
     check();
     const auto result = sources_.version(65536, 5000, [&] { guard_.check_active(); return false; });
     guard_.check(typed::Effect::SystemProbe, result.output.size());
-    if (result.byte_limit || result.timed_out || result.cancelled || result.exit_code != 0) throw std::runtime_error("Bounded version probe failed");
+    if (result.byte_limit || result.timed_out || result.cancelled) throw std::runtime_error("Bounded version probe failed");
+    auto output = result.output;
+    if (input_.platform != typed::Platform::Windows) {
+        output.resize(std::min(output.size(), std::size_t{255}));
+        const auto newline = output.find('\n');
+        if (newline != std::string::npos) output.resize(newline + 1);
+    }
     std::smatch match;
     const std::regex version(R"(version:\s*(\d+)|version\s+b?(\d+))");
-    if (std::regex_search(result.output, match, version)) return "b" + (match[1].matched ? match[1].str() : match[2].str());
-    return result.output.empty() ? "unknown" : "detected";
+    if (std::regex_search(output, match, version)) return "b" + (match[1].matched ? match[1].str() : match[2].str());
+    return output.empty() ? "unknown" : "detected";
 }
 bool SystemServices::kfd_present() { check(true); return sources_.kfd(); }
 bool SystemServices::hip_plugin_present() { check(true); return sources_.hip_plugin(); }

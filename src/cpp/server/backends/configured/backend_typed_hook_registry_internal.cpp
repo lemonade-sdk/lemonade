@@ -29,7 +29,7 @@ Registration expected(Contract contract) {
             {E::ParentEnvironmentRead, E::RuntimeFactRead, E::StagingPlan},
             {F::Platform, F::SelectedBackend, F::ResolvedProgram}, {F::EnvironmentPlan}};
         case C::System: return {C::System, "llamacpp.system.v1", "system",
-            SystemOps{&llamacpp::resolve_version, &llamacpp::check_install}, 1, 1,
+            SystemOps{&llamacpp::resolve_version, &llamacpp::check_install}, 1, 2,
             {E::SystemProbe}, {F::Platform, F::SelectedBackend, F::VersionInputs}, {F::SystemFacts}};
         case C::Artifacts: return {C::Artifacts, "llamacpp.artifacts.v1", "artifacts",
             ArtifactOps{&llamacpp::metadata, &llamacpp::validate_registration, &llamacpp::validate_file,
@@ -91,7 +91,7 @@ const std::vector<Registration>& installed_targets() {
         {C::RuntimeOptions, "llamacpp.runtime_options.v1", "runtime_options", RuntimeOptionsHook(&llamacpp::runtime_options),
             1, 1, {}, {F::ModelLabels, F::DraftCheckpoint}, {F::RuntimeFacts}},
         {C::System, "llamacpp.system.v1", "system", SystemOps{&llamacpp::resolve_version, &llamacpp::check_install},
-            1, 1, {E::SystemProbe}, {F::Platform, F::SelectedBackend, F::VersionInputs}, {F::SystemFacts}},
+            1, 2, {E::SystemProbe}, {F::Platform, F::SelectedBackend, F::VersionInputs}, {F::SystemFacts}},
         {C::ToolSchemaLimits, "llamacpp.tool_schema_limits", "request", RequestTransform(&llamacpp::tool_schema_limits),
             1, 1, {}, {F::Request}, {F::Request}}
     };

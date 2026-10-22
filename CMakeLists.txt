@@ -4168,6 +4168,31 @@ if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_backend_d
         DEPENDS test_backend_runtime_boundary lemonade-backend-definition-binding lemonade-backend-definition-execution)
 endif()
 
+if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_llamacpp_v2_oracle.cpp")
+    foreach(_view linux_x64 linux_arm64 windows_x64 macos_arm64 deliberate_diff)
+        if(_view STREQUAL "deliberate_diff")
+            set(_target test_llamacpp_v2_deliberate_diff)
+            set(_test LlamaCppV2DeliberateDiffTest)
+        else()
+            set(_target test_llamacpp_v2_oracle_${_view})
+            set(_test LlamaCppV2Oracle_${_view}Test)
+        endif()
+        add_executable(${_target} test/cpp/test_llamacpp_v2_oracle.cpp
+            src/cpp/server/backends/configured/backend_definition_authorization.cpp
+            src/cpp/server/backends/configured/backend_definition_exports.cpp)
+        target_compile_definitions(${_target} PRIVATE
+            LEMON_BACKEND_EXPORT_TESTING LEMONADE_BINDING_TEST LEMONADE_RUNTIME_TEST LEMONADE_TYPED_HOOK_TEST
+            LEMON_TEST_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures")
+        if(NOT _view STREQUAL "deliberate_diff")
+            target_compile_definitions(${_target} PRIVATE LEMON_V2_ORACLE_VIEW="${_view}")
+        endif()
+        target_include_directories(${_target} PRIVATE src/cpp/server/backends/configured)
+        target_link_libraries(${_target} PRIVATE lemonade-binding-test lemonade-typed-hook-test lemonade-server-core)
+        add_cpp_ci_test(${_test} CI ON COMMAND ${_target}
+            DEPENDS ${_target} lemonade-backend-definition-binding lemonade-backend-typed-hooks)
+    endforeach()
+endif()
+
 if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_backend_catalog_execution.cpp")
     foreach(_suite execution accounting publication)
         add_executable(test_backend_catalog_${_suite}

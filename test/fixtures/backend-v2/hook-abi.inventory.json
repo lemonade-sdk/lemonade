@@ -74,7 +74,7 @@
       "id": "llamacpp.system.v1",
       "stage": "system",
       "revision": 1,
-      "implementation_revision": 1,
+      "implementation_revision": 2,
       "operations": []
     },
     {
@@ -232,6 +232,6 @@
       ]
     }
   ],
-  "abi_digest": "sha256:23e91ba6e4523ce7082033f875c69a4d027045d9acd10b1980620066f3a2bfe7",
-  "registry_digest": "sha256:06038c6bac962c715a33f7b09827ee6b48be35a80917be6ade54357a0e96111d"
+  "abi_digest": "sha256:b80e5f74cf8ddabc833fa81c16c4dadec6fcc376980a1e03322ae82197a24c36",
+  "registry_digest": "sha256:b2e770dfdb68a27db72cbe2fdad29f26c3eeb7ab2ca5ea136d325bfe4a5dfa8a"
 }

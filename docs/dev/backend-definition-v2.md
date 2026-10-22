@@ -1003,7 +1003,7 @@ processes. These projections are not the four required full-corpus v2 oracle
 registrations.
 
 Unit 4e.2a adds 321 load and 30 artifact cases per view to that existing suite.
-All 446/476 candidate cases per view match the frozen records exactly. The
+At that boundary, 446/476 candidate cases per view match the frozen records exactly. The
 load comparison covers requested/resolved/unchanged options, failure device
 state, errors, command/output policy and the complete ordered effect prefix.
 `ConfiguredServer` separately witnesses device assignment before installation
@@ -1014,7 +1014,43 @@ root fallback does not authorize any path outside the service inventory.
 The bounded reader preserves the legacy distinction between architecture
 metadata and string capability hints.
 
-The 24 system-probe and six scoped-argument cases per view, exact bounded-probe
-deliberate-diff sidecar and five new CI registrations remain for 4e.2b. The CI
-census stays 145. Production activation remains 4e.3 work. These CPU fake and
-macro-view checks do not qualify native Windows/macOS or real model execution.
+Unit 4e.2b completes all 476 cases per view: 66 install, 29 runtime, 321 load,
+30 artifact, 24 system and six scoped-argument cases. Each of the four
+`LlamaCppV2Oracle_<view>Test` registrations constructs the candidate through the
+resolver, authority, compiler, binder and entry, then executes the runner.
+Scoped arguments use the common upstream scope resolver and retain the resolved
+string through the runtime stage with default merging disabled. The existing
+scope rules need no change.
+
+`LlamaCppV2DeliberateDiffTest` repeats all four captures and verifies the sidecar
+`test/fixtures/backend-v2/llamacpp.deliberate-diffs.json`. It pins the original
+cases, install pins and four view fixtures by SHA256. The single `bounded-probe`
+family contains exactly 40 literal view/case/`/events`/old/new records: ten
+version cases per view. The gate computes the complete raw JSON diff over all
+476 records, requires equality with the disclosed event replacements, checks
+that every record is necessary and consumed, and requires no remaining diff.
+Missing, extra, duplicate, foreign, stale and unused records fail. A second
+family fails. Each process uses the test isolation scratch helper, so the five
+suites can run together without sharing artifact files. The frozen fixtures and
+v1 comparators remain unchanged.
+
+This is a **full oracle comparison, with the enumerated bounded-probe delta**.
+The new event describes fixed direct argv `llama-server --version`, stdout-only
+capture, a 65,536-byte output cap and a 5,000-ms deadline. Cancellation and bound
+failures cannot produce a version. POSIX parsing retains the first line and
+255-byte limit; Windows retains full-output parsing; nonzero child status does
+not discard a parsed version. Combined stdout/stderr capture remains the
+`ProcessManager` default for existing callers. HIP lookup preserves override,
+first executable, adjacent/sibling and fixed-path ordering with lazy eligibility.
+No shell or arbitrary executable is supplied by the declaration.
+
+The five additions take `cpp-ci` from 145 to 150 without dropping any test.
+`llamacpp.system.v1` remains ABI 1 and advances implementation 1 to 2;
+mixed-v2 runner/service policy advances from 3 to 4. The aggregate becomes
+`sha256:b2e770dfdb68a27db72cbe2fdad29f26c3eeb7ab2ca5ea136d325bfe4a5dfa8a`.
+Other ABI records, both schemas and the candidate declaration are unchanged.
+Production llama.cpp remains on its wrapper, production source/authority/export
+tables remain empty, and HRX retains its current definition. Atomic production
+activation, HRX legacy artifact isolation and the catalog transition gate remain
+4e.3 work. These CPU fake and macro-view checks do not qualify native
+Windows/macOS or real model execution.

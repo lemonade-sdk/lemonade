@@ -27,7 +27,7 @@ HookShape hook_shape(typed::Contract contract) {
         case C::Environment: return {contract, "llamacpp.environment.v1", "environment", 3, 3,
             {E::ParentEnvironmentRead, E::RuntimeFactRead, E::StagingPlan},
             {F::Platform, F::SelectedBackend, F::ResolvedProgram}, {F::EnvironmentPlan}};
-        case C::System: return {contract, "llamacpp.system.v1", "system", 1, 1,
+        case C::System: return {contract, "llamacpp.system.v1", "system", 1, 2,
             {E::SystemProbe}, {F::Platform, F::SelectedBackend, F::VersionInputs}, {F::SystemFacts}};
         case C::Artifacts: return {contract, "llamacpp.artifacts.v1", "artifacts", 2, 2,
             {E::ArtifactRead}, {F::ModelArtifacts, F::ModelLabels}, {F::ArtifactMetadata}};

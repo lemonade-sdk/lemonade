@@ -37,8 +37,8 @@ public:
         const json& request, json response, utils::RequestCancelToken cancel = {}) const;
     void resolve_runtime_options(const ModelInfo& model, RecipeOptions& options) const;
     InstallParams install_params(const InstallContext& context, runtime::InstallFactSources sources = runtime::install_fact_sources()) const;
-    std::string resolve_version(const std::string& backend, const std::string& file_version, runtime::ProbeSources sources = runtime::probe_sources()) const;
-    BackendOps::InstallCheck check_install(const std::string& backend, bool found, runtime::ProbeSources sources = runtime::probe_sources()) const;
+    std::string resolve_version(const std::string& backend, const std::string& file_version, runtime::ProbeSources sources = runtime::probe_sources(), PlatformInfo platform = native_platform()) const;
+    BackendOps::InstallCheck check_install(const std::string& backend, bool found, runtime::ProbeSources sources = runtime::probe_sources(), PlatformInfo platform = native_platform()) const;
     void populate_metadata(ModelInfo& model) const;
     std::string validate_registration(const std::string& checkpoint) const;
     std::string validate_file(const std::string& path) const;

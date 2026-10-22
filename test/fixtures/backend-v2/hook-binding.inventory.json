@@ -139,7 +139,7 @@
       "id": "llamacpp.system.v1",
       "stage": "system",
       "abi": 1,
-      "implementation": 1,
+      "implementation": 2,
       "effects": [
         6
       ],

@@ -46,7 +46,7 @@
   ],
   "policy": "sha256:ee96b91094d26e35d863fd3c462a1fe05ef4e1eb7aaf5819f27e2a3c97063d79",
   "policy_revision": 2,
-  "registry": "sha256:e5697d4de20e624b0038c635d81262300ee1d4c5820c2a1556d1c8e34dd822ab",
+  "registry": "sha256:74184f0215e1039610e8c1cce06ddf3a9b639412f2a9461ae75e26565a2e5871",
   "slots": [
     {
       "abi": 1,

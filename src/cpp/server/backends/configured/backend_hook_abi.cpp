@@ -32,7 +32,7 @@ const std::vector<HookAbiDescriptor>& installed_hook_abis() {
             {"llamacpp.install_context.v1", "install_context", 2, 2, {}},
             {"llamacpp.prepare.v1", "launch", 1, 1, {}},
             {"llamacpp.runtime_options.v1", "runtime_options", 1, 1, {}},
-            {"llamacpp.system.v1", "system", 1, 1, {}}
+            {"llamacpp.system.v1", "system", 1, 2, {}}
         };
         result.insert(result.end(), typed.begin(), typed.end());
         return result;

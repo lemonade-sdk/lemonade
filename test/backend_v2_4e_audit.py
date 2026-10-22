@@ -1,11 +1,13 @@
-"""CPU-only cache, initialization, linkage and code-generation gates for unit 4e.1."""
+"""CPU-only cache, initialization, linkage and code-generation gates for units 4e.1 and 4e.2."""
 
 import argparse
+import copy
 import json
 import os
 from pathlib import Path
 import re
 import subprocess
+from unittest import mock
 
 REPO = Path(__file__).resolve().parents[1]
 SCRATCH = REPO / ".synagent/scratch/backend-v2-4e1"
@@ -134,15 +136,35 @@ def census(args):
         )
     }
     old, new = names(before), names(current)
-    assert len(old) == 144 and len(new) == args.expected_count == 145
-    assert new - old == {"BackendBuiltinSourceCacheTest"} and not old - new
+    additions = (
+        {"BackendBuiltinSourceCacheTest"}
+        if args.expected_count == 145
+        else {
+            "LlamaCppV2Oracle_" + view + "Test"
+            for view in ("linux_x64", "linux_arm64", "windows_x64", "macos_arm64")
+        }
+        | {"LlamaCppV2DeliberateDiffTest"}
+    )
+    assert args.expected_count in (145, 150)
+    assert len(new) == args.expected_count and len(old) == args.expected_count - len(
+        additions
+    ), "CppCiCountExact"
+    assert new - old == additions and not old - new, "CppCiNamesExact"
     dependencies = subprocess.check_output(
         ["ninja", "-C", str(args.build), "-t", "query", "cpp-ci-tests"], text=True
     )
-    assert (
-        "test_backend_builtin_source_cache" in dependencies
-        and "test_backend_builtin_source_data" in dependencies
+    targets = (
+        {"test_backend_builtin_source_cache", "test_backend_builtin_source_data"}
+        if args.expected_count == 145
+        else {
+            "test_llamacpp_v2_oracle_" + view
+            for view in ("linux_x64", "linux_arm64", "windows_x64", "macos_arm64")
+        }
+        | {"test_llamacpp_v2_deliberate_diff"}
     )
+    assert all(
+        target in dependencies.split() for target in targets
+    ), "CppCiExecutableDependencies"
     if args.out:
         (args.out / "cpp-ci.json").write_text(json.dumps(current, indent=2) + "\n")
         (args.out / "census.json").write_text(
@@ -159,7 +181,7 @@ def census(args):
         )
         (args.out / "dependencies.txt").write_text(dependencies)
     print(
-        "cpp-ci: 144 -> 145; exactly BackendBuiltinSourceCacheTest added; nothing dropped; both executables are aggregate dependencies"
+        f"cpp-ci: {len(old)} -> {len(new)}; exact additions {sorted(additions)}; nothing dropped; executable dependencies checked"
     )
 
 
@@ -192,6 +214,78 @@ def oracle_controls(args):
             str(args.scratch / "oracle-controls"),
         ]
     )
+
+
+def census_mutations(args):
+    current = json.loads(
+        subprocess.check_output(
+            [
+                "ctest",
+                "--test-dir",
+                str(args.build),
+                "-L",
+                "^cpp-ci$",
+                "--show-only=json-v1",
+            ],
+            text=True,
+        )
+    )
+    dependencies = subprocess.check_output(
+        ["ninja", "-C", str(args.build), "-t", "query", "cpp-ci-tests"], text=True
+    )
+    cases = []
+    missing = copy.deepcopy(current)
+    missing["tests"].remove(
+        next(
+            row
+            for row in missing["tests"]
+            if row["name"] == "LlamaCppV2DeliberateDiffTest"
+        )
+    )
+    cases.append(("missing-registration", missing, dependencies, "CppCiCountExact"))
+    extra = copy.deepcopy(current)
+    extra["tests"].append(
+        dict(name="ExtraTest", properties=[dict(name="LABELS", value=["cpp-ci"])])
+    )
+    cases.append(("extra-registration", extra, dependencies, "CppCiCountExact"))
+    dropped = copy.deepcopy(current)
+    next(
+        row
+        for row in dropped["tests"]
+        if row["name"] == "BackendBuiltinSourceCacheTest"
+    )["name"] = "ReplacementTest"
+    cases.append(("prior-test-dropped", dropped, dependencies, "CppCiNamesExact"))
+    cases.append(
+        (
+            "missing-executable-dependency",
+            current,
+            dependencies.replace("test_llamacpp_v2_deliberate_diff", "omitted"),
+            "CppCiExecutableDependencies",
+        )
+    )
+    results = []
+    census(args)
+    for name, value, deps, assertion in cases:
+        fixture = args.scratch / (name + ".json")
+        fixture.write_text(
+            json.dumps(dict(actual=value, dependencies=deps), indent=2) + "\n"
+        )
+
+        def output(command, **_):
+            return json.dumps(value) if command[0] == "ctest" else deps
+
+        with mock.patch.object(subprocess, "check_output", side_effect=output):
+            try:
+                census(args)
+            except AssertionError as error:
+                assert str(error) == assertion, (name, error)
+            else:
+                raise AssertionError("Uncaught census mutation: " + name)
+        results.append(dict(rule=name, assertion=assertion, caught=True))
+    (args.out / "census-mutations.json").write_text(
+        json.dumps(results, indent=2) + "\n"
+    )
+    print("Four census mutations caught by the actual census assertions")
 
 
 def synthetic_codegen(args):
@@ -300,6 +394,7 @@ def main():
             "dispatch",
             "mutations",
             "census",
+            "census-mutations",
             "data-parity",
             "oracle-controls",
             "synthetic-codegen",
@@ -311,12 +406,12 @@ def main():
     parser.add_argument(
         "--baseline",
         type=Path,
-        default=REPO / ".synagent/artifacts/backend-v2-4d2/ctest-current.json",
+        default=REPO / ".synagent/artifacts/backend-v2-4e2a/census/cpp-ci.json",
     )
     parser.add_argument(
         "--baseline-commit", default="789ca434131bde84e2c55e35bec3c0818f35900f"
     )
-    parser.add_argument("--expected-count", type=int, default=145)
+    parser.add_argument("--expected-count", type=int, default=150)
     parser.add_argument(
         "--views",
         nargs="+",

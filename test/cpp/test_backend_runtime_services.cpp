@@ -1,7 +1,7 @@
 #include "backend_runtime_fixture.h"
 #include "lemon/backends/configured/backend_spec_utils.h"
 #include "lemon/utils/path_utils.h"
-#include "llamacpp_v2_load_artifact_parity.h"
+#include "llamacpp_v2_oracle.h"
 
 #include <filesystem>
 #include <fstream>
@@ -35,6 +35,7 @@ using namespace runtime_fixture;
 int main(int argc, char** argv) {
     if (argc > 1 && std::string(argv[1]) == "--capture-helper") {
         if (std::string(argv[2]) == "wait") std::this_thread::sleep_for(std::chrono::milliseconds(300));
+        else if (std::string(argv[2]) == "streams") { std::cout << "stdout"; std::cerr << "stderr"; }
         else { std::cout << std::string(10000, 'a'); std::cerr << std::string(10000, 'b'); }
         return 0;
     }
@@ -303,6 +304,20 @@ int main(int argc, char** argv) {
     const auto capture_binary = std::filesystem::absolute(argv[0]).string();
     const auto captured = utils::ProcessManager::capture_output(capture_binary, {"--capture-helper", "bytes"}, 1024, 1000);
     check(captured.output.size() == 1024 && captured.byte_limit, "ByteCaptureBoundsNewlineFreeCombinedOutput");
+    const auto stdout_only = utils::ProcessManager::capture_output(capture_binary, {"--capture-helper", "streams"}, 1024, 1000, {}, utils::CaptureOutput::Stdout);
+    check(stdout_only.output == "stdout" && stdout_only.exit_code == 0, "StdoutCaptureSuppressesStderr");
+    const auto combined = utils::ProcessManager::capture_output(capture_binary, {"--capture-helper", "streams"}, 1024, 1000);
+    check(combined.output.find("stdout") != std::string::npos && combined.output.find("stderr") != std::string::npos,
+        "DefaultCaptureStillCombinesBothStreams");
+    unsigned cancellation_polls = 0;
+    const auto mid_cancel = utils::ProcessManager::capture_output(capture_binary, {"--capture-helper", "wait"}, 1024, 1000,
+        [&] { return ++cancellation_polls > 2; });
+    check(mid_cancel.cancelled && cancellation_polls > 2, "CaptureCancellationDuringWait");
+    for (const std::string failure : {"timeout", "cancelled"}) {
+        auto failing = probes_sources;
+        failing.version = [&](auto, auto, const auto&) { return utils::CapturedProcess{"version: 1", 0, false, failure == "timeout", failure == "cancelled"}; };
+        check(throws([&] { runner.resolve_version("system", "", failing); }, "Bounded"), "FailedBoundedProbeCannotBecomeVersion:" + failure);
+    }
     const auto start = std::chrono::steady_clock::now();
     const auto waited = utils::ProcessManager::capture_output(capture_binary, {"--capture-helper", "wait"}, 1024, 20);
     check(waited.timed_out && std::chrono::steady_clock::now() - start < std::chrono::seconds(1), "ByteCaptureWaitIsBounded");
@@ -665,6 +680,18 @@ int main(int argc, char** argv) {
     reject_install(invalid_install, "invalid_install_fact_backend", "BeforePlatformCannotReadAnotherBackendFact");
     llama_corpus::witnesses(candidate_executable, candidate_entry);
     llama_corpus::parity(candidate_executable, *candidate_entry);
+    for (const auto& view : llama_corpus::views) {
+        for (const auto& input : llama_corpus::read("cases")) {
+            const auto kind = input.at("kind");
+            if (kind != "system-version" && kind != "system-install" && kind != "scoped") continue;
+            const auto id = input.at("id").get<std::string>();
+            auto expected = llama_corpus::read(view).at("cases").at(id);
+            if (kind == "system-version") expected["events"] = Json::array({llama_corpus::probe_event});
+            const auto actual = kind == "scoped" ? llama_corpus::scoped_case(input, DefinitionRunner(candidate_executable)) :
+                llama_corpus::system_case(input, view, DefinitionRunner(candidate_executable));
+            check(actual == expected, "FrozenSystemScopedParity:" + view + ":" + id);
+        }
+    }
     llamacpp_install_parity(candidate_executable, *candidate_entry);
     llamacpp_runtime_parity(candidate_executable);
     llamacpp_protocol_parity(candidate_executable, candidate_entry);

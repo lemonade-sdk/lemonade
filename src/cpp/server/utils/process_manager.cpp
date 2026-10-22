@@ -64,7 +64,7 @@ int ProcessManager::reap_process(ProcessHandle handle) {
 }
 
 CapturedProcess ProcessManager::capture_output(const std::string& executable, const std::vector<std::string>& args,
-    std::size_t max_bytes, unsigned timeout_ms, const std::function<bool()>& cancelled) {
+    std::size_t max_bytes, unsigned timeout_ms, const std::function<bool()>& cancelled, CaptureOutput output) {
     if (executable.empty() || executable.find('\0') != std::string::npos || !max_bytes || max_bytes > 65536 || !timeout_ms || timeout_ms > 5000)
         throw std::invalid_argument("Invalid bounded process capture policy");
     for (const auto& arg : args) if (arg.find('\0') != std::string::npos) throw std::invalid_argument("Invalid process argument");
@@ -101,7 +101,11 @@ CapturedProcess ProcessManager::capture_output(const std::string& executable, co
     startup.cb = sizeof(startup);
     startup.dwFlags = STARTF_USESTDHANDLES;
     startup.hStdOutput = writer;
-    startup.hStdError = writer;
+    const auto null_error = output == CaptureOutput::Stdout ? CreateFileW(L"NUL", GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, &security, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr) : INVALID_HANDLE_VALUE;
+    if (output == CaptureOutput::Stdout && null_error == INVALID_HANDLE_VALUE) {
+        CloseHandle(reader); CloseHandle(writer); throw std::runtime_error("Capture stderr setup failed");
+    }
+    startup.hStdError = output == CaptureOutput::Stdout ? null_error : writer;
     startup.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
     PROCESS_INFORMATION process{};
     const auto job = CreateJobObjectW(nullptr, nullptr);
@@ -109,10 +113,12 @@ CapturedProcess ProcessManager::capture_output(const std::string& executable, co
     limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
     if (!job || !SetInformationJobObject(job, JobObjectExtendedLimitInformation, &limits, sizeof(limits))) {
         if (job) CloseHandle(job);
+        if (null_error != INVALID_HANDLE_VALUE) CloseHandle(null_error);
         CloseHandle(reader); CloseHandle(writer); throw std::runtime_error("Capture job setup failed");
     }
     const bool created = CreateProcessW(program.c_str(), command.data(), nullptr, nullptr, TRUE, CREATE_NO_WINDOW | CREATE_SUSPENDED, nullptr, nullptr, &startup, &process);
     CloseHandle(writer);
+    if (null_error != INVALID_HANDLE_VALUE) CloseHandle(null_error);
     if (!created) { CloseHandle(job); CloseHandle(reader); throw std::runtime_error("Capture spawn failed"); }
     if (!AssignProcessToJobObject(job, process.hProcess)) {
         TerminateProcess(process.hProcess, 1);
@@ -135,7 +141,8 @@ CapturedProcess ProcessManager::capture_output(const std::string& executable, co
     posix_spawn_file_actions_t actions;
     posix_spawn_file_actions_init(&actions);
     posix_spawn_file_actions_adddup2(&actions, pipes[1], STDOUT_FILENO);
-    posix_spawn_file_actions_adddup2(&actions, pipes[1], STDERR_FILENO);
+    if (output == CaptureOutput::Combined) posix_spawn_file_actions_adddup2(&actions, pipes[1], STDERR_FILENO);
+    else posix_spawn_file_actions_addopen(&actions, STDERR_FILENO, "/dev/null", O_WRONLY, 0);
     posix_spawn_file_actions_addclose(&actions, pipes[0]);
     posix_spawn_file_actions_addclose(&actions, pipes[1]);
     posix_spawnattr_t attributes;
