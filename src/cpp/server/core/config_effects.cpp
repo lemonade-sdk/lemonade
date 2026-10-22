@@ -49,8 +49,6 @@ void ConfigEffects::apply(const std::string& key, const json& value) {
         }
         utils::HttpClient::set_download_rate_limit(bps);
     } else if (key == "enable_containers") {
-        // Containers can only be cleaned up while they are enabled, so a
-        // container left running now would outlive a crash.
         if (!config.enable_containers()) {
             for (const auto& name : ctx_.router->get_container_model_names()) {
                 LOG(INFO, "Server") << "Unloading " << name

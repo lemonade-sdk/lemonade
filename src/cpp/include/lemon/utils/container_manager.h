@@ -130,9 +130,6 @@ public:
     void stop(const std::string& name) const;
     // The container's address on its network, or "" while it has none.
     std::string address(const std::string& name) const;
-    // Removes every container, stopped ones included, and every network that
-    // carries the ai.lemonade label.
-    void sweep() const;
 
     // lemonade-<recipe>-<backend>-<model>, reduced to the characters a
     // container name accepts.

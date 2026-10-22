@@ -1,8 +1,8 @@
 """
 Container backend smoke test: drives one container backend end to end through
-one container tool: install, load, chat, unload, the startup sweep and
-uninstall. Unlike the other suites, it starts and stops lemond itself, since the
-sweep needs a restart.
+one container tool: install, load, chat, unload, a killed lemond and
+uninstall. Unlike the other suites, it starts and stops lemond itself, since it
+kills lemond.
 
 Usage:
     python test/server_containers.py --lemond PATH --backend llamacpp:nathanw \
@@ -30,7 +30,6 @@ from utils.server_base import (
 from utils.test_models import ENDPOINT_TEST_MODEL, TIMEOUT_MODEL_OPERATION
 
 LABEL = "ai.lemonade"
-LEFTOVER = "lemonade-smoke-leftover"
 
 args = None
 
@@ -165,23 +164,25 @@ class ContainerSmokeTest(unittest.TestCase):
         self.assertEqual(labeled("container"), [])
         self.assertEqual(labeled("network"), [])
 
-    def test_05_startup_sweep(self):
-        self.stop_lemond()
-        self.assertEqual(
-            tool("network", "create", "--label", LABEL, LEFTOVER).returncode, 0
+    def test_05_killed_lemond_leaves_no_container(self):
+        recipe, backend = args.backend.split(":")
+        response = load_model(
+            ENDPOINT_TEST_MODEL, port=self.port, **{f"{recipe}_backend": backend}
         )
-        self.assertEqual(
-            tool(
-                "create", "--label", LABEL, "--name", LEFTOVER, self.image, "true"
-            ).returncode,
-            0,
-        )
-        self.start_lemond()
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(len(labeled("container")), 1)
+
+        self.lemond.kill()
+        self.lemond.wait(timeout=60)
         deadline = time.time() + 60
-        while (labeled("container") or labeled("network")) and time.time() < deadline:
+        while labeled("container") and time.time() < deadline:
             time.sleep(1)
         self.assertEqual(labeled("container"), [])
-        self.assertEqual(labeled("network"), [])
+
+        # The network stays until the same model loads again.
+        for network in labeled("network"):
+            tool("network", "rm", network)
+        self.start_lemond()
 
     def test_06_uninstall(self):
         self.cli("backends", "uninstall", args.backend)

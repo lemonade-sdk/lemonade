@@ -7,9 +7,7 @@
 
 #include <lemon/utils/aixlog.hpp>
 
-#include "lemon/backends/backend_ops.h"
 #include "lemon/runtime_config.h"
-#include "lemon/utils/container_manager.h"
 #include "lemon/utils/network_utils.h"
 #include "lemon/websocket_server.h"
 
@@ -271,16 +269,6 @@ void HttpListener::start() {
             return;
         }
     }
-
-#ifdef __linux__
-    // A lemond that was killed leaves its containers behind, still holding GPU
-    // memory and the names the next load of each model needs. This runs only
-    // once the port is ours, so a second lemond that is about to exit leaves
-    // the running one's containers alone.
-    if (backends::containers_enabled()) {
-        utils::ContainerManager::global().sweep();
-    }
-#endif
 
     warn_if_unsecured(host, ipv4, ipv6);
 

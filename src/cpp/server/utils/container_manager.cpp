@@ -496,28 +496,6 @@ std::string ContainerManager::address(const std::string& name) const {
     return result.exit_code == 0 ? trim(result.output) : "";
 }
 
-void ContainerManager::sweep() const {
-    if (!tool()) return;
-    const std::string filter = std::string("label=") + kLabel;
-    const CommandResult containers = invoke(
-        {"ps", "--all", "--filter", filter, "--format", "{{.Names}}"}, kCommandTimeoutSeconds,
-        /*capture_stderr=*/false);
-    if (containers.exit_code == 0) {
-        for (const auto& name : lines_of(containers.output)) {
-            LOG(INFO, "Container") << "Removing leftover container " << name << std::endl;
-            remove_container(name);
-        }
-    }
-    const CommandResult networks = invoke(
-        {"network", "ls", "--filter", filter, "--format", "{{.Name}}"}, kCommandTimeoutSeconds,
-        /*capture_stderr=*/false);
-    if (networks.exit_code == 0) {
-        for (const auto& name : lines_of(networks.output)) {
-            remove_network(name);
-        }
-    }
-}
-
 std::string ContainerManager::container_name(const std::string& recipe,
                                              const std::string& backend,
                                              const std::string& model) {
