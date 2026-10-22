@@ -18,6 +18,5 @@ std::string validate_option_contract(const nlohmann::json& contract, const nlohm
 const nlohmann::json* external_option_contract(const std::string& recipe, const std::string& name);
 const nlohmann::json* external_option_contract(const std::string& name);
 bool descriptor_snapshot_consumed();
-void publish_backend_catalog_data(std::shared_ptr<const BackendCatalogData> data) noexcept;
 
 }

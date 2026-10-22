@@ -1,3 +1,4 @@
+#include "backend_catalog_ledger_internal.h"
 #include "backend_definition_execution_internal.h"
 
 #include <algorithm>
@@ -14,11 +15,13 @@ void require(bool condition, const std::string& code, const std::string& pointer
 }
 
 void Budget::work(std::size_t bytes, std::size_t visits) {
+    accounting::work(bytes, visits);
     v2::charge(metrics.work_bytes, bytes, limits.work_bytes);
     v2::charge(metrics.work_visits, visits, limits.work_visits);
 }
 
 void Budget::keep(std::size_t bytes) {
+    accounting::owned(bytes);
     v2::charge(metrics.retained_bytes, bytes, limits.retained_bytes);
 }
 
@@ -156,7 +159,8 @@ std::string compilation_identity(const ResolvedDefinition& source, const Program
     std::size_t retained = 0;
     v2::Budget hashing{limits, {}, retained};
     const auto result = v2::digest("lemonade.backend-compilation.v2\n", identity, hashing);
-    budget.work(hashing.metrics.work_bytes, hashing.metrics.work_nodes);
+    v2::charge(budget.metrics.work_bytes, hashing.metrics.work_bytes, budget.limits.work_bytes);
+    v2::charge(budget.metrics.work_visits, hashing.metrics.work_nodes, budget.limits.work_visits);
     return result;
 }
 
@@ -181,6 +185,7 @@ public:
         ExecutionCompileResult result;
         execution::Budget budget{execution::bounded(limits), {}};
         const auto error = [&](const std::string& code, const std::string& pointer) {
+            result.definition.reset();
             if (budget.limits.diagnostics == 0) { result.diagnostics.truncated = true; return; }
             result.diagnostics.entries.push_back({code, authorized ? authorized->definition().key.id : "", pointer,
                 code == "unsupported_execution_feature" ? "Execution feature is unavailable for the sealed authority" : "Execution compilation failed", {}, {}, {}});
@@ -188,7 +193,9 @@ public:
         try {
             if (!authorized) { error("invalid_authority", ""); return result; }
             const auto& source = authorized->definition();
-            budget.keep(source.metrics.retained_logical_bytes);
+            v2::charge(budget.metrics.retained_bytes, source.metrics.retained_logical_bytes, budget.limits.retained_bytes);
+            accounting::dependency(&source);
+            accounting::Temporary temporary(v2::checked_sum(v2::checked_product(source.metrics.effective_bytes, 8), 8192));
             const auto additions = execution::defaults(source.declaration, budget);
             auto size = execution::measure(source.declaration, budget);
             for (const auto& [pointer, value] : additions) {
@@ -219,6 +226,7 @@ public:
                 std::move(authorized), std::move(staging), budget.metrics, identity);
             static_assert(std::is_const_v<typename decltype(impl)::element_type>, "CompiledDefinitionImplIsActuallyConst");
             result.definition = std::shared_ptr<const CompiledDefinition>(new CompiledDefinition(std::move(impl)));
+            accounting::receipt(result.definition.get());
         } catch (const execution::Failure& failure) { error(failure.code, failure.pointer); }
         catch (const v2::LimitExceeded&) { error("limit_exceeded", ""); }
         catch (const std::exception&) { error("invalid_execution", ""); }

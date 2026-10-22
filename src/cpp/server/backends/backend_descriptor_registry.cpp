@@ -1,3 +1,4 @@
+#include "backend_catalog_publication_internal.h"
 #include "lemon/backends/backend_descriptor_registry.h"
 
 #include <atomic>
@@ -11,18 +12,10 @@
 namespace lemon {
 namespace backends {
 
-namespace {
-std::shared_ptr<const BackendCatalogData> catalog_data;
-std::atomic<bool> snapshot_consumed{false};
-}
-
-bool descriptor_snapshot_consumed() { return snapshot_consumed.load(std::memory_order_relaxed); }
-void publish_backend_catalog_data(std::shared_ptr<const BackendCatalogData> data) noexcept {
-    if (catalog_data || descriptor_snapshot_consumed() || !data) std::terminate();
-    catalog_data = std::move(data);
-}
+bool descriptor_snapshot_consumed() { return catalog_publication().state() == CatalogPublication::State::BuiltinsConsumed; }
 
 const nlohmann::json* external_option_contract(const std::string& recipe, const std::string& name) {
+    const auto* catalog_data = catalog_publication().data();
     if (!catalog_data) return nullptr;
     auto row = catalog_data->external_options.find(recipe);
     if (row == catalog_data->external_options.end()) return nullptr;
@@ -30,6 +23,7 @@ const nlohmann::json* external_option_contract(const std::string& recipe, const 
     return option == row->second.end() ? nullptr : &*option;
 }
 const nlohmann::json* external_option_contract(const std::string& name) {
+    const auto* catalog_data = catalog_publication().data();
     if (catalog_data) for (const auto& [recipe, options] : catalog_data->external_options) {
         auto option = options.find(name);
         if (option != options.end()) return &*option;
@@ -38,8 +32,7 @@ const nlohmann::json* external_option_contract(const std::string& name) {
 }
 
 const std::vector<const BackendDescriptor*>& all_descriptors() {
-    if (catalog_data) return catalog_data->descriptors;
-    snapshot_consumed.store(true, std::memory_order_relaxed);
+    if (const auto* catalog_data = catalog_publication().data()) return catalog_data->descriptors;
     return builtin_descriptors();
 }
 

@@ -62,8 +62,8 @@ def main(binary):
                     and rich["legacy_feature_manifest_id"]
                     == legacy["feature_manifest_id"]
                     and rich["accepted_definition_versions"] == [1, 2]
-                    and rich["executable_definition_versions"] == [1]
-                    and rich["acceptance_stage"] == "declaration_authorization",
+                    and rich["executable_definition_versions"] == [1, 2]
+                    and rich["acceptance_stage"] == "execution_finalization",
                     "honest versions and separate identities",
                 )
                 check(
@@ -127,18 +127,19 @@ def main(binary):
                     body=json.dumps(candidate).encode(),
                 )
                 check(
-                    status == 400
-                    and body["valid"] is False
+                    status == 200
+                    and body["valid"] is True
                     and body["stages"]
                     == dict(
                         resolved=True,
                         authorized=True,
                         catalog_admitted=True,
-                        executable=False,
+                        compiled=True,
+                        bound=True,
+                        executable=True,
                     )
-                    and body["diagnostics"][0]["code"]
-                    == "unsupported_execution_version",
-                    "admission success is not executable validation",
+                    and body["diagnostics"] == [],
+                    "hook-free candidate completes executable validation",
                 )
                 candidate = dict(
                     schema_version=2,
@@ -261,7 +262,10 @@ def main(binary):
                 body=json.dumps(root_definition()).encode(),
             )
             check(
-                status == 400 and body["stages"]["catalog_admitted"],
+                status == 200
+                and body["valid"]
+                and body["stages"]["catalog_admitted"]
+                and body["stages"]["executable"],
                 "v2 private graph retains frozen pins",
             )
     print(f"{checks} checks passed")

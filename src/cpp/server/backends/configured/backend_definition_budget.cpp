@@ -1,3 +1,4 @@
+#include "backend_catalog_ledger_internal.h"
 #include "backend_definition_v2_internal.h"
 
 #include <algorithm>
@@ -34,11 +35,13 @@ std::size_t string_bytes(std::string_view value) {
 }
 
 void Budget::work(std::size_t bytes, std::size_t nodes) {
+    accounting::work(bytes, nodes);
     charge(metrics.work_bytes, bytes, limits.work_bytes);
     charge(metrics.work_nodes, nodes, limits.work_nodes);
 }
 
 void Budget::keep(std::size_t bytes) {
+    accounting::owned(bytes);
     charge(retained, bytes, limits.retained_logical_bytes);
     metrics.retained_logical_bytes = retained;
 }
@@ -108,6 +111,7 @@ Json materialize(const NodePtr& node, Budget& budget) {
 std::string digest(std::string_view domain, const Json& value, Budget& budget) {
     const auto metrics = measure(value, budget);
     budget.work(checked_sum(domain.size(), metrics.bytes), metrics.nodes);
+    accounting::Temporary temporary(checked_sum(metrics.bytes, 4096));
     const auto bytes = value.dump();
     mbedtls_md_context_t context;
     mbedtls_md_init(&context);

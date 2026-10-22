@@ -1,3 +1,4 @@
+#include "backend_catalog_ledger_internal.h"
 #include "backend_definition_v2_internal.h"
 
 #include <algorithm>
@@ -111,6 +112,7 @@ struct DefinitionResolver::Impl {
                 const auto cached = cache.find(v2::key_string(current));
                 if (cached != cache.end()) {
                     if (cached->second.definition->metrics.work_bytes > limits.work_bytes || cached->second.definition->metrics.work_nodes > limits.work_nodes) throw v2::LimitExceeded();
+                    accounting::work(cached->second.definition->metrics.effective_bytes, 1);
                     v2::charge(retained, cached->second.definition->metrics.effective_bytes, limits.retained_logical_bytes);
                     parent = &cached->second;
                     continue;
@@ -138,7 +140,9 @@ struct DefinitionResolver::Impl {
                 if (parent) {
                     budget.admit(parent->state->root->metrics);
                     budget.work(parent->state->root->metrics.bytes, parent->state->root->metrics.nodes);
-                    budget.keep(v2::checked_sum(parent->state->root->metrics.bytes, sizeof(v2::LayerState)));
+                    accounting::owned(sizeof(v2::LayerState));
+                    v2::charge(retained, v2::checked_sum(parent->state->root->metrics.bytes, sizeof(v2::LayerState)), limits.retained_logical_bytes);
+                    budget.metrics.retained_logical_bytes = retained;
                     for (const auto& event : parent->state->journal) {
                         const auto strings = v2::checked_sum(event.source.document.id.size(), v2::checked_sum(event.source.pointer.size(), v2::checked_sum(event.target.path.size(), v2::checked_sum(event.target.at.size(), event.target.match ? event.target.match->value.size() : 0))));
                         budget.keep(v2::checked_sum(sizeof(AuthorshipEvent), strings));

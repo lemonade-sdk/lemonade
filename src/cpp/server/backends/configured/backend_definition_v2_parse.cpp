@@ -1,3 +1,4 @@
+#include "backend_catalog_ledger_internal.h"
 #include "backend_definition_v2_internal.h"
 
 #include <algorithm>
@@ -158,6 +159,7 @@ DefinitionSnapshotResult make_v2_source_snapshot(const std::vector<DefinitionSou
 DefinitionSnapshotResult make_v2_source_snapshot_accounted(const std::vector<DefinitionSourceView>& sources,
     const DefinitionLimits& limits, std::size_t* retained) {
     DefinitionSnapshotResult result;
+    accounting::owned(sizeof(DefinitionSourceSnapshot) + 64);
     auto snapshot = std::make_shared<DefinitionSourceSnapshot>();
     std::size_t source_bytes = 0;
     const auto error = [&](const DefinitionKey& key, const std::string& code, const std::string& pointer) {
@@ -170,6 +172,8 @@ DefinitionSnapshotResult make_v2_source_snapshot_accounted(const std::vector<Def
             source.bytes.size() > limits.retained_logical_bytes - snapshot->logical_bytes) { error(source.key, "limit_exceeded", ""); return result; }
         if ((source.key.space == DefinitionNamespace::Builtin && source.key.contract == 0) ||
             (source.key.space == DefinitionNamespace::External && source.key.contract != 0)) { error(source.key, "invalid_source_key", ""); return result; }
+        accounting::Temporary temporary(v2::checked_sum(v2::checked_product(source.bytes.size(), 16), 4096));
+        accounting::work(source.bytes.size(), source.bytes.size());
         Preflight preflight(limits);
         if (!Json::sax_parse(source.bytes.begin(), source.bytes.end(), &preflight)) {
             error(source.key, preflight.code.empty() ? "invalid_json" : preflight.code, preflight.pointer);
@@ -199,7 +203,7 @@ DefinitionSnapshotResult make_v2_source_snapshot_accounted(const std::vector<Def
         const auto key = v2::key_string(source.key);
         if (snapshot->sources.count(key)) { error(source.key, "duplicate_source", "/id"); return result; }
         if (retained) {
-            try { v2::charge(*retained, logical, limits.retained_logical_bytes); }
+            try { accounting::owned(logical); v2::charge(*retained, logical, limits.retained_logical_bytes); }
             catch (const v2::LimitExceeded&) { error(source.key, "limit_exceeded", ""); return result; }
         }
         source_bytes += source.bytes.size();

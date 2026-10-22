@@ -35,6 +35,7 @@ private:
     std::string identity_;
     friend struct CatalogAdmissionBuilder;
     friend class BackendCatalog;
+    friend struct CatalogExecutionBuilder;
 };
 
 class CatalogSourceSnapshot {
@@ -53,6 +54,7 @@ private:
     std::shared_ptr<const FrozenDefinitionSnapshot> authority_;
     friend struct CatalogAdmissionBuilder;
     friend class BackendCatalog;
+    friend struct CatalogExecutionBuilder;
 };
 
 struct CatalogAdmissionBuilder {

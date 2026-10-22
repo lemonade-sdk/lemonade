@@ -1143,6 +1143,7 @@ configure_file(src/cpp/server/backends/configured/backend_definition_v2_resource
 add_library(lemonade-backend-definition-v2 STATIC
     src/cpp/server/backends/configured/backend_definition_v2_contract.cpp
     src/cpp/server/backends/configured/backend_definition_v2_parse.cpp
+    src/cpp/server/backends/configured/backend_catalog_ledger.cpp
     src/cpp/server/backends/configured/backend_definition_budget.cpp
     src/cpp/server/backends/configured/backend_definition_edits.cpp
     src/cpp/server/backends/configured/backend_definition_provenance.cpp
@@ -1181,6 +1182,7 @@ set(LEMON_BACKEND_FACTORY_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/configured/backend_hook_registry.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/configured/backend_catalog_admission.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/configured/backend_catalog_projection.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/configured/backend_catalog_execution.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/configured/backend_catalog.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/configured/request_mapper.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/configured/backend_transport.cpp
@@ -1220,8 +1222,12 @@ foreach(_backend_entry ${LEMON_BACKENDS})
         "        &lemon::backends::${_backend_stem}::descriptor,\n")
     string(APPEND LEMON_FACTORY_INCLUDES
         "#include \"lemon/backends/${_backend_stem}/${_backend_stem}_server.h\"\n")
+    set(_configured_entry "nullptr")
+    if(_backend_definition IN_LIST LEMON_BACKEND_DEFINITION_FILES)
+        set(_configured_entry "lemon::backends::${_backend_stem}::configured_entry().get()")
+    endif()
     string(APPEND LEMON_FACTORY_ENTRIES
-        "        { &lemon::backends::${_backend_stem}::descriptor, &lemon::backends::${_backend_stem}::create, lemon::backends::${_backend_stem}::spec(), lemon::backends::${_backend_stem}::ops() },\n")
+        "        { &lemon::backends::${_backend_stem}::descriptor, &lemon::backends::${_backend_stem}::create, lemon::backends::${_backend_stem}::spec(), lemon::backends::${_backend_stem}::ops(), ${_configured_entry} },\n")
     string(APPEND LEMON_CAPABILITY_ENTRIES
         "        { &lemon::backends::${_backend_stem}::descriptor, lemon::backends::${_backend_stem}::capabilities() },\n")
 endforeach()
@@ -4159,4 +4165,26 @@ if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_backend_d
         DEPENDS test_backend_runtime_services lemonade-backend-definition-binding lemonade-backend-typed-hooks)
     add_cpp_ci_test(BackendRuntimeBoundaryTest CI ON COMMAND test_backend_runtime_boundary
         DEPENDS test_backend_runtime_boundary lemonade-backend-definition-binding lemonade-backend-definition-execution)
+endif()
+
+if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_backend_catalog_execution.cpp")
+    foreach(_suite execution accounting publication)
+        add_executable(test_backend_catalog_${_suite}
+            test/cpp/test_backend_catalog_${_suite}.cpp
+            src/cpp/server/backends/configured/backend_definition_authorization.cpp
+            src/cpp/server/backends/configured/backend_definition_exports.cpp)
+        target_compile_definitions(test_backend_catalog_${_suite} PRIVATE
+            LEMON_BACKEND_EXPORT_TESTING LEMONADE_BINDING_TEST LEMONADE_RUNTIME_TEST LEMONADE_TYPED_HOOK_TEST
+            LEMON_TEST_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures")
+        target_include_directories(test_backend_catalog_${_suite} PRIVATE
+            src/cpp/server/backends src/cpp/server/backends/configured)
+        target_link_libraries(test_backend_catalog_${_suite} PRIVATE
+            lemonade-binding-test lemonade-typed-hook-test lemonade-server-core)
+    endforeach()
+    add_cpp_ci_test(BackendCatalogExecutionTest CI ON COMMAND test_backend_catalog_execution
+        DEPENDS test_backend_catalog_execution lemonade-backend-definition-binding lemonade-backend-typed-hooks)
+    add_cpp_ci_test(BackendCatalogAccountingTest CI ON COMMAND test_backend_catalog_accounting
+        DEPENDS test_backend_catalog_accounting lemonade-backend-definition-binding lemonade-backend-definition-execution)
+    add_cpp_ci_test(BackendCatalogPublicationTest CI ON COMMAND test_backend_catalog_publication
+        DEPENDS test_backend_catalog_publication lemonade-backend-definition-binding lemonade-backend-definition-execution)
 endif()

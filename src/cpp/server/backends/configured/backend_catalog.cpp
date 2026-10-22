@@ -1,4 +1,6 @@
+#include "../backend_catalog_publication_internal.h"
 #include "backend_catalog_admission_internal.h"
+#include "backend_catalog_ledger_internal.h"
 #include "backend_definition_resources.h"
 #include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/configured/backend_catalog.h"
@@ -15,7 +17,6 @@
 
 namespace lemon::backends {
 namespace {
-std::unique_ptr<const BackendCatalog> catalog;
 std::string frozen_directory;
 bool frozen_builtin_only = false;
 
@@ -51,11 +52,12 @@ json operation_row(const OperationDescription& description) {
         {"model_modes", selected}, {"provenance", description.provenance == OperationProvenance::Implemented ? "implemented" : "legacy_forwarding"}};
 }
 
-json descriptor_row(const BackendDescriptor& descriptor, const BackendDefinition* definition, bool external) {
+json descriptor_row(const BackendDescriptor& descriptor, const BackendDefinition* definition, bool external, const ExecutableDefinition* executable = nullptr) {
+    const json* records = definition ? &definition->records : executable ? &executable->compiled().normalized_declaration() : nullptr;
     json options = json::array();
     const auto common = RecipeOptions::common_option_defaults();
     if (descriptor.uses_ctx_size) options.push_back(legacy_option("ctx_size", common["ctx_size"]));
-    if (definition) for (const auto& option : definition->records["metadata"]["options"]) options.push_back(public_option(option));
+    if (records) for (const auto& option : records->at("metadata").at("options")) options.push_back(public_option(option));
     else for (const auto& option : descriptor.options) options.push_back(legacy_option(option.name, option.default_value, option.help, option.group));
     for (const auto* key : {"merge_args", "auto_evict", "evict_idle_timeout", "downsize_idle_timeout", "evict_weight_factor", "pinned", "auto_update"}) options.push_back(legacy_option(key, common[key]));
     json support = json::array();
@@ -67,37 +69,43 @@ json descriptor_row(const BackendDescriptor& descriptor, const BackendDefinition
         {"format", row.format == BackendFormat::Native ? "native" : row.format == BackendFormat::Python ? "python" : "container"},
         {"supported_os", row.supported_os}, {"devices", row.devices}, {"device_summary", row.device_summary}, {"arch_gates", gates}});
     }
-    json row = {{"recipe", descriptor.recipe}, {"definition_id", definition ? json(definition->id) : json()},
+    json row = {{"recipe", descriptor.recipe}, {"definition_id", definition ? json(definition->id) : executable ? json(executable->compiled().authorized().definition().key.id) : json()},
         {"source", external ? "external" : "builtin"}, {"display_name", descriptor.display_name},
-        {"supported_modes", descriptor.supported_modes}, {"options", options}, {"operations_complete", definition != nullptr},
+        {"supported_modes", descriptor.supported_modes}, {"options", options}, {"operations_complete", records != nullptr},
         {"operations", json::array()}, {"support", support}};
     if (external) {
-        const auto& backend = definition->records["launch"]["backend"];
+        const auto& backend = records->at("launch").at("backend");
         row["backend_option"] = backend.contains("option") ? backend["option"] : json();
     }
-    row["definition_hash"] = definition ? definition->digest : schema_digest(row.dump());
+    row["definition_hash"] = definition ? definition->digest : executable ? executable->compiled().authorized().definition().definition_hash : schema_digest(row.dump());
     return row;
 }
 }
 
-BackendCatalog::BackendCatalog(const std::vector<DefinitionSource>& sources)
-    : BackendCatalog(sources, freeze_builtin_catalog()) {}
-
-BackendCatalog::BackendCatalog(const std::vector<DefinitionSource>& sources, std::shared_ptr<const FrozenBuiltinCatalog> builtins)
-    : builtins_(std::move(builtins)), data_(std::make_shared<BackendCatalogData>()), registrations_(builtin_registrations()) {
+BackendCatalog::BackendCatalog(const std::vector<DefinitionSource>& sources) {
     std::vector<ExternalDefinitionInput> inputs;
     if (sources.size() > DefinitionLimits{}.snapshot_documents) fail("limit_exceeded", "", "", "", "Catalog source count exceeded");
     for (const auto& source : sources) inputs.push_back({source.text, source.file});
-    const auto snapshot = make_catalog_source_snapshot(builtins_, inputs);
-    const auto admission = snapshot.snapshot ? admit_catalog(snapshot.snapshot) : CatalogAdmissionResult{nullptr, snapshot.diagnostics};
-    if (!admission.catalog) {
+    auto result = build_backend_catalog(freeze_builtin_catalog(), inputs);
+    if (!result.catalog) {
         std::vector<DefinitionDiagnostic> errors;
-        for (const auto& row : admission.diagnostics.entries) errors.push_back({row.code, row.definition, "", row.pointer, row.message});
+        for (const auto& row : result.diagnostics.entries) errors.push_back({row.code, row.definition, "", row.pointer, row.message});
         throw DefinitionValidationError(std::move(errors));
     }
-    admitted_ = admission.catalog;
-    for (const auto& source : snapshot.snapshot->sources_) if (source.header.version == 2)
-        fail("unsupported_execution_version", "", source.header.id, "/schema_version", "Executable validation for definition version 2 is not installed");
+    auto completed = std::const_pointer_cast<BackendCatalog>(result.catalog);
+    *this = std::move(*completed);
+}
+
+void BackendCatalog::finalize() {
+    data_ = std::make_shared<BackendCatalogData>();
+    registrations_ = builtin_registrations();
+    for (const auto& entry : entries_) {
+        if (!entry->executable_definition || entry->executable_definition->compiled().authorized().definition().key.space != DefinitionNamespace::Builtin) continue;
+        const BackendRegistration registration{&entry->descriptor, entry->factory, &entry->spec, entry->backend_ops(), entry.get()};
+        auto found = std::find_if(registrations_.begin(), registrations_.end(), [&](const auto& row) { return row.descriptor->recipe == entry->descriptor.recipe; });
+        if (found == registrations_.end()) registrations_.push_back(registration);
+        else *found = registration;
+    }
     std::set<std::string> ids, recipes, sections{"no_broadcast"}, option_names{"no_broadcast"};
     const auto& defaults = builtins_->defaults_;
     for (const auto& [key, value] : defaults.items()) { sections.insert(key); option_names.insert(key); }
@@ -113,36 +121,42 @@ BackendCatalog::BackendCatalog(const std::vector<DefinitionSource>& sources, std
         for (const auto& option : descriptor->options) option_names.insert(option.name);
         const auto* definition = registration.spec && registration.spec->definition ? registration.spec->definition.get() : nullptr;
         arms.push_back({descriptor->recipe, definition ? "D" : "A"});
-        auto row = descriptor_row(*descriptor, definition, false);
+        const auto* entry = registration.configured_entry;
+        const auto* executable = entry ? entry->executable_definition.get() : nullptr;
+        auto row = descriptor_row(*descriptor, definition, false, executable);
         if (definition) {
             ids.insert(definition->id);
-            const auto server = registration.create(BackendContext{"error"});
-            for (const auto& description : server->operation_bindings()->descriptions()) row["operations"].push_back(operation_row(description));
+            if (!entry) throw std::logic_error("Configured registration has no finalized entry");
+        }
+        if (entry) {
+            for (const auto& binding : entry->bindings) row["operations"].push_back(operation_row(binding.description));
         }
         schema_["recipes"].push_back(std::move(row));
     }
-    for (const auto& source : sources) {
-        const auto header = inspect_catalog_input(source.text, DefinitionLimits{});
-        const auto parsed_definition = admitted_->v1_definition(header.id);
-        const auto& definition = *parsed_definition;
-        if (!ids.insert(definition.id).second) fail("id_collision", source.file, definition.id, "/id", "Definition ID already owned");
-        if (!recipes.insert(definition.recipe).second) fail("recipe_collision", source.file, definition.id, "/recipe", "Recipe already owned");
-        std::shared_ptr<const ConfiguredBackendEntry> entry;
-        try { entry = ConfiguredBackendEntry::make(parsed_definition); }
-        catch (const std::exception&) { fail("invalid_binding", source.file, definition.id, "", "Definition cannot bind to installed server primitives"); }
-        if (!sections.insert(entry->descriptor.effective_config_section()).second) fail("section_collision", source.file, definition.id, "/metadata/config_section", "Configuration section already owned");
-        auto& contracts = data_->external_options[definition.recipe];
+    json executions = json::array();
+    for (const auto& entry : entries_) {
+        const bool builtin = entry->executable_definition && entry->executable_definition->compiled().authorized().definition().key.space == DefinitionNamespace::Builtin;
+        if (entry->executable_definition) executions.push_back(entry->executable_definition->execution_id());
+        if (builtin) continue;
+        const auto& records = entry->records();
+        const auto id = entry->definition ? entry->definition->id : entry->executable_definition->compiled().authorized().definition().key.id;
+        const auto& recipe = entry->descriptor.recipe;
+        const std::string file;
+        if (!ids.insert(id).second) fail("id_collision", file, id, "/id", "Definition ID already owned");
+        if (!recipes.insert(recipe).second) fail("recipe_collision", file, id, "/recipe", "Recipe already owned");
+        if (!sections.insert(entry->descriptor.effective_config_section()).second) fail("section_collision", file, id, "/metadata/config_section", "Configuration section already owned");
+        auto& contracts = data_->external_options[recipe];
         contracts = json::object();
-        for (size_t i = 0; i < definition.records["metadata"]["options"].size(); ++i) {
-            const auto& option = definition.records["metadata"]["options"][i];
+        for (size_t i = 0; i < records["metadata"]["options"].size(); ++i) {
+            const auto& option = records["metadata"]["options"][i];
             const std::string name = option["name"];
-            if (!option_names.insert(name).second) fail("option_collision", source.file, definition.id, "/metadata/options/" + std::to_string(i) + "/name", "Option already owned");
+            if (!option_names.insert(name).second) fail("option_collision", file, id, "/metadata/options/" + std::to_string(i) + "/name", "Option already owned");
             contracts[name] = public_option(option);
         }
-        const auto& install = definition.records["install"];
+        const auto& install = records["install"];
         if (install["strategy"] == "github_release") {
             std::set<std::string> backends;
-            const auto& selection = definition.records["launch"]["backend"];
+            const auto& selection = records["launch"]["backend"];
             if (selection.contains("fixed") && selection["fixed"].is_string()) backends.insert(selection["fixed"]);
             else if (selection.contains("fixed")) for (const auto& [os, fixed] : selection["fixed"].items()) backends.insert(fixed);
             for (const auto& row : install["cases"]) for (const auto& backend : row.value("backend", json::array())) backends.insert(backend);
@@ -155,16 +169,17 @@ BackendCatalog::BackendCatalog(const std::vector<DefinitionSource>& sources, std
                     for (const auto& channel : entry->descriptor.rocm_channels) normalized.insert("rocm-" + channel);
                 } else if (backend != "system") normalized.insert(backend);
             }
-            for (const auto& backend : normalized) if (!shipped.contains(backend) && (!versions.contains(backend) || versions[backend].get<std::string>().empty())) fail("required", source.file, definition.id, "/install/default_versions", "Managed backend requires a default version");
+            for (const auto& backend : normalized) if (!shipped.contains(backend) && (!versions.contains(backend) || versions[backend].get<std::string>().empty())) fail("required", file, id, "/install/default_versions", "Managed backend requires a default version");
         }
-        auto row = descriptor_row(entry->descriptor, &definition, true);
+        auto row = descriptor_row(entry->descriptor, entry->definition.get(), true, entry->executable_definition.get());
         for (const auto& binding : entry->bindings) row["operations"].push_back(operation_row(binding.description));
         schema_["recipes"].push_back(std::move(row));
         data_->descriptors.push_back(&entry->descriptor);
-        registrations_.push_back({&entry->descriptor, entry->factory, &entry->spec, entry->ops.get()});
-        entries_.push_back(std::move(entry));
+        registrations_.push_back({&entry->descriptor, entry->factory, &entry->spec, entry->backend_ops(), entry.get()});
     }
-    schema_["catalog_id"] = schema_digest(json{{"export", schema_}, {"arms", arms}}.dump());
+    json identity = {{"export", schema_}, {"arms", arms}};
+    if (!executions.empty()) { identity["executions"] = executions; identity["runner_service_policy"] = 1; }
+    schema_["catalog_id"] = schema_digest(identity.dump());
 }
 
 json BackendCatalog::export_schema(const std::string& recipe, unsigned representation) const {
@@ -174,8 +189,8 @@ json BackendCatalog::export_schema(const std::string& recipe, unsigned represent
         result["schema_version"] = 2;
         result["definition_schema_version"] = 2;
         result["accepted_definition_versions"] = {1, 2};
-        result["acceptance_stage"] = "declaration_authorization";
-        result["executable_definition_versions"] = {1};
+        result["acceptance_stage"] = "execution_finalization";
+        result["executable_definition_versions"] = {1, 2};
         result["resolver_revision"] = 1;
         result["authorizer_revision"] = 1;
         result["grant_policy_revision"] = 1;
@@ -185,7 +200,10 @@ json BackendCatalog::export_schema(const std::string& recipe, unsigned represent
         result["export_registry_id"] = installed_builtin_exports().digest();
         result["catalog_v2_id"] = schema_digest(json{{"domain", "lemonade.backend-catalog-v2.v1"},
             {"admission", admitted_->admission_id()}, {"executable", schema_["catalog_id"]}}.dump());
-        for (auto& row : result["recipes"]) row["input_schema_version"] = row["definition_id"].is_null() ? json() : json(1);
+        for (auto& row : result["recipes"]) {
+            row["input_schema_version"] = row["definition_id"].is_null() ? json() : json(1);
+            for (const auto& entry : entries_) if (entry->executable_definition && entry->descriptor.recipe == row["recipe"]) row["input_schema_version"] = 2;
+        }
     }
     if (recipe.empty()) return result;
     auto rows = std::move(result["recipes"]);
@@ -212,34 +230,36 @@ json BackendCatalog::validate(const std::string& bytes) const {
             inputs.push_back({source.bytes, ""});
         }
         inputs.push_back({bytes, ""});
+        const auto candidate = build_backend_catalog(builtins_, inputs);
         if (v2_input) {
-            const auto candidate = validate_candidate_definition(admitted_, bytes);
-            const auto& admission = candidate.admission;
-            response["stages"]["resolved"] = admission.resolved;
-            response["stages"]["authorized"] = admission.authorized;
-            for (const auto& error : admission.diagnostics.entries) response["diagnostics"].push_back(public_admission_diagnostic(error));
-            if (admission.catalog) {
-                const auto authorized = admission.catalog->v2_definition(header.id);
+            const auto& stages = candidate.stages;
+            response["stages"]["resolved"] = stages.resolved;
+            response["stages"]["authorized"] = stages.authorized;
+            response["stages"]["catalog_admitted"] = stages.catalog_admitted;
+            if (stages.catalog_admitted) {
+                response["stages"]["compiled"] = stages.compiled;
+                response["stages"]["bound"] = stages.bound;
+            }
+            response["stages"]["executable"] = stages.executable;
+            for (const auto& error : candidate.diagnostics.entries) response["diagnostics"].push_back(public_admission_diagnostic(error));
+            if (candidate.catalog) {
+                const auto authorized = candidate.catalog->admitted_->v2_definition(header.id);
                 const auto& resolved = authorized->definition();
+                response["valid"] = true;
                 response["definition_id"] = header.id;
                 response["recipe"] = header.recipe;
                 response["definition_hash"] = resolved.definition_hash;
                 response["dependency_digest"] = resolved.dependency_digest;
-                response["candidate_admission_id"] = admission.catalog->admission_id();
-                response["stages"] = {{"resolved", true}, {"authorized", true}, {"catalog_admitted", true}, {"executable", false}};
-                response["diagnostics"].push_back({{"code", "unsupported_execution_version"}, {"definition", header.id},
-                    {"pointer", "/schema_version"}, {"message", "Executable validation for definition version 2 is not installed"}});
+                response["candidate_admission_id"] = candidate.catalog->admitted_->admission_id();
             }
+        } else if (candidate.catalog) {
+            response["valid"] = true;
+            response["definition_id"] = parsed.definition->id;
+            response["recipe"] = parsed.definition->recipe;
+            response["definition_hash"] = parsed.definition->digest;
         } else {
-            std::vector<DefinitionSource> sources;
-            for (const auto& input : inputs) sources.push_back({"", std::string(input.bytes), DefinitionOrigin::External});
-            try {
-                BackendCatalog candidate(sources, builtins_);
-                response["valid"] = true;
-                response["definition_id"] = parsed.definition->id;
-                response["recipe"] = parsed.definition->recipe;
-                response["definition_hash"] = parsed.definition->digest;
-            } catch (const DefinitionValidationError& error) { errors = error.diagnostics; }
+            errors.clear();
+            for (const auto& row : candidate.diagnostics.entries) errors.push_back({row.code, row.definition, "", row.pointer, row.message});
         }
     }
     for (const auto& error : errors) response["diagnostics"].push_back({{"code", error.code}, {"definition", error.definition}, {"pointer", error.pointer}, {"message", error.message}});
@@ -290,13 +310,13 @@ std::vector<DefinitionSource> discover_backend_definitions(const std::string& co
 
 void bootstrap_backend_catalog(const std::string& config_dir, bool builtin_only) {
     const auto directory = utils::path_to_utf8(utils::path_from_utf8(config_dir).lexically_normal());
-    if (catalog) {
+    if (backend_catalog()) {
         if (directory != frozen_directory || builtin_only != frozen_builtin_only) throw std::logic_error("Backend catalog is already frozen");
         return;
     }
-    if (descriptor_snapshot_consumed()) throw std::logic_error("Backend descriptors were consumed before catalog bootstrap");
-    std::unique_ptr<BackendCatalog> candidate;
-    try { candidate = std::make_unique<BackendCatalog>(builtin_only ? std::vector<DefinitionSource>{} : discover_backend_definitions(config_dir)); }
+    CatalogPublicationGuard publication(catalog_publication());
+    std::shared_ptr<BackendCatalog> candidate;
+    try { candidate = std::make_shared<BackendCatalog>(builtin_only ? std::vector<DefinitionSource>{} : discover_backend_definitions(config_dir)); }
     catch (const DefinitionValidationError& error) {
         std::string diagnostic;
         for (const auto& row : error.diagnostics) diagnostic += row.file + " " + row.definition + " " + row.pointer + " " + row.code + ": " + row.message + "\n";
@@ -305,13 +325,11 @@ void bootstrap_backend_catalog(const std::string& config_dir, bool builtin_only)
     frozen_directory = directory;
     frozen_builtin_only = builtin_only;
     auto data = candidate->data();
-    catalog = std::move(candidate);
-    publish_backend_catalog_data(std::move(data));
+    publication.commit(std::move(data), std::move(candidate));
 }
-const BackendCatalog* backend_catalog() { return catalog.get(); }
+const BackendCatalog* backend_catalog() { return static_cast<const BackendCatalog*>(catalog_publication().server()); }
 const BackendCatalog& frozen_backend_catalog() {
-    if (catalog) return *catalog;
-    all_descriptors();
+    if (const auto* catalog = static_cast<const BackendCatalog*>(catalog_publication().consume_server())) return *catalog;
     static const BackendCatalog builtins({});
     return builtins;
 }

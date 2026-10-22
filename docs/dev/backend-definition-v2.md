@@ -769,7 +769,10 @@ against the frozen oracle and resolve bounded system-probe behavior explicitly.
 Production HRX inheritance, external exports and hardware qualification remain
 later work. The aggregate export pin and all v1 snapshots remain unchanged.
 
-### Private runtime increment (partial 4d.1)
+### Historical first runtime increment (partial 4d.1)
+
+The following records the first runtime slice. The completed 4d status below
+supersedes its remaining-work statements.
 
 The v2 overload of `ConfiguredBackendEntry::make` accepts only a retained bound
 `ExecutableDefinition`. Its private runner selects compiled operation cells and
@@ -807,3 +810,80 @@ coverage establishes the implemented subset, not all of 4d.1. Production startup
 still rejects v2, candidates still report `executable:false`, and both production
 authority/export tables remain empty. Shared accounting, complete catalog
 finalization and one-shot publication remain 4d.2 work.
+
+
+### Complete runtime and startup catalog transaction (4d)
+
+All ten confined capability consumers are attached to the private runner. Install
+facts are phase-specific and lazy; environment staging uses invocation-bound
+sealed plans; version capture is byte- and time-bounded; artifact reads use an
+approved handle inventory, including explicit HF snapshot/blob relationships.
+The pinned typed contracts and production hook/export inventories are unchanged.
+
+`build_backend_catalog` creates a private transaction, admits the complete mixed
+source graph, compiles every external v2 leaf and registered builtin execution
+leaf, binds each compilation to its exact admission token, and finalizes every
+entry and its installed adapters. Managed version coverage is checked before the
+catalog becomes executable. Descendant failure returns no catalog. Candidate
+validation uses this same pipeline with the active catalog's frozen builtin
+context and all proposed sources; it never publishes or invokes runtime services.
+Builtin operation projections read finalized entries without constructing servers.
+
+The transaction owns a `CatalogLedger`. Private thread-local stage scopes connect
+existing preallocation budget sites to that one writer; standalone compiler and
+binder signatures and their local limits remain unchanged. Their public metrics
+include transitive context and must not be summed. Exact-object private receipts
+record dependencies already retained by the transaction. Referencing admitted,
+resolved or compiled data does not charge its payload again; newly owned copies,
+reference containers, indexes, normalized programs, bound slots, descriptors,
+option contracts, schemas and factories reserve separate logical allowances.
+A final receipt failure clears the compiler or binder result before it can escape.
+Builtin leaf inventories and entry sorting also reserve storage before allocation.
+Copied admission ownership sets reserve temporary storage, while shared resolver
+nodes retain their existing ownership. These are conservative logical allowances,
+not allocator byte counts or measured RSS. Existing conservative owned-allocation
+allowances are nonrefundable; temporary reservations refund live capacity and
+retain their peak counters. Traversal, replay, hashing and serialization work is
+cumulative and never refunds.
+
+Aggregate defaults are 128 MiB of owned plus live temporary allowance, an explicit
+128 MiB temporary ceiling, 64 MiB of cumulative work and 4,194,304 work visits.
+Each stage has independent owned, work and temporary bounds; source, depth,
+expression, slot and diagnostic ceilings still apply. Public policy can only
+reduce hard ceilings. The final seal requires every expected entry and no live
+temporary reservation; the catalog retains the sealed ledger for its lifetime.
+Runtime invocations continue to use independent budgets.
+
+One data-only publication coordinator serves descriptor and server readers:
+`Empty -> Building -> Published`, or `Empty -> BuiltinsConsumed`. Startup enters
+`Building` before discovery. Reads during construction throw instead of consuming
+builtin fallback. Registry and frozen-catalog reads consume or observe the terminal state before
+selecting a root, so a concurrent publication cannot pair builtin factories with
+published descriptors. All throwing construction precedes commit; prepared ownership
+transfers precede the single release publication event, observed with acquire
+semantics. Failure rolls back to `Empty`. Publication and prior consumption both
+reject replacement. Identical repeated bootstrap is idempotent. Published roots
+retain entries, descriptors, specs, ops and factories for the process lifetime,
+preserving the existing borrowed addresses. This is startup publication only;
+these borrowed APIs do not support a live catalog swap.
+
+An admitted hook-free external v2 candidate can now return `valid:true` and
+`stages.executable:true` after whole-graph compilation, binding and finalization.
+Post-admission responses include `compiled` and `bound`; pre-admission failure
+shapes remain unchanged. The server's representation 2 advertises execution
+versions `[1,2]` and `execution_finalization`, separately from its admission
+manifest. Mixed catalog identity includes execution identities and runner/service
+policy revision 1. A v1-only catalog keeps its exact identity construction and
+legacy projection bytes.
+
+The three additional CI registrations are `BackendCatalogExecutionTest`,
+`BackendCatalogAccountingTest` and `BackendCatalogPublicationTest`. Their explicit
+aggregate dependencies include each executable and its helper libraries. The
+catalog mutation harness compiles isolated single-rule variants and requires a
+named assertion failure; compilation failures, crashes and timeouts do not count.
+Production llama.cpp still uses its wrapper. Both production v2 authority/export
+tables remain empty, and aggregate pin
+`sha256:6bac770f2a8d740927eb20a69a430d9430a0eabea744efedb74486afe941ead6`
+is unchanged. The production llama.cpp definition/factory port and frozen-oracle
+comparison belong to 4e; HRX inheritance and native/model/hardware/export
+qualification remain later work.

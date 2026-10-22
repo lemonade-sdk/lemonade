@@ -1,3 +1,4 @@
+#include "backend_catalog_publication_internal.h"
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/configured/backend_catalog.h"
 #include "lemon/wrapped_server.h"
@@ -11,8 +12,7 @@ namespace lemon {
 namespace backends {
 
 const std::vector<BackendRegistration>& all_registrations() {
-    if (const auto* catalog = backend_catalog()) return catalog->registrations();
-    all_descriptors();
+    if (const auto* catalog = static_cast<const BackendCatalog*>(catalog_publication().consume_server())) return catalog->registrations();
     return builtin_registrations();
 }
 

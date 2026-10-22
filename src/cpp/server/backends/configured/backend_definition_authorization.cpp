@@ -1,4 +1,5 @@
 #include "backend_catalog_admission_internal.h"
+#include "backend_catalog_ledger_internal.h"
 #include "backend_definition_authorization_internal.h"
 #include "backend_definition_policy_internal.h"
 
@@ -399,6 +400,7 @@ FrozenDefinitionSnapshotResult BuiltinCatalogLoader::freeze_sources(const std::v
         result.diagnostics = builtin_audit;
         if (!builtin_audit.entries.empty() || builtin_audit.truncated) return result;
     }
+    accounting::owned(sizeof(FrozenDefinitionSnapshot::Impl) + sizeof(FrozenDefinitionSnapshot) + 128);
     auto impl = std::make_shared<FrozenDefinitionSnapshot::Impl>();
     impl->sources = input.snapshot;
     impl->registry = std::move(registry);
@@ -464,6 +466,8 @@ DefinitionAuthorizationResult BuiltinCatalogLoader::authorize_builtin(std::share
 FrozenDefinitionSnapshotResult BuiltinCatalogLoader::compose(std::shared_ptr<const FrozenDefinitionSnapshot> builtins,
     const std::vector<DefinitionSourceView>& external_sources, const DefinitionLimits& limits, std::size_t& retained) {
     std::vector<DefinitionSourceView> sources;
+    accounting::owned(checked_product(checked_sum(external_sources.size(), builtins->impl_->sources->sources.size()),
+        sizeof(DefinitionSourceView) + sizeof(DefinitionKey)));
     charge(retained, checked_product(checked_sum(external_sources.size(), builtins->impl_->sources->sources.size()),
         sizeof(DefinitionSourceView) + sizeof(DefinitionKey)), limits.retained_logical_bytes);
     for (const auto& [key, source] : builtins->impl_->sources->sources)

@@ -1,4 +1,5 @@
 #include "backend_catalog_admission_internal.h"
+#include "backend_catalog_ledger_internal.h"
 #include "backend_definition_binding_internal.h"
 
 #include <algorithm>
@@ -23,8 +24,8 @@ ExecutionBindLimits bounded(ExecutionBindLimits value) {
     value.diagnostics = std::min(value.diagnostics, hard.diagnostics);
     return value;
 }
-void Budget::keep(std::size_t bytes) { v2::charge(metrics.retained_bytes, bytes, limits.retained_bytes); }
-void Budget::work(std::size_t visits) { v2::charge(metrics.work_visits, visits, limits.work_visits); }
+void Budget::keep(std::size_t bytes) { accounting::owned(bytes); v2::charge(metrics.retained_bytes, bytes, limits.retained_bytes); }
+void Budget::work(std::size_t visits) { accounting::work(0, visits); v2::charge(metrics.work_visits, visits, limits.work_visits); }
 void Budget::slots(std::size_t count) { v2::charge(metrics.slots, count, limits.slots); }
 
 namespace {
@@ -123,7 +124,10 @@ public:
         };
         try {
             execution::require(admitted && compiled, "invalid_binding_input", "");
-            budget.keep(v2::checked_sum(admitted->metrics().retained_logical_bytes, compiled->metrics().retained_bytes));
+            v2::charge(budget.metrics.retained_bytes, v2::checked_sum(admitted->metrics().retained_logical_bytes, compiled->metrics().retained_bytes), budget.limits.retained_bytes);
+            accounting::dependency(admitted.get());
+            accounting::dependency(compiled.get());
+            accounting::Temporary temporary(v2::checked_sum(v2::checked_product(compiled->metrics().normalized_bytes, 4), 8192));
             budget.keep(sizeof(ExecutableDefinition) + sizeof(ExecutableDefinition::Impl));
             budget.work(v2::checked_sum(admitted->metrics().authorized_definitions, 1));
             LEMON_BIND_COUNT(membership_scans);
@@ -159,6 +163,7 @@ public:
                 std::move(staging), std::move(identity), budget.metrics);
             static_assert(std::is_const_v<typename decltype(impl)::element_type>, "ExecutableDefinitionImplIsActuallyConst");
             result.definition = std::shared_ptr<const ExecutableDefinition>(new ExecutableDefinition(std::move(impl)));
+            accounting::receipt(result.definition.get());
         } catch (const execution::Failure& error) { fail(error.code, error.pointer); }
         catch (const v2::LimitExceeded&) { fail("limit_exceeded", ""); }
         catch (const std::exception&) { fail("sealed_target_mismatch", ""); }

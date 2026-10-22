@@ -1,4 +1,5 @@
 #include "backend_catalog_admission_internal.h"
+#include "backend_catalog_ledger_internal.h"
 #include "backend_definition_resources.h"
 #include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/backend_option_contract.h"
@@ -69,6 +70,7 @@ private:
 };
 
 void keep(std::size_t& retained, std::size_t bytes, const DefinitionLimits& limits) {
+    accounting::owned(bytes);
     charge(retained, bytes, limits.retained_logical_bytes);
 }
 
@@ -191,6 +193,7 @@ CatalogSnapshotResult CatalogAdmissionBuilder::snapshot(std::shared_ptr<const Fr
     const auto fail = [&](const std::string& code, const std::string& id = "", const std::string& pointer = "") { error(result.diagnostics, limits, code, id, pointer); };
     try {
         if (!builtins) { fail("invalid_snapshot"); return result; }
+        accounting::owned(checked_sum(sizeof(CatalogSourceSnapshot) + 64, checked_product(sources.size(), sizeof(CatalogSourceSnapshot::Source))));
         auto snapshot = std::make_shared<CatalogSourceSnapshot>();
         snapshot->builtins_ = std::move(builtins);
         snapshot->limits_ = limits;
@@ -201,9 +204,11 @@ CatalogSnapshotResult CatalogAdmissionBuilder::snapshot(std::shared_ptr<const Fr
         charge(metrics.definitions, sources.size(), limits.snapshot_documents);
         charge(metrics.source_bytes, 0, limits.snapshot_source_bytes);
         auto& retained = metrics.retained_logical_bytes;
-        keep(retained, checked_sum(sizeof(CatalogSourceSnapshot), checked_product(sources.size(), sizeof(CatalogSourceSnapshot::Source))), limits);
+        charge(retained, checked_sum(sizeof(CatalogSourceSnapshot), checked_product(sources.size(), sizeof(CatalogSourceSnapshot::Source))), limits.retained_logical_bytes);
         for (const auto& input : sources) charge(metrics.source_bytes, input.bytes.size(), limits.snapshot_source_bytes);
         for (const auto& input : sources) {
+            accounting::work(input.bytes.size(), input.bytes.size());
+            accounting::Temporary temporary(checked_sum(checked_product(input.bytes.size(), 16), 4096));
             const auto header = inspect_catalog_input(input.bytes, limits);
             const auto& id = header.id;
             if (snapshot->builtins_->ids_.count(id) || snapshot->ids_.count(id)) {
@@ -288,6 +293,7 @@ CatalogAdmissionResult CatalogAdmissionBuilder::admit(std::shared_ptr<const Cata
     const auto fail = [&](const std::string& code, const std::string& id = "", const std::string& pointer = "") { error(result.diagnostics, limits, code, id, pointer); };
     try {
         if (!snapshot) { fail("invalid_snapshot"); return result; }
+        accounting::owned(sizeof(AdmittedCatalog::Impl) + sizeof(AdmittedCatalog) + 128);
         auto impl = std::make_shared<AdmittedCatalog::Impl>();
         impl->sources = snapshot;
         impl->metrics = snapshot->metrics_;
@@ -295,7 +301,21 @@ CatalogAdmissionResult CatalogAdmissionBuilder::admit(std::shared_ptr<const Cata
         impl->ticket = std::shared_ptr<const CatalogAdmissionTicket>(new CatalogAdmissionTicket());
         auto& retained = impl->metrics.retained_logical_bytes;
         const auto& builtin = *snapshot->builtins_;
-        keep(retained, builtin.logical_bytes_, limits);
+        charge(retained, builtin.logical_bytes_, limits.retained_logical_bytes);
+        std::size_t ownership_bytes = 1024;
+        const auto measure_set = [&](const auto& values) {
+            for (const auto& value : values) {
+                accounting::work(value.size(), 1);
+                ownership_bytes = checked_sum(ownership_bytes, value.size() + sizeof(std::string) + 96);
+            }
+        };
+        measure_set(builtin.recipes_); measure_set(builtin.sections_); measure_set(builtin.options_);
+        for (const auto& [section, keys] : builtin.persisted_) {
+            accounting::work(section.size(), 1);
+            ownership_bytes = checked_sum(ownership_bytes, section.size() + 128);
+            measure_set(keys);
+        }
+        accounting::Temporary ownership_copy(ownership_bytes);
         auto recipes = builtin.recipes_, sections = builtin.sections_, options = builtin.options_;
         auto persisted = builtin.persisted_;
         std::set<std::string> aliases;

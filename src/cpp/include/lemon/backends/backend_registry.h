@@ -17,6 +17,7 @@ struct ModelInfo;
 
 namespace backends {
 
+struct ConfiguredBackendEntry;
 struct BackendSpec;  // install/download spec, defined in backend_utils.h
 
 // Everything a backend's create() needs to build an instance.
@@ -55,6 +56,7 @@ struct BackendRegistration {
     BackendCreateFn create;
     const BackendSpec* spec;  // install/download spec, or nullptr (e.g. cloud has none)
     const BackendOps* ops;    // stateless model-management behavior (never null)
+    const ConfiguredBackendEntry* configured_entry = nullptr;
 };
 
 // All registered (descriptor, create, spec, ops) entries, in LEMON_BACKENDS order.

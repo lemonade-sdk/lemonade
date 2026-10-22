@@ -99,13 +99,11 @@ int main() {
     const auto collision_reply = active.validate(legacy_collision.dump());
     check(collision_reply["diagnostics"][0]["message"] == "Recipe already owned", "v1 ownership diagnostic remains byte compatible");
     const auto candidate = active.validate(root().dump());
-    check(candidate["valid"] == false && candidate["stages"]["catalog_admitted"] == true && candidate["stages"]["executable"] == false,
-        "v2 candidate is admitted but never executable valid");
+    check(candidate["valid"] == true && candidate["stages"]["catalog_admitted"] == true && candidate["stages"]["compiled"] == true && candidate["stages"]["bound"] == true && candidate["stages"]["executable"] == true,
+        "hook-free v2 candidate completes executable validation");
     check(active.export_schema() == before && !backend_catalog(), "private candidate cannot publish");
-    bool refused = false;
-    try { BackendCatalog executable({{"", root().dump(), DefinitionOrigin::External}}); }
-    catch (const DefinitionValidationError& error) { refused = error.diagnostics[0].code == "unsupported_execution_version"; }
-    check(refused && !backend_catalog(), "startup cannot activate admitted v2");
+    BackendCatalog executable({{"", root().dump(), DefinitionOrigin::External}});
+    check(executable.registrations().size() == 18 && !backend_catalog(), "hook-free v2 construction finalizes without publication");
     value = child("child", "missing");
     auto response = active.validate(value.dump());
     check(response["diagnostics"][0]["code"] == "missing_parent" && response["diagnostics"][0]["pointer"] == "/extends/external", "candidate missing dependency response");
@@ -119,7 +117,7 @@ int main() {
     check(public_admission_diagnostic(unsafe) == Json{{"code", "unknown_key"}, {"definition", ""}, {"pointer", "/merge"}, {"message", "Definition admission failed"}}, "unsafe diagnostic identity pointer and exception excluded");
     const auto v2 = active.export_schema("", 2);
     check(v2["catalog_id"] == before["catalog_id"] && v2["catalog_v2_id"] != before["catalog_id"], "separate admission catalog identity");
-    check(v2["accepted_definition_versions"] == Json::array({1, 2}) && v2["executable_definition_versions"] == Json::array({1}), "honest input admission versus execution versions");
+    check(v2["accepted_definition_versions"] == Json::array({1, 2}) && v2["executable_definition_versions"] == Json::array({1, 2}), "honest input admission versus execution versions");
     check(v2["admission_manifest"]["manifest_version"] == 1 && v2["export_registry_id"] == installed_builtin_exports().digest(), "separate versioned admission manifest");
     for (std::size_t i = 0; i < before["recipes"].size(); ++i)
         check(v2["recipes"][i]["input_schema_version"] == (before["recipes"][i]["definition_id"].is_null() ? Json() : Json(1)), "honest recipe source version " + std::to_string(i));
