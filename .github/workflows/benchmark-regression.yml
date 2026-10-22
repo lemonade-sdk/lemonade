@@ -98,7 +98,7 @@ jobs:
   bench:
     name: Bench ${{ matrix.fork_id }}
     needs: [setup]
-    runs-on: [self-hosted, stx-halo, Linux, X64, lemon-prod]
+    runs-on: [self-hosted, Linux, strix-halo, devlab-dispatch]
     timeout-minutes: 180
     strategy:
       fail-fast: false
@@ -589,6 +589,13 @@ jobs:
           # per-fork replacement means the newest run per fork wins.
           results_dir = Path("bench-history/results")
           leaderboard = {}
+          MODEL_ALIASES = {
+            "Qwen3.8-27B-HRX": "Qwen3.8-27B-GGUF",
+            "MiniCPM-V-4.6-HRX": "MiniCPM-V-4.6-GGUF",
+            "MiniCPM5-1B-HRX": "MiniCPM5-1B-GGUF",
+            "Qwen3-30B-A3B-Instruct-2507-HRX": "Qwen3-30B-A3B-Instruct-2507-GGUF",
+            "Meta-Llama-3.1-8B-Instruct-HRX": "Meta-Llama-3.1-8B-Instruct-GGUF",
+          }
           systems = {}          # hw fingerprint -> hardware block (dedup across runs)
           lemonade_versions = set()
           # Active scenario -> required ctx; other ctx/scenarios not rendered.
@@ -664,7 +671,10 @@ jobs:
             if not isinstance(model_entries, list):
               model_entries = [data]
             for me in model_entries:
-              model = me.get("model", data.get("model", "unknown"))
+              raw_model = me.get("model", data.get("model", "unknown"))
+              if fork_id == "llamacpp-hrx" and raw_model not in MODEL_ALIASES:
+                continue
+              model = MODEL_ALIASES.get(raw_model, raw_model)
               for br in me.get("results", []):
                 for sc in br.get("scenarios", []):
                   want_ctx = SCENARIO_CTX.get(sc["name"])
@@ -676,8 +686,6 @@ jobs:
                   ttft_block = sc.get("ttft_ms", {})
                   in_tok = sc.get("input_tokens")
                   pp_tps = sc.get("pp_tps")
-                  if pp_tps is None and in_tok and ttft_block.get("min", 0) > 0:
-                    pp_tps = round(in_tok * 1000.0 / ttft_block["min"], 2)
                   key = f"{model}|{sc['name']}"
                   entry = {
                     "model": model, "scenario": sc["name"],
@@ -724,7 +732,10 @@ jobs:
             if not isinstance(model_entries, list):
               model_entries = [data]
             for me in model_entries:
-              mdl = me.get("model", data.get("model", "unknown"))
+              raw_mdl = me.get("model", data.get("model", "unknown"))
+              if fid == "llamacpp-hrx" and raw_mdl not in MODEL_ALIASES:
+                continue
+              mdl = MODEL_ALIASES.get(raw_mdl, raw_mdl)
               quant = quant_from_checkpoint(me, data)
               for br in me.get("results", []):
                 for sc in br.get("scenarios", []):
@@ -737,8 +748,6 @@ jobs:
                   ttft_block = sc.get("ttft_ms", {})
                   in_tok = sc.get("input_tokens")
                   pp_tps = sc.get("pp_tps")
-                  if pp_tps is None and in_tok and ttft_block.get("min", 0) > 0:
-                    pp_tps = round(in_tok * 1000.0 / ttft_block["min"], 2)
                   h = history.setdefault(mdl, {}).setdefault(sc["name"], {}).setdefault(fid, [])
                   h.append({
                     "version": ver, "timestamp": me.get("timestamp", data.get("timestamp")),

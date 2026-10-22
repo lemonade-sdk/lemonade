@@ -518,13 +518,12 @@ def backend_results(data: dict, model: str | None = None) -> list[dict]:
 
 
 def annotate_pp(data: dict) -> None:
-    """Derive pp_tps (input_tokens / fastest TTFT) for each scenario."""
+    """Promote bench pp_tps dict to scalar mean, mirroring tps_mean for TG."""
     for br in backend_results(data):
         for sc in br.get("scenarios", []):
-            in_tok = sc.get("input_tokens")
-            best_ttft = sc.get("ttft_ms", {}).get("min", 0)
-            if in_tok and best_ttft > 0:
-                sc["pp_tps"] = round(in_tok * 1000.0 / best_ttft, 2)
+            native = sc.get("pp_tps")
+            if isinstance(native, dict):
+                sc["pp_tps"] = native.get("mean")
 
 
 def check_regression(
