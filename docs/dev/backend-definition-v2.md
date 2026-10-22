@@ -938,22 +938,26 @@ are unchanged, and the production v2 source, leaf-authority and export tables
 remain empty. This increment does not qualify the complete 476-case corpus or
 activate the candidate.
 
-The reviewed production aggregate re-pin is
-`sha256:43df4f52e00eb4db57e0f0e9bd02ed60293466cc86a2303496335977d370de09`.
-Only `llamacpp.environment.v1` and `llamacpp.install_context.v1` change from ABI /
-implementation revisions 1/1 to 2/2. The nineteen-record inventory and twelve
-legacy records remain intact. The compiler revision is 4, defaults and adapter
-revisions are 2, binding revision remains 1, and mixed v2 catalogs use runner /
-service policy revision 2. V1-only catalog identity construction is unchanged.
-The earlier aggregate literals above describe their historical increments.
+The current production aggregate re-pin is
+`sha256:06038c6bac962c715a33f7b09827ee6b48be35a80917be6ade54357a0e96111d`.
+Unit 4e.2a changes `llamacpp.backend.v1` ABI / implementation 1/1 to 1/2,
+`llamacpp.environment.v1` 2/2 to 3/3, and `llamacpp.artifacts.v1` 1/1 to 2/2.
+The environment service gains a capability-checked staging action at the point
+of invocation; artifact reads gain approved-root existence and snapshot facts.
+The other sixteen ABI records and all twelve legacy records remain intact.
+The compiler revision is 4, defaults and adapter revisions are 2, binding
+revision remains 1, and mixed v2 catalogs use runner / service policy revision 3.
+V1-only catalog identity construction is unchanged. Earlier aggregate literals
+above describe their historical increments.
 
 The environment vocabulary explicitly adds parent keys `LD_LIBRARY_PATH`,
 `CUDA_VISIBLE_DEVICES` and `__NV_PRIME_RENDER_OFFLOAD`, and a CUDA architecture
 query. Providers still accept enums, reject unknown enum values before reading,
 and return child assignments rather than modifying the parent process.
 The target preserves CUDA visibility overrides, loader ordering and absent versus
-empty parent values. Full load and environment effect-order comparison remains
-part of the unfinished corpus qualification.
+empty parent values. Repeated runtime queries remain observable, and Windows
+TheRock staging runs between the second and third architecture reads through
+the same sealed-capability consumer. JSON cannot supply the staging destination.
 
 Install policy defaults remain `repository_result: repository_only` and
 `fact_timing: selected_case`, with no repository facts, unmanaged backends or
@@ -996,5 +1000,21 @@ compiler, binder and entry construction, then compares candidate install results
 32 buffered and 40 streaming transcripts per view. Eight additional loopback
 checks exercise completion bytes through `ConfiguredServer` and HTTP with fake
 processes. These projections are not the four required full-corpus v2 oracle
-registrations. Load/artifact/system-probe qualification, the exact bounded-probe
-deliberate-diff sidecar and five new CI registrations remain unfinished.
+registrations.
+
+Unit 4e.2a adds 321 load and 30 artifact cases per view to that existing suite.
+All 446/476 candidate cases per view match the frozen records exactly. The
+load comparison covers requested/resolved/unchanged options, failure device
+state, errors, command/output policy and the complete ordered effect prefix.
+`ConfiguredServer` separately witnesses device assignment before installation
+failure, and paired declarations exercise allowed and rejected zero ports.
+Artifact comparisons cover absent/flat roots, active and older snapshots,
+live manifests, variant ambiguity, import, validation and metadata. Approved
+root fallback does not authorize any path outside the service inventory.
+The bounded reader preserves the legacy distinction between architecture
+metadata and string capability hints.
+
+The 24 system-probe and six scoped-argument cases per view, exact bounded-probe
+deliberate-diff sidecar and five new CI registrations remain for 4e.2b. The CI
+census stays 145. Production activation remains 4e.3 work. These CPU fake and
+macro-view checks do not qualify native Windows/macOS or real model execution.

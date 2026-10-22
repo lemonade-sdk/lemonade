@@ -191,6 +191,7 @@ public:
         ++calls;
         return magic.substr(0, bytes);
     }
+    typed::ArtifactRootInfo root_info(typed::ArtifactHandle) override { return {"", true, false, false}; }
     std::vector<typed::ArtifactEntry> entries(typed::ArtifactHandle value) override {
         if (index(value) != 0) throw std::logic_error("not the approved root");
         ++calls;

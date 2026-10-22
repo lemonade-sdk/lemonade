@@ -25,18 +25,17 @@ bool dflash(std::string checkpoint) {
 BackendSelection select_backend(const BackendSelectionInput& input, BackendSelectionServices& services) {
     LEMON_TYPED_ENTRY("backend.select_backend");
     auto backend = input.backend;
-    if (backend.empty()) {
+    if (backend.empty() && !input.supported.empty()) {
         const auto found = std::find_if(input.supported.begin(), input.supported.end(),
             [&](const auto& value) { return services.supports(value); });
         if (found == input.supported.end()) throw std::runtime_error("No supported llama.cpp backend");
         backend = *found;
-    } else if (!services.supports(backend)) {
-        throw std::runtime_error("Unsupported llama.cpp backend: " + backend);
+    } else if (backend != "auto" && !services.supports(backend)) {
+        std::string allowed = "auto";
+        for (const auto& value : input.supported) allowed += ", " + value;
+        throw std::invalid_argument("'llamacpp.backend' must be one of: " + allowed);
     }
-    if (backend == "rocm") {
-        if (input.rocm_channel != "stable" && input.rocm_channel != "nightly") throw std::logic_error("unknown ROCm channel");
-        backend += "-" + input.rocm_channel;
-    }
+    if (backend == "rocm") backend += "-" + input.rocm_channel;
     return {backend, backend != "cpu"};
 }
 
@@ -118,7 +117,7 @@ EnvironmentPlan environment(const EnvironmentInput& input, EnvironmentServices& 
         if (windows && rocm) {
             if (input.backend == "rocm-stable") {
                 const auto architecture = services.runtime(RuntimeQuery::RocmArchitecture);
-                if (!architecture.empty() && input.staging) result.staging.push_back({*input.staging, architecture});
+                if (!architecture.empty() && input.staging) services.stage({*input.staging, architecture});
             }
             const auto architecture = services.runtime(RuntimeQuery::RocmArchitecture);
             if (architecture == "gfx1151" || architecture == "gfx1152") result.assignments.emplace_back("OCL_SET_SVM_SIZE", "262144");

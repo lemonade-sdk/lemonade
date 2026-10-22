@@ -4,8 +4,8 @@
       "contract": 6,
       "id": "llamacpp.artifacts.v1",
       "stage": "artifacts",
-      "abi": 1,
-      "implementation": 1,
+      "abi": 2,
+      "implementation": 2,
       "effects": [
         7
       ],
@@ -22,7 +22,7 @@
       "id": "llamacpp.backend.v1",
       "stage": "backend",
       "abi": 1,
-      "implementation": 1,
+      "implementation": 2,
       "effects": [
         0,
         1
@@ -53,8 +53,8 @@
       "contract": 4,
       "id": "llamacpp.environment.v1",
       "stage": "environment",
-      "abi": 2,
-      "implementation": 2,
+      "abi": 3,
+      "implementation": 3,
       "effects": [
         3,
         4,

@@ -554,7 +554,7 @@ const BuiltinExportRegistry& BuiltinCatalogLoader::installed_exports() {
     static const BuiltinExportRegistry registry = [] {
         BuiltinExportRegistry value;
         auto impl = std::make_shared<BuiltinExportRegistry::Impl>();
-        impl->digest = "sha256:43df4f52e00eb4db57e0f0e9bd02ed60293466cc86a2303496335977d370de09";
+        impl->digest = "sha256:06038c6bac962c715a33f7b09827ee6b48be35a80917be6ade54357a0e96111d";
         const auto audit = v2::audit_export_contracts({}, nullptr, installed_hook_abis(), impl->digest);
         if (!audit.entries.empty() || audit.truncated) throw std::logic_error("Installed export registry audit failed");
         value.impl_ = std::move(impl);

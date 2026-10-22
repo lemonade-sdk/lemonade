@@ -107,6 +107,7 @@ public:
         const auto found = parents.find(key);
         return found == parents.end() ? std::nullopt : std::optional<std::string>(found->second);
     }
+    void stage(const typed::StagingAction&) override { ++calls; queries.push_back("stage"); }
     std::string runtime(typed::RuntimeQuery query) override {
         ++calls; queries.push_back("runtime:" + std::to_string(static_cast<int>(query)));
         return facts.count(query) ? facts.at(query) : "fake";

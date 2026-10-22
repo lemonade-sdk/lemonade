@@ -111,7 +111,7 @@ def prior_mutations():
         (
             "resource",
             SERVICES,
-            "if (std::find(supported_.begin(), supported_.end(), backend) == supported_.end())",
+            "if (std::find(supported_.begin(), supported_.end(), backend) == supported_.end() &&\n        std::find(supported_.begin(), supported_.end(), input.backend) == supported_.end())",
             "if (false)",
             "runtime_services",
             "SelectionCannotEscapeBackendScope",
@@ -303,9 +303,9 @@ def mutations():
         ),
         (
             "active-snapshot-relative-input",
-            ARTIFACTS,
-            "if (entry.active) relative = relative.substr(relative.find('/', 10) + 1);",
-            "if (false) relative = relative.substr(relative.find('/', 10) + 1);",
+            "src/cpp/server/backends/configured/typed/llamacpp_artifacts.cpp",
+            "entry.active && entry.relative_path.substr(entry.relative_path.find('/', 10) + 1) == input.variant",
+            "false",
             "runtime_services",
             "AuxiliaryResolutionUsesBoundArtifactOwnerAndActiveInventory",
         ),
@@ -568,8 +568,8 @@ def mutations():
         (
             "json-staging-path",
             RUNNER,
-            "destination = utils::path_to_utf8(executable.parent_path());",
-            'destination = options.value("staging_path", utils::path_to_utf8(executable.parent_path()));',
+            "destination = services.staging_directory(plan.command.program);",
+            'destination = options.value("staging_path", services.staging_directory(plan.command.program));',
             "runtime_services",
             "JsonPathCannotSupplyStagingAuthority",
         ),
@@ -750,7 +750,11 @@ def main():
             "assertion": assertion,
             "source_sha256": hashlib.sha256(copied.read_bytes()).hexdigest(),
         }
-        entry = next(x for x in commands if x["file"] == str(source))
+        candidates = [x for x in commands if x["file"] == str(source)]
+        entry = next(
+            (x for x in candidates if "lemonade-typed-hook-test.dir" in x["command"]),
+            candidates[0],
+        )
         command = shlex.split(entry["command"])
         original_object = command[command.index("-o") + 1]
         command[command.index("-o") + 1] = str(directory / "mutant.o")
@@ -775,6 +779,8 @@ def main():
                 for x in link
                 if not x.startswith("-Wl,--dependency-file=")
             ]
+            if str(directory / "mutant.o") not in link:
+                link.insert(1, str(directory / "mutant.o"))
             link[link.index("-o") + 1] = str(directory / target)
             record["link"] = run(link, build, directory / "link.log", env)
             if record["link"] == 0:

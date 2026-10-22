@@ -119,6 +119,7 @@ public:
         ++reads;
         return "GGUF";
     }
+    typed::ArtifactRootInfo root_info(typed::ArtifactHandle) override { return {"", true, false, false}; }
     std::vector<typed::ArtifactEntry> entries(typed::ArtifactHandle value) override {
         if (index(value) != 0) throw std::logic_error("foreign root");
         ++reads;
@@ -136,6 +137,7 @@ public:
     std::string cuda_architecture() override { fail(); }
     std::optional<std::string> parent(typed::ParentKey) override { fail(); }
     std::string runtime(typed::RuntimeQuery) override { fail(); }
+    void stage(const typed::StagingAction&) override { fail(); }
     std::string llama_version() override { fail(); }
     bool kfd_present() override { fail(); }
     bool hip_plugin_present() override { fail(); }

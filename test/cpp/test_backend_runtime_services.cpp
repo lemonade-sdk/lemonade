@@ -1,7 +1,7 @@
 #include "backend_runtime_fixture.h"
 #include "lemon/backends/configured/backend_spec_utils.h"
 #include "lemon/utils/path_utils.h"
-#include "llamacpp_v2_parity.h"
+#include "llamacpp_v2_load_artifact_parity.h"
 
 #include <filesystem>
 #include <fstream>
@@ -663,6 +663,8 @@ int main(int argc, char** argv) {
     invalid_install = legacy_install;
     invalid_install["merge"]["install"]["cases"][0]["backend"] = {"cuda"};
     reject_install(invalid_install, "invalid_install_fact_backend", "BeforePlatformCannotReadAnotherBackendFact");
+    llama_corpus::witnesses(candidate_executable, candidate_entry);
+    llama_corpus::parity(candidate_executable, *candidate_entry);
     llamacpp_install_parity(candidate_executable, *candidate_entry);
     llamacpp_runtime_parity(candidate_executable);
     llamacpp_protocol_parity(candidate_executable, candidate_entry);

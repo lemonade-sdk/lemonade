@@ -144,7 +144,7 @@ std::optional<typed::ArtifactHeader> read_header(const std::string& bytes) {
         if (type == 8) {
             const auto value = cursor.string();
             if (key == "general.architecture") result.architecture = value;
-            inspect_gguf_string(key, value, result.capabilities);
+            else inspect_gguf_string(key, value, result.capabilities);
         } else if (type == 9) {
             const auto element = cursor.number<std::uint32_t>();
             const auto elements = cursor.number<std::uint64_t>();
@@ -193,15 +193,17 @@ struct ArtifactServices::Inventory {
     };
     std::vector<Entry> entries;
     bool directory;
+    typed::ArtifactRootInfo info;
 };
 ArtifactServices::ArtifactServices(InvocationGuard& guard, const std::string& approved_path, bool directory)
     : guard_(guard), lifetime_(guard.lifetime()), inventory_(std::make_unique<Inventory>()) {
     check();
     if (approved_path.empty() || approved_path.find('\0') != std::string::npos) throw std::invalid_argument("Invalid approved artifact input");
-    const auto root = fs::canonical(utils::path_from_utf8(approved_path));
+    const auto root = fs::weakly_canonical(utils::path_from_utf8(approved_path));
+    inventory_->info = {utils::path_to_utf8(root), fs::exists(root), fs::exists(root / "snapshots"), false};
     inventory_->directory = directory;
-    inventory_->entries.push_back({handle_identity(), root, root, "", false, directory ? nullptr : std::make_unique<ReadFile>(root)});
-    if (!directory) return;
+    inventory_->entries.push_back({handle_identity(), root, root, "", false, directory || !inventory_->info.exists ? nullptr : std::make_unique<ReadFile>(root)});
+    if (!directory || !inventory_->info.exists) return;
     if (!fs::is_directory(root)) throw std::invalid_argument("Artifact root is not a directory");
     std::string active;
     const auto ref = root / "refs" / "main";
@@ -212,6 +214,7 @@ ArtifactServices::ArtifactServices(InvocationGuard& guard, const std::string& ap
         if (active.empty() || active == "." || active == ".." || active.find_first_of("/\\:") != std::string::npos || active.find('\0') != std::string::npos)
             throw std::invalid_argument("Invalid approved HF snapshot ref");
     }
+    inventory_->info.active_snapshot = !active.empty() && fs::exists(root / "snapshots" / active);
     fs::recursive_directory_iterator iterator(root), end;
     std::size_t visited = 0;
     for (; iterator != end; ++iterator) {
@@ -251,7 +254,10 @@ std::string ArtifactServices::prefix(typed::ArtifactHandle file, std::size_t byt
     if (bytes > 262144) throw std::length_error("Artifact prefix byte limit exceeded");
     check(bytes);
     const auto& read = inventory_->entries.at(at).file;
-    if (!read) throw std::logic_error("Artifact directory cannot be read as a file");
+    if (!read) {
+        if (!inventory_->info.exists) return "";
+        throw std::logic_error("Artifact directory cannot be read as a file");
+    }
     return read->prefix(bytes);
 }
 std::optional<typed::ArtifactHeader> ArtifactServices::header(typed::ArtifactHandle file) { return read_header(prefix(file, 262144)); }
@@ -262,17 +268,25 @@ std::vector<typed::ArtifactEntry> ArtifactServices::entries(typed::ArtifactHandl
         const auto& entry = inventory_->entries[i];
         check(entry.relative.size());
         auto relative = entry.relative;
-        if (entry.active) relative = relative.substr(relative.find('/', 10) + 1);
+        bool committed = entry.relative.find(".incomplete") == std::string::npos;
+        if (entry.relative.rfind("snapshots/", 0) == 0) {
+            const auto end = entry.relative.find('/', 10);
+            if (end != std::string::npos && fs::exists(inventory_->entries.front().path / entry.relative.substr(0, end) / ".download_manifest.json")) committed = false;
+        }
         result.push_back({handle(entry.token), relative, utils::path_to_utf8(entry.path), entry.active,
-            entry.relative.find(".incomplete") == std::string::npos});
+            committed});
     }
     return result;
+}
+typed::ArtifactRootInfo ArtifactServices::root_info(typed::ArtifactHandle root) {
+    if (lookup(root) != 0 || !inventory_->directory) throw std::logic_error("Artifact handle is not the approved root");
+    return inventory_->info;
 }
 std::string ArtifactServices::approved_result(const std::string& path) {
     check(path.size());
     if (path.empty()) return "";
     for (const auto& entry : inventory_->entries) if (utils::path_to_utf8(entry.path) == path) {
-        if (fs::canonical(entry.path) != entry.target) throw std::logic_error("Artifact inventory changed");
+        if (fs::weakly_canonical(entry.path) != entry.target) throw std::logic_error("Artifact inventory changed");
         return path;
     }
     throw std::logic_error("Returned artifact path outside approved handle inventory");

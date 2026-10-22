@@ -163,6 +163,8 @@ bool SystemServices::kfd_present() { check(true); return sources_.kfd(); }
 bool SystemServices::hip_plugin_present() { check(true); return sources_.hip_plugin(); }
 
 EnvironmentSources environment_sources() {
+    const auto rocm_arch = std::make_shared<std::string>();
+    const auto cuda_arch = std::make_shared<std::string>();
     return {
         [](typed::ParentKey key) -> std::optional<std::string> {
             const char* name = nullptr;
@@ -179,12 +181,12 @@ EnvironmentSources environment_sources() {
             const auto* value = std::getenv(name);
             return value ? std::optional<std::string>(utils::get_environment_variable_utf8(name)) : std::nullopt;
         },
-        [](typed::RuntimeQuery query) {
+        [rocm_arch, cuda_arch](typed::RuntimeQuery query) {
             switch (query) {
-                case typed::RuntimeQuery::RocmArchitecture: return SystemInfo::get_rocm_arch();
-                case typed::RuntimeQuery::CudaArchitecture: return SystemInfo::get_cuda_arch();
-                case typed::RuntimeQuery::TheRockDirectory: return BackendUtils::join_runtime_dirs(BackendUtils::get_therock_lib_paths(SystemInfo::get_rocm_arch()));
-                case typed::RuntimeQuery::CudaVisibleDevices: return SystemInfo::get_cuda_visible_devices_for_arch(SystemInfo::get_cuda_arch());
+                case typed::RuntimeQuery::RocmArchitecture: return *rocm_arch = SystemInfo::get_rocm_arch();
+                case typed::RuntimeQuery::CudaArchitecture: return *cuda_arch = SystemInfo::get_cuda_arch();
+                case typed::RuntimeQuery::TheRockDirectory: return BackendUtils::join_runtime_dirs(BackendUtils::get_therock_lib_paths(*rocm_arch));
+                case typed::RuntimeQuery::CudaVisibleDevices: return SystemInfo::get_cuda_visible_devices_for_arch(*cuda_arch);
                 case typed::RuntimeQuery::HomeDirectory: {
 #ifdef _WIN32
                     return utils::get_environment_variable_utf8("USERPROFILE");
@@ -226,12 +228,15 @@ std::string EnvironmentServices::runtime(typed::RuntimeQuery query) {
     if (query != typed::RuntimeQuery::RocmArchitecture && query != typed::RuntimeQuery::TheRockDirectory &&
         query != typed::RuntimeQuery::CudaVisibleDevices && query != typed::RuntimeQuery::HomeDirectory && query != typed::RuntimeQuery::CudaArchitecture)
         throw std::logic_error("Unknown enumerated runtime query");
-    auto found = runtime_.find(query);
-    if (found == runtime_.end()) found = runtime_.emplace(query, sources_.runtime(query)).first;
-    const auto& result = found->second;
+    const auto result = sources_.runtime(query);
     guard_.check(typed::Effect::RuntimeFactRead, result.size());
     if (query == typed::RuntimeQuery::RocmArchitecture) architectures_.insert(result);
     return result;
+}
+void EnvironmentServices::stage(const typed::StagingAction& action) {
+    typed::EnvironmentPlan plan;
+    plan.staging.push_back(action);
+    StagingConsumer::execute(seal(std::move(plan)));
 }
 StagingPlan EnvironmentServices::seal(typed::EnvironmentPlan plan) {
     guard_.check_active();
@@ -290,17 +295,21 @@ void InvocationGuard::check(typed::Effect effect, std::size_t allowance) {
 }
 SelectionServices::SelectionServices(InvocationGuard& guard, std::vector<std::string> supported)
     : guard_(guard), supported_(std::move(supported)) {}
+SelectionServices::SelectionServices(InvocationGuard& guard, std::function<void(const std::string&)> validate)
+    : guard_(guard), validate_(std::move(validate)) {}
 bool SelectionServices::supports(const std::string& backend) {
     guard_.check(typed::Effect::SupportQuery);
+    if (validate_) { validate_(backend); return true; }
     return std::find(supported_.begin(), supported_.end(), backend) != supported_.end();
 }
 typed::DeviceCheck SelectionServices::validate_device(const typed::DeviceValidationInput& input) {
     guard_.check(typed::Effect::DeviceQuery);
     auto backend = input.backend;
     if (backend.rfind("rocm-", 0) == 0) backend = "rocm";
-    if (std::find(supported_.begin(), supported_.end(), backend) == supported_.end())
+    if (std::find(supported_.begin(), supported_.end(), backend) == supported_.end() &&
+        std::find(supported_.begin(), supported_.end(), input.backend) == supported_.end())
         throw std::logic_error("Device query outside selected backend scope");
-    try { BackendUtils::validate_device_backend_match(backend, input.device); return {true, ""}; }
+    try { BackendUtils::validate_device_backend_match(input.backend, input.device); return {true, ""}; }
     catch (const std::invalid_argument& error) { return {false, error.what()}; }
 }
 

@@ -26,9 +26,9 @@ const std::vector<HookAbiDescriptor>& installed_hook_abis() {
     static const std::vector<HookAbiDescriptor> descriptors = [] {
         auto result = installed_legacy_hook_abis();
         const std::vector<HookAbiDescriptor> typed = {
-            {"llamacpp.artifacts.v1", "artifacts", 1, 1, {}},
-            {"llamacpp.backend.v1", "backend", 1, 1, {}},
-            {"llamacpp.environment.v1", "environment", 2, 2, {}},
+            {"llamacpp.artifacts.v1", "artifacts", 2, 2, {}},
+            {"llamacpp.backend.v1", "backend", 1, 2, {}},
+            {"llamacpp.environment.v1", "environment", 3, 3, {}},
             {"llamacpp.install_context.v1", "install_context", 2, 2, {}},
             {"llamacpp.prepare.v1", "launch", 1, 1, {}},
             {"llamacpp.runtime_options.v1", "runtime_options", 1, 1, {}},

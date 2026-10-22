@@ -16,7 +16,7 @@ HookShape hook_shape(typed::Contract contract) {
     using E = typed::Effect;
     using F = typed::Fact;
     switch (contract) {
-        case C::Backend: return {contract, "llamacpp.backend.v1", "backend", 1, 1,
+        case C::Backend: return {contract, "llamacpp.backend.v1", "backend", 1, 2,
             {E::SupportQuery, E::DeviceQuery}, {F::BackendOptions}, {F::SelectedBackend}};
         case C::InstallContext: return {contract, "llamacpp.install_context.v1", "install_context", 2, 2,
             {E::InstallFactRead}, {F::SelectedBackend, F::Platform, F::VersionInputs}, {F::InstallFacts}};
@@ -24,12 +24,12 @@ HookShape hook_shape(typed::Contract contract) {
             {}, {F::ModelLabels, F::DraftCheckpoint}, {F::RuntimeFacts}};
         case C::Prepare: return {contract, "llamacpp.prepare.v1", "launch", 1, 1,
             {}, {F::ModelArtifacts, F::ModelLabels, F::DraftCheckpoint, F::ContextSize, F::SelectedBackend}, {F::ModelFacts}};
-        case C::Environment: return {contract, "llamacpp.environment.v1", "environment", 2, 2,
+        case C::Environment: return {contract, "llamacpp.environment.v1", "environment", 3, 3,
             {E::ParentEnvironmentRead, E::RuntimeFactRead, E::StagingPlan},
             {F::Platform, F::SelectedBackend, F::ResolvedProgram}, {F::EnvironmentPlan}};
         case C::System: return {contract, "llamacpp.system.v1", "system", 1, 1,
             {E::SystemProbe}, {F::Platform, F::SelectedBackend, F::VersionInputs}, {F::SystemFacts}};
-        case C::Artifacts: return {contract, "llamacpp.artifacts.v1", "artifacts", 1, 1,
+        case C::Artifacts: return {contract, "llamacpp.artifacts.v1", "artifacts", 2, 2,
             {E::ArtifactRead}, {F::ModelArtifacts, F::ModelLabels}, {F::ArtifactMetadata}};
         case C::MaxTokensAlias: return {contract, "llamacpp.max_tokens_alias", "request", 1, 1, {}, {F::Request}, {F::Request}};
         case C::ToolSchemaLimits: return {contract, "llamacpp.tool_schema_limits", "request", 1, 1, {}, {F::Request}, {F::Request}};

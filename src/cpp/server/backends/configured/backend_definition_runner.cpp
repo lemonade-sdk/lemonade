@@ -345,7 +345,7 @@ BackendOps::InstallCheck DefinitionRunner::check_install(const std::string& back
 void DefinitionRunner::populate_metadata(ModelInfo& model) const {
     if (program_.artifacts.empty()) return;
     const auto path = model.resolved_path("main");
-    if (path.empty()) return;
+    if (path.empty() || !std::filesystem::exists(utils::path_from_utf8(path))) return;
     const auto result = artifact("main", [&](const auto& target, auto& guard) {
         runtime::ArtifactServices reads(guard, path, false);
         return target.metadata({reads.root(), utils::path_to_utf8(utils::path_from_utf8(path).filename()), model.type, model.labels}, reads);
@@ -373,7 +373,7 @@ std::string DefinitionRunner::validate_file(const std::string& path) const {
 }
 std::string DefinitionRunner::resolve_artifact(const CheckpointResolveContext& context) const {
     if (program_.artifacts.empty()) throw std::logic_error("Configured v2 artifact consumer is unavailable");
-    if (context.model_cache_path.empty() || !std::filesystem::is_directory(utils::path_from_utf8(context.model_cache_path))) return "";
+    if (context.model_cache_path.empty()) return "";
     const auto role = context.type.empty() ? "main" : context.type;
     const auto owner = role == "mmproj" || role == "draft" ? "main" : role;
     return artifact(owner, [&](const auto& target, auto& guard) {
@@ -436,11 +436,11 @@ PreparedExecution DefinitionRunner::prepare_load(const LoadContext& context, con
                 for (const auto index : schedule) {
                     const auto selected = invoke<typed::BackendSelectionOps>(frame, index, SlotOwnerKind::Root, "backend", "backend", cancel,
                         [&](const auto& target, auto& guard) {
-                            runtime::SelectionServices selection(guard, services.supported_backends(spec.effective_public_recipe()));
-                            auto result = target.select_backend({backend, options.value("rocm_channel", "stable"), services.supported_backends(spec.effective_public_recipe())}, selection);
-                            const auto device = target.validate_device({result.backend, options.value("device", "")}, selection);
-                            if (!device.supported) throw std::invalid_argument(device.error);
-                            return result;
+                            const auto channel = backend == "rocm" ? services.rocm_channel() : "stable";
+                            runtime::SelectionServices selection(guard, [&](const auto& requested) {
+                                services.validate_backend(spec.effective_public_recipe(), requested);
+                            });
+                            return target.select_backend({backend, channel, {}}, selection);
                         });
                     backend = selected.backend; use_gpu = selected.use_gpu;
                 }
@@ -455,6 +455,7 @@ PreparedExecution DefinitionRunner::prepare_load(const LoadContext& context, con
                 frame.facts.insert(typed::Fact::SelectedBackend);
             }
             values["launch"]["backend"] = backend;
+            if (context.device_selected) context.device_selected(use_gpu ? DEVICE_GPU : DEVICE_CPU);
             if (context.backend_selected) context.backend_selected();
         } else if (phase == "hook") {
             auto context_size = options.contains("ctx_size") && options["ctx_size"].is_number_integer() && options["ctx_size"].get<std::int64_t>() > 0 ? options["ctx_size"].get<std::uint64_t>() : 0;
@@ -494,7 +495,8 @@ PreparedExecution DefinitionRunner::prepare_load(const LoadContext& context, con
                 if (program_.install.strategy == "external_only") throw std::runtime_error("External backend executable is required");
                 plan.command.program = services.managed_binary(spec, backend);
             }
-            if (plan.command.program.empty() || !services.exists(plan.command.program)) throw std::runtime_error("Configured backend executable is missing");
+            if (plan.command.program.empty() || (launch.program_source != "managed" && !services.exists(plan.command.program)))
+                throw std::runtime_error("Configured backend executable is missing");
             values["launch"]["executable"] = plan.command.program;
             values["launch"]["executable_directory"] = utils::path_to_utf8(utils::path_from_utf8(plan.command.program).parent_path());
             frame.facts.insert(typed::Fact::ResolvedProgram);
@@ -514,11 +516,23 @@ PreparedExecution DefinitionRunner::prepare_load(const LoadContext& context, con
                         start = candidate + 1;
                     }
                 } else number = services.allocate_port();
-                if (number <= 0 || number > 65535) throw std::runtime_error(port.error.empty() ? "Invalid configured port" : port.error);
+                if (number < 0 || (number == 0 && port.reject_zero) || number > 65535) throw std::runtime_error(port.error.empty() ? "Invalid configured port" : port.error);
                 values["launch"]["ports"][port.name] = number;
             }
         }
         if (context.phase_prepared) context.phase_prepared(phase, values);
+    }
+    for (const auto index : slots(SlotOwnerKind::Root, "backend", "backend")) {
+        invoke<typed::BackendSelectionOps>(frame, index, SlotOwnerKind::Root, "backend", "backend", cancel,
+            [&](const auto& target, auto& guard) {
+                runtime::SelectionServices selection(guard, {backend});
+                const auto binding = std::find_if(program_.bindings.begin(), program_.bindings.end(),
+                    [](const auto& item) { return item.id == "device"; });
+                const auto device = binding == program_.bindings.end() ? std::string() : options.at(binding->public_name).template get<std::string>();
+                const auto checked = target.validate_device({backend, device}, selection);
+                if (!checked.supported) throw std::invalid_argument(checked.error);
+                return true;
+            });
     }
     defaults(frame, "launch");
     std::string custom;
@@ -548,14 +562,14 @@ PreparedExecution DefinitionRunner::prepare_load(const LoadContext& context, con
                 std::string destination;
                 if (host.os == "windows" && backend == "rocm-stable" && (!external_program ||
                     executable_->compiled().authorized().definition().key.space == DefinitionNamespace::Builtin)) {
-                    std::error_code error;
-                    const auto executable = std::filesystem::canonical(utils::path_from_utf8(plan.command.program), error);
-                    if (error) throw std::runtime_error("Staging requires the selected executable inventory");
-                    destination = utils::path_to_utf8(executable.parent_path());
+                    destination = services.staging_directory(plan.command.program);
                     scope = external_program ? typed::StagingScope::BuiltinExternalTheRock : typed::StagingScope::ManagedTheRock;
                 }
                 runtime::EnvironmentServices service(guard, environment, destination, scope);
-                auto plan = target({runtime::typed_platform(host.os), backend, options.value("device", ""),
+                const auto device_binding = std::find_if(program_.bindings.begin(), program_.bindings.end(),
+                    [](const auto& item) { return item.id == "device"; });
+                const auto device = device_binding == program_.bindings.end() ? std::string() : options.at(device_binding->public_name).template get<std::string>();
+                auto plan = target({runtime::typed_platform(host.os), backend, device,
                     values["launch"]["executable_directory"].get<std::string>(), service.capability()}, service);
                 return runtime::StagingConsumer::execute(service.seal(std::move(plan)));
             });

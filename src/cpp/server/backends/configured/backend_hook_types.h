@@ -110,6 +110,7 @@ public:
     virtual ~EnvironmentServices() = default;
     virtual std::optional<std::string> parent(ParentKey key) = 0;
     virtual std::string runtime(RuntimeQuery query) = 0;
+    virtual void stage(const StagingAction& action) = 0;
     bool owns(const StagingCapability& capability) const noexcept { return capability.owner_ == this; }
 protected:
     StagingCapability staging_capability(StagingScope scope) const { return StagingCapability(this, scope); }
@@ -180,12 +181,19 @@ struct ArtifactResolveInput {
     std::string variant;
 };
 struct ArtifactImportInput { ArtifactHandle root; };
+struct ArtifactRootInfo {
+    std::string path;
+    bool exists = false;
+    bool snapshots = false;
+    bool active_snapshot = false;
+};
 class ArtifactReadServices {
 public:
     virtual ~ArtifactReadServices() = default;
     virtual std::optional<ArtifactHeader> header(ArtifactHandle file) = 0;
     virtual std::string prefix(ArtifactHandle file, std::size_t bytes) = 0;
     virtual std::vector<ArtifactEntry> entries(ArtifactHandle root) = 0;
+    virtual ArtifactRootInfo root_info(ArtifactHandle root) = 0;
 protected:
     ArtifactHandle handle(std::size_t index) const { return ArtifactHandle(this, index); }
     std::size_t index(ArtifactHandle value) const {

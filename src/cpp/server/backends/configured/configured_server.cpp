@@ -96,7 +96,8 @@ void ConfiguredServer::load(const std::string& name, const ModelInfo& model, con
         auto cancel = current_request_cancel_context();
         const auto outer = cancel.should_cancel;
         cancel.should_cancel = [this, outer] { return load_cancelled() || (outer && outer()); };
-        const auto prepared = entry_->runner_->prepare_load({name, model, options, log_level_, {}, {}}, entry_->spec, *services_.launch, cancel);
+        const auto prepared = entry_->runner_->prepare_load({name, model, options, log_level_, {}, {},
+            [this](DeviceType device) { device_type_ = device; }}, entry_->spec, *services_.launch, cancel);
         const auto& plan = prepared.plan;
         configure_backend_watchdog({plan.command.ready_endpoint, plan.watchdog_enabled, true});
         start_server(services_.make_process(plan.output, plan.working_directory), plan.command, plan.readiness_timeout_seconds);

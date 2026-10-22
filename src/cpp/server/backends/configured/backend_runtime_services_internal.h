@@ -140,6 +140,7 @@ class EnvironmentServices final : public typed::EnvironmentServices {
 public:
     std::optional<std::string> parent(typed::ParentKey key) override;
     std::string runtime(typed::RuntimeQuery query) override;
+    void stage(const typed::StagingAction& action) override;
 private:
     EnvironmentServices(InvocationGuard& guard, EnvironmentSources sources, std::string destination, std::optional<typed::StagingScope> scope);
     std::optional<typed::StagingCapability> capability();
@@ -149,7 +150,6 @@ private:
     const std::string destination_;
     const std::optional<typed::StagingScope> scope_;
     std::map<typed::ParentKey, std::optional<std::string>> parents_;
-    std::map<typed::RuntimeQuery, std::string> runtime_;
     std::set<std::string> architectures_;
     friend class ::lemon::backends::DefinitionRunner;
 #ifdef LEMONADE_RUNTIME_TEST
@@ -165,6 +165,7 @@ public:
     std::optional<typed::ArtifactHeader> header(typed::ArtifactHandle file) override;
     std::string prefix(typed::ArtifactHandle file, std::size_t bytes) override;
     std::vector<typed::ArtifactEntry> entries(typed::ArtifactHandle root) override;
+    typed::ArtifactRootInfo root_info(typed::ArtifactHandle root) override;
     std::string approved_result(const std::string& path);
 private:
     struct Inventory;
@@ -178,11 +179,13 @@ private:
 class SelectionServices final : public typed::BackendSelectionServices {
 public:
     SelectionServices(InvocationGuard& guard, std::vector<std::string> supported);
+    SelectionServices(InvocationGuard& guard, std::function<void(const std::string&)> validate);
     bool supports(const std::string& backend) override;
     typed::DeviceCheck validate_device(const typed::DeviceValidationInput& input) override;
 private:
     InvocationGuard& guard_;
     const std::vector<std::string> supported_;
+    const std::function<void(const std::string&)> validate_;
 };
 
 }

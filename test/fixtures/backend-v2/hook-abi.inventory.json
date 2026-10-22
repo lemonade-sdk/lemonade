@@ -10,15 +10,15 @@
     {
       "id": "llamacpp.artifacts.v1",
       "stage": "artifacts",
-      "revision": 1,
-      "implementation_revision": 1,
+      "revision": 2,
+      "implementation_revision": 2,
       "operations": []
     },
     {
       "id": "llamacpp.backend.v1",
       "stage": "backend",
       "revision": 1,
-      "implementation_revision": 1,
+      "implementation_revision": 2,
       "operations": []
     },
     {
@@ -31,8 +31,8 @@
     {
       "id": "llamacpp.environment.v1",
       "stage": "environment",
-      "revision": 2,
-      "implementation_revision": 2,
+      "revision": 3,
+      "implementation_revision": 3,
       "operations": []
     },
     {
@@ -232,6 +232,6 @@
       ]
     }
   ],
-  "abi_digest": "sha256:b359c737e8618f6561bc2e495a53a24ad40ea33969a9feaf76d2e8b78ba03965",
-  "registry_digest": "sha256:43df4f52e00eb4db57e0f0e9bd02ed60293466cc86a2303496335977d370de09"
+  "abi_digest": "sha256:23e91ba6e4523ce7082033f875c69a4d027045d9acd10b1980620066f3a2bfe7",
+  "registry_digest": "sha256:06038c6bac962c715a33f7b09827ee6b48be35a80917be6ade54357a0e96111d"
 }

@@ -8,7 +8,7 @@ const std::vector<DefinitionSourceView>& embedded_v2_sources() {
 }
 
 const BuiltinExecutionPolicies& embedded_v2_policies() {
-    static const BuiltinExecutionPolicies policies{{}, "sha256:43df4f52e00eb4db57e0f0e9bd02ed60293466cc86a2303496335977d370de09"};
+    static const BuiltinExecutionPolicies policies{{}, "sha256:06038c6bac962c715a33f7b09827ee6b48be35a80917be6ade54357a0e96111d"};
     return policies;
 }
 

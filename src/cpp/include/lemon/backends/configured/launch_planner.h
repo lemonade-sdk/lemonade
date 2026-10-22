@@ -14,6 +14,7 @@ struct LoadContext {
     std::string log_level;
     std::function<void()> backend_selected;
     std::function<void(const std::string& phase, const json& values)> phase_prepared;
+    std::function<void(DeviceType)> device_selected;
 };
 struct ResolvedLaunchInputs {
     json values;
@@ -42,6 +43,8 @@ public:
     virtual std::vector<std::pair<std::string, std::string>> environment(
         const std::string& preset, const std::string& executable, const std::string& backend, const std::string& log_category) const = 0;
     virtual PlatformInfo platform() const = 0;
+    virtual std::string rocm_channel() const;
+    virtual std::string staging_directory(const std::string& program) const;
     virtual long default_timeout_seconds() const = 0;
 };
 class EffectLaunchServices : public LaunchServices {

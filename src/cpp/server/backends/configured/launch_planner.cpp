@@ -1,6 +1,7 @@
 #include "lemon/backends/backend_option_contract.h"
 #include "lemon/backends/configured/backend_hook_registry.h"
 #include "lemon/backends/configured/launch_planner.h"
+#include "lemon/runtime_config.h"
 #include "lemon/utils/custom_args.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/recipe_arg_resolver.h"
@@ -10,6 +11,18 @@
 #include <set>
 
 namespace lemon::backends {
+
+std::string LaunchServices::rocm_channel() const {
+    const auto* config = RuntimeConfig::global();
+    return config ? config->rocm_channel() : "stable";
+}
+
+std::string LaunchServices::staging_directory(const std::string& program) const {
+    std::error_code error;
+    const auto executable = std::filesystem::canonical(utils::path_from_utf8(program), error);
+    if (error) throw std::runtime_error("Staging requires the selected executable inventory");
+    return utils::path_to_utf8(executable.parent_path());
+}
 
 PlatformInfo native_platform() {
     PlatformInfo platform;

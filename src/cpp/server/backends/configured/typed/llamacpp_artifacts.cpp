@@ -38,11 +38,14 @@ bool confined(const std::string& value) {
     return true;
 }
 
-std::string select(std::vector<ArtifactEntry> entries, const std::string& variant) {
+std::string select(std::vector<ArtifactEntry> entries, const std::string& variant, const ArtifactRootInfo& root) {
+    if (!root.exists) return root.path;
+    if (root.snapshots && !root.active_snapshot) return "";
     entries.erase(std::remove_if(entries.begin(), entries.end(), [](const auto& entry) {
         return !entry.complete || !confined(entry.relative_path) || !gguf(entry.relative_path) ||
             lower(filename(entry.relative_path)).find("mmproj") != std::string::npos;
     }), entries.end());
+    if (entries.empty()) return root.snapshots ? "" : root.path;
     std::sort(entries.begin(), entries.end(), [](const auto& a, const auto& b) {
         return a.relative_path < b.relative_path;
     });
@@ -117,17 +120,17 @@ std::string validate_file(const ArtifactFileInput& input, ArtifactReadServices& 
 std::string resolve_path(const ArtifactResolveInput& input, ArtifactReadServices& reads) {
     LEMON_TYPED_ENTRY("artifacts.resolve_path");
     const auto entries = reads.entries(input.root);
-    if (input.role == "main") return select(entries, input.variant);
+    if (input.role == "main") return select(entries, input.variant, reads.root_info(input.root));
     if (input.role != "mmproj" && input.role != "draft") throw std::logic_error("unknown artifact role");
     for (const auto& entry : entries) {
-        if (entry.complete && confined(entry.relative_path) && entry.relative_path == input.variant) return entry.resolved_path;
+        if (entry.complete && confined(entry.relative_path) && (entry.relative_path == input.variant || (entry.active && entry.relative_path.substr(entry.relative_path.find('/', 10) + 1) == input.variant))) return entry.resolved_path;
     }
     return "";
 }
 
 std::string find_imported(const ArtifactImportInput& input, ArtifactReadServices& reads) {
     LEMON_TYPED_ENTRY("artifacts.find_imported");
-    return select(reads.entries(input.root), "");
+    return select(reads.entries(input.root), "", reads.root_info(input.root));
 }
 
 }
