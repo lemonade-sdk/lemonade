@@ -38,10 +38,17 @@ admin without `edit_node` on a device sees a notice instead of that device's
 access list. Removing a device requires `delete_node` on the device node.
 
 The header's **Inference server** selector chooses this device or a linked mesh
-device without leaving Chat. Health and models reload from the selected server.
-Failed switches restore the previous connection. Enter the peer's API key when
-prompted, or in Devices & mesh. Peer keys stay in client memory; they are never
-sent to the local controller. Temporary mesh forwarding ports are not saved as
+device without leaving Chat. It works in the desktop app and in a browser, on
+this device or on another machine. It lists this device and the group's Tier 3
+devices that are online. Health and models reload from the selected server.
+Failed switches restore the previous connection.
+
+The client keeps talking to its own `lemond`, which relays the requests to the
+selected device over the mesh (see [Inference relay](#inference-relay)). The
+selection lives in that client only; other clients of the same `lemond` keep
+their own server. Enter the peer's API key when prompted, or in Devices & mesh.
+The client holds peer keys in memory and sends them only in the relay header,
+which `lemond` forwards to that peer alone. Relay URLs are not saved as
 connection settings.
 
 Native passkeys use FIDO2 USB security keys with required user presence and user
@@ -60,10 +67,9 @@ access, invites, joining and device removal. The server must have
 the reason.
 
 Some actions need the desktop app on the server itself: passkey registration
-and unlock, turning the mesh on or off, locking, renaming the device, live
-events and mesh inference selection. Unlock the server locally before you manage
-it remotely. A remote join works only when the server is unlocked and
-not yet in a group.
+and unlock, turning the mesh on or off, locking, renaming the device and live
+events. Unlock the server locally before you manage it remotely. A remote join
+works only when the server is unlocked and not yet in a group.
 
 An unlocked device creates and cancels invites without another passkey check.
 The local controller rules or the API key authorize the request. A locked device
@@ -92,10 +98,34 @@ join, without replaying consumed invite tokens.
 
 Virtual TCP port `13305` forwards to a separate loopback listener in `lemond`.
 That listener serves the normal API with normal API-key authentication, but it
-refuses every Nexus route. Selected peers get an SDK egress listener on
-`127.0.0.1`. Member removal and address changes close
-that listener and existing forwarded connections. Remote HTTP requests retain
-normal API-key authentication.
+refuses every Nexus route. Relayed peers get an SDK egress listener on
+`127.0.0.1`. Member removal and address changes close that listener and
+existing forwarded connections. Remote HTTP requests retain normal API-key
+authentication.
+
+### Inference relay
+
+`lemond` relays any request under
+`/api/v1/nexus/peers/{node_id}/<path>` (also the other route prefixes) to
+`<path>` on that device's virtual port `13305`. GUI3 uses
+`<server>/api/v1/nexus/peers/{node_id}` as its base URL, so health, models,
+chat completions and other HTTP routes reach the peer unchanged. Responses
+stream through as they arrive, so SSE works; status and `Content-Type` are kept.
+Multipart uploads are rebuilt for the peer. WebSocket routes are not relayed.
+
+- `Authorization` authenticates the caller to this `lemond` and is never
+  forwarded.
+- `X-Lemonade-Peer-Authorization: Bearer <peer key>` is sent to the peer as its
+  `Authorization`.
+- Loopback clients follow the normal API-key rules. Other machines need
+  `LEMONADE_API_KEY` set on this server and a matching bearer token, as for
+  remote management.
+- The mesh ingress listener refuses the relay, so a peer cannot relay through
+  this device.
+- The target must be another group member that is a Tier 3 inference node,
+  online and with a mesh address. Otherwise the relay returns 400 (this
+  device), 404 (not in the group) or 409 (offline or not an inference node).
+  An unreachable peer returns 502.
 
 ## Control API
 
@@ -116,6 +146,7 @@ Routes are available under `/api/v0/nexus/`, `/api/v1/nexus/`, `/v0/nexus/`,
 | GET, POST | `devices/{node_id}/access` | Device access list; POST `{"member_node_id", "see", "connect"}` |
 | POST | `devices/{node_id}/remove` | Removal; needs `delete_node` on the device |
 | POST | `egress` | Loopback endpoint for a selected group member |
+| any | `peers/{node_id}/<path>` | Relay to a mesh inference device (see [Inference relay](#inference-relay)) |
 | GET | `events` | SSE mesh/membership/lock events; `after` cursor, `once=1` snapshot |
 
 Member and access routes send one change at a time to the federation's
@@ -130,8 +161,8 @@ Each listener applies its own rules:
 
 | Listener | Client | Nexus routes |
 | --- | --- | --- |
-| Public | Loopback | `status` directly; every other route redirects with HTTP 307 to the management listener |
-| Public | Other machines | `status`, `join/status`, `devices`, `members`, `members/{id}/role`, `members/{id}/permissions`, `devices/{id}/access`, `devices/{id}/remove`, `invites`, `invites/cancel` and `join`, only with `LEMONADE_API_KEY` set and `Authorization: Bearer <key>` |
+| Public | Loopback | `status` and the relay directly; every other route redirects with HTTP 307 to the management listener |
+| Public | Other machines | `status`, `join/status`, `devices`, `members`, `members/{id}/role`, `members/{id}/permissions`, `devices/{id}/access`, `devices/{id}/remove`, `invites`, `invites/cancel`, `join` and the relay, only with `LEMONADE_API_KEY` set and `Authorization: Bearer <key>` |
 | Management (`127.0.0.1`, ephemeral port) | Local desktop | All routes |
 | Mesh ingress (`127.0.0.1`, ephemeral port) | Mesh peers | None (HTTP 403) |
 

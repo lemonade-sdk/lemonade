@@ -784,6 +784,9 @@ class LemonadeAPI {
   private _pollTimer: ReturnType<typeof setInterval> | null = null;
   private _sessionApiKey = '';
   private _sessionAdminApiKey = '';
+  // Key for a mesh peer reached through this server's Nexus relay. The relay sends it
+  // only to that peer; Authorization keeps authenticating this server.
+  private _peerApiKey = '';
   private _hostBaseUrl: string | null = null;
   private _connectionSettingsPromise: Promise<void> | null = null;
   public readonly clientSessionId: string = createSecureClientSessionId();
@@ -820,6 +823,7 @@ class LemonadeAPI {
 
   set baseUrl(url: string) {
     const normalized = normalizeBaseUrl(url);
+    this._peerApiKey = '';
     this._hostBaseUrl = normalized;
     safeSetLocalStorage(LS_BASE_URL, normalized);
   }
@@ -1051,6 +1055,7 @@ class LemonadeAPI {
     const h: Record<string, string> = { ...(extra || {}) };
     const credential = auth === 'admin' ? this.adminApiKey : auth === 'api' ? this.apiKey : '';
     if (credential) h['Authorization'] = `Bearer ${credential}`;
+    if (this._peerApiKey) h['X-Lemonade-Peer-Authorization'] = `Bearer ${this._peerApiKey}`;
 
     if (includeSessionHeaders && this.sessionHeadersEnabled) {
       h['X-Client-Session-Id'] = this.clientSessionId;
@@ -2574,10 +2579,15 @@ class LemonadeAPI {
 
   // ── Connection management ───────────────────────────────────────
 
-  async switchServer(endpoint: string, apiKey: string): Promise<boolean> {
+  get peerApiKey(): string {
+    return this._peerApiKey;
+  }
+
+  async switchServer(endpoint: string, apiKey: string, peerApiKey = ''): Promise<boolean> {
     await Promise.allSettled([this._connectInFlight, this._refreshInFlight, this._systemInfoInFlight]);
     this._hostBaseUrl = normalizeBaseUrl(endpoint);
     this._sessionAdminApiKey = '';
+    this._peerApiKey = peerApiKey;
     this.setSessionApiKey(apiKey);
     this._healthData = null;
     this._healthDataSignature = '';

@@ -1001,7 +1001,7 @@ const App: React.FC = () => {
         </nav>
 
         <div className="titlebar__right" data-tauri-drag-region>
-          {isDesktop && <Suspense fallback={null}><NexusShortcut onOpen={() => navigateToRoute({ view: 'connect', section: 'devices-and-mesh' })} /></Suspense>}
+          <Suspense fallback={null}><NexusShortcut onOpen={() => navigateToRoute({ view: 'connect', section: 'devices-and-mesh' })} /></Suspense>
           <div
             ref={utilityMenuRef}
             className={`titlebar__utilities${utilityMenuOpen ? ' is-open' : ''}`}

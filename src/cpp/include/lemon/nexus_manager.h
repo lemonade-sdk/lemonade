@@ -38,13 +38,24 @@ std::pair<int, std::string> assignment_error(const std::string& reason);
 bool constant_time_equals(const std::string& candidate, const std::string& expected);
 /// True when `authorization` is "Bearer <key>" for `api_key` or a nonempty `admin_key`.
 bool bearer_matches(const std::string& authorization, const std::string& api_key, const std::string& admin_key);
-/// True for the group operations a nonloopback client may call on the public listener.
+/// True for the operations a nonloopback client may call on the public listener:
+/// the group operations and "relay".
 bool remote_operation(const std::string& operation);
 /// Decides whether a Nexus route may run on a listener other than Management.
 /// Returns {0, ""} to run the route, {307, ""} to redirect it to the management listener,
 /// or an HTTP error status and message. An empty `api_key` turns remote management off.
 std::pair<int, std::string> route_access(NexusListener listener, bool loopback, const std::string& operation,
     const std::string& authorization, const std::string& api_key, const std::string& admin_key);
+/// Header that carries the selected peer's API key through the relay. The relay sends it
+/// to that peer as Authorization and never forwards the caller's own Authorization.
+extern const char* const kPeerAuthorizationHeader;
+/// Chooses the relay target among merged group members. Returns {0, tunnel address without
+/// prefix length} or an HTTP error status and message.
+std::pair<int, std::string> relay_target(const nlohmann::json& members, const std::string& self_node_id,
+    const std::string& node_id);
+/// Sends `req` to http://127.0.0.1:`port``path` and streams the reply into `res`, keeping
+/// status and Content-Type. Blocks until the upstream reply headers arrive.
+void relay_http(uint16_t port, const std::string& path, const httplib::Request& req, httplib::Response& res);
 }
 
 class NexusManager {
@@ -66,6 +77,7 @@ private:
     void update_snapshot_locked(const json& snapshot);
     void emit_locked(const std::string& type, const json& data);
     void handle(const httplib::Request& req, httplib::Response& res, const std::string& operation, bool remote);
+    void relay(const httplib::Request& req, httplib::Response& res);
     std::pair<int, json> control_locked(const std::string& method, const std::string& path, const json& body);
     std::string data_root_;
     int ingress_port_;

@@ -3,11 +3,15 @@
 #include "lemon/utils/path_utils.h"
 
 #include <algorithm>
+#include <condition_variable>
+#include <deque>
 #include <filesystem>
 #include <fstream>
 #include <functional>
 #include <map>
+#include <random>
 #include <stdexcept>
+#include <thread>
 #ifdef LEMONADE_WITH_NEXUS
 #include <LemonadeNexusSDK/lemonade_nexus.h>
 #endif
@@ -68,6 +72,50 @@ json find_member(const json& members, const std::string& node_id) {
         if (member.value("node_id", "") == node_id) return member;
     }
     return nullptr;
+}
+void reply_error(httplib::Response& res, int status, const std::string& message) {
+    res.set_header("Cache-Control", "no-store");
+    res.status = status;
+    res.set_content(json{{"error", message}}.dump(), "application/json");
+}
+
+// Hands a relayed reply from the upstream client thread to the content provider, so the
+// caller sees status and Content-Type first and then each chunk as it arrives.
+struct RelayStream {
+    std::mutex mutex;
+    std::condition_variable changed;
+    bool headers{false};
+    bool done{false};
+    bool cancelled{false};
+    int status{502};
+    std::string content_type;
+    std::deque<std::string> chunks;
+    std::unique_ptr<httplib::Client> client;
+    std::thread worker;
+    void finish() {
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            cancelled = true;
+        }
+        changed.notify_all();
+        if (client) client->stop();
+        if (worker.joinable()) worker.join();
+    }
+};
+
+std::string multipart_body(const httplib::MultipartFormData& form, const std::string& boundary) {
+    std::string body;
+    for (const auto& entry : form.fields) {
+        body += "--" + boundary + "\r\nContent-Disposition: form-data; name=\"" + entry.second.name + "\"\r\n\r\n" +
+            entry.second.content + "\r\n";
+    }
+    for (const auto& entry : form.files) {
+        const auto& file = entry.second;
+        body += "--" + boundary + "\r\nContent-Disposition: form-data; name=\"" + file.name + "\"; filename=\"" + file.filename +
+            "\"\r\nContent-Type: " + (file.content_type.empty() ? "application/octet-stream" : file.content_type) +
+            "\r\n\r\n" + file.content + "\r\n";
+    }
+    return body + "--" + boundary + "--\r\n";
 }
 }
 
@@ -228,7 +276,7 @@ bool bearer_matches(const std::string& authorization, const std::string& api_key
 
 bool remote_operation(const std::string& operation) {
     static const std::vector<std::string> operations = {"status", "join/status", "devices", "members",
-        "members/role", "members/permissions", "devices/access", "devices/remove", "invites", "invites/cancel", "join"};
+        "members/role", "members/permissions", "devices/access", "devices/remove", "invites", "invites/cancel", "join", "relay"};
     return std::find(operations.begin(), operations.end(), operation) != operations.end();
 }
 
@@ -236,11 +284,105 @@ std::pair<int, std::string> route_access(NexusListener listener, bool loopback, 
                                          const std::string& authorization, const std::string& api_key, const std::string& admin_key) {
     if (listener == NexusListener::MeshIngress) return {403, "Network management is not available through the mesh"};
     if (listener == NexusListener::Management) return {0, ""};
-    if (loopback) return {operation == "status" || operation == "join/status" ? 0 : 307, ""};
+    if (loopback) return {operation == "status" || operation == "join/status" || operation == "relay" ? 0 : 307, ""};
     if (!remote_operation(operation)) return {403, "Use the Lemonade desktop app on this device for that action"};
     if (api_key.empty()) return {403, "Remote network management is off. Set LEMONADE_API_KEY on this server to turn it on."};
     if (!bearer_matches(authorization, api_key, admin_key)) return {401, "Invalid or missing API key"};
     return {0, ""};
+}
+
+const char* const kPeerAuthorizationHeader = "X-Lemonade-Peer-Authorization";
+
+std::pair<int, std::string> relay_target(const json& members, const std::string& self_node_id, const std::string& node_id) {
+    if (node_id == self_node_id) return {400, "Use this device directly instead of relaying to it"};
+    const auto target = find_member(members, node_id);
+    if (target.is_null()) return {404, "That device is not in your group"};
+    if (!target.value("is_inference", false)) return {409, "That device is not an inference server"};
+    if (!target.value("is_online", false)) return {409, "That device is offline"};
+    auto address = target.value("tunnel_ip", "");
+    if (const auto slash = address.find('/'); slash != std::string::npos) address.resize(slash);
+    if (address.empty()) return {409, "That device has no mesh address"};
+    return {0, address};
+}
+
+void relay_http(uint16_t port, const std::string& path, const httplib::Request& req, httplib::Response& res) {
+    auto stream = std::make_shared<RelayStream>();
+    httplib::Request upstream;
+    upstream.method = req.method;
+    upstream.path = path;
+    for (const auto* name : {"Accept", "Content-Type", "X-Client-Session-Id"}) {
+        if (req.has_header(name)) upstream.set_header(name, req.get_header_value(name));
+    }
+    const auto peer_key = req.get_header_value(kPeerAuthorizationHeader);
+    if (!peer_key.empty()) upstream.set_header("Authorization", peer_key);
+    if (req.is_multipart_form_data()) {
+        std::random_device random;
+        const auto boundary = "lemonade-relay-" + std::to_string(random()) + std::to_string(random()) + std::to_string(random());
+        upstream.headers.erase("Content-Type");
+        upstream.set_header("Content-Type", "multipart/form-data; boundary=" + boundary);
+        upstream.body = multipart_body(req.form, boundary);
+    } else {
+        upstream.body = req.body;
+    }
+    upstream.response_handler = [stream](const httplib::Response& response) {
+        {
+            std::lock_guard<std::mutex> lock(stream->mutex);
+            stream->status = response.status;
+            stream->content_type = response.get_header_value("Content-Type");
+            stream->headers = true;
+        }
+        stream->changed.notify_all();
+        return true;
+    };
+    upstream.content_receiver = [stream](const char* data, size_t length, auto, auto) {
+        {
+            std::lock_guard<std::mutex> lock(stream->mutex);
+            if (stream->cancelled) return false;
+            stream->chunks.emplace_back(data, length);
+        }
+        stream->changed.notify_all();
+        return true;
+    };
+    stream->client = std::make_unique<httplib::Client>("127.0.0.1", port);
+    stream->client->set_connection_timeout(10, 0);
+    stream->client->set_read_timeout(300, 0);
+    stream->client->set_write_timeout(300, 0);
+    stream->worker = std::thread([stream, upstream = std::move(upstream)]() mutable {
+        httplib::Response response;
+        auto error = httplib::Error::Success;
+        stream->client->send(upstream, response, error);
+        {
+            std::lock_guard<std::mutex> lock(stream->mutex);
+            stream->done = true;
+        }
+        stream->changed.notify_all();
+    });
+
+    std::unique_lock<std::mutex> lock(stream->mutex);
+    stream->changed.wait(lock, [&] { return stream->headers || stream->done; });
+    if (!stream->headers) {
+        lock.unlock();
+        stream->finish();
+        reply_error(res, 502, "Cannot reach that device's server through the mesh");
+        return;
+    }
+    res.status = stream->status;
+    const auto type = stream->content_type.empty() ? std::string("application/octet-stream") : stream->content_type;
+    lock.unlock();
+    res.set_header("Cache-Control", "no-store");
+    res.set_chunked_content_provider(type, [stream](size_t, httplib::DataSink& sink) {
+        std::unique_lock<std::mutex> lock(stream->mutex);
+        stream->changed.wait(lock, [&] { return !stream->chunks.empty() || stream->done; });
+        while (!stream->chunks.empty()) {
+            auto chunk = std::move(stream->chunks.front());
+            stream->chunks.pop_front();
+            lock.unlock();
+            if (!sink.write(chunk.data(), chunk.size())) return false;
+            lock.lock();
+        }
+        if (stream->done) sink.done();
+        return true;
+    }, [stream](bool) { stream->finish(); });
 }
 }
 
@@ -400,6 +542,18 @@ struct NexusManager::Session {
             } else ++it;
         }
         devices = std::move(next);
+    }
+    uint16_t relay_port(const std::string& id) {
+        if (locked) throw NexusError(423, "Unlock your network first");
+        if (!joined) throw NexusError(409, "Join the network first");
+        const auto target = nexus_access::relay_target(devices, node_id, id);
+        if (target.first != 0) throw NexusError(target.first, target.second);
+        uint16_t port = 0;
+        if (ln_mesh_open_egress(client.get(), target.second.c_str(), 13305, &port) != LN_OK || !port) {
+            throw NexusError(502, "Cannot open a mesh connection to that device");
+        }
+        egress_ips[id] = target.second;
+        return port;
     }
     json status() {
         auto mesh = sdk_call([&](auto out) { return ln_mesh_status(client.get(), out); });
@@ -872,6 +1026,23 @@ void NexusManager::handle(const httplib::Request& req, httplib::Response& res,
     }
 }
 
+void NexusManager::relay(const httplib::Request& req, httplib::Response& res) {
+#ifdef LEMONADE_WITH_NEXUS
+    uint16_t port = 0;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!enabled_ || !session_) { reply_error(res, 409, "Turn on the mesh first"); return; }
+        try { port = session_->relay_port(req.matches[1].str()); }
+        catch (const NexusError& e) { reply_error(res, e.status, e.what()); return; }
+    }
+    auto path = req.matches[2].str();
+    if (const auto query = req.target.find('?'); query != std::string::npos) path += req.target.substr(query);
+    nexus_access::relay_http(port, path, req, res);
+#else
+    reply_error(res, 503, "This build does not include the Nexus SDK");
+#endif
+}
+
 void NexusManager::register_routes(httplib::Server& server, NexusListener listener) {
     const auto dispatch = [this, listener](const httplib::Request& req, httplib::Response& res, const std::string& operation) {
         const bool loopback = local_request(req);
@@ -906,6 +1077,18 @@ void NexusManager::register_routes(httplib::Server& server, NexusListener listen
             [dispatch](const auto& req, auto& res) { dispatch(req, res, "members/role"); });
         server.Post(std::string(prefix) + R"(members/([A-Za-z0-9_-]+)/permissions)",
             [dispatch](const auto& req, auto& res) { dispatch(req, res, "members/permissions"); });
+        const auto relayed = std::string(prefix) + R"(peers/([A-Za-z0-9_-]+)(/.*))";
+        const auto relay_route = [this, listener](const httplib::Request& req, httplib::Response& res) {
+            const auto access = nexus_access::route_access(listener, local_request(req), "relay",
+                req.get_header_value("Authorization"), api_key(), admin_api_key());
+            if (access.first != 0) { reply_error(res, access.first, access.second); return; }
+            relay(req, res);
+        };
+        server.Get(relayed, relay_route);
+        server.Post(relayed, relay_route);
+        server.Put(relayed, relay_route);
+        server.Patch(relayed, relay_route);
+        server.Delete(relayed, relay_route);
     }
 }
 }

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { dismissNexusNotice, nexusStatusLabel, selectNexusInferenceServer, useNexusNetwork } from '../features/nexus/nexus';
+import { dismissNexusNotice, isNexusInferencePeer, nexusStatusLabel, selectNexusInferenceServer, useNexusNetwork } from '../features/nexus/nexus';
 import { friendlyErrorMessage } from '../api';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { WorkspaceActionButton } from './WorkspacePanels';
@@ -30,16 +30,16 @@ const NexusShortcut: React.FC<{ onOpen: () => void }> = ({ onOpen }) => {
       if (nodeId !== 'local' && /api key|401|403|unauthorized|authentication/i.test(message)) setNeedsKey(nodeId);
     }
   };
-  const peers = status?.members.filter(member => member.node_id !== status.node_id) || [];
+  const peers = status?.mesh_up ? status.members.filter(member => isNexusInferencePeer(member, status.node_id)) : [];
   return <>
     <button className="nexus-shortcut" type="button" onClick={onOpen} aria-label={`Devices and mesh: ${nexusStatusLabel(status)}`} title={nexusStatusLabel(status)} data-tauri-drag-region="false">
       <span className={`nexus-shortcut__dot${status?.mesh_up ? ' is-online' : ''}`} aria-hidden="true" />
       <span className="nexus-shortcut__label">Nexus</span>
     </button>
-    {network.mode !== 'remote' && (peers.length > 0 || network.selectedServerId && network.selectedServerId !== 'local') && <select ref={selector} className="nexus-server-select" aria-label="Inference server" title="Inference server" data-tauri-drag-region="false"
+    {(peers.length > 0 || network.selectedServerId && network.selectedServerId !== 'local') && <select ref={selector} className="nexus-server-select" aria-label="Inference server" title="Inference server" data-tauri-drag-region="false"
       value={network.selectedServerId || 'local'} disabled={network.switchingServer} onChange={event => void choose(event.target.value)}>
       <option value="local">This device</option>
-      {peers.map(device => <option key={device.node_id} value={device.node_id} disabled={!status?.mesh_up || device.is_online === false}>{device.device_name || 'Mesh device'}{device.is_online === false ? ' (offline)' : ''}</option>)}
+      {peers.map(device => <option key={device.node_id} value={device.node_id}>{device.device_name || 'Mesh device'} · Tier 3 · Online</option>)}
       {network.selectedServerId && network.selectedServerId !== 'local' && !peers.some(peer => peer.node_id === network.selectedServerId) && <option value={network.selectedServerId} disabled>Mesh server disconnected</option>}
     </select>}
     {(notice || error) && !needsKey && <div className="nexus-toast" role={error ? 'alert' : 'status'}><span>{error || notice}</span><WorkspaceActionButton appearance="quiet" size="small" onClick={onOpen}>View devices</WorkspaceActionButton><WorkspaceActionButton appearance="quiet" size="small" icon="x" aria-label="Dismiss notification" onClick={() => { setError(''); dismissNexusNotice(); }} /></div>}

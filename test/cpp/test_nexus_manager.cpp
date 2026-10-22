@@ -82,6 +82,74 @@ void check_route_access(const std::function<void(bool, const char*)>& check) {
     for (const auto* operation : {"passkey/challenge", "passkey/register", "passkey/unlock", "enable", "disable", "lock", "device", "events", "egress"}) {
         check(access(NexusListener::Public, false, operation, "Bearer key", "key").first == 403, "Local device operations stay local");
     }
+    check(access(NexusListener::MeshIngress, true, "relay", "Bearer key", "key").first == 403, "Mesh peers cannot use the relay");
+    check(access(NexusListener::Public, true, "relay", "", "").first == 0, "Local clients use the relay under the local rules");
+    check(access(NexusListener::Public, false, "relay", "Bearer key", "").first == 403, "Remote relay is off without an API key");
+    check(access(NexusListener::Public, false, "relay", "Bearer wrong", "key").first == 401, "Remote relay rejects a wrong key");
+    check(access(NexusListener::Public, false, "relay", "Bearer key", "key").first == 0, "Remote relay accepts the API key");
+
+    const json members = json::array({
+        {{"node_id", "self"}, {"is_inference", true}, {"is_online", true}, {"tunnel_ip", "10.8.0.2/32"}},
+        {{"node_id", "gpu"}, {"is_inference", true}, {"is_online", true}, {"tunnel_ip", "10.8.0.3/32"}},
+        {{"node_id", "sleeping"}, {"is_inference", true}, {"is_online", false}, {"tunnel_ip", "10.8.0.4/32"}},
+        {{"node_id", "laptop"}, {"is_inference", false}, {"is_online", true}, {"tunnel_ip", "10.8.0.5/32"}}});
+    check(access::relay_target(members, "self", "gpu") == std::make_pair(0, std::string("10.8.0.3")), "Relay targets an online inference peer");
+    check(access::relay_target(members, "self", "self").first == 400, "Relay refuses this device");
+    check(access::relay_target(members, "self", "missing").first == 404, "Relay refuses an unknown device");
+    check(access::relay_target(members, "self", "sleeping").first == 409, "Relay refuses an offline device");
+    check(access::relay_target(members, "self", "laptop").first == 409, "Relay refuses a Tier 4 client");
+}
+
+void check_relay_stream(const std::function<void(bool, const char*)>& check) {
+    httplib::Server peer;
+    std::string seen_authorization;
+    std::string seen_body;
+    peer.Post("/api/v1/chat/completions", [&](const httplib::Request& req, httplib::Response& res) {
+        seen_authorization = req.get_header_value("Authorization");
+        seen_body = req.body;
+        if (seen_authorization != "Bearer peer-key") {
+            res.status = 401;
+            res.set_content(R"({"error":"API key required"})", "application/json");
+            return;
+        }
+        res.set_chunked_content_provider("text/event-stream", [](size_t offset, httplib::DataSink& sink) {
+            if (offset > 0) { sink.done(); return true; }
+            for (const char* event : {"data: {\"n\":1}\n\n", "data: {\"n\":2}\n\n", "data: [DONE]\n\n"}) {
+                sink.write(event, std::char_traits<char>::length(event));
+                std::this_thread::sleep_for(std::chrono::milliseconds(20));
+            }
+            sink.done();
+            return true;
+        });
+    });
+    const int peer_port = peer.bind_to_any_port("127.0.0.1");
+    std::thread peer_worker([&] { peer.listen_after_bind(); });
+    peer.wait_until_ready();
+
+    httplib::Server front;
+    front.Post(R"(/relay(/.*))", [&](const httplib::Request& req, httplib::Response& res) {
+        access::relay_http(static_cast<uint16_t>(peer_port), req.matches[1].str(), req, res);
+    });
+    front.Post(R"(/closed(/.*))", [&](const httplib::Request& req, httplib::Response& res) {
+        access::relay_http(1, req.matches[1].str(), req, res);
+    });
+    const int front_port = front.bind_to_any_port("127.0.0.1");
+    std::thread front_worker([&] { front.listen_after_bind(); });
+    front.wait_until_ready();
+
+    httplib::Client client("127.0.0.1", front_port);
+    const httplib::Headers keys = {{"Authorization", "Bearer local-key"}, {access::kPeerAuthorizationHeader, "Bearer peer-key"}};
+    auto streamed = client.Post("/relay/api/v1/chat/completions", keys, R"({"stream":true})", "application/json");
+    check(streamed && streamed->status == 200, "Relay returns the peer status");
+    check(streamed && streamed->get_header_value("Content-Type") == "text/event-stream", "Relay keeps the stream type");
+    check(streamed && streamed->body == "data: {\"n\":1}\n\ndata: {\"n\":2}\n\ndata: [DONE]\n\n", "Relay delivers the stream intact");
+    check(seen_authorization == "Bearer peer-key" && seen_body == R"({"stream":true})", "Relay sends only the peer key and the body");
+    auto unauthorized = client.Post("/relay/api/v1/chat/completions", httplib::Headers{{"Authorization", "Bearer local-key"}}, "{}", "application/json");
+    check(unauthorized && unauthorized->status == 401 && seen_authorization.empty(), "Relay never forwards the caller's own key");
+    auto unreachable = client.Post("/closed/api/v1/chat/completions", keys, "{}", "application/json");
+    check(unreachable && unreachable->status == 502, "Relay reports an unreachable peer");
+    front.stop(); front_worker.join();
+    peer.stop(); peer_worker.join();
 }
 
 void check_listener_isolation(const std::filesystem::path& root, const std::function<void(bool, const char*)>& check) {
@@ -104,6 +172,8 @@ void check_listener_isolation(const std::filesystem::path& root, const std::func
         check(enable && enable->status == 403 && !manager.status().at("enabled"), "Mesh peers cannot enable Nexus");
         auto role = peer.Post("/api/v1/nexus/members/peer/role", R"({"role":"admin"})", "application/json");
         check(role && role->status == 403, "Mesh peers cannot change member roles");
+        auto bounced = peer.Post("/api/v1/nexus/peers/gpu/api/v1/chat/completions", "{}", "application/json");
+        check(bounced && bounced->status == 403, "Mesh peers cannot relay through this device");
         mesh.stop(); mesh_worker.join();
 
         const auto address = non_loopback_ipv4();
@@ -136,12 +206,22 @@ void check_listener_isolation(const std::filesystem::path& root, const std::func
 #endif
             auto unlock = remote.Post("/api/v1/nexus/passkey/unlock", valid, "{}", "application/json");
             check(unlock && unlock->status == 403, "Remote clients cannot use the passkey");
+            auto relayed = remote.Post("/api/v1/nexus/peers/gpu/api/v1/chat/completions", valid, "{}", "application/json");
+#ifdef LEMONADE_WITH_NEXUS
+            check(relayed && relayed->status == 409, "Remote relay needs the mesh turned on");
+#else
+            check(relayed && relayed->status == 503, "Remote relay needs the Nexus SDK");
+#endif
+            auto unkeyed_relay = remote.Post("/api/v1/nexus/peers/gpu/api/v1/chat/completions", "{}", "application/json");
+            check(unkeyed_relay && unkeyed_relay->status == 401, "Remote relay needs the API key");
             auto enable_remote = remote.Post("/api/v1/nexus/enable", valid, "{}", "application/json");
             check(enable_remote && enable_remote->status == 403 && !manager.status().at("enabled"), "Remote clients cannot enable Nexus");
             set_environment("LEMONADE_API_KEY", "");
             auto refused = remote.Get("/api/v1/nexus/members", valid);
             check(refused && refused->status == 403 && refused->body.find("LEMONADE_API_KEY") != std::string::npos,
                 "Remote management is refused without a configured API key");
+            auto refused_relay = remote.Post("/api/v1/nexus/peers/gpu/api/v1/chat/completions", valid, "{}", "application/json");
+            check(refused_relay && refused_relay->status == 403, "Remote relay is refused without a configured API key");
             server.stop(); worker.join();
         }
         manager.stop();
@@ -232,6 +312,7 @@ int main() {
     try {
         check_access_rules(check);
         check_route_access(check);
+        check_relay_stream(check);
         check_listener_isolation(root, check);
         {
             lemon::NexusManager manager(root.string(), 13305);

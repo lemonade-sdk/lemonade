@@ -4,7 +4,7 @@ import { useFocusTrap } from '../hooks/useFocusTrap';
 import { useI18n } from '../i18n';
 import { Icon } from './Icon';
 import { WorkspaceActionButton, WorkspaceActionGroup } from './WorkspacePanels';
-import { isNexusDesktop, nexusRequest, nexusStatusLabel, prepareNexus, refreshNexus,
+import { isNexusDesktop, isNexusInferencePeer, nexusRequest, nexusStatusLabel, prepareNexus, refreshNexus,
   cancelNexusPasskey, sendNexusPasskeyPin, useNexusNetwork, type PasskeyPrompt, type NexusDevice, type NexusInvite,
   NEXUS_GROUP_PERMISSIONS, getNexusDeviceAccess, hasNexusPermission, nexusTierLabel, setNexusDeviceAccess,
   setNexusMemberPermissions, setNexusMemberRole, type NexusDeviceAccess } from '../features/nexus/nexus';
@@ -103,6 +103,7 @@ const NexusPanel: React.FC<Props> = ({ isActive, onConnect }) => {
   const self = members.find(member => member.node_id === status?.node_id);
   const canManage = Boolean(self?.is_admin);
   const managingSelf = managing?.node_id === status?.node_id;
+  const connectable = (device: NexusDevice) => Boolean(status?.mesh_up) && isNexusInferencePeer(device, status?.node_id);
   const addDevice = manage && status?.mesh_up ? <WorkspaceActionButton appearance="primary" icon="plus" disabled={Boolean(busy) || !hasNexusPermission(self?.permissions, 'add_child')} onClick={() => { rememberFocus(); setInviteName(''); setInvite(null); setDialog('invite'); }}>Add a device</WorkspaceActionButton> : null;
   const joinGroup = manage && !status?.mesh_up && (desktop || (status?.enabled && !status.locked)) ? <WorkspaceActionButton appearance="secondary" disabled={!status?.available || Boolean(busy)} onClick={() => { rememberFocus(); setCode(''); setDialog('join'); }}>Join a group</WorkspaceActionButton> : null;
   return <section className="nexus-panel" aria-label="Devices and mesh">
@@ -148,13 +149,13 @@ const NexusPanel: React.FC<Props> = ({ isActive, onConnect }) => {
       <ul className="nexus-panel__device-list">{members.map(device => <li key={device.node_id}>
         <Icon name="hard-drive" size={24} />
         <div className="nexus-panel__device"><strong>{device.device_name || 'Unnamed device'}{device.is_admin && <span className="nexus-panel__badge">Admin</span>}{device.node_id === status?.node_id && <span className="nexus-panel__self">This device</span>}</strong><span>{nexusTierLabel(device)} · {device.tunnel_ip || 'No mesh address'}{device.is_online !== undefined && ` · ${device.is_online ? 'Online' : 'Offline'}`}{Boolean(device.is_online && device.latency_ms) && ` · ${Math.round(device.latency_ms!)} ms`}</span></div>
-        {manage && (desktop || canManage || device.can_remove) && (device.node_id !== status?.node_id || (canManage && status?.mesh_up)) && <WorkspaceActionGroup>
-          {desktop && device.node_id !== status?.node_id && <WorkspaceActionButton appearance="secondary" size="small" icon="plug" disabled={Boolean(busy) || !status?.mesh_up} onClick={() => void connect(device)}>Connect to server</WorkspaceActionButton>}
-          {canManage && status?.mesh_up && <WorkspaceActionButton appearance="quiet" size="small" icon="user-round-cog" disabled={Boolean(busy)} onClick={() => manageAccess(device)} aria-label={`Manage access for ${device.device_name || 'this device'}`}>Manage access</WorkspaceActionButton>}
-          {device.can_remove && <WorkspaceActionButton appearance="danger" size="small" icon="trash" disabled={Boolean(busy)} onClick={() => { rememberFocus(); setRemoving(device); }} aria-label={`Remove ${device.device_name}`}>Remove</WorkspaceActionButton>}
+        {(connectable(device) || (manage && ((canManage && status?.mesh_up) || device.can_remove))) && <WorkspaceActionGroup>
+          {connectable(device) && <WorkspaceActionButton appearance="secondary" size="small" icon="plug" disabled={Boolean(busy)} onClick={() => void connect(device)}>Connect to server</WorkspaceActionButton>}
+          {manage && canManage && status?.mesh_up && <WorkspaceActionButton appearance="quiet" size="small" icon="user-round-cog" disabled={Boolean(busy)} onClick={() => manageAccess(device)} aria-label={`Manage access for ${device.device_name || 'this device'}`}>Manage access</WorkspaceActionButton>}
+          {manage && device.can_remove && <WorkspaceActionButton appearance="danger" size="small" icon="trash" disabled={Boolean(busy)} onClick={() => { rememberFocus(); setRemoving(device); }} aria-label={`Remove ${device.device_name}`}>Remove</WorkspaceActionButton>}
         </WorkspaceActionGroup>}
       </li>)}</ul>
-      {desktop && members.some(member => member.node_id !== status?.node_id) && <div className="form-field nexus-panel__remote-key"><label className="form-field__label" htmlFor="nexus-remote-key">Remote server API key (if required)</label><input id="nexus-remote-key" className="input" type="password" autoComplete="off" value={remoteKey} onChange={event => setRemoteKey(event.target.value)} /><span className="form-field__hint">Use the key configured on the device you connect to.</span></div>}
+      {members.some(connectable) && <div className="form-field nexus-panel__remote-key"><label className="form-field__label" htmlFor="nexus-remote-key">Remote server API key (if required)</label><input id="nexus-remote-key" className="input" type="password" autoComplete="off" value={remoteKey} onChange={event => setRemoteKey(event.target.value)} /><span className="form-field__hint">Use the key configured on the device you connect to.</span></div>}
     </div>
     {network.passkey && <PasskeyDialog prompt={network.passkey} />}
     {(dialog || removing) && <div className="nexus-dialog__backdrop" onClick={event => { if (event.target === event.currentTarget && !busy) closeDialog(); }}>

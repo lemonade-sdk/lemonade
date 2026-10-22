@@ -4,16 +4,19 @@ const headers = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Head
 const self = { node_id: 'self', device_name: 'My laptop', tunnel_ip: '10.8.0.2/32', management_pubkey: 'self-key', permissions: ['read', 'write', 'add_child', 'edit_node', 'delete_node', 'admin'], permissions_known: true, is_admin: true, is_owner: true, is_inference: true, tier: 3, access_known: true, can_remove: false };
 const peer = { node_id: 'peer', device_name: 'Kitchen PC', tunnel_ip: '10.8.0.3/32', management_pubkey: 'peer-key', permissions: ['read', 'write'], permissions_known: true, is_admin: false, is_owner: false, is_inference: false, tier: 4, access_known: true, can_remove: true };
 const tablet = { node_id: 'tablet', device_name: 'Tablet', tunnel_ip: '10.8.0.4/32', management_pubkey: 'tablet-key', permissions: ['read'], permissions_known: true, is_admin: false, is_owner: false, is_inference: false, tier: 4, access_known: true, can_remove: true };
+const workstation = { node_id: 'workstation', device_name: 'GPU tower', tunnel_ip: '10.8.0.5/32', management_pubkey: 'workstation-key', permissions: ['read'], permissions_known: true, is_admin: false, is_owner: false, is_inference: true, tier: 3, access_known: true, can_remove: true, is_online: true };
 const memberSelf = { ...self, permissions: ['read'], is_admin: false, is_owner: false, can_remove: false };
-interface Options { members?: typeof self[]; accessKnown?: boolean; baseUrl?: string; apiKey?: string; remoteManagement?: boolean; refuse?: { status: number; error: string } }
+interface Member { node_id: string; device_name: string; tunnel_ip: string; management_pubkey: string; permissions: string[]; permissions_known: boolean; is_admin: boolean; is_owner: boolean; is_inference: boolean; tier: number; access_known: boolean; can_remove: boolean; is_online?: boolean }
+interface Options { members?: Member[]; accessKnown?: boolean; baseUrl?: string; apiKey?: string; remoteManagement?: boolean; refuse?: { status: number; error: string } }
 async function setup(page: Page, desktop = true, locked = false, options: Options = {}) {
-  const members = options.members ?? [self, peer];
+  const members: Member[] = options.members ?? [self, peer];
   const baseUrl = options.baseUrl ?? 'http://127.0.0.1:13305';
   const apiKey = options.apiKey ?? 'local-secret';
   const state = { available: true, controller_url: 'http://127.0.0.1:15555', remote_management: options.remoteManagement ?? false, enabled: true, registered: true, locked, mesh_up: !locked, status: locked ? 'locked' : 'running', node_id: 'self', group_node_id: 'group', device_name: 'My laptop', tunnel_ip: '10.8.0.2', peer_count: 1, members: locked ? [] : members };
   const access = (nodeId: string) => ({ node_id: nodeId, device_name: state.members.find(member => member.node_id === nodeId)?.device_name, access_known: options.accessKnown ?? true, can_manage: true,
     members: state.members.filter(member => member.node_id !== nodeId && member.node_id !== 'self').map(member => ({ node_id: member.node_id, device_name: member.device_name, is_admin: member.is_admin, tier: member.tier, see: member.node_id === 'peer', connect: false, editable: options.accessKnown ?? true })) });
-  const calls: { url: string; path: string; body: unknown; authorization?: string }[] = [];
+  const calls: { url: string; path: string; body: unknown; authorization?: string; peerAuthorization?: string }[] = [];
+  const relayed: { url: string; authorization?: string; peerAuthorization?: string }[] = [];
   await page.addInitScript(({ desktop, baseUrl, apiKey }) => {
     (window as any).api = {
       isWebApp: !desktop,
@@ -27,8 +30,14 @@ async function setup(page: Page, desktop = true, locked = false, options: Option
     const request = route.request();
     const path = new URL(request.url()).pathname;
     if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
+    if (path.includes('/nexus/peers/')) {
+      relayed.push({ url: request.url(), authorization: request.headers().authorization, peerAuthorization: request.headers()['x-lemonade-peer-authorization'] });
+      if (path.endsWith('/health')) return route.fulfill({ headers, json: { status: 'ok', version: 'peer', all_models_loaded: [] } });
+      if (path.endsWith('/models')) return route.fulfill({ headers, json: { data: [] } });
+      return route.fulfill({ headers, json: {} });
+    }
     if (path.includes('/nexus/')) {
-      calls.push({ url: request.url(), path, body: request.postDataJSON(), authorization: request.headers().authorization });
+      calls.push({ url: request.url(), path, body: request.postDataJSON(), authorization: request.headers().authorization, peerAuthorization: request.headers()['x-lemonade-peer-authorization'] });
       if (options.refuse) return route.fulfill({ status: options.refuse.status, headers, json: { error: options.refuse.error } });
       if (path.endsWith('/remove')) state.members = [self];
       if (path.endsWith('/invites')) return route.fulfill({ headers, json: { code: '12345678', link_token: `lnk_${'a'.repeat(64)}`, expires_at: Math.floor(Date.now() / 1000) + 600, device_name: request.postDataJSON().device_name } });
@@ -44,7 +53,7 @@ async function setup(page: Page, desktop = true, locked = false, options: Option
   });
   await page.goto('/#/connect/devices-and-mesh');
   await expect(page.getByRole('heading', { name: 'Devices in your group' })).toBeVisible();
-  return { state, calls };
+  return { state, calls, relayed };
 }
 
 test('desktop shortcut opens device information and removes the selected peer', async ({ page }) => {
@@ -96,31 +105,35 @@ test('browser device overview exposes no desktop management actions', async ({ p
   await expect(page.getByRole('button', { name: /^Manage access for/ })).toHaveCount(0);
 });
 
-test('remote server key stays separate from local network controls', async ({ page }) => {
-  const { calls } = await setup(page);
+test('remote server key goes only to the selected peer through the relay', async ({ page }) => {
+  const { calls, relayed } = await setup(page, true, false, { members: [self, peer, workstation] });
+  await expect(page.getByRole('button', { name: 'Connect to server', exact: true })).toHaveCount(1);
   await page.getByLabel('Remote server API key (if required)').fill('peer-secret');
-  const remoteRequests: string[] = [];
-  page.on('request', request => {
-    if (request.url().startsWith('http://127.0.0.1:16666/')) remoteRequests.push(request.headers().authorization || '');
-  });
   await page.getByRole('button', { name: 'Connect to server', exact: true }).click();
   await expect(page).toHaveURL(/connect\/server/);
-  expect(remoteRequests).toContain('Bearer peer-secret');
-  expect(calls.find(call => call.path.endsWith('/egress'))?.authorization).toBe('Bearer local-secret');
+  expect(relayed.length).toBeGreaterThan(0);
+  for (const call of relayed) {
+    expect(call.url.startsWith('http://127.0.0.1:13305/api/v1/nexus/peers/workstation/api/v1/')).toBe(true);
+    expect(call.authorization).toBe('Bearer local-secret');
+    expect(call.peerAuthorization).toBe('Bearer peer-secret');
+  }
   await page.getByRole('button', { name: 'Devices and mesh: Mesh connected' }).click();
   await page.getByRole('button', { name: 'Refresh', exact: true }).click();
-  expect(calls.filter(call => call.path.endsWith('/status')).at(-1)?.authorization).toBe('Bearer local-secret');
+  const status = calls.filter(call => call.path.endsWith('/status')).at(-1);
+  expect(status?.authorization).toBe('Bearer local-secret');
+  expect(status?.peerAuthorization).toBeUndefined();
+  expect(calls.some(call => call.path.endsWith('/egress'))).toBe(false);
 });
 
-test('header server selector switches inference to a mesh device and back to local', async ({ page }) => {
-  const { calls } = await setup(page);
+test('header server selector lists online inference devices and relays chat through this server', async ({ page }) => {
+  await setup(page, true, false, { members: [self, peer, workstation, { ...workstation, node_id: 'sleeping', device_name: 'Sleeping GPU', is_online: false }] });
   const requests: string[] = [];
   await page.route('**/api/v1/health**', route => {
-    const remote = new URL(route.request().url()).port === '16666';
+    const remote = route.request().url().includes('/nexus/peers/');
     return route.fulfill({ headers, json: { status: 'ok', all_models_loaded: [{ model_name: remote ? 'MeshModel' : 'LocalModel', labels: ['chat'], recipe: 'llamacpp' }] } });
   });
   await page.route('**/api/v1/models**', route => {
-    const remote = new URL(route.request().url()).port === '16666';
+    const remote = route.request().url().includes('/nexus/peers/');
     return route.fulfill({ headers, json: { data: [{ id: remote ? 'MeshModel' : 'LocalModel', labels: ['chat'], recipe: 'llamacpp', downloaded: true }] } });
   });
   await page.route('**/api/v1/chat/completions', route => {
@@ -129,56 +142,58 @@ test('header server selector switches inference to a mesh device and back to loc
   });
   await page.locator('.titlebar__nav').getByRole('button', { name: 'Chat', exact: true }).click();
   const selector = page.getByRole('combobox', { name: 'Inference server', exact: true });
-  await selector.selectOption('peer');
-  await expect(selector).toHaveValue('peer');
+  await expect(selector.locator('option')).toHaveText(['This device', 'GPU tower · Tier 3 · Online']);
+  await selector.selectOption('workstation');
+  await expect(selector).toHaveValue('workstation');
   await expect(selector).toBeEnabled();
   await expect(page).toHaveURL(/#\/chat$/);
   await page.getByRole('textbox', { name: 'Message', exact: true }).fill('Say hello');
   await page.getByRole('button', { name: 'Send', exact: true }).click();
   await expect.poll(() => requests.length).toBe(1);
-  expect(requests[0]).toBe('http://127.0.0.1:16666/api/v1/chat/completions');
+  expect(requests[0]).toBe('http://127.0.0.1:13305/api/v1/nexus/peers/workstation/api/v1/chat/completions');
   await expect(page.getByText('Mesh inference worked.', { exact: true })).toBeVisible();
   await selector.selectOption('local');
   await expect(selector).toHaveValue('local');
   await expect(selector).toBeEnabled();
-  expect(calls.find(call => call.path.endsWith('/egress'))?.body).toEqual({ node_id: 'peer' });
-  expect(await page.evaluate(() => localStorage.getItem('lemonade_base_url'))).not.toContain('16666');
+  expect(await page.evaluate(() => localStorage.getItem('lemonade_base_url'))).not.toContain('/nexus/peers/');
 });
 
 test('failed mesh server selection restores the previous inference connection', async ({ page }) => {
-  await setup(page);
-  await page.route('http://127.0.0.1:16666/api/v1/health**', route => route.fulfill({ status: 503, headers, json: { error: 'Offline' } }));
+  await setup(page, true, false, { members: [self, workstation] });
+  await page.route('**/nexus/peers/workstation/api/v1/health**', route => route.fulfill({ status: 409, headers, json: { error: 'That device is offline' } }));
   const selector = page.getByRole('combobox', { name: 'Inference server', exact: true });
-  await selector.selectOption('peer');
+  await selector.selectOption('workstation');
   await expect(selector).toBeEnabled();
   await expect(selector).toHaveValue('local');
   await expect(page.getByRole('alert')).toBeVisible();
 });
 
 test('selector requests a protected peer key and keeps it separate when returning to local', async ({ page }) => {
-  const { calls } = await setup(page);
-  const remoteKeys: string[] = [];
-  await page.route('http://127.0.0.1:16666/api/v1/health**', route => {
-    const authorization = route.request().headers().authorization || '';
-    remoteKeys.push(authorization);
-    return authorization === 'Bearer peer-secret'
+  await setup(page, true, false, { members: [self, workstation] });
+  const peerKeys: string[] = [];
+  const serverKeys: string[] = [];
+  await page.route('**/nexus/peers/workstation/api/v1/health**', route => {
+    const peerKey = route.request().headers()['x-lemonade-peer-authorization'] || '';
+    peerKeys.push(peerKey);
+    serverKeys.push(route.request().headers().authorization || '');
+    return peerKey === 'Bearer peer-secret'
       ? route.fulfill({ headers, json: { status: 'ok', all_models_loaded: [] } })
       : route.fulfill({ status: 401, headers, json: { error: 'API key required' } });
   });
   const selector = page.getByRole('combobox', { name: 'Inference server', exact: true });
-  await selector.selectOption('peer');
+  await selector.selectOption('workstation');
   const dialog = page.getByRole('dialog', { name: 'Server API key', exact: true });
   await expect(dialog).toBeVisible();
   await dialog.getByLabel('Remote server API key', { exact: true }).fill('peer-secret');
   await dialog.getByRole('button', { name: 'Connect', exact: true }).click();
   await expect(dialog).toHaveCount(0);
-  await expect(selector).toHaveValue('peer');
+  await expect(selector).toHaveValue('workstation');
   await selector.selectOption('local');
   await expect(selector).toBeEnabled();
   await expect(selector).toHaveValue('local');
-  expect(remoteKeys).toContain('Bearer peer-secret');
-  expect(remoteKeys).not.toContain('Bearer local-secret');
-  expect(calls.filter(call => call.path.endsWith('/egress')).every(call => call.authorization === 'Bearer local-secret')).toBe(true);
+  expect(peerKeys).toContain('Bearer peer-secret');
+  expect(peerKeys).not.toContain('Bearer local-secret');
+  expect(serverKeys.every(key => key === 'Bearer local-secret')).toBe(true);
 });
 
 test('member list shows admins and device tiers', async ({ page }) => {
@@ -291,4 +306,29 @@ test('remote GUI explains when the server has no API key for remote management',
   await expect(page.getByRole('button', { name: 'Add a device' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Join a group' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /^Manage access for/ })).toHaveCount(0);
+});
+
+test('remote GUI selects a mesh inference device through the remote server relay', async ({ page }) => {
+  const { relayed } = await setup(page, true, false, { baseUrl: 'http://192.168.1.50:13305', apiKey: 'remote-secret', remoteManagement: true, members: [self, peer, workstation] });
+  const selector = page.getByRole('combobox', { name: 'Inference server', exact: true });
+  await expect(selector.locator('option')).toHaveText(['This device', 'GPU tower · Tier 3 · Online']);
+  await selector.selectOption('workstation');
+  await expect(selector).toHaveValue('workstation');
+  await expect(selector).toBeEnabled();
+  expect(relayed.length).toBeGreaterThan(0);
+  for (const call of relayed) {
+    expect(call.url.startsWith('http://192.168.1.50:13305/api/v1/nexus/peers/workstation/api/v1/')).toBe(true);
+    expect(call.authorization).toBe('Bearer remote-secret');
+  }
+});
+
+test('browser GUI selects a mesh inference device through its server relay', async ({ page }) => {
+  const { relayed } = await setup(page, false, false, { members: [self, peer, workstation] });
+  await expect(page.getByRole('button', { name: /^Manage access for/ })).toHaveCount(0);
+  const selector = page.getByRole('combobox', { name: 'Inference server', exact: true });
+  await selector.selectOption('workstation');
+  await expect(selector).toHaveValue('workstation');
+  await expect(selector).toBeEnabled();
+  expect(relayed.length).toBeGreaterThan(0);
+  expect(relayed.every(call => call.url.startsWith('http://127.0.0.1:13305/api/v1/nexus/peers/workstation/api/v1/'))).toBe(true);
 });

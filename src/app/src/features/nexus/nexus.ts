@@ -96,6 +96,13 @@ let pollRunning = false;
 let eventStream: AbortController | undefined;
 interface Controller { mode: NexusManagementMode; source: string; endpoint: string; key: string }
 let localController: Controller | undefined;
+// The server this client connected to before it selected a mesh peer. Relayed requests go to
+// `${home.endpoint}/api/v1/nexus/peers/<node>`; Nexus management keeps using home itself.
+let home: { endpoint: string; key: string } | undefined;
+const relayEndpoint = (endpoint: string, nodeId: string) => `${endpoint}/api/v1/nexus/peers/${encodeURIComponent(nodeId)}`;
+export function isNexusInferencePeer(device: NexusDevice, selfId?: string): boolean {
+  return device.node_id !== selfId && Boolean(device.is_inference) && device.is_online === true;
+}
 let lastMemberIds: Set<string> | undefined;
 const publish = (next: NetworkState) => { state = next; listeners.forEach(listener => listener()); };
 
@@ -113,16 +120,21 @@ export function isLoopbackUrl(value: string): boolean {
   return ['localhost', '127.0.0.1', '[::1]'].includes(new URL(value).hostname);
 }
 // A nonloopback server is managed through its public listener with the API key. Loopback
-// URLs reach the local management listener; mesh egress endpoints are loopback too and
-// keep using the controller discovered before the switch.
+// URLs reach the local management listener.
 async function controller(): Promise<Controller> {
   const { default: api } = await import('../../api');
   await api.loadConnectionSettings();
-  if (!isLoopbackUrl(api.baseUrl)) return { mode: 'remote', source: api.baseUrl, endpoint: api.baseUrl, key: api.apiKey };
-  if (localController?.source === api.baseUrl) localController.key = api.apiKey;
+  if (home && !api.baseUrl.startsWith(`${home.endpoint}/api/v1/nexus/peers/`)) {
+    home = undefined;
+    if (state.selectedServerId) publish({ ...state, selectedServerId: undefined });
+  }
+  const base = home?.endpoint ?? api.baseUrl;
+  const baseKey = home ? home.key : api.apiKey;
+  if (!isLoopbackUrl(base)) return { mode: 'remote', source: base, endpoint: base, key: baseKey };
+  if (localController?.source === base) localController.key = baseKey;
   if (!localController) {
-    const endpoint = api.baseUrl;
-    const key = api.apiKey;
+    const endpoint = base;
+    const key = baseKey;
     const response = await fetch(`${endpoint}/api/v1/nexus/status`, { headers: key ? { Authorization: `Bearer ${key}` } : {}, signal: AbortSignal.timeout(10000) });
     if (!response.ok) throw new Error(`Cannot access the local network controller (${response.status}).`);
     const status = await response.json() as NexusStatus;
@@ -305,23 +317,32 @@ export function nexusStatusLabel(status: NexusStatus | null): string {
   return 'Mesh offline';
 }
 
+// A peer is reached through this client's own server, which relays the request over the
+// mesh. The selection lives only in this client; other clients of the server are unaffected.
 export async function selectNexusInferenceServer(nodeId: string, suppliedKey?: string): Promise<void> {
   if (state.switchingServer) throw new Error('A server switch is already in progress.');
-  const local = await controller();
-  if (local.mode === 'remote') throw new Error('Choose a mesh inference server from the desktop app on that device.');
+  const origin = await controller();
   const { default: api } = await import('../../api');
-  const previousEndpoint = api.baseUrl;
-  const previousKey = api.apiKey;
+  const previous = { endpoint: api.baseUrl, key: api.apiKey, peerKey: api.peerApiKey, home };
+  const server = home ?? { endpoint: origin.source, key: origin.key };
   if (state.switchingServer) throw new Error('A server switch is already in progress.');
   publish({ ...state, switchingServer: true });
   try {
-    const target = nodeId === 'local' ? { endpoint: local.source } : await nexusRequest<{ endpoint: string }>('egress', { node_id: nodeId });
-    const key = nodeId === 'local' ? local.key : suppliedKey ?? peerKeys.get(nodeId) ?? '';
-    if (!await api.switchServer(target.endpoint, key)) throw new Error(api.lastConnectionError || 'Could not connect to the selected inference server.');
-    if (nodeId !== 'local' && suppliedKey !== undefined) peerKeys.set(nodeId, suppliedKey);
+    if (nodeId === 'local') {
+      home = undefined;
+      if (!await api.switchServer(server.endpoint, server.key)) throw new Error(api.lastConnectionError || 'Could not connect to this device’s server.');
+    } else {
+      home = server;
+      const peerKey = suppliedKey ?? peerKeys.get(nodeId) ?? '';
+      if (!await api.switchServer(relayEndpoint(server.endpoint, nodeId), server.key, peerKey)) {
+        throw new Error(api.lastConnectionError || 'Could not connect to the selected inference server.');
+      }
+      if (suppliedKey !== undefined) peerKeys.set(nodeId, suppliedKey);
+    }
     publish({ ...state, selectedServerId: nodeId });
   } catch (error) {
-    await api.switchServer(previousEndpoint, previousKey);
+    home = previous.home;
+    await api.switchServer(previous.endpoint, previous.key, previous.peerKey);
     throw error;
   } finally { publish({ ...state, switchingServer: false }); }
 }
