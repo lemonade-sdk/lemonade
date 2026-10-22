@@ -215,6 +215,7 @@ set(LEMON_BACKENDS
     "onnxruntime|onnxruntime"
     "trellis|trellis"
     "openmoss|openmoss"
+    "amica|amica"
 )
 
 # ============================================================
@@ -1426,6 +1427,34 @@ add_custom_command(TARGET ${EXECUTABLE_NAME} POST_BUILD
 
 # Ensure resources are copied before building the executable
 add_dependencies(${EXECUTABLE_NAME} copy_resources)
+
+# ============================================================
+# AMICA engine (Windows, optional)
+# ============================================================
+# The amica recipe generates through amica-engine, which links the public AMICA
+# API. AMICA is not fetched, so the engine is built only when LEMON_AMICA_ROOT
+# names an AMICA package (include/amica, lib/amica.lib, amica/amica.dll).
+set(LEMON_AMICA_ROOT "" CACHE PATH "AMICA package to build amica-engine against")
+if(WIN32 AND LEMON_AMICA_ROOT)
+    foreach(_amica_required include/amica/amica.h include/amica/amica.hpp lib/amica.lib)
+        if(NOT EXISTS "${LEMON_AMICA_ROOT}/${_amica_required}")
+            message(FATAL_ERROR "LEMON_AMICA_ROOT=${LEMON_AMICA_ROOT} is not an AMICA package: "
+                                "${_amica_required} is missing")
+        endif()
+    endforeach()
+    add_executable(amica-engine src/cpp/amica_engine/amica_engine.cpp)
+    target_include_directories(amica-engine PRIVATE "${LEMON_AMICA_ROOT}/include")
+    # amica.dll is delay-loaded from the AMICA install configured at run time
+    # (amica.dx12_bin), not from the package the engine was built against.
+    target_link_libraries(amica-engine PRIVATE
+        "${LEMON_AMICA_ROOT}/lib/amica.lib" delayimp d3d12 dxgi nlohmann_json::nlohmann_json)
+    target_link_options(amica-engine PRIVATE "/DELAYLOAD:amica.dll")
+    target_compile_definitions(amica-engine PRIVATE WIN32_LEAN_AND_MEAN)
+    set_target_properties(amica-engine PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "$<TARGET_FILE_DIR:${EXECUTABLE_NAME}>")
+    add_dependencies(${EXECUTABLE_NAME} amica-engine)
+    message(STATUS "Building amica-engine against ${LEMON_AMICA_ROOT}")
+endif()
 
 # ============================================================
 # Tauri App Integration (Cross-Platform)
