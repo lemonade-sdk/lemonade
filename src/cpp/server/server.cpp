@@ -768,7 +768,12 @@ Server::Server(std::shared_ptr<RuntimeConfig> config,
     } else {
         LOG(WARNING, "Server") << "Cannot bind the Nexus mesh listener; mesh peers cannot reach this server" << std::endl;
     }
-    nexus_manager_ = std::make_unique<NexusManager>(config_dir, mesh_ingress_port_);
+    nexus_manager_ = std::make_unique<NexusManager>(config_dir, mesh_ingress_port_, [this](httplib::Server& server) {
+        server.set_pre_routing_handler([this](const httplib::Request& req, httplib::Response& res) {
+            return route_request_policy(req, res);
+        });
+        setup_cors(server);
+    });
     setup_http_servers();
 
     // Initialize WebSocket server for realtime API and log streaming
@@ -887,8 +892,13 @@ void Server::setup_http_servers() {
     http_front_v6_->new_task_queue = task_queue_factory;
     http_server_->new_task_queue = task_queue_factory;
     http_server_v6_->new_task_queue = task_queue_factory;
-    mesh_ingress_front_->new_task_queue = task_queue_factory;
-    mesh_ingress_server_->new_task_queue = task_queue_factory;
+    // A main-port rebind calls this again while the mesh listener keeps serving,
+    // so the mesh listener is configured only once.
+    const bool configure_mesh = !mesh_ingress_configured_;
+    if (configure_mesh) {
+        mesh_ingress_front_->new_task_queue = task_queue_factory;
+        mesh_ingress_server_->new_task_queue = task_queue_factory;
+    }
 
     // Bound how long a single connection can tie up a worker thread. Without a
     // read timeout a client that opens a socket and never finishes its request
@@ -897,12 +907,12 @@ void Server::setup_http_servers() {
     // need the same limits: they own accept and run the WebSocket upgrade peek
     // before delegating, so a stalled client could otherwise hold a front
     // worker there.
-    for (httplib::Server* srv : {static_cast<httplib::Server*>(http_front_.get()),
-                                 static_cast<httplib::Server*>(http_front_v6_.get()),
-                                 static_cast<httplib::Server*>(http_server_.get()),
-                                 static_cast<httplib::Server*>(http_server_v6_.get()),
-                                 static_cast<httplib::Server*>(mesh_ingress_front_.get()),
-                                 static_cast<httplib::Server*>(mesh_ingress_server_.get())}) {
+    std::vector<httplib::Server*> servers = {http_front_.get(), http_front_v6_.get(), http_server_.get(), http_server_v6_.get()};
+    if (configure_mesh) {
+        servers.push_back(mesh_ingress_front_.get());
+        servers.push_back(mesh_ingress_server_.get());
+    }
+    for (httplib::Server* srv : servers) {
         srv->set_read_timeout(30, 0);
         srv->set_write_timeout(300, 0);
         srv->set_keep_alive_max_count(100);
@@ -910,7 +920,10 @@ void Server::setup_http_servers() {
 
     setup_routes(*http_server_);
     setup_routes(*http_server_v6_);
-    setup_routes(*mesh_ingress_server_, NexusListener::MeshIngress);
+    if (configure_mesh) {
+        setup_routes(*mesh_ingress_server_, NexusListener::MeshIngress);
+        mesh_ingress_configured_ = true;
+    }
 }
 
 void Server::stop_http_listeners() {
@@ -1128,47 +1141,53 @@ httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Req
 }
 
 
+// Origin, CORS and API-key handling shared by every listener that serves the API,
+// including the Nexus management listener.
+httplib::Server::HandlerResponse Server::route_request_policy(const httplib::Request& req, httplib::Response& res) {
+    this->log_request(req);
+
+    // Unconditionally set Vary: Origin to prevent caching issues, preserving existing values
+    std::string vary = "Origin";
+    if (res.has_header("Vary")) {
+        std::string existing = res.get_header_value("Vary");
+        if (existing.find("Origin") == std::string::npos) {
+            vary = existing + ", Origin";
+        } else {
+            vary = existing;
+        }
+    }
+    res.set_header("Vary", vary);
+
+    if (req.has_header("Origin")) {
+        std::string origin = req.get_header_value("Origin");
+        std::string host = req.get_header_value("Host");
+        std::string scheme = "http";
+
+        std::string allowed_origins = utils::resolve_allowed_origins();
+        std::string bound_host = config_ ? config_->host() : "";
+        if (utils::is_origin_allowed(origin, allowed_origins, host, scheme, bound_host)) {
+            res.set_header("Access-Control-Allow-Origin", origin);
+            if (req.has_header("Access-Control-Request-Private-Network") &&
+                req.get_header_value("Access-Control-Request-Private-Network") == "true") {
+                res.set_header("Access-Control-Allow-Private-Network", "true");
+            }
+        } else {
+            LOG(WARNING, "Server") << "Rejected request from unauthorized origin: " << origin
+                                   << ". Configure allowed_origins in config.json or via 'lemonade config set allowed_origins=...' to allow this origin." << std::endl;
+            res.status = 403;
+            res.set_content("{\"error\": \"Origin not allowed\"}", "application/json");
+            return httplib::Server::HandlerResponse::Handled;
+        }
+    }
+
+    return authenticate_request(req, res);
+}
+
 void Server::setup_routes(httplib::Server &web_server, NexusListener nexus_listener) {
     nexus_manager_->register_routes(web_server, nexus_listener);
     // Add pre-routing handler to log ALL incoming requests (except health checks)
     web_server.set_pre_routing_handler([this](const httplib::Request& req, httplib::Response& res) {
-        this->log_request(req);
-
-        // Unconditionally set Vary: Origin to prevent caching issues, preserving existing values
-        std::string vary = "Origin";
-        if (res.has_header("Vary")) {
-            std::string existing = res.get_header_value("Vary");
-            if (existing.find("Origin") == std::string::npos) {
-                vary = existing + ", Origin";
-            } else {
-                vary = existing;
-            }
-        }
-        res.set_header("Vary", vary);
-
-        if (req.has_header("Origin")) {
-            std::string origin = req.get_header_value("Origin");
-            std::string host = req.get_header_value("Host");
-            std::string scheme = "http";
-
-            std::string allowed_origins = utils::resolve_allowed_origins();
-            std::string bound_host = config_ ? config_->host() : "";
-            if (utils::is_origin_allowed(origin, allowed_origins, host, scheme, bound_host)) {
-                res.set_header("Access-Control-Allow-Origin", origin);
-                if (req.has_header("Access-Control-Request-Private-Network") &&
-                    req.get_header_value("Access-Control-Request-Private-Network") == "true") {
-                    res.set_header("Access-Control-Allow-Private-Network", "true");
-                }
-            } else {
-                LOG(WARNING, "Server") << "Rejected request from unauthorized origin: " << origin
-                                       << ". Configure allowed_origins in config.json or via 'lemonade config set allowed_origins=...' to allow this origin." << std::endl;
-                res.status = 403;
-                res.set_content("{\"error\": \"Origin not allowed\"}", "application/json");
-                return httplib::Server::HandlerResponse::Handled;
-            }
-        }
-
-        return authenticate_request(req, res);
+        return route_request_policy(req, res);
     });
 
     web_server.Get("/live", [this](const httplib::Request& req, httplib::Response& res) {

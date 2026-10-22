@@ -88,6 +88,7 @@ private:
     void setup_http_logger(httplib::Server &web_server);
     void log_request(const httplib::Request& req);
     httplib::Server::HandlerResponse authenticate_request(const httplib::Request& req, httplib::Response& res);
+    httplib::Server::HandlerResponse route_request_policy(const httplib::Request& req, httplib::Response& res);
 
     // Setup HTTP servers (create httplib::Server instances, routes, CORS, thread pool)
     void setup_http_servers();
@@ -387,6 +388,7 @@ private:
     std::unique_ptr<UpgradableFrontServer> mesh_ingress_front_;
     std::thread mesh_ingress_thread_;
     int mesh_ingress_port_ = 0;
+    bool mesh_ingress_configured_ = false;
 
     std::unique_ptr<Router> router_;
     std::unique_ptr<AliasManager> alias_manager_;

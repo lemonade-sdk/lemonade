@@ -3,6 +3,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <deque>
+#include <functional>
 #include <httplib.h>
 #include <memory>
 #include <mutex>
@@ -41,9 +42,10 @@ bool bearer_matches(const std::string& authorization, const std::string& api_key
 /// True for the operations a nonloopback client may call on the public listener:
 /// the group operations and "relay".
 bool remote_operation(const std::string& operation);
-/// Decides whether a Nexus route may run on a listener other than Management.
-/// Returns {0, ""} to run the route, {307, ""} to redirect it to the management listener,
-/// or an HTTP error status and message. An empty `api_key` turns remote management off.
+/// Decides whether a Nexus route may run. Origin, CORS and the API key are checked earlier
+/// by lemond's shared listener policy; this adds the per-listener rules. Returns {0, ""}
+/// to run the route, {307, ""} to redirect it to the management listener, or an HTTP
+/// error status and message. An empty `api_key` turns remote management off.
 std::pair<int, std::string> route_access(NexusListener listener, bool loopback, const std::string& operation,
     const std::string& authorization, const std::string& api_key, const std::string& admin_key);
 /// Header that carries the selected peer's API key through the relay. The relay sends it
@@ -63,7 +65,10 @@ class NexusManager {
 public:
     /// `ingress_port` is the port of the NexusListener::MeshIngress listener (see there).
     /// Zero means that listener is not running, and joining fails.
-    NexusManager(const std::string& config_dir, int ingress_port);
+    /// `apply_listener_policy` installs lemond's origin, CORS and API-key handling on the
+    /// management listener before it starts, the same handling as the public listener.
+    NexusManager(const std::string& config_dir, int ingress_port,
+                 const std::function<void(httplib::Server&)>& apply_listener_policy);
     ~NexusManager();
     void register_routes(httplib::Server& server, NexusListener listener = NexusListener::Public);
     void stop();
@@ -79,11 +84,13 @@ private:
     void emit_locked(const std::string& type, const json& data);
     void handle(const httplib::Request& req, httplib::Response& res, const std::string& operation, bool remote);
     void relay(const httplib::Request& req, httplib::Response& res);
-    std::pair<int, json> control_locked(const std::string& method, const std::string& path, const json& body);
+    std::pair<int, json> control(const std::string& method, const std::string& path, const json& body);
     std::string data_root_;
     int ingress_port_;
     std::unique_ptr<Session> session_;
     mutable std::mutex mutex_;
+    // Serializes Session (SDK) work. Lock before mutex_ when both are needed.
+    std::mutex session_mutex_;
     std::condition_variable wake_;
     bool enabled_{false};
     bool stopping_{false};

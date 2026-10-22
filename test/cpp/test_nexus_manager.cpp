@@ -1,4 +1,5 @@
 #include "lemon/nexus_manager.h"
+#include "lemon/utils/origin_utils.h"
 #include "lemon/utils/path_utils.h"
 #include <chrono>
 #include <cstdlib>
@@ -16,6 +17,23 @@ namespace access = lemon::nexus_access;
 bool throws(const std::function<void()>& action) {
     try { action(); } catch (const std::runtime_error&) { return true; }
     return false;
+}
+
+// Stands in for Server::route_request_policy: the shared origin check and the API key.
+void listener_policy(httplib::Server& server) {
+    server.set_pre_routing_handler([](const httplib::Request& req, httplib::Response& res) {
+        if (!lemon::utils::is_origin_allowed(req.get_header_value("Origin"), "", req.get_header_value("Host"))) {
+            res.status = 403;
+            return httplib::Server::HandlerResponse::Handled;
+        }
+        const auto key = lemon::utils::get_environment_variable_utf8("LEMONADE_API_KEY");
+        if (!key.empty() && req.method != "OPTIONS" &&
+            !access::bearer_matches(req.get_header_value("Authorization"), key, lemon::utils::get_environment_variable_utf8("LEMONADE_ADMIN_API_KEY"))) {
+            res.status = 401;
+            return httplib::Server::HandlerResponse::Handled;
+        }
+        return httplib::Server::HandlerResponse::Unhandled;
+    });
 }
 
 void set_environment(const char* name, const std::string& value) {
@@ -67,6 +85,8 @@ void check_route_access(const std::function<void(bool, const char*)>& check) {
     }
     check(access(NexusListener::Public, true, "status", "", "").first == 0, "Local clients read status on the public listener");
     check(access(NexusListener::Public, true, "members", "Bearer key", "key").first == 307, "Local clients are redirected to the management listener");
+    check(access(NexusListener::Management, true, "members", "", "").first == 0, "The management listener serves loopback clients");
+    check(access(NexusListener::Management, false, "members", "Bearer key", "key").first == 403, "The management listener refuses other clients");
 
     const auto off = access(NexusListener::Public, false, "members", "Bearer key", "");
     check(off.first == 403 && off.second.find("LEMONADE_API_KEY") != std::string::npos, "Remote management is off without an API key");
@@ -167,7 +187,7 @@ void check_listener_isolation(const std::filesystem::path& root, const std::func
     set_environment("LEMONADE_ADMIN_API_KEY", "");
     set_environment("LEMONADE_API_KEY", "remote-test-key");
     {
-        lemon::NexusManager manager((root / "isolation").string(), 13305);
+        lemon::NexusManager manager((root / "isolation").string(), 13305, listener_policy);
         httplib::Server mesh;
         manager.register_routes(mesh, lemon::NexusListener::MeshIngress);
         const int mesh_port = mesh.bind_to_any_port("127.0.0.1");
@@ -324,7 +344,7 @@ int main() {
         check_relay_stream(check);
         check_listener_isolation(root, check);
         {
-            lemon::NexusManager manager(root.string(), 13305);
+            lemon::NexusManager manager(root.string(), 13305, listener_policy);
             httplib::Server server;
             manager.register_routes(server);
             const int port = server.bind_to_any_port("127.0.0.1");
@@ -397,14 +417,14 @@ int main() {
         }
 #ifdef LEMONADE_WITH_NEXUS
         {
-            lemon::NexusManager restored(root.string(), 13305);
+            lemon::NexusManager restored(root.string(), 13305, listener_policy);
             const auto status = restored.status();
             check(status.at("enabled") && status.at("locked") && !status.at("mesh_up"), "Restarts enabled and locked");
             check(status.at("device_name") == "My laptop", "Name survives restart");
             restored.disable();
         }
         {
-            lemon::NexusManager disabled(root.string(), 13305);
+            lemon::NexusManager disabled(root.string(), 13305, listener_policy);
             check(!disabled.status().at("enabled"), "Disable survives restart");
         }
 #endif
