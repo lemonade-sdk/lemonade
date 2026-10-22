@@ -749,6 +749,42 @@
         },
         "hook": {
           "$ref": "#/$defs/Hook"
+        },
+        "repository_result": {
+          "enum": [
+            "repository_only",
+            "full_params"
+          ]
+        },
+        "fact_timing": {
+          "enum": [
+            "selected_case",
+            "before_platform"
+          ]
+        },
+        "repository_facts": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "therock_version",
+              "rocm_asset_family",
+              "cuda_architecture"
+            ]
+          },
+          "uniqueItems": true,
+          "maxItems": 3
+        },
+        "unmanaged_backends": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "backend_fallback": {
+          "type": "string",
+          "minLength": 1
         }
       },
       "required": [
@@ -1013,6 +1049,12 @@
               "items": {
                 "$ref": "#/$defs/CustomArgDefault"
               }
+            },
+            "runtime_input": {
+              "enum": [
+                "preserve",
+                "string_or_empty"
+              ]
             }
           },
           "required": [
@@ -1169,6 +1211,12 @@
           },
           "required": [],
           "additionalProperties": false
+        },
+        "direct_stream_policy": {
+          "enum": [
+            "strict",
+            "llamacpp_legacy"
+          ]
         }
       },
       "required": [

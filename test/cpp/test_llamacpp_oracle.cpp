@@ -15,6 +15,10 @@
 #include <map>
 #include <set>
 
+#ifdef __linux__
+#include <unistd.h>
+#endif
+
 using namespace lemon;
 using namespace lemon::backends;
 namespace fs = std::filesystem;
@@ -152,8 +156,11 @@ struct Fixture : llamacpp::oracle::Effects {
     FILE* version_pipe(const std::string& command) override {
         events.push_back("probe:" + command);
         if (facts.value("probe_failure", false)) return nullptr;
-        FILE* pipe = std::tmpfile();
-        if (!pipe) throw std::runtime_error("oracle version pipe failed");
+        auto path = (fs::temp_directory_path() / "lemonade-llamacpp-version-XXXXXX").string();
+        const int descriptor = mkstemp(path.data());
+        if (descriptor < 0) throw std::runtime_error("oracle version pipe failed");
+        FILE* pipe = fdopen(descriptor, "w+b");
+        if (!pipe) { close(descriptor); throw std::runtime_error("oracle version pipe failed"); }
         const std::string output = facts.value("version_output", "");
         std::fwrite(output.data(), 1, output.size(), pipe);
         std::rewind(pipe);
@@ -198,8 +205,8 @@ json normalize(json value, const std::string& temp = "");
 struct TempDirectory {
     fs::path path;
     TempDirectory() {
-        char pattern[] = "/tmp/lemonade-llamacpp-oracle-XXXXXX";
-        char* result = mkdtemp(pattern);
+        auto directory = (fs::temp_directory_path() / "lemonade-llamacpp-oracle-XXXXXX").string();
+        char* result = mkdtemp(directory.data());
         if (!result) throw std::runtime_error("oracle temporary directory failed");
         path = result;
     }

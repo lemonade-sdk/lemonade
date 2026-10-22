@@ -31,8 +31,8 @@
     {
       "id": "llamacpp.environment.v1",
       "stage": "environment",
-      "revision": 1,
-      "implementation_revision": 1,
+      "revision": 2,
+      "implementation_revision": 2,
       "operations": []
     },
     {
@@ -45,8 +45,8 @@
     {
       "id": "llamacpp.install_context.v1",
       "stage": "install_context",
-      "revision": 1,
-      "implementation_revision": 1,
+      "revision": 2,
+      "implementation_revision": 2,
       "operations": []
     },
     {
@@ -232,6 +232,6 @@
       ]
     }
   ],
-  "abi_digest": "sha256:8a3f1079a23231f2b54d8c0f9e052b186bdc5c33438c7838b7d539c0230d03ff",
-  "registry_digest": "sha256:6bac770f2a8d740927eb20a69a430d9430a0eabea744efedb74486afe941ead6"
+  "abi_digest": "sha256:b359c737e8618f6561bc2e495a53a24ad40ea33969a9feaf76d2e8b78ba03965",
+  "registry_digest": "sha256:43df4f52e00eb4db57e0f0e9bd02ed60293466cc86a2303496335977d370de09"
 }

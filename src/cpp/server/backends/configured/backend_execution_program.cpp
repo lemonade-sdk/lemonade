@@ -173,6 +173,52 @@ void compile_programs(Program& program, Budget& budget) {
             require(!overlaps, "selector_overlap", "/install/cases/" + std::to_string(i));
         }
     }
+    const auto& install = program.install.records;
+    const bool full = install.value("repository_result", "repository_only") == "full_params";
+    const bool early = install.value("fact_timing", "selected_case") == "before_platform";
+    const auto declared = install.value("repository_facts", std::vector<std::string>{});
+    const auto unmanaged = install.value("unmanaged_backends", std::vector<std::string>{});
+    const auto fallback = install.value("backend_fallback", "");
+    require((full || declared.empty()) && (program.install.strategy == "github_release" ||
+        (!full && !early && declared.empty() && unmanaged.empty() && fallback.empty())), "invalid_install_policy", "/install");
+    const bool fact_hook = std::any_of(program.hooks.begin(), program.hooks.end(), [](const auto& hook) {
+        return hook.contract == typed::Contract::InstallContext;
+    });
+    require(declared.empty() || fact_hook, "invalid_install_policy", "/install/repository_facts");
+    std::map<std::string, std::set<std::string>> backend_facts;
+    std::set<std::string> used_facts, backends;
+    for (const auto& record : program.install.cases) {
+        std::set<std::string> facts;
+        const auto visit = [&](const auto& self, const Expression& expression) -> void {
+            budget.work(0);
+            for (const auto* name : {"therock_version", "rocm_asset_family", "cuda_architecture"})
+                if (expression.reference == std::string("/install/") + name) facts.insert(name);
+            if (early) require(expression.kind != Expression::Kind::When && expression.kind != Expression::Kind::Coalesce &&
+                expression.kind != Expression::Kind::All && expression.kind != Expression::Kind::Any,
+                "ambiguous_install_facts", record.filename);
+            for (const auto& child : expression.children) self(self, child);
+        };
+        visit(visit, program.expressions.at(record.filename));
+        if (record.version_override) visit(visit, program.expressions.at(*record.version_override));
+        used_facts.insert(facts.begin(), facts.end());
+        if (full) for (const auto& fact : facts) require(std::find(declared.begin(), declared.end(), fact) != declared.end(),
+            "undeclared_repository_fact", "/install/repository_facts");
+        const auto group = record.selectors.find("backend");
+        if (early) require(group != record.selectors.end(), "ambiguous_install_facts", "/install/cases");
+        if (group != record.selectors.end()) for (const auto& backend : group->second) {
+            budget.keep(backend.size() + 256);
+            backends.insert(backend);
+            const auto found = backend_facts.find(backend);
+            if (early) require(found == backend_facts.end() || found->second == facts, "ambiguous_install_facts", "/install/cases");
+            backend_facts.emplace(backend, facts);
+            if (early) for (const auto& fact : facts) require((fact == "therock_version" && backend == "rocm-stable") ||
+                (fact == "rocm_asset_family" && backend == "rocm-nightly") || (fact == "cuda_architecture" && backend == "cuda"),
+                "invalid_install_fact_backend", "/install/cases");
+        }
+    }
+    for (const auto& fact : declared) require(used_facts.count(fact), "unused_repository_fact", "/install/repository_facts");
+    for (const auto& backend : unmanaged) require(!backends.count(backend), "invalid_install_policy", "/install/unmanaged_backends");
+    require(fallback.empty() || backends.count(fallback), "invalid_install_policy", "/install/backend_fallback");
     for (std::size_t i = 0; i < doc["operations"].size(); ++i) {
         const auto& record = doc["operations"][i];
         const auto p = "/operations/" + std::to_string(i);

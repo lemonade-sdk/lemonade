@@ -50,7 +50,7 @@ inline std::shared_ptr<const FrozenBuiltinCatalog> builtins(bool hrx = false, co
     std::size_t retained = 0;
     v2::Budget budget{limits, {}, retained};
     for (const auto& selection : v2::hook_selections(source.declaration, budget)) {
-        ExportSlotPolicy slot{selection.slot, 1, v2::parameter_digest(selection.parameters), "", SlotRemoval::Independent, {}};
+        ExportSlotPolicy slot{selection.slot, find_hook_abi(selection.slot.hook_id)->revision, v2::parameter_digest(selection.parameters), "", SlotRemoval::Independent, {}};
         slot.owner_semantics_digest = v2::owner_semantics_digest(selection.owner_semantics);
         slot.ordered_hooks = selection.ordered_hooks;
         slot.effects = {HookEffect::Pure};

@@ -59,10 +59,13 @@ namespace lemon::backends {
               public_recipe(std::move(public_id)), pin_recipe(std::move(pin_id)),
               definition(std::move(owner)), install_params_fn(std::move(fn)) {}
 
+        const std::string& effective_public_recipe() const { return public_recipe.empty() ? recipe : public_recipe; }
+        const std::string& effective_pin_recipe() const { return pin_recipe.empty() ? effective_public_recipe() : pin_recipe; }
+
         std::string log_name() const { return recipe + " Server"; };
 
-        BackendSpec(std::string r, std::string b, std::shared_ptr<const ExecutableDefinition> owner, InstallParamsFn fn = {}, bool split = false)
-            : recipe(r), binary(std::move(b)), supports_split_archive(split), public_recipe(r), pin_recipe(r),
+        BackendSpec(std::string r, std::string b, std::shared_ptr<const ExecutableDefinition> owner, InstallParamsFn fn = {}, bool split = false, bool legacy_aliases = false)
+            : recipe(r), binary(std::move(b)), supports_split_archive(split), public_recipe(legacy_aliases ? "" : r), pin_recipe(legacy_aliases ? "" : r),
               executable_definition(std::move(owner)), install_params_fn(std::move(fn)) {
             if (!executable_definition) throw std::invalid_argument("V2 spec requires an executable definition");
         }

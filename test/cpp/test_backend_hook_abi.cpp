@@ -66,8 +66,8 @@ void typed_assertions() {
     rejected([](auto& copy) { copy[5].target = typed::RequestTransform(&typed::llamacpp::tool_schema_limits); }, "ExactTenTypedTargets");
     rejected([](auto& copy) { copy[9].target = typed::RequestTransform(&typed::llamacpp::max_tokens_alias); }, "ExactTenTypedTargets");
     for (std::size_t i = 0; i < entries.size(); ++i) {
-        rejected([&](auto& copy) { copy[i].abi_revision = 2; }, "TypedEffectsAndDependenciesPinned");
-        rejected([&](auto& copy) { copy[i].implementation_revision = 2; }, "TypedEffectsAndDependenciesPinned");
+        rejected([&](auto& copy) { ++copy[i].abi_revision; }, "TypedEffectsAndDependenciesPinned");
+        rejected([&](auto& copy) { ++copy[i].implementation_revision; }, "TypedEffectsAndDependenciesPinned");
         rejected([&](auto& copy) { copy[i].effects.push_back(typed::Effect::SystemProbe); }, "TypedEffectsAndDependenciesPinned");
         rejected([&](auto& copy) { copy[i].requires.clear(); }, "TypedEffectsAndDependenciesPinned");
         rejected([&](auto& copy) { copy[i].provides.clear(); }, "TypedEffectsAndDependenciesPinned");
@@ -94,13 +94,23 @@ class Services final : public typed::BackendSelectionServices, public typed::Ins
     public typed::EnvironmentServices, public typed::SystemProbeServices {
 public:
     unsigned calls = 0;
+    std::map<typed::ParentKey, std::string> parents;
+    std::map<typed::RuntimeQuery, std::string> facts;
+    std::vector<std::string> queries;
     bool supports(const std::string& backend) override { ++calls; return backend == "rocm" || backend == "cpu"; }
     typed::DeviceCheck validate_device(const typed::DeviceValidationInput&) override { ++calls; return {true, ""}; }
     std::string therock_version() override { ++calls; return "v7.12.1"; }
     std::string rocm_asset_family() override { ++calls; return "gfx1151"; }
     std::string cuda_architecture() override { ++calls; return "sm_120"; }
-    std::optional<std::string> parent(typed::ParentKey) override { ++calls; return std::nullopt; }
-    std::string runtime(typed::RuntimeQuery) override { ++calls; return "fake"; }
+    std::optional<std::string> parent(typed::ParentKey key) override {
+        ++calls; queries.push_back("parent:" + std::to_string(static_cast<int>(key)));
+        const auto found = parents.find(key);
+        return found == parents.end() ? std::nullopt : std::optional<std::string>(found->second);
+    }
+    std::string runtime(typed::RuntimeQuery query) override {
+        ++calls; queries.push_back("runtime:" + std::to_string(static_cast<int>(query)));
+        return facts.count(query) ? facts.at(query) : "fake";
+    }
     std::string llama_version() override { ++calls; return "b1234"; }
     bool kfd_present() override { ++calls; return true; }
     bool hip_plugin_present() override { ++calls; return false; }
@@ -127,6 +137,17 @@ void check_other_adapters() {
     bool rejected = false;
     try { impl::install_context(install, services); } catch (const std::logic_error&) { rejected = true; }
     check(rejected, "install phase mismatch fails closed");
+    const auto declared_before = services.calls;
+    install.repository_facts = {typed::InstallFact::TheRockVersion};
+    typed::InstallFacts declared_facts;
+    bool declared_ok = true;
+    try { declared_facts = impl::install_context(install, services); } catch (const std::logic_error&) { declared_ok = false; }
+    check(declared_ok && declared_facts.therock_version == "7.12" && services.calls == declared_before + 1,
+        "declared repository phase fact exception is bounded");
+    install.requested = {typed::InstallFact::CudaArchitecture};
+    rejected = false;
+    try { impl::install_context(install, services); } catch (const std::logic_error&) { rejected = true; }
+    check(rejected && services.calls == declared_before + 1, "undeclared repository fact remains rejected");
     const auto defaults = impl::runtime_options({{"dflash", "mtp"}, "org/DFlash-draft.gguf"});
     check(defaults.dflash && !defaults.mtp, "pure runtime facts retain DFlash precedence");
     typed::PrepareInput input;
@@ -152,6 +173,34 @@ void check_other_adapters() {
     const auto sanitized = impl::tool_schema_limits({{"tools", {{{"parameters", {{"maxLength", 2000}}}}}}});
     check(!sanitized.at("tools")[0].at("parameters").contains("maxLength"), "schema target uses existing transform");
     check(impl::client_model({{"model", "backend"}}, {{"model", "client"}}, "fallback").at("model") == "client", "response target uses existing transform");
+    Services cuda;
+    cuda.parents[typed::ParentKey::LibraryPath] = "/parent";
+    cuda.facts[typed::RuntimeQuery::CudaArchitecture] = "sm_120";
+    cuda.facts[typed::RuntimeQuery::CudaVisibleDevices] = "0,2";
+    const typed::EnvironmentInput cuda_input{typed::Platform::Linux, "cuda", "", "/engine", {}};
+    const auto cuda_plan = impl::environment(cuda_input, cuda);
+    check(cuda_plan.assignments == std::vector<std::pair<std::string, std::string>>{
+        {"LD_LIBRARY_PATH", "/engine:/parent"}, {"CUDA_VISIBLE_DEVICES", "0,2"}, {"__NV_PRIME_RENDER_OFFLOAD", "1"}} &&
+        cuda.queries == std::vector<std::string>{"parent:4", "parent:1", "parent:5", "runtime:4", "runtime:2", "parent:6"},
+        "CUDA environment uses exact enumerated keys and ordered queries");
+    cuda.queries.clear(); cuda.parents[typed::ParentKey::CudaVisibleDevices] = "3";
+    const auto override_plan = impl::environment(cuda_input, cuda);
+    check(override_plan.assignments == std::vector<std::pair<std::string, std::string>>{
+        {"LD_LIBRARY_PATH", "/engine:/parent"}, {"__NV_PRIME_RENDER_OFFLOAD", "1"}} &&
+        cuda.queries == std::vector<std::string>{"parent:4", "parent:1", "parent:5", "parent:6"},
+        "CUDA parent override suppresses architecture and device queries");
+    cuda.queries.clear(); cuda.parents[typed::ParentKey::LlamaDevice] = "CUDA2"; cuda.parents[typed::ParentKey::PrimeRenderOffload] = "0";
+    check(impl::environment(cuda_input, cuda).assignments == std::vector<std::pair<std::string, std::string>>{{"LD_LIBRARY_PATH", "/engine:/parent"}} &&
+        cuda.queries == std::vector<std::string>{"parent:4", "parent:1", "parent:6"}, "CUDA llama override and existing PRIME remain lazy");
+    Services macos;
+    macos.parents[typed::ParentKey::MetalNoResidency] = "";
+    macos.facts[typed::RuntimeQuery::HomeDirectory] = "/fallback";
+    check(impl::environment({typed::Platform::Macos, "metal", "", "/engine", {}}, macos).assignments ==
+        std::vector<std::pair<std::string, std::string>>{{"GGML_METAL_NO_RESIDENCY", ""}, {"HOME", "/fallback"}},
+        "Environment preserves absent versus empty parent values");
+    macos.facts[typed::RuntimeQuery::HomeDirectory] = "";
+    const auto missing_home = impl::environment({typed::Platform::Macos, "metal", "", "/engine", {}}, macos);
+    check(missing_home.assignments.back() == std::pair<std::string, std::string>{"HOME", "/var/root"}, "MissingPasswdHomeRetainsLegacyFallback");
     const std::array<const char*, 11> observed = {"backend.select_backend", "backend.validate_device", "install_context",
         "runtime_options", "prepare", "environment", "system.resolve_version", "system.check_install",
         "max_tokens_alias", "tool_schema_limits", "client_model"};

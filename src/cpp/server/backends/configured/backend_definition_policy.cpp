@@ -374,7 +374,7 @@ std::optional<TypedReferenceMetadata> typed_data_reference(const std::string& pa
             if (path == std::string("/launch/hook/") + field) return result(Type::Boolean, Phase::Prepare);
     }
     if (selected("runtime_options", "llamacpp.runtime_options.v1"))
-        for (const auto* field : {"dflash", "mtp", "draft"}) if (path == std::string("/runtime/") + field) return result(Type::Boolean, Phase::RuntimeOptions);
+        for (const auto* field : {"dflash", "mtp"}) if (path == std::string("/runtime/") + field) return result(Type::Boolean, Phase::RuntimeOptions);
     return {};
 }
 

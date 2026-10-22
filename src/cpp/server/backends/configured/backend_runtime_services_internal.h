@@ -70,6 +70,7 @@ struct InstallFactSources {
     std::function<std::string()> therock_version;
     std::function<std::string()> rocm_asset_family;
     std::function<std::string()> cuda_architecture;
+    std::function<std::string()> rocm_channel = [] { return std::string("stable"); };
 };
 InstallFactSources install_fact_sources();
 

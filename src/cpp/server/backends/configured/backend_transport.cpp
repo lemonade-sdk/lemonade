@@ -12,7 +12,7 @@ json BackendTransport::send_json(const TransportRequest& request) const {
 void BackendTransport::send_stream(const TransportRequest& request, httplib::DataSink& sink, WrappedServer::TelemetryCallback telemetry) const {
     if (request.kind != "http_sse" || request.codec != "openai_sse.v1" || request.method != "POST" || !access_.post_stream)
         throw std::invalid_argument("No SSE transport adapter");
-    access_.post_stream(request.path, request.original_body ? *request.original_body : request.body.dump(), sink, true, request.timeout_seconds, std::move(telemetry));
+    access_.post_stream(request.path, request.original_body ? *request.original_body : request.body.dump(), sink, request.sse, request.timeout_seconds, std::move(telemetry));
 }
 
 json BackendTransport::send_json(const MappedRequest& request) const {

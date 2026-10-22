@@ -256,16 +256,9 @@ void ConfiguredServer::forward_streaming_request(const std::string& endpoint, co
     if (entry_->runner_) {
         const auto session = std::atomic_load(&session_);
         if (!session) throw std::logic_error("Configured v2 session is not loaded");
-        for (const auto& [operation, path] : endpoints) if (path == endpoint) {
-            const auto parsed = json::parse(body, nullptr, false);
-            auto mapped = entry_->runner_->map_request(operation, OperationDelivery::Streaming, get_model_type(), *session,
-                parsed.is_discarded() ? json::object() : parsed, body, current_request_cancel_context());
-            if (parsed.is_discarded() && !mapped.original_body) throw std::invalid_argument("Invalid JSON for mapped streaming operation");
-            if (!mapped.timeout_seconds) mapped.timeout_seconds = timeout;
-            transport_.send_stream(mapped, sink, std::move(callback));
-            return;
-        }
-        throw std::invalid_argument("Streaming operation adapter is not bound");
+        const auto mapped = entry_->runner_->map_stream(endpoint, get_model_type(), *session, body, sse, timeout, current_request_cancel_context());
+        transport_.send_stream(mapped, sink, std::move(callback));
+        return;
     }
     for (const auto& [operation, path] : endpoints) {
         if (path != endpoint) continue;

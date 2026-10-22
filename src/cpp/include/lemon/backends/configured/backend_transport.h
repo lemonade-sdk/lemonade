@@ -18,6 +18,7 @@ struct TransportRequest {
     json body;
     std::optional<std::string> original_body;
     long timeout_seconds = 0;
+    bool sse = true;
 };
 class BackendTransport {
 public:

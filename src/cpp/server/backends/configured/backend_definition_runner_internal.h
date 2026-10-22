@@ -31,6 +31,8 @@ public:
     TransportRequest map_request(BackendOperation operation, OperationDelivery delivery, ModelType model_type,
         const ExecutionSession& session, const json& request, std::optional<std::string_view> original_body = {},
         utils::RequestCancelToken cancel = {}) const;
+    TransportRequest map_stream(const std::string& endpoint, ModelType model_type, const ExecutionSession& session,
+        const std::string& body, bool sse, long timeout, utils::RequestCancelToken cancel = {}) const;
     json map_response(BackendOperation operation, ModelType model_type, const ExecutionSession& session,
         const json& request, json response, utils::RequestCancelToken cancel = {}) const;
     void resolve_runtime_options(const ModelInfo& model, RecipeOptions& options) const;

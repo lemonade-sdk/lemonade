@@ -1,5 +1,6 @@
 #include "backend_runtime_services_internal.h"
 #include "lemon/backends/configured/backend_definition_binding.h"
+#include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
@@ -44,16 +45,31 @@ typed::Platform typed_platform(const std::string& os) {
 }
 InstallFactSources install_fact_sources() {
     return {
-        [] { return utils::JsonUtils::load_from_file(utils::get_resource_path("resources/backend_versions.json")).at("therock").at("version").get<std::string>(); },
-        [] { return SystemInfo::rocm_asset_family(SystemInfo::get_rocm_arch()); },
-        [] { return SystemInfo::get_cuda_arch(); }
+        [] {
+            const auto config = utils::JsonUtils::load_from_file(utils::get_resource_path("resources/backend_versions.json"));
+            if (!config.contains("therock") || !config["therock"].is_object() || !config["therock"].contains("version") || !config["therock"]["version"].is_string())
+                throw std::runtime_error("backend_versions.json is missing 'therock.version'");
+            return config["therock"]["version"].get<std::string>();
+        },
+        [] {
+            const auto family = SystemInfo::rocm_asset_family(SystemInfo::get_rocm_arch());
+            if (family.empty()) throw std::runtime_error(SystemInfo::get_unsupported_backend_error("llamacpp", "rocm-nightly"));
+            return family;
+        },
+        [] {
+            const auto architecture = SystemInfo::get_cuda_arch();
+            if (architecture.empty()) throw std::runtime_error(SystemInfo::get_unsupported_backend_error("llamacpp", "cuda"));
+            return architecture;
+        },
+        [] { const auto* config = RuntimeConfig::global(); return config ? config->rocm_channel() : "stable"; }
     };
 }
 InstallServices::InstallServices(InvocationGuard& guard, typed::InstallFactsInput input, InstallFactSources sources)
     : guard_(guard), input_(std::move(input)), sources_(std::move(sources)) {}
 std::string InstallServices::read(typed::InstallFact fact, const std::string& backend, const std::function<std::string()>& source) {
     guard_.check(typed::Effect::InstallFactRead);
-    if (input_.phase != typed::InstallPhase::Asset || input_.backend != backend ||
+    if ((input_.phase != typed::InstallPhase::Asset &&
+        std::find(input_.repository_facts.begin(), input_.repository_facts.end(), fact) == input_.repository_facts.end()) || input_.backend != backend ||
         std::find(input_.requested.begin(), input_.requested.end(), fact) == input_.requested.end())
         throw std::logic_error("Install fact outside selected phase/case");
     const auto result = source();
@@ -155,6 +171,9 @@ EnvironmentSources environment_sources() {
                 case typed::ParentKey::LlamaDevice: name = "LLAMA_ARG_DEVICE"; break;
                 case typed::ParentKey::MetalNoResidency: name = "GGML_METAL_NO_RESIDENCY"; break;
                 case typed::ParentKey::Home: name = "HOME"; break;
+                case typed::ParentKey::LibraryPath: name = "LD_LIBRARY_PATH"; break;
+                case typed::ParentKey::CudaVisibleDevices: name = "CUDA_VISIBLE_DEVICES"; break;
+                case typed::ParentKey::PrimeRenderOffload: name = "__NV_PRIME_RENDER_OFFLOAD"; break;
                 default: throw std::logic_error("Unknown enumerated parent key");
             }
             const auto* value = std::getenv(name);
@@ -163,6 +182,7 @@ EnvironmentSources environment_sources() {
         [](typed::RuntimeQuery query) {
             switch (query) {
                 case typed::RuntimeQuery::RocmArchitecture: return SystemInfo::get_rocm_arch();
+                case typed::RuntimeQuery::CudaArchitecture: return SystemInfo::get_cuda_arch();
                 case typed::RuntimeQuery::TheRockDirectory: return BackendUtils::join_runtime_dirs(BackendUtils::get_therock_lib_paths(SystemInfo::get_rocm_arch()));
                 case typed::RuntimeQuery::CudaVisibleDevices: return SystemInfo::get_cuda_visible_devices_for_arch(SystemInfo::get_cuda_arch());
                 case typed::RuntimeQuery::HomeDirectory: {
@@ -173,15 +193,14 @@ EnvironmentSources environment_sources() {
                     struct passwd record{};
                     struct passwd* result = nullptr;
                     if (getpwuid_r(getuid(), &record, buffer, sizeof(buffer), &result) == 0 && result && record.pw_dir) return std::string(record.pw_dir);
-                    return std::string("/");
+                    return std::string();
 #endif
                 }
                 default: throw std::logic_error("Unknown enumerated runtime query");
             }
         },
         [](const std::string& architecture, const std::string& destination) {
-            if (!BackendUtils::stage_therock_hip_runtime(architecture, utils::path_from_utf8(destination)))
-                throw std::runtime_error("TheRock runtime staging failed");
+            BackendUtils::stage_therock_hip_runtime(architecture, utils::path_from_utf8(destination));
         }
     };
 }
@@ -193,7 +212,8 @@ std::optional<typed::StagingCapability> EnvironmentServices::capability() {
 }
 std::optional<std::string> EnvironmentServices::parent(typed::ParentKey key) {
     guard_.check(typed::Effect::ParentEnvironmentRead);
-    if (key != typed::ParentKey::Path && key != typed::ParentKey::LlamaDevice && key != typed::ParentKey::MetalNoResidency && key != typed::ParentKey::Home)
+    if (key != typed::ParentKey::Path && key != typed::ParentKey::LlamaDevice && key != typed::ParentKey::MetalNoResidency && key != typed::ParentKey::Home && key != typed::ParentKey::LibraryPath &&
+        key != typed::ParentKey::CudaVisibleDevices && key != typed::ParentKey::PrimeRenderOffload)
         throw std::logic_error("Unknown enumerated parent key");
     auto found = parents_.find(key);
     if (found == parents_.end()) found = parents_.emplace(key, sources_.parent(key)).first;
@@ -204,7 +224,7 @@ std::optional<std::string> EnvironmentServices::parent(typed::ParentKey key) {
 std::string EnvironmentServices::runtime(typed::RuntimeQuery query) {
     guard_.check(typed::Effect::RuntimeFactRead);
     if (query != typed::RuntimeQuery::RocmArchitecture && query != typed::RuntimeQuery::TheRockDirectory &&
-        query != typed::RuntimeQuery::CudaVisibleDevices && query != typed::RuntimeQuery::HomeDirectory)
+        query != typed::RuntimeQuery::CudaVisibleDevices && query != typed::RuntimeQuery::HomeDirectory && query != typed::RuntimeQuery::CudaArchitecture)
         throw std::logic_error("Unknown enumerated runtime query");
     auto found = runtime_.find(query);
     if (found == runtime_.end()) found = runtime_.emplace(query, sources_.runtime(query)).first;

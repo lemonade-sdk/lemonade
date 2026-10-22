@@ -929,3 +929,72 @@ All eight production definitions, including HRX, remain v1; production llama.cpp
 keeps its wrapper. Production embedded v2 sources, builtin leaf policies and
 exports remain empty. Unit 4e.2 owns candidate semantics and frozen-oracle parity;
 4e.3 owns production authority, capability advertisement and atomic activation.
+
+## Candidate contract and transcript closure (4e.2, partial)
+
+The candidate remains in `test/fixtures/backend-v2/llamacpp.candidate.json`.
+Production llama.cpp still uses its wrapper, the eight production v1 definitions
+are unchanged, and the production v2 source, leaf-authority and export tables
+remain empty. This increment does not qualify the complete 476-case corpus or
+activate the candidate.
+
+The reviewed production aggregate re-pin is
+`sha256:43df4f52e00eb4db57e0f0e9bd02ed60293466cc86a2303496335977d370de09`.
+Only `llamacpp.environment.v1` and `llamacpp.install_context.v1` change from ABI /
+implementation revisions 1/1 to 2/2. The nineteen-record inventory and twelve
+legacy records remain intact. The compiler revision is 4, defaults and adapter
+revisions are 2, binding revision remains 1, and mixed v2 catalogs use runner /
+service policy revision 2. V1-only catalog identity construction is unchanged.
+The earlier aggregate literals above describe their historical increments.
+
+The environment vocabulary explicitly adds parent keys `LD_LIBRARY_PATH`,
+`CUDA_VISIBLE_DEVICES` and `__NV_PRIME_RENDER_OFFLOAD`, and a CUDA architecture
+query. Providers still accept enums, reject unknown enum values before reading,
+and return child assignments rather than modifying the parent process.
+The target preserves CUDA visibility overrides, loader ordering and absent versus
+empty parent values. Full load and environment effect-order comparison remains
+part of the unfinished corpus qualification.
+
+Install policy defaults remain `repository_result: repository_only` and
+`fact_timing: selected_case`, with no repository facts, unmanaged backends or
+fallback. The candidate explicitly selects `full_params`, `before_platform`,
+unmanaged `system`, and install-only `vulkan` fallback. Its `repository_facts`
+allowlist contains exactly `therock_version`, `rocm_asset_family` and
+`cuda_architecture`. Compilation rejects missing or unused capabilities, a
+capability without the bound install target, invalid fallback references,
+managed/unmanaged overlap, conditional early-fact expressions and conflicting
+fact requirements within a backend group. Both the typed target and its confined
+service reject a repository read unless that exact fact was declared and
+requested for the matching backend. The runner derives the allowlist exclusively
+from the immutable compiled declaration.
+
+The existing repository-phase rejection assertion is retained. Its paired
+assertion covers the declared legacy exception; another assertion rejects a
+different fact despite opt-in. This is a disclosed correction to an unconditional
+phase-laziness claim. It does not grant undeclared definitions repository facts.
+The repository result uses the pinned version; the asset result uses the resolved
+version. Declared selector errors are evaluated after the declared fact timing.
+Legacy empty spec aliases are retained only for the exact builtin llama.cpp
+identity; effective-owner accessors preserve internal ownership checks.
+
+`runtime_input: string_or_empty` is an explicit custom-argument policy. It applies
+only at `runtime_options`, permits defaults after explicit empty input, treats
+non-string arguments as empty and non-boolean `merge_args` as true, and leaves
+other definitions' preservation defaults intact. Runtime expressions accept only
+the declared DFlash and MTP facts at that stage. The consumer and compiler agree
+on `/runtime/dflash` and `/runtime/mtp`.
+
+The builtin-only `direct_stream_policy: llamacpp_legacy` preserves malformed
+mapped streams, direct unknown endpoints and caller framing. Other definitions
+retain strict defaults. The advertised matrix remains eleven cells. An empty
+request chain preserves the original bytes, including whitespace, malformed
+JSON, arrays and null; response hooks consume error objects when declared.
+
+The existing runtime-services suite executes the actual resolver, authority,
+compiler, binder and entry construction, then compares candidate install results
+(66 cases times four views), runtime options (29 times four), all eleven cells,
+32 buffered and 40 streaming transcripts per view. Eight additional loopback
+checks exercise completion bytes through `ConfiguredServer` and HTTP with fake
+processes. These projections are not the four required full-corpus v2 oracle
+registrations. Load/artifact/system-probe qualification, the exact bounded-probe
+deliberate-diff sidecar and five new CI registrations remain unfinished.

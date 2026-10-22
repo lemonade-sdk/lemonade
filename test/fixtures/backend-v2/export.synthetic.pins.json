@@ -232,7 +232,7 @@
       "mutation_policy_digest": "sha256:c0a6dc16afbf095721eaa13dbd370c62a4d9ee028fadf19e36586d9073b5445c"
     }
   ],
-  "registry": "sha256:0fa2b0e181b7a42488b1973d4d030d540579c07f71a94b53508f177f0c9e0506",
+  "registry": "sha256:563841d50a144beecf04d0e096f6c67acabcf7e9df5154c00ff75370f519b317",
   "policy_revision": 2,
   "owners": [
     {

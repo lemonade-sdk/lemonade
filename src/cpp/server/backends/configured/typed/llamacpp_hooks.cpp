@@ -49,7 +49,9 @@ InstallFacts install_context(const InstallFactsInput& input, InstallFactsService
     LEMON_TYPED_ENTRY("install_context");
     InstallFacts result;
     for (const auto fact : input.requested) {
-        if (input.phase != InstallPhase::Asset) throw std::logic_error("install fact requested before asset phase");
+        if (input.phase != InstallPhase::Asset &&
+            std::find(input.repository_facts.begin(), input.repository_facts.end(), fact) == input.repository_facts.end())
+            throw std::logic_error("install fact requested before asset phase");
         switch (fact) {
             case InstallFact::TheRockVersion: {
                 if (input.backend != "rocm-stable") throw std::logic_error("TheRock fact for wrong backend");
@@ -98,33 +100,46 @@ EnvironmentPlan environment(const EnvironmentInput& input, EnvironmentServices& 
     LEMON_TYPED_ENTRY("environment");
     if (input.staging && !services.owns(*input.staging)) throw std::logic_error("foreign staging capability");
     EnvironmentPlan result;
-    if (input.platform == Platform::Windows && input.backend.rfind("rocm-", 0) == 0) {
-        const auto path = services.parent(ParentKey::Path).value_or("");
-        const auto runtime = services.runtime(RuntimeQuery::TheRockDirectory);
-        if (!runtime.empty()) result.assignments.emplace_back("PATH", runtime + (path.empty() ? "" : ";" + path));
-        if (input.backend == "rocm-stable" && input.staging) {
+    const bool rocm = input.backend == "rocm-stable" || input.backend == "rocm-nightly";
+    const bool windows = input.platform == Platform::Windows;
+    if (rocm || input.backend == "cuda") {
+        std::string directories = windows && rocm ? "" : input.executable_directory;
+        if (input.backend == "rocm-stable") {
             const auto architecture = services.runtime(RuntimeQuery::RocmArchitecture);
-            if (!architecture.empty()) result.staging.push_back({*input.staging, architecture});
+            if (!architecture.empty()) {
+                const auto runtime = services.runtime(RuntimeQuery::TheRockDirectory);
+                if (!runtime.empty()) directories = runtime + (directories.empty() ? "" : (windows ? ";" : ":") + directories);
+            }
         }
-        const auto architecture = services.runtime(RuntimeQuery::RocmArchitecture);
-        if (architecture == "gfx1151" || architecture == "gfx1152") result.assignments.emplace_back("OCL_SET_SVM_SIZE", "262144");
+        if (!directories.empty()) {
+            const auto path = services.parent(windows ? ParentKey::Path : ParentKey::LibraryPath).value_or("");
+            result.assignments.emplace_back(windows ? "PATH" : "LD_LIBRARY_PATH", directories + (path.empty() ? "" : (windows ? ";" : ":") + path));
+        }
+        if (windows && rocm) {
+            if (input.backend == "rocm-stable") {
+                const auto architecture = services.runtime(RuntimeQuery::RocmArchitecture);
+                if (!architecture.empty() && input.staging) result.staging.push_back({*input.staging, architecture});
+            }
+            const auto architecture = services.runtime(RuntimeQuery::RocmArchitecture);
+            if (architecture == "gfx1151" || architecture == "gfx1152") result.assignments.emplace_back("OCL_SET_SVM_SIZE", "262144");
+        }
     }
     if (input.backend == "cuda") {
-        if (input.platform == Platform::Windows) {
-            const auto path = services.parent(ParentKey::Path).value_or("");
-            result.assignments.emplace_back("PATH", input.executable_directory + (path.empty() ? "" : ";" + path));
-        }
         const auto override = services.parent(ParentKey::LlamaDevice).value_or("");
-        if (input.device.empty() && override.empty()) {
+        if (input.device.empty() && override.empty() && services.parent(ParentKey::CudaVisibleDevices).value_or("").empty()) {
+            const auto architecture = services.runtime(RuntimeQuery::CudaArchitecture);
             const auto devices = services.runtime(RuntimeQuery::CudaVisibleDevices);
-            if (!devices.empty()) result.assignments.emplace_back("CUDA_VISIBLE_DEVICES", devices);
+            if (!architecture.empty() && !devices.empty()) result.assignments.emplace_back("CUDA_VISIBLE_DEVICES", devices);
         }
+        if (input.platform == Platform::Linux && services.parent(ParentKey::PrimeRenderOffload).value_or("").empty())
+            result.assignments.emplace_back("__NV_PRIME_RENDER_OFFLOAD", "1");
     }
     if (input.platform == Platform::Macos) {
         const auto residency = services.parent(ParentKey::MetalNoResidency);
         if (residency) result.assignments.emplace_back("GGML_METAL_NO_RESIDENCY", *residency);
         if (services.parent(ParentKey::Home).value_or("").empty()) {
-            result.assignments.emplace_back("HOME", services.runtime(RuntimeQuery::HomeDirectory));
+            const auto home = services.runtime(RuntimeQuery::HomeDirectory);
+            result.assignments.emplace_back("HOME", home.empty() ? "/var/root" : home);
         }
     }
     return result;

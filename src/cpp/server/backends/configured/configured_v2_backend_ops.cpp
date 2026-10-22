@@ -19,7 +19,7 @@ std::string configured_external_default_version(const BackendSpec& spec, const s
     if (spec.executable_definition && spec.executable_definition->compiled().authorized().definition().key.space == DefinitionNamespace::External)
         records = &spec.executable_definition->compiled().normalized_declaration();
     if (!records) return "";
-    const auto pinned = shipped_pins.value(spec.pin_recipe, json::object());
+    const auto pinned = shipped_pins.value(spec.effective_pin_recipe(), json::object());
     if (pinned.contains(backend) && pinned[backend].is_string()) return pinned[backend].get<std::string>();
     const auto versions = records->at("install").value("default_versions", json::object());
     return versions.contains(backend) ? versions[backend].get<std::string>() : "";
@@ -117,7 +117,10 @@ ConfiguredBackendEntry::ConfiguredBackendEntry(std::shared_ptr<const ExecutableD
       bindings(runner_->operation_bindings()), v2_ops(std::make_shared<const ConfiguredV2BackendOps>(runner_)),
       executable_definition(std::move(executable)), spec(descriptor.recipe, descriptor.binary, executable_definition,
           [runner = runner_](const InstallContext& context) { return runner->install_params(context); },
-          runner_->declaration()["install"].value("supports_split_archive", false)),
+          runner_->declaration()["install"].value("supports_split_archive", false),
+          executable_definition->compiled().authorized().definition().key.space == DefinitionNamespace::Builtin &&
+          executable_definition->compiled().authorized().definition().key.id == "llamacpp" &&
+          executable_definition->compiled().authorized().definition().key.contract == 1 && descriptor.recipe == "llamacpp"),
       compatibility(TrustedCompatibility::None),
       factory([state = v2_factory_state_](const BackendContext& context) -> std::unique_ptr<WrappedServer> {
           auto owner = state->owner.lock();

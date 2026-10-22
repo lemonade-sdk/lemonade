@@ -1,6 +1,7 @@
 #include "backend_runtime_fixture.h"
 #include "lemon/backends/configured/backend_spec_utils.h"
 #include "lemon/utils/path_utils.h"
+#include "llamacpp_v2_parity.h"
 
 #include <filesystem>
 #include <fstream>
@@ -115,10 +116,24 @@ int main(int argc, char** argv) {
         alias_entry->backend_ops()->resolve_runtime_options(info, selected);
         check(selected.get_option("fork_args") == argument, "RuntimeDefaultAliasesPreserveOverride");
     }
+    const auto candidate_document = Json::parse(read_bytes("llamacpp.candidate.json"));
+    std::shared_ptr<const ExecutableDefinition> candidate_executable;
+    const bool candidate_compiles = !throws([&] { candidate_executable = runtime_fixture::executable(candidate_document); });
+    check(candidate_compiles, "RuntimeCandidateCompilesWithDeclaredRuntimeFacts");
+    if (!candidate_compiles) return finish();
+    const auto candidate_entry = ConfiguredBackendEntry::make(candidate_executable);
+    check(candidate_entry->bindings.size() == 11, "RuntimeCandidateHasElevenRealBoundCells");
     auto all_document = binding_fixture::document();
     const auto all = runtime_fixture::executable(all_document);
     DefinitionRunner runner(all);
     const auto all_entry = ConfiguredBackendEntry::make(all);
+    all_entry->backend_ops()->resolve_runtime_options(info, launch_only);
+    BackendSpec forged_aliases(all_entry->spec.recipe, all_entry->spec.binary, all, {}, false, true);
+    const auto forged_context = configured_install_context(forged_aliases, "cpu", "request", "pin", native_platform());
+    check(throws([&] { DefinitionRunner(all).install_params(forged_context); }, "ownership"), "EmptyAliasesRemainBuiltinLlamaOnly");
+    check(candidate_entry->spec.public_recipe.empty() && candidate_entry->spec.pin_recipe.empty() &&
+        candidate_entry->spec.effective_public_recipe() == "llamacpp" && candidate_entry->spec.effective_pin_recipe() == "llamacpp",
+        "FrozenEmptyAliasesRetainEffectiveBuiltinOwner");
     const auto& all_program = ex::Inspection::program(all->compiled());
     const auto service_guard = [&](rt::Frame& service_frame, typed::Contract contract) {
         const auto found = std::find_if(all_program.hooks.begin(), all_program.hooks.end(), [&](const auto& hook) { return hook.contract == contract; });
@@ -301,6 +316,9 @@ int main(int argc, char** argv) {
     std::filesystem::create_directories(scratch / "snapshots" / "active");
     std::filesystem::create_directories(scratch / "blobs");
     std::filesystem::create_directories(scratch / "refs");
+#ifdef __linux__
+    check(!throws([&] { rt::environment_sources().stage("gfx1151", scratch.string()); }), "StagingFalseResultRetainsLegacyNonFailure");
+#endif
     {
         std::ofstream file(scratch / "blobs" / "hash", std::ios::binary);
         file << "GGUF";
@@ -393,6 +411,16 @@ int main(int argc, char** argv) {
     auto environment_service = rt::TestAccess::environment(*environment_guard, environment_sources, scratch.string());
     check(throws([&] { environment_service->parent(static_cast<typed::ParentKey>(99)); }, "enumerated") && parent_reads == 0, "EnvironmentRejectsNonEnumeratedParentKey");
     check(throws([&] { environment_service->runtime(static_cast<typed::RuntimeQuery>(99)); }, "enumerated") && runtime_reads == 0, "EnvironmentRejectsNonEnumeratedRuntimeQuery");
+    for (const auto key : {typed::ParentKey::Path, typed::ParentKey::LlamaDevice, typed::ParentKey::MetalNoResidency, typed::ParentKey::Home,
+        typed::ParentKey::LibraryPath, typed::ParentKey::CudaVisibleDevices, typed::ParentKey::PrimeRenderOffload}) {
+        check(!throws([&] { if (environment_service->parent(key) != "parent") throw std::logic_error("wrong parent"); }),
+            "EnvironmentEnumeratedParentKeySetExact");
+    }
+    for (const auto query : {typed::RuntimeQuery::RocmArchitecture, typed::RuntimeQuery::TheRockDirectory, typed::RuntimeQuery::CudaVisibleDevices,
+        typed::RuntimeQuery::HomeDirectory, typed::RuntimeQuery::CudaArchitecture}) {
+        check(!throws([&] { if (environment_service->runtime(query) != "gfx1151") throw std::logic_error("wrong runtime"); }),
+            "EnvironmentEnumeratedRuntimeQuerySetExact");
+    }
     const auto staging_capability = rt::TestAccess::capability(*environment_service);
     environment_service->runtime(typed::RuntimeQuery::RocmArchitecture);
     typed::EnvironmentPlan staging{{{"PATH", "child"}}, {{staging_capability, "gfx1151"}}};
@@ -522,6 +550,123 @@ int main(int argc, char** argv) {
     rt::InstallServices denied_facts(*denied_guard, {typed::InstallPhase::Asset, typed::Platform::Linux, "rocm-stable", "", "", "", {typed::InstallFact::TheRockVersion}}, fact_sources);
     check(throws([&] { denied_facts.therock_version(); }, "Effect outside") && fact_calls == before_denied_facts,
         "InstallAuthorityCheckedBeforeReadingFacts");
+    auto legacy_install = fact_document;
+    legacy_install["merge"]["install"]["repository_result"] = "full_params";
+    legacy_install["merge"]["install"]["repository_facts"] = {"therock_version"};
+    legacy_install["merge"]["install"]["fact_timing"] = "before_platform";
+    legacy_install["merge"]["install"]["unmanaged_backends"] = {"system"};
+    legacy_install["merge"]["install"]["backend_fallback"] = "rocm-stable";
+    legacy_install["merge"]["install"]["cases"][0]["os"] = {"linux"};
+    legacy_install["merge"]["install"]["errors"] = {{"os", "legacy platform error"}, {"machine_arch", "legacy machine error"}, {"no_case", "legacy no case"}};
+    const auto legacy_executable = runtime_fixture::executable(legacy_install);
+    const auto legacy_entry = ConfiguredBackendEntry::make(legacy_executable);
+    const DefinitionRunner legacy_runner(legacy_executable);
+    auto legacy_context = configured_install_context(legacy_entry->spec, "rocm-stable", "request", "pin", {"linux", "x86_64", ""});
+    auto before_legacy = fact_calls;
+    InstallParams legacy_repository;
+    const bool legacy_repository_ok = !throws([&] { legacy_repository = legacy_runner.install_params(legacy_context, fact_sources); });
+    check(legacy_repository_ok && legacy_repository.repo == "test/engine" && legacy_repository.filename == "runtime-7.12-pin" && fact_calls == before_legacy + 1,
+        "DeclaredRepositoryFactProducesFullPinnedParameters");
+    legacy_context.phase = InstallPhase::Asset;
+    legacy_context.resolved_version = "resolved";
+    before_legacy = fact_calls;
+    check(legacy_runner.install_params(legacy_context, fact_sources).filename == "runtime-7.12-resolved" && fact_calls == before_legacy + 1,
+        "DeclaredAssetFactUsesResolvedVersion");
+    legacy_context.backend = "system";
+    before_legacy = fact_calls;
+    check(legacy_runner.install_params(legacy_context, fact_sources).repo.empty() && fact_calls == before_legacy,
+        "DeclaredUnmanagedBackendDoesNotReadFacts");
+    legacy_context.backend = "unknown";
+    InstallParams fallback_params;
+    const bool fallback_ok = !throws([&] { fallback_params = legacy_runner.install_params(legacy_context, fact_sources); });
+    check(fallback_ok && fallback_params.filename == "runtime-7.12-resolved" && fact_calls == before_legacy + 1,
+        "DeclaredFallbackAppliesOnlyToInstallEvaluation");
+    legacy_context.backend = "rocm-stable";
+    legacy_context.platform.os = "macos";
+    before_legacy = fact_calls;
+    check(throws([&] { legacy_runner.install_params(legacy_context, fact_sources); }, "legacy platform error") && fact_calls == before_legacy + 1,
+        "DeclaredBeforePlatformFactPrecedesDeclaredPlatformError");
+    auto selected_install = legacy_install;
+    selected_install["merge"]["install"]["fact_timing"] = "selected_case";
+    const auto selected_executable = runtime_fixture::executable(selected_install);
+    const auto selected_install_entry = ConfiguredBackendEntry::make(selected_executable);
+    auto selected_install_context = configured_install_context(selected_install_entry->spec, "rocm-stable", "request", "pin", {"macos", "x86_64", ""});
+    before_legacy = fact_calls;
+    check(throws([&] { DefinitionRunner(selected_executable).install_params(selected_install_context, fact_sources); }, "legacy platform error") && fact_calls == before_legacy,
+        "DefaultSelectedCaseStillRejectsPlatformBeforeFacts");
+    auto declared_fact_input = fact_input;
+    declared_fact_input.phase = typed::InstallPhase::Repository;
+    declared_fact_input.requested = {typed::InstallFact::TheRockVersion};
+    declared_fact_input.repository_facts = {typed::InstallFact::TheRockVersion};
+    rt::Frame declared_frame(*all);
+    auto declared_guard = service_guard(declared_frame, typed::Contract::InstallContext);
+    rt::InstallServices declared_services(*declared_guard, declared_fact_input, fact_sources);
+    before_legacy = fact_calls;
+    std::string declared_value;
+    const bool declared_ok = !throws([&] { declared_value = declared_services.therock_version(); });
+    check(declared_ok && declared_value == "v7.12.1" && fact_calls == before_legacy + 1,
+        "RepositoryServiceAcceptsOnlyDeclaredRequestedFact");
+    check(throws([&] { declared_services.cuda_architecture(); }, "phase/case") && fact_calls == before_legacy + 1,
+        "RepositoryServiceRejectsAnotherFactDespiteOptIn");
+    declared_guard.reset();
+    const auto reject_install = [&](const Json& value, const std::string& expected, const std::string& label) {
+        const auto admitted = admit({}, builtins(false, &value));
+        const auto compiled = compile_execution_definition(admitted.catalog->builtin_v2_definition({DefinitionNamespace::Builtin, value.at("id"), 1}));
+        check(!compiled.definition && std::any_of(compiled.diagnostics.entries.begin(), compiled.diagnostics.entries.end(),
+            [&](const auto& error) { return error.code == expected; }), label);
+    };
+    auto foreign_stream_policy = runtime_document();
+    foreign_stream_policy["merge"]["launch"]["direct_stream_policy"] = "llamacpp_legacy";
+    reject_install(foreign_stream_policy, "unsupported_execution_feature", "LegacyDirectStreamingPolicyIsBuiltinOnly");
+    const ExecutionSession strict_session{all, {}, {}, {}, "fixture"};
+    check(throws([&] { runner.map_stream("/unknown", ModelType::LLM, strict_session, "raw", false, 1); }, "not bound"),
+        "DefaultDirectStreamingStillRejectsUnknownEndpoints");
+    auto invalid_runtime = candidate_document;
+    invalid_runtime["merge"]["launch"]["custom_args"]["defaults"][0]["when"] = {{"ref", "/runtime/draft"}};
+    reject_install(invalid_runtime, "invalid_reference", "RuntimeFactsCannotInventFields");
+    invalid_runtime = candidate_document;
+    invalid_runtime["merge"]["launch"]["custom_args"]["defaults"][0]["stage"] = "launch";
+    reject_install(invalid_runtime, "phase_dependency", "RuntimeFactsCannotLeakIntoLaunchDefaults");
+    auto invalid_install = legacy_install;
+    invalid_install["merge"]["install"].erase("repository_facts");
+    reject_install(invalid_install, "undeclared_repository_fact", "FullParametersCannotObtainUndeclaredRepositoryFacts");
+    invalid_install = legacy_install;
+    invalid_install["merge"]["install"].erase("repository_result");
+    reject_install(invalid_install, "invalid_install_policy", "RepositoryFactDeclarationRequiresFullParameters");
+    invalid_install = legacy_install;
+    invalid_install["merge"]["hooks"].erase("install_context");
+    invalid_install["merge"]["install"]["cases"][0]["filename"] = "no-fact";
+    reject_install(invalid_install, "invalid_install_policy", "RepositoryFactsRequireBoundInstallContract");
+    invalid_install = legacy_install;
+    invalid_install["merge"]["install"]["repository_facts"].push_back("cuda_architecture");
+    reject_install(invalid_install, "unused_repository_fact", "RepositoryFactDeclarationCannotContainUnusedCapability");
+    invalid_install = legacy_install;
+    invalid_install["merge"]["install"]["backend_fallback"] = "absent";
+    reject_install(invalid_install, "invalid_install_policy", "InstallFallbackMustNameDeclaredBackendGroup");
+    invalid_install = legacy_install;
+    invalid_install["merge"]["install"]["unmanaged_backends"] = {"rocm-stable"};
+    reject_install(invalid_install, "invalid_install_policy", "UnmanagedBackendCannotOverlapManagedCase");
+    invalid_install = legacy_install;
+    invalid_install["merge"]["install"]["strategy"] = "external_only";
+    invalid_install["merge"]["install"]["cases"][0]["filename"] = "no-fact";
+    reject_install(invalid_install, "invalid_install_policy", "LegacyInstallPoliciesRequireManagedReleases");
+    invalid_install = legacy_install;
+    invalid_install["merge"]["install"]["cases"][0]["filename"] = {{"coalesce", Json::array({"constant", {{"ref", "/install/therock_version"}}})}};
+    reject_install(invalid_install, "ambiguous_install_facts", "BeforePlatformCannotEagerlyEvaluateConditionalFactBranches");
+    invalid_install = legacy_install;
+    auto other_platform = invalid_install["merge"]["install"]["cases"][0];
+    other_platform["id"] = "another-platform";
+    other_platform["os"] = {"windows"};
+    other_platform["filename"] = "no-fact";
+    invalid_install["merge"]["install"]["cases"].push_back(other_platform);
+    reject_install(invalid_install, "ambiguous_install_facts", "BeforePlatformGroupRequiresIdenticalFactRequirements");
+    invalid_install = legacy_install;
+    invalid_install["merge"]["install"]["cases"][0]["backend"] = {"cuda"};
+    reject_install(invalid_install, "invalid_install_fact_backend", "BeforePlatformCannotReadAnotherBackendFact");
+    llamacpp_install_parity(candidate_executable, *candidate_entry);
+    llamacpp_runtime_parity(candidate_executable);
+    llamacpp_protocol_parity(candidate_executable, candidate_entry);
+    llamacpp_loopback(candidate_entry);
     std::filesystem::remove_all(scratch);
     } catch (const std::exception& error) {
         std::printf("Runtime rejection: %s\n", error.what());

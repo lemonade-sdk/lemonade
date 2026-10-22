@@ -59,7 +59,11 @@ void phase_reference(const std::string& reference, const std::string& at, const 
         if (doc["launch"]["custom_args"]["defaults"][index]["stage"] == "runtime_options") use = 0;
     }
     std::size_t available = 0;
-    if (root == "/model" || root == "/platform" || root == "/options") available = 0;
+    if (root == "/runtime") {
+        require(v2::typed_data_reference(reference, doc).has_value(), "invalid_reference", at);
+        require(at.rfind("/launch/custom_args/defaults/", 0) == 0 && use == 0, "phase_dependency", at);
+        available = 0;
+    } else if (root == "/model" || root == "/platform" || root == "/options") available = 0;
     else if (root == "/request") available = order.size() + 2;
     else if (root == "/artifacts") available = after("artifacts");
     else if (root == "/install") available = rank(rank("install") <= order.size() ? "install" : "program");
@@ -122,7 +126,7 @@ Expression compile(const Json& value, const std::string& pointer, Program& progr
                 result.type = type;
             }
             if (!produced && (text.rfind("/platform/", 0) == 0 || text.rfind("/install/", 0) == 0 ||
-                text.rfind("/artifacts/", 0) == 0 || text.rfind("/launch/", 0) == 0)) {
+                text.rfind("/artifacts/", 0) == 0 || text.rfind("/launch/", 0) == 0 || text.rfind("/runtime/", 0) == 0)) {
                 budget.work(text.size(), v2::checked_sum(program.bindings.size(), program.normalized["launch"]["ports"].size()));
                 budget.keep(v2::checked_product(v2::checked_sum(text.size(), 128), 4));
                 const auto known = v2::typed_data_reference(text, program.normalized);

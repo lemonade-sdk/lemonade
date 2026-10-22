@@ -217,6 +217,9 @@ public:
             execution::Program staging;
             staging.normalized = source.declaration;
             for (const auto& [pointer, value] : additions) staging.normalized[Json::json_pointer(pointer)] = value;
+            if (staging.normalized["launch"].value("direct_stream_policy", "strict") == "llamacpp_legacy")
+                execution::require(source.key.space == DefinitionNamespace::Builtin && source.key.id == "llamacpp" &&
+                    staging.normalized["recipe"] == "llamacpp", "unsupported_execution_feature", "/launch/direct_stream_policy");
             execution::bind_options(staging, budget);
             execution::compile_hooks(*authorized, staging, budget);
             execution::compile_expressions(staging, budget);

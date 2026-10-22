@@ -173,7 +173,7 @@ void BackendCatalog::finalize() {
             for (const auto& row : install["cases"]) for (const auto& backend : row.value("backend", json::array())) backends.insert(backend);
             const auto versions = install.value("default_versions", json::object());
             const auto& pins = builtins_->pins_;
-            const auto shipped = pins.value(entry->spec.pin_recipe, json::object());
+            const auto shipped = pins.value(entry->spec.effective_pin_recipe(), json::object());
             std::set<std::string> normalized;
             for (const auto& backend : backends) {
                 if (backend == "rocm" && !entry->descriptor.rocm_channels.empty()) {
@@ -189,7 +189,7 @@ void BackendCatalog::finalize() {
         registrations_.push_back({&entry->descriptor, entry->factory, &entry->spec, entry->backend_ops(), entry.get()});
     }
     json identity = {{"export", schema_}, {"arms", arms}};
-    if (!executions.empty()) { identity["executions"] = executions; identity["runner_service_policy"] = 1; }
+    if (!executions.empty()) { identity["executions"] = executions; identity["runner_service_policy"] = 2; }
     schema_["catalog_id"] = schema_digest(identity.dump());
 }
 

@@ -53,8 +53,8 @@
       "contract": 4,
       "id": "llamacpp.environment.v1",
       "stage": "environment",
-      "abi": 1,
-      "implementation": 1,
+      "abi": 2,
+      "implementation": 2,
       "effects": [
         3,
         4,
@@ -73,8 +73,8 @@
       "contract": 1,
       "id": "llamacpp.install_context.v1",
       "stage": "install_context",
-      "abi": 1,
-      "implementation": 1,
+      "abi": 2,
+      "implementation": 2,
       "effects": [
         2
       ],

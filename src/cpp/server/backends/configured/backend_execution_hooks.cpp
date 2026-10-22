@@ -18,13 +18,13 @@ HookShape hook_shape(typed::Contract contract) {
     switch (contract) {
         case C::Backend: return {contract, "llamacpp.backend.v1", "backend", 1, 1,
             {E::SupportQuery, E::DeviceQuery}, {F::BackendOptions}, {F::SelectedBackend}};
-        case C::InstallContext: return {contract, "llamacpp.install_context.v1", "install_context", 1, 1,
+        case C::InstallContext: return {contract, "llamacpp.install_context.v1", "install_context", 2, 2,
             {E::InstallFactRead}, {F::SelectedBackend, F::Platform, F::VersionInputs}, {F::InstallFacts}};
         case C::RuntimeOptions: return {contract, "llamacpp.runtime_options.v1", "runtime_options", 1, 1,
             {}, {F::ModelLabels, F::DraftCheckpoint}, {F::RuntimeFacts}};
         case C::Prepare: return {contract, "llamacpp.prepare.v1", "launch", 1, 1,
             {}, {F::ModelArtifacts, F::ModelLabels, F::DraftCheckpoint, F::ContextSize, F::SelectedBackend}, {F::ModelFacts}};
-        case C::Environment: return {contract, "llamacpp.environment.v1", "environment", 1, 1,
+        case C::Environment: return {contract, "llamacpp.environment.v1", "environment", 2, 2,
             {E::ParentEnvironmentRead, E::RuntimeFactRead, E::StagingPlan},
             {F::Platform, F::SelectedBackend, F::ResolvedProgram}, {F::EnvironmentPlan}};
         case C::System: return {contract, "llamacpp.system.v1", "system", 1, 1,

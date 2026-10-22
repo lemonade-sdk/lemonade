@@ -18,6 +18,11 @@ bool endpoint(const std::string& path) {
     return !path.empty() && path[0] == '/' && path.rfind("//", 0) != 0 &&
         path.find("://") == std::string::npos && path.find_first_of("\r\n") == std::string::npos && path.find('\0') == std::string::npos;
 }
+bool valid_spec_aliases(const ExecutableDefinition& executable, const BackendSpec& spec) {
+    const auto& key = executable.compiled().authorized().definition().key;
+    return (!spec.public_recipe.empty() && !spec.pin_recipe.empty()) ||
+        (key.space == DefinitionNamespace::Builtin && key.id == "llamacpp" && key.contract == 1 && spec.recipe == "llamacpp");
+}
 std::string scalar(const json& value) { return value.is_string() ? value.get<std::string>() : value.dump(); }
 void remove_pointer(json& body, const std::string& path) {
     const json::json_pointer pointer(path);
@@ -111,9 +116,32 @@ TransportRequest DefinitionRunner::map_request(BackendOperation operation, Opera
     if (original_body && op.identity && op.remove.empty() && op.set.empty() && chain.empty()) result.original_body = std::string(*original_body);
     return result;
 }
+TransportRequest DefinitionRunner::map_stream(const std::string& path, ModelType model_type, const ExecutionSession& session,
+    const std::string& body, bool sse, long timeout, utils::RequestCancelToken cancel) const {
+    runtime::check_cancelled(cancel);
+    if (session.executable.get() != executable_.get()) throw std::logic_error("Foreign execution session");
+    const bool legacy = program_.launch.records.value("direct_stream_policy", "strict") == "llamacpp_legacy";
+    BackendOperation operation = BackendOperation::Count;
+    if (path == "/v1/chat/completions") operation = BackendOperation::ChatCompletion;
+    if (path == "/v1/completions") operation = BackendOperation::Completion;
+    if (path == "/v1/responses") operation = BackendOperation::Responses;
+    if (operation == BackendOperation::Count) {
+        if (!legacy || !endpoint(path)) throw std::invalid_argument("Streaming operation adapter is not bound");
+        return {"http_sse", "POST", "openai_sse.v1", path, {}, body, timeout, sse};
+    }
+    const auto& op = cell(operation, OperationDelivery::Streaming, model_type);
+    const auto parsed = json::parse(body, nullptr, false);
+    if (legacy && parsed.is_discarded()) return {op.kind, op.method, op.codec, op.path, {}, body,
+        op.timeout_seconds ? static_cast<long>(op.timeout_seconds) : timeout, sse};
+    auto mapped = map_request(operation, OperationDelivery::Streaming, model_type, session,
+        parsed.is_discarded() ? json::object() : parsed, body, cancel);
+    if (parsed.is_discarded() && !mapped.original_body) throw std::invalid_argument("Invalid JSON for mapped streaming operation");
+    if (!mapped.timeout_seconds) mapped.timeout_seconds = timeout;
+    if (legacy) mapped.sse = sse;
+    return mapped;
+}
 json DefinitionRunner::map_response(BackendOperation operation, ModelType model_type, const ExecutionSession& session,
     const json& request, json response, utils::RequestCancelToken cancel) const {
-    if (response.contains("error")) return response;
     runtime::check_cancelled(cancel);
     const auto& op = cell(operation, OperationDelivery::Buffered, model_type);
     auto frame = request_frame(session, request);
@@ -129,11 +157,14 @@ void DefinitionRunner::defaults(runtime::Frame& frame, const std::string& stage)
     if (!program_.launch.custom_args_slot) return;
     const auto& name = program_.bindings.at(*program_.launch.custom_args_slot).public_name;
     const auto existing = frame.data.options.find(name);
-    if (existing != frame.data.options.end() && existing->is_null()) return;
-    if (existing != frame.data.options.end() && *existing == "" && frame.explicit_options.count(name)) return;
-    std::string text = existing == frame.data.options.end() ? "" : existing->get<std::string>();
+    const bool normalize = stage == "runtime_options" && program_.launch.records.at("custom_args").value("runtime_input", "preserve") == "string_or_empty";
+    if (!normalize && existing != frame.data.options.end() && existing->is_null()) return;
+    if (!normalize && existing != frame.data.options.end() && *existing == "" && frame.explicit_options.count(name)) return;
+    std::string text = existing == frame.data.options.end() || (normalize && !existing->is_string()) ? "" : existing->get<std::string>();
+    const auto merge_value = frame.data.options.value("merge_args", json(true));
+    const bool normalized_merge = !merge_value.is_boolean() || merge_value.get<bool>();
     for (const auto& item : program_.launch.defaults) {
-        if (item.stage != stage || (item.respect_merge_args && !frame.data.options.value("merge_args", true))) continue;
+        if (item.stage != stage || (item.respect_merge_args && !(normalize ? normalized_merge : frame.data.options.value("merge_args", true)))) continue;
         if (!evaluate(item.condition, frame).value_or(false).get<bool>()) continue;
         text = utils::append_runtime_arg_defaults(text, {{item.args, item.flag, item.aliases}});
     }
@@ -154,8 +185,8 @@ void DefinitionRunner::resolve_runtime_options(const ModelInfo& model, RecipeOpt
     for (const auto index : slots(SlotOwnerKind::Root, "runtime_options", "runtime_options")) {
         const auto facts = invoke<typed::RuntimeOptionsHook>(frame, index, SlotOwnerKind::Root, "runtime_options", "runtime_options", {},
             [&](auto target, auto&) { return target({model.labels, model.checkpoint("draft")}); });
-        frame.data.values["model"]["dflash"] = facts.dflash;
-        frame.data.values["model"]["mtp"] = facts.mtp;
+        frame.data.values["runtime"]["dflash"] = facts.dflash;
+        frame.data.values["runtime"]["mtp"] = facts.mtp;
     }
     defaults(frame, "runtime_options");
     if (program_.launch.custom_args_slot) {
@@ -166,83 +197,113 @@ void DefinitionRunner::resolve_runtime_options(const ModelInfo& model, RecipeOpt
 
 InstallParams DefinitionRunner::install_params(const InstallContext& context, runtime::InstallFactSources sources) const {
     if (context.executable_definition.get() != executable_.get() || context.spec.executable_definition.get() != executable_.get() ||
-        context.definition || context.spec.definition || context.public_recipe != declaration()["recipe"] ||
-        context.pin_recipe != context.public_recipe || context.spec.public_recipe != context.public_recipe || context.spec.pin_recipe != context.pin_recipe)
+        !valid_spec_aliases(*executable_, context.spec) || context.definition || context.spec.definition || context.public_recipe != declaration()["recipe"] ||
+        context.pin_recipe != context.public_recipe || context.spec.effective_public_recipe() != context.public_recipe || context.spec.effective_pin_recipe() != context.pin_recipe)
         throw std::logic_error("Install definition/spec ownership mismatch");
     if (program_.install.strategy != "github_release") throw std::logic_error("Backend has no managed release installation");
+    const auto& policy = program_.install.records;
+    std::string backend = context.backend;
+    if (backend == "rocm" && !slots(SlotOwnerKind::Root, "install_context", "install_context").empty()) backend += "-" + sources.rocm_channel();
+    const auto unmanaged = policy.value("unmanaged_backends", std::vector<std::string>{});
+    if (std::find(unmanaged.begin(), unmanaged.end(), backend) != unmanaged.end()) return {};
+    const auto has_backend = [&](const std::string& value) {
+        return std::any_of(program_.install.cases.begin(), program_.install.cases.end(), [&](const auto& record) {
+            const auto found = record.selectors.find("backend");
+            return found == record.selectors.end() || std::find(found->second.begin(), found->second.end(), value) != found->second.end();
+        });
+    };
+    if (!has_backend(backend) && policy.contains("backend_fallback")) backend = policy.at("backend_fallback");
+    const bool full = policy.value("repository_result", "repository_only") == "full_params";
+    const bool early = policy.value("fact_timing", "selected_case") == "before_platform";
     runtime::Frame frame(*executable_);
     frame.facts = {typed::Fact::BackendOptions, typed::Fact::SelectedBackend, typed::Fact::Platform, typed::Fact::VersionInputs};
     frame.data.values = {{"platform", {{"os", context.platform.os}, {"machine_arch", context.platform.machine_arch}, {"arch", context.platform.rocm_arch}}},
-        {"install", {{"backend", context.backend}, {"requested_version", context.requested_version}, {"pinned_version", context.pinned_version}}}};
-    if (context.phase == InstallPhase::Asset) {
-        frame.data.values["install"]["version"] = context.resolved_version;
+        {"install", {{"backend", backend}, {"requested_version", context.requested_version}, {"pinned_version", context.pinned_version}}}};
+    if (context.phase == InstallPhase::Asset || full) {
+        frame.data.values["install"]["version"] = context.phase == InstallPhase::Repository ? context.pinned_version : context.resolved_version;
         frame.data.values["install"]["resolved_version"] = context.resolved_version;
     }
+    const auto fail = [&](const std::string& axis) -> void {
+        const auto& errors = policy.value("errors", json::object());
+        const auto key = errors.contains(axis) ? axis : "no_case";
+        if (errors.contains(key)) throw std::runtime_error(evaluate("/install/errors/" + key, frame).value().get<std::string>());
+        throw std::invalid_argument("No matching install case: " + axis);
+    };
     std::vector<const execution::InstallCase*> eligible;
     for (const auto& record : program_.install.cases) eligible.push_back(&record);
-    for (const auto& [axis, value] : std::vector<std::pair<std::string, std::string>>{
-        {"backend", context.backend}, {"os", context.platform.os}, {"machine_arch", context.platform.machine_arch}, {"arch", context.platform.rocm_arch}}) {
+    const auto filter = [&](const std::string& axis, const std::string& value) {
         eligible.erase(std::remove_if(eligible.begin(), eligible.end(), [&](const auto* record) {
             const auto found = record->selectors.find(axis);
             return found != record->selectors.end() && std::find(found->second.begin(), found->second.end(), value) == found->second.end();
         }), eligible.end());
-        if (eligible.empty()) throw std::invalid_argument("No matching install case: " + axis);
-    }
-    const auto& selected = *eligible.front();
+        if (eligible.empty()) fail(axis);
+    };
+    filter("backend", backend);
     for (const auto index : slots(SlotOwnerKind::Root, "backend", "backend"))
         invoke<typed::BackendSelectionOps>(frame, index, SlotOwnerKind::Root, "backend", "backend", {}, [&](const auto& target, auto& guard) {
-            runtime::SelectionServices services(guard, {context.backend});
-            return target.select_backend({context.backend, "stable", {context.backend}}, services);
+            runtime::SelectionServices services(guard, {backend});
+            return target.select_backend({backend, "stable", {backend}}, services);
         });
-    typed::InstallFactsInput input{context.phase == InstallPhase::Repository ? typed::InstallPhase::Repository : typed::InstallPhase::Asset,
-        runtime::typed_platform(context.platform.os), context.backend, context.requested_version, context.pinned_version, context.resolved_version, {}};
-    for (const auto index : slots(SlotOwnerKind::Root, "install_context", "install_context")) {
-        invoke<typed::InstallContextHook>(frame, index, SlotOwnerKind::Root, "install_context", "install_context", {}, [&](auto target, auto& guard) {
-            typed::InstallFacts combined;
-            bool invoked = false;
-            const auto read = [&] {
-                runtime::InstallServices services(guard, input, sources);
-                const auto facts = target(input, services);
-                invoked = true;
-                auto& values = frame.data.values["install"];
-                if (facts.therock_version) { combined.therock_version = facts.therock_version; values["therock_version"] = *facts.therock_version; }
-                if (facts.rocm_asset_family) { combined.rocm_asset_family = facts.rocm_asset_family; values["rocm_asset_family"] = *facts.rocm_asset_family; }
-                if (facts.cuda_architecture) { combined.cuda_architecture = facts.cuda_architecture; values["cuda_architecture"] = *facts.cuda_architecture; }
-            };
-            const auto request = [&](const auto& self, const execution::Expression& expression) -> void {
-                using Kind = execution::Expression::Kind;
-                for (const auto& [name, fact] : std::vector<std::pair<std::string, typed::InstallFact>>{
-                    {"/install/therock_version", typed::InstallFact::TheRockVersion}, {"/install/rocm_asset_family", typed::InstallFact::RocmAssetFamily},
-                    {"/install/cuda_architecture", typed::InstallFact::CudaArchitecture}}) {
-                    if (expression.reference == name && !frame.data.values.contains(json::json_pointer(name))) {
-                        input.requested = {fact};
-                        read();
+    const auto read_facts = [&](const execution::InstallCase& fact_case) {
+        typed::InstallFactsInput input{context.phase == InstallPhase::Repository ? typed::InstallPhase::Repository : typed::InstallPhase::Asset,
+            runtime::typed_platform(context.platform.os), backend, context.requested_version, context.pinned_version, context.resolved_version, {}};
+        for (const auto& name : policy.value("repository_facts", std::vector<std::string>{}))
+            input.repository_facts.push_back(name == "therock_version" ? typed::InstallFact::TheRockVersion :
+                name == "rocm_asset_family" ? typed::InstallFact::RocmAssetFamily : typed::InstallFact::CudaArchitecture);
+        for (const auto index : slots(SlotOwnerKind::Root, "install_context", "install_context")) {
+            invoke<typed::InstallContextHook>(frame, index, SlotOwnerKind::Root, "install_context", "install_context", {}, [&](auto target, auto& guard) {
+                typed::InstallFacts combined;
+                bool invoked = false;
+                const auto read = [&] {
+                    runtime::InstallServices services(guard, input, sources);
+                    const auto facts = target(input, services);
+                    invoked = true;
+                    auto& values = frame.data.values["install"];
+                    if (facts.therock_version) { combined.therock_version = facts.therock_version; values["therock_version"] = *facts.therock_version; }
+                    if (facts.rocm_asset_family) { combined.rocm_asset_family = facts.rocm_asset_family; values["rocm_asset_family"] = *facts.rocm_asset_family; }
+                    if (facts.cuda_architecture) { combined.cuda_architecture = facts.cuda_architecture; values["cuda_architecture"] = *facts.cuda_architecture; }
+                };
+                const auto request = [&](const auto& self, const execution::Expression& expression) -> void {
+                    using Kind = execution::Expression::Kind;
+                    for (const auto& [name, fact] : std::vector<std::pair<std::string, typed::InstallFact>>{
+                        {"/install/therock_version", typed::InstallFact::TheRockVersion}, {"/install/rocm_asset_family", typed::InstallFact::RocmAssetFamily},
+                        {"/install/cuda_architecture", typed::InstallFact::CudaArchitecture}}) {
+                        if (expression.reference == name && !frame.data.values.contains(json::json_pointer(name))) {
+                            input.requested = {fact};
+                            read();
+                        }
                     }
-                }
-                if (expression.kind == Kind::When) {
-                    self(self, expression.children.at(0));
-                    if (expression.children.at(0).evaluate(frame.data, program_.bindings).value().template get<bool>()) self(self, expression.children.at(1));
-                    return;
-                }
-                for (const auto& child : expression.children) {
-                    self(self, child);
-                    if (expression.kind == Kind::Coalesce && child.evaluate(frame.data, program_.bindings)) break;
-                    if (expression.kind == Kind::All || expression.kind == Kind::Any) {
-                        const bool value = child.evaluate(frame.data, program_.bindings).value().template get<bool>();
-                        if (expression.kind == Kind::All && !value) break;
-                        if (expression.kind == Kind::Any && value) break;
+                    if (expression.kind == Kind::When) {
+                        self(self, expression.children.at(0));
+                        if (expression.children.at(0).evaluate(frame.data, program_.bindings).value().template get<bool>()) self(self, expression.children.at(1));
+                        return;
                     }
+                    for (const auto& child : expression.children) {
+                        self(self, child);
+                        if (expression.kind == Kind::Coalesce && child.evaluate(frame.data, program_.bindings)) break;
+                        if (expression.kind == Kind::All || expression.kind == Kind::Any) {
+                            const bool value = child.evaluate(frame.data, program_.bindings).value().template get<bool>();
+                            if (expression.kind == Kind::All && !value) break;
+                            if (expression.kind == Kind::Any && value) break;
+                        }
+                    }
+                };
+                if (context.phase == InstallPhase::Asset || full) {
+                    request(request, program_.expressions.at(fact_case.filename));
+                    if (fact_case.version_override) request(request, program_.expressions.at(*fact_case.version_override));
                 }
-            };
-            if (context.phase == InstallPhase::Asset) {
-                request(request, program_.expressions.at(selected.filename));
-                if (selected.version_override) request(request, program_.expressions.at(*selected.version_override));
-            }
-            if (!invoked) { input.requested.clear(); read(); }
-            return combined;
-        });
-    }
-    if (context.phase == InstallPhase::Repository) return {selected.repo, "", "", ""};
+                if (!invoked) { input.requested.clear(); read(); }
+                return combined;
+            });
+        }
+    };
+    if (early) read_facts(*eligible.front());
+    filter("os", context.platform.os);
+    filter("machine_arch", context.platform.machine_arch);
+    filter("arch", context.platform.rocm_arch);
+    const auto& selected = *eligible.front();
+    if (!early) read_facts(selected);
+    if (context.phase == InstallPhase::Repository && !full) return {selected.repo, "", "", ""};
     const auto filename = evaluate(selected.filename, frame);
     const auto version = selected.version_override ? evaluate(*selected.version_override, frame) : std::optional<json>("");
     if (!filename || !version) throw std::invalid_argument("Missing selected install fact");
@@ -330,8 +391,8 @@ std::string DefinitionRunner::find_imported(const std::string& path) const {
 
 PreparedExecution DefinitionRunner::prepare_load(const LoadContext& context, const BackendSpec& spec,
     LaunchServices& services, utils::RequestCancelToken cancel, runtime::EnvironmentSources environment) const {
-    if (spec.executable_definition.get() != executable_.get() || spec.definition ||
-        spec.public_recipe != declaration()["recipe"] || spec.pin_recipe != spec.public_recipe)
+    if (spec.executable_definition.get() != executable_.get() || !valid_spec_aliases(*executable_, spec) || spec.definition ||
+        spec.effective_public_recipe() != declaration()["recipe"] || spec.effective_pin_recipe() != spec.effective_public_recipe())
         throw std::logic_error("Install definition/spec ownership mismatch");
     runtime::Frame frame(*executable_);
     auto& values = frame.data.values;
@@ -375,8 +436,8 @@ PreparedExecution DefinitionRunner::prepare_load(const LoadContext& context, con
                 for (const auto index : schedule) {
                     const auto selected = invoke<typed::BackendSelectionOps>(frame, index, SlotOwnerKind::Root, "backend", "backend", cancel,
                         [&](const auto& target, auto& guard) {
-                            runtime::SelectionServices selection(guard, services.supported_backends(spec.public_recipe));
-                            auto result = target.select_backend({backend, options.value("rocm_channel", "stable"), services.supported_backends(spec.public_recipe)}, selection);
+                            runtime::SelectionServices selection(guard, services.supported_backends(spec.effective_public_recipe()));
+                            auto result = target.select_backend({backend, options.value("rocm_channel", "stable"), services.supported_backends(spec.effective_public_recipe())}, selection);
                             const auto device = target.validate_device({result.backend, options.value("device", "")}, selection);
                             if (!device.supported) throw std::invalid_argument(device.error);
                             return result;
@@ -385,11 +446,11 @@ PreparedExecution DefinitionRunner::prepare_load(const LoadContext& context, con
                 }
             } else {
                 if (backend.empty()) {
-                    const auto supported = services.supported_backends(spec.public_recipe);
+                    const auto supported = services.supported_backends(spec.effective_public_recipe());
                     if (supported.empty()) throw std::runtime_error("No supported configured backend");
                     backend = supported.front();
                 }
-                services.validate_backend(spec.public_recipe, backend);
+                services.validate_backend(spec.effective_public_recipe(), backend);
                 use_gpu = backend != "cpu";
                 frame.facts.insert(typed::Fact::SelectedBackend);
             }
@@ -424,7 +485,7 @@ PreparedExecution DefinitionRunner::prepare_load(const LoadContext& context, con
             }
         } else if (phase == "install") {
             if (program_.install.strategy == "external_only") throw std::logic_error("External-only backend cannot be downloaded");
-            if (launch.install_policy == "always" || services.external_binary(spec, backend).empty()) services.install_backend(spec.public_recipe, backend);
+            if (launch.install_policy == "always" || services.external_binary(spec, backend).empty()) services.install_backend(spec.effective_public_recipe(), backend);
         } else if (phase == "program") {
             if (launch.program_source == "external_or_managed" || program_.install.strategy == "external_only")
                 plan.command.program = services.external_binary(spec, backend);

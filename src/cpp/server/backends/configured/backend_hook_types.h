@@ -41,6 +41,7 @@ struct InstallFactsInput {
     std::string pinned_version;
     std::string resolved_version;
     std::vector<InstallFact> requested;
+    std::vector<InstallFact> repository_facts;
 };
 struct InstallFacts {
     std::optional<std::string> therock_version;
@@ -78,8 +79,8 @@ struct ModelFacts {
     std::uint64_t context_size = 0;
 };
 
-enum class ParentKey { Path, LlamaDevice, MetalNoResidency, Home };
-enum class RuntimeQuery { RocmArchitecture, TheRockDirectory, CudaVisibleDevices, HomeDirectory };
+enum class ParentKey { Path, LlamaDevice, MetalNoResidency, Home, LibraryPath, CudaVisibleDevices, PrimeRenderOffload };
+enum class RuntimeQuery { RocmArchitecture, TheRockDirectory, CudaVisibleDevices, HomeDirectory, CudaArchitecture };
 enum class StagingScope { ManagedTheRock, BuiltinExternalTheRock };
 class EnvironmentServices;
 class StagingCapability final {

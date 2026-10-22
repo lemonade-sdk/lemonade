@@ -159,7 +159,7 @@ def prior_mutations():
         (
             "explicit-empty",
             RUNNER,
-            'if (existing != frame.data.options.end() && *existing == "" && frame.explicit_options.count(name)) return;',
+            'if (!normalize && existing != frame.data.options.end() && *existing == "" && frame.explicit_options.count(name)) return;',
             "",
             "runtime_services",
             "RuntimeDefaultsPreserveExplicitEmptyAndNull",
@@ -167,15 +167,15 @@ def prior_mutations():
         (
             "explicit-null",
             RUNNER,
-            "if (existing != frame.data.options.end() && existing->is_null()) return;",
-            'if (existing != frame.data.options.end() && existing->is_null()) frame.data.options[name] = "";',
+            "if (!normalize && existing != frame.data.options.end() && existing->is_null()) return;",
+            'if (!normalize && existing != frame.data.options.end() && existing->is_null()) frame.data.options[name] = "";',
             "runtime_services",
             "RuntimeDefaultsPreserveExplicitEmptyAndNull",
         ),
         (
             "merge-args",
             RUNNER,
-            '(item.respect_merge_args && !frame.data.options.value("merge_args", true))',
+            '(item.respect_merge_args && !(normalize ? normalized_merge : frame.data.options.value("merge_args", true)))',
             "false",
             "runtime_services",
             "RuntimeDefaultsRespectMergeArgs",
@@ -199,7 +199,7 @@ def prior_mutations():
         (
             "spec-ownership",
             RUNNER,
-            'if (spec.executable_definition.get() != executable_.get() || spec.definition ||\n        spec.public_recipe != declaration()["recipe"] || spec.pin_recipe != spec.public_recipe)',
+            'if (spec.executable_definition.get() != executable_.get() || !valid_spec_aliases(*executable_, spec) || spec.definition ||\n        spec.effective_public_recipe() != declaration()["recipe"] || spec.effective_pin_recipe() != spec.effective_public_recipe())',
             "if (false)",
             "definition_runner",
             "LeafSpecOwnershipBeforeEffects",
@@ -288,7 +288,7 @@ def mutations():
         (
             "install-phase-dispatch",
             RUNNER,
-            "services.install_backend(spec.public_recipe, backend);",
+            "services.install_backend(spec.effective_public_recipe(), backend);",
             "(void)0;",
             "runtime_services",
             "InstallPhaseUsesLeafIdentityBeforeProgram",
@@ -488,7 +488,7 @@ def mutations():
         (
             "leaf-pin-owner",
             "src/cpp/server/backends/configured/configured_v2_backend_ops.cpp",
-            "shipped_pins.value(spec.pin_recipe, json::object())",
+            "shipped_pins.value(spec.effective_pin_recipe(), json::object())",
             'shipped_pins.value("other-recipe", json::object())',
             "runtime_services",
             "LeafPinOwnershipAndShippedDefaultPrecedence",
@@ -544,8 +544,8 @@ def mutations():
         (
             "repository-asset-fact",
             SERVICES,
-            "input_.phase != typed::InstallPhase::Asset || ",
-            "",
+            "input_.phase != typed::InstallPhase::Asset &&\n        std::find(input_.repository_facts.begin(), input_.repository_facts.end(), fact) == input_.repository_facts.end()",
+            "false",
             "runtime_services",
             "RepositoryServiceRejectsAssetFact",
         ),
@@ -560,8 +560,8 @@ def mutations():
         (
             "eager-repository-expression",
             RUNNER,
-            "if (context.phase == InstallPhase::Asset) {\n                request",
-            "if (true) {\n                request",
+            "if (context.phase == InstallPhase::Asset || full) {\n                    request",
+            "if (true) {\n                    request",
             "runtime_services",
             "RepositoryDoesNotEvaluateSelectedAssetExpression",
         ),
@@ -592,7 +592,7 @@ def mutations():
         (
             "parent-enumeration",
             SERVICES,
-            "if (key != typed::ParentKey::Path && key != typed::ParentKey::LlamaDevice && key != typed::ParentKey::MetalNoResidency && key != typed::ParentKey::Home)",
+            "if (key != typed::ParentKey::Path && key != typed::ParentKey::LlamaDevice && key != typed::ParentKey::MetalNoResidency && key != typed::ParentKey::Home && key != typed::ParentKey::LibraryPath &&\n        key != typed::ParentKey::CudaVisibleDevices && key != typed::ParentKey::PrimeRenderOffload)",
             "if (false)",
             "runtime_services",
             "EnvironmentRejectsNonEnumeratedParentKey",
@@ -600,7 +600,7 @@ def mutations():
         (
             "runtime-enumeration",
             SERVICES,
-            "if (query != typed::RuntimeQuery::RocmArchitecture && query != typed::RuntimeQuery::TheRockDirectory &&\n        query != typed::RuntimeQuery::CudaVisibleDevices && query != typed::RuntimeQuery::HomeDirectory)",
+            "if (query != typed::RuntimeQuery::RocmArchitecture && query != typed::RuntimeQuery::TheRockDirectory &&\n        query != typed::RuntimeQuery::CudaVisibleDevices && query != typed::RuntimeQuery::HomeDirectory && query != typed::RuntimeQuery::CudaArchitecture)",
             "if (false)",
             "runtime_services",
             "EnvironmentRejectsNonEnumeratedRuntimeQuery",

@@ -16,8 +16,7 @@ Registration expected(Contract contract) {
             BackendSelectionOps{&llamacpp::select_backend, &llamacpp::validate_device}, 1, 1,
             {E::SupportQuery, E::DeviceQuery}, {F::BackendOptions}, {F::SelectedBackend}};
         case C::InstallContext: return {C::InstallContext, "llamacpp.install_context.v1", "install_context",
-            InstallContextHook(&llamacpp::install_context), 1, 1,
-            {E::InstallFactRead}, {F::SelectedBackend, F::Platform, F::VersionInputs}, {F::InstallFacts}};
+            InstallContextHook(&llamacpp::install_context), 2, 2,            {E::InstallFactRead}, {F::SelectedBackend, F::Platform, F::VersionInputs}, {F::InstallFacts}};
         case C::RuntimeOptions: return {C::RuntimeOptions, "llamacpp.runtime_options.v1", "runtime_options",
             RuntimeOptionsHook(&llamacpp::runtime_options), 1, 1,
             {}, {F::ModelLabels, F::DraftCheckpoint}, {F::RuntimeFacts}};
@@ -25,8 +24,7 @@ Registration expected(Contract contract) {
             PrepareHook(&llamacpp::prepare), 1, 1,
             {}, {F::ModelArtifacts, F::ModelLabels, F::DraftCheckpoint, F::ContextSize, F::SelectedBackend}, {F::ModelFacts}};
         case C::Environment: return {C::Environment, "llamacpp.environment.v1", "environment",
-            EnvironmentHook(&llamacpp::environment), 1, 1,
-            {E::ParentEnvironmentRead, E::RuntimeFactRead, E::StagingPlan},
+            EnvironmentHook(&llamacpp::environment), 2, 2,            {E::ParentEnvironmentRead, E::RuntimeFactRead, E::StagingPlan},
             {F::Platform, F::SelectedBackend, F::ResolvedProgram}, {F::EnvironmentPlan}};
         case C::System: return {C::System, "llamacpp.system.v1", "system",
             SystemOps{&llamacpp::resolve_version, &llamacpp::check_install}, 1, 1,
@@ -80,10 +78,10 @@ const std::vector<Registration>& installed_targets() {
         {C::ClientModel, "llamacpp.client_model", "response", ResponseTransform(&llamacpp::client_model),
             1, 1, {}, {F::Request, F::Response}, {F::Response}},
         {C::Environment, "llamacpp.environment.v1", "environment", EnvironmentHook(&llamacpp::environment),
-            1, 1, {E::ParentEnvironmentRead, E::RuntimeFactRead, E::StagingPlan},
+            2, 2, {E::ParentEnvironmentRead, E::RuntimeFactRead, E::StagingPlan},
             {F::Platform, F::SelectedBackend, F::ResolvedProgram}, {F::EnvironmentPlan}},
         {C::InstallContext, "llamacpp.install_context.v1", "install_context", InstallContextHook(&llamacpp::install_context),
-            1, 1, {E::InstallFactRead}, {F::SelectedBackend, F::Platform, F::VersionInputs}, {F::InstallFacts}},
+            2, 2, {E::InstallFactRead}, {F::SelectedBackend, F::Platform, F::VersionInputs}, {F::InstallFacts}},
         {C::MaxTokensAlias, "llamacpp.max_tokens_alias", "request", RequestTransform(&llamacpp::max_tokens_alias),
             1, 1, {}, {F::Request}, {F::Request}},
         {C::Prepare, "llamacpp.prepare.v1", "launch", PrepareHook(&llamacpp::prepare),

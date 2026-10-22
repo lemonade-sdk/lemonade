@@ -571,7 +571,104 @@
             "aarch64"
           ]
         }
-      ]
+      ],
+      "repository_result": "full_params",
+      "fact_timing": "before_platform",
+      "repository_facts": [
+        "therock_version",
+        "rocm_asset_family",
+        "cuda_architecture"
+      ],
+      "unmanaged_backends": [
+        "system"
+      ],
+      "backend_fallback": "vulkan",
+      "errors": {
+        "os": {
+          "coalesce": [
+            {
+              "when": [
+                {
+                  "eq": [
+                    {
+                      "ref": "/install/backend"
+                    },
+                    "rocm-stable"
+                  ]
+                },
+                "ROCm stable llamacpp is currently supported on Windows and Linux only"
+              ]
+            },
+            {
+              "when": [
+                {
+                  "eq": [
+                    {
+                      "ref": "/install/backend"
+                    },
+                    "rocm-nightly"
+                  ]
+                },
+                "ROCm nightly llamacpp only supported on Windows and Linux"
+              ]
+            },
+            {
+              "when": [
+                {
+                  "eq": [
+                    {
+                      "ref": "/install/backend"
+                    },
+                    "cuda"
+                  ]
+                },
+                "CUDA llamacpp is currently supported on Windows and Linux only"
+              ]
+            },
+            {
+              "when": [
+                {
+                  "eq": [
+                    {
+                      "ref": "/install/backend"
+                    },
+                    "metal"
+                  ]
+                },
+                "Metal llamacpp only supported on macOS"
+              ]
+            },
+            {
+              "when": [
+                {
+                  "eq": [
+                    {
+                      "ref": "/install/backend"
+                    },
+                    "cpu"
+                  ]
+                },
+                "CPU llamacpp not supported on this platform"
+              ]
+            },
+            {
+              "when": [
+                {
+                  "eq": [
+                    {
+                      "ref": "/install/backend"
+                    },
+                    "vulkan"
+                  ]
+                },
+                "Vulkan llamacpp only supported on Windows and Linux"
+              ]
+            },
+            "Unsupported llama.cpp platform"
+          ]
+        },
+        "machine_arch": "Unsupported llama.cpp machine architecture"
+      }
     },
     "artifacts": {
       "main": {
@@ -857,7 +954,8 @@
             "stage": "runtime_options",
             "respect_merge_args": true
           }
-        ]
+        ],
+        "runtime_input": "string_or_empty"
       },
       "environment": {
         "preset": "hook",
@@ -885,7 +983,8 @@
         "policy": "standard",
         "port": "http",
         "path": "/health"
-      }
+      },
+      "direct_stream_policy": "llamacpp_legacy"
     },
     "operations": [
       {
@@ -1189,7 +1288,7 @@
     "rationale": [
       {
         "subject": "",
-        "text": "Candidate declaration only: unit 4e.2 runtime parity is incomplete. Repository full_params/before_platform/unmanaged system/fallback policies require schema and runner work; environment and artifact parity require a scope decision about the frozen typed contracts and pins. This fixture is not production authority or a qualified replacement.",
+        "text": "Staged candidate: frozen install, runtime-options and protocol projections are qualified through the bound v2 runner. Full load, artifact and system-probe parity, the deliberate-diff gate and five CI registrations remain incomplete. The enumerated environment and repository-fact contract widenings are authorized and implemented. This fixture is not production authority or a fully qualified replacement.",
         "source": "4e design sections 2, 3 and 5",
         "tests": [
           "BackendDefinitionDescriptorTest"

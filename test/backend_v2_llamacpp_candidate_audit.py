@@ -175,7 +175,7 @@ def main():
         f"{len(results)}/{len(results)} declaration mutants caught by named assertions; control passed"
     )
     print(
-        "Runtime/raw-byte, repository fact timing and deliberate-diff mutations remain unimplemented."
+        "This declaration audit does not cover runtime behavior; use backend_v2_llamacpp_runtime_mutations.py for the implemented runtime rules. The deliberate-diff gate remains unimplemented."
     )
 
 
