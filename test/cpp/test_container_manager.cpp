@@ -280,7 +280,7 @@ void test_system_service_setup() {
     podman.tools = {"podman", "getsubids"};
     podman.groups = {"render"};
     podman.subids = {{"lemonade", "0: lemonade 165536 65536\n"}};
-    const lemon::utils::SetupReport groups{ContainerManager(podman.host()).check_host()};
+    const lemon::utils::SetupReport groups{ContainerManager(podman.host()).check_host(true)};
     check("the service's group fix names lemonade and restarts lemond",
           groups.ids() == std::vector<std::string>({"device_groups"}) &&
               groups.action() == "1. sudo usermod -aG video,render lemonade\n"
@@ -299,7 +299,7 @@ void test_system_service_setup() {
     podman.groups = {"video", "render"};
     const ContainerManager ready(podman.host());
     check("the service passes with both ranges and both groups",
-          ready.check_host().empty() && !ready.check_podman());
+          ready.check_host(true).empty() && !ready.check_podman());
 
     FakeHost user = podman;
     user.account = "alice";
@@ -311,7 +311,7 @@ void test_system_service_setup() {
     docker.account = "lemonade";
     docker.tools = {"docker"};
     docker.docker_socket = false;
-    const lemon::utils::SetupReport refused{ContainerManager(docker.host()).check_host()};
+    const lemon::utils::SetupReport refused{ContainerManager(docker.host()).check_host(true)};
     check("the service's Docker fix names lemonade and restarts lemond",
           refused.action() == "1. sudo usermod -aG docker lemonade\n"
                               "2. sudo systemctl restart lemond");
