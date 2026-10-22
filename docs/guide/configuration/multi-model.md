@@ -136,7 +136,7 @@ To prevent frequently used models from being auto-evicted by the LRU policy, you
   lemonade pin Qwen3-0.6B-GGUF
   lemonade unpin Qwen3-0.6B-GGUF
   ```
-  Or via a POST request to `/internal/pin`.
+  Or via a POST request to [`/internal/pin`](../../api/internal.md#post-internalpin).
 - **Pre-emptive Warnings:** The CLI checks `/api/v1/health` before loading a new model. If all slots for that model type are occupied by pinned models, the CLI will output a pre-emptive warning alerting you that loading will fail.
 - **Capacity Failures:** If every model in the target `(residency class, model type)` pool is pinned and another model needs that pool, the load request fails with a `409 Conflict` HTTP status containing a `slots_pinned_error` code. You must unpin or unload a model from that pool to free its slot.
 
