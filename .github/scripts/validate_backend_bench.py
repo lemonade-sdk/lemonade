@@ -518,13 +518,24 @@ def backend_results(data: dict, model: str | None = None) -> list[dict]:
 
 
 def annotate_pp(data: dict) -> None:
-    """Derive pp_tps (input_tokens / fastest TTFT) for each scenario."""
+    """Populate pp_tps as a scalar for each scenario.
+
+    v2026.43.3+ bench emits pp_tps natively as {mean,min,max,p50,p95} from
+    timings.prompt_per_second. Older releases emit nothing; we fall back to
+    input_tokens/fastest-TTFT. Either way downstream sees a scalar.
+    """
     for br in backend_results(data):
         for sc in br.get("scenarios", []):
-            in_tok = sc.get("input_tokens")
-            best_ttft = sc.get("ttft_ms", {}).get("min", 0)
-            if in_tok and best_ttft > 0:
-                sc["pp_tps"] = round(in_tok * 1000.0 / best_ttft, 2)
+            native = sc.get("pp_tps")
+            if isinstance(native, dict):
+                sc["pp_tps"] = (
+                    round(native.get("max", native.get("mean", 0)), 2) or None
+                )
+            elif not native:
+                in_tok = sc.get("input_tokens")
+                best_ttft = sc.get("ttft_ms", {}).get("min", 0)
+                if in_tok and best_ttft > 0:
+                    sc["pp_tps"] = round(in_tok * 1000.0 / best_ttft, 2)
 
 
 def check_regression(
