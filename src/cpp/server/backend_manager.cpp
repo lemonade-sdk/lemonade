@@ -3,6 +3,7 @@
 #include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/runtime_config.h"
+#include "lemon/rocm_arch_override.h"
 #include "lemon/system_info.h"
 #include "lemon/utils/github_api.h"
 #include "lemon/utils/http_client.h"
@@ -10,8 +11,8 @@
 #include "lemon/utils/path_utils.h"
 #include <algorithm>
 #include <atomic>
-#include <chrono>
 #include <cctype>
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -40,49 +41,6 @@ std::string normalize_backend_name(const std::string& recipe, const std::string&
     }
     return backend;
 }
-
-class RocmDeviceArchOverride {
-public:
-    explicit RocmDeviceArchOverride(const std::string& device)
-        : previous_(SystemInfo::get_rocm_arch_override()) {
-        if (!previous_.empty()) {
-            return;
-        }
-
-        const auto start = device.find_first_not_of(" \t\r\n");
-        if (start == std::string::npos) {
-            return;
-        }
-        const auto end = device.find_last_not_of(" \t\r\n");
-        std::string normalized = device.substr(start, end - start + 1);
-        std::transform(normalized.begin(), normalized.end(), normalized.begin(),
-                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-        if (normalized == "rocm" || normalized.rfind("rocm", 0) != 0) {
-            return;
-        }
-
-        const std::string arch = SystemInfo::get_rocm_arch_for_device(device);
-        if (arch.empty()) {
-            throw std::invalid_argument("Unable to resolve the selected ROCm device architecture: " +
-                                        device);
-        }
-        SystemInfo::set_rocm_arch_override(arch);
-        active_ = true;
-    }
-
-    ~RocmDeviceArchOverride() {
-        if (active_) {
-            SystemInfo::set_rocm_arch_override(previous_);
-        }
-    }
-
-    RocmDeviceArchOverride(const RocmDeviceArchOverride&) = delete;
-    RocmDeviceArchOverride& operator=(const RocmDeviceArchOverride&) = delete;
-
-private:
-    std::string previous_;
-    bool active_ = false;
-};
 
 std::string configured_llamacpp_rocm_device(const std::string& recipe,
                                              const std::string& resolved_backend) {
@@ -601,7 +559,7 @@ std::string BackendManager::get_or_resolve_latest_tag(const std::string& recipe,
 
 BackendManager::InstallParams BackendManager::get_install_params(const std::string& recipe, const std::string& backend) {
     std::string resolved_backend = normalize_backend_name(recipe, backend);
-    RocmDeviceArchOverride rocm_device_arch_override(
+    RocmArchOverrideGuard rocm_device_arch_override(
         configured_llamacpp_rocm_device(recipe, resolved_backend));
 
     auto* spec = backends::try_get_spec_for_recipe(recipe);
@@ -624,14 +582,18 @@ BackendManager::InstallParams BackendManager::get_install_params(const std::stri
     std::string release_version = final_params.version_override.empty()
                                       ? resolved_version
                                       : final_params.version_override;
-    return {final_params.repo, final_params.filename, release_version};
+    const std::string resolved_arch =
+        (resolved_backend == "rocm-stable" || resolved_backend == "rocm-nightly")
+            ? SystemInfo::get_rocm_arch()
+            : "";
+    return {final_params.repo, final_params.filename, release_version, resolved_arch};
 }
 
 void BackendManager::install_backend(const std::string& recipe, const std::string& backend,
                                      bool force,
                                      DownloadProgressCallback progress_cb) {
     std::string resolved_backend = normalize_backend_name(recipe, backend);
-    RocmDeviceArchOverride rocm_device_arch_override(
+    RocmArchOverrideGuard rocm_device_arch_override(
         configured_llamacpp_rocm_device(recipe, resolved_backend));
     LOG(DEBUG, "BackendManager") << "Installing " << recipe << ":" << resolved_backend << std::endl;
 

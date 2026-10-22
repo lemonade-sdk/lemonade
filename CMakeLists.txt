@@ -3367,7 +3367,8 @@ set(_VLLM_CDNA_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_vllm_cdna_gat
 if(BUILD_TESTING AND EXISTS "${_VLLM_CDNA_TEST_SRC}")
     add_executable(test_vllm_cdna_gating test/cpp/test_vllm_cdna_gating.cpp)
     target_link_libraries(test_vllm_cdna_gating PRIVATE lemonade-server-core)
-    add_cpp_ci_test(VllmCdnaGatingTest CI OFF COMMAND test_vllm_cdna_gating)
+    add_dependencies(test_vllm_cdna_gating copy_resources)
+    add_cpp_ci_test(VllmCdnaGatingTest CI ON COMMAND test_vllm_cdna_gating)
 endif()
 
 # ds4 install params: upstream ds4 ships no binaries, so assets come from

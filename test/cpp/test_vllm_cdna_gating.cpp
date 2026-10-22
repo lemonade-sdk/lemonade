@@ -234,6 +234,20 @@ int main() {
         expect(SystemInfo::select_rocm_arch(dual_gpu, "ROCm0, ROCm1").empty(),
                "whitespace does not hide mixed-architecture selections");
 
+        nlohmann::json kfd_ordered_gpu = nlohmann::json::array();
+        kfd_ordered_gpu.push_back({{"name", "AMD Radeon 8060S"}, {"family", "gfx1151"},
+                                   {"integrated", true}, {"available", true},
+                                   {"rocm_index", 1}});
+        kfd_ordered_gpu.push_back({{"name", "AMD Radeon RX 6800"}, {"family", "gfx1031"},
+                                   {"integrated", false}, {"available", true},
+                                   {"rocm_index", 0}});
+        expect(SystemInfo::select_rocm_arch(kfd_ordered_gpu, "ROCm0") == "gfx1031",
+               "explicit ROCm0 follows the KFD runtime ordinal, not the display order");
+        expect(SystemInfo::select_rocm_arch(kfd_ordered_gpu, "ROCm1") == "gfx1151",
+               "explicit ROCm1 follows the KFD runtime ordinal for an iGPU");
+        expect(SystemInfo::get_rocm_visible_devices(kfd_ordered_gpu, "ROCm0").empty(),
+               "missing UUIDs keep KFD ordinal selection unpinned");
+
         nlohmann::json unavailable_gpu = nlohmann::json::array();
         unavailable_gpu.push_back({{"name", "AMD Radeon RX 6800"}, {"family", "gfx1031"},
                                    {"integrated", false}, {"available", true}});

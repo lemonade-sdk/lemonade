@@ -414,7 +414,9 @@ std::vector<RocmAgentInfo> query_rocm_agents() {
 
 std::vector<GPUInfo> query_dxg_amd_gpus(const std::string& gpu_type) {
     std::vector<GPUInfo> gpus;
+    int rocm_index = 0;
     for (const auto& agent : query_rocm_agents()) {
+        const int current_rocm_index = rocm_index++;
         if ((gpu_type == "integrated" && !agent.is_integrated) ||
             (gpu_type == "discrete" && agent.is_integrated)) {
             continue;
@@ -423,6 +425,7 @@ std::vector<GPUInfo> query_dxg_amd_gpus(const std::string& gpu_type) {
         GPUInfo gpu;
         gpu.name = agent.display_name;
         gpu.available = true;
+        gpu.rocm_index = current_rocm_index;
         gpu.uuid = agent.uuid;
         gpu.vram_gb = agent.vram_gb;
         gpus.push_back(gpu);
@@ -901,6 +904,9 @@ json SystemInfo::get_device_dict() {
             if (!amd_igpu.uuid.empty()) {
                 gpu_json["uuid"] = amd_igpu.uuid;
             }
+            if (amd_igpu.rocm_index >= 0) {
+                gpu_json["rocm_index"] = amd_igpu.rocm_index;
+            }
             gpu_json["family"] = identify_rocm_arch_from_name(amd_igpu.name);
             if (!amd_igpu.error.empty()) {
                 gpu_json["error"] = amd_igpu.error;
@@ -924,6 +930,9 @@ json SystemInfo::get_device_dict() {
                 }
                 if (!gpu.uuid.empty()) {
                     gpu_json["uuid"] = gpu.uuid;
+                }
+                if (gpu.rocm_index >= 0) {
+                    gpu_json["rocm_index"] = gpu.rocm_index;
                 }
                 if (!gpu.driver_version.empty()) {
                     gpu_json["driver_version"] = gpu.driver_version;
@@ -2206,6 +2215,34 @@ bool parse_rocm_device_indices(const std::string& device,
     return !indices.empty();
 }
 
+const json* rocm_gpu_for_index(const json& amd_gpu_devices, size_t rocm_index) {
+    bool has_rocm_indices = false;
+    for (const auto& gpu : amd_gpu_devices) {
+        const auto index = gpu.find("rocm_index");
+        if (index != gpu.end() && index->is_number_integer() &&
+            index->get<long long>() >= 0) {
+            has_rocm_indices = true;
+            break;
+        }
+    }
+
+    if (has_rocm_indices) {
+        for (const auto& gpu : amd_gpu_devices) {
+            const auto index = gpu.find("rocm_index");
+            if (index != gpu.end() && index->is_number_integer() &&
+                index->get<long long>() == static_cast<long long>(rocm_index)) {
+                return &gpu;
+            }
+        }
+        return nullptr;
+    }
+
+    if (rocm_index >= amd_gpu_devices.size()) {
+        return nullptr;
+    }
+    return &amd_gpu_devices[rocm_index];
+}
+
 }  // namespace
 
 std::string SystemInfo::select_rocm_arch(const json& amd_gpu_devices,
@@ -2215,47 +2252,29 @@ std::string SystemInfo::select_rocm_arch(const json& amd_gpu_devices,
     }
 
     if (!device.empty()) {
-        std::string requested = trim_rocm_device_copy(device);
-        std::transform(requested.begin(), requested.end(), requested.begin(),
+        const std::string requested = trim_rocm_device_copy(device);
+        std::string normalized = requested;
+        std::transform(normalized.begin(), normalized.end(), normalized.begin(),
                        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-        if (requested.empty()) {
+        if (normalized.empty()) {
             return "";
         }
-        if (requested != "rocm") {
-            if (requested.front() == ',' || requested.back() == ',' ||
-                requested.find(",,") != std::string::npos) {
+        if (normalized != "rocm") {
+            std::vector<size_t> indices;
+            if (!parse_rocm_device_indices(device, indices)) {
                 return "";
             }
-            std::istringstream devices(requested);
+
             std::string selected_arch;
             std::string selected_family;
-            std::string target;
-            while (std::getline(devices, target, ',')) {
-                target = trim_rocm_device_copy(target);
-                if (target.rfind("rocm", 0) != 0 || target.size() == 4) {
+            for (const size_t index : indices) {
+                const json* gpu = rocm_gpu_for_index(amd_gpu_devices, index);
+                if (!gpu || !gpu->value("available", false)) {
                     return "";
                 }
-                const std::string index_text = target.substr(4);
-                if (!std::all_of(index_text.begin(), index_text.end(),
-                                 [](unsigned char c) { return std::isdigit(c) != 0; })) {
-                    return "";
-                }
-                unsigned long long index = 0;
-                try {
-                    index = std::stoull(index_text);
-                } catch (const std::exception&) {
-                    return "";
-                }
-                if (index >= amd_gpu_devices.size()) {
-                    return "";
-                }
-                const auto& gpu = amd_gpu_devices[static_cast<size_t>(index)];
-                if (!gpu.value("available", false)) {
-                    return "";
-                }
-                std::string arch = gpu.value("family", "");
+                std::string arch = gpu->value("family", "");
                 if (arch.empty()) {
-                    arch = identify_rocm_arch_from_name(gpu.value("name", ""));
+                    arch = identify_rocm_arch_from_name(gpu->value("name", ""));
                 }
                 if (arch.empty()) {
                     return "";
@@ -2268,9 +2287,6 @@ std::string SystemInfo::select_rocm_arch(const json& amd_gpu_devices,
                     selected_arch = arch;
                 }
                 selected_family = asset_family;
-            }
-            if (selected_arch.empty()) {
-                return "";
             }
             return selected_arch;
         }
@@ -2338,14 +2354,11 @@ std::string SystemInfo::get_rocm_visible_devices(const json& amd_gpu_devices,
 
     for (size_t ordinal = 0; ordinal < indices.size(); ++ordinal) {
         const size_t index = indices[ordinal];
-        if (index >= amd_gpu_devices.size()) {
+        const json* gpu = rocm_gpu_for_index(amd_gpu_devices, index);
+        if (!gpu || !is_available(*gpu)) {
             return "";
         }
-        const auto& gpu = amd_gpu_devices[index];
-        if (!is_available(gpu)) {
-            return "";
-        }
-        const std::string uuid = get_uuid(gpu);
+        const std::string uuid = get_uuid(*gpu);
         if (uuid.empty()) {
             return "";
         }
@@ -3658,8 +3671,34 @@ std::vector<GPUInfo> LinuxSystemInfo::detect_amd_gpus(const std::string& gpu_typ
         return gpus;
     }
 
+    std::vector<fs::directory_entry> node_entries;
     for (const auto& node_entry : fs::directory_iterator(kfd_path)) {
         if (!node_entry.is_directory()) continue;
+        node_entries.push_back(node_entry);
+    }
+    std::sort(node_entries.begin(), node_entries.end(), [](const auto& lhs, const auto& rhs) {
+        const auto parse_node_number = [](const fs::directory_entry& entry) {
+            try {
+                size_t consumed = 0;
+                const std::string name = entry.path().filename().string();
+                const unsigned long long number = std::stoull(name, &consumed);
+                if (consumed == name.size()) {
+                    return number;
+                }
+            } catch (const std::exception&) {
+            }
+            return std::numeric_limits<unsigned long long>::max();
+        };
+        const auto lhs_number = parse_node_number(lhs);
+        const auto rhs_number = parse_node_number(rhs);
+        if (lhs_number != rhs_number) {
+            return lhs_number < rhs_number;
+        }
+        return lhs.path().filename().string() < rhs.path().filename().string();
+    });
+
+    int rocm_index = 0;
+    for (const auto& node_entry : node_entries) {
 
         std::string node_path = node_entry.path().string();
         std::string properties_file = node_path + "/properties";
@@ -3693,14 +3732,20 @@ std::vector<GPUInfo> LinuxSystemInfo::detect_amd_gpus(const std::string& gpu_typ
         }
         props.close();
 
-        if (!is_gpu || drm_render_minor.empty() || drm_render_minor == "-1")
+        if (!is_gpu)
             continue;
+
+        const int current_rocm_index = rocm_index++;
+        if (drm_render_minor.empty() || drm_render_minor == "-1") {
+            continue;
+        }
 
         bool is_integrated = get_amd_is_igpu(drm_render_minor);
         if ((gpu_type == "integrated" && !is_integrated) || (gpu_type == "discrete" && is_integrated)) continue;
 
         GPUInfo gpu;
         gpu.name = gfx_target_version;
+        gpu.rocm_index = current_rocm_index;
         gpu.uuid = system_info_detail::rocm_gpu_uuid_from_identifier(unique_id);
         gpu.display_name = system_info_detail::gpu_display_name(
             query_amdgpu_marketing_name(drm_render_minor),

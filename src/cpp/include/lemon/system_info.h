@@ -27,6 +27,7 @@ struct CPUInfo : DeviceInfo {
 
 struct GPUInfo : DeviceInfo {
     int index = -1;  // Physical device index, when available
+    int rocm_index = -1;  // ROCr/HIP ordinal, when available
     std::string uuid;  // Stable GPU UUID, when the runtime exposes one
     std::string driver_version;
     // Human-readable name for display. Empty when no better name than `name` is

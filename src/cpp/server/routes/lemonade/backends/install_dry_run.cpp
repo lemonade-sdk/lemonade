@@ -53,12 +53,13 @@ public:
         response.format = ResponseFormat::Json;
         response.schema = ordered_json::parse(R"({
             "type": "object",
-            "required": ["recipe", "backend", "arch", "repo", "version", "filename", "url",
+            "required": ["recipe", "backend", "arch", "resolved_arch", "repo", "version", "filename", "url",
                          "supports_split_archive", "supported"],
             "properties": {
                 "recipe": {"type": "string", "description": "The requested recipe."},
                 "backend": {"type": "string", "description": "The requested backend."},
                 "arch": {"type": "string", "description": "The requested `arch`, or `\"\"` when it was omitted."},
+                "resolved_arch": {"type": "string", "description": "The ROCm architecture used to resolve the asset, or `\"\"` for non-ROCm backends."},
                 "repo": {"type": "string", "description": "GitHub repository of the release."},
                 "version": {"type": "string", "description": "Release version: the pin in `backend_versions.json` unless runtime version policy overrides it."},
                 "filename": {"type": "string", "description": "Release asset name."},
@@ -116,6 +117,7 @@ public:
                 {"recipe", recipe},
                 {"backend", backend},
                 {"arch", requested_arch},
+                {"resolved_arch", params.resolved_arch},
                 {"repo", params.repo},
                 {"version", params.version},
                 {"filename", params.filename},

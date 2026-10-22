@@ -43,11 +43,12 @@ public:
     // Get all enrichment data for a backend in one call (avoids repeated config lookups)
     BackendEnrichment get_backend_enrichment(const std::string& recipe, const std::string& backend);
 
-    // Install parameters for a backend (repo + filename + version)
+    // Install parameters for a backend (repo + filename + version + resolved ROCm arch)
     struct InstallParams {
         std::string repo;
         std::string filename;
         std::string version;
+        std::string resolved_arch;
     };
 
     // Unlike the enrichment helpers above, this returns the repo and lets

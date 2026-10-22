@@ -18,6 +18,7 @@
 #include "lemon/auto_tune.h"
 #include "lemon/backend_manager.h"
 #include "lemon/runtime_config.h"
+#include "lemon/rocm_arch_override.h"
 #include "lemon/utils/custom_args.h"
 #include "lemon/utils/recipe_arg_resolver.h"
 #include "lemon/utils/process_manager.h"
@@ -97,59 +98,9 @@ static bool is_llamacpp_rocm_backend(const std::string& backend) {
     return backend == "rocm-stable" || backend == "rocm-nightly";
 }
 
-static const char* rocm_visible_devices_env_name() {
-#ifdef _WIN32
-    return "HIP_VISIBLE_DEVICES";
-#else
-    return "ROCR_VISIBLE_DEVICES";
-#endif
-}
-
 static const char* existing_rocm_visible_devices_env_name() {
-#ifdef _WIN32
-    return lemon::backends::llamacpp::detail::rocm_visibility_override_env_name(
-        nullptr, std::getenv("HIP_VISIBLE_DEVICES"));
-#else
-    return lemon::backends::llamacpp::detail::rocm_visibility_override_env_name(
-        std::getenv("ROCR_VISIBLE_DEVICES"), std::getenv("HIP_VISIBLE_DEVICES"));
-#endif
+    return lemon::existing_rocm_visibility_override_env_name();
 }
-
-class RocmArchOverrideGuard {
-public:
-    explicit RocmArchOverrideGuard(const std::string& device)
-        : previous_(SystemInfo::get_rocm_arch_override()) {
-        std::string normalized = device;
-        const auto start = normalized.find_first_not_of(" \t\r\n");
-        if (start == std::string::npos) {
-            return;
-        }
-        const auto end = normalized.find_last_not_of(" \t\r\n");
-        normalized = normalized.substr(start, end - start + 1);
-        std::transform(normalized.begin(), normalized.end(), normalized.begin(),
-                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-        if (normalized == "rocm" || normalized.rfind("rocm", 0) != 0) {
-            return;
-        }
-
-        const std::string arch = SystemInfo::get_rocm_arch_for_device(device);
-        if (arch.empty()) {
-            throw std::invalid_argument(
-                "Unable to resolve the selected ROCm device architecture: " + device);
-        }
-        SystemInfo::set_rocm_arch_override(arch);
-    }
-
-    ~RocmArchOverrideGuard() {
-        SystemInfo::set_rocm_arch_override(previous_);
-    }
-
-    RocmArchOverrideGuard(const RocmArchOverrideGuard&) = delete;
-    RocmArchOverrideGuard& operator=(const RocmArchOverrideGuard&) = delete;
-
-private:
-    std::string previous_;
-};
 
 static bool is_llamacpp_cuda_backend(const std::string& backend) {
     return backend == "cuda";
@@ -343,11 +294,14 @@ void LlamaCppServer::load(const std::string& model_name,
         is_llamacpp_rocm_backend(llamacpp_backend) ? llamacpp_device : "");
 
     std::string llamacpp_device_arg = llamacpp_device;
+#ifdef __linux__
     std::string rocm_visible_devices;
+#endif
     if (is_llamacpp_rocm_backend(llamacpp_backend) && !llamacpp_device.empty()) {
         const char* existing_visible_devices_env =
             existing_rocm_visible_devices_env_name();
         if (!existing_visible_devices_env) {
+#ifdef __linux__
             rocm_visible_devices =
                 SystemInfo::get_rocm_visible_devices_for_device(llamacpp_device);
             if (!rocm_visible_devices.empty()) {
@@ -358,10 +312,15 @@ void LlamaCppServer::load(const std::string& model_name,
                     llamacpp_device_arg = llamacpp_device;
                 }
             }
+#endif
         } else {
             LOG(INFO, "LlamaCpp")
-                << "Respecting existing " << existing_visible_devices_env
-                << " for explicit ROCm device selection" << std::endl;
+                << "Respecting existing " << existing_visible_devices_env << "="
+                << (std::getenv(existing_visible_devices_env)
+                        ? std::getenv(existing_visible_devices_env)
+                        : "")
+                << " for " << llamacpp_device << " (llama-server sees it as "
+                << llamacpp_device_arg << ")" << std::endl;
         }
     }
 
@@ -497,12 +456,15 @@ void LlamaCppServer::load(const std::string& model_name,
 
     // For ROCm on Linux, set LD_LIBRARY_PATH to include the ROCm library directory
     std::vector<std::pair<std::string, std::string>> env_vars;
+#ifdef __linux__
     if (!rocm_visible_devices.empty()) {
-        env_vars.push_back({rocm_visible_devices_env_name(), rocm_visible_devices});
+        env_vars.push_back({"ROCR_VISIBLE_DEVICES", rocm_visible_devices});
         LOG(INFO, "LlamaCpp")
-            << "Using stable ROCm device selectors through "
-            << rocm_visible_devices_env_name() << std::endl;
+            << "Pinning " << llamacpp_device << " with ROCR_VISIBLE_DEVICES="
+            << rocm_visible_devices << " (llama-server sees it as " << llamacpp_device_arg
+            << ")" << std::endl;
     }
+#endif
 #ifndef _WIN32
     if (is_llamacpp_rocm_backend(llamacpp_backend)) {
         // Get the directory containing the executable (where ROCm .so files are)
