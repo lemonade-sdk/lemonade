@@ -90,5 +90,39 @@ bool path_inside(const std::filesystem::path& path, const std::filesystem::path&
     return !relative.empty() && *relative.begin() != std::filesystem::path("..");
 }
 
+bool is_safe_path_component(const std::string& name) {
+    // 255 is the longest name any supported filesystem holds, so a longer string is a
+    // malformed value rather than a file nobody asked for.
+    if (name.empty() || name.size() > 255 || name == "." || name == "..") {
+        return false;
+    }
+    for (const char raw : name) {
+        const unsigned char c = static_cast<unsigned char>(raw);
+        if (raw == '/' || raw == '\\' || raw == ':' || c < 0x20 || c == 0x7f) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool is_safe_relative_path(const std::string& path) {
+    if (path.empty()) {
+        return false;
+    }
+    std::size_t start = 0;
+    while (true) {
+        const std::size_t separator = path.find_first_of("/\\", start);
+        const std::size_t length =
+            separator == std::string::npos ? std::string::npos : separator - start;
+        if (!is_safe_path_component(path.substr(start, length))) {
+            return false;
+        }
+        if (separator == std::string::npos) {
+            return true;
+        }
+        start = separator + 1;
+    }
+}
+
 }  // namespace utils
 }  // namespace lemon

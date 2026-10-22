@@ -39,6 +39,18 @@ static void check(const std::string& name, bool ok) {
     if (!ok) ++g_failures;
 }
 
+// A symlink is the one thing this suite cannot make portable: Windows needs a
+// privilege for it, and a run without that privilege pins nothing silently.
+static bool make_symlink(const fs::path& target, const fs::path& link, std::string& why) {
+    std::error_code ec;
+    fs::create_symlink(target, link, ec);
+    if (!ec) {
+        return true;
+    }
+    why = ec.message();
+    return false;
+}
+
 static fs::path make_temp_dir(const char* tag) {
     fs::path dir = fs::temp_directory_path();
     dir /= std::string("file_transfer_") + tag + "_" +
@@ -331,6 +343,55 @@ int main() {
               !fs::exists(fs::temp_directory_path() / "escaped.bin") &&
                   !fs::exists("/escaped.bin"));
         check("a refused plan opens no directory", !fs::exists(dir / "other"));
+        fs::remove_all(dir);
+    }
+
+    // --- a symlink standing where the bytes go ------------------------------
+    {
+        const fs::path dir = make_temp_dir("symlink_in_the_way");
+        const std::string content = "bytes a listing asked for";
+        write_file(dir / "source.bin", content);
+        const fs::path outside = dir / "outside_target.bin";
+        const std::string untouched = "must still say this afterwards";
+        write_file(outside, untouched);
+
+        std::vector<std::unique_ptr<FileTransfer>> local_transfers;
+        local_transfers.push_back(std::make_unique<LocalCopyFileTransfer>());
+        const ArtifactTransfer local_only(std::move(local_transfers));
+
+        // The final name is contained by resolving it; the staged name beside it is a
+        // different path and needs the same refusal.
+        for (const std::string& suffix : {std::string(), std::string(".partial")}) {
+            const std::string which = suffix.empty() ? "final" : "staged";
+            const fs::path cache = dir / ("cache_" + which);
+            fs::create_directories(cache);
+            const fs::path link = cache / ("model.bin" + suffix);
+            std::string why;
+            if (!make_symlink(outside, link, why)) {
+                std::printf("[SKIP] %s symlink unavailable (%s): containment needs one\n",
+                            which.c_str(), why.c_str());
+                continue;
+            }
+
+            DownloadPlan plan;
+            plan.download_path = lemon::utils::path_to_utf8(cache);
+            plan.files.push_back(DownloadFile{"model.bin", file_url(dir / "source.bin"),
+                                              content.size(), {}, {}, {}});
+            bool threw = false;
+            std::string message;
+            try {
+                local_only.execute(plan, {}, nullptr, {});
+            } catch (const std::exception& e) {
+                threw = true;
+                message = e.what();
+            }
+            check("a " + which + " symlink stops the plan before any byte moves", threw);
+            check("the " + which + " symlink's target keeps its own bytes",
+                  read_file(outside) == untouched);
+            check("the " + which + " symlink is left alone, not replaced",
+                  fs::is_symlink(link));
+            (void)message;
+        }
         fs::remove_all(dir);
     }
 

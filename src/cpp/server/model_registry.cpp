@@ -1068,7 +1068,9 @@ std::string registry_repo_cache_dir_name(const std::string& repo_id,
                                          RegistryId source) {
     std::string cache_dir_name = require_descriptor(source).cache_dir_prefix;
     for (char c : repo_id) {
-        cache_dir_name += (c == '/') ? "--" : std::string(1, c);
+        // Both separators, because a name kept verbatim is a directory component on the
+        // platform doing the reading, and Windows reads '\' as one.
+        cache_dir_name += (c == '/' || c == '\\') ? "--" : std::string(1, c);
     }
     return cache_dir_name;
 }

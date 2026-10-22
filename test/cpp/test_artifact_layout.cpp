@@ -1,4 +1,5 @@
 #include "lemon/model_manager.h"
+#include "lemon/backends/hf_cache_util.h"
 #include "lemon/utils/path_utils.h"
 #include "lemon/models/artifact_layout.h"
 #include "lemon/models/artifact_resolver.h"
@@ -122,6 +123,12 @@ std::string read(const fs::path& path) {
     return std::string((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
 }
 
+void write(const fs::path& path, const std::string& content) {
+    fs::create_directories(path.parent_path());
+    std::ofstream file(path, std::ios::binary | std::ios::trunc);
+    file << content;
+}
+
 static void test_the_snapshot_directory_names_the_revision() {
     const Placement placement{"/cache/models--org--repo", "abc123", ""};
     check("the snapshot directory names the revision",
@@ -133,6 +140,50 @@ static void test_the_snapshot_directory_names_the_revision() {
               "/cache/models--org--repo/snapshots/abc123/assets/tokenizer.json");
     check("a name that is already absolute is refused",
           hf_hub_layout().target(placement, "/etc/passwd").empty());
+}
+
+// A revision becomes one directory name, and it arrives from a registry document, from
+// refs/main written on an earlier run, and from the request itself. Pointing the client
+// at a mirror or gateway is a supported configuration, so none of the three is trusted.
+static void test_a_revision_that_is_not_one_component_places_nothing() {
+    const fs::path cache = scratch_dir("bad_revision");
+    for (const char* revision : {"../../escape", "..", ".", "a/b", "a\\b", "C:evil",
+                                 "rev\nname", "rev\tname"}) {
+        const Placement placement{cache.string(), revision, ""};
+        check(std::string("no snapshot directory for '") + revision + "'",
+              hf_hub_layout().directory(placement).empty());
+        check(std::string("no target for a file under '") + revision + "'",
+              hf_hub_layout().target(placement, "model.gguf").empty());
+        hf_hub_layout().activate(placement);
+        check(std::string("activating '") + revision + "' writes no refs/main",
+              !fs::exists(cache / "refs" / "main"));
+    }
+
+    const Placement good{cache.string(), "8b14a9e8c9db4a52e3f6f07d9086e2e3e0d94d1f", ""};
+    check("a commit sha still places the snapshot",
+          hf_hub_layout().directory(good) ==
+              (cache / "snapshots" / "8b14a9e8c9db4a52e3f6f07d9086e2e3e0d94d1f").string());
+
+    const Placement revision{"/cache/models--org--repo", "abc123", ""};
+    check("a name reaching above the snapshot is refused",
+          hf_hub_layout().target(revision, "../outside.gguf").empty());
+    check("a traversal inside a nested name is refused",
+          hf_hub_layout().target(revision, "assets/../../outside.gguf").empty());
+
+    // refs/main is written by an earlier run and read back as a path component.
+    const fs::path poisoned = scratch_dir("poisoned_ref");
+    write(poisoned / "refs" / "main", "../escape");
+    check("a refs/main that is not one component resolves to nothing",
+          lemon::backends::hf_cache::read_ref_main(poisoned).empty() &&
+              lemon::backends::hf_cache::active_snapshot_path(poisoned).empty());
+    write(poisoned / "refs" / "main", "8b14a9e8c9db4a52e3f6f07d9086e2e3e0d94d1f");
+    fs::create_directories(poisoned / "snapshots" /
+                                  "8b14a9e8c9db4a52e3f6f07d9086e2e3e0d94d1f");
+    check("a refs/main holding a commit sha still resolves",
+          lemon::backends::hf_cache::active_snapshot_path(poisoned) ==
+              poisoned / "snapshots" / "8b14a9e8c9db4a52e3f6f07d9086e2e3e0d94d1f");
+    fs::remove_all(cache);
+    fs::remove_all(poisoned);
 }
 
 static void test_activating_records_the_revision() {
@@ -150,8 +201,8 @@ static void test_a_sibling_lands_beside_the_file_it_belongs_to() {
     check("the directory is the sibling's own", sibling_layout().directory(placement) == "/models");
     check("the target sits beside the sibling",
           sibling_layout().target(placement, "cache.rai") == "/models/cache.rai");
-    check("only the final component is placed, so a name cannot climb out",
-          sibling_layout().target(placement, "../escape.rai") == "/models/escape.rai");
+    check("a name that climbs is refused, not clamped to a file nobody asked for",
+          sibling_layout().target(placement, "../escape.rai").empty());
     check("with nothing to be a sibling of, nothing is placed",
           sibling_layout().directory(Placement{"/cache", "rev", ""}).empty());
     check("an empty name is refused", sibling_layout().target(placement, "").empty());
@@ -377,6 +428,7 @@ int main() {
     lemon::utils::set_models_dir((fixture / "hf").string());
 
     test_the_snapshot_directory_names_the_revision();
+    test_a_revision_that_is_not_one_component_places_nothing();
     test_activating_records_the_revision();
     test_a_sibling_lands_beside_the_file_it_belongs_to();
     test_layout_selection_is_a_backend_fact();

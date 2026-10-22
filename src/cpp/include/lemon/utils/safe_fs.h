@@ -1,6 +1,8 @@
 #pragma once
 
+#include <cstddef>
 #include <filesystem>
+#include <string>
 
 namespace lemon {
 namespace utils {
@@ -25,6 +27,17 @@ inline constexpr auto safe_dir_options = std::filesystem::directory_options::non
 // Whether a path sits under a root, resolved first, so a symlink out of the tree
 // does not read as inside it.
 bool path_inside(const std::filesystem::path& path, const std::filesystem::path& root);
+
+// Whether a string can be exactly one path component. Revisions, repository directory
+// names and file names each reach a path from a document fetched over the network or
+// from a cache written by an earlier run, and pointing a registry at a mirror or gateway
+// is a supported configuration, so none of them arrives trusted. Rejects separators, a
+// drive specifier, `.` and `..`, control characters, and a name no filesystem will hold.
+bool is_safe_path_component(const std::string& name);
+
+// Whether a string is a path under a root: components that are each safe, so nothing
+// traverses out and nothing is absolute.
+bool is_safe_relative_path(const std::string& path);
 
 }  // namespace utils
 }  // namespace lemon

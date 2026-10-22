@@ -2,6 +2,7 @@
 
 #include <lemon/backends/hf_cache_util.h>
 #include <lemon/utils/path_utils.h>
+#include <lemon/utils/safe_fs.h>
 
 #include <filesystem>
 
@@ -19,7 +20,7 @@ using lemon::utils::path_to_utf8;
 class HfHubLayout : public ArtifactLayout {
   public:
     std::string directory(const Placement& placement) const override {
-        if (placement.cache_dir.empty() || placement.revision.empty()) {
+        if (placement.cache_dir.empty() || !utils::is_safe_path_component(placement.revision)) {
             return "";
         }
         return path_to_utf8(path_from_utf8(placement.cache_dir) / "snapshots" /
@@ -27,7 +28,7 @@ class HfHubLayout : public ArtifactLayout {
     }
 
     std::string target(const Placement& placement, const std::string& path) const override {
-        if (path.empty() || fs::path(path).is_absolute()) {
+        if (!utils::is_safe_relative_path(path)) {
             return "";
         }
         const std::string dir = directory(placement);
@@ -55,7 +56,7 @@ class SiblingLayout : public ArtifactLayout {
 
     std::string target(const Placement& placement, const std::string& path) const override {
         const std::string dir = directory(placement);
-        if (dir.empty() || path.empty()) {
+        if (dir.empty() || !utils::is_safe_relative_path(path)) {
             return "";
         }
         const fs::path parent = path_from_utf8(dir);

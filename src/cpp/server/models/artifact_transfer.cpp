@@ -58,6 +58,21 @@ void require_placed_inside(const std::string& target_dir, const std::string& nam
     }
 }
 
+// A link standing where bytes are going takes the write to whatever it points at.
+// Resolving the final name catches a link there; the staged twin beside it is another
+// path, and no plan needs either one to be a link.
+void require_no_link_in_place(const fs::path& placed) {
+    std::error_code ec;
+    const fs::file_status status = fs::symlink_status(placed, ec);
+    if (ec) {
+        return;
+    }
+    if (fs::is_symlink(status)) {
+        throw std::runtime_error("Refusing to write through a symlink: " +
+                                 utils::path_to_utf8(placed));
+    }
+}
+
 std::string size_in_gb(std::uint64_t bytes) {
     std::ostringstream oss;
     oss << std::fixed << std::setprecision(1) << (bytes / (1024.0 * 1024.0 * 1024.0));
@@ -175,7 +190,14 @@ void ArtifactTransfer::execute(const DownloadPlan& plan,
     std::vector<const FileTransfer*> chosen;
     chosen.reserve(plan.files.size());
     for (const auto& file : plan.files) {
-        require_placed_inside(target_directory_of(plan, file), file.name);
+        const std::string target_dir = target_directory_of(plan, file);
+        require_placed_inside(target_dir, file.name);
+        fs::path placed = path_from_utf8(target_dir);
+        placed /= path_from_utf8(file.name);
+        require_no_link_in_place(placed);
+        placed += ".partial";
+        require_no_link_in_place(placed);
+
         const FileTransfer* match = nullptr;
         for (const auto& transfer : transfers_) {
             if (transfer->handles(file.url)) {
