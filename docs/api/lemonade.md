@@ -1709,7 +1709,7 @@ This endpoint does not take any parameters.
   - `model_name` - Name of the loaded model
   - `checkpoint` - The model's main checkpoint.
   - `last_use` - Monotonic timestamp of last access (load or inference), in milliseconds
-  - `type` - Model type: `llm`, `embedding`, `reranking`, `transcription`, `image`, `tts`, `audio-generation`, `classification` or `mesh`.
+  - `type` - Model type: `llm`, `embedding`, `reranking`, `transcription`, `image`, `tts`, `audio-generation`, `classification`, `mesh` or `detection`.
   - `device` - Devices the model runs on, joined by `|`: `cpu`, `gpu` and `npu`, such as `gpu|npu`, or `none`.
   - `pinned` - Whether the model is pinned, which exempts it from auto-eviction
   - `is_busy` - Whether the model has active requests or maintenance in progress
@@ -1740,6 +1740,7 @@ This endpoint does not take any parameters.
   - `image` - Maximum image models
   - `tts` - Maximum text-to-speech models
   - `classification` - Maximum classification models
+  - `detection` - Maximum detection models
 - `websocket_port` - Port of the dedicated WebSocket server for the [Realtime Audio Transcription API](./openai.md#ws-realtime) and [Log Streaming API](#log-streaming-api-websocket), present while it runs; the main port serves both APIs too. The port is OS-assigned, or set by the `websocket_port` setting in [Server Configuration](../guide/configuration/README.md).
 - `telemetry` - Telemetry state.
   - `enabled` - Whether telemetry collection is active

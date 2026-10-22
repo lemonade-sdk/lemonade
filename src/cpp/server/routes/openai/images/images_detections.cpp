@@ -182,10 +182,10 @@ public:
                                             "description": "Corners in pixels of the original image: `x1,y1` top-left, `x2,y2` bottom-right.",
                                             "required": ["x1", "y1", "x2", "y2"],
                                             "properties": {
-                                                "x1": {"type": "number"},
-                                                "y1": {"type": "number"},
-                                                "x2": {"type": "number"},
-                                                "y2": {"type": "number"}
+                                                "x1": {"type": "number", "description": "Left edge."},
+                                                "y1": {"type": "number", "description": "Top edge."},
+                                                "x2": {"type": "number", "description": "Right edge."},
+                                                "y2": {"type": "number", "description": "Bottom edge."}
                                             }
                                         }
                                     }
@@ -196,6 +196,7 @@ public:
                 },
                 "usage": {
                     "type": "object",
+                    "description": "What the request processed.",
                     "required": ["images", "detections", "inference_ms"],
                     "properties": {
                         "images": {"type": "integer", "description": "Images analyzed."},
@@ -217,7 +218,7 @@ public:
         example.args = ordered_json::parse(R"({
             "model": "YOLO26s-Detection-NPU",
             "image": "data:image/png;base64,@fixtures/image.png",
-            "confidence": 0.1
+            "confidence": 0.05
         })");
         s.examples = {example};
         s.errors = join_errors({{kBodyNotJson, kArgMissing, kArgInvalid, kImageInvalid,
@@ -252,8 +253,7 @@ protected:
             }
             images.push_back(std::move(payload));
         }
-        req.body.erase(kImage.name);
-        req.body["images"] = std::move(images);
+        req.body[kImage.name] = std::move(images);
 
         if (req.has(kMaxDetections)) {
             // The validator accepts 2.0 as an integer; the backend expects 2.
@@ -281,7 +281,7 @@ protected:
     }
 
     void run(RouteRequest& req, httplib::Response& res) override {
-        const size_t image_count = req.body["images"].size();
+        const size_t image_count = req.arg(kImage).size();
         auto response = ctx_.router->image_detections(req.body);
         if (response.contains("error")) {
             set_error_response(response, res, kBackendError);

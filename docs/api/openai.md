@@ -1533,6 +1533,146 @@ To upscale an image from [`POST /v1/images/generations`](#post-v1imagesgeneratio
 <!-- END GENERATED: openai.images_upscale -->
 
 <!-- BEGIN GENERATED: openai.images_detections -->
+## `POST /v1/images/detections`
+<sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
+
+Finds objects in one or more images and returns a label, a score and a bounding box for each. OpenAI has no detection endpoint, so this one follows its `images/*` family: the same image inputs, a `list` envelope with one `data` entry per input image, and OpenAI-shaped errors. It serves `ryzenai-vision` models, which run ONNX detectors on the Ryzen AI NPU.
+
+Requires `LEMONADE_API_KEY` when it is set.
+
+### Parameters
+
+| Parameter | Required | Description | Status |
+|-----------|----------|-------------|--------|
+| `model` | No | The detection model, such as `YOLO26s-Detection-NPU`. Optional when exactly one detection model is loaded; that model is used. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `image` or `images` | Yes | The image or images to analyze, PNG, JPEG, BMP or WebP. Each is a base64 string, a `data:image/...;base64,` URL, or an `{"image_url": "..."}` / `{"image_url": {"url": "..."}}` object as in OpenAI's image inputs; send an array of up to 16 for a batch. Remote `http(s)` URLs are rejected rather than fetched. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `confidence` | No | Minimum score a detection needs to be returned. Defaults to `0.25`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `classes` | No | Return only these classes. Takes the model's class names (`sports ball`) and everyday names that map onto them (`ball`, `phone`, `mug`); a phrase such as `the red ball` works too. Names that match no class are listed in `unresolved_classes`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `max_detections` | No | Maximum detections returned per image, highest score first. Defaults to `100`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+
+A malformed request, such as one whose `image` is not an image, is rejected before any model loads.
+
+### Setup
+
+The `ryzenai-vision` backend runs on a separately installed [Ryzen AI Software](https://ryzenai.docs.amd.com/en/latest/inst.html) environment. Point Lemonade at it once with `lemonade config set ryzenaivision.npu_bin=<env dir or its python>`; on Linux, starting `lemond` from an activated Ryzen AI venv also works through `RYZEN_AI_INSTALLATION_PATH`.
+
+The first load of a model compiles it for the NPU, about 15 minutes for YOLO26s on a Strix Halo machine. The result is cached under `<cache_dir>/ryzenai-vision/npu-cache` and later loads take about a second. Like `ryzenai-llm`, loading a detection model unloads the other NPU models; GPU and CPU models stay loaded.
+
+### Supported Models
+
+Ultralytics YOLO26 and YOLOv10 end-to-end exports (`[1, N, 6]` output), YOLOv8 to YOLO12 exports (`[1, 4 + C, A]`, NMS is applied by the server), and RT-DETR-style `logits` + `pred_boxes` exports with sigmoid scores, such as `onnx-community/yolo26s-ONNX`. Register another one as a custom model:
+
+```bash
+lemonade pull user.YOLO26n --checkpoint main onnx-community/yolo26n-ONNX:onnx/model.onnx --recipe ryzenai-vision
+```
+
+Class names come from the model's `config.json` (`id2label`) or the Ultralytics `names` metadata in the ONNX file, falling back to the 80 COCO classes.
+
+### Example
+
+=== "PowerShell"
+
+    ```powershell
+    $image = [Convert]::ToBase64String([IO.File]::ReadAllBytes("image.png"))
+    $body = @"
+    {
+          "model": "YOLO26s-Detection-NPU",
+          "image": "data:image/png;base64,$image",
+          "confidence": 0.05
+        }
+    "@
+    Invoke-WebRequest `
+      -Uri "http://localhost:13305/v1/images/detections" `
+      -Method POST `
+      -Headers @{ "Content-Type" = "application/json" } `
+      -Body $body
+    ```
+
+=== "Bash"
+
+    ```bash
+    curl http://localhost:13305/v1/images/detections \
+      -H "Content-Type: application/json" \
+      -d "{
+          \"model\": \"YOLO26s-Detection-NPU\",
+          \"image\": \"data:image/png;base64,$(base64 -w0 image.png)\",
+          \"confidence\": 0.05
+        }"
+    ```
+
+**Response:** `200 OK`
+
+```json
+{
+  "object": "list",
+  "created": 1792694607,
+  "model": "YOLO26s-Detection-NPU",
+  "data": [
+    {
+      "object": "image.detections",
+      "index": 0,
+      "width": 256,
+      "height": 256,
+      "detections": [
+        {
+          "object": "detection",
+          "label": "orange",
+          "class_id": 49,
+          "score": 0.09947,
+          "box": {"x1": 49.0, "y1": 49.0, "x2": 207.0, "y2": 207.0}
+        }
+      ]
+    }
+  ],
+  "usage": {"images": 1, "detections": 1, "inference_ms": 22.25}
+}
+```
+
+### Response format
+
+- `object` - Always `list`.
+- `created` - Unix timestamp of the response.
+- `model` - The model that ran, including one chosen because it was the only one loaded.
+- `data` - One entry per input image, in request order.
+  - `object` - Always `image.detections`.
+  - `index` - Position of the image in the request.
+  - `width` - Width of the decoded image in pixels.
+  - `height` - Height of the decoded image in pixels.
+  - `detections` - The detections, highest score first.
+    - `object` - Always `detection`.
+    - `label` - Class name from the model's label map.
+    - `class_id` - Class index in the model's label map.
+    - `score` - Confidence, in `[0, 1]`.
+    - `box` - Corners in pixels of the original image: `x1,y1` top-left, `x2,y2` bottom-right.
+      - `x1` - Left edge.
+      - `y1` - Top edge.
+      - `x2` - Right edge.
+      - `y2` - Bottom edge.
+- `usage` - What the request processed.
+  - `images` - Images analyzed.
+  - `detections` - Detections returned across all images.
+  - `inference_ms` - Time spent decoding, preprocessing and running the model for all images.
+- `unresolved_classes` - Requested `classes` that match no class of the model; present only when there are some.
+
+### Errors
+
+| Status | Code | When |
+|--------|------|------|
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `missing_argument` | A required argument is missing |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
+| `400` |  | An `image` is not a PNG, JPEG, BMP or WebP image, is a remote URL, or there are more than 16 |
+| `400` |  | `model` is omitted and not exactly one detection model is loaded |
+| `400` |  | The backend rejects the request, for example because `model` is not a detection model, which is found only after it loads |
+| `404` |  | The model is unloaded while the request waits for it |
+| `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
+| `404` | `model_not_found` | The requested model is not in the registry |
+| `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
+| `409` | `slots_pinned_error` | Every loaded model of the requested model's type is pinned, so none can be unloaded to make room |
+| `500` |  | The backend reports an error; the backend's own status replaces this one when it sends one |
+| `500` |  | The backend's response lacks a field the route returns, such as `choices` or `labels` |
+| `500` |  | The request fails unexpectedly |
+| `500` | `model_load_error` | Loading the requested model fails for another reason, such as a failed download or a backend that does not start |
 <!-- END GENERATED: openai.images_detections -->
 
 <!-- BEGIN GENERATED: openai.audio_speech -->

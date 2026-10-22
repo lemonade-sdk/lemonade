@@ -8878,6 +8878,58 @@
       }
     }
   },
+  "29d3932ffc5f3e1cdbd0d9183902f9d6302b891acba5a53db3bd9599a0803e43": {
+    "route": "openai.images_detections",
+    "format": "Json",
+    "request": {
+      "method": "POST",
+      "path": "/v1/images/detections",
+      "query": {},
+      "json": {
+        "model": "YOLO26s-Detection-NPU",
+        "image": "data:image/png;base64,@fixtures/image.png",
+        "confidence": 0.05
+      },
+      "form": {},
+      "files": {}
+    },
+    "response": {
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "created": 1792694607,
+        "data": [
+          {
+            "detections": [
+              {
+                "box": {
+                  "x1": 49.0,
+                  "x2": 207.0,
+                  "y1": 49.0,
+                  "y2": 207.0
+                },
+                "class_id": 49,
+                "label": "orange",
+                "object": "detection",
+                "score": 0.09947
+              }
+            ],
+            "height": 256,
+            "index": 0,
+            "object": "image.detections",
+            "width": 256
+          }
+        ],
+        "model": "YOLO26s-Detection-NPU",
+        "object": "list",
+        "usage": {
+          "detections": 1,
+          "images": 1,
+          "inference_ms": 22.25
+        }
+      }
+    }
+  },
   "a36d2d53888b01ed86aa000377b38f0c408b7fa0c33d5a18a066d27777a9426f": {
     "route": "openai.images_edits",
     "format": "Json",

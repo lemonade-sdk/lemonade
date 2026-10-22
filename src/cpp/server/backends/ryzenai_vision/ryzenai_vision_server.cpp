@@ -269,7 +269,9 @@ void RyzenAIVisionServer::load(const std::string& model_name,
     };
     const bool inherit_output = (log_level_ == "info") || is_debug();
     try {
-        start_server(std::make_unique<NativeProcess>(ProcessOutput{inherit_output, false}),
+        // The VitisAI compiler drops signature files into the working directory.
+        start_server(std::make_unique<NativeProcess>(ProcessOutput{inherit_output, false},
+                                                     path_to_utf8(cache_dir)),
                      command, kFirstCompileTimeoutSeconds);
     } catch (const std::runtime_error& e) {
         const std::string details = read_status_error(status_file);
@@ -282,7 +284,7 @@ void RyzenAIVisionServer::load(const std::string& model_name,
 }
 
 json RyzenAIVisionServer::detect(const json& request) {
-    json body = {{"images", request.value("images", json::array())}};
+    json body = {{"images", request.value("image", json::array())}};
     for (const char* key : {"confidence", "classes", "max_detections"}) {
         if (request.contains(key)) body[key] = request[key];
     }

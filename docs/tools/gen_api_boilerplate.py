@@ -494,6 +494,14 @@ DISTINCT_ARGUMENTS = {
             ],
         ),
         (
+            "Omitted, classify falls back to the sole loaded classification model and "
+            "detection to the sole loaded detection model",
+            [
+                "routes/lemonade/inference/classify.cpp:kModel",
+                "routes/openai/images/images_detections.cpp:kModel",
+            ],
+        ),
+        (
             "Register takes only user.* names; load takes any registered model",
             [
                 "routes/lemonade/load/load.cpp:kModelName",
