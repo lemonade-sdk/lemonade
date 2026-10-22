@@ -9,22 +9,38 @@
 
 namespace lemon {
 
+inline const char* rocm_visibility_override_env_name(
+    const char* rocr_visible_devices,
+    const char* hip_visible_devices,
+    const char* cuda_visible_devices,
+    const char* gpu_device_ordinal) {
+#ifdef _WIN32
+    (void)rocr_visible_devices;
+    (void)cuda_visible_devices;
+    (void)gpu_device_ordinal;
+    return hip_visible_devices ? "HIP_VISIBLE_DEVICES" : nullptr;
+#else
+    if (rocr_visible_devices) {
+        return "ROCR_VISIBLE_DEVICES";
+    }
+    if (hip_visible_devices) {
+        return "HIP_VISIBLE_DEVICES";
+    }
+    if (cuda_visible_devices) {
+        return "CUDA_VISIBLE_DEVICES";
+    }
+    return gpu_device_ordinal ? "GPU_DEVICE_ORDINAL" : nullptr;
+#endif
+}
+
 // An existing visibility environment changes ROCm's ordinal space. Leave both
 // architecture detection and UUID pinning to that explicit caller-owned policy.
 inline const char* existing_rocm_visibility_override_env_name() {
-#ifdef _WIN32
-    if (std::getenv("HIP_VISIBLE_DEVICES")) {
-        return "HIP_VISIBLE_DEVICES";
-    }
-#else
-    if (std::getenv("ROCR_VISIBLE_DEVICES")) {
-        return "ROCR_VISIBLE_DEVICES";
-    }
-    if (std::getenv("HIP_VISIBLE_DEVICES")) {
-        return "HIP_VISIBLE_DEVICES";
-    }
-#endif
-    return nullptr;
+    return rocm_visibility_override_env_name(
+        std::getenv("ROCR_VISIBLE_DEVICES"),
+        std::getenv("HIP_VISIBLE_DEVICES"),
+        std::getenv("CUDA_VISIBLE_DEVICES"),
+        std::getenv("GPU_DEVICE_ORDINAL"));
 }
 
 class RocmArchOverrideGuard {

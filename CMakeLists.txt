@@ -3304,6 +3304,20 @@ if(BUILD_TESTING AND CMAKE_SYSTEM_NAME STREQUAL "Linux" AND EXISTS "${_LLAMACPP_
     add_cpp_ci_test(LlamaCppSystemBackendTest CI ON COMMAND test_llamacpp_system_backend)
 endif()
 
+set(_ROCM_VISIBILITY_OVERRIDE_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_rocm_visibility_override.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_ROCM_VISIBILITY_OVERRIDE_TEST_SRC}")
+    add_executable(test_rocm_visibility_override
+        test/cpp/test_rocm_visibility_override.cpp
+    )
+    target_include_directories(test_rocm_visibility_override PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+    )
+    target_link_libraries(test_rocm_visibility_override PRIVATE nlohmann_json::nlohmann_json)
+    add_cpp_ci_test(RocmVisibilityOverrideTest CI ON COMMAND test_rocm_visibility_override)
+endif()
+
 set(_DLL_VERSION_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_backend_utils_dll_version.cpp")
 if(BUILD_TESTING AND EXISTS "${_DLL_VERSION_TEST_SRC}")
     add_executable(test_backend_utils_dll_version test/cpp/test_backend_utils_dll_version.cpp)
