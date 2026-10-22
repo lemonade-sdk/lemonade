@@ -5,9 +5,14 @@
 // Build: cmake --build --preset default --target test_system_info_helpers
 // Run:   ctest --test-dir build -R '^SystemInfoHelpersTest$' --output-on-failure
 
+#include "platform/nvidia_metrics.h"
 #include "system_info_utils.h"
 
+#include <cmath>
+#include <cstdint>
 #include <cstdio>
+#include <filesystem>
+#include <fstream>
 #include <set>
 #include <string>
 #include <utility>
@@ -16,7 +21,10 @@
 using lemon::system_info_detail::compute_cap_to_sm;
 using lemon::system_info_detail::cuda_supported_archs;
 using lemon::system_info_detail::device_matches_constraint;
+using lemon::system_info_detail::gfx_target_version_to_arch;
+using lemon::system_info_detail::gpu_display_name;
 using lemon::system_info_detail::identify_cuda_arch_from_name;
+using lemon::system_info_detail::rocm_device_memory_from_sysfs;
 
 static bool expect_string(const char* name,
                           const std::string& actual,
@@ -41,11 +49,95 @@ static bool expect_bool(const char* name, bool actual, bool expected) {
     return ok;
 }
 
+static bool expect_double(const char* name, double actual, double expected) {
+    const bool ok = std::fabs(actual - expected) <= 1e-9;
+    std::printf("[%s] %s\n", ok ? "PASS" : "FAIL", name);
+    if (!ok) std::printf("  got: %.6f, expected: %.6f\n", actual, expected);
+    return ok;
+}
+
 static bool expect_membership(const char* name,
                               const std::string& arch,
                               bool expected) {
     const bool actual = cuda_supported_archs().count(arch) > 0;
     return expect_bool(name, actual, expected);
+}
+
+namespace fs = std::filesystem;
+
+// A throwaway copy of the two world-readable sysfs trees the ROCm memory probe reads,
+// so the topology walk is exercised with no GPU present.
+class FakeSysfs {
+public:
+    explicit FakeSysfs(const std::string& tag)
+        : root_(fs::temp_directory_path() / ("lemonade_sysfs_" + tag)) {
+        fs::remove_all(root_);
+        fs::create_directories(kfd_nodes());
+        fs::create_directories(drm());
+    }
+
+    ~FakeSysfs() {
+        std::error_code ec;
+        fs::remove_all(root_, ec);
+    }
+
+    FakeSysfs(const FakeSysfs&) = delete;
+    FakeSysfs& operator=(const FakeSysfs&) = delete;
+
+    fs::path kfd_nodes() const { return root_ / "kfd_nodes"; }
+    fs::path drm() const { return root_ / "drm"; }
+
+    void add_node(const std::string& node_id,
+                  const std::string& gfx_target_version,
+                  const std::string& drm_render_minor) const {
+        const fs::path node = kfd_nodes() / node_id;
+        fs::create_directories(node);
+        std::ofstream props(node / "properties");
+        props << "cpu_cores_count 0\n"
+              << "gfx_target_version " << gfx_target_version << "\n"
+              << "drm_render_minor " << drm_render_minor << "\n";
+    }
+
+    void add_memory(const std::string& drm_render_minor,
+                    const std::string& used,
+                    const std::string& total) const {
+        const fs::path device = drm() / ("renderD" + drm_render_minor) / "device";
+        fs::create_directories(device);
+        std::ofstream(device / "mem_info_vram_used") << used << "\n";
+        std::ofstream(device / "mem_info_vram_total") << total << "\n";
+    }
+
+private:
+    fs::path root_;
+};
+
+static bool expect_device_memory(const char* name,
+                                 const FakeSysfs& sysfs,
+                                 const std::string& arch,
+                                 bool expected_found,
+                                 uint64_t expected_free = 0,
+                                 uint64_t expected_total = 0) {
+    uint64_t free_bytes = 0;
+    uint64_t total_bytes = 0;
+    const bool found = rocm_device_memory_from_sysfs(
+        sysfs.kfd_nodes(), sysfs.drm(), arch, free_bytes, total_bytes);
+
+    bool ok = found == expected_found;
+    if (ok && found) {
+        ok = free_bytes == expected_free && total_bytes == expected_total;
+    }
+    std::printf("[%s] %s\n", ok ? "PASS" : "FAIL", name);
+    if (!ok) {
+        std::printf("  got:  found=%s free=%llu total=%llu\n"
+                    "  want: found=%s free=%llu total=%llu\n",
+                    found ? "true" : "false",
+                    static_cast<unsigned long long>(free_bytes),
+                    static_cast<unsigned long long>(total_bytes),
+                    expected_found ? "true" : "false",
+                    static_cast<unsigned long long>(expected_free),
+                    static_cast<unsigned long long>(expected_total));
+    }
+    return ok;
 }
 
 int main() {
@@ -148,6 +240,215 @@ int main() {
     failures += !expect_bool(
         "does not match any wildcard family",
         device_matches_constraint("gfx1151", {"gfx103X", "gfx110X"}), false);
+
+    // KFD publishes a GPU's ISA as packed decimal, with hex minor and step nibbles.
+    failures += !expect_string(
+        "gfx_target_version 110501 is gfx1151",
+        gfx_target_version_to_arch("110501"), "gfx1151");
+    failures += !expect_string(
+        "gfx_target_version 90010 is gfx90a, whose step is a hex nibble",
+        gfx_target_version_to_arch("90010"), "gfx90a");
+    failures += !expect_string(
+        "gfx_target_version 120001 is gfx1201",
+        gfx_target_version_to_arch("120001"), "gfx1201");
+    failures += !expect_string(
+        "gfx_target_version 90402 is gfx942",
+        gfx_target_version_to_arch("90402"), "gfx942");
+    // Preserved from the original inline conversion: 0 formats rather than erroring, and
+    // the result cannot collide with a real ISA, so the CPU node needs no special case.
+    failures += !expect_string(
+        "the CPU node's zero version yields an unmatchable ISA",
+        gfx_target_version_to_arch("0"), "gfx000");
+    failures += !expect_string(
+        "an already-formatted ISA is not a packed version",
+        gfx_target_version_to_arch("gfx1151"), "");
+    failures += !expect_string(
+        "an empty version has no ISA",
+        gfx_target_version_to_arch(""), "");
+
+    {
+        // 27.07 of 32.0 GiB free: the reading from the gfx1151 merge-queue failures.
+        FakeSysfs sysfs("single");
+        sysfs.add_node("0", "0", "-1");
+        sysfs.add_node("1", "110501", "128");
+        sysfs.add_memory("128", "5292500582", "34359738368");
+        failures += !expect_device_memory(
+            "a single matching GPU reports its own free and total bytes",
+            sysfs, "gfx1151", true, 34359738368ULL - 5292500582ULL, 34359738368ULL);
+        failures += !expect_device_memory(
+            "an ISA absent from the topology is not reported",
+            sysfs, "gfx942", false);
+        failures += !expect_device_memory(
+            "an empty ISA is not reported",
+            sysfs, "", false);
+    }
+
+    {
+        // A machine-wide pressure reading would return the exhausted card here. Sizing a
+        // launch against that number is what this probe exists to avoid.
+        FakeSysfs sysfs("hybrid");
+        sysfs.add_node("0", "0", "-1");
+        sysfs.add_node("1", "110501", "128");
+        sysfs.add_node("2", "110000", "129");
+        sysfs.add_memory("128", "0", "34359738368");
+        sysfs.add_memory("129", "17179869184", "17179869184");
+        failures += !expect_device_memory(
+            "an exhausted second GPU does not affect the requested one",
+            sysfs, "gfx1151", true, 34359738368ULL, 34359738368ULL);
+    }
+
+    {
+        FakeSysfs sysfs("duplicate");
+        sysfs.add_node("1", "110501", "128");
+        sysfs.add_node("2", "110501", "129");
+        sysfs.add_memory("128", "0", "34359738368");
+        sysfs.add_memory("129", "0", "34359738368");
+        failures += !expect_device_memory(
+            "two GPUs of one ISA are ambiguous and go unreported",
+            sysfs, "gfx1151", false);
+    }
+
+    {
+        FakeSysfs sysfs("norender");
+        sysfs.add_node("1", "110501", "-1");
+        failures += !expect_device_memory(
+            "a GPU with no render node goes unreported",
+            sysfs, "gfx1151", false);
+    }
+
+    {
+        FakeSysfs sysfs("unreadable");
+        sysfs.add_node("1", "110501", "128");
+        failures += !expect_device_memory(
+            "a missing memory reading goes unreported",
+            sysfs, "gfx1151", false);
+    }
+
+    {
+        FakeSysfs sysfs("zerototal");
+        sysfs.add_node("1", "110501", "128");
+        sysfs.add_memory("128", "0", "0");
+        failures += !expect_device_memory(
+            "a zero total goes unreported",
+            sysfs, "gfx1151", false);
+    }
+
+    {
+        FakeSysfs sysfs("overused");
+        sysfs.add_node("1", "110501", "128");
+        sysfs.add_memory("128", "34359738369", "34359738368");
+        failures += !expect_device_memory(
+            "used exceeding total goes unreported",
+            sysfs, "gfx1151", false);
+    }
+
+    {
+        FakeSysfs sysfs("empty");
+        failures += !expect_device_memory(
+            "an empty topology goes unreported",
+            sysfs, "gfx1151", false);
+    }
+
+    failures += !expect_string(
+        "a marketing name keeps the ISA alongside it",
+        gpu_display_name("AMD Radeon RX 9070 XT", "gfx1201"),
+        "AMD Radeon RX 9070 XT (gfx1201)");
+    failures += !expect_string(
+        "no marketing name leaves the ISA alone",
+        gpu_display_name("", "gfx1201"), "gfx1201");
+    failures += !expect_string(
+        "an unrecognized ISA leaves the marketing name alone",
+        gpu_display_name("AMD Radeon RX 9070 XT", ""),
+        "AMD Radeon RX 9070 XT");
+    failures += !expect_string(
+        "a driver that reports the ISA as its marketing name is not doubled up",
+        gpu_display_name("gfx1201", "gfx1201"), "gfx1201");
+    failures += !expect_string(
+        "neither half available yields an empty name",
+        gpu_display_name("", ""), "");
+
+    // The largest GPU-accessible memory pool is the stable primary, not the
+    // GPU with the highest instantaneous utilization or VRAM usage.
+    {
+        lemon::GpuMetricsTracker tracker;
+        std::vector<lemon::GpuDeviceMetrics> devices = {
+            {"amd:0000:c1:00.0", "amd", "Strix Halo", "shared", 25.0, 120.0, 18.0},
+            {"nvidia:GPU-1", "nvidia", "RTX", "dedicated", 95.0, 24.0, 12.0},
+            {"amd:0000:01:00.0", "amd", "small dGPU", "dedicated", 100.0, 2.0, 1.0}
+        };
+        auto stats = tracker.update(devices);
+        failures += !expect_string("Strix Halo ranks first by capacity",
+                                   stats.primary_gpu_id, "amd:0000:c1:00.0");
+        failures += !expect_double("primary utilization belongs to Strix Halo",
+                                   stats.gpu_percent, 25.0);
+        failures += !expect_double("primary memory belongs to Strix Halo",
+                                   stats.vram_used_gb, 18.0);
+        failures += !expect_bool("three devices are individually represented",
+                                 stats.gpus.size() == 3, true);
+        failures += !expect_string("NVIDIA remains slot two",
+                                   stats.gpus.at(1).id, "nvidia:GPU-1");
+
+        devices[0].gpu_percent = 0.0;
+        devices[1].gpu_percent = 100.0;
+        devices[2].gpu_percent = 0.0;
+        stats = tracker.update(devices);
+        failures += !expect_string("utilization changes never switch primary",
+                                   stats.primary_gpu_id, "amd:0000:c1:00.0");
+        failures += !expect_double("primary utilization is valid zero",
+                                   stats.gpu_percent, 0.0);
+
+        // Simulate one poll with only NVIDIA data: retain device identity and
+        // memory capacity, but do not reuse stale live values.
+        stats = tracker.update({devices[1]});
+        failures += !expect_string("transient telemetry loss preserves primary",
+                                   stats.primary_gpu_id, "amd:0000:c1:00.0");
+        failures += !expect_double("unavailable primary utilization stays unknown",
+                                   stats.gpu_percent, -1.0);
+        failures += !expect_double("unavailable primary usage stays unknown",
+                                   stats.vram_used_gb, -1.0);
+        failures += !expect_double("remembered primary capacity remains stable",
+                                   stats.gpus.at(0).memory_total_gb, 120.0);
+    }
+    {
+        lemon::GpuMetricsTracker tracker;
+        const auto stats = tracker.update({
+            {"nvidia:GPU-a", "nvidia", "GPU A", "dedicated", 90.0, 8.0, 1.0},
+            {"nvidia:GPU-b", "nvidia", "GPU B", "dedicated", 3.0, 24.0, 20.0}
+        });
+        failures += !expect_string("NVIDIA multi GPU selects capacity, not activity",
+                                   stats.primary_gpu_id, "nvidia:GPU-b");
+        failures += !expect_double("paired utilization comes from selected GPU",
+                                   stats.gpu_percent, 3.0);
+        failures += !expect_double("paired memory comes from selected GPU",
+                                   stats.vram_used_gb, 20.0);
+    }
+    {
+        lemon::GpuMetricsTracker tracker;
+        const auto stats = tracker.update({
+            {"nvidia:GPU-unknown", "nvidia", "unified GPU", "unknown", 40.0, -1.0, -1.0},
+            {"amd:card0", "amd", "dGPU", "dedicated", 0.0, 2.0, 0.0}
+        });
+        failures += !expect_string("unknown capacity is not assumed zero",
+                                   stats.gpus.back().id, "nvidia:GPU-unknown");
+        failures += !expect_double("valid zero GPU memory is preserved",
+                                   stats.vram_used_gb, 0.0);
+    }
+    {
+        lemon::NvidiaNvmlDevice gpu;
+        gpu.index = 7;
+        gpu.uuid = "GPU-test";
+        gpu.name = "RTX";
+        gpu.vram_total_gb = 32.0;
+        gpu.vram_used_gb = 14.0;
+        gpu.gpu_percent = -1.0;
+        const auto sample = lemon::nvidia_device_metrics(gpu);
+        failures += !expect_string("NVIDIA UUID creates stable device id",
+                                   sample.id, "nvidia:GPU-test");
+        failures += !expect_double("NVML used memory survives failed utilization",
+                                   sample.memory_used_gb, 14.0);
+        failures += !expect_string("NVML memory totals do not prove dedicated VRAM",
+                                   sample.memory_type, "unknown");
+    }
 
     std::printf("\n%d failures\n", failures);
     return failures == 0 ? 0 : 1;

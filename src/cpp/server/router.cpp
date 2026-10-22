@@ -1,5 +1,6 @@
 #include "lemon/router.h"
 #include "lemon/cloud_provider_registry.h"
+#include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/cloud/cloud_server.h"
 #include "lemon/backends/llamacpp/llamacpp_server.h"
@@ -27,6 +28,7 @@
 #include "lemon/eviction_engine.h"
 #include "lemon/suspend_inhibitor.h"
 #include "lemon/utils/http_client.h"
+#include "lemon/utils/recipe_arg_resolver.h"
 
 namespace lemon {
 
@@ -50,6 +52,48 @@ public:
 private:
     SuspendInhibitor* inhibitor_;
 };
+
+// Only OpenAI output-delta events count. Generic SSE payloads, keepalives,
+// request state, usage and complete/cumulative "response" fields are not tokens.
+void observe_stream_content(LiveThroughput::Request& live, const json& event) {
+    if (!event.is_object()) return;
+
+    const auto object = event.value("object", std::string{});
+    if (object == "chat.completion.chunk" || object == "text_completion") {
+        if (!event.contains("choices") || !event["choices"].is_array()) return;
+        for (const auto& choice : event["choices"]) {
+            if (!choice.is_object()) continue;
+            if (object == "text_completion") {
+                if (choice.contains("text") && choice["text"].is_string())
+                    live.observe(choice["text"].get_ref<const std::string&>());
+                continue;
+            }
+            if (!choice.contains("delta") || !choice["delta"].is_object()) continue;
+            const auto& delta = choice["delta"];
+            for (const auto* field : {"content", "reasoning_content", "thinking"}) {
+                if (delta.contains(field) && delta[field].is_string())
+                    live.observe(delta[field].get_ref<const std::string&>());
+            }
+            if (delta.contains("tool_calls") && delta["tool_calls"].is_array()) {
+                for (const auto& call : delta["tool_calls"]) {
+                    if (call.is_object() && call.contains("function") && call["function"].is_object()) {
+                        const auto& function = call["function"];
+                        if (function.contains("arguments") && function["arguments"].is_string())
+                            live.observe(function["arguments"].get_ref<const std::string&>());
+                    }
+                }
+            }
+        }
+        return;
+    }
+
+    const auto type = event.value("type", std::string{});
+    if (type == "response.output_text.delta" || type == "response.reasoning_text.delta" ||
+        type == "response.function_call_arguments.delta") {
+        if (event.contains("delta") && event["delta"].is_string())
+            live.observe(event["delta"].get_ref<const std::string&>());
+    }
+}
 
 } // namespace
 
@@ -186,25 +230,47 @@ bool Router::is_watchdog_reset_response(const json& response) const {
         error["details"]["code"] == "backend_watchdog_reset") {
         return true;
     }
+
+    if (error.contains("message") && error["message"].is_string()) {
+        std::string message = error["message"].get<std::string>();
+        std::string lowered = message;
+        std::transform(lowered.begin(), lowered.end(), lowered.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        if (lowered.find("compute error") != std::string::npos ||
+            lowered.find("gpu hang") != std::string::npos) {
+            return true;
+        }
+    }
+
     return false;
 }
 
-bool Router::reload_model_after_watchdog_reset(const std::string& requested_model, const RecipeOptions& options) {
+bool Router::reload_model_after_watchdog_reset(const std::string& requested_model, const RecipeOptions& options, uint64_t failed_instance_id) {
     try {
         LOG(WARNING, "Router") << "Reloading model after backend watchdog reset: "
                                 << requested_model << std::endl;
-        auto info = model_manager_->get_model_info(requested_model);
+        const std::string canonical_model_name = resolve_model_name(requested_model);
+        auto info = model_manager_->get_model_info(canonical_model_name);
         bool was_pinned = false;
         ResidencyClass was_residency_class = ResidencyClass::Standard;
         {
-            std::lock_guard<std::mutex> lock(load_mutex_);
-            auto* existing = find_server_by_model_name(requested_model);
+            std::unique_lock<std::mutex> lock(load_mutex_);
+            while (is_loading_) {
+                load_cv_.wait(lock);
+            }
+            auto* existing = find_server_by_model_name(canonical_model_name);
             if (existing) {
+                if (failed_instance_id != 0 && existing->get_instance_id() != failed_instance_id) {
+                    LOG(INFO, "Router") << "Model '" << requested_model
+                                        << "' already reloaded by another thread. Skipping reload."
+                                        << std::endl;
+                    return true;
+                }
                 was_pinned = existing->is_pinned();
                 was_residency_class = existing->get_residency_class();
             }
         }
-        load_model(requested_model, info, options, true, false, was_pinned,
+        load_model(canonical_model_name, info, options, true, false, was_pinned,
                    load_purpose_for_residency_class(was_residency_class));
         return true;
     } catch (const std::exception& e) {
@@ -841,11 +907,9 @@ void Router::load_model(const std::string& model_name,
         // Check if model is already loaded. Watchdog-reset or otherwise dead
         // entries are evicted first so auto-load performs a real lazy restart.
         WrappedServer* existing = find_server_by_model_name(canonical_model_name);
-        if (existing && !existing->is_backend_alive()) {
+        if (existing && (!existing->is_backend_alive() || existing->was_watchdog_triggered())) {
             LOG(WARNING, "Router") << "Existing backend for " << canonical_model_name
-                                    << " is unavailable (state="
-                                    << existing->get_backend_health_state()
-                                    << "), evicting before reload" << std::endl;
+                                    << " is unavailable or watchdog triggered, evicting before reload" << std::endl;
             evict_server(existing);
             existing = nullptr;
         }
@@ -980,6 +1044,11 @@ void Router::load_model(const std::string& model_name,
         // Done AFTER eviction so that freed VRAM/RAM is visible to the memory query.
         int64_t auto_ctx = resolve_auto_ctx_size(effective_options, model_info);
         const bool ctx_size_auto = auto_ctx != -2;
+        if (auto_ctx == AUTO_CTX_NO_CAPACITY) {
+            throw std::runtime_error(
+                "Not enough free memory to load " + canonical_model_name +
+                " with automatic context sizing. Free memory or choose a smaller model.");
+        }
         if (auto_ctx > 0) {
             LOG(INFO, "Router") << "Auto-tune ctx_size resolved to " << auto_ctx << std::endl;
             effective_options.set_option("ctx_size", auto_ctx);
@@ -1023,6 +1092,7 @@ void Router::load_model(const std::string& model_name,
         // Load the backend (this can take 30-60 seconds)
         LOG(DEBUG, "Router") << "Starting backend (this may take a moment)..." << std::endl;
         bool load_success = false;
+        bool unrecoverable_config = false;
         std::string error_message;
         auto load_start = std::chrono::steady_clock::now();
 
@@ -1034,6 +1104,11 @@ void Router::load_model(const std::string& model_name,
             auto load_end = std::chrono::steady_clock::now();
             new_server->set_load_duration_ms(std::chrono::duration_cast<std::chrono::milliseconds>(load_end - load_start).count());
             LOG(DEBUG, "Router") << "Backend started successfully in " << new_server->get_load_duration_ms() << "ms" << std::endl;
+        } catch (const ConfigurationException& e) {
+            error_message = e.what();
+            load_success = false;
+            unrecoverable_config = true;
+            LOG(ERROR, "Router") << "Backend load failed: " << error_message << std::endl;
         } catch (const std::exception& e) {
             error_message = e.what();
             load_success = false;
@@ -1090,6 +1165,14 @@ void Router::load_model(const std::string& model_name,
             if (cancel_flag && cancel_flag->load()) {
                 LOG(INFO, "Router") << "Load cancelled, skipping nuclear retry" << std::endl;
                 throw std::runtime_error("load cancelled");
+            }
+
+            // Checked before the substring sniff below: the exception type is
+            // a stronger signal than prose that happens to contain "not found",
+            // and it is what keeps the type intact for the caller.
+            if (unrecoverable_config) {
+                LOG(ERROR, "Router") << "Configuration error, NOT evicting other models" << std::endl;
+                throw ConfigurationException(error_message);
             }
 
             if (is_file_not_found) {
@@ -1304,7 +1387,11 @@ json Router::get_all_loaded_models() const {
                   server->get_model_type(), server->get_residency_class());
         model_info["device"] = device_type_to_string(server->get_device_type());
         model_info["backend_url"] = server->get_address();  // For debugging port issues
-        model_info["pid"] = server->get_process_id();
+        const WrappedServer::ProcessInfo process_info = server->get_process_info();
+        model_info["pid"] = process_info.pid;
+        if (!process_info.launch_command.empty()) {
+            model_info["launch_command"] = process_info.launch_command;
+        }
         model_info["status"] = model_state_to_string(server->get_state());
         model_info["backend_alive"] = true;
         model_info["backend_health"] = server->get_backend_health_state();
@@ -1391,12 +1478,62 @@ RecipeOptions Router::resolve_effective_options(const ModelInfo& model_info,
     json backend_json = tentative.get_option(backend_option);
     const std::string backend = backend_json.is_string() ? backend_json.get<std::string>() : "";
 
-    // Second pass: rebuild defaults using the resolved backend.
-    // Per-architecture defaults sit between global config and model-level recipe_options.
-    RecipeOptions default_opt = RecipeOptions(model_info.recipe, config_->recipe_options(backend));
+    RecipeOptions default_opt(model_info.recipe, config_->recipe_options(backend));
     RecipeOptions arch_opts(model_info.recipe,
                             model_manager_->get_architecture_defaults(model_info.gguf.architecture));
-    return request_options.inherit(model_info.recipe_options.inherit(arch_opts.inherit(default_opt)));
+    RecipeOptions effective =
+        request_options.inherit(model_info.recipe_options.inherit(arch_opts.inherit(default_opt)));
+
+    const json model_json = model_info.recipe_options.to_json();
+    const json model_defaults_json =
+        model_manager_->get_model_default_options(model_info).to_json();
+    const json arch_json = arch_opts.to_json();
+    const json backend_defaults_json = default_opt.to_json();
+    const json merge_value = effective.get_option("merge_args");
+    const bool merge_args = merge_value.is_boolean() ? merge_value.get<bool>() : true;
+
+    auto args_value = [](const json& layer, const std::string& key) {
+        auto it = layer.find(key);
+        return it != layer.end() && it->is_string() ? it->get<std::string>() : "";
+    };
+
+    for (const auto& key : RecipeOptions::keys_for_recipe(model_info.recipe)) {
+        if (!utils::is_custom_args_option(key)) continue;
+
+        utils::CustomArgsRequestState request_state =
+            utils::CustomArgsRequestState::Omitted;
+        std::string request_args;
+        if (request_options.has_explicit_option(key)) {
+            const json raw_request = request_options.get_explicit_option(key);
+            if (raw_request.is_null()) {
+                request_state = utils::CustomArgsRequestState::Tombstone;
+            } else if (raw_request.is_string()) {
+                request_state = utils::CustomArgsRequestState::Value;
+                request_args = raw_request.get<std::string>();
+            } else {
+                throw std::invalid_argument("'" + key + "' must be a string or null");
+            }
+        }
+
+        const std::string resolved_args =
+            utils::resolve_scoped_custom_args({
+                args_value(backend_defaults_json, key),
+                args_value(arch_json, key),
+                args_value(model_defaults_json, key),
+                args_value(model_json, key),
+                request_state,
+                request_args,
+                merge_args,
+            });
+        // Keep empty results: explicit "" is a meaningful clear value and the
+        // effective layer is also used as replayable load input.
+        effective.set_option(key, resolved_args);
+    }
+
+    if (const auto* ops = backends::ops_for(model_info.recipe)) {
+        ops->resolve_runtime_options(model_info, effective);
+    }
+    return effective;
 }
 
 RecipeOptions Router::get_model_recipe_options(const std::string& model_name) const {
@@ -1457,6 +1594,7 @@ auto Router::execute_inference(const json& request, Func&& inference_func) -> de
         RecipeOptions restart_options;
         std::string restart_model_name;
         bool should_reload_before_request = false;
+        uint64_t failed_instance_id = 0;
 
         {
             std::unique_lock<std::mutex> lock(load_mutex_);
@@ -1466,7 +1604,9 @@ auto Router::execute_inference(const json& request, Func&& inference_func) -> de
                 return ErrorResponse::from_exception(ModelNotLoadedException(requested_model));
             }
 
-            if (!server->is_backend_alive()) {
+            failed_instance_id = server->get_instance_id();
+
+            if (server->was_watchdog_triggered() || !server->is_backend_alive()) {
                 restart_options = server->get_recipe_options();
                 restart_model_name = server->get_model_name();
                 should_reload_before_request = true;
@@ -1482,7 +1622,7 @@ auto Router::execute_inference(const json& request, Func&& inference_func) -> de
             if (restart_model_name.empty()) {
                 restart_model_name = requested_model;
             }
-            if (attempt == 0 && reload_model_after_watchdog_reset(restart_model_name, restart_options)) {
+            if (attempt == 0 && reload_model_after_watchdog_reset(restart_model_name, restart_options, failed_instance_id)) {
                 continue;
             }
             return ErrorResponse::create(
@@ -1496,12 +1636,18 @@ auto Router::execute_inference(const json& request, Func&& inference_func) -> de
 
         try {
             auto response = inference_func(server);
+
+            if (!server->was_watchdog_triggered() && is_watchdog_reset_response(response)) {
+                server->request_backend_reset_from_watchdog("GPU Hang / compute error detected");
+            }
+
             const bool watchdog_reset =
                 server->was_watchdog_triggered() || is_watchdog_reset_response(response);
 
             if (attempt == 0 && watchdog_reset) {
                 restart_options = server->get_recipe_options();
                 restart_model_name = server->get_model_name();
+                failed_instance_id = server->get_instance_id();
             }
 
             server->release_inference();
@@ -1510,7 +1656,7 @@ auto Router::execute_inference(const json& request, Func&& inference_func) -> de
                 if (restart_model_name.empty()) {
                     restart_model_name = requested_model;
                 }
-                if (reload_model_after_watchdog_reset(restart_model_name, restart_options)) {
+                if (reload_model_after_watchdog_reset(restart_model_name, restart_options, failed_instance_id)) {
                     continue;
                 }
             }
@@ -1532,7 +1678,6 @@ auto Router::execute_inference(const json& request, Func&& inference_func) -> de
 // Template method for streaming execution
 template<typename Func>
 void Router::execute_streaming(const std::string& request_body, httplib::DataSink& sink, Func&& streaming_func, std::shared_ptr<telemetry::InferenceSpan> span) {
-    WrappedServer* server = nullptr;
     std::string requested_model;
 
     try {
@@ -1554,9 +1699,11 @@ void Router::execute_streaming(const std::string& request_body, httplib::DataSin
     }
 
     for (int attempt = 0; attempt < 2; ++attempt) {
+        WrappedServer* server = nullptr;
         RecipeOptions restart_options;
         std::string restart_model_name;
         bool should_reload_before_request = false;
+        uint64_t failed_instance_id = 0;
 
         {
             std::unique_lock<std::mutex> lock(load_mutex_);
@@ -1570,7 +1717,9 @@ void Router::execute_streaming(const std::string& request_body, httplib::DataSin
                 return;
             }
 
-            if (!server->is_backend_alive()) {
+            failed_instance_id = server->get_instance_id();
+
+            if (server->was_watchdog_triggered() || !server->is_backend_alive()) {
                 restart_options = server->get_recipe_options();
                 restart_model_name = server->get_model_name();
                 should_reload_before_request = true;
@@ -1591,7 +1740,7 @@ void Router::execute_streaming(const std::string& request_body, httplib::DataSin
             if (restart_model_name.empty()) {
                 restart_model_name = requested_model;
             }
-            if (attempt == 0 && reload_model_after_watchdog_reset(restart_model_name, restart_options)) {
+            if (attempt == 0 && reload_model_after_watchdog_reset(restart_model_name, restart_options, failed_instance_id)) {
                 continue;
             }
 
@@ -1615,6 +1764,7 @@ void Router::execute_streaming(const std::string& request_body, httplib::DataSin
             if (watchdog_reset) {
                 restart_options = server->get_recipe_options();
                 restart_model_name = server->get_model_name();
+                failed_instance_id = server->get_instance_id();
             }
 
             server->release_inference();
@@ -1626,18 +1776,20 @@ void Router::execute_streaming(const std::string& request_body, httplib::DataSin
                 if (restart_model_name.empty()) {
                     restart_model_name = requested_model;
                 }
-                reload_model_after_watchdog_reset(restart_model_name, restart_options);
+                reload_model_after_watchdog_reset(restart_model_name, restart_options, failed_instance_id);
             }
             return;
         } catch (const BackendStreamRetryableReset& e) {
             restart_options = server->get_recipe_options();
             restart_model_name = server->get_model_name();
+            failed_instance_id = server->get_instance_id();
+
             server->release_inference();
 
             if (restart_model_name.empty()) {
                 restart_model_name = requested_model;
             }
-            if (attempt == 0 && reload_model_after_watchdog_reset(restart_model_name, restart_options)) {
+            if (attempt == 0 && reload_model_after_watchdog_reset(restart_model_name, restart_options, failed_instance_id)) {
                 continue;
             }
 
@@ -1666,21 +1818,15 @@ json Router::chat_completion(const json& request, std::atomic<bool>* cancel) {
     std::string requested_model = request.value("model", "");
     std::shared_ptr<telemetry::InferenceSpan> span = telemetry::TelemetryTracker::start_span("LLM", "chat.completions", requested_model, request);
 
-    struct RequestCancelScope {
-        WrappedServer* server = nullptr;
-        ~RequestCancelScope() {
-            if (server) server->set_request_cancel_flag(nullptr);
-        }
-    } cancel_scope;
+    std::optional<WrappedServer::RequestCancelScope> cancel_scope;
+    if (cancel) {
+        cancel_scope.emplace(utils::RequestCancelToken{cancel});
+    }
 
     try {
         WrappedServer* active_server = nullptr;
         json response = execute_inference(request, [&](WrappedServer* server) {
             active_server = server;
-            if (cancel) {
-                server->set_request_cancel_flag(cancel);
-                cancel_scope.server = server;
-            }
             ModelTelemetryIdentity identity = get_telemetry_identity(server);
             if (span) {
                 span->set_attribute("llm.backend", identity.recipe);
@@ -1738,6 +1884,7 @@ json Router::chat_completion(const json& request, std::atomic<bool>* cancel) {
                     }
                 }
 
+                std::vector<telemetry::ToolCall> tool_calls;
                 if (response.contains("choices") && response["choices"].is_array() && !response["choices"].empty()) {
                     auto choice = response["choices"][0];
                     std::string reasoning_output = "";
@@ -1751,6 +1898,24 @@ json Router::chat_completion(const json& request, std::atomic<bool>* cancel) {
                         if (msg.contains("content") && msg["content"].is_string()) {
                             text_output = msg["content"].get<std::string>();
                         }
+                        if (msg.contains("tool_calls") && msg["tool_calls"].is_array()) {
+                            for (const auto& tc : msg["tool_calls"]) {
+                                telemetry::ToolCall item;
+                                if (tc.contains("id") && tc["id"].is_string()) item.id = tc["id"].get<std::string>();
+                                if (tc.contains("function") && tc["function"].is_object()) {
+                                    auto fn = tc["function"];
+                                    if (fn.contains("name") && fn["name"].is_string()) item.function_name = fn["name"].get<std::string>();
+                                    if (fn.contains("arguments")) {
+                                        if (fn["arguments"].is_string()) {
+                                            item.function_arguments = fn["arguments"].get<std::string>();
+                                        } else {
+                                            item.function_arguments = fn["arguments"].dump();
+                                        }
+                                    }
+                                }
+                                tool_calls.push_back(std::move(item));
+                            }
+                        }
                     }
                     if (!reasoning_output.empty()) {
                         text_output = "<think>\n" + reasoning_output + "\n</think>\n" + text_output;
@@ -1763,7 +1928,7 @@ json Router::chat_completion(const json& request, std::atomic<bool>* cancel) {
                     url = active_server->get_additional_telemetry_url();
                     parser = active_server->get_additional_telemetry_parser();
                 }
-                telemetry::end_llm_span_async(span, url, parser, usage_payload, text_output);
+                telemetry::end_llm_span_async(span, url, parser, usage_payload, text_output, tool_calls);
             }
         }
         return response;
@@ -2128,6 +2293,11 @@ json Router::audio_transcriptions(const json& request) {
 
 void Router::audio_speech(const json& request, httplib::DataSink& sink) {
     execute_streaming(request.dump(), sink, [&](WrappedServer* server) {
+        if (server->get_model_type() != ModelType::TTS) {
+            throw InvalidRequestException(
+                "model '" + server->get_model_name() +
+                "' is not a text-to-speech model");
+        }
         auto tts_server = dynamic_cast<ITextToSpeechServer*>(server);
         if (!tts_server) {
             throw UnsupportedOperationException("Text to speech", device_type_to_string(server->get_device_type()));
@@ -2148,6 +2318,18 @@ std::vector<std::string> Router::audio_speech_supported_streaming_formats(const 
     auto tts_server = dynamic_cast<ITextToSpeechServer*>(
         find_server_by_model_name(resolve_model_name(model_name)));
     return tts_server ? tts_server->supported_streaming_audio_formats() : std::vector<std::string>{};
+}
+
+AudioFormatMetadata Router::audio_speech_format_metadata(
+    const std::string& model_name, const std::string& response_format) {
+    std::lock_guard<std::mutex> lock(load_mutex_);
+    auto* server = find_server_by_model_name(resolve_model_name(model_name));
+    if (!server || server->get_model_type() != ModelType::TTS) {
+        return {};
+    }
+    auto* tts_server = dynamic_cast<ITextToSpeechServer*>(server);
+    return tts_server ? tts_server->audio_format_metadata(response_format)
+                      : AudioFormatMetadata{};
 }
 
 json Router::image_generations(const json& request) {
@@ -2200,6 +2382,11 @@ json Router::image_detections(const json& request) {
 
 void Router::audio_generations(const json& request, httplib::DataSink& sink) {
     execute_streaming(request.dump(), sink, [&](WrappedServer* server) {
+        if (server->get_model_type() != ModelType::AUDIO_GENERATION) {
+            throw InvalidRequestException(
+                "model '" + server->get_model_name() +
+                "' is not an audio-generation model");
+        }
         auto audio_server = dynamic_cast<IAudioGenerationServer*>(server);
         if (!audio_server) {
             throw UnsupportedOperationException("Audio generation", device_type_to_string(server->get_device_type()));
@@ -2213,6 +2400,18 @@ std::vector<std::string> Router::audio_generation_supported_formats(const std::s
     auto audio_server = dynamic_cast<IAudioGenerationServer*>(
         find_server_by_model_name(resolve_model_name(model_name)));
     return audio_server ? audio_server->supported_audio_formats() : std::vector<std::string>{};
+}
+
+AudioFormatMetadata Router::audio_generation_format_metadata(
+    const std::string& model_name, const std::string& response_format) {
+    std::lock_guard<std::mutex> lock(load_mutex_);
+    auto* server = find_server_by_model_name(resolve_model_name(model_name));
+    if (!server || server->get_model_type() != ModelType::AUDIO_GENERATION) {
+        return {};
+    }
+    auto* audio_server = dynamic_cast<IAudioGenerationServer*>(server);
+    return audio_server ? audio_server->audio_format_metadata(response_format)
+                        : AudioFormatMetadata{};
 }
 
 void Router::model_3d_generations(const json& request, httplib::DataSink& sink) {
@@ -2230,6 +2429,9 @@ json Router::get_stats() const {
     json stats = aggregate_telemetry_.to_json();
     stats["routing_decisions_total"] = routing_decisions_total_;
     stats["routing_switches_total"] = routing_switches_total_;
+    const auto live = live_throughput_.snapshot();
+    stats["live"] = {{"active_requests", live.active_requests},
+                     {"estimated_tokens_per_second", live.estimated_tokens_per_second}};
     return stats;
 }
 
@@ -2413,6 +2615,7 @@ void Router::chat_completion_stream(const std::string& request_body, httplib::Da
     std::string requested_model = request_json.value("model", "");
 
     std::shared_ptr<telemetry::InferenceSpan> span = telemetry::TelemetryTracker::start_span("LLM", "chat.completions", requested_model, request_json);
+    auto live_request = live_throughput_.start();
 
     bool hide_outputs = false;
     bool hide_thinking = false;
@@ -2423,21 +2626,23 @@ void Router::chat_completion_stream(const std::string& request_body, httplib::Da
 
     auto accumulated_text = std::make_shared<std::string>();
     auto accumulated_reasoning = std::make_shared<std::string>();
+    auto accumulated_tool_calls = std::make_shared<std::map<int, telemetry::ToolCall>>();
     auto line_buffer = std::make_shared<std::string>();
 
     httplib::DataSink telemetry_sink;
-    telemetry_sink.write = [accumulated_text, accumulated_reasoning, line_buffer, &sink, hide_outputs, hide_thinking](const char* data, size_t len) -> bool {
+    telemetry_sink.write = [accumulated_text, accumulated_reasoning, accumulated_tool_calls, line_buffer, &sink, hide_outputs, hide_thinking, &live_request](const char* data, size_t len) -> bool {
         bool success = false;
         if (sink.write) {
             success = sink.write(data, len);
         }
         line_buffer->append(data, len);
-        StreamingProxy::process_sse_lines(*line_buffer, [accumulated_text, accumulated_reasoning, hide_outputs, hide_thinking](const std::string& line) {
+        StreamingProxy::process_sse_lines(*line_buffer, [accumulated_text, accumulated_reasoning, accumulated_tool_calls, hide_outputs, hide_thinking, &live_request](const std::string& line) {
             if (line.rfind("data: ", 0) == 0) {
                 std::string json_str = line.substr(6);
                 if (json_str.find("[DONE]") == std::string::npos) {
                     try {
                         auto parsed = json::parse(json_str);
+                        observe_stream_content(live_request, parsed);
                         if (parsed.contains("choices") && parsed["choices"].is_array() && !parsed["choices"].empty()) {
                             auto delta = parsed["choices"][0]["delta"];
                             if (!hide_thinking) {
@@ -2450,6 +2655,24 @@ void Router::chat_completion_stream(const std::string& request_body, httplib::Da
                             if (!hide_outputs) {
                                 if (delta.contains("content") && delta["content"].is_string()) {
                                     *accumulated_text += delta["content"].get<std::string>();
+                                }
+                                if (delta.contains("tool_calls") && delta["tool_calls"].is_array()) {
+                                    for (const auto& tc : delta["tool_calls"]) {
+                                        int idx = tc.value("index", 0);
+                                        auto& entry = (*accumulated_tool_calls)[idx];
+                                        if (tc.contains("id") && tc["id"].is_string()) {
+                                            entry.id = tc["id"].get<std::string>();
+                                        }
+                                        if (tc.contains("function") && tc["function"].is_object()) {
+                                            auto fn = tc["function"];
+                                            if (fn.contains("name") && fn["name"].is_string()) {
+                                                entry.function_name += fn["name"].get<std::string>();
+                                            }
+                                            if (fn.contains("arguments") && fn["arguments"].is_string()) {
+                                                entry.function_arguments += fn["arguments"].get<std::string>();
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -2494,7 +2717,7 @@ void Router::chat_completion_stream(const std::string& request_body, httplib::Da
             }
 
             server->forward_streaming_request("/v1/chat/completions", request_body, telemetry_sink, true, 0,
-                [this, identity, span, accumulated_text, accumulated_reasoning, server](
+                [this, identity, span, accumulated_text, accumulated_reasoning, accumulated_tool_calls, server](
                     const StreamingProxy::TelemetryData& telemetry) {
                     if (!telemetry.error_message.empty()) {
                         if (span) {
@@ -2516,13 +2739,18 @@ void Router::chat_completion_stream(const std::string& request_body, httplib::Da
                             final_output = "<think>\n" + *accumulated_reasoning + "\n</think>\n" + final_output;
                         }
 
+                        std::vector<telemetry::ToolCall> tool_calls;
+                        for (auto& [_, tc] : *accumulated_tool_calls) {
+                            tool_calls.push_back(std::move(tc));
+                        }
+
                         std::string url;
                         std::function<std::map<std::string, nlohmann::json>(const std::string&)> parser;
                         if (server) {
                             url = server->get_additional_telemetry_url();
                             parser = server->get_additional_telemetry_parser();
                         }
-                        telemetry::end_llm_span_async(span, url, parser, usage_payload, final_output);
+                        telemetry::end_llm_span_async(span, url, parser, usage_payload, final_output, tool_calls);
                     }
                 });
         }, span);
@@ -2543,6 +2771,7 @@ void Router::completion_stream(const std::string& request_body, httplib::DataSin
     std::string requested_model = request_json.value("model", "");
 
     std::shared_ptr<telemetry::InferenceSpan> span = telemetry::TelemetryTracker::start_span("LLM", "completions", requested_model, request_json);
+    auto live_request = live_throughput_.start();
 
     bool hide_outputs = false;
     if (auto* config = RuntimeConfig::global()) {
@@ -2553,18 +2782,19 @@ void Router::completion_stream(const std::string& request_body, httplib::DataSin
     auto line_buffer = std::make_shared<std::string>();
 
     httplib::DataSink telemetry_sink;
-    telemetry_sink.write = [accumulated_text, line_buffer, &sink, hide_outputs](const char* data, size_t len) -> bool {
+    telemetry_sink.write = [accumulated_text, line_buffer, &sink, hide_outputs, &live_request](const char* data, size_t len) -> bool {
         bool success = false;
         if (sink.write) {
             success = sink.write(data, len);
         }
         line_buffer->append(data, len);
-        StreamingProxy::process_sse_lines(*line_buffer, [accumulated_text, hide_outputs](const std::string& line) {
+        StreamingProxy::process_sse_lines(*line_buffer, [accumulated_text, hide_outputs, &live_request](const std::string& line) {
             if (line.rfind("data: ", 0) == 0) {
                 std::string json_str = line.substr(6);
                 if (json_str.find("[DONE]") == std::string::npos) {
                     try {
                         auto parsed = json::parse(json_str);
+                        observe_stream_content(live_request, parsed);
                         if (parsed.contains("choices") && parsed["choices"].is_array() && !parsed["choices"].empty()) {
                             auto choice = parsed["choices"][0];
                             if (!hide_outputs) {
@@ -2658,6 +2888,7 @@ void Router::responses_stream(const std::string& request_body, httplib::DataSink
     std::string requested_model = request_json.value("model", "");
 
     std::shared_ptr<telemetry::InferenceSpan> span = telemetry::TelemetryTracker::start_span("LLM", "responses", requested_model, request_json);
+    auto live_request = live_throughput_.start();
 
     bool hide_outputs = false;
     if (auto* config = RuntimeConfig::global()) {
@@ -2668,18 +2899,19 @@ void Router::responses_stream(const std::string& request_body, httplib::DataSink
     auto line_buffer = std::make_shared<std::string>();
 
     httplib::DataSink telemetry_sink;
-    telemetry_sink.write = [accumulated_text, line_buffer, &sink, hide_outputs](const char* data, size_t len) -> bool {
+    telemetry_sink.write = [accumulated_text, line_buffer, &sink, hide_outputs, &live_request](const char* data, size_t len) -> bool {
         bool success = false;
         if (sink.write) {
             success = sink.write(data, len);
         }
         line_buffer->append(data, len);
-        StreamingProxy::process_sse_lines(*line_buffer, [accumulated_text, hide_outputs](const std::string& line) {
+        StreamingProxy::process_sse_lines(*line_buffer, [accumulated_text, hide_outputs, &live_request](const std::string& line) {
             if (line.rfind("data: ", 0) == 0) {
                 std::string json_str = line.substr(6);
                 if (json_str.find("[DONE]") == std::string::npos) {
                     try {
                         auto parsed = json::parse(json_str);
+                        observe_stream_content(live_request, parsed);
                         if (!hide_outputs) {
                             StreamingProxy::accumulate_responses_delta(parsed, *accumulated_text);
                         }

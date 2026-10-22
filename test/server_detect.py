@@ -18,7 +18,6 @@ The 0xx tests never pull or load the model.
 
 import base64
 import hashlib
-import io
 import urllib.request
 
 import requests
@@ -233,16 +232,21 @@ class DetectTests(ServerTestBase):
             + ", ".join(f"{d['label']} {d['score']:.2f}" for d in image["detections"])
         )
 
-    def test_501_multipart_matches_json(self):
+    def test_501_images_alias_and_image_url_match_plain_base64(self):
+        """`images` is an alias of `image`; every accepted image shape decodes alike."""
         self._ensure_model_pulled()
         model = get_test_model("detection")
-        from_json = self._detect(json=self._payload())
-        from_form = self._detect(
-            data={"model": model},
-            files={"image": ("bus.jpg", io.BytesIO(bus_jpeg()), "image/jpeg")},
+        plain = self._detect(json=self._payload())
+        aliased = self._detect(
+            json={
+                "model": model,
+                "images": [
+                    {"image_url": {"url": f"data:image/jpeg;base64,{bus_b64()}"}}
+                ],
+            }
         )
         self.assertEqual(
-            from_form["data"][0]["detections"], from_json["data"][0]["detections"]
+            aliased["data"][0]["detections"], plain["data"][0]["detections"]
         )
 
     def test_502_class_filter_and_synonyms(self):

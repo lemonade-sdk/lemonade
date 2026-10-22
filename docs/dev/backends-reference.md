@@ -10,68 +10,73 @@ the generator instead. Prose outside the markers is preserved. -->
 | Recipe | Name | Selectable backend | Uses ctx_size | Backends |
 |--------|------|--------------------|---------------|----------|
 | `acestep` | ACE-Step | yes | no | cuda, rocm, vulkan |
+| `ds4` | DwarfStar4 | no | yes | rocm |
 | `flm` | FastFlowLM NPU | no | yes | npu |
 | `kokoro` | Kokoro | no | no | cpu, metal |
 | `llamacpp` | Llama.cpp GPU | yes | yes | cpu, cuda, metal, rocm, system, vulkan |
+| `llamacpp-hrx` | HRX GPU | no | yes | hrx |
 | `moonshine` | Moonshine | no | no | cpu |
 | `onnxruntime` | ONNX Runtime | no | no | cpu |
-| `openmoss` | OpenMOSS TTS | yes | no | cuda, rocm, vulkan |
+| `openmoss` | OpenMOSS TTS | yes | no | cuda, vulkan |
 | `ryzenai-llm` | Ryzen AI LLM | no | yes | npu |
 | `ryzenai-vision` | Ryzen AI Vision | no | no | npu |
 | `sd-cpp` | StableDiffusion.cpp | yes | no | cpu, cuda, metal, rocm, vulkan |
-| `thenoise` | TheNoise ROCm (experimental) | yes | no | rocm |
+| `thenoise` | TheNoise ROCm | yes | no | rocm |
 | `thinksound` | ThinkSound | yes | no | cuda, rocm, vulkan |
 | `trellis` | TRELLIS.2 | yes | no | cuda, rocm, vulkan |
-| `vllm` | vLLM ROCm (experimental) | yes | yes | rocm |
+| `vllm` | vLLM ROCm | yes | yes | rocm |
 | `whispercpp` | Whisper.cpp | yes | no | cpu, metal, npu, rocm, vulkan |
 <!-- END GENERATED: backends-overview -->
 
 ## Support matrix
 
+Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lemonade.md#backend-tiers-and-formats).
+
 <!-- BEGIN GENERATED: backends-matrix -->
-| Recipe | Backend | OS | Device families |
-|--------|---------|----|-----------------|
-| `acestep` | cuda | linux, windows | nvidia_gpu |
-| `acestep` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
-| `acestep` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
-| `flm` | npu | linux, windows | amd_npu (XDNA2) |
-| `kokoro` | metal | macos | metal |
-| `kokoro` | cpu | linux, windows | cpu (x86_64) |
-| `llamacpp` | system | linux | cpu (arm64, x86_64) |
-| `llamacpp` | metal | macos | metal |
-| `llamacpp` | cuda | linux, windows | nvidia_gpu (sm_100, sm_120, sm_121, sm_75, sm_80, sm_86, sm_89, sm_90) |
-| `llamacpp` | vulkan | linux, windows | amd_gpu; cpu (arm64, x86_64) |
-| `llamacpp` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X, gfx908, gfx90a, gfx942, gfx950) |
-| `llamacpp` | cpu | linux, windows | cpu (arm64, x86_64) |
-| `moonshine` | cpu | windows | cpu (x86_64) |
-| `moonshine` | cpu | linux | cpu (arm64, x86_64) |
-| `moonshine` | cpu | macos | cpu (arm64) |
-| `onnxruntime` | cpu | windows | cpu (x86_64) |
-| `onnxruntime` | cpu | linux | cpu (arm64, x86_64) |
-| `onnxruntime` | cpu | macos | cpu (arm64) |
-| `openmoss` | cuda | linux, windows | nvidia_gpu |
-| `openmoss` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
-| `openmoss` | rocm | linux, windows | amd_gpu |
-| `ryzenai-llm` | npu | windows | amd_npu (XDNA2) |
-| `ryzenai-vision` | npu | linux, windows | amd_npu (XDNA2) |
-| `sd-cpp` | metal | macos | metal |
-| `sd-cpp` | cuda | linux, windows | nvidia_gpu (sm_100, sm_120, sm_121, sm_75, sm_80, sm_86, sm_89, sm_90) |
-| `sd-cpp` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
-| `sd-cpp` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
-| `sd-cpp` | cpu | linux, windows | cpu (x86_64) |
-| `thenoise` | rocm | linux | amd_gpu (gfx1150, gfx1151, gfx1152) |
-| `thinksound` | cuda | linux, windows | nvidia_gpu |
-| `thinksound` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
-| `thinksound` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
-| `trellis` | cuda | linux, windows | nvidia_gpu |
-| `trellis` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
-| `trellis` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
-| `vllm` | rocm | linux | amd_gpu (gfx110X, gfx1150, gfx1151, gfx120X) |
-| `whispercpp` | npu | windows | amd_npu (XDNA2) |
-| `whispercpp` | metal | macos | metal |
-| `whispercpp` | vulkan | linux, windows | amd_gpu; cpu (x86_64) |
-| `whispercpp` | rocm | linux, windows | amd_gpu (gfx110X, gfx1150, gfx1151, gfx120X) |
-| `whispercpp` | cpu | linux, windows | cpu (x86_64) |
+| Recipe | Backend | Tier | Format | OS | Device families |
+|--------|---------|------|--------|----|-----------------|
+| `acestep` | cuda | experimental | native | linux, windows | nvidia_gpu |
+| `acestep` | vulkan | experimental | native | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
+| `acestep` | rocm | experimental | native | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
+| `ds4` | rocm | guest | native | linux | amd_gpu (gfx1151) |
+| `flm` | npu | core | native | linux, windows | amd_npu (XDNA2) |
+| `kokoro` | metal | core | native | macos | metal |
+| `kokoro` | cpu | core | native | linux, windows | cpu (x86_64) |
+| `llamacpp` | system | core | native | linux | cpu (arm64, x86_64) |
+| `llamacpp` | metal | core | native | macos | metal |
+| `llamacpp` | cuda | core | native | linux, windows | nvidia_gpu (sm_100, sm_120, sm_121, sm_75, sm_80, sm_86, sm_89, sm_90) |
+| `llamacpp` | vulkan | core | native | linux, windows | amd_gpu; cpu (arm64, x86_64) |
+| `llamacpp` | rocm | core | native | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X, gfx908, gfx90a, gfx942, gfx950) |
+| `llamacpp` | cpu | core | native | linux, windows | cpu (arm64, x86_64) |
+| `llamacpp-hrx` | hrx | experimental | native | linux | amd_gpu (gfx1100, gfx1151) |
+| `moonshine` | cpu | core | python | windows | cpu (x86_64) |
+| `moonshine` | cpu | core | python | linux | cpu (arm64, x86_64) |
+| `moonshine` | cpu | core | python | macos | cpu (arm64) |
+| `onnxruntime` | cpu | experimental | native | windows | cpu (x86_64) |
+| `onnxruntime` | cpu | experimental | native | linux | cpu (arm64, x86_64) |
+| `onnxruntime` | cpu | experimental | native | macos | cpu (arm64) |
+| `openmoss` | cuda | experimental | native | linux, windows | nvidia_gpu |
+| `openmoss` | vulkan | experimental | native | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
+| `ryzenai-llm` | npu | core | native | windows | amd_npu (XDNA2) |
+| `ryzenai-vision` | npu | experimental | python | linux, windows | amd_npu (XDNA2) |
+| `sd-cpp` | metal | core | native | macos | metal |
+| `sd-cpp` | cuda | core | native | linux, windows | nvidia_gpu (sm_100, sm_120, sm_121, sm_75, sm_80, sm_86, sm_89, sm_90) |
+| `sd-cpp` | vulkan | core | native | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
+| `sd-cpp` | rocm | core | native | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
+| `sd-cpp` | cpu | core | native | linux, windows | cpu (x86_64) |
+| `thenoise` | rocm | core | python | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
+| `thinksound` | cuda | experimental | native | linux, windows | nvidia_gpu |
+| `thinksound` | vulkan | experimental | native | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
+| `thinksound` | rocm | experimental | native | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
+| `trellis` | cuda | experimental | native | linux, windows | nvidia_gpu |
+| `trellis` | vulkan | experimental | native | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
+| `trellis` | rocm | experimental | native | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
+| `vllm` | rocm | experimental | python | linux | amd_gpu (gfx110X, gfx1150, gfx1151, gfx120X) |
+| `whispercpp` | npu | core | native | windows | amd_npu (XDNA2) |
+| `whispercpp` | metal | core | native | macos | metal |
+| `whispercpp` | vulkan | core | native | linux, windows | amd_gpu; cpu (x86_64) |
+| `whispercpp` | rocm | core | native | linux, windows | amd_gpu (gfx110X, gfx1150, gfx1151, gfx120X) |
+| `whispercpp` | cpu | core | native | linux, windows | cpu (x86_64) |
 <!-- END GENERATED: backends-matrix -->
 
 > **Note:** The `llamacpp` `rocm` row lists `linux, windows` for the family as a
@@ -90,6 +95,13 @@ the generator instead. Prose outside the markers is preserved. -->
 |--------|----------|------|---------|-------------|
 | `acestep_backend` | `--acestep` | BACKEND | "" | ACE-Step backend to use |
 
+#### `ds4` — DwarfStar4
+
+| Option | CLI flag | Type | Default | Description |
+|--------|----------|------|---------|-------------|
+| `ctx_size` | `--ctx-size` | SIZE | -1 | Context size for the model |
+| `ds4_args` | `--ds4-args` | ARGS | "" | Custom arguments to pass to ds4-server |
+
 #### `flm` — FastFlowLM NPU
 
 | Option | CLI flag | Type | Default | Description |
@@ -105,6 +117,13 @@ the generator instead. Prose outside the markers is preserved. -->
 | `llamacpp_backend` | `--llamacpp` | BACKEND | "" | LlamaCpp backend to use |
 | `llamacpp_device` | `--llamacpp-device` | DEVICES | "" | Comma-separated list of accelerator devices to use (e.g. Vulkan0) |
 | `llamacpp_args` | `--llamacpp-args` | ARGS | "" | Custom arguments to pass to llama-server |
+
+#### `llamacpp-hrx` — HRX GPU
+
+| Option | CLI flag | Type | Default | Description |
+|--------|----------|------|---------|-------------|
+| `ctx_size` | `--ctx-size` | SIZE | -1 | Context size for the model |
+| `hrx_args` | `--hrx-args` | ARGS | "" | Custom arguments to pass to the HRX llama-server |
 
 #### `moonshine` — Moonshine
 
@@ -143,7 +162,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `sampling_method` | — | ARGS | "" | Sampling method |
 | `flow_shift` | — | SIZE | 0.0 | Flow shift |
 
-#### `thenoise` — TheNoise ROCm (experimental)
+#### `thenoise` — TheNoise ROCm
 
 | Option | CLI flag | Type | Default | Description |
 |--------|----------|------|---------|-------------|
@@ -172,7 +191,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `trellis_backend` | `--trellis` | BACKEND | "" | Trellis backend to use |
 | `trellis_args` | `--trellis-args` | ARGS | "" | Custom arguments to pass to trellis-server |
 
-#### `vllm` — vLLM ROCm (experimental)
+#### `vllm` — vLLM ROCm
 
 | Option | CLI flag | Type | Default | Description |
 |--------|----------|------|---------|-------------|
@@ -188,6 +207,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `whispercpp_args` | `--whispercpp-args` | ARGS | "" | Custom arguments to pass to whisper-server |
 <!-- END GENERATED: backend-options -->
 
+
 ## Implementation notes
 
 ### ACE-Step (`acestep`)
@@ -201,6 +221,32 @@ Vocals are a two-stage pipeline. `POST /lm` with `lm_mode: "generate"` runs the 
 Errors from `audio_generations` are written into the response sink as a JSON error payload; the endpoint handler turns that into an HTTP error instead of shipping it as audio.
 
 The model download fetches the DiT checkpoint variant plus three companions when present in the repo: the language model (`acestep-5Hz-lm-4B-Q8_0.gguf`, required for vocals and auto-lyrics), the Qwen3 text encoder, and the VAE. The checkpoint path handed to `--models` is the directory of GGUFs; `ace-server` scans it by architecture, and `--keep-loaded` keeps models resident across requests.
+
+### OpenMOSS (`openmoss`)
+
+`moss-tts-server` hosts exactly one `--model` per process, so the voice generator that ships as a component of the speech model cannot be served by the same process. `OpenMossServer` runs the cascade one model at a time: the speech process is stopped, a transient process is spawned on the voice-generator checkpoint to render a single reference sample, and the speech process is brought back. Holding both would require a card that fits the pair, a strictly harder requirement than running the model that was actually asked for. For the same reason, `server_models.json` keeps `size` as the peak resident requirement of the main speech model rather than adding the non-resident VoiceGen download size. Rendered samples are cached per description for the life of the load, so repeating a description costs nothing. The speech process is restarted even when design fails, so an unsuccessful design cannot leave a loaded model with no process behind it.
+
+The legacy `MOSS-VoiceGen` registry entry remains as a compatibility model for existing clients; integrated voice design on `OpenMOSS-TTS` and `MOSS-TTS-Local` does not depend on that standalone entry.
+
+`request_mutex_` serialises a process-changing voice-design request against normal OpenMOSS inference, `load()`, and `unload()`. Speech and SFX hold it shared; voice design and lifecycle changes hold it exclusively. During the intentional speech -> VoiceGenerator -> speech swap, `process_swap_in_progress_` keeps `is_backend_alive()` true so the router does not mistake the temporarily empty speech-process handle for a crash. A request arriving in that window is accepted and then waits on `request_mutex_` until speech is restored. When the speech process fails its readiness wait, `start_server()` stops it, so the voice-design path does not call `unload()`, which would take the same exclusive lock again.
+
+The transient design process is a local `NativeProcess` in `render_reference_sample()` rather than a `start_server()` call, because it does not own `port_`. Its readiness loop polls its own `/health` and checks `designer.running()` each round, so a subprocess that dies during model loading fails the request at once instead of polling to the deadline, and destroying `designer` stops the process and logs its exit code. `server_command()` picks the port with `find_free_port()` instead of `choose_port()` for the same reason: `choose_port()` assigns `port_`, and `start_server()` points `port_` at the speech process only.
+
+Reference-conditioned TTS can exceed OpenMOSS's default 8192-token context. Lemonade intentionally keeps the upstream context default instead of forcing a larger allocation, preserving compatibility with memory-constrained GPUs. OpenMOSS v0.3 chunks prefill batches, but a complete prompt still has to fit `n_ctx`; unusually long references may therefore be rejected by upstream with guidance to shorten the reference or raise the context size.
+
+Lemonade does not inject `max_audio_frames` into OpenMOSS speech requests. OpenMOSS v0.3 owns this policy: its VoiceGenerator derives a text-based duration window when needed, while MOSS-TTS/MOSS-TTSD keep their reference-aware/native stop behavior. Keeping that distinction in the backend avoids truncating conditioned or multi-speaker speech.
+
+Voice design is opt-in through the `voice_design_description` extension and is never inferred from `voice`, which keeps its OpenAI-compatible meaning and is forwarded as an instruction. A client sending `"voice": "default"` gets speech rather than a design run for a voice literally named "default". The field is ignored when the request already carries `reference_wav_b64`. Request fields are read with a type-checking accessor rather than `json::value()`, which throws on a type mismatch instead of falling back to the default and would turn a client's wrong-typed field into a 500.
+
+`MOSS-SoundEffect` uses the same recipe but is an audio-generation model: `audio_generations()` forwards to the backend's `/sfx` endpoint, accepting `duration`/`cfg` as aliases for `seconds`/`cfg_scale`.
+
+### llama.cpp (`llamacpp`)
+
+Lemonade launches `llama-server` with `--parallel 1` and leaves the upstream `--cache-ram` host prompt cache at its default. `LlamaCppServer` does not override `downsize()`: slot `erase` frees no device memory (the KV buffer is allocated once at model load) and discards the slot's KV state without going through the host-cache save path, so soft idle leaves the slot resident and a resumed conversation reuses its cached prefix.
+
+### Model downloads
+
+A checkpoint file can be reached twice during a registry download: once because the backend's `select_checkpoint_files` claimed it alongside the main weight, and again because it is also declared as its own checkpoint role (the OpenMOSS `.extras.gguf` sidecars are both). The same bytes either way, so `download_from_registry` collapses duplicates before counting, or the progress total overshoots.
 
 ### Backend auto-selection
 

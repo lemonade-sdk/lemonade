@@ -4,6 +4,12 @@
 #include <filesystem>
 #include <cstring>
 #include <vector>
+#include <utility>
+#include <chrono>
+#include <map>
+#include <mutex>
+#include "nvidia_metrics.h"
+#include "amd_gpu_type.h"
 #include <cmath>
 #include <fcntl.h>
 #include <unistd.h>
@@ -14,6 +20,100 @@
 namespace fs = std::filesystem;
 
 namespace lemon {
+
+namespace {
+
+bool read_sysfs_u64(const fs::path& path, uint64_t& result) {
+    std::ifstream file(path);
+    return file.is_open() && static_cast<bool>(file >> result);
+}
+
+struct CachedAmdGpuInfo {
+    bool shared = false;
+    bool confirmed = false;
+    std::string marketing_name;
+    std::chrono::steady_clock::time_point retry_after{};
+};
+
+CachedAmdGpuInfo amd_static_info(const fs::path& card_path,
+                                 const std::string& id) {
+    static std::mutex mutex;
+    static std::map<std::string, CachedAmdGpuInfo> cache;
+    std::lock_guard<std::mutex> lock(mutex);
+    auto& value = cache[id];
+    const auto now = std::chrono::steady_clock::now();
+    // Retry inconclusive probes occasionally; never freeze a sandbox guess.
+    if (!value.confirmed && now >= value.retry_after) {
+        value.shared = gpu_metrics_detail::is_amd_apu(
+            card_path, &value.marketing_name, true, &value.confirmed);
+        value.retry_after = now + std::chrono::seconds(30);
+    }
+    return value;
+}
+
+std::vector<GpuDeviceMetrics> query_amd_gpu_metrics() {
+    std::vector<GpuDeviceMetrics> devices;
+    try {
+        const fs::path drm_path = "/sys/class/drm";
+        if (!fs::is_directory(drm_path)) return devices;
+        for (const auto& entry : fs::directory_iterator(drm_path)) {
+            const std::string card = entry.path().filename().string();
+            if (card.rfind("card", 0) != 0 || card.find('-') != std::string::npos)
+                continue;
+            const fs::path device_path = entry.path() / "device";
+            std::ifstream vendor_file(device_path / "vendor");
+            std::string vendor;
+            if (!std::getline(vendor_file, vendor) || vendor != "0x1002")
+                continue;
+
+            GpuDeviceMetrics gpu;
+            std::error_code ec;
+            const auto canonical = fs::canonical(device_path, ec);
+            gpu.id = "amd:" + (ec ? "drm:" + card : canonical.filename().string());
+            gpu.vendor = "amd";
+            gpu.name = "AMD GPU (" + card + ")";
+            const auto static_info = amd_static_info(entry.path(), gpu.id);
+            const bool shared = static_info.shared;
+            if (!static_info.marketing_name.empty())
+                gpu.name = static_info.marketing_name;
+            gpu.memory_type = shared ? "shared" : "dedicated";
+            std::ifstream usage_file(device_path / "gpu_busy_percent");
+            double usage = -1.0;
+            if (usage_file >> usage) gpu.gpu_percent = usage;
+
+            uint64_t vram_total = 0, vram_used = 0;
+            uint64_t gtt_total = 0, gtt_used = 0;
+            const bool has_vram_total = read_sysfs_u64(
+                device_path / "mem_info_vram_total", vram_total);
+            const bool has_vram_used = read_sysfs_u64(
+                device_path / "mem_info_vram_used", vram_used);
+            const bool has_gtt_total = read_sysfs_u64(
+                device_path / "mem_info_gtt_total", gtt_total);
+            const bool has_gtt_used = read_sysfs_u64(
+                device_path / "mem_info_gtt_used", gtt_used);
+
+            if (shared) {
+                if (has_vram_total && has_gtt_total)
+                    gpu.memory_total_gb = static_cast<double>(vram_total + gtt_total)
+                        / BYTES_PER_GIB;
+                if (has_vram_used && has_gtt_used)
+                    gpu.memory_used_gb = static_cast<double>(vram_used + gtt_used)
+                        / BYTES_PER_GIB;
+            } else {
+                if (has_vram_total)
+                    gpu.memory_total_gb = static_cast<double>(vram_total) / BYTES_PER_GIB;
+                if (has_vram_used)
+                    gpu.memory_used_gb = static_cast<double>(vram_used) / BYTES_PER_GIB;
+            }
+            devices.push_back(std::move(gpu));
+        }
+    } catch (const fs::filesystem_error&) {
+        // A card disappearing during enumeration is handled by the tracker.
+    }
+    return devices;
+}
+
+} // namespace
 
 class LinuxMetricsPlatform : public SystemMetricsPlatform {
 public:
@@ -86,106 +186,18 @@ public:
     }
 
     double get_gpu_usage() override {
-        try {
-            std::string drm_path = "/sys/class/drm";
-
-            if (!fs::exists(drm_path)) {
-                return -1.0;
-            }
-
-            double highest_usage = -1.0;
-
-            for (const auto& entry : fs::directory_iterator(drm_path)) {
-                std::string card_name = entry.path().filename().string();
-                if (card_name.find("card") != 0 || card_name.find("-") != std::string::npos) {
-                    continue;
-                }
-
-                std::string busy_path = entry.path().string() + "/device/gpu_busy_percent";
-                std::ifstream busy_file(busy_path);
-                if (busy_file.is_open()) {
-                    double usage;
-                    busy_file >> usage;
-                    busy_file.close();
-                    if (usage > highest_usage) {
-                        highest_usage = usage;
-                    }
-                }
-            }
-
-            return highest_usage;
-        } catch (...) {
-            return -1.0;
-        }
+        return get_system_gpu_metrics().gpu_percent;
     }
 
     double get_vram_usage_gb() override {
-        try {
-            std::string drm_path = "/sys/class/drm";
+        return get_system_gpu_metrics().vram_used_gb;
+    }
 
-            if (!fs::exists(drm_path)) {
-                return -1.0;
-            }
-
-            double highest_usage = -1.0;
-            std::string highest_card;
-            double highest_card_memory = 0.0;
-
-            for (const auto& entry : fs::directory_iterator(drm_path)) {
-                std::string card_name = entry.path().filename().string();
-                if (card_name.find("card") != 0 || card_name.find("-") != std::string::npos) {
-                    continue;
-                }
-
-                std::string device_path = entry.path().string() + "/device";
-
-                // Read GPU utilization to find the most active GPU
-                double gpu_usage = 0.0;
-                std::ifstream busy_file(device_path + "/gpu_busy_percent");
-                if (busy_file.is_open()) {
-                    busy_file >> gpu_usage;
-                    busy_file.close();
-                }
-
-                // Check if this is a dGPU (has board_info) or APU (no board_info)
-                bool is_dgpu = fs::exists(device_path + "/board_info");
-
-                // Read VRAM used
-                uint64_t vram_used = 0;
-                std::ifstream vram_file(device_path + "/mem_info_vram_used");
-                if (vram_file.is_open()) {
-                    vram_file >> vram_used;
-                    vram_file.close();
-                }
-
-                // Read GTT used
-                uint64_t gtt_used = 0;
-                std::ifstream gtt_file(device_path + "/mem_info_gtt_used");
-                if (gtt_file.is_open()) {
-                    gtt_file >> gtt_used;
-                    gtt_file.close();
-                }
-
-                // Skip if no memory info found
-                if (vram_used == 0 && gtt_used == 0) {
-                    continue;
-                }
-
-                // Calculate memory for this card
-                uint64_t card_memory = is_dgpu ? vram_used : (vram_used + gtt_used);
-
-                // Track the GPU with highest utilization
-                if (gpu_usage > highest_usage || highest_usage < 0) {
-                    highest_usage = gpu_usage;
-                    highest_card = card_name;
-                    highest_card_memory = card_memory / (1024.0 * 1024.0 * 1024.0); // Convert to GB
-                }
-            }
-
-            return highest_card_memory > 0 ? highest_card_memory : -1.0;
-        } catch (...) {
-            return -1.0;
-        }
+    SystemGpuMetrics get_system_gpu_metrics() override {
+        auto devices = query_amd_gpu_metrics();
+        auto nvidia = query_nvidia_gpu_metrics();
+        devices.insert(devices.end(), nvidia.begin(), nvidia.end());
+        return gpu_tracker_.update(devices);
     }
 
     double get_npu_utilization() override {
@@ -263,6 +275,8 @@ public:
             return -1.0;
         }
     }
+private:
+    GpuMetricsTracker gpu_tracker_;
 };
 
 std::unique_ptr<SystemMetricsPlatform> create_metrics_platform() {

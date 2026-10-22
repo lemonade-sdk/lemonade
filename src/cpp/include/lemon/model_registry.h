@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <map>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -20,6 +21,27 @@ class RegistryNotFoundError : public std::runtime_error {
 public:
     using std::runtime_error::runtime_error;
 };
+
+// Throttling or an upstream outage, as opposed to a repository that does not
+// exist, so the caller should retry after retry_after_seconds().
+class RegistryRateLimitError : public std::runtime_error {
+public:
+    RegistryRateLimitError(int status_code, int retry_after_seconds, const std::string& message)
+        : std::runtime_error(message),
+          status_code_(status_code),
+          retry_after_seconds_(retry_after_seconds) {}
+
+    int status_code() const noexcept { return status_code_; }
+    int retry_after_seconds() const noexcept { return retry_after_seconds_; }
+
+private:
+    int status_code_;
+    int retry_after_seconds_;
+};
+
+// /pull attaches this on both its JSON and SSE error paths, so
+// clients can retry instead of treating the pull as permanently broken.
+constexpr const char* kRegistryUnavailableErrorCode = "registry_unavailable";
 
 class RegistrySearchError : public std::runtime_error {
 public:
@@ -115,6 +137,21 @@ RegistrySearchResponse normalize_registry_search_response(
     RemoteRegistrySource source,
     const nlohmann::json& body,
     std::size_t limit = 12);
+
+bool registry_task_is_excluded(const std::string& task);
+
+bool is_official_huggingface_endpoint(const std::string& endpoint);
+std::string huggingface_repository_api_url(
+    const std::string& endpoint,
+    const std::string& repo_id,
+    const std::string& revision = "");
+std::optional<nlohmann::json> parse_huggingface_compatibility_response(
+    int status_code,
+    const std::string& body,
+    bool metadata_required);
+std::optional<nlohmann::json> fetch_huggingface_compatibility_metadata(
+    const std::string& repo_id,
+    const std::string& revision);
 
 // Search a remote model registry. Provider-side GGUF filters are candidate
 // hints only; callers must use /pull/variants as the authoritative file-level

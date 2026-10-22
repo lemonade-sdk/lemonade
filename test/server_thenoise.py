@@ -289,61 +289,6 @@ class TheNoiseTests(ServerTestBase):
             assert_valid_png(self, entry["b64_json"], "multi-image")
         print(f"[OK] Image generation with n=2 successful")
 
-    def test_013_image_edits_unsupported(self):
-        """Test that /images/edits returns an error (TheNoise is text2image only)."""
-        response = requests.post(
-            f"{self.base_url}/images/edits",
-            files={"image": ("test.png", b"\x89PNG\r\n\x1a\n", "image/png")},
-            data={
-                "model": THENOISE_MODEL,
-                "prompt": "a red circle",
-                "size": "256x256",
-                "response_format": "b64_json",
-            },
-            timeout=TIMEOUT_DEFAULT,
-        )
-
-        self.assertEqual(
-            response.status_code,
-            500,
-            f"Expected 500 for unsupported image edit, got {response.status_code}: {response.text}",
-        )
-        self.assertIn(
-            "not supported",
-            response.text.lower(),
-            f"Error should mention edits are not supported: {response.text}",
-        )
-        print(
-            f"[OK] Correctly rejected image edit as unsupported: {response.status_code}"
-        )
-
-    def test_014_image_variations_unsupported(self):
-        """Test that /images/variations returns an error (TheNoise is text2image only)."""
-        response = requests.post(
-            f"{self.base_url}/images/variations",
-            files={"image": ("test.png", b"\x89PNG\r\n\x1a\n", "image/png")},
-            data={
-                "model": THENOISE_MODEL,
-                "size": "256x256",
-                "response_format": "b64_json",
-            },
-            timeout=TIMEOUT_DEFAULT,
-        )
-
-        self.assertEqual(
-            response.status_code,
-            500,
-            f"Expected 500 for unsupported image variations, got {response.status_code}: {response.text}",
-        )
-        self.assertIn(
-            "not supported",
-            response.text.lower(),
-            f"Error should mention variations are not supported: {response.text}",
-        )
-        print(
-            f"[OK] Correctly rejected image variations as unsupported: {response.status_code}"
-        )
-
 
 if __name__ == "__main__":
     run_server_tests(

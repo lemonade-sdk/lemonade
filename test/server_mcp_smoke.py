@@ -1,5 +1,5 @@
 """
-MCP gateway smoke tests — exercises each of the 5 MCP tools end-to-end.
+MCP gateway smoke tests - exercises the gateway and representative tool paths end-to-end.
 
 Two modes:
 

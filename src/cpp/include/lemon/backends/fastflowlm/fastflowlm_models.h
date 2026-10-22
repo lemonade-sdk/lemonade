@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 #include "lemon/model_manager.h"  // ModelInfo, DownloadProgressCallback
+#include "lemon/model_registry.h"
 
 namespace lemon {
 
@@ -45,9 +46,13 @@ bool run_flm_validate(const std::string& flm_path, std::string& error_message);
 // Detect the installed FLM version via `flm version` ("unknown" if unavailable).
 std::string flm_version();
 
-// Download (pull) an FLM model by checkpoint via the `flm` CLI.
+std::vector<std::string> flm_pull_arguments(const std::string& checkpoint,
+                                            bool do_not_upgrade,
+                                            RemoteRegistrySource source);
+
 void flm_download(const std::string& checkpoint, bool do_not_upgrade,
-                  DownloadProgressCallback progress_callback);
+                  DownloadProgressCallback progress_callback,
+                  RemoteRegistrySource source = RemoteRegistrySource::HuggingFace);
 
 // Remove an installed FLM model by checkpoint via `flm remove`; throws on failure.
 void flm_remove(const std::string& checkpoint);

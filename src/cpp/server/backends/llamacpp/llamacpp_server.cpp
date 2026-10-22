@@ -2,6 +2,7 @@
 #include "lemon/backends/llamacpp/llamacpp.h"
 #include "lemon/backends/llamacpp/llamacpp_gguf.h"
 #include "lemon/backends/llamacpp/llamacpp_request.h"
+#include "llamacpp_system_utils.h"
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_utils.h"
@@ -18,6 +19,7 @@
 #include "lemon/backend_manager.h"
 #include "lemon/runtime_config.h"
 #include "lemon/utils/custom_args.h"
+#include "lemon/utils/recipe_arg_resolver.h"
 #include "lemon/utils/process_manager.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
@@ -79,44 +81,6 @@ static void push_arg(std::vector<std::string>& args,
     push_reserved(reserved, key, aliases);
 }
 
-// Helper to add a flag-only overridable argument (e.g., --context-shift)
-static void push_overridable_arg(std::vector<std::string>& args,
-                    const std::string& custom_args,
-                    const std::string& key) {
-    // boolean flags in llama-server can be turned off adding the --no- prefix to their name
-    std::string anti_key;
-    if (key.rfind("--no-", 0) == 0) {
-        anti_key = "--" + key.substr(5); // remove --no- prefix
-    } else {
-        anti_key = "--no-" + key.substr(2); //remove -- prefix
-    }
-
-    const std::vector<std::string> tokens = parse_custom_args(custom_args);
-    if (!custom_args_has_flag(tokens, key) && !custom_args_has_flag(tokens, anti_key)) {
-        args.push_back(key);
-    }
-}
-
-// Helper to add a flag-value overridable pair (e.g., --keep 16)
-static void push_overridable_arg(std::vector<std::string>& args,
-                    const std::string& custom_args,
-                    const std::string& key,
-                    const std::string& value,
-                    const std::vector<std::string>& aliases = {}) {
-    const std::vector<std::string> tokens = parse_custom_args(custom_args);
-
-    for (const auto& alias : aliases) {
-        if (custom_args_has_flag(tokens, alias)) {
-            return;
-        }
-    }
-
-    if (!custom_args_has_flag(tokens, key)) {
-        args.push_back(key);
-        args.push_back(value);
-    }
-}
-
 static std::string resolve_llamacpp_backend(const std::string& backend) {
     if (backend == "rocm") {
         // Map "rocm" to the appropriate channel based on config
@@ -145,6 +109,37 @@ static bool is_dflash_draft_checkpoint(std::string checkpoint) {
                                ? checkpoint
                                : checkpoint.substr(separator + 1);
     return filename.rfind("dflash-", 0) == 0 || filename == "dflash.gguf";
+}
+
+static std::string resolve_llamacpp_runtime_args(const ModelInfo& model_info,
+                                                 const std::string& custom_args,
+                                                 bool merge_args) {
+    if (!merge_args) return custom_args;
+
+    std::vector<RuntimeArgDefault> defaults;
+
+    const std::string draft_checkpoint = model_info.checkpoint("draft");
+    const bool has_dflash_label =
+        std::find(model_info.labels.begin(), model_info.labels.end(), "dflash") !=
+        model_info.labels.end();
+    const bool is_dflash_draft =
+        !draft_checkpoint.empty() && is_dflash_draft_checkpoint(draft_checkpoint);
+    const bool uses_mtp =
+        std::find(model_info.labels.begin(), model_info.labels.end(), "mtp") !=
+        model_info.labels.end();
+
+    if (is_dflash_draft && has_dflash_label) {
+        defaults.push_back({"--spec-type draft-dflash", "--spec-type"});
+    } else if (uses_mtp) {
+        defaults.push_back({"--spec-type draft-mtp", "--spec-type"});
+    }
+
+    // An auto slot count also enables the unified KV buffer, which advertises the
+    // full ctx_size to every slot instead of dividing it. Pinning the count keeps
+    // ctx_size the context a request actually gets.
+    defaults.push_back({"--parallel 1", "--parallel", {"-np"}});
+
+    return append_runtime_arg_defaults(custom_args, defaults);
 }
 
 static std::string trim_version_prefix(const std::string& version) {
@@ -272,10 +267,6 @@ LlamaCppServer::LlamaCppServer(const std::string& log_level, ModelManager* model
     : WrappedServer("llama-server", log_level, model_manager, backend_manager) {
 }
 
-LlamaCppServer::~LlamaCppServer() {
-    unload();
-}
-
 void LlamaCppServer::load(const std::string& model_name,
                          const ModelInfo& model_info,
                          const RecipeOptions& options,
@@ -358,6 +349,14 @@ void LlamaCppServer::load(const std::string& model_name,
     push_arg(args, reserved_flags, "--jinja", std::vector<std::string>{"--no-jinja"});
     push_arg(args, reserved_flags, "--metrics");
 
+    // To detect silent CPU fallback, raise llama-server verbosity in debug so the
+    // device-selection lines ("llama_prepare_model_devices: using device ...",
+    // "offloaded N/N layers to GPU") are emitted. At the default threshold they are suppressed.
+    if (is_debug()) {
+        args.push_back("-lv");
+        args.push_back("4");
+    }
+
     LOG(DEBUG, "LlamaCpp") << "Using backend: " << llamacpp_backend << "\n"
             << "[LlamaCpp] Use GPU: " << (use_gpu ? "true" : "false") << std::endl;
 
@@ -383,28 +382,6 @@ void LlamaCppServer::load(const std::string& model_name,
         push_arg(args, reserved_flags, "--model-draft", draft_path);
     }
     push_reserved(reserved_flags, "--model-draft", std::vector<std::string>{"-md", "--spec-draft-model"});
-
-    // Use legacy reasoning formatting
-    push_overridable_arg(args, llamacpp_args, "--reasoning-format", "auto");
-
-    const bool uses_mtp =
-        std::find(model_info.labels.begin(), model_info.labels.end(), "mtp") != model_info.labels.end();
-
-    if (is_dflash_draft && has_dflash_label) {
-        LOG(INFO, "LlamaCpp") << "Model uses DFlash, adding draft decoding defaults" << std::endl;
-        push_overridable_arg(args, llamacpp_args, "--spec-type", "draft-dflash");
-    } else if (uses_mtp) {
-        LOG(INFO, "LlamaCpp") << "Model uses MTP, adding draft decoding defaults" << std::endl;
-        push_overridable_arg(args, llamacpp_args, "--spec-type", "draft-mtp");
-    }
-
-    // Disable llamacpp webui by default
-    push_overridable_arg(args, llamacpp_args, "--no-ui");
-
-    // Disable mmap on iGPU
-    if (SystemInfo::get_has_igpu()) {
-        push_overridable_arg(args, llamacpp_args, "--load-mode", "none", {"--direct-io", "--no-direct-io", "-dio", "-ndio", "--mmap", "--no-mmap", "--mlock", "-lm"});
-    }
 
     // Add embeddings support if the model supports it
     if (supports_embeddings) {
@@ -506,29 +483,13 @@ void LlamaCppServer::load(const std::string& model_name,
         }
 
         // Windows DLL search order checks System32 BEFORE PATH, so a stale
-        // System32 amdhip64_7.dll crashes the runtime even when PATH points at
-        // TheRock. Copying to the exe directory overrides both.
+        // System32 amdhip64_7.dll shadows the TheRock runtime on PATH. Copying
+        // to the exe directory overrides both.
         if (llamacpp_backend == "rocm-stable") {
             std::string rocm_arch = SystemInfo::get_rocm_arch();
             if (!rocm_arch.empty()) {
-                std::vector<std::string> therock_dirs =
-                    BackendUtils::get_therock_lib_paths(rocm_arch);
-                std::string therock_bin = therock_dirs.empty() ? std::string() : therock_dirs.front();
-                if (!therock_bin.empty()) {
-                    fs::path therock_dll = fs::path(therock_bin) / "amdhip64_7.dll";
-                    fs::path target_dll = fs::path(executable).parent_path() / "amdhip64_7.dll";
-                    if (fs::exists(therock_dll)) {
-                        std::error_code ec;
-                        fs::copy_file(therock_dll, target_dll, fs::copy_options::overwrite_existing, ec);
-                        if (!ec) {
-                            LOG(INFO, "LlamaCpp") << "Copied amdhip64_7.dll from TheRock to "
-                                << path_to_utf8(target_dll) << std::endl;
-                        } else {
-                            LOG(ERROR, "LlamaCpp") << "Failed to copy amdhip64_7.dll: "
-                                << ec.message() << std::endl;
-                        }
-                    }
-                }
+                BackendUtils::stage_therock_hip_runtime(
+                    rocm_arch, fs::path(executable).parent_path());
             }
         }
 
@@ -615,50 +576,16 @@ void LlamaCppServer::load(const std::string& model_name,
     working_dir = path_to_utf8(executable_path.parent_path());
 #endif
 
+    ServerCommand command;
+    command.program = process_executable;
+    command.args = std::move(args);
+    command.env = std::move(env_vars);
+    command.port = port_;
+
     bool inherit_llama_output = (log_level_ == "info") || is_debug();
-    set_process_handle(ProcessManager::start_process(
-        process_executable, args, working_dir, inherit_llama_output, true, env_vars));
-
-    if (!wait_for_ready("/health")) {
-        const ProcessHandle handle = consume_process_handle_for_cleanup();
-        if (has_process_handle(handle)) {
-            ProcessManager::stop_process(handle);
-        }
-        throw std::runtime_error("llama-server failed to start");
-    }
-
-    LOG(DEBUG, "LlamaCpp") << "Model loaded on port " << get_backend_port() << std::endl;
-}
-
-void LlamaCppServer::unload() {
-    stop_backend_watchdog();
-    LOG(INFO, "LlamaCpp") << "Unloading model..." << std::endl;
-
-    const ProcessHandle handle = consume_process_handle_for_cleanup();
-    if (has_process_handle(handle)) {
-        ProcessManager::stop_process(handle);
-    }
-}
-
-bool LlamaCppServer::downsize() {
-    LOG(INFO, "LlamaCpp") << "Downsizing model by erasing KV cache..." << std::endl;
-    try {
-        json slots = get_slots();
-        if (slots.is_array()) {
-            for (const auto& slot : slots) {
-                if (slot.contains("id") && slot["id"].is_number()) {
-                    int id = slot["id"].get<int>();
-                    slots_action(id, "erase", json::object());
-                }
-            }
-        } else if (slots.contains("id")) {
-            slots_action(slots["id"].get<int>(), "erase", json::object());
-        }
-        return true;
-    } catch (const std::exception& e) {
-        LOG(ERROR, "LlamaCpp") << "Failed to downsize model: " << e.what() << std::endl;
-        return false;
-    }
+    start_server(
+        std::make_unique<NativeProcess>(ProcessOutput{inherit_llama_output, true}, working_dir),
+        command);
 }
 
 json LlamaCppServer::normalize_response_model(json response, const json& request) const {
@@ -785,53 +712,20 @@ bool is_ggml_hip_plugin_available() {
 #ifdef __linux__
     // Allow distros/packagers that install outside the FHS paths below
     // (e.g. NixOS, custom prefixes) to point directly at libggml-hip.so.
-    if (const char* env = std::getenv("LEMONADE_GGML_HIP_PATH"); env && *env) {
-        // Require the basename to look like the HIP plugin (libggml-hip*.so*,
-        // case-insensitive, versioned sonames allowed). This is a sanity check,
-        // not a security boundary: the path is not forwarded to ggml's loader,
-        // so we cannot verify it is actually loadable. It only guards against an
-        // accidental override pointing at an unrelated existing file.
-        std::string name = fs::path(env).filename().string();
-        std::transform(name.begin(), name.end(), name.begin(),
-                       [](unsigned char c) { return std::tolower(c); });
-        const bool name_matches = name.rfind("libggml-hip", 0) == 0 &&
-                                  name.find(".so") != std::string::npos;
-        // LEMONADE_GGML_HIP_PATH is user-controlled, so use the non-throwing
-        // filesystem overload: an odd or malformed path resolves to "not a
-        // regular file" (ec set) instead of raising a filesystem_error.
-        std::error_code hip_path_ec;
-        if (name_matches && fs::is_regular_file(env, hip_path_ec)) {
-            return true;
-        }
+    if (detail::ggml_hip_env_override_available()) {
+        return true;
     }
+
     // A self-built llama.cpp resolved from PATH ships libggml-hip.so next to
     // the binary (build tree) or in a sibling lib/ directory (installed tree).
     // find_executable_in_path() returns the bare name on POSIX, so walk PATH
     // here to recover the directory the binary actually lives in.
     if (const char* path_env = std::getenv("PATH"); path_env && *path_env) {
-        std::string path_str(path_env);
-        size_t start = 0;
-        while (start <= path_str.size()) {
-            size_t end = path_str.find(':', start);
-            std::string dir = path_str.substr(start, end == std::string::npos ? std::string::npos : end - start);
-            if (!dir.empty()) {
-                std::error_code plugin_ec;
-                fs::path bin_dir(dir);
-                fs::path llama_server = bin_dir / "llama-server";
-                if (fs::is_regular_file(llama_server, plugin_ec) &&
-                    access(llama_server.c_str(), X_OK) == 0) {
-                    plugin_ec.clear();
-                    if (fs::exists(bin_dir / "libggml-hip.so", plugin_ec) ||
-                        fs::exists(bin_dir.parent_path() / "lib" / "libggml-hip.so", plugin_ec)) {
-                        return true;
-                    }
-                    break;
-                }
-            }
-            if (end == std::string::npos) break;
-            start = end + 1;
+        if (detail::ggml_hip_plugin_near_llama_server(path_env)) {
+            return true;
         }
     }
+
     // On Linux x86_64, check common system library paths for the HIP plugin
     std::vector<std::string> possible_paths = {
         // Debian/Ubuntu multiarch path (most common)
@@ -859,6 +753,18 @@ bool is_ggml_hip_plugin_available() {
 // llamacpp model-management behavior: GGUF metadata + capability labels.
 class LlamaCppOps : public BackendOps {
 public:
+    void resolve_runtime_options(const ModelInfo& info, RecipeOptions& options) const override {
+        const json merge_args_value = options.get_option("merge_args");
+        const bool merge_args =
+            merge_args_value.is_boolean() ? merge_args_value.get<bool>() : true;
+        const json custom_args_value = options.get_option("llamacpp_args");
+        const std::string custom_args =
+            custom_args_value.is_string() ? custom_args_value.get<std::string>() : "";
+        options.set_option(
+            "llamacpp_args",
+            resolve_llamacpp_runtime_args(info, custom_args, merge_args));
+    }
+
     void populate_metadata(ModelInfo& info, const BackendOpsContext&) const override {
         const std::string gguf_path = info.resolved_path();
         if (gguf_path.size() < 5) {

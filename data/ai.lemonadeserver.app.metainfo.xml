@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>ai.lemonadeserver.app</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>Apache-2.0</project_license>
+  <name>Lemonade</name>
+  <summary>Local AI server with GPU and NPU acceleration</summary>
+  <description>
+    <p>
+      Lemonade is a local AI server that provides the same capabilities as cloud APIs,
+      but 100% free and private. Run the latest models for chat, coding, speech, and
+      image generation on your own NPU and GPU.
+    </p>
+    <p>
+      Features include:
+    </p>
+    <ul>
+      <li>Multi-modal AI support: chat, speech transcription, text-to-speech, and image generation</li>
+      <li>GPU and NPU acceleration for optimal performance</li>
+      <li>OpenAI, Anthropic, and Ollama compatible APIs</li>
+      <li>Model management with automatic download and optimization</li>
+      <li>Privacy-focused: all processing happens locally</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">lemonade-app.desktop</launchable>
+  <url type="homepage">https://lemonade-server.ai</url>
+  <url type="bugtracker">https://github.com/lemonade-sdk/lemonade/issues</url>
+  <url type="help">https://lemonade-server.ai/docs/</url>
+  <url type="vcs-browser">https://github.com/lemonade-sdk/lemonade</url>
+  <developer id="ai.lemonadeserver">
+    <name>Lemonade SDK Community</name>
+  </developer>
+  <categories>
+    <category>Development</category>
+    <category>Utility</category>
+  </categories>
+  <keywords>
+    <keyword>AI</keyword>
+    <keyword>LLM</keyword>
+    <keyword>GPU</keyword>
+    <keyword>NPU</keyword>
+    <keyword>Machine Learning</keyword>
+  </keywords>
+  <provides>
+    <binary>lemonade-app</binary>
+  </provides>
+  <releases>
+    <release version="11.6.0" date="2026-08-13"/>
+  </releases>
+  <content_rating type="oars-1.1"/>
+</component>

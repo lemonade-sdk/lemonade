@@ -43,7 +43,7 @@ inline const BackendDescriptor descriptor = {
         {"myrecipe_args", "--myrecipe-args", "", "ARGS", "Custom args to pass", "My Options"},
     },
     /*support*/ {                           // OS / device families ({} = no local gating)
-        {"myrecipe", "cpu", {"linux", "windows"}, {{"cpu", {"x86_64"}}}},
+        {"cpu", BackendTier::Experimental, BackendFormat::Native, {"linux", "windows"}, {{"cpu", {"x86_64"}}}},
     },
     /*supported_modes*/ {"chat"},           // every mode you serve, most-default first
     /*required_checkpoints*/ {"main"},      // unconditional files; conditional ones checked in load()
@@ -55,11 +55,13 @@ inline const BackendDescriptor descriptor = {
 
 `SlotPolicy` controls accelerator sharing: `Standard` (counts toward LRU slots), `ExclusiveNpu` (evicts all NPU servers first), `CoexistByType` (one per model type), `Unmetered` (never counted, never auto-evicted — cloud).
 
+Each `support` row names its backend's tier (`BackendTier::Core`, `BackendTier::Experimental` or `BackendTier::Guest`) and format (`BackendFormat::Native`, `BackendFormat::Python` or `BackendFormat::Container`) right after the backend name, so a row without them does not compile. Rows for the same backend on different OSes can carry different labels; `/system-info` reports the labels of the row for the current OS. See [Backend Tiers and Formats](../api/lemonade.md#backend-tiers-and-formats) for what each value means.
+
 `supported_modes` is the backend's contract with the model registry. A model whose labels name no mode is stamped with `supported_modes[0]`; a model whose labels name a mode absent from the list is refused by `POST /pull` with a 400 rather than failing later at inference time. `BackendModeContractTest` fails the build if this list disagrees with the capability interfaces your server class implements.
 
 ## The server class + factory — `<stem>/<stem>_server.{h,cpp}`
 
-The server class is a `WrappedServer` subclass. Implement `load()`, `unload()`, and only the capability interfaces you serve (`ITranscriptionServer`, `IImageServer`, `ITextToSpeechServer`, …). `WrappedServer` provides default "unsupported" `chat_completion`/`completion`/`responses`, so a non-chat backend does not stub them. Alongside it, a free `create()` builds the instance.
+The server class is a `WrappedServer` subclass. Implement `load()` ([Starting the server process](#starting-the-server-process)) and only the capability interfaces you serve (`ITranscriptionServer`, `IImageServer`, `ITextToSpeechServer`, …). `WrappedServer` provides default "unsupported" `chat_completion`/`completion`/`responses`, so a non-chat backend does not stub them. Alongside it, a free `create()` builds the instance.
 
 `<stem>_server.h`:
 
@@ -71,7 +73,7 @@ The server class is a `WrappedServer` subclass. Implement `load()`, `unload()`, 
 namespace lemon { namespace backends {
 
 class MyServer : public WrappedServer {
-    // load(), unload(), the capability methods you serve …
+    // load(), the capability methods you serve …
 };
 
 namespace myrecipe {
@@ -95,6 +97,36 @@ std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
 }
 }}}  // namespace lemon::backends::myrecipe
 ```
+
+## Starting the server process
+
+`load()` builds a `ServerCommand` and passes it to `start_server()` together with the `ServerProcess` that runs it:
+
+```cpp
+void MyServer::load(const std::string& model_name, const ModelInfo& model_info,
+                    const RecipeOptions& options, bool do_not_upgrade) {
+    backend_manager_->install_backend(myrecipe::spec()->recipe, "cpu");
+    port_ = choose_port();
+
+    ServerCommand command;
+    command.program = BackendUtils::get_backend_binary_path(*myrecipe::spec(), "cpu");
+    command.args = {"-m", model_info.resolved_path(), "--port", std::to_string(port_)};
+    command.port = port_;
+    start_server(std::make_unique<NativeProcess>(ProcessOutput{is_debug(), false}), command);
+}
+```
+
+`start_server()` launches the process and polls `command.ready_endpoint` until it answers, then starts the backend watchdog on the same endpoint. It throws, with the process stopped, when the process exits, the load is cancelled, or the timeout passes first. These settings cover the differences between servers:
+
+| Setting | Effect |
+|---------|--------|
+| `command.env` | Extra environment variables for the server process. |
+| `command.ready_endpoint` | The path polled for readiness and by the watchdog. Defaults to `/health`; set it when the server has a different always-on route (FLM uses `/api/tags`). |
+| `start_server(process, command, timeout_seconds)` | Startup timeout in seconds. Defaults to 600. |
+| `ProcessOutput{inherit, filter_health_logs}` | `inherit` copies the server's output into the Lemonade log. `filter_health_logs` drops the server's health-check request lines from that output. |
+| `NativeProcess(output, working_dir)` | Working directory for the server process. Defaults to the Lemonade process's own. |
+
+The default `unload()` calls `stop_server()`. Override it when the backend owns resources beyond the process, such as files it created (vLLM's ROCm shim directory), and call `stop_server()` from the override. The router destroys the server object right after `unload()`, so an override cleans up external resources only. The `WrappedServer` destructor stops the server too, so a backend writes a destructor only for its own resources (whisper.cpp removes its temp directory).
 
 ## Register it: one line
 
@@ -129,7 +161,7 @@ Add the test to CI in both matrices of `.github/workflows/cpp_server_build_test_
   script: server_<modality>.py
   extra_args: "--wrapped-server <recipe>"
   backends: "vulkan rocm"
-  runner: [Linux, vulkan, rocm, lemon-prod]
+  runner: [Linux, X64, vulkan, rocm, lemon-prod]
 ```
 
 If your backend uses ROCm via TheRock, add its recipe to `_THEROCK_RECIPES` in `test/utils/server_base.py`. Otherwise a cold runner folds the one-time TheRock download into the first request's timeout instead of `TIMEOUT_ROCM_INSTALL`, and the ROCm job flakes.
@@ -145,10 +177,10 @@ A new capability, a request type with no existing endpoint, is a larger change. 
 | Capability interface `I<Thing>Server` | `src/cpp/include/lemon/server_capabilities.h` |
 | A `ModelType` value and its label mapping | `src/cpp/include/lemon/model_types.h`. Add it to `Router::get_pinned_model_counts` so loaded models of the new type are counted. |
 | Router method that `dynamic_cast`s to your interface and dispatches | `src/cpp/server/router.h`, `src/cpp/server/router.cpp` |
-| Endpoint handler, registered with `register_post` or `register_get` | `src/cpp/server/server.cpp`. One call registers all four `/api/v0`, `/api/v1`, `/v0`, `/v1` prefixes ([invariant 1](../../AGENTS.md)). |
-| API documentation | `docs/api/` |
+| A route class, usually a `ModelRoute` | One file under `src/cpp/server/routes/<page>/<section>/`, plus one line in that folder's `routes.cpp`. `Prefixes::Quad` registers it under `/v1/`, which the docs and examples use (see [Compatibility with v2026.42 and Prior](specs/http-server.md#compatibility-with-v202642-and-prior)). |
+| API documentation | The route's `RouteSpec`. Run `docs/tools/gen_api_boilerplate.py` and commit `docs/api/` and `docs/tools/api_examples_cache.json`. |
 
-Pick the API-doc file by protocol: extend `docs/api/openai.md` for an OpenAI-compatible endpoint, add a file alongside `docs/api/llamacpp.md` when you mirror another server's standard, or use `docs/api/lemonade.md` for a Lemonade-specific endpoint. Follow the API reference structure from the [documentation guide](documentation.md): an H2 `METHOD /path` heading, a status badge, a one-sentence description, a parameters table, a curl example, and the response format.
+The route's folder picks its docs page: `routes/openai/` for an OpenAI-compatible endpoint, a new top-level folder when you mirror another server's standard, or `routes/lemonade/` for a Lemonade-specific endpoint. See the [HTTP Server spec](specs/http-server.md) for the route classes and the generated docs.
 
 ## Escape hatches
 
@@ -160,7 +192,7 @@ Pick the API-doc file by protocol: extend `docs/api/openai.md` for an OpenAI-com
 | Conditional / grouped checkpoints (sd-cpp flux, whisper npu_cache) | validate in `load()`; list only unconditional files in `required_checkpoints` |
 | Custom per-model fields without editing `ModelInfo` | read `model_info.extra<T>("my_field", fallback)` (populated from unknown `server_models.json` keys) |
 | Models supplied at runtime, not from `server_models.json` | set `dynamic_models = true` and provide them in the class (see cloud's `discover_models()`) |
-| Per-create setup before load (ryzenai `set_model_path`) | do it in `create()` |
+| Per-create setup before load (cloud's provider) | do it in `create()` |
 
 ## The simplest end-to-end example
 

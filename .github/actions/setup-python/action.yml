@@ -126,25 +126,7 @@ runs:
         done
 
         if [ -z "$PYTHON_CMD" ]; then
-          # Try to install from deadsnakes PPA (Ubuntu)
-          echo "Python $PYTHON_VERSION not found. Attempting to install..."
-
-          if command -v apt-get &> /dev/null; then
-            sudo add-apt-repository -y ppa:deadsnakes/ppa 2>/dev/null || true
-            sudo apt-get update
-            sudo apt-get install -y "python${PYTHON_VERSION}" "python${PYTHON_VERSION}-venv" || {
-              echo "Failed to install Python $PYTHON_VERSION from deadsnakes"
-              echo "Falling back to system python3..."
-              PYTHON_CMD=$(command -v python3)
-            }
-            PYTHON_CMD=$(command -v "python${PYTHON_VERSION}") || PYTHON_CMD=$(command -v python3)
-          else
-            PYTHON_CMD=$(command -v python3)
-          fi
-        fi
-
-        if [ -z "$PYTHON_CMD" ]; then
-          echo "ERROR: Could not find or install Python $PYTHON_VERSION"
+          echo "ERROR: Could not find Python $PYTHON_VERSION"
           exit 1
         fi
 

@@ -18,7 +18,7 @@ Contents:
 `lemond`'s configuration has two properties, `models_dir` and `extra_models_dir`, that determine where `lemond` will look when listing, pulling, and loading models.
 
 - `models_dir` is the primary model store, where `lemond` will `pull` models to.
-- `extra_models_dir` is a search path for GGUF LLMs that can be imported into `lemond`.
+- `extra_models_dir` is a search path for GGUF models that can be imported into `lemond`.
 
 ### Sharing Models With Other Apps
 
@@ -153,14 +153,12 @@ You can test whether it worked like this:
 Which should return:
 
 ```
-extra.my_custom_model.gguf              Yes         llamacpp
+my_custom_model                         Yes                 N/A       llamacpp
 ```
 
-> Note: models imported via `extra_models_dir` will have the `extra.` prefix in the `list` command and `/v1/models` endpoint.
+> Tip: `extra_models_dir` can be a relative path inside your app's package, which is how you ship GGUFs that are not on a registry.
 
-> Tip: `extra_models_dir` can be a relative path to any location within your app's package, or any absolute path on your user's system. It searches recursively and can import many GGUFs from a single directory tree.
-
-> Note: When an existing `extra_models_dir` is set at runtime, the path must be a readable directory for the `lemond` process. Permission or I/O failures are rejected instead of replacing the current model view. A path that does not exist yet is allowed and can be picked up later by the directory watcher.
+For how imported models are named and run, see [Imported models (`extra_models_dir`)](../guide/configuration/custom-models.md#imported-models-extra_models_dir) in the custom model guide.
 
 ## Customization
 

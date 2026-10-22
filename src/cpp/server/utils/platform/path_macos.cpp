@@ -18,6 +18,20 @@ public:
         return value ? std::string(value) : "";
     }
 
+    void set_environment_variable_utf8(const std::string& name,
+                                       const std::string& value) override {
+        if (setenv(name.c_str(), value.c_str(), 1) != 0) {
+            throw std::runtime_error("Failed to set environment variable: " + name);
+        }
+    }
+
+    void unset_environment_variable_utf8(const std::string& name) override {
+        if (unsetenv(name.c_str()) != 0) {
+            throw std::runtime_error("Failed to unset environment variable: " + name);
+        }
+    }
+
+
     fs::path path_from_utf8(const std::string& path) override {
         return fs::path(path);
     }
@@ -39,6 +53,11 @@ public:
     std::string get_cache_dir(const std::string& g_cache_dir) override {
         if (!g_cache_dir.empty()) {
             return g_cache_dir;
+        }
+
+        std::string xdg_cache_home = get_environment_variable_utf8("XDG_CACHE_HOME");
+        if (!xdg_cache_home.empty()) {
+            return xdg_cache_home + "/lemonade";
         }
 
         if (geteuid() != 0) {
@@ -70,6 +89,34 @@ public:
             }
             return cache_dir;
         }
+    }
+
+    std::string get_config_dir(const std::string& g_config_dir) override {
+        if (!g_config_dir.empty()) {
+            return g_config_dir;
+        }
+
+        std::string xdg_config_home = get_environment_variable_utf8("XDG_CONFIG_HOME");
+        if (!xdg_config_home.empty()) {
+            return xdg_config_home + "/lemonade";
+        }
+
+        if (geteuid() != 0) {
+            std::string home = get_environment_variable_utf8("HOME");
+            if (!home.empty()) {
+                return home + "/.config/lemonade";
+            }
+            struct passwd* pw = getpwuid(getuid());
+            if (pw) {
+                return std::string(pw->pw_dir) + "/.config/lemonade";
+            }
+        }
+
+        return "/Library/Application Support/lemonade/.config";
+    }
+
+    std::string get_legacy_cache_dir() override {
+        return "";
     }
 
     std::string get_runtime_dir() override {

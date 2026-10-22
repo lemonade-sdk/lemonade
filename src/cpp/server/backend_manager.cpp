@@ -415,7 +415,8 @@ std::string BackendManager::fetch_latest_github_tag(const std::string& repo,
         return "";
     }
 
-    const std::string url = "https://api.github.com/repos/" + repo + "/releases/latest";
+    // Include pre-releases to handle the new release scheme of llama.cpp
+    const std::string url = "https://api.github.com/repos/" + repo + "/releases?per_page=1";
 
     LOG(DEBUG, "BackendManager") << "Resolving 'latest' for " << repo << " via " << url << std::endl;
     utils::HttpResponse resp;
@@ -442,8 +443,11 @@ std::string BackendManager::fetch_latest_github_tag(const std::string& repo,
 
     std::string tag;
     try {
-        auto body = json::parse(resp.body);
-        tag = body.at("tag_name").get<std::string>();
+        auto releases = json::parse(resp.body);
+        if (!releases.is_array() || releases.empty()) {
+            throw std::runtime_error("expected a non-empty JSON array of releases");
+        }
+        tag = releases[0]["tag_name"].get<std::string>();
     } catch (const std::exception& e) {
         if (throw_on_failure) {
             throw std::runtime_error(
@@ -732,10 +736,29 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
     const bool backend_install_dir_existed_before = fs::exists(backend_install_dir);
 
     bool completion_reported = false;
+    bool backend_committed = false;
+
+    auto handle_install_failure = [&](const std::string& message) -> bool {
+        if (backend_committed || !has_existing_backend || force) {
+            if (!backend_install_dir_existed_before) {
+                std::error_code cleanup_ec;
+                fs::remove_all(backend_install_dir, cleanup_ec);
+            }
+            return false;
+        }
+        LOG(WARNING, "BackendManager")
+            << "Backend update for " << recipe << ":" << resolved_backend
+            << " failed (" << message << "); falling back to installed backend";
+        report_backend_ready(recipe, resolved_backend, progress_cb);
+        return true;
+    };
 
     try {
         backends::BackendUtils::install_from_github(
             *spec, params.version, params.repo, params.filename, resolved_backend, backend_progress_cb);
+        // install_from_github only returns after atomically swapping the new
+        // backend into place; from here on the working install is the new one.
+        backend_committed = true;
 
         const int logical_total_files = backend_total_files + static_cast<int>(runtime_steps.size());
         for (size_t i = 0; i < runtime_steps.size(); ++i) {
@@ -802,13 +825,11 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
             complete_progress.complete = true;
             progress_cb(complete_progress);
         }
+    } catch (const std::exception& e) {
+        if (handle_install_failure(e.what())) return;
+        throw;
     } catch (...) {
-        // If the backend was newly created and a required runtime fails, roll
-        // back the backend so the status does not look ready with missing deps.
-        if (!backend_install_dir_existed_before) {
-            std::error_code cleanup_ec;
-            fs::remove_all(backend_install_dir, cleanup_ec);
-        }
+        if (handle_install_failure("unknown")) return;
         throw;
     }
 }

@@ -55,13 +55,16 @@ class StreamingErrorTests(ServerTestBase):
         )
 
     def _consume_stream(self, response):
-        """Consume all SSE lines; fails the test on ChunkedEncodingError."""
+        """Consume all SSE lines; fails the test on ChunkedEncodingError or ConnectionError."""
         lines = []
         try:
             for raw in response.iter_lines():
                 if raw:
                     lines.append(raw.decode("utf-8") if isinstance(raw, bytes) else raw)
-        except requests.exceptions.ChunkedEncodingError as exc:
+        except (
+            requests.exceptions.ChunkedEncodingError,
+            requests.exceptions.ConnectionError,
+        ) as exc:
             self.fail(f"Stream not properly terminated (sink.done() missing?): {exc}")
         return lines
 

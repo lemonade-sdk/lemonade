@@ -1,16 +1,12 @@
 #include "lemon/model_manager.h"
 #include "lemon/model_registry.h"
-#include "lemon/utils/path_utils.h"
 
 #include <algorithm>
-#include <chrono>
 #include <cstdio>
-#include <filesystem>
 #include <stdexcept>
 #include <string>
 #include <vector>
 
-namespace fs = std::filesystem;
 using lemon::ModelManager;
 using lemon::RegistryFile;
 using lemon::RemoteRegistrySource;
@@ -21,14 +17,6 @@ static int g_failures = 0;
 static void check(const char* name, bool ok) {
     std::printf("[%s] %s\n", ok ? "PASS" : "FAIL", name);
     if (!ok) ++g_failures;
-}
-
-static fs::path make_temp_dir() {
-    fs::path dir = fs::temp_directory_path();
-    dir /= "model_registry_" +
-           std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
-    fs::create_directories(dir);
-    return dir;
 }
 
 static void test_source_parsing_and_cache_names() {
@@ -161,10 +149,89 @@ static void test_tree_snapshot_fingerprint() {
           first.rfind("modelscope-master-", 0) == 0);
 }
 
-static void test_registration_persists_remote_provenance() {
-    fs::path temp = make_temp_dir();
-    lemon::utils::set_cache_dir(temp.string());
+static void test_huggingface_compatibility_metadata_policy() {
+    check("official Hugging Face endpoint requires compatibility metadata",
+          lemon::is_official_huggingface_endpoint("https://huggingface.co/") &&
+              !lemon::is_official_huggingface_endpoint("https://hf.example.test"));
+    check("compatibility metadata URL is pinned to the file-tree SHA",
+          lemon::huggingface_repository_api_url(
+              "https://huggingface.co/", "org/model", "abc123") ==
+              "https://huggingface.co/api/models/org/model/revision/abc123");
 
+    bool rate_limit_rejected = false;
+    try {
+        (void)lemon::parse_huggingface_compatibility_response(429, "", true);
+    } catch (const std::runtime_error&) {
+        rate_limit_rejected = true;
+    }
+    check("official Hugging Face rate limits do not fail open", rate_limit_rejected);
+
+    bool server_failure_rejected = false;
+    try {
+        (void)lemon::parse_huggingface_compatibility_response(503, "", true);
+    } catch (const std::runtime_error&) {
+        server_failure_rejected = true;
+    }
+    check("official Hugging Face server errors do not fail open", server_failure_rejected);
+
+    const auto mirror_failure =
+        lemon::parse_huggingface_compatibility_response(404, "", false);
+    check("metadata-unaware mirrors remain compatible", !mirror_failure.has_value());
+
+    bool mirror_rate_limit_rejected = false;
+    try {
+        (void)lemon::parse_huggingface_compatibility_response(429, "", false);
+    } catch (const std::runtime_error&) {
+        mirror_rate_limit_rejected = true;
+    }
+    check("mirror rate limits do not fail open", mirror_rate_limit_rejected);
+
+    bool mirror_server_failure_rejected = false;
+    try {
+        (void)lemon::parse_huggingface_compatibility_response(503, "", false);
+    } catch (const std::runtime_error&) {
+        mirror_server_failure_rejected = true;
+    }
+    check("mirror server errors do not fail open", mirror_server_failure_rejected);
+
+    bool malformed_official_rejected = false;
+    try {
+        (void)lemon::parse_huggingface_compatibility_response(200, "not json", true);
+    } catch (const std::exception&) {
+        malformed_official_rejected = true;
+    }
+    check("malformed official metadata does not fail open", malformed_official_rejected);
+
+    bool missing_official_gguf_rejected = false;
+    try {
+        (void)lemon::parse_huggingface_compatibility_response(
+            200, R"({"pipeline_tag":"text-generation"})", true);
+    } catch (const std::exception&) {
+        missing_official_gguf_rejected = true;
+    }
+    check("official response without GGUF metadata does not fail open",
+          missing_official_gguf_rejected);
+
+    bool wrong_official_shape_rejected = false;
+    try {
+        (void)lemon::parse_huggingface_compatibility_response(200, "[]", true);
+    } catch (const std::exception&) {
+        wrong_official_shape_rejected = true;
+    }
+    check("wrong-shaped official metadata does not fail open",
+          wrong_official_shape_rejected);
+
+    const auto malformed_mirror =
+        lemon::parse_huggingface_compatibility_response(200, "not json", false);
+    check("malformed mirror metadata remains optional", !malformed_mirror.has_value());
+
+    const auto valid = lemon::parse_huggingface_compatibility_response(
+        200, R"({"gguf":{"architecture":"llama"}})", true);
+    check("valid compatibility metadata is parsed",
+          valid && (*valid)["gguf"]["architecture"] == "llama");
+}
+
+static void test_registration_persists_remote_provenance() {
     ModelManager manager;
     manager.register_user_model("user.FromModelScope", json{
         {"source", "modelscope"},
@@ -184,8 +251,6 @@ static void test_registration_persists_remote_provenance() {
     auto local = manager.get_model_info("user.LocalMirror");
     check("local origin and remote provenance can coexist",
           local.source == "local_upload" && local.registry_source == "modelscope");
-
-    fs::remove_all(temp);
 }
 
 int main() {
@@ -193,6 +258,7 @@ int main() {
     test_search_result_normalization();
     test_search_response_normalization();
     test_tree_snapshot_fingerprint();
+    test_huggingface_compatibility_metadata_policy();
     test_registration_persists_remote_provenance();
 
     if (g_failures == 0) {

@@ -19,7 +19,9 @@
 #include <filesystem>
 #include <iostream>
 #include <fstream>
+#include <functional>
 #include <algorithm>
+#include <cctype>
 #include <cstdlib>
 #include <cstdint>
 #include <cstring>
@@ -114,7 +116,12 @@ static constexpr auto safe_dir_options = fs::directory_options::none;
 namespace lemon {
 
 // Properties which are defined by the user for model registration.
-static const std::vector<std::string> USER_DEFINED_MODEL_PROPS = std::vector<std::string>{"checkpoints", "checkpoint", "recipe", "mmproj", "size", "image_defaults", "components", "recipe_options", "routing", "system_prompt", "version", "source", "registry_source"};
+static const std::vector<std::string> USER_DEFINED_MODEL_PROPS = std::vector<std::string>{
+    "checkpoints", "checkpoint", "recipe", "mmproj", "size",
+    "image_defaults", "audio_defaults", "components", "recipe_options",
+    "routing", "system_prompt", "version", "source", "registry_source",
+    "auto_update"
+};
 
 static std::string visible_extra_variant_name(const lemon::GgufVariant& variant) {
     std::string stem = fs::path(variant.primary_file).stem().string();
@@ -142,6 +149,27 @@ static constexpr const char EXTRA_MODEL_PREFIX[] = "extra.";
 static constexpr const char EXTRA_MODEL_RECIPE[] = "llamacpp";
 static constexpr const char EXTRA_MODEL_SOURCE[] = "extra_models_dir";
 
+static bool are_required_checkpoints_complete(const ModelInfo& info);
+static bool is_checkpoint_path_complete(const std::string& path);
+static bool path_inside(const fs::path& path, const fs::path& root);
+
+// Select the deployment mode from the top-level directory within extra_models_dir.
+static std::string extra_model_deployment_label(
+    const fs::path& model_path,
+    const fs::path& search_path) {
+    const fs::path relative_path = model_path.lexically_relative(search_path);
+    if (relative_path.empty()) return {};
+
+    const auto first_component = relative_path.begin();
+    if (first_component == relative_path.end()) return {};
+
+    const std::string category = first_component->string();
+    if (category == "chat") return "chat";
+    if (category == "embeddings") return "embeddings";
+    if (category == "reranking") return "reranking";
+    return {};
+}
+
 // Built-ins are keyed bare in models_cache_; user.* and extra.* keys already
 // include their canonical prefix. This helper returns the canonical ID for any
 // cache key, which is the form used by recipe_options.json on disk.
@@ -167,6 +195,9 @@ static std::string describe_illegal_labels(const std::string& model_name,
 // Order is most-specific to most-historical.
 
 static void populate_model_metadata(ModelInfo& info) {
+    if (info.recipe == "cloud") {
+        return;
+    }
     info.max_context_window = 0;
     if (!info.downloaded) return;
 
@@ -193,6 +224,20 @@ static std::string strip_user_model_prefix(const std::string& model_name) {
 
 static std::string effective_registry_source(const ModelInfo& info) {
     return remote_registry_source_name(parse_remote_registry_source(info.registry_source));
+}
+
+void ModelManager::set_default_model_source_provider(std::function<std::string()> provider) {
+    default_model_source_provider_ = std::move(provider);
+}
+
+RemoteRegistrySource ModelManager::download_source_for(const ModelInfo& info) const {
+    if (!info.registry_source.empty()) {
+        return parse_remote_registry_source(info.registry_source);
+    }
+    if (default_model_source_provider_) {
+        return parse_remote_registry_source(default_model_source_provider_());
+    }
+    return RemoteRegistrySource::HuggingFace;
 }
 
 static void parse_model_source_fields(ModelInfo& info, const json& model_json) {
@@ -329,11 +374,80 @@ static std::string checkpoint_to_variant(std::string checkpoint) {
     return variant;
 }
 
-// Check if any model other than exclude_model references the given repo_id
-static bool is_repo_shared(const std::string& repo_id,
-                           const std::string& registry_source,
-                           const std::string& exclude_model,
-                           const std::map<std::string, ModelInfo>& cache) {
+// Re-resolves every checkpoint of a model against disk.
+using ModelResolver = std::function<ModelInfo(const ModelInfo& info)>;
+
+static void insert_shard_family(const fs::path& shard, std::set<fs::path>& out) {
+    std::string base;
+    int total = 0;
+    if (!is_gguf_shard_filename(shard.filename().string(), &base, &total)) return;
+
+    std::error_code ec;
+    for (const auto& entry :
+         fs::directory_iterator(shard.parent_path(), safe_dir_options, ec)) {
+        if (ec) break;
+        if (same_shard_family(entry.path().filename().string(), base, total)) {
+            out.insert(entry.path());
+        }
+    }
+}
+
+static std::set<fs::path> repo_occupant_paths(const std::string& repo_id,
+                                              const std::string& registry_source,
+                                              const std::string& exclude_model,
+                                              const std::map<std::string, ModelInfo>& cache,
+                                              const ModelResolver& resolve_managed,
+                                              bool stop_at_first) {
+    std::set<fs::path> occupied;
+    const std::string normalized_source = remote_registry_source_name(
+        parse_remote_registry_source(registry_source));
+    for (const auto& [name, info] : cache) {
+        if (name == exclude_model || !info.source.empty()) continue;
+        if (effective_registry_source(info) != normalized_source) continue;
+
+        // Resolving walks the disk, so skip the models that cannot match anyway.
+        const bool names_repo = std::any_of(
+            info.checkpoints.begin(), info.checkpoints.end(),
+            [&repo_id](const auto& entry) {
+                return checkpoint_to_repo_id(entry.second) == repo_id;
+            });
+        if (!names_repo) continue;
+
+        const ModelInfo resolved = resolve_managed(info);
+        for (const auto& [type, cp] : info.checkpoints) {
+            if (checkpoint_to_repo_id(cp) != repo_id) continue;
+            const std::string rpath = resolved.resolved_path(type);
+            if (rpath.empty()) continue;
+            fs::path path = path_from_utf8(rpath);
+            if (!safe_exists(path)) continue;
+            occupied.insert(path);
+            if (stop_at_first) return occupied;
+            insert_shard_family(path, occupied);
+        }
+    }
+    return occupied;
+}
+
+// Check if any model other than exclude_model still occupies the given repo_id.
+// Callers must hold models_cache_mutex_.
+static bool is_repo_occupied(const std::string& repo_id,
+                             const std::string& registry_source,
+                             const std::string& exclude_model,
+                             const std::map<std::string, ModelInfo>& cache,
+                             const ModelResolver& resolve_managed) {
+    return !repo_occupant_paths(repo_id, registry_source, exclude_model, cache,
+                                resolve_managed, /*stop_at_first=*/true).empty();
+}
+
+// Every variant another model would pull from this repo. An unfinished
+// download carries no name of its own, so the catalog is the only signal left
+// for who is waiting on it. Callers must hold models_cache_mutex_.
+static std::vector<std::string> repo_claimant_variants(
+        const std::string& repo_id,
+        const std::string& registry_source,
+        const std::string& exclude_model,
+        const std::map<std::string, ModelInfo>& cache) {
+    std::vector<std::string> variants;
     const std::string normalized_source = remote_registry_source_name(
         parse_remote_registry_source(registry_source));
     for (const auto& [name, info] : cache) {
@@ -341,10 +455,12 @@ static bool is_repo_shared(const std::string& repo_id,
         if (effective_registry_source(info) != normalized_source) continue;
         for (const auto& [type, cp] : info.checkpoints) {
             (void)type;
-            if (checkpoint_to_repo_id(cp) == repo_id) return true;
+            if (checkpoint_to_repo_id(cp) == repo_id) {
+                variants.push_back(checkpoint_to_variant(cp));
+            }
         }
     }
-    return false;
+    return variants;
 }
 
 // Parse image_defaults from a model JSON entry into ModelInfo
@@ -358,6 +474,10 @@ static void parse_image_defaults(ModelInfo& info, const json& model_json) {
         info.image_defaults.height = JsonUtils::get_or_default<int>(img_defaults, "height", 512);
         info.image_defaults.sampling_method = JsonUtils::get_or_default<std::string>(img_defaults, "sampling_method", "");
         info.image_defaults.flow_shift = JsonUtils::get_or_default<float>(img_defaults, "flow_shift", 0.0f);
+        const auto edit_cap = img_defaults.find("soft_pixel_cap");
+        if (edit_cap != img_defaults.end() && edit_cap->is_number_unsigned()) {
+            info.image_defaults.soft_pixel_cap = edit_cap->get<std::uint64_t>();
+        }
     }
 }
 
@@ -390,7 +510,8 @@ static DeviceType device_type_for_recipe(const std::string& recipe) {
     return get_device_type_from_recipe(recipe);
 }
 
-// Build merged recipe options: image_defaults -> JSON recipe_options -> user-saved overrides.
+// Fold the model-level precedence layers (lowest → highest). The full ladder
+// is documented in SDServer::build_extra_args().
 // json_recipe_options: pre-extracted recipe_options for this model (from build_cache's
 // two-phase pattern). Pass a null json if the model JSON should be read directly instead.
 // saved_recipe_options_key: canonical ID (user.* / extra.* / builtin.*) under which the
@@ -400,36 +521,26 @@ static RecipeOptions build_recipe_options(const ModelInfo& info,
                                           const json& json_recipe_options,
                                           const std::string& saved_recipe_options_key,
                                           const json& saved_recipe_options) {
-    json base_options = json::object();
+    // Non-sd recipes pass an empty image_defaults layer.
+    json image_defaults = json::object();
 
-    // Layer 1: image_defaults as base
     if (info.image_defaults.has_defaults) {
-        base_options["steps"] = info.image_defaults.steps;
-        base_options["cfg_scale"] = info.image_defaults.cfg_scale;
-        base_options["width"] = info.image_defaults.width;
-        base_options["height"] = info.image_defaults.height;
+        image_defaults["steps"] = info.image_defaults.steps;
+        image_defaults["cfg_scale"] = info.image_defaults.cfg_scale;
+        image_defaults["width"] = info.image_defaults.width;
+        image_defaults["height"] = info.image_defaults.height;
         if (!info.image_defaults.sampling_method.empty())
-            base_options["sampling_method"] = info.image_defaults.sampling_method;
+            image_defaults["sampling_method"] = info.image_defaults.sampling_method;
         if (info.image_defaults.flow_shift > 0.0f)
-            base_options["flow_shift"] = info.image_defaults.flow_shift;
+            image_defaults["flow_shift"] = info.image_defaults.flow_shift;
     }
 
-    // Layer 2: JSON-level recipe_options override image_defaults (e.g. sdcpp_args)
-    if (!json_recipe_options.is_null() && json_recipe_options.is_object()) {
-        for (auto& [key, value] : json_recipe_options.items()) {
-            base_options[key] = value;
-        }
-    }
+    json user_saved = JsonUtils::has_key(saved_recipe_options, saved_recipe_options_key)
+                          ? saved_recipe_options[saved_recipe_options_key]
+                          : json(nullptr);
 
-    // Layer 3: User-saved recipe options override everything
-    if (JsonUtils::has_key(saved_recipe_options, saved_recipe_options_key)) {
-        auto saved = saved_recipe_options[saved_recipe_options_key];
-        for (auto& [key, value] : saved.items()) {
-            base_options[key] = value;
-        }
-    }
-
-    return RecipeOptions(info.recipe, base_options);
+    return RecipeOptions::merge_precedence_layers(
+        info.recipe, image_defaults, json_recipe_options, user_saved);
 }
 
 // Clean up orphaned HF cache blobs after deleting a symlink.
@@ -686,12 +797,312 @@ static void remove_file_or_throw(const fs::path& path, const std::string& descri
     }
 }
 
+static bool path_is_within(const fs::path& path, const fs::path& base) {
+    if (base.empty()) return false;
+    const fs::path relative = path.lexically_relative(base);
+    return !relative.empty() && *relative.begin() != "..";
+}
+
+static bool is_unfinished_download_artifact(const fs::path& path) {
+    return path.extension() == ".partial" ||
+           path.filename() == ".download_manifest.json";
+}
+
+static bool repo_has_unfinished_download(const fs::path& repo_dir) {
+    if (!safe_exists(repo_dir)) return false;
+    std::error_code ec;
+    fs::recursive_directory_iterator it(repo_dir, safe_dir_options, ec);
+    if (ec) return true;
+    const fs::recursive_directory_iterator end;
+    while (it != end) {
+        if (is_unfinished_download_artifact(it->path())) return true;
+        it.increment(ec);
+        if (ec) return true;
+    }
+    return false;
+}
+
+static void remove_shared_checkpoint_dir(const fs::path& dir,
+                                         const fs::path& repo_root,
+                                         const std::set<fs::path>& keep) {
+    const fs::path refs_dir = repo_root / "refs";
+    const fs::path blobs_dir = repo_root / "blobs";
+
+    std::vector<fs::path> doomed;
+    std::error_code ec;
+    fs::recursive_directory_iterator it(dir, safe_dir_options, ec);
+    if (ec) {
+        LOG(WARNING, "ModelManager") << "Cannot scan checkpoint directory "
+                    << path_to_utf8(dir) << " (" << ec.message()
+                    << "); keeping it" << std::endl;
+        return;
+    }
+
+    const fs::recursive_directory_iterator end;
+    while (it != end) {
+        const fs::path entry = it->path();
+        const bool keep_entry =
+            safe_is_directory(entry) ||
+            is_unfinished_download_artifact(entry) ||
+            path_is_within(entry, refs_dir) ||
+            path_is_within(entry, blobs_dir) ||
+            std::any_of(keep.begin(), keep.end(),
+                        [&entry](const fs::path& owned) {
+                            return path_is_within(entry, owned);
+                        });
+        if (!keep_entry) doomed.push_back(entry);
+
+        it.increment(ec);
+        if (ec) {
+            LOG(WARNING, "ModelManager") << "Scan of " << path_to_utf8(dir)
+                        << " stopped early (" << ec.message()
+                        << "); keeping the directory" << std::endl;
+            return;
+        }
+    }
+
+    for (const fs::path& victim : doomed) {
+        cleanup_orphaned_blob(victim, repo_root);
+        remove_file_or_throw(victim, "checkpoint file");
+        cleanup_empty_parents(victim, repo_root);
+    }
+}
+
+// A variant claims the whole repo when it names nothing in particular, so no
+// file name can be matched against it.
+static bool variant_claims_whole_repo(const std::string& variant) {
+    return variant.empty() || variant == "*";
+}
+
+static std::string strip_shard_suffix(const std::string& filename) {
+    const size_t dot = filename.find_last_of('.');
+    const std::string stem = dot == std::string::npos ? filename : filename.substr(0, dot);
+    const std::string extension = dot == std::string::npos ? "" : filename.substr(dot);
+
+    const size_t of = stem.rfind("-of-");
+    if (of == std::string::npos) return filename;
+
+    auto all_digits = [&stem](size_t from, size_t to) {
+        if (from >= to) return false;
+        for (size_t i = from; i < to; ++i) {
+            if (stem[i] < '0' || stem[i] > '9') return false;
+        }
+        return true;
+    };
+    if (!all_digits(of + 4, stem.size())) return filename;
+
+    size_t index_begin = of;
+    while (index_begin > 0 && stem[index_begin - 1] >= '0' && stem[index_begin - 1] <= '9') {
+        --index_begin;
+    }
+    if (index_begin == of || index_begin == 0 || stem[index_begin - 1] != '-') return filename;
+
+    return stem.substr(0, index_begin - 1) + extension;
+}
+
+// Mirrors resolve_gguf_path()'s matching so attribution agrees with resolution.
+static bool file_matches_variant(const std::string& relative_name,
+                                 const std::string& variant) {
+    if (relative_name.empty() || variant_claims_whole_repo(variant)) return false;
+
+    auto normalize = [](std::string value) {
+        std::replace(value.begin(), value.end(), '\\', '/');
+        std::transform(value.begin(), value.end(), value.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        return value;
+    };
+    auto ends_with = [](const std::string& value, const std::string& tail) {
+        return value.size() >= tail.size() &&
+               value.compare(value.size() - tail.size(), tail.size(), tail) == 0;
+    };
+
+    const std::string rel = normalize(relative_name);
+    const std::string want = normalize(variant);
+
+    if (rel == want || ends_with(rel, "/" + want)) return true;
+    if (rel.find(want + "/") != std::string::npos) return true;
+
+    const size_t slash = rel.find_last_of('/');
+    const std::string base = slash == std::string::npos ? rel : rel.substr(slash + 1);
+    const std::string quant_suffix = want + ".gguf";
+    for (const std::string& candidate : {base, strip_shard_suffix(base)}) {
+        if (candidate == want || ends_with(candidate, quant_suffix)) return true;
+    }
+
+    // resolve_gguf_path()'s quant-token fallback: some repos put the token in
+    // the middle of the name (Model-IQ4_XS-Q8nextn.gguf for variant IQ4_XS)
+    const std::string want_quant = gguf_quant_token(variant);
+    std::string upper_variant = variant;
+    std::transform(upper_variant.begin(), upper_variant.end(), upper_variant.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+    if (!want_quant.empty() && want_quant == upper_variant &&
+        gguf_quant_token(base) == want_quant) {
+        return true;
+    }
+    return false;
+}
+
+static bool partial_belongs_to_variant(const fs::path& partial_path,
+                                       const fs::path& snapshots_dir,
+                                       const std::string& variant) {
+    static const std::string kMarker = ".partial";
+    if (partial_path.extension() != kMarker || safe_is_directory(partial_path)) {
+        return false;
+    }
+
+    std::string rel = normalized_relative_path(partial_path, snapshots_dir);
+    rel.resize(rel.size() - kMarker.size());
+    return file_matches_variant(rel, variant);
+}
+
+static bool manifest_covers_variant(const fs::path& manifest_path,
+                                    const std::string& variant) {
+    try {
+        const json manifest = JsonUtils::load_from_file(path_to_utf8(manifest_path));
+        if (!manifest.contains("files") || !manifest["files"].is_array()) return false;
+        for (const auto& file_desc : manifest["files"]) {
+            if (!file_desc.is_object() || !file_desc.contains("name")) continue;
+            if (!file_desc["name"].is_string()) continue;
+            if (file_matches_variant(file_desc["name"].get<std::string>(), variant)) {
+                return true;
+            }
+        }
+    } catch (const std::exception&) {
+        return false;
+    }
+    return false;
+}
+
+struct RepoDownload {
+    std::string owner;
+    std::vector<std::string> files;
+};
+
+static RepoDownload repo_download(const fs::path& repo_dir) {
+    std::error_code ec;
+    fs::recursive_directory_iterator it(repo_dir, safe_dir_options, ec);
+    if (ec) return {};
+
+    const fs::recursive_directory_iterator end;
+    RepoDownload found;
+    while (it != end) {
+        if (it->path().filename() == ".download_manifest.json") {
+            std::string name;
+            std::vector<std::string> files;
+            try {
+                const json manifest = JsonUtils::load_from_file(path_to_utf8(it->path()));
+                if (manifest.contains("model_name") && manifest["model_name"].is_string()) {
+                    name = manifest["model_name"].get<std::string>();
+                }
+                if (manifest.contains("files") && manifest["files"].is_array()) {
+                    for (const auto& file_desc : manifest["files"]) {
+                        if (!file_desc.is_object() || !file_desc.contains("name")) continue;
+                        if (!file_desc["name"].is_string()) continue;
+                        files.push_back(file_desc["name"].get<std::string>());
+                    }
+                }
+            } catch (const std::exception&) {
+            }
+            if (name.empty() || (!found.owner.empty() && found.owner != name)) return {};
+            found.owner = name;
+            found.files.insert(found.files.end(), files.begin(), files.end());
+        }
+        it.increment(ec);
+        if (ec) return {};
+    }
+    return found;
+}
+
+static bool repo_has_unattributed_file(const fs::path& repo_dir,
+                                       const std::string& variant,
+                                       const std::vector<std::string>& own_download_files) {
+    const fs::path snapshots_dir = repo_dir / "snapshots";
+    if (!safe_exists(snapshots_dir)) return false;
+
+    std::error_code ec;
+    fs::recursive_directory_iterator it(snapshots_dir, safe_dir_options, ec);
+    if (ec) return true;
+
+    static const std::string kMarker = ".partial";
+    const bool claims_every_file = variant_claims_whole_repo(variant);
+
+    const fs::recursive_directory_iterator end;
+    while (it != end) {
+        const fs::path entry = it->path();
+        if (!safe_is_directory(entry) && entry.filename() != ".download_manifest.json") {
+            std::string rel = normalized_relative_path(entry, snapshots_dir);
+            if (entry.extension() == kMarker) rel.resize(rel.size() - kMarker.size());
+            const bool own = claims_every_file || file_matches_variant(rel, variant) ||
+                std::any_of(own_download_files.begin(), own_download_files.end(),
+                            [&rel](const std::string& name) {
+                                return file_matches_variant(rel, name);
+                            });
+            if (!own) return true;
+        }
+        it.increment(ec);
+        if (ec) return true;
+    }
+    return false;
+}
+
+static bool download_belongs_to_variant(const fs::path& artifact,
+                                        const fs::path& snapshots_dir,
+                                        const std::string& variant,
+                                        bool is_manifest) {
+    if (variant_claims_whole_repo(variant)) return true;
+    return is_manifest ? manifest_covers_variant(artifact, variant)
+                       : partial_belongs_to_variant(artifact, snapshots_dir, variant);
+}
+
+static bool download_claimed_by_other(const fs::path& artifact,
+                                      const fs::path& snapshots_dir,
+                                      const std::vector<std::string>& other_variants,
+                                      bool is_manifest) {
+    return std::any_of(other_variants.begin(), other_variants.end(),
+                       [&](const std::string& other) {
+                           return download_belongs_to_variant(artifact, snapshots_dir,
+                                                              other, is_manifest);
+                       });
+}
+
+static bool repo_has_foreign_download(const fs::path& repo_dir,
+                                      const std::string& variant,
+                                      const std::vector<std::string>& other_variants) {
+    const fs::path snapshots_dir = repo_dir / "snapshots";
+    std::error_code ec;
+    fs::recursive_directory_iterator it(repo_dir, safe_dir_options, ec);
+    if (ec) return true;
+
+    const fs::recursive_directory_iterator end;
+    while (it != end) {
+        const fs::path entry = it->path();
+        const bool is_manifest = entry.filename() == ".download_manifest.json";
+        if (is_manifest || entry.extension() == ".partial") {
+            if (!download_belongs_to_variant(entry, snapshots_dir, variant, is_manifest) ||
+                download_claimed_by_other(entry, snapshots_dir, other_variants, is_manifest)) {
+                return true;
+            }
+        }
+        it.increment(ec);
+        if (ec) return true;
+    }
+    return false;
+}
+
 static void remove_stale_manifest_for_partial(const fs::path& partial_path,
-                                              const fs::path& stop_dir) {
+                                              const fs::path& stop_dir,
+                                              const fs::path& snapshots_dir,
+                                              const std::vector<std::string>& claimants) {
     fs::path parent = partial_path.parent_path();
     for (int i = 0; i < 8 && !parent.empty() && parent != stop_dir; ++i) {
         fs::path manifest_path = parent / ".download_manifest.json";
         if (safe_exists(manifest_path)) {
+            if (download_claimed_by_other(manifest_path, snapshots_dir, claimants,
+                                          /*is_manifest=*/true)) {
+                LOG(INFO, "ModelManager") << "Keeping " << path_to_utf8(manifest_path)
+                            << " (another model resumes from it)" << std::endl;
+                return;
+            }
             remove_file_or_throw(manifest_path, "stale download manifest");
             cleanup_empty_parents(manifest_path, stop_dir);
             return;
@@ -701,8 +1112,8 @@ static void remove_stale_manifest_for_partial(const fs::path& partial_path,
 }
 
 static bool cleanup_incomplete_hf_model_cache(const ModelInfo& info,
-                                              const std::string& canonical_model_name,
-                                              const std::map<std::string, ModelInfo>& models_cache) {
+                                              bool repo_occupied,
+                                              const std::vector<std::string>& other_variants) {
     const std::string main_checkpoint = info.checkpoint("main");
     const std::string main_repo = checkpoint_to_repo_id(main_checkpoint);
     if (main_repo.empty()) {
@@ -714,10 +1125,27 @@ static bool cleanup_incomplete_hf_model_cache(const ModelInfo& info,
         return false;
     }
 
-    // If no other model references this HF repo, delete the whole incomplete
-    // repo cache. That removes .partial files, stale manifests, any files that
-    // finished before cancellation, refs, and blobs in one atomic intent.
-    if (!is_repo_shared(main_repo, effective_registry_source(info), canonical_model_name, models_cache)) {
+    const std::string variant = checkpoint_to_variant(main_checkpoint);
+
+    const RepoDownload download = repo_download(model_cache_path);
+    const std::string& download_owner = download.owner;
+    const bool owner_known = !download_owner.empty();
+    const bool owned_by_self = download_owner == info.model_name;
+    const bool foreign_download =
+        owner_known ? !owned_by_self
+                    : repo_has_foreign_download(model_cache_path, variant, other_variants);
+
+    // Only a download this model started can account for a file it did not
+    // finish, so a manifest another model owns says nothing about what is here.
+    const std::vector<std::string> own_download_files =
+        owned_by_self ? download.files : std::vector<std::string>{};
+
+    // Nothing else lives here, so the whole incomplete repo cache goes: .partial
+    // files, stale manifests, any files that finished before cancellation, refs,
+    // and blobs in one atomic intent. A download that is not this model's holds
+    // the repo back, and so does a complete file that no download explains.
+    if (!repo_occupied && !foreign_download &&
+        !repo_has_unattributed_file(model_cache_path, variant, own_download_files)) {
         LOG(INFO, "ModelManager") << "Removing incomplete model cache: "
                                   << path_to_utf8(model_cache_path) << std::endl;
         std::error_code ec;
@@ -729,12 +1157,17 @@ static bool cleanup_incomplete_hf_model_cache(const ModelInfo& info,
         return true;
     }
 
-    // Shared repos must not be removed wholesale. Remove only the resumable
+    if (owner_known && !owned_by_self) {
+        LOG(INFO, "ModelManager") << "Keeping the unfinished download in " << main_repo
+                                  << " because it belongs to " << download_owner << std::endl;
+        return false;
+    }
+
+    // An occupied repo must not be removed wholesale. Remove only the resumable
     // partial for this model's requested variant, plus the manifest that made
     // that partial visible as an incomplete download.
-    const std::string variant = checkpoint_to_variant(main_checkpoint);
     if (variant.empty()) {
-        LOG(INFO, "ModelManager") << "Keeping shared incomplete cache for " << main_repo
+        LOG(INFO, "ModelManager") << "Keeping occupied incomplete cache for " << main_repo
                                   << " because the model has no exact variant" << std::endl;
         return false;
     }
@@ -744,8 +1177,8 @@ static bool cleanup_incomplete_hf_model_cache(const ModelInfo& info,
         return false;
     }
 
-    std::string normalized_variant = variant;
-    std::replace(normalized_variant.begin(), normalized_variant.end(), '\\', '/');
+    const std::vector<std::string> claimants =
+        owner_known ? std::vector<std::string>{} : other_variants;
 
     bool removed_any = false;
     std::error_code ec;
@@ -753,25 +1186,22 @@ static bool cleanup_incomplete_hf_model_cache(const ModelInfo& info,
         if (ec) break;
 
         const fs::path partial_path = entry.path();
-        const std::string rel = normalized_relative_path(partial_path, snapshots_dir);
-        const std::string filename = partial_path.filename().string();
-        const bool matches_variant_partial =
-            filename == variant + ".partial" ||
-            rel == normalized_variant + ".partial" ||
-            rel.rfind("/" + normalized_variant + ".partial") != std::string::npos;
-
-        if (!matches_variant_partial) {
+        if (safe_is_directory(partial_path) ||
+            !partial_belongs_to_variant(partial_path, snapshots_dir, variant) ||
+            download_claimed_by_other(partial_path, snapshots_dir, claimants,
+                                      /*is_manifest=*/false)) {
             continue;
         }
 
         remove_file_or_throw(partial_path, "incomplete model download partial");
-        remove_stale_manifest_for_partial(partial_path, model_cache_path);
+        remove_stale_manifest_for_partial(partial_path, model_cache_path, snapshots_dir,
+                                          claimants);
         cleanup_empty_parents(partial_path, model_cache_path);
         removed_any = true;
     }
 
     if (!removed_any) {
-        LOG(INFO, "ModelManager") << "No incomplete cache artifacts found for shared repo "
+        LOG(INFO, "ModelManager") << "No incomplete cache artifacts found for occupied repo "
                                   << main_repo << std::endl;
     }
 
@@ -1023,11 +1453,11 @@ ModelManager::ModelManager(const std::string& extra_models_dir)
 }
 
 std::string ModelManager::get_user_models_file() {
-    return get_cache_dir() + "/user_models.json";
+    return get_config_dir() + "/user_models.json";
 }
 
 std::string ModelManager::get_recipe_options_file() {
-    return get_cache_dir() + "/recipe_options.json";
+    return get_config_dir() + "/recipe_options.json";
 }
 
 std::string ModelManager::get_hf_cache_dir() const {
@@ -1085,48 +1515,6 @@ void ModelManager::notify_models_changed() {
     }
 }
 
-bool ModelManager::refresh_user_models_from_disk_for_lookup(const std::string& model_name) {
-    std::vector<std::string> candidate_keys;
-
-    if (auto canon = parse_canonical_id(model_name)) {
-        if (canon->source == ModelSource::Registered) {
-            candidate_keys.push_back(canon->bare_name);
-        }
-    } else if (!model_name.empty()) {
-        candidate_keys.push_back(model_name);
-    }
-
-    if (candidate_keys.empty()) {
-        return false;
-    }
-
-    json latest_user_models = load_optional_json(get_user_models_file());
-    if (!latest_user_models.is_object()) {
-        return false;
-    }
-
-    bool found = false;
-    for (const auto& key : candidate_keys) {
-        if (latest_user_models.contains(key)) {
-            found = true;
-            break;
-        }
-    }
-
-    if (!found) {
-        return false;
-    }
-
-    {
-        std::lock_guard<std::mutex> lock(models_cache_mutex_);
-        user_models_ = std::move(latest_user_models);
-        cache_valid_ = false;
-    }
-
-    build_cache();
-    return true;
-}
-
 void ModelManager::set_extra_models_dir(const std::string& dir) {
     extra_models_dir_ = dir;
 
@@ -1145,6 +1533,10 @@ void ModelManager::set_extra_models_dir(const std::string& dir) {
     notify_models_changed();
 }
 
+ModelManager::~ModelManager() {
+    directory_watcher_.reset();
+}
+
 void ModelManager::start_directory_watcher() {
     directory_watcher_ = std::make_unique<DirectoryWatcher>(extra_models_dir_);
     directory_watcher_->set_callback([this]() {
@@ -1158,6 +1550,7 @@ void ModelManager::start_directory_watcher() {
     directory_watcher_->start();
 }
 
+// Apply the default only after discovery has checked for an explicit directory mode.
 ModelInfo ModelManager::init_extra_model_info(const std::string& name) const {
     ModelInfo info;
     info.model_name = name;
@@ -1166,32 +1559,112 @@ ModelInfo ModelManager::init_extra_model_info(const std::string& name) const {
     info.downloaded = true;
     info.source = EXTRA_MODEL_SOURCE;
     info.labels = {"custom"};
-    lemon::backends::ensure_deployment_label(info.labels, EXTRA_MODEL_RECIPE);
     info.device = device_type_for_recipe(EXTRA_MODEL_RECIPE);
     return info;
 }
 
-// Record a discovered model without ever overwriting one already found. Two
-// extra_models_dir folders can hold identically named files; qualifying the
-// newcomer with its folder keeps both and leaves the first model's id alone.
-static void add_extra_model(std::map<std::string, ModelInfo>& discovered,
-                            const std::string& base_name,
-                            const fs::path& folder,
-                            ModelInfo info) {
-    const std::string prefix(EXTRA_MODEL_PREFIX);
-    std::string id = prefix + base_name;
-    if (discovered.count(id)) {
-        const std::string qualified = folder.filename().string() + "-" + base_name;
-        id = prefix + qualified;
-        for (int n = 2; discovered.count(id); ++n) {
-            id = prefix + qualified + "-" + std::to_string(n);
+// A model kept in a Hugging Face or ModelScope cache lives under
+// <models--org--repo>/snapshots/<commit>/, so its folder is an opaque commit
+// hash. An empty name means the folder is not in a cache with a live revision.
+struct CacheRepoNaming {
+    std::string name;
+    std::string qualifier;
+    std::string variant_prefix;
+};
+
+static CacheRepoNaming cache_repo_naming(const fs::path& dir_path,
+                                         const fs::path& search_path) {
+    fs::path snapshot_dir;
+    for (fs::path cur = dir_path; cur.has_filename(); cur = cur.parent_path()) {
+        if (cur.parent_path().filename() == "snapshots") {
+            snapshot_dir = cur;
+            break;
+        }
+        if (cur == search_path) break;
+    }
+    if (snapshot_dir.empty()) return {};
+
+    const fs::path cache_root = snapshot_dir.parent_path().parent_path();
+    const std::string cache_dir_name = cache_root.filename().string();
+    std::string encoded;
+    for (const std::string prefix : {"modelscope--models--", "models--"}) {
+        if (cache_dir_name.rfind(prefix, 0) == 0) {
+            encoded = cache_dir_name.substr(prefix.size());
+            break;
         }
     }
-    info.model_name = id;
-    discovered.emplace(id, std::move(info));
+
+    // registry_repo_cache_dir_name() encodes "org/repo" as "org--repo". Only the
+    // first separator is the org boundary; the rest belongs to the repo name.
+    const size_t sep = encoded.find("--");
+    const std::string org = sep == std::string::npos ? "" : encoded.substr(0, sep);
+    const std::string repo = sep == std::string::npos ? encoded : encoded.substr(sep + 2);
+    if (repo.empty()) return {};
+
+    const fs::path live = active_hf_snapshot_path(cache_root);
+    if (live.empty()) return {};
+
+    CacheRepoNaming out;
+    out.name = dir_path == snapshot_dir ? repo : repo + "-" + dir_path.filename().string();
+    if (live != snapshot_dir) {
+        // Names the live revision uses stay with it, whatever order the
+        // revisions are discovered in.
+        out.variant_prefix = snapshot_dir.filename().string() + "-";
+        out.name = out.variant_prefix + out.name;
+    }
+    // Qualifying a collision with the folder would bring back the commit hash.
+    out.qualifier = org.empty() ? out.name : org;
+    return out;
 }
 
-std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
+// Record a discovered model without ever overwriting one already found. Two
+// extra_models_dir folders can hold identically named files; qualifying the
+// newcomer keeps both and leaves the first model's id alone. Ids and kept
+// folder names share one namespace, so a qualified id can never shadow a
+// folder name another model already owns.
+static void add_extra_model(std::map<std::string, ModelInfo>& discovered,
+                            std::set<std::string>& claimed_names,
+                            const std::string& base_name,
+                            const std::string& qualifier,
+                            ModelInfo info,
+                            const std::set<std::string>* reserved_ids = nullptr) {
+    const std::string prefix(EXTRA_MODEL_PREFIX);
+    auto taken = [&](const std::string& name) {
+        return claimed_names.count(name) ||
+               (reserved_ids && reserved_ids->count(prefix + name));
+    };
+    std::string name = base_name;
+    if (taken(name)) {
+        const std::string qualified = qualifier + "-" + base_name;
+        name = qualified;
+        for (int n = 2; taken(name); ++n) {
+            name = qualified + "-" + std::to_string(n);
+        }
+    }
+    claimed_names.insert(name);
+    info.model_name = prefix + name;
+    discovered.emplace(info.model_name, std::move(info));
+}
+
+static const std::set<std::string>& reserved_extra_model_ids() {
+    static const std::set<std::string> ids = {
+        std::string(EXTRA_MODEL_PREFIX) + "chat",
+        std::string(EXTRA_MODEL_PREFIX) + "embeddings",
+        std::string(EXTRA_MODEL_PREFIX) + "reranking",
+    };
+    return ids;
+}
+
+static bool is_draft_gguf_filename(std::string filename) {
+    std::transform(filename.begin(), filename.end(), filename.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return filename.rfind("mtp-", 0) == 0 ||
+           filename.find("-mtp-ud-") != std::string::npos ||
+           filename.rfind("dflash-", 0) == 0 || filename == "dflash.gguf";
+}
+
+std::map<std::string, ModelInfo> ModelManager::discover_extra_models(
+    const std::set<fs::path>& registered_paths) const {
     std::map<std::string, ModelInfo> discovered;
 
     // If no extra models directory configured, return empty
@@ -1199,7 +1672,10 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
         return discovered;
     }
 
-    const fs::path search_path = path_from_utf8(extra_models_dir_);
+    fs::path search_path = path_from_utf8(extra_models_dir_).lexically_normal();
+    if (!search_path.has_filename()) {
+        search_path = search_path.parent_path();
+    }
     std::error_code status_ec;
     const fs::file_status status = fs::status(search_path, status_ec);
     if (status_ec) {
@@ -1222,6 +1698,7 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
 
     // Track which directories we've processed (for multimodal/multi-shard detection)
     std::map<fs::path, std::vector<fs::path>> dirs_with_gguf;  // directory -> list of gguf files
+    std::map<fs::path, std::vector<fs::path>> category_files;
     std::vector<fs::path> standalone_files;  // GGUF files not in subdirectories
 
     // Recursively find all .gguf files
@@ -1233,16 +1710,35 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
 
             std::string filename = entry.path().filename().string();
 
-            if (!gguf_reader_detail::ends_with_ignore_case(filename, ".gguf")) continue;
+            if (!gguf_reader_detail::ends_with_ignore_case(filename, ".gguf") ||
+                is_draft_gguf_filename(filename)) continue;
+
+            // Registry-owned files were already attached to their original
+            // model IDs. Do not surface them again as extra.* models. A
+            // directory checkpoint also owns any GGUFs below that directory.
+            bool registered = false;
+            for (fs::path path = entry.path().lexically_normal(); !path.empty();
+                 path = path.parent_path()) {
+                if (registered_paths.count(path)) {
+                    registered = true;
+                    break;
+                }
+                if (path == search_path) break;
+            }
+            if (registered) continue;
 
             fs::path parent_dir = entry.path().parent_path();
+            const std::string deployment_label =
+                extra_model_deployment_label(entry.path(), search_path);
+            const fs::path relative_parent = parent_dir.lexically_relative(search_path);
+            const bool directly_in_category =
+                !deployment_label.empty() && relative_parent == fs::path(deployment_label);
 
-            // Check if this file is directly in the search directory or in a subdirectory
             if (parent_dir == search_path) {
-                // Standalone file in the root of search directory
                 standalone_files.push_back(entry.path());
+            } else if (directly_in_category) {
+                category_files[parent_dir].push_back(entry.path());
             } else {
-                // File in a subdirectory - group by parent directory
                 dirs_with_gguf[parent_dir].push_back(entry.path());
             }
         }
@@ -1251,34 +1747,122 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
         return discovered;
     }
 
-    // Process standalone files (single-file models)
-    for (const auto& gguf_path : standalone_files) {
+    // A directory used to be listed as a single model named after itself.
+    // Reserving one splits it into separate models, so keep the old id resolving.
+    // The first model to keep a folder name owns it in both its bare and
+    // extra. forms; resolving each form separately could split them.
+    std::set<std::string> claimed_names;
+    auto add_standalone_model = [&](const std::vector<fs::path>& model_files,
+                                    const std::string& deployment_label,
+                                    const fs::path& mmproj_file = fs::path()) {
+        const fs::path& gguf_path = model_files.front();
         std::string filename = gguf_path.filename().string();
-
-        // Skip mmproj files - they're part of multimodal models
-        if (gguf_reader_detail::contains_ignore_case(filename, "mmproj")) continue;
-
-        std::string model_name = std::string(EXTRA_MODEL_PREFIX) + gguf_path.stem().string();
+        std::string shard_base;
+        const bool sharded = model_files.size() > 1 &&
+            is_gguf_shard_filename(filename, &shard_base);
+        const std::string base_name = sharded ? shard_base : gguf_path.stem().string();
+        std::string model_name = std::string(EXTRA_MODEL_PREFIX) + base_name;
         ModelInfo info = init_extra_model_info(model_name);
         info.checkpoints["main"] = gguf_path.string();
         info.resolved_paths["main"] = gguf_path.string();
-        info.type = ModelType::LLM;
+        if (!deployment_label.empty()) {
+            add_label_once(info.labels, deployment_label);
+        }
+        lemon::backends::ensure_deployment_label(info.labels, EXTRA_MODEL_RECIPE);
+        info.type = get_model_type_from_labels(info.labels);
 
-        // Calculate size in GB
-        try {
-            uintmax_t file_size = fs::file_size(gguf_path);
-            info.size = static_cast<double>(file_size) / (1024.0 * 1024.0 * 1024.0);
-        } catch (...) {
-            info.size = 0.0;
+        uintmax_t total_size = 0;
+        for (const auto& model_file : model_files) {
+            try {
+                total_size += fs::file_size(model_file);
+            } catch (...) {}
+        }
+        info.size = static_cast<double>(total_size) / (1024.0 * 1024.0 * 1024.0);
+
+        if (!mmproj_file.empty()) {
+            info.checkpoints["mmproj"] = mmproj_file.filename().string();
+            info.resolved_paths["mmproj"] = mmproj_file.string();
+            info.labels.push_back("vision");
         }
 
-        add_extra_model(discovered, gguf_path.stem().string(), gguf_path.parent_path(), std::move(info));
+        if (!deployment_label.empty() && claimed_names.insert(deployment_label).second) {
+            info.input_aliases.push_back(deployment_label);
+            info.input_aliases.push_back(std::string(EXTRA_MODEL_PREFIX) + deployment_label);
+        }
+
+        add_extra_model(discovered, claimed_names, base_name,
+                        gguf_path.parent_path().filename().string(),
+                        std::move(info), deployment_label.empty()
+                            ? nullptr
+                            : &reserved_extra_model_ids());
+    };
+
+    // Files sitting directly in a directory are separate models, except where
+    // numbered shard names declare that they belong together.
+    auto group_logical_models = [](std::vector<fs::path> files,
+                                   std::vector<fs::path>& mmproj_files) {
+        std::sort(files.begin(), files.end(),
+                  [](const fs::path& lhs, const fs::path& rhs) {
+                      return lhs.generic_string() < rhs.generic_string();
+                  });
+        std::vector<std::vector<fs::path>> logical_models;
+        std::map<std::pair<std::string, int>, size_t> shard_groups;
+
+        for (const auto& file : files) {
+            const std::string filename = file.filename().string();
+            if (gguf_reader_detail::contains_ignore_case(filename, "mmproj")) {
+                mmproj_files.push_back(file);
+                continue;
+            }
+
+            std::string shard_base;
+            int shard_total = 0;
+            if (is_gguf_shard_filename(filename, &shard_base, &shard_total)) {
+                const auto key = std::make_pair(shard_base, shard_total);
+                auto [it, inserted] = shard_groups.emplace(key, logical_models.size());
+                if (inserted) logical_models.emplace_back();
+                logical_models[it->second].push_back(file);
+            } else {
+                logical_models.push_back({file});
+            }
+        }
+
+        std::sort(logical_models.begin(), logical_models.end(),
+                  [](const auto& lhs, const auto& rhs) {
+                      return lhs.front().generic_string() < rhs.front().generic_string();
+                  });
+        return logical_models;
+    };
+
+    // Root files claim their short id first, so adding a reserved directory
+    // never renames an extra model that already exists.
+    std::vector<fs::path> root_mmproj_files;
+    for (const auto& model_files : group_logical_models(standalone_files, root_mmproj_files)) {
+        add_standalone_model(model_files, "");
+    }
+
+    for (const auto& [category_path, files] : category_files) {
+        std::vector<fs::path> mmproj_files;
+        const auto logical_models = group_logical_models(files, mmproj_files);
+
+        const std::string deployment_label = category_path.filename().string();
+        const fs::path direct_mmproj = logical_models.size() == 1 && !mmproj_files.empty()
+            ? mmproj_files.front()
+            : fs::path();
+        for (const auto& model_files : logical_models) {
+            add_standalone_model(model_files, deployment_label, direct_mmproj);
+        }
     }
 
     // Process directories (multimodal and multi-shard models)
-    for (const auto& [dir_path, gguf_files] : dirs_with_gguf) {
+    for (auto& [dir_path, gguf_files] : dirs_with_gguf) {
         if (gguf_files.empty()) continue;
-        discover_extra_models_in_directory(dir_path, gguf_files, discovered);
+        std::sort(gguf_files.begin(), gguf_files.end(),
+                  [](const fs::path& lhs, const fs::path& rhs) {
+                      return lhs.generic_string() < rhs.generic_string();
+                  });
+        discover_extra_models_in_directory(dir_path, gguf_files, discovered, search_path,
+                                           claimed_names);
     }
 
     LOG(INFO, "ModelManager") << "Discovered " << discovered.size() << " models from extra directory" << std::endl;
@@ -1289,9 +1873,19 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
 void ModelManager::discover_extra_models_in_directory(
     const fs::path& dir_path,
     const std::vector<fs::path>& gguf_files,
-    std::map<std::string, ModelInfo>& discovered) const {
+    std::map<std::string, ModelInfo>& discovered,
+    const fs::path& search_path,
+    std::set<std::string>& claimed_names) const {
 
     std::string dir_name = dir_path.filename().string();
+    std::string qualifier = dir_name;
+    std::string folder_qualifier = dir_path.parent_path().filename().string();
+    const CacheRepoNaming cache = cache_repo_naming(dir_path, search_path);
+    if (!cache.name.empty()) {
+        dir_name = cache.name;
+        qualifier = folder_qualifier = cache.qualifier;
+    }
+    const std::string deployment_label = extra_model_deployment_label(dir_path, search_path);
     fs::path main_model_path; // File the old folder-based discovery would have selected.
     std::vector<fs::path> mmproj_files;
     double total_size = 0.0;
@@ -1358,27 +1952,38 @@ void ModelManager::discover_extra_models_in_directory(
             if (it == model_file_by_name.end()) continue;
 
             const fs::path& path = it->second;
-            std::string variant_id = std::string(EXTRA_MODEL_PREFIX) + visible_extra_variant_name(v);
+            const std::string variant_name =
+                cache.variant_prefix + visible_extra_variant_name(v);
+            std::string variant_id = std::string(EXTRA_MODEL_PREFIX) + variant_name;
 
             ModelInfo info = init_extra_model_info(variant_id);
             info.checkpoints["main"] = path.string();
             info.resolved_paths["main"] = path.string();
             info.size = static_cast<double>(v.size_bytes) / (1024.0 * 1024.0 * 1024.0);
 
+            if (!deployment_label.empty()) {
+                add_label_once(info.labels, deployment_label);
+            }
+
             if (!mmproj_file.empty()) {
                 info.checkpoints["mmproj"] = mmproj_file.filename().string();
                 info.resolved_paths["mmproj"] = mmproj_file.string();
                 info.labels.push_back("vision");
             }
+            lemon::backends::ensure_deployment_label(info.labels, EXTRA_MODEL_RECIPE);
             info.type = get_model_type_from_labels(info.labels);
 
             // Keep the old folder name working in requests without listing it.
-            if (path == main_model_path) {
+            if (path == main_model_path && cache.name.empty() &&
+                claimed_names.insert(dir_name).second) {
                 info.input_aliases.push_back(dir_name);
                 info.input_aliases.push_back(std::string(EXTRA_MODEL_PREFIX) + dir_name);
             }
 
-            add_extra_model(discovered, visible_extra_variant_name(v), dir_path, std::move(info));
+            add_extra_model(discovered, claimed_names, variant_name, qualifier,
+                            std::move(info), deployment_label.empty()
+                                ? nullptr
+                                : &reserved_extra_model_ids());
         }
     } else {
         // Keep the folder as one model when splitting would be ambiguous.
@@ -1388,13 +1993,21 @@ void ModelManager::discover_extra_models_in_directory(
         info.resolved_paths["main"] = main_model_path.string();
         info.size = total_size;
 
+        if (!deployment_label.empty()) {
+            add_label_once(info.labels, deployment_label);
+        }
+
         if (!mmproj_file.empty()) {
             info.checkpoints["mmproj"] = mmproj_file.filename().string();
             info.resolved_paths["mmproj"] = mmproj_file.string();
             info.labels.push_back("vision");
         }
+        lemon::backends::ensure_deployment_label(info.labels, EXTRA_MODEL_RECIPE);
         info.type = get_model_type_from_labels(info.labels);
-        add_extra_model(discovered, dir_name, dir_path, std::move(info));
+        add_extra_model(discovered, claimed_names, dir_name, folder_qualifier,
+                        std::move(info), deployment_label.empty()
+                            ? nullptr
+                            : &reserved_extra_model_ids());
     }
 }
 
@@ -1434,9 +2047,130 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::s
     return backends::ops_for(info.recipe)->resolve_checkpoint_path(info, ctx);
 }
 
+// Reuse the backend-specific registry resolver against an alternative cache
+// root, without changing how the managed cache is resolved by default.
+static std::string resolve_registered_extra_checkpoint(
+    const ModelInfo& info, const std::string& type,
+    const std::string& checkpoint, const std::string& extra_dir) {
+    backends::CheckpointResolveContext ctx;
+    ctx.hf_cache = extra_dir;
+    ctx.repo_id = checkpoint_to_repo_id(checkpoint);
+    ctx.main_repo_id = checkpoint_to_repo_id(info.checkpoint("main"));
+    ctx.variant = checkpoint_to_variant(checkpoint);
+    ctx.registry_source = effective_registry_source(info);
+    ctx.model_cache_path = extra_dir + "/" +
+        repo_id_to_cache_dir_name(ctx.repo_id, ctx.registry_source);
+    ctx.type = type;
+    ctx.checkpoint = checkpoint;
+    return backends::ops_for(info.recipe)->resolve_checkpoint_path(info, ctx);
+}
+
+// Resolve the complete family of a registered sharded GGUF. A first shard
+// alone is not a usable model, and its remaining shards must not be discovered
+// as an unrelated extra.* model. Other quantizations remain independent.
+static bool collect_registered_shards(const fs::path& resolved, const fs::path& repo_root,
+                                      std::set<fs::path>& owned_paths) {
+    const fs::path file = resolved.lexically_normal();
+    std::string base;
+    int total = 0;
+    if (!is_gguf_shard_filename(file.filename().string(), &base, &total)) {
+        owned_paths.insert(file);
+        return true;
+    }
+
+    std::set<int> indices;
+    bool complete = true;
+    std::error_code ec;
+    for (const auto& entry : fs::directory_iterator(file.parent_path(), safe_dir_options, ec)) {
+        if (ec) return false;
+        const std::string filename = entry.path().filename().string();
+        if (!same_shard_family(filename, base, total)) continue;
+
+        int index = 0;
+        is_gguf_shard_filename(filename, nullptr, nullptr, &index);
+        if (!entry.is_regular_file(ec) || ec ||
+            !path_inside(entry.path(), repo_root)) {
+            return false;
+        }
+        owned_paths.insert(entry.path().lexically_normal());
+        const std::string path = path_to_utf8(entry.path());
+        if (!is_checkpoint_path_complete(path) ||
+            !backends::ops_for("llamacpp")->validate_checkpoint_file(path).empty()) {
+            complete = false;  // Still scan remaining siblings for discovery exclusion.
+        }
+        indices.insert(index);
+    }
+    return !ec && complete && indices.size() == static_cast<size_t>(total);
+}
+
+// Only complete repository caches can reclaim registered model identities;
+// loose GGUFs remain independent extra.* entries.
+static bool try_resolve_registered_extra_cache(ModelInfo& info, const std::string& extra_dir,
+                                               std::set<fs::path>* registered_paths = nullptr) {
+    if (extra_dir.empty() || !info.source.empty() ||
+        info.recipe == "flm" || info.recipe == "cloud" ||
+        is_model_collection_recipe(info.recipe)) return false;
+
+    const fs::path root = path_from_utf8(extra_dir);
+    const std::string repo = checkpoint_to_repo_id(info.checkpoint("main"));
+    if (repo.empty()) return false;
+    const fs::path main_repo = root /
+        repo_id_to_cache_dir_name(repo, effective_registry_source(info));
+    if (!safe_is_directory(main_repo) || !path_inside(main_repo, root)) {
+        return false;
+    }
+
+    ModelInfo candidate = info;
+    // Discovery must also exclude matched shards when the family is incomplete.
+    // Resolved model paths are still only committed after full validation.
+    std::set<fs::path> local_owned_paths;
+    std::set<fs::path>& owned_paths = registered_paths ? *registered_paths : local_owned_paths;
+    try {
+        for (const auto& [type, checkpoint] : info.checkpoints) {
+            if (type == "npu_cache") continue;  // Lazily managed by flm-npu.
+            const std::string checkpoint_repo = checkpoint_to_repo_id(checkpoint);
+            if (checkpoint_repo.empty()) return false;
+            const fs::path expected_repo = root /
+                repo_id_to_cache_dir_name(checkpoint_repo, effective_registry_source(info));
+            candidate.resolved_paths[type] =
+                resolve_registered_extra_checkpoint(info, type, checkpoint, extra_dir);
+            const std::string& resolved = candidate.resolved_paths[type];
+            if (info.recipe == "llamacpp" && type == "main" &&
+                (safe_is_directory(path_from_utf8(resolved)) ||
+                 !gguf_reader_detail::ends_with_ignore_case(resolved, ".gguf"))) {
+                return false;
+            }
+            // Reject escaped refs/main entries and symlinks, including redirects
+            // into a *different* repository under the same extra models root.
+            const fs::path resolved_path = path_from_utf8(resolved);
+            const bool own_repo = path_inside(expected_repo, root) &&
+                path_inside(resolved_path, expected_repo);
+            const bool legacy_main_repo = type != "main" &&
+                path_inside(resolved_path, main_repo);
+            if (resolved.empty() || (!own_repo && !legacy_main_repo) ||
+                !collect_registered_shards(resolved_path,
+                    own_repo ? expected_repo : main_repo, owned_paths)) {
+                return false;
+            }
+        }
+        if (!are_required_checkpoints_complete(candidate)) return false;
+    } catch (const std::exception&) {
+        return false;  // An optional directory must never break catalog discovery.
+    }
+    info.resolved_paths = std::move(candidate.resolved_paths);
+    return true;
+}
+
 void ModelManager::resolve_all_model_paths(ModelInfo& info) {
     for (auto const& [type, checkpoint] : info.checkpoints) {
         info.resolved_paths[type] = resolve_model_path(info, type, checkpoint);
+    }
+    // Prefer the managed cache, falling back only when incomplete.
+    if (!extra_models_dir_.empty() && info.source.empty() &&
+        info.recipe != "flm" && info.recipe != "cloud" &&
+        !is_model_collection_recipe(info.recipe) &&
+        !are_required_checkpoints_complete(info)) {
+        try_resolve_registered_extra_cache(info, extra_models_dir_);
     }
 }
 
@@ -1720,13 +2454,31 @@ static bool hf_selected_artifacts_unchanged(
     const std::map<std::string, std::string>& headers,
     HfTreePageCache* tree_cache);
 
-std::vector<std::string> ModelManager::check_for_model_updates() {
+ModelManager::UpdateCheckResult ModelManager::check_for_model_updates(const std::vector<std::string>& targets) {
     std::lock_guard<std::mutex> update_check_lock(update_check_mutex_);
+
+    if (update_check_override_) {
+        UpdateCheckResult res = update_check_override_(targets);
+        if (sync_phase_callback_) {
+            for (const auto& m : res.up_to_date_models) {
+                sync_phase_callback_("registry_check:" + m);
+            }
+            for (const auto& m : res.updated_models) {
+                sync_phase_callback_("registry_check:" + m);
+            }
+            for (const auto& [m, _] : res.failed_models) {
+                sync_phase_callback_("registry_check:" + m);
+            }
+        }
+        return res;
+    }
+
+    UpdateCheckResult result;
 
     if (auto* cfg = RuntimeConfig::global(); cfg && cfg->offline()) {
         LOG(DEBUG, "ModelManager")
             << "Offline mode enabled, skipping model update check" << std::endl;
-        return {};
+        return result;
     }
 
     struct RepoEntry {
@@ -1741,15 +2493,25 @@ std::vector<std::string> ModelManager::check_for_model_updates() {
     // Fast path only — never the comparison baseline (see active_local_snapshot).
     std::unordered_map<std::string, std::string> processed_snapshots;
 
+    build_cache();
+
     {
         std::lock_guard<std::mutex> lock(models_cache_mutex_);
 
-        if (!cache_valid_) {
-            return {};
+
+
+        std::unordered_set<std::string> target_canonicals;
+        for (const auto& t : targets) {
+            auto it = public_model_aliases_.find(t);
+            target_canonicals.insert(it != public_model_aliases_.end() ? it->second : t);
         }
 
         for (const auto& [name, info] : models_cache_) {
             if (!info.downloaded) {
+                continue;
+            }
+
+            if (!target_canonicals.empty() && target_canonicals.find(name) == target_canonicals.end()) {
                 continue;
             }
 
@@ -1811,6 +2573,13 @@ std::vector<std::string> ModelManager::check_for_model_updates() {
     for (auto& [key, entry] : repos) {
         (void)key;
 
+        {
+            std::lock_guard<std::mutex> lock(sync_state_.mutex);
+            if (sync_state_.cancel_requested) {
+                break;
+            }
+        }
+
         try {
             const auto source =
                 parse_remote_registry_source(entry.registry_source);
@@ -1821,10 +2590,20 @@ std::vector<std::string> ModelManager::check_for_model_updates() {
                 << remote_registry_display_name(source)
                 << ": " << entry.repo_id << std::endl;
 
+            for (const auto& model_name : entry.model_names) {
+                if (sync_phase_callback_) {
+                    sync_phase_callback_("registry_check:" + model_name);
+                }
+            }
+
             const RegistryRepository latest =
                 registry.fetch_repository(entry.repo_id);
 
             if (latest.snapshot_id.empty()) {
+                for (const auto& model_name : entry.model_names) {
+                    std::string pub_name = get_public_model_name(model_name);
+                    result.failed_models[pub_name] = "Empty snapshot returned from registry";
+                }
                 continue;
             }
 
@@ -1985,11 +2764,12 @@ std::vector<std::string> ModelManager::check_for_model_updates() {
 
         } catch (const RegistryNotFoundError& e) {
             LOG(DEBUG, "ModelManager")
-                << e.what() << ", assuming updates for "
-                << entry.model_names.size() << " model(s)" << std::endl;
+                << e.what() << ", skipping update check" << std::endl;
+            std::lock_guard<std::mutex> lock(models_cache_mutex_);
             for (const auto& model_name : entry.model_names) {
-                updated_models.insert(model_name);
-                determination_tracker.mark_determined(model_name);
+                const auto pub_it = canonical_public_names_.find(model_name);
+                std::string pub_name = pub_it != canonical_public_names_.end() ? pub_it->second : model_name;
+                result.failed_models[pub_name] = e.what();
             }
 
         } catch (const std::exception& e) {
@@ -1997,53 +2777,556 @@ std::vector<std::string> ModelManager::check_for_model_updates() {
                 << "Failed to check updates for "
                 << entry.repo_id
                 << " on " << entry.registry_source
-                << ": " << e.what()
-                << ", assuming updates for "
-                << entry.model_names.size() << " model(s)" << std::endl;
+                << ": " << e.what() << std::endl;
+            std::lock_guard<std::mutex> lock(models_cache_mutex_);
             for (const auto& model_name : entry.model_names) {
-                updated_models.insert(model_name);
-                determination_tracker.mark_determined(model_name);
+                const auto pub_it = canonical_public_names_.find(model_name);
+                std::string pub_name = pub_it != canonical_public_names_.end() ? pub_it->second : model_name;
+                result.failed_models[pub_name] = e.what();
             }
         }
     }
-
-    std::vector<std::string> public_updated_models;
 
     {
         std::lock_guard<std::mutex> lock(models_cache_mutex_);
 
         for (auto& [name, info] : models_cache_) {
             if (determination_tracker.is_verified(name)) {
-                info.update_available =
-                    updated_models.count(name) != 0;
+                auto pub_it = canonical_public_names_.find(name);
+                const std::string pub_name =
+                    pub_it != canonical_public_names_.end()
+                        ? pub_it->second
+                        : name;
+                if (result.failed_models.find(pub_name) == result.failed_models.end()) {
+                    info.update_available =
+                        updated_models.count(name) != 0;
+                }
             }
         }
 
-        public_updated_models.reserve(updated_models.size());
-
         for (const auto& name : updated_models) {
-            const auto public_it =
-                canonical_public_names_.find(name);
+            auto pub_it = canonical_public_names_.find(name);
+            const std::string pub_name =
+                pub_it != canonical_public_names_.end()
+                    ? pub_it->second
+                    : name;
+            if (result.failed_models.find(pub_name) == result.failed_models.end()) {
+                result.updated_models.push_back(pub_name);
+            }
+        }
 
-            public_updated_models.push_back(
-                public_it != canonical_public_names_.end()
-                    ? public_it->second
-                    : name);
+        for (const auto& [name, _] : candidate_models) {
+            if (determination_tracker.is_verified(name) && updated_models.count(name) == 0) {
+                auto pub_it = canonical_public_names_.find(name);
+                const std::string pub_name =
+                    pub_it != canonical_public_names_.end()
+                        ? pub_it->second
+                        : name;
+                if (result.failed_models.find(pub_name) == result.failed_models.end()) {
+                    result.up_to_date_models.push_back(pub_name);
+                }
+            }
         }
     }
 
-    std::sort(
-        public_updated_models.begin(),
-        public_updated_models.end());
+    std::sort(result.updated_models.begin(), result.updated_models.end());
+    std::sort(result.up_to_date_models.begin(), result.up_to_date_models.end());
 
-    if (!public_updated_models.empty()) {
+    if (!result.updated_models.empty()) {
         LOG(INFO, "ModelManager")
             << "Updates available for "
-            << public_updated_models.size()
+            << result.updated_models.size()
             << " model(s)" << std::endl;
     }
 
-    return public_updated_models;
+    return result;
+}
+
+bool ModelManager::should_auto_update(const ModelInfo& info) const {
+    if (info.auto_update.has_value()) {
+        return *info.auto_update;
+    }
+    auto* cfg = RuntimeConfig::global();
+    return cfg ? cfg->auto_update_models() : false;
+}
+
+json ModelManager::get_sync_status_locked() const {
+    std::string status = "idle";
+    if (sync_state_.is_sync_running) {
+        status = "in_progress";
+    } else if (!sync_state_.terminal_error.empty() || !sync_state_.failed_models.empty()) {
+        status = "failed";
+    } else if (sync_state_.checked_count > 0) {
+        status = "success";
+    }
+
+    json j = json{
+        {"status", status},
+        {"sync_id", sync_state_.current_generation},
+        {"completed_sync_id", sync_state_.completed_generation},
+        {"already_in_progress", sync_state_.is_sync_running},
+        {"is_full_sync", sync_state_.is_full_sync},
+        {"active_targets", sync_state_.active_targets},
+        {"pending_targets", sync_state_.pending_targets},
+        {"completed_targets", sync_state_.completed_targets},
+        {"models_updated", sync_state_.completed_targets},
+        {"models_up_to_date", sync_state_.models_up_to_date},
+        {"failed_models", sync_state_.failed_models},
+        {"terminal_error", sync_state_.terminal_error},
+        {"checked_count", sync_state_.checked_count},
+        {"updated_count", sync_state_.completed_targets.size()}
+    };
+    if (sync_state_.is_sync_running) {
+        j["progress"] = json{
+            {"current_model", sync_state_.current_model},
+            {"file", sync_state_.current_file},
+            {"file_index", sync_state_.file_index},
+            {"total_files", sync_state_.total_files},
+            {"bytes_downloaded", sync_state_.bytes_downloaded},
+            {"bytes_total", sync_state_.bytes_total},
+            {"percent", sync_state_.percent}
+        };
+    }
+    return j;
+}
+
+json ModelManager::get_sync_status(uint64_t sync_id) const {
+    std::lock_guard<std::mutex> lock(sync_state_.mutex);
+    if (sync_id > 0) {
+        if (sync_state_.is_sync_running && sync_state_.current_generation == sync_id) {
+            return get_sync_status_locked();
+        }
+        auto it = sync_state_.completed_generation_results.find(sync_id);
+        if (it != sync_state_.completed_generation_results.end()) {
+            return it->second;
+        }
+        return json{
+            {"status", "not_found"},
+            {"sync_id", sync_id},
+            {"completed_sync_id", sync_state_.completed_generation},
+            {"already_in_progress", false}
+        };
+    }
+    return get_sync_status_locked();
+}
+
+void ModelManager::cancel_sync() {
+
+    std::lock_guard<std::mutex> lock(sync_state_.mutex);
+    sync_state_.cancel_requested = true;
+}
+
+ModelManager::SyncEnqueueResult ModelManager::enqueue_sync(const std::vector<std::string>& target_models, bool attach_if_running) {
+    std::lock_guard<std::mutex> lock(sync_state_.mutex);
+
+    auto is_already_known = [this](const std::string& target) -> bool {
+        std::string canonical = resolve_model_name(target);
+        std::string pub = get_public_model_name(canonical);
+        if (sync_state_.active_targets.count(target) || sync_state_.active_targets.count(pub) || sync_state_.active_targets.count(canonical)) {
+            return true;
+        }
+        if (std::find(sync_state_.completed_targets.begin(), sync_state_.completed_targets.end(), target) != sync_state_.completed_targets.end() ||
+            std::find(sync_state_.completed_targets.begin(), sync_state_.completed_targets.end(), pub) != sync_state_.completed_targets.end() ||
+            std::find(sync_state_.completed_targets.begin(), sync_state_.completed_targets.end(), canonical) != sync_state_.completed_targets.end()) {
+            return true;
+        }
+        if (std::find(sync_state_.models_up_to_date.begin(), sync_state_.models_up_to_date.end(), target) != sync_state_.models_up_to_date.end() ||
+            std::find(sync_state_.models_up_to_date.begin(), sync_state_.models_up_to_date.end(), pub) != sync_state_.models_up_to_date.end() ||
+            std::find(sync_state_.models_up_to_date.begin(), sync_state_.models_up_to_date.end(), canonical) != sync_state_.models_up_to_date.end()) {
+            return true;
+        }
+        return false;
+    };
+
+    if (sync_state_.is_sync_running) {
+        LOG(INFO, "ModelManager") << "Sync requested while a model synchronization is already in progress. Enqueueing targets." << std::endl;
+        if (!attach_if_running) {
+            if (target_models.empty()) {
+                sync_state_.is_full_sync = true;
+            } else {
+                for (const auto& t : target_models) {
+                    std::string canonical = resolve_model_name(t);
+                    std::string pub = get_public_model_name(canonical);
+                    if (!is_already_known(t)) {
+                        sync_state_.pending_targets.insert(pub);
+                    }
+                }
+            }
+        }
+        return SyncEnqueueResult{/*already_running=*/true, /*sync_id=*/sync_state_.current_generation};
+    }
+
+    sync_state_.current_generation++;
+    sync_state_.is_sync_running = true;
+    sync_state_.is_full_sync = target_models.empty();
+    sync_state_.cancel_requested = false;
+    sync_state_.active_targets.clear();
+    sync_state_.pending_targets.clear();
+    sync_state_.completed_targets.clear();
+    sync_state_.models_up_to_date.clear();
+    sync_state_.failed_models.clear();
+    sync_state_.terminal_error.clear();
+    sync_state_.checked_count = 0;
+    for (const auto& t : target_models) {
+        std::string canonical = resolve_model_name(t);
+        std::string pub = get_public_model_name(canonical);
+        sync_state_.pending_targets.insert(pub);
+    }
+    return SyncEnqueueResult{/*already_running=*/false, /*sync_id=*/sync_state_.current_generation};
+}
+
+json ModelManager::execute_sync() {
+    struct SyncStateGuard {
+        ModelSyncState& state;
+        bool active = true;
+        ~SyncStateGuard() {
+            if (active) {
+                std::lock_guard<std::mutex> lock(state.mutex);
+                state.is_sync_running = false;
+                state.active_targets.clear();
+                state.current_model.clear();
+                state.current_file.clear();
+                state.file_index = 0;
+                state.total_files = 0;
+                state.bytes_downloaded = 0;
+                state.bytes_total = 0;
+                state.percent = 0;
+                state.completed_generation = state.current_generation;
+                state.completed_generation_results[state.current_generation] = json{
+                    {"status", "failed"},
+                    {"sync_id", state.current_generation},
+                    {"completed_sync_id", state.current_generation},
+                    {"already_in_progress", false},
+                    {"terminal_error", "Sync worker terminated unexpectedly"}
+                };
+                state.cv.notify_all();
+            }
+        }
+    } guard{sync_state_};
+
+    enum class ModelCheckOutcome {
+        UpToDate,
+        UpdateAvailable,
+        Failed
+    };
+    std::unordered_map<std::string, ModelCheckOutcome> checked_canonicals_in_job;
+
+    try {
+        while (true) {
+            std::vector<std::string> current_batch;
+            bool run_full_sync = false;
+
+            {
+                std::lock_guard<std::mutex> lock(sync_state_.mutex);
+                if (sync_state_.is_full_sync) {
+                    run_full_sync = true;
+                    sync_state_.is_full_sync = false;
+                }
+            }
+
+            if (run_full_sync) {
+                LOG(INFO, "ModelManager") << "Checking all models for sync/update..." << std::endl;
+                UpdateCheckResult full_check = check_for_model_updates();
+
+                std::vector<std::string> canonicals_to_notify;
+                {
+                    std::lock_guard<std::mutex> lock(sync_state_.mutex);
+                    for (const auto& [m, err] : full_check.failed_models) {
+                        std::string canonical = resolve_model_name(m);
+                        if (std::find(sync_state_.completed_targets.begin(), sync_state_.completed_targets.end(), m) == sync_state_.completed_targets.end()) {
+                            checked_canonicals_in_job[canonical] = ModelCheckOutcome::Failed;
+                            canonicals_to_notify.push_back(canonical);
+                            sync_state_.failed_models[m] = err;
+                            auto up_it = std::find(sync_state_.models_up_to_date.begin(), sync_state_.models_up_to_date.end(), m);
+                            if (up_it != sync_state_.models_up_to_date.end()) {
+                                sync_state_.models_up_to_date.erase(up_it);
+                            }
+                        }
+                    }
+                    for (const auto& m : full_check.updated_models) {
+                        std::string canonical = resolve_model_name(m);
+                        if (std::find(sync_state_.completed_targets.begin(), sync_state_.completed_targets.end(), m) == sync_state_.completed_targets.end()) {
+                            checked_canonicals_in_job[canonical] = ModelCheckOutcome::UpdateAvailable;
+                            canonicals_to_notify.push_back(canonical);
+                            auto up_it = std::find(sync_state_.models_up_to_date.begin(), sync_state_.models_up_to_date.end(), m);
+                            if (up_it != sync_state_.models_up_to_date.end()) {
+                                sync_state_.models_up_to_date.erase(up_it);
+                            }
+                            sync_state_.failed_models.erase(m);
+                            if (sync_state_.active_targets.find(m) == sync_state_.active_targets.end()) {
+                                sync_state_.pending_targets.insert(m);
+                            }
+                        }
+                    }
+                    for (const auto& m : full_check.up_to_date_models) {
+                        std::string canonical = resolve_model_name(m);
+                        if (std::find(sync_state_.completed_targets.begin(), sync_state_.completed_targets.end(), m) == sync_state_.completed_targets.end()) {
+                            checked_canonicals_in_job[canonical] = ModelCheckOutcome::UpToDate;
+                            canonicals_to_notify.push_back(canonical);
+                            sync_state_.failed_models.erase(m);
+                            if (std::find(sync_state_.models_up_to_date.begin(), sync_state_.models_up_to_date.end(), m) == sync_state_.models_up_to_date.end()) {
+                                sync_state_.models_up_to_date.push_back(m);
+                            }
+                        }
+                    }
+                    sync_state_.checked_count = static_cast<int>(checked_canonicals_in_job.size());
+                }
+
+                if (sync_phase_callback_) {
+                    for (const auto& canonical : canonicals_to_notify) {
+                        sync_phase_callback_("check_model:" + canonical);
+                    }
+                    sync_phase_callback_("full_check_done");
+                }
+            }
+
+            std::vector<std::string> pending;
+            {
+                std::lock_guard<std::mutex> lock(sync_state_.mutex);
+                if (!sync_state_.pending_targets.empty()) {
+                    pending.assign(sync_state_.pending_targets.begin(), sync_state_.pending_targets.end());
+                    sync_state_.pending_targets.clear();
+                }
+            }
+
+            for (const auto& t : pending) {
+                try {
+                    std::string canonical_name = resolve_model_name(t);
+                    std::string public_name = get_public_model_name(canonical_name);
+
+                    bool skip = false;
+                    {
+                        std::lock_guard<std::mutex> lock(sync_state_.mutex);
+                        if (sync_state_.active_targets.count(public_name) ||
+                            std::find(sync_state_.completed_targets.begin(), sync_state_.completed_targets.end(), public_name) != sync_state_.completed_targets.end() ||
+                            std::find(sync_state_.models_up_to_date.begin(), sync_state_.models_up_to_date.end(), public_name) != sync_state_.models_up_to_date.end()) {
+                            skip = true;
+                        }
+                    }
+                    if (skip) {
+                        continue;
+                    }
+
+                    if (sync_phase_callback_) {
+                        sync_phase_callback_("check_model:" + canonical_name);
+                    }
+
+                    ModelInfo info = get_model_info(canonical_name);
+                    if (!info.downloaded) {
+                        std::lock_guard<std::mutex> lock(sync_state_.mutex);
+                        sync_state_.failed_models[public_name] = "Model is not downloaded";
+                        checked_canonicals_in_job[canonical_name] = ModelCheckOutcome::Failed;
+                        continue;
+                    }
+
+                    auto it = checked_canonicals_in_job.find(canonical_name);
+                    if (it != checked_canonicals_in_job.end()) {
+                        if (it->second == ModelCheckOutcome::UpdateAvailable) {
+                            current_batch.push_back(public_name);
+                        }
+                        continue;
+                    }
+
+                    UpdateCheckResult target_check = check_for_model_updates({public_name});
+
+                    {
+                        std::lock_guard<std::mutex> lock(sync_state_.mutex);
+                        if (!target_check.failed_models.empty() && target_check.failed_models.count(public_name)) {
+                            sync_state_.failed_models[public_name] = target_check.failed_models[public_name];
+                            checked_canonicals_in_job[canonical_name] = ModelCheckOutcome::Failed;
+                        } else if (!target_check.updated_models.empty()) {
+                            current_batch.push_back(public_name);
+                            checked_canonicals_in_job[canonical_name] = ModelCheckOutcome::UpdateAvailable;
+                            sync_state_.checked_count++;
+                        } else if (!target_check.up_to_date_models.empty() &&
+                                   std::find(target_check.up_to_date_models.begin(), target_check.up_to_date_models.end(), public_name) != target_check.up_to_date_models.end()) {
+                            if (std::find(sync_state_.models_up_to_date.begin(), sync_state_.models_up_to_date.end(), public_name) == sync_state_.models_up_to_date.end()) {
+                                sync_state_.models_up_to_date.push_back(public_name);
+                            }
+                            checked_canonicals_in_job[canonical_name] = ModelCheckOutcome::UpToDate;
+                            sync_state_.checked_count++;
+                        } else {
+                            sync_state_.failed_models[public_name] = "Model is not eligible for remote registry update checks";
+                            checked_canonicals_in_job[canonical_name] = ModelCheckOutcome::Failed;
+                        }
+                    }
+                    if (sync_phase_callback_) {
+                        sync_phase_callback_("target_check_done:" + canonical_name);
+                    }
+                } catch (const std::exception& e) {
+                    {
+                        std::lock_guard<std::mutex> lock(sync_state_.mutex);
+                        sync_state_.failed_models[t] = e.what();
+                        checked_canonicals_in_job[resolve_model_name(t)] = ModelCheckOutcome::Failed;
+                    }
+                    if (sync_phase_callback_) {
+                        sync_phase_callback_("target_check_done:" + resolve_model_name(t));
+                    }
+                }
+            }
+
+            {
+                std::lock_guard<std::mutex> lock(sync_state_.mutex);
+                if (current_batch.empty()) {
+                    if (sync_state_.is_full_sync || !sync_state_.pending_targets.empty()) {
+                        continue;
+                    }
+                    sync_state_.is_sync_running = false;
+                    sync_state_.active_targets.clear();
+                    sync_state_.current_model.clear();
+                    sync_state_.current_file.clear();
+                    sync_state_.file_index = 0;
+                    sync_state_.total_files = 0;
+                    sync_state_.bytes_downloaded = 0;
+                    sync_state_.bytes_total = 0;
+                    sync_state_.percent = 0;
+                    sync_state_.completed_generation = sync_state_.current_generation;
+                    json res = get_sync_status_locked();
+                    sync_state_.completed_generation_results[sync_state_.current_generation] = res;
+                    if (sync_state_.completed_generation_results.size() > 32) {
+                        sync_state_.completed_generation_results.erase(sync_state_.completed_generation_results.begin());
+                    }
+                    guard.active = false;
+                    sync_state_.cv.notify_all();
+                    return res;
+                }
+            }
+
+            for (const auto& model_name : current_batch) {
+                {
+                    std::lock_guard<std::mutex> lock(sync_state_.mutex);
+                    sync_state_.active_targets.insert(model_name);
+                }
+
+                LOG(INFO, "ModelManager") << "Syncing model: " << model_name << std::endl;
+                try {
+                    auto progress_cb = [this, model_name](const DownloadProgress& prog) -> bool {
+                        std::lock_guard<std::mutex> lock(sync_state_.mutex);
+                        if (sync_state_.cancel_requested) {
+                            return false;
+                        }
+                        sync_state_.current_model = model_name;
+                        sync_state_.current_file = prog.file;
+                        sync_state_.file_index = prog.file_index;
+                        sync_state_.total_files = prog.total_files;
+                        sync_state_.bytes_downloaded = prog.bytes_downloaded;
+                        sync_state_.bytes_total = prog.bytes_total;
+                        sync_state_.percent = prog.percent;
+                        return true;
+                    };
+
+                    download_model(model_name, json::object(), /*do_not_upgrade=*/false, progress_cb);
+
+                    std::lock_guard<std::mutex> lock(sync_state_.mutex);
+                    sync_state_.active_targets.erase(model_name);
+                    sync_state_.completed_targets.push_back(model_name);
+                } catch (const std::exception& e) {
+                    LOG(ERROR, "ModelManager") << "Failed to sync model " << model_name << ": " << e.what() << std::endl;
+                    std::lock_guard<std::mutex> lock(sync_state_.mutex);
+                    sync_state_.active_targets.erase(model_name);
+                    sync_state_.failed_models[model_name] = e.what();
+                }
+            }
+        }
+    } catch (const std::exception& e) {
+        LOG(ERROR, "ModelManager") << "Terminal error in model synchronization: " << e.what() << std::endl;
+        std::lock_guard<std::mutex> lock(sync_state_.mutex);
+        sync_state_.terminal_error = e.what();
+        sync_state_.is_sync_running = false;
+        sync_state_.active_targets.clear();
+        sync_state_.current_model.clear();
+        sync_state_.current_file.clear();
+        sync_state_.file_index = 0;
+        sync_state_.total_files = 0;
+        sync_state_.bytes_downloaded = 0;
+        sync_state_.bytes_total = 0;
+        sync_state_.percent = 0;
+        sync_state_.completed_generation = sync_state_.current_generation;
+        json res = get_sync_status_locked();
+        sync_state_.completed_generation_results[sync_state_.current_generation] = res;
+        if (sync_state_.completed_generation_results.size() > 32) {
+            sync_state_.completed_generation_results.erase(sync_state_.completed_generation_results.begin());
+        }
+        guard.active = false;
+        sync_state_.cv.notify_all();
+        return res;
+    }
+
+    return get_sync_status();
+}
+
+json ModelManager::sync_models(const std::vector<std::string>& target_models, bool dry_run, bool attach_if_running) {
+    if (dry_run) {
+        LOG(INFO, "ModelManager") << "Checking models for sync/update (dry-run)..." << std::endl;
+        UpdateCheckResult check_res = check_for_model_updates(target_models);
+
+        std::vector<std::string> models_to_update = check_res.updated_models;
+        std::vector<std::string> models_up_to_date = check_res.up_to_date_models;
+        std::map<std::string, std::string> failed_models = check_res.failed_models;
+        int checked_count = check_res.up_to_date_models.size() + check_res.updated_models.size();
+
+        if (!target_models.empty()) {
+            for (const auto& input_name : target_models) {
+                std::string canonical_name = resolve_model_name(input_name);
+                std::string pub_name = get_public_model_name(canonical_name);
+                if (failed_models.count(pub_name) || failed_models.count(input_name)) {
+                    continue;
+                }
+                ModelInfo info;
+                bool found = false;
+                {
+                    std::lock_guard<std::mutex> lock(models_cache_mutex_);
+                    auto it = models_cache_.find(canonical_name);
+                    if (it != models_cache_.end()) {
+                        info = it->second;
+                        found = true;
+                    }
+                }
+
+                if (!found) {
+                    failed_models[input_name] = "Model not found or registered";
+                    continue;
+                }
+
+                if (!info.downloaded) {
+                    failed_models[input_name] = "Model is not downloaded";
+                    continue;
+                }
+            }
+        }
+
+        json status_info = get_sync_status();
+        bool running = status_info.value("already_in_progress", false);
+        return json{
+            {"status", running ? "in_progress" : (failed_models.empty() ? "success" : "failed")},
+            {"dry_run", true},
+            {"already_in_progress", running},
+            {"sync_id", status_info.value("sync_id", 0)},
+            {"completed_sync_id", status_info.value("completed_sync_id", 0)},
+            {"checked_count", checked_count},
+            {"updated_count", models_to_update.size()},
+            {"models_updated", models_to_update},
+            {"models_up_to_date", models_up_to_date},
+            {"failed_models", failed_models}
+        };
+    }
+
+    SyncEnqueueResult enqueue_res = enqueue_sync(target_models, attach_if_running);
+    uint64_t target_gen = enqueue_res.sync_id;
+
+    if (enqueue_res.already_running) {
+        std::unique_lock<std::mutex> lock(sync_state_.mutex);
+        sync_state_.cv.wait(lock, [this, target_gen]() {
+            return sync_state_.completed_generation >= target_gen && (!sync_state_.is_sync_running || sync_state_.current_generation > target_gen);
+        });
+        auto it = sync_state_.completed_generation_results.find(target_gen);
+        if (it != sync_state_.completed_generation_results.end()) {
+            return it->second;
+        }
+        return get_sync_status_locked();
+    }
+
+    return execute_sync();
 }
 
 static void load_checkpoints(ModelInfo& info, json& model_json) {
@@ -2242,6 +3525,135 @@ void ModelManager::download_from_huggingface_engine(
     download_from_registry_engine(info, progress_callback);
 }
 
+// Every alias form rebuild_public_model_aliases_locked() computes -- bare
+// name (by source precedence), builtin.<X>, and ModelInfo::input_aliases --
+// as a pure function of an arbitrary model set, so it can also run against
+// the pre-filter set (#2748): a component's alias must resolve the same way
+// whether or not its model currently survives hardware filtering. See that
+// function's own doc comment for what each field means.
+struct ModelAliasMaps {
+    std::map<std::string, std::string> public_model_aliases;
+    std::map<std::string, std::string> canonical_public_names;
+};
+
+static ModelAliasMaps compute_model_alias_maps(const std::map<std::string, ModelInfo>& models) {
+    ModelAliasMaps result;
+
+    struct Entry {
+        std::string cache_key;
+        ModelSource source;
+    };
+    std::map<std::string, std::vector<Entry>> by_bare;
+
+    for (const auto& [cache_key, info] : models) {
+        ModelSource source;
+        std::string bare;
+        if (auto canon = parse_canonical_id(cache_key)) {
+            source = canon->source;
+            bare = canon->bare_name;
+        } else {
+            source = ModelSource::Builtin;
+            bare = cache_key;
+        }
+        by_bare[bare].push_back({cache_key, source});
+    }
+
+    for (auto& [bare, entries] : by_bare) {
+        std::sort(entries.begin(), entries.end(), [](const Entry& a, const Entry& b) {
+            return precedence_rank(a.source) < precedence_rank(b.source);
+        });
+
+        const Entry& winner = entries.front();
+        result.public_model_aliases[bare] = winner.cache_key;
+
+        const auto winner_it = models.find(winner.cache_key);
+        const bool winner_is_prefixed_collection =
+            winner.source != ModelSource::Builtin &&
+            winner_it != models.end() &&
+            is_model_collection_recipe(winner_it->second.recipe);
+        result.canonical_public_names[winner.cache_key] =
+            winner_is_prefixed_collection ? canonical_id(winner.source, bare) : bare;
+
+        for (size_t i = 1; i < entries.size(); ++i) {
+            const Entry& shadowed = entries[i];
+            std::string canonical = canonical_id(shadowed.source, bare);
+            result.canonical_public_names[shadowed.cache_key] = canonical;
+            if (canonical != shadowed.cache_key) {
+                result.public_model_aliases[canonical] = shadowed.cache_key;
+            }
+        }
+    }
+
+    for (const auto& [cache_key, _info] : models) {
+        if (parse_canonical_id(cache_key)) continue;
+        std::string canonical = canonical_id(ModelSource::Builtin, cache_key);
+        result.public_model_aliases.try_emplace(canonical, cache_key);
+    }
+
+    auto source_for_cache_key = [](const std::string& cache_key) {
+        if (auto canon = parse_canonical_id(cache_key)) {
+            return canon->source;
+        }
+        return ModelSource::Builtin;
+    };
+
+    for (const auto& [cache_key, info] : models) {
+        for (const auto& alias : info.input_aliases) {
+            if (parse_canonical_id(alias)) {
+                if (models.find(alias) == models.end()) {
+                    result.public_model_aliases[alias] = cache_key;
+                }
+            } else {
+                auto existing = result.public_model_aliases.find(alias);
+                if (existing == result.public_model_aliases.end()) {
+                    result.public_model_aliases[alias] = cache_key;
+                    continue;
+                }
+
+                if (source_for_cache_key(existing->second) == ModelSource::Builtin) {
+                    std::string builtin_canonical = canonical_id(ModelSource::Builtin, alias);
+                    result.canonical_public_names[existing->second] = builtin_canonical;
+                    result.public_model_aliases[builtin_canonical] = existing->second;
+                    result.public_model_aliases[alias] = cache_key;
+                }
+            }
+        }
+    }
+
+    return result;
+}
+
+// Both routing-policy parse sites resolve a component the same way: alias
+// first, falling back to the name as authored; then a primary type lookup
+// with one fallback tier behind it. #2748 was that shape drifting between
+// them, so they are built from here rather than hand-written twice. Only the
+// tiers differ -- which model set each consults, and what the fallback is.
+struct RoutingResolutionTiers {
+    std::function<std::optional<std::string>(const std::string&)> alias;
+    std::function<std::optional<ModelType>(const std::string&)> type;
+    std::function<std::optional<ModelType>(const std::string&)> type_fallback;
+};
+
+static RoutingPolicyParseOptions make_routing_parse_options(RoutingResolutionTiers tiers) {
+    RoutingPolicyParseOptions options;
+    options.resolve_component =
+        [tiers](const std::string& name) -> std::optional<std::string> {
+        if (tiers.alias) {
+            if (auto resolved = tiers.alias(name)) return *resolved;
+        }
+        // An unresolvable name stays as authored so component-role validation
+        // can still report it by the name the author actually wrote.
+        return name;
+    };
+    options.get_model_type = [tiers](const std::string& name) -> std::optional<ModelType> {
+        if (tiers.type) {
+            if (auto type = tiers.type(name)) return type;
+        }
+        return tiers.type_fallback ? tiers.type_fallback(name) : std::nullopt;
+    };
+    return options;
+}
+
 void ModelManager::build_cache() {
     std::lock_guard<std::mutex> lock(models_cache_mutex_);
 
@@ -2274,8 +3686,12 @@ void ModelManager::build_cache() {
             continue;
         }
         info.size = JsonUtils::get_or_default<double>(value, "size", 0.0);
+        info.min_resident_gb = JsonUtils::get_or_default<double>(value, "min_resident_gb", 0.0);
         info.cloud_provider = JsonUtils::get_or_default<std::string>(value, "cloud_provider", "");
         info.system_prompt = JsonUtils::get_or_default<std::string>(value, "system_prompt", "");
+        if (value.contains("auto_update") && value["auto_update"].is_boolean()) {
+            info.auto_update = value["auto_update"].get<bool>();
+        }
 
         // Registry-backed collections store their components remotely — the
         // cached manifest is the single source of truth. Rebuild the component
@@ -2304,11 +3720,10 @@ void ModelManager::build_cache() {
             json_recipe_options[key] = value["recipe_options"];
         }
 
-        // Built-ins declare their mode in server_models.json, and
-        // test_server_models_labels.py fails CI on one that names an illegal
-        // set, so this normally changes nothing — but it is what makes "an LLM
-        // always carries `chat`" hold for every ingest path rather than only
-        // for the ones that happen to call it.
+        // Built-ins declare their mode in server_models.json, so this normally
+        // changes nothing — but it is what makes "an LLM always carries `chat`"
+        // hold for every ingest path rather than only for the ones that happen
+        // to call it.
         std::string illegal =
             lemon::backends::illegal_deployment_labels(info.labels, info.recipe);
         if (!illegal.empty()) {
@@ -2350,8 +3765,12 @@ void ModelManager::build_cache() {
             continue;
         }
         info.size = JsonUtils::get_or_default<double>(value, "size", 0.0);
+        info.min_resident_gb = JsonUtils::get_or_default<double>(value, "min_resident_gb", 0.0);
         info.cloud_provider = JsonUtils::get_or_default<std::string>(value, "cloud_provider", "");
         info.system_prompt = JsonUtils::get_or_default<std::string>(value, "system_prompt", "");
+        if (value.contains("auto_update") && value["auto_update"].is_boolean()) {
+            info.auto_update = value["auto_update"].get<bool>();
+        }
 
         // Registry-backed user collections (created by `lemonade pull <org>/<repo>` or `--source`)
         // keep only a repo pointer in user_models.json; their components live in
@@ -2404,14 +3823,21 @@ void ModelManager::build_cache() {
         all_models[info.model_name] = info;
     }
 
-    // Step 1.5: Discover models from extra_models_dir
-    // All discovered models are prefixed with "extra." so they have distinct
-    // canonical IDs from any user. or builtin. records that may share a bare
-    // name. Bare-name collisions are surfaced via the friendly-name layer in
-    // rebuild_public_model_aliases_locked, not by dropping records here.
+    // Step 1.5: Keep registered models attached to their catalog IDs when a
+    // complete HF/ModelScope repository cache also lives in extra_models_dir.
+    // This also suppresses duplicates if both cache roots have the same model;
+    // unrelated GGUFs in extra_models_dir are still discovered normally.
+    std::set<fs::path> registered_extra_paths;
+    if (!extra_models_dir_.empty()) {
+        for (const auto& [name, info] : all_models) {
+            ModelInfo candidate = info;
+            try_resolve_registered_extra_cache(candidate, extra_models_dir_, &registered_extra_paths);
+        }
+    }
+
     std::map<std::string, ModelInfo> discovered_models;
     try {
-        discovered_models = discover_extra_models();
+        discovered_models = discover_extra_models(registered_extra_paths);
     } catch (const std::exception& e) {
         // External discovery is additive. A filesystem failure in that optional
         // source must never make built-in or user-registered models disappear.
@@ -2479,10 +3905,36 @@ void ModelManager::build_cache() {
     for (auto& [name, info] : all_models) {
         json jro = json_recipe_options.count(name) ? json_recipe_options[name] : json(nullptr);
         info.recipe_options = build_recipe_options(info, jro, cache_key_to_canonical_id(name), recipe_options_);
+        if (info.recipe_options.to_json().contains("auto_update") &&
+            info.recipe_options.to_json()["auto_update"].is_boolean()) {
+            info.auto_update = info.recipe_options.to_json()["auto_update"].get<bool>();
+        }
     }
 
-    // Step 2: Filter by backend availability
-    all_models = filter_models_by_backend(all_models);
+    // Pre-filter snapshots for the routing-policy resolver below (#2748); see
+    // compute_model_alias_maps() for why the alias needs the full algorithm
+    // rather than a plain bare-name map. Only router collections read them and
+    // the alias rebuild is O(n log n) over the whole registry, so a host with
+    // no router collection -- the common case, across ~15 build_cache() call
+    // sites -- pays nothing.
+    const bool needs_routing_snapshots =
+        std::any_of(all_models.begin(), all_models.end(), [](const auto& entry) {
+            return is_router_collection_recipe(entry.second.recipe);
+        });
+
+    std::map<std::string, ModelType> pre_filter_types;
+    std::map<std::string, std::string> pre_filter_aliases;
+    if (needs_routing_snapshots) {
+        for (const auto& [name, info] : all_models) {
+            pre_filter_types[name] = info.type;
+        }
+        pre_filter_aliases = compute_model_alias_maps(all_models).public_model_aliases;
+    }
+
+    // Step 2: Filter by backend availability. This is the full-registry pass, so
+    // it also refreshes the recipe availability side table used to hide backends
+    // that have nothing runnable on this host.
+    all_models = filter_models_by_backend(all_models, /*track_recipe_availability=*/true);
 
     // Step 3: Check download status for all models. Dynamic-discovery backends
     // (flm, cloud) already set downloaded during discovery; everyone else asks
@@ -2528,25 +3980,37 @@ void ModelManager::build_cache() {
 
     cache_valid_ = true;
 
-    // Parse each collection.router model's routing policy now, while the cache
-    // and its alias map are fully built and the lock is still held. The parser's
-    // component resolver needs only alias resolution, which is a direct lookup
-    // into public_model_aliases_ here - exactly what resolve_model_name() does,
-    // minus its own build_cache()+lock. Calling resolve_model_name() here would
-    // re-lock this non-recursive mutex and deadlock, so the lookup is inlined.
-    RoutingPolicyParseOptions policy_options;
-    policy_options.resolve_component =
-        [this](const std::string& name) -> std::optional<std::string> {
-        auto it = public_model_aliases_.find(name);
-        return it != public_model_aliases_.end() ? it->second : name;
-    };
-    // Direct lookup into the map already being built, same rationale as
-    // resolve_component above: models_cache_ is populated and the lock is
-    // still held, so this avoids re-entering get_model_info()'s own locking.
-    policy_options.get_model_type = [this](const std::string& name) -> std::optional<ModelType> {
-        auto it = models_cache_.find(name);
-        return it != models_cache_.end() ? std::optional<ModelType>(it->second.type) : std::nullopt;
-    };
+    // Parse each collection.router model's routing policy while the cache and
+    // alias map are built and the lock is held (avoids re-locking via
+    // resolve_model_name()/get_model_info()). pre_filter_aliases is computed
+    // over all_models, a strict superset of models_cache_, so it alone
+    // covers everything public_model_aliases_ would (#2748).
+    //
+    // Components only the pre-filter tier can resolve are unavailable on this
+    // host: a classifier bound to one takes its on_error path on every
+    // request. Recorded here, where that is known, and reported per collection
+    // below so the operator sees degraded routing instead of silence (#2748).
+    std::set<std::string> unavailable_components;
+
+    RoutingPolicyParseOptions policy_options = make_routing_parse_options({
+        [&pre_filter_aliases](const std::string& name) -> std::optional<std::string> {
+            auto it = pre_filter_aliases.find(name);
+            if (it == pre_filter_aliases.end()) return std::nullopt;
+            return it->second;
+        },
+        [this](const std::string& name) -> std::optional<ModelType> {
+            auto it = models_cache_.find(name);
+            if (it == models_cache_.end()) return std::nullopt;
+            return it->second.type;
+        },
+        [&pre_filter_types, &unavailable_components](
+            const std::string& name) -> std::optional<ModelType> {
+            auto it = pre_filter_types.find(name);
+            if (it == pre_filter_types.end()) return std::nullopt;
+            unavailable_components.insert(name);
+            return it->second;
+        },
+    });
     for (auto& [name, info] : models_cache_) {
         if (!is_router_collection_recipe(info.recipe)) {
             continue;
@@ -2562,12 +4026,27 @@ void ModelManager::build_cache() {
         if (routing_it != info.extras.end()) {
             doc["routing"] = routing_it->second;
         }
+        unavailable_components.clear();
         try {
             info.route_policy = std::make_shared<const RoutePolicy>(
                 parse_route_policy_collection(doc, policy_options));
         } catch (const std::exception& e) {
             LOG(WARNING, "ModelManager") << "Failed to parse routing policy for '"
                                          << name << "': " << e.what() << std::endl;
+        }
+        if (!unavailable_components.empty()) {
+            std::ostringstream joined;
+            bool first = true;
+            for (const auto& component : unavailable_components) {
+                if (!first) joined << ", ";
+                joined << component;
+                first = false;
+            }
+            LOG(WARNING, "ModelManager")
+                << "Routing policy for '" << name << "' references component(s) "
+                << "unavailable on this host: " << joined.str()
+                << ". Any classifier bound to them will fall back to its on_error "
+                << "result on every request." << std::endl;
         }
     }
 
@@ -2858,7 +4337,8 @@ bool parse_TF_env_var(const char* env_var_name) {
 }
 
 std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
-    const std::map<std::string, ModelInfo>& models) {
+    const std::map<std::string, ModelInfo>& models,
+    bool track_recipe_availability) {
 
     // Check if model filtering is disabled via config.json
     bool disable_filtering = false;
@@ -2871,6 +4351,9 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
 
     if (disable_filtering) {
         filtered_out_models_.clear();
+        if (track_recipe_availability) {
+            recipes_all_models_filtered_.clear();
+        }
         return models;
     }
 
@@ -2884,6 +4367,9 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
     std::map<std::string, ModelInfo> filtered;
 
     filtered_out_models_.clear();
+
+    std::set<std::string> size_filtered_recipes;
+    std::set<std::string> visible_recipes;
 
     json system_info = SystemInfoCache::get_system_info_with_cache();
     json hardware = system_info.contains("devices") ? system_info["devices"] : json::object();
@@ -2899,14 +4385,19 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
         // Because we have mixed types this just makes every device_type an array.
         nlohmann::json dev_list = devices.is_array() ? devices : nlohmann::json{devices};
 
-        // Expand this later to accommodate mixed pools
-        MemoryAllocBehavior dev_mem_alloc_behavior = MemoryAllocBehavior::Hardware;
-        if (dev_type == "amd_igpu")
-            dev_mem_alloc_behavior = MemoryAllocBehavior::Largest;
-        if (enable_dgpu_gtt)
-            dev_mem_alloc_behavior = MemoryAllocBehavior::Unified;
-
         for (const auto& dev : dev_list) {
+            if (!dev.is_object())
+                continue;
+
+            // Behavior is chosen per device, not per device-type: AMD APUs are
+            // reported under "amd_gpu" with "integrated": true and their GTT
+            // pool in virtual_mem_gb -- an "amd_igpu" container key is never
+            // emitted, so default to integrated when the flag is absent.
+            MemoryAllocBehavior dev_mem_alloc_behavior = MemoryAllocBehavior::Hardware;
+            if (dev_type == "amd_gpu" && dev.value("integrated", true))
+                dev_mem_alloc_behavior = MemoryAllocBehavior::Largest;
+            if (enable_dgpu_gtt)
+                dev_mem_alloc_behavior = MemoryAllocBehavior::Unified;
             curr_mem_pool_gb = get_max_memory_of_device(dev, dev_mem_alloc_behavior);
             largest_mem_pool_gb = largest_mem_pool_gb < curr_mem_pool_gb ? curr_mem_pool_gb : largest_mem_pool_gb;
         }
@@ -3000,11 +4491,35 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
                            "Detected operating system: " + os_version + ".";
         }
 
-        // Filter out models that are too large for system RAM
-        // Heuristic: if model size > 80% of system RAM, filter it out
-        if (!filter_out && !user_controlled_model && system_ram_gb > 0.0 && info.size > 0.0) {
-            if (info.size > max_model_size_gb) {
+        if (!filter_out) {
+            filter_reason = SystemInfo::check_guest_backend_installed(recipe, system_info);
+            filter_out = !filter_reason.empty();
+        }
+
+        // Filter out models too large to run on this machine.
+        if (!filter_out && !user_controlled_model && info.size > 0.0) {
+            const auto* desc = backends::descriptor_for(recipe);
+            if (desc && desc->streams_model_from_storage) {
+                // A streaming backend reads the model from disk on demand, so the
+                // full model need not fit in memory — only its resident working
+                // set, and only in the device's own pool. ROCm cannot address
+                // system RAM plus the iGPU carveout as one pool; it gets the
+                // larger of the pools (largest_mem_pool_gb), so that is the ceiling.
+                const double working_set = streaming_working_set_gb(info.min_resident_gb, info.size);
+                if (streaming_model_exceeds_pool(working_set, largest_mem_pool_gb)) {
+                    filter_out = true;
+                    size_filtered_recipes.insert(recipe);
+                    std::ostringstream oss;
+                    oss << std::fixed << std::setprecision(1);
+                    oss << "This model streams from disk but needs about " << working_set
+                        << " GB resident in GPU memory, and this device's largest memory "
+                        << "pool is only " << largest_mem_pool_gb << " GB.";
+                    filter_reason = oss.str();
+                }
+            } else if (system_ram_gb > 0.0 && info.size > max_model_size_gb) {
+                // Non-streaming: the whole model must fit (80% of system RAM).
                 filter_out = true;
+                size_filtered_recipes.insert(recipe);
                 std::ostringstream oss;
                 oss << std::fixed << std::setprecision(1);
                 oss << "This model requires approximately " << info.size << " GB of memory, "
@@ -3024,6 +4539,16 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
                 << "Your system has " << system_ram_gb << " GB.";
             filter_reason = oss.str();
         }
+
+        // Special rule: filter out qwen3.6-moe-35b-a3b-FLM on Windows systems with less than 64 GB RAM
+        if (!filter_out && name == "qwen3.6-moe-35b-a3b-FLM" && system_ram_gb > 0.0 && system_ram_gb < 64.0) {
+            filter_out = true;
+            std::ostringstream oss;
+            oss << std::fixed << std::setprecision(1);
+            oss << "The qwen3.6-moe-35b-a3b-FLM model requires at least 64 GB of RAM. "
+                << "Your system has " << system_ram_gb << " GB.";
+            filter_reason = oss.str();
+        }
 #endif
 
         if (filter_out) {
@@ -3033,10 +4558,44 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
         }
 
         // Model passes all filters
+        visible_recipes.insert(info.recipe);
         filtered[name] = info;
     }
 
+    // Only the full-registry pass may commit the availability side table;
+    // incremental single-model passes would otherwise reduce it to one model.
+    if (track_recipe_availability) {
+        recipes_all_models_filtered_ =
+            recipes_missing_all_models(size_filtered_recipes, visible_recipes);
+    }
+
     return filtered;
+}
+
+std::set<std::string> ModelManager::recipes_all_models_filtered_snapshot() const {
+    std::lock_guard<std::mutex> lock(models_cache_mutex_);
+    return recipes_all_models_filtered_;
+}
+
+std::set<std::string> ModelManager::recipes_missing_all_models(
+    const std::set<std::string>& size_filtered_recipes,
+    const std::set<std::string>& visible_recipes) {
+    std::set<std::string> hidden;
+    for (const auto& recipe : size_filtered_recipes) {
+        if (visible_recipes.find(recipe) == visible_recipes.end()) {
+            hidden.insert(recipe);
+        }
+    }
+    return hidden;
+}
+
+double ModelManager::streaming_working_set_gb(double min_resident_gb, double size_gb) {
+    return min_resident_gb > 0.0 ? min_resident_gb : size_gb;
+}
+
+bool ModelManager::streaming_model_exceeds_pool(double working_set_gb, double pool_gb) {
+    // pool <= 0 means the device pool is unknown: don't hide on missing data.
+    return pool_gb > 0.0 && working_set_gb > pool_gb;
 }
 
 void ModelManager::set_cloud_registry(CloudProviderRegistry* registry) {
@@ -3079,7 +4638,9 @@ size_t ModelManager::refresh_cloud_models(const std::string& provider) {
     try {
         models = backends::CloudServer::discover_models(
             provider, api_key, base_url,
-            cloud_registry_->allow_insecure_http_for(provider));
+            cloud_registry_->allow_insecure_http_for(provider),
+            cloud_registry_->auth_header_for(provider),
+            cloud_registry_->wire_format_for(provider));
     } catch (const std::exception& e) {
         LOG(WARNING, "ModelManager") << "Cloud discovery threw for provider '"
                                       << provider << "': " << e.what() << std::endl;
@@ -3373,7 +4934,7 @@ void ModelManager::download_registered_model(const ModelInfo& info, bool do_not_
     if (is_user_model_name(canonical_model_name))
     {
         std::lock_guard<std::mutex> lock(models_cache_mutex_);
-        auto it = models_cache_.find(info.model_name);
+        auto it = models_cache_.find(canonical_model_name);
         if (it != models_cache_.end())
         {
             json updated_user_models = load_optional_json(get_user_models_file());
@@ -3718,6 +5279,10 @@ void ModelManager::download_model(const std::string& model_name,
                                  const json& model_data,
                                  bool do_not_upgrade,
                                  DownloadProgressCallback progress_callback) {
+    if (download_model_override_) {
+        download_model_override_(model_name, model_data, do_not_upgrade, progress_callback);
+        return;
+    }
     std::set<std::string> visited;
     download_model(model_name, model_data, do_not_upgrade, progress_callback, visited,
                    false, false, false);
@@ -4002,7 +5567,7 @@ void ModelManager::download_model(const std::string& model_name,
                 continue;
             }
             auto comp_info = get_model_info(component);
-            if (comp_info.downloaded) {
+            if (comp_info.downloaded && do_not_upgrade) {
                 LOG(INFO, "ModelManager") << "Component already downloaded: " << component << std::endl;
                 continue;
             }
@@ -4062,6 +5627,11 @@ void ModelManager::download_model(const std::string& model_name,
 
     auto model_info = get_model_info(model_name);
 
+    const std::string download_source = requested_registry_source(model_data);
+    if (!download_source.empty() && backend_self_manages_downloads(model_info.recipe)) {
+        model_info.registry_source = download_source;
+    }
+
     if (model_data.contains("recipe_options")) {
         // Merge import recipe_options on top of the already-merged options
         // (which include image_defaults + JSON recipe_options + user-saved).
@@ -4104,7 +5674,35 @@ void ModelManager::download_model(const std::string& model_name,
         return;
     }
 
+    std::map<std::string, std::filesystem::path> resolved_paths_before;
+    {
+        std::lock_guard<std::mutex> lock(models_cache_mutex_);
+        auto it = models_cache_.find(model_info.model_name);
+        if (it != models_cache_.end()) {
+            for (const auto& [k, v] : it->second.resolved_paths) {
+                resolved_paths_before[k] = path_from_utf8(v).lexically_normal();
+            }
+        }
+    }
+
     download_registered_model(model_info, do_not_upgrade, progress_callback);
+
+    std::map<std::string, std::filesystem::path> resolved_paths_after;
+    {
+        std::lock_guard<std::mutex> lock(models_cache_mutex_);
+        auto it = models_cache_.find(model_info.model_name);
+        if (it != models_cache_.end()) {
+            for (const auto& [k, v] : it->second.resolved_paths) {
+                resolved_paths_after[k] = path_from_utf8(v).lexically_normal();
+            }
+        }
+    }
+
+    if (on_model_updated_cb_ && resolved_paths_before != resolved_paths_after) {
+        on_model_updated_cb_(model_name);
+    }
+
+
 }
 
 namespace registry_files {
@@ -4604,7 +6202,7 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
         download_opts.max_retry_delay_ms = 120000;
         download_opts.resume_partial = true;
         download_opts.low_speed_limit = 1000;
-        download_opts.low_speed_time = 60;
+        download_opts.low_speed_time = static_cast<int>(utils::HttpClient::get_default_timeout());
         download_opts.connect_timeout = 60;
         if (file_desc.contains("hash") && file_desc["hash"].is_object()) {
             const auto& hash = file_desc["hash"];
@@ -4839,6 +6437,18 @@ void ModelManager::download_from_registry(const ModelInfo& info,
         }
     }
 
+    for (auto& [repo_id, files] : files_to_download) {
+        (void)repo_id;
+        std::set<std::string> seen;
+        std::vector<std::string> unique_files;
+        for (auto& filename : files) {
+            if (seen.insert(filename).second) {
+                unique_files.push_back(filename);
+            }
+        }
+        files = std::move(unique_files);
+    }
+
     int total_files = 0;
     LOG(INFO, "ModelManager") << "Identified files to download:" << std::endl;
     for (const auto& [repo_id, files] : files_to_download) {
@@ -4937,6 +6547,7 @@ void ModelManager::download_from_registry(const ModelInfo& info,
 
     json manifest;
     manifest["repo_id"] = main_repo_id;
+    manifest["model_name"] = info.model_name;
     manifest["registry_source"] = source_name;
     manifest["commit_hash"] = repo_snapshot_ids.at(main_repo_id);
     manifest["download_path"] = repo_snapshot_paths.at(main_repo_id);
@@ -5034,6 +6645,18 @@ void ModelManager::download_from_registry(const ModelInfo& info,
         << repo_download_paths.at(main_repo_id) << std::endl;
 }
 
+// Files in a separate extra_models_dir remain user-managed even when their
+// complete repository cache is recognized under a catalog model's ID.
+static bool path_inside(const fs::path& path, const fs::path& root) {
+    if (path.empty() || root.empty()) return false;
+    std::error_code ec;
+    const fs::path actual = fs::weakly_canonical(path, ec);
+    if (ec) return false;
+    const fs::path base = fs::weakly_canonical(root, ec);
+    if (ec) return false;
+    const fs::path relative = actual.lexically_relative(base);
+    return !relative.empty() && *relative.begin() != fs::path("..");
+}
 
 void ModelManager::delete_model(const std::string& model_name) {
     auto info = get_model_info(model_name);
@@ -5066,6 +6689,64 @@ void ModelManager::delete_model(const std::string& model_name) {
                                  "Delete the file directly from: " + info.checkpoint());
     }
 
+    const ModelResolver resolve_now = [this](const ModelInfo& candidate) {
+        ModelInfo fresh = candidate;
+        fresh.resolved_paths.clear();
+        resolve_all_model_paths(fresh);
+        return fresh;
+    };
+    const ModelInfo resolved_self = resolve_now(info);
+
+    const ModelResolver resolve_managed = [this](const ModelInfo& candidate) {
+        ModelInfo fresh = candidate;
+        fresh.resolved_paths.clear();
+        for (const auto& [type, checkpoint] : fresh.checkpoints) {
+            fresh.resolved_paths[type] = resolve_model_path(fresh, type, checkpoint);
+        }
+        return fresh;
+    };
+
+    // An adopted external cache is never deleted through its registered catalog
+    // ID.
+    bool resolved_outside_managed_cache = false;
+    if (info.source.empty() && info.recipe != "flm" && info.recipe != "cloud" &&
+        !is_model_collection_recipe(info.recipe)) {
+        const fs::path managed_root = path_from_utf8(get_hf_cache_dir());
+        const std::string main_repo = checkpoint_to_repo_id(info.checkpoint("main"));
+        const fs::path managed_main_repo = main_repo.empty() ? fs::path() :
+            managed_root / repo_id_to_cache_dir_name(main_repo, effective_registry_source(info));
+        for (const auto& [type, checkpoint] : info.checkpoints) {
+            if (type == "npu_cache" || resolved_self.resolved_path(type).empty()) continue;
+            const std::string repo = checkpoint_to_repo_id(checkpoint);
+            if (repo.empty()) {
+                throw std::runtime_error("Cannot delete a registered model with an invalid checkpoint.");
+            }
+            const fs::path managed_repo = managed_root /
+                repo_id_to_cache_dir_name(repo, effective_registry_source(info));
+            const fs::path resolved_path = path_from_utf8(resolved_self.resolved_path(type));
+            const bool own_repo = path_inside(managed_repo, managed_root) &&
+                path_inside(resolved_path, managed_repo);
+            // Legacy downloads placed auxiliary files in the main repo cache.
+            // Never extend that exception to main files or external paths.
+            const bool legacy_main_repo = type != "main" && !main_repo.empty() &&
+                path_inside(managed_main_repo, managed_root) &&
+                path_inside(resolved_path, managed_main_repo);
+            if (!own_repo && !legacy_main_repo) {
+                LOG(INFO, "ModelManager") << "Model resolves outside the managed cache ("
+                            << resolved_self.resolved_path(type)
+                            << "); leaving those files to the user and cleaning the "
+                               "managed cache only" << std::endl;
+                resolved_outside_managed_cache = true;
+                break;
+            }
+        }
+    }
+
+    if (resolved_outside_managed_cache && !is_user_model_name(canonical_model_name)) {
+        throw std::runtime_error("Cannot delete a registered model outside its managed cache. "
+                                 "External files are user-managed; remove them manually.");
+    }
+
     // FLM models have no local HF cache; deletion is the backend's `flm remove`.
     if (info.recipe == "flm") {
         backends::fastflowlm::flm_remove(info.checkpoint());
@@ -5090,16 +6771,31 @@ void ModelManager::delete_model(const std::string& model_name) {
         return;
     }
 
-    // Use resolved_path to find the model directory to delete.
-    // Cancelled or interrupted downloads may not have a resolved model path yet,
-    // but they can still leave resumable .partial files and manifests in the HF
-    // cache. Clean those artifacts before falling back to registry-only cleanup.
-    if (info.resolved_path().empty()) {
+    const std::string main_repo = checkpoint_to_repo_id(info.checkpoint("main"));
+    const std::string registry_source = effective_registry_source(info);
+
+    const std::string own_main_path =
+        resolved_outside_managed_cache ? std::string() : resolved_self.resolved_path("main");
+    const bool own_main_on_disk =
+        !own_main_path.empty() && safe_exists(path_from_utf8(own_main_path));
+
+    // Cancelled or interrupted downloads have no resolved model file, but they
+    // can still leave resumable .partial files and manifests in the HF cache.
+    // Clean those artifacts before falling back to registry-only cleanup.
+    if (!own_main_on_disk) {
+        bool main_repo_occupied;
+        std::vector<std::string> main_repo_other_variants;
+        {
+            std::lock_guard<std::mutex> lock(models_cache_mutex_);
+            main_repo_occupied = is_repo_occupied(main_repo, registry_source,
+                                                  canonical_model_name, models_cache_,
+                                                  resolve_managed);
+            main_repo_other_variants = repo_claimant_variants(
+                main_repo, registry_source, canonical_model_name, models_cache_);
+        }
+
         bool removed_incomplete_cache = cleanup_incomplete_hf_model_cache(
-            info,
-            canonical_model_name,
-            models_cache_
-        );
+            info, main_repo_occupied, main_repo_other_variants);
 
         if (!removed_incomplete_cache) {
             LOG(INFO, "ModelManager") << "Model not downloaded, removing from registry only" << std::endl;
@@ -5123,9 +6819,9 @@ void ModelManager::delete_model(const std::string& model_name) {
         return;
     }
 
-    // Find the models--* directory from resolved_path
-    // resolved_path could be a file or directory, we need to find the models-- ancestor
-    fs::path path_obj(path_from_utf8(info.resolved_path()));
+    // Find the models--* directory from the resolved path
+    // The resolved path could be a file or directory, we need to find the models-- ancestor
+    fs::path path_obj(path_from_utf8(own_main_path));
     std::string model_cache_path;
 
     // Walk up the directory tree to find models--* directory
@@ -5140,18 +6836,27 @@ void ModelManager::delete_model(const std::string& model_name) {
     }
 
     if (model_cache_path.empty()) {
-        throw std::runtime_error("Could not find models-- directory in path: " + info.resolved_path());
+        throw std::runtime_error("Could not find models-- directory in path: " + own_main_path);
     }
 
     LOG(INFO, "ModelManager") << "Cache path: " << model_cache_path << std::endl;
 
     fs::path model_cache_path_fs = path_from_utf8(model_cache_path);
-    std::string main_repo = checkpoint_to_repo_id(info.checkpoint("main"));
 
-    // Check if the main repo is shared with another model
-    bool main_shared = is_repo_shared(main_repo, effective_registry_source(info), canonical_model_name, models_cache_);
+    // What else still occupies this repo on disk. Collected under the lock; the
+    // removals below run outside it so a slow delete cannot stall model listing.
+    std::set<fs::path> main_repo_occupants;
+    {
+        std::lock_guard<std::mutex> lock(models_cache_mutex_);
+        main_repo_occupants = repo_occupant_paths(main_repo, registry_source,
+                                                  canonical_model_name, models_cache_,
+                                                  resolve_managed, /*stop_at_first=*/false);
+    }
 
-    if (!main_shared) {
+    const bool main_occupied = !main_repo_occupants.empty();
+    const bool main_busy = !main_occupied && repo_has_unfinished_download(model_cache_path_fs);
+
+    if (!main_occupied && !main_busy) {
         // No other model uses this repo - safe to delete the entire directory
         if (fs::exists(model_cache_path_fs)) {
             LOG(INFO, "ModelManager") << "Removing directory..." << std::endl;
@@ -5161,40 +6866,79 @@ void ModelManager::delete_model(const std::string& model_name) {
             LOG(INFO, "ModelManager") << "Warning: Model cache directory not found (may already be deleted)" << std::endl;
         }
     } else {
-        // Shared repo - only delete this model's specific resolved variant path
+        // Repo still in use - only delete this model's specific resolved variant path
         LOG(INFO, "ModelManager") << "Main repo " << main_repo
-                    << " is shared with other models, deleting variant path only" << std::endl;
-        std::string rpath = info.resolved_path("main");
-        if (!rpath.empty()) {
-            fs::path variant_path = path_from_utf8(rpath);
-            if (safe_exists(variant_path)) {
-                // Delete the whole resolved path, not just regular files
-                // and clean any HF symlink blobs before removing the snapshot entries.
-                cleanup_orphaned_blobs_under(variant_path, model_cache_path_fs);
-                remove_resolved_path_or_throw(variant_path, "variant path");
-                cleanup_empty_parents(variant_path, model_cache_path_fs);
+                    << (main_busy ? " has an unfinished download, deleting variant path only"
+                                  : " is still occupied by other models, deleting variant path only")
+                    << std::endl;
+        fs::path variant_path = path_from_utf8(own_main_path);
+        if (safe_is_directory(variant_path)) {
+            // A directory checkpoint is shared ground, so clearing it wholesale
+            // would take the sibling files or the unfinished download that put
+            // this delete on the variant-only path in the first place.
+            remove_shared_checkpoint_dir(variant_path, model_cache_path_fs,
+                                         main_repo_occupants);
+        } else if (safe_exists(variant_path)) {
+            // Resolution names one file, but a sharded checkpoint reaches every
+            // sibling shard. Leaving those behind is the disk leak this delete
+            // exists to close.
+            std::set<fs::path> own_files{variant_path};
+            insert_shard_family(variant_path, own_files);
+
+            for (const fs::path& own_file : own_files) {
+                if (!safe_exists(own_file)) continue;
+                // Two catalog entries can name the exact same checkpoint, so the
+                // file under this model's name is not always this model's alone.
+                const bool owned_by_sibling = std::any_of(
+                    main_repo_occupants.begin(), main_repo_occupants.end(),
+                    [&own_file](const fs::path& owned) {
+                        return path_is_within(own_file, owned);
+                    });
+                if (owned_by_sibling) {
+                    LOG(INFO, "ModelManager") << "Keeping " << path_to_utf8(own_file)
+                                << " (another model resolves to the same file)" << std::endl;
+                    continue;
+                }
+                // Clean any HF symlink blobs before removing the snapshot entries.
+                cleanup_orphaned_blobs_under(own_file, model_cache_path_fs);
+                remove_resolved_path_or_throw(own_file, "variant path");
+                cleanup_empty_parents(own_file, model_cache_path_fs);
             }
         }
         LOG(INFO, "ModelManager") << "✓ Deleted variant for: " << canonical_model_name << std::endl;
     }
 
     // Clean up non-main checkpoint files in their own repo dirs (multi-repo models)
-    // Only delete if no other model in the registry references the same repo
+    // Only delete if no other model on disk occupies the same repo
     for (const auto& [type, checkpoint] : info.checkpoints) {
         if (type == "main" || type == "npu_cache") continue;
 
         std::string cp_repo = checkpoint_to_repo_id(checkpoint);
         if (cp_repo.empty() || cp_repo == main_repo) continue;
 
-        if (is_repo_shared(cp_repo, effective_registry_source(info), canonical_model_name, models_cache_)) {
-            LOG(INFO, "ModelManager") << "Keeping shared repo " << cp_repo
-                        << " (used by other models)" << std::endl;
+        bool cp_repo_occupied;
+        {
+            std::lock_guard<std::mutex> lock(models_cache_mutex_);
+            cp_repo_occupied = is_repo_occupied(cp_repo, registry_source,
+                                                canonical_model_name, models_cache_,
+                                                resolve_managed);
+        }
+        if (cp_repo_occupied) {
+            LOG(INFO, "ModelManager") << "Keeping repo " << cp_repo
+                        << " (still occupied by other models)" << std::endl;
             continue;
         }
 
-        // Not shared — safe to delete the entire repo directory
-        std::string cp_cache_dir = get_hf_cache_dir() + "/" + repo_id_to_cache_dir_name(cp_repo, effective_registry_source(info));
+        std::string cp_cache_dir = get_hf_cache_dir() + "/" + repo_id_to_cache_dir_name(cp_repo, registry_source);
         fs::path cp_cache_path = path_from_utf8(cp_cache_dir);
+
+        if (repo_has_unfinished_download(cp_cache_path)) {
+            LOG(INFO, "ModelManager") << "Keeping repo " << cp_repo
+                        << " (unfinished download in progress)" << std::endl;
+            continue;
+        }
+
+        // Nothing else is living here — safe to delete the entire repo directory
         if (fs::exists(cp_cache_path)) {
             LOG(INFO, "ModelManager") << "Removing non-main repo directory: " << cp_cache_dir << std::endl;
             fs::remove_all(cp_cache_path);
@@ -5308,16 +7052,6 @@ ModelInfo ModelManager::get_model_info(const std::string& model_name) {
         }
     }
 
-    if (refresh_user_models_from_disk_for_lookup(model_name)) {
-        std::lock_guard<std::mutex> lock(models_cache_mutex_);
-        auto alias_it = public_model_aliases_.find(model_name);
-        std::string canonical_name = alias_it != public_model_aliases_.end() ? alias_it->second : model_name;
-        auto it = models_cache_.find(canonical_name);
-        if (it != models_cache_.end()) {
-            return it->second;
-        }
-    }
-
     throw std::runtime_error("Model not found: " + model_name);
 }
 
@@ -5349,13 +7083,6 @@ bool ModelManager::model_exists(const std::string& model_name) {
         if (models_cache_.find(canonical_name) != models_cache_.end()) {
             return true;
         }
-    }
-
-    if (refresh_user_models_from_disk_for_lookup(model_name)) {
-        std::lock_guard<std::mutex> lock(models_cache_mutex_);
-        auto alias_it = public_model_aliases_.find(model_name);
-        std::string canonical_name = alias_it != public_model_aliases_.end() ? alias_it->second : model_name;
-        return models_cache_.find(canonical_name) != models_cache_.end();
     }
 
     return false;
@@ -5464,39 +7191,44 @@ std::optional<std::string> ModelManager::validate_collection_request(
         }
     }
     if (is_router_collection_recipe(model_data.value("recipe", std::string()))) {
-        RoutingPolicyParseOptions options;
-        options.resolve_component = [this](const std::string& name) -> std::optional<std::string> {
-            try {
-                return resolve_model_name(name);
-            } catch (...) {
-                // Inline collection imports may reference components that are
-                // defined in the same JSON but not registered yet. Keep those
-                // names stable so parser component-role validation can still
-                // compare them against the authored components array.
-                return name;
-            }
-        };
-        options.get_model_type = [this, &find_inline_def](const std::string& name) -> std::optional<ModelType> {
-            try {
-                return get_model_info(name).type;
-            } catch (...) {
-                // Not registered yet - the name may match an inline `models[]`
-                // definition in this same request; derive its type from that
-                // definition's declared labels (absent labels default to LLM,
-                // same as everywhere else). Only nullopt if no definition
-                // exists at all - that's the "truly unknown" case.
+        // Same resolution shape as build_cache()'s, differing only in its
+        // tiers: this one resolves live and falls back to the request's own
+        // inline `models[]`, because an import validates names that are not
+        // registered yet. Unresolvable names are kept as authored by
+        // make_routing_parse_options, so component-role validation can still
+        // compare them against the authored components array.
+        RoutingPolicyParseOptions options = make_routing_parse_options({
+            [this](const std::string& name) -> std::optional<std::string> {
+                try {
+                    return resolve_model_name(name);
+                } catch (...) {
+                    return std::nullopt;
+                }
+            },
+            [this](const std::string& name) -> std::optional<ModelType> {
+                try {
+                    return get_model_info(name).type;
+                } catch (...) {
+                    return std::nullopt;
+                }
+            },
+            [this, &find_inline_def](const std::string& name) -> std::optional<ModelType> {
+                // Not registered - the name may match an inline `models[]`
+                // definition in this same request. Derive the type exactly as
+                // register_user_model() would once that definition is
+                // registered, so validation and runtime cannot disagree
+                // (absent labels default to LLM, same as everywhere else).
+                // nullopt only when no definition exists at all - the
+                // "truly unknown" case.
                 const json* def = find_inline_def(bare_component_name(name));
                 if (!def) {
                     return std::nullopt;
                 }
-                // Derive the type exactly as register_user_model() would once
-                // this inline definition is registered, so validation and
-                // runtime cannot disagree.
                 std::set<std::string> label_set = normalized_definition_labels(*def);
                 return get_model_type_from_labels(
                     std::vector<std::string>(label_set.begin(), label_set.end()));
-            }
-        };
+            },
+        });
         try {
             // Strip pull-protocol keys (stream, subscribe, do_not_upgrade, …)
             // that the client merges into the body but the policy parser does
@@ -5544,16 +7276,6 @@ bool ModelManager::model_exists_unfiltered(const std::string& model_name) {
         return true;
     }
 
-    // If a stale warm cache caused the alias/registry lookup to miss, reload the
-    // persisted user registry before reporting a hard "not found".
-    if (refresh_user_models_from_disk_for_lookup(model_name)) {
-        if (exists_in_registries(model_name)) {
-            return true;
-        }
-        canonical_name = resolve_model_name(model_name);
-        return exists_in_registries(canonical_name) || server_models_.contains(canonical_name);
-    }
-
     return false;
 }
 
@@ -5588,16 +7310,6 @@ ModelInfo ModelManager::get_model_info_unfiltered(const std::string& model_name)
         std::string canonical_name = resolve_model_name(model_name);
         if (canonical_name != model_name) {
             resolved = try_resolve(canonical_name);
-        }
-    }
-
-    if (!resolved && refresh_user_models_from_disk_for_lookup(model_name)) {
-        resolved = try_resolve(model_name);
-        if (!resolved) {
-            std::string canonical_name = resolve_model_name(model_name);
-            if (canonical_name != model_name) {
-                resolved = try_resolve(canonical_name);
-            }
         }
     }
 
@@ -5673,6 +7385,12 @@ std::string ModelManager::get_model_filter_reason(const std::string& model_name)
     return "";
 }
 
+std::set<std::string> ModelManager::recipes_with_all_models_filtered() {
+    build_cache();
+    std::lock_guard<std::mutex> lock(models_cache_mutex_);
+    return recipes_all_models_filtered_;
+}
+
 // Must be called with models_cache_mutex_ held.
 //
 // Populates two maps that drive the friendly-name / canonical-ID system:
@@ -5691,103 +7409,14 @@ std::string ModelManager::get_model_filter_reason(const std::string& model_name)
 //       fetch, and chat (the bare name still resolves via public_model_aliases_)
 //     - shadowed cache keys → canonical-prefixed ID (user.X / extra.X / builtin.X)
 //
-// Precedence: Registered > Imported > Builtin.
+// Precedence: Registered > Imported > Builtin. The algorithm itself is
+// compute_model_alias_maps(), shared with build_cache()'s pre-filter
+// resolver snapshot (#2748); this just runs it against models_cache_ and
+// commits the result to member state.
 void ModelManager::rebuild_public_model_aliases_locked() {
-    public_model_aliases_.clear();
-    canonical_public_names_.clear();
-
-    struct Entry {
-        std::string cache_key;
-        ModelSource source;
-    };
-    std::map<std::string, std::vector<Entry>> by_bare;
-
-    for (const auto& [cache_key, info] : models_cache_) {
-        ModelSource source;
-        std::string bare;
-        if (auto canon = parse_canonical_id(cache_key)) {
-            source = canon->source;
-            bare = canon->bare_name;
-        } else {
-            // Unprefixed cache keys are built-ins (server_models.json).
-            source = ModelSource::Builtin;
-            bare = cache_key;
-        }
-        by_bare[bare].push_back({cache_key, source});
-    }
-
-    for (auto& [bare, entries] : by_bare) {
-        std::sort(entries.begin(), entries.end(),
-                  [](const Entry& a, const Entry& b) {
-                      return precedence_rank(a.source) < precedence_rank(b.source);
-                  });
-
-        const Entry& winner = entries.front();
-        public_model_aliases_[bare] = winner.cache_key;
-
-        // Collections registered under a prefixed namespace (user.* / extra.*)
-        // must list with their prefix so the id emitted by /v1/models matches the
-        // id used for registration, fetch, and chat. The bare name still resolves
-        // via the alias above, preserving dual-id (bare + prefixed) invocation.
-        const auto winner_it = models_cache_.find(winner.cache_key);
-        const bool winner_is_prefixed_collection =
-            winner.source != ModelSource::Builtin &&
-            winner_it != models_cache_.end() &&
-            is_model_collection_recipe(winner_it->second.recipe);
-        canonical_public_names_[winner.cache_key] =
-            winner_is_prefixed_collection ? canonical_id(winner.source, bare) : bare;
-
-        for (size_t i = 1; i < entries.size(); ++i) {
-            const Entry& shadowed = entries[i];
-            std::string canonical = canonical_id(shadowed.source, bare);
-            canonical_public_names_[shadowed.cache_key] = canonical;
-            if (canonical != shadowed.cache_key) {
-                public_model_aliases_[canonical] = shadowed.cache_key;
-            }
-        }
-    }
-
-    // Always accept builtin.<X> as an input alias for the bare cache key,
-    // even when no other source shadows the built-in.
-    for (const auto& [cache_key, _info] : models_cache_) {
-        if (parse_canonical_id(cache_key)) continue;
-        std::string canonical = canonical_id(ModelSource::Builtin, cache_key);
-        public_model_aliases_.try_emplace(canonical, cache_key);
-    }
-
-    // A split extra_models_dir folder should show only its variant models in
-    // /models. Keep the old folder name working for existing scripts, but only
-    // as an input alias. Do not let that alias replace a user model or another
-    // real extra model with the same name.
-    auto source_for_cache_key = [](const std::string& cache_key) {
-        if (auto canon = parse_canonical_id(cache_key)) {
-            return canon->source;
-        }
-        return ModelSource::Builtin;
-    };
-
-    for (const auto& [cache_key, info] : models_cache_) {
-        for (const auto& alias : info.input_aliases) {
-            if (parse_canonical_id(alias)) {
-                if (models_cache_.find(alias) == models_cache_.end()) {
-                    public_model_aliases_[alias] = cache_key;
-                }
-            } else {
-                auto existing = public_model_aliases_.find(alias);
-                if (existing == public_model_aliases_.end()) {
-                    public_model_aliases_[alias] = cache_key;
-                    continue;
-                }
-
-                if (source_for_cache_key(existing->second) == ModelSource::Builtin) {
-                    std::string builtin_canonical = canonical_id(ModelSource::Builtin, alias);
-                    canonical_public_names_[existing->second] = builtin_canonical;
-                    public_model_aliases_[builtin_canonical] = existing->second;
-                    public_model_aliases_[alias] = cache_key;
-                }
-            }
-        }
-    }
+    ModelAliasMaps computed = compute_model_alias_maps(models_cache_);
+    public_model_aliases_ = std::move(computed.public_model_aliases);
+    canonical_public_names_ = std::move(computed.canonical_public_names);
 }
 
 } // namespace lemon

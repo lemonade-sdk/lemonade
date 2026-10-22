@@ -20,7 +20,7 @@ on:
         default: false
         type: boolean
       disable_macos_signing:
-        description: 'Force the unsigned macOS path (reproduces a fork PR, which has no Apple secrets). Skips the self-hosted inference rigs.'
+        description: 'Force the unsigned macOS path (reproduces a fork PR, which has no Apple secrets). Skips the self-hosted inference runners.'
         required: false
         default: false
         type: boolean
@@ -37,6 +37,40 @@ env:
   LEMONADE_DISABLE_SYSTEMD_JOURNAL: "1"
 
 jobs:
+  source-tarball:
+    name: Build Source Tarball
+    if: startsWith(github.ref, 'refs/heads/release-v') || startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
+      release_branch: ${{ steps.get_version.outputs.release_branch }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          clean: true
+          fetch-depth: 0
+
+      - name: Get Lemonade version
+        id: get_version
+        uses: ./.github/actions/get-version
+
+      - name: Create source tarball
+        env:
+          LEMONADE_VERSION: ${{ steps.get_version.outputs.version }}
+        run: |
+          set -euo pipefail
+          archive_root="lemonade-${LEMONADE_VERSION}"
+          python3 tools/source_archive.py --version "$LEMONADE_VERSION"
+          archived_version=$(tar -xOf "lemonade-${LEMONADE_VERSION}.tar.gz" "$archive_root/.version")
+          test "$archived_version" = "$LEMONADE_VERSION"
+
+      - name: Upload source tarball
+        uses: actions/upload-artifact@v7
+        with:
+          name: lemonade-source-tarball
+          path: lemonade-${{ steps.get_version.outputs.version }}.tar.gz
+          retention-days: 30
+
   # ========================================================================
   # BUILD JOBS - Run on rai-160-sdk workers
   # ========================================================================
@@ -82,7 +116,7 @@ jobs:
           # job installs lemonade-server-minimal.msi, so on the PR and
           # merge-queue paths the full installer is pure critical-path latency;
           # build-lemonade-desktop-installer covers it off the critical path.
-          BUILD_FULL_INSTALLER: ${{ startsWith(github.ref, 'refs/tags/v') || inputs.enable_signing == true }}
+          BUILD_FULL_INSTALLER: ${{ startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/heads/release-v') || inputs.enable_signing == true }}
         run: |
           $ErrorActionPreference = "Stop"
 
@@ -127,19 +161,6 @@ jobs:
           if ($failures.Count -gt 0) { exit 1 }
           Write-Host "Build and packaging successful!" -ForegroundColor Green
 
-      - name: Run MCP client unit test on Windows
-        shell: PowerShell
-        run: |
-          $ErrorActionPreference = "Stop"
-
-          # Exercise the Windows-only process, quoting, environment-block, and
-          # pipe/handle paths that Linux and macOS cannot cover.
-          cmake --build build --config Release --target test_mcp_client_config
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-          ctest --test-dir build -C Release --output-on-failure -R "^mcp_client_config$"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
       - name: Upload Lemonade Server Installers
         id: upload-unsigned-msi
         uses: actions/upload-artifact@v7
@@ -162,7 +183,7 @@ jobs:
     # BUILD_FULL_INSTALLER above, spelled the same way so the two stay
     # provably complementary.
     if: >-
-      !(startsWith(github.ref, 'refs/tags/v') || inputs.enable_signing == true) &&
+      !(startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/heads/release-v') || inputs.enable_signing == true) &&
       (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:distros'))
     runs-on: windows-latest
     steps:
@@ -433,6 +454,8 @@ jobs:
         password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - name: Configure git safe directory
         run: git config --global --add safe.directory $(pwd)
@@ -484,11 +507,11 @@ jobs:
       - name: Enable Trixie backports
         run: |
           echo "deb http://deb.debian.org/debian trixie-backports main" > /etc/apt/sources.list.d/trixie-backports.list
-      - name: Install git
+      - name: Install bootstrap dependencies
         run: |
           set -e
           apt-get update
-          apt-get install -y git
+          apt-get install -y git python3
       - name: Install from backports
         run: |
           set -e
@@ -646,18 +669,21 @@ jobs:
     outputs:
       version: ${{ steps.get_version.outputs.version }}
     steps:
+      - name: Install RPM packaging tools
+        shell: bash
+        run: |
+          set -e
+          dnf install -y git python3 rpm-build
+
       - uses: actions/checkout@v5
         with:
           clean: true
           fetch-depth: 0
 
-      - name: Install RPM packaging tools
-        shell: bash
-        run: |
-          set -e
-          dnf install -y rpm-build
+      - name: Configure git safe directory
+        run: git config --global --add safe.directory "$(pwd)"
 
-      - name: Get version from CMakeLists.txt
+      - name: Get Lemonade version
         id: get_version
         uses: ./.github/actions/get-version
 
@@ -724,7 +750,7 @@ jobs:
           clean: true
           fetch-depth: 0
 
-      - name: Get version from CMakeLists.txt
+      - name: Get Lemonade version
         id: get_version
         uses: ./.github/actions/get-version
 
@@ -812,15 +838,27 @@ jobs:
           clean: true
           fetch-depth: 0
 
-      - name: Get version from CMakeLists.txt
+      - name: Get Lemonade version
         id: get_version
         uses: ./.github/actions/get-version
 
       - name: Install minimal build dependencies
         run: |
           set -e
-          sudo apt-get update
-          sudo apt-get install -y cmake ninja-build g++ pkg-config libssl-dev libdrm-dev
+          # The Ubuntu ports mirror occasionally serves a package index that
+          # is briefly out of sync with its pool (esp. on arm64 runners),
+          # causing 404s on individual .deb files. Retry a few times.
+          success=false
+          for i in 1 2 3; do
+            if sudo apt-get update && \
+                sudo apt-get install -y cmake ninja-build g++ pkg-config libssl-dev libdrm-dev; then
+              success=true
+              break
+            fi
+            echo "apt-get failed (attempt $i/3), retrying..."
+            sleep 10
+          done
+          $success
 
       - name: Build embeddable archive
         shell: bash
@@ -857,15 +895,27 @@ jobs:
           clean: true
           fetch-depth: 0
 
-      - name: Get version from CMakeLists.txt
+      - name: Get Lemonade version
         id: get_version
         uses: ./.github/actions/get-version
 
       - name: Install build dependencies
         run: |
           set -e
-          sudo apt-get update
-          sudo apt-get install -y cmake ninja-build g++ pkg-config libssl-dev libdrm-dev
+          # The Ubuntu ports mirror occasionally serves a package index that
+          # is briefly out of sync with its pool (esp. on arm64 runners),
+          # causing 404s on individual .deb files. Retry a few times.
+          success=false
+          for i in 1 2 3; do
+            if sudo apt-get update && \
+                sudo apt-get install -y cmake ninja-build g++ pkg-config libssl-dev libdrm-dev; then
+              success=true
+              break
+            fi
+            echo "apt-get failed (attempt $i/3), retrying..."
+            sleep 10
+          done
+          $success
 
       - name: Build
         run: |
@@ -897,7 +947,7 @@ jobs:
       - name: Install CMake if not available
         uses: ./.github/actions/install-cmake-windows
 
-      - name: Get version from CMakeLists.txt
+      - name: Get Lemonade version
         id: get_version
         uses: ./.github/actions/get-version
 
@@ -944,7 +994,7 @@ jobs:
           clean: true
           fetch-depth: 0
 
-      - name: Get version from CMakeLists.txt
+      - name: Get Lemonade version
         id: get_version
         uses: ./.github/actions/get-version
 
@@ -990,92 +1040,57 @@ jobs:
     runs-on: ${{ matrix.runner }}
     needs: build-lemonade-server-installer
     # Skip inference tests when signing is enabled (tag pushes or manual workflow_dispatch).
-    # Self-hosted rig capacity is the binding constraint, so the merge queue runs
+    # Self-hosted runner capacity is the binding constraint, so the merge queue runs
     # these instead of PR pushes. Label a PR `ci:backends` to opt it back in.
     if: >-
       !startsWith(github.ref, 'refs/tags/') &&
+      !startsWith(github.ref, 'refs/heads/release-v') &&
       inputs.enable_signing != true &&
       inputs.disable_macos_signing != true &&
       (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:backends'))
     strategy:
       fail-fast: ${{ github.event_name == 'merge_group' }}
+      # The runner agent can drop a job dispatch (actions/runner#4728), so suites
+      # share one job per runner class to minimize the number of dispatches.
       matrix:
         include:
-          - name: llamacpp
-            script: server_llm.py
-            extra_args: "--wrapped-server llamacpp"
-            backends: "vulkan rocm"
-            runner: [Windows, vulkan, rocm, lemon-prod]
-          - name: omni
-            script: server_omni.py
-            extra_args: "--wrapped-server llamacpp"
-            backends: "vulkan"
-            runner: [Windows, vulkan, stx-halo, lemon-prod]
-          - name: ryzenai
-            script: server_llm.py
-            extra_args: "--wrapped-server ryzenai"
-            backends: "cpu hybrid npu"
-            runner: [Windows, xdna2, lemon-prod]
-          - name: flm
-            script: server_llm.py
-            extra_args: "--wrapped-server flm"
-            backends: "npu"
-            runner: [Windows, xdna2, lemon-prod]
-          - name: whisper
-            script: server_whisper.py
-            extra_args: "--wrapped-server whispercpp"
-            backends: "cpu npu rocm"
-            runner: [Windows, stx-halo, lemon-prod]
-          - name: flm-whisper
-            script: server_whisper.py
-            extra_args: "--wrapped-server flm"
-            backends: "npu"
-            runner: [Windows, xdna2, lemon-prod]
-          - name: moonshine
-            script: server_moonshine.py
-            extra_args: "--wrapped-server moonshine"
-            backends: "cpu"
-            runner: [self-hosted, Windows, lemon-prod]
-          - name: classify-onnxruntime
-            script: server_classify.py
-            extra_args: "--wrapped-server onnxruntime"
-            backends: "cpu"
-            runner: [self-hosted, Windows, lemon-prod]
-          - name: router-onnxruntime
-            script: server_router.py
-            extra_args: "--wrapped-server onnxruntime"
-            backends: "cpu"
-            runner: [self-hosted, Windows, lemon-prod]
-          - name: stable-diffusion
-            script: server_sd.py
-            extra_args: ""
-            backends: "cpu rocm vulkan"
-            runner: [Windows, rocm, vulkan, lemon-prod]
-          - name: audio-gen-thinksound
-            script: server_audio_generation.py
-            extra_args: "--wrapped-server thinksound"
-            backends: "vulkan rocm"
-            runner: [Windows, rocm, vulkan, lemon-prod]
-          - name: audio-gen-acestep
-            script: server_audio_generation.py
-            extra_args: "--wrapped-server acestep"
-            backends: "vulkan rocm"
-            runner: [Windows, rocm, vulkan, lemon-prod]
-          - name: text-to-speech
-            script: server_tts.py
-            extra_args: ""
-            backends: ""
-            runner: [self-hosted, Windows, lemon-prod]
-          - name: 3d-trellis
-            script: server_3d.py
-            extra_args: "--wrapped-server trellis"
-            backends: "vulkan rocm"
-            runner: [Windows, rocm, vulkan, lemon-prod]
-          - name: tts-openmoss
-            script: server_tts_openmoss.py
-            extra_args: "--wrapped-server openmoss"
-            backends: "vulkan rocm"
-            runner: [Windows, rocm, vulkan, lemon-prod]
+          # Two entries share these labels so neither part lands on the critical
+          # path; a third would occupy every vulkan+rocm runner, starving stx-halo.
+          - name: vulkan-rocm-1
+            runner: [Windows, X64, vulkan, rocm, lemon-prod]
+            suites: >-
+              [{"name":"3d-trellis","script":"server_3d.py","extra_args":"--wrapped-server trellis","backends":"vulkan rocm"},
+               {"name":"stable-diffusion","script":"server_sd.py","extra_args":"","backends":"cpu rocm vulkan"},
+               {"name":"audio-gen-thinksound","script":"server_audio_generation.py","extra_args":"--wrapped-server thinksound","backends":"vulkan rocm"}]
+          - name: vulkan-rocm-2
+            runner: [Windows, X64, vulkan, rocm, lemon-prod]
+            suites: >-
+              [{"name":"tts-openmoss","script":"server_tts_openmoss.py","extra_args":"--wrapped-server openmoss","backends":"vulkan"},
+               {"name":"llamacpp","script":"server_llm.py","extra_args":"--wrapped-server llamacpp","backends":"vulkan rocm"},
+               {"name":"audio-gen-acestep","script":"server_audio_generation.py","extra_args":"--wrapped-server acestep","backends":"vulkan rocm"},
+               {"name":"audio-gen-openmoss","script":"server_audio_generation.py","extra_args":"--wrapped-server openmoss","backends":"vulkan"}]
+          - name: xdna2
+            runner: [Windows, X64, xdna2, lemon-prod]
+            suites: >-
+              [{"name":"ryzenai","script":"server_llm.py","extra_args":"--wrapped-server ryzenai","backends":"cpu hybrid npu"},
+               {"name":"flm","script":"server_llm.py","extra_args":"--wrapped-server flm","backends":"npu"},
+               {"name":"flm-whisper","script":"server_whisper.py","extra_args":"--wrapped-server flm","backends":"npu"}]
+          - name: stx-halo
+            runner: [Windows, X64, stx-halo, lemon-prod]
+            suites: >-
+              [{"name":"whisper","script":"server_whisper.py","extra_args":"--wrapped-server whispercpp","backends":"cpu npu rocm"},
+               {"name":"thenoise","script":"server_thenoise.py","extra_args":"--wrapped-server thenoise","backends":"rocm"}]
+          - name: vulkan-stx-halo
+            runner: [Windows, X64, vulkan, stx-halo, lemon-prod]
+            suites: >-
+              [{"name":"omni","script":"server_omni.py","extra_args":"--wrapped-server llamacpp","backends":"vulkan"}]
+          - name: generic
+            runner: [self-hosted, Windows, X64, lemon-prod]
+            suites: >-
+              [{"name":"moonshine","script":"server_moonshine.py","extra_args":"--wrapped-server moonshine","backends":"cpu"},
+               {"name":"classify-onnxruntime","script":"server_classify.py","extra_args":"--wrapped-server onnxruntime","backends":"cpu"},
+               {"name":"router-onnxruntime","script":"server_router.py","extra_args":"--wrapped-server onnxruntime","backends":"cpu"},
+               {"name":"text-to-speech","script":"server_tts.py","extra_args":"","backends":""}]
     env:
       LEMONADE_CI_MODE: "True"
       HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
@@ -1153,11 +1168,6 @@ jobs:
         with:
           matrix-name: ${{ matrix.name }}
 
-      - name: Install and Verify Lemonade Server
-        uses: ./.github/actions/install-lemonade-server-msi
-        with:
-          install-path: ${{ env.LEMONADE_INSTALL_PATH }}
-
       - name: Setup Python and virtual environment
         uses: ./.github/actions/setup-venv
         with:
@@ -1165,8 +1175,13 @@ jobs:
           python-version: '3.10'
           requirements-file: 'test/requirements.txt'
 
+      - name: Install and Verify Lemonade Server
+        uses: ./.github/actions/install-lemonade-server-msi
+        with:
+          install-path: ${{ env.LEMONADE_INSTALL_PATH }}
+
       - name: Install FLM backend for FLM wrapped-server tests
-        if: ${{ runner.os == 'Windows' && contains(matrix.extra_args, '--wrapped-server flm') }}
+        if: ${{ runner.os == 'Windows' && contains(matrix.suites, '--wrapped-server flm') }}
         shell: PowerShell
         run: |
           $ErrorActionPreference = "Stop"
@@ -1179,22 +1194,39 @@ jobs:
         shell: PowerShell
         env:
           HF_HOME: ${{ env.HF_HOME }}
+          SUITES: ${{ matrix.suites }}
         run: |
           $ErrorActionPreference = "Stop"
           $venvPython = ".\.venv\Scripts\python.exe"
           $serverExe = Join-Path $env:LEMONADE_INSTALL_PATH "bin\lemonade.exe"
-          $extraArgs = "${{ matrix.extra_args }}" -split " " | Where-Object { $_ }
-          $backends = "${{ matrix.backends }}" -split " " | Where-Object { $_ }
+
+          # An unreadable suite list must fail loudly.
+          # An empty list would walk zero suites and report success without testing anything.
+          $suites = $null
+          try { $suites = $env:SUITES | ConvertFrom-Json } catch { }
+          $expected = @($suites).Count
+          if (-not $suites -or $expected -lt 1) {
+            Write-Host "::error title=Suite list unusable::Could not parse matrix.suites into at least one suite"
+            exit 1
+          }
 
           function Invoke-TestBackend {
             param(
+              [object]$Suite,
               [string]$Backend,
               [int]$MaxAttempts = 1
             )
 
+            $extraArgs = $Suite.extra_args -split " " | Where-Object { $_ }
+
             for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
-              Write-Host "Running test/${{ matrix.script }} ${{ matrix.extra_args }} --backend $Backend (attempt $attempt/$MaxAttempts)" -ForegroundColor Cyan
-              & $venvPython test/${{ matrix.script }} @extraArgs --backend $Backend --cli-binary $serverExe
+              if ($Backend) {
+                Write-Host "Running test/$($Suite.script) $($Suite.extra_args) --backend $Backend (attempt $attempt/$MaxAttempts)" -ForegroundColor Cyan
+                & $venvPython test/$($Suite.script) @extraArgs --backend $Backend --cli-binary $serverExe
+              } else {
+                Write-Host "Running test/$($Suite.script) $($Suite.extra_args)" -ForegroundColor Cyan
+                & $venvPython test/$($Suite.script) @extraArgs --cli-binary $serverExe
+              }
               $testExitCode = $LASTEXITCODE
 
               if ($testExitCode -eq 0) {
@@ -1202,7 +1234,7 @@ jobs:
               }
 
               if ($attempt -lt $MaxAttempts) {
-                Write-Host "::warning title=Retrying transient backend test::test/${{ matrix.script }} --backend $Backend failed with exit code $testExitCode; cleaning sd-server state and retrying."
+                Write-Host "::warning title=Retrying transient backend test::test/$($Suite.script) --backend $Backend failed with exit code $testExitCode; cleaning sd-server state and retrying."
 
                 Get-Process sd-server -ErrorAction SilentlyContinue |
                   Stop-Process -Force -ErrorAction SilentlyContinue
@@ -1227,19 +1259,31 @@ jobs:
             }
           }
 
-          if ($backends.Count -eq 0) {
-            Write-Host "Running test/${{ matrix.script }} ${{ matrix.extra_args }}" -ForegroundColor Cyan
-            & $venvPython test/${{ matrix.script }} @extraArgs --cli-binary $serverExe
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          } else {
-            foreach ($backend in $backends) {
-              $maxAttempts = 1
-              if ("${{ matrix.name }}" -eq "stable-diffusion" -and $backend -eq "rocm") {
-                $maxAttempts = 3
-              }
+          $ran = 0
+          foreach ($suite in $suites) {
+            Write-Host "::group::$($suite.name)"
+            $ran++
+            $backends = $suite.backends -split " " | Where-Object { $_ }
 
-              Invoke-TestBackend -Backend $backend -MaxAttempts $maxAttempts
+            if ($backends.Count -eq 0) {
+              Invoke-TestBackend -Suite $suite -Backend ""
+            } else {
+              foreach ($backend in $backends) {
+                $maxAttempts = 1
+                if ($suite.name -eq "stable-diffusion" -and $backend -eq "rocm") {
+                  $maxAttempts = 3
+                }
+
+                Invoke-TestBackend -Suite $suite -Backend $backend -MaxAttempts $maxAttempts
+              }
             }
+            Write-Host "::endgroup::"
+          }
+
+          Write-Host "Ran $ran of $expected suite(s) in this group."
+          if ($ran -ne $expected) {
+            Write-Host "::error title=Suites skipped::Ran $ran of $expected suite(s)"
+            exit 1
           }
 
       - name: Capture and upload server logs
@@ -1258,77 +1302,51 @@ jobs:
     runs-on: ${{ matrix.runner }}
     needs: build-lemonade-deb
     # Skip inference tests when signing is enabled (tag pushes or manual workflow_dispatch).
-    # Self-hosted rig capacity is the binding constraint, so the merge queue runs
+    # Self-hosted runner capacity is the binding constraint, so the merge queue runs
     # these instead of PR pushes. Label a PR `ci:backends` to opt it back in.
     if: >-
       !startsWith(github.ref, 'refs/tags/') &&
+      !startsWith(github.ref, 'refs/heads/release-v') &&
       inputs.enable_signing != true &&
       inputs.disable_macos_signing != true &&
       (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:backends'))
     strategy:
       fail-fast: ${{ github.event_name == 'merge_group' }}
+      # Same reasoning as test-exe-inference; only four X64 runners serve this matrix.
       matrix:
         include:
-          - name: llamacpp
-            script: server_llm.py
-            extra_args: "--wrapped-server llamacpp"
-            backends: "vulkan rocm"
-            runner: [Linux, vulkan, rocm, lemon-prod]
-          - name: omni
-            script: server_omni.py
-            extra_args: "--wrapped-server llamacpp"
-            backends: "vulkan"
-            runner: [Linux, vulkan, stx-halo, lemon-prod]
-          - name: stable-diffusion
-            script: server_sd.py
-            extra_args: ""
-            backends: "cpu rocm vulkan"
-            runner: [Linux, vulkan, rocm, lemon-prod]
-          - name: thenoise
-            script: server_thenoise.py
-            extra_args: "--wrapped-server thenoise"
-            backends: "rocm"
-            runner: [Linux, rocm, stx-halo, lemon-prod]
-          - name: audio-gen-thinksound
-            script: server_audio_generation.py
-            extra_args: "--wrapped-server thinksound"
-            backends: "vulkan rocm"
-            runner: [Linux, vulkan, rocm, lemon-prod]
-          - name: audio-gen-acestep
-            script: server_audio_generation.py
-            extra_args: "--wrapped-server acestep"
-            backends: "vulkan rocm"
-            runner: [Linux, vulkan, rocm, lemon-prod]
-          - name: whisper
-            script: server_whisper.py
-            extra_args: "--wrapped-server whispercpp"
-            backends: "cpu vulkan rocm"
-            runner: [Linux, rocm, xdna2, lemon-prod]
-          - name: moonshine
-            script: server_moonshine.py
-            extra_args: "--wrapped-server moonshine"
-            backends: "cpu"
-            runner: [self-hosted, Linux, lemon-prod]
-          - name: flm
-            script: server_llm.py
-            extra_args: "--wrapped-server flm"
-            backends: "npu"
-            runner: [Linux, xdna2, lemon-prod]
-          - name: text-to-speech
-            script: server_tts.py
-            extra_args: ""
-            backends: ""
-            runner: [self-hosted, Linux, lemon-prod]
-          - name: 3d-trellis
-            script: server_3d.py
-            extra_args: "--wrapped-server trellis"
-            backends: "vulkan rocm"
-            runner: [Linux, vulkan, rocm, lemon-prod]
-          - name: tts-openmoss
-            script: server_tts_openmoss.py
-            extra_args: "--wrapped-server openmoss"
-            backends: "vulkan rocm"
-            runner: [Linux, vulkan, rocm, lemon-prod]
+          - name: vulkan-rocm
+            runner: [Linux, X64, vulkan, rocm, lemon-prod]
+            suites: >-
+              [{"name":"llamacpp","script":"server_llm.py","extra_args":"--wrapped-server llamacpp","backends":"vulkan rocm"},
+               {"name":"stable-diffusion","script":"server_sd.py","extra_args":"","backends":"cpu rocm vulkan"},
+               {"name":"audio-gen-thinksound","script":"server_audio_generation.py","extra_args":"--wrapped-server thinksound","backends":"vulkan rocm"},
+               {"name":"audio-gen-acestep","script":"server_audio_generation.py","extra_args":"--wrapped-server acestep","backends":"vulkan rocm"},
+               {"name":"audio-gen-openmoss","script":"server_audio_generation.py","extra_args":"--wrapped-server openmoss","backends":"vulkan"},
+               {"name":"3d-trellis","script":"server_3d.py","extra_args":"--wrapped-server trellis","backends":"vulkan rocm"},
+               {"name":"tts-openmoss","script":"server_tts_openmoss.py","extra_args":"--wrapped-server openmoss","backends":"vulkan"}]
+          - name: rocm-stx-halo
+            runner: [Linux, X64, rocm, stx-halo, lemon-prod]
+            suites: >-
+              [{"name":"llamacpp-hrx","script":"server_llm.py","extra_args":"--wrapped-server llamacpp-hrx","backends":"hrx"},
+               {"name":"thenoise","script":"server_thenoise.py","extra_args":"--wrapped-server thenoise","backends":"rocm"}]
+          - name: vulkan-stx-halo
+            runner: [Linux, X64, vulkan, stx-halo, lemon-prod]
+            suites: >-
+              [{"name":"omni","script":"server_omni.py","extra_args":"--wrapped-server llamacpp","backends":"vulkan"}]
+          - name: rocm-xdna2
+            runner: [Linux, X64, rocm, xdna2, lemon-prod]
+            suites: >-
+              [{"name":"whisper","script":"server_whisper.py","extra_args":"--wrapped-server whispercpp","backends":"cpu vulkan rocm"}]
+          - name: xdna2
+            runner: [Linux, X64, xdna2, lemon-prod]
+            suites: >-
+              [{"name":"flm","script":"server_llm.py","extra_args":"--wrapped-server flm","backends":"npu"}]
+          - name: generic
+            runner: [self-hosted, Linux, X64, lemon-prod]
+            suites: >-
+              [{"name":"moonshine","script":"server_moonshine.py","extra_args":"--wrapped-server moonshine","backends":"cpu"},
+               {"name":"text-to-speech","script":"server_tts.py","extra_args":"","backends":""}]
     env:
       LEMONADE_CI_MODE: "True"
       HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
@@ -1359,7 +1377,7 @@ jobs:
           port: auto
 
       - name: Install FLM backend for FLM wrapped-server tests
-        if: ${{ contains(matrix.extra_args, '--wrapped-server flm') }}
+        if: ${{ contains(matrix.suites, '--wrapped-server flm') }}
         run: |
           set -e
           echo "Installing FLM backend for CI inference tests..."
@@ -1375,16 +1393,47 @@ jobs:
       - name: Run tests
         env:
           HF_HOME: ${{ env.HF_HOME }}
+          SUITES: ${{ matrix.suites }}
         run: |
-          set -e
-          if [ -z "${{ matrix.backends }}" ]; then
-            echo "Running test/${{ matrix.script }} ${{ matrix.extra_args }}"
-            .venv/bin/python test/${{ matrix.script }} ${{ matrix.extra_args }} --cli-binary lemonade
-          else
-            for backend in ${{ matrix.backends }}; do
-              echo "Running test/${{ matrix.script }} ${{ matrix.extra_args }} --backend $backend"
-              .venv/bin/python test/${{ matrix.script }} ${{ matrix.extra_args }} --backend $backend --cli-binary lemonade
-            done
+          set -uo pipefail
+          ran=0
+
+          # An unreadable suite list must fail loudly.
+          # An empty list would walk zero suites and report success without testing anything.
+          expected=$(.venv/bin/python -c "
+          import json, os
+          print(len(json.loads(os.environ['SUITES'])))
+          ") || expected=""
+          if ! printf '%s' "$expected" | grep -qE '^[1-9][0-9]*$'; then
+            echo "::error title=Suite list unusable::Could not parse matrix.suites into at least one suite"
+            exit 1
+          fi
+
+          # Unit separator, not tab: bash collapses runs of IFS whitespace, so a
+          # tab would drop an empty extra_args and shift backends into its place.
+          while IFS=$'\x1f' read -r name script extra_args backends; do
+            echo "::group::$name"
+            ran=$((ran + 1))
+            if [ -z "$backends" ]; then
+              echo "Running test/$script $extra_args"
+              .venv/bin/python "test/$script" $extra_args --cli-binary lemonade
+            else
+              for backend in $backends; do
+                echo "Running test/$script $extra_args --backend $backend"
+                .venv/bin/python "test/$script" $extra_args --backend "$backend" --cli-binary lemonade
+              done
+            fi
+            echo "::endgroup::"
+          done < <(.venv/bin/python -c "
+          import json, os
+          for s in json.loads(os.environ['SUITES']):
+              print('\x1f'.join([s['name'], s['script'], s['extra_args'], s['backends']]))
+          ")
+
+          echo "Ran $ran of $expected suite(s) in this group."
+          if [ "$ran" -ne "$expected" ]; then
+            echo "::error title=Suites skipped::Ran $ran of $expected suite(s)"
+            exit 1
           fi
 
       - name: Capture and upload server logs
@@ -1403,6 +1452,7 @@ jobs:
     needs: build-lemonade-deb
     if: >-
       !startsWith(github.ref, 'refs/tags/') &&
+      !startsWith(github.ref, 'refs/heads/release-v') &&
       inputs.enable_signing != true &&
       inputs.disable_macos_signing != true &&
       (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:backends'))
@@ -1568,7 +1618,7 @@ jobs:
           needs: ${{ toJSON(needs) }}
           event-name: ${{ github.event_name }}
 
-  # Same gate pattern as packaging-gate, for the self-hosted inference rigs
+  # Same gate pattern as packaging-gate, for the self-hosted inference runners
   # that PR pushes skip. The job name below belongs in main's required status
   # checks — that registration is what makes the merge-queue strictness bind,
   # so renaming the job requires a matching branch-protection update.
@@ -1945,12 +1995,23 @@ jobs:
         run: |
           .venv/bin/python -m test.utils.reset_server_state --best-effort --label "ubuntu endpoints"
           .venv/bin/python test/server_endpoints.py --cli-binary lemonade
+          .venv/bin/python test/server_cancellation.py --cli-binary lemonade
           echo "Running WebSocket idle test..."
           .venv/bin/python test/test_websocket_idle.py
           echo "WebSocket idle test PASSED!"
           echo "Running WebSocket auth tests..."
           .venv/bin/python test/server_websocket_auth.py
           echo "WebSocket auth tests PASSED!"
+          echo "Running tray supervisor watchdog test..."
+          .venv/bin/python test/test_tray_supervisor_watchdog.py
+          echo "Tray supervisor watchdog test PASSED!"
+
+      - name: Test log rotation
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        shell: bash
+        run: |
+          .venv/bin/python -m test.utils.reset_server_state --best-effort --label "ubuntu log-rotation"
+          .venv/bin/python test/server_log_rotation.py
 
       - name: Test router
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
@@ -1997,6 +2058,7 @@ jobs:
         run: |
           .venv/bin/python -m test.utils.reset_server_state --best-effort --label "ubuntu streaming-errors"
           .venv/bin/python test/server_streaming_errors.py --cli-binary lemonade
+          .venv/bin/python test/test_gpu_hang_retry.py --cli-binary lemonade
 
       - name: Test jobs
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
@@ -2112,6 +2174,7 @@ jobs:
           elif [ "${{ matrix.test_type }}" = "streaming-errors" ]; then
             echo "Running streaming error termination tests..."
             $VENV_PYTHON test/server_streaming_errors.py --cli-binary "$CLI_BINARY"
+            $VENV_PYTHON test/test_gpu_hang_retry.py --cli-binary "$CLI_BINARY"
           fi
           echo "${{ matrix.test_type }} tests PASSED!"
 
@@ -2134,7 +2197,7 @@ jobs:
     steps:
       # Pre-checkout cleanup is run here as a safeguard to release file locks on Windows
       # in case this job is mapped to persistent self-hosted runners labeled as 'windows-latest'.
-      - name: Prepare Windows runner for long paths and stale workspace caches
+      - name: Kill orphaned Lemonade processes holding file locks
         shell: PowerShell
         run: |
           $ErrorActionPreference = "Continue"
@@ -2221,6 +2284,7 @@ jobs:
         run: |
           $VENV_PYTHON -m test.utils.reset_server_state --best-effort --label "windows-latest streaming-errors"
           $VENV_PYTHON test/server_streaming_errors.py --cli-binary "$CLI_BINARY"
+          $VENV_PYTHON test/test_gpu_hang_retry.py --cli-binary "$CLI_BINARY"
 
       # Must run last: its tearDown stops lemond via /internal/shutdown to
       # launch its own instance, and nothing after it can rely on the server.
@@ -2270,6 +2334,31 @@ jobs:
           name: lemonade-macos-pkg
           path: .
 
+      # Must precede the install: the .pkg postflight starts lemond via launchd,
+      # which passes on the launchd domain environment rather than this shell's.
+      # HF_HUB_CACHE rather than HF_HOME because the daemon plist pins HF_HOME,
+      # and plist EnvironmentVariables outrank the domain environment; HF_HUB_CACHE
+      # is unset there and wins over HF_HOME in resolve_hf_cache_dir(). The daemon
+      # runs as root and the suites' own servers as the runner user, so the path is
+      # shared and world-writable.
+      - name: Point every lemond at one HF cache
+        shell: bash
+        run: |
+          set -e
+          sudo mkdir -p /Users/Shared/hf-cache
+          # The daemon writes as root and the suites' own servers as the runner
+          # user, so a mode on the root alone would not reach the model
+          # directories the daemon creates later. An inherited ACL does.
+          sudo chmod 0777 /Users/Shared/hf-cache
+          ACE="list,search,add_file,add_subdirectory,delete,delete_child"
+          ACE="$ACE,read,write,execute,append,readattr,writeattr"
+          ACE="$ACE,readextattr,writeextattr,readsecurity"
+          ACE="$ACE,file_inherit,directory_inherit"
+          sudo chmod +a "everyone allow $ACE" /Users/Shared/hf-cache
+          ls -lde /Users/Shared/hf-cache
+          sudo launchctl setenv HF_HUB_CACHE /Users/Shared/hf-cache
+          echo "HF_HUB_CACHE=/Users/Shared/hf-cache" >> $GITHUB_ENV
+
       - name: Install Lemonade Server (.pkg)
         id: install-pkg
         uses: ./.github/actions/install-lemonade-server-dmg
@@ -2277,18 +2366,36 @@ jobs:
           version: ${{ env.LEMONADE_VERSION }}
           download-artifact: 'false'
 
+      - name: Verify the server picked up the cache setting
+        # Assert rather than assume: a server that missed it silently downloads
+        # into a second cache, which is the flake this step exists to prevent.
+        shell: bash
+        run: |
+          set -e
+          PID=$(sudo lsof -t -nP -iTCP:13305 -sTCP:LISTEN 2>/dev/null | head -1)
+          if [ -z "$PID" ]; then
+            echo "ERROR: nothing is listening on port 13305"
+            exit 1
+          fi
+          if ! sudo ps eww -p "$PID" | grep -q "HF_HUB_CACHE=/Users/Shared/hf-cache"; then
+            echo "ERROR: lemond (PID $PID) is missing HF_HUB_CACHE"
+            sudo ps eww -p "$PID" || true
+            exit 1
+          fi
+          echo "lemond (PID $PID) has HF_HUB_CACHE"
+
       - name: Set HF_HOME environment variable
         shell: bash
         run: echo "HF_HOME=$PWD/hf-cache" >> $GITHUB_ENV
 
       - name: Stop the tray agent started by the .pkg
-        # postinst-full-mac bootstraps com.lemonade.tray into the GUI domain and
+        # postinst-full-mac bootstraps ai.lemonadeserver.tray into the GUI domain and
         # the tray is single-instance, so test_tray_https.py cannot start its own
         # while this one runs. KeepAlive is false, so it stays down.
         shell: bash
         run: |
           set -e
-          launchctl bootout "gui/$(id -u)/com.lemonade.tray" 2>/dev/null || true
+          launchctl bootout "gui/$(id -u)/ai.lemonadeserver.tray" 2>/dev/null || true
           pkill -f lemonade-tray 2>/dev/null || true
           sudo pkill -f lemonade-tray 2>/dev/null || true
           for i in $(seq 1 15); do
@@ -2331,6 +2438,7 @@ jobs:
           $VENV_PYTHON test/test_websocket_idle.py
           $VENV_PYTHON test/server_websocket_auth.py
           $VENV_PYTHON test/test_tray_https.py
+          $VENV_PYTHON test/test_tray_supervisor_watchdog.py --lemond-binary "$LEMOND_BINARY"
           $VENV_PYTHON test/server_jobs.py --lemond-binary "$LEMOND_BINARY"
 
       - name: Test router
@@ -2367,6 +2475,7 @@ jobs:
         run: |
           $VENV_PYTHON -m test.utils.reset_server_state --best-effort --label "macos-latest streaming-errors"
           $VENV_PYTHON test/server_streaming_errors.py --cli-binary "$CLI_BINARY"
+          $VENV_PYTHON test/test_gpu_hang_retry.py --cli-binary "$CLI_BINARY"
 
       # Must run last: its tearDown stops lemond via /internal/shutdown to
       # launch its own instance, and nothing after it can rely on the server.
@@ -2498,7 +2607,7 @@ jobs:
     steps:
       # Pre-checkout cleanup is run here as a safeguard to release file locks on Windows
       # in case this job is mapped to persistent self-hosted runners labeled as 'windows-latest'.
-      - name: Prepare Windows runner for long paths and stale workspace caches
+      - name: Kill orphaned Lemonade processes holding file locks
         shell: PowerShell
         run: |
           $ErrorActionPreference = "Continue"
@@ -2600,6 +2709,43 @@ jobs:
         uses: ./.github/actions/teardown-windows-ci-env
 
   # ========================================================================
+  # REPO-MANAGER JOB - Release checklist, notes, and announcement
+  # ========================================================================
+
+  repo-manager-release:
+    name: Build Release Artifacts
+    needs: source-tarball
+    # A stable tag points at a commit that already had a candidate build, so its artifacts
+    # exist and describe the same commit range; regenerating them would only reword what the
+    # release admin already read. The release job tolerates this job being skipped.
+    if: startsWith(github.ref, 'refs/heads/release-v')
+    runs-on: [self-hosted, stx-halo, Linux, X64, lemon-prod]
+    timeout-minutes: 180
+    # The workflow-level grant is `contents: write` and nothing else. repo-manager reads this
+    # repository's pull requests and issues.
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+    # One release's notes, checklist and announcement are one set of files, so successive
+    # builds of the same release queue instead of overwriting each other.
+    concurrency:
+      group: repo-manager-release-${{ needs.source-tarball.outputs.release_branch }}
+      cancel-in-progress: false
+    steps:
+      # Enough to resolve the local action; it does its own clone.
+      - uses: actions/checkout@v5
+        with:
+          clean: true
+          sparse-checkout: .github
+
+      - uses: ./.github/actions/repo-manager
+        with:
+          command: release build --branch ${{ needs.source-tarball.outputs.release_branch }} --head ${{ github.sha }}
+          app-client-id: ${{ vars.RELEASE_BRANCH_APP_CLIENT_ID }}
+          app-private-key: ${{ secrets.RELEASE_BRANCH_APP_PRIVATE_KEY }}
+
+  # ========================================================================
   # RELEASE JOB - Add artifacts to GitHub release
   # ========================================================================
 
@@ -2621,19 +2767,51 @@ jobs:
       - test-embeddable-posix
       - test-embeddable-macos
       - test-embeddable-windows
-    if: startsWith(github.ref, 'refs/tags/v')
+      - source-tarball
+      - repo-manager-release
+    # Candidates skip sign-msi-installers, so a plain `needs` would skip this
+    # job too; check the results explicitly instead.
+    if: >-
+      !cancelled() &&
+      (startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/heads/release-v')) &&
+      !contains(needs.*.result, 'failure') &&
+      !contains(needs.*.result, 'cancelled')
     env:
       LEMONADE_VERSION: ${{ needs.build-lemonade-rpm.outputs.version }}
+      # A release branch build is a candidate: published unsigned as a prerelease
+      # under candidate-v<version>, so it never enters the v* namespace that gates
+      # stable publication (PPA upload, tools/version.py, tools/release.py).
+      CANDIDATE: ${{ startsWith(github.ref, 'refs/heads/release-v') }}
+      RELEASE_TAG: ${{ startsWith(github.ref, 'refs/heads/release-v') && format('candidate-v{0}', needs.build-lemonade-rpm.outputs.version) || github.ref_name }}
     steps:
+      - name: Tag the candidate
+        if: env.CANDIDATE == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          if ! gh api "repos/${GITHUB_REPOSITORY}/git/refs" -f ref="refs/tags/${RELEASE_TAG}" -f sha="${GITHUB_SHA}" >/dev/null; then
+            existing=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" --jq .object.sha)
+            test "$existing" = "$GITHUB_SHA"
+          fi
+
       - name: Checkout for release notes action
         uses: actions/checkout@v5
         with:
           sparse-checkout: .github
 
       - name: Download Signed Lemonade Server Installer (Windows)
+        if: env.CANDIDATE == 'false'
         uses: actions/download-artifact@v7
         with:
           name: Lemonade_Server_MSI_Signed
+          path: .
+
+      - name: Download Unsigned Lemonade Server Installer (Windows)
+        if: env.CANDIDATE == 'true'
+        uses: actions/download-artifact@v7
+        with:
+          name: Lemonade_Server_MSI
           path: .
 
       - name: Download Lemonade .rpm Packages (x86_64)
@@ -2692,8 +2870,17 @@ jobs:
           name: lemonade-embeddable-macos
           path: .
 
+      - name: Download Lemonade source tarball
+        uses: actions/download-artifact@v7
+        with:
+          name: lemonade-source-tarball
+          path: .
+
       - name: Verify release artifacts
+        env:
+          SOURCE_VERSION: ${{ needs.source-tarball.outputs.version }}
         run: |
+          test "$SOURCE_VERSION" = "$LEMONADE_VERSION"
           echo "Release artifacts:"
           ls -lh lemonade-server-minimal.msi
           ls -lh lemonade.msi
@@ -2706,6 +2893,7 @@ jobs:
           ls -lh lemonade-embeddable-${LEMONADE_VERSION}-ubuntu-arm64.tar.gz
           ls -lh lemonade-embeddable-${LEMONADE_VERSION}-windows-x64.zip
           ls -lh lemonade-embeddable-${LEMONADE_VERSION}-macos-arm64.tar.gz
+          ls -lh lemonade-${LEMONADE_VERSION}.tar.gz
 
       - name: Generate release notes
         id: release-notes
@@ -2718,7 +2906,9 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          name: ${{ github.ref_name }}
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: ${{ env.CANDIDATE == 'true' && format('v{0} (release candidate)', env.LEMONADE_VERSION) || github.ref_name }}
+          prerelease: ${{ env.CANDIDATE == 'true' }}
           body_path: ${{ steps.release-notes.outputs.release_notes_file }}
           files: |
             lemonade-server-minimal.msi
@@ -2732,4 +2922,5 @@ jobs:
             lemonade-embeddable-${{ env.LEMONADE_VERSION }}-ubuntu-arm64.tar.gz
             lemonade-embeddable-${{ env.LEMONADE_VERSION }}-windows-x64.zip
             lemonade-embeddable-${{ env.LEMONADE_VERSION }}-macos-arm64.tar.gz
+            lemonade-${{ env.LEMONADE_VERSION }}.tar.gz
           fail_on_unmatched_files: true

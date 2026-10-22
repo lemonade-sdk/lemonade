@@ -15,7 +15,7 @@
 #   zensical serve
 
 site_name: Lemonade Server Documentation
-site_url: https://lemonade-server.ai/
+site_url: https://lemonade-server.ai/docs/
 site_description: Lemonade Server is a lightweight, open-source local LLM server that allows you to run and manage multiple AI applications on your local machine. It provides a simple CLI for managing applications and supports various LLMs, making it easy to deploy and use AI models locally.
 
 edit_uri: README.md
@@ -58,13 +58,22 @@ nav:
   - User Guide:
     - Getting Started: guide/README.md
     - Install:
-      - Supported Platforms: guide/install/README.md
+      - Overview: guide/install/README.md
+      - Windows: guide/install/windows.md
+      - Linux: guide/install/linux.md
       - Ubuntu: guide/install/ubuntu.md
       - Arch: guide/install/arch.md
       - Fedora: guide/install/fedora.md
       - Debian: guide/install/debian.md
       - Docker: guide/install/docker.md
+      - macOS: guide/install/macos.md
     - Local Server Concepts: guide/concepts.md
+    - Lemonade App:
+      - Overview: guide/app/README.md
+      - Models: guide/app/models.md
+      - Chat and effective settings: guide/app/chat.md
+      - Audio and 3D: guide/app/audio-and-3d.md
+      - Backends, Apps, Monitor, and Settings: guide/app/operations.md
     - CLI: guide/cli.md
     - Chat in your terminal: guide/cli-chat.md
     - Configuration:
@@ -80,6 +89,13 @@ nav:
   - Development:
     - Overview: dev/README.md
     - Philosophy: dev/philosophy.md
+    - AI Content Policy: dev/ai-content-policy.md
+    - Spec Driven Development Policy: dev/spec-driven-dev.md
+    - Specs:
+      - Writing Guide: dev/specs/spec-writing-guide.md
+      - Container Backends: dev/specs/container-backends.md
+      - HTTP Server: dev/specs/http-server.md
+      - Model Management Spec: dev/specs/model-management.md
     - Working Groups: dev/working-groups/README.md
     - Contribute: dev/contribute.md
     - Documentation Guide: dev/documentation.md
@@ -100,6 +116,8 @@ nav:
     - Claude Code: integrations/claude-code.md
     - CodeGPT: integrations/codeGPT.md
     - Continue: integrations/continue.md
+    - Interviewer: integrations/interviewer.md
+    - Junie: integrations/junie.md
     - LangChain: integrations/langchain.md
     - Lemon Zest: integrations/lemon-zest.md
     - Mindcraft: integrations/mindcraft.md
@@ -111,8 +129,11 @@ nav:
       - OpenAI Compatible: api/openai.md
       - Ollama Compatible: api/ollama.md
       - Anthropic Compatible: api/anthropic.md
+      - MCP Gateway: api/mcp.md
       - llama.cpp Specific: api/llamacpp.md
       - Lemonade Specific: api/lemonade.md
+      - Router: api/router.md
+      - Internal: api/internal.md
   - Embeddable Lemonade:
       - Overview: embeddable/README.md
       - Runtime: embeddable/runtime.md

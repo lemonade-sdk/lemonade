@@ -190,10 +190,6 @@ RyzenAIVisionServer::RyzenAIVisionServer(const std::string& log_level,
     : WrappedServer("ryzenai-vision-server", log_level, model_manager, backend_manager) {
 }
 
-RyzenAIVisionServer::~RyzenAIVisionServer() {
-    unload();
-}
-
 void RyzenAIVisionServer::load(const std::string& model_name,
                                const ModelInfo& model_info,
                                const RecipeOptions& options,
@@ -260,40 +256,29 @@ void RyzenAIVisionServer::load(const std::string& model_name,
     LOG(INFO, "RyzenAIVisionServer") << "Using Python: " << python << std::endl;
     LOG(INFO, "RyzenAIVisionServer") << "Using model: " << onnx << std::endl;
 
+    ServerCommand command;
+    command.program = python;
+    command.args = args;
+    command.port = port_;
     // Keep the Ryzen AI environment's own packages authoritative even when
     // lemond was started from a shell with another venv or PYTHONPATH active.
-    const std::vector<std::pair<std::string, std::string>> env = {
+    command.env = {
         {"PYTHONNOUSERSITE", "1"},
         {"PYTHONPATH", ""},
         {"PYTHONUNBUFFERED", "1"},
     };
     const bool inherit_output = (log_level_ == "info") || is_debug();
-    ProcessHandle handle = ProcessManager::start_process(python, args, "", inherit_output, false, env);
-    set_process_handle(handle);
-    if (!has_process_handle(handle)) {
-        throw std::runtime_error("Failed to start ryzenai-vision-server process");
-    }
-    LOG(INFO, "RyzenAIVisionServer") << "Process started with PID: " << handle.pid << std::endl;
-
-    if (!wait_for_ready("/health", kFirstCompileTimeoutSeconds)) {
-        unload();
+    try {
+        start_server(std::make_unique<NativeProcess>(ProcessOutput{inherit_output, false}),
+                     command, kFirstCompileTimeoutSeconds);
+    } catch (const std::runtime_error& e) {
         const std::string details = read_status_error(status_file);
         fs::remove(status_file, ec);
-        throw std::runtime_error("ryzenai-vision-server failed to start or become ready" +
-                                 (details.empty() ? "" : ": " + details));
+        if (load_cancelled() || details.empty()) throw;
+        throw std::runtime_error(std::string(e.what()) + ": " + details);
     }
     fs::remove(status_file, ec);
-    start_backend_watchdog("/health");
     LOG(INFO, "RyzenAIVisionServer") << "Server is ready!" << std::endl;
-}
-
-void RyzenAIVisionServer::unload() {
-    stop_backend_watchdog();
-    const ProcessHandle handle = consume_process_handle_for_cleanup();
-    if (has_process_handle(handle)) {
-        LOG(INFO, "RyzenAIVisionServer") << "Stopping server (PID: " << handle.pid << ")" << std::endl;
-        ProcessManager::stop_process(handle);
-    }
 }
 
 json RyzenAIVisionServer::detect(const json& request) {

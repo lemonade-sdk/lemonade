@@ -597,7 +597,6 @@ class OllamaTests(ServerTestBase):
                 "top_p",
                 "num_predict",
                 "pinned",
-                "llamacpp_args",
                 "auto_evict",
                 "evict_idle_timeout",
             ):
@@ -606,6 +605,14 @@ class OllamaTests(ServerTestBase):
                     recipe_options,
                     f"Request-scoped field '{field}' must not leak into recipe_options",
                 )
+
+            effective_llamacpp_args = recipe_options.get("llamacpp_args", "")
+            self.assertIsInstance(effective_llamacpp_args, str)
+            self.assertNotIn(
+                "--foo-bar",
+                effective_llamacpp_args,
+                "Ollama request llamacpp_args must not leak into recipe_options",
+            )
         finally:
             unload_all_models()
 
@@ -1015,6 +1022,107 @@ class OllamaTests(ServerTestBase):
             self.assertIn(
                 "context", error_payloads[0].get("error", {}).get("message", "")
             )
+
+    # ========================================================================
+    # Requests as the official Ollama clients send them
+    # ========================================================================
+
+    # Ollama's Go client (api.Client, which the `ollama` CLI uses) always sends
+    # both "model" and "name" on show, pull and delete, and leaves the one it
+    # does not use empty. Ollama reads cmp.Or(model, name).
+
+    @staticmethod
+    def _go_show_request(model="", name=""):
+        return {
+            "model": model,
+            "system": "",
+            "template": "",
+            "verbose": False,
+            "options": None,
+            "name": name,
+        }
+
+    def test_029_show_go_client_run_request(self):
+        """`ollama run X` calls /api/show with model set and name empty."""
+        self.ensure_model_pulled()
+        response = requests.post(
+            f"{OLLAMA_BASE_URL}/api/show",
+            json=self._go_show_request(model=ENDPOINT_TEST_MODEL),
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertIn("details", response.json())
+
+    def test_030_show_go_client_show_request(self):
+        """`ollama show X` calls /api/show with name set and model empty."""
+        self.ensure_model_pulled()
+        response = requests.post(
+            f"{OLLAMA_BASE_URL}/api/show",
+            json=self._go_show_request(name=ENDPOINT_TEST_MODEL),
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertIn("details", response.json())
+
+    def test_031_pull_go_client_request(self):
+        """`ollama pull X` streams /api/pull with name set and model empty."""
+        self.ensure_model_pulled()
+        response = requests.post(
+            f"{OLLAMA_BASE_URL}/api/pull",
+            json={
+                "model": "",
+                "username": "",
+                "password": "",
+                "name": ENDPOINT_TEST_MODEL,
+            },
+            timeout=TIMEOUT_MODEL_OPERATION,
+            stream=True,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        chunks = [json.loads(line) for line in response.iter_lines() if line]
+        self.assertGreater(len(chunks), 0)
+        self.assertEqual(chunks[-1].get("status"), "success", chunks[-1])
+
+    def test_032_chat_think_levels(self):
+        """/api/chat accepts every think value Ollama accepts: a boolean or a level."""
+        self.ensure_model_pulled()
+        for think in (True, False, "low", "medium", "high", "max"):
+            with self.subTest(think=think):
+                response = requests.post(
+                    f"{OLLAMA_BASE_URL}/api/chat",
+                    json={
+                        "model": ENDPOINT_TEST_MODEL,
+                        "messages": [{"role": "user", "content": "Hi"}],
+                        "stream": False,
+                        "think": think,
+                        "options": {"num_predict": 1},
+                    },
+                    timeout=TIMEOUT_MODEL_OPERATION,
+                )
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertTrue(response.json()["done"])
+
+    # Runs last, so the model it removes is not needed again.
+
+    def test_099_delete_go_client_request(self):
+        """`ollama rm X` sends /api/delete with name set and model empty."""
+        self.ensure_model_pulled()
+        try:
+            response = requests.delete(
+                f"{OLLAMA_BASE_URL}/api/delete",
+                json={"model": "", "name": ENDPOINT_TEST_MODEL},
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+
+            tags = requests.get(f"{OLLAMA_BASE_URL}/api/tags", timeout=TIMEOUT_DEFAULT)
+            names = [m["name"] for m in tags.json()["models"]]
+            self.assertFalse(
+                any(n.split(":")[0] == ENDPOINT_TEST_MODEL for n in names), names
+            )
+        finally:
+            OllamaTests._model_pulled = False
+            self.ensure_model_pulled()
 
 
 if __name__ == "__main__":

@@ -10,6 +10,7 @@
 #include <lemon/model_registry.h>
 #include <lemon/version.h>
 #include <lemon_cli/agent_launcher.h>
+#include <lemon_cli/junie_profile.h>
 #include <lemon_cli/opencode_profile.h>
 #include <lemon_cli/pi_profile.h>
 #include <lemon/utils/process_manager.h>
@@ -66,7 +67,8 @@ static const std::vector<std::string> SUPPORTED_AGENTS = {
     "claude",
     "codex",
     "opencode",
-    "pi"
+    "pi",
+    "junie"
 };
 
 static bool prompt_agent_selection(std::string& agent_out) {
@@ -167,6 +169,8 @@ struct CliConfig {
     std::string output_file;
     bool downloaded = false;
     bool dry_run = false;
+    bool sync_wait = false;
+    std::vector<std::string> sync_target_models;
     std::string agent;
     std::string repo_dir;
     std::string recipe_file;
@@ -177,12 +181,19 @@ struct CliConfig {
     bool codex_use_user_config = false;
     std::string codex_model_provider = "lemonade";
     std::string agent_args;
+    std::optional<bool> pi_mcp;
+    bool pi_codemode = false;
 
     // Cloud provider commands
     std::string cloud_provider;
     std::string cloud_base_url;
     std::string cloud_api_key;
     bool cloud_allow_insecure_http = false;
+    // Unset means "don't send the field", so the server keeps the provider's
+    // current value instead of resetting it to the Authorization/Bearer default.
+    std::optional<std::string> cloud_auth_header_name;
+    std::optional<std::string> cloud_auth_header_prefix;
+    std::optional<std::string> cloud_wire_format;
 
     // Alias management options
     std::string alias_name;
@@ -455,6 +466,9 @@ static int handle_pull_command(lemonade::LemonadeClient& client, const CliConfig
     } else {
         nlohmann::json model_data;
         model_data["model_name"] = config.model;
+        if (config.model_source_explicit) {
+            model_data["source"] = config.model_source;
+        }
         res = client.pull_model(model_data, "", /*upgrade=*/true);
     }
 
@@ -604,6 +618,33 @@ static int handle_backends_command(lemonade::LemonadeClient& client,
     return client.list_recipes(config.backends_showall);
 }
 
+static lemon_cli::AgentModelEntry agent_model_entry_from_json(const std::string& id,
+                                                              const nlohmann::json& model,
+                                                              int default_context_window) {
+    std::vector<std::string> labels;
+    const auto model_labels = model.find("labels");
+    if (model_labels != model.end() && model_labels->is_array()) {
+        for (const auto& label : *model_labels) {
+            if (label.is_string()) {
+                labels.push_back(label.get<std::string>());
+            }
+        }
+    }
+
+    int context_window = default_context_window;
+    const auto options = model.find("recipe_options");
+    if (options != model.end() && options->is_object()) {
+        // A saved ctx_size of -1 means auto, which the CLI cannot resolve.
+        const auto ctx_size = options->find("ctx_size");
+        if (ctx_size != options->end() && ctx_size->is_number_integer() &&
+            ctx_size->get<int>() > 0) {
+            context_window = ctx_size->get<int>();
+        }
+    }
+
+    return {id, id + " (local)", context_window, std::move(labels)};
+}
+
 static std::vector<lemon_cli::AgentModelEntry> fetch_llm_models_for_sync(
     lemonade::LemonadeClient& client,
     int context_window) {
@@ -623,27 +664,12 @@ static std::vector<lemon_cli::AgentModelEntry> fetch_llm_models_for_sync(
                 continue;
             }
 
-            bool is_chat = false;
-            const auto labels = model.find("labels");
-            if (labels != model.end() && labels->is_array()) {
-                for (const auto& label : *labels) {
-                    if (label.is_string() && label.get<std::string>() == "chat") {
-                        is_chat = true;
-                        break;
-                    }
-                }
-            }
-            if (!is_chat) {
+            lemon_cli::AgentModelEntry entry =
+                agent_model_entry_from_json(model["id"].get<std::string>(), model, context_window);
+            if (std::find(entry.labels.begin(), entry.labels.end(), "chat") == entry.labels.end()) {
                 continue;
             }
-
-            const std::string model_id = model["id"].get<std::string>();
-            int model_context_window = context_window;
-            if (model.contains("recipe_options") && model["recipe_options"].is_object()
-			    && model["recipe_options"].contains("ctx_size")) {
-                model_context_window = model["recipe_options"]["ctx_size"].get<int>();
-            }
-            models.push_back({model_id, model_id + " (local)", model_context_window});
+            models.push_back(std::move(entry));
         }
     } catch (const std::exception&) {
         // Non-fatal: we still include the selected model below.
@@ -652,11 +678,97 @@ static std::vector<lemon_cli::AgentModelEntry> fetch_llm_models_for_sync(
     return models;
 }
 
-static void sync_agent_config_for_launch(lemonade::LemonadeClient& client,
-                                         const CliConfig& config) {
+// Auto-tune sizes the context only when the model loads, so the window is
+// read from the server after loading. Returns false when the load fails;
+// context_window stays 0 when the size can't be read.
+static bool load_for_context_window(lemonade::LemonadeClient& client, const CliConfig& config,
+                                    int& context_window) {
+    context_window = 0;
+    std::cout << "Loading " << config.model << " to read its context size..." << std::endl;
+    try {
+        nlohmann::json request_body =
+            config.recipe_options.is_object() ? config.recipe_options : nlohmann::json::object();
+        request_body["model_name"] = config.model;
+        request_body["save_options"] = false;
+        constexpr time_t load_timeout_ms = 86400000;
+        client.make_request("/api/v1/load", "POST", request_body.dump(), "application/json",
+                            load_timeout_ms, load_timeout_ms);
+    } catch (const lemonade::HttpError& e) {
+        std::cerr << "Error: Failed to load " << config.model << ": "
+                  << lemonade::extract_server_error_message(e) << std::endl;
+        return false;
+    } catch (const std::exception& e) {
+        std::cerr << "Error: Failed to load " << config.model << ": " << e.what() << std::endl;
+        return false;
+    }
+
+    try {
+        const nlohmann::json model = nlohmann::json::parse(client.make_request(
+            "/api/v1/models/" + config.model, "GET", "", "", 3000, 3000));
+        const auto context_length = model.find("context_length");
+        if (context_length != model.end() && context_length->is_number_integer() &&
+            context_length->get<int>() > 0) {
+            context_window = context_length->get<int>();
+            return true;
+        }
+        std::cerr << "Warning: The server reported no context size for " << config.model
+                  << "." << std::endl;
+    } catch (const std::exception& e) {
+        std::cerr << "Warning: Failed to read the context size of " << config.model << ": "
+                  << e.what() << std::endl;
+    }
+    return true;
+}
+
+// Older pi starts fine with these flags but without what they enable, so
+// the version is checked only when one is passed. Returns false when launch
+// must not start pi.
+static bool check_pi_version_for_flags(const std::string& pi_binary, const CliConfig& config,
+                                       const std::string& install_instructions) {
+    if (!config.pi_codemode && !config.pi_mcp.value_or(false)) {
+        return true;
+    }
+
+    std::string output;
+    try {
+        lemon::utils::ProcessManager::run_process_with_output(
+            pi_binary, {"--version"},
+            [&output](const std::string& line) {
+                output += line + "\n";
+                return true;
+            },
+            "", 10, false);
+    } catch (const std::exception&) {
+        return true;
+    }
+    int major = 0;
+    int minor = 0;
+    if (!lemon_cli::parse_pi_version(output, major, minor)) {
+        return true;
+    }
+    const std::string found = output.substr(0, output.find('\n'));
+
+    if (config.pi_codemode && (major < 1 || (major == 1 && minor < 1))) {
+        std::cerr << "Error: --codemode needs pi 1.1 or newer (found " << found
+                  << "). Reinstall pi to update it." << std::endl;
+        std::cerr << install_instructions << std::endl;
+        return false;
+    }
+    if (config.pi_mcp.value_or(false) && major < 1) {
+        std::cerr << "Warning: --mcp needs pi 1.0 or newer (found " << found
+                  << "); this pi ignores mcp.json." << std::endl;
+    }
+    return true;
+}
+
+// Returns false when launch must not start the agent. model_loaded is set
+// when the sync already loaded the launched model.
+static bool sync_agent_config_for_launch(lemonade::LemonadeClient& client,
+                                         const CliConfig& config,
+                                         bool* model_loaded = nullptr) {
     constexpr int default_context_window = 40960;
-    std::vector<lemon_cli::AgentModelEntry> models =
-        fetch_llm_models_for_sync(client, default_context_window);
+    // A window of 0 marks a model without a saved size until the fallback is applied.
+    std::vector<lemon_cli::AgentModelEntry> models = fetch_llm_models_for_sync(client, 0);
 
     bool selected_present = false;
     for (const auto& model : models) {
@@ -666,8 +778,86 @@ static void sync_agent_config_for_launch(lemonade::LemonadeClient& client,
         }
     }
 
+    // The list holds only downloaded models; a selected model that is not
+    // downloaded yet still needs its labels and saved window.
+    bool selected_unknown = false;
     if (!selected_present) {
-        models.push_back({config.model, config.model + " (local)", default_context_window});
+        nlohmann::json selected = nlohmann::json::object();
+        try {
+            selected = nlohmann::json::parse(client.make_request(
+                "/api/v1/models/" + config.model, "GET", "", "", 3000, 3000));
+        } catch (const lemonade::HttpError& e) {
+            selected_unknown = e.status_code() == 404;
+        } catch (const std::exception&) {
+            // Other failures: the model goes in without labels.
+        }
+        if (!selected.is_object()) {
+            selected = nlohmann::json::object();
+        }
+        models.push_back(agent_model_entry_from_json(config.model, selected, 0));
+    }
+
+    // Launch loads the selected model with its own ctx_size, which outranks the saved one.
+    if (config.recipe_options.is_object() && config.recipe_options.contains("ctx_size")) {
+        const int launch_ctx_size = config.recipe_options["ctx_size"].get<int>();
+        for (auto& model : models) {
+            if (model.id == config.model) {
+                model.context_window = launch_ctx_size > 0 ? launch_ctx_size : 0;
+            }
+        }
+    }
+
+    // Pi compacts by contextWindow, so it waits for the load rather than
+    // guessing a window the auto-tuned model may not have.
+    if (config.agent == "pi" && !selected_unknown) {
+        for (auto& model : models) {
+            if (model.id == config.model && model.context_window <= 0) {
+                if (!load_for_context_window(client, config, model.context_window)) {
+                    std::cerr << "Not launching pi, since the model failed to load." << std::endl;
+                    return false;
+                }
+                if (model_loaded != nullptr) {
+                    *model_loaded = true;
+                }
+                if (model.context_window <= 0) {
+                    std::cerr << "Launching pi anyway, using a context size of "
+                              << default_context_window << "." << std::endl;
+                }
+            }
+        }
+    }
+
+    for (auto& model : models) {
+        if (model.context_window <= 0) {
+            model.context_window = default_context_window;
+        }
+    }
+
+    if (config.agent == "junie") {
+        int context_window = default_context_window;
+        for (const auto& model : models) {
+            if (model.id == config.model) {
+                context_window = model.context_window;
+                break;
+            }
+        }
+
+        const std::string junie_api_key =
+            config.api_key.empty() ? "lemonade" : config.api_key;
+        // Junie's profile baseUrl is the full endpoint, not an API root.
+        const std::string junie_base_url =
+            lemon_tray::build_agent_server_base_url(config.host, config.port) +
+            "/v1/chat/completions";
+        std::string junie_error;
+        if (!lemon_cli::sync_junie_model_file(junie_base_url,
+                                              junie_api_key,
+                                              config.model,
+                                              context_window,
+                                              junie_error)) {
+            std::cerr << "Warning: Failed to sync junie config: " << junie_error << std::endl;
+            std::cerr << "Continuing with launch anyway..." << std::endl;
+        }
+        return true;
     }
 
     const lemon_cli::AgentConfigProfile* profile = nullptr;
@@ -678,13 +868,24 @@ static void sync_agent_config_for_launch(lemonade::LemonadeClient& client,
     }
 
     if (profile == nullptr) {
-        return;
+        return true;
     }
 
-    const std::string config_api_key = config.api_key.empty() ? "lemonade" : config.api_key;
+    // Pi decides between an env reference and a placeholder itself, so it
+    // needs to know whether a key was configured at all.
+    const std::string config_api_key =
+        (config.agent == "pi" || !config.api_key.empty()) ? config.api_key : "lemonade";
 
+    // Only pi's config follows the server's scheme; the other agents still get http.
     const std::string base_url =
-        lemon_tray::build_agent_server_base_url(config.host, config.port) + "/v1";
+        lemon_tray::build_agent_server_base_url(
+            config.host, config.port, config.agent == "pi" && config.is_ssl) + "/v1";
+
+    // Pi's config references the key launch exports, so starting pi on a
+    // config that still points at another server would send it this key.
+    const bool pi_with_key = config.agent == "pi" && !config.api_key.empty();
+    const char* pi_key_stop = "Not launching pi, since it would send this server's API key "
+                              "to the server in pi's old config.";
 
     std::string error_message;
     if (!lemon_cli::sync_agent_config_file(*profile,
@@ -693,12 +894,68 @@ static void sync_agent_config_for_launch(lemonade::LemonadeClient& client,
                                            config_api_key,
                                            models,
                                            error_message)) {
+        if (pi_with_key) {
+            std::cerr << "Error: Failed to sync pi config: " << error_message << std::endl;
+            std::cerr << pi_key_stop << std::endl;
+            return false;
+        }
         std::cerr << "Warning: Failed to sync " << config.agent
                   << " config: " << error_message << std::endl;
         std::cerr << "Continuing with launch anyway..." << std::endl;
     }
 
     if (config.agent == "pi") {
+        if (selected_unknown) {
+            std::cerr << "Warning: " << config.model
+                      << " is not a model on the Lemonade server; check the name with"
+                      << " `lemonade list`." << std::endl;
+        }
+        for (const auto& model : models) {
+            if (model.id == config.model && !model.labels.empty() &&
+                std::find(model.labels.begin(), model.labels.end(), "tool-calling") ==
+                    model.labels.end()) {
+                std::cerr << "Warning: " << config.model
+                          << " is not labeled tool-calling; pi may fail to use its tools."
+                          << std::endl;
+            }
+        }
+
+        // Pi may still load an mcp.json launch cannot parse (Node tolerates
+        // invalid UTF-8), so its lemonade entry could not be checked or refreshed.
+        std::string mcp_read_error;
+        if (pi_with_key && !lemon_cli::pi_mcp_config_readable(mcp_read_error)) {
+            std::cerr << "Error: Can't read pi's mcp.json: " << mcp_read_error << std::endl;
+            std::cerr << "Not launching pi with an API key until it can be read." << std::endl;
+            return false;
+        }
+
+        // An existing entry is refreshed so it follows the current host, port and key.
+        const bool had_mcp_entry = lemon_cli::pi_has_mcp_server();
+        if (config.pi_mcp.value_or(had_mcp_entry)) {
+            std::string mcp_error;
+            if (!lemon_cli::sync_pi_mcp_server(
+                    lemon_tray::build_agent_server_base_url(config.host, config.port,
+                                                            config.is_ssl),
+                    !config.api_key.empty(), mcp_error)) {
+                if (pi_with_key && had_mcp_entry) {
+                    std::cerr << "Error: Failed to update Lemonade MCP in pi: " << mcp_error
+                              << std::endl;
+                    std::cerr << pi_key_stop << std::endl;
+                    return false;
+                }
+                std::cerr << "Warning: Failed to add Lemonade MCP to pi: " << mcp_error << std::endl;
+                std::cerr << "Continuing with launch anyway..." << std::endl;
+            }
+        } else if (config.pi_mcp.has_value()) {
+            std::string mcp_error;
+            if (!lemon_cli::remove_pi_mcp_server(mcp_error)) {
+                std::cerr << "Error: Failed to remove Lemonade MCP from pi: " << mcp_error
+                          << std::endl;
+                std::cerr << "Not launching pi, since --no-mcp was requested." << std::endl;
+                return false;
+            }
+        }
+
         // Only write settings.json if pi doesn't already have a default provider/model.
         // This preserves existing user configuration while providing seamless first-time UX.
         if (!lemon_cli::pi_has_default_config()) {
@@ -709,6 +966,7 @@ static void sync_agent_config_for_launch(lemonade::LemonadeClient& client,
             }
         }
     }
+    return true;
 }
 
 static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& config) {
@@ -727,8 +985,12 @@ static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& co
         std::cout << "Model was provided explicitly; skipping recipe import prompts." << std::endl;
     }
 
-    if (lemon_tray::agent_needs_config_sync(config.agent)) {
-        sync_agent_config_for_launch(client, config);
+    // Pi's config sync can load the model, so it waits until pi is found.
+    const bool needs_config_sync = lemon_tray::agent_needs_config_sync(config.agent);
+    const bool sync_after_binary_check = config.agent == "pi";
+    if (needs_config_sync && !sync_after_binary_check &&
+        !sync_agent_config_for_launch(client, config)) {
+        return 1;
     }
 
     lemon_tray::AgentConfig agent_config;
@@ -752,6 +1014,11 @@ static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& co
         std::cout << "Launch auth: API key provided and propagated to the launched agent." << std::endl;
     }
 
+    if (config.agent == "pi" && config.pi_codemode) {
+        agent_config.extra_args.push_back("--tools");
+        agent_config.extra_args.push_back("+codemode");
+    }
+
     if (!config.agent_args.empty()) {
         std::vector<std::string> user_args = lemon::utils::parse_custom_args(config.agent_args);
         agent_config.extra_args.insert(agent_config.extra_args.end(), user_args.begin(), user_args.end());
@@ -767,26 +1034,39 @@ static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& co
         return 1;
     }
 
-    std::cout << "Loading model in background: " << config.model << std::endl;
+    if (config.agent == "pi" &&
+        !check_pi_version_for_flags(agent_binary, config, agent_config.install_instructions)) {
+        return 1;
+    }
 
-    // Trigger load asynchronously so launch is non-blocking for agent startup.
-    std::thread([host = config.host,
-                 port = config.port,
-                 api_key = config.api_key,
-                 is_ssl = config.is_ssl,
-                 model = config.model,
-                 recipe_options = config.recipe_options]() {
-        try {
-            lemonade::LemonadeClient async_client(host, port, api_key, is_ssl);
-            nlohmann::json request_body = recipe_options;
-            request_body["model_name"] = model;
-            request_body["save_options"] = false;
-            // Keep async load silent to avoid disrupting interactive agent UIs.
-            (void)async_client.make_request("/api/v1/load", "POST", request_body.dump(), "application/json");
-        } catch (const std::exception& e) {
-            (void)e;
-        }
-    }).detach();
+    bool model_loaded = false;
+    if (needs_config_sync && sync_after_binary_check &&
+        !sync_agent_config_for_launch(client, config, &model_loaded)) {
+        return 1;
+    }
+
+    if (!model_loaded) {
+        std::cout << "Loading model in background: " << config.model << std::endl;
+
+        // Trigger load asynchronously so launch is non-blocking for agent startup.
+        std::thread([host = config.host,
+                     port = config.port,
+                     api_key = config.api_key,
+                     is_ssl = config.is_ssl,
+                     model = config.model,
+                     recipe_options = config.recipe_options]() {
+            try {
+                lemonade::LemonadeClient async_client(host, port, api_key, is_ssl);
+                nlohmann::json request_body = recipe_options;
+                request_body["model_name"] = model;
+                request_body["save_options"] = false;
+                // Keep async load silent to avoid disrupting interactive agent UIs.
+                (void)async_client.make_request("/api/v1/load", "POST", request_body.dump(), "application/json");
+            } catch (const std::exception& e) {
+                (void)e;
+            }
+        }).detach();
+    }
 
     std::cout << "Launching " << config.agent << "..." << std::endl;
 
@@ -1278,6 +1558,9 @@ int main(int argc, char* argv[]) {
     CLI::App* list_cmd = app.add_subcommand("list", "List available models. Use --downloaded to show only local models.")->group("Model management");
     CLI::App* check_updates_cmd = app.add_subcommand(
         "check-updates", "Check downloaded models for upstream updates")->group("Model management");
+    CLI::App* update_models_cmd = app.add_subcommand(
+        "update-models", "Check for and download updates to downloaded models")->group("Model management");
+
     CLI::App* pull_cmd = app.add_subcommand("pull",
         "Pull/download a model by registered name or remote registry checkpoint")->group("Model management");
     CLI::App* delete_cmd = app.add_subcommand("delete", "Delete a model")->group("Model management");
@@ -1294,6 +1577,14 @@ int main(int argc, char* argv[]) {
     list_cmd->add_option("name_filter", config.list_filter,
         "Optional case-insensitive model-name filter; supports * wildcards")
         ->type_name("NAME_FILTER");
+
+    // Update-models options
+    update_models_cmd->add_option("models", config.sync_target_models, "Optional model name(s) to update. If omitted, checks all downloaded models.")->type_name("MODEL");
+    update_models_cmd->add_flag("--check,--dry-run", config.dry_run, "Check for model updates without downloading files");
+    update_models_cmd->add_flag("-w,--wait", config.sync_wait, "Wait for model update operation to complete with live progress output");
+    update_models_cmd->add_flag("-j,--json", config.json_output, "Output result as JSON");
+
+
 
     // Backend management options
     backends_install_cmd->add_option("spec", config.backend_spec, "Backend spec (recipe:backend)")->required()->type_name("SPEC");
@@ -1312,6 +1603,18 @@ int main(int argc, char* argv[]) {
         ->type_name("KEY");
     cloud_install_cmd->add_flag("--allow-insecure-http", config.cloud_allow_insecure_http,
         "Explicitly allow sending this provider's API key over http://.");
+    cloud_install_cmd->add_option("--auth-header-name", config.cloud_auth_header_name,
+        "Custom auth header name, for gateways that don't use 'Authorization' (default: Authorization)")
+        ->type_name("HEADER");
+    cloud_install_cmd->add_option("--auth-header-prefix", config.cloud_auth_header_prefix,
+        "Custom auth header value prefix; pass an empty string for gateways with no "
+        "'Bearer ' prefix (default: 'Bearer ')")
+        ->type_name("PREFIX");
+    cloud_install_cmd->add_option("--wire-format", config.cloud_wire_format,
+        "Request/response shape this provider speaks (default: openai). "
+        "'anthropic' providers are reachable via /v1/messages only.")
+        ->check(CLI::IsMember({"openai", "anthropic"}))
+        ->type_name("FORMAT");
 
     CLI::App* cloud_uninstall_cmd = cloud_cmd->add_subcommand("uninstall", "Remove a cloud provider")->group("Subcommands");
     cloud_uninstall_cmd->add_option("provider", config.cloud_provider, "Provider name")->required()->type_name("PROVIDER");
@@ -1328,6 +1631,7 @@ int main(int argc, char* argv[]) {
     cloud_clear_cmd->add_option("provider", config.cloud_provider, "Provider name")->required()->type_name("PROVIDER");
 
     CLI::App* cloud_list_cmd = cloud_cmd->add_subcommand("list", "List installed cloud providers")->group("Subcommands");
+    cloud_list_cmd->add_flag("--json", config.json_output, "Output providers as JSON");
 
     // Pull options
     pull_cmd->add_option("model", config.model,
@@ -1453,6 +1757,14 @@ int main(int argc, char* argv[]) {
         agent_cmd->callback([&config, agent_name]() { config.agent = agent_name; });
         add_common_launch_options(*agent_cmd);
 
+        if (agent_name == "pi") {
+            agent_cmd->add_flag("--mcp,!--no-mcp", config.pi_mcp,
+                "Add (or remove) the Lemonade MCP server in pi's mcp.json; the choice is kept "
+                "for later launches");
+            agent_cmd->add_flag("--codemode", config.pi_codemode,
+                "Enable pi's codemode tool for this launch");
+        }
+
         if (agent_name == "codex") {
             codex_provider_opt = agent_cmd->add_option("--provider,-p", config.codex_model_provider,
                 "Use model provider name for Codex instead of Lemonade-injected provider definition")
@@ -1541,25 +1853,17 @@ int main(int argc, char* argv[]) {
     // Execute command
     if (status_cmd->count() > 0) {
         if (config.json_output) {
-            // Verify the server is actually reachable before reporting its port.
-            // Without this check, we'd report the default port even when no server is running,
-            // which could cause callers to target the wrong process.
-            bool reachable = try_live_check(config.host, config.port, config.api_key, config.is_ssl, 500);
-            if (!reachable) {
-                std::cerr << "Server is not running" << std::endl;
-                return 1;
-            }
-            nlohmann::json out;
-            out["port"] = config.port;
-            std::cout << out.dump() << std::endl;
-            return 0;
+            return client.status_json(config.port);
         }
         return client.status(config.port);
     } else if (list_cmd->count() > 0) {
         return client.list_models(!config.downloaded, config.list_filter);
     } else if (check_updates_cmd->count() > 0) {
         return client.check_model_updates();
-    } else if (pull_cmd->count() > 0) {
+    } else if (update_models_cmd->count() > 0) {
+        return client.update_models(config.sync_target_models, config.dry_run, config.json_output, config.sync_wait);
+    }
+ else if (pull_cmd->count() > 0) {
         if (config.model.empty()) {
             std::cerr << "Error: 'lemonade pull' requires a model name or remote registry checkpoint." << std::endl;
             std::cerr << "       See 'lemonade pull --help'." << std::endl;
@@ -1604,7 +1908,10 @@ int main(int argc, char* argv[]) {
             return client.install_cloud_provider(config.cloud_provider,
                                                   config.cloud_base_url,
                                                   config.cloud_api_key,
-                                                  config.cloud_allow_insecure_http);
+                                                  config.cloud_allow_insecure_http,
+                                                  config.cloud_auth_header_name,
+                                                  config.cloud_auth_header_prefix,
+                                                  config.cloud_wire_format);
         }
         if (cloud_uninstall_cmd->count() > 0) {
             return client.uninstall_cloud_provider(config.cloud_provider);
@@ -1641,7 +1948,7 @@ int main(int argc, char* argv[]) {
             return client.cloud_auth_clear(config.cloud_provider);
         }
         if (cloud_list_cmd->count() > 0) {
-            return client.cloud_list();
+            return client.cloud_list(config.json_output);
         }
         // No subcommand specified: print help.
         std::cout << cloud_cmd->help() << std::endl;

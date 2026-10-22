@@ -12,8 +12,8 @@
 #include "lemon/utils/custom_args.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/path_utils.h"
-#include "lemon/utils/process_manager.h"
 #include "lemon/error_types.h"
+#include "whispercpp_multipart_fields.h"
 #include <iostream>
 #include <chrono>
 #include <filesystem>
@@ -66,7 +66,7 @@ WhisperServer::WhisperServer(const std::string& log_level, ModelManager* model_m
 }
 
 WhisperServer::~WhisperServer() {
-    unload();
+    stop_server();
 
     try {
         if (fs::exists(temp_dir_)) {
@@ -264,7 +264,6 @@ void WhisperServer::load(const std::string& model_name,
 
     // Lemonade manages the model path and port;
     // optional whisper-server flags like --convert come from whispercpp_args.
-    // Note: Don't include exe_path here - ProcessManager::start_process already handles it
     std::vector<std::string> args = {
         "-m", model_path,
         "--port", std::to_string(port_)
@@ -322,37 +321,12 @@ void WhisperServer::load(const std::string& model_name,
     }
 #endif
 
-    ProcessHandle started_handle = utils::ProcessManager::start_process(
-        exe_path,
-        args,
-        "",     // working_dir (empty = current)
-        is_debug(),  // inherit_output
-        false,  // filter_health_logs
-        env_vars
-    );
-    set_process_handle(started_handle);
-
-    if (!has_process_handle(started_handle)) {
-        throw std::runtime_error("Failed to start whisper-server process");
-    }
-
-    LOG(INFO, "WhisperServer") << "Process started with PID: " << started_handle.pid << std::endl;
-
-    if (!wait_for_ready("/health")) {
-        unload();
-        throw std::runtime_error("whisper-server failed to start or become ready");
-    }
-
-    LOG(INFO, "WhisperServer") << "Server is ready!" << std::endl;
-}
-
-void WhisperServer::unload() {
-    stop_backend_watchdog();
-    const ProcessHandle handle = consume_process_handle_for_cleanup();
-    if (has_process_handle(handle)) {
-        LOG(INFO, "WhisperServer") << "Stopping server (PID: " << handle.pid << ")" << std::endl;
-        utils::ProcessManager::stop_process(handle);
-    }
+    ServerCommand command;
+    command.program = exe_path;
+    command.args = std::move(args);
+    command.env = std::move(env_vars);
+    command.port = port_;
+    start_server(std::make_unique<NativeProcess>(ProcessOutput{is_debug(), false}), command);
 }
 
 // ICompletionServer implementation - not supported for Whisper
@@ -503,56 +477,21 @@ json WhisperServer::forward_multipart_audio_request(const std::string& file_path
     else if (ext == ".flac") content_type = "audio/flac";
     else if (ext == ".webm") content_type = "audio/webm";
 
-    std::vector<utils::MultipartField> fields;
-
     utils::MultipartField audio_file;
     audio_file.name = "file";
     audio_file.data = file_content;
     audio_file.filename = filepath.filename().string();
     audio_file.content_type = content_type;
-    fields.push_back(audio_file);
 
     std::string response_format = params.value("response_format", "json");
-    utils::MultipartField fmt_field;
-    fmt_field.name = "response_format";
-    fmt_field.data = response_format;
-    fields.push_back(fmt_field);
-
-    utils::MultipartField temp_field;
-    temp_field.name = "temperature";
-    if (params.contains("temperature")) {
-        temp_field.data = std::to_string(params["temperature"].get<double>());
-    } else {
-        temp_field.data = "0.0";
-    }
-    fields.push_back(temp_field);
-
-    if (params.contains("language")) {
-        utils::MultipartField lang_field;
-        lang_field.name = "language";
-        lang_field.data = params["language"].get<std::string>();
-        fields.push_back(lang_field);
-    }
-
-    if (params.contains("prompt")) {
-        utils::MultipartField prompt_field;
-        prompt_field.name = "prompt";
-        prompt_field.data = params["prompt"].get<std::string>();
-        fields.push_back(prompt_field);
-    }
-
-    if (translate) {
-        utils::MultipartField translate_field;
-        translate_field.name = "translate";
-        translate_field.data = "true";
-        fields.push_back(translate_field);
-    }
+    std::vector<utils::MultipartField> fields =
+        whispercpp::detail::build_multipart_fields(std::move(audio_file), params, translate);
 
     const std::string url = "http://127.0.0.1:" + std::to_string(get_backend_port()) + "/inference";
     LOG(DEBUG, "WhisperServer") << "Sending multipart request to " << url << std::endl;
 
     // Pass 0 so HttpClient falls back to its default timeout, which is kept in
-    // sync with `global_timeout` in config.json (see server.cpp). Hard-coding 300
+    // sync with `global_timeout` in config.json (see core/config_effects.cpp). Hard-coding 300
     // caused long-form audio (~35+ min on slower backends) to fail regardless of
     // the user's configuration.
     utils::HttpResponse res;
@@ -597,48 +536,15 @@ json WhisperServer::forward_multipart_audio_data(const std::string& audio_data,
     else if (ext == ".flac") content_type = "audio/flac";
     else if (ext == ".webm") content_type = "audio/webm";
 
-    std::vector<utils::MultipartField> fields;
-
     utils::MultipartField audio_file;
     audio_file.name = "file";
     audio_file.data = audio_data;
     audio_file.filename = filepath.filename().string();
     audio_file.content_type = content_type;
-    fields.push_back(audio_file);
 
     std::string response_format = params.value("response_format", "json");
-    utils::MultipartField fmt_field;
-    fmt_field.name = "response_format";
-    fmt_field.data = response_format;
-    fields.push_back(fmt_field);
-
-    utils::MultipartField temp_field;
-    temp_field.name = "temperature";
-    temp_field.data = params.contains("temperature")
-        ? std::to_string(params["temperature"].get<double>())
-        : "0.0";
-    fields.push_back(temp_field);
-
-    if (params.contains("language")) {
-        utils::MultipartField lang_field;
-        lang_field.name = "language";
-        lang_field.data = params["language"].get<std::string>();
-        fields.push_back(lang_field);
-    }
-
-    if (params.contains("prompt")) {
-        utils::MultipartField prompt_field;
-        prompt_field.name = "prompt";
-        prompt_field.data = params["prompt"].get<std::string>();
-        fields.push_back(prompt_field);
-    }
-
-    if (translate) {
-        utils::MultipartField translate_field;
-        translate_field.name = "translate";
-        translate_field.data = "true";
-        fields.push_back(translate_field);
-    }
+    std::vector<utils::MultipartField> fields =
+        whispercpp::detail::build_multipart_fields(std::move(audio_file), params, translate);
 
     const std::string url = "http://127.0.0.1:" + std::to_string(get_backend_port()) + "/inference";
     LOG(DEBUG, "WhisperServer") << "Sending multipart request to " << url << " (direct data)" << std::endl;
@@ -697,7 +603,6 @@ namespace whispercpp {
 std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
     return std::make_unique<WhisperServer>(ctx.log_level, ctx.model_manager, ctx.backend_manager);
 }
-
 
 namespace {
 class WhisperOps : public BackendOps {
