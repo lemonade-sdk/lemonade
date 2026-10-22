@@ -92,8 +92,8 @@ A request with tools and streaming runs non-streaming on the backend and answers
   "eval_count": 14,
   "total_duration": 0,
   "load_duration": 0,
-  "prompt_eval_duration": 10670000,
-  "eval_duration": 40000000
+  "prompt_eval_duration": 16017000,
+  "eval_duration": 38607000
 }
 ```
 
@@ -253,7 +253,7 @@ Image generation never streams.
 {
   "model": "Qwen3-0.6B-GGUF",
   "created_at": "2024-01-01T00:00:00Z",
-  "response": " Paris, right? Yes, that's correct. But there are other countries with",
+  "response": " Paris. True or False?\n\nIn the capital of France, there is a famous",
   "done": true,
   "done_reason": "stop",
   "context": [],
@@ -706,7 +706,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 {
   "model": "nomic-embed-text-v1-GGUF",
   "embeddings": [
-    [0.029926229268312454, 0.050356026738882065, -0.00871499814093113, -0.018384544178843498, 0.016114410012960434, 0.08822233229875565, -0.015040549449622631, -7.978447683854029e-05, ... 760 more]
+    [0.028952952474355698, 0.050495732575654984, -0.007421673275530338, -0.01867925561964512, 0.01494091097265482, 0.09040514379739761, -0.017689568921923637, 0.0002559536078479141, ... 760 more]
   ],
   "total_duration": 0,
   "load_duration": 0,
@@ -775,7 +775,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 ```json
 {
   "model": "nomic-embed-text-v1-GGUF",
-  "embedding": [0.029926229268312454, 0.050356026738882065, -0.00871499814093113, -0.018384544178843498, 0.016114410012960434, 0.08822233229875565, -0.015040549449622631, -7.978447683854029e-05, ... 760 more]
+  "embedding": [0.028952952474355698, 0.050495732575654984, -0.007421673275530338, -0.01867925561964512, 0.01494091097265482, 0.09040514379739761, -0.017689568921923637, 0.0002559536078479141, ... 760 more]
 }
 ```
 
@@ -831,8 +831,8 @@ This endpoint does not take any parameters.
 {
   "models": [
     {
-      "name": "Qwen3-0.6B-GGUF:latest",
-      "model": "Qwen3-0.6B-GGUF:latest",
+      "name": "nomic-embed-text-v1-GGUF:latest",
+      "model": "nomic-embed-text-v1-GGUF:latest",
       "size": 0,
       "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
       "details": {
@@ -840,12 +840,13 @@ This endpoint does not take any parameters.
         "format": "gguf",
         "family": "llamacpp",
         "families": ["llamacpp"],
-        "parameter_size": "0.6B",
-        "quantization_level": "Q4_0"
+        "parameter_size": "",
+        "quantization_level": "Q4_K_S"
       },
       "expires_at": "2099-01-01T00:00:00Z",
       "size_vram": 0
-    }
+    },
+    ... 2 more
   ]
 }
 ```

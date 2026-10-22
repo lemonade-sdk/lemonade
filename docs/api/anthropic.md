@@ -78,7 +78,7 @@ Errors use Anthropic's shape, `{"type": "error", "error": {"type", "message"}}`.
 
 ```json
 {
-  "id": "chatcmpl-uhdmXVdTjsgmRNikJFqvtD007BhH22p1",
+  "id": "chatcmpl-alqwyCo0YqfT2NhSsnn2UqnTAswJWBLO",
   "type": "message",
   "role": "assistant",
   "model": "Qwen3-0.6B-GGUF",
@@ -125,7 +125,7 @@ Errors use Anthropic's shape, `{"type": "error", "error": {"type", "message"}}`.
 
 ```text
 event: message_start
-data: {"type": "message_start", "message": {"content": [], "id": "chatcmpl-W8xmVYifwOmFLduA4zOyS4skhoHrbmJi", "model": "Qwen3-0.6B-GGUF", "role": "assistant", "stop_reason": null, "stop_sequence": null, "type": "message", "usage": {"input_tokens": 0, "output_tokens": 0}}}
+data: {"type": "message_start", "message": {"content": [], "id": "chatcmpl-QRjpz8xvVP9qQxU0AWAjxsChn69xAhan", "model": "Qwen3-0.6B-GGUF", "role": "assistant", "stop_reason": null, "stop_sequence": null, "type": "message", "usage": {"input_tokens": 0, "output_tokens": 0}}}
 event: content_block_start
 data: {"type": "content_block_start", "index": 0, "content_block": {"text": "", "type": "text"}}
 event: content_block_delta
