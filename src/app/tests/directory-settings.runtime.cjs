@@ -54,14 +54,16 @@ assert.match(runtimeConfigSource, /fs::directory_iterator\{dir, read_ec\};/,
 assert.match(runtimeConfigSource, /not readable by the Lemonade server/,
   'permission failures must surface a user-facing server error');
 
-// Each C++ needle sits in the file that owns the behavior: the walk is ScanCatalog's, the
-// decision to keep the registered set when the walk fails is the cache rebuild's.
 assert.match(scanCatalogSource, /fs::directory_options::skip_permission_denied/,
   'extra-model discovery must skip inaccessible nested directories');
-assert.match(modelManagerSource,
-  /try \{[\s\S]{0,240}?discover_extra_models\(registered_extra_paths\)[\s\S]{0,240}?\} catch \(const std::exception& e\)/,
+const scanStart = modelManagerSource.indexOf('ModelManager::scan_extra_models(');
+assert.notEqual(scanStart, -1, 'model manager must provide extra-model discovery');
+const scanEnd = modelManagerSource.indexOf('ModelManager::make_catalog_deps(', scanStart);
+const scanBody = modelManagerSource.slice(scanStart, scanEnd >= 0 ? scanEnd : undefined);
+assert.match(scanBody,
+  /try\s*\{[\s\S]*?discover_extra_models\(registered_extra_paths\)[\s\S]*?\}\s*catch\s*\(const std::exception& e\)/,
   'optional extra-model discovery failures must not abort the registered model cache rebuild');
-assert.match(modelManagerSource, /keeping registered models/,
+assert.match(scanBody, /keeping registered models/,
   'the cache fallback should document preservation of registered models');
 
 console.log('Directory settings regression contract checks passed.');
