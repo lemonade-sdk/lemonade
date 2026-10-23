@@ -354,6 +354,7 @@ def run_bench(
     compare_file: Path | None,
     dry_run: bool,
     lemonade_bin: str,
+    port: str = "",
 ) -> dict | None:
     backend = fork["backend"]
     # bench_as: the real llamacpp backend key lemond recognises for --backend.
@@ -382,8 +383,10 @@ def run_bench(
     merged = None
     for ctx_size, group_scenarios in sorted(ctx_groups.items()):
         group_out = output_file.with_suffix(f".ctx{ctx_size}.json")
+        target = ["--host", "127.0.0.1", "--port", port] if port else []
         cmd = [
             lemonade_bin,
+            *target,
             "bench",
             model,
             "--backend",
@@ -640,7 +643,7 @@ def main() -> int:
     parser.add_argument("--fork-filter", default="")
     parser.add_argument("--model-filter", default="")
     parser.add_argument(
-        "--port", default="", help="lemond port (informational; bench uses UDP beacon)"
+        "--port", default="", help="lemond port; pins lemonade bench to this server"
     )
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument(
@@ -665,7 +668,7 @@ def main() -> int:
     print(f"Lemonade : {lemonade_bin}")
     print(f"Dry run  : {args.dry_run}")
     if args.port:
-        print(f"Port     : {args.port} (informational)")
+        print(f"Port     : {args.port}")
     print()
 
     with open(forks_path) as f:
@@ -821,6 +824,7 @@ def main() -> int:
                 prev_result,
                 args.dry_run,
                 lemonade_bin,
+                args.port,
             )
 
             if result is None:
