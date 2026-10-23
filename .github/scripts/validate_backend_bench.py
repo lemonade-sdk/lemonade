@@ -349,7 +349,6 @@ def run_bench(
     binary_path: Path,
     model: str,
     output_file: Path,
-    compare_file: Path | None,
     dry_run: bool,
     lemonade_bin: str,
     port: str = "",
@@ -404,8 +403,6 @@ def run_bench(
             "--ctx-size",
             str(ctx_size),
         ]
-        if compare_file and compare_file.exists():
-            cmd += ["--compare", str(compare_file)]
 
         print(f"    cmd (ctx={ctx_size}): {' '.join(cmd)}")
         if dry_run:
@@ -829,7 +826,6 @@ def main() -> int:
                 binary_path,
                 model,
                 run_file,
-                prev_result,
                 args.dry_run,
                 lemonade_bin,
                 args.port,
