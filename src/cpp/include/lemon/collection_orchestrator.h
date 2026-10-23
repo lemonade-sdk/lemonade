@@ -36,7 +36,7 @@ class Router;
 class CollectionOrchestrator {
 public:
     // Loads a component model on demand (download + load). Wraps
-    // Server::auto_load_model_if_needed so the orchestrator doesn't duplicate the
+    // ModelLoader::ensure_loaded so the orchestrator doesn't duplicate the
     // download/load logic. Throws on failure.
     using EnsureLoadedFn = std::function<void(const std::string&)>;
 

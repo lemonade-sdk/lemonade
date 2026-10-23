@@ -221,6 +221,87 @@ class ClassifyTests(ServerTestBase):
             )
         print(f"[OK] scores match the HuggingFace reference within {HF_REFERENCE_TOL}")
 
+    def _classifier_residency(self, model):
+        response = requests.get(f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(response.status_code, 200, response.text[:500])
+        for loaded in response.json().get("all_models_loaded", []):
+            if loaded.get("model_name") == model:
+                return loaded.get("residency_class")
+        self.fail(f"{model} is not in all_models_loaded: {response.text[:1000]}")
+
+    def test_505_model_optional_keeps_routing_helper_residency(self):
+        """Classifying without 'model' must not demote a routing helper to standard."""
+        model = get_test_model("classification")
+        requests.post(f"{self.base_url}/unload", json={}, timeout=TIMEOUT_DEFAULT)
+        self._ensure_model_pulled()
+
+        collection = "user.Test-Classify-Routing-Helper"
+        policy = {
+            "version": "1",
+            "model_name": collection,
+            "recipe": "collection.router",
+            "components": ["Tiny-Test-Model-GGUF", "Qwen3-0.6B-GGUF", model],
+            "routing": {
+                "candidates": ["Tiny-Test-Model-GGUF", "Qwen3-0.6B-GGUF"],
+                "default_model": "Tiny-Test-Model-GGUF",
+                "classifiers": [
+                    {
+                        "id": "phishing",
+                        "type": "classifier",
+                        "model": model,
+                        "labels": ["LABEL_0", "LABEL_1", "LABEL_2", "LABEL_3"],
+                        "default_label": "LABEL_1",
+                        "on_error": "match_false",
+                    }
+                ],
+                "rules": [
+                    {
+                        "id": "phishing-to-capable",
+                        "match": {
+                            "classifier": "phishing",
+                            "label": "LABEL_1",
+                            "min_score": 0.5,
+                        },
+                        "route_to": "Qwen3-0.6B-GGUF",
+                    }
+                ],
+            },
+        }
+        # The router skips loading a routing helper that no registered policy
+        # references, so register the collection before validating against it.
+        response = requests.post(f"{self.base_url}/pull", json=policy, timeout=600)
+        self.assertEqual(response.status_code, 200, response.text[:1000])
+        try:
+            inline_policy = {k: v for k, v in policy.items() if k != "model_name"}
+            response = requests.post(
+                f"{self.base_url}/routing/validate",
+                json={"policy": inline_policy, "prompt": "Verify your account now."},
+                timeout=TIMEOUT_CLASSIFY,
+            )
+            self.assertEqual(response.status_code, 200, response.text[:1000])
+            self.assertEqual(self._classifier_residency(model), "routing_helper")
+
+            payload = self._payload()
+            del payload["model"]
+            response = requests.post(
+                f"{self.base_url}/classify", json=payload, timeout=TIMEOUT_CLASSIFY
+            )
+            self.assertEqual(response.status_code, 200, response.text[:500])
+            self.assertEqual(response.json().get("model"), model)
+
+            self.assertEqual(
+                self._classifier_residency(model),
+                "routing_helper",
+                "model-optional classify reloaded the routing helper as a standard model",
+            )
+            print("[OK] model-optional classify kept the routing helper's residency")
+        finally:
+            requests.post(
+                f"{self.base_url}/delete",
+                json={"model_name": collection},
+                timeout=TIMEOUT_DEFAULT,
+            )
+
 
 if __name__ == "__main__":
     run_server_tests(
