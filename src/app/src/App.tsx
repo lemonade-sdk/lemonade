@@ -392,6 +392,8 @@ const App: React.FC = () => {
   const customModelInfos = useMemo(() => serverModels.filter(model => (model as any).custom === true), [serverModels]);
   const rawLoadedModels = serverModelState.health?.all_models_loaded ?? EMPTY_LOADED_MODELS;
   const [currentModel, setCurrentModel] = useState<string | null>(null);
+  const [dictationTarget, setDictationTarget] = useState<string | null>(null);
+  const [dictationActive, setDictationActive] = useState(false);
   const [modelSelectionEpoch, setModelSelectionEpoch] = useState(0);
   const [composerFocusEpoch, setComposerFocusEpoch] = useState(0);
   const [theme, setTheme] = useState<Theme>(loadTheme);
@@ -693,6 +695,7 @@ const App: React.FC = () => {
       );
     };
     setCurrentModel(current => {
+      if (current && current === dictationTarget) return current;
       if (current && loadedModels.some(m => m.model_name === current && (modelHelpers.canSelectInComposer(m) || infoSelectable(m.model_name)))) return current;
       if (current) {
         const info = modelHelpers.findModelInfoByName(knownInfos, current);
@@ -707,7 +710,15 @@ const App: React.FC = () => {
         || loadedModels.find(m => infoSelectable(m.model_name))?.model_name
         || null;
     });
-  }, [loadedModelViewState, loadedModels, modelHelpers, rawLoadedModels]);
+  }, [dictationTarget, loadedModelViewState, loadedModels, modelHelpers, rawLoadedModels]);
+
+  // An unloaded prompt model must survive ASR-only health updates.
+  // After dictation, release the pin once that model is actually loaded.
+  useEffect(() => {
+    if (!dictationActive && dictationTarget && loadedModels.some(m => m.model_name === dictationTarget)) {
+      setDictationTarget(null);
+    }
+  }, [dictationActive, dictationTarget, loadedModels]);
 
   const navigateToRoute = useCallback((nextRoute: AppRoute) => {
     if (nextRoute.view === 'dashboard') lastWorkspaceSectionsRef.current.dashboard = nextRoute.section;
@@ -944,7 +955,16 @@ const App: React.FC = () => {
     await api.refresh();
   }, []);
 
+  const handleDictationStart = useCallback((model: string) => {
+    setDictationActive(true);
+    setDictationTarget(model);
+    setCurrentModel(model);
+  }, []);
+
+  const handleDictationEnd = useCallback(() => setDictationActive(false), []);
+
   const handleModelSelect = useCallback((modelName: string) => {
+    setDictationTarget(null);
     setCurrentModel(modelName);
     setModelSelectionEpoch(epoch => epoch + 1);
     setView('chat');
@@ -1202,6 +1222,9 @@ const App: React.FC = () => {
                 serverModels={serverModels}
                 connectionStatus={status}
                 onModelSelect={handleModelSelect}
+                dictationTarget={dictationTarget}
+                onDictationStart={handleDictationStart}
+                onDictationEnd={handleDictationEnd}
                 onOpenModelDetails={openModelDetails}
                 onRefresh={handleRefreshModels}
               />
