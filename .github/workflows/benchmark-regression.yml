@@ -27,7 +27,7 @@ permissions:
 # Never let two runs overlap: parallel benches on the same box would share the
 # GPU and corrupt perf numbers, and both would race to push benchmark history.
 concurrency:
-  group: benchmark-regression
+  group: benchmark-regression-accuracy-tmp
   cancel-in-progress: false
 
 env:
