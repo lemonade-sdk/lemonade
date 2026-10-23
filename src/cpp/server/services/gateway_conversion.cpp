@@ -546,7 +546,8 @@ void stream_openai_sse_to_anthropic_sse(const std::string& openai_body,
                          &stop_reason,
                          &input_tokens,
                          &output_tokens,
-                         &warnings]() {
+                         &warnings,
+                         model]() {
         // The error event terminates the stream. Emitting the closing frames
         // here would let a client read the failure as a turn that produced no
         // content, which is the state this path exists to avoid.
@@ -562,6 +563,7 @@ void stream_openai_sse_to_anthropic_sse(const std::string& openai_body,
                     {"id", anthropic_message_id()},
                     {"type", "message"},
                     {"role", "assistant"},
+                    {"model", model},
                     {"content", json::array()},
                     {"stop_reason", nullptr},
                     {"stop_sequence", nullptr},
