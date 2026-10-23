@@ -98,7 +98,7 @@ jobs:
   bench:
     name: Bench ${{ matrix.fork_id }}
     needs: [setup]
-    runs-on: [self-hosted, Linux, strix-halo, devlab-dispatch]
+    runs-on: [self-hosted, stx-halo, Linux, X64, lemon-prod]
     timeout-minutes: 180
     strategy:
       fail-fast: false
@@ -522,7 +522,7 @@ jobs:
   report:
     name: Aggregate and report
     needs: bench
-    if: always() && needs.bench.result != 'skipped'
+    if: false
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
