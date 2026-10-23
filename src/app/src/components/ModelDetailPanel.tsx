@@ -2806,6 +2806,17 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
           {t('Delete')}
         </WorkspaceActionButton>
       )}
+      {!isPulling && (isDownloaded || isLoaded) && model.update_available === true && (
+        <WorkspaceActionButton
+          appearance="secondary"
+          icon="rotate-ccw"
+          onClick={() => onPull(model)}
+          disabled={isLoadingThis}
+          aria-label={`Update ${name}`}
+        >
+          {t('Update')}
+        </WorkspaceActionButton>
+      )}
     </WorkspaceActionGroup>
   );
 

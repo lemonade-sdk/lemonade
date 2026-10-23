@@ -114,6 +114,7 @@ assert.equal(settings.autoCheckModelUpdatesFromConfig({}), true);
 
 const listSource = fs.readFileSync(path.join(root, 'src/components/ModelListPanel.tsx'), 'utf8');
 const managerSource = fs.readFileSync(path.join(root, 'src/components/ModelManager.tsx'), 'utf8');
+const detailSource = fs.readFileSync(path.join(root, 'src/components/ModelDetailPanel.tsx'), 'utf8');
 const panelSource = fs.readFileSync(path.join(root, 'src/components/GlobalModelSettingsPanel.tsx'), 'utf8');
 const connectSource = fs.readFileSync(path.join(root, 'src/components/ConnectView.tsx'), 'utf8');
 const dashboardSource = fs.readFileSync(path.join(root, 'src/components/Dashboard.tsx'), 'utf8');
@@ -124,6 +125,8 @@ const settingsSource = fs.readFileSync(path.join(root, 'src/features/modelSettin
 
 assert.doesNotMatch(listSource, /onOpenGlobalSettings|Open global model settings|Global model settings/);
 assert.match(listSource, /onUpdateAllModels && \([\s\S]*?icon="rotate-ccw"[\s\S]*?Update all downloaded models/);
+assert.match(detailSource, /!isPulling && \(isDownloaded \|\| isLoaded\) && model\.update_available === true/);
+assert.match(detailSource, /icon="rotate-ccw"\s+onClick=\{\(\) => onPull\(model\)\}/);
 assert.doesNotMatch(managerSource, /showGlobalSettings|<GlobalModelSettingsPanel|loadWithGlobalModelPolicy|automaticUpdateIsDue|lastAutomaticUpdateAt/);
 assert.match(managerSource, /await loadModelRuntime\(model, new Set<string>\(\), overrideOptions\)/);
 assert.match(managerSource, /handleUpdateAllModels/);
