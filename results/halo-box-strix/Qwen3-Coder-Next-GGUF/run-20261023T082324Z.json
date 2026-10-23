@@ -1,0 +1,124 @@
+{
+  "hardware": {
+    "backends": {
+      "llamacpp/rocm": "b11580"
+    },
+    "cpu": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S",
+    "gpu": [
+      {
+        "integrated": true,
+        "name": "AMD Radeon Graphics (gfx1151)",
+        "type": "amd",
+        "vram_gb": 0.5
+      }
+    ],
+    "lemonade_version": "2026.43.3",
+    "os": "linux",
+    "ram_gb": 124.95
+  },
+  "models": [
+    {
+      "checkpoints": {
+        "main": "unsloth/Qwen3-Coder-Next-GGUF:Qwen3-Coder-Next-MXFP4_MOE.gguf"
+      },
+      "config": {
+        "measurement_runs": 3,
+        "memory_tracking": true,
+        "warmup_runs": 1
+      },
+      "model": "Qwen3-Coder-Next-GGUF",
+      "results": [
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 4096,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 3147.494156,
+                "mean": 2993.2681546666668,
+                "min": 2782.991528,
+                "p50": 3049.31878,
+                "p95": 3137.6766184000003
+              },
+              "failed_runs": 0,
+              "input_tokens": 3208,
+              "memory_peak_gb": 51.3,
+              "name": "context-4k",
+              "output_tokens": 2,
+              "pp_tps": 1087.5042895096415,
+              "tps": {
+                "max": 36.84191135836127,
+                "mean": 36.52532557169582,
+                "min": 36.20171596133657,
+                "p50": 36.532349395389616,
+                "p95": 36.810955162064104
+              },
+              "ttft_ms": {
+                "max": 3110.529,
+                "mean": 2958.0066666666667,
+                "min": 2748.8,
+                "p50": 3014.691,
+                "p95": 3100.9452
+              },
+              "vram_peak_gb": 45.268009185791016
+            }
+          ]
+        },
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 32768,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 26107.704236,
+                "mean": 25072.070946666663,
+                "min": 24301.938897,
+                "p50": 24806.569707,
+                "p95": 25977.5907831
+              },
+              "failed_runs": 0,
+              "input_tokens": 24788,
+              "memory_peak_gb": 51.9,
+              "name": "context-32k",
+              "output_tokens": 2,
+              "pp_tps": 992.7963190763061,
+              "tps": {
+                "max": 31.691703112125246,
+                "mean": 25.25018598911456,
+                "min": 14.131279587366636,
+                "p50": 29.927575267851797,
+                "p95": 31.5152903276979
+              },
+              "ttft_ms": {
+                "max": 26000.748,
+                "mean": 24989.732333333333,
+                "min": 24230.308,
+                "p50": 24738.141,
+                "p95": 25874.4873
+              },
+              "vram_peak_gb": 45.93098831176758
+            }
+          ]
+        }
+      ],
+      "timestamp": "2026-10-23T09:51:04Z"
+    }
+  ],
+  "timestamp": "2026-10-23T09:42:41Z",
+  "fork_id": "halo-box-strix",
+  "fork_label": "llama.cpp Halo-box",
+  "fork_repo": "halo-box/strix-llama.cpp",
+  "fork_version": "b1029",
+  "fork_backend": "halo-box-strix",
+  "experimental": true,
+  "run_id": "39891125132",
+  "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/39891125132",
+  "commit": "bbddc371b2fd79d482b165fae473917b2ab4f1c0",
+  "lemonade_version": "v2026.43.3"
+}
