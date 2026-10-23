@@ -45,6 +45,10 @@ public:
     // Harmony chats (gpt-oss) write reasoning and answer as channel messages.
     bool harmony() const { return harmony_; }
 
+    // Muse Glimmer chats address each message to a recipient: to=self is
+    // reasoning and to=user the answer.
+    bool muse_glimmer() const { return muse_glimmer_; }
+
 private:
     void resolve_stop_ids();
 
@@ -58,6 +62,7 @@ private:
     std::set<std::int64_t> eos_ids_;
     std::set<std::int64_t> chat_stop_ids_;
     bool harmony_ = false;
+    bool muse_glimmer_ = false;
 };
 
 }  // namespace amica_engine

@@ -129,16 +129,20 @@ protected:
     bool stopped_ = false;
 };
 
-// A Harmony reply is a series of messages, each a header naming its channel
-// and a body: <|channel|>analysis<|message|>...<|end|><|start|>assistant
-// <|channel|>final<|message|>... The final channel is the answer; every other
-// channel is reasoning. Control tokens never reach the client.
-class HarmonyReplyStream : public ReplyStream {
+// A Harmony or Muse Glimmer reply is a series of messages, each a header and a
+// body. The header names the message's channel (Harmony) or recipient (Muse
+// Glimmer) after a marker:
+//   Harmony:      <|channel|>analysis<|message|>...<|end|><|start|>assistant<|channel|>final<|message|>...
+//   Muse Glimmer: to=self<|message|>...<|eom|><|start|>assistant to=user<|message|>...
+// Messages named `answer` are the answer; every other message is reasoning.
+// Control tokens never reach the client.
+class MessageReplyStream : public ReplyStream {
 public:
-    HarmonyReplyStream(const Tokenizer& tokenizer, const std::set<std::int64_t>& stop_ids)
-        : ReplyStream(tokenizer, stop_ids) {
+    MessageReplyStream(const Tokenizer& tokenizer, const std::set<std::int64_t>& stop_ids, std::string marker,
+                       std::string answer)
+        : ReplyStream(tokenizer, stop_ids), marker_(std::move(marker)), answer_(std::move(answer)) {
         for (const char* name : {"<|start|>", "<|channel|>", "<|constrain|>", "<|message|>", "<|end|>", "<|call|>",
-                                 "<|return|>"}) {
+                                 "<|return|>", "<|eom|>", "<|eot|>"}) {
             const auto ids = tokenizer.encode(name);
             if (ids.size() == 1) control_[ids[0]] = name;
         }
@@ -162,12 +166,12 @@ public:
         field_.clear();
         if (control->second == "<|message|>") {
             const std::string header = tokenizer_.decode(header_);
-            const std::size_t channel = header.rfind("<|channel|>");
-            const std::string rest = channel == std::string::npos ? header : header.substr(channel + 11);
+            const std::size_t marker = header.rfind(marker_);
+            const std::string rest = marker == std::string::npos ? header : header.substr(marker + marker_.size());
             const std::size_t begin = rest.find_first_not_of(" \t\r\n");
             const std::string name =
                 begin == std::string::npos ? "" : rest.substr(begin, rest.find_first_of(" \t\r\n", begin) - begin);
-            field_ = name == "final" ? "content" : "reasoning_content";
+            field_ = name == answer_ ? "content" : "reasoning_content";
             text_ = TextStream(tokenizer_);
             header_.clear();
         } else {
@@ -182,6 +186,8 @@ public:
     }
 
 private:
+    std::string marker_;
+    std::string answer_;
     std::map<std::int64_t, std::string> control_;
     std::vector<std::int64_t> header_;
     std::string field_;
@@ -510,7 +516,9 @@ private:
         const auto open = tokenizer.encode("<think>");
         const auto close = tokenizer.encode("</think>");
         if (request.chat && frontend_.harmony()) {
-            reply = std::make_unique<HarmonyReplyStream>(tokenizer, stop_ids);
+            reply = std::make_unique<MessageReplyStream>(tokenizer, stop_ids, "<|channel|>", "final");
+        } else if (request.chat && frontend_.muse_glimmer()) {
+            reply = std::make_unique<MessageReplyStream>(tokenizer, stop_ids, "to=", "user");
         } else if (request.chat && open.size() == 1 && close.size() == 1) {
             // The reply starts in reasoning when the prompt ends with an open <think>.
             bool in_reasoning = false;

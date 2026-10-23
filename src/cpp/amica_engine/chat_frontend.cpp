@@ -77,6 +77,8 @@ ChatFrontend::ChatFrontend(const std::string& model_dir)
     }
     harmony_ = special_tokens_.count("<|channel|>") && special_tokens_.count("<|message|>") &&
                special_tokens_.count("<|return|>");
+    muse_glimmer_ = !harmony_ && special_tokens_.count("<|start|>") && special_tokens_.count("<|message|>") &&
+                    special_tokens_.count("<|eom|>") && special_tokens_.count("<|eot|>");
 
     const json configured = get(tokenizer_config_, "chat_template", json());
     if (configured.is_string()) {
@@ -123,6 +125,9 @@ void ChatFrontend::resolve_stop_ids() {
         // A Harmony turn can close its analysis message with <|end|> and go on
         // to the final answer, so only <|return|> ends it.
         terminators = {"<|return|>"};
+    } else if (muse_glimmer_) {
+        // <|eom|> closes the reasoning message, but only <|eot|> ends the turn.
+        terminators = {"<|eot|>"};
     } else if (!template_text_.empty()) {
         for (const char* token : {"<|end|>", "<|im_end|>"}) {
             if (template_text_.find(token) != std::string::npos) terminators.push_back(token);
