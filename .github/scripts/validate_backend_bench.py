@@ -200,9 +200,7 @@ def find_lemonade_bin() -> str:
 def get_models_from_registry(
     base_url: str, recipe: str = "llamacpp", require_hot: bool = True
 ) -> list[str]:
-    """Live-registry models for `recipe`. Production forks want the curated hot
-    set; experimental forks (require_hot=False) take every model on their recipe,
-    so a new hrx model needs only a server_models.json entry."""
+    """Live-registry models for `recipe`, hot-labeled only unless require_hot=False."""
     try:
         req = urllib.request.Request(f"{base_url}/api/v1/models?show_all=true")
         with urllib.request.urlopen(req, timeout=30) as r:
@@ -793,14 +791,24 @@ def main() -> int:
                 print(f"  Models (from fork model_filter): {run_models}")
         if not run_models and not args.dry_run:
             fork_recipe = fork.get("recipe", "llamacpp")
-            require_hot = not fork.get("experimental", False)
-            run_models = get_models_from_registry(
-                base_url, recipe=fork_recipe, require_hot=require_hot
-            )
+            aliases = fork.get("model_aliases", {})
+            if aliases:
+                # Fork ships its own model names: run the alias of each hot GGUF.
+                hot = set(get_models_from_registry(base_url, recipe="llamacpp"))
+                available = set(
+                    get_models_from_registry(
+                        base_url, recipe=fork_recipe, require_hot=False
+                    )
+                )
+                run_models = sorted(
+                    m for m, gguf in aliases.items() if gguf in hot and m in available
+                )
+            else:
+                run_models = get_models_from_registry(base_url, recipe=fork_recipe)
             if run_models:
                 print(
-                    f"  Models from registry ({len(run_models)}, "
-                    f"recipe={fork_recipe}, require_hot={require_hot}): {run_models}"
+                    f"  Models from registry ({len(run_models)} hot, "
+                    f"recipe={fork_recipe}): {run_models}"
                 )
             else:
                 print(

@@ -589,13 +589,6 @@ jobs:
           # per-fork replacement means the newest run per fork wins.
           results_dir = Path("bench-history/results")
           leaderboard = {}
-          MODEL_ALIASES = {
-            "Qwen3.8-27B-HRX": "Qwen3.8-27B-GGUF",
-            "MiniCPM-V-4.6-HRX": "MiniCPM-V-4.6-GGUF",
-            "MiniCPM5-1B-HRX": "MiniCPM5-1B-GGUF",
-            "Qwen3-30B-A3B-Instruct-2507-HRX": "Qwen3-30B-A3B-Instruct-2507-GGUF",
-            "Meta-Llama-3.1-8B-Instruct-HRX": "Meta-Llama-3.1-8B-Instruct-GGUF",
-          }
           systems = {}          # hw fingerprint -> hardware block (dedup across runs)
           lemonade_versions = set()
           # Active scenario -> required ctx; other ctx/scenarios not rendered.
@@ -628,6 +621,12 @@ jobs:
 
           forks_config = json.loads(Path("src/cpp/resources/benchmark_forks.json").read_text())
           experimental_forks = [f["fork_id"] for f in forks_config["forks"] if f.get("experimental", False)]
+          MODEL_ALIASES = {}
+          aliased_forks = set()
+          for f in forks_config["forks"]:
+            if f.get("model_aliases"):
+              MODEL_ALIASES.update(f["model_aliases"])
+              aliased_forks.add(f["fork_id"])
           for run_file in sorted(results_dir.rglob("run-*.json")):
             if "regression" in run_file.name:
               continue
@@ -672,7 +671,7 @@ jobs:
               model_entries = [data]
             for me in model_entries:
               raw_model = me.get("model", data.get("model", "unknown"))
-              if fork_id == "llamacpp-hrx" and raw_model not in MODEL_ALIASES:
+              if fork_id in aliased_forks and raw_model not in MODEL_ALIASES:
                 continue
               model = MODEL_ALIASES.get(raw_model, raw_model)
               for br in me.get("results", []):
@@ -733,7 +732,7 @@ jobs:
               model_entries = [data]
             for me in model_entries:
               raw_mdl = me.get("model", data.get("model", "unknown"))
-              if fid == "llamacpp-hrx" and raw_mdl not in MODEL_ALIASES:
+              if fid in aliased_forks and raw_mdl not in MODEL_ALIASES:
                 continue
               mdl = MODEL_ALIASES.get(raw_mdl, raw_mdl)
               quant = quant_from_checkpoint(me, data)
