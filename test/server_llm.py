@@ -954,6 +954,49 @@ class LLMTests(ServerTestBase):
         self.assertIn(model2, model_names)
 
     @skip_if_unsupported("multi_model")
+    def test_019a_failed_model_load_preserves_pinned_resident(self):
+        """A failed second-model load must not evict a pinned resident model."""
+        self.addCleanup(
+            requests.post,
+            f"{self.base_url}/unload",
+            json={},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        requests.post(f"{self.base_url}/unload", json={}, timeout=TIMEOUT_DEFAULT)
+
+        pinned_model = self.get_test_model("llm")
+        response = requests.post(
+            f"{self.base_url}/load",
+            json={"model_name": pinned_model, "pinned": True},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+
+        response = requests.post(
+            f"{self.base_url}/load",
+            json={
+                "model_name": MULTI_MODEL_SECONDARY,
+                "llamacpp_args": "--lemonade-invalid-test-arg",
+            },
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertNotEqual(response.status_code, 200, response.text)
+
+        health = requests.get(f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT)
+        health.raise_for_status()
+        loaded_models = {
+            model["model_name"]: model
+            for model in health.json().get("all_models_loaded", [])
+        }
+        self.assertIn(
+            pinned_model,
+            loaded_models,
+            "A failed second-model load must retain the pinned resident model",
+        )
+        self.assertTrue(loaded_models[pinned_model].get("pinned"))
+        self.assertNotIn(MULTI_MODEL_SECONDARY, loaded_models)
+
+    @skip_if_unsupported("multi_model")
     def test_020_multi_model_unload_specific(self):
         """Test unloading a specific model by name."""
         requests.post(f"{self.base_url}/unload", json={}, timeout=TIMEOUT_DEFAULT)

@@ -713,6 +713,22 @@ void Router::evict_all_servers() {
                          << loaded_servers_.size() << std::endl;
 }
 
+void Router::evict_unpinned_servers() {
+    std::vector<WrappedServer*> servers;
+    servers.reserve(loaded_servers_.size());
+    for (const auto& server : loaded_servers_) {
+        if (!server->is_pinned()) {
+            servers.push_back(server.get());
+        }
+    }
+
+    LOG(INFO, "Router") << "Evicting unpinned models (" << servers.size()
+                         << " total) after load failure" << std::endl;
+    for (auto* server : servers) {
+        evict_server(server, EVICTION_TIMEOUT);
+    }
+}
+
 void Router::simulate_vram_pressure(double pct) {
     if (vram_monitor_) {
         vram_monitor_->simulate_pressure(pct);
@@ -1192,11 +1208,11 @@ void Router::load_model(const std::string& model_name,
                 return;
             }
 
-            // Nuclear option: evict all models and retry
+            // Retry with a clean slate while preserving models the user pinned.
             LOG(WARNING, "Router") << "Load failed with non-file-not-found error, "
-                      << "evicting all models and retrying..." << std::endl;
+                      << "evicting unpinned models and retrying..." << std::endl;
 
-            evict_all_servers();
+            evict_unpinned_servers();
 
             // Mark loading again for retry
             is_loading_ = true;

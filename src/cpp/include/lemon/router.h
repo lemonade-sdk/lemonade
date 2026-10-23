@@ -359,6 +359,7 @@ private:
     WrappedServer* find_coexisting_server_by_type(ModelType type) const;
     void evict_all_npu_servers();
     void evict_server(WrappedServer* server, int timeout_seconds = -1);
+    void evict_unpinned_servers();
     void evict_all_servers();
     // Publish the (already-canonicalized) needed-helper set under load_mutex_,
     // then defer the eviction pass until no load holds the slot. Split out from
