@@ -673,6 +673,10 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
         return;
     }
 
+    struct InvalidateBackendStatusOnExit {
+        ~InvalidateBackendStatusOnExit() { SystemInfoCache::invalidate_recipes(); }
+    } invalidate_backend_status_on_exit;
+
     if (backends::BackendUtils::get_container_policy(recipe, resolved_backend)) {
         install_container_backend(recipe, resolved_backend, force, progress_cb);
         return;
