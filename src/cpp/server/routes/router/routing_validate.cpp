@@ -62,7 +62,6 @@ public:
             "the exception: when the classifier model cannot be resident alongside the models "
             "already loaded, the request returns 409 and no decision is made, because the policy "
             "cannot run on this machine in this combination.",
-
             "The example below uses explicit `routing.rules`, so its `normalized_policy` comes "
             "back unchanged. The `routing.router` shorthand is "
             "expanded into an `llm` classifier plus one rule per candidate, so a `routing` block "
