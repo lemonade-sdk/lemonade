@@ -621,6 +621,8 @@ jobs:
 
           forks_config = json.loads(Path("src/cpp/resources/benchmark_forks.json").read_text())
           experimental_forks = [f["fork_id"] for f in forks_config["forks"] if f.get("experimental", False)]
+          server_models = json.loads(Path("src/cpp/resources/server_models.json").read_text())
+          HOT_MODELS = {k for k, v in server_models.items() if isinstance(v, dict) and "hot" in v.get("labels", [])}
           MODEL_ALIASES = {}
           aliased_forks = set()
           for f in forks_config["forks"]:
@@ -674,6 +676,8 @@ jobs:
               if fork_id in aliased_forks and raw_model not in MODEL_ALIASES:
                 continue
               model = MODEL_ALIASES.get(raw_model, raw_model)
+              if model not in HOT_MODELS:
+                continue
               for br in me.get("results", []):
                 for sc in br.get("scenarios", []):
                   want_ctx = SCENARIO_CTX.get(sc["name"])
@@ -735,6 +739,8 @@ jobs:
               if fid in aliased_forks and raw_mdl not in MODEL_ALIASES:
                 continue
               mdl = MODEL_ALIASES.get(raw_mdl, raw_mdl)
+              if mdl not in HOT_MODELS:
+                continue
               quant = quant_from_checkpoint(me, data)
               for br in me.get("results", []):
                 for sc in br.get("scenarios", []):
