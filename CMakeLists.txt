@@ -2389,6 +2389,18 @@ if(BUILD_TESTING AND EXISTS "${_SYSTEM_INFO_HELPERS_TEST_SRC}")
     add_cpp_ci_test(SystemInfoHelpersTest CI ON COMMAND test_system_info_helpers)
 endif()
 
+# Bench scenario context planning (no GPU, network or model downloads required).
+set(_BENCH_CONTEXT_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_bench_context.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_BENCH_CONTEXT_TEST_SRC}")
+    add_executable(test_bench_context ${_BENCH_CONTEXT_TEST_SRC})
+    target_include_directories(test_bench_context PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+    )
+    add_cpp_ci_test(BenchContextTest CI ON COMMAND test_bench_context)
+endif()
+
 # Custom arg parsing helpers (header-only utility shared by all arg resolvers).
 set(_CUSTOM_ARGS_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_custom_args.cpp"
