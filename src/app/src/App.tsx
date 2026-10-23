@@ -393,6 +393,7 @@ const App: React.FC = () => {
   const rawLoadedModels = serverModelState.health?.all_models_loaded ?? EMPTY_LOADED_MODELS;
   const [currentModel, setCurrentModel] = useState<string | null>(null);
   const [dictationTarget, setDictationTarget] = useState<string | null>(null);
+  const [dictationActive, setDictationActive] = useState(false);
   const [modelSelectionEpoch, setModelSelectionEpoch] = useState(0);
   const [composerFocusEpoch, setComposerFocusEpoch] = useState(0);
   const [theme, setTheme] = useState<Theme>(loadTheme);
@@ -711,6 +712,14 @@ const App: React.FC = () => {
     });
   }, [dictationTarget, loadedModelViewState, loadedModels, modelHelpers, rawLoadedModels]);
 
+  // An unloaded prompt model must survive ASR-only health updates.
+  // After dictation, release the pin once that model is actually loaded.
+  useEffect(() => {
+    if (!dictationActive && dictationTarget && loadedModels.some(m => m.model_name === dictationTarget)) {
+      setDictationTarget(null);
+    }
+  }, [dictationActive, dictationTarget, loadedModels]);
+
   const navigateToRoute = useCallback((nextRoute: AppRoute) => {
     if (nextRoute.view === 'dashboard') lastWorkspaceSectionsRef.current.dashboard = nextRoute.section;
     if (nextRoute.view === 'connect') lastWorkspaceSectionsRef.current.connect = nextRoute.section;
@@ -947,9 +956,12 @@ const App: React.FC = () => {
   }, []);
 
   const handleDictationStart = useCallback((model: string) => {
+    setDictationActive(true);
     setDictationTarget(model);
     setCurrentModel(model);
   }, []);
+
+  const handleDictationEnd = useCallback(() => setDictationActive(false), []);
 
   const handleModelSelect = useCallback((modelName: string) => {
     setDictationTarget(null);
@@ -1212,6 +1224,7 @@ const App: React.FC = () => {
                 onModelSelect={handleModelSelect}
                 dictationTarget={dictationTarget}
                 onDictationStart={handleDictationStart}
+                onDictationEnd={handleDictationEnd}
                 onOpenModelDetails={openModelDetails}
                 onRefresh={handleRefreshModels}
               />

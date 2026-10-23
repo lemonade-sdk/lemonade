@@ -246,6 +246,11 @@ assert.match(chatViewSource, /if \(dictating\) onDictationStart\(currentModel\);
 assert.match(chatViewSource, /if \(selectedModel && selectedModel === dictationTarget\) return;/);
 assert.match(appSource, /if \(current && current === dictationTarget\) return current;/);
 assert.match(appSource, /setDictationTarget\(null\);\s*setCurrentModel\(modelName\)/);
+assert.match(appSource, /const \[dictationActive, setDictationActive\] = useState\(false\)/);
+assert.match(appSource, /if \(!dictationActive && dictationTarget && loadedModels\.some\(/);
+assert.match(appSource, /const handleDictationEnd = useCallback\(\(\) => setDictationActive\(false\)/);
+assert.ok((chatViewSource.match(/if \(dictating\) onDictationEnd\(\);/g) || []).length >= 2);
+assert.match(chatViewSource, /if \(micSessionRef\.current === 'dictation'\) onDictationEnd\(\)/);
 assert.match(chatViewSource, /Icon name=\{isLiveRecording \? 'stop' : supportsDictation \? 'mic' : 'audio'\}/);
 
 console.log('Chat + audio capability contract checks passed.');

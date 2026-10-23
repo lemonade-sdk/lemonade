@@ -520,6 +520,7 @@ interface ChatViewProps {
   connectionStatus: ConnectionStatus;
   onModelSelect: (model: string) => void;
   onDictationStart: (model: string) => void;
+  onDictationEnd: () => void;
   onOpenModelDetails: (model: string) => void;
   onRefresh: () => void | Promise<void>;
 }
@@ -891,6 +892,7 @@ const ChatView: React.FC<ChatViewProps> = ({
   connectionStatus,
   onModelSelect,
   onDictationStart,
+  onDictationEnd,
   onOpenModelDetails,
   onRefresh,
 }) => {
@@ -2512,6 +2514,7 @@ ${finalText}`
       stopRecording();
       clearLiveMicState();
       micSessionRef.current = null;
+      if (dictating) onDictationEnd();
       setLiveError(friendlyErrorMessage(err));
     } finally {
       setMicPreparation(null);
@@ -2530,6 +2533,7 @@ ${finalText}`
     micPreparation,
     onRefresh,
     onDictationStart,
+    onDictationEnd,
     startRecording,
     stopRecording,
     supportsDictation,
@@ -2558,18 +2562,20 @@ ${finalText}`
       micSessionRef.current = null;
       finishDictationRef.current = null;
       liveFinalizeTimerRef.current = null;
+      if (dictating) onDictationEnd();
     };
     if (dictating) finishDictationRef.current = finish;
     liveFinalizeTimerRef.current = window.setTimeout(finish, dictating ? 10000 : 1200);
-  }, [appendLiveTranscript, clearLiveMicState, stopRecording]);
+  }, [appendLiveTranscript, clearLiveMicState, onDictationEnd, stopRecording]);
 
   useEffect(() => {
     return () => {
       stopRecording();
       realtimeRef.current?.close();
       if (liveFinalizeTimerRef.current) window.clearTimeout(liveFinalizeTimerRef.current);
+      if (micSessionRef.current === 'dictation') onDictationEnd();
     };
-  }, [stopRecording]);
+  }, [onDictationEnd, stopRecording]);
 
   const runCapabilityRequest = useCallback(async (
     convoId: string,
