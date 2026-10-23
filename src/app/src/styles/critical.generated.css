@@ -241,11 +241,11 @@
   --accent-strong:  rgba(252, 216, 70, 0.58);
   --accent-on:      #000000;
 
-  --success:        #4CAF50;
+  --success:        #38833A;
   --success-soft:   rgba(60, 101, 49, 0.10);
   --warn:           #ffb74d;
   --warn-soft:      rgba(252, 216, 70, 0.20);
-  --danger:         #f44336;
+  --danger:         #C62828;
   --danger-soft:    rgba(185, 74, 61, 0.10);
   --info:           #2196F3;
   --info-soft:      rgba(48, 110, 168, 0.10);
