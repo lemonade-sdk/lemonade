@@ -1,5 +1,5 @@
 {
-  "comment": "This configuration file controls which llama.cpp, whisper.cpp, sd.cpp, ryzenai-llm, and FLM versions are downloaded for each backend. You can modify these values to pin specific versions without rebuilding the application.",
+  "comment": "Backend version pins and optional release asset checksums. Compatible Strata engine upgrades only change the strata pins; asset names and SHA-256 digests are discovered from that GitHub release. Stable Strata model/adapter/build metadata lives in strata.json.",
   "checksums": {
     "comment": "Expected SHA-256 of downloaded GitHub release assets, verified after download (see BackendUtils::lookup_expected_asset_hash). Keyed by checksums.github.<owner/repo>.<tag>.<asset>. Values are the sha256:<hex> digests GitHub publishes for each asset. Update alongside the matching version pin below.",
     "github": {
@@ -145,6 +145,12 @@
   },
   "flm": {
     "npu": "v1.0.7"
+  },
+  "strata": {
+    "cuda": "v0.2.7",
+    "cuda13": "v0.2.7",
+    "rocm": "v0.2.7",
+    "metal": "v0.2.7"
   },
   "kokoro": {
     "cpu": "b21",

@@ -523,7 +523,7 @@ public:
                                            TelemetryCallback telemetry_callback = nullptr);
 
     // Get the server address
-    std::string get_address() const {
+    virtual std::string get_address() const {
         return get_base_url() + "/v1";
     }
 
@@ -599,6 +599,7 @@ protected:
                       long timeout_seconds = 600);
     // Stops the watchdog and the server. Safe to call when nothing is running.
     void stop_server();
+    std::shared_ptr<ServerProcess> acquire_process() const;
 
     bool load_cancelled() const { return load_cancel_ && load_cancel_->load(); }
 
@@ -633,7 +634,7 @@ protected:
     std::string server_name_;
     int port_;
     std::string host_ = "127.0.0.1";
-    std::unique_ptr<ServerProcess> process_;
+    std::shared_ptr<ServerProcess> process_;
     mutable std::mutex process_mutex_;
     Telemetry telemetry_;
     std::string log_level_;
@@ -684,7 +685,7 @@ private:
     void backend_watchdog_loop();
     bool has_backend_process_exited() const;
     bool process_running() const;
-    std::unique_ptr<ServerProcess> take_process();
+    std::shared_ptr<ServerProcess> take_process();
     bool wait_for_ready(const std::string& endpoint, long timeout_seconds);
 
     mutable std::mutex watchdog_mutex_;

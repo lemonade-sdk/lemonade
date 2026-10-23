@@ -16,6 +16,11 @@ struct RecipeAvailability {
     bool streams_model_from_storage = false;
 };
 
+struct ModelAvailability {
+    std::string unsupported_reason;
+    double streaming_memory_pool_gb = 0.0;
+};
+
 // Machine facts for one rebuild; filtering is a pure function of these.
 struct BackendAvailability {
     // An operator can turn visibility filtering off entirely.
@@ -31,6 +36,7 @@ struct BackendAvailability {
     std::string os_version = "Unknown";
 
     std::map<std::string, RecipeAvailability> recipes;
+    std::map<std::string, ModelAvailability> models;
 
 // An unknown recipe counts as supported.
     const RecipeAvailability& recipe(const std::string& name) const {

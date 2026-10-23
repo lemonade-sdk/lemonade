@@ -1,6 +1,8 @@
 #include <lemon/models/host_availability.h>
 
 #include <lemon/backends/backend_descriptor_registry.h>
+#include <lemon/backends/backend_ops.h>
+#include <lemon/backends/backend_registry.h>
 #include <lemon/models/model_info.h>
 #include <lemon/runtime_config.h>
 #include <lemon/system_info.h>
@@ -209,20 +211,29 @@ BackendAvailability probe_backend_availability(
 
     for (const auto& [name, info] : models) {
         const std::string& recipe = info.recipe;
-        if (availability.recipes.count(recipe)) {
-            continue;
+        if (!availability.recipes.count(recipe)) {
+            RecipeAvailability recipe_availability;
+            recipe_availability.unsupported_reason = SystemInfo::check_recipe_supported(recipe);
+            if (recipe_availability.unsupported_reason.empty()) {
+                recipe_availability.guest_backend_missing_reason =
+                    SystemInfo::check_guest_backend_installed(recipe, system_info);
+            }
+            if (const auto* desc = backends::descriptor_for(recipe)) {
+                recipe_availability.streams_model_from_storage = desc->streams_model_from_storage;
+            }
+            availability.recipes.emplace(recipe, std::move(recipe_availability));
         }
 
-        RecipeAvailability recipe_availability;
-        recipe_availability.unsupported_reason = SystemInfo::check_recipe_supported(recipe);
-        if (recipe_availability.unsupported_reason.empty()) {
-            recipe_availability.guest_backend_missing_reason =
-                SystemInfo::check_guest_backend_installed(recipe, system_info);
+        const auto& recipe_availability = availability.recipe(recipe);
+        if (recipe_availability.unsupported_reason.empty() &&
+            !is_model_collection_recipe(recipe) && recipe != "cloud") {
+            const auto* ops = backends::ops_for(recipe);
+            auto& model_availability = availability.models[name];
+            model_availability.unsupported_reason = ops->model_support_error(info, system_info);
+            model_availability.streaming_memory_pool_gb = recipe_availability.streams_model_from_storage
+                ? ops->streaming_memory_pool_gb(info, system_ram_gb, largest_mem_pool_gb, hardware)
+                : largest_mem_pool_gb;
         }
-        if (const auto* desc = backends::descriptor_for(recipe)) {
-            recipe_availability.streams_model_from_storage = desc->streams_model_from_storage;
-        }
-        availability.recipes.emplace(recipe, std::move(recipe_availability));
     }
 
     return availability;

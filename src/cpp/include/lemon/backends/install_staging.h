@@ -18,13 +18,13 @@ namespace lemon::backends {
     inline std::string find_executable_in_dir(const std::string& dir,
                                               const std::string& binary_name) {
         namespace fs = std::filesystem;
-        if (!fs::exists(dir)) {
+        if (!fs::exists(fs::u8path(dir))) {
             return "";
         }
 #ifdef _WIN32
         const std::string binary_name_exe = binary_name + ".exe";
 #endif
-        for (const fs::directory_entry& dir_entry : fs::recursive_directory_iterator(dir)) {
+        for (const fs::directory_entry& dir_entry : fs::recursive_directory_iterator(fs::u8path(dir))) {
             if (dir_entry.is_regular_file()) {
                 const auto& fname = dir_entry.path().filename();
                 if (fname == binary_name
@@ -32,7 +32,7 @@ namespace lemon::backends {
                     || fname == binary_name_exe
 #endif
                 ) {
-                    return dir_entry.path().string();
+                    return dir_entry.path().u8string();
                 }
             }
         }
@@ -73,20 +73,20 @@ namespace lemon::backends {
         std::string staged_exe = find_executable_in_dir(staging_dir, binary_name);
         if (staged_exe.empty()) {
             std::error_code ec;
-            fs::remove_all(staging_dir, ec);  // drop the bad staging tree; keep install_dir
+            fs::remove_all(fs::u8path(staging_dir), ec);  // drop the bad staging tree; keep install_dir
             return "";
         }
 
         const std::string backup_dir = install_dir + ".old";
         std::error_code ec;
-        fs::remove_all(backup_dir, ec);  // clear any stale backup from a prior aborted swap
+        fs::remove_all(fs::u8path(backup_dir), ec);  // clear any stale backup from a prior aborted swap
 
         // Move the existing install aside (if any) so it survives a failed
         // promotion. We never remove it outright — it is renamed to .old and
         // only deleted once the new tree is verified in place.
-        const bool had_install = fs::exists(install_dir);
+        const bool had_install = fs::exists(fs::u8path(install_dir));
         if (had_install) {
-            fs::rename(install_dir, backup_dir, ec);
+            fs::rename(fs::u8path(install_dir), fs::u8path(backup_dir), ec);
             if (ec) {
                 // Could not move the existing install aside; leave it untouched.
                 throw std::runtime_error(
@@ -96,13 +96,13 @@ namespace lemon::backends {
         }
 
         // Promote the staged tree into place.
-        fs::rename(staging_dir, install_dir, ec);
+        fs::rename(fs::u8path(staging_dir), fs::u8path(install_dir), ec);
         if (ec) {
             // Promotion failed. Roll the backup back so the previously-working
             // install is restored rather than lost.
             if (had_install) {
                 std::error_code rollback_ec;
-                fs::rename(backup_dir, install_dir, rollback_ec);
+                fs::rename(fs::u8path(backup_dir), fs::u8path(install_dir), rollback_ec);
             }
             throw std::runtime_error(
                 "backend install swap failed: could not promote staged install to "
@@ -110,7 +110,7 @@ namespace lemon::backends {
         }
 
         // New install is in place; drop the backup.
-        fs::remove_all(backup_dir, ec);
+        fs::remove_all(fs::u8path(backup_dir), ec);
 
         return find_executable_in_dir(install_dir, binary_name);
     }

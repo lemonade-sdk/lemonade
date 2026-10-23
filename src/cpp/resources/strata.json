@@ -1,0 +1,303 @@
+{
+  "comment": "Stable Strata adapter, model and build metadata. Routine engine upgrades only change the strata backend pins in backend_versions.json. Strata-owned data follows the official repository at that release tag. All runtime Hugging Face assets use their default revision; download hashes come from registry metadata, not fixed model pins here. Download receipts record provenance and actual file sizes; only engine-owned data is release-scoped. The build-time native_utilities dependency remains independently pinned.",
+  "engine": {
+    "protocol": 1,
+    "repository": "Niko1221/Strata",
+    "asset_pattern": "strata-engine-*-{platform}-{variant}.tar.gz",
+    "default_context": 8192,
+    "vision": {"cpu_max_tokens": 300, "gpu_max_tokens": 1024, "gpu_reserve_mib": 2048},
+    "kv_cache": {
+      "short_context": 8192,
+      "short_format": "fp16",
+      "long_format": "int8",
+      "streaming_context": 65536,
+      "resident_context": 32768,
+      "streaming_headroom_gb": 1,
+      "layers": 13,
+      "cell_bytes": {"fp16": 2048, "int8": 1056, "q4_0": 576, "k8v4": 816},
+      "formats": {
+        "cuda": ["fp16", "int8", "q4_0", "k8v4"],
+        "cuda13": ["fp16", "int8", "q4_0", "k8v4"],
+        "rocm": ["fp16", "int8", "q4_0", "k8v4"]
+      }
+    },
+    "vram_reserve": {
+      "small_gpu_gib": 16,
+      "small_reserve_mib": 1536,
+      "large_reserve_mib": 1024,
+      "fraction": 0.2
+    },
+    "arguments": ["--expert-cache", "auto", "--prefill", "auto", "--spec", "4"],
+    "memory_tuning": {
+      "expert_ram_headroom_gib": 24,
+      "expert_resident_headroom_gib": 16,
+      "expert_min_budget_gib": 8,
+      "pool_workers_cap": 32
+    },
+    "targets": {
+      "windows-x86_64": {
+        "cuda": {"default": "cuda-cuda12"},
+        "cuda13": {"default": "cuda-cuda13"},
+        "rocm": {
+          "gfx1030": "hip-rdna2",
+          "gfx1031": "hip-rdna2",
+          "gfx103X": "hip-rdna2",
+          "gfx1100": "hip-rdna3",
+          "gfx1101": "hip-rdna3",
+          "gfx1102": "hip-rdna3",
+          "gfx110X": "hip-rdna3",
+          "gfx1151": "hip-rdna3",
+          "gfx1200": "hip-rx9070",
+          "gfx1201": "hip-rx9070",
+          "gfx120X": "hip-rx9070"
+        }
+      },
+      "linux-x86_64": {
+        "cuda": {"default": "cuda-cuda12"},
+        "cuda13": {"default": "cuda-cuda13"},
+        "rocm": {
+          "gfx1030": "hip-rx6000",
+          "gfx1031": "hip-rx6000",
+          "gfx103X": "hip-rx6000",
+          "gfx1100": "hip-rx7900",
+          "gfx1101": "hip-rx7900",
+          "gfx1102": "hip-rx7900",
+          "gfx110X": "hip-rx7900",
+          "gfx1151": "hip-halo",
+          "gfx1200": "hip-rx9070",
+          "gfx1201": "hip-rx9070",
+          "gfx120X": "hip-rx9070"
+        }
+      },
+      "macos-arm64": {
+        "metal": {"default": "metal"}
+      }
+    }
+  },
+  "models": {
+    "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF": {
+      "vision": {
+        "repository": "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF",
+        "file": "mmproj-Qwen3.8-Flash-Next-BF16.gguf"
+      },
+      "quant_options": {
+        "Q2_0": {"full_expert_arena": true, "recommended_ram_gb": 48},
+        "IQ2_XS": {"full_expert_arena": true, "recommended_ram_gb": 48},
+        "IQ3_XXS": {"full_expert_arena": true, "recommended_ram_gb": 60},
+        "IQ3_S": {"full_expert_arena": true, "recommended_ram_gb": 62}
+      },
+      "mtp": {
+        "repository": "Maximilian228/Qwen3.8-Flash-Next-NVFP4-GPTQ-Strata",
+        "backends": ["cuda", "cuda13", "rocm"],
+        "arguments": ["--spec-min-p", "0.5"],
+        "files": {
+          "LICENSE": {},
+          "mtp/dense.bin": {},
+          "mtp/dense.txt": {},
+          "mtp/draft_vocab.bin": {"source": "data/draft_vocab.bin"},
+          "mtp/experts.bin": {}
+        }
+      },
+      "expert_profile": "data/expert-profile.bin",
+      "quants": {
+        "Q2_0": [
+          "Q2_0/Qwen3.8-Flash-Next-GSQ-RCO-Q2_0-00001-of-00002.gguf",
+          "Q2_0/Qwen3.8-Flash-Next-GSQ-RCO-Q2_0-00002-of-00002.gguf"
+        ],
+        "IQ2_XS": [
+          "IQ2_XS/Qwen3.8-Flash-Next-GSQ-RCO-IQ2_XS-00001-of-00002.gguf",
+          "IQ2_XS/Qwen3.8-Flash-Next-GSQ-RCO-IQ2_XS-00002-of-00002.gguf"
+        ],
+        "IQ3_XXS": [
+          "IQ3_XXS/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00001-of-00002.gguf",
+          "IQ3_XXS/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00002-of-00002.gguf"
+        ],
+        "IQ3_S": [
+          "IQ3_S/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00001-of-00002.gguf",
+          "IQ3_S/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00002-of-00002.gguf"
+        ]
+      }
+    },
+    "ukisai/Swift-1.5-Qwen3.8-Flash-Next-GSQ-RCO-GGUF": {
+      "vision": {
+        "repository": "ukisai/Swift-1.5-Qwen3.8-Flash-Next-GSQ-RCO-GGUF",
+        "file": "mmproj-Swift-Qwen3.8-Flash-Next-BF16.gguf"
+      },
+      "quant_options": {
+        "IQ2_XS": {"full_expert_arena": true, "recommended_ram_gb": 48},
+        "IQ3_XXS": {"full_expert_arena": true, "recommended_ram_gb": 60},
+        "IQ3_S": {"full_expert_arena": true, "recommended_ram_gb": 62}
+      },
+      "mtp_from": "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF",
+      "expert_profile_from": "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF",
+      "quants": {
+        "IQ2_XS": [
+          "Swift-Qwen3.8-Flash-Next-GSQ-RCO-IQ2_XS-00001-of-00002.gguf",
+          "Swift-Qwen3.8-Flash-Next-GSQ-RCO-IQ2_XS-00002-of-00002.gguf"
+        ],
+        "IQ3_XXS": [
+          "Swift-Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00001-of-00002.gguf",
+          "Swift-Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00002-of-00002.gguf"
+        ],
+        "IQ3_S": [
+          "Swift-Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00001-of-00002.gguf",
+          "Swift-Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00002-of-00002.gguf"
+        ]
+      }
+    },
+    "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-Coder-GGUF": {
+      "vision_from": "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF",
+      "mtp_from": "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF",
+      "quant_options": {
+        "IQ1_M": {"full_expert_arena": true, "recommended_ram_gb": 32}
+      },
+      "expert_profile": "data/expert-profile-coder.bin",
+      "quants": {
+        "IQ1_M": [
+          "IQ1_M/Qwen3.8-Flash-Next-GSQ-RCO-IQ1_M-00001-of-00002.gguf",
+          "IQ1_M/Qwen3.8-Flash-Next-GSQ-RCO-IQ1_M-00002-of-00002.gguf"
+        ]
+      }
+    },
+    "unsloth/Qwen3.8-Flash-Next-GGUF": {
+      "budget_experts": true,
+      "vision_from": "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF",
+      "mtp_from": "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF",
+      "expert_profile_from": "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF",
+      "compat_bf16": true,
+      "quants": {
+        "UD-IQ4_XS": [
+          "UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf",
+          "UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00002-of-00003.gguf",
+          "UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00003-of-00003.gguf"
+        ],
+        "UD-Q4_K_XL": [
+          "UD-Q4_K_XL/Qwen3.8-Flash-Next-UD-Q4_K_XL-00001-of-00004.gguf",
+          "UD-Q4_K_XL/Qwen3.8-Flash-Next-UD-Q4_K_XL-00002-of-00004.gguf",
+          "UD-Q4_K_XL/Qwen3.8-Flash-Next-UD-Q4_K_XL-00003-of-00004.gguf",
+          "UD-Q4_K_XL/Qwen3.8-Flash-Next-UD-Q4_K_XL-00004-of-00004.gguf"
+        ],
+        "UD-Q5_K_XL": [
+          "UD-Q5_K_XL/Qwen3.8-Flash-Next-UD-Q5_K_XL-00001-of-00006.gguf",
+          "UD-Q5_K_XL/Qwen3.8-Flash-Next-UD-Q5_K_XL-00002-of-00006.gguf",
+          "UD-Q5_K_XL/Qwen3.8-Flash-Next-UD-Q5_K_XL-00003-of-00006.gguf",
+          "UD-Q5_K_XL/Qwen3.8-Flash-Next-UD-Q5_K_XL-00004-of-00006.gguf",
+          "UD-Q5_K_XL/Qwen3.8-Flash-Next-UD-Q5_K_XL-00005-of-00006.gguf",
+          "UD-Q5_K_XL/Qwen3.8-Flash-Next-UD-Q5_K_XL-00006-of-00006.gguf"
+        ],
+        "UD-Q6_K_XL": [
+          "UD-Q6_K_XL/Qwen3.8-Flash-Next-UD-Q6_K_XL-00001-of-00006.gguf",
+          "UD-Q6_K_XL/Qwen3.8-Flash-Next-UD-Q6_K_XL-00002-of-00006.gguf",
+          "UD-Q6_K_XL/Qwen3.8-Flash-Next-UD-Q6_K_XL-00003-of-00006.gguf",
+          "UD-Q6_K_XL/Qwen3.8-Flash-Next-UD-Q6_K_XL-00004-of-00006.gguf",
+          "UD-Q6_K_XL/Qwen3.8-Flash-Next-UD-Q6_K_XL-00005-of-00006.gguf",
+          "UD-Q6_K_XL/Qwen3.8-Flash-Next-UD-Q6_K_XL-00006-of-00006.gguf"
+        ],
+        "Q8_0": [
+          "Q8_0/Qwen3.8-Flash-Next-Q8_0-00001-of-00006.gguf",
+          "Q8_0/Qwen3.8-Flash-Next-Q8_0-00002-of-00006.gguf",
+          "Q8_0/Qwen3.8-Flash-Next-Q8_0-00003-of-00006.gguf",
+          "Q8_0/Qwen3.8-Flash-Next-Q8_0-00004-of-00006.gguf",
+          "Q8_0/Qwen3.8-Flash-Next-Q8_0-00005-of-00006.gguf",
+          "Q8_0/Qwen3.8-Flash-Next-Q8_0-00006-of-00006.gguf"
+        ]
+      }
+    },
+    "agentionai/Qwen3.8-Flash-Next-Gyro-GGUF": {
+      "vision_from": "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF",
+      "mtp_from": "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF",
+      "expert_profile_from": "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF",
+      "compat_bf16": true,
+      "quants": {
+        "Gyro-S": ["Qwen3.8-Flash-Next-Gyro-S-TQ1_0.gguf"],
+        "Gyro-M": ["Qwen3.8-Flash-Next-Gyro-M-TQ2_0.gguf"]
+      }
+    },
+    "agentionai/Qwen3.8-Flash-Next-Gyro-Coder-GGUF": {
+      "vision_from": "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF",
+      "mtp_from": "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF",
+      "compat_bf16": true,
+      "quants": {
+        "Gyro-Coder": ["Qwen3.8-Flash-Next-Gyro-Coder-TQ2_0.gguf"]
+      }
+    },
+    "Maximilian228/Qwen3.8-Flash-Next-NVFP4-GPTQ-Strata": {
+      "budget_experts": true,
+      "vision_from": "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF",
+      "mtp_from": "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF",
+      "preparation": "ready-pack",
+      "expert_profile_from": "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF",
+      "backends": ["cuda", "cuda13"],
+      "native_file": "qwen-nvfp4-gptq-dense.gguf",
+      "ple_file": "ple-fp8.gguf",
+      "embedding_file": "token-embd-bf16.gguf",
+      "quants": {
+        "NVFP4": [
+          "qwen-nvfp4-gptq-dense.gguf",
+          "ple-fp8.gguf",
+          "token-embd-bf16.gguf",
+          "pack/dense.bin",
+          "pack/experts.bin",
+          "pack/index.txt",
+          "pack/native_experts.txt",
+          "pack/tokenizer/chat_template.jinja",
+          "pack/tokenizer/merges.txt",
+          "pack/tokenizer/token_type.json",
+          "pack/tokenizer/tokenizer.json",
+          "pack/tokenizer/vocab.json"
+        ]
+      }
+    },
+    "Maximilian228/Qwen3.8-Flash-Next-NVIDIA-NVFP4-Strata": {
+      "budget_experts": true,
+      "vision_from": "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF",
+      "mtp_from": "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF",
+      "preparation": "ready-pack",
+      "expert_profile_from": "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF",
+      "backends": ["cuda", "cuda13"],
+      "native_file": "qwen-nvidia-nvfp4-dense.gguf",
+      "ple_file": "ple-fp8.gguf",
+      "embedding_file": "token-embd-bf16.gguf",
+      "quants": {
+        "NVFP4-NVIDIA": [
+          "qwen-nvidia-nvfp4-dense.gguf",
+          "ple-fp8.gguf",
+          "token-embd-bf16.gguf",
+          "pack/dense.bin",
+          "pack/experts.bin",
+          "pack/index.txt",
+          "pack/native_experts.txt",
+          "pack/tokenizer/chat_template.jinja",
+          "pack/tokenizer/merges.txt",
+          "pack/tokenizer/token_type.json",
+          "pack/tokenizer/tokenizer.json",
+          "pack/tokenizer/vocab.json"
+        ]
+      }
+    },
+    "unsloth/Qwen3.6-35B-A3B-MTP-GGUF": {
+      "vision": {
+        "repository": "unsloth/Qwen3.6-35B-A3B-MTP-GGUF",
+        "file": "mmproj-F16.gguf"
+      },
+      "preparation": "native-gguf",
+      "backends": ["cuda", "cuda13", "rocm"],
+      "arguments": ["--prefill", "auto"],
+      "embedded_mtp_drafts": 2,
+      "quants": {
+        "UD-Q4_K_XL": ["Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf"],
+        "UD-Q6_K_XL": ["Qwen3.6-35B-A3B-UD-Q6_K_XL.gguf"],
+        "Q8_0": ["Qwen3.6-35B-A3B-Q8_0.gguf"]
+      }
+    }
+  },
+  "quant_types": {
+    "144": {"name": "TQ2_T", "block": 128, "bytes": 34},
+    "145": {"name": "TQK6", "block": 128, "bytes": 26},
+    "146": {"name": "TQK7", "block": 128, "bytes": 30}
+  },
+  "native_utilities": {
+    "url": "https://github.com/ggml-org/llama.cpp/archive/3cf03257f219afbe7334045ff7c6a06ac68c627d.tar.gz",
+    "sha256": "c076d7534afa0e5d0ec2a0d425b11e791c16f3de0d727221aea071cef156a280"
+  }
+}

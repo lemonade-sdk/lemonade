@@ -214,7 +214,12 @@ std::string WrappedServer::get_base_url() const {
     return "http://" + utils::bracket_host_if_ipv6(host_) + ":" + std::to_string(port_);
 }
 
-std::unique_ptr<ServerProcess> WrappedServer::take_process() {
+std::shared_ptr<ServerProcess> WrappedServer::acquire_process() const {
+    std::lock_guard<std::mutex> lock(process_mutex_);
+    return process_;
+}
+
+std::shared_ptr<ServerProcess> WrappedServer::take_process() {
     std::lock_guard<std::mutex> lock(process_mutex_);
     port_ = 0;
     host_ = "127.0.0.1";
@@ -371,7 +376,8 @@ void WrappedServer::start_backend_watchdog(const BackendWatchdogPolicy& policy) 
     watchdog_thread_ = std::thread(&WrappedServer::backend_watchdog_loop, this);
 
     LOG(INFO, "BackendWatchdog") << "Started watchdog for " << server_name_
-                                  << " using " << get_base_url() << effective_policy.health_endpoint
+                                  << " using " << (effective_policy.health_endpoint.empty()
+                                      ? "process liveness" : get_base_url() + effective_policy.health_endpoint)
                                   << " (streaming=" << (effective_policy.monitor_streaming_requests ? "on" : "off")
                                   << ", non_streaming=on)" << std::endl;
 }
@@ -408,23 +414,25 @@ bool WrappedServer::has_backend_process_exited() const {
 void WrappedServer::start_server(std::unique_ptr<ServerProcess> process,
                                  const ServerCommand& command, long timeout_seconds) {
     const std::string host = process->start(command);
-    std::unique_ptr<ServerProcess> previous;
+    const bool uses_http = process->uses_http();
+    std::shared_ptr<ServerProcess> previous;
     {
         std::lock_guard<std::mutex> lock(process_mutex_);
         previous = std::move(process_);
         process_ = std::move(process);
-        port_ = command.port;
+        port_ = uses_http ? command.port : 0;
         host_ = host;
     }
     if (previous) {
         previous->stop();
     }
 
-    if (!wait_for_ready(command.ready_endpoint, timeout_seconds)) {
+    if (uses_http ? !wait_for_ready(command.ready_endpoint, timeout_seconds)
+                  : load_cancelled() || !process_running()) {
         stop_server();
         throw std::runtime_error(server_name_ + " failed to start");
     }
-    start_backend_watchdog(command.ready_endpoint);
+    start_backend_watchdog(uses_http ? command.ready_endpoint : "");
 }
 
 void WrappedServer::stop_server() {

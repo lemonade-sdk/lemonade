@@ -20,12 +20,16 @@ the generator instead. Prose outside the markers is preserved. -->
 | `openmoss` | OpenMOSS TTS | yes | no | cuda, vulkan |
 | `ryzenai-llm` | Ryzen AI LLM | no | yes | npu |
 | `sd-cpp` | StableDiffusion.cpp | yes | no | cpu, cuda, metal, rocm, vulkan |
+| `strata` | Strata | yes | yes | cuda, cuda13, metal, rocm |
 | `thenoise` | TheNoise ROCm | yes | no | rocm |
 | `thinksound` | ThinkSound | yes | no | cuda, rocm, vulkan |
 | `trellis` | TRELLIS.2 | yes | no | cuda, rocm, vulkan |
 | `vllm` | vLLM ROCm | yes | yes | rocm |
 | `whispercpp` | Whisper.cpp | yes | no | cpu, metal, npu, rocm, vulkan |
 <!-- END GENERATED: backends-overview -->
+
+See the [Strata engine guide](../guide/strata.md) for its native C++ adapter,
+GPU-specific installation, model preparation and version-only upgrades.
 
 ## Support matrix
 
@@ -62,6 +66,10 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 | `sd-cpp` | vulkan | core | native | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `sd-cpp` | rocm | core | native | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
 | `sd-cpp` | cpu | core | native | linux, windows | cpu (x86_64) |
+| `strata` | rocm | experimental | native | linux, windows | amd_gpu (gfx1030, gfx1031, gfx103X, gfx1100, gfx1101, gfx1102, gfx110X, gfx1151, gfx1200, gfx1201, gfx120X) |
+| `strata` | cuda | experimental | native | linux, windows | nvidia_gpu (sm_100, sm_120, sm_75, sm_80, sm_86, sm_89, sm_90) |
+| `strata` | cuda13 | experimental | native | linux, windows | nvidia_gpu (sm_100, sm_120, sm_75, sm_80, sm_86, sm_89, sm_90) |
+| `strata` | metal | experimental | native | macos | metal |
 | `thenoise` | rocm | core | python | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
 | `thinksound` | cuda | experimental | native | linux, windows | nvidia_gpu |
 | `thinksound` | vulkan | experimental | native | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
@@ -153,6 +161,19 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 | `height` | — | SIZE | 512 | Output image height |
 | `sampling_method` | — | ARGS | "" | Sampling method |
 | `flow_shift` | — | SIZE | 0.0 | Flow shift |
+
+#### `strata` — Strata
+
+| Option | CLI flag | Type | Default | Description |
+|--------|----------|------|---------|-------------|
+| `ctx_size` | `--ctx-size` | SIZE | -1 | Context size for the model |
+| `strata_backend` | `--strata` | BACKEND | auto | Strata backend: auto, cuda, cuda13, rocm, metal |
+| `strata_args` | `--strata-args` | ARGS | "" | Additional Strata engine arguments |
+| `strata_mtp` | `--strata-mtp` | BOOL | true | Enable model-compatible Strata MTP drafts (external pack or embedded GGUF block) |
+| `strata_vision` | `--strata-vision` | MODE | cpu | Native picture reader: cpu, gpu (if packaged), off |
+| `strata_kv` | `--strata-kv` | FORMAT | auto | Strata KV cache, where supported: auto, fp16, int8, q4_0, k8v4 |
+| `strata_experts` | `--strata-experts` | MODE | auto | Strata CPU experts: auto (model defaults), mmap or resident where supported |
+| `strata_kv_streaming` | `--strata-kv-streaming` | MODE | auto | Strata RAM-backed KV streaming, where supported: auto, on, off |
 
 #### `thenoise` — TheNoise ROCm
 

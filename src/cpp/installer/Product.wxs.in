@@ -202,6 +202,14 @@
         <File Id="backend_versions.json" Source="$(var.BuildDir)\Release\resources\backend_versions.json" KeyPath="yes" />
       </Component>
 
+      <Component Id="StrataNativeLicenses" Directory="ResourcesDir" Guid="930a4b2e-1ca1-4da5-a2cc-3dd77c0d6cd1">
+        <File Id="StrataNativeLicensesTxt" Source="$(var.BuildDir)\Release\resources\strata-native-licenses.txt" KeyPath="yes" />
+      </Component>
+
+      <Component Id="StrataJson" Directory="ResourcesDir" Guid="48c5f032-ef45-4f47-ac62-90bf7e218a6d">
+        <File Id="StrataJsonFile" Source="$(var.BuildDir)\Release\resources\strata.json" KeyPath="yes" />
+      </Component>
+
       <Component Id="DefaultsJson" Directory="ResourcesDir" Guid="0b2d4f6a-7c8e-49f1-a2b3-c4d5e6f70819">
         <File Id="defaults.json" Source="$(var.BuildDir)\Release\resources\defaults.json" KeyPath="yes" />
       </Component>

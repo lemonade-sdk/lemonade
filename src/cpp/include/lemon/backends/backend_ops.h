@@ -1,6 +1,8 @@
 #pragma once
 
+#include <cstdint>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <vector>
 #include "lemon/models/artifact_fetch.h"  // ArtifactFetchService
@@ -28,6 +30,11 @@ enum class DownloadPolicy : int {
     Repository,
     SelfManaged,
     None,
+};
+
+class InstallPreparationError : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
 };
 
 // Context handed to BackendOps methods: the server state model management needs
@@ -77,6 +84,17 @@ public:
     virtual void resolve_runtime_options(const ModelInfo& info, RecipeOptions& options) const {
         (void)info;
         (void)options;
+    }
+
+    virtual std::string model_support_error(const ModelInfo&, const nlohmann::json&) const { return ""; }
+
+    virtual std::optional<int64_t> auto_context_size(const ModelInfo&, const RecipeOptions&) const {
+        return std::nullopt;
+    }
+
+    virtual double streaming_memory_pool_gb(const ModelInfo&, double, double device_pool_gb,
+                                            const nlohmann::json&) const {
+        return device_pool_gb;
     }
 
     // Resolve a checkpoint to its absolute on-disk path (file or directory).
@@ -213,6 +231,8 @@ public:
         (void)default_install_command;
         return std::nullopt;
     }
+
+    virtual void prepare_install(const std::string&, const std::string&, DownloadProgressCallback) const {}
 };
 
 // Shared default ops instance for backends that override nothing.

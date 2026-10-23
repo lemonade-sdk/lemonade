@@ -231,6 +231,7 @@ The route's folder picks its docs page: `routes/openai/` for an OpenAI-compatibl
 | Conditional / grouped checkpoints (sd-cpp flux, whisper npu_cache) | validate in `load()`; list only unconditional files in `required_checkpoints` |
 | Custom per-model fields without editing `ModelInfo` | read `model_info.extra<T>("my_field", fallback)` (populated from unknown `server_models.json` keys) |
 | Models supplied at runtime, not from `server_models.json` | set `dynamic_models = true` and provide them in the class (see cloud's `discover_models()`) |
+| Backend-owned model storage and deletion | override `BackendOps::delete_model()` and return true after removing the managed artifacts; shared registry cleanup still runs |
 | Per-create setup before load (cloud's provider) | do it in `create()` |
 
 ### The simplest end-to-end example

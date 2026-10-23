@@ -18,6 +18,21 @@ bool exists(const std::filesystem::path& p);
 // of throwing.
 std::filesystem::directory_options dir_options();
 
+// Backend-owned caches must not satisfy another backend's registry checkpoints.
+inline bool is_backend_private_path(const std::filesystem::path& model_cache_path,
+                                    const std::filesystem::path& path) {
+    const auto relative = path.lexically_normal().lexically_relative(model_cache_path.lexically_normal());
+    return !relative.empty() && *relative.begin() == "strata";
+}
+
+inline bool is_backend_private_cache_only(const std::filesystem::path& model_cache_path) {
+    if (!hf_cache::exists(model_cache_path / "strata")) return false;
+    for (const auto& entry : std::filesystem::directory_iterator(model_cache_path, dir_options())) {
+        if (!is_backend_private_path(model_cache_path, entry.path())) return false;
+    }
+    return true;
+}
+
 // The active registry snapshot directory (snapshots/<refs/main>) for a model cache
 // dir, or an empty path if there is no recorded ref / it doesn't exist.
 std::filesystem::path active_snapshot_path(const std::filesystem::path& model_cache_path);

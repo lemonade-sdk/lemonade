@@ -180,6 +180,7 @@ function loadListHelpers() {
 
 const helpers = loadListHelpers();
 const chatModel = { id: 'Qwen-Chat', name: 'Qwen-Chat', labels: ['chat'], recipe: 'llamacpp', suggested: true };
+const strataModel = { id: 'Qwen-Strata', name: 'Qwen-Strata', labels: ['chat'], recipe: 'strata' };
 const audioModel = { id: 'Whisper', name: 'Whisper', labels: ['transcription'], recipe: 'whispercpp' };
 const hotLabelModel = { id: 'Gemma-Hot', name: 'Gemma-4-31B', labels: ['hot', 'tool-calling'], recipe: 'llamacpp', suggested: true };
 const hotCapabilityModel = { id: 'Future-Hot', name: 'Future-Model', capabilities: ['hot'], labels: ['chat'], recipe: 'llamacpp' };
@@ -216,6 +217,10 @@ assert.equal(helpers.modelMatchesTasks(chatModel, new Set(['llm', 'audio'])), tr
 assert.equal(helpers.modelMatchesTasks(audioModel, new Set(['llm', 'audio'])), true);
 assert.equal(helpers.modelMatchesBackends(chatModel, new Set(['llamacpp', 'whispercpp'])), true);
 assert.equal(helpers.modelMatchesBackends(audioModel, new Set(['llamacpp', 'whispercpp'])), true);
+assert.equal(helpers.modelHasFilterableBackend(strataModel), true);
+assert.equal(helpers.modelMatchesBackends(strataModel, new Set(['strata'])), true);
+assert.equal(helpers.modelMatchesBackends(chatModel, new Set(['strata'])), false);
+assert.equal(helpers.modelMatchesBackends(strataModel, new Set(['llamacpp'])), false);
 assert.equal(helpers.modelHasFilterableBackend(routerModel), false);
 assert.equal(helpers.modelHasFilterableBackend(omniModel), false);
 assert.equal(helpers.modelMatchesTasks(omniModel, new Set(['omni'])), true);

@@ -60,8 +60,13 @@ std::string BackendOps::resolve_checkpoint_path(const ModelInfo& info,
 
         // Try to find the exact variant in the cache directory's subtree.
         if (hf_cache::exists(model_cache_path_fs)) {
-            for (const auto& entry :
-                 fs::recursive_directory_iterator(model_cache_path_fs, hf_cache::dir_options())) {
+            for (auto it = fs::recursive_directory_iterator(model_cache_path_fs, hf_cache::dir_options());
+                 it != fs::recursive_directory_iterator(); ++it) {
+                const auto& entry = *it;
+                if (hf_cache::is_backend_private_path(model_cache_path_fs, entry.path())) {
+                    it.disable_recursion_pending();
+                    continue;
+                }
                 if (entry.is_regular_file()) {
                     if (entry.path().filename().string() == ctx.variant) {
                         return path_to_utf8(entry.path());
@@ -81,7 +86,13 @@ std::string BackendOps::resolve_checkpoint_path(const ModelInfo& info,
                 ctx.hf_cache + "/" + hf_cache::repo_id_to_cache_dir_name(ctx.main_repo_id, ctx.registry_source);
             fs::path main_cache_path_fs = path_from_utf8(main_cache_path);
             if (fs::exists(main_cache_path_fs)) {
-                for (const auto& entry : fs::recursive_directory_iterator(main_cache_path_fs)) {
+                for (auto it = fs::recursive_directory_iterator(main_cache_path_fs);
+                     it != fs::recursive_directory_iterator(); ++it) {
+                    const auto& entry = *it;
+                    if (hf_cache::is_backend_private_path(main_cache_path_fs, entry.path())) {
+                        it.disable_recursion_pending();
+                        continue;
+                    }
                     if (entry.is_regular_file()) {
                         if (entry.path().filename().string() == ctx.variant) {
                             return path_to_utf8(entry.path());
@@ -111,7 +122,7 @@ std::string BackendOps::resolve_checkpoint_path(const ModelInfo& info,
     if (hf_cache::exists(model_cache_path_fs / "snapshots")) {
         return "";
     }
-    return ctx.model_cache_path;
+    return hf_cache::is_backend_private_cache_only(model_cache_path_fs) ? "" : ctx.model_cache_path;
 }
 
 bool BackendOps::is_downloaded(const ModelInfo& info, const BackendOpsContext& ctx) const {
