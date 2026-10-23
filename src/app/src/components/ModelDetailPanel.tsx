@@ -2469,6 +2469,8 @@ export interface ModelDetailPanelProps {
     recipeOptions?: Record<string, unknown>,
   ) => Promise<void>;
   onPull: (model: ModelInfo) => void;
+  onUpdate: (model: ModelInfo) => void;
+  isUpdating?: boolean;
   onPullAndLoad: (model: ModelInfo, recipeOptions?: Record<string, unknown>) => void;
   onDelete: (model: ModelInfo) => void;
   onCancelPull: (name: string) => void;
@@ -2532,6 +2534,8 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
   onUnload,
   onReloadModel,
   onPull,
+  onUpdate,
+  isUpdating = false,
   onPullAndLoad,
   onDelete,
   onCancelPull,
@@ -2810,9 +2814,10 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
         <WorkspaceActionButton
           appearance="secondary"
           icon="rotate-ccw"
-          onClick={() => onPull(model)}
-          disabled={isLoadingThis}
+          onClick={() => onUpdate(model)}
+          disabled={isLoadingThis || isUpdating}
           aria-label={`Update ${name}`}
+          title={isUpdating ? t('Updating…') : undefined}
         >
           {t('Update')}
         </WorkspaceActionButton>

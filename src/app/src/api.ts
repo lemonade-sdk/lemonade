@@ -260,6 +260,15 @@ export interface ModelsData {
   data: ModelInfo[];
 }
 
+/** Server-owned update job; unrelated to /api/v1/pull download jobs. */
+export interface ModelSyncStatus {
+  status: 'idle' | 'in_progress' | 'success' | 'failed' | 'not_found';
+  sync_id: number;
+  failed_models?: Record<string, string>;
+  terminal_error?: string;
+  progress?: { current_model?: string; percent?: number };
+}
+
 /**
  * Canonical renderer-side snapshot of the server model registry and loaded
  * model state. Components subscribe to this instead of maintaining independent
@@ -2247,6 +2256,23 @@ class LemonadeAPI {
     });
     this._notifyModelsChanged();
     return result;
+  }
+
+  // Model updates are checked and selected by lemond, not the GUI.
+  async startModelSync(models?: string[]): Promise<ModelSyncStatus> {
+    return this._json<ModelSyncStatus>('/internal/models/sync', {
+      method: 'POST',
+      body: { async: true, ...(models ? { models } : {}) },
+      auth: 'admin',
+      cache: 'no-store',
+    });
+  }
+
+  async getModelSyncStatus(): Promise<ModelSyncStatus> {
+    return this._json<ModelSyncStatus>('/internal/models/sync/status', {
+      auth: 'admin',
+      cache: 'no-store',
+    });
   }
 
   // ── SSE: Pull (model download) ──────────────────────────────────
