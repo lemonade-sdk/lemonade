@@ -1192,6 +1192,15 @@ void Router::load_model(const std::string& model_name,
                 return;
             }
 
+            // The failed server is never in loaded_servers_, so an empty list means
+            // eviction frees nothing and the retry would repeat the identical load
+            // (e.g. a second kernel OOM kill when the model does not fit).
+            if (loaded_servers_.empty()) {
+                LOG(ERROR, "Router") << "No other models loaded, nothing to evict; "
+                          << "skipping nuclear retry" << std::endl;
+                throw std::runtime_error(error_message);
+            }
+
             // Nuclear option: evict all models and retry
             LOG(WARNING, "Router") << "Load failed with non-file-not-found error, "
                       << "evicting all models and retrying..." << std::endl;
