@@ -32,8 +32,8 @@ public:
         response.schema = ordered_json::parse(R"json({
             "type": "object",
             "properties": {
-                "time_to_first_token": {"type": ["number", "null"], "description": "Time in seconds until the first token was generated"},
-                "tokens_per_second": {"type": ["number", "null"], "description": "Generation speed in tokens per second"},
+                "time_to_first_token": {"type": ["number", "null"], "description": "Time in seconds until the first token was generated, as reported by the backend for the latest request; a reliable TTFT requires backend timing, since the first streamed chunk is not necessarily the first token. `null` when no timing was available (e.g. non-streaming OpenAI-compatible cloud completions)"},
+                "tokens_per_second": {"type": ["number", "null"], "description": "Generation speed in tokens per second, as reported by the backend or calculated from a streamed response for the latest request; `null` when no timing was available (e.g. non-streaming OpenAI-compatible cloud completions)"},
                 "input_tokens": {"type": ["integer", "null"], "description": "Number of tokens processed"},
                 "output_tokens": {"type": ["integer", "null"], "description": "Number of tokens generated"},
                 "prompt_tokens": {"type": ["integer", "null"], "description": "Total prompt tokens including cached tokens"},
