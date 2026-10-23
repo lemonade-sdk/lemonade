@@ -11,6 +11,8 @@ set(CPACK_RPM_PACKAGE_URL "https://github.com/lemonade-sdk/lemonade")
 # Adjust for target distro if needed.
 # libgomp is required at runtime by OpenMP-linked backends (e.g. llama-server).
 set(CPACK_RPM_PACKAGE_REQUIRES "libcurl, openssl, zlib, libgomp")
+# Weak dependency: Vulkan loader is needed for GPU acceleration with the Vulkan llama.cpp backend.
+set(CPACK_RPM_PACKAGE_SUGGESTS "vulkan-loader, mesa-vulkan-drivers")
 
 # Architecture and file name
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)$")

@@ -4,6 +4,15 @@ Lemonade is tested on Ubuntu 24.04 LTS but should also work on other versions.
 
 To build from source, see the [development](../../dev/README.md) guide.
 
+!!! note "GPU prerequisites on Ubuntu Server"
+    The Vulkan backend needs a Vulkan loader and driver. Without them, models silently run on the CPU. Desktop installs usually include them; on minimal/server installs run:
+
+    ```
+    sudo apt install libvulkan1 mesa-vulkan-drivers vulkan-tools
+    ```
+
+    Verify with `vulkaninfo --summary`, then restart with `sudo systemctl restart lemond`.
+
 ## Step 1: Install lemonade-server
 
 === "Stable PPA"
