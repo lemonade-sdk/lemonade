@@ -409,7 +409,13 @@ function summarizeDevice(name: string, value: unknown): Record<string, unknown> 
   const details: string[] = [];
   if (record.cores) details.push(`${record.cores} cores`);
   if (record.threads) details.push(`${record.threads} threads`);
-  if (record.vram_gb) details.push(`${record.vram_gb} GB VRAM`);
+  if (name === 'amd_gpu' && record.integrated === true) {
+    details.push('Unified memory (shared with system RAM)');
+    if (record.vram_gb) details.push(`${record.vram_gb} GB reserved GPU memory`);
+    if (record.virtual_mem_gb) details.push(`${record.virtual_mem_gb} GB shared GPU memory (GTT)`);
+  } else if (record.vram_gb) {
+    details.push(`${record.vram_gb} GB VRAM`);
+  }
   if (record.tops_max_int) details.push(`${record.tops_max_int} TOPS`);
   return { type: name, name: label, available, details };
 }
