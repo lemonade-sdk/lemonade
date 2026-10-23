@@ -882,6 +882,12 @@ def main() -> int:
         # Precedence: --model-filter, then the fork's model_filter, then registry
         # discovery by the fork's recipe.
         run_models = models
+        if run_models and fork.get("model_aliases"):
+            to_alias = {gguf: m for m, gguf in fork["model_aliases"].items()}
+            run_models = [to_alias[m] for m in run_models if m in to_alias]
+            if not run_models:
+                print(f"  [skip] no {fork_id} alias for --model-filter {models}")
+                continue
         if not run_models:
             run_models = fork.get("model_filter", [])
             if run_models:
