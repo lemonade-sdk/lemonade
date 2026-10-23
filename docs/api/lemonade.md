@@ -1993,11 +1993,7 @@ This endpoint does not take any parameters.
 
 ### Backend Tiers and Formats
 
-| Tier | Meaning |
-|------|---------|
-| `core` | Supported by Lemonade's maintainers for production use. |
-| `experimental` | Provided by Lemonade's maintainers, not supported for production use. |
-| `guest` | Developed and published outside Lemonade's maintainers. Use at your own risk. The models of a recipe whose only backends on this system are guest backends stay hidden from [`GET /v1/models`](./openai.md#get-v1models) with `show_all=true` until one of those backends is installed. |
+A backend's tier is `core`, `experimental`, or `guest`, as defined by the [backend support tier policy](../dev/adding-a-backend.md#support-tier). The models of a recipe whose only backends on this system are guest backends stay hidden from [`GET /v1/models`](./openai.md#get-v1models) with `show_all=true` until one of those backends is installed.
 
 | Format | Meaning |
 |--------|---------|
