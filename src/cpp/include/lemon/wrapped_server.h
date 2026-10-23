@@ -242,6 +242,12 @@ public:
             // clears the flag only when the last streaming request completes.
             if (--active_request_count_ == 0) {
                 state_ = ModelState::READY;
+                // The idle clock starts when the last in-flight request
+                // completes, not when it started: a request whose prefill or
+                // generation runs longer than the eviction timeout must not
+                // leave the model instantly evictable the moment it finishes
+                // (issue #3733).
+                last_access_time_ = std::chrono::steady_clock::now();
                 state_cv_.notify_all();
                 on_idle = take_pending_reclaim_if_idle_locked();
             }
