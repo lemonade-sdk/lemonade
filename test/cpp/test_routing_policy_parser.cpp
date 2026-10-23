@@ -292,6 +292,32 @@ static void test_classifier_capability_validation() {
               throws_with_options(doc, options, "cannot serve zero_shot"));
     }
     {
+        auto systemone_doc = [] {
+            json doc = fixture("l3_classifier.json");
+            json& pii = doc["routing"]["classifiers"][0];
+            pii["type"] = "systemone";
+            pii.erase("labels");
+            pii["default_label"] = "true";
+            pii["question"] = {{"type", "noul"},
+                               {"instructions", "Does the message contain personal data?"}};
+            return doc;
+        };
+        RoutingPolicyParseOptions classification;
+        classification.get_model_type = [](const std::string& name) -> std::optional<ModelType> {
+            if (name == "pii-detector-small") return ModelType::CLASSIFICATION;
+            return ModelType::LLM;
+        };
+        check("systemone accepts a CLASSIFICATION model type",
+              parses_ok(systemone_doc(), classification));
+
+        RoutingPolicyParseOptions llm;
+        llm.get_model_type = [](const std::string&) -> std::optional<ModelType> {
+            return ModelType::LLM;
+        };
+        check("systemone rejects a model typed LLM",
+              throws_with_options(systemone_doc(), llm, "cannot serve systemone"));
+    }
+    {
         json doc = fixture("l2_semantic.json");
         RoutingPolicyParseOptions options;
         options.get_model_type = [](const std::string&) -> std::optional<ModelType> {
