@@ -45,6 +45,10 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
     "vulkan_bin": "builtin"
   },
   "allowed_origins": "",
+  "amica": {
+    "args": "",
+    "dx12_bin": "builtin"
+  },
   "auto_check_model_updates": true,
   "auto_evict": false,
   "auto_evict_threshold_pct": 0.9,
