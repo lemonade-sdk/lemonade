@@ -8,6 +8,8 @@
 #include <icu.h>
 #include <nlohmann/json.hpp>
 
+#include <cctype>
+#include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <limits>
@@ -158,12 +160,85 @@ struct Tokenizer::Regex {
     }
 };
 
-Tokenizer::Tokenizer(const std::string& path) : regex_(std::make_unique<Regex>()) {
+namespace {
+
+std::shared_ptr<Tokenizer::Regex> compile_regex(const std::string& pattern, bool literal) {
+    auto regex = std::make_shared<Tokenizer::Regex>();
+    const UString pattern16 = to_utf16(pattern);
+    UParseError parse_error{};
+    UErrorCode status = U_ZERO_ERROR;
+    regex->pattern = uregex_open(pattern16.data(), static_cast<std::int32_t>(pattern16.size()),
+                                 literal ? UREGEX_LITERAL : 0, &parse_error, &status);
+    check_icu(status, "compiling a pre-tokenizer pattern");
+    return regex;
+}
+
+// Pieces of text with whether each is a pattern match, in order.
+std::vector<std::pair<std::string, bool>> split_by(const Tokenizer::Regex& compiled, const std::string& piece) {
+    const UString text = to_utf16(piece);
+    UErrorCode status = U_ZERO_ERROR;
+    std::unique_ptr<URegularExpression, decltype(&uregex_close)> regex(uregex_clone(compiled.pattern, &status),
+                                                                       &uregex_close);
+    check_icu(status, "uregex_clone");
+    uregex_setText(regex.get(), text.data(), static_cast<std::int32_t>(text.size()), &status);
+    check_icu(status, "uregex_setText");
+    std::vector<std::pair<std::string, bool>> parts;
+    std::int32_t position = 0;
+    while (uregex_findNext(regex.get(), &status)) {
+        const std::int32_t start = uregex_start(regex.get(), 0, &status);
+        const std::int32_t end = uregex_end(regex.get(), 0, &status);
+        check_icu(status, "uregex_findNext");
+        if (end == start) continue;
+        if (start > position) parts.emplace_back(to_utf8(text.data() + position, start - position), false);
+        parts.emplace_back(to_utf8(text.data() + start, end - start), true);
+        position = end;
+    }
+    check_icu(status, "uregex_findNext");
+    if (position < static_cast<std::int32_t>(text.size())) {
+        parts.emplace_back(to_utf8(text.data() + position, static_cast<std::int32_t>(text.size()) - position), false);
+    }
+    return parts;
+}
+
+void replace_all(std::string& text, const std::string& from, const std::string& to) {
+    if (from.empty()) return;
+    for (std::size_t at = text.find(from); at != std::string::npos; at = text.find(from, at + to.size())) {
+        text.replace(at, from.size(), to);
+    }
+}
+
+// The length of the UTF-8 character ending at text[end - 1].
+std::size_t previous_char_length(const std::string& text, std::size_t end) {
+    std::size_t begin = end - 1;
+    while (begin > 0 && (static_cast<std::uint8_t>(text[begin]) & 0xC0) == 0x80) --begin;
+    return end - begin;
+}
+
+bool is_whitespace(std::uint32_t code_point) { return u_isUWhiteSpace(static_cast<UChar32>(code_point)) != 0; }
+
+std::string string_pattern(const json& step, const std::string& path, const char* what) {
+    const json& pattern = step.at("pattern");
+    if (!pattern.contains("String")) unsupported(path, std::string("a regex ") + what);
+    return pattern.at("String").get<std::string>();
+}
+
+// Expands a component and its nested Sequences into its steps, in order.
+void flatten(const json& component, const char* list_key, std::vector<json>& steps) {
+    if (component.is_null()) return;
+    if (component.value("type", "") == "Sequence") {
+        for (const auto& step : component.at(list_key)) flatten(step, list_key, steps);
+    } else {
+        steps.push_back(component);
+    }
+}
+
+}  // namespace
+
+Tokenizer::Tokenizer(const std::string& path) {
     const json file = json::parse(read_file(path));
 
     const json& model = file.at("model");
     if (model.value("type", "") != "BPE") unsupported(path, "a model other than BPE");
-    if (flag(model, "byte_fallback")) unsupported(path, "byte_fallback");
     if (model.contains("dropout") && !model.at("dropout").is_null()) unsupported(path, "BPE dropout");
     for (const char* affix : {"continuing_subword_prefix", "end_of_word_suffix"}) {
         if (model.contains(affix) && model.at(affix).is_string() && !model.at(affix).get<std::string>().empty()) {
@@ -171,9 +246,15 @@ Tokenizer::Tokenizer(const std::string& path) : regex_(std::make_unique<Regex>()
         }
     }
     ignore_merges_ = flag(model, "ignore_merges");
+    byte_fallback_ = flag(model, "byte_fallback");
+    fuse_unk_ = flag(model, "fuse_unk");
 
     for (const auto& [token, id] : model.at("vocab").items()) {
         vocab_.emplace(token, id.get<std::int64_t>());
+    }
+    if (model.contains("unk_token") && model.at("unk_token").is_string()) {
+        const auto it = vocab_.find(model.at("unk_token").get<std::string>());
+        if (it != vocab_.end()) unk_id_ = it->second;
     }
     std::int64_t max_id = -1;
     for (const auto& [token, id] : vocab_) max_id = std::max(max_id, id);
@@ -208,54 +289,78 @@ Tokenizer::Tokenizer(const std::string& path) : regex_(std::make_unique<Regex>()
     }
 
     for (const auto& added : file.value("added_tokens", json::array())) {
-        for (const char* option : {"single_word", "lstrip", "rstrip", "normalized"}) {
+        for (const char* option : {"single_word", "normalized"}) {
             if (flag(added, option)) unsupported(path, std::string("an added token with ") + option);
         }
         const std::string content = added.at("content").get<std::string>();
         const std::int64_t id = added.at("id").get<std::int64_t>();
-        added_.push_back({content, id, flag(added, "special")});
+        added_.push_back({content, id, flag(added, "special"), flag(added, "lstrip"), flag(added, "rstrip")});
         id_to_token_[static_cast<std::size_t>(id)] = content;
     }
 
-    const json normalizer = file.value("normalizer", json());
-    if (!normalizer.is_null()) {
-        if (normalizer.value("type", "") != "NFC") unsupported(path, "a normalizer other than NFC");
-        nfc_ = true;
-    }
-
-    const json pre = file.value("pre_tokenizer", json());
-    const auto plain_byte_level = [](const json& step) {
-        return step.value("type", "") == "ByteLevel" && !flag(step, "add_prefix_space");
-    };
-    std::string pattern;
-    bool literal = false;
-    if (pre.value("type", "") == "Sequence" && pre.at("pretokenizers").size() == 2 &&
-        pre.at("pretokenizers")[0].value("type", "") == "Split" && plain_byte_level(pre.at("pretokenizers")[1]) &&
-        !pre.at("pretokenizers")[1].value("use_regex", true)) {
-        const json& split = pre.at("pretokenizers")[0];
-        if (split.value("behavior", "") != "Isolated" || flag(split, "invert")) {
-            unsupported(path, "a Split pre-tokenizer other than Isolated");
-        }
-        if (split.at("pattern").contains("Regex")) {
-            pattern = to_icu_pattern(split.at("pattern").at("Regex").get<std::string>());
+    std::vector<json> steps;
+    flatten(file.value("normalizer", json()), "normalizers", steps);
+    for (const auto& step : steps) {
+        const std::string type = step.value("type", "");
+        if (type == "NFC") {
+            normalizers_.push_back({Normalizer::Kind::Nfc, "", ""});
+        } else if (type == "Prepend") {
+            normalizers_.push_back({Normalizer::Kind::Prepend, "", step.at("prepend").get<std::string>()});
+        } else if (type == "Replace") {
+            normalizers_.push_back({Normalizer::Kind::Replace, string_pattern(step, path, "Replace normalizer"),
+                                    step.at("content").get<std::string>()});
         } else {
-            pattern = split.at("pattern").at("String").get<std::string>();
-            literal = true;
+            unsupported(path, "the " + type + " normalizer");
         }
-    } else if (plain_byte_level(pre) && pre.value("use_regex", true)) {
-        pattern = to_icu_pattern(kByteLevelPattern);
-    } else {
-        unsupported(path, "this pre_tokenizer");
     }
-    const json decoder = file.value("decoder", json());
-    if (decoder.value("type", "") != "ByteLevel") unsupported(path, "a decoder other than ByteLevel");
 
-    const UString pattern16 = to_utf16(pattern);
-    UParseError parse_error{};
-    UErrorCode status = U_ZERO_ERROR;
-    regex_->pattern = uregex_open(pattern16.data(), static_cast<std::int32_t>(pattern16.size()),
-                                  literal ? UREGEX_LITERAL : 0, &parse_error, &status);
-    check_icu(status, "compiling the pre-tokenizer pattern");
+    steps.clear();
+    flatten(file.value("pre_tokenizer", json()), "pretokenizers", steps);
+    for (const auto& step : steps) {
+        const std::string type = step.value("type", "");
+        if (type == "Split") {
+            const std::string behavior = step.value("behavior", "");
+            if (behavior != "Isolated" && behavior != "Removed") unsupported(path, "Split behavior " + behavior);
+            PreTokenizer split{PreTokenizer::Kind::Split};
+            const json& pattern = step.at("pattern");
+            split.regex = pattern.contains("Regex")
+                              ? compile_regex(to_icu_pattern(pattern.at("Regex").get<std::string>()), false)
+                              : compile_regex(pattern.at("String").get<std::string>(), true);
+            split.removed = behavior == "Removed";
+            split.invert = flag(step, "invert");
+            pre_tokenizers_.push_back(split);
+        } else if (type == "ByteLevel") {
+            if (flag(step, "add_prefix_space")) unsupported(path, "ByteLevel with add_prefix_space");
+            PreTokenizer byte_level{PreTokenizer::Kind::ByteLevel};
+            if (step.value("use_regex", true)) {
+                byte_level.regex = compile_regex(to_icu_pattern(kByteLevelPattern), false);
+            }
+            pre_tokenizers_.push_back(byte_level);
+        } else {
+            unsupported(path, "the " + type + " pre-tokenizer");
+        }
+    }
+
+    steps.clear();
+    flatten(file.value("decoder", json()), "decoders", steps);
+    for (const auto& step : steps) {
+        const std::string type = step.value("type", "");
+        if (type == "ByteLevel") {
+            decoders_.push_back({Decoder::Kind::ByteLevel});
+        } else if (type == "Replace") {
+            decoders_.push_back({Decoder::Kind::Replace, string_pattern(step, path, "Replace decoder"),
+                                 step.at("content").get<std::string>()});
+        } else if (type == "ByteFallback") {
+            decoders_.push_back({Decoder::Kind::ByteFallback});
+        } else if (type == "Fuse") {
+            decoders_.push_back({Decoder::Kind::Fuse});
+        } else if (type == "Strip") {
+            decoders_.push_back({Decoder::Kind::Strip, "", step.at("content").get<std::string>(),
+                                 step.value("start", std::size_t{0}), step.value("stop", std::size_t{0})});
+        } else {
+            unsupported(path, "the " + type + " decoder");
+        }
+    }
 
     // GPT-2's reversible byte-to-character table: printable bytes keep their
     // own code point, the rest are moved to U+0100 onward.
@@ -291,7 +396,9 @@ std::vector<std::int64_t> Tokenizer::encode(const std::string& text) const {
     std::vector<std::int64_t> ids;
     std::size_t segment = 0;
     std::size_t i = 0;
-    // Added tokens are matched leftmost-longest on the raw text, before normalization.
+    // Added tokens are matched leftmost-longest on the raw text, before
+    // normalization. A token with lstrip/rstrip also takes the whitespace
+    // beside it, though never text an earlier token already took.
     while (i < text.size()) {
         const AddedToken* best = nullptr;
         for (const auto& added : added_) {
@@ -304,10 +411,28 @@ std::vector<std::int64_t> Tokenizer::encode(const std::string& text) const {
             ++i;
             continue;
         }
-        encode_segment(text.substr(segment, i - segment), ids);
+        std::size_t start = i;
+        std::size_t stop = i + best->content.size();
+        if (best->lstrip) {
+            while (start > segment) {
+                const std::size_t length = previous_char_length(text, start);
+                std::size_t at = start - length;
+                if (!is_whitespace(next_code_point(text, at))) break;
+                start -= length;
+            }
+        }
+        if (best->rstrip) {
+            while (stop < text.size()) {
+                std::size_t at = stop;
+                if (!is_whitespace(next_code_point(text, at))) break;
+                stop = at;
+            }
+        }
+        encode_segment(text.substr(segment, start - segment), ids);
         ids.push_back(best->id);
         i += best->content.size();
-        segment = i;
+        segment = stop;
+        i = std::max(i, segment);
     }
     encode_segment(text.substr(segment), ids);
     return ids;
@@ -315,50 +440,90 @@ std::vector<std::int64_t> Tokenizer::encode(const std::string& text) const {
 
 void Tokenizer::encode_segment(const std::string& segment, std::vector<std::int64_t>& ids) const {
     if (segment.empty()) return;
-    const UString text = to_utf16(nfc_ ? nfc(segment) : segment);
-
-    UErrorCode status = U_ZERO_ERROR;
-    std::unique_ptr<URegularExpression, decltype(&uregex_close)> regex(uregex_clone(regex_->pattern, &status),
-                                                                       &uregex_close);
-    check_icu(status, "uregex_clone");
-    uregex_setText(regex.get(), text.data(), static_cast<std::int32_t>(text.size()), &status);
-    check_icu(status, "uregex_setText");
-
-    // Isolated split: every match is a word, and so is any text between matches.
-    std::int32_t position = 0;
-    const auto word = [&](std::int32_t begin, std::int32_t end) {
-        if (end > begin) encode_word(to_utf8(text.data() + begin, end - begin), ids);
-    };
-    while (uregex_findNext(regex.get(), &status)) {
-        const std::int32_t start = uregex_start(regex.get(), 0, &status);
-        const std::int32_t end = uregex_end(regex.get(), 0, &status);
-        check_icu(status, "uregex_findNext");
-        if (end == start) continue;
-        word(position, start);
-        word(start, end);
-        position = end;
+    std::string normalized = segment;
+    for (const auto& step : normalizers_) {
+        switch (step.kind) {
+        case Normalizer::Kind::Nfc:
+            normalized = nfc(normalized);
+            break;
+        case Normalizer::Kind::Prepend:
+            if (!normalized.empty()) normalized = step.to + normalized;
+            break;
+        case Normalizer::Kind::Replace:
+            replace_all(normalized, step.from, step.to);
+            break;
+        }
     }
-    check_icu(status, "uregex_findNext");
-    word(position, static_cast<std::int32_t>(text.size()));
+
+    std::vector<std::string> pieces{normalized};
+    for (const auto& step : pre_tokenizers_) {
+        std::vector<std::string> next;
+        for (const auto& piece : pieces) {
+            if (!step.regex) {
+                next.push_back(piece);
+                continue;
+            }
+            // Isolated keeps every match and every gap as its own piece;
+            // Removed drops the matches. invert swaps which parts are matches.
+            for (const auto& [part, matched] : split_by(*step.regex, piece)) {
+                if (step.kind == PreTokenizer::Kind::Split && step.removed && matched != step.invert) continue;
+                next.push_back(part);
+            }
+        }
+        if (step.kind == PreTokenizer::Kind::ByteLevel) {
+            for (auto& piece : next) {
+                std::string mapped;
+                for (const char c : piece) mapped += byte_to_char_[static_cast<std::uint8_t>(c)];
+                piece = mapped;
+            }
+        }
+        pieces = std::move(next);
+    }
+    for (const auto& piece : pieces) {
+        if (!piece.empty()) encode_word(piece, ids);
+    }
 }
 
 void Tokenizer::encode_word(const std::string& word, std::vector<std::int64_t>& ids) const {
-    std::string mapped;
-    std::vector<std::int64_t> parts;
-    for (const char c : word) {
-        const std::string& symbol = byte_to_char_[static_cast<std::uint8_t>(c)];
-        mapped += symbol;
-        const auto it = vocab_.find(symbol);
-        if (it == vocab_.end()) {
-            throw std::runtime_error("the tokenizer vocabulary has no entry for byte symbol '" + symbol + "'");
-        }
-        parts.push_back(it->second);
-    }
     if (ignore_merges_) {
-        const auto it = vocab_.find(mapped);
+        const auto it = vocab_.find(word);
         if (it != vocab_.end()) {
             ids.push_back(it->second);
             return;
+        }
+    }
+    // One symbol per character. A character outside the vocabulary becomes
+    // its <0xNN> byte tokens with byte fallback, otherwise the unknown token.
+    std::vector<std::int64_t> parts;
+    bool previous_unknown = false;
+    for (std::size_t i = 0; i < word.size();) {
+        const std::size_t begin = i;
+        next_code_point(word, i);
+        const std::string symbol = word.substr(begin, i - begin);
+        const auto it = vocab_.find(symbol);
+        if (it != vocab_.end()) {
+            parts.push_back(it->second);
+            previous_unknown = false;
+            continue;
+        }
+        if (byte_fallback_) {
+            std::vector<std::int64_t> bytes;
+            for (const char c : symbol) {
+                char name[8];
+                std::snprintf(name, sizeof(name), "<0x%02X>", static_cast<unsigned>(static_cast<std::uint8_t>(c)));
+                const auto byte = vocab_.find(name);
+                if (byte == vocab_.end()) break;
+                bytes.push_back(byte->second);
+            }
+            if (bytes.size() == symbol.size()) {
+                parts.insert(parts.end(), bytes.begin(), bytes.end());
+                previous_unknown = false;
+                continue;
+            }
+        }
+        if (unk_id_) {
+            if (!(fuse_unk_ && previous_unknown)) parts.push_back(*unk_id_);
+            previous_unknown = true;
         }
     }
     // Repeatedly merge the adjacent pair with the lowest rank, leftmost first.
@@ -384,25 +549,91 @@ void Tokenizer::encode_word(const std::string& word, std::vector<std::int64_t>& 
 }
 
 std::string Tokenizer::decode(const std::vector<std::int64_t>& ids) const {
-    std::string bytes;
+    std::vector<std::string> tokens;
     for (const std::int64_t id : ids) {
-        if (id < 0 || static_cast<std::size_t>(id) >= id_to_token_.size()) continue;
-        const std::string& token = id_to_token_[static_cast<std::size_t>(id)];
-        // A token with a character outside the byte table is kept as written,
-        // as the ByteLevel decoder does.
-        std::string token_bytes;
-        bool mapped = true;
-        for (std::size_t i = 0; i < token.size();) {
-            const auto it = char_to_byte_.find(next_code_point(token, i));
-            if (it == char_to_byte_.end()) {
-                mapped = false;
-                break;
-            }
-            token_bytes += static_cast<char>(it->second);
+        if (id >= 0 && static_cast<std::size_t>(id) < id_to_token_.size()) {
+            tokens.push_back(id_to_token_[static_cast<std::size_t>(id)]);
         }
-        bytes += mapped ? token_bytes : token;
     }
-    return utf8_lossy(bytes);
+    for (const auto& step : decoders_) {
+        switch (step.kind) {
+        case Decoder::Kind::ByteLevel: {
+            // A token with a character outside the byte table is kept as written.
+            std::string bytes;
+            for (const auto& token : tokens) {
+                std::string token_bytes;
+                bool mapped = true;
+                for (std::size_t i = 0; i < token.size();) {
+                    const auto it = char_to_byte_.find(next_code_point(token, i));
+                    if (it == char_to_byte_.end()) {
+                        mapped = false;
+                        break;
+                    }
+                    token_bytes += static_cast<char>(it->second);
+                }
+                bytes += mapped ? token_bytes : token;
+            }
+            tokens = {utf8_lossy(bytes)};
+            break;
+        }
+        case Decoder::Kind::Replace:
+            for (auto& token : tokens) replace_all(token, step.from, step.to);
+            break;
+        case Decoder::Kind::ByteFallback: {
+            // A run of <0xNN> tokens becomes the text its bytes spell, or one
+            // U+FFFD per byte when they are not valid UTF-8.
+            std::vector<std::string> result;
+            std::string bytes;
+            std::size_t byte_tokens = 0;
+            const auto flush = [&]() {
+                if (byte_tokens == 0) return;
+                if (utf8_lossy(bytes) == bytes) {
+                    result.push_back(bytes);
+                } else {
+                    for (std::size_t k = 0; k < byte_tokens; ++k) result.push_back("\xEF\xBF\xBD");
+                }
+                bytes.clear();
+                byte_tokens = 0;
+            };
+            for (const auto& token : tokens) {
+                const bool byte_token = token.size() == 6 && token.compare(0, 3, "<0x") == 0 && token[5] == '>' &&
+                                        std::isxdigit(static_cast<unsigned char>(token[3])) &&
+                                        std::isxdigit(static_cast<unsigned char>(token[4]));
+                if (byte_token) {
+                    bytes += static_cast<char>(std::stoi(token.substr(3, 2), nullptr, 16));
+                    ++byte_tokens;
+                } else {
+                    flush();
+                    result.push_back(token);
+                }
+            }
+            flush();
+            tokens = std::move(result);
+            break;
+        }
+        case Decoder::Kind::Fuse: {
+            std::string fused;
+            for (const auto& token : tokens) fused += token;
+            tokens = {fused};
+            break;
+        }
+        case Decoder::Kind::Strip:
+            for (auto& token : tokens) {
+                for (std::size_t k = 0; k < step.start && token.compare(0, step.to.size(), step.to) == 0; ++k) {
+                    token.erase(0, step.to.size());
+                }
+                for (std::size_t k = 0; k < step.stop && token.size() >= step.to.size() &&
+                                        token.compare(token.size() - step.to.size(), step.to.size(), step.to) == 0;
+                     ++k) {
+                    token.erase(token.size() - step.to.size());
+                }
+            }
+            break;
+        }
+    }
+    std::string text;
+    for (const auto& token : tokens) text += token;
+    return utf8_lossy(text);
 }
 
 std::string utf8_lossy(const std::string& bytes) {

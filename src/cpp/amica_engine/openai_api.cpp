@@ -331,7 +331,7 @@ public:
             if (!prompt_value.is_string() || prompt_value.get<std::string>().empty()) {
                 throw RequestError("'prompt' must be a non-empty string");
             }
-            const auto prompt = frontend_.tokenizer().encode(prompt_value.get<std::string>());
+            const auto prompt = frontend_.encode_text(prompt_value.get<std::string>());
             if (prompt.size() > bundle_.max_prompt_tokens()) {
                 throw RequestError(prompt_too_long(prompt.size()));
             }
@@ -411,7 +411,7 @@ private:
         for (std::size_t i = 0; i < messages.size(); ++i) {
             text += (i ? "\n" : "") + messages[i].content;
         }
-        return frontend_.tokenizer().encode(text);
+        return frontend_.encode_text(text);
     }
 
     // Tokenizes the conversation, dropping the oldest turns until it fits prefill.

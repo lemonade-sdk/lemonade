@@ -35,6 +35,10 @@ public:
     std::string render(const std::vector<ChatMessage>& messages) const;
     std::vector<std::int64_t> encode_messages(const std::vector<ChatMessage>& messages) const;
 
+    // Tokenizes prompt text, adding BOS when tokenizer_config.json asks for it
+    // and the text does not already start with it.
+    std::vector<std::int64_t> encode_text(const std::string& text) const;
+
     const std::set<std::int64_t>& eos_ids() const { return eos_ids_; }
     const std::set<std::int64_t>& chat_stop_ids() const { return chat_stop_ids_; }
 

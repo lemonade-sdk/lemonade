@@ -139,18 +139,16 @@ void ChatFrontend::resolve_stop_ids() {
 
 std::string ChatFrontend::render(const std::vector<ChatMessage>& messages) const {
     if (!template_) {
-        std::string system;
-        std::string user;
+        // The AMICA ChatApp's formats for bundles without a template, applied
+        // to every turn; a single-turn prompt is exactly ChatApp's.
+        const bool chat_ml = special_tokens_.count("<|im_start|>") && special_tokens_.count("<|im_end|>");
+        std::string text;
         for (const auto& message : messages) {
-            if (message.role == "system" && system.empty()) system = message.content;
-            if (message.role == "user") user = message.content;
+            if (message.role == "system" && message.content.empty()) continue;
+            text += chat_ml ? "<|im_start|>" + message.role + "\n" + message.content + "<|im_end|>\n"
+                            : "<|" + message.role + "|>\n" + message.content + "<|end|>\n";
         }
-        if (special_tokens_.count("<|im_start|>") && special_tokens_.count("<|im_end|>")) {
-            const std::string head = system.empty() ? "" : "<|im_start|>system\n" + system + "<|im_end|>\n";
-            return head + "<|im_start|>user\n" + user + "<|im_end|>\n<|im_start|>assistant\n";
-        }
-        const std::string head = system.empty() ? "" : "<|system|>\n" + system + "<|end|>\n";
-        return head + "<|user|>\n" + user + "<|end|>\n<|assistant|>\n";
+        return text + (chat_ml ? "<|im_start|>assistant\n" : "<|assistant|>\n");
     }
 
     nlohmann::ordered_json list = nlohmann::ordered_json::array();
@@ -181,8 +179,13 @@ std::string ChatFrontend::render(const std::vector<ChatMessage>& messages) const
 }
 
 std::vector<std::int64_t> ChatFrontend::encode_messages(const std::vector<ChatMessage>& messages) const {
-    std::vector<std::int64_t> ids = tokenizer_.encode(render(messages));
-    if (tokenizer_config_.value("add_bos_token", false)) {
+    return encode_text(render(messages));
+}
+
+std::vector<std::int64_t> ChatFrontend::encode_text(const std::string& text) const {
+    std::vector<std::int64_t> ids = tokenizer_.encode(text);
+    const json add_bos = get(tokenizer_config_, "add_bos_token", json(false));
+    if (add_bos.is_boolean() && add_bos.get<bool>()) {
         json bos = get(generation_config_, "bos_token_id", tokenizer_config_.value("bos_token_id", json()));
         if (bos.is_array()) bos = bos.empty() ? json() : bos[0];
         if (bos.is_number_integer() && (ids.empty() || ids[0] != bos.get<std::int64_t>())) {
