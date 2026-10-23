@@ -1,5 +1,5 @@
 {
-  "f7a8406093b5d2e13a12ac9a36a195af9b03b92046ae8a2f6919a504b9c63f78": {
+  "86acc039b321c1beaa623644e42071a1f129736b5909fafc1839a61dd7ec9c12": {
     "route": "anthropic.messages",
     "format": "EventStream",
     "request": {
@@ -36,7 +36,7 @@
       "count": 14
     }
   },
-  "464dd23e936fdce07014b9f408933e3bb20c25bb6f0b34c44406e4ec111312ed": {
+  "a6a5bb0eaefcf1d1a4447172f8bdfef0295d83da0521348b6566b30688f89033": {
     "route": "anthropic.messages",
     "format": "Json",
     "request": {
@@ -747,7 +747,7 @@
       }
     }
   },
-  "76a3b8c30ef16bc8cf56e5d2373e0a45c3f6c9c91f2ffc27f11832475c479ffe": {
+  "615032ff383e7c0eacdb0ca26142370ec512be87257ea6e515568ed4d93eddcf": {
     "route": "internal.pin",
     "format": "Json",
     "request": {
@@ -922,7 +922,7 @@
       }
     }
   },
-  "e10b7407d3a3abcbeed39d94449b91919534e5516b46c09b7dff4778390f3bb3": {
+  "990ebf5dcf2c2bb07c838de48f4395c5b0ffab2ce8672b64dafa42c9afc8993c": {
     "route": "lemonade.3d_generations",
     "format": "Binary",
     "request": {
@@ -944,7 +944,7 @@
       "bytes": 4534160
     }
   },
-  "a7eb2ef91d1879f736b0085b6daad61a3959869d1280b61314ea1aa8f2b126e9": {
+  "a292d73fcbb22dfdecb48de484e9a1a902c92f2b2a71a90e577f76d91bc101c6": {
     "route": "lemonade.audio_generations",
     "format": "Binary",
     "request": {
@@ -967,7 +967,7 @@
       "bytes": 8640044
     }
   },
-  "ef7b8e39b1288cd3c45f4d0b0ffd5cde6efbe02c2d42c04b1cae4a795d2432cb": {
+  "204810b5025ebac94883a81a51034a5258f47458789e607159848e8054dd6a1c": {
     "route": "lemonade.audio_generations",
     "format": "Binary",
     "request": {
@@ -1207,7 +1207,7 @@
       "line_count": 4453
     }
   },
-  "107c6d3e62bc8113e9645446300a72a63b5ce0852a8ff08e76e9c1e908a13616": {
+  "2ec89e3f6289e2ec5d6afe5b0327d55cd7f1eabc20e7efead245620f06a3cd8c": {
     "route": "lemonade.downloads",
     "format": "Json",
     "request": {
@@ -1244,7 +1244,7 @@
       ]
     }
   },
-  "d14ecf68be913d9b3de354e38c360cbbafe7161340f45c73d7a2e70af11eaaab": {
+  "115416c96453cf173a1a9b1bbcf6903c3fa7a1761104428b27eb0fd6a4f3372c": {
     "route": "lemonade.downloads_control",
     "format": "Json",
     "request": {
@@ -1305,7 +1305,7 @@
       }
     }
   },
-  "30032a8905fab1c904c12607f7249fb3193faa3b007ff9a67dd5e4b48a2a463b": {
+  "da355876d5b148571f5c199491cf2ca4074556749723a0d56da32b9532c924ca": {
     "route": "lemonade.health",
     "format": "Json",
     "request": {
@@ -1791,7 +1791,7 @@
       }
     }
   },
-  "04cbd80e9425bedeaeee4c225242435f7930069ec4bb3725a91082c9a26bea7a": {
+  "295945d848b732b90b2ac924534651d642d563c9385f5c4f5dae0c1da3fb828f": {
     "route": "lemonade.load",
     "format": "Json",
     "request": {
@@ -1923,7 +1923,7 @@
       }
     }
   },
-  "d9f4ca236534b89fe7b81e8874d60c9342a62310951243e517d74b869dcb6216": {
+  "411bcecdd61180762951bd4683dc344693417d4579e567c9982b94bc95d9ea27": {
     "route": "lemonade.pull",
     "format": "EventStream",
     "request": {
@@ -2003,7 +2003,7 @@
       }
     }
   },
-  "ca36b7349ac496db20c49c37bd7a7527f2e78c409d98d5eb9f3ef7cff59483ee": {
+  "9df1783441f004352ca695c793f612e896bb9b07038152601405ce378ded4d6e": {
     "route": "lemonade.pull",
     "format": "Json",
     "request": {
@@ -2042,7 +2042,7 @@
       }
     }
   },
-  "98f63b01ae5326ca11c3445db164ffc3478ab29a6d62bf0568e148c8b9d12495": {
+  "4040510809c3ab159ca296ef2287e0a0622b13dbf9cdf30ab83fab0fb327fe5a": {
     "route": "lemonade.pull",
     "format": "Json",
     "request": {
@@ -2601,7 +2601,7 @@
       }
     }
   },
-  "5ab63ecbd8e309c7ed69a9939fd5ed788598aad4d7b357e90a1121c0306a6ace": {
+  "4b1ca46ff4cce3af48f46f29cdc0c1380c6708e94c8763623ed570411efc85de": {
     "route": "lemonade.stats",
     "format": "Json",
     "request": {
@@ -4612,7 +4612,7 @@
       }
     }
   },
-  "a535df77dcde9d7eebd0848751b4e7392287251e0699672bd3a7f0c5e2e8bb2c": {
+  "c9e45470ef69416dae8994b9224052daf65f1595e5c59355cba54172777e4117": {
     "route": "lemonade.unload",
     "format": "Json",
     "request": {
@@ -4635,7 +4635,7 @@
       }
     }
   },
-  "936b32734df1a874d0013876777809131fbbbbc2c14eb1dd713e7515da95f64e": {
+  "cfa6282235ee5e20560c9fe08fb75e4e60323c7dd9d00a8dbed37e8471dc1c48": {
     "route": "llamacpp.rerank",
     "format": "Json",
     "request": {
@@ -4681,7 +4681,7 @@
       }
     }
   },
-  "d6a5fa6469fdcab115e189bcfcc2c2c1933b95497445ade6638844b252a8d108": {
+  "88273738ff7f2d335cf789d68a648b789fad285c33ab0c70f24e831612b59e59": {
     "route": "llamacpp.slots",
     "format": "Json",
     "request": {
@@ -4771,7 +4771,7 @@
       ]
     }
   },
-  "6c53ba37762de8a090538da3c81f3f3e46eb7573271ed888f7d309a8e74cf7c9": {
+  "1394743bb293d827f8d19235655f8d12d3af81d1895906b723cbc91d8a6c6670": {
     "route": "llamacpp.slots_action",
     "format": "Json",
     "request": {
@@ -4793,7 +4793,7 @@
       }
     }
   },
-  "0989622f15cc9aa0c6113ee5b036c17227b6102a7aa8b39b005082022d6fc3e5": {
+  "78c1a3d9f7bc27c7def2842ff2275822f7476cacb6220479a2044f92ce4d2f51": {
     "route": "llamacpp.slots_action",
     "format": "Json",
     "request": {
@@ -4822,7 +4822,7 @@
       }
     }
   },
-  "6542ad71255a62386b6fef3737eda3826eaeb9d0bc4de1c261dedb10bbfce813": {
+  "7898694786594c15409221453f993cd491e6e5bdb1b2b769f69698408799426e": {
     "route": "llamacpp.slots_action",
     "format": "Json",
     "request": {
@@ -4851,7 +4851,7 @@
       }
     }
   },
-  "c4ca686315310e16fa6f39898e23ff43307cca6e26c2160af42ea42c0fec2d30": {
+  "c4d3cecd8b4c4bcdefff43424d568f8d260222e131c7d751ec447e6a0aba29dd": {
     "route": "llamacpp.tokenize",
     "format": "Json",
     "request": {
@@ -4936,7 +4936,7 @@
       }
     }
   },
-  "4b6885551f8e67cd1adcad81e598617cb0c2a5ead70b1bdfd70bb496f14236e4": {
+  "b6d4546177504f2fee379ff1bb5488b068b0620342ae86aa2c763ab4c13bc4a5": {
     "route": "ollama.chat",
     "format": "Json",
     "request": {
@@ -4977,7 +4977,7 @@
       }
     }
   },
-  "1a19d2fb0364121451b995ad2509582eb9fad4adb09415cf1e16eeb05de86acb": {
+  "68e6faf00ba9cfbfcc54d5626aa4064ee9f397755a03519c858562e1879b0ac9": {
     "route": "ollama.chat",
     "format": "JsonLines",
     "request": {
@@ -5012,7 +5012,7 @@
       "count": 12
     }
   },
-  "f4aa7f3d2703ac1a653f147a450128aab5c6c6777b2a365cc87d5fa5055f029b": {
+  "6f2203df5109cc116e095c130c71bd797efe0a1b6f6e6dade2533b175faa4ee8": {
     "route": "ollama.delete",
     "format": "Empty",
     "request": {
@@ -5030,7 +5030,7 @@
       "content_type": ""
     }
   },
-  "3e82f698fecc9189505a16eea725de59d21e9910b09cf126e4ee0ddd911d3539": {
+  "14576a94f928048d33c80a2652ead92db639fe8c8bb5b783c1051a062299fe7e": {
     "route": "ollama.embed",
     "format": "Json",
     "request": {
@@ -5827,7 +5827,7 @@
       }
     }
   },
-  "2eebae468f4940f74b9b13970ccf8d47bb7d56eb2167bdcb0c4870b2dffe6306": {
+  "693f02b5fc3385f7d4636800fc5f657266e68530272488ddae542efb5f5dcb1b": {
     "route": "ollama.embeddings",
     "format": "Json",
     "request": {
@@ -6619,7 +6619,7 @@
       }
     }
   },
-  "4a19fd9777a44d1d6286febc3355a093cc42a63cbea56f7e0a47bc54df960bee": {
+  "fd6a80481085d9b2a3528d29d3dc533f765831970fc42dda4aca85055f3a3cc2": {
     "route": "ollama.generate",
     "format": "Json",
     "request": {
@@ -6656,7 +6656,7 @@
       }
     }
   },
-  "a7c3681cf12331aa6a502574dc38127aa9e83ae4e8b8fad03c6633a5a5f447c5": {
+  "cb800c9d448184a1a2f5b82bae64227fe0a79791a0f0685588ff8636a3bb20a0": {
     "route": "ollama.generate",
     "format": "JsonLines",
     "request": {
@@ -6689,7 +6689,7 @@
       "count": 18
     }
   },
-  "139533fcf49a2b14c5a79a546bf76cbfe1f695e2232ddb0de2a0f2dfe1e47492": {
+  "c81021208321488c8ac28e65678c8a00221699a23fabcb21348c552ecc5c4193": {
     "route": "ollama.ps",
     "format": "Json",
     "request": {
@@ -6727,7 +6727,7 @@
       }
     }
   },
-  "11da425f149fb042c5889c0dcccf10ecfc08531c21a38c3404d6fca1c89903a3": {
+  "0422fd16fc19c6c26111988fd738013d77fffe573894b8c68a74ececa340a717": {
     "route": "ollama.pull",
     "format": "Json",
     "request": {
@@ -6749,7 +6749,7 @@
       }
     }
   },
-  "a55263c049f78890629e2c48f96e7428160b0210dc017a6683c8e6d40266c0e4": {
+  "8e98a048da8b4d054b66f98cda182b1b48e6b1e8b4f907f9f777b1f26d27bcc7": {
     "route": "ollama.pull",
     "format": "JsonLines",
     "request": {
@@ -6778,7 +6778,7 @@
       "count": 7
     }
   },
-  "c4211772e7d711833b02de6ef28a63f149104d76ff809d8f1c1db86faa6d3c57": {
+  "dacca00d528065e149888269c6457f3579f633e522972d928377ac158dd59caf": {
     "route": "ollama.show",
     "format": "Json",
     "request": {
@@ -7093,7 +7093,7 @@
       "bytes": 97200
     }
   },
-  "e68c84a14b9f336f75fee40c87eada866b00dfdfd009a0c7f8e22189bc8d54f0": {
+  "769ae5ec5732094059a5a6733798d11536a6749d0954030235d2f3bfe68996b3": {
     "route": "openai.audio_transcriptions",
     "format": "Json",
     "request": {
@@ -7116,7 +7116,7 @@
       }
     }
   },
-  "80d6764f9d1200e2dd41762f579f42f9814756a8628f5fee1f006e41efb20aae": {
+  "60070ec49d4e5ea68de66c040452705e108303fa944c4c384f7679108da9825c": {
     "route": "openai.audio_transcriptions",
     "format": "Text",
     "request": {
@@ -7141,7 +7141,7 @@
       "line_count": 1
     }
   },
-  "6e1f86d1e71dd0a6ffc0253985d864c9a582e85e4f128737fee9ff0764ec622f": {
+  "d4c3ca496f3ee4c5ddfd154c579d82a9724e3cc28add7650684221cabe7539c5": {
     "route": "openai.chat_completions",
     "format": "EventStream",
     "request": {
@@ -7239,7 +7239,7 @@
       }
     }
   },
-  "1a1f1cee28e3542a26e8eedccf690a487a185811f89469fa62dbfcf45b135f3f": {
+  "11fb913f401f3ddc079c7e7d048644e8462e909dbaf05a51da1484dd60731a09": {
     "route": "openai.chat_completions",
     "format": "Json",
     "request": {
@@ -7301,7 +7301,7 @@
       }
     }
   },
-  "730bcee14aa033710b9e494839e215a0241a316b521f234208136a95426595a7": {
+  "71d3ce8b6bcdb08d8b0af0a3d1b09256b5af44c2b5e96c0a9e4788fbb60d8c0c": {
     "route": "openai.chat_completions",
     "format": "Json",
     "request": {
@@ -7374,7 +7374,7 @@
       }
     }
   },
-  "096791f9d31a26757fd221179dab07a8d3d07ba6ffc51e7adfc5d9b36d76efcc": {
+  "a89a1d383987336a94a2250f66434ff17b6ca8f0140a7c33d7bccd18b0155402": {
     "route": "openai.completions",
     "format": "EventStream",
     "request": {
@@ -7405,7 +7405,7 @@
       "count": 66
     }
   },
-  "6598563668a899f5e13198c0d077e9c5d9869ea15771292bb01ae5d643611d15": {
+  "46ab8f939d3c7abe8707352ba4807a9610e7fa4213f450f66f11a7f9e6068720": {
     "route": "openai.completions",
     "format": "Json",
     "request": {
@@ -7460,7 +7460,7 @@
       }
     }
   },
-  "8d6a8b9c94ee80265bccc4f961ffc299d0984c8ef00bd8b8fe7064b741fa6b6b": {
+  "909c61af3664af846a8eddcec358ac11abc7296f3b5f7e4e78f9072faa10ab46": {
     "route": "openai.embeddings",
     "format": "Json",
     "request": {
@@ -9041,7 +9041,7 @@
       }
     }
   },
-  "a36d2d53888b01ed86aa000377b38f0c408b7fa0c33d5a18a066d27777a9426f": {
+  "4b819dd527b5006e711a2a6799f3db06e85837cd13e45eca466e7e27d5a4a0e8": {
     "route": "openai.images_edits",
     "format": "Json",
     "request": {
@@ -9074,7 +9074,7 @@
       }
     }
   },
-  "9c666f76cfe7733a9b3829b76c09486fb140ea8c34f5c81ff4a1570f739a01a7": {
+  "b7092ae0f861ec80e1acab13c2f15087dd79440967a2439a22fac249439209e8": {
     "route": "openai.images_generations",
     "format": "Json",
     "request": {
@@ -9105,7 +9105,7 @@
       }
     }
   },
-  "73f3fa9994c6f7fb6979be7c5c30056fd53053d04b4b2292a69a46c98a3a6b70": {
+  "45c3d966efc0a2387b2292a5b97e586acfa9a96da9ce7aa24301b5ab9da9603c": {
     "route": "openai.images_upscale",
     "format": "Json",
     "request": {
@@ -9132,7 +9132,7 @@
       }
     }
   },
-  "058981e79fc2d3a18da30043fd246b9222737bee5c079649040cf9e260e46101": {
+  "ae8882d22202091a0c23830fe3e158bb3d937ef1a6893494c2576df9e0978a93": {
     "route": "openai.images_variations",
     "format": "Json",
     "request": {
@@ -9672,7 +9672,7 @@
       }
     }
   },
-  "16c6ba6452d4e4e283800ef6948215b5dd069fc73337518a87b7c6e38e59869a": {
+  "9f5eeac9aa4db9a9c06988017e2eab2f735a5fd52ae991ab023063cbbf3711ab": {
     "route": "openai.responses",
     "format": "EventStream",
     "request": {
@@ -9702,7 +9702,7 @@
       "count": 79
     }
   },
-  "ae0eb5aaf605248800639d058367a6475be219bd5509d4ddf86fdcffa3dede68": {
+  "d29f61a622f026171064162cabd1dbcc641488fea0a165e14dd7306661941cec": {
     "route": "openai.responses",
     "format": "Json",
     "request": {

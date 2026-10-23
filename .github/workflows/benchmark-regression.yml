@@ -41,9 +41,6 @@ env:
   # Empty = benchmark the full "hot" llama.cpp model set from the registry
   # (validate_backend_bench.py fetches it live from /api/v1/models). Override per
   # run via the workflow_dispatch model_filter input.
-  # NOTE: gpt-oss-20b-mxfp4-GGUF is known to segfault llama-server (exit 139 —
-  # its checkpoint resolves to the eagle3 draft); it's excluded from the hot set
-  # or will simply be skipped (its crash no longer fails other models).
   DEFAULT_MODEL_FILTER: ""
 
 jobs:

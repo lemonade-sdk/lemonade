@@ -583,6 +583,10 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
         throw std::runtime_error("[BackendManager] Unknown recipe: " + recipe);
     }
 
+    struct InvalidateBackendStatusOnExit {
+        ~InvalidateBackendStatusOnExit() { SystemInfoCache::invalidate_recipes(); }
+    } invalidate_backend_status_on_exit;
+
     const std::string existing_backend_binary =
         installed_backend_binary_path(*spec, resolved_backend);
     const bool has_existing_backend = !existing_backend_binary.empty();
