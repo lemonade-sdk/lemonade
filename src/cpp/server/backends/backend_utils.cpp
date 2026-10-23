@@ -521,13 +521,10 @@ namespace lemon::backends {
                     // download cannot leave the backend with no usable binary.
                 }
                 if (!needs_install && tracks_asset_identity) {
-                    const fs::path asset_file = fs::path(install_dir) / "asset.txt";
-                    std::string installed_asset;
-                    if (fs::exists(asset_file)) {
-                        std::ifstream af(asset_file);
-                        std::getline(af, installed_asset);
-                    }
-                    if (installed_asset != asset_pattern) {
+                    const std::string installed_asset =
+                        read_installed_asset_identity(install_dir);
+                    if (installed_asset_identity_requires_refresh(installed_asset,
+                                                                  asset_pattern)) {
                         LOG(INFO, spec.log_name())
                             << "Installed asset differs from requested asset; reinstalling "
                             << spec.binary << " (" << installed_asset << " -> "

@@ -2,6 +2,7 @@
 
 #include "lemon/backend_manager.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/runtime_config.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/shared_args.h"
 #include "lemon/system_info.h"
@@ -59,7 +60,7 @@ public:
                 "recipe": {"type": "string", "description": "The requested recipe."},
                 "backend": {"type": "string", "description": "The requested backend."},
                 "arch": {"type": "string", "description": "The requested `arch`, or `\"\"` when it was omitted."},
-                "resolved_arch": {"type": "string", "description": "The ROCm architecture used to resolve the asset, or `\"\"` for non-ROCm backends."},
+                "resolved_arch": {"type": "string", "description": "The ROCm architecture used to resolve the asset, or `\"\"` when none applies."},
                 "repo": {"type": "string", "description": "GitHub repository of the release."},
                 "version": {"type": "string", "description": "Release version: the pin in `backend_versions.json` unless runtime version policy overrides it."},
                 "filename": {"type": "string", "description": "Release asset name."},
@@ -94,7 +95,12 @@ public:
                 SystemInfo::set_rocm_arch_override(requested_arch);
             }
 
-            auto params = ctx_.backend_manager->get_install_params(recipe, backend);
+            const std::string llamacpp_device =
+                recipe == "llamacpp" && ctx_.config
+                    ? ctx_.config->backend_string("llamacpp", "device")
+                    : "";
+            auto params = ctx_.backend_manager->get_install_params(
+                recipe, backend, llamacpp_device);
 
             // Clear the override as soon as resolution is done so it cannot leak to
             // any later work on this thread.

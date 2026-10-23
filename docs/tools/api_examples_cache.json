@@ -1377,9 +1377,9 @@
       "path": "/v1/install/dry-run",
       "query": {},
       "json": {
-        "arch": "gfx1201",
+        "recipe": "whispercpp",
         "backend": "rocm",
-        "recipe": "whispercpp"
+        "arch": "gfx1201"
       },
       "form": {},
       "files": {}
@@ -1393,6 +1393,7 @@
         "filename": "whisper-v1.8.4-linux-rocm-gfx120X.tar.gz",
         "recipe": "whispercpp",
         "repo": "lemonade-sdk/whisper.cpp-rocm",
+        "resolved_arch": "gfx1201",
         "supported": true,
         "supports_split_archive": false,
         "url": "https://github.com/lemonade-sdk/whisper.cpp-rocm/releases/download/v1.8.4/whisper-v1.8.4-linux-rocm-gfx120X.tar.gz",

@@ -146,7 +146,12 @@ void ConfigEffects::apply_bin_change(const std::string& section,
     // version.txt mismatches the resolved version, the install dir is wiped
     // and re-downloaded.
     try {
-        ctx_.backend_manager->install_backend(recipe, backend);
+        const std::string llamacpp_device =
+            recipe == "llamacpp" && ctx_.config
+                ? ctx_.config->backend_string("llamacpp", "device")
+                : "";
+        ctx_.backend_manager->install_backend(recipe, backend, false, nullptr,
+                                               llamacpp_device);
     } catch (const std::exception& e) {
         LOG(WARNING, "Server") << "install_backend(" << recipe << ":" << backend
                                << ") failed after *_bin change: " << e.what() << std::endl;

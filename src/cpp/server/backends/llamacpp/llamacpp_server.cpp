@@ -334,7 +334,8 @@ void LlamaCppServer::load(const std::string& model_name,
     device_type_ = use_gpu ? DEVICE_GPU : DEVICE_CPU;
 
     // Install llama-server if needed (use per-model backend)
-    backend_manager_->install_backend(llamacpp::spec()->recipe, llamacpp_backend);
+    backend_manager_->install_backend(llamacpp::spec()->recipe, llamacpp_backend,
+                                      false, nullptr, llamacpp_device);
 
     // Use pre-resolved GGUF path. Skipped for hf_load models because llama-server
     // sources the weights itself via -hf; those models may not have local files.

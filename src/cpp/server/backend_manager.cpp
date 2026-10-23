@@ -42,16 +42,10 @@ std::string normalize_backend_name(const std::string& recipe, const std::string&
     return backend;
 }
 
-std::string configured_llamacpp_rocm_device(const std::string& recipe,
-                                             const std::string& resolved_backend) {
-    if (recipe != "llamacpp" ||
-        (resolved_backend != "rocm-stable" && resolved_backend != "rocm-nightly")) {
-        return "";
-    }
-    if (auto* config = RuntimeConfig::global()) {
-        return config->backend_string("llamacpp", "device");
-    }
-    return "";
+bool is_llamacpp_rocm_backend(const std::string& recipe,
+                              const std::string& resolved_backend) {
+    return recipe == "llamacpp" &&
+           (resolved_backend == "rocm-stable" || resolved_backend == "rocm-nightly");
 }
 
 std::string get_backend_runtime_version(const json& backend_versions,
@@ -557,10 +551,13 @@ std::string BackendManager::get_or_resolve_latest_tag(const std::string& recipe,
     }
 }
 
-BackendManager::InstallParams BackendManager::get_install_params(const std::string& recipe, const std::string& backend) {
+BackendManager::InstallParams BackendManager::get_install_params(
+    const std::string& recipe,
+    const std::string& backend,
+    const std::string& llamacpp_device) {
     std::string resolved_backend = normalize_backend_name(recipe, backend);
     RocmArchOverrideGuard rocm_device_arch_override(
-        configured_llamacpp_rocm_device(recipe, resolved_backend));
+        is_llamacpp_rocm_backend(recipe, resolved_backend) ? llamacpp_device : "");
 
     auto* spec = backends::try_get_spec_for_recipe(recipe);
     if (!spec) {
@@ -583,7 +580,7 @@ BackendManager::InstallParams BackendManager::get_install_params(const std::stri
                                       ? resolved_version
                                       : final_params.version_override;
     const std::string resolved_arch =
-        (resolved_backend == "rocm-stable" || resolved_backend == "rocm-nightly")
+        resolved_backend.rfind("rocm", 0) == 0
             ? SystemInfo::get_rocm_arch()
             : "";
     return {final_params.repo, final_params.filename, release_version, resolved_arch};
@@ -591,10 +588,11 @@ BackendManager::InstallParams BackendManager::get_install_params(const std::stri
 
 void BackendManager::install_backend(const std::string& recipe, const std::string& backend,
                                      bool force,
-                                     DownloadProgressCallback progress_cb) {
+                                     DownloadProgressCallback progress_cb,
+                                     const std::string& llamacpp_device) {
     std::string resolved_backend = normalize_backend_name(recipe, backend);
     RocmArchOverrideGuard rocm_device_arch_override(
-        configured_llamacpp_rocm_device(recipe, resolved_backend));
+        is_llamacpp_rocm_backend(recipe, resolved_backend) ? llamacpp_device : "");
     LOG(DEBUG, "BackendManager") << "Installing " << recipe << ":" << resolved_backend << std::endl;
 
     // System backend uses a pre-installed binary from PATH - nothing to install
@@ -648,7 +646,7 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
         return;
     }
 
-    auto params = get_install_params(recipe, resolved_backend);
+    auto params = get_install_params(recipe, resolved_backend, llamacpp_device);
 
     // Check if we need to download additional runtime components after the main backend.
     // `will_install_therock` intentionally answers whether TheRock is applicable
@@ -937,32 +935,39 @@ json BackendManager::get_all_backends_status() {
     return result;
 }
 
-std::string BackendManager::get_release_url(const std::string& recipe, const std::string& backend) {
+std::string BackendManager::get_release_url(const std::string& recipe,
+                                           const std::string& backend,
+                                           const std::string& llamacpp_device) {
     try {
         std::string resolved_backend = normalize_backend_name(recipe, backend);
-        auto params = get_install_params(recipe, resolved_backend);
+        auto params = get_install_params(recipe, resolved_backend, llamacpp_device);
         return "https://github.com/" + params.repo + "/releases/tag/" + params.version;
     } catch (...) {
         return "";
     }
 }
 
-std::string BackendManager::get_download_filename(const std::string& recipe, const std::string& backend) {
+std::string BackendManager::get_download_filename(const std::string& recipe,
+                                                  const std::string& backend,
+                                                  const std::string& llamacpp_device) {
     try {
         std::string resolved_backend = normalize_backend_name(recipe, backend);
-        auto params = get_install_params(recipe, resolved_backend);
+        auto params = get_install_params(recipe, resolved_backend, llamacpp_device);
         return params.filename;
     } catch (...) {
         return "";
     }
 }
 
-BackendManager::BackendEnrichment BackendManager::get_backend_enrichment(const std::string& recipe, const std::string& backend) {
+BackendManager::BackendEnrichment BackendManager::get_backend_enrichment(
+    const std::string& recipe,
+    const std::string& backend,
+    const std::string& llamacpp_device) {
     BackendEnrichment result;
     try {
         std::string resolved_backend = normalize_backend_name(recipe, backend);
         // All standard recipes (including ryzenai-llm): one get_install_params() call gives us everything
-        auto params = get_install_params(recipe, resolved_backend);
+        auto params = get_install_params(recipe, resolved_backend, llamacpp_device);
         result.release_url = "https://github.com/" + params.repo + "/releases/tag/" + params.version;
         result.download_filename = params.filename;
         result.version = params.version;

@@ -8,6 +8,7 @@
 #include "lemon/backend_manager.h"
 #include "lemon/cloud_provider_registry.h"
 #include "lemon/model_manager.h"
+#include "lemon/runtime_config.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/cloud_providers.h"
 #include "lemon/server/download_manager.h"
@@ -265,11 +266,16 @@ public:
 
             BackendManager* backend_manager = ctx_.backend_manager;
             ModelManager* model_manager = ctx_.model_manager;
+            const std::string llamacpp_device =
+                recipe == "llamacpp" && ctx_.config
+                    ? ctx_.config->backend_string("llamacpp", "device")
+                    : "";
             if (stream) {
                 DownloadManager::Operation operation =
-                    [backend_manager, model_manager, recipe, backend, force](
+                    [backend_manager, model_manager, recipe, backend, force, llamacpp_device](
                         DownloadProgressCallback progress_cb) {
-                        backend_manager->install_backend(recipe, backend, force, progress_cb);
+                        backend_manager->install_backend(recipe, backend, force, progress_cb,
+                                                         llamacpp_device);
                         SystemInfoCache::invalidate_recipes();
                         model_manager->invalidate_models_cache();
                     };
@@ -286,7 +292,8 @@ public:
                     DownloadManager::stream(operation, sink);
                 });
             } else {
-                backend_manager->install_backend(recipe, backend, force);
+                backend_manager->install_backend(recipe, backend, force, nullptr,
+                                                 llamacpp_device);
                 SystemInfoCache::invalidate_recipes();
                 model_manager->invalidate_models_cache();
                 json response = {

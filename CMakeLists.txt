@@ -3289,6 +3289,16 @@ if(BUILD_TESTING AND EXISTS "${_GPU_ENV_TEST_SRC}")
     add_cpp_ci_test(BackendUtilsGpuEnvTest CI ON COMMAND test_backend_utils_gpu_env)
 endif()
 
+set(_LLAMACPP_ROCM_DEVICE_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_llamacpp_rocm_device.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_LLAMACPP_ROCM_DEVICE_TEST_SRC}")
+    add_executable(test_llamacpp_rocm_device test/cpp/test_llamacpp_rocm_device.cpp)
+    target_link_libraries(test_llamacpp_rocm_device PRIVATE lemonade-server-core)
+    add_dependencies(test_llamacpp_rocm_device copy_resources)
+    add_cpp_ci_test(LlamaCppRocmDeviceTest CI ON COMMAND test_llamacpp_rocm_device)
+endif()
+
 set(_LLAMACPP_SYSTEM_BACKEND_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_llamacpp_system_backend.cpp"
 )
