@@ -129,10 +129,12 @@ public:
     void set_zero_shot_scores(const std::string& model,
                               std::map<std::string, double> scores) {
         zero_shot_scores_[model] = std::move(scores);
+        declare("run_zero_shot_classifier", model);
     }
 
     // The labels passed to the most recent run_zero_shot_classifier call.
-    const std::vector<std::string>& last_zero_shot_labels() const {
+    std::vector<std::string> last_zero_shot_labels() const {
+        std::lock_guard<std::mutex> lock(mutex_);
         return last_zero_shot_labels_;
     }
 
@@ -193,9 +195,16 @@ public:
         };
         svc.run_zero_shot_classifier = [self](const std::string& model, const std::string&,
                                               const std::vector<std::string>& labels) {
-            self->last_zero_shot_labels_ = labels;
+            {
+                std::lock_guard<std::mutex> lock(self->mutex_);
+                self->last_zero_shot_labels_ = labels;
+            }
             auto it = self->zero_shot_scores_.find(model);
-            if (it != self->zero_shot_scores_.end()) return it->second;
+            if (it != self->zero_shot_scores_.end()) {
+                self->mark_used("run_zero_shot_classifier", model);
+                return it->second;
+            }
+            self->record_unexpected("run_zero_shot_classifier", model);
             return std::map<std::string, double>{};
         };
         svc.run_systemone = [self](const std::string& model, const std::string&,
@@ -241,8 +250,8 @@ private:
         unexpected_calls_.push_back(stub_key(service, target));
     }
 
-    // Guards unexpected_calls_, used_stubs_ and the embed counters: concurrent
-    // route() tests write them from many threads.
+    // Guards unexpected_calls_, used_stubs_, last_zero_shot_labels_ and the
+    // embed counters: concurrent route() tests write them from many threads.
     mutable std::mutex mutex_;
     std::vector<std::string> unexpected_calls_;
     std::set<std::string> declared_stubs_;

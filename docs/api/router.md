@@ -49,7 +49,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 Validation is structural: every `candidates` entry, `default_model`, rule `route_to` and classifier model must be listed in `components`. Component names are not looked up in the model registry, so a policy can be tested before its candidates are downloaded, and registration's model-type checks, such as whether a `semantic_similarity` model can embed, do not run.
 
-Deterministic conditions (`keywords_any`, `regex`, `min_chars`, `metadata`, etc.) are evaluated locally. Model-backed conditions (`semantic_similarity`, `classifier` and `llm`, including `routing.router`) may load and run their models. A model failure follows the classifier's `on_error` policy (`match_false` by default), so routing continues to a later rule or to `default_model`.
+Deterministic conditions (`keywords_any`, `regex`, `min_chars`, `metadata`, etc.) are evaluated locally. Model-backed conditions (`semantic_similarity`, `classifier`, `zero_shot` and `llm`, including `routing.router`) may load and run their models. A model failure follows the classifier's `on_error` policy (`match_false` by default), so routing continues to a later rule or to `default_model`. A residency conflict is the exception: when the classifier model cannot be resident alongside the models already loaded, the request returns 409 and no decision is made, because the policy cannot run on this machine in this combination.
 
 The example below uses explicit `routing.rules`, so its `normalized_policy` comes back unchanged. The `routing.router` shorthand is expanded into an `llm` classifier plus one rule per candidate, so a `routing` block written as:
 
