@@ -21,7 +21,7 @@ type MarketplaceCategory = { id: string; label: string };
 import {
   WORKSPACE_NAVIGATION,
   type ConnectSection,
-  type DashboardSection,
+  type MonitorSection,
   type WorkspaceRoute,
   workspaceHash,
   workspaceRouteFromPath,
@@ -109,8 +109,8 @@ const MonitorView = monitorWorkspaceView.View;
 const ConnectView = connectWorkspaceView.View;
 const DownloadManager = downloadManagerView.View;
 
-type View = 'chat' | 'models' | 'backends' | 'apps' | 'dashboard' | 'connect';
-type SimpleView = Exclude<View, 'dashboard' | 'connect'>;
+type View = 'chat' | 'models' | 'backends' | 'apps' | 'monitor' | 'connect';
+type SimpleView = Exclude<View, 'monitor' | 'connect'>;
 type LazyWorkspace = Exclude<View, 'chat'>;
 
 const WORKSPACE_PRELOADERS: Record<LazyWorkspace, () => Promise<void>> = {
@@ -121,7 +121,7 @@ const WORKSPACE_PRELOADERS: Record<LazyWorkspace, () => Promise<void>> = {
   },
   backends: backendManagerView.preload,
   apps: appsWorkspaceView.preload,
-  dashboard: async () => {
+  monitor: async () => {
     await monitorWorkspaceView.preload();
     const module = await loadMonitorView();
     await module.preloadMonitorSections();
@@ -130,7 +130,7 @@ const WORKSPACE_PRELOADERS: Record<LazyWorkspace, () => Promise<void>> = {
 };
 type AppRoute =
   | { view: SimpleView }
-  | { view: 'dashboard'; section: DashboardSection }
+  | { view: 'monitor'; section: MonitorSection }
   | { view: 'connect'; section: ConnectSection };
 
 const NAVIGATION_DESTINATIONS: Array<{
@@ -143,7 +143,7 @@ const NAVIGATION_DESTINATIONS: Array<{
   { id: 'models', label: 'Models', keywords: 'model manager download load', icon: 'hard-drive' },
   { id: 'backends', label: 'Backends', keywords: 'runtime inference engine', icon: 'box' },
   { id: 'apps', label: 'Apps', keywords: 'clients integrations', icon: 'layers' },
-  { id: 'dashboard', label: 'Monitor', keywords: 'dashboard monitor system hardware statistics', icon: 'gauge' },
+  { id: 'monitor', label: 'Monitor', keywords: 'monitor system hardware statistics', icon: 'gauge' },
   { id: 'connect', label: 'Settings', keywords: 'connect configuration preferences server', icon: 'settings' },
 ];
 
@@ -259,13 +259,13 @@ declare global {
 function routeFromValue(raw: unknown): AppRoute | null {
   const value = String(raw || '').trim().replace(/^\//, '').toLowerCase();
   if (value === 'connect/app-directory') return { view: 'apps' };
-  const workspaceRoute = workspaceRouteFromPath(value);
+  const workspaceRoute = workspaceRouteFromPath(value === 'logs' ? 'monitor/logs' : value);
   if (workspaceRoute) return { view: workspaceRoute.workspace, section: workspaceRoute.section } as AppRoute;
   return SIMPLE_VIEWS.includes(value as SimpleView) ? { view: value as SimpleView } : null;
 }
 
 function hashForRoute(route: AppRoute): string {
-  if (route.view === 'dashboard' || route.view === 'connect') {
+  if (route.view === 'monitor' || route.view === 'connect') {
     return workspaceHash({ workspace: route.view, section: route.section } as WorkspaceRoute);
   }
   return `#/${route.view}`;
@@ -314,7 +314,7 @@ function parseHostNavigation(payload: HostNavigationPayload): { route: AppRoute 
 function routeFromCurrentLocation(): AppRoute | null {
   try {
     const params = new URLSearchParams(window.location.search);
-    return routeFromValue(params.get('view')) || routeFromHashValue(window.location.hash || '');
+    return routeFromValue(params.get('view') || (params.get('logs') === 'true' ? 'logs' : '')) || routeFromHashValue(window.location.hash || '');
   } catch { return routeFromHashValue(window.location.hash || ''); }
 }
 
@@ -572,7 +572,7 @@ const App: React.FC = () => {
   const [activeDownloadCount, setActiveDownloadCount] = useState(0);
   const activeDownloadCountRef = useRef(0);
   const lastWorkspaceSectionsRef = useRef({
-    dashboard: route.view === 'dashboard' ? route.section : WORKSPACE_NAVIGATION.dashboard.defaultSection,
+    monitor: route.view === 'monitor' ? route.section : WORKSPACE_NAVIGATION.monitor.defaultSection,
     connect: route.view === 'connect' ? route.section : WORKSPACE_NAVIGATION.connect.defaultSection,
   });
   useEffect(() => {
@@ -710,7 +710,7 @@ const App: React.FC = () => {
   }, [loadedModelViewState, loadedModels, modelHelpers, rawLoadedModels]);
 
   const navigateToRoute = useCallback((nextRoute: AppRoute) => {
-    if (nextRoute.view === 'dashboard') lastWorkspaceSectionsRef.current.dashboard = nextRoute.section;
+    if (nextRoute.view === 'monitor') lastWorkspaceSectionsRef.current.monitor = nextRoute.section;
     if (nextRoute.view === 'connect') lastWorkspaceSectionsRef.current.connect = nextRoute.section;
     setRouteState(nextRoute);
     const newHash = hashForRoute(nextRoute);
@@ -721,8 +721,8 @@ const App: React.FC = () => {
   }, []);
 
   const setView = useCallback((nextView: View) => {
-    if (nextView === 'dashboard') {
-      navigateToRoute({ view: nextView, section: lastWorkspaceSectionsRef.current.dashboard });
+    if (nextView === 'monitor') {
+      navigateToRoute({ view: nextView, section: lastWorkspaceSectionsRef.current.monitor });
       return;
     }
     if (nextView === 'connect') {
@@ -761,15 +761,15 @@ const App: React.FC = () => {
         view: destination.id,
       }));
 
-    const monitorDefinition = WORKSPACE_NAVIGATION.dashboard;
+    const monitorDefinition = WORKSPACE_NAVIGATION.monitor;
     const monitor = monitorDefinition.sections
       .filter(section => matches(`${t(section.label)} ${t(section.description)}`))
       .map(section => ({
-        id: `workspace:dashboard:${section.id}`,
+        id: `workspace:monitor:${section.id}`,
         label: t(section.label),
         description: `${t(monitorDefinition.label)} - ${t(section.description)}`,
         icon: section.icon,
-        route: { view: 'dashboard', section: section.id } as AppRoute,
+        route: { view: 'monitor', section: section.id } as AppRoute,
       }));
     const settingsDefinition = WORKSPACE_NAVIGATION.connect;
     const settings = settingsDefinition.sections
@@ -911,7 +911,7 @@ const App: React.FC = () => {
       const nextRoute = routeFromHash();
       if (nextRoute) {
         canonicalizeLegacyHash(nextRoute);
-        if (nextRoute.view === 'dashboard') lastWorkspaceSectionsRef.current.dashboard = nextRoute.section;
+        if (nextRoute.view === 'monitor') lastWorkspaceSectionsRef.current.monitor = nextRoute.section;
         if (nextRoute.view === 'connect') lastWorkspaceSectionsRef.current.connect = nextRoute.section;
         setRouteState(nextRoute);
         try { localStorage.setItem('lemonade_current_view', hashForRoute(nextRoute).slice(2)); } catch { /* ignore */ }
@@ -1244,14 +1244,14 @@ const App: React.FC = () => {
             </ViewErrorBoundary>
           </div>
         )}
-        {mountedViewsRef.current.has('dashboard') && (
-          <div className="view-slot" hidden={view !== 'dashboard'}>
+        {mountedViewsRef.current.has('monitor') && (
+          <div className="view-slot" hidden={view !== 'monitor'}>
             <ViewErrorBoundary view={t('Monitor')}>
               <Suspense fallback={<ViewLoadingFallback label={t('Loading monitor')} />}>
                 <MonitorView
-                  activeSection={route.view === 'dashboard' ? route.section : lastWorkspaceSectionsRef.current.dashboard}
-                  isActive={view === 'dashboard'}
-                  onSectionChange={section => navigateToRoute({ view: 'dashboard', section })}
+                  activeSection={route.view === 'monitor' ? route.section : lastWorkspaceSectionsRef.current.monitor}
+                  isActive={view === 'monitor'}
+                  onSectionChange={section => navigateToRoute({ view: 'monitor', section })}
                 />
               </Suspense>
             </ViewErrorBoundary>
