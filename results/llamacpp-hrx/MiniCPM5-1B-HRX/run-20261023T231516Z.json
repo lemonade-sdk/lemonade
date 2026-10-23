@@ -1,0 +1,224 @@
+{
+  "hardware": {
+    "backends": {
+      "llamacpp-hrx/hrx": "hrx-b99"
+    },
+    "cpu": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S",
+    "gpu": [
+      {
+        "integrated": true,
+        "name": "AMD Radeon Graphics (gfx1151)",
+        "type": "amd",
+        "vram_gb": 0.5
+      }
+    ],
+    "lemonade_version": "2026.43.3",
+    "os": "linux",
+    "ram_gb": 124.94
+  },
+  "models": [
+    {
+      "checkpoints": {
+        "main": "OpenBMB/MiniCPM5-1B-GGUF:MiniCPM5-1B-Q4_K_M.gguf"
+      },
+      "config": {
+        "measurement_runs": 3,
+        "memory_tracking": true,
+        "warmup_runs": 1
+      },
+      "model": "MiniCPM5-1B-HRX",
+      "results": [
+        {
+          "backend": "hrx",
+          "backend_args": "",
+          "ctx_size": 4096,
+          "recipe": "llamacpp-hrx",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 724.121985,
+                "mean": 716.301137,
+                "min": 706.635294,
+                "p50": 718.146132,
+                "p95": 723.5243997
+              },
+              "failed_runs": 0,
+              "input_tokens": 3065,
+              "memory_peak_gb": 8.3,
+              "name": "context-4k",
+              "output_tokens": 20,
+              "pp_tps": 6575.941923017904,
+              "tps": {
+                "max": 84.83347189467077,
+                "mean": 84.57539762914628,
+                "min": 84.18500496691529,
+                "p50": 84.7077160258528,
+                "p95": 84.82089630778897
+              },
+              "ttft_ms": {
+                "max": 476.814,
+                "mean": 466.2226666666667,
+                "min": 458.226,
+                "p50": 463.628,
+                "p95": 475.4954
+              },
+              "vram_peak_gb": 1.8495368957519531
+            }
+          ]
+        },
+        {
+          "backend": "hrx",
+          "backend_args": "",
+          "ctx_size": 32768,
+          "recipe": "llamacpp-hrx",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 8723.564876,
+                "mean": 8710.555407333333,
+                "min": 8701.998913,
+                "p50": 8706.102433,
+                "p95": 8721.8186317
+              },
+              "failed_runs": 0,
+              "input_tokens": 23649,
+              "memory_peak_gb": 9.9,
+              "name": "context-32k",
+              "output_tokens": 20,
+              "pp_tps": 2998.3187208032928,
+              "tps": {
+                "max": 24.998562582651495,
+                "mean": 24.714573519998822,
+                "min": 24.488106738759654,
+                "p50": 24.657051238585325,
+                "p95": 24.964411448244878
+              },
+              "ttft_ms": {
+                "max": 7894.792,
+                "mean": 7887.424666666667,
+                "min": 7880.464,
+                "p50": 7887.018,
+                "p95": 7894.0146
+              },
+              "vram_peak_gb": 3.7167625427246094
+            }
+          ]
+        }
+      ],
+      "timestamp": "2026-10-23T23:27:21Z",
+      "accuracy": {
+        "passed": 27,
+        "total": 50,
+        "score": 0.54,
+        "questions_version": 1,
+        "failures": [
+          {
+            "id": "arith-paren",
+            "response": "The expression (3 + 5) * (12 - 4) is evaluated as follows:\n\nFirst, calculate the sum inside the parentheses: 3 + 5 = 8.\nNext, calculate the difference inside the parentheses: 12 - 4 = 8.\nThen, multipl"
+          },
+          {
+            "id": "reason-train",
+            "response": "The problem asks us to calculate the distance traveled by a train.\nWe are given the speed of the train and the time it traveled.\nThe formula to calculate distance is: Distance = Speed \u00d7 Time.\n\nGiven:\n"
+          },
+          {
+            "id": "reason-batball",
+            "response": "Let's break down the problem step by step.\n\n1. **Define the variables:**\n   - Let \\( b \\) represent the cost of the ball in dollars.\n   - Let \\( c \\) represent the cost of the bat in dollars.\n\n2. **Tr"
+          },
+          {
+            "id": "reason-sisters",
+            "response": "Let's break down the information given:\n\n1. Alice has 3 brothers and 1 sister.\n2. The question asks about how many sisters each of Alice's brothers has.\n\nSince the question is asking about the number "
+          },
+          {
+            "id": "reason-day-fwd",
+            "response": "Wednesday"
+          },
+          {
+            "id": "reason-day-back",
+            "response": "Wednesday minus 3 days is Tuesday."
+          },
+          {
+            "id": "fact-jupiter",
+            "response": "The largest planet in our solar system is Jupiter."
+          },
+          {
+            "id": "fact-boil",
+            "response": "At sea level, at what temperature in degrees Celsius does water boil?"
+          },
+          {
+            "id": "fact-light",
+            "response": "The speed of light in a vacuum is approximately 299,792 kilometers per second. Rounded to the nearest thousand, the speed is 300 kilometers per second."
+          },
+          {
+            "id": "code-len",
+            "response": "The code `print(len(\"hello world\"))` will print the length of the string `\"hello world\"`. The output will be `6`, because the string `\"hello world\"` has 6 characters."
+          },
+          {
+            "id": "code-sorted",
+            "response": "The code `print(sorted([3, 1, 2])[0])` will print `1`. Here's the breakdown:\n\n1. `[3, 1, 2]` creates a list with the elements `3`, `1`, and `2`.\n2. `sorted(["
+          },
+          {
+            "id": "code-powassoc",
+            "response": "The Python code `print(2 ** 3 ** 2)` will print the result of the expression `2 ** 3 ** 2`.\n\nHere's how the expression works:\n1. `2 ** 3` calculates 2 raised to the power of 3, which equals 8.\n2."
+          },
+          {
+            "id": "code-reverse",
+            "response": "The code `print(\"abc\"[::-1])` will print the string `\"abc\"` reversed. The expression `\"abc\"[::-1]` creates a new string by slicing the original string `\"abc\"` from the end to the beginning, resulting "
+          },
+          {
+            "id": "code-typeof",
+            "response": "null"
+          },
+          {
+            "id": "code-append",
+            "response": "The Python code provided will print the sum of the list `x` after appending the value `4` to it. Here's a step-by-step explanation:\n\n1. The list `x` is initialized as `[1, 2, 3]`.\n2. The `append` meth"
+          },
+          {
+            "id": "code-bool",
+            "response": "The Python code `print(bool(\"\"))` will print `False` because the `bool()` function converts the string `\"\"` to a boolean value, which is `False`."
+          },
+          {
+            "id": "unit-miles",
+            "response": "The problem asks for the number of kilometers in 5 miles, rounded to one decimal place. This is a straightforward conversion problem.\n\nStep 1: Convert miles to kilometers.\nWe know that 1 mile is appro"
+          },
+          {
+            "id": "unit-fahrenheit",
+            "response": "100 degrees Fahrenheit is equal to 37 degrees Celsius. Rounded to the nearest whole number, it is 37 degrees Celsius."
+          },
+          {
+            "id": "unit-grams",
+            "response": "The question \"How many grams are in 2.5 kilograms?\" is not a mathematical problem that can be solved with a numerical answer. It is a conceptual question about unit conversion.\n\nTo answer this questio"
+          },
+          {
+            "id": "fmt-backwards",
+            "response": "banana"
+          },
+          {
+            "id": "fmt-count-r",
+            "response": "The letter 'r' appears 2 times in the word \"strawberry\"."
+          },
+          {
+            "id": "fmt-json",
+            "response": "{\"sum\": 2}"
+          },
+          {
+            "id": "fmt-third-word",
+            "response": "The third word in the phrase \"the quick brown fox\" is \"brown\"."
+          }
+        ]
+      }
+    }
+  ],
+  "timestamp": "2026-10-23T23:27:13Z",
+  "fork_id": "llamacpp-hrx",
+  "fork_label": "llama.cpp HRX (ROCm/ggml-staging-automation)",
+  "fork_repo": "ROCm/ggml-staging-automation",
+  "fork_version": "hrx-b120",
+  "fork_backend": "hrx",
+  "experimental": true,
+  "run_id": "40031533239",
+  "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/40031533239",
+  "commit": "9de0e089c8a55ea080d7827e1188510915f706c1",
+  "lemonade_version": "v2026.43.3"
+}

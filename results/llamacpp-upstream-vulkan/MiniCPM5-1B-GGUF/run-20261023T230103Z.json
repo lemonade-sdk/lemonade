@@ -1,0 +1,228 @@
+{
+  "hardware": {
+    "backends": {
+      "llamacpp/vulkan": "b11393"
+    },
+    "cpu": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S",
+    "gpu": [
+      {
+        "integrated": true,
+        "name": "AMD Radeon Graphics (gfx1151)",
+        "type": "amd",
+        "vram_gb": 0.5
+      }
+    ],
+    "lemonade_version": "2026.43.3",
+    "os": "linux",
+    "ram_gb": 124.95
+  },
+  "models": [
+    {
+      "checkpoints": {
+        "main": "OpenBMB/MiniCPM5-1B-GGUF:MiniCPM5-1B-Q4_K_M.gguf"
+      },
+      "config": {
+        "measurement_runs": 3,
+        "memory_tracking": true,
+        "warmup_runs": 1
+      },
+      "model": "MiniCPM5-1B-GGUF",
+      "results": [
+        {
+          "backend": "vulkan",
+          "backend_args": "",
+          "ctx_size": 4096,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 534.148872,
+                "mean": 532.5039223333333,
+                "min": 531.621855,
+                "p50": 531.74104,
+                "p95": 533.9080888
+              },
+              "failed_runs": 0,
+              "input_tokens": 3065,
+              "memory_peak_gb": 6.2,
+              "name": "context-4k",
+              "output_tokens": 20,
+              "pp_tps": 6958.4629060847865,
+              "tps": {
+                "max": 220.35628131378732,
+                "mean": 220.07336810615718,
+                "min": 219.6658766402682,
+                "p50": 220.197946364416,
+                "p95": 220.34044781885018
+              },
+              "ttft_ms": {
+                "max": 442.071,
+                "mean": 440.474,
+                "min": 439.254,
+                "p50": 440.097,
+                "p95": 441.8736
+              },
+              "vram_peak_gb": 1.0250701904296875
+            }
+          ]
+        },
+        {
+          "backend": "vulkan",
+          "backend_args": "",
+          "ctx_size": 32768,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 9579.785728,
+                "mean": 9531.879703,
+                "min": 9506.554183,
+                "p50": 9509.299198,
+                "p95": 9572.737075000001
+              },
+              "failed_runs": 0,
+              "input_tokens": 23649,
+              "memory_peak_gb": 6.8,
+              "name": "context-32k",
+              "output_tokens": 20,
+              "pp_tps": 2521.9283986180676,
+              "tps": {
+                "max": 141.52489348389594,
+                "mean": 139.37788942782996,
+                "min": 137.79598941146608,
+                "p50": 138.81278538812785,
+                "p95": 141.25368267431912
+              },
+              "ttft_ms": {
+                "max": 9425.724,
+                "mean": 9377.472,
+                "min": 9351.416,
+                "p50": 9355.276,
+                "p95": 9418.6792
+              },
+              "vram_peak_gb": 1.7556381225585938
+            }
+          ]
+        }
+      ],
+      "timestamp": "2026-10-23T23:09:54Z",
+      "accuracy": {
+        "passed": 26,
+        "total": 50,
+        "score": 0.52,
+        "questions_version": 1,
+        "failures": [
+          {
+            "id": "arith-pct",
+            "response": "To find 15% of 240, calculate 15% of 240 as follows:\n\n\\[\n15\\% \\text{ of } 240 = \\frac{15}{100} \\times 240 = 0.15 \\times 240 = 36\n\\]\n\nThus, 15%"
+          },
+          {
+            "id": "arith-paren",
+            "response": "The expression (3 + 5) * (12 - 4) is evaluated as follows:\n\nFirst, calculate the sum inside the parentheses: 3 + 5 = 8.\nNext, calculate the difference inside the parentheses: 12 - 4 = 8.\nThen, multipl"
+          },
+          {
+            "id": "reason-train",
+            "response": "The problem asks us to calculate the distance traveled by a train.\nWe are given the speed of the train and the time it traveled.\nThe formula to calculate distance is: Distance = Speed \u00d7 Time.\n\nGiven:\n"
+          },
+          {
+            "id": "reason-widgets",
+            "response": "Let's analyze the problem step by step.\n\n1. **Understanding the given information:**\n   - 5 machines make 5 widgets in 5 minutes.\n\n2. **Determine the rate of production:**\n   - The rate of production "
+          },
+          {
+            "id": "reason-batball",
+            "response": "Let's break down the problem step by step.\n\n1. **Define the variables:**\n   - Let \\( b \\) represent the cost of the ball in dollars.\n   - Let \\( c \\) represent the cost of the bat in dollars.\n\n2. **Tr"
+          },
+          {
+            "id": "reason-sisters",
+            "response": "Let's break down the information given:\n\n1. Alice has 3 brothers and 1 sister.\n2. The question asks about how many sisters each of Alice's brothers has.\n\nSince the question is asking about the number "
+          },
+          {
+            "id": "reason-day-fwd",
+            "response": "Wednesday"
+          },
+          {
+            "id": "reason-day-back",
+            "response": "Wednesday minus 3 days is Tuesday."
+          },
+          {
+            "id": "fact-jupiter",
+            "response": "The largest planet in our solar system is Jupiter."
+          },
+          {
+            "id": "fact-boil",
+            "response": "At sea level, at what temperature in degrees Celsius does water boil?"
+          },
+          {
+            "id": "fact-light",
+            "response": "The speed of light in a vacuum is approximately 299,792 kilometers per second. Rounded to the nearest thousand, the speed of light is 300 kilometers per second."
+          },
+          {
+            "id": "code-len",
+            "response": "The code `print(len(\"hello world\"))` will print the length of the string `\"hello world\"`. The output will be `6`."
+          },
+          {
+            "id": "code-sorted",
+            "response": "The code `print(sorted([3, 1, 2])[0])` will print `1`. Here's the breakdown:\n\n1. `[3, 1, 2]` creates a list with the elements `3`, `1`, and `2`.\n2. `sorted(["
+          },
+          {
+            "id": "code-powassoc",
+            "response": "The Python code `print(2 ** 3 ** 2)` will print the result of the expression `2 ** 3 ** 2`.\n\nHere's how the expression works:\n\n1. `2 ** 3` calculates 2 raised to the power of 3, which equals 8.\n2"
+          },
+          {
+            "id": "code-reverse",
+            "response": "The code `print(\"abc\"[::-1])` will print the string `\"abc\"` reversed. The expression `\"abc\"[::-1]` creates a new string by slicing the original string `\"abc\"` in reverse order. The `[::-1]` slice mean"
+          },
+          {
+            "id": "code-typeof",
+            "response": "null"
+          },
+          {
+            "id": "code-append",
+            "response": "The Python code provided will print the sum of the list `x` after appending the value `4` to it. Here's a step-by-step explanation:\n\n1. The list `x` is initialized as `[1, 2, 3]`.\n2. The `append` meth"
+          },
+          {
+            "id": "code-bool",
+            "response": "The Python code `print(bool(\"\"))` will print `False` because the `bool()` function converts the string `\"\"` to a boolean value, which is `False`."
+          },
+          {
+            "id": "unit-miles",
+            "response": "The problem asks for the number of kilometers in 5 miles, rounded to one decimal place. This is a straightforward conversion problem.\n\nStep 1: Convert miles to kilometers.\nWe know that 1 mile is appro"
+          },
+          {
+            "id": "unit-fahrenheit",
+            "response": "100 degrees Fahrenheit is equal to 37 degrees Celsius. Rounded to the nearest whole number, it is 37."
+          },
+          {
+            "id": "fmt-backwards",
+            "response": "banana"
+          },
+          {
+            "id": "fmt-count-r",
+            "response": "The letter 'r' appears 2 times in the word 'strawberry'."
+          },
+          {
+            "id": "fmt-json",
+            "response": "{\"sum\": 2 + 3}"
+          },
+          {
+            "id": "fmt-third-word",
+            "response": "The third word in the phrase \"the quick brown fox\" is \"brown\"."
+          }
+        ]
+      }
+    }
+  ],
+  "timestamp": "2026-10-23T23:09:54Z",
+  "fork_id": "llamacpp-upstream-vulkan",
+  "fork_label": "llama.cpp Vulkan (upstream reference)",
+  "fork_repo": "ggml-org/llama.cpp",
+  "fork_version": "b11840",
+  "fork_backend": "vulkan",
+  "experimental": false,
+  "run_id": "40031533239",
+  "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/40031533239",
+  "commit": "9de0e089c8a55ea080d7827e1188510915f706c1",
+  "lemonade_version": "v2026.43.3"
+}

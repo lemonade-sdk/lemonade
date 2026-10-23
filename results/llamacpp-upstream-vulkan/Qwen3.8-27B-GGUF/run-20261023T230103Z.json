@@ -1,0 +1,137 @@
+{
+  "hardware": {
+    "backends": {
+      "llamacpp/vulkan": "b11393"
+    },
+    "cpu": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S",
+    "gpu": [
+      {
+        "integrated": true,
+        "name": "AMD Radeon Graphics (gfx1151)",
+        "type": "amd",
+        "vram_gb": 0.5
+      }
+    ],
+    "lemonade_version": "2026.43.3",
+    "os": "linux",
+    "ram_gb": 124.95
+  },
+  "models": [
+    {
+      "checkpoints": {
+        "main": "unsloth/Qwen3.8-27B-GGUF:Qwen3.8-27B-UD-Q4_K_XL.gguf",
+        "mmproj": "unsloth/Qwen3.8-27B-GGUF:mmproj-F16.gguf"
+      },
+      "config": {
+        "measurement_runs": 3,
+        "memory_tracking": true,
+        "warmup_runs": 1
+      },
+      "model": "Qwen3.8-27B-GGUF",
+      "results": [
+        {
+          "backend": "vulkan",
+          "backend_args": "",
+          "ctx_size": 4096,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 12144.136953,
+                "mean": 12112.673444666667,
+                "min": 12084.952327,
+                "p50": 12108.931054,
+                "p95": 12140.616363099998
+              },
+              "failed_runs": 0,
+              "input_tokens": 3252,
+              "memory_peak_gb": 24.5,
+              "name": "context-4k",
+              "output_tokens": 20,
+              "pp_tps": 289.752039306335,
+              "tps": {
+                "max": 21.63208379586144,
+                "mean": 21.597800230362065,
+                "min": 21.578746524686085,
+                "p50": 21.582570370538654,
+                "p95": 21.627132453329164
+              },
+              "ttft_ms": {
+                "max": 11254.153,
+                "mean": 11223.441666666666,
+                "min": 11195.015,
+                "p50": 11221.157,
+                "p95": 11250.8534
+              },
+              "vram_peak_gb": 18.971664428710938
+            }
+          ]
+        },
+        {
+          "backend": "vulkan",
+          "backend_args": "",
+          "ctx_size": 32768,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 98373.273735,
+                "mean": 98194.72977833333,
+                "min": 98086.688462,
+                "p50": 98124.227138,
+                "p95": 98348.3690753
+              },
+              "failed_runs": 0,
+              "input_tokens": 24832,
+              "memory_peak_gb": 26.7,
+              "name": "context-32k",
+              "output_tokens": 20,
+              "pp_tps": 254.81827489463842,
+              "tps": {
+                "max": 26.913324928821336,
+                "mean": 26.84009066005235,
+                "min": 26.791090129457366,
+                "p50": 26.815856921878353,
+                "p95": 26.903578128127037
+              },
+              "ttft_ms": {
+                "max": 97628.13,
+                "mean": 97450.005,
+                "min": 97340.681,
+                "p50": 97381.204,
+                "p95": 97603.43740000001
+              },
+              "vram_peak_gb": 21.072437286376953
+            }
+          ]
+        }
+      ],
+      "timestamp": "2026-10-23T23:01:05Z",
+      "accuracy": {
+        "passed": 49,
+        "total": 50,
+        "score": 0.98,
+        "questions_version": 1,
+        "failures": [
+          {
+            "id": "reason-day-fwd",
+            "response": "Tuesday"
+          }
+        ]
+      }
+    }
+  ],
+  "timestamp": "2026-10-23T23:01:05Z",
+  "fork_id": "llamacpp-upstream-vulkan",
+  "fork_label": "llama.cpp Vulkan (upstream reference)",
+  "fork_repo": "ggml-org/llama.cpp",
+  "fork_version": "b11840",
+  "fork_backend": "vulkan",
+  "experimental": false,
+  "run_id": "40031533239",
+  "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/40031533239",
+  "commit": "9de0e089c8a55ea080d7827e1188510915f706c1",
+  "lemonade_version": "v2026.43.3"
+}

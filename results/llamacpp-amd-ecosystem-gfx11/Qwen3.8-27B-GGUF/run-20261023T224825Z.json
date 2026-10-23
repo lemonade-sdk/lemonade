@@ -1,0 +1,137 @@
+{
+  "hardware": {
+    "backends": {
+      "llamacpp/rocm": "b1338"
+    },
+    "cpu": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S",
+    "gpu": [
+      {
+        "integrated": true,
+        "name": "AMD Radeon Graphics (gfx1151)",
+        "type": "amd",
+        "vram_gb": 0.5
+      }
+    ],
+    "lemonade_version": "2026.43.3",
+    "os": "linux",
+    "ram_gb": 124.95
+  },
+  "models": [
+    {
+      "checkpoints": {
+        "main": "unsloth/Qwen3.8-27B-GGUF:Qwen3.8-27B-UD-Q4_K_XL.gguf",
+        "mmproj": "unsloth/Qwen3.8-27B-GGUF:mmproj-F16.gguf"
+      },
+      "config": {
+        "measurement_runs": 3,
+        "memory_tracking": true,
+        "warmup_runs": 1
+      },
+      "model": "Qwen3.8-27B-GGUF",
+      "results": [
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 4096,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 9742.078915,
+                "mean": 9686.140077333332,
+                "min": 9657.100656,
+                "p50": 9659.240661,
+                "p95": 9733.7950896
+              },
+              "failed_runs": 0,
+              "input_tokens": 3252,
+              "memory_peak_gb": 26.5,
+              "name": "context-4k",
+              "output_tokens": 20,
+              "pp_tps": 368.15935957911114,
+              "tps": {
+                "max": 23.04538728379788,
+                "mean": 22.55718951824237,
+                "min": 22.024542295235513,
+                "p50": 22.60163897569372,
+                "p95": 23.001012452987464
+              },
+              "ttft_ms": {
+                "max": 8868.335,
+                "mean": 8833.204333333333,
+                "min": 8809.136,
+                "p50": 8822.142,
+                "p95": 8863.715699999999
+              },
+              "vram_peak_gb": 19.203697204589844
+            }
+          ]
+        },
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 32768,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 77044.494466,
+                "mean": 76918.377984,
+                "min": 76745.976167,
+                "p50": 76964.663319,
+                "p95": 77036.51135130001
+              },
+              "failed_runs": 0,
+              "input_tokens": 24832,
+              "memory_peak_gb": 28.6,
+              "name": "context-32k",
+              "output_tokens": 20,
+              "pp_tps": 326.29269536435646,
+              "tps": {
+                "max": 24.966361113447142,
+                "mean": 24.55511363474318,
+                "min": 24.08413729986399,
+                "p50": 24.614842490918416,
+                "p95": 24.931209251194268
+              },
+              "ttft_ms": {
+                "max": 76215.743,
+                "mean": 76103.64666666667,
+                "min": 75933.826,
+                "p50": 76161.371,
+                "p95": 76210.3058
+              },
+              "vram_peak_gb": 21.094757080078125
+            }
+          ]
+        }
+      ],
+      "timestamp": "2026-10-23T22:48:26Z",
+      "accuracy": {
+        "passed": 49,
+        "total": 50,
+        "score": 0.98,
+        "questions_version": 1,
+        "failures": [
+          {
+            "id": "reason-day-fwd",
+            "response": "Wednesday"
+          }
+        ]
+      }
+    }
+  ],
+  "timestamp": "2026-10-23T22:48:26Z",
+  "fork_id": "llamacpp-amd-ecosystem-gfx11",
+  "fork_label": "llama.cpp gfx11 (AMD-Ecosystem)",
+  "fork_repo": "AMD-Ecosystem/llama.cpp",
+  "fork_version": "gfx11-rocm-nightly-20261023",
+  "fork_backend": "rocm-gfx11",
+  "experimental": false,
+  "run_id": "40031533239",
+  "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/40031533239",
+  "commit": "9de0e089c8a55ea080d7827e1188510915f706c1",
+  "lemonade_version": "v2026.43.3"
+}
