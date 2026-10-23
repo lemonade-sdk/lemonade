@@ -194,7 +194,7 @@ Generation is greedy, so these outputs are deterministic for a given AMICA build
 | qwen2.5-0.5b | completion "The capital of France is" | ` Paris, a city that has been a` |
 | qwen2.5-0.5b | streamed "Count from 1 to 5." | `1\n2\n3\n4\n5` |
 | gpt-oss-20b | chat "What is the capital of France?" | `content`: `The capital of France is **Paris**.`, plus a `reasoning_content` field |
-| qwen3.8-flash-next | chat "What is the capital of France?" | reasoning ending in `</think>`, then `The capital of France is **Paris**.` |
+| qwen3.8-flash-next | chat "What is the capital of France?" | `content`: `The capital of France is **Paris**.`, plus a `reasoning_content` field |
 
 Each response carries `usage` and llama.cpp-style `timings` (`prompt_ms` is the time to first token; `predicted_per_second` is the decode rate). For reference on an RX 9070 XT: qwen2.5-0.5b decodes at about 300 tokens/s, gpt-oss-20b at about 125, and the offloaded gpt-oss-120b and qwen3.8-flash-next at about 3 to 4 tokens/s.
 

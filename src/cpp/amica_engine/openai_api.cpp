@@ -187,6 +187,69 @@ private:
     std::string field_;
 };
 
+// Qwen-style reasoning: text between <think> and </think> is reasoning and the
+// rest is the answer. Chat templates often open <think> at the end of the
+// prompt, so the reply can begin inside it. As llama.cpp's reasoning parser
+// does, whitespace at the edges of each part is dropped; trailing whitespace
+// is held back until more text follows it.
+class ThinkReplyStream : public ReplyStream {
+public:
+    ThinkReplyStream(const Tokenizer& tokenizer, const std::set<std::int64_t>& stop_ids, std::int64_t open,
+                     std::int64_t close, bool in_reasoning)
+        : ReplyStream(tokenizer, stop_ids), open_(open), close_(close) {
+        begin(in_reasoning ? "reasoning_content" : "content");
+    }
+
+    std::vector<Delta> push(std::int64_t token) override {
+        if (stop_ids_.count(token)) {
+            stopped_ = true;
+            return {};
+        }
+        if (token != open_ && token != close_) return trim(text_.push(token));
+        std::vector<Delta> deltas = finish();
+        begin(token == open_ ? "reasoning_content" : "content");
+        return deltas;
+    }
+
+    std::vector<Delta> finish() override {
+        std::vector<Delta> deltas = trim(text_.finish());
+        pending_.clear();
+        return deltas;
+    }
+
+private:
+    void begin(const std::string& field) {
+        field_ = field;
+        text_ = TextStream(tokenizer_);
+        started_ = false;
+        pending_.clear();
+    }
+
+    std::vector<Delta> trim(std::string delta) {
+        static const char* kWhitespace = " \t\r\n";
+        if (!started_) {
+            const std::size_t first = delta.find_first_not_of(kWhitespace);
+            if (first == std::string::npos) return {};
+            delta.erase(0, first);
+            started_ = true;
+        }
+        const std::size_t last = delta.find_last_not_of(kWhitespace);
+        if (last == std::string::npos) {
+            pending_ += delta;
+            return {};
+        }
+        std::string text = pending_ + delta.substr(0, last + 1);
+        pending_ = delta.substr(last + 1);
+        return emit(field_, text);
+    }
+
+    std::int64_t open_;
+    std::int64_t close_;
+    std::string field_;
+    bool started_ = false;
+    std::string pending_;
+};
+
 std::string message_text(const json& content) {
     if (content.is_null()) return "";
     if (content.is_string()) return content.get<std::string>();
@@ -442,10 +505,26 @@ private:
 
     Outcome run(const Request& request, const std::function<bool(const Delta&)>& on_delta) {
         const std::set<std::int64_t>& stop_ids = request.chat ? frontend_.chat_stop_ids() : frontend_.eos_ids();
-        std::unique_ptr<ReplyStream> reply =
-            request.chat && frontend_.harmony()
-                ? std::make_unique<HarmonyReplyStream>(frontend_.tokenizer(), stop_ids)
-                : std::make_unique<ReplyStream>(frontend_.tokenizer(), stop_ids);
+        const Tokenizer& tokenizer = frontend_.tokenizer();
+        std::unique_ptr<ReplyStream> reply;
+        const auto open = tokenizer.encode("<think>");
+        const auto close = tokenizer.encode("</think>");
+        if (request.chat && frontend_.harmony()) {
+            reply = std::make_unique<HarmonyReplyStream>(tokenizer, stop_ids);
+        } else if (request.chat && open.size() == 1 && close.size() == 1) {
+            // The reply starts in reasoning when the prompt ends with an open <think>.
+            bool in_reasoning = false;
+            for (auto it = request.prompt.rbegin(); it != request.prompt.rend(); ++it) {
+                if (*it == open[0]) in_reasoning = true;
+                if (*it == open[0] || *it == close[0] ||
+                    tokenizer.decode({*it}).find_first_not_of(" \t\r\n") != std::string::npos) {
+                    break;
+                }
+            }
+            reply = std::make_unique<ThinkReplyStream>(tokenizer, stop_ids, open[0], close[0], in_reasoning);
+        } else {
+            reply = std::make_unique<ReplyStream>(tokenizer, stop_ids);
+        }
         const auto started = std::chrono::steady_clock::now();
         Generation generation;
         {
