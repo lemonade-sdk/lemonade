@@ -1,6 +1,6 @@
 {
-  "version": 1,
-  "system_prompt": "Respond with only the final answer. Do not explain or show your work.",
+  "version": 2,
+  "system_prompt": "Answer the question. You may reason briefly, but always end your reply with a final line of the form 'Answer: <answer>' that contains only the answer.",
   "questions": [
     {"id": "arith-mul", "category": "arithmetic", "prompt": "What is 17 multiplied by 23?", "grade": {"type": "number", "value": 391}},
     {"id": "arith-add", "category": "arithmetic", "prompt": "What is 1234 + 5678?", "grade": {"type": "number", "value": 6912}},

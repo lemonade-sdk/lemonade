@@ -538,10 +538,20 @@ def _lemond_post(base_url: str, path: str, body: dict, timeout: int) -> dict:
         return json.loads(r.read())
 
 
-def _final_answer(text: str) -> str:
+def _clean(text: str) -> str:
     text = unicodedata.normalize("NFKC", text or "")
-    text = re.sub(r"<think>.*?</think>", "", text, flags=re.S).strip()
-    text = re.sub(r"^```[a-zA-Z]*\s*|\s*```$", "", text)
+    return re.sub(r"<think>.*?</think>", "", text, flags=re.S).strip()
+
+
+def _final_answer(text: str) -> str:
+    text = _clean(text)
+    # Graded text is whatever follows the last "Answer:"; models that skip the
+    # convention are graded on their whole reply.
+    marks = list(re.finditer(r"answer\s*[:：]", text, re.I))
+    if marks:
+        tail = text[marks[-1].end() :].strip()
+        text = tail.splitlines()[0] if tail else ""
+    text = re.sub(r"^```[a-zA-Z]*\s*|\s*```$", "", text.strip())
     return text.strip().strip("*_`\"' ").rstrip(".").strip()
 
 
@@ -559,7 +569,7 @@ def grade_answer(text: str, grade: dict) -> bool:
         )
     if kind == "one_of":
         a = _norm(ans)
-        short = len(a.split()) <= 8
+        short = len(a.split()) <= 12
         return any(
             a == _norm(v) or (short and re.search(rf"\b{re.escape(_norm(v))}\b", a))
             for v in grade["values"]
@@ -567,7 +577,7 @@ def grade_answer(text: str, grade: dict) -> bool:
     if kind == "regex":
         return re.fullmatch(grade["pattern"], ans) is not None
     if kind == "json":
-        m = re.search(r"\{.*\}", ans, re.S)
+        m = re.search(r"\{.*\}", _clean(text), re.S)
         try:
             return m is not None and json.loads(m.group(0)) == grade["value"]
         except ValueError:
@@ -596,7 +606,7 @@ def run_accuracy(base_url: str, fork: dict, model: str) -> dict | None:
             ],
             "temperature": 0,
             "seed": 42,
-            "max_tokens": 64,
+            "max_tokens": 512,
             "enable_thinking": False,
         }
         try:
@@ -607,7 +617,7 @@ def run_accuracy(base_url: str, fork: dict, model: str) -> dict | None:
         if grade_answer(text, q["grade"]):
             passed += 1
         else:
-            failures.append({"id": q["id"], "response": text[:200]})
+            failures.append({"id": q["id"], "response": text[-300:]})
     total = len(qs["questions"])
     print(f"    [{model}] accuracy = {passed}/{total}", flush=True)
     return {
