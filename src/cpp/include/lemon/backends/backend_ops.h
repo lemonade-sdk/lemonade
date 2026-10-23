@@ -99,6 +99,10 @@ public:
     // Whether a model's local artifacts are present. Default: the shared registry
     // checkpoint-completeness check (ModelManager::checkpoints_complete).
     virtual bool is_downloaded(const ModelInfo& info, const BackendOpsContext& ctx) const;
+    virtual std::string validate_load(const ModelInfo& info) const {
+        (void)info;
+        return "";
+    }
 
     // Validate a resolved checkpoint file for the cache. Returns "" if valid, or
     // a reason it should be treated as not-downloaded. Default: always valid.

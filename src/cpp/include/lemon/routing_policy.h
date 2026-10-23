@@ -177,6 +177,13 @@ struct ClassifierServices {
                                                 const std::vector<std::string>& labels)>
         run_zero_shot_classifier;
 
+    // Powers the `systemone` type (see ISystemOneServer). Maps to
+    // Router::systemone. The question is ordered_json because the order
+    // of a choice question's options changes the model's scores.
+    std::function<json(const std::string& model,
+                       const std::string& text,
+                       const nlohmann::ordered_json& question)> run_systemone;
+
     // Run a chat `model` with a system `prompt` over `input`; returns the raw
     // assistant text. Powers the `llm` router / L0a on-ramp. Maps to
     // Router::chat_completion.
