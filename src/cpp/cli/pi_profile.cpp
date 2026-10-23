@@ -1,11 +1,9 @@
 #include "lemon_cli/pi_profile.h"
 
-#include <algorithm>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <regex>
-#include <system_error>
 
 namespace fs = std::filesystem;
 
@@ -58,10 +56,6 @@ std::string resolve_pi_settings_path() {
     return (fs::path(dir) / "settings.json").string();
 }
 
-bool has_label(const AgentModelEntry& model, const std::string& label) {
-    return std::find(model.labels.begin(), model.labels.end(), label) != model.labels.end();
-}
-
 nlohmann::json build_pi_model_entry(const AgentModelEntry& model) {
     nlohmann::json entry = {{"id", model.id}};
 
@@ -102,123 +96,6 @@ nlohmann::json build_pi_provider_block(
     provider_block["models"] = std::move(models_json);
 
     return provider_block;
-}
-
-// Atomically write JSON to path, creating parent directories. Mirrors the
-// approach in agent_config_file.cpp, but keeps a symlinked file linked and an
-// existing file's permissions, since mcp.json can hold other servers' tokens.
-bool write_json_atomic(const std::string& path,
-                       const nlohmann::json& config,
-                       std::string& error_out) {
-    fs::path output_path(path);
-    std::error_code ec;
-    if (fs::is_symlink(output_path, ec)) {
-        const fs::path target = fs::canonical(output_path, ec);
-        if (ec) {
-            error_out = "Cannot resolve symlink " + output_path.string() + ": " + ec.message();
-            return false;
-        }
-        output_path = target;
-    }
-    ec.clear();
-    const fs::file_status existing = fs::status(output_path, ec);
-    const bool keep_permissions = !ec && fs::exists(existing);
-    ec.clear();
-    const fs::path output_dir = output_path.parent_path();
-    if (!output_dir.empty()) {
-        fs::create_directories(output_dir, ec);
-        if (ec) {
-            error_out = "Cannot create directory " + output_dir.string() + ": " + ec.message();
-            return false;
-        }
-    }
-
-    const fs::path tmp_path = output_path.string() + ".tmp";
-    {
-        std::ofstream out(tmp_path);
-        if (!out.is_open()) {
-            error_out = "Cannot open " + tmp_path.string() + " for writing";
-            return false;
-        }
-
-        out << config.dump(2) << "\n";
-        out.flush();
-        if (!out.good()) {
-            out.close();
-            std::error_code remove_ec;
-            fs::remove(tmp_path, remove_ec);
-            error_out = "Write failed for " + tmp_path.string();
-            return false;
-        }
-
-        out.close();
-        if (!out) {
-            std::error_code remove_ec;
-            fs::remove(tmp_path, remove_ec);
-            error_out = "Write failed for " + tmp_path.string();
-            return false;
-        }
-    }
-
-    if (keep_permissions) {
-        fs::permissions(tmp_path, existing.permissions(), ec);
-        if (ec) {
-            std::error_code remove_ec;
-            fs::remove(tmp_path, remove_ec);
-            error_out = "Cannot set permissions on " + tmp_path.string() + ": " + ec.message();
-            return false;
-        }
-    }
-
-    fs::rename(tmp_path, output_path, ec);
-    if (ec) {
-        // Cross-device or filesystem edge cases can make rename fail.
-        ec.clear();
-        fs::copy_file(tmp_path, output_path, fs::copy_options::overwrite_existing, ec);
-        if (!ec) {
-            std::error_code remove_tmp_ec;
-            fs::remove(tmp_path, remove_tmp_ec);
-        }
-    }
-
-    if (ec) {
-        std::error_code remove_ec;
-        fs::remove(tmp_path, remove_ec);
-        error_out = "Cannot move temp config into place: " + ec.message();
-        return false;
-    }
-
-    return true;
-}
-
-// Reads a JSON object from path into out. A missing file yields an empty
-// object; unreadable or malformed files are errors so they are never
-// overwritten.
-bool read_json_object(const std::string& path, nlohmann::json& out, std::string& error_out) {
-    out = nlohmann::json::object();
-    if (!fs::exists(path)) {
-        return true;
-    }
-
-    std::ifstream file(path);
-    if (!file.is_open()) {
-        error_out = "Cannot open " + path + " for reading";
-        return false;
-    }
-
-    try {
-        out = nlohmann::json::parse(file);
-    } catch (const nlohmann::json::exception& e) {
-        error_out = "Cannot parse existing " + path + ": " + std::string(e.what()) +
-                    ". Refusing to overwrite. Fix or remove the file manually.";
-        return false;
-    }
-
-    if (!out.is_object()) {
-        error_out = path + " is not a JSON object. Refusing to overwrite.";
-        return false;
-    }
-    return true;
 }
 
 } // namespace
@@ -321,16 +198,6 @@ bool sync_pi_mcp_server(const std::string& server_origin,
     if (!server.is_object()) {
         server = nlohmann::json::object();
     }
-    const std::string url = server_origin + "/mcp";
-    // Credentials on the entry belong to the server it pointed at, so they
-    // are not carried over to a different one.
-    const auto old_url = server.find("url");
-    if (old_url == server.end() || *old_url != url) {
-        for (const char* credential_key : {"headers", "oauth", "auth"}) {
-            server.erase(credential_key);
-        }
-    }
-    server["url"] = url;
     // Pi rejects a url entry whose type is not an HTTP one, and leftover
     // stdio keys would make the entry look like a local command.
     if (server.contains("type") && server["type"] != "http" &&
@@ -343,21 +210,8 @@ bool sync_pi_mcp_server(const std::string& server_origin,
 
     // Pi fails the whole connection when a header references an unset
     // variable, so the header exists only when launch exports the key.
-    const std::string key_header = "Bearer ${LEMONADE_API_KEY}";
-    if (has_api_key) {
-        if (!server.contains("headers") || !server["headers"].is_object()) {
-            server["headers"] = nlohmann::json::object();
-        }
-        server["headers"]["Authorization"] = key_header;
-    } else if (server.contains("headers") && server["headers"].is_object()) {
-        const auto auth = server["headers"].find("Authorization");
-        if (auth != server["headers"].end() && *auth == key_header) {
-            server["headers"].erase(auth);
-        }
-        if (server["headers"].empty()) {
-            server.erase("headers");
-        }
-    }
+    sync_mcp_server_connection(server, server_origin + "/mcp", "Bearer ${LEMONADE_API_KEY}",
+                               has_api_key);
 
     // Codemode exposure would switch codemode on in every pi session; direct
     // tools keep it behind --codemode.
