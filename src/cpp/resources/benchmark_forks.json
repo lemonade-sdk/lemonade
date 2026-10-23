@@ -69,7 +69,8 @@
       "binary_exe_linux": "llama-server",
       "arch": "gfx1151",
       "tracked": true,
-      "notes": "Upstream ggml-org baseline. Used as performance reference for fork comparisons."
+      "notes": "Upstream ggml-org baseline. Used as performance reference for fork comparisons.",
+      "accuracy_reference": true
     },
     {
       "fork_id": "llamacpp-hrx",

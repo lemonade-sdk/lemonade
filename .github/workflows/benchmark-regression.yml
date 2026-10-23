@@ -703,6 +703,9 @@ jobs:
                     "ttft_ms_mean": round(ttft_block.get("mean", 0), 2),
                     "ttft_ms_best": round(ttft_block["min"], 2) if ttft_block.get("min") else None,
                     "pp_tps": pp_tps,
+                    "accuracy": (me.get("accuracy") or {}).get("score"),
+                    "accuracy_passed": (me.get("accuracy") or {}).get("passed"),
+                    "accuracy_total": (me.get("accuracy") or {}).get("total"),
                     "input_tokens": sc.get("input_tokens"),
                     "vram_peak_gb": sc.get("vram_peak_gb"),
                     "timestamp": me.get("timestamp", data.get("timestamp")),
@@ -716,6 +719,17 @@ jobs:
                   leaderboard[key] = [e for e in leaderboard[key] if e["fork_id"] != fork_id]
                   leaderboard[key].append(entry)
                   leaderboard[key].sort(key=lambda e: e["tps_mean"], reverse=True)
+
+          # Accuracy pass/fail: within ACCURACY_TOLERANCE of the reference fork's
+          # score on the same model, so a model that is merely weak doesn't fail.
+          ACCURACY_TOLERANCE = 0.06
+          ref_forks = {f["fork_id"] for f in forks_config["forks"] if f.get("accuracy_reference")}
+          for entries in leaderboard.values():
+            ref = next((e["accuracy"] for e in entries if e["fork_id"] in ref_forks and e.get("accuracy") is not None), None)
+            for e in entries:
+              e["accuracy_ref"] = ref
+              e["accuracy_pass"] = (None if ref is None or e.get("accuracy") is None
+                                    else e["accuracy"] >= ref - ACCURACY_TOLERANCE)
 
           # Per-fork build-history series (for the trend/regression chart):
           # model -> scenario -> fork_id -> [ {version, timestamp, tps, run_url} ]
@@ -762,6 +776,7 @@ jobs:
                     "ttft_ms_mean": round(ttft_block.get("mean", 0), 2),
                     "ttft_ms_best": round(ttft_block["min"], 2) if ttft_block.get("min") else None,
                     "pp_tps": pp_tps,
+                    "accuracy": (me.get("accuracy") or {}).get("score"),
                     "vram_peak_gb": sc.get("vram_peak_gb"),
                     "input_tokens": sc.get("input_tokens"),
                     "quant": quant,

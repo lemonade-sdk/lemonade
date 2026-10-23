@@ -19,10 +19,12 @@ import hashlib
 import json
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
 import tarfile
+import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -33,6 +35,7 @@ from pathlib import Path
 IS_WINDOWS = platform.system() == "Windows"
 BACKEND_VERSIONS_PATH = Path("src/cpp/resources/backend_versions.json")
 SCENARIO_FILE = Path("src/cpp/resources/bench_scenarios.json")
+ACCURACY_FILE = Path(__file__).with_name("accuracy_questions.json")
 # ctx window -> scenarios run at it. Forks override via "scenario_ctx".
 SCENARIO_CTX = {
     4096: ["context-4k"],
@@ -524,6 +527,98 @@ def annotate_pp(data: dict) -> None:
                 sc["pp_tps"] = native.get("mean")
 
 
+def _lemond_post(base_url: str, path: str, body: dict, timeout: int) -> dict:
+    req = urllib.request.Request(
+        f"{base_url}{path}",
+        data=json.dumps(body).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.loads(r.read())
+
+
+def _final_answer(text: str) -> str:
+    text = unicodedata.normalize("NFKC", text or "")
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.S).strip()
+    text = re.sub(r"^```[a-zA-Z]*\s*|\s*```$", "", text)
+    return text.strip().strip("*_`\"' ").rstrip(".").strip()
+
+
+def _norm(s: str) -> str:
+    return re.sub(r"[^a-z0-9 ]", "", s.lower()).strip()
+
+
+def grade_answer(text: str, grade: dict) -> bool:
+    ans = _final_answer(text)
+    kind = grade["type"]
+    if kind == "number":
+        nums = re.findall(r"-?\d+(?:\.\d+)?", ans.replace(",", ""))
+        return bool(nums) and abs(float(nums[-1]) - grade["value"]) <= grade.get(
+            "tolerance", 1e-9
+        )
+    if kind == "one_of":
+        a = _norm(ans)
+        short = len(a.split()) <= 8
+        return any(
+            a == _norm(v) or (short and re.search(rf"\b{re.escape(_norm(v))}\b", a))
+            for v in grade["values"]
+        )
+    if kind == "regex":
+        return re.fullmatch(grade["pattern"], ans) is not None
+    if kind == "json":
+        m = re.search(r"\{.*\}", ans, re.S)
+        try:
+            return m is not None and json.loads(m.group(0)) == grade["value"]
+        except ValueError:
+            return False
+    raise ValueError(f"unknown grade type {kind}")
+
+
+def run_accuracy(base_url: str, fork: dict, model: str) -> dict | None:
+    """Ask the fixed question set on this fork's backend; deterministic, thinking off."""
+    qs = json.loads(ACCURACY_FILE.read_text())
+    load = {"model_name": model, "save_options": False, "ctx_size": 4096}
+    if fork.get("recipe", "llamacpp") == "llamacpp":
+        load["llamacpp_backend"] = fork.get("install_as", fork["backend"])
+    try:
+        _lemond_post(base_url, "/api/v1/load", load, 3600)
+    except Exception as e:
+        print(f"    [accuracy] load failed for {model}: {e}")
+        return None
+    passed, failures = 0, []
+    for q in qs["questions"]:
+        body = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": qs["system_prompt"]},
+                {"role": "user", "content": q["prompt"]},
+            ],
+            "temperature": 0,
+            "seed": 42,
+            "max_tokens": 64,
+            "enable_thinking": False,
+        }
+        try:
+            r = _lemond_post(base_url, "/api/v1/chat/completions", body, 300)
+            text = r["choices"][0]["message"].get("content") or ""
+        except Exception as e:
+            text = f"<error: {e}>"
+        if grade_answer(text, q["grade"]):
+            passed += 1
+        else:
+            failures.append({"id": q["id"], "response": text[:200]})
+    total = len(qs["questions"])
+    print(f"    [{model}] accuracy = {passed}/{total}", flush=True)
+    return {
+        "passed": passed,
+        "total": total,
+        "score": round(passed / total, 4),
+        "questions_version": qs["version"],
+        "failures": failures,
+    }
+
+
 def check_regression(
     current: dict, previous: dict, fork_id: str, model: str
 ) -> list[dict]:
@@ -641,6 +736,11 @@ def main() -> int:
         "--port", default="", help="lemond port; pins lemonade bench to this server"
     )
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument(
+        "--skip-accuracy",
+        action="store_true",
+        help="skip the answer-key accuracy check",
+    )
     parser.add_argument(
         "--download-only",
         action="store_true",
@@ -836,6 +936,15 @@ def main() -> int:
                     {"fork_id": fork_id, "model": model, "status": "FAILED"}
                 )
                 continue
+
+            if not args.skip_accuracy:
+                acc = run_accuracy(base_url, fork, model)
+                if acc:
+                    for me in result.get("models", []):
+                        if me.get("model") == model:
+                            me["accuracy"] = acc
+                    with open(run_file, "w") as f:
+                        json.dump(result, f, indent=2)
 
             alerts = []
             if prev_result and prev_result.exists():
