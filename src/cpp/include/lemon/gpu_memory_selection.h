@@ -132,6 +132,19 @@ inline GpuMemoryPool select_gpu_memory_pool(GpuMemoryVendor vendor,
                 devices.begin(), devices.end(), [](const GPUInfo* gpu) {
                     return gpu->rocm_index >= 0;
                 });
+#ifdef _WIN32
+            if (!has_rocm_indices) {
+                const size_t available_amd_gpu_count =
+                    (amd_igpu.available ? 1U : 0U) +
+                    static_cast<size_t>(std::count_if(
+                        amd_dgpus.begin(), amd_dgpus.end(),
+                        [](const GPUInfo& gpu) { return gpu.available; }));
+                if (available_amd_gpu_count != 1 || target.indices.size() != 1 ||
+                    target.indices.front() != 0) {
+                    return {};
+                }
+            }
+#endif
             for (int index : target.indices) {
                 const GPUInfo* selected = nullptr;
                 if (has_rocm_indices) {

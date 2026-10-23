@@ -50,5 +50,24 @@ int main() {
 #endif
     check(!lemon::rocm_visibility_override_env_name(nullptr, nullptr, nullptr, nullptr),
           "no override is reported when no visibility mask is set");
+    check(!lemon::should_apply_rocm_device_arch_override(
+              "ROCm999", "", "HIP_VISIBLE_DEVICES"),
+          "a caller-owned visibility mask skips architecture lookup for unavailable ROCm indices");
+    check(!lemon::should_apply_rocm_device_arch_override(
+              "ROCm-invalid", "", "HIP_VISIBLE_DEVICES"),
+          "a caller-owned visibility mask leaves invalid ROCm selections to the runtime");
+#ifndef _WIN32
+    check(!lemon::should_apply_rocm_device_arch_override(
+              "ROCm0", "", "CUDA_VISIBLE_DEVICES"),
+          "an inherited CUDA mask prevents a conflicting ROCm architecture override");
+    check(!lemon::should_apply_rocm_device_arch_override(
+              "ROCm0", "", "GPU_DEVICE_ORDINAL"),
+          "an inherited GPU ordinal mask prevents a conflicting ROCm architecture override");
+#endif
+    check(!lemon::should_apply_rocm_device_arch_override(
+              "ROCm0", "gfx1100", nullptr),
+          "an explicit architecture override takes precedence over device-based resolution");
+    check(lemon::should_apply_rocm_device_arch_override("ROCm0", "", nullptr),
+          "an explicit ROCm device is resolved when no caller override is present");
     return failures == 0 ? 0 : 1;
 }

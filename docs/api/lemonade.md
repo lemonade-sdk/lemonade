@@ -2514,7 +2514,7 @@ Lemonade does not check that the asset exists; fetch `url`, or its split-archive
 - `recipe` - The requested recipe.
 - `backend` - The requested backend.
 - `arch` - The requested `arch`, or `""` when it was omitted.
-- `resolved_arch` - The ROCm architecture used to resolve the asset, or `""` when none applies.
+- `resolved_arch` - The ROCm architecture used to resolve the asset, or `""` when the backend is non-ROCm or no ROCm architecture could be resolved.
 - `repo` - GitHub repository of the release.
 - `version` - Release version: the pin in `backend_versions.json` unless runtime version policy overrides it.
 - `filename` - Release asset name.

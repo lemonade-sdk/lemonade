@@ -2237,6 +2237,12 @@ const json* rocm_gpu_for_index(const json& amd_gpu_devices, size_t rocm_index) {
         return nullptr;
     }
 
+#ifdef _WIN32
+    if (rocm_index != 0 || amd_gpu_devices.size() != 1) {
+        return nullptr;
+    }
+#endif
+
     if (rocm_index >= amd_gpu_devices.size()) {
         return nullptr;
     }

@@ -154,6 +154,7 @@ class GfxTopologyTests(ServerTestBase):
                         f"{response.text[:500]}",
                     )
                     body = response.json()
+                    self.assertEqual(body.get("resolved_arch"), arch)
                     # An arch this backend does not publish for is not expected to
                     # produce a usable asset name; only check the supported ones.
                     if not body.get("supported"):

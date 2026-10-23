@@ -60,7 +60,7 @@ public:
                 "recipe": {"type": "string", "description": "The requested recipe."},
                 "backend": {"type": "string", "description": "The requested backend."},
                 "arch": {"type": "string", "description": "The requested `arch`, or `\"\"` when it was omitted."},
-                "resolved_arch": {"type": "string", "description": "The ROCm architecture used to resolve the asset, or `\"\"` when none applies."},
+                "resolved_arch": {"type": "string", "description": "The ROCm architecture used to resolve the asset, or `\"\"` when the backend is non-ROCm or no ROCm architecture could be resolved."},
                 "repo": {"type": "string", "description": "GitHub repository of the release."},
                 "version": {"type": "string", "description": "Release version: the pin in `backend_versions.json` unless runtime version policy overrides it."},
                 "filename": {"type": "string", "description": "Release asset name."},

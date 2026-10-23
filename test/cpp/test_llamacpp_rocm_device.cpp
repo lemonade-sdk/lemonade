@@ -142,13 +142,34 @@ int main() {
     expect(SystemInfo::get_rocm_visible_devices(kfd_ordered_gpu, "ROCm0").empty(),
            "missing UUID metadata keeps KFD ordinal selection unpinned");
 
+    nlohmann::json single_unindexed_gpu = nlohmann::json::array({
+        {{"name", "AMD Radeon RX 6800"}, {"family", "gfx1031"},
+         {"available", true}}
+    });
+    expect(SystemInfo::select_rocm_arch(single_unindexed_gpu, "ROCm0") == "gfx1031",
+           "a single detected AMD GPU safely maps to ROCm0 without ordinal metadata");
+
+    nlohmann::json unindexed_dual_gpu = nlohmann::json::array({
+        {{"name", "AMD Radeon 8060S"}, {"family", "gfx1151"},
+         {"integrated", true}, {"available", true}},
+        {{"name", "AMD Radeon RX 6800"}, {"family", "gfx1031"},
+         {"integrated", false}, {"available", true}}
+    });
+#ifdef _WIN32
+    expect(SystemInfo::select_rocm_arch(unindexed_dual_gpu, "ROCm0").empty(),
+           "Windows rejects ambiguous ROCm architecture ordinals from WMI order");
+#else
+    expect(SystemInfo::select_rocm_arch(unindexed_dual_gpu, "ROCm0") == "gfx1151",
+           "Linux test fixtures without runtime ordinals retain array-order fallback");
+#endif
+
     nlohmann::json identical_gpu = nlohmann::json::array({
         {{"name", "AMD Radeon RX 9070"}, {"family", "gfx1201"},
          {"integrated", false}, {"available", true},
-         {"uuid", "GPU-0000000000000001"}},
+         {"uuid", "GPU-0000000000000001"}, {"rocm_index", 0}},
         {{"name", "AMD Radeon RX 9070"}, {"family", "gfx1201"},
          {"integrated", false}, {"available", true},
-         {"uuid", "GPU-0000000000000002"}}
+         {"uuid", "GPU-0000000000000002"}, {"rocm_index", 1}}
     });
     expect(SystemInfo::get_rocm_visible_devices(identical_gpu, "ROCm0") ==
                "GPU-0000000000000001",
