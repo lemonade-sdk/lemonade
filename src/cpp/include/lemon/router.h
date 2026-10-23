@@ -129,6 +129,7 @@ public:
     // Test-only access to routing-helper reconciliation internals (inject stub
     // servers, seed the needed set, drive prune). Defined in the test binary.
     friend struct RoutingHelperTestHook;
+    friend struct UnloadBusyModelTestHook;
     Router(RuntimeConfig* config,
 
            ModelManager* model_manager,
@@ -360,6 +361,8 @@ private:
     void evict_all_npu_servers();
     void evict_server(WrappedServer* server, int timeout_seconds = -1);
     void evict_all_servers();
+    void unload_model_canonical(const std::string& canonical_model_name,
+                                const std::string& requested_model_name);
     // Publish the (already-canonicalized) needed-helper set under load_mutex_,
     // then defer the eviction pass until no load holds the slot. Split out from
     // reconcile_routing_helpers so the set is visible to a mid-load helper's
