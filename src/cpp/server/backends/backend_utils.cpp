@@ -493,6 +493,8 @@ namespace lemon::backends {
         std::string version_file;
         std::string exe_path = find_external_backend_binary(spec.recipe, backend);
         bool needs_install = exe_path.empty();
+        const bool tracks_asset_identity =
+            spec.recipe == "llamacpp" && backend == "rocm-nightly";
 
         if (needs_install) {
             install_dir = get_install_directory(spec.recipe, backend);
@@ -517,6 +519,18 @@ namespace lemon::backends {
                     // downloaded, extracted, and verified; the atomic swap below
                     // (commit_staged_install) handles removal so an interrupted
                     // download cannot leave the backend with no usable binary.
+                }
+                if (!needs_install && tracks_asset_identity) {
+                    const std::string installed_asset =
+                        read_installed_asset_identity(install_dir);
+                    if (installed_asset_identity_requires_refresh(installed_asset,
+                                                                  asset_pattern)) {
+                        LOG(INFO, spec.log_name())
+                            << "Installed asset differs from requested asset; reinstalling "
+                            << spec.binary << " (" << installed_asset << " -> "
+                            << asset_pattern << ")" << std::endl;
+                        needs_install = true;
+                    }
                 }
             } else if (!needs_install && !expected_version.empty()) {
                 // If the executable exists but version.txt is missing, SystemInfo
@@ -790,6 +804,15 @@ namespace lemon::backends {
                 vf.flush();
                 if (!vf.good()) {
                     throw std::runtime_error("Failed to write version file: " + staged_version_file);
+                }
+            }
+            if (tracks_asset_identity) {
+                const std::string staged_asset_file = (fs::path(staging_dir) / "asset.txt").string();
+                std::ofstream af(staged_asset_file);
+                af << asset_pattern;
+                af.flush();
+                if (!af.good()) {
+                    throw std::runtime_error("Failed to write asset file: " + staged_asset_file);
                 }
             }
 

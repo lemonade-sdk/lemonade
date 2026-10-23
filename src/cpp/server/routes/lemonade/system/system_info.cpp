@@ -114,14 +114,21 @@ json get_model_storage_stats(const std::string& model_storage_path) {
     };
 }
 
-void enrich_recipes(BackendManager* backend_manager, json& recipes) {
+void enrich_recipes(BackendManager* backend_manager,
+                    RuntimeConfig* config,
+                    json& recipes) {
     if (!backend_manager) return;
 
     for (auto& [recipe_name, recipe_info] : recipes.items()) {
         if (!recipe_info.contains("backends")) continue;
         for (auto& [backend_name, backend_info] : recipe_info["backends"].items()) {
             try {
-                auto enrichment = backend_manager->get_backend_enrichment(recipe_name, backend_name);
+                const std::string llamacpp_device =
+                    recipe_name == "llamacpp" && config
+                        ? config->backend_string("llamacpp", "device")
+                        : "";
+                auto enrichment = backend_manager->get_backend_enrichment(
+                    recipe_name, backend_name, llamacpp_device);
                 if (!enrichment.release_url.empty()) {
                     backend_info["release_url"] = enrichment.release_url;
                 }
@@ -299,7 +306,7 @@ public:
         json system_info = SystemInfoCache::get_system_info_with_cache();
 
         if (system_info.contains("recipes")) {
-            enrich_recipes(ctx_.backend_manager, system_info["recipes"]);
+            enrich_recipes(ctx_.backend_manager, ctx_.config, system_info["recipes"]);
         }
 
         // Surfaced as a separate host-specific field rather than by pruning

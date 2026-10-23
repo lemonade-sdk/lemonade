@@ -18,7 +18,8 @@ public:
     // Core operations
     void install_backend(const std::string& recipe, const std::string& backend,
                          bool force = false,
-                         DownloadProgressCallback progress_cb = nullptr);
+                         DownloadProgressCallback progress_cb = nullptr,
+                         const std::string& llamacpp_device = {});
     void uninstall_backend(const std::string& recipe, const std::string& backend);
 
     // Query operations
@@ -28,10 +29,12 @@ public:
     json get_all_backends_status();
 
     // Get GitHub release URL for a recipe/backend
-    std::string get_release_url(const std::string& recipe, const std::string& backend);
+    std::string get_release_url(const std::string& recipe, const std::string& backend,
+                                const std::string& llamacpp_device = {});
 
     // Get the platform-specific download filename for a recipe/backend (empty if N/A)
-    std::string get_download_filename(const std::string& recipe, const std::string& backend);
+    std::string get_download_filename(const std::string& recipe, const std::string& backend,
+                                      const std::string& llamacpp_device = {});
 
     // Enrichment data for a backend (all fields computed in a single call)
     struct BackendEnrichment {
@@ -41,18 +44,21 @@ public:
     };
 
     // Get all enrichment data for a backend in one call (avoids repeated config lookups)
-    BackendEnrichment get_backend_enrichment(const std::string& recipe, const std::string& backend);
+    BackendEnrichment get_backend_enrichment(const std::string& recipe, const std::string& backend,
+                                             const std::string& llamacpp_device = {});
 
-    // Install parameters for a backend (repo + filename + version)
+    // Install parameters for a backend (repo + filename + version + resolved ROCm arch)
     struct InstallParams {
         std::string repo;
         std::string filename;
         std::string version;
+        std::string resolved_arch;
     };
 
     // Unlike the enrichment helpers above, this returns the repo and lets
     // exceptions propagate so callers can surface stale-pin/404-shaped failures.
-    InstallParams get_install_params(const std::string& recipe, const std::string& backend);
+    InstallParams get_install_params(const std::string& recipe, const std::string& backend,
+                                     const std::string& llamacpp_device = {});
 
     // Returns the most-recent upstream release tag for the given (recipe, backend),
     // resolved via GitHub. The result is cached for the lifetime of this

@@ -2,6 +2,7 @@
 
 #include "lemon/backend_manager.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/runtime_config.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/shared_args.h"
 #include "lemon/system_info.h"
@@ -53,12 +54,13 @@ public:
         response.format = ResponseFormat::Json;
         response.schema = ordered_json::parse(R"({
             "type": "object",
-            "required": ["recipe", "backend", "arch", "repo", "version", "filename", "url",
+            "required": ["recipe", "backend", "arch", "resolved_arch", "repo", "version", "filename", "url",
                          "supports_split_archive", "supported"],
             "properties": {
                 "recipe": {"type": "string", "description": "The requested recipe."},
                 "backend": {"type": "string", "description": "The requested backend."},
                 "arch": {"type": "string", "description": "The requested `arch`, or `\"\"` when it was omitted."},
+                "resolved_arch": {"type": "string", "description": "The ROCm architecture used to resolve the asset, or `\"\"` when the backend is non-ROCm or no ROCm architecture could be resolved."},
                 "repo": {"type": "string", "description": "GitHub repository of the release."},
                 "version": {"type": "string", "description": "Release version: the pin in `backend_versions.json` unless runtime version policy overrides it."},
                 "filename": {"type": "string", "description": "Release asset name."},
@@ -93,7 +95,12 @@ public:
                 SystemInfo::set_rocm_arch_override(requested_arch);
             }
 
-            auto params = ctx_.backend_manager->get_install_params(recipe, backend);
+            const std::string llamacpp_device =
+                recipe == "llamacpp" && ctx_.config
+                    ? ctx_.config->backend_string("llamacpp", "device")
+                    : "";
+            auto params = ctx_.backend_manager->get_install_params(
+                recipe, backend, llamacpp_device);
 
             // Clear the override as soon as resolution is done so it cannot leak to
             // any later work on this thread.
@@ -116,6 +123,7 @@ public:
                 {"recipe", recipe},
                 {"backend", backend},
                 {"arch", requested_arch},
+                {"resolved_arch", params.resolved_arch},
                 {"repo", params.repo},
                 {"version", params.version},
                 {"filename", params.filename},

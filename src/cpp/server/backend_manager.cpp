@@ -2,13 +2,17 @@
 #include "lemon/backend_version_policy.h"
 #include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/backends/install_staging.h"
 #include "lemon/runtime_config.h"
+#include "lemon/rocm_arch_override.h"
 #include "lemon/system_info.h"
 #include "lemon/utils/github_api.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
+#include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -16,6 +20,7 @@
 #include <iostream>
 #include <map>
 #include <optional>
+#include <stdexcept>
 #include <thread>
 #include <vector>
 #include <lemon/utils/aixlog.hpp>
@@ -36,6 +41,12 @@ std::string normalize_backend_name(const std::string& recipe, const std::string&
         return "rocm-" + channel;
     }
     return backend;
+}
+
+bool is_llamacpp_rocm_backend(const std::string& recipe,
+                              const std::string& resolved_backend) {
+    return recipe == "llamacpp" &&
+           (resolved_backend == "rocm-stable" || resolved_backend == "rocm-nightly");
 }
 
 std::string get_backend_runtime_version(const json& backend_versions,
@@ -541,8 +552,13 @@ std::string BackendManager::get_or_resolve_latest_tag(const std::string& recipe,
     }
 }
 
-BackendManager::InstallParams BackendManager::get_install_params(const std::string& recipe, const std::string& backend) {
+BackendManager::InstallParams BackendManager::get_install_params(
+    const std::string& recipe,
+    const std::string& backend,
+    const std::string& llamacpp_device) {
     std::string resolved_backend = normalize_backend_name(recipe, backend);
+    RocmArchOverrideGuard rocm_device_arch_override(
+        is_llamacpp_rocm_backend(recipe, resolved_backend) ? llamacpp_device : "");
 
     auto* spec = backends::try_get_spec_for_recipe(recipe);
     if (!spec) {
@@ -564,13 +580,20 @@ BackendManager::InstallParams BackendManager::get_install_params(const std::stri
     std::string release_version = final_params.version_override.empty()
                                       ? resolved_version
                                       : final_params.version_override;
-    return {final_params.repo, final_params.filename, release_version};
+    const std::string resolved_arch =
+        resolved_backend.rfind("rocm", 0) == 0
+            ? SystemInfo::get_rocm_arch()
+            : "";
+    return {final_params.repo, final_params.filename, release_version, resolved_arch};
 }
 
 void BackendManager::install_backend(const std::string& recipe, const std::string& backend,
                                      bool force,
-                                     DownloadProgressCallback progress_cb) {
+                                     DownloadProgressCallback progress_cb,
+                                     const std::string& llamacpp_device) {
     std::string resolved_backend = normalize_backend_name(recipe, backend);
+    RocmArchOverrideGuard rocm_device_arch_override(
+        is_llamacpp_rocm_backend(recipe, resolved_backend) ? llamacpp_device : "");
     LOG(DEBUG, "BackendManager") << "Installing " << recipe << ":" << resolved_backend << std::endl;
 
     // System backend uses a pre-installed binary from PATH - nothing to install
@@ -590,12 +613,44 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
     const std::string existing_backend_binary =
         installed_backend_binary_path(*spec, resolved_backend);
     const bool has_existing_backend = !existing_backend_binary.empty();
+    const bool tracks_asset_identity =
+        recipe == "llamacpp" && resolved_backend == "rocm-nightly" &&
+        backends::BackendUtils::find_external_backend_binary(recipe, resolved_backend).empty();
+    std::optional<InstallParams> install_params;
+
+    auto ensure_install_params = [&]() -> const InstallParams& {
+        if (!install_params) {
+            install_params = get_install_params(recipe, resolved_backend, llamacpp_device);
+        }
+        return *install_params;
+    };
+
+    auto require_matching_installed_asset = [&]() {
+        if (!tracks_asset_identity) {
+            return;
+        }
+
+        const auto& requested_params = ensure_install_params();
+        const fs::path install_dir = backends::BackendUtils::get_install_directory(
+            spec->recipe, resolved_backend);
+        const std::string installed_asset = backends::read_installed_asset_identity(install_dir);
+        if (!backends::installed_asset_identity_requires_refresh(
+                installed_asset, requested_params.filename)) {
+            return;
+        }
+
+        const std::string installed_label = installed_asset.empty() ? "<missing>" : installed_asset;
+        throw std::runtime_error(
+            "Cannot use installed " + recipe + ":" + resolved_backend + " backend: requested asset '" +
+            requested_params.filename + "' is unavailable; installed asset is '" + installed_label + "'");
+    };
 
     if (auto* cfg = RuntimeConfig::global()) {
         const bool offline = cfg->offline();
         const bool no_fetch = cfg->no_fetch_executables();
         if (offline || no_fetch) {
             if (!force && has_existing_backend) {
+                require_matching_installed_asset();
                 LOG(WARNING, "BackendManager")
                     << (offline ? "offline mode" : "Fetching executable artifacts is disabled")
                     << "; using installed " << recipe << ":" << resolved_backend
@@ -616,6 +671,7 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
         // backend updates are applied before the model starts. Only skip the
         // update path when the machine is effectively offline and a usable
         // backend binary is already present.
+        require_matching_installed_asset();
         LOG(WARNING, "BackendManager")
             << "GitHub is not reachable; using installed " << recipe << ":"
             << resolved_backend << " backend at " << existing_backend_binary
@@ -624,7 +680,7 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
         return;
     }
 
-    auto params = get_install_params(recipe, resolved_backend);
+    const InstallParams& params = ensure_install_params();
 
     // Check if we need to download additional runtime components after the main backend.
     // `will_install_therock` intentionally answers whether TheRock is applicable
@@ -750,6 +806,7 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
             }
             return false;
         }
+        require_matching_installed_asset();
         LOG(WARNING, "BackendManager")
             << "Backend update for " << recipe << ":" << resolved_backend
             << " failed (" << message << "); falling back to installed backend";
@@ -913,32 +970,39 @@ json BackendManager::get_all_backends_status() {
     return result;
 }
 
-std::string BackendManager::get_release_url(const std::string& recipe, const std::string& backend) {
+std::string BackendManager::get_release_url(const std::string& recipe,
+                                           const std::string& backend,
+                                           const std::string& llamacpp_device) {
     try {
         std::string resolved_backend = normalize_backend_name(recipe, backend);
-        auto params = get_install_params(recipe, resolved_backend);
+        auto params = get_install_params(recipe, resolved_backend, llamacpp_device);
         return "https://github.com/" + params.repo + "/releases/tag/" + params.version;
     } catch (...) {
         return "";
     }
 }
 
-std::string BackendManager::get_download_filename(const std::string& recipe, const std::string& backend) {
+std::string BackendManager::get_download_filename(const std::string& recipe,
+                                                  const std::string& backend,
+                                                  const std::string& llamacpp_device) {
     try {
         std::string resolved_backend = normalize_backend_name(recipe, backend);
-        auto params = get_install_params(recipe, resolved_backend);
+        auto params = get_install_params(recipe, resolved_backend, llamacpp_device);
         return params.filename;
     } catch (...) {
         return "";
     }
 }
 
-BackendManager::BackendEnrichment BackendManager::get_backend_enrichment(const std::string& recipe, const std::string& backend) {
+BackendManager::BackendEnrichment BackendManager::get_backend_enrichment(
+    const std::string& recipe,
+    const std::string& backend,
+    const std::string& llamacpp_device) {
     BackendEnrichment result;
     try {
         std::string resolved_backend = normalize_backend_name(recipe, backend);
         // All standard recipes (including ryzenai-llm): one get_install_params() call gives us everything
-        auto params = get_install_params(recipe, resolved_backend);
+        auto params = get_install_params(recipe, resolved_backend, llamacpp_device);
         result.release_url = "https://github.com/" + params.repo + "/releases/tag/" + params.version;
         result.download_filename = params.filename;
         result.version = params.version;

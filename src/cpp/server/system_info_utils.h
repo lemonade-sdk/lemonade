@@ -7,7 +7,9 @@
 #include <exception>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
 #include <set>
+#include <sstream>
 #include <system_error>
 #include <string>
 #include <utility>
@@ -147,6 +149,54 @@ inline std::string gfx_target_version_to_arch(const std::string& gfx_target_vers
     std::snprintf(buf, sizeof(buf), "gfx%d%x%x",
                   packed / 10000, (packed / 100) % 100, packed % 100);
     return std::string(buf);
+}
+
+inline std::string rocm_gpu_uuid_from_identifier(const std::string& value) {
+    const size_t start = value.find_first_not_of(" \t\n\r");
+    if (start == std::string::npos) {
+        return "";
+    }
+    const size_t end = value.find_last_not_of(" \t\n\r");
+    const std::string identifier = value.substr(start, end - start + 1);
+
+    if (identifier.size() == 20 &&
+        (identifier.compare(0, 4, "GPU-") == 0 ||
+         identifier.compare(0, 4, "gpu-") == 0)) {
+        const std::string digits = identifier.substr(4);
+        if (!std::all_of(digits.begin(), digits.end(), [](unsigned char c) {
+                return std::isxdigit(c) != 0;
+            })) {
+            return "";
+        }
+        std::string normalized = digits;
+        std::transform(normalized.begin(), normalized.end(), normalized.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        return "GPU-" + normalized;
+    }
+
+    const bool hexadecimal = identifier.size() > 2 &&
+        identifier[0] == '0' && (identifier[1] == 'x' || identifier[1] == 'X');
+    const std::string digits = hexadecimal ? identifier.substr(2) : identifier;
+    if (digits.empty() || !std::all_of(digits.begin(), digits.end(), [hexadecimal](unsigned char c) {
+            return hexadecimal ? std::isxdigit(c) != 0 : std::isdigit(c) != 0;
+        })) {
+        return "";
+    }
+
+    try {
+        size_t consumed = 0;
+        const unsigned long long unique_id =
+            std::stoull(identifier, &consumed, hexadecimal ? 16 : 10);
+        if (consumed != identifier.size() || unique_id == 0) {
+            return "";
+        }
+
+        std::ostringstream uuid;
+        uuid << "GPU-" << std::hex << std::setw(16) << std::setfill('0') << unique_id;
+        return uuid.str();
+    } catch (const std::exception&) {
+        return "";
+    }
 }
 
 // Keeps the ISA visible next to the driver's marketing name, since users match it

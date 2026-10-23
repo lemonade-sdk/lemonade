@@ -16,9 +16,8 @@ namespace backends {
 namespace llamacpp {
 namespace detail {
 
-// Private, deterministic pieces of the system llama.cpp HIP lookup. The full
-// production availability check stays in llamacpp_server.cpp so this header is
-// only a narrow test seam, not a second implementation of the policy.
+// Private, deterministic pieces of the llama.cpp system backend.
+// The production availability check stays in llamacpp_server.cpp.
 inline bool is_valid_ggml_hip_plugin_path(const std::filesystem::path& path) {
 #ifdef __linux__
     std::string name = path.filename().string();
