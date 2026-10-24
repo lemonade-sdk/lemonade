@@ -1,13 +1,3 @@
-if(NOT APPLE AND NOT WIN32)
-    find_package(spdlog QUIET)
-    if(TARGET spdlog::spdlog AND NOT TARGET spdlog)
-        add_library(spdlog ALIAS spdlog::spdlog)
-    endif()
-    if(TARGET spdlog)
-        return()
-    endif()
-endif()
-
 include(FetchContent)
 
 FetchContent_Declare(

@@ -34,6 +34,9 @@ const UDP_QUEUE_DATAGRAMS: usize = 512;
 const UDP_BUF: usize = 512 * 1024;
 const IPV4_HEADER_LEN: usize = 20;
 const UDP_HEADER_LEN: usize = 8;
+/// Smallest MTU every IPv4 link must carry (RFC 791). send_udp fragments to
+/// the MTU, so a smaller value leaves no room for a fragment payload.
+pub const MIN_IPV4_MTU: usize = 68;
 
 /// Receiver for datagrams that arrive on a bound virtual UDP port. Called on
 /// the stack thread with (source, destination, payload).
@@ -124,6 +127,12 @@ impl Stack {
         cmd_rx: Receiver<Command>,
         pkt_rx: Receiver<Vec<u8>>,
     ) -> io::Result<(Stack, Waker)> {
+        if mtu < MIN_IPV4_MTU {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("mtu {mtu} is below the IPv4 minimum of {MIN_IPV4_MTU}"),
+            ));
+        }
         let mut device = VirtDevice::new(mtu, output);
         let config = Config::new(smoltcp::wire::HardwareAddress::Ip);
         let now = Instant::from_millis(0);

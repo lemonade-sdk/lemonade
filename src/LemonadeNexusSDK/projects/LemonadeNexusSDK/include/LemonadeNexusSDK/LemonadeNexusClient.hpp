@@ -300,6 +300,9 @@ public:
     void enable_mesh(const MeshConfig& config = {});
 
     /// Disable mesh networking and remove all mesh peers from the tunnel.
+    /// Waits for the orchestrator thread to stop, without holding the client
+    /// lock, so a mesh state callback may call other client methods. Do not
+    /// call it, enable_mesh(), or leave_network() from a mesh state callback.
     void disable_mesh();
 
     /// Get mesh tunnel status including all peers with live stats.

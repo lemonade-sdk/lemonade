@@ -18,7 +18,7 @@ extern "C" {
 #include <stddef.h>
 
 /* Shared FFI build is compiled with hidden visibility; mark the ln_* C API
- * default-visible; platform export maps limit the shared interface to ln_*. */
+ * default-visible so only it is exported (MSVC uses WINDOWS_EXPORT_ALL_SYMBOLS). */
 #if defined(__GNUC__) || defined(__clang__)
 #  pragma GCC visibility push(default)
 #endif

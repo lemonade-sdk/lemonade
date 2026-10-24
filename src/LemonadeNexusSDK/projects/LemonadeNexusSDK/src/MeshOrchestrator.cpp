@@ -5,6 +5,7 @@
 #include <spdlog/spdlog.h>
 
 #include <chrono>
+#include <utility>
 
 namespace lnsdk {
 
@@ -34,6 +35,9 @@ void MeshOrchestrator::start(const MeshConfig& config) {
 void MeshOrchestrator::stop() {
     if (!running_.exchange(false)) return;
 
+    // Take the lock so the loop cannot miss the change between its predicate
+    // check and its wait.
+    { std::lock_guard lock(mutex_); }
     cv_.notify_all();
     if (thread_.joinable()) thread_.join();
 
@@ -65,6 +69,10 @@ std::vector<MeshPeer> MeshOrchestrator::peers() const {
 }
 
 void MeshOrchestrator::refresh_now() {
+    {
+        std::lock_guard lock(mutex_);
+        refresh_requested_ = true;
+    }
     cv_.notify_all();
 }
 
@@ -84,13 +92,15 @@ void MeshOrchestrator::run_loop() {
         auto now = clock::now();
 
         MeshConfig cfg;
+        bool refresh_requested = false;
         {
             std::lock_guard lock(mutex_);
             cfg = config_;
+            refresh_requested = std::exchange(refresh_requested_, false);
         }
 
         // Peer refresh
-        if (now >= next_peer_refresh) {
+        if (refresh_requested || now >= next_peer_refresh) {
             do_peer_refresh();
             next_peer_refresh = now + std::chrono::seconds(cfg.peer_refresh_interval_sec);
         }
@@ -110,7 +120,8 @@ void MeshOrchestrator::run_loop() {
         // Sleep until next event or woken early
         auto next_wake = std::min({next_peer_refresh, next_heartbeat, next_monitor});
         std::unique_lock lock(mutex_);
-        cv_.wait_until(lock, next_wake, [this] { return !running_.load(); });
+        cv_.wait_until(lock, next_wake,
+                       [this] { return !running_.load() || refresh_requested_; });
     }
 }
 
@@ -174,10 +185,11 @@ void MeshOrchestrator::do_monitor() {
     {
         std::lock_guard lock(mutex_);
         for (auto& peer : known_peers_) {
-            // Merge handshake timestamps from the dataplane status
+            // Merge handshake timestamps from the dataplane status. The
+            // dataplane knows a peer only by its mesh public key: its
+            // tunnel_ip has no prefix and its node_id is empty.
             for (const auto& tp : ms.peers) {
-                if (tp.tunnel_ip == peer.tunnel_ip ||
-                    tp.node_id == peer.node_id) {
+                if (!peer.mesh_pubkey.empty() && tp.mesh_pubkey == peer.mesh_pubkey) {
                     if (tp.last_handshake > peer.last_handshake) {
                         peer.last_handshake = tp.last_handshake;
                     }

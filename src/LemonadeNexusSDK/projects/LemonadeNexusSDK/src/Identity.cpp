@@ -4,8 +4,23 @@
 #include <sodium.h>
 #include <spdlog/spdlog.h>
 
+#include <algorithm>
 #include <cstring>
 #include <fstream>
+#include <limits>
+#include <system_error>
+
+#ifdef _WIN32
+#include <fcntl.h>
+#include <io.h>
+#include <share.h>
+#include <sys/stat.h>
+#else
+#include <cerrno>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
 
 namespace lnsdk {
 
@@ -153,12 +168,62 @@ bool Identity::load(const std::filesystem::path& path) {
     }
 }
 
+namespace {
+
+/// Write `text` to a new file at `tmp` that only the owner can read and write.
+/// The file is created with that mode, so no other user can open it at any
+/// point. Fails when `tmp` already exists.
+bool write_owner_only_file(const std::filesystem::path& tmp, const std::string& text) {
+#ifdef _WIN32
+    int fd = -1;
+    if (_wsopen_s(&fd, tmp.c_str(), _O_WRONLY | _O_CREAT | _O_EXCL | _O_BINARY,
+                  _SH_DENYRW, _S_IREAD | _S_IWRITE) != 0) {
+        return false;
+    }
+    const char* p = text.data();
+    std::size_t remaining = text.size();
+    while (remaining > 0) {
+        const unsigned chunk = static_cast<unsigned>(
+            std::min<std::size_t>(remaining, (std::numeric_limits<int>::max)()));
+        const int n = _write(fd, p, chunk);
+        if (n <= 0) break;
+        p += n;
+        remaining -= static_cast<std::size_t>(n);
+    }
+    const bool ok = remaining == 0 && _commit(fd) == 0;
+    return _close(fd) == 0 && ok;
+#else
+    const int fd = ::open(tmp.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC,
+                          S_IRUSR | S_IWUSR);
+    if (fd < 0) return false;
+    // The umask can only remove bits from the creation mode. Set the mode
+    // exactly so the result does not depend on the umask.
+    bool ok = ::fchmod(fd, S_IRUSR | S_IWUSR) == 0;
+    const char* p = text.data();
+    std::size_t remaining = text.size();
+    while (ok && remaining > 0) {
+        const ssize_t n = ::write(fd, p, remaining);
+        if (n < 0 && errno == EINTR) continue;
+        if (n <= 0) break;
+        p += n;
+        remaining -= static_cast<std::size_t>(n);
+    }
+    ok = ok && remaining == 0 && ::fsync(fd) == 0;
+    return ::close(fd) == 0 && ok;
+#endif
+}
+
+} // namespace
+
 bool Identity::save(const std::filesystem::path& path) const {
     if (!valid_) {
         spdlog::warn("[Identity] cannot save: no valid keypair");
         return false;
     }
 
+    std::string text;
+    std::filesystem::path tmp;
+    bool ok = false;
     try {
         if (path.has_parent_path()) {
             std::filesystem::create_directories(path.parent_path());
@@ -167,20 +232,37 @@ bool Identity::save(const std::filesystem::path& path) const {
         nlohmann::json j;
         j["public_key"]  = to_base64(pubkey_);
         j["private_key"] = to_base64(privkey_);
+        text = j.dump(2);
+        auto& encoded = j["private_key"].get_ref<std::string&>();
+        sodium_memzero(encoded.data(), encoded.size());
 
-        std::ofstream file(path);
-        if (!file.is_open()) {
-            spdlog::error("[Identity] cannot open {} for writing", path.string());
-            return false;
+        // Write a new owner-only file beside the target, then rename it over
+        // the target. The key is never in a file that others can read, and a
+        // reader sees either the old file or the complete new one.
+        unsigned char suffix[8];
+        char suffix_hex[sizeof suffix * 2 + 1];
+        randombytes_buf(suffix, sizeof suffix);
+        sodium_bin2hex(suffix_hex, sizeof suffix_hex, suffix, sizeof suffix);
+        tmp = path;
+        tmp += std::string(".tmp-") + suffix_hex;
+
+        if (!write_owner_only_file(tmp, text)) {
+            spdlog::error("[Identity] cannot write {}", tmp.string());
+        } else {
+            std::filesystem::rename(tmp, path);
+            ok = true;
+            spdlog::info("[Identity] saved keypair to {}", path.string());
         }
-        file << j.dump(2);
-        spdlog::info("[Identity] saved keypair to {}", path.string());
-        return true;
-
     } catch (const std::exception& e) {
         spdlog::error("[Identity] failed to save keypair: {}", e.what());
-        return false;
     }
+
+    sodium_memzero(text.data(), text.size());
+    if (!ok && !tmp.empty()) {
+        std::error_code ec;
+        std::filesystem::remove(tmp, ec);
+    }
+    return ok;
 }
 
 std::vector<uint8_t> Identity::sign(std::span<const uint8_t> message) const {

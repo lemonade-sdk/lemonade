@@ -8,7 +8,8 @@
 ///
 /// Decrypted packets are routed in userspace:
 ///   - dst == one of our virtual IPs  -> inbound handler (in-process netstack)
-///   - dst in another peer's allowed IPs -> re-encrypted and sent (hairpin)
+///   - dst in another peer's allowed IPs -> re-encrypted and sent (hairpin),
+///     when the forwarding policy allows it (see ForwardPolicy)
 ///   - anything else -> dropped by cryptokey routing
 ///
 /// Incoming UDP datagrams are demultiplexed O(1): boringtun tags each local
@@ -19,8 +20,8 @@
 /// Plain class (not a CRTP service) so tests can run several instances in
 /// one process. BoringtunService owns one and delegates to it.
 
-#include <LemonadeNexusSDK/Transport/IBoringtunProvider.hpp>
-#include <LemonadeNexusSDK/Transport/IpRouter.hpp>
+#include <LemonadeNexus/Boringtun/IBoringtunProvider.hpp>
+#include <LemonadeNexus/Boringtun/IpRouter.hpp>
 
 #include <atomic>
 #include <cstdint>
@@ -31,11 +32,43 @@
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 struct Tunn;  // boringtun_ffi.h
 
 namespace nexus::boringtun {
+
+/// Authorization for packets that the dataplane forwards from one peer to
+/// another peer. It does not affect packets for our own virtual addresses.
+///
+/// Each peer is identified by its primary address: the first /32 entry of its
+/// allowed IPs (its tunnel IP). The inner source address is checked against
+/// the sending peer's allowed IPs before this policy applies, so a peer cannot
+/// claim another peer's primary address.
+///
+/// Rules, in order:
+///   1. A peer without a /32 allowed-IPs entry is unknown: drop.
+///   2. A peer whose primary address is outside `governed` is
+///      infrastructure (for example a backbone server): forward.
+///   3. A primary address in `open` (for example a relay): forward.
+///   4. The pair (source, destination) is in `allowed`: forward.
+///   5. The pair (destination, source) is in `allowed`, and the packet is a
+///      reply: forward. A reply is a TCP segment that is not a bare SYN, or
+///      an ICMP echo reply, destination-unreachable, or time-exceeded
+///      message. A non-first IPv4 fragment is not a reply.
+///   6. Anything else: drop.
+/// The policy is immutable after it is built; replace it to change it.
+struct ForwardPolicy {
+    Cidr                         governed;
+    std::unordered_set<uint32_t> open;
+    std::unordered_set<uint64_t> allowed;  ///< key(source, destination)
+
+    /// Key for an ordered pair of primary addresses (host byte order).
+    [[nodiscard]] static constexpr uint64_t key(uint32_t src, uint32_t dst) {
+        return (static_cast<uint64_t>(src) << 32) | dst;
+    }
+};
 
 class UserspaceDataplane {
 public:
@@ -111,6 +144,19 @@ public:
     /// destination has no route or no usable endpoint.
     bool send_outbound_ip_packet(std::span<const uint8_t> ip_packet);
 
+    // ---- forwarding authorization --------------------------------------------
+
+    /// Replace the policy for peer-to-peer forwarding. The swap is atomic for
+    /// the receive path. Without a policy (the default, and after nullptr),
+    /// every route is forwarded: a client dataplane uses no policy. A server
+    /// installs one before it accepts peers. Thread-safe.
+    void set_forward_policy(std::shared_ptr<const ForwardPolicy> policy);
+
+    /// Number of forwarded packets the policy has dropped since start.
+    [[nodiscard]] uint64_t forward_denied_count() const {
+        return forward_denied_.load(std::memory_order_relaxed);
+    }
+
 private:
     struct Peer {
         Tunn*            tunn{nullptr};
@@ -118,6 +164,9 @@ private:
         std::string      pubkey_b64;
         std::string      allowed_ips;
         std::vector<Cidr> cidrs;
+        /// First /32 entry of `cidrs` (the tunnel IP), 0 when there is none.
+        /// Written with cidrs under tables_mtx_.
+        uint32_t         primary_addr{0};
         /// Packed endpoint: (ipv4_host << 16) | port. 0 = unknown (NATed
         /// client not yet heard from). Atomic so the hot path never takes
         /// the table lock to roam.
@@ -157,6 +206,14 @@ private:
 
     void send_udp(const uint8_t* data, size_t len, uint64_t to_packed);
 
+    /// Apply forward_policy_ to a packet from `src` routed to `dst`. Caller
+    /// holds tables_mtx_ (shared or exclusive).
+    [[nodiscard]] bool forward_allowed_locked(const Peer& src, const Peer& dst,
+                                              std::span<const uint8_t> ip_pkt) const;
+
+    /// Count a policy drop and log at most once per interval.
+    void note_forward_denied(const Peer& src, const Peer& dst);
+
     [[nodiscard]] PeerPtr peer_by_index(uint32_t index) const;
     [[nodiscard]] PeerPtr peer_by_pubkey(const std::string& pubkey_b64) const;
 
@@ -171,6 +228,10 @@ private:
     IpRouter<PeerPtr>                        router_;
     uint32_t                                 next_index_{1};
     std::vector<uint32_t>                    free_indices_;
+    std::shared_ptr<const ForwardPolicy>     forward_policy_;  ///< guarded by tables_mtx_
+
+    std::atomic<uint64_t> forward_denied_{0};
+    std::atomic<int64_t>  forward_denied_logged_ms_{0};
 
     mutable std::shared_mutex inbound_mtx_;
     InboundIpHandler          inbound_;

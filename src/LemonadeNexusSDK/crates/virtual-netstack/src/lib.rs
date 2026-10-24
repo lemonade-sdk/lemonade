@@ -126,7 +126,8 @@ fn parse_cidr(s: &str) -> Option<IpCidr> {
     Some(IpCidr::new(addr.into(), prefix))
 }
 
-/// Create a netstack. Returns null on failure.
+/// Create a netstack. Returns null on failure, including an `mtu` below the
+/// IPv4 minimum of 68. A null return leaves no stack thread running.
 ///
 /// # Safety
 /// `output` must be a valid function pointer; `ctx` must outlive the stack.
@@ -141,26 +142,21 @@ pub unsafe extern "C" fn ns_create(
     let (pkt_tx, pkt_rx) = channel::<Vec<u8>>();
 
     let mtu = mtu as usize;
-    let (waker_tx, waker_rx) = channel::<Arc<Waker>>();
+    let (ready_tx, ready_rx) = channel::<std::io::Result<Arc<Waker>>>();
 
     let join = std::thread::Builder::new()
         .name("virtual-netstack".into())
         .spawn(move || {
             let output_rc: Rc<device::OutputFn> = Rc::new(move |pkt: &[u8]| callback.emit(pkt));
-            let (stack, waker) = match Stack::new(mtu, output_rc, cmd_rx, pkt_rx) {
-                Ok(v) => v,
-                Err(e) => {
-                    log::error!("virtual-netstack: failed to start: {e}");
-                    let _ = waker_tx.send(Arc::new(
-                        // Unreachable use; channel just needs a value on error.
-                        Waker::new(&mio::Poll::new().unwrap().registry().try_clone().unwrap(), Token(0))
-                            .unwrap(),
-                    ));
-                    return;
+            match Stack::new(mtu, output_rc, cmd_rx, pkt_rx) {
+                Ok((stack, waker)) => {
+                    let _ = ready_tx.send(Ok(Arc::new(waker)));
+                    stack.run();
                 }
-            };
-            let _ = waker_tx.send(Arc::new(waker));
-            stack.run();
+                Err(e) => {
+                    let _ = ready_tx.send(Err(e));
+                }
+            }
         });
 
     let join = match join {
@@ -168,9 +164,20 @@ pub unsafe extern "C" fn ns_create(
         Err(_) => return std::ptr::null_mut(),
     };
 
-    let waker = match waker_rx.recv() {
-        Ok(w) => w,
-        Err(_) => return std::ptr::null_mut(),
+    // A closed channel means the thread panicked before it reported. Join the
+    // thread in every failure case so no thread outlives a null return.
+    let waker = match ready_rx.recv() {
+        Ok(Ok(w)) => w,
+        Ok(Err(e)) => {
+            log::error!("virtual-netstack: failed to start: {e}");
+            let _ = join.join();
+            return std::ptr::null_mut();
+        }
+        Err(_) => {
+            log::error!("virtual-netstack: stack thread exited during start");
+            let _ = join.join();
+            return std::ptr::null_mut();
+        }
     };
 
     Box::into_raw(Box::new(NsHandle {

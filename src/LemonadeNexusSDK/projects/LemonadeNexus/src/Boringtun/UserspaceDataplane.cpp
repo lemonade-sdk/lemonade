@@ -1,6 +1,6 @@
-#include <LemonadeNexusSDK/Transport/UserspaceDataplane.hpp>
+#include <LemonadeNexus/Boringtun/UserspaceDataplane.hpp>
 
-#include <LemonadeNexusSDK/Transport/WireProtocol.hpp>
+#include <LemonadeNexus/Boringtun/WireProtocol.hpp>
 
 #include <boringtun_ffi.h>
 #include <sodium.h>
@@ -62,6 +62,49 @@ std::string endpoint_to_string(uint64_t packed) {
                   (ip >> 24) & 0xFF, (ip >> 16) & 0xFF, (ip >> 8) & 0xFF, ip & 0xFF,
                   static_cast<unsigned>(packed & 0xFFFF));
     return buf;
+}
+
+/// Dotted form of a host-order IPv4 address.
+std::string ipv4_to_string(uint32_t ip) {
+    char buf[16];
+    std::snprintf(buf, sizeof(buf), "%u.%u.%u.%u",
+                  (ip >> 24) & 0xFF, (ip >> 16) & 0xFF, (ip >> 8) & 0xFF, ip & 0xFF);
+    return buf;
+}
+
+/// First /32 entry of an allowed-IPs list (the tunnel IP), 0 when there is none.
+uint32_t primary_address(const std::vector<Cidr>& cidrs) {
+    for (const auto& c : cidrs)
+        if (c.prefix_len == 32) return c.network;
+    return 0;
+}
+
+/// True when `ip_pkt` (IPv4, already length-checked by the router) answers a
+/// flow that the other side opened: a TCP segment that is not a bare SYN, or
+/// an ICMP echo reply, destination-unreachable, or time-exceeded message. A
+/// non-first fragment carries no transport header and is not a reply.
+bool is_reply_packet(std::span<const uint8_t> ip_pkt) {
+    if (ip_pkt.size() < 20) return false;
+    const size_t ihl = static_cast<size_t>(ip_pkt[0] & 0x0F) * 4;
+    if (ihl < 20 || ip_pkt.size() < ihl) return false;
+    const uint16_t frag = static_cast<uint16_t>((ip_pkt[6] << 8) | ip_pkt[7]);
+    if ((frag & 0x1FFF) != 0) return false;
+    switch (ip_pkt[9]) {
+        case 6: {  // TCP: flags byte at offset 13
+            if (ip_pkt.size() < ihl + 14) return false;
+            const uint8_t flags = ip_pkt[ihl + 13];
+            const bool syn = (flags & 0x02) != 0;
+            const bool ack = (flags & 0x10) != 0;
+            return !syn || ack;
+        }
+        case 1: {  // ICMP: type at offset 0
+            if (ip_pkt.size() < ihl + 1) return false;
+            const uint8_t type = ip_pkt[ihl];
+            return type == 0 || type == 3 || type == 11;
+        }
+        default:
+            return false;
+    }
 }
 
 /// Parse "a.b.c.d:port" into a packed endpoint.
@@ -258,8 +301,9 @@ bool UserspaceDataplane::add_peer(const std::string& pubkey_b64,
         std::unique_lock lock(tables_mtx_);
         if (auto it = by_pubkey_.find(pubkey_b64); it != by_pubkey_.end()) {
             // Update in place: routes and endpoint may have changed.
-            it->second->allowed_ips = allowed_ips;
-            it->second->cidrs       = cidrs;
+            it->second->allowed_ips  = allowed_ips;
+            it->second->cidrs        = cidrs;
+            it->second->primary_addr = primary_address(cidrs);
             router_.remove_routes_for(it->second);
             router_.add_routes(cidrs, it->second);
             if (packed_endpoint)
@@ -287,9 +331,10 @@ bool UserspaceDataplane::add_peer(const std::string& pubkey_b64,
         peer->tunn        = tunn;
         peer->index       = index;
         peer->pubkey_b64  = pubkey_b64;
-        peer->allowed_ips = allowed_ips;
-        peer->cidrs       = std::move(cidrs);
-        peer->keepalive   = persistent_keepalive;
+        peer->allowed_ips  = allowed_ips;
+        peer->cidrs        = std::move(cidrs);
+        peer->primary_addr = primary_address(peer->cidrs);
+        peer->keepalive    = persistent_keepalive;
         peer->endpoint.store(packed_endpoint, std::memory_order_relaxed);
 
         by_pubkey_[pubkey_b64] = peer;
@@ -675,9 +720,13 @@ void UserspaceDataplane::route_decrypted(std::span<const uint8_t> ip_pkt,
     }
 
     IpRouter<PeerPtr>::Result route;
+    bool forward = false;
     {
         std::shared_lock lock(tables_mtx_);
         route = router_.lookup(*dst_ip);
+        // No hairpin back out the same peer.
+        if (route.verdict == IpRouter<PeerPtr>::Verdict::Peer && route.peer != src)
+            forward = forward_allowed_locked(*src, *route.peer, ip_pkt);
     }
     switch (route.verdict) {
         case IpRouter<PeerPtr>::Verdict::Local: {
@@ -686,12 +735,49 @@ void UserspaceDataplane::route_decrypted(std::span<const uint8_t> ip_pkt,
             break;
         }
         case IpRouter<PeerPtr>::Verdict::Peer:
-            if (route.peer != src)  // no hairpin back out the same peer
+            if (forward)
                 encrypt_and_send(route.peer, ip_pkt, scratch);
+            else if (route.peer != src)
+                note_forward_denied(*src, *route.peer);
             break;
         case IpRouter<PeerPtr>::Verdict::Drop:
             break;
     }
+}
+
+void UserspaceDataplane::set_forward_policy(std::shared_ptr<const ForwardPolicy> policy) {
+    std::unique_lock lock(tables_mtx_);
+    forward_policy_.swap(policy);
+    // The previous policy is released after the lock, in `policy`'s destructor.
+}
+
+bool UserspaceDataplane::forward_allowed_locked(const Peer& src, const Peer& dst,
+                                                std::span<const uint8_t> ip_pkt) const {
+    const ForwardPolicy* policy = forward_policy_.get();
+    if (!policy) return true;
+    const uint32_t s = src.primary_addr;
+    const uint32_t d = dst.primary_addr;
+    if (s == 0 || d == 0) return false;
+    if (!policy->governed.contains(s) || !policy->governed.contains(d)) return true;
+    if (policy->open.count(s) || policy->open.count(d)) return true;
+    if (policy->allowed.count(ForwardPolicy::key(s, d))) return true;
+    return policy->allowed.count(ForwardPolicy::key(d, s)) && is_reply_packet(ip_pkt);
+}
+
+void UserspaceDataplane::note_forward_denied(const Peer& src, const Peer& dst) {
+    const uint64_t total = forward_denied_.fetch_add(1, std::memory_order_relaxed) + 1;
+    constexpr int64_t kLogIntervalMs = 10'000;
+    const int64_t now = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+    int64_t last = forward_denied_logged_ms_.load(std::memory_order_relaxed);
+    if (now - last < kLogIntervalMs ||
+        !forward_denied_logged_ms_.compare_exchange_strong(last, now,
+                                                           std::memory_order_relaxed)) {
+        return;
+    }
+    spdlog::warn("[dataplane] forwarding policy dropped a packet from {} to {} "
+                 "({} dropped in total)",
+                 ipv4_to_string(src.primary_addr), ipv4_to_string(dst.primary_addr), total);
 }
 
 void UserspaceDataplane::timer_loop() {

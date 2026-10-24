@@ -29,7 +29,7 @@ if(APPLE AND CMAKE_OSX_DEPLOYMENT_TARGET)
 endif()
 foreach(_transport boringtun-ffi virtual-netstack)
     string(REPLACE "-" "_" _crate "lemonade-${_transport}")
-    set(_manifest "${CMAKE_CURRENT_SOURCE_DIR}/crates/${_transport}/Cargo.toml")
+    set(_manifest "${NEXUS_SDK_ROOT}/crates/${_transport}/Cargo.toml")
     set(_target_dir "${CMAKE_CURRENT_BINARY_DIR}/cargo/${_transport}")
     if(APPLE AND CMAKE_OSX_DEPLOYMENT_TARGET)
         string(APPEND _target_dir "-${CMAKE_OSX_DEPLOYMENT_TARGET}")
@@ -39,17 +39,17 @@ foreach(_transport boringtun-ffi virtual-netstack)
     else()
         set(_archive "${_target_dir}/release/lib${_crate}.a")
     endif()
-    file(GLOB_RECURSE _rust_sources CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/crates/${_transport}/src/*.rs")
+    file(GLOB_RECURSE _rust_sources CONFIGURE_DEPENDS "${NEXUS_SDK_ROOT}/crates/${_transport}/src/*.rs")
     add_custom_command(OUTPUT "${_archive}"
         COMMAND ${CMAKE_COMMAND} -E env ${_rust_environment} ${NEXUS_CARGO_EXECUTABLE}
             build --release ${_cargo_flags} --manifest-path "${_manifest}" --target-dir "${_target_dir}"
-        DEPENDS ${_rust_sources} "${_manifest}" "${CMAKE_CURRENT_SOURCE_DIR}/crates/${_transport}/Cargo.lock"
-        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/crates/${_transport}"
+        DEPENDS ${_rust_sources} "${_manifest}" "${NEXUS_SDK_ROOT}/crates/${_transport}/Cargo.lock"
+        WORKING_DIRECTORY "${NEXUS_SDK_ROOT}/crates/${_transport}"
         VERBATIM)
     add_custom_target(${_transport}-build DEPENDS "${_archive}")
     add_library(${_transport} STATIC IMPORTED GLOBAL)
     set_target_properties(${_transport} PROPERTIES IMPORTED_LOCATION "${_archive}"
-        INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_CURRENT_SOURCE_DIR}/crates/${_transport}/include")
+        INTERFACE_INCLUDE_DIRECTORIES "${NEXUS_SDK_ROOT}/crates/${_transport}/include")
     add_dependencies(${_transport} ${_transport}-build)
     if(APPLE)
         target_link_libraries(${_transport} INTERFACE "-framework Security" "-framework SystemConfiguration")

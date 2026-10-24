@@ -2237,7 +2237,7 @@ if(UNIX AND NOT APPLE)
     include(CPack)
 endif()
 
-include(src/LemonadeNexusSDK/lemonade.cmake)
+include(cmake/NexusSDK.cmake)
 
 # ============================================================
 # Embeddable Archive Target (Cross-Platform)

@@ -75,6 +75,15 @@ int64_t steady_now_ms() {
         .count();
 }
 
+/// True when httplib failed before it wrote any request byte: the TCP connect
+/// or the TLS handshake failed. Each later error (Write, Read, and others)
+/// can follow a request that the server received and applied.
+bool request_not_sent(httplib::Error error) {
+    return error == httplib::Error::Connection ||
+           error == httplib::Error::ConnectionTimeout ||
+           error == httplib::Error::SSLConnection;
+}
+
 /// Resolve a hostname to its first IPv4 address (dotted string), or "" on
 /// failure. Used to learn the server's mesh IP from its private FQDN (which the
 /// authoritative DNS maps to the in-mesh address, e.g. 10.64.0.1).
@@ -463,10 +472,15 @@ struct LemonadeNexusClient::Impl {
         // session is negotiated, so a cold or expired tunnel loses the first
         // connect. By the time it fails the session is usually live — retry
         // once rather than surfacing a failure the caller can't act on.
+        //
+        // Only a GET is always safe to send again. The server may already have
+        // applied a POST whose response was lost, so a POST is retried only
+        // when httplib reports that no request byte was written.
+        const bool is_get = std::string(method) == "GET";
         for (int attempt = 0; attempt < 2; ++attempt) {
             try {
                 auto* cli = private_client(lp);
-                httplib::Result res = (std::string(method) == "GET")
+                httplib::Result res = is_get
                     ? cli->Get(path, auth_headers())
                     : cli->Post(path, auth_headers(), body, "application/json");
                 if (res) {
@@ -485,18 +499,21 @@ struct LemonadeNexusClient::Impl {
                 // A pooled connection the server has since closed fails on use;
                 // drop it so the retry dials a fresh one.
                 drop_private_client();
-                if (attempt == 0) {
+                if (attempt == 0 && (is_get || request_not_sent(res.error()))) {
                     spdlog::debug("[LemonadeNexusClient] private(mesh) {} {} retrying "
                                   "after {}", method, path, httplib::to_string(res.error()));
                     continue;
                 }
                 spdlog::warn("[LemonadeNexusClient] private(mesh) {} {} NO RESPONSE "
                              "(httplib err={})", method, path, httplib::to_string(res.error()));
+                break;
             } catch (const std::exception& e) {
+                // An exception does not show how much of the request was sent.
                 drop_private_client();
-                if (attempt == 0) continue;
+                if (attempt == 0 && is_get) continue;
                 spdlog::warn("[LemonadeNexusClient] private(mesh) {} {} EXCEPTION: {}",
                              method, path, e.what());
+                break;
             }
         }
         if (use_breaker) {
@@ -1855,11 +1872,6 @@ Result<JoinResult> LemonadeNexusClient::join_network(const std::string& username
 StatusResult LemonadeNexusClient::leave_network() {
     StatusResult result;
 
-    // Tear down the mesh dataplane if active
-    if (impl_->meshplane.is_active()) {
-        impl_->meshplane.stop();
-    }
-
     std::string current_node_id;
     {
         std::lock_guard lock(impl_->mutex);
@@ -1867,10 +1879,14 @@ StatusResult LemonadeNexusClient::leave_network() {
     }
 
     if (current_node_id.empty()) {
+        impl_->meshplane.stop();
         result.error = "not currently joined (no node ID)";
         return result;
     }
 
+    // The delete goes to the private API, which is reachable only over the
+    // mesh. Delete the node first, and keep the mesh up when the delete fails
+    // so the caller can retry.
     auto del = delete_node(current_node_id);
     if (!del) {
         result.error = "leave failed: " + del.error;
@@ -1878,6 +1894,8 @@ StatusResult LemonadeNexusClient::leave_network() {
         return result;
     }
 
+    disable_mesh();
+    impl_->meshplane.stop();
     {
         std::lock_guard lock(impl_->mutex);
         impl_->node_id.clear();
@@ -2118,11 +2136,15 @@ void LemonadeNexusClient::enable_mesh(const MeshConfig& config) {
 }
 
 void LemonadeNexusClient::disable_mesh() {
-    std::lock_guard lock(impl_->mutex);
-    if (impl_->mesh_orchestrator) {
-        impl_->mesh_orchestrator->stop();
-        impl_->mesh_orchestrator.reset();
+    // stop() joins the orchestrator thread, and a state callback on that
+    // thread may call a client method that takes impl_->mutex. Detach the
+    // orchestrator under the lock, then stop it without the lock.
+    std::unique_ptr<MeshOrchestrator> orchestrator;
+    {
+        std::lock_guard lock(impl_->mutex);
+        orchestrator = std::move(impl_->mesh_orchestrator);
     }
+    if (orchestrator) orchestrator->stop();
 }
 
 MeshTunnelStatus LemonadeNexusClient::mesh_status() const {

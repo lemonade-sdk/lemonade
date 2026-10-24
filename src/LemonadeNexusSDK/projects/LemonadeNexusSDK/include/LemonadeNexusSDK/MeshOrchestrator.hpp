@@ -52,7 +52,8 @@ public:
     /// Get current mesh peers (thread-safe snapshot).
     [[nodiscard]] std::vector<MeshPeer> peers() const;
 
-    /// Force an immediate peer refresh cycle.
+    /// Wake the loop and run a peer refresh now, without waiting for the next
+    /// refresh interval. Thread-safe. Has no effect when the loop is stopped.
     void refresh_now();
 
     /// Set callback for mesh state changes.
@@ -85,6 +86,7 @@ private:
     MeshTunnelStatus         last_status_;
     StateCallback            callback_;
     std::string              our_endpoint_; // last reported public endpoint
+    bool                     refresh_requested_{false};  // set by refresh_now()
 };
 
 } // namespace lnsdk

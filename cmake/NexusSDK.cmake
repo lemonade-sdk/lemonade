@@ -20,7 +20,7 @@ if(WIN32)
     list(APPEND _nexus_byproducts "${_nexus_link_dir}/lemonade_nexus_sdk.lib")
 endif()
 ExternalProject_Add(nexus-sdk-build
-    SOURCE_DIR "${CMAKE_SOURCE_DIR}/src/LemonadeNexusSDK"
+    SOURCE_DIR "${CMAKE_SOURCE_DIR}/cmake/nexus"
     BINARY_DIR "${_nexus_build}"
     CMAKE_ARGS
         -DCMAKE_BUILD_TYPE=Release
@@ -31,14 +31,16 @@ ExternalProject_Add(nexus-sdk-build
         -DNEXUS_CARGO_EXECUTABLE=${LEMONADE_CARGO_EXECUTABLE}
         -DNEXUS_CARGO_VENDOR_DIR=${LEMONADE_NEXUS_CARGO_VENDOR_DIR}
         ${LEMONADE_NEXUS_CMAKE_ARGS}
-    BUILD_COMMAND ${CMAKE_COMMAND} --build <BINARY_DIR> --config Release --target lemonade_nexus_sdk
+    # The bundled OpenSSL build reads the deployment target from the environment.
+    BUILD_COMMAND ${CMAKE_COMMAND} -E env MACOSX_DEPLOYMENT_TARGET=${_nexus_deployment_target}
+        ${CMAKE_COMMAND} --build <BINARY_DIR> --config Release --target lemonade_nexus_sdk
     INSTALL_COMMAND ""
     BUILD_ALWAYS TRUE
     BUILD_BYPRODUCTS ${_nexus_byproducts}
 )
 add_library(lemonade-nexus-sdk SHARED IMPORTED GLOBAL)
 set_target_properties(lemonade-nexus-sdk PROPERTIES IMPORTED_LOCATION "${_nexus_runtime}"
-    INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_SOURCE_DIR}/src/LemonadeNexusSDK/include")
+    INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_SOURCE_DIR}/src/LemonadeNexusSDK/projects/LemonadeNexusSDK/include")
 if(WIN32)
     set_target_properties(lemonade-nexus-sdk PROPERTIES IMPORTED_IMPLIB "${_nexus_link_dir}/lemonade_nexus_sdk.lib")
 elseif(APPLE)

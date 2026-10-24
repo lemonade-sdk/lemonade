@@ -1,8 +1,8 @@
 #include <LemonadeNexusSDK/BoringtunMesh.hpp>
 #include <algorithm>
 
-#include <LemonadeNexusSDK/Transport/IpRouter.hpp>
-#include <LemonadeNexusSDK/Transport/UserspaceDataplane.hpp>
+#include <LemonadeNexus/Boringtun/IpRouter.hpp>
+#include <LemonadeNexus/Boringtun/UserspaceDataplane.hpp>
 
 #include <virtual_netstack.h>
 #include <sodium.h>
@@ -13,6 +13,7 @@
 #include <mutex>
 #include <span>
 #include <unordered_set>
+#include <utility>
 
 namespace lnsdk {
 
@@ -54,13 +55,16 @@ void mesh_output_trampoline(void* ctx, const uint8_t* pkt, size_t len) {
 
 struct BoringtunMesh::Impl {
     UserspaceDataplane dp;
-    NsHandle*          ns{nullptr};
     std::string        server_pubkey;     // never removed by sync_peers
-    std::string        tunnel_addr;       // our virtual IP (no prefix), egress source
     std::atomic<bool>  active{false};
     BoringtunConfig    started_cfg;       // what the live plane was started with
 
-    std::mutex                                            egress_mtx;
+    // Guards ns, tunnel_addr, and egress_cache. stop() destroys the netstack
+    // while egress and ingress calls may run on other threads, so every read
+    // or write of ns must hold this lock.
+    std::mutex                                            ns_mtx;
+    NsHandle*                                             ns{nullptr};
+    std::string                                           tunnel_addr;  // our virtual IP (no prefix), egress source
     std::map<std::pair<std::string, uint16_t>, uint16_t>  egress_cache;
 };
 
@@ -91,33 +95,37 @@ bool BoringtunMesh::start(const BoringtunConfig& config) {
     dpcfg.public_key_b64  = config.public_key;
     dpcfg.listen_port     = config.listen_port;  // 0 = random
 
-    impl_->ns = ns_create(dpcfg.mtu, &mesh_output_trampoline, &impl_->dp);
-    if (!impl_->ns) return false;
+    NsHandle* ns = ns_create(dpcfg.mtu, &mesh_output_trampoline, &impl_->dp);
+    if (!ns) return false;
 
-    NsHandle* ns = impl_->ns;
+    // dp.stop() joins the receive workers, so this handler never runs after
+    // stop() destroys the netstack.
     impl_->dp.set_inbound_handler([ns](std::span<const uint8_t> pkt) {
         if (!pkt.empty()) ns_feed_inbound(ns, pkt.data(), pkt.size());
     });
 
     if (!impl_->dp.start(dpcfg)) {
-        ns_destroy(impl_->ns);
-        impl_->ns = nullptr;
+        ns_destroy(ns);
         return false;
     }
 
     // Register our virtual address; widen the netstack prefix to the mesh plane
     // (from the first allowed-IPs entry) so mesh peers are on-link for egress.
-    impl_->tunnel_addr = addr_part(config.tunnel_ip);
-    if (!impl_->tunnel_addr.empty()) {
-        if (auto c = Cidr::parse(impl_->tunnel_addr); c && c->prefix_len == 32) {
+    const std::string tunnel_addr = addr_part(config.tunnel_ip);
+    if (!tunnel_addr.empty()) {
+        if (auto c = Cidr::parse(tunnel_addr); c && c->prefix_len == 32) {
             impl_->dp.add_local_ip(c->network);
         }
         int prefix = 10;
         if (!config.allowed_ips.empty()) {
             prefix = prefix_part(config.allowed_ips.front(), 10);
         }
-        ns_add_local_ip(impl_->ns,
-                        (impl_->tunnel_addr + "/" + std::to_string(prefix)).c_str());
+        ns_add_local_ip(ns, (tunnel_addr + "/" + std::to_string(prefix)).c_str());
+    }
+    {
+        std::lock_guard lock(impl_->ns_mtx);
+        impl_->ns          = ns;
+        impl_->tunnel_addr = tunnel_addr;
     }
 
     // Add the server as the initial peer (its allowed-ips cover the mesh plane,
@@ -138,7 +146,7 @@ bool BoringtunMesh::start(const BoringtunConfig& config) {
     impl_->started_cfg = config;
     impl_->active = true;
     spdlog::info("[BoringtunMesh] dataplane up: mesh_ip={}, server_peer={}…",
-                 impl_->tunnel_addr,
+                 tunnel_addr,
                  impl_->server_pubkey.substr(0, std::min<size_t>(8, impl_->server_pubkey.size())));
     return true;
 }
@@ -146,12 +154,16 @@ bool BoringtunMesh::start(const BoringtunConfig& config) {
 void BoringtunMesh::stop() {
     if (!impl_->active.exchange(false)) return;
     impl_->dp.stop();  // stop feeding the netstack before tearing it down
-    if (impl_->ns) {
-        ns_destroy(impl_->ns);
-        impl_->ns = nullptr;
+    NsHandle* ns = nullptr;
+    {
+        std::lock_guard lock(impl_->ns_mtx);
+        ns = std::exchange(impl_->ns, nullptr);
+        impl_->egress_cache.clear();
     }
-    std::lock_guard lock(impl_->egress_mtx);
-    impl_->egress_cache.clear();
+    // No other thread can reach the handle now: each one reads ns under
+    // ns_mtx and finds null. ns_destroy joins the stack thread, so it runs
+    // outside the lock.
+    ns_destroy(ns);
     spdlog::info("[BoringtunMesh] dataplane down");
 }
 
@@ -160,8 +172,9 @@ bool BoringtunMesh::is_active() const {
 }
 
 uint16_t BoringtunMesh::tcp_egress(const std::string& dst_ip, uint16_t dst_port) {
-    if (!impl_->active.load() || !impl_->ns || impl_->tunnel_addr.empty()) return 0;
-    std::lock_guard lock(impl_->egress_mtx);
+    if (!impl_->active.load()) return 0;
+    std::lock_guard lock(impl_->ns_mtx);
+    if (!impl_->ns || impl_->tunnel_addr.empty()) return 0;
     const auto key = std::make_pair(dst_ip, dst_port);
     if (auto it = impl_->egress_cache.find(key); it != impl_->egress_cache.end())
         return it->second;
@@ -175,7 +188,7 @@ uint16_t BoringtunMesh::tcp_egress(const std::string& dst_ip, uint16_t dst_port)
 }
 
 void BoringtunMesh::close_egress(const std::string& dst_ip, uint16_t dst_port) {
-    std::lock_guard lock(impl_->egress_mtx);
+    std::lock_guard lock(impl_->ns_mtx);
     impl_->egress_cache.erase({dst_ip, dst_port});
     if (!impl_->ns) return;
     ns_remove_tcp_egress(impl_->ns, dst_ip.c_str(), dst_port);
@@ -183,8 +196,10 @@ void BoringtunMesh::close_egress(const std::string& dst_ip, uint16_t dst_port) {
 }
 
 bool BoringtunMesh::tcp_ingress(uint16_t vport, const std::string& target) {
-    if (!impl_->active.load() || !impl_->ns || impl_->tunnel_addr.empty()) return false;
+    if (!impl_->active.load()) return false;
     if (vport == 0 || target.empty()) return false;
+    std::lock_guard lock(impl_->ns_mtx);
+    if (!impl_->ns || impl_->tunnel_addr.empty()) return false;
     if (ns_add_tcp_forward(impl_->ns, impl_->tunnel_addr.c_str(), vport,
                            target.c_str()) != 0) {
         spdlog::warn("[BoringtunMesh] ingress {}:{} -> {} failed",
@@ -240,8 +255,11 @@ StatusResult BoringtunMesh::remove_peer(const std::string& pubkey) {
 
 MeshTunnelStatus BoringtunMesh::mesh_status() const {
     MeshTunnelStatus ms;
-    ms.is_up     = impl_->active.load();
-    ms.tunnel_ip = impl_->tunnel_addr;
+    ms.is_up = impl_->active.load();
+    {
+        std::lock_guard lock(impl_->ns_mtx);
+        ms.tunnel_ip = impl_->tunnel_addr;
+    }
     if (!ms.is_up) return ms;
 
     for (const auto& peer : impl_->dp.snapshot_peers()) {

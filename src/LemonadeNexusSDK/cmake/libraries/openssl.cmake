@@ -43,8 +43,11 @@ include(ExternalProject)
 set(OPENSSL_VERSION  "3.3.2")
 set(OPENSSL_URL      "https://github.com/openssl/openssl/releases/download/openssl-${OPENSSL_VERSION}/openssl-${OPENSSL_VERSION}.tar.gz")
 
-# Install prefix inside the build tree — keeps things isolated.
-set(OPENSSL_INSTALL_PREFIX "${CMAKE_BINARY_DIR}/openssl-install")
+# Compile target-filesystem paths into libcrypto and stage the install with
+# DESTDIR: a build-tree --prefix baked the build directory into the final ELF
+# and made it non-reproducible.
+set(OPENSSL_STAGE_ROOT "${CMAKE_BINARY_DIR}/openssl-stage")
+set(OPENSSL_INSTALL_PREFIX "${OPENSSL_STAGE_ROOT}/usr")
 
 # ---------------------------------------------------------------------------
 # Platform-specific Configure target
@@ -97,22 +100,17 @@ if(WIN32)
     set(_SSL_LIB_NAME "libssl.lib")
     set(_CRYPTO_LIB_NAME "libcrypto.lib")
 else()
-    set(_openssl_cflags "${CMAKE_C_FLAGS}")
-    if(APPLE AND CMAKE_OSX_DEPLOYMENT_TARGET)
-        string(APPEND _openssl_cflags " -mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}")
-    endif()
     set(_OPENSSL_CONFIGURE_CMD
         ${CMAKE_COMMAND} -E env
         "CC=${CMAKE_C_COMPILER}"
-        "CFLAGS=${_openssl_cflags}"
         ./Configure ${OPENSSL_CONFIGURE_TARGET}
-        --prefix=${OPENSSL_INSTALL_PREFIX}
-        --openssldir=${OPENSSL_INSTALL_PREFIX}/ssl
+        --prefix=/usr
+        --openssldir=/etc/ssl
         --libdir=lib
         no-shared no-tests no-ui-console no-docs
     )
     set(_OPENSSL_BUILD_CMD make -j${NPROC})
-    set(_OPENSSL_INSTALL_CMD make install_sw)
+    set(_OPENSSL_INSTALL_CMD make DESTDIR=${OPENSSL_STAGE_ROOT} install_sw)
     set(_SSL_LIB_NAME "libssl.a")
     set(_CRYPTO_LIB_NAME "libcrypto.a")
 endif()

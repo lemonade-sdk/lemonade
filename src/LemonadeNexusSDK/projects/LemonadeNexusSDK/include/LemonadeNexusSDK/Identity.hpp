@@ -43,7 +43,15 @@ public:
     /// Format: {"public_key":"<base64>","private_key":"<base64>"}
     [[nodiscard]] bool load(const std::filesystem::path& path);
 
-    /// Save keypair to a JSON file.
+    /// Save keypair to a JSON file, in the format that load() reads.
+    ///
+    /// Creates the parent directories when needed. Writes a new file beside
+    /// `path` and renames it over `path`, so a reader sees either the old file
+    /// or the complete new one. On POSIX the new file is created with mode
+    /// 0600 and is never readable by other users, and a replaced file of any
+    /// mode becomes 0600. On Windows the file takes the access control list
+    /// of its directory. Returns false when there is no valid keypair or the
+    /// write fails; the existing file is then unchanged.
     [[nodiscard]] bool save(const std::filesystem::path& path) const;
 
     /// Sign a message with the private key.

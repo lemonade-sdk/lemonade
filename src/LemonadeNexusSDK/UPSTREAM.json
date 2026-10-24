@@ -1,10 +1,36 @@
 {
   "repository": "https://github.com/lemonade-sdk/lemonade-nexus.git",
-  "commit": "1c5d901b8c996020b9f9555d1484c29804408c00",
+  "commit": "e453aa567e9af9b95552cdb1f3643ba7bdc91543",
   "version": "0.9.8",
-  "profile": "Client SDK and required userspace transport only",
-  "local_patches": [
-    "Device-hosted account avatars: signed hash references in the private API; bounded local image cache and authenticated encrypted peer transfers. Requires the companion Nexus reference API patch; see docs/dev/nexus-account-ui.md.",
-    "Virtual netstack: update an existing ingress target when a service is re-registered."
+  "paths": [
+    "LICENSE",
+    "cmake/FindOpenSSL.cmake",
+    "cmake/libraries/httplib.cmake",
+    "cmake/libraries/libsodium.cmake",
+    "cmake/libraries/nlohmann_json.cmake",
+    "cmake/libraries/openssl.cmake",
+    "cmake/libraries/spdlog.cmake",
+    "crates/boringtun-ffi/Cargo.lock",
+    "crates/boringtun-ffi/Cargo.toml",
+    "crates/boringtun-ffi/include",
+    "crates/boringtun-ffi/src",
+    "crates/virtual-netstack/Cargo.lock",
+    "crates/virtual-netstack/Cargo.toml",
+    "crates/virtual-netstack/include",
+    "crates/virtual-netstack/src",
+    "projects/LemonadeNexus/include/LemonadeNexus/Boringtun/IBoringtunProvider.hpp",
+    "projects/LemonadeNexus/include/LemonadeNexus/Boringtun/IpRouter.hpp",
+    "projects/LemonadeNexus/include/LemonadeNexus/Boringtun/UserspaceDataplane.hpp",
+    "projects/LemonadeNexus/include/LemonadeNexus/Boringtun/WireProtocol.hpp",
+    "projects/LemonadeNexus/src/Boringtun/UserspaceDataplane.cpp",
+    "projects/LemonadeNexusSDK/include",
+    "projects/LemonadeNexusSDK/src"
+  ],
+  "exclude": [
+    "projects/LemonadeNexusSDK/src/main.cpp"
+  ],
+  "patches": [
+    "0001-Update-an-existing-ingress-target-when-a-service-is-.patch",
+    "0002-Add-device-hosted-account-images-to-the-client-SDK.patch"
   ]
 }
