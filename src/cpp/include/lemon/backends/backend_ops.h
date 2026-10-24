@@ -170,8 +170,8 @@ const BackendOps* default_backend_ops();
 // Podman or Docker or connect to their sockets.
 bool containers_enabled();
 
-// nullopt when `recipe:backend` is ready. `podman info` runs only once the
-// user has opted in.
+// nullopt when `recipe:backend` is ready. `podman info` and SELinux run only
+// once the user has opted in.
 std::optional<utils::SetupReport> container_setup_failure(const std::string& recipe,
                                                           const std::string& backend);
 

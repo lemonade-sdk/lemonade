@@ -2112,6 +2112,10 @@ bool needs_gfx1151_cwsr_fix() {
     return false;
 }
 
+std::string hip_visible_device(const std::string& arch) {
+    return system_info_detail::hip_visible_device("/sys/class/kfd/kfd/topology/nodes", arch);
+}
+
 // Identify NPU architecture by checking for known hardware
 // Windows: PCI device ID via WMI; Linux: amdxdna driver in sysfs accel subsystem
 // Returns the NPU family (e.g., "XDNA2") or empty string if no NPU found
