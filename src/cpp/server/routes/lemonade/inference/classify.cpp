@@ -1,3 +1,5 @@
+#include <set>
+
 #include "lemon/model_types.h"
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
@@ -14,7 +16,8 @@ const RouteError kNoSoleClassifier{
 const RouteError kBackendRejected{
     400, "",
     "The backend rejects the request, for example because `model` is not a classification "
-    "model, which is found only after it loads"};
+    "model, which is found only after it loads, or because `labels` is sent to a fixed-label "
+    "model or left out for a zero-shot one"};
 
 const RouteArg kModel{"model", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
                       "The classifier model. Optional when exactly one classification model is loaded; that "
@@ -23,6 +26,10 @@ const RouteArg kInput{"input", ArgIn::JsonBody, {{"type", "string"}, {"pattern",
                       "Text to classify.", {"text"}};
 const RouteArg kTopK{"top_k", ArgIn::JsonBody, {{"type", "integer"}, {"minimum", 1}, {"maximum", 1000000}}, false, Support::Available,
                      "Return only the highest-scoring `k` labels. Defaults to every label."};
+const RouteArg kLabels{"labels", ArgIn::JsonBody, {{"type", "array"}, {"items", {{"type", "string"}, {"pattern", "\\S"}}}},
+                       false, Support::Available,
+                       "The labels to score `input` against. Required by a zero-shot model, and refused by "
+                       "every other model. The entries are unique and not blank."};
 
 class ClassifyRoute : public ModelRoute {
 public:
@@ -37,12 +44,13 @@ public:
         s.experimental = true;
         s.description =
             "Runs an encoder text classifier, such as a PII, prompt-safety or domain classifier, on "
-            "a string and returns a score for each label. It serves `onnxruntime` models, both "
-            "sequence classifiers (one label set) and token classifiers (aggregated span labels), "
-            "and provides the classification that the router's `classifier` condition uses.";
+            "a string and returns a score for each label. It serves `onnxruntime` sequence "
+            "classifiers (one label set), token classifiers (aggregated span labels) and zero-shot "
+            "models (labels sent with each request). It provides the classification that the "
+            "router's `classifier` and `zero_shot` conditions use.";
         s.notes = {
-            "A malformed request, such as one with a blank `input` or a non-positive `top_k`, is "
-            "rejected before any model loads.",
+            "A malformed request, such as one with a blank `input`, a non-positive `top_k`, or an "
+            "empty or repeated `labels` entry, is rejected before any model loads.",
             "### Supported Models\n\n"
             "Single-sequence encoder families: BERT, DistilBERT, RoBERTa, XLM-RoBERTa, DeBERTa "
             "(v1/v2), ELECTRA, ALBERT and CamemBERT. A stock `optimum-cli export onnx` directory of "
@@ -58,7 +66,7 @@ public:
             "Some upstream models declare only generic `LABEL_<n>` label names; their model card "
             "explains them.",
         };
-        s.args = {kModel, kInput, kTopK};
+        s.args = {kModel, kInput, kTopK, kLabels};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -102,6 +110,22 @@ protected:
             const double top_k = req.arg(kTopK).get<double>();
             // The validator accepts 2.0 as an integer; the backend expects 2.
             req.body[kTopK.name] = static_cast<long long>(top_k);
+        }
+
+        if (req.has(kLabels)) {
+            const json& labels = req.arg(kLabels);
+            if (labels.empty()) {
+                write_openai_error(res, kArgInvalid, "'labels' must contain at least one label");
+                return false;
+            }
+            std::set<std::string> seen;
+            for (const auto& label : labels) {
+                if (!seen.insert(label.get<std::string>()).second) {
+                    write_openai_error(res, kArgInvalid,
+                        "'labels' contains a duplicate entry: '" + label.get<std::string>() + "'");
+                    return false;
+                }
+            }
         }
 
         // The router requires a model on every request, so an omitted one is resolved

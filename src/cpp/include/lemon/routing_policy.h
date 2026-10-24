@@ -170,6 +170,13 @@ struct ClassifierServices {
     std::function<std::map<std::string, double>(const std::string& model,
                                                 const std::string& text)> run_classifier;
 
+    // Score `text` against a caller-supplied `labels` list; returns label ->
+    // score. Powers the `zero_shot` type.
+    std::function<std::map<std::string, double>(const std::string& model,
+                                                const std::string& text,
+                                                const std::vector<std::string>& labels)>
+        run_zero_shot_classifier;
+
     // Run a chat `model` with a system `prompt` over `input`; returns the raw
     // assistant text. Powers the `llm` router / L0a on-ramp. Maps to
     // Router::chat_completion.

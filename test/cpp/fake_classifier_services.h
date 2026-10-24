@@ -20,6 +20,9 @@
 //   - embed(model, text)          -> a fixed vector (per (model, text), else a
 //                                    per-model default).
 //   - run_classifier(model, text) -> a fixed label->score map per model.
+//   - run_zero_shot_classifier(model, text, labels)
+//                                 -> a fixed label->score map per model; the
+//                                    labels it was handed are recorded.
 //   - chat(model, prompt, input)  -> a fixed reply per model.
 //
 // A model can also be marked as failing, so callers can exercise on_error.
@@ -117,6 +120,21 @@ public:
         return unused;
     }
 
+    // Configure a fixed label->score map returned by run_zero_shot_classifier
+    // for `model`. Kept separate from set_classifier_scores so a test can tell
+    // which of the two services a classifier actually reached.
+    void set_zero_shot_scores(const std::string& model,
+                              std::map<std::string, double> scores) {
+        zero_shot_scores_[model] = std::move(scores);
+        declare("run_zero_shot_classifier", model);
+    }
+
+    // The labels passed to the most recent run_zero_shot_classifier call.
+    std::vector<std::string> last_zero_shot_labels() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return last_zero_shot_labels_;
+    }
+
     // Build a ClassifierServices wired to this fake. The returned struct copies
     // `this` by pointer, so keep the FakeClassifierServices alive for the
     // services' lifetime.
@@ -162,6 +180,20 @@ public:
             self->record_unexpected("run_classifier", model);
             return std::map<std::string, double>{};
         };
+        svc.run_zero_shot_classifier = [self](const std::string& model, const std::string&,
+                                              const std::vector<std::string>& labels) {
+            {
+                std::lock_guard<std::mutex> lock(self->mutex_);
+                self->last_zero_shot_labels_ = labels;
+            }
+            auto it = self->zero_shot_scores_.find(model);
+            if (it != self->zero_shot_scores_.end()) {
+                self->mark_used("run_zero_shot_classifier", model);
+                return it->second;
+            }
+            self->record_unexpected("run_zero_shot_classifier", model);
+            return std::map<std::string, double>{};
+        };
         svc.chat = [self](const std::string& model, const std::string&,
                           const std::string&) {
             if (self->failing_chats_.count(model) != 0) {
@@ -198,8 +230,8 @@ private:
         unexpected_calls_.push_back(stub_key(service, target));
     }
 
-    // Guards unexpected_calls_, used_stubs_ and the embed counters: concurrent
-    // route() tests write them from many threads.
+    // Guards unexpected_calls_, used_stubs_, last_zero_shot_labels_ and the
+    // embed counters: concurrent route() tests write them from many threads.
     mutable std::mutex mutex_;
     std::vector<std::string> unexpected_calls_;
     std::set<std::string> declared_stubs_;
@@ -209,6 +241,8 @@ private:
     std::map<std::string, int> embed_calls_;
     int total_embed_calls_ = 0;
     std::map<std::string, std::map<std::string, double>> classifier_scores_;
+    std::map<std::string, std::map<std::string, double>> zero_shot_scores_;
+    std::vector<std::string> last_zero_shot_labels_;
     std::map<std::string, std::string> chat_replies_;
     std::set<std::pair<std::string, std::string>> failing_embeds_;
     std::set<std::string> failing_classifiers_;
