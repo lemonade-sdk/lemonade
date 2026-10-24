@@ -877,10 +877,10 @@ jobs:
             exit $validationExitCode
           }
 
-      - name: Record the API examples these pins invalidate
-        # The update PR carries examples recorded with the new backend, so the API
-        # reference keeps showing what lemond returns. When this fails, the PR's API
-        # docs check reports the stale examples instead.
+      - name: Record and verify API examples for candidate pins
+        # The recording is diagnostic, not part of inference validation. Failures
+        # must yield a visible draft PR, not silently block the update job.
+        id: record_api_examples
         if: matrix.backend == 'vulkan' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
         continue-on-error: true
         shell: PowerShell
@@ -889,15 +889,33 @@ jobs:
           Copy-Item build\resources\backend_versions.json src\cpp\resources\backend_versions.json -Force
           & .\.venv\Scripts\python.exe docs\tools\gen_api_boilerplate.py --lemond build\Release\lemond.exe
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & .\.venv\Scripts\python.exe docs\tools\gen_api_boilerplate.py --lemond build\Release\lemond.exe --check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Upload recorded API examples
-        if: matrix.backend == 'vulkan' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+      - name: Write API documentation verification status
+        if: always() && matrix.backend == 'vulkan' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+        continue-on-error: true
+        shell: PowerShell
+        env:
+          RECORD_OUTCOME: ${{ steps.record_api_examples.outcome }}
+        run: |
+          $status = if ($env:RECORD_OUTCOME -eq 'success') { 'passed' } else { 'failed' }
+          Set-Content -Path docs\tools\api_examples_status.txt -Value $status -Encoding ascii -NoNewline
+          if ($status -ne 'passed') {
+            Write-Warning "API docs recording or verification failed; the update PR will be a draft."
+            "### API documentation verification failed" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+            "The auto-update PR will be opened as a draft. Review the recording logs." | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          }
+
+      - name: Upload recorded API examples and verification status
+        if: always() && matrix.backend == 'vulkan' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
         continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: api-examples
           path: |
             docs/tools/api_examples_cache.json
+            docs/tools/api_examples_status.txt
             docs/api/
           retention-days: 7
 
@@ -952,7 +970,7 @@ jobs:
   # ========================================================================
   create-pr:
     name: Create update PR
-    needs: [get-latest-releases, verify-release-assets, validate]
+    needs: [get-latest-releases, verify-release-assets, validate, gpu-offload-gate]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -960,16 +978,76 @@ jobs:
     if: >-
       (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
       needs.validate.result == 'success' &&
-      needs.verify-release-assets.result == 'success'
+      needs.verify-release-assets.result == 'success' &&
+      needs.gpu-offload-gate.result == 'success'
     steps:
       - uses: actions/checkout@v5
 
       - name: Download recorded API examples
+        id: download_api_examples
         continue-on-error: true
         uses: actions/download-artifact@v7
         with:
           name: api-examples
-          path: docs
+          path: api-examples-artifact
+
+      - name: Classify API documentation verification
+        id: api_docs
+        shell: bash
+        env:
+          DOWNLOAD_OUTCOME: ${{ steps.download_api_examples.outcome }}
+        run: |
+          set -euo pipefail
+          status_file=api-examples-artifact/tools/api_examples_status.txt
+          docs_ok=false
+          reason=''
+          if [[ "$DOWNLOAD_OUTCOME" != "success" ]]; then
+            reason='API documentation artifact download failed.'
+          elif [[ ! -f "$status_file" ]]; then
+            reason='API documentation artifact has no verification status.'
+          elif [[ "$(cat "$status_file")" != "passed" ]]; then
+            reason='API recording or verification failed on the validation runner.'
+          elif [[ ! -s api-examples-artifact/tools/api_examples_cache.json ]]; then
+            reason='API documentation artifact has no recorded example cache.'
+          else
+            # A successful status alone is insufficient if the artifact is partial.
+            for page in docs/api/*.md; do
+              if [[ ! -s "api-examples-artifact/api/${page##*/}" ]]; then
+                reason="API documentation artifact is missing ${page##*/}."
+                break
+              fi
+            done
+            if [[ -z "$reason" ]]; then
+              # Copy and line-ending conversion must succeed before declaring OK.
+              # A failure is a draft-PR condition, not an unreported workflow error.
+              if cp api-examples-artifact/tools/api_examples_cache.json docs/tools/ &&
+                 cp -R api-examples-artifact/api/. docs/api/ &&
+                 python3 - <<'PY'
+          from pathlib import Path
+          for path in Path('docs/api').glob('*.md'):
+              data = path.read_bytes()
+              normalized = data.replace(b'\r\n', b'\n')
+              if data != normalized:
+                  path.write_bytes(normalized)
+          PY
+              then
+                docs_ok=true
+              else
+                reason='Failed to install or normalize verified API documentation artifacts.'
+              fi
+            fi
+          fi
+          echo "ok=$docs_ok" >> "$GITHUB_OUTPUT"
+          echo "reason=$reason" >> "$GITHUB_OUTPUT"
+          if [[ "$docs_ok" != true ]]; then
+            echo "::warning::$reason Creating a draft update PR."
+            {
+              echo '### API documentation needs attention: draft update PR'
+              echo "$reason"
+              echo 'The release pins and GPU validation are unaffected.'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          rm -rf api-examples-artifact
 
       - name: Download validation results
         uses: actions/download-artifact@v7
@@ -1045,6 +1123,9 @@ jobs:
       - name: Generate PR body
         shell: bash
         env:
+          API_DOCS_OK: ${{ steps.api_docs.outputs.ok }}
+          API_DOCS_REASON: ${{ steps.api_docs.outputs.reason }}
+          WORKFLOW_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           LLAMACPP_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_release }}
           LLAMACPP_ROCM_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_rocm_release }}
           LLAMACPP_LEMONADE_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_lemonade_release }}
@@ -1076,6 +1157,25 @@ jobs:
               return release if enabled else "unchanged"
 
           body_lines = []
+          if os.environ.get("API_DOCS_OK") != "true":
+              body_lines += [
+                  "> [!CAUTION]",
+                  "> **API DOCUMENTATION VERIFICATION FAILED OR WAS NOT AVAILABLE.**",
+                  "> This PR is intentionally a **DRAFT**. The configured inference",
+                  "> and GPU offload gates passed, but API examples could not be recorded",
+                  "> and verified against these candidate backend versions.",
+                  f"> **Reason:** {os.environ.get('API_DOCS_REASON') or 'See workflow logs.'}",
+                  f"> **Investigate:** {os.environ['WORKFLOW_RUN_URL']}",
+                  "> Do **not** mark ready or merge before resolving the documentation issue.",
+                  "",
+              ]
+          else:
+              body_lines += [
+                  "> [!NOTE]",
+                  "> **API documentation verified:** examples were recorded using the",
+                  "> candidate backend pins and `gen_api_boilerplate.py --check` passed.",
+                  "",
+              ]
           llamacpp = os.environ.get("LLAMACPP_RELEASE", "unknown")
           rocm_nightly = os.environ.get("LLAMACPP_ROCM_RELEASE", "unknown")
           lemonade_release = os.environ.get("LLAMACPP_LEMONADE_RELEASE", "unknown")
@@ -1205,8 +1305,19 @@ jobs:
           # Check if a PR already exists for this update
           EXISTING_PR=$(gh pr list --head "$BRANCH" --json number --jq '.[0].number' 2>/dev/null || echo "")
           if [ -n "$EXISTING_PR" ]; then
+            if [ "${{ steps.api_docs.outputs.ok }}" != "true" ]; then
+              # An existing bot PR must not silently stay ready if docs regressed.
+              if [ "$(gh pr view "$EXISTING_PR" --json isDraft --jq .isDraft)" != "true" ]; then
+                gh pr ready "$EXISTING_PR" --undo
+              fi
+              gh pr edit "$EXISTING_PR" --title "[Docs review required] Update llama.cpp to ${LLAMACPP_RELEASE}" --body-file pr_body.md
+            fi
             echo "PR #$EXISTING_PR already exists for branch $BRANCH. Skipping."
             exit 0
+          fi
+          # A closed prior auto-PR can leave its branch behind. Never overwrite it.
+          if git ls-remote --exit-code --heads origin "$BRANCH" > /dev/null 2>&1; then
+            BRANCH="${BRANCH}-${GITHUB_RUN_ID}"
           fi
 
           git config user.name "github-actions[bot]"
@@ -1219,13 +1330,22 @@ jobs:
           fi
 
           git checkout -b "$BRANCH"
-          git add src/cpp/resources/backend_versions.json src/cpp/include/lemon/llamacpp_architectures_generated.h \
-            docs/tools/api_examples_cache.json docs/api
+          git add -- src/cpp/resources/backend_versions.json src/cpp/include/lemon/llamacpp_architectures_generated.h
+          if [ "${{ steps.api_docs.outputs.ok }}" = "true" ]; then
+            git add -- docs/tools/api_examples_cache.json docs/api
+          fi
+          # A broken recording is represented by a draft, never by partial docs.
           git commit -m "Update llama.cpp to ${LLAMACPP_RELEASE}, rocm-stable to ${LLAMACPP_LEMONADE_RELEASE}, rocm-nightly to ${LLAMACPP_ROCM_RELEASE}"
           git push origin "$BRANCH"
 
-          gh pr create \
-            --title "Update llama.cpp to ${LLAMACPP_RELEASE}" \
+          pr_args=()
+          pr_title="Update llama.cpp to ${LLAMACPP_RELEASE}"
+          if [ "${{ steps.api_docs.outputs.ok }}" != "true" ]; then
+            pr_args+=(--draft)
+            pr_title="[Docs review required] $pr_title"
+          fi
+          gh pr create "${pr_args[@]}" \
+            --title "$pr_title" \
             --body-file pr_body.md \
             --base main \
             --head "$BRANCH"
