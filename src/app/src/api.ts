@@ -700,10 +700,14 @@ function safeGetLocalStorage(key: string): string | null {
   }
 }
 
-function safeSetLocalStorage(key: string, value: string): void {
+function safeSetLocalStorage(key: string, value: string): boolean {
   try {
-    if (typeof localStorage !== 'undefined') localStorage.setItem(key, value);
-  } catch {}
+    if (typeof localStorage === 'undefined') return false;
+    localStorage.setItem(key, value);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function safeRemoveLocalStorage(key: string): void {
@@ -784,6 +788,7 @@ class LemonadeAPI {
   private _pollTimer: ReturnType<typeof setInterval> | null = null;
   private _sessionApiKey = '';
   private _sessionAdminApiKey = '';
+  private _apiKeyPersisted = false;
   private _hostBaseUrl: string | null = null;
   private _connectionSettingsPromise: Promise<void> | null = null;
   public readonly clientSessionId: string = createSecureClientSessionId();
@@ -791,9 +796,9 @@ class LemonadeAPI {
   public onSessionHeadersFailed?: () => void;
 
   // ── Config ──────────────────────────────────────────────────────
-  // Non-secret connection settings may be persisted in browser storage.
-  // API keys are never stored in localStorage; in the desktop app they are
-  // persisted through Lemonade's native settings bridge (`window.api.saveSettings`).
+  // Remembered browser API keys belong to this browser origin's localStorage.
+  // The desktop app continues to use native app settings for remembered keys.
+  // Neither kind of client writes its connection key to the lemond server.
 
   get baseUrl(): string {
     try {
@@ -825,7 +830,6 @@ class LemonadeAPI {
   }
 
   get apiKey(): string {
-    safeRemoveLocalStorage(LS_API_KEY);
     return this._sessionApiKey;
   }
 
@@ -850,17 +854,36 @@ class LemonadeAPI {
     this._sessionAdminApiKey = key.trim();
   }
 
+  get isApiKeyPersisted(): boolean {
+    return this._apiKeyPersisted;
+  }
+
   get canPersistApiKey(): boolean {
     const hostApi = getHostSettingsApi();
-    return Boolean(hostApi?.getSettings && hostApi?.saveSettings && hostApi.isWebApp !== true);
+    if (hostApi && hostApi.isWebApp !== true) {
+      return Boolean(hostApi.getSettings && hostApi.saveSettings);
+    }
+    try {
+      if (typeof window === 'undefined' || typeof localStorage === 'undefined') return false;
+      localStorage.getItem(LS_API_KEY); // Storage access may throw in restricted browsers.
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   async loadConnectionSettings(): Promise<void> {
-    safeRemoveLocalStorage(LS_API_KEY);
     if (this._connectionSettingsPromise) return this._connectionSettingsPromise;
 
     this._connectionSettingsPromise = (async () => {
       const hostApi = await waitForHostSettingsApi();
+      if (!hostApi || hostApi.isWebApp) {
+        this._sessionApiKey = safeGetLocalStorage(LS_API_KEY) || '';
+        this._apiKeyPersisted = Boolean(this._sessionApiKey);
+      } else {
+        // Native clients must continue to use their host settings, not browser storage.
+        safeRemoveLocalStorage(LS_API_KEY);
+      }
       if (!hostApi) return;
 
       if (hostApi.getSettings) {
@@ -881,7 +904,10 @@ class LemonadeAPI {
         if (hostApi.isWebApp && apiKey && hostApi.saveSettings) {
           await hostApi.saveSettings(mergeConnectionSettings(settings, resolvedUrl, ''));
         }
-        this._sessionApiKey = hostApi.isWebApp ? '' : apiKey;
+        if (!hostApi.isWebApp) {
+          this._sessionApiKey = apiKey;
+          this._apiKeyPersisted = Boolean(apiKey);
+        }
         return;
       }
 
@@ -892,9 +918,10 @@ class LemonadeAPI {
           safeSetLocalStorage(LS_BASE_URL, this._hostBaseUrl);
         }
       }
-      if (hostApi.getServerAPIKey) {
+      if (hostApi.getServerAPIKey && !hostApi.isWebApp) {
         const apiKey = await hostApi.getServerAPIKey();
         this._sessionApiKey = typeof apiKey === 'string' ? apiKey : '';
+        this._apiKeyPersisted = Boolean(this._sessionApiKey);
       }
     })().catch(err => {
       this._connectionSettingsPromise = null;
@@ -909,23 +936,40 @@ class LemonadeAPI {
     this._hostBaseUrl = normalized;
     this._sessionApiKey = apiKey;
     safeSetLocalStorage(LS_BASE_URL, normalized);
-    safeRemoveLocalStorage(LS_API_KEY);
 
     const hostApi = await waitForHostSettingsApi();
-    if (!hostApi?.getSettings || !hostApi?.saveSettings) {
-      return { apiKeyPersisted: false };
+    if (!hostApi || hostApi.isWebApp) {
+      // Browser secrets are opt-in and local to this browser origin. Never put
+      // them in the web host shim's general "lemonade-settings" object.
+      const saved = rememberApiKey && Boolean(apiKey) && this.canPersistApiKey
+        ? safeSetLocalStorage(LS_API_KEY, apiKey)
+        : false;
+      if (!saved) safeRemoveLocalStorage(LS_API_KEY);
+      this._apiKeyPersisted = saved;
+      if (hostApi?.getSettings && hostApi.saveSettings) {
+        const currentSettings = await hostApi.getSettings();
+        await hostApi.saveSettings(mergeConnectionSettings(currentSettings, normalized, ''));
+      }
+      return { apiKeyPersisted: saved };
     }
 
-    const persistedApiKey = rememberApiKey && !hostApi.isWebApp ? apiKey : '';
+    safeRemoveLocalStorage(LS_API_KEY);
+    if (!hostApi.getSettings || !hostApi.saveSettings) {
+      this._apiKeyPersisted = false;
+      return { apiKeyPersisted: false };
+    }
+    const persistedApiKey = rememberApiKey ? apiKey : '';
     const currentSettings = await hostApi.getSettings();
     await hostApi.saveSettings(mergeConnectionSettings(currentSettings, normalized, persistedApiKey));
-    return { apiKeyPersisted: Boolean(persistedApiKey) };
+    this._apiKeyPersisted = Boolean(persistedApiKey);
+    return { apiKeyPersisted: this._apiKeyPersisted };
   }
 
   async clearConnectionSettings(): Promise<void> {
     this._hostBaseUrl = null;
     this._sessionApiKey = '';
     this._sessionAdminApiKey = '';
+    this._apiKeyPersisted = false;
     safeRemoveLocalStorage(LS_BASE_URL);
     safeRemoveLocalStorage(LS_API_KEY);
 
@@ -960,7 +1004,6 @@ class LemonadeAPI {
 
   setSessionApiKey(key: string): void {
     this._sessionApiKey = key;
-    safeRemoveLocalStorage(LS_API_KEY);
   }
 
   clearStoredApiKey(): void {
