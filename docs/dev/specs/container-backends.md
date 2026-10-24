@@ -272,23 +272,9 @@ The setup assistant tells the user every setup step that is missing and how to f
 - `message`: each failed check's "Fails when" text, one per line.
 - `action`: the commands that fix them, one step per line.
 
-No container command runs before the user [enables container backends](#enabling-container-backends): until then, only the checks that read `PATH`, the account's groups and the Docker socket run.
-
 `/system-info` reports both fields. The Backend Manager panel in the desktop and web apps shows `message`, with a help button that copies `action`, and `lemonade backends` prints both. Checks rerun on each `/system-info` request, so the backend changes to `installable` as soon as a fix takes effect.
 
 Each install type below lists its checks in the order they run, in one table per container tool. The `action` cells are the user's setup steps.
-
-### Enabling Container Backends
-
-Container backends start disabled, because the `.deb` and `.rpm` packages pull in Podman by default and a fresh install must not pull or run images until the user opts in. The global `config.json` key `enable_containers` defaults to `false`, and while it is `false`, `lemond` refuses to install a container backend or load its models:
-
-| Check | Fails when | `action` |
-| --- | --- | --- |
-| Containers enabled | `enable_containers` is `false` | `lemonade config set enable_containers=true` |
-
-The change goes through `POST /internal/set`, so it needs `LEMONADE_ADMIN_API_KEY` when one is set, and the CLI shows a security warning before sending it.
-
-While it is `false`, `lemond` does not run Podman or Docker or connect to their sockets: the Docker socket check waits until it is `true`, an installed backend counts as installed from its recorded pin alone, and uninstall leaves the image on disk. Setting it to `false` unloads every model running in a container first.
 
 ### Tool Choice and Install Commands
 
@@ -346,7 +332,7 @@ The Debian (`.deb`/PPA) and Fedora (`.rpm`) packages install `lemond` as `lemond
 
 What the user does:
 
-- **With Podman:** only [Enabling Container Backends](#enabling-container-backends); `podman` installs with the package.
+- **With Podman:** nothing; `podman` installs with the package.
 - **With Docker:**
   1. Runs `sudo usermod -aG docker lemonade`.
   2. Runs `sudo systemctl restart lemond`.

@@ -1501,7 +1501,6 @@ jobs:
       - name: Install the container backend
         run: |
           set -e
-          lemonade config set enable_containers=true --yes
           lemonade backends
           lemonade backends install ${{ matrix.install }}
 

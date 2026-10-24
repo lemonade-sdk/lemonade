@@ -204,11 +204,6 @@ WrappedServer::ProcessInfo WrappedServer::get_process_info() const {
     return {process_->handle().pid, process_->command_line()};
 }
 
-bool WrappedServer::runs_in_container() const {
-    std::lock_guard<std::mutex> lock(process_mutex_);
-    return process_ && process_->in_container();
-}
-
 int WrappedServer::get_backend_port() const {
     std::lock_guard<std::mutex> lock(process_mutex_);
     return port_;

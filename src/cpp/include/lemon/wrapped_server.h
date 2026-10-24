@@ -417,7 +417,6 @@ public:
         std::vector<std::string> launch_command;
     };
     ProcessInfo get_process_info() const;
-    bool runs_in_container() const;
 
     // Cheap liveness gate used by the router. On POSIX this relies on
     // ProcessManager::is_running(), which intentionally checks without reaping.

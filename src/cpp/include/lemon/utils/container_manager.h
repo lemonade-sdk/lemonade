@@ -106,13 +106,9 @@ public:
     // rootful Podman or Docker, lemond connects at the container's address.
     bool rootless_podman() const;
 
-    // Every failed check that runs before the user enables container
-    // backends: the tool on PATH, then the account's access to it. These read
-    // only PATH and groups until `containers_enabled`, which adds the Docker
-    // socket check, so nothing reaches Podman or Docker before the user opts
-    // in. Rerun on each call, so a fix takes effect without a restart.
-    std::vector<SetupFailure> check_host(bool containers_enabled) const;
-    // `podman info`, which runs only once container backends are enabled.
+    // Every failed check of the tool on PATH and the account's access to it.
+    // Rerun on each call, so a fix takes effect without a restart.
+    std::vector<SetupFailure> check_host() const;
     std::optional<SetupFailure> check_podman() const;
 
     std::vector<std::string> run_command(const ContainerRunSpec& spec) const;

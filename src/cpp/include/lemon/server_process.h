@@ -40,7 +40,6 @@ public:
     // already exited. Does nothing when it never started.
     virtual void stop();
     virtual bool running() const;
-    virtual bool in_container() const { return false; }
 
     utils::ProcessHandle handle() const { return handle_; }
     const std::vector<std::string>& command_line() const { return command_line_; }
@@ -84,7 +83,6 @@ public:
     // on its own and is reaped quietly; the exit log is for a client that had
     // already exited before stop().
     void stop() override;
-    bool in_container() const override { return true; }
 
 private:
     std::string recipe_;

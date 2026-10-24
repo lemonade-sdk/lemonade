@@ -76,7 +76,6 @@ public:
     bool auto_update_models() const;
     bool no_fetch_executables() const;
     bool disable_model_filtering() const;
-    bool enable_containers() const;
     bool enable_dgpu_gtt() const;
     std::string default_model_source() const;
     std::string rocm_channel() const;

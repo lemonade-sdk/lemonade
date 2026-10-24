@@ -48,21 +48,6 @@ void ConfigEffects::apply(const std::string& key, const json& value) {
             LOG(INFO, "Server") << "Download rate limit disabled" << std::endl;
         }
         utils::HttpClient::set_download_rate_limit(bps);
-    } else if (key == "enable_containers") {
-        if (!config.enable_containers()) {
-            for (const auto& name : ctx_.router->get_container_model_names()) {
-                LOG(INFO, "Server") << "Unloading " << name
-                                    << " because containers were disabled" << std::endl;
-                try {
-                    ctx_.router->unload_model(name);
-                } catch (const std::exception& e) {
-                    LOG(WARNING, "Server") << "Failed to unload " << name << ": " << e.what()
-                                           << std::endl;
-                }
-            }
-        }
-        SystemInfoCache::invalidate_recipes();
-        ctx_.model_manager->invalidate_models_cache();
     } else if (key == "allowed_origins") {
         LOG(INFO, "Server") << "Allowed origins updated: " << config.allowed_origins() << std::endl;
     } else if (key == "extra_models_dir") {

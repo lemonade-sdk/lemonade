@@ -166,12 +166,7 @@ public:
 // Shared default ops instance for backends that override nothing.
 const BackendOps* default_backend_ops();
 
-// The enable_containers setting. While it is false, lemond does not run
-// Podman or Docker or connect to their sockets.
-bool containers_enabled();
-
-// nullopt when `recipe:backend` is ready. `podman info` runs only once the
-// user has opted in.
+// nullopt when `recipe:backend` is ready.
 std::optional<utils::SetupReport> container_setup_failure(const std::string& recipe,
                                                           const std::string& backend);
 

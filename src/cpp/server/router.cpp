@@ -1364,17 +1364,6 @@ std::string Router::get_sole_loaded_model_of_type(ModelType type) const {
     return match ? model_manager_->get_public_model_name(match->get_model_name()) : "";
 }
 
-std::vector<std::string> Router::get_container_model_names() const {
-    std::lock_guard<std::mutex> lock(load_mutex_);
-    std::vector<std::string> names;
-    for (const auto& server : loaded_servers_) {
-        if (server->runs_in_container()) {
-            names.push_back(server->get_model_name());
-        }
-    }
-    return names;
-}
-
 json Router::get_all_loaded_models() const {
     std::lock_guard<std::mutex> lock(load_mutex_);
 

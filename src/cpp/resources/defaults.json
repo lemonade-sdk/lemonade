@@ -21,7 +21,6 @@
   "ds4": {
     "args": ""
   },
-  "enable_containers": false,
   "enable_dgpu_gtt": false,
   "extra_models_dir": "",
   "flm": {

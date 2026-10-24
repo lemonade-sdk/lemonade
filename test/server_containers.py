@@ -114,7 +114,6 @@ class ContainerSmokeTest(unittest.TestCase):
         self.assertEqual(rootless.strip().lower(), str(args.mode == "rootless").lower())
 
     def test_02_install(self):
-        self.cli("config", "set", "enable_containers=true", "--yes")
         self.cli("backends", "install", args.backend, "--force")
 
     def test_03_load_and_chat(self):
