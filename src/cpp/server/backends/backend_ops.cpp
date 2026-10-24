@@ -130,8 +130,7 @@ const BackendOps* default_backend_ops() {
     return &kDefault;
 }
 
-std::optional<utils::SetupReport> container_setup_failure(const std::string& recipe,
-                                                          const std::string& backend) {
+std::optional<utils::SetupReport> container_setup_failure() {
     const auto& manager = utils::ContainerManager::global();
     utils::SetupReport report;
     report.failures = manager.check_host();

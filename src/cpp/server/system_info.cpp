@@ -658,9 +658,8 @@ bool SystemInfo::backend_supports_arch(const std::string& recipe,
 }
 
 // Marks `status` action_required when a setup check fails, returning whether one did.
-static bool mark_container_setup(json& status, const std::string& recipe,
-                                 const std::string& backend) {
-    const auto failure = backends::container_setup_failure(recipe, backend);
+static bool mark_container_setup(json& status,
+                                 const std::optional<utils::SetupReport>& failure) {
     if (!failure) return false;
     status["state"] = "action_required";
     status["message"] = failure->message();
@@ -1280,6 +1279,7 @@ json SystemInfo::build_recipes_info(const json& devices) {
     }
 
     // Build recipes from the definition table
+    std::optional<std::optional<utils::SetupReport>> container_setup;
     for (const auto& def : recipe_defs()) {
         const auto* def_desc = backends::descriptor_for(def.recipe);
         const bool container_backend = def_desc && def_desc->container_for(def.backend);
@@ -1596,7 +1596,8 @@ json SystemInfo::build_recipes_info(const json& devices) {
         // using BackendManager as the single source of truth for repo/version mappings.
 
         if (supported && container_backend) {
-            mark_container_setup(backend, def.recipe, def.backend);
+            if (!container_setup) container_setup = backends::container_setup_failure();
+            mark_container_setup(backend, *container_setup);
         }
 
         set_backend_status(def, backend, kCurrentOsUnsupportedPriority);
@@ -1756,6 +1757,7 @@ std::string SystemInfo::check_recipe_supported(const std::string& recipe) {
 
 bool SystemInfo::refresh_container_setup(json& recipes) {
     bool cleared = false;
+    std::optional<std::optional<utils::SetupReport>> container_setup;
     for (auto& [recipe, info] : recipes.items()) {
         const auto* desc = lemon::backends::descriptor_for(recipe);
         if (!desc || desc->containers.empty() || !info.contains("backends")) {
@@ -1766,7 +1768,8 @@ bool SystemInfo::refresh_container_setup(json& recipes) {
             if (!desc->container_for(backend) || state == "unsupported") {
                 continue;
             }
-            if (!mark_container_setup(status, recipe, backend) && state == "action_required") {
+            if (!container_setup) container_setup = backends::container_setup_failure();
+            if (!mark_container_setup(status, *container_setup) && state == "action_required") {
                 cleared = true;
             }
         }

@@ -166,9 +166,8 @@ public:
 // Shared default ops instance for backends that override nothing.
 const BackendOps* default_backend_ops();
 
-// nullopt when `recipe:backend` is ready.
-std::optional<utils::SetupReport> container_setup_failure(const std::string& recipe,
-                                                          const std::string& backend);
+// nullopt when the host is ready to run container backends.
+std::optional<utils::SetupReport> container_setup_failure();
 
 } // namespace backends
 } // namespace lemon

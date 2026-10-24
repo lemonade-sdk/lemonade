@@ -107,7 +107,7 @@ std::string ContainerProcess::start(const ServerCommand& command) {
                              " is a container backend, which runs on Linux");
 #endif
     const auto& manager = ContainerManager::global();
-    if (auto failure = backends::container_setup_failure(recipe_, backend_)) {
+    if (auto failure = backends::container_setup_failure()) {
         throw std::runtime_error(recipe_ + ":" + backend_ + " cannot start:" + failure->text());
     }
     if (!ContainerManager::allowed_image(policy_.image)) {
