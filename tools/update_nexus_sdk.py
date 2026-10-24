@@ -165,6 +165,8 @@ def main():
 
     manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
     source = args.source or manifest["repository"]
+    if os.path.isdir(source):
+        source = os.path.abspath(source)
     ref = manifest["commit"] if args.check else args.ref
 
     with tempfile.TemporaryDirectory() as temp:
