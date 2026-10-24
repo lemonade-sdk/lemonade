@@ -18,7 +18,11 @@ Real download/SHA corruption smoke test:
 from __future__ import annotations
 
 import hashlib
+import json
 import os
+import shutil
+import subprocess
+import tempfile
 import time
 import uuid
 from pathlib import Path
@@ -26,11 +30,12 @@ from urllib.parse import quote
 
 import requests
 
-from utils.server_base import ServerTestBase, run_server_tests
+from utils.server_base import ServerTestBase, get_cli_binary, run_server_tests
 from utils.test_models import (
     ENDPOINT_TEST_MODEL,
     PORT,
     TIMEOUT_DEFAULT,
+    get_default_lemond_binary,
     get_hf_cache_dir_candidates,
 )
 
@@ -493,6 +498,133 @@ class ServerDownloadRegistryTests(ServerTestBase):
         self.assertEqual(reused_gguf.stat().st_mtime_ns, original_mtime_ns)
         self.assertEqual(_sha256_file(reused_gguf), original_sha256)
         self.assertEqual(_git_blob_sha1_file(reused_gguf), original_git_sha1)
+
+    def test_007_incomplete_multi_checkpoint_component_reaches_cli_and_collection_pull(
+        self,
+    ):
+        # Thin integration smoke: incomplete multi-checkpoint state must reach
+        # the CLI and collection pull fan-out.
+        comp_id = "comp-multi"
+        coll_id = "coll-test"
+        # Intentionally non-default port: test starts its own isolated lemond
+        isolated_port = 13306
+
+        tmp_dir = tempfile.mkdtemp()
+        server_proc = None
+        server_stdout = ""
+        server_stderr = ""
+
+        try:
+            path1 = os.path.join(tmp_dir, "model1.gguf")
+            path2 = os.path.join(tmp_dir, "model2.gguf")
+
+            user_models = {
+                comp_id: {
+                    "checkpoints": {"main": path1, "vae": path2},
+                    "recipe": "llamacpp",
+                    "source": "local_path",
+                },
+                coll_id: {
+                    "components": [comp_id],
+                    "recipe": "collection.omni",
+                },
+            }
+
+            with open(
+                os.path.join(tmp_dir, "user_models.json"),
+                "w",
+                encoding="utf-8",
+            ) as handle:
+                json.dump(user_models, handle)
+
+            with open(path1, "wb") as handle:
+                handle.write(b"GGUF")
+
+            env = os.environ.copy()
+            env["HF_HUB_CACHE"] = os.path.join(tmp_dir, "hf")
+            os.makedirs(env["HF_HUB_CACHE"], exist_ok=True)
+
+            server_proc = subprocess.Popen(
+                [
+                    get_default_lemond_binary(),
+                    tmp_dir,
+                    "--port",
+                    str(isolated_port),
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                env=env,
+            )
+
+            for _ in range(30):
+                if server_proc.poll() is not None:
+                    server_stdout, server_stderr = server_proc.communicate()
+                    self.fail(
+                        "isolated lemond exited before becoming ready:\n"
+                        f"{server_stdout}{server_stderr}"
+                    )
+                try:
+                    response = requests.get(
+                        f"http://localhost:{isolated_port}/api/v1/models",
+                        timeout=1,
+                    )
+                    response.raise_for_status()
+                    break
+                except requests.RequestException:
+                    time.sleep(1)
+            else:
+                self.fail("isolated lemond timed out on port 13306")
+
+            list_result = subprocess.run(
+                [
+                    get_cli_binary(),
+                    "--port",
+                    str(isolated_port),
+                    "list",
+                ],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(
+                list_result.returncode,
+                0,
+                list_result.stderr,
+            )
+
+            component_rows = [
+                line for line in list_result.stdout.splitlines() if comp_id in line
+            ]
+            self.assertTrue(component_rows, list_result.stdout)
+            self.assertIn("No", component_rows[0])
+
+            subprocess.run(
+                [
+                    get_cli_binary(),
+                    "--port",
+                    str(isolated_port),
+                    "pull",
+                    coll_id,
+                ],
+                capture_output=True,
+                text=True,
+            )
+        finally:
+            if server_proc is not None:
+                server_proc.terminate()
+                try:
+                    stdout, stderr = server_proc.communicate(timeout=5)
+                except subprocess.TimeoutExpired:
+                    server_proc.kill()
+                    stdout, stderr = server_proc.communicate()
+
+                server_stdout = stdout or server_stdout
+                server_stderr = stderr or server_stderr
+
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+        log_output = server_stdout + server_stderr
+        self.assertIn(f"Downloading component: {comp_id}", log_output)
 
 
 if __name__ == "__main__":
