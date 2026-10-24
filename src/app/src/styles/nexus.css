@@ -1,7 +1,13 @@
+.titlebar.titlebar--with-account.titlebar--desktop {
+  grid-template-columns: minmax(0, 1fr) auto minmax(max-content, 1fr);
+}
+
+.titlebar.titlebar--with-account.titlebar--desktop .titlebar__nav { transform: none; }
+
 .nexus-account-trigger {
   display: inline-flex;
   align-items: center;
-  flex: 0 1 auto;
+  flex: 0 0 auto;
   gap: var(--space-2);
   min-width: 0;
   height: 34px;
@@ -244,8 +250,9 @@
 
 @media (max-width: 768px) {
   .app .titlebar.titlebar--with-account { grid-template-columns: 40px minmax(0, 1fr) auto; column-gap: 4px; }
-  .titlebar.titlebar--with-account .titlebar__nav { max-width: 100%; overflow-x: auto; transform: none; }
-  .titlebar.titlebar--with-account.titlebar--desktop .titlebar__nav button { width: 32px; min-width: 32px; padding: 0; }
+  .titlebar.titlebar--with-account .titlebar__nav { max-width: 100%; transform: none; }
+  .titlebar.titlebar--with-account .titlebar__nav button { width: 42px; min-width: 0; padding: 0; }
+  .titlebar.titlebar--with-account.titlebar--desktop .titlebar__nav button { width: 32px; }
   .titlebar--with-account.titlebar--desktop .nexus-account-trigger { width: 32px; padding: 3px; flex-shrink: 0; justify-content: center; }
   .titlebar--with-account.titlebar--desktop .nexus-account-trigger__label,
   .titlebar--with-account.titlebar--desktop .nexus-account-trigger > .app-icon { display: none; }
@@ -259,7 +266,8 @@
 @media (max-width: 480px) {
   .titlebar--with-account .titlebar__right { gap: 4px; }
   .titlebar--with-account.titlebar--desktop .titlebar__right { gap: 2px; }
-  .titlebar.titlebar--with-account.titlebar--desktop .titlebar__nav button { width: 28px; min-width: 28px; }
+  .titlebar.titlebar--with-account .titlebar__nav button { width: 32px; }
+  .titlebar.titlebar--with-account.titlebar--desktop .titlebar__nav button { width: 28px; }
   .nexus-account-trigger { width: 32px; padding: 3px; flex-shrink: 0; justify-content: center; }
   .nexus-account-trigger > .app-icon { display: none; }
   .nexus-account-trigger__label { display: none; }
@@ -267,5 +275,5 @@
 }
 
 @media (max-width: 360px) {
-  .titlebar--with-account .titlebar__nav button { width: 28px; min-width: 28px; }
+  .titlebar.titlebar--with-account .titlebar__nav button { width: 28px; }
 }

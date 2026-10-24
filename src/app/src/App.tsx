@@ -1166,7 +1166,7 @@ const App: React.FC = () => {
           <NexusAccountMenu open={accountMenuOpen} onOpenChange={handleAccountMenuChange}
             onOpenPage={() => navigateToRoute({ view: 'connect', section: 'nexus' })} />
           {isDesktop && (
-            <>
+            <div className="titlebar__window-controls" data-tauri-drag-region="false">
               <button
                 className="titlebar__window-btn titlebar__window-btn--minimize"
                 data-tauri-drag-region="false"
@@ -1194,7 +1194,7 @@ const App: React.FC = () => {
               >
                 <Icon name="x" size={15} className="titlebar__window-icon" />
               </button>
-            </>
+            </div>
           )}
         </div>
       </header>

@@ -498,10 +498,19 @@ input[type="checkbox"]:disabled {
 }
 .titlebar__theme-toggle:hover { background: var(--surface-2); }
 
+.titlebar__window-controls {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
 .titlebar__window-btn {
   display: flex;
   align-items: center;
   justify-content: center;
+  flex: 0 0 var(--icon-button-size);
+  min-width: var(--icon-button-size);
+  max-width: var(--icon-button-size);
   width: var(--icon-button-size);
   height: var(--icon-button-size);
   background: transparent;
@@ -540,6 +549,9 @@ input[type="checkbox"]:disabled {
 }
 
 .titlebar__window-icon {
+  width: 15px;
+  height: 15px;
+  flex: none;
   stroke-width: 1.5;
 }
 
@@ -11917,11 +11929,6 @@ a.backend-card__version:focus-visible {
   .titlebar--desktop .titlebar__utility-menu {
     gap: var(--space-1);
   }
-
-  .titlebar--desktop .titlebar__window-btn {
-    width: 32px;
-    height: 32px;
-  }
 }
 
 @media (max-width: 820px) {
@@ -12510,11 +12517,6 @@ a.backend-card__version:focus-visible {
   .titlebar--desktop .titlebar__utilities,
   .titlebar--desktop .titlebar__utility-menu {
     gap: 2px;
-  }
-
-  .titlebar--desktop .titlebar__window-btn {
-    width: 30px;
-    height: 30px;
   }
 }
 
