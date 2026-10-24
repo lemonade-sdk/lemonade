@@ -12,6 +12,7 @@
 #include <functional>
 #include <map>
 #include <random>
+#include <set>
 #include <stdexcept>
 #ifdef LEMONADE_WITH_NEXUS
 #include <LemonadeNexusSDK/lemonade_nexus.h>
@@ -116,6 +117,75 @@ bool same_key(const std::string& a, const std::string& b) {
 
 bool grants(const json& permissions, const std::string& permission) {
     return contains(permissions, permission) || contains(permissions, "admin");
+}
+
+json account_summary(const json& members, const std::string& group_id,
+                     const std::string& node_id, const std::string& identity_id) {
+    const auto self = find_member(members, node_id);
+    if (group_id.empty() || identity_id.empty() || self.is_null() || !self.value("permissions_known", false)) {
+        throw NexusError(409, "Account membership could not be verified. Refresh the network and try again.");
+    }
+    return {{"id", group_id}, {"member_id", identity_id}, {"device_node_id", node_id},
+        {"role", self.value("is_admin", false) ? "admin" : "user"}};
+}
+
+json account_avatar(const json& value, const std::string& group_id) {
+    if (!value.is_object() || value.value("group_id", json()) != group_id ||
+        !value.contains("revision") || !value["revision"].is_number_integer() ||
+        (!value["revision"].is_number_unsigned() && value["revision"].get<int64_t>() < 0) ||
+        value["revision"].get<uint64_t>() > 9007199254740991ULL ||
+        !value.contains("image") || (!value["image"].is_null() && !value["image"].is_string()) ||
+        !value.contains("can_write") || !value["can_write"].is_boolean() ||
+        (value.contains("pending") && (!value["pending"].is_boolean() ||
+            (value["pending"].get<bool>() && !value["image"].is_null())))) {
+        throw NexusError(502, "The network returned invalid account image data");
+    }
+    if (value["image"].is_string()) {
+        const auto& image = value["image"].get_ref<const std::string&>();
+        if (image.size() > 128 * 1024 || image.rfind("data:image/png;base64,", 0) != 0) {
+            throw NexusError(502, "The network returned an invalid profile image");
+        }
+    }
+    return {{"state", "ready"}, {"revision", value["revision"]},
+        {"image", value["image"]}, {"can_write", value["can_write"]}, {"pending", value.value("pending", false)}};
+}
+
+json tree_path(const std::string& id, const std::string& root_id,
+               const std::function<json(const std::string&)>& fetch) {
+    json path = json::array();
+    std::set<std::string> visited;
+    auto current = id;
+    while (!current.empty() && visited.size() < 128) {
+        if (current.size() > 256 || current.find_first_not_of("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-") != std::string::npos || !visited.insert(current).second) {
+            throw NexusError(400, "Invalid group hierarchy");
+        }
+        auto node = fetch(current);
+        if (!node.is_object() || text(node, "id") != current) throw NexusError(502, "The network returned an invalid node");
+        if (!path.empty() && text(node, "type") != "customer" && text(node, "type") != "root") {
+            throw NexusError(400, "Only groups can contain other nodes");
+        }
+        path.push_back(node);
+        if (current == root_id) return path;
+        current = text(node, "parent_id");
+    }
+    throw NexusError(403, "That node is outside your group or its hierarchy is too deep");
+}
+
+json tree_entry(const json& node, const std::string& self_key, bool ancestor_admin) {
+    const auto type = text(node, "type");
+    const bool group = type == "customer" || type == "root";
+    const auto assignments = node.value("assignments", json::array());
+    const auto permissions = permissions_for(assignments, self_key);
+    const bool admin = ancestor_admin || contains(permissions, "admin");
+    const bool access_known = grants(permissions, "edit_node");
+    return {{"id", text(node, "id")}, {"parent_id", text(node, "parent_id")},
+        {"name", text(node, "hostname")}, {"kind", group ? "group" : "node"},
+        {"node_type", type}, {"tunnel_ip", text(node, "tunnel_ip")},
+        {"is_inference", flag(node, "is_inference")}, {"management_pubkey", text(node, "mgmt_pubkey")},
+        {"permissions", permissions}, {"can_add_group", group && (admin || grants(permissions, "add_child"))},
+        {"can_rename", group && (admin || grants(permissions, "edit_node"))},
+        {"can_manage", group && admin && access_known}, {"access_known", access_known},
+        {"assignments", access_known ? assignments : json::array()}};
 }
 
 json merge_members(const json& group, const json& children, const json& peers,
@@ -253,7 +323,8 @@ bool bearer_matches(const std::string& authorization, const std::string& api_key
 
 bool remote_operation(const std::string& operation) {
     static const std::vector<std::string> operations = {"status", "join/status", "devices", "members",
-        "members/role", "members/permissions", "devices/access", "devices/remove", "invites", "invites/cancel", "join", "relay"};
+        "members/role", "members/permissions", "devices/access", "devices/remove", "invites", "invites/cancel", "join", "relay",
+        "tree", "tree/children", "tree/groups", "tree/rename", "tree/permissions"};
     return std::find(operations.begin(), operations.end(), operation) != operations.end();
 }
 
@@ -361,6 +432,7 @@ struct NexusManager::Session {
     bool locked{true};
     bool joined{false};
     bool reconnect{false};
+    bool avatar_configured{false};
     std::chrono::steady_clock::time_point retry_at{};
     std::chrono::seconds retry_delay{5};
     std::map<std::string, std::string> egress_ips;
@@ -403,6 +475,8 @@ struct NexusManager::Session {
         }
         if (ln_set_identity(client.get(), identity.get()) != LN_OK) throw NexusError(500, "Cannot load device identity");
         pubkey = sdk_string(ln_identity_pubkey(identity.get()));
+        const auto avatar_cache = utils::path_to_utf8(root / "avatar-cache");
+        avatar_configured = ln_account_avatar_configure(client.get(), identity.get(), avatar_cache.c_str()) == LN_OK;
     }
     ~Session() { if (client) ln_mesh_disable(client.get()); }
     std::string device_name() const { return account.value("device_name", "My Lemonade device"); }
@@ -448,6 +522,17 @@ struct NexusManager::Session {
         }
         return value;
     }
+
+    json read_avatar() {
+        if (!avatar_configured) return {{"state", "unavailable"}};
+        char* output = nullptr;
+        const auto code = ln_account_avatar_get(client.get(), &output);
+        std::unique_ptr<char, decltype(&ln_free)> owned(output, ln_free);
+        if (code == LN_ERR_NOT_FOUND || code == LN_ERR_UNSUPPORTED) return {{"state", "unsupported"}};
+        if (code != LN_OK || !output) return {{"state", "unavailable"}};
+        try { return nexus_access::account_avatar(json::parse(output), group_id); }
+        catch (const std::exception&) { return {{"state", "unavailable"}}; }
+    }
     void set_assignment(const std::string& target, const std::string& key, const json& permissions) {
         const auto list = permissions.dump();
         char* output = nullptr;
@@ -468,6 +553,33 @@ struct NexusManager::Session {
         auto children = sdk_call([&](auto out) { return ln_tree_get_children(client.get(), group_id.c_str(), out); });
         if (!children.is_array()) throw NexusError(502, "The network returned invalid data");
         return children;
+    }
+    json scoped_tree_path(const std::string& id) {
+        return nexus_access::tree_path(id, group_id, [&](const std::string& current) {
+            return private_call("GET", "/api/tree/node/" + current);
+        });
+    }
+    json describe_tree_node(const json& path) {
+        bool ancestor_admin = false;
+        for (size_t i = 1; i < path.size(); ++i) {
+            ancestor_admin = ancestor_admin || contains(permissions_for(path[i].value("assignments", json::array()), pubkey), "admin");
+        }
+        return nexus_access::tree_entry(path.front(), pubkey, ancestor_admin);
+    }
+    json tree_children(const std::string& id) {
+        const auto path = scoped_tree_path(id);
+        const auto parent = describe_tree_node(path);
+        if (parent.at("kind") != "group") throw NexusError(400, "Only groups can contain other nodes");
+        const auto children = private_call("GET", "/api/tree/children/" + id);
+        if (!children.is_array()) throw NexusError(502, "The network returned invalid children");
+        json entries = json::array();
+        for (const auto& child : children) {
+            if (text(child, "parent_id") != id || text(child, "id").empty()) throw NexusError(502, "The network returned an invalid hierarchy");
+            auto child_path = path;
+            child_path.insert(child_path.begin(), child);
+            entries.push_back(describe_tree_node(child_path));
+        }
+        return {{"parent", parent}, {"children", entries}};
     }
     void refresh_devices() {
         const auto own = sdk_call([&](auto out) { return ln_tree_get_node(client.get(), node_id.c_str(), out); });
@@ -629,6 +741,73 @@ struct NexusManager::Session {
             return status();
         }
         if (!joined) throw NexusError(409, "Join the network first");
+        if (path == "/account") {
+            refresh_devices();
+            auto result = nexus_access::account_summary(devices, group_id, node_id, account.value("user_id", ""));
+            result["devices"] = devices;
+            result["avatar"] = read_avatar();
+            return result;
+        }
+        if (path == "/account/avatar" && method == "POST") {
+            if (body.value("account_id", "") != group_id || body.value("member_id", "") != account.value("user_id", "") ||
+                body.value("device_node_id", "") != node_id) throw NexusError(409, "The account changed. Sign in again.");
+            const auto current = read_avatar();
+            if (current.at("state") == "unsupported") throw NexusError(501, "This mesh needs a Nexus server update to sync profile images.");
+            if (current.at("state") != "ready") throw NexusError(502, "Cannot reach the account image service. Try again.");
+            if (!current.at("can_write").get<bool>()) throw NexusError(403, "You do not have permission to change this account image.");
+            if (body.at("revision") != current.at("revision")) throw NexusError(409, "The profile image changed. Refresh and try again.");
+            const auto revision = current.at("revision").get<uint64_t>();
+            if (revision >= 9007199254740991ULL) throw NexusError(409, "The account image revision limit was reached.");
+            const auto& image = body.at("image");
+            if (!image.is_null() && !image.is_string()) throw NexusError(400, "Expected a profile image or null");
+            const auto data = image.is_null() ? std::string() : image.get<std::string>();
+            if (data.size() > 128 * 1024 || (!data.empty() && data.rfind("data:image/png;base64,", 0) != 0)) throw NexusError(400, "Choose a PNG profile image under 128 KiB.");
+            const auto record = sdk_call([&](auto out) { return ln_account_avatar_sign(identity.get(), group_id.c_str(), data.c_str(), revision + 1, out); });
+            char* output = nullptr;
+            const auto encoded = record.dump();
+            const auto code = ln_account_avatar_put(client.get(), encoded.c_str(), data.c_str(), &output);
+            std::unique_ptr<char, decltype(&ln_free)> owned(output, ln_free);
+            const auto result = output ? json::parse(output, nullptr, false) : json();
+            if (code != LN_OK) {
+                const auto message = result.is_object() ? result.value("error", "Profile image could not be saved") : "Profile image could not be saved";
+                throw NexusError(code == LN_ERR_AUTH ? 403 : code == LN_ERR_REJECTED ? 409 : code == LN_ERR_NOT_FOUND ? 501 : 502, message);
+            }
+            return nexus_access::account_avatar(result, group_id);
+        }
+        if (path == "/tree") return tree_children(group_id);
+        if (path.rfind("/tree/", 0) == 0) {
+            const auto separator = path.find('/', 6);
+            if (separator == std::string::npos) throw NexusError(404, "Unknown tree operation");
+            const auto id = path.substr(6, separator - 6);
+            const auto action = path.substr(separator + 1);
+            if (method == "GET" && action == "children") return tree_children(id);
+            const auto chain = scoped_tree_path(id);
+            const auto target = describe_tree_node(chain);
+            if (target.at("kind") != "group") throw NexusError(400, "Select a group for this action");
+            if (method == "POST" && (action == "groups" || action == "rename")) {
+                if (!target.at(action == "groups" ? "can_add_group" : "can_rename").get<bool>()) throw NexusError(403, "You do not have permission to change this group");
+                const auto name = body.at("name").get<std::string>();
+                if (name.empty() || name.size() > 128 || name.find_first_not_of(" \t\r\n") == std::string::npos) throw NexusError(400, "Enter a group name (up to 128 UTF-8 bytes)");
+                const auto result = action == "groups"
+                    ? private_call("POST", "/api/tree/node", json{{"parent_id", id}, {"type", "customer"}, {"hostname", name}}.dump())
+                    : private_call("POST", "/api/tree/node/update/" + id, json{{"hostname", name}}.dump());
+                if (!result.value("success", false)) throw NexusError(502, "The network could not save the group");
+                return result;
+            }
+            if (method == "POST" && action == "permissions") {
+                if (!target.at("can_manage").get<bool>()) throw NexusError(403, "Only an admin with access to this group's assignments can change permissions");
+                const auto member = scoped_tree_path(body.at("member_node_id").get<std::string>()).front();
+                if (text(member, "type") != "endpoint") throw NexusError(400, "Choose a device node");
+                const auto key = text(member, "mgmt_pubkey");
+                if (key.empty() || nexus_access::same_key(key, pubkey)) throw NexusError(403, "You cannot change your own access");
+                const bool admin = body.at("admin").get<bool>();
+                if (!admin && nexus_access::same_key(key, text(chain.front(), "mgmt_pubkey"))) throw NexusError(403, "The group creator always administers the group");
+                const auto permissions = nexus_access::group_permissions(body.at("permissions"), admin);
+                set_assignment(id, key, permissions);
+                return tree_children(id);
+            }
+            throw NexusError(404, "Unknown tree operation");
+        }
         if (path == "/devices") { refresh_devices(); return devices; }
         if (path == "/members") {
             refresh_devices();
@@ -913,8 +1092,9 @@ void NexusManager::handle(const httplib::Request& req, httplib::Response& res,
         res.set_content(body.dump(), "application/json");
     };
     auto body = req.body.empty() ? json::object() : json::parse(req.body, nullptr, false);
-    if (!body.is_object() || req.body.size() > 65536) {
-        reply(400, {{"error", "Expected a JSON object of at most 64 KiB"}});
+    const std::size_t limit = operation == "account/avatar" ? 128 * 1024 + 2048 : 65536;
+    if (!body.is_object() || req.body.size() > limit) {
+        reply(400, {{"error", "Expected a bounded JSON object"}});
         return;
     }
     try {
@@ -977,6 +1157,7 @@ void NexusManager::handle(const httplib::Request& req, httplib::Response& res,
         else if (operation == "devices/access") path = "/devices/" + req.matches[1].str() + "/access";
         else if (operation == "members/role") path = "/members/" + req.matches[1].str() + "/role";
         else if (operation == "members/permissions") path = "/members/" + req.matches[1].str() + "/permissions";
+        else if (operation.rfind("tree/", 0) == 0) path = "/tree/" + req.matches[1].str() + "/" + operation.substr(5);
         else path = "/" + operation;
         auto result = control(req.method, path, body);
         std::lock_guard<std::mutex> lock(mutex_);
@@ -1031,10 +1212,10 @@ void NexusManager::register_routes(httplib::Server& server, NexusListener listen
         handle(req, res, operation, listener == NexusListener::Public && !loopback);
     };
     for (const auto* prefix : {"/api/v0/nexus/", "/api/v1/nexus/", "/v0/nexus/", "/v1/nexus/", "/api/nexus/"}) {
-        for (const auto* operation : {"status", "passkey/challenge", "devices", "members", "join/status", "events"}) {
+        for (const auto* operation : {"status", "passkey/challenge", "devices", "members", "join/status", "events", "tree", "account"}) {
             server.Get(std::string(prefix) + operation, [dispatch, operation](const auto& req, auto& res) { dispatch(req, res, operation); });
         }
-        for (const auto* operation : {"enable", "disable", "passkey/register", "passkey/unlock", "invites", "invites/cancel", "join", "egress", "lock", "device"}) {
+        for (const auto* operation : {"enable", "disable", "passkey/register", "passkey/unlock", "invites", "invites/cancel", "join", "egress", "lock", "device", "account/avatar"}) {
             server.Post(std::string(prefix) + operation, [dispatch, operation](const auto& req, auto& res) { dispatch(req, res, operation); });
         }
         server.Post(std::string(prefix) + R"(devices/([A-Za-z0-9_-]+)/remove)",
@@ -1047,6 +1228,12 @@ void NexusManager::register_routes(httplib::Server& server, NexusListener listen
             [dispatch](const auto& req, auto& res) { dispatch(req, res, "members/role"); });
         server.Post(std::string(prefix) + R"(members/([A-Za-z0-9_-]+)/permissions)",
             [dispatch](const auto& req, auto& res) { dispatch(req, res, "members/permissions"); });
+        server.Get(std::string(prefix) + R"(tree/([A-Za-z0-9_-]+)/children)",
+            [dispatch](const auto& req, auto& res) { dispatch(req, res, "tree/children"); });
+        for (const auto* action : {"groups", "rename", "permissions"}) {
+            server.Post(std::string(prefix) + R"(tree/([A-Za-z0-9_-]+)/)" + action,
+                [dispatch, action](const auto& req, auto& res) { dispatch(req, res, std::string("tree/") + action); });
+        }
         const auto relayed = std::string(prefix) + R"(peers/([A-Za-z0-9_-]+)(/.*))";
         const auto relay_route = [this, listener](const httplib::Request& req, httplib::Response& res) {
             const auto access = nexus_access::route_access(listener, local_request(req), "relay",

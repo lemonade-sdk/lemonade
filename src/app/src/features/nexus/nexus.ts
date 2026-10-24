@@ -88,6 +88,16 @@ export interface PasskeyPrompt { message: string; needs_pin: boolean; rp_id: str
 export type NexusManagementMode = 'local' | 'remote';
 interface NetworkState { mode?: NexusManagementMode; selectedServerId?: string; switchingServer?: boolean; passkey?: PasskeyPrompt; status: NexusStatus | null; error: string | null; notice: string | null }
 let state: NetworkState = { status: null, error: null, notice: null };
+let networkEpoch = 0;
+let networkPaused = false;
+export function clearNexusNetwork() {
+  networkEpoch += 1;
+  networkPaused = true;
+  clearTimeout(timer);
+  eventStream?.abort();
+  lastMemberIds = undefined;
+  publish({ status: null, error: null, notice: null });
+}
 const listeners = new Set<() => void>();
 const peerKeys = new Map<string, string>();
 let subscribers = 0;
@@ -96,6 +106,7 @@ let pollRunning = false;
 let eventStream: AbortController | undefined;
 interface Controller { mode: NexusManagementMode; source: string; endpoint: string; key: string }
 let localController: Controller | undefined;
+const API_KEY_ERROR = 'The server requires a valid API key. Check it in Settings > Server, then try again.';
 // The server this client connected to before it selected a mesh peer. Relayed requests go to
 // `${home.endpoint}/api/v1/nexus/peers/<node>`; Nexus management keeps using home itself.
 let home: { endpoint: string; key: string } | undefined;
@@ -137,6 +148,7 @@ async function controller(): Promise<Controller> {
     const endpoint = base;
     const key = baseKey;
     const response = await fetch(`${endpoint}/api/v1/nexus/status`, { headers: key ? { Authorization: `Bearer ${key}` } : {}, signal: AbortSignal.timeout(10000) });
+    if (response.status === 401) throw new Error(API_KEY_ERROR);
     if (!response.ok) throw new Error(`Cannot access the local network controller (${response.status}).`);
     const status = await response.json() as NexusStatus;
     const control = new URL(status.controller_url || endpoint);
@@ -145,9 +157,13 @@ async function controller(): Promise<Controller> {
   }
   return localController;
 }
-export async function nexusRequest<T>(path: string, body?: unknown): Promise<T> {
+export async function nexusAccountController(): Promise<{ source: string; local: boolean; request: typeof nexusRequest }> {
+  const target = { ...await controller() };
+  return { source: target.source, local: target.mode === 'local', request: <T>(path: string, body?: unknown) => nexusRequest<T>(path, body, target) };
+}
+export async function nexusRequest<T>(path: string, body?: unknown, pinnedController?: Controller): Promise<T> {
   const send = async () => {
-    const target = await controller();
+    const target = pinnedController || await controller();
     if (state.mode !== target.mode) publish({ ...state, mode: target.mode });
     return { target, response: await fetch(`${target.endpoint}/api/v1/nexus/${path}`, {
       method: body === undefined ? 'GET' : 'POST',
@@ -162,20 +178,24 @@ export async function nexusRequest<T>(path: string, body?: unknown): Promise<T> 
   try {
     ({ response } = await send());
   } catch (error) {
-    // lemond picks a new management port each time it starts; rediscover it once.
-    if (!localController) throw error;
+    // A lost POST response may already have changed the server; only reads can be retried safely.
+    const previousController = localController;
     localController = undefined;
+    if (pinnedController || !previousController || body !== undefined) throw error;
     ({ response } = await send());
   }
+  if (response.status === 401) throw new Error(API_KEY_ERROR);
   const data = await response.json();
   if (!response.ok) throw new Error(typeof data?.error === 'string' ? data.error : `Network request failed (${response.status}).`);
   return data as T;
 }
 export async function refreshNexus(): Promise<void> {
-  if (pollRunning) return;
+  if (pollRunning || networkPaused) return;
+  const epoch = networkEpoch;
   pollRunning = true;
   try {
     const status = await nexusRequest<NexusStatus>('status');
+    if (epoch !== networkEpoch) return;
     let notice = state.notice;
     if (lastMemberIds && state.status?.mesh_up && status.mesh_up) {
       const joined = status.members.filter(member => !lastMemberIds!.has(member.node_id));
@@ -184,6 +204,7 @@ export async function refreshNexus(): Promise<void> {
     lastMemberIds = status.mesh_up ? new Set(status.members.map(member => member.node_id)) : undefined;
     publish({ ...state, status, error: null, notice });
   } catch (error) {
+    if (epoch !== networkEpoch) return;
     publish({ ...state, error: error instanceof Error ? error.message : String(error) });
   } finally { pollRunning = false; }
 }
@@ -217,12 +238,13 @@ async function streamEvents() {
 }
 async function poll() {
   await refreshNexus();
-  if (subscribers) timer = setTimeout(poll, 5000);
+  if (subscribers && !networkPaused) timer = setTimeout(poll, 5000);
 }
 const subscribe = (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; };
 export function useNexusNetwork(active = true): NetworkState {
   useEffect(() => {
     if (!active) return;
+    networkPaused = false;
     if (++subscribers === 1) { void poll(); void streamEvents(); }
     return () => { if (--subscribers === 0) { clearTimeout(timer); eventStream?.abort(); } };
   }, [active]);
@@ -236,7 +258,7 @@ async function nativePasskey<T>(options: PasskeyChallenge, deviceName: string, r
   const [{ invoke }, { listen }] = await Promise.all([import('@tauri-apps/api/core'), import('@tauri-apps/api/event')]);
   const update = (message: string, needs_pin: boolean) => publish({ ...state, passkey: { message, needs_pin, rp_id: options.rp_id } });
   const unlisten = await listen<{ message: string; needs_pin: boolean }>('nexus:passkey-status', event => update(event.payload.message, event.payload.needs_pin));
-  update('Connect your FIDO2 security key. Verification may require its PIN or fingerprint.', false);
+  update('Follow your device’s passkey verification prompt.', false);
   try { return await invoke<T>('nexus_passkey', { options: { ...options, device_name: deviceName, registration } }); }
   finally { unlisten(); publish({ ...state, passkey: undefined }); }
 }
@@ -261,11 +283,11 @@ function checkPasskeyContext(rpId: string) {
   }
 }
 const toHex = (bytes: Uint8Array) => Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
-export async function registerNexusPasskey(deviceName: string): Promise<void> {
-  const options = await nexusRequest<PasskeyChallenge>('passkey/challenge?register=1');
+export async function registerNexusPasskey(deviceName: string, request = nexusRequest): Promise<void> {
+  const options = await request<PasskeyChallenge>('passkey/challenge?register=1');
   if (nativePasskeys()) {
     const result = await nativePasskey<Record<string, string>>(options, deviceName, true);
-    await nexusRequest('passkey/register', result);
+    await request('passkey/register', result);
     return;
   }
   checkPasskeyContext(options.rp_id);
@@ -284,15 +306,15 @@ export async function registerNexusPasskey(deviceName: string): Promise<void> {
   const key = await crypto.subtle.importKey('spki', spki, { name: 'ECDSA', namedCurve: 'P-256' }, true, ['verify']);
   const publicKey = await crypto.subtle.exportKey('jwk', key);
   if (!publicKey.x || !publicKey.y) throw new Error('The passkey did not return a P-256 public key.');
-  await nexusRequest('passkey/register', { credential_id: encodeBase64Url(credential.rawId),
+  await request('passkey/register', { credential_id: encodeBase64Url(credential.rawId),
     public_key_x: toHex(decodeBase64Url(publicKey.x)), public_key_y: toHex(decodeBase64Url(publicKey.y)) });
 }
-export async function unlockNexus(deferJoin = false): Promise<void> {
-  const options = await nexusRequest<PasskeyChallenge>('passkey/challenge');
+export async function unlockNexus(deferJoin = false, request = nexusRequest): Promise<void> {
+  const options = await request<PasskeyChallenge>('passkey/challenge');
   if (!options.credential_id) throw new Error('Create a passkey for this device first.');
   if (nativePasskeys()) {
     const assertion = await nativePasskey<Record<string, string>>(options, '', false);
-    await nexusRequest('passkey/unlock', { defer_join: deferJoin, passkey_assertion: assertion });
+    await request('passkey/unlock', { defer_join: deferJoin, passkey_assertion: assertion });
     return;
   }
   checkPasskeyContext(options.rp_id);
@@ -303,23 +325,25 @@ export async function unlockNexus(deferJoin = false): Promise<void> {
   } }) as PublicKeyCredential | null;
   if (!credential) throw new Error('Passkey confirmation was cancelled.');
   const response = credential.response as AuthenticatorAssertionResponse;
-  await nexusRequest('passkey/unlock', { defer_join: deferJoin, passkey_assertion: {
+  await request('passkey/unlock', { defer_join: deferJoin, passkey_assertion: {
     credential_id: encodeBase64Url(credential.rawId), authenticator_data: encodeBase64Url(response.authenticatorData),
     client_data_json: encodeBase64Url(response.clientDataJSON), signature: encodeBase64Url(response.signature),
   } });
 }
-export async function prepareNexus(deviceName: string, joining: boolean) {
-  await nexusRequest('enable', {});
+export async function prepareNexus(deviceName: string, joining: boolean, request = nexusRequest,
+  beforeUnlock?: (status: NexusStatus) => void) {
+  await request('enable', {});
   let status: NexusStatus | undefined;
   for (let attempt = 0; attempt < 20; attempt++) {
-    status = await nexusRequest<NexusStatus>('status');
+    status = await request<NexusStatus>('status');
     if (status.status !== 'starting') break;
     await new Promise(resolve => setTimeout(resolve, 250));
   }
   if (!status || status.status === 'starting') throw new Error('Network is still starting. Try again shortly.');
-  await nexusRequest('device', { device_name: deviceName });
-  if (!status.registered) await registerNexusPasskey(deviceName);
-  await unlockNexus(joining);
+  beforeUnlock?.(status);
+  await request('device', { device_name: deviceName });
+  if (!status.registered) await registerNexusPasskey(deviceName, request);
+  await unlockNexus(joining, request);
 }
 export function nexusStatusLabel(status: NexusStatus | null): string {
   if (!status?.enabled) return 'Mesh off';

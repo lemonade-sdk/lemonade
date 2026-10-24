@@ -1,5 +1,10 @@
 # Nexus integration
 
+For this GUI3 checkout, see [Nexus account UI](nexus-account-ui.md) for the
+account dropdown, passwordless sign-in, Basic/Advanced views and recursive
+group-management routes.
+The UI walkthrough below describes the original integration panel.
+
 Lemonade links the client SDK in `src/LemonadeNexusSDK`. SDK headers, sources,
 Rust transport crates and build rules stay in that directory. There is no Nexus
 server, submodule, nested repository, or networking sidecar. The shared C
@@ -56,11 +61,13 @@ requests to that relay URL, and `lemond` forwards them to that peer alone. Any
 change to the connection settings drops the peer key. Relay URLs are not saved as
 connection settings.
 
-Native passkeys use FIDO2 USB security keys with required user presence and user
-verification. PIN prompts and cancellation run inside the desktop app on Linux,
-Windows and macOS. Linux requires libudev and working hidraw permissions.
-Windows Hello and macOS Touch ID are not native backends in this integration.
-A matching-origin webview can also use WebAuthn.
+Native passkeys require user presence and user verification. Windows uses the
+system WebAuthn dialog for Windows Hello and other available passkey options;
+verification stays in the Windows dialog and cancellation is forwarded to it.
+Linux and macOS use FIDO2 USB security keys with PIN prompts and cancellation
+inside the desktop app. Linux requires libudev and working hidraw permissions.
+macOS Touch ID is not a native backend in this integration. A matching-origin
+webview can also use WebAuthn.
 
 ### Remote management
 
@@ -94,6 +101,11 @@ The bootstrap hostname found in Nexus configuration is `lemonade-nexus.io`.
 | `LEMONADE_NEXUS_SERVER` | `lemonade-nexus.io` | Bootstrap HTTPS host |
 | `LEMONADE_NEXUS_PORT` | `9100` | Bootstrap HTTPS port |
 | `LEMONADE_NEXUS_RP_ID` | `lemonade-nexus.io` | RP ID; must match the federation |
+
+The bootstrap hostname must match its HTTPS certificate. Use an advertised
+server FQDN when the bootstrap alias is not covered by that certificate. The
+RP ID must match the federation's `/api/health` response; it is independent of
+the hostname used to reach that server.
 
 Identity, account metadata and enabled preference live in `nexus/` under the
 server configuration directory. Unix permissions restrict the directory to its
@@ -153,6 +165,10 @@ Routes are available under `/api/v0/nexus/`, `/api/v1/nexus/`, `/v0/nexus/`,
 | POST | `invites`, `invites/cancel`, `join` | Invite or join a group |
 | GET | `devices` | Group devices with tier, admin flag and permissions |
 | GET | `members` | Devices plus `can_manage` (this device is an admin) |
+| GET | `account` | Verified current account ID, membership identity, device ID, role and devices; local-only |
+| GET | `tree`, `tree/{id}/children` | Current group or a descendant group and direct children |
+| POST | `tree/{id}/groups`, `tree/{id}/rename` | Create a child group or rename a group with `{name}` |
+| POST | `tree/{id}/permissions` | Group assignment with `{member_node_id, admin, permissions}` |
 | POST | `members/{node_id}/role` | `{"role": "admin" \| "member"}` |
 | POST | `members/{node_id}/permissions` | `{"permissions": [...]}` on the group node |
 | GET, POST | `devices/{node_id}/access` | Device access list; POST `{"member_node_id", "see", "connect"}` |
@@ -184,6 +200,11 @@ a local-only route. `LEMONADE_ADMIN_API_KEY` is also accepted once
 `LEMONADE_API_KEY` is set. Keys are compared in constant time. The public
 listener's origin checks still apply. Remote `status` omits `controller_url`
 and reports `remote_management`.
+
+`account` is a local management operation and is refused on remote and mesh
+ingress requests. It requires an unlocked, joined session and known current
+membership permissions. It contains no private key material or client display
+label; those labels belong to the GUI3 client.
 
 The desktop discovers the management listener through `status` and sends the
 local API key directly. It rediscovers the listener once when a request cannot

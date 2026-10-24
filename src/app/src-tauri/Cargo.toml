@@ -52,7 +52,7 @@ glib = "0.18"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 webview2-com = "0.38"
-windows = { version = "0.61", features = ["Win32_Foundation"] }
+windows = { version = "0.61", features = ["Win32_Foundation", "Win32_Networking_WindowsWebServices"] }
 # authenticator 0.4.1 passes std's RawHandle where winapi expects its own c_void;
 # winapi's std feature makes the two types identical.
 winapi = { version = "0.3", features = ["std"] }

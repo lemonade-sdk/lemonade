@@ -91,6 +91,38 @@ char* ln_identity_pubkey(const ln_identity_t* identity);
 /** Destroy an identity and release resources. */
 void ln_identity_destroy(ln_identity_t* identity);
 
+/** Configure device-hosted account images after ln_set_identity.
+ * cache_root is an absolute UTF-8 directory on this device, scoped to its identity.
+ * The client owns the image service and a copy of the identity until destruction.
+ * Do not configure concurrently with other avatar calls. No mesh connection is
+ * needed until get/put. No image bytes are uploaded to the Nexus API.
+ */
+ln_error_t ln_account_avatar_configure(ln_client_t* client, const ln_identity_t* identity, const char* cache_root);
+
+/** Sign a v2 image reference containing only group, author, revision and SHA-256.
+ * image is a normalized PNG data URL up to 128 KiB and 128x128 pixels, or "" to
+ * remove. revision is 1..2^53-1. Membership and Read/Write are checked separately.
+ * No network request. Caller owns *out_json on success and must ln_free it.
+ * Failure sets *out_json to null. Identity must remain alive during this call.
+ */
+ln_error_t ln_account_avatar_sign(const ln_identity_t* identity, const char* group_id,
+                                  const char* image, uint64_t revision, char** out_json);
+
+/** Read current references/permissions over the private API, then obtain bytes
+ * from the local cache or authorized devices over the encrypted mesh. Returns
+ * {group_id,revision,can_write,image,pending}. pending=true means no copy was
+ * available; it is not a removal. Requires configure, authentication and join.
+ * Caller owns *out_json (success or refusal); release it with ln_free. Unsupported
+ * reference protocols return LN_ERR_UNSUPPORTED; missing APIs LN_ERR_NOT_FOUND.
+ */
+ln_error_t ln_account_avatar_get(ln_client_t* client, char** out_json);
+
+/** Cache image locally and publish only the matching signed reference. Empty
+ * image is removal. Does not retry conflicting writes. Ownership/errors follow
+ * avatar_get. Lost responses retain the staged local copy for later retrieval.
+ */
+ln_error_t ln_account_avatar_put(ln_client_t* client, const char* record_json, const char* image, char** out_json);
+
 /** Attach an identity to a client for delta signing. */
 ln_error_t ln_set_identity(ln_client_t* client, const ln_identity_t* identity);
 

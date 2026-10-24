@@ -1,13 +1,17 @@
-#include <LemonadeNexusSDK/lemonade_nexus.h>
-#include <LemonadeNexusSDK/LemonadeNexusClient.hpp>
+#include <LemonadeNexusSDK/AccountAvatarClient.hpp>
 #include <LemonadeNexusSDK/GroupKey.hpp>
+#include <LemonadeNexusSDK/LemonadeNexusClient.hpp>
+#include <LemonadeNexusSDK/lemonade_nexus.h>
 
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
 
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
+#include <memory>
 #include <span>
+#include <stdexcept>
 #include <string>
 
 using json = nlohmann::json;
@@ -32,6 +36,7 @@ static ln_error_t ln_map_error(int http_status) {
 
 struct ln_client_s {
     lnsdk::LemonadeNexusClient client;
+    std::unique_ptr<lnsdk::AccountAvatarClient> avatar;
     explicit ln_client_s(const lnsdk::ServerConfig& cfg) : client{cfg} {}
 };
 
@@ -62,6 +67,60 @@ static char* strdup_str(const std::string& s) {
 
 void ln_free(char* ptr) {
     std::free(ptr);
+}
+
+ln_error_t ln_account_avatar_configure(ln_client_t* client, const ln_identity_t* identity, const char* cache_root) {
+    if (!client || !identity || !cache_root) return LN_ERR_NULL_ARG;
+    try {
+        if (!identity->identity.is_valid()) return LN_ERR_NO_IDENTITY;
+        if (!*cache_root || !std::filesystem::u8path(cache_root).is_absolute()) return LN_ERR_REJECTED;
+        client->avatar = std::make_unique<lnsdk::AccountAvatarClient>(identity->identity,
+            std::filesystem::u8path(cache_root),
+            [client](const std::string& method, const std::string& path, const std::string& body) {
+                return client->client.call_private_api(method, path, body);
+            },
+            [client](uint16_t port, const std::string& target) { return client->client.expose_service(port, target).ok; },
+            [client](const std::string& ip, uint16_t port) { return client->client.open_egress(ip, port); },
+            [client] { return client->client.get_mesh_peers(); });
+        return LN_OK;
+    } catch (...) { return LN_ERR_INTERNAL; }
+}
+
+ln_error_t ln_account_avatar_sign(const ln_identity_t* identity, const char* group_id,
+                                  const char* image, uint64_t revision, char** out_json) {
+    if (out_json) *out_json = nullptr;
+    if (!identity || !group_id || !image || !out_json) return LN_ERR_NULL_ARG;
+    try {
+        if (!identity->identity.is_valid()) return LN_ERR_NO_IDENTITY;
+        *out_json = strdup_json(lnsdk::sign_avatar_reference(identity->identity, group_id, image, revision));
+        return *out_json ? LN_OK : LN_ERR_INTERNAL;
+    } catch (const std::invalid_argument&) { return LN_ERR_REJECTED; }
+    catch (...) { return LN_ERR_INTERNAL; }
+}
+
+static ln_error_t avatar_result(const lnsdk::Result<json>& result, char** out_json) {
+    *out_json = strdup_json(result.ok ? result.value : json{{"error", result.error}});
+    if (!*out_json) return LN_ERR_INTERNAL;
+    if (result.http_status == 501) return LN_ERR_UNSUPPORTED;
+    return result.ok ? LN_OK : ln_map_error(result.http_status);
+}
+
+ln_error_t ln_account_avatar_get(ln_client_t* client, char** out_json) {
+    if (out_json) *out_json = nullptr;
+    if (!client || !out_json) return LN_ERR_NULL_ARG;
+    try {
+        if (!client->avatar) return LN_ERR_UNSUPPORTED;
+        return avatar_result(client->avatar->read(), out_json);
+    } catch (...) { return LN_ERR_INTERNAL; }
+}
+
+ln_error_t ln_account_avatar_put(ln_client_t* client, const char* record_json, const char* image, char** out_json) {
+    if (out_json) *out_json = nullptr;
+    if (!client || !record_json || !image || !out_json) return LN_ERR_NULL_ARG;
+    try {
+        if (!client->avatar) return LN_ERR_UNSUPPORTED;
+        return avatar_result(client->avatar->write(json::parse(record_json, nullptr, false), image), out_json);
+    } catch (...) { return LN_ERR_INTERNAL; }
 }
 
 // ---------------------------------------------------------------------------

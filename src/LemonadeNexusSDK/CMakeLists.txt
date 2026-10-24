@@ -32,6 +32,8 @@ if(UNIX AND NOT APPLE)
     target_link_options(lemonade_nexus_sdk PRIVATE "LINKER:--exclude-libs,ALL")
 endif()
 
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/LemonadeNexusSDK/lemonade_nexus.h")
 file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/include/LemonadeNexusSDK/lemonade_nexus.h" _c_api_lines REGEX "ln_[a-z0-9_]+\\(")
 set(_exports "")
 foreach(_line IN LISTS _c_api_lines)

@@ -208,11 +208,15 @@ impl Stack {
                     addr: Some(IpAddress::Ipv4(vip)),
                     port: vport,
                 };
+                let spec = match &target {
+                    BridgeTarget::Tcp(a) => format!("tcp:{a}"),
+                    BridgeTarget::Unix(p) => format!("unix:{p}"),
+                };
+                if let Some(listener) = self.listeners.iter_mut().find(|l| l.endpoint == endpoint) {
+                    listener.target_spec = spec;
+                    return true;
+                }
                 if let Some(handle) = self.new_listening_socket(endpoint) {
-                    let spec = match &target {
-                        BridgeTarget::Tcp(a) => format!("tcp:{a}"),
-                        BridgeTarget::Unix(p) => format!("unix:{p}"),
-                    };
                     self.listeners.push(Listener {
                         endpoint,
                         target_spec: spec,

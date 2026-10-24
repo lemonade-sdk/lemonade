@@ -54,6 +54,7 @@ public:
     /// Publish a local service at our mesh IP: virtual <mesh_ip>:vport is
     /// bridged to `target` ("tcp:127.0.0.1:PORT" or "unix:/path"), making it
     /// reachable by authorized mesh peers. Returns false if inactive / failed.
+    /// Re-registering a virtual port updates the target for new connections.
     bool tcp_ingress(uint16_t vport, const std::string& target);
 
     /// The dataplane's bound local UDP port (0 when inactive).

@@ -27,6 +27,14 @@ namespace nexus_access {
 extern const std::vector<std::string> kPermissions;
 bool same_key(const std::string& a, const std::string& b);
 bool grants(const nlohmann::json& permissions, const std::string& permission);
+nlohmann::json account_summary(const nlohmann::json& members, const std::string& group_id,
+    const std::string& node_id, const std::string& identity_id);
+/// Validate bounded account avatar metadata against this session's group.
+nlohmann::json account_avatar(const nlohmann::json& value, const std::string& group_id);
+nlohmann::json tree_path(const std::string& id, const std::string& root_id,
+    const std::function<nlohmann::json(const std::string&)>& fetch);
+nlohmann::json tree_entry(const nlohmann::json& node, const std::string& self_key,
+    bool ancestor_admin = false);
 nlohmann::json merge_members(const nlohmann::json& group, const nlohmann::json& children,
     const nlohmann::json& peers, const std::string& self_key, const std::string& self_node_id);
 nlohmann::json device_access(const nlohmann::json& members, const std::string& device_id,

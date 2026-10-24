@@ -328,6 +328,7 @@ pub unsafe extern "C" fn ns_feed_inbound(handle: *mut NsHandle, pkt: *const u8, 
 
 /// Add an ingress forward: virtual `vip:vport` -> bridge `target`.
 /// `target` is "tcp:127.0.0.1:PORT" or "unix:/path".
+/// Re-registering an endpoint replaces the target for subsequent connections.
 ///
 /// # Safety
 /// `handle` valid; string args NUL-terminated UTF-8.
