@@ -5,6 +5,8 @@ import {
 } from './nexus';
 
 export interface SavedNexusAccount { id: string; displayName: string }
+export type NexusAvatarState = { state: 'ready'; image: string | null; revision: number; can_write: boolean; pending?: boolean }
+  | { state: 'unsupported' | 'unavailable' };
 export interface VerifiedNexusAccount {
   account: NexusAccount;
   devices: readonly NexusDevice[];
@@ -12,6 +14,7 @@ export interface VerifiedNexusAccount {
   deviceNodeId: string;
   source: string;
   canInvite: boolean;
+  avatar: NexusAvatarState;
 }
 export interface NexusAccountInspection { status: NexusStatus; source: string; local: boolean; desktop: boolean }
 export interface NexusSignInInput {
@@ -27,9 +30,23 @@ export interface NexusAccountService {
   signIn: (input: NexusSignInInput) => Promise<VerifiedNexusAccount>;
   refresh: (session: VerifiedNexusAccount) => Promise<VerifiedNexusAccount>;
   invite: (session: VerifiedNexusAccount, deviceName: string) => Promise<NexusInvite>;
+  setAvatar: (session: VerifiedNexusAccount, image: string | null) => Promise<NexusAvatarState & { state: 'ready' }>;
 }
 
-interface AccountReply { id: string; member_id: string; device_node_id: string; role: 'admin' | 'user'; devices: NetworkDevice[] }
+export function verifyAvatarReply(value: unknown): NexusAvatarState {
+  const reply = value as Partial<NexusAvatarState & { image: string | null; revision: number; can_write: boolean; pending?: boolean }> | null;
+  if (!reply || reply.state === 'unsupported') return { state: 'unsupported' };
+  if (reply.state === 'unavailable') return { state: 'unavailable' };
+  if (reply.state !== 'ready' || !Number.isSafeInteger(reply.revision) || reply.revision! < 0 || typeof reply.can_write !== 'boolean'
+    || (reply.pending !== undefined && (typeof reply.pending !== 'boolean' || (reply.pending && reply.image !== null)))
+    || (reply.image !== null && (typeof reply.image !== 'string' || reply.image.length > 128 * 1024
+      || !/^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/.test(reply.image)))) {
+    throw new Error('The mesh returned invalid profile image data.');
+  }
+  return reply as NexusAvatarState & { state: 'ready' };
+}
+
+interface AccountReply { id: string; member_id: string; device_node_id: string; role: 'admin' | 'user'; devices: NetworkDevice[]; avatar?: unknown }
 export function verifyAccountReply(value: unknown, displayName: string, source: string, expectedId?: string): VerifiedNexusAccount {
   const reply = value as AccountReply | null;
   if (!reply || typeof reply.id !== 'string' || !reply.id || typeof reply.member_id !== 'string' || !reply.member_id
@@ -45,7 +62,10 @@ export function verifyAccountReply(value: unknown, displayName: string, source: 
     id: device.node_id, name: device.device_name, kind: 'computer' as const,
     current: device.node_id === reply.device_node_id, connected: device.is_online === true,
   }));
-  return { account: { id: reply.id, displayName, role: reply.role }, devices, memberId: reply.member_id, deviceNodeId: reply.device_node_id, source,
+  let avatar: NexusAvatarState;
+  try { avatar = verifyAvatarReply(reply.avatar); } catch { avatar = { state: 'unavailable' }; }
+  return { account: { id: reply.id, displayName, role: reply.role, avatarUrl: avatar.state === 'ready' ? avatar.image ?? undefined : undefined },
+    devices, memberId: reply.member_id, deviceNodeId: reply.device_node_id, source, avatar,
     canInvite: Boolean(self.permissions?.includes('admin') || self.permissions?.includes('add_child')) };
 }
 
@@ -84,6 +104,7 @@ export function createNexusAccountService(dependencies = { controller: nexusAcco
       const controller = await requireController(session.source);
       const next = verifyAccountReply(await controller.request('account'), session.account.displayName, session.source, session.account.id);
       if (next.memberId !== session.memberId || next.deviceNodeId !== session.deviceNodeId) throw new Error('The account membership changed. Sign in again.');
+      if (next.avatar.state === 'unavailable') next.account.avatarUrl = session.account.avatarUrl;
       return next;
     },
     async invite(session, deviceName) {
@@ -96,6 +117,17 @@ export function createNexusAccountService(dependencies = { controller: nexusAcco
         throw new Error('The server returned an invalid invitation. Try again.');
       }
       return invite;
+    },
+    async setAvatar(session, image) {
+      if (session.avatar.state !== 'ready' || !session.avatar.can_write) throw new Error('Profile images cannot be changed on this account right now.');
+      const controller = await requireController(session.source);
+      const next = verifyAvatarReply(await controller.request('account/avatar', {
+        account_id: session.account.id, member_id: session.memberId, device_node_id: session.deviceNodeId,
+        revision: session.avatar.revision, image,
+      }));
+      await requireController(session.source);
+      if (next.state !== 'ready' || next.revision <= session.avatar.revision) throw new Error('The mesh did not confirm the profile image change. Try again.');
+      return next;
     },
   };
 }

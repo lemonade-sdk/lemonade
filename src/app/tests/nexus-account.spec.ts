@@ -1,6 +1,63 @@
 import { expect, test, type Page } from '@playwright/test';
 import { setupNexusAccount, signInNexusAccount } from './nexusAccountFixture';
 
+const avatarFile = { name: 'profile.png', mimeType: 'image/png', buffer: Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a6XcAAAAASUVORK5CYII=', 'base64') };
+
+test('account images survive sign-in and propagate removal', async ({ page }) => {
+  const fixture = await setupNexusAccount(page);
+  await signInNexusAccount(page);
+  await page.getByLabel('Profile image file', { exact: true }).setInputFiles(avatarFile);
+  await expect(page.locator('.nexus-account-trigger img')).toBeVisible();
+  expect(fixture.avatar.revision).toBe(1);
+  const saved = fixture.avatar.image;
+  await page.getByRole('button', {name: 'Sign out', exact: true}).click();
+  await expect(page.locator('.nexus-account-trigger img')).toHaveCount(0);
+  await signInNexusAccount(page);
+  await expect(page.locator('.nexus-account-trigger img')).toHaveAttribute('src', saved!);
+  fixture.avatar = {...fixture.avatar, image: null, revision: 2};
+  await expect(page.locator('.nexus-account-trigger img')).toHaveCount(0, {timeout: 10000});
+  await page.getByLabel('Profile image file', { exact: true }).setInputFiles(avatarFile);
+  await expect(page.locator('.nexus-account-trigger img')).toBeVisible();
+  await page.getByRole('button', {name: 'Remove image', exact: true}).click();
+  await expect(page.locator('.nexus-account-trigger img')).toHaveCount(0);
+  expect(fixture.avatar.image).toBeNull();
+});
+
+test('a failed image save preserves the current image', async ({ page }) => {
+  const fixture = await setupNexusAccount(page);
+  await signInNexusAccount(page);
+  await page.getByLabel('Profile image file', {exact: true}).setInputFiles(avatarFile);
+  await expect(page.locator('.nexus-account-trigger img')).toBeVisible();
+  const saved = fixture.avatar.image;
+  fixture.rejectWrites = true;
+  await page.getByRole('button', {name: 'Remove image', exact: true}).click();
+  await expect(page.getByRole('alert')).toContainText('The mesh could not save the image.');
+  await expect(page.locator('.nexus-account-trigger img')).toHaveAttribute('src', saved!);
+});
+
+test('older meshes keep sign-in working and explain the profile update requirement', async ({ page }) => {
+  await setupNexusAccount(page, {avatarUnsupported: true});
+  await signInNexusAccount(page);
+  await expect(page.getByRole('button', {name: 'Change profile image', exact: true})).toBeDisabled();
+  await expect(page.getByText('This mesh needs a Nexus server update to sync profile images.')).toBeVisible();
+});
+
+test('a late image-save response cannot restore a signed-out account', async ({ page }) => {
+  const fixture = await setupNexusAccount(page);
+  await signInNexusAccount(page);
+  let release!: () => void;
+  fixture.avatarSaveGate = new Promise<void>(resolve => { release = resolve; });
+  const response = page.waitForResponse(reply => reply.url().endsWith('/nexus/account/avatar'));
+  await page.getByLabel('Profile image file', {exact: true}).setInputFiles(avatarFile);
+  await expect.poll(() => fixture.calls.some(call => call.path.endsWith('/account/avatar'))).toBe(true);
+  await page.getByRole('button', {name: 'Sign out', exact: true}).click();
+  release();
+  await response;
+  await expect(page.getByRole('button', {name: 'User: Not signed in', exact: true})).toBeVisible();
+  await expect(page.locator('.nexus-account-trigger img')).toHaveCount(0);
+});
+
 test('an unlocked mesh does not sign in the account automatically', async ({ page }) => {
   const fixture = await setupNexusAccount(page);
   await expect(page.getByRole('button', { name: 'User: Not signed in' })).toBeVisible();
@@ -196,6 +253,7 @@ async function selectionStyle(page: Page) {
 
 test('Nexus uses the shared Settings selection colors in both themes', async ({ page }) => {
   await setupNexusAccount(page);
+  await page.addStyleTag({ content: '.workspace-nav button, .workspace-nav__icon { transition: none !important; }' });
   for (const theme of ['dark', 'light']) {
     if (theme === 'light') await page.getByRole('button', { name: 'Toggle theme', exact: true }).click();
     const nexus = await selectionStyle(page);
@@ -217,4 +275,16 @@ test('lost account access clears the signed-in identity', async ({ page }) => {
   fixture.accountError = true;
   await expect(page.getByRole('button', { name: 'User: Not signed in' })).toBeVisible({ timeout: 12000 });
   await expect(page.getByText('Account access ended. Sign in again to continue.')).toBeVisible();
+});
+
+
+test('an offline image source shows waiting guidance without blocking account access', async ({ page }) => {
+  const fixture = await setupNexusAccount(page);
+  fixture.avatar = {...fixture.avatar, revision:1, pending:true};
+  await signInNexusAccount(page);
+  await expect(page.getByText('Connect a device with this profile image to download it.')).toBeVisible();
+  await expect(page.getByRole('button', { name:'Change profile image', exact:true })).toBeEnabled();
+  await expect(page.locator('.nexus-account-summary img')).toHaveCount(0);
+  fixture.avatar.pending = false;
+  await expect(page.getByText('Connect a device with this profile image to download it.')).toHaveCount(0, {timeout:12000});
 });

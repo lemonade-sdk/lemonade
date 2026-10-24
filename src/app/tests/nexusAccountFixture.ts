@@ -8,6 +8,7 @@ const peer: NexusDevice = { node_id: 'peer', device_name: 'Kitchen PC', tunnel_i
 
 export async function setupNexusAccount(page: Page, options: {
   desktop?: boolean; registered?: boolean; joined?: boolean; readOnly?: boolean; cancelPasskey?: boolean; unauthorized?: boolean;
+  avatarUnsupported?: boolean;
 } = {}) {
   const members = [{ ...self, ...(options.readOnly ? { is_admin: false, permissions: ['read'] } : {}) }, peer];
   const state: NexusStatus = { available: true, controller_url: 'http://127.0.0.1:15555', enabled: true,
@@ -30,7 +31,9 @@ export async function setupNexusAccount(page: Page, options: {
     lab: { parent: lab, children: [entry('workstation', 'Lab workstation', 'node', 'lab')] },
   };
   const calls: { path: string; method: string; body: Record<string, unknown> | null; authorization?: string }[] = [];
-  const fixture = { state, calls, accountError: false, rejectWrites: false, invalidTree: false };
+  const fixture = { state, calls, accountError: false, rejectWrites: false, invalidTree: false,
+    avatarSaveGate: undefined as Promise<void> | undefined,
+    avatar: {state: 'ready', image: null as string | null, revision: 0, can_write: !options.readOnly, pending: false} };
   await page.addInitScript(({ desktop, cancelPasskey }) => {
     localStorage.setItem('lemonade_theme', 'dark');
     (window as any).api = { isWebApp: !desktop,
@@ -64,7 +67,16 @@ export async function setupNexusAccount(page: Page, options: {
     if (path.endsWith('/join')) { state.mesh_up = true; state.group_node_id = 'group'; }
     if (path.endsWith('/account')) return route.fulfill(fixture.accountError
       ? { status: 409, headers, json: { error: 'Account access ended' } }
-      : { headers, json: { id: state.group_node_id, member_id: 'fixture-identity', device_node_id: 'self', role: members[0].is_admin ? 'admin' : 'user', devices: members } });
+      : { headers, json: { id: state.group_node_id, member_id: 'fixture-identity', device_node_id: 'self', role: members[0].is_admin ? 'admin' : 'user', devices: members,
+        avatar: options.avatarUnsupported ? {state: 'unsupported'} : fixture.avatar } });
+    if (path.endsWith('/account/avatar')) {
+      await fixture.avatarSaveGate;
+      if (fixture.rejectWrites) return route.fulfill({status: 502, headers, json: {error: 'The mesh could not save the image.'}});
+      if (options.readOnly) return route.fulfill({status: 403, headers, json: {error: 'Read only account'}});
+      if (body?.revision !== fixture.avatar.revision) return route.fulfill({status: 409, headers, json: {error: 'The profile image changed.'}});
+      fixture.avatar = {...fixture.avatar, image: body?.image as string | null, pending: false, revision: fixture.avatar.revision + 1};
+      return route.fulfill({headers, json: fixture.avatar});
+    }
     if (path.endsWith('/invites')) return route.fulfill({ headers, json: { code: '12345678', link_token: `lnk_${'a'.repeat(64)}`, expires_at: Math.floor(Date.now() / 1000) + 600, device_name: body?.device_name } });
     const mutation = path.match(/\/tree\/([^/]+)\/(groups|rename|permissions)$/);
     if (mutation) {

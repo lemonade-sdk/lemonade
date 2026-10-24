@@ -129,6 +129,27 @@ json account_summary(const json& members, const std::string& group_id,
         {"role", self.value("is_admin", false) ? "admin" : "user"}};
 }
 
+json account_avatar(const json& value, const std::string& group_id) {
+    if (!value.is_object() || value.value("group_id", json()) != group_id ||
+        !value.contains("revision") || !value["revision"].is_number_integer() ||
+        (!value["revision"].is_number_unsigned() && value["revision"].get<int64_t>() < 0) ||
+        value["revision"].get<uint64_t>() > 9007199254740991ULL ||
+        !value.contains("image") || (!value["image"].is_null() && !value["image"].is_string()) ||
+        !value.contains("can_write") || !value["can_write"].is_boolean() ||
+        (value.contains("pending") && (!value["pending"].is_boolean() ||
+            (value["pending"].get<bool>() && !value["image"].is_null())))) {
+        throw NexusError(502, "The network returned invalid account image data");
+    }
+    if (value["image"].is_string()) {
+        const auto& image = value["image"].get_ref<const std::string&>();
+        if (image.size() > 128 * 1024 || image.rfind("data:image/png;base64,", 0) != 0) {
+            throw NexusError(502, "The network returned an invalid profile image");
+        }
+    }
+    return {{"state", "ready"}, {"revision", value["revision"]},
+        {"image", value["image"]}, {"can_write", value["can_write"]}, {"pending", value.value("pending", false)}};
+}
+
 json tree_path(const std::string& id, const std::string& root_id,
                const std::function<json(const std::string&)>& fetch) {
     json path = json::array();
@@ -411,6 +432,7 @@ struct NexusManager::Session {
     bool locked{true};
     bool joined{false};
     bool reconnect{false};
+    bool avatar_configured{false};
     std::chrono::steady_clock::time_point retry_at{};
     std::chrono::seconds retry_delay{5};
     std::map<std::string, std::string> egress_ips;
@@ -453,6 +475,8 @@ struct NexusManager::Session {
         }
         if (ln_set_identity(client.get(), identity.get()) != LN_OK) throw NexusError(500, "Cannot load device identity");
         pubkey = sdk_string(ln_identity_pubkey(identity.get()));
+        const auto avatar_cache = utils::path_to_utf8(root / "avatar-cache");
+        avatar_configured = ln_account_avatar_configure(client.get(), identity.get(), avatar_cache.c_str()) == LN_OK;
     }
     ~Session() { if (client) ln_mesh_disable(client.get()); }
     std::string device_name() const { return account.value("device_name", "My Lemonade device"); }
@@ -497,6 +521,17 @@ struct NexusManager::Session {
             throw NexusError(502, reason.empty() ? "Network request failed" : reason);
         }
         return value;
+    }
+
+    json read_avatar() {
+        if (!avatar_configured) return {{"state", "unavailable"}};
+        char* output = nullptr;
+        const auto code = ln_account_avatar_get(client.get(), &output);
+        std::unique_ptr<char, decltype(&ln_free)> owned(output, ln_free);
+        if (code == LN_ERR_NOT_FOUND || code == LN_ERR_UNSUPPORTED) return {{"state", "unsupported"}};
+        if (code != LN_OK || !output) return {{"state", "unavailable"}};
+        try { return nexus_access::account_avatar(json::parse(output), group_id); }
+        catch (const std::exception&) { return {{"state", "unavailable"}}; }
     }
     void set_assignment(const std::string& target, const std::string& key, const json& permissions) {
         const auto list = permissions.dump();
@@ -710,7 +745,34 @@ struct NexusManager::Session {
             refresh_devices();
             auto result = nexus_access::account_summary(devices, group_id, node_id, account.value("user_id", ""));
             result["devices"] = devices;
+            result["avatar"] = read_avatar();
             return result;
+        }
+        if (path == "/account/avatar" && method == "POST") {
+            if (body.value("account_id", "") != group_id || body.value("member_id", "") != account.value("user_id", "") ||
+                body.value("device_node_id", "") != node_id) throw NexusError(409, "The account changed. Sign in again.");
+            const auto current = read_avatar();
+            if (current.at("state") == "unsupported") throw NexusError(501, "This mesh needs a Nexus server update to sync profile images.");
+            if (current.at("state") != "ready") throw NexusError(502, "Cannot reach the account image service. Try again.");
+            if (!current.at("can_write").get<bool>()) throw NexusError(403, "You do not have permission to change this account image.");
+            if (body.at("revision") != current.at("revision")) throw NexusError(409, "The profile image changed. Refresh and try again.");
+            const auto revision = current.at("revision").get<uint64_t>();
+            if (revision >= 9007199254740991ULL) throw NexusError(409, "The account image revision limit was reached.");
+            const auto& image = body.at("image");
+            if (!image.is_null() && !image.is_string()) throw NexusError(400, "Expected a profile image or null");
+            const auto data = image.is_null() ? std::string() : image.get<std::string>();
+            if (data.size() > 128 * 1024 || (!data.empty() && data.rfind("data:image/png;base64,", 0) != 0)) throw NexusError(400, "Choose a PNG profile image under 128 KiB.");
+            const auto record = sdk_call([&](auto out) { return ln_account_avatar_sign(identity.get(), group_id.c_str(), data.c_str(), revision + 1, out); });
+            char* output = nullptr;
+            const auto encoded = record.dump();
+            const auto code = ln_account_avatar_put(client.get(), encoded.c_str(), data.c_str(), &output);
+            std::unique_ptr<char, decltype(&ln_free)> owned(output, ln_free);
+            const auto result = output ? json::parse(output, nullptr, false) : json();
+            if (code != LN_OK) {
+                const auto message = result.is_object() ? result.value("error", "Profile image could not be saved") : "Profile image could not be saved";
+                throw NexusError(code == LN_ERR_AUTH ? 403 : code == LN_ERR_REJECTED ? 409 : code == LN_ERR_NOT_FOUND ? 501 : 502, message);
+            }
+            return nexus_access::account_avatar(result, group_id);
         }
         if (path == "/tree") return tree_children(group_id);
         if (path.rfind("/tree/", 0) == 0) {
@@ -1030,8 +1092,9 @@ void NexusManager::handle(const httplib::Request& req, httplib::Response& res,
         res.set_content(body.dump(), "application/json");
     };
     auto body = req.body.empty() ? json::object() : json::parse(req.body, nullptr, false);
-    if (!body.is_object() || req.body.size() > 65536) {
-        reply(400, {{"error", "Expected a JSON object of at most 64 KiB"}});
+    const std::size_t limit = operation == "account/avatar" ? 128 * 1024 + 2048 : 65536;
+    if (!body.is_object() || req.body.size() > limit) {
+        reply(400, {{"error", "Expected a bounded JSON object"}});
         return;
     }
     try {
@@ -1152,7 +1215,7 @@ void NexusManager::register_routes(httplib::Server& server, NexusListener listen
         for (const auto* operation : {"status", "passkey/challenge", "devices", "members", "join/status", "events", "tree", "account"}) {
             server.Get(std::string(prefix) + operation, [dispatch, operation](const auto& req, auto& res) { dispatch(req, res, operation); });
         }
-        for (const auto* operation : {"enable", "disable", "passkey/register", "passkey/unlock", "invites", "invites/cancel", "join", "egress", "lock", "device"}) {
+        for (const auto* operation : {"enable", "disable", "passkey/register", "passkey/unlock", "invites", "invites/cancel", "join", "egress", "lock", "device", "account/avatar"}) {
             server.Post(std::string(prefix) + operation, [dispatch, operation](const auto& req, auto& res) { dispatch(req, res, operation); });
         }
         server.Post(std::string(prefix) + R"(devices/([A-Za-z0-9_-]+)/remove)",

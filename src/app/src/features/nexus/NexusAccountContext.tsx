@@ -26,6 +26,9 @@ export interface NexusAccountConnection {
   onSignIn?: () => void;
   onSignOut?: () => void;
   onConnectDevice?: () => void;
+  onAvatarChange?: (image: string | null) => Promise<void>;
+  avatarSaving?: boolean;
+  avatarNotice?: 'unsupported' | 'unavailable' | 'readonly' | 'pending';
   notice?: string;
 }
 
@@ -33,8 +36,8 @@ const SIGNED_OUT: NexusAccountConnection = { account: null, devices: [] };
 
 const NexusAccountContext = createContext<NexusAccountConnection & {
   avatarUrl?: string;
-  setAvatar: (image: string | null) => void;
-}>({ ...SIGNED_OUT, setAvatar: () => undefined });
+  setAvatar: (image: string | null) => Promise<void>;
+}>({ ...SIGNED_OUT, setAvatar: async () => { throw new Error('Sign in before changing your image.'); } });
 
 export function NexusAccountProvider({ connection, service = nexusAccountService, children }: {
   connection?: NexusAccountConnection;
@@ -47,13 +50,10 @@ export function NexusAccountProvider({ connection, service = nexusAccountService
 }
 
 function AccountStateProvider({ connection, children }: { connection: NexusAccountConnection; children: React.ReactNode }) {
-  const accountId = connection.account?.id;
-  const [avatar, setAvatar] = useState<{ accountId: string; image: string | null }>();
-  useEffect(() => { setAvatar(undefined); }, [accountId]);
   return <NexusAccountContext.Provider value={{
     ...connection,
-    avatarUrl: avatar && avatar.accountId === accountId ? avatar.image ?? undefined : connection.account?.avatarUrl,
-    setAvatar: image => { if (accountId) setAvatar({ accountId, image }); },
+    avatarUrl: connection.account?.avatarUrl,
+    setAvatar: connection.onAvatarChange || (async () => { throw new Error('Profile images cannot be changed right now.'); }),
   }}>{children}</NexusAccountContext.Provider>;
 }
 
@@ -62,6 +62,9 @@ function ConnectedAccountProvider({ service, children }: { service: NexusAccount
   const [dialog, setDialog] = useState<'signin' | 'invite'>();
   const [notice, setNotice] = useState('');
   const generation = useRef(0);
+  const avatarGeneration = useRef(0);
+  const avatarWriting = useRef(false);
+  const [avatarSaving, setAvatarSaving] = useState(false);
   const origin = useRef<HTMLElement | null>(null);
   const network = useNexusNetwork(Boolean(session) || dialog === 'signin');
   const restoreFocus = () => window.requestAnimationFrame(() => {
@@ -82,13 +85,17 @@ function ConnectedAccountProvider({ service, children }: { service: NexusAccount
     let running = false;
     let stopped = false;
     const refresh = async () => {
-      if (running) return;
+      if (running || avatarWriting.current) return;
       running = true;
+      const imageRevision = avatarGeneration.current;
       try {
         const next = await service.refresh(session);
-        if (!stopped && revision === generation.current) setSession(next);
+        if (!stopped && revision === generation.current && imageRevision === avatarGeneration.current) {
+          setSession(current => next.avatar.state === 'unavailable' && current
+            ? { ...next, account: { ...next.account, avatarUrl: current.account.avatarUrl } } : next);
+        }
       } catch {
-        if (!stopped && revision === generation.current) {
+        if (!stopped && revision === generation.current && imageRevision === avatarGeneration.current) {
           generation.current += 1; setSession(undefined); setDialog(undefined);
           setNotice('session-ended');
         }
@@ -96,11 +103,25 @@ function ConnectedAccountProvider({ service, children }: { service: NexusAccount
     };
     const timer = window.setInterval(() => void refresh(), 5000);
     return () => { stopped = true; window.clearInterval(timer); };
-  }, [session?.account.id, session?.memberId, session?.source, service]);
+  }, [session?.account.id, session?.memberId, session?.deviceNodeId, session?.source, service]);
   return <AccountStateProvider connection={{
     account: session?.account || null, devices: session?.devices || [], notice,
     onSignIn: () => open('signin'), onSignOut: signOut,
     onConnectDevice: session?.canInvite ? () => open('invite') : undefined,
+    avatarSaving,
+    avatarNotice: session?.avatar.state === 'ready' ? session.avatar.pending ? 'pending' : session.avatar.can_write ? undefined : 'readonly' : session?.avatar.state,
+    onAvatarChange: session?.avatar.state === 'ready' && session.avatar.can_write ? async image => {
+      if (avatarWriting.current) throw new Error('A profile image change is already being saved.');
+      const revision = generation.current;
+      avatarWriting.current = true; avatarGeneration.current += 1; setAvatarSaving(true);
+      try {
+        const avatar = await service.setAvatar(session, image);
+        if (revision !== generation.current) throw new Error('The account changed before the image was saved.');
+        setSession(current => current ? { ...current, avatar, account: { ...current.account, avatarUrl: avatar.image ?? undefined } } : current);
+      } finally {
+        avatarGeneration.current += 1; avatarWriting.current = false; setAvatarSaving(false);
+      }
+    } : undefined,
   }}>
     {children}
     {dialog === 'signin' && createPortal(<NexusSignInDialog service={service} onClose={close} passkeyActive={Boolean(network.passkey)} onSignedIn={verified => {

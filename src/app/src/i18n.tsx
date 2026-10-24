@@ -9,6 +9,12 @@ export type TranslationValues = Record<string, string | number>;
 export type Translate = (key: string, values?: TranslationValues) => string;
 
 const ZH_CN: Record<string, string> = {
+  'Saving image…': '正在保存头像…',
+  'The profile image could not be removed. Try again.': '无法移除头像，请重试。',
+  'This mesh needs a Nexus server update to sync profile images.': '此网络需要更新 Nexus 服务器才能同步头像。',
+  'You can view this account image. Changing it requires write access.': '你可以查看此账户头像，更改头像需要写入权限。',
+  'Profile images are temporarily unavailable. Try again shortly.': '头像暂时不可用，请稍后重试。',
+  'Connect a device with this profile image to download it.': '连接保存此头像的设备以下载头像。',
   'The server requires a valid API key. Check it in Settings > Server, then try again.': '服务器需要有效的 API 密钥。请在设置 > 服务器中检查密钥，然后重试。',
   'The server returned an invalid invitation. Try again.': '服务器返回了无效邀请，请重试。',
   'Cannot reach the Lemonade server. Start it or check the connection in Settings.': '无法连接 Lemonade 服务器。请启动服务器或在设置中检查连接。',

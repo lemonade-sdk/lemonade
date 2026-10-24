@@ -80,7 +80,7 @@ void check_route_access(const std::function<void(bool, const char*)>& check) {
     check(!access::bearer_matches("Bearer ", "", ""), "An empty bearer never matches an unset key");
     check(!access::bearer_matches("Basic secret", "secret", ""), "Only bearer credentials are accepted");
 
-    for (const auto* operation : {"status", "members", "enable", "passkey/unlock", "members/role", "devices/access", "events", "tree", "tree/children", "tree/groups", "tree/rename", "tree/permissions", "account"}) {
+    for (const auto* operation : {"status", "members", "enable", "passkey/unlock", "members/role", "devices/access", "events", "tree", "tree/children", "tree/groups", "tree/rename", "tree/permissions", "account", "account/avatar"}) {
         check(access(NexusListener::MeshIngress, true, operation, "Bearer key", "key").first == 403, "Mesh ingress refuses every Nexus route");
     }
     check(access(NexusListener::Public, true, "status", "", "").first == 0, "Local clients read status on the public listener");
@@ -371,6 +371,19 @@ int main() {
         check(throws([&] { access::account_summary(verified_members, "cluster", "device", ""); }), "An account requires an authenticated identity");
         ordinary_members[0]["permissions_known"] = false;
         check(throws([&] { access::account_summary(ordinary_members, "cluster", "device", "identity"); }), "Unknown group permissions cannot produce an account role");
+        const json profile = {{"group_id", "cluster"}, {"revision", 1}, {"image", nullptr}, {"can_write", true}};
+        check(access::account_avatar(profile, "cluster").at("state") == "ready", "Account image metadata is bound to the verified group");
+        auto waiting_profile = profile;
+        waiting_profile["pending"] = true;
+        check(access::account_avatar(waiting_profile, "cluster").at("pending"), "An offline device image stays pending without becoming a removal");
+        waiting_profile["pending"] = "yes";
+        check(throws([&] { access::account_avatar(waiting_profile, "cluster"); }), "Pending image state requires a boolean");
+        check(throws([&] { access::account_avatar(profile, "other"); }), "Another account's profile image is rejected");
+        auto invalid_profile = profile;
+        invalid_profile["image"] = "https://external.example/photo.png";
+        check(throws([&] { access::account_avatar(invalid_profile, "cluster"); }), "Profile images cannot load external tracking URLs");
+        invalid_profile = profile; invalid_profile["revision"] = -1;
+        check(throws([&] { access::account_avatar(invalid_profile, "cluster"); }), "Negative image revisions are rejected");
         check_access_rules(check);
         check_route_access(check);
         check_relay_stream(check);
@@ -420,7 +433,7 @@ int main() {
                     const auto redirected = client.Get(std::string(prefix) + "nexus/" + path);
                     check(redirected && redirected->status == 307, "Tree reads use the management listener on every prefix");
                 }
-                for (const auto* path : {"tree/root/groups", "tree/root/rename", "tree/root/permissions"}) {
+                for (const auto* path : {"tree/root/groups", "tree/root/rename", "tree/root/permissions", "account/avatar"}) {
                     const auto redirected = client.Post(std::string(prefix) + "nexus/" + path, "{}", "application/json");
                     check(redirected && redirected->status == 307, "Tree writes use the management listener on every prefix");
                 }
@@ -441,6 +454,7 @@ int main() {
             request("tree/root/groups", R"({"name":"Team"})", 423);
             request("tree/root/rename", R"({"name":"Team"})", 423);
             request("tree/root/permissions", R"({"member_node_id":"peer","admin":true,"permissions":["read"]})", 423);
+            request("account/avatar", R"({"account_id":"cluster","image":null,"revision":0})", 423);
             auto locked_tree = management.Get("/api/v1/nexus/tree");
             check(locked_tree && locked_tree->status == 423, "Tree requires an unlocked network");
             auto locked_account = management.Get("/api/v1/nexus/account");

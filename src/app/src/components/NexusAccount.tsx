@@ -21,7 +21,7 @@ function AccountAvatar({ small = false }: { small?: boolean }) {
 
 function AvatarPicker({ errorId, onError }: { errorId: string; onError: (error: string | undefined) => void }) {
   const { t } = useI18n();
-  const { avatarUrl, setAvatar } = useNexusAccount();
+  const { avatarUrl, setAvatar, onAvatarChange, avatarSaving } = useNexusAccount();
   const inputRef = useRef<HTMLInputElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const requestRef = useRef(0);
@@ -38,31 +38,48 @@ function AvatarPicker({ errorId, onError }: { errorId: string; onError: (error: 
     }
     setBusy(true);
     const url = URL.createObjectURL(file);
+    let decoded = false;
     try {
       const image = new Image();
       image.src = url;
       await image.decode();
       const canvas = document.createElement('canvas');
-      canvas.width = canvas.height = 256;
+      canvas.width = canvas.height = 128;
       const context = canvas.getContext('2d');
       if (!context) throw new Error('Canvas unavailable');
       const side = Math.min(image.naturalWidth, image.naturalHeight);
-      context.drawImage(image, (image.naturalWidth - side) / 2, (image.naturalHeight - side) / 2, side, side, 0, 0, 256, 256);
-      if (request === requestRef.current) setAvatar(canvas.toDataURL('image/png'));
-    } catch {
-      if (request === requestRef.current) onError(t('This image could not be opened. Choose another image.'));
+      context.drawImage(image, (image.naturalWidth - side) / 2, (image.naturalHeight - side) / 2, side, side, 0, 0, 128, 128);
+      const data = canvas.toDataURL('image/png');
+      if (data.length > 128 * 1024) throw new Error('Profile image is too large');
+      decoded = true;
+      if (request === requestRef.current) await setAvatar(data);
+    } catch (error) {
+      if (request === requestRef.current) onError(decoded && error instanceof Error ? error.message : t('This image could not be opened. Choose another image.'));
     } finally {
       URL.revokeObjectURL(url);
       if (request === requestRef.current) setBusy(false);
     }
   };
 
+  const removeImage = async () => {
+    const request = ++requestRef.current;
+    onError(undefined); setBusy(true);
+    try {
+      await setAvatar(null);
+      if (request === requestRef.current) buttonRef.current?.focus();
+    } catch (error) {
+      if (request === requestRef.current) onError(error instanceof Error ? error.message : t('The profile image could not be removed. Try again.'));
+    } finally { if (request === requestRef.current) setBusy(false); }
+  };
+
+  const disabled = busy || avatarSaving || !onAvatarChange;
+
   return <div className="nexus-avatar-picker">
-    <button ref={buttonRef} type="button" className="nexus-avatar-picker__button" disabled={busy}
+    <button ref={buttonRef} type="button" className="nexus-avatar-picker__button" disabled={disabled}
       aria-label={t('Change profile image')} aria-describedby={errorId}
       onClick={() => inputRef.current?.click()}>
       <span className="nexus-avatar-picker__preview"><AccountAvatar /><span className="nexus-avatar-picker__badge"><Icon name="camera" size={13} /></span></span>
-      <span>{busy ? t('Opening image…') : t('Change image')}</span>
+      <span>{avatarSaving ? t('Saving image…') : busy ? t('Opening image…') : t('Change image')}</span>
     </button>
     <input ref={inputRef} type="file" accept="image/png,image/jpeg,image/webp" hidden tabIndex={-1}
       aria-label={t('Profile image file')}
@@ -71,13 +88,13 @@ function AvatarPicker({ errorId, onError }: { errorId: string; onError: (error: 
         event.target.value = '';
         if (file) void chooseImage(file);
       }} />
-    {avatarUrl && <button type="button" className="nexus-text-button" disabled={busy} onClick={() => { setAvatar(null); onError(undefined); buttonRef.current?.focus(); }}>{t('Remove image')}</button>}
+    {avatarUrl && <button type="button" className="nexus-text-button" disabled={disabled} onClick={() => void removeImage()}>{t('Remove image')}</button>}
   </div>;
 }
 
 function AccountSummary() {
   const { t } = useI18n();
-  const { account } = useNexusAccount();
+  const { account, avatarNotice } = useNexusAccount();
   const [error, setError] = useState<string>();
   const errorId = useId();
   useEffect(() => { setError(undefined); }, [account?.id]);
@@ -92,6 +109,11 @@ function AccountSummary() {
         <span className={`nexus-account-status${account ? ' nexus-account-status--signed-in' : ''}`}>
           {account && <Icon name="check" size={14} />}{account ? t('Signed in') : t('Not signed in')}
         </span>
+        {account && avatarNotice && <p className="nexus-hint" role="status">{t(avatarNotice === 'unsupported'
+          ? 'This mesh needs a Nexus server update to sync profile images.' : avatarNotice === 'pending'
+            ? 'Connect a device with this profile image to download it.' : avatarNotice === 'readonly'
+            ? 'You can view this account image. Changing it requires write access.'
+            : 'Profile images are temporarily unavailable. Try again shortly.')}</p>}
       </div>
     </div>
     <p id={errorId} className="nexus-error" role="alert">{error}</p>

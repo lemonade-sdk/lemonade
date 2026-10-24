@@ -35,15 +35,55 @@ on returned permissions, not on the selected form action.
 controller and API key chosen at the start; a connection change or unexpected
 account ID fails verification. A five-second membership refresh updates device
 presence and capabilities. Lost access clears the UI session. Signing out clears
-only this client's session and avatar, preserving the shared server's network
+only this client's session and visible avatar, preserving the account image, shared server's network
 and other clients. No unlock or sign-in request runs on application startup.
 
 The account name is a client-local label chosen by the user, separate from the
 device name. `lemonade_nexus_account_labels` retains only the verified account ID
 and label, indexed by controller source. It never retains roles, authenticated
 state, invitation tokens, PINs or private keys. A saved label pre-fills the next
-sign-in; it does not bypass verification. Profile images remain in memory for
-the current UI session and clear when the account changes or signs out.
+sign-in; it does not bypass verification.
+
+Profile images belong to the verified account group. Account devices keep the
+image bytes in a local SDK cache, scoped to the device identity and account.
+Nexus stores and replicates only a signed image fingerprint and logical revision.
+The SDK reads that reference after explicit sign-in and downloads matching bytes
+from an authorized account device through the encrypted mesh. Downloaded copies
+can serve other devices. Sign-out clears the visible image while the device's
+existing mesh session and cache remain available. **Remove image** publishes a
+signed removal that other devices observe during refresh.
+
+PNG, JPEG and WebP inputs up to 5 MB are center-cropped to a 128 by 128 PNG.
+The saved data URL is limited to 128 KiB. External image URLs are rejected.
+Images never enter `.env`, local account labels or Lemonade settings. The
+local-only bridge signs the account ID, device public key, SHA-256 fingerprint
+and revision with the existing SDK identity. It does not export the key or send
+image bytes to Nexus servers. Local cached files use hashed account directories
+under the device's Nexus data directory.
+
+Changing an image waits for confirmation of its reference. A failed save keeps
+the visible image. A lost response retains the staged local copy because the
+reference may already be live. Fetches verify a one-use challenge signature,
+current account Read/connection rights, image bounds and the exact fingerprint.
+No server session token or API key is sent to the serving peer. If no device
+with the current image is reachable, the UI shows initials and guidance to
+connect a device with a copy. This is distinct from removal; account access and
+image editing remain available. Cached copies remain usable when peers go offline.
+
+The companion Nexus reference API and replication patch is prepared against
+`lemonade-nexus` commit `e2c619fa8e8052eb5a5669173b5e9876e44e99fd`. All serving
+mesh servers and account devices need the update. The vendored SDK records its
+local extensions in `UPSTREAM.json`; its pin is unchanged. Older meshes still
+support sign-in and show an image update notice. Transient metadata failures
+retain the visible image without ending the account session. The server
+accepts references only; the earlier unpublished image-storage format is rejected.
+
+References are readable account metadata, separate from client-encrypted chats
+and sealed group keys. Nexus checks current account membership and Read/Write
+on publication and replication. It retains signed removal revisions. Devices
+recheck current access before serving cached bytes. Revoking access cannot
+erase copies already downloaded by a previously authorized device. If all
+device copies are lost, an authorized writer must select the image again.
 
 This bridge uses the one persistent device identity already owned by `lemond`.
 It does not implement the upstream Flutter client's multi-keyring account
@@ -92,7 +132,8 @@ The server bridge adds these routes beneath every Nexus prefix listed in
 
 | Method and suffix | Operation |
 | --- | --- |
-| `GET account` | Verified current membership: `{id, member_id, device_node_id, role, devices}`; local-only |
+| `GET account` | Verified current membership and bounded avatar state; local-only |
+| `POST account/avatar` | Replace/remove an image using `{account_id, member_id, device_node_id, revision, image}`; local-only |
 | `GET tree` | Current group and its direct children |
 | `GET tree/{id}/children` | A descendant group and its direct children |
 | `POST tree/{id}/groups` | Create a child group using `{name}` |
