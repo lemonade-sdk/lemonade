@@ -29,7 +29,7 @@ const compiled = ts.transpileModule(program, {
 });
 assert.deepEqual((compiled.diagnostics || []).filter(d => d.category === ts.DiagnosticCategory.Error), []);
 
-function makeClient(webApp, startingKey = '', storedKey = '', blockedStorage = false, hasWindow = true) {
+function makeClient(webApp, startingKey = '', storedKey = '', blockedStorage = false, hasWindow = true, removalBlocked = false) {
   const settings = { apiUrl: 'http://localhost:13305', apiKey: { value: startingKey } };
   const saved = [];
   const host = webApp === null ? null : {
@@ -48,7 +48,7 @@ function makeClient(webApp, startingKey = '', storedKey = '', blockedStorage = f
       storage.set(key, String(value));
     },
     removeItem(key) {
-      if (blockedStorage) throw new Error('Storage blocked');
+      if (blockedStorage || removalBlocked) throw new Error('Storage blocked');
       storage.delete(key);
     },
   } : undefined;
@@ -62,7 +62,11 @@ function makeClient(webApp, startingKey = '', storedKey = '', blockedStorage = f
       try { return localStorage?.getItem(key) ?? null; } catch { return null; }
     },
     safeRemoveLocalStorage: key => {
-      try { localStorage?.removeItem(key); } catch { /* unavailable */ }
+      try {
+        if (!localStorage) return true;
+        localStorage.removeItem(key);
+        return localStorage.getItem(key) === null;
+      } catch { return false; }
     },
     safeSetLocalStorage: (key, value) => {
       try {
@@ -111,6 +115,17 @@ function makeClient(webApp, startingKey = '', storedKey = '', blockedStorage = f
   assert.equal(restored.storage.has('api_key'), false, 'unchecking remember must remove the key');
   assert.equal(restored.client._sessionApiKey, 'once-only', 'session continues using the key');
   assert.equal(restored.client.isApiKeyPersisted, false, 'UI must not re-check remember on remount');
+
+  const removalDenied = makeClient(true, '', 'old-secret', false, true, true);
+  await removalDenied.client.loadConnectionSettings();
+  await assert.rejects(
+    removalDenied.client.saveConnectionSettings('http://localhost:13305', 'temporary', false),
+    /Could not remove the remembered API key/,
+    'failed key removal must be reported instead of silently claiming success',
+  );
+  assert.equal(removalDenied.storage.get('api_key'), 'old-secret', 'old key remains in localStorage');
+  assert.equal(removalDenied.client.isApiKeyPersisted, true, 'do not report the old key as cleared');
+  assert.equal(removalDenied.client._sessionApiKey, 'temporary', 'the current session uses the new key');
 
   const cleared = makeClient(true, '', 'remembered');
   await cleared.client.loadConnectionSettings();

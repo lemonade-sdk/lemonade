@@ -710,10 +710,14 @@ function safeSetLocalStorage(key: string, value: string): boolean {
   }
 }
 
-function safeRemoveLocalStorage(key: string): void {
+function safeRemoveLocalStorage(key: string): boolean {
   try {
-    if (typeof localStorage !== 'undefined') localStorage.removeItem(key);
-  } catch {}
+    if (typeof localStorage === 'undefined') return true;
+    localStorage.removeItem(key);
+    return localStorage.getItem(key) === null;
+  } catch {
+    return false;
+  }
 }
 
 function typedStringSetting(value: string): { value: string; useDefault: boolean } {
@@ -944,7 +948,9 @@ class LemonadeAPI {
       const saved = rememberApiKey && Boolean(apiKey) && this.canPersistApiKey
         ? safeSetLocalStorage(LS_API_KEY, apiKey)
         : false;
-      if (!saved) safeRemoveLocalStorage(LS_API_KEY);
+      if (!saved && !safeRemoveLocalStorage(LS_API_KEY) && this._apiKeyPersisted) {
+        throw new Error('Could not remove the remembered API key from browser storage. Re-enable site storage or clear browser site data.');
+      }
       this._apiKeyPersisted = saved;
       if (hostApi?.getSettings && hostApi.saveSettings) {
         const currentSettings = await hostApi.getSettings();
