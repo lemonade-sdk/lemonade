@@ -63,6 +63,7 @@ export async function setupNexusAccount(page: Page, options: {
       challenge: 'AQIDBA', user_id: 'fixture-identity', rp_id: new URL(page.url()).hostname, credential_id: state.registered ? 'AQIDBA' : '', registration: !state.registered,
     } });
     if (path.endsWith('/passkey/register')) state.registered = true;
+    if (path.endsWith('/lock')) { state.locked = true; state.mesh_up = false; state.members = []; }
     if (path.endsWith('/passkey/unlock')) { state.locked = false; if (!body?.defer_join) { state.mesh_up = true; state.group_node_id = 'group'; } }
     if (path.endsWith('/join')) { state.mesh_up = true; state.group_node_id = 'group'; }
     if (path.endsWith('/account')) return route.fulfill(fixture.accountError
@@ -98,7 +99,7 @@ export async function setupNexusAccount(page: Page, options: {
     return route.fulfill({ headers, json: state });
   });
   await page.goto('/#/connect/nexus');
-  await expect(page.getByRole('heading', { name: 'Nexus', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Account', exact: true })).toBeVisible();
   return fixture;
 }
 

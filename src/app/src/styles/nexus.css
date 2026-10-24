@@ -88,11 +88,13 @@
 
 .nexus-account-menu__header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: var(--space-2);
   margin-bottom: var(--space-4);
 }
+.nexus-account-menu__header > div { min-width: 0; flex: 1; }
+.nexus-account-menu__header > button { flex-shrink: 0; }
 .nexus-account-menu__header h2 { margin: 0; font-size: var(--text-lg); font-weight: var(--weight-semibold); }
 .nexus-account-summary { display: flex; align-items: flex-start; gap: var(--space-4); }
 .nexus-account-summary__details { min-width: 0; padding-top: var(--space-2); }
@@ -114,6 +116,29 @@
 .nexus-device-empty p { margin: 0; font-size: var(--text-sm); }
 .nexus-account-menu__link { display: flex; align-items: center; justify-content: space-between; width: 100%; margin-top: var(--space-5); padding: var(--space-3) var(--space-2); border-top: 1px solid var(--border-subtle); color: var(--text-secondary); border-radius: var(--radius-sm); }
 .nexus-account-menu__link:hover { color: var(--text-primary); background: var(--surface-2); }
+.nexus-account-menu__theme { margin-top: var(--space-2); }
+.nexus-account-menu__theme + .nexus-section { margin-top: var(--space-2); }
+.nexus-device-disclosure > summary { display: flex; align-items: center; gap: var(--space-2); cursor: pointer; list-style: none; color: var(--text-secondary); font-size: var(--text-sm); }
+.nexus-device-disclosure > summary::-webkit-details-marker { display: none; }
+.nexus-device-disclosure[open] > summary > .app-icon { transform: rotate(90deg); }
+.nexus-device-disclosure__content { padding-top: var(--space-3); }
+.nexus-account-menu .nexus-account-menu__theme,
+.nexus-account-menu .nexus-device-disclosure + .nexus-account-menu__link {
+  margin-top: 0;
+  padding-block: var(--space-3);
+}
+.nexus-account-menu .nexus-device-disclosure {
+  margin-top: 0;
+  padding-block: 0;
+}
+.nexus-account-menu .nexus-device-disclosure > summary {
+  justify-content: space-between;
+  min-height: 44px;
+  padding: var(--space-3) var(--space-2);
+}
+.nexus-account-menu .nexus-device-disclosure__content {
+  padding: 0 var(--space-2) var(--space-3);
+}
 .nexus-account-menu__sign-out { width: 100%; margin-top: var(--space-1); }
 .nexus-page { width: 100%; max-width: 1120px; }
 .nexus-page > .nexus-section + .nexus-section { margin-top: var(--space-6); }

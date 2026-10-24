@@ -57,7 +57,7 @@ export const WORKSPACE_NAVIGATION = {
     defineSection('model-storage', 'Cache and custom directories', 'hard-drive'),
     defineSection('cloud-providers', 'OpenAI-compatible services', 'cloud'),
     defineSection('mcp-gateway', 'Tools and external servers', 'tools'),
-    defineSection('nexus', 'Account and devices', 'user-round'),
+    { ...defineSection('nexus', 'Account and devices', 'user-round'), label: 'Accounts' },
     defineSection('help-and-support', 'Docs, releases and community', 'book-open'),
   ] as const, 'Settings'),
 } as const;

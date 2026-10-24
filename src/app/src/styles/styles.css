@@ -11260,6 +11260,10 @@ optgroup {
   grid-template-rows: var(--workspace-header) minmax(0, 1fr);
 }
 
+.connect__main > .connect__layout:only-child {
+  grid-row: 1 / -1;
+}
+
 .connect__layout {
   padding: var(--space-5);
 }

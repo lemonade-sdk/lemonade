@@ -34,9 +34,12 @@ on returned permissions, not on the selected form action.
 `features/nexus/accountSession.ts` owns this sequence. It pins requests to the
 controller and API key chosen at the start; a connection change or unexpected
 account ID fails verification. A five-second membership refresh updates device
-presence and capabilities. Lost access clears the UI session. Signing out clears
-only this client's session and visible avatar, preserving the account image, shared server's network
-and other clients. No unlock or sign-in request runs on application startup.
+presence and capabilities. Lost access clears the UI session. Disconnect locks
+the shared server's device and disconnects it from the mesh, affecting all clients
+using that server. After the server confirms the lock, the app clears its session
+and network display and stops polling and event updates. Device registration and
+identity remain available for reconnecting with a passkey. A failed disconnect
+shows an error. No unlock or sign-in request runs on application startup.
 
 The account name is a client-local label chosen by the user, separate from the
 device name. `lemonade_nexus_account_labels` retains only the verified account ID

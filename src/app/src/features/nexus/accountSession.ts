@@ -26,6 +26,7 @@ export interface NexusSignInInput {
   expectedId?: string;
 }
 export interface NexusAccountService {
+  disconnect: (session: VerifiedNexusAccount) => Promise<void>;
   inspect: () => Promise<NexusAccountInspection>;
   signIn: (input: NexusSignInInput) => Promise<VerifiedNexusAccount>;
   refresh: (session: VerifiedNexusAccount) => Promise<VerifiedNexusAccount>;
@@ -80,6 +81,11 @@ export function createNexusAccountService(dependencies = { controller: nexusAcco
     return controller;
   };
   return {
+    async disconnect(session) {
+      const controller = await requireController(session.source);
+      const status = await controller.request<{ locked: boolean; mesh_up: boolean }>('lock', {});
+      if (!status.locked || status.mesh_up) throw new Error('The device did not disconnect. Try again.');
+    },
     async inspect() {
       const controller = await dependencies.controller();
       return { status: await controller.request<NexusStatus>('status'), source: controller.source, local: controller.local, desktop: dependencies.desktop() };

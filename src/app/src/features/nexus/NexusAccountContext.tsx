@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { NexusAccountInviteDialog, NexusSignInDialog } from '../../components/NexusSignInDialog';
 import { NexusPasskeyDialog } from '../../components/NexusPasskeyDialog';
 import { nexusAccountService, saveNexusAccountLabel, type NexusAccountService, type VerifiedNexusAccount } from './accountSession';
-import { refreshNexus, useNexusNetwork } from './nexus';
+import { clearNexusNetwork, refreshNexus, useNexusNetwork } from './nexus';
 
 export interface NexusAccount {
   id: string;
@@ -61,6 +61,7 @@ function ConnectedAccountProvider({ service, children }: { service: NexusAccount
   const [session, setSession] = useState<VerifiedNexusAccount>();
   const [dialog, setDialog] = useState<'signin' | 'invite'>();
   const [notice, setNotice] = useState('');
+  const disconnecting = useRef(false);
   const generation = useRef(0);
   const avatarGeneration = useRef(0);
   const avatarWriting = useRef(false);
@@ -76,8 +77,17 @@ function ConnectedAccountProvider({ service, children }: { service: NexusAccount
     origin.current = document.activeElement as HTMLElement | null;
     setNotice(''); setDialog(next);
   };
-  const signOut = () => {
-    generation.current += 1; setSession(undefined); setDialog(undefined); setNotice(''); restoreFocus();
+  const signOut = async () => {
+    if (!session || disconnecting.current) return;
+    disconnecting.current = true;
+    try {
+      await service.disconnect(session);
+      generation.current += 1;
+      clearNexusNetwork();
+      setSession(undefined); setDialog(undefined); setNotice(''); restoreFocus();
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'The device did not disconnect. Try again.');
+    } finally { disconnecting.current = false; }
   };
   useEffect(() => {
     if (!session) return;
@@ -85,17 +95,17 @@ function ConnectedAccountProvider({ service, children }: { service: NexusAccount
     let running = false;
     let stopped = false;
     const refresh = async () => {
-      if (running || avatarWriting.current) return;
+      if (running || avatarWriting.current || disconnecting.current) return;
       running = true;
       const imageRevision = avatarGeneration.current;
       try {
         const next = await service.refresh(session);
-        if (!stopped && revision === generation.current && imageRevision === avatarGeneration.current) {
+        if (!stopped && !disconnecting.current && revision === generation.current && imageRevision === avatarGeneration.current) {
           setSession(current => next.avatar.state === 'unavailable' && current
             ? { ...next, account: { ...next.account, avatarUrl: current.account.avatarUrl } } : next);
         }
       } catch {
-        if (!stopped && revision === generation.current && imageRevision === avatarGeneration.current) {
+        if (!stopped && !disconnecting.current && revision === generation.current && imageRevision === avatarGeneration.current) {
           generation.current += 1; setSession(undefined); setDialog(undefined);
           setNotice('session-ended');
         }

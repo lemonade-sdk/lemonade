@@ -92,7 +92,7 @@ for (const desktop of [true, false]) {
         }
       }
       await page.getByRole('button', { name: 'User: Not signed in', exact: true }).click();
-      await expect(page.getByRole('dialog', { name: 'Nexus Account Manager', exact: true })).toBeVisible();
+      await expect(page.getByRole('dialog', { name: 'Lemonade Account', exact: true })).toBeVisible();
       await expect(page.getByRole('button', { name: 'Toggle theme', exact: true })).toBeVisible();
       await page.keyboard.press('Escape');
       await page.getByRole('button', { name: 'App controls', exact: true }).click();

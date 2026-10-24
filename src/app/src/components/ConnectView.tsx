@@ -349,12 +349,12 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
         </div>}
       />
 
-      <section className="workspace-pane connect__main" aria-labelledby="connect-pane-title">
-        <WorkspacePaneHeader
+      <section className="workspace-pane connect__main" aria-labelledby={activeSection === 'nexus' ? 'nexus-account-heading' : 'connect-pane-title'}>
+        {activeSection !== 'nexus' && <WorkspacePaneHeader
           title={t(section.label)}
-          subtitle={activeSection === 'nexus' ? t('Your account and connected devices.') : t(section.description)}
+          subtitle={t(section.description)}
           titleId="connect-pane-title"
-        />
+        />}
 
         <div className="connect__layout workspace-pane__scroll">
         {activeSection === 'nexus' && <NexusAccountPage />}

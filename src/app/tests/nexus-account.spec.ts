@@ -1,8 +1,37 @@
 import { expect, test, type Page } from '@playwright/test';
 import { setupNexusAccount, signInNexusAccount } from './nexusAccountFixture';
 
+test('Accounts content fills the pane without a page header', async ({ page }) => {
+  await setupNexusAccount(page);
+  const content = page.locator('.connect__layout');
+  const pane = page.locator('.connect__main');
+  const contentBounds = await content.boundingBox();
+  const paneBounds = await pane.boundingBox();
+  expect(contentBounds!.height).toBeGreaterThan(paneBounds!.height - 2);
+  await expect(page.getByRole('button', { name: 'Connect to Mesh', exact: true }).first()).toBeInViewport();
+  await page.getByRole('button', { name: 'User: Not signed in', exact: true }).click();
+  const menu = page.getByRole('dialog', { name: 'Lemonade Account', exact: true });
+  await expect(menu.locator('.nexus-account-menu__header .nexus-account-summary')).toBeVisible();
+  await expect(menu.locator('h2')).not.toBeInViewport();
+});
+
 const avatarFile = { name: 'profile.png', mimeType: 'image/png', buffer: Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a6XcAAAAASUVORK5CYII=', 'base64') };
+
+test('signing out removes the network and management controls', async ({ page }) => {
+  const fixture = await setupNexusAccount(page);
+  await expect(page.locator('.nexus-view-heading')).toHaveCount(0);
+  await signInNexusAccount(page);
+  await expect(page.locator('.nexus-view-heading')).toBeVisible();
+  await page.getByRole('radio', { name: 'Advanced', exact: true }).check();
+  await expect(page.locator('.nexus-hierarchy')).toBeVisible();
+  await page.getByRole('button', { name: 'Disconnect', exact: true }).click();
+  await expect(page.locator('.nexus-view-heading')).toHaveCount(0);
+  await expect(page.locator('.nexus-hierarchy')).toHaveCount(0);
+  expect(fixture.state.locked).toBe(true);
+  expect(fixture.state.mesh_up).toBe(false);
+  await expect(page.getByRole('button', { name: 'Connect to Mesh', exact: true })).toBeVisible();
+});
 
 test('account images survive sign-in and propagate removal', async ({ page }) => {
   const fixture = await setupNexusAccount(page);
@@ -11,7 +40,7 @@ test('account images survive sign-in and propagate removal', async ({ page }) =>
   await expect(page.locator('.nexus-account-trigger img')).toBeVisible();
   expect(fixture.avatar.revision).toBe(1);
   const saved = fixture.avatar.image;
-  await page.getByRole('button', {name: 'Sign out', exact: true}).click();
+  await page.getByRole('button', {name: 'Disconnect', exact: true}).click();
   await expect(page.locator('.nexus-account-trigger img')).toHaveCount(0);
   await signInNexusAccount(page);
   await expect(page.locator('.nexus-account-trigger img')).toHaveAttribute('src', saved!);
@@ -51,7 +80,7 @@ test('a late image-save response cannot restore a signed-out account', async ({ 
   const response = page.waitForResponse(reply => reply.url().endsWith('/nexus/account/avatar'));
   await page.getByLabel('Profile image file', {exact: true}).setInputFiles(avatarFile);
   await expect.poll(() => fixture.calls.some(call => call.path.endsWith('/account/avatar'))).toBe(true);
-  await page.getByRole('button', {name: 'Sign out', exact: true}).click();
+  await page.getByRole('button', {name: 'Disconnect', exact: true}).click();
   release();
   await response;
   await expect(page.getByRole('button', {name: 'User: Not signed in', exact: true})).toBeVisible();
@@ -70,7 +99,7 @@ test('the account dropdown opens sign-in and restores focus when cancelled', asy
   await setupNexusAccount(page);
   const trigger = page.getByRole('button', { name: 'User: Not signed in' });
   await trigger.click();
-  const menu = page.getByRole('dialog', { name: 'Nexus Account Manager' });
+  const menu = page.getByRole('dialog', { name: 'Lemonade Account' });
   await menu.getByRole('button', { name: 'Connect to Mesh', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Sign in to Lemonade' });
   await expect(dialog).toBeVisible();
@@ -131,14 +160,14 @@ test('joining validates both invitation formats and keeps the member role', asyn
   expect(fixture.calls.find(call => call.path.endsWith('/join'))?.body).toEqual({ code: '12345678' });
 });
 
-test('sign-out clears account devices without locking the shared server', async ({ page }) => {
+test('disconnect clears account devices and locks the server', async ({ page }) => {
   const fixture = await setupNexusAccount(page);
   await signInNexusAccount(page);
   await expect(page.locator('.nexus-devices')).toContainText('Kitchen PC');
-  await page.getByRole('button', { name: 'Sign out', exact: true }).click();
+  await page.getByRole('button', { name: 'Disconnect', exact: true }).click();
   await expect(page.getByRole('button', { name: 'User: Not signed in' })).toBeVisible();
   await expect(page.locator('.nexus-devices')).toHaveCount(0);
-  expect(fixture.calls.some(call => /\/(lock|disable)$/.test(call.path))).toBe(false);
+  expect(fixture.calls.some(call => /\/(lock|disable)$/.test(call.path))).toBe(true);
 });
 
 test('a saved label pre-fills the form but does not restore authentication', async ({ page }) => {
@@ -165,6 +194,7 @@ test('read-only members have no admin badge or invitation action', async ({ page
 test('an authorized account creates an expiring device invitation', async ({ page }) => {
   const fixture = await setupNexusAccount(page);
   await signInNexusAccount(page);
+  await page.locator('.nexus-device-disclosure > summary').click();
   await page.getByRole('button', { name: 'Connect another device' }).click();
   const dialog = page.getByRole('dialog', { name: 'Connect another device' });
   await dialog.getByRole('textbox', { name: 'Device you are inviting' }).fill('My phone');
@@ -177,6 +207,7 @@ test('an authorized account creates an expiring device invitation', async ({ pag
 
 test('Advanced navigates recursive groups and leaves have no group actions', async ({ page }) => {
   await setupNexusAccount(page);
+  await signInNexusAccount(page);
   await page.getByRole('radio', { name: 'Advanced', exact: true }).check();
   const team = page.getByRole('treeitem', { name: 'Team', exact: true });
   await team.click(); await team.press('ArrowRight');
@@ -190,6 +221,7 @@ test('Advanced navigates recursive groups and leaves have no group actions', asy
 
 test('Advanced creates and renames groups using the existing controller key', async ({ page }) => {
   const fixture = await setupNexusAccount(page);
+  await signInNexusAccount(page);
   await page.getByRole('radio', { name: 'Advanced', exact: true }).check();
   await page.getByRole('button', { name: 'Add group', exact: true }).click();
   await page.getByRole('textbox', { name: 'Group name', exact: true }).fill('Design');
@@ -206,6 +238,7 @@ test('Advanced creates and renames groups using the existing controller key', as
 
 test('a rejected group write retains its draft without a phantom node', async ({ page }) => {
   const fixture = await setupNexusAccount(page);
+  await signInNexusAccount(page);
   fixture.rejectWrites = true;
   await page.getByRole('radio', { name: 'Advanced', exact: true }).check();
   await page.getByRole('button', { name: 'Add group', exact: true }).click();
@@ -218,6 +251,7 @@ test('a rejected group write retains its draft without a phantom node', async ({
 
 test('read-only tree capabilities hide mutation controls', async ({ page }) => {
   await setupNexusAccount(page, { readOnly: true });
+  await signInNexusAccount(page);
   await page.getByRole('radio', { name: 'Advanced', exact: true }).check();
   await expect(page.getByText('You have read-only access to this group.')).toBeVisible();
   for (const name of ['Add group', 'Rename', 'Permissions']) await expect(page.getByRole('button', { name, exact: true })).toHaveCount(0);
@@ -225,6 +259,7 @@ test('read-only tree capabilities hide mutation controls', async ({ page }) => {
 
 test('invalid tree data is recoverable', async ({ page }) => {
   const fixture = await setupNexusAccount(page);
+  await signInNexusAccount(page);
   fixture.invalidTree = true;
   await page.getByRole('radio', { name: 'Advanced', exact: true }).check();
   await expect(page.locator('.nexus-hierarchy').getByRole('alert')).toContainText('invalid group data');
@@ -236,6 +271,7 @@ test('invalid tree data is recoverable', async ({ page }) => {
 test('Basic and Advanced retain the same width and toggle position', async ({ page }) => {
   await page.setViewportSize({ width: 1920, height: 1080 });
   await setupNexusAccount(page);
+  await signInNexusAccount(page);
   const toggle = page.getByRole('group', { name: 'Management mode', exact: true });
   const basic = await toggle.boundingBox();
   const width = await page.locator('.nexus-page').evaluate(el => el.getBoundingClientRect().width);
@@ -255,11 +291,15 @@ test('Nexus uses the shared Settings selection colors in both themes', async ({ 
   await setupNexusAccount(page);
   await page.addStyleTag({ content: '.workspace-nav button, .workspace-nav__icon { transition: none !important; }' });
   for (const theme of ['dark', 'light']) {
-    if (theme === 'light') await page.getByRole('button', { name: 'Toggle theme', exact: true }).click();
+    if (theme === 'light') {
+      await page.locator('.nexus-account-trigger').click();
+      await page.getByRole('button', { name: 'Toggle theme', exact: true }).click();
+      await page.keyboard.press('Escape');
+    }
     const nexus = await selectionStyle(page);
     await page.getByRole('button', { name: 'MCP gateway', exact: true }).click();
     expect(await selectionStyle(page)).toEqual(nexus);
-    await page.getByRole('button', { name: 'Nexus', exact: true }).click();
+    await page.getByRole('button', { name: 'Accounts', exact: true }).click();
   }
 });
 

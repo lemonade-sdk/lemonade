@@ -124,7 +124,10 @@ function AccountAccess({ showSignOut = false }: { showSignOut?: boolean }) {
   const { t } = useI18n();
   const { account, onSignIn, onSignOut, notice } = useNexusAccount();
   const hintId = useId();
-  if (account) return showSignOut && onSignOut ? <div className="nexus-account-access"><WorkspaceActionButton onClick={onSignOut}>{t('Sign out')}</WorkspaceActionButton></div> : null;
+  if (account) return <div className="nexus-account-access">
+    {showSignOut && onSignOut && <WorkspaceActionButton onClick={onSignOut}>{t('Disconnect')}</WorkspaceActionButton>}
+    {notice && <p className="nexus-error" role="alert">{t(notice)}</p>}
+  </div>;
   return <div className="nexus-account-access">
     <p>{t('Sign in to bring your Lemonade devices together.')}</p>
     {notice === 'session-ended' && <p className="nexus-error" role="status">{t('Account access ended. Sign in again to continue.')}</p>}
@@ -136,9 +139,9 @@ function AccountAccess({ showSignOut = false }: { showSignOut?: boolean }) {
 function MyDevices() {
   const { t } = useI18n();
   const { account, devices, onConnectDevice } = useNexusAccount();
-  const headingId = useId();
-  return <section className="nexus-section" aria-labelledby={headingId}>
-    <h3 id={headingId}>{t('My devices')}</h3>
+  return <details className="nexus-section nexus-device-disclosure">
+    <summary><span>{t('My devices')}</span><Icon name="chevron-right" size={16} /></summary>
+    <div className="nexus-device-disclosure__content">
     {account && devices.length ? <ul className="nexus-devices">
       {devices.map(device => <li key={device.id}>
         <Icon name={device.kind === 'phone' ? 'smartphone' : 'monitor'} size={23} />
@@ -149,11 +152,13 @@ function MyDevices() {
       <div><strong>{t('Your devices')}</strong><p>{account ? t('No devices connected yet.') : t('Sign in to connect your phone or another computer.')}</p></div>
     </div>}
     {account && onConnectDevice && <WorkspaceActionButton icon="plus" onClick={onConnectDevice}>{t('Connect another device')}</WorkspaceActionButton>}
-  </section>;
+    </div>
+  </details>;
 }
 
 export function NexusAccountPage() {
   const { t } = useI18n();
+  const { account } = useNexusAccount();
   const modeId = useId();
   const [advanced, setAdvanced] = useState(() => {
     try { return localStorage.getItem('lemonade_nexus_view') === 'advanced'; } catch { return false; }
@@ -168,6 +173,7 @@ export function NexusAccountPage() {
       <AccountSummary />
       <AccountAccess showSignOut />
     </section>
+    {account && <React.Fragment key={account.id}>
     <div className="nexus-view-heading">
       <div><h3>{t('Your network')}</h3><p aria-hidden={!advanced}>{t('Explore the tree and manage group access.')}</p></div>
       <fieldset className="nexus-view-mode"><legend className="sr-only">{t('Management mode')}</legend>
@@ -177,6 +183,7 @@ export function NexusAccountPage() {
     </div>
     {!advanced && <MyDevices />}
     <NexusNetwork advanced={advanced} showCompact={false} />
+    </React.Fragment>}
   </div>;
 }
 
@@ -232,20 +239,20 @@ export function NexusAccountMenu({ open, onOpenChange, onOpenPage, theme, onTogg
     </button>
     {open && createPortal(<div ref={panelRef} id={panelId} className="nexus-account-menu" role="dialog" aria-labelledby={titleId}>
       <div className="nexus-account-menu__header">
-        <h2 id={titleId}>{t('Nexus Account Manager')}</h2>
+        <h2 id={titleId} className="sr-only">{t('Lemonade Account')}</h2>
+        <AccountSummary />
         <WorkspaceActionButton ref={closeRef} appearance="quiet" size="small" iconOnly icon="x" aria-label={t('Close account menu')} onClick={() => close(true)} />
       </div>
-      <AccountSummary />
       <AccountAccess />
-      {onToggleTheme && <button type="button" className="nexus-account-menu__link" onClick={onToggleTheme}
+      {onToggleTheme && <button type="button" className="nexus-account-menu__link nexus-account-menu__theme" onClick={onToggleTheme}
         aria-label={t('Toggle theme')} title={theme === 'dark' ? t('Switch to light mode') : t('Switch to dark mode')}>
         <span>{theme === 'dark' ? t('Light mode') : t('Dark mode')}</span><Icon name={theme === 'dark' ? 'sun' : 'moon'} size={16} />
       </button>}
       <MyDevices />
       <button type="button" className="nexus-account-menu__link" onClick={() => { close(true); onOpenPage(); }}>
-        <span>{t('Open Nexus')}</span><Icon name="chevron-right" size={16} />
+        <span>{t('Open Accounts')}</span><Icon name="chevron-right" size={16} />
       </button>
-      {account && onSignOut && <WorkspaceActionButton className="nexus-account-menu__sign-out" appearance="quiet" onClick={onSignOut}>{t('Sign out')}</WorkspaceActionButton>}
+      {account && onSignOut && <WorkspaceActionButton className="nexus-account-menu__sign-out" appearance="quiet" onClick={onSignOut}>{t('Disconnect')}</WorkspaceActionButton>}
     </div>, document.body)}
   </>;
 }

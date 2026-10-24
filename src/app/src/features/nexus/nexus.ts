@@ -88,6 +88,16 @@ export interface PasskeyPrompt { message: string; needs_pin: boolean; rp_id: str
 export type NexusManagementMode = 'local' | 'remote';
 interface NetworkState { mode?: NexusManagementMode; selectedServerId?: string; switchingServer?: boolean; passkey?: PasskeyPrompt; status: NexusStatus | null; error: string | null; notice: string | null }
 let state: NetworkState = { status: null, error: null, notice: null };
+let networkEpoch = 0;
+let networkPaused = false;
+export function clearNexusNetwork() {
+  networkEpoch += 1;
+  networkPaused = true;
+  clearTimeout(timer);
+  eventStream?.abort();
+  lastMemberIds = undefined;
+  publish({ status: null, error: null, notice: null });
+}
 const listeners = new Set<() => void>();
 const peerKeys = new Map<string, string>();
 let subscribers = 0;
@@ -180,10 +190,12 @@ export async function nexusRequest<T>(path: string, body?: unknown, pinnedContro
   return data as T;
 }
 export async function refreshNexus(): Promise<void> {
-  if (pollRunning) return;
+  if (pollRunning || networkPaused) return;
+  const epoch = networkEpoch;
   pollRunning = true;
   try {
     const status = await nexusRequest<NexusStatus>('status');
+    if (epoch !== networkEpoch) return;
     let notice = state.notice;
     if (lastMemberIds && state.status?.mesh_up && status.mesh_up) {
       const joined = status.members.filter(member => !lastMemberIds!.has(member.node_id));
@@ -192,6 +204,7 @@ export async function refreshNexus(): Promise<void> {
     lastMemberIds = status.mesh_up ? new Set(status.members.map(member => member.node_id)) : undefined;
     publish({ ...state, status, error: null, notice });
   } catch (error) {
+    if (epoch !== networkEpoch) return;
     publish({ ...state, error: error instanceof Error ? error.message : String(error) });
   } finally { pollRunning = false; }
 }
@@ -225,12 +238,13 @@ async function streamEvents() {
 }
 async function poll() {
   await refreshNexus();
-  if (subscribers) timer = setTimeout(poll, 5000);
+  if (subscribers && !networkPaused) timer = setTimeout(poll, 5000);
 }
 const subscribe = (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; };
 export function useNexusNetwork(active = true): NetworkState {
   useEffect(() => {
     if (!active) return;
+    networkPaused = false;
     if (++subscribers === 1) { void poll(); void streamEvents(); }
     return () => { if (--subscribers === 0) { clearTimeout(timer); eventStream?.abort(); } };
   }, [active]);

@@ -14,7 +14,7 @@ test('first Downloads open keeps the workspace stable while its code loads', asy
 
   try {
     await page.goto('/#/connect/nexus');
-    await expect(page.getByRole('heading', { name: 'Nexus', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Account', exact: true })).toBeVisible();
     const workspace = page.locator('#main-content');
     const bounds = await workspace.boundingBox();
     const toggle = page.getByRole('button', { name: 'Open download manager', exact: true });
