@@ -28,6 +28,7 @@ struct BenchScenario {
     std::string image_path;      // Path to image file for vision benchmarks (relative to scenario file)
     std::string source_file;     // The scenario JSON file path (for resolving relative image paths at run time)
     int max_tokens;
+    int minimum_ctx_size = 0;  // From optional context.target_tokens
     int warmup_runs = 0;
     int measurement_runs = 3;
 };
