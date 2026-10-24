@@ -273,20 +273,6 @@ bool repo_shared(const std::string& repo_id, const std::string& registry_source,
     return false;
 }
 
-// Another model asked for this exact checkpoint, so its bytes are that model's too.
-bool checkpoint_shared(const std::string& checkpoint, const std::string& registry_source,
-                       const std::string& exclude_model, const KnownModels& all_models) {
-    for (const auto& [name, info] : all_models) {
-        if (name == exclude_model || !info.source.empty()) continue;
-        if (registry_source_of(info) != registry_source) continue;
-        for (const auto& [type, other] : info.checkpoints) {
-            (void)type;
-            if (other == checkpoint) return true;
-        }
-    }
-    return false;
-}
-
 }  // namespace
 
 std::string repo_id_to_cache_dir_name(const std::string& repo_id,
@@ -531,23 +517,6 @@ PendingOwnership classify_pending(const fs::path& repo_dir, const std::string& v
     return out;
 }
 
-std::vector<std::string> sibling_variants_in(const ModelInfo& victim, const std::string& repo_id,
-                                             const std::string& registry_source,
-                                             const KnownModels& all_models) {
-    std::vector<std::string> variants;
-    for (const auto& [name, other] : all_models) {
-        if (name == victim.model_name || !other.source.empty()) continue;
-        if (registry_source_of(other) != registry_source) continue;
-        for (const auto& [type, checkpoint] : other.checkpoints) {
-            (void)type;
-            if (repo_id_from_checkpoint(checkpoint) == repo_id) {
-                variants.push_back(variant_from_checkpoint(checkpoint));
-            }
-        }
-    }
-    return variants;
-}
-
 }  // namespace
 
 namespace {
@@ -560,6 +529,134 @@ bool is_repo_plumbing(const fs::path& path, const fs::path& repo_dir) {
     const std::string first = rel.begin()->string();
     if (first == "refs" || first == "blobs") return true;
     return path.filename().string().find('.') == 0;
+}
+
+}  // namespace
+
+namespace {
+
+// Which other rows have bytes at stake in one repository. A row that only names a
+// repository claims nothing: the file it resolves to is usually here because the
+// model being deleted put it here. Deletion rule 2 in model-management.md states
+// what earns a claim.
+struct RepositoryClaims {
+    std::set<fs::path> occupied;        // bytes a claimant reads here
+    std::vector<std::string> variants;  // what a claimant would fetch here
+};
+
+std::vector<fs::path> repository_files(const fs::path& repo_dir) {
+    std::vector<fs::path> files;
+    if (!safe_exists(repo_dir)) return files;
+
+    std::error_code ec;
+    for (const auto& entry : fs::recursive_directory_iterator(repo_dir, safe_dir_options, ec)) {
+        if (ec) break;
+        if (!entry.is_regular_file(ec) || ec) continue;
+        const fs::path& path = entry.path();
+        if (is_repo_plumbing(path, repo_dir) || path.extension() == ".partial") continue;
+        files.push_back(path.lexically_normal());
+    }
+    return files;
+}
+
+bool any_variant_matches(const std::vector<std::string>& variants, const std::string& name) {
+    return std::any_of(variants.begin(), variants.end(), [&name](const std::string& variant) {
+        return pending_matches_variant(name, variant);
+    });
+}
+
+RepositoryClaims claims_in_repo(const ModelInfo& victim, const std::string& repo,
+                                const std::string& registry_source, const fs::path& repo_dir,
+                                const std::set<fs::path>& victim_named,
+                                const KnownModels& all_models,
+                                const std::function<void(ModelInfo&)>& resolve) {
+    RepositoryClaims claims;
+
+    const DownloadMarkers markers = collect_download_markers(repo_dir);
+    std::string recorded_owner;
+    std::vector<std::string> resumed;
+    for (const fs::path& path : markers.manifests) {
+        json doc = read_json_file(path);
+        std::string owner;
+        if (manifest_owner(doc, owner)) recorded_owner = owner;
+        std::vector<std::string> listed;
+        if (manifest_lists(doc, listed)) resumed.insert(resumed.end(), listed.begin(), listed.end());
+    }
+    for (const fs::path& partial : markers.partials) {
+        std::string target = partial.filename().string();
+        target.erase(target.size() - strlen(".partial"));
+        resumed.push_back(target);
+    }
+
+    const std::vector<fs::path> files = repository_files(repo_dir);
+
+    for (const auto& [name, other] : all_models) {
+        if (name == victim.model_name || !other.source.empty()) continue;
+        if (registry_source_of(other) != registry_source) continue;
+
+        std::vector<std::string> variants;
+        for (const auto& [type, checkpoint] : other.checkpoints) {
+            (void)type;
+            if (repo_id_from_checkpoint(checkpoint) == repo)
+                variants.push_back(variant_from_checkpoint(checkpoint));
+        }
+        if (variants.empty()) continue;
+
+        std::set<fs::path> needs;
+        std::set<fs::path> own;
+        ModelInfo fresh = other;
+        resolve(fresh);
+        for (const auto& [type, checkpoint] : other.checkpoints) {
+            if (repo_id_from_checkpoint(checkpoint) != repo) continue;
+            const std::string path = fresh.resolved_path(type);
+            if (path.empty() || !safe_exists(path)) continue;
+            std::set<fs::path> here;
+            collect_registered_shards(utils::path_from_utf8(path), repo_dir, here);
+            for (const fs::path& found : here) {
+                if (!path_inside(found, repo_dir)) continue;
+                needs.insert(found);
+                if (!victim_named.count(found)) own.insert(found);
+            }
+        }
+
+        // Resolution misses a file in a snapshot no manifest has committed, and a
+        // repository with no refs/main resolves to nothing at all.
+        for (const fs::path& file : files) {
+            if (victim_named.count(file) || needs.count(file)) continue;
+            if (any_variant_matches(variants, file.filename().string())) own.insert(file);
+        }
+
+        if (own.empty() && !other.downloaded) {
+            const bool awaited =
+                recorded_owner.empty()
+                    ? std::any_of(resumed.begin(), resumed.end(),
+                                  [&variants](const std::string& target) {
+                                      return any_variant_matches(variants, target);
+                                  })
+                    : recorded_owner == other.model_name;
+            if (!awaited) continue;
+        }
+
+        claims.occupied.insert(needs.begin(), needs.end());
+        claims.occupied.insert(own.begin(), own.end());
+        claims.variants.insert(claims.variants.end(), variants.begin(), variants.end());
+    }
+    return claims;
+}
+
+std::set<fs::path> paths_named_in(const ModelInfo& resolved, const std::string& repo,
+                                  const fs::path& repo_dir) {
+    std::set<fs::path> named;
+    for (const auto& [type, checkpoint] : resolved.checkpoints) {
+        (void)type;
+        if (repo_id_from_checkpoint(checkpoint) != repo) continue;
+        const std::string path = resolved.resolved_path(type);
+        if (path.empty()) continue;
+        collect_registered_shards(utils::path_from_utf8(path), repo_dir, named);
+    }
+    std::set<fs::path> normalized;
+    for (const fs::path& path : named) normalized.insert(path.lexically_normal());
+    return normalized;
 }
 
 }  // namespace
@@ -636,41 +733,29 @@ DeleteReport ModelArtifactStore::delete_artifacts(const ModelInfo& info,
         const fs::path repo_dir = managed_root /
             backends::hf_cache::repo_id_to_cache_dir_name(repo, registry_source);
 
+        const std::string variant = variant_from_checkpoint(checkpoint);
+        const std::set<fs::path> mine = paths_named_in(current, repo, repo_dir);
+        const RepositoryClaims claims = claims_in_repo(info, repo, registry_source, repo_dir,
+                                                      mine, all_models,
+                                                      [this](ModelInfo& row) {
+                                                          resolve_all(row);
+                                                      });
+
         // An auxiliary checkpoint is a dependency: while another model reads the
         // same file it stays. A main checkpoint is this model's own identity, so a
         // repository shared with other models still loses just its variant.
-        if (type != "main" &&
-            checkpoint_shared(checkpoint, registry_source, info.model_name, all_models)) {
+        if (type != "main" && claims.occupied.count(resolved.lexically_normal())) {
             LOG(INFO, kLog) << "Keeping " << checkpoint
-                            << ", another model reads the same checkpoint" << std::endl;
+                            << ", another downloaded model reads the same checkpoint"
+                            << std::endl;
             continue;
         }
 
-        // Who lives here is a question about the disk: rows name repositories they
-        // never filled, and rows do not announce what arrived since.
-        const std::string variant = variant_from_checkpoint(checkpoint);
-        const std::vector<std::string> siblings =
-            sibling_variants_in(info, repo, registry_source, all_models);
-
-        std::set<fs::path> theirs;
-        for (const auto& [name, other] : all_models) {
-            if (name == info.model_name || !other.source.empty()) continue;
-            if (registry_source_of(other) != registry_source) continue;
-            ModelInfo fresh = other;
-            resolve_all(fresh);
-            for (const auto& [other_type, other_checkpoint] : other.checkpoints) {
-                if (repo_id_from_checkpoint(other_checkpoint) != repo) continue;
-                const std::string path = fresh.resolved_path(other_type);
-                if (path.empty() || !safe_exists(path)) continue;
-                collect_registered_shards(utils::path_from_utf8(path), repo_dir, theirs);
-            }
-        }
-
         const PendingOwnership pending =
-            classify_pending(repo_dir, variant, info.model_name, siblings,
+            classify_pending(repo_dir, variant, info.model_name, claims.variants,
                              /*unattributed_is_mine=*/false);
 
-        if (theirs.empty() && !pending.foreign) {
+        if (claims.occupied.empty() && !pending.foreign) {
             if (safe_exists(repo_dir)) {
                 LOG(INFO, kLog) << "Removing repository cache: " << utils::path_to_utf8(repo_dir)
                                 << std::endl;
@@ -699,7 +784,7 @@ DeleteReport ModelArtifactStore::delete_artifacts(const ModelInfo& info,
                 if (!entry.is_regular_file(ec) || ec) continue;
                 const fs::path& path = entry.path();
                 if (is_repo_plumbing(path, repo_dir) || path.extension() == ".partial") continue;
-                if (siblings.empty()) {
+                if (claims.variants.empty()) {
                     ours.insert(path);
                 } else if (pending_matches_variant(path.filename().string(), variant)) {
                     collect_registered_shards(path, repo_dir, ours);
@@ -710,7 +795,7 @@ DeleteReport ModelArtifactStore::delete_artifacts(const ModelInfo& info,
         }
 
         for (const fs::path& path : ours) {
-            if (theirs.count(path) || !safe_exists(path)) continue;
+            if (claims.occupied.count(path.lexically_normal()) || !safe_exists(path)) continue;
             cleanup_orphaned_blobs_under(path, repo_dir);
             remove_path_or_throw(path, "variant path");
             cleanup_empty_parents(path, repo_dir);
@@ -748,15 +833,22 @@ bool ModelArtifactStore::cleanup_incomplete_download(const ModelInfo& info,
         return false;
     }
 
-    const std::vector<std::string> siblings =
-        sibling_variants_in(info, main_repo, registry_source, all_models);
+    const std::set<fs::path> mine = paths_named_in(info, main_repo, repo_dir);
+    const RepositoryClaims claims = claims_in_repo(info, main_repo, registry_source, repo_dir,
+                                                   mine, all_models,
+                                                   [this](ModelInfo& row) {
+                                                       resolve_all(row);
+                                                   });
     const std::string variant = variant_from_checkpoint(main_checkpoint);
-    PendingOwnership pending = classify_pending(repo_dir, variant, info.model_name, siblings,
-                                                /*unattributed_is_mine=*/siblings.empty());
+    const bool alone_here =
+        !repo_shared(main_repo, registry_source, info.model_name, all_models);
+    PendingOwnership pending = classify_pending(repo_dir, variant, info.model_name, claims.variants,
+                                                /*unattributed_is_mine=*/alone_here);
 
     // While somebody else names this repository, a complete file in it is theirs
     // unless this model can name it too.
-    if (!siblings.empty()) {
+    if (!claims.occupied.empty() ||
+        repo_shared(main_repo, registry_source, info.model_name, all_models)) {
         std::error_code ec;
         for (const auto& entry : fs::recursive_directory_iterator(repo_dir, safe_dir_options, ec)) {
             if (ec) break;
