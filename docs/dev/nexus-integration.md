@@ -61,11 +61,13 @@ requests to that relay URL, and `lemond` forwards them to that peer alone. Any
 change to the connection settings drops the peer key. Relay URLs are not saved as
 connection settings.
 
-Native passkeys use FIDO2 USB security keys with required user presence and user
-verification. PIN prompts and cancellation run inside the desktop app on Linux,
-Windows and macOS. Linux requires libudev and working hidraw permissions.
-Windows Hello and macOS Touch ID are not native backends in this integration.
-A matching-origin webview can also use WebAuthn.
+Native passkeys require user presence and user verification. Windows uses the
+system WebAuthn dialog for Windows Hello and other available passkey options;
+verification stays in the Windows dialog and cancellation is forwarded to it.
+Linux and macOS use FIDO2 USB security keys with PIN prompts and cancellation
+inside the desktop app. Linux requires libudev and working hidraw permissions.
+macOS Touch ID is not a native backend in this integration. A matching-origin
+webview can also use WebAuthn.
 
 ### Remote management
 
@@ -99,6 +101,11 @@ The bootstrap hostname found in Nexus configuration is `lemonade-nexus.io`.
 | `LEMONADE_NEXUS_SERVER` | `lemonade-nexus.io` | Bootstrap HTTPS host |
 | `LEMONADE_NEXUS_PORT` | `9100` | Bootstrap HTTPS port |
 | `LEMONADE_NEXUS_RP_ID` | `lemonade-nexus.io` | RP ID; must match the federation |
+
+The bootstrap hostname must match its HTTPS certificate. Use an advertised
+server FQDN when the bootstrap alias is not covered by that certificate. The
+RP ID must match the federation's `/api/health` response; it is independent of
+the hostname used to reach that server.
 
 Identity, account metadata and enabled preference live in `nexus/` under the
 server configuration directory. Unix permissions restrict the directory to its

@@ -56,7 +56,7 @@ export function createNexusAccountService(dependencies = { controller: nexusAcco
   const requireController = async (source: string) => {
     const controller = await dependencies.controller();
     if (controller.source !== source) throw new Error('The server connection changed. Close this dialog and sign in again.');
-    if (!controller.local || !dependencies.desktop()) throw new Error('Open the Lemonade desktop app on this computer to sign in with a security key.');
+    if (!controller.local || !dependencies.desktop()) throw new Error('Open the Lemonade desktop app on this computer to verify your passkey.');
     return controller;
   };
   return {

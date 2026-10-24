@@ -66,7 +66,7 @@ export function NexusSignInDialog({ service, onClose, onSignedIn, passkeyActive 
     <div ref={ref} className="nexus-account-dialog" role="dialog" aria-modal="true" aria-labelledby={`${id}-title`} aria-busy={busy || checking}>
       <div className="nexus-account-dialog__header"><span className="nexus-tree-detail__icon"><Icon name="user-round" size={23} /></span><div><h2 id={`${id}-title`}>{t('Sign in to Lemonade')}</h2><p>{t('One account for your devices.')}</p></div><WorkspaceActionButton iconOnly icon="x" size="small" appearance="quiet" aria-label={t('Close sign-in')} disabled={busy || passkeyActive} onClick={onClose} /></div>
       {checking ? <p role="status">{t('Checking account access…')}</p> : <>
-        {inspection && !available && <p className="nexus-hint">{!inspection.status.available ? t('This server does not include Nexus account support.') : t('Open the Lemonade desktop app on this computer to sign in with a security key.')}</p>}
+        {inspection && !available && <p className="nexus-hint">{!inspection.status.available ? t('This server does not include Nexus account support.') : t('Open the Lemonade desktop app on this computer to verify your passkey.')}</p>}
         {available && <form onSubmit={event => void submit(event)}>
           <p className="nexus-hint">{t('Nexus accounts use a device key and passkey. Your account name is a label saved on this app.')}</p>
           <fieldset className="nexus-sign-in__fields" disabled={busy}>
@@ -82,7 +82,7 @@ export function NexusSignInDialog({ service, onClose, onSignedIn, passkeyActive 
           </fieldset>
           {nameTooLong && <p className="nexus-error" role="alert">{t('This name is too long. Try a shorter name.')}</p>}
           <WorkspaceActionButton type="submit" disabled={busy || !displayName.trim() || !deviceName.trim() || nameTooLong || (action === 'join' && !validNexusInvitation(invitation))}>{busy ? t('Signing in…') : action === 'create' ? t('Create with passkey') : action === 'join' ? t('Join with passkey') : t('Continue with passkey')}</WorkspaceActionButton>
-          <p className="nexus-hint">{t('Use the FIDO2 security key registered for this device. New devices will register a key first.')}</p>
+          <p className="nexus-hint">{t('Use the passkey registered for this device. New devices will register a passkey first.')}</p>
         </form>}
         {error && <p ref={errorRef} className="nexus-error" role="alert" tabIndex={-1}>{t(error)}</p>}
         <div className="nexus-group-actions">{!busy && <WorkspaceActionButton size="small" appearance="quiet" icon="rotate-ccw" onClick={() => void inspect()}>{t('Check again')}</WorkspaceActionButton>}<WorkspaceActionButton appearance="quiet" disabled={busy || passkeyActive} onClick={onClose}>{t('Cancel')}</WorkspaceActionButton></div>

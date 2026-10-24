@@ -20,7 +20,7 @@ export function NexusPasskeyDialog({ prompt }: { prompt: PasskeyPrompt }) {
     return () => document.removeEventListener('keydown', escape);
   }, []);
   return <div className="nexus-verification-backdrop"><div ref={ref} className="nexus-verification" role="dialog" aria-modal="true" aria-labelledby={`${id}-title`}>
-    <h3 id={`${id}-title`}>{t('Verify with your security key')}</h3><p role="status">{prompt.message}</p>
+    <h3 id={`${id}-title`}>{t('Verify with your passkey')}</h3><p role="status">{t(prompt.message)}</p>
     {error && <p className="nexus-error" role="alert">{error}</p>}
     {prompt.needs_pin && <form onSubmit={event => {
       event.preventDefault(); const value = pin; setPin(''); setError('');

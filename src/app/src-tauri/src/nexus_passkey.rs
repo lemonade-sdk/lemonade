@@ -1,3 +1,5 @@
+use authenticator::Pin;
+#[cfg(not(target_os = "windows"))]
 use authenticator::{
     authenticatorservice::{AuthenticatorService, RegisterArgs, SignArgs},
     crypto::{COSEAlgorithm, COSEKeyType},
@@ -7,25 +9,39 @@ use authenticator::{
         ResidentKeyRequirement, Transport, UserVerificationRequirement,
     },
     statecallback::StateCallback,
-    Pin, StatusPinUv, StatusUpdate,
+    StatusPinUv, StatusUpdate,
 };
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::Value;
+#[cfg(not(target_os = "windows"))]
+use serde_json::json;
+#[cfg(not(target_os = "windows"))]
 use sha2::{Digest, Sha256};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
-    mpsc::{channel, Sender},
-    Arc, Mutex,
+    mpsc::Sender,
+    Mutex,
 };
+#[cfg(not(target_os = "windows"))]
+use std::sync::{mpsc::channel, Arc};
+#[cfg(not(target_os = "windows"))]
 use std::time::{Duration, Instant};
-use tauri::{Emitter, Manager};
+use tauri::Manager;
+#[cfg(not(target_os = "windows"))]
+use tauri::Emitter;
+
+#[cfg(target_os = "windows")]
+#[path = "nexus_passkey_windows.rs"]
+mod windows_passkey;
 
 #[derive(Default)]
 pub struct PasskeyState {
     running: AtomicBool,
     cancelled: AtomicBool,
     pin: Mutex<Option<Sender<Pin>>>,
+    #[cfg(target_os = "windows")]
+    cancellation: Mutex<Option<windows::core::GUID>>,
 }
 
 #[derive(Deserialize)]
@@ -57,6 +73,7 @@ fn check_options(options: &PasskeyOptions) -> Result<Vec<u8>, String> {
     Ok(challenge)
 }
 
+#[cfg(not(target_os = "windows"))]
 fn perform(app: tauri::AppHandle, options: PasskeyOptions) -> Result<Value, String> {
     check_options(&options)?;
     let credential_id = if options.registration {
@@ -186,13 +203,20 @@ pub async fn nexus_passkey(
         return Err("Passkeys are available in the main window only".into());
     }
     check_options(&options)?;
+    #[cfg(target_os = "windows")]
+    let native_window = window.hwnd().map_err(|_| "Cannot find the passkey window")?.0 as isize;
     let state = app.state::<PasskeyState>();
     if state.running.swap(true, Ordering::AcqRel) {
         return Err("Another passkey operation is running".into());
     }
     state.cancelled.store(false, Ordering::Release);
     let worker_app = app.clone();
-    let result = tauri::async_runtime::spawn_blocking(move || perform(worker_app, options)).await;
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        #[cfg(target_os = "windows")]
+        { windows_passkey::perform(worker_app, native_window, options) }
+        #[cfg(not(target_os = "windows"))]
+        { perform(worker_app, options) }
+    }).await;
     state.running.store(false, Ordering::Release);
     result.map_err(|_| "Passkey operation failed".to_string())?
 }
@@ -227,8 +251,9 @@ pub fn nexus_passkey_cancel(
     if window.label() != "main" {
         return Err("Invalid window".into());
     }
-    app.state::<PasskeyState>()
-        .cancelled
-        .store(true, Ordering::Release);
+    let state = app.state::<PasskeyState>();
+    state.cancelled.store(true, Ordering::Release);
+    #[cfg(target_os = "windows")]
+    windows_passkey::cancel(&state)?;
     Ok(())
 }

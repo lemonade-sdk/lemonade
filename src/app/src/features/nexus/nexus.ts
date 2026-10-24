@@ -244,7 +244,7 @@ async function nativePasskey<T>(options: PasskeyChallenge, deviceName: string, r
   const [{ invoke }, { listen }] = await Promise.all([import('@tauri-apps/api/core'), import('@tauri-apps/api/event')]);
   const update = (message: string, needs_pin: boolean) => publish({ ...state, passkey: { message, needs_pin, rp_id: options.rp_id } });
   const unlisten = await listen<{ message: string; needs_pin: boolean }>('nexus:passkey-status', event => update(event.payload.message, event.payload.needs_pin));
-  update('Connect your FIDO2 security key. Verification may require its PIN or fingerprint.', false);
+  update('Follow your device’s passkey verification prompt.', false);
   try { return await invoke<T>('nexus_passkey', { options: { ...options, device_name: deviceName, registration } }); }
   finally { unlisten(); publish({ ...state, passkey: undefined }); }
 }

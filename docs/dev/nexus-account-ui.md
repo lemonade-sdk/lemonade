@@ -106,9 +106,11 @@ management listener. Remote requests require the existing API-key configuration;
 mesh ingress refuses all tree routes. No group deletion or reparenting operation
 is introduced by this UI.
 
-Personal account verification currently requires the desktop app on the server
-computer and a supported USB FIDO2 security key. Windows Hello and Touch ID are
-not supported by the existing native integration. The passkey dialog is hosted
+Personal account verification requires the desktop app on the server computer.
+Windows uses the [system WebAuthn dialog](https://learn.microsoft.com/en-us/windows/win32/api/webauthn/), including Windows Hello and other
+passkey options available on that Windows installation. Linux and macOS use
+USB FIDO2 security keys. User presence and user verification remain required;
+Windows Hello verification stays in the Windows dialog. The passkey dialog is hosted
 by the account provider, so signing in from the header works outside the Nexus
 page. Browser and remote clients show desktop guidance instead of offering a
 verification path they cannot complete. Advanced management of an already
@@ -139,5 +141,5 @@ requirements and the hardware-backed pairing checks.
 
 Local mock tests and browser fixtures do not establish live account creation,
 hardware verification or federation pairing. A packaged native-app end-to-end
-test requires the rebuilt server, a supported FIDO2 security key and an
+test requires the rebuilt server, Windows Hello or a supported FIDO2 security key and an
 explicitly configured test network.
