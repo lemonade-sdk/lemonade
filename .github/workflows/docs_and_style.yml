@@ -85,6 +85,9 @@ jobs:
       - name: Run the version and source archive unit tests
         run: python -m unittest test.test_version test.test_source_archive -v
 
+      - name: Check the vendored Nexus SDK matches its pin and patches
+        run: python tools/update_nexus_sdk.py --check
+
       - name: Run pre-commit on the changed files
         # Scoped to what the change touches; running repo-wide would fail on drift that
         # predates it and is not the contributor's to fix.
