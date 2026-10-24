@@ -91,7 +91,7 @@ export async function setupNexusAccount(page: Page, options: {
 }
 
 export async function signInNexusAccount(page: Page, name = 'Geramy') {
-  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await page.getByRole('button', { name: 'Connect to Mesh', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Sign in to Lemonade' });
   await dialog.getByRole('textbox', { name: 'Account name', exact: true }).fill(name);
   await dialog.getByRole('button', { name: 'Continue with passkey' }).click();

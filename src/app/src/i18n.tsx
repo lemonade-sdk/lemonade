@@ -154,6 +154,7 @@ const ZH_CN: Record<string, string> = {
   'Not signed in': '未登录',
   'Signed in': '已登录',
   'Sign in': '登录',
+  'Connect to Mesh': '连接到 Mesh',
   'Sign out': '退出登录',
   'Sign in to bring your Lemonade devices together.': '登录以连接你的 Lemonade 设备。',
   'Nexus sign-in is not available yet.': 'Nexus 登录功能暂未开放。',

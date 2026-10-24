@@ -14,7 +14,7 @@ test('the account dropdown opens sign-in and restores focus when cancelled', asy
   const trigger = page.getByRole('button', { name: 'User: Not signed in' });
   await trigger.click();
   const menu = page.getByRole('dialog', { name: 'Nexus Account Manager' });
-  await menu.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await menu.getByRole('button', { name: 'Connect to Mesh', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Sign in to Lemonade' });
   await expect(dialog).toBeVisible();
   await expect(menu).toHaveCount(0);
@@ -24,7 +24,7 @@ test('the account dropdown opens sign-in and restores focus when cancelled', asy
 
 test('browser sign-in explains the desktop requirement', async ({ page }) => {
   await setupNexusAccount(page, { desktop: false });
-  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await page.getByRole('button', { name: 'Connect to Mesh', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Sign in to Lemonade' });
   await expect(dialog).toContainText('Open the Lemonade desktop app on this computer');
   await expect(dialog.getByRole('button', { name: 'Continue with passkey' })).toHaveCount(0);
@@ -32,7 +32,7 @@ test('browser sign-in explains the desktop requirement', async ({ page }) => {
 
 test('creating an account registers and verifies before showing its role', async ({ page }) => {
   const fixture = await setupNexusAccount(page, { registered: false, joined: false });
-  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await page.getByRole('button', { name: 'Connect to Mesh', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Sign in to Lemonade' });
   const submit = dialog.getByRole('button', { name: 'Create with passkey' });
   await expect(submit).toBeDisabled();
@@ -47,7 +47,7 @@ test('creating an account registers and verifies before showing its role', async
 
 test('cancelled passkey verification keeps the draft and signed-out state', async ({ page }) => {
   const fixture = await setupNexusAccount(page, { cancelPasskey: true });
-  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await page.getByRole('button', { name: 'Connect to Mesh', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Sign in to Lemonade' });
   await dialog.getByRole('textbox', { name: 'Account name', exact: true }).fill('Geramy');
   await dialog.getByRole('button', { name: 'Continue with passkey' }).click();
@@ -59,7 +59,7 @@ test('cancelled passkey verification keeps the draft and signed-out state', asyn
 
 test('joining validates both invitation formats and keeps the member role', async ({ page }) => {
   const fixture = await setupNexusAccount(page, { registered: false, joined: false, readOnly: true });
-  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await page.getByRole('button', { name: 'Connect to Mesh', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Sign in to Lemonade' });
   await dialog.getByRole('radio', { name: 'Join by invitation' }).check();
   await dialog.getByRole('textbox', { name: 'Account name', exact: true }).fill('Alex');
@@ -90,7 +90,7 @@ test('a saved label pre-fills the form but does not restore authentication', asy
   const reads = fixture.calls.filter(call => call.path.endsWith('/account')).length;
   await page.reload();
   await expect(page.getByRole('button', { name: 'User: Not signed in' })).toBeVisible();
-  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await page.getByRole('button', { name: 'Connect to Mesh', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Sign in to Lemonade' });
   await expect(dialog.getByRole('textbox', { name: 'Account name', exact: true })).toHaveValue('Geramy');
   expect(fixture.calls.filter(call => call.path.endsWith('/account')).length).toBe(reads);
@@ -207,7 +207,7 @@ test('Nexus uses the shared Settings selection colors in both themes', async ({ 
 
 test('a rejected server API key gives actionable sign-in guidance', async ({ page }) => {
   await setupNexusAccount(page, { unauthorized: true });
-  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await page.getByRole('button', { name: 'Connect to Mesh', exact: true }).click();
   await expect(page.getByRole('dialog', { name: 'Sign in to Lemonade' }).getByRole('alert')).toContainText('Settings > Server');
 });
 

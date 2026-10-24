@@ -106,7 +106,7 @@ function AccountAccess({ showSignOut = false }: { showSignOut?: boolean }) {
   return <div className="nexus-account-access">
     <p>{t('Sign in to bring your Lemonade devices together.')}</p>
     {notice === 'session-ended' && <p className="nexus-error" role="status">{t('Account access ended. Sign in again to continue.')}</p>}
-    <WorkspaceActionButton onClick={onSignIn} disabled={!onSignIn} aria-describedby={!onSignIn ? hintId : undefined}>{t('Sign in')}</WorkspaceActionButton>
+    <WorkspaceActionButton onClick={onSignIn} disabled={!onSignIn} aria-describedby={!onSignIn ? hintId : undefined}>{t('Connect to Mesh')}</WorkspaceActionButton>
     {!onSignIn && <p id={hintId} className="nexus-hint">{t('Nexus sign-in is not available yet.')}</p>}
   </div>;
 }
