@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <filesystem>
 #include "lemon/backends/hf_cache_util.h"
+#include "lemon/runtime_config.h"
 #include "lemon/utils/path_utils.h"
 
 namespace fs = std::filesystem;
@@ -128,6 +129,30 @@ void BackendOps::download_model(const ModelInfo& info, bool do_not_upgrade,
 const BackendOps* default_backend_ops() {
     static const BackendOps kDefault;
     return &kDefault;
+}
+
+bool containers_enabled() {
+    const auto* cfg = RuntimeConfig::global();
+    return cfg && cfg->enable_containers();
+}
+
+std::optional<utils::SetupReport> container_setup_failure(const std::string& recipe,
+                                                          const std::string& backend) {
+    const auto& manager = utils::ContainerManager::global();
+    const bool enabled = containers_enabled();
+    utils::SetupReport report;
+    report.failures = manager.check_host(enabled);
+    if (!enabled) {
+        report.failures.push_back({"enable_containers", "enable_containers is false",
+                                   {"lemonade config set enable_containers=true"}, ""});
+    }
+    if (report.empty()) {
+        if (auto failure = manager.check_podman()) {
+            report.failures.push_back(*failure);
+        }
+    }
+    if (report.empty()) return std::nullopt;
+    return report;
 }
 
 } // namespace backends

@@ -30,6 +30,7 @@
 #include <map>
 #include <vector>
 #include <optional>
+#include <sstream>
 
 #ifdef _WIN32
     #include <winsock2.h>
@@ -508,12 +509,117 @@ static int handle_export_command(lemonade::LemonadeClient& client, const CliConf
     return 0;
 }
 
+static const char* kEnableContainersCommand = "lemonade config set enable_containers=true";
+
+static bool confirm_enable_containers() {
+    std::cout << "Enabling containers lets Lemonade pull and run container images, pinned by "
+              << "digest in each Lemonade release. Once they are enabled, every client that "
+              << "reaches this server's API can make it pull and start them. Keep `host` on "
+              << "localhost, or set LEMONADE_API_KEY before serving on the network."
+              << std::endl;
+    return lemon_cli::prompt_yes_no("Enable containers?", false);
+}
+
+// /system-info's status for `recipe:backend`, with "" naming the recipe's
+// default backend; null when the server does not list it.
+static nlohmann::json fetch_backend_status(lemonade::LemonadeClient& client,
+                                           const std::string& recipe, std::string& backend) {
+    const auto info = nlohmann::json::parse(client.make_request("/api/v1/system-info"));
+    const auto recipes = info.value("recipes", nlohmann::json::object());
+    const auto entry = recipes.value(recipe, nlohmann::json::object());
+    if (backend.empty()) {
+        backend = entry.value("default_backend", "");
+    }
+    return entry.value("backends", nlohmann::json::object()).value(backend, nlohmann::json());
+}
+
+static void print_setup_steps(const std::string& recipe, const std::string& backend,
+                              const nlohmann::json& status) {
+    std::cerr << "Error: Cannot install " << recipe << ":" << backend << ":" << std::endl;
+    std::istringstream message(status.value("message", ""));
+    for (std::string line; std::getline(message, line);) {
+        std::cerr << "  - " << line << std::endl;
+    }
+    std::cerr << "To fix it:" << std::endl;
+    std::istringstream action(status.value("action", ""));
+    for (std::string line; std::getline(action, line);) {
+        std::cerr << "  " << line << std::endl;
+    }
+    std::cerr << "Then run this command again." << std::endl;
+}
+
+// Runs before anything is downloaded. Asks for consent only when it is the
+// last step left, so a yes lets the command finish. False means stop.
+static bool ready_container_backend(lemonade::LemonadeClient& client, const std::string& recipe,
+                                    std::string backend, bool yes) {
+    nlohmann::json status;
+    try {
+        status = fetch_backend_status(client, recipe, backend);
+    } catch (const std::exception&) {
+        return true;  // The server reports the same steps when the command reaches it.
+    }
+    if (!status.is_object() || status.value("format", "") != "container" ||
+        status.value("state", "") != "action_required") {
+        return true;
+    }
+    const auto checks = status.value("setup_checks", nlohmann::json::array());
+    if (checks != nlohmann::json::array({"enable_containers"})) {
+        print_setup_steps(recipe, backend, status);
+        return false;
+    }
+
+    if (!yes && !confirm_enable_containers()) {
+        std::cout << "Containers stay disabled. Run `" << kEnableContainersCommand
+                  << "` to enable them later." << std::endl;
+        return false;
+    }
+    try {
+        client.make_request("/internal/set", "POST", R"({"enable_containers": true})",
+                            "application/json");
+    } catch (const lemonade::HttpError& e) {
+        std::cerr << "Error: Could not enable containers: "
+                  << lemonade::extract_server_error_message(e) << std::endl;
+        return false;
+    } catch (const std::exception& e) {
+        std::cerr << "Error: Could not enable containers: " << e.what() << std::endl;
+        return false;
+    }
+
+    try {
+        status = fetch_backend_status(client, recipe, backend);
+    } catch (const std::exception&) {
+        return true;
+    }
+    if (status.is_object() && status.value("state", "") == "action_required") {
+        print_setup_steps(recipe, backend, status);
+        return false;
+    }
+    return true;
+}
+
+// The backend `--<recipe>` names, or "" for the recipe's default.
+static std::string selected_backend(const nlohmann::json& recipe_options, std::string recipe) {
+    if (!recipe_options.is_object()) return "";
+    recipe.erase(std::remove(recipe.begin(), recipe.end(), '-'), recipe.end());
+    const auto option = recipe_options.find(recipe + "_backend");
+    if (option == recipe_options.end() || !option->is_string()) return "";
+    const std::string backend = option->get<std::string>();
+    return backend == "auto" ? "" : backend;
+}
+
 static int handle_load_command(lemonade::LemonadeClient& client, const CliConfig& config) {
     // First, check if the model is downloaded
     nlohmann::json model_info = client.get_model_info(config.model);
 
     if (model_info.empty()) {
         std::cerr << "Error: Failed to fetch model info for '" << config.model << "'" << std::endl;
+        return 1;
+    }
+
+    const std::string recipe = model_info.value("recipe", "");
+    if (!recipe.empty() &&
+        !ready_container_backend(client, recipe, selected_backend(config.recipe_options, recipe),
+                                 /*yes=*/false)) {
         return 1;
     }
 
@@ -599,6 +705,10 @@ static int handle_backends_command(lemonade::LemonadeClient& client,
         int result = 0;
         handle_backend_operation(config.backend_spec, "Install",
             [&client, &config, &result](const std::string& recipe, const std::string& backend) {
+                if (!ready_container_backend(client, recipe, backend, config.yes)) {
+                    result = 1;
+                    return result;
+                }
                 result = client.install_backend(recipe, backend, config.force);
                 return result;
             });
@@ -1328,7 +1438,8 @@ static int handle_config_view(lemonade::LemonadeClient& client) {
 }
 
 static int handle_config_set(lemonade::LemonadeClient& client,
-                             const std::vector<std::string>& raw_args) {
+                             const std::vector<std::string>& raw_args,
+                             bool yes) {
     nlohmann::json updates = nlohmann::json::object();
 
     for (const auto& arg : raw_args) {
@@ -1382,6 +1493,14 @@ static int handle_config_set(lemonade::LemonadeClient& client,
         std::cerr << "Usage: lemonade config set key=value [key=value ...]" << std::endl;
         std::cerr << "Example: lemonade config set llamacpp.backend=rocm port=8123" << std::endl;
         return 1;
+    }
+
+    if (updates.value("enable_containers", nlohmann::json()) == true && !yes) {
+        if (!confirm_enable_containers()) {
+            std::cout << "Containers stay disabled. Pass --yes to enable them without "
+                      << "this prompt." << std::endl;
+            return 1;
+        }
     }
 
     try {
@@ -1552,6 +1671,8 @@ int main(int argc, char* argv[]) {
     CLI::App* config_cmd = app.add_subcommand("config", "View or modify server configuration")->group("Server");
     CLI::App* config_set_cmd = config_cmd->add_subcommand("set", "Set configuration values (e.g., llamacpp.backend=rocm port=8123)")->group("Subcommands");
     config_set_cmd->allow_extras(true);
+    config_set_cmd->add_flag("--yes", config.yes,
+        "Confirm settings that ask first, such as enable_containers=true");
     config_set_cmd->fallthrough(false);
 
     // Model commands
@@ -1589,6 +1710,8 @@ int main(int argc, char* argv[]) {
     // Backend management options
     backends_install_cmd->add_option("spec", config.backend_spec, "Backend spec (recipe:backend)")->required()->type_name("SPEC");
     backends_install_cmd->add_flag("--force", config.force, "Bypass hardware filtering when installing a backend");
+    backends_install_cmd->add_flag("--yes", config.yes,
+        "Enable containers without asking when a container backend needs it");
     backends_uninstall_cmd->add_option("spec", config.backend_spec, "Backend spec (recipe:backend)")->required()->type_name("SPEC");
 
     // Cloud provider commands. `cloud` is a subcommand group with install /
@@ -1979,7 +2102,7 @@ int main(int argc, char* argv[]) {
         }
     } else if (config_cmd->count() > 0) {
         if (config_set_cmd->count() > 0) {
-            return handle_config_set(client, config_set_cmd->remaining());
+            return handle_config_set(client, config_set_cmd->remaining(), config.yes);
         }
         return handle_config_view(client);
     } else if (cleanup_cmd->count() > 0) {

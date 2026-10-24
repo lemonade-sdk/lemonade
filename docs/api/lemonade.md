@@ -1096,7 +1096,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `pinned` | No | If `true`, pins the model so least-recently-used eviction skips it; `false` unpins it. When omitted, a loaded model keeps its pin state and a new load uses the model's saved `pinned` option, else `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `save_options` | No | If `true`, saves the options sent in this request as the model's `recipe_options.json` entry, replacing the stored one, so an option the request omits is no longer saved; one sent as `null` keeps its stored value. To save options without loading, or to change one option without resending the rest, use [`POST /v1/models/{id}/options`](openai.md#post-v1modelsidoptions). Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `ctx_size` | No | Context size: a positive whole number, or `-1` to size it automatically even when the server-wide `ctx_size` is a specific number. Only recipes that take a context size use it, such as `llamacpp`, `flm`, `ryzenai-llm` and `vllm`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `llamacpp_backend` | No | `llamacpp`: the llama.cpp backend: `auto`, `vulkan`, `rocm`, `cuda`, `metal`, `cpu`, or `system` for a `llama-server` already installed where supported. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `llamacpp_backend` | No | `llamacpp`: the llama.cpp backend: `auto`, `vulkan`, `rocm`, `cuda`, `metal`, `cpu`, `nathanw`, or `system` for a `llama-server` already installed where supported. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `llamacpp_args` | No | `llamacpp`: extra arguments for `llama-server`. Flags Lemonade sets itself are rejected, with their aliases: `-m`, `--port`, `--ctx-size`, `--jinja`, `--device`, `--mmproj`, `--model-draft`, `--embeddings`, `--reranking` and `--metrics`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `whispercpp_backend` | No | `whispercpp`: the whisper.cpp backend, such as `cpu`, `npu`, `vulkan`, `rocm` or `metal`. [`/v1/system-info`](#get-v1system-info) lists the ones this system supports. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `whispercpp_args` | No | `whispercpp`: extra arguments for `whisper-server`, such as `--convert`. `-m`, `--model` and `--port` are rejected. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
@@ -2145,9 +2145,10 @@ The same backend can carry different labels on different operating systems. Each
     - `backends` - Available backends for this recipe
       - One entry per backend.
         - `devices` - Devices **on this system** that support this backend; empty when none do.
-        - `state` - Backend lifecycle state: `unsupported`, `installable`, `update_required`, `update_available` or `installed`.
+        - `state` - Backend lifecycle state: `unsupported`, `installable`, `update_required`, `update_available`, `action_required` or `installed`.
         - `message` - Human-readable status text for GUI and CLI users. Required for `unsupported`, `installable`, and `update_required`; empty for `installed`.
         - `action` - An instruction for the user: for install and update, usually the exact CLI command; for other states it may be empty or another action, such as a URL.
+        - `setup_checks` - For a container backend in the `action_required` state, the ids of its failed setup checks, in the order of `message`'s lines (for example `["container_tool", "device_groups", "enable_containers"]`). `message` then holds one failed check per line and `action` the numbered steps that fix them. See [Container Backends](../guide/configuration/container-backends.md).
         - `version` - Installed or configured backend version (when available)
         - `tier` - `core`, `experimental`, or `guest`. See [Backend Tiers and Formats](#backend-tiers-and-formats).
         - `format` - `native`, `python`, or `container`. See [Backend Tiers and Formats](#backend-tiers-and-formats).

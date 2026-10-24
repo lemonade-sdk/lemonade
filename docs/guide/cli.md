@@ -612,7 +612,7 @@ The `backends` command lists supported recipes and their backends. Use `--all` t
 ```bash
 lemonade backends
 lemonade backends --all
-lemonade backends install SPEC [--force]
+lemonade backends install SPEC [--force] [--yes]
 lemonade backends uninstall SPEC
 ```
 
@@ -623,6 +623,7 @@ lemonade backends uninstall SPEC
 | `lemonade backends install SPEC` | Install a backend. Format: `recipe:backend` (e.g., `llamacpp:vulkan`) |
 | `lemonade backends uninstall SPEC` | Uninstall a backend. Format: `recipe:backend` (e.g., `llamacpp:cpu`) |
 | `lemonade backends install SPEC --force` | Bypass hardware filtering and attempt the install anyway |
+| `lemonade backends install SPEC --yes` | For a container backend, enable container backends without asking when that is the only setup step left |
 
 **Notes:**
 - Supported backends depend on your system and the recipe
