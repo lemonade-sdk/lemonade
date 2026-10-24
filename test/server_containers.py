@@ -52,7 +52,10 @@ def labeled(kind):
         command = ["ps", "-a", "--format", "{{.Names}}"]
     else:
         command = ["network", "ls", "--format", "{{.Name}}"]
-    return tool(*command, "--filter", f"label={LABEL}").stdout.split()
+    result = tool(*command, "--filter", f"label={LABEL}")
+    if result.returncode != 0:
+        raise AssertionError(f"{args.tool} {' '.join(command)} failed: {result.stderr}")
+    return result.stdout.split()
 
 
 class ContainerSmokeTest(unittest.TestCase):
