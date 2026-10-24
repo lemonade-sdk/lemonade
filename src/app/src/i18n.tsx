@@ -25,7 +25,7 @@ const ZH_CN: Record<string, string> = {
   "Create account": "创建账户",
   "Join by invitation": "通过邀请加入",
   "Account name": "账户名称",
-  "For example, Geramy": "例如：Geramy",
+  "Enter an account name": "输入账户名称",
   "Invitation code or token": "邀请码或令牌",
   "Get an invitation from a device already linked to the account.": "从已连接到账户的设备获取邀请。",
   "This device will create the account. Administrator access is confirmed by Nexus after joining.": "此设备将创建账户。加入后，管理员权限由 Nexus 确认。",
