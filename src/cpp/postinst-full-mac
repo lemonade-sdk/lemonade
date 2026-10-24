@@ -130,7 +130,7 @@ fi
 # ------------------------------------------------------------------------------
 # 5. SETUP BINARIES
 # ------------------------------------------------------------------------------
-APP_BINARY="${INSTALL_ROOT}/Applications/Lemonade.app/Contents/MacOS/Lemonade"
+APP_BINARY="${INSTALL_ROOT}/Applications/lemonade-app.app/Contents/MacOS/lemonade-app"
 TARGET_LINK="${INSTALL_ROOT}/usr/local/bin/lemonade-app"
 
 if [ -f "$APP_BINARY" ]; then
