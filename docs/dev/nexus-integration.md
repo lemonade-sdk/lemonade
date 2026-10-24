@@ -5,9 +5,11 @@ account dropdown, passwordless sign-in, Basic/Advanced views and recursive
 group-management routes.
 The UI walkthrough below describes the original integration panel.
 
-Lemonade links the client SDK in `src/LemonadeNexusSDK`. SDK headers, sources,
-Rust transport crates and build rules stay in that directory. There is no Nexus
-server, submodule, nested repository, or networking sidecar. The shared C
+Lemonade links the client SDK vendored in `src/LemonadeNexusSDK`: the files of
+one pinned Nexus commit, in Nexus's own layout, plus a patch series (see
+[Updating the SDK](#updating-the-sdk)). Lemonade's build rules for it live in
+`cmake/NexusSDK.cmake` and `cmake/nexus/`. There is no Nexus server, submodule,
+nested repository, or networking sidecar. The shared C
 interface isolates SDK OpenSSL from Lemonade's HTTP implementation.
 
 ## GUI3
@@ -35,7 +37,11 @@ ADMIN badge and a **Manage access** action on each device:
   is always kept. Admins hold every permission.
 - **Who can use this device** sets **See** (`read`) and **Connect**
   (`connect_private`) on the device node for each other member. Connect implies
-  See.
+  See. See only shows the device. To reach a device over the mesh, a member
+  needs Connect, `connect_shared` or `admin` on that device: the federation
+  lists only those devices as the member's mesh peers, and the federation server
+  forwards mesh packets only between such pairs. A device the member cannot
+  reach is reported offline, and the inference relay refuses it.
 
 The federation returns a node's full assignment list only to a caller with
 `edit_node` on that node. Members without it see only their own entry, and an
@@ -255,3 +261,25 @@ control and mesh inference switching. Real pairing requires a
 deployed federation with matching RP configuration, security keys and two
 machines. Windows installers and Debian packages require target-platform
 validation.
+
+## Updating the SDK
+
+`src/LemonadeNexusSDK/UPSTREAM.json` pins one Nexus commit (full SHA) and lists
+the vendored paths. Lemonade-only changes are `git format-patch` files in
+`src/LemonadeNexusSDK/patches/`, applied in order. No other change to the
+vendored tree is allowed; send fixes to Nexus so the series can shrink.
+
+1. Run `python tools/update_nexus_sdk.py <commit-or-tag>`. Add
+   `--source <path>` to use a local Nexus clone. The script fetches the commit,
+   copies the profile paths into a clean tree, applies the patches (and stops on
+   any conflict), installs the result, rewrites `UPSTREAM.json` and prints a
+   summary.
+2. If a patch no longer applies, rebase it onto the new commit, regenerate it
+   with `git format-patch`, and run the script again. Drop a patch once Nexus
+   carries the change.
+3. Build `lemond` and `test_nexus_manager` with `LEMONADE_WITH_NEXUS=ON`, and
+   check that every `ln_*` symbol `lemond` imports is still exported.
+
+CI runs `python tools/update_nexus_sdk.py --check`. It rebuilds the pinned
+commit plus the patches in a temporary directory and fails if the result
+differs from the committed tree, so a hand edit cannot slip in.

@@ -346,7 +346,7 @@ std::pair<int, std::string> relay_target(const json& members, const std::string&
     const auto target = find_member(members, node_id);
     if (target.is_null()) return {404, "That device is not in your group"};
     if (!target.value("is_inference", false)) return {409, "That device is not an inference server"};
-    if (!target.value("is_online", false)) return {409, "That device is offline"};
+    if (!target.value("is_online", false)) return {409, "That device is offline or not reachable from this device"};
     auto address = target.value("tunnel_ip", "");
     if (const auto slash = address.find('/'); slash != std::string::npos) address.resize(slash);
     if (address.empty()) return {409, "That device has no mesh address"};
