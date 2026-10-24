@@ -1178,7 +1178,7 @@ jobs:
   # ========================================================================
   create-pr:
     name: Create update PR
-    needs: [get-latest-releases, verify-release-assets, validate, validate-linux, gpu-offload-gate, validation-gate]
+    needs: [get-latest-releases, verify-release-assets, build-linux, validate, validate-linux, gpu-offload-gate, validation-gate]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -1188,6 +1188,7 @@ jobs:
       (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
       needs.get-latest-releases.result == 'success' &&
       needs.verify-release-assets.result == 'success' &&
+      needs.build-linux.result == 'success' &&
       (needs.validate.result == 'success' || needs.validate.result == 'failure') &&
       needs.validate-linux.result != 'cancelled' &&
       needs.gpu-offload-gate.result != 'cancelled'
@@ -1273,6 +1274,7 @@ jobs:
         shell: bash
         env:
           INFERENCE_RESULT: ${{ needs.validate.result }}
+          LINUX_RESULT: ${{ needs.validate-linux.result }}
           GPU_GATE_RESULT: ${{ needs.gpu-offload-gate.result }}
           REGRESSION_GATE_RESULT: ${{ needs.validation-gate.result }}
           ARTIFACT_OUTCOME: ${{ steps.validation_results.outcome }}
@@ -1281,6 +1283,8 @@ jobs:
           reason=''
           if [[ "$INFERENCE_RESULT" != 'success' ]]; then
             reason="Inference validation: $INFERENCE_RESULT."
+          elif [[ "$LINUX_RESULT" != 'success' ]]; then
+            reason="Linux CUDA validation: $LINUX_RESULT."
           elif [[ "$GPU_GATE_RESULT" != 'success' ]]; then
             reason="GPU offload gate: $GPU_GATE_RESULT."
           elif [[ "$REGRESSION_GATE_RESULT" != 'success' ]]; then
@@ -1288,7 +1292,7 @@ jobs:
           elif [[ "$ARTIFACT_OUTCOME" != 'success' ]]; then
             reason='Validation result artifacts could not be downloaded.'
           else
-            for backend in vulkan rocm-stable rocm-nightly; do
+            for backend in vulkan rocm-stable rocm-nightly cuda-arm64 cuda-x64; do
               file="llamacpp_validation_${backend}.json"
               if [[ ! -s "$file" ]]; then
                 reason="Validation results missing for $backend."
@@ -1550,8 +1554,8 @@ jobs:
 
           # Reuse an open PR for this release tuple, including a retry branch if
           # an older closed PR left the original branch name behind.
-          EXISTING_ROW=$(gh pr list --state open --limit 200 --json number,headRefName |
-            BRANCH_PREFIX="$BRANCH" python3 -c 'import json,os,sys; p=os.environ["BRANCH_PREFIX"]; a=json.load(sys.stdin); q=next((x for x in a if x["headRefName"]==p),None) or next((x for x in a if x["headRefName"].startswith(p+"-")),None); print(str(q["number"])+" "+q["headRefName"] if q else "")')
+          EXISTING_ROW=$(gh pr list --state open --limit 200 --json number,headRefName,author |
+            BRANCH_PREFIX="$BRANCH" python3 -c 'import json,os,sys; p=os.environ["BRANCH_PREFIX"]; a=[x for x in json.load(sys.stdin) if (x.get("author") or {}).get("login") in ("app/github-actions","github-actions[bot]")]; q=next((x for x in a if x["headRefName"]==p),None) or next((x for x in a if x["headRefName"].startswith(p+"-")),None); print(str(q["number"])+" "+q["headRefName"] if q else "")')
           EXISTING_PR=""
           if [[ -n "$EXISTING_ROW" ]]; then
             EXISTING_PR="${EXISTING_ROW%% *}"
@@ -1576,7 +1580,27 @@ jobs:
             fi
             was_draft=$(gh pr view "$EXISTING_PR" --json isDraft --jq .isDraft)
             old_title=$(gh pr view "$EXISTING_PR" --json title --jq .title)
+            if [[ "$was_draft" == 'true' &&
+                  "$old_title" != '[Docs review required] '* &&
+                  "$old_title" != '[Backend validation failed] '* ]]; then
+              echo "PR #$EXISTING_PR is a manually held draft. Skipping."
+              exit 0
+            fi
             if [[ "$BACKEND_OK" != 'true' || "$API_DOCS_OK" != 'true' ]]; then
+              # Refresh pins and architectures; never commit unverified API docs.
+              worktree=$(mktemp -d)
+              git fetch --no-tags origin "$BRANCH"
+              git worktree add --detach "$worktree" FETCH_HEAD
+              mkdir -p "$worktree/src/cpp/resources" "$worktree/src/cpp/include/lemon"
+              cp src/cpp/resources/backend_versions.json "$worktree/src/cpp/resources/"
+              cp src/cpp/include/lemon/llamacpp_architectures_generated.h "$worktree/src/cpp/include/lemon/"
+              git -C "$worktree" add -- src/cpp/resources/backend_versions.json \
+                src/cpp/include/lemon/llamacpp_architectures_generated.h
+              if ! git -C "$worktree" diff --cached --quiet; then
+                git -C "$worktree" commit -m "Refresh llama.cpp pins for ${LLAMACPP_RELEASE}"
+                git -C "$worktree" push origin "HEAD:$BRANCH"
+              fi
+              git worktree remove "$worktree"
               if [[ "$was_draft" != 'true' ]]; then
                 gh pr ready "$EXISTING_PR" --undo
               fi
@@ -1589,11 +1613,6 @@ jobs:
             # Keep ordinary PRs untouched (a rerun would cause noisy random docs).
             if [[ "$was_draft" != 'true' ]]; then
               echo "PR #$EXISTING_PR is not a draft. Skipping."
-              exit 0
-            fi
-            if [[ "$old_title" != '[Docs review required] '* &&
-                  "$old_title" != '[Backend validation failed] '* ]]; then
-              echo "PR #$EXISTING_PR is a manually held draft. Skipping."
               exit 0
             fi
             worktree=$(mktemp -d)
@@ -1620,7 +1639,7 @@ jobs:
           fi
           # A closed prior auto-PR can leave its branch behind. Never overwrite it.
           if git ls-remote --exit-code --heads origin "$BRANCH" > /dev/null 2>&1; then
-            BRANCH="${BRANCH}-${GITHUB_RUN_ID}"
+            BRANCH="${BRANCH}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           fi
 
           # Skip if backend_versions.json is already up to date
