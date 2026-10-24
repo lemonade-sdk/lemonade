@@ -1387,8 +1387,8 @@ jobs:
 
           # Reuse an open PR for this release tuple, including a retry branch if
           # an older closed PR left the original branch name behind.
-          EXISTING_ROW=$(gh pr list --state open --limit 200 --json number,headRefName |
-            BRANCH_PREFIX="$BRANCH" python3 -c 'import json,os,sys; p=os.environ["BRANCH_PREFIX"]; a=json.load(sys.stdin); q=next((x for x in a if x["headRefName"]==p),None) or next((x for x in a if x["headRefName"].startswith(p+"-")),None); print(str(q["number"])+" "+q["headRefName"] if q else "")')
+          EXISTING_ROW=$(gh pr list --state open --limit 200 --json number,headRefName,author |
+            BRANCH_PREFIX="$BRANCH" python3 -c 'import json,os,sys; p=os.environ["BRANCH_PREFIX"]; a=[x for x in json.load(sys.stdin) if (x.get("author") or {}).get("login") in ("app/github-actions","github-actions[bot]")]; q=next((x for x in a if x["headRefName"]==p),None) or next((x for x in a if x["headRefName"].startswith(p+"-")),None); print(str(q["number"])+" "+q["headRefName"] if q else "")')
           EXISTING_PR=""
           if [[ -n "$EXISTING_ROW" ]]; then
             EXISTING_PR="${EXISTING_ROW%% *}"
