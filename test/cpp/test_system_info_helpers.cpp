@@ -25,6 +25,7 @@ using lemon::system_info_detail::gfx_target_version_to_arch;
 using lemon::system_info_detail::gpu_display_name;
 using lemon::system_info_detail::identify_cuda_arch_from_name;
 using lemon::system_info_detail::hip_visible_device;
+using lemon::system_info_detail::kfd_gpu_properties;
 using lemon::system_info_detail::rocm_device_memory_from_sysfs;
 
 static bool expect_string(const char* name,
@@ -361,6 +362,10 @@ int main() {
         failures += !expect_string(
             "no HIP index when no GPU matches",
             hip_visible_device(sysfs.kfd_nodes(), "gfx942"), "");
+        failures += !expect_string(
+            "the KFD properties are the matching GPU's",
+            kfd_gpu_properties(sysfs.kfd_nodes(), "gfx1151"),
+            "cpu_cores_count 0\ngfx_target_version 110501\ndrm_render_minor 129\n");
     }
 
     failures += !expect_string(

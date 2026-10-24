@@ -7,7 +7,9 @@
 #include <exception>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <set>
+#include <sstream>
 #include <system_error>
 #include <string>
 #include <utility>
@@ -293,6 +295,35 @@ inline std::string hip_visible_device(const std::filesystem::path& kfd_nodes_dir
             return std::to_string(index);
         }
         ++index;
+    }
+    return "";
+}
+
+// The properties file of the first GPU node of `arch`, or "" when none is present.
+inline std::string kfd_gpu_properties(const std::filesystem::path& kfd_nodes_dir,
+                                      const std::string& arch) {
+    namespace fs = std::filesystem;
+
+    if (arch.empty()) {
+        return "";
+    }
+    std::error_code ec;
+    for (fs::directory_iterator it(kfd_nodes_dir, ec), end; it != end && !ec;
+         it.increment(ec)) {
+        std::ifstream props(it->path() / "properties");
+        const std::string text((std::istreambuf_iterator<char>(props)),
+                               std::istreambuf_iterator<char>());
+        std::istringstream lines(text);
+        std::string key;
+        std::string value;
+        while (lines >> key >> value) {
+            if (key == "gfx_target_version") {
+                if (gfx_target_version_to_arch(value) == arch) {
+                    return text;
+                }
+                break;
+            }
+        }
     }
     return "";
 }
