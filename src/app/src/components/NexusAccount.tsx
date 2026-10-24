@@ -211,6 +211,7 @@ export function NexusAccountMenu({ open, onOpenChange, onOpenPage, theme, onTogg
     closeRef.current?.focus();
     const outside = (event: Event) => {
       const target = event.target as Node;
+      if (target instanceof Element && target.closest('[data-header-menu-trigger="downloads"]')) return;
       if (!panelRef.current?.contains(target) && !triggerRef.current?.contains(target)) onOpenChange(false);
     };
     const escape = (event: KeyboardEvent) => {

@@ -401,13 +401,15 @@ const App: React.FC = () => {
   const [modelHelpers, setModelHelpers] = useState<ModelHelpers | null>(null);
   const [downloadManagerOpen, setDownloadManagerOpen] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
-  const handleAccountMenuChange = useCallback((open: boolean) => {
-    setAccountMenuOpen(open);
-    if (open) {
-      setDownloadManagerOpen(false);
-      setUtilityMenuOpen(false);
-    }
+  const openHeaderMenu = useCallback((menu: 'account' | 'downloads' | null) => {
+    setAccountMenuOpen(menu === 'account');
+    setDownloadManagerOpen(menu === 'downloads');
+    setUtilityMenuOpen(false);
   }, []);
+  const handleAccountMenuChange = useCallback((open: boolean) => {
+    if (open) openHeaderMenu('account');
+    else setAccountMenuOpen(false);
+  }, [openHeaderMenu]);
   const downloadManagerMountedRef = useRef(false);
   if (downloadManagerOpen) downloadManagerMountedRef.current = true;
   const [modelDetailsRequest, setModelDetailsRequest] = useState<{ modelName: string; nonce: number } | null>(null);
@@ -1177,7 +1179,8 @@ const App: React.FC = () => {
               </div>
               <button
                 className={`titlebar__download-toggle${downloadManagerOpen ? ' is-active' : ''}${activeDownloadCount > 0 ? ' has-active-downloads' : ''}`}
-                onClick={() => { setDownloadManagerOpen(open => !open); setUtilityMenuOpen(false); setAccountMenuOpen(false); }}
+                onClick={() => openHeaderMenu(downloadManagerOpen ? null : 'downloads')}
+                data-header-menu-trigger="downloads"
                 onPointerEnter={() => { void downloadManagerView.preload().catch(() => undefined); }}
                 onFocus={() => { void downloadManagerView.preload().catch(() => undefined); }}
                 aria-label={t('Open download manager')}
