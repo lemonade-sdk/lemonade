@@ -37,9 +37,10 @@ std::vector<std::string> merge_reuse_comparison_files(
     const std::vector<std::string>& repo_files_a,
     const std::vector<std::string>& repo_files_b);
 
-// Checkpoints without a "repo:variant" shape are skipped.
+// Checkpoints without a "repo:variant" shape are skipped, and so are the ones a
+// backend fetches on first use: a pull does not offer them.
 std::map<std::string, std::vector<std::string>> group_aux_checkpoint_variants(
-    const std::map<std::string, std::string>& checkpoints);
+    const std::string& recipe, const std::map<std::string, std::string>& checkpoints);
 
 // Empty when the resolved path does not point inside snapshots/.
 std::string snapshot_id_from_resolved_path(
@@ -84,6 +85,33 @@ bool can_reuse_previous_hf_snapshot(
     const std::filesystem::path& previous_snapshot,
     const std::map<std::string, HfFileMetadata>& current_metadata,
     const std::map<std::string, HfFileMetadata>& previous_metadata);
+
+// Run-scoped cache of registry tree pages, keyed by repo/ref/subdir: one page
+// answers for every model and every selection that reads it.
+using HfTreePageCache =
+    std::map<std::string, std::map<std::string, HfFileMetadata>>;
+
+// A file absent from the fetched tree is omitted; callers treat that as
+// "changed". `tree_cache` is optional and holds whole, unfiltered pages.
+std::map<std::string, HfFileMetadata> fetch_file_metadata_for_ref(
+    const std::string& repo_id,
+    const std::string& ref,
+    const std::vector<std::string>& selected_files,
+    const std::map<std::string, std::string>& headers,
+    HfTreePageCache* tree_cache);
+
+// True when the selected artifacts are byte-identical between the active local
+// snapshot and the new upstream revision. Any failure -- network, filesystem,
+// missing metadata -- returns false ("assume changed"): an indeterminate check
+// must never hide an update.
+bool selected_artifacts_unchanged(
+    const std::string& repo_id,
+    const std::string& active_ref,
+    const std::string& current_ref,
+    const std::filesystem::path& active_snapshot,
+    const std::vector<std::string>& selected_files,
+    const std::map<std::string, std::string>& headers,
+    HfTreePageCache* tree_cache);
 
 // A model spanning several repositories (e.g. an auxiliary checkpoint outside
 // the main checkpoint's repository) becomes verified only once every

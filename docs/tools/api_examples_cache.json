@@ -517,6 +517,169 @@
       }
     }
   },
+  "60e14fe3ad42fd15de522b596208dfbed0e406f950a675b68949683b3a9d08fc": {
+    "route": "internal.model_sources",
+    "format": "Json",
+    "request": {
+      "method": "GET",
+      "path": "/internal/model-sources",
+      "query": {},
+      "json": null,
+      "form": {},
+      "files": {}
+    },
+    "response": {
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "catalogs": [
+          {
+            "config_key": "",
+            "example": "",
+            "host_specific": false,
+            "id": "server_models.json",
+            "notes": [
+              "Nothing writes this file back: a new row ships in a release."
+            ],
+            "required": false,
+            "summary": "The model list shipped with the server.",
+            "title": "Built-in registry"
+          },
+          {
+            "config_key": "",
+            "example": "",
+            "host_specific": false,
+            "id": "user_models.json",
+            "notes": [
+              "A registration keeps its own provenance, so a later built-in row cannot take its name."
+            ],
+            "required": false,
+            "summary": "Every model the user pulled or registered.",
+            "title": "Registrations"
+          },
+          {
+            "config_key": "extra_models_dir",
+            "example": "",
+            "host_specific": false,
+            "id": "extra_models_dir",
+            "notes": [
+              "A directory watcher requests one rebuild when the tree changes."
+            ],
+            "required": false,
+            "summary": "A scan of the extra models directory; GGUF files are identified by their header, not their name.",
+            "title": "Extra models directory"
+          },
+          {
+            "config_key": "",
+            "example": "",
+            "host_specific": true,
+            "id": "discovered:flm",
+            "notes": [
+              "Nothing is downloaded here: the backend already has them."
+            ],
+            "required": false,
+            "summary": "Models an installed backend reports holding.",
+            "title": "Installed backend: flm"
+          }
+        ],
+        "local_origin_tokens": [
+          "local_upload",
+          "local_path",
+          "extra_models_dir"
+        ],
+        "pull_source_values": [
+          "huggingface",
+          "modelscope",
+          "local_upload",
+          "local_path",
+          "extra_models_dir"
+        ],
+        "registries": [
+          {
+            "aliases": [
+              "huggingface",
+              "hf",
+              ""
+            ],
+            "cache_dir_prefix": "models--",
+            "default_revision": "main",
+            "display_name": "Hugging Face",
+            "download_protocol": "hf-hub",
+            "endpoint_default": "https://huggingface.co",
+            "env": [
+              {
+                "name": "HF_TOKEN",
+                "purpose": "read access to gated repositories",
+                "required": false
+              },
+              {
+                "name": "HF_ENDPOINT",
+                "purpose": "a mirror or gateway for the API",
+                "required": false
+              }
+            ],
+            "example": "https://huggingface.co/{repo}",
+            "notes": [
+              "A token-gated repository needs `HF_TOKEN`.",
+              "`HF_ENDPOINT` moves the API to a mirror or gateway; the cache layout does not change."
+            ],
+            "revision_semantics": "branch, tag or commit SHA",
+            "scheme": "hf://",
+            "search": true,
+            "staleness_basis": "the commit SHA the API reports for the revision",
+            "summary": "The default remote registry: GGUF repositories over HTTPS.",
+            "title": "Hugging Face",
+            "token": "huggingface"
+          },
+          {
+            "aliases": [
+              "modelscope",
+              "ms"
+            ],
+            "cache_dir_prefix": "modelscope--models--",
+            "default_revision": "master",
+            "display_name": "ModelScope",
+            "download_protocol": "modelscope-api",
+            "endpoint_default": "",
+            "env": [
+              {
+                "name": "MODELSCOPE_API_TOKEN",
+                "purpose": "read access to gated repositories",
+                "required": false
+              },
+              {
+                "name": "MODELSCOPE_ACCESS_TOKEN",
+                "purpose": "an accepted alternative to the API token",
+                "required": false
+              },
+              {
+                "name": "MODELSCOPE_ENDPOINT",
+                "purpose": "a mirror or gateway for the API",
+                "required": false
+              }
+            ],
+            "example": "https://modelscope.cn/models/{repo}",
+            "notes": [
+              "A token needs `MODELSCOPE_API_TOKEN`, or `MODELSCOPE_ACCESS_TOKEN`.",
+              "`MODELSCOPE_ENDPOINT` moves the API to a mirror; the default is `https://modelscope.cn`.",
+              "The download endpoint is the provider API, so no separate file host is configured."
+            ],
+            "revision_semantics": "branch, tag or commit SHA",
+            "scheme": "ms://",
+            "search": true,
+            "staleness_basis": "a content hash over the resolved file tree",
+            "summary": "A second remote registry, reached through the provider's own file API.",
+            "title": "ModelScope",
+            "token": "modelscope"
+          }
+        ],
+        "source_tokens": [
+          "huggingface",
+          "modelscope"
+        ]
+      }
+    }
+  },
   "a8553cab2255ff220def7e7cd7c319116a78a02d4120cf82d15d01fc42a3b687": {
     "route": "internal.models_sync",
     "format": "Json",

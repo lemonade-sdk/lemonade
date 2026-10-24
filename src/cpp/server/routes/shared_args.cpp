@@ -65,6 +65,12 @@ const RouteArg kUser{"user", ArgIn::Form, {{"type", "string"}}, false, Support::
 namespace openai::models {
 const RouteArg kId{"id", ArgIn::Path, {{"type", "string"}, {"pattern", ".+"}}, true, Support::Available,
                    "Model id, as listed by [`GET /v1/models`](#get-v1models), or an alias."};
+const RouteArg kIncludePaths{
+    "include_paths", ArgIn::Query, {{"type", "boolean"}}, false, Support::Available,
+    "`true` adds each present checkpoint's absolute `path` to its `checkpoint_status` entry, "
+    "which can reveal local usernames and the cache layout. Defaults to `false`. The files a "
+    "model is made of have their own list, at "
+    "[`GET /v1/models/{id}/files`](./openai.md#get-v1modelsidfiles)."};
 } // namespace openai::models
 
 namespace gateway {

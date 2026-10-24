@@ -1657,6 +1657,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
 | `show_all` (query) | No | `true` also lists catalog models that are not downloaded. Defaults to `false`, which lists downloaded models only. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `include_paths` (query) | No | `true` adds each present checkpoint's absolute `path` to its `checkpoint_status` entry, which can reveal local usernames and the cache layout. Defaults to `false`. The files a model is made of have their own list, at [`GET /v1/models/{id}/files`](./openai.md#get-v1modelsidfiles). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 A model alias whose target is listed appears too, as a copy of the target with the alias as its `id`.
 
@@ -1738,6 +1739,12 @@ With cloud providers configured, their models are listed too, with `recipe: "clo
   - `models` - Omni collections only: each component's full model object, in the order of `components`, so an exported collection can be imported elsewhere through [`/v1/pull`](./lemonade.md#post-v1pull).
   - `checkpoints` - Every checkpoint by role, such as `main`, `mmproj`, `draft`, `text_encoder` or `vae`.
     - The checkpoint that fills the role named by its key.
+  - `checkpoint_status` - One entry per checkpoint of the model, answering whether its bytes are there.
+    - `type` - Checkpoint slot, e.g. `main`, `mmproj`, `vae`.
+    - `present` - `true` only when the checkpoint's bytes are complete and readable.
+    - `required` - A missing required checkpoint keeps the model undownloaded; an optional one, loaded lazily, does not.
+    - `registry` - Registry hosting the checkpoint; empty for local files and directories.
+    - `path` - Absolute path to the checkpoint file; present only with `include_paths=true` and when `present` is `true`.
   - `source` - Where the model came from: a registry name, `local_upload`, `local_path` or `extra_models_dir`.
   - `registry_source` - Remote registry the checkpoint downloads from: `huggingface` or `modelscope`.
   - `recipe_options` - The model's own options: its image defaults and registry options, with what was saved in `recipe_options.json` on top.
@@ -1839,6 +1846,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
 | `id` (path) | Yes | Model id, as listed by [`GET /v1/models`](#get-v1models), or an alias. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `include_paths` (query) | No | `true` adds each present checkpoint's absolute `path` to its `checkpoint_status` entry, which can reveal local usernames and the cache layout. Defaults to `false`. The files a model is made of have their own list, at [`GET /v1/models/{id}/files`](./openai.md#get-v1modelsidfiles). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 ### Example
 
@@ -1908,6 +1916,12 @@ Requires `LEMONADE_API_KEY` when it is set.
 - `models` - Omni collections only: each component's full model object, in the order of `components`, so an exported collection can be imported elsewhere through [`/v1/pull`](./lemonade.md#post-v1pull).
 - `checkpoints` - Every checkpoint by role, such as `main`, `mmproj`, `draft`, `text_encoder` or `vae`.
   - The checkpoint that fills the role named by its key.
+- `checkpoint_status` - One entry per checkpoint of the model, answering whether its bytes are there.
+  - `type` - Checkpoint slot, e.g. `main`, `mmproj`, `vae`.
+  - `present` - `true` only when the checkpoint's bytes are complete and readable.
+  - `required` - A missing required checkpoint keeps the model undownloaded; an optional one, loaded lazily, does not.
+  - `registry` - Registry hosting the checkpoint; empty for local files and directories.
+  - `path` - Absolute path to the checkpoint file; present only with `include_paths=true` and when `present` is `true`.
 - `source` - Where the model came from: a registry name, `local_upload`, `local_path` or `extra_models_dir`.
 - `registry_source` - Remote registry the checkpoint downloads from: `huggingface` or `modelscope`.
 - `recipe_options` - The model's own options: its image defaults and registry options, with what was saved in `recipe_options.json` on top.

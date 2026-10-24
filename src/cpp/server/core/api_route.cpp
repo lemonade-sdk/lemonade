@@ -9,7 +9,6 @@
 #include <lemon/utils/aixlog.hpp>
 
 #include "../telemetry.h"
-#include "lemon/alias_manager.h"
 #include "lemon/anthropic_error.h"
 #include "lemon/error_types.h"
 #include "lemon/model_manager.h"
@@ -745,15 +744,8 @@ std::string strip_latest_tag(const std::string& name) {
 }
 
 std::string canonical_model_name(ServerContext& ctx, const std::string& name, bool strip_latest) {
-    std::string base = strip_latest ? strip_latest_tag(name) : name;
-    if (base != name &&
-        (ctx.alias_manager->has_alias(name) || ctx.model_manager->model_exists(name))) {
-        base = name;
-    }
-    if (auto target = ctx.alias_manager->resolve_alias(base)) {
-        return *target;
-    }
-    return base;
+    const std::string requested = strip_latest ? strip_latest_tag(name) : name;
+    return ctx.model_manager->canonical_for_request(requested);
 }
 
 std::unique_ptr<WrappedServer::RequestCancelScope> cancel_on_disconnect(const RouteRequest& req) {

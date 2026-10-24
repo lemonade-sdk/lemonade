@@ -1,3 +1,4 @@
+#include "support/server_wired_manager.h"
 // Deleting a model must reclaim its repo when nothing else is living in it, and
 // must leave the repo alone when something is. The dividing line is what is on
 // disk, not what the catalog lists: several entries routinely map to one repo,
@@ -232,6 +233,14 @@ int main() {
     write_file(orph_repo / "snapshots" / "snap" / ".download_manifest.json",
                R"({"model_name":"user.orph-b","files":[{"name":"b.gguf"}]})");
 
+    // A plain model and the MTP variant built on it: same main, same mmproj, and the
+    // MTP row also wants a draft. Only the plain model's bytes are here.
+    fs::path mtp_repo = make_repo(hf_root, "models--org--mtp", {"main.gguf", "mmproj.gguf"});
+
+    // The same pair with the draft present, so both rows are on disk.
+    fs::path mtpboth_repo = make_repo(hf_root, "models--org--mtpboth",
+                                      {"main.gguf", "mmproj.gguf", "draft.gguf"});
+
     // Repos used by the late-arrival cases further down.
     fs::path late_repo = make_repo(hf_root, "models--org--late", {"a.gguf"});
     fs::path arrive_repo = hf_root / "models--org--arrive";
@@ -304,6 +313,20 @@ int main() {
         {"norefs-b", json{{"checkpoint", "org/norefs:b.gguf"}, {"recipe", "llamacpp"}}},
         {"coex-a", json{{"checkpoint", "org/coex:a.gguf"}, {"recipe", "llamacpp"}}},
         {"coex-b", json{{"checkpoint", "org/coex:b.gguf"}, {"recipe", "llamacpp"}}},
+        {"mtp-a", json{{"checkpoints", json{{"main", "org/mtp:main.gguf"},
+                                            {"mmproj", "org/mtp:mmproj.gguf"}}},
+                       {"recipe", "llamacpp"}}},
+        {"mtp-b", json{{"checkpoints", json{{"main", "org/mtp:main.gguf"},
+                                            {"draft", "org/mtp:draft.gguf"},
+                                            {"mmproj", "org/mtp:mmproj.gguf"}}},
+                       {"recipe", "llamacpp"}}},
+        {"mtpboth-a", json{{"checkpoints", json{{"main", "org/mtpboth:main.gguf"},
+                                                {"mmproj", "org/mtpboth:mmproj.gguf"}}},
+                           {"recipe", "llamacpp"}}},
+        {"mtpboth-b", json{{"checkpoints", json{{"main", "org/mtpboth:main.gguf"},
+                                                {"draft", "org/mtpboth:draft.gguf"},
+                                                {"mmproj", "org/mtpboth:mmproj.gguf"}}},
+                           {"recipe", "llamacpp"}}},
         {"late-a", json{{"checkpoint", "org/late:a.gguf"}, {"recipe", "llamacpp"}}},
         {"late-b", json{{"checkpoint", "org/late:b.gguf"}, {"recipe", "llamacpp"}}},
         {"arrive-a", json{{"checkpoint", "org/arrive:a.gguf"}, {"recipe", "llamacpp"}}},
@@ -312,7 +335,7 @@ int main() {
     write_file(temp / "user_models.json", user_models.dump(2));
 
     {
-        ModelManager manager;
+        ModelManager manager(lemon::test::server_wired_config());
 
         // solo-b is listed but was never downloaded, so nothing else is living
         // in the repo and the whole thing goes.
@@ -533,7 +556,31 @@ int main() {
     // tells Lemonade it happened. Each case needs its own manager: deleting a user
     // model invalidates the cache, which would rebuild it and hide the staleness.
     {
-        ModelManager manager;
+        ModelManager manager(lemon::test::server_wired_config());
+
+        // mtp-b only names these files; its draft never arrived.
+        manager.delete_model("user.mtp-a");
+        check("a checkpoint no other downloaded model reads is removed",
+              !fs::exists(mtp_repo / "snapshots" / "snap" / "main.gguf"));
+        check("the shared auxiliary checkpoint goes with it",
+              !fs::exists(mtp_repo / "snapshots" / "snap" / "mmproj.gguf"));
+        check("the repo an undownloaded twin only lists is reclaimed",
+              !fs::exists(mtp_repo));
+
+        manager.delete_model("user.mtpboth-a");
+        check("a downloaded twin keeps the main file it reads",
+              fs::exists(mtpboth_repo / "snapshots" / "snap" / "main.gguf"));
+        check("a downloaded twin keeps the auxiliary file it reads",
+              fs::exists(mtpboth_repo / "snapshots" / "snap" / "mmproj.gguf"));
+        check("a downloaded twin keeps its own draft",
+              fs::exists(mtpboth_repo / "snapshots" / "snap" / "draft.gguf"));
+        manager.delete_model("user.mtpboth-b");
+        check("the last model to go takes the shared files with it",
+              !fs::exists(mtpboth_repo));
+    }
+
+    {
+        ModelManager manager(lemon::test::server_wired_config());
         (void)manager.get_model_info("user.late-a");  // builds the cache
 
         write_file(late_repo / "snapshots" / "snap" / "b.gguf");
@@ -548,7 +595,7 @@ int main() {
     }
 
     {
-        ModelManager manager;
+        ModelManager manager(lemon::test::server_wired_config());
         (void)manager.get_model_info("user.arrive-a");  // builds the cache
 
         // The deleted model's own files arrive late too, so its cached resolved
@@ -574,7 +621,7 @@ int main() {
 
         // The constructor sets the directory without starting a watcher, so
         // nothing invalidates the cache when the files below appear.
-        ModelManager manager(path_to_utf8(extra_root));
+        ModelManager manager(lemon::test::server_wired_config(path_to_utf8(extra_root)));
         (void)manager.get_model_info("user.adopted-a");  // nothing on disk yet
 
         fs::path adopted_repo = extra_root / "models--org--adopted";
@@ -602,7 +649,7 @@ int main() {
         write_file(ext / "snapshots" / "snap" / "Model-Q4_K_M.gguf");
         write_file(ext / "refs" / "main", "snap");
 
-        ModelManager manager(path_to_utf8(extra_root));
+        ModelManager manager(lemon::test::server_wired_config(path_to_utf8(extra_root)));
         bool threw = false;
         try {
             manager.delete_model("user.adoptleft-a");
@@ -635,7 +682,7 @@ int main() {
         write_file(ext / "snapshots" / "snap" / gguf);
         write_file(ext / "refs" / "main", "snap");
 
-        ModelManager manager(path_to_utf8(extra_root));
+        ModelManager manager(lemon::test::server_wired_config(path_to_utf8(extra_root)));
         if (!manager.model_exists(registered)) {
             std::printf("[SKIP] %s is no longer in the catalog\n", registered.c_str());
         } else {
@@ -667,7 +714,7 @@ int main() {
         write_file(ext / "snapshots" / "snap" / "vae.bin", "VAE");
         write_file(ext / "refs" / "main", "snap");
 
-        ModelManager manager(path_to_utf8(extra_root));
+        ModelManager manager(lemon::test::server_wired_config(path_to_utf8(extra_root)));
         manager.delete_model("user.adopt2-a");
         check("a sibling served from extra_models_dir keeps its managed file",
               fs::exists(managed / "snapshots" / "snap" / "b.gguf"));
