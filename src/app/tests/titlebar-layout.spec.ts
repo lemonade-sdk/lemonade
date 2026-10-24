@@ -2,12 +2,42 @@ import { expect, test } from '@playwright/test';
 import { setupNexusAccount } from './nexusAccountFixture';
 
 for (const desktop of [true, false]) {
+  test(`${desktop ? 'desktop' : 'browser'} search responds to control width`, async ({ page }) => {
+    await page.setViewportSize({ width: 1800, height: 800 });
+    await setupNexusAccount(page, { desktop });
+    const header = page.locator('.titlebar');
+    await expect(header).not.toHaveClass(/titlebar--search-collapsed/);
+    await expect(page.locator('.nexus-account-trigger__label')).toBeVisible();
+    await page.locator('.titlebar__right').evaluate(right => {
+      const control = document.createElement('button');
+      control.id = 'extra-header-control';
+      control.textContent = 'Extra control';
+      control.style.cssText = 'width: 400px; flex: 0 0 400px';
+      right.append(control);
+    });
+    await expect(header).toHaveClass(/titlebar--search-collapsed/);
+    await expect(page.locator('.nexus-account-trigger__label')).toBeHidden();
+    await page.locator('.titlebar__search-toggle').click();
+    await expect(page.locator('.titlebar__search input')).toBeVisible();
+    await page.keyboard.press('Escape');
+    const gap = await header.evaluate(element => element.querySelector('.titlebar__right')!.getBoundingClientRect().left
+      - element.querySelector('.titlebar__nav')!.getBoundingClientRect().right);
+    expect(gap).toBeGreaterThanOrEqual(16);
+    await page.locator('#extra-header-control').evaluate(control => control.remove());
+    await expect(header).not.toHaveClass(/titlebar--search-collapsed/);
+    await expect(page.locator('.nexus-account-trigger__label')).toBeVisible();
+  });
+
   test(`${desktop ? 'desktop' : 'browser'} header fits without resizing window controls`, async ({ page }) => {
     await setupNexusAccount(page, { desktop });
     let baseline: { width: number; height: number; iconWidth: number; iconHeight: number }[] | undefined;
     for (const theme of ['dark', 'light']) {
       await page.setViewportSize({ width: 1280, height: 800 });
-      if (theme === 'light') await page.getByRole('button', { name: 'Toggle theme', exact: true }).click();
+      if (theme === 'light') {
+        await page.getByRole('button', { name: 'User: Not signed in', exact: true }).click();
+        await page.getByRole('button', { name: 'Toggle theme', exact: true }).click();
+        await page.keyboard.press('Escape');
+      }
       for (const width of [1280, 1101, 1100, 901, 900, 821, 820, 769, 768, 600, 481, 480, 400, ...(desktop ? [] : [375, 360, 320])]) {
         await page.setViewportSize({ width, height: 800 });
         const layout = await page.locator('.titlebar').evaluate(header => {
@@ -63,9 +93,9 @@ for (const desktop of [true, false]) {
       }
       await page.getByRole('button', { name: 'User: Not signed in', exact: true }).click();
       await expect(page.getByRole('dialog', { name: 'Nexus Account Manager', exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Toggle theme', exact: true })).toBeVisible();
       await page.keyboard.press('Escape');
       await page.getByRole('button', { name: 'App controls', exact: true }).click();
-      await expect(page.getByRole('button', { name: 'Toggle theme', exact: true })).toBeVisible();
       await expect(page.getByRole('button', { name: 'Open download manager', exact: true })).toBeVisible();
       await page.keyboard.press('Escape');
     }

@@ -180,10 +180,12 @@ export function NexusAccountPage() {
   </div>;
 }
 
-export function NexusAccountMenu({ open, onOpenChange, onOpenPage }: {
+export function NexusAccountMenu({ open, onOpenChange, onOpenPage, theme, onToggleTheme }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onOpenPage: () => void;
+  theme?: 'light' | 'dark';
+  onToggleTheme?: () => void;
 }) {
   const { t } = useI18n();
   const { account, onSignOut } = useNexusAccount();
@@ -235,6 +237,10 @@ export function NexusAccountMenu({ open, onOpenChange, onOpenPage }: {
       </div>
       <AccountSummary />
       <AccountAccess />
+      {onToggleTheme && <button type="button" className="nexus-account-menu__link" onClick={onToggleTheme}
+        aria-label={t('Toggle theme')} title={theme === 'dark' ? t('Switch to light mode') : t('Switch to dark mode')}>
+        <span>{theme === 'dark' ? t('Light mode') : t('Dark mode')}</span><Icon name={theme === 'dark' ? 'sun' : 'moon'} size={16} />
+      </button>}
       <MyDevices />
       <button type="button" className="nexus-account-menu__link" onClick={() => { close(true); onOpenPage(); }}>
         <span>{t('Open Nexus')}</span><Icon name="chevron-right" size={16} />

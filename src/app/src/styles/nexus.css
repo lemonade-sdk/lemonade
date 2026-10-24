@@ -1,5 +1,8 @@
-.titlebar.titlebar--with-account.titlebar--desktop {
+.titlebar.titlebar--with-account {
+  --header-search-width: 176px;
+  --header-control-gap: 16px;
   grid-template-columns: minmax(0, 1fr) auto minmax(max-content, 1fr);
+  column-gap: var(--header-control-gap);
 }
 
 .titlebar.titlebar--with-account.titlebar--desktop .titlebar__nav { transform: none; }
@@ -31,6 +34,19 @@
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+@media (min-width: 769px) {
+  .titlebar--search-collapsed .nexus-account-trigger {
+    width: 34px;
+    padding: 3px;
+    justify-content: center;
+  }
+
+  .titlebar--search-collapsed .nexus-account-trigger__label,
+  .titlebar--search-collapsed .nexus-account-trigger > .app-icon {
+    display: none;
+  }
 }
 
 .nexus-avatar {

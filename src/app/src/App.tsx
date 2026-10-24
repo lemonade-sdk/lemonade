@@ -423,6 +423,42 @@ const App: React.FC = () => {
   const utilityMenuRef = useRef<HTMLDivElement>(null);
   const utilityMenuTriggerRef = useRef<HTMLButtonElement>(null);
   const navigationSearchRef = useRef<HTMLInputElement>(null);
+  const titlebarRef = useRef<HTMLElement>(null);
+  const [searchCollapsed, setSearchCollapsed] = useState(true);
+  useEffect(() => {
+    const header = titlebarRef.current;
+    if (!header) return;
+    const nav = header.querySelector<HTMLElement>('.titlebar__nav')!;
+    const right = header.querySelector<HTMLElement>('.titlebar__right')!;
+    const search = header.querySelector<HTMLElement>('.titlebar__search')!;
+    const measure = () => {
+      if (window.innerWidth <= 768) return;
+      const style = getComputedStyle(header);
+      const expandedWidth = parseFloat(style.getPropertyValue('--header-search-width'));
+      const minimumGap = parseFloat(style.getPropertyValue('--header-control-gap'));
+      const wasCollapsed = header.classList.contains('titlebar--search-collapsed');
+      // Measure both controls expanded so compacting the account cannot cause a resize loop.
+      header.classList.remove('titlebar--search-collapsed');
+      const bounds = header.getBoundingClientRect();
+      const navBounds = nav.getBoundingClientRect();
+      const available = bounds.right - parseFloat(style.paddingRight)
+        - (bounds.left + bounds.width / 2 + navBounds.width / 2);
+      const controlsWidth = right.getBoundingClientRect().right - right.firstElementChild!.getBoundingClientRect().left;
+      const expandedControls = controlsWidth - search.getBoundingClientRect().width + expandedWidth;
+      header.classList.toggle('titlebar--search-collapsed', wasCollapsed);
+      setSearchCollapsed(previous => expandedControls + minimumGap + (previous ? 4 : 0) > available);
+    };
+    const observer = new ResizeObserver(measure);
+    const observeControls = () => {
+      observer.disconnect();
+      [header, nav, right, search, ...right.children].forEach(element => observer.observe(element));
+      measure();
+    };
+    const mutations = new MutationObserver(observeControls);
+    mutations.observe(right, { childList: true, subtree: true });
+    observeControls();
+    return () => { observer.disconnect(); mutations.disconnect(); };
+  }, []);
   const [isDesktop, setIsDesktop] = useState(false);
   const navigationSearchShortcut = /Mac|iPhone|iPad|iPod/.test(navigator.userAgent) ? '⌘ K' : 'Ctrl+K';
 
@@ -971,7 +1007,7 @@ const App: React.FC = () => {
     <NexusAccountProvider>
       <a href="#main-content" className="skip-link">{t('Skip to main content')}</a>
       <div className="app">
-        <header className={`titlebar titlebar--with-account${isDesktop ? ' titlebar--desktop' : ''}`} data-tauri-drag-region>
+        <header ref={titlebarRef} className={`titlebar titlebar--with-account${searchCollapsed ? ' titlebar--search-collapsed' : ''}${isDesktop ? ' titlebar--desktop' : ''}`} data-tauri-drag-region>
         <div className="titlebar__brand" data-tauri-drag-region>
           <span className="titlebar__brand-logo" data-tauri-drag-region>
             <span className="titlebar__brand-icon" aria-hidden="true" />
@@ -1140,15 +1176,6 @@ const App: React.FC = () => {
                 </span>
               </div>
               <button
-                className="titlebar__theme-toggle"
-                onClick={() => { toggleTheme(); setUtilityMenuOpen(false); }}
-                aria-label={t('Toggle theme')}
-                title={theme === 'dark' ? t('Switch to light mode') : t('Switch to dark mode')}
-              >
-                <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={16} />
-                <span className="titlebar__utility-label">{theme === 'dark' ? t('Light mode') : t('Dark mode')}</span>
-              </button>
-              <button
                 className={`titlebar__download-toggle${downloadManagerOpen ? ' is-active' : ''}${activeDownloadCount > 0 ? ' has-active-downloads' : ''}`}
                 onClick={() => { setDownloadManagerOpen(open => !open); setUtilityMenuOpen(false); setAccountMenuOpen(false); }}
                 onPointerEnter={() => { void downloadManagerView.preload().catch(() => undefined); }}
@@ -1164,6 +1191,7 @@ const App: React.FC = () => {
             </div>
           </div>
           <NexusAccountMenu open={accountMenuOpen} onOpenChange={handleAccountMenuChange}
+            theme={theme} onToggleTheme={toggleTheme}
             onOpenPage={() => navigateToRoute({ view: 'connect', section: 'nexus' })} />
           {isDesktop && (
             <div className="titlebar__window-controls" data-tauri-drag-region="false">
