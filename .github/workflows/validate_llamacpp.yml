@@ -970,16 +970,18 @@ jobs:
   # ========================================================================
   create-pr:
     name: Create update PR
-    needs: [get-latest-releases, verify-release-assets, validate, gpu-offload-gate]
+    needs: [get-latest-releases, verify-release-assets, validate, gpu-offload-gate, validation-gate]
     runs-on: ubuntu-latest
     permissions:
       contents: write
       pull-requests: write
     if: >-
+      always() &&
       (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
-      needs.validate.result == 'success' &&
+      needs.get-latest-releases.result == 'success' &&
       needs.verify-release-assets.result == 'success' &&
-      needs.gpu-offload-gate.result == 'success'
+      (needs.validate.result == 'success' || needs.validate.result == 'failure') &&
+      needs.gpu-offload-gate.result != 'cancelled'
     steps:
       - uses: actions/checkout@v5
 
@@ -1044,16 +1046,74 @@ jobs:
             {
               echo '### API documentation needs attention: draft update PR'
               echo "$reason"
-              echo 'The release pins and GPU validation are unaffected.'
+              echo 'Documentation verification is independent of inference validation.'
             } >> "$GITHUB_STEP_SUMMARY"
           fi
           rm -rf api-examples-artifact
 
       - name: Download validation results
+        id: validation_results
+        continue-on-error: true
         uses: actions/download-artifact@v7
         with:
           pattern: validation-results-*
           merge-multiple: true
+
+      - name: Classify backend validation
+        id: backend_validation
+        shell: bash
+        env:
+          INFERENCE_RESULT: ${{ needs.validate.result }}
+          GPU_GATE_RESULT: ${{ needs.gpu-offload-gate.result }}
+          REGRESSION_GATE_RESULT: ${{ needs.validation-gate.result }}
+          ARTIFACT_OUTCOME: ${{ steps.validation_results.outcome }}
+        run: |
+          set -euo pipefail
+          reason=''
+          if [[ "$INFERENCE_RESULT" != 'success' ]]; then
+            reason="Inference validation: $INFERENCE_RESULT."
+          elif [[ "$GPU_GATE_RESULT" != 'success' ]]; then
+            reason="GPU offload gate: $GPU_GATE_RESULT."
+          elif [[ "$REGRESSION_GATE_RESULT" != 'success' ]]; then
+            reason="llama.cpp validation gate (including architecture-source tests): $REGRESSION_GATE_RESULT."
+          elif [[ "$ARTIFACT_OUTCOME" != 'success' ]]; then
+            reason='Validation result artifacts could not be downloaded.'
+          else
+            for backend in vulkan rocm-stable rocm-nightly; do
+              file="llamacpp_validation_${backend}.json"
+              if [[ ! -s "$file" ]]; then
+                reason="Validation results missing for $backend."
+                break
+              fi
+              if ! python3 - "$file" <<'PYVALID'
+          import json
+          import sys
+          with open(sys.argv[1], encoding='utf-8') as f:
+              results = json.load(f)
+          if not isinstance(results, list) or not results or not all(
+              isinstance(item, dict) and isinstance(item.get('model'), str)
+              and item.get('pass') is True for item in results
+          ):
+              raise SystemExit('Invalid validation results structure')
+          PYVALID
+              then
+                reason="Validation results are invalid or contain failures for $backend."
+                break
+              fi
+            done
+          fi
+          ok=true
+          if [[ -n "$reason" ]]; then
+            ok=false
+            echo "::warning::$reason Creating a draft update PR."
+            {
+              echo '### Backend validation failed: draft update PR'
+              echo "$reason"
+              echo 'Do not merge before the backend and GPU-offload checks pass.'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "ok=$ok" >> "$GITHUB_OUTPUT"
+          echo "reason=$reason" >> "$GITHUB_OUTPUT"
 
       - name: Update backend_versions.json with verified releases
         shell: bash
@@ -1125,6 +1185,8 @@ jobs:
         env:
           API_DOCS_OK: ${{ steps.api_docs.outputs.ok }}
           API_DOCS_REASON: ${{ steps.api_docs.outputs.reason }}
+          BACKEND_OK: ${{ steps.backend_validation.outputs.ok }}
+          BACKEND_REASON: ${{ steps.backend_validation.outputs.reason }}
           WORKFLOW_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           LLAMACPP_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_release }}
           LLAMACPP_ROCM_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_rocm_release }}
@@ -1157,23 +1219,33 @@ jobs:
               return release if enabled else "unchanged"
 
           body_lines = []
-          if os.environ.get("API_DOCS_OK") != "true":
+          backend_ok = os.environ.get("BACKEND_OK") == "true"
+          docs_ok = os.environ.get("API_DOCS_OK") == "true"
+          if not backend_ok or not docs_ok:
               body_lines += [
                   "> [!CAUTION]",
-                  "> **API DOCUMENTATION VERIFICATION FAILED OR WAS NOT AVAILABLE.**",
-                  "> This PR is intentionally a **DRAFT**. The configured inference",
-                  "> and GPU offload gates passed, but API examples could not be recorded",
-                  "> and verified against these candidate backend versions.",
-                  f"> **Reason:** {os.environ.get('API_DOCS_REASON') or 'See workflow logs.'}",
+                  "> **THIS AUTO-UPDATE IS NOT VALIDATED AND MUST REMAIN A DRAFT.**",
+              ]
+              if not backend_ok:
+                  body_lines += [
+                      "> **Backend validation did not pass.** Inference, GPU offload,",
+                      "> or the required validation results need attention.",
+                      f"> **Backend reason:** {os.environ.get('BACKEND_REASON') or 'See workflow logs.'}",
+                  ]
+              if not docs_ok:
+                  body_lines += [
+                      "> **API documentation verification did not pass or was unavailable.**",
+                      f"> **Docs reason:** {os.environ.get('API_DOCS_REASON') or 'See workflow logs.'}",
+                  ]
+              body_lines += [
                   f"> **Investigate:** {os.environ['WORKFLOW_RUN_URL']}",
-                  "> Do **not** mark ready or merge before resolving the documentation issue.",
+                  "> Do **not** mark ready or merge until all checks pass.",
                   "",
               ]
           else:
               body_lines += [
                   "> [!NOTE]",
-                  "> **API documentation verified:** examples were recorded using the",
-                  "> candidate backend pins and `gen_api_boilerplate.py --check` passed.",
+                  "> **Backend and API documentation verification passed.**",
                   "",
               ]
           llamacpp = os.environ.get("LLAMACPP_RELEASE", "unknown")
@@ -1237,9 +1309,18 @@ jobs:
               results_file = f"llamacpp_validation_{backend}.json"
               if not os.path.isfile(results_file):
                   continue
+              try:
+                  with open(results_file, "r") as f:
+                      results = json.load(f)
+                  if not isinstance(results, list) or not all(
+                      isinstance(r, dict) and isinstance(r.get("model"), str)
+                      and isinstance(r.get("pass"), bool) for r in results
+                  ):
+                      raise ValueError("invalid result entries")
+              except (OSError, ValueError, TypeError) as error:
+                  print(f"Skipping invalid validation report {results_file}: {error}")
+                  continue
               available_backends.append(backend)
-              with open(results_file, "r") as f:
-                  results = json.load(f)
               for r in results:
                   model = r["model"]
                   if model not in per_model:
@@ -1296,32 +1377,88 @@ jobs:
       - name: Create Pull Request
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BACKEND_OK: ${{ steps.backend_validation.outputs.ok }}
+          API_DOCS_OK: ${{ steps.api_docs.outputs.ok }}
           LLAMACPP_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_release }}
           LLAMACPP_ROCM_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_rocm_release }}
           LLAMACPP_LEMONADE_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_lemonade_release }}
         run: |
           BRANCH="auto/llamacpp-update-${LLAMACPP_RELEASE}-${LLAMACPP_LEMONADE_RELEASE}-${LLAMACPP_ROCM_RELEASE}"
 
-          # Check if a PR already exists for this update
-          EXISTING_PR=$(gh pr list --head "$BRANCH" --json number --jq '.[0].number' 2>/dev/null || echo "")
+          # Reuse an open PR for this release tuple, including a retry branch if
+          # an older closed PR left the original branch name behind.
+          EXISTING_ROW=$(gh pr list --state open --limit 200 --json number,headRefName |
+            BRANCH_PREFIX="$BRANCH" python3 -c 'import json,os,sys; p=os.environ["BRANCH_PREFIX"]; a=json.load(sys.stdin); q=next((x for x in a if x["headRefName"]==p),None) or next((x for x in a if x["headRefName"].startswith(p+"-")),None); print(str(q["number"])+" "+q["headRefName"] if q else "")')
+          EXISTING_PR=""
+          if [[ -n "$EXISTING_ROW" ]]; then
+            EXISTING_PR="${EXISTING_ROW%% *}"
+            BRANCH="${EXISTING_ROW#* }"
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          pr_title="Update llama.cpp to ${LLAMACPP_RELEASE}"
+          if [[ "$BACKEND_OK" != 'true' ]]; then
+            pr_title="[Backend validation failed] $pr_title"
+          elif [[ "$API_DOCS_OK" != 'true' ]]; then
+            pr_title="[Docs review required] $pr_title"
+          fi
+
           if [ -n "$EXISTING_PR" ]; then
-            if [ "${{ steps.api_docs.outputs.ok }}" != "true" ]; then
-              # An existing bot PR must not silently stay ready if docs regressed.
-              if [ "$(gh pr view "$EXISTING_PR" --json isDraft --jq .isDraft)" != "true" ]; then
+            # Only update bot-owned PRs. Never modify a contributor's branch.
+            author=$(gh pr view "$EXISTING_PR" --json author --jq '.author.login')
+            if [[ "$author" != 'app/github-actions' && "$author" != 'github-actions[bot]' ]]; then
+              echo "::error::PR #$EXISTING_PR is not owned by github-actions[bot]."
+              exit 1
+            fi
+            was_draft=$(gh pr view "$EXISTING_PR" --json isDraft --jq .isDraft)
+            old_title=$(gh pr view "$EXISTING_PR" --json title --jq .title)
+            if [[ "$BACKEND_OK" != 'true' || "$API_DOCS_OK" != 'true' ]]; then
+              if [[ "$was_draft" != 'true' ]]; then
                 gh pr ready "$EXISTING_PR" --undo
               fi
-              gh pr edit "$EXISTING_PR" --title "[Docs review required] Update llama.cpp to ${LLAMACPP_RELEASE}" --body-file pr_body.md
+              gh pr edit "$EXISTING_PR" --title "$pr_title" --body-file pr_body.md
+              echo "PR #$EXISTING_PR now requires review."
+              exit 0
             fi
-            echo "PR #$EXISTING_PR already exists for branch $BRANCH. Skipping."
+
+            # Re-recorded examples must reach the original bot draft on recovery.
+            # Keep ordinary PRs untouched (a rerun would cause noisy random docs).
+            if [[ "$was_draft" != 'true' ]]; then
+              echo "PR #$EXISTING_PR is not a draft. Skipping."
+              exit 0
+            fi
+            if [[ "$old_title" != '[Docs review required] '* &&
+                  "$old_title" != '[Backend validation failed] '* ]]; then
+              echo "PR #$EXISTING_PR is a manually held draft. Skipping."
+              exit 0
+            fi
+            worktree=$(mktemp -d)
+            git fetch --no-tags origin "$BRANCH"
+            git worktree add --detach "$worktree" FETCH_HEAD
+            mkdir -p "$worktree/src/cpp/resources" "$worktree/src/cpp/include/lemon" \
+              "$worktree/docs/tools" "$worktree/docs/api"
+            cp src/cpp/resources/backend_versions.json "$worktree/src/cpp/resources/"
+            cp src/cpp/include/lemon/llamacpp_architectures_generated.h "$worktree/src/cpp/include/lemon/"
+            cp docs/tools/api_examples_cache.json "$worktree/docs/tools/"
+            cp -R docs/api/. "$worktree/docs/api/"
+            git -C "$worktree" add -- src/cpp/resources/backend_versions.json \
+              src/cpp/include/lemon/llamacpp_architectures_generated.h \
+              docs/tools/api_examples_cache.json docs/api
+            if ! git -C "$worktree" diff --cached --quiet; then
+              git -C "$worktree" commit -m "Update verified API examples for ${LLAMACPP_RELEASE}"
+              git -C "$worktree" push origin "HEAD:$BRANCH"
+            fi
+            git worktree remove "$worktree"
+            gh pr edit "$EXISTING_PR" --title "$pr_title" --body-file pr_body.md
+            gh pr ready "$EXISTING_PR"
+            echo "PR #$EXISTING_PR recovered with verified documentation."
             exit 0
           fi
           # A closed prior auto-PR can leave its branch behind. Never overwrite it.
           if git ls-remote --exit-code --heads origin "$BRANCH" > /dev/null 2>&1; then
             BRANCH="${BRANCH}-${GITHUB_RUN_ID}"
           fi
-
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
 
           # Skip if backend_versions.json is already up to date
           if git diff --quiet src/cpp/resources/backend_versions.json src/cpp/include/lemon/llamacpp_architectures_generated.h; then
@@ -1331,7 +1468,7 @@ jobs:
 
           git checkout -b "$BRANCH"
           git add -- src/cpp/resources/backend_versions.json src/cpp/include/lemon/llamacpp_architectures_generated.h
-          if [ "${{ steps.api_docs.outputs.ok }}" = "true" ]; then
+          if [[ "$BACKEND_OK" == 'true' && "$API_DOCS_OK" == 'true' ]]; then
             git add -- docs/tools/api_examples_cache.json docs/api
           fi
           # A broken recording is represented by a draft, never by partial docs.
@@ -1339,10 +1476,8 @@ jobs:
           git push origin "$BRANCH"
 
           pr_args=()
-          pr_title="Update llama.cpp to ${LLAMACPP_RELEASE}"
-          if [ "${{ steps.api_docs.outputs.ok }}" != "true" ]; then
+          if [[ "$BACKEND_OK" != 'true' || "$API_DOCS_OK" != 'true' ]]; then
             pr_args+=(--draft)
-            pr_title="[Docs review required] $pr_title"
           fi
           gh pr create "${pr_args[@]}" \
             --title "$pr_title" \
