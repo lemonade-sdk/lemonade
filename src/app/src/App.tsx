@@ -472,6 +472,8 @@ const App: React.FC = () => {
 
       if (cancelled) return;
 
+      void downloadManagerView.preload().catch(() => undefined);
+
       // First warm only the two interactions users can notice immediately:
       // Models -> Details and Monitor -> Telemetry. This starts after reveal,
       // so it cannot regress first paint. The remaining interaction surfaces
@@ -1149,6 +1151,8 @@ const App: React.FC = () => {
               <button
                 className={`titlebar__download-toggle${downloadManagerOpen ? ' is-active' : ''}${activeDownloadCount > 0 ? ' has-active-downloads' : ''}`}
                 onClick={() => { setDownloadManagerOpen(open => !open); setUtilityMenuOpen(false); setAccountMenuOpen(false); }}
+                onPointerEnter={() => { void downloadManagerView.preload().catch(() => undefined); }}
+                onFocus={() => { void downloadManagerView.preload().catch(() => undefined); }}
                 aria-label={t('Open download manager')}
                 aria-expanded={downloadManagerOpen}
                 title={t('Download manager')}
@@ -1196,7 +1200,13 @@ const App: React.FC = () => {
       </header>
 
       {downloadManagerMountedRef.current && (
-        <Suspense fallback={downloadManagerOpen ? <ViewLoadingFallback label={t('Loading downloads')} /> : null}>
+        <Suspense fallback={downloadManagerOpen ? (
+          <div className="download-manager" role="dialog" aria-modal="false" aria-label={t('Download manager')} onClick={() => setDownloadManagerOpen(false)}>
+            <div className="download-manager__panel" onClick={event => event.stopPropagation()}>
+              <ViewLoadingFallback label={t('Loading downloads')} />
+            </div>
+          </div>
+        ) : null}>
           <DownloadManager isVisible={downloadManagerOpen} onClose={() => setDownloadManagerOpen(false)} />
         </Suspense>
       )}
