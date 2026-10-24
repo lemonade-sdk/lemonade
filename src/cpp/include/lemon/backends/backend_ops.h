@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include "lemon/model_manager.h"  // ModelInfo, DownloadProgressCallback
+#include "lemon/utils/container_manager.h"
 
 namespace lemon {
 
@@ -164,6 +165,9 @@ public:
 
 // Shared default ops instance for backends that override nothing.
 const BackendOps* default_backend_ops();
+
+// nullopt when the host is ready to run container backends.
+std::optional<utils::SetupReport> container_setup_failure();
 
 } // namespace backends
 } // namespace lemon

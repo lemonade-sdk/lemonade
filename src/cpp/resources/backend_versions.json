@@ -59,7 +59,8 @@
     "rocm-nightly": "b1338",
     "cuda": "b11395",
     "metal": "b11393",
-    "cpu": "b11393"
+    "cpu": "b11393",
+    "nathanw": "vulkan-radv-performance@sha256:548fabbe96e2f9dbadd24de50a3f395f883069e8cda858fae1bf01913a454073"
   },
   "llamacpp-hrx": {
     "hrx": "hrx-b99"

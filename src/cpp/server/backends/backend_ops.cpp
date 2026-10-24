@@ -130,5 +130,18 @@ const BackendOps* default_backend_ops() {
     return &kDefault;
 }
 
+std::optional<utils::SetupReport> container_setup_failure() {
+    const auto& manager = utils::ContainerManager::global();
+    utils::SetupReport report;
+    report.failures = manager.check_host();
+    if (report.empty()) {
+        if (auto failure = manager.check_podman()) {
+            report.failures.push_back(*failure);
+        }
+    }
+    if (report.empty()) return std::nullopt;
+    return report;
+}
+
 } // namespace backends
 } // namespace lemon

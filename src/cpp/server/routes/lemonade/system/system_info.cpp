@@ -196,9 +196,10 @@ ordered_json system_info_schema() {
                                 "required": ["devices", "state", "tier", "format"],
                                 "properties": {
                                     "devices": {"type": "array", "items": {"type": "string"}, "description": "Devices **on this system** that support this backend; empty when none do."},
-                                    "state": {"enum": ["unsupported", "installable", "update_required", "update_available", "installed"], "description": "Backend lifecycle state: `unsupported`, `installable`, `update_required`, `update_available` or `installed`."},
+                                    "state": {"enum": ["unsupported", "installable", "update_required", "update_available", "action_required", "installed"], "description": "Backend lifecycle state: `unsupported`, `installable`, `update_required`, `update_available`, `action_required` or `installed`."},
                                     "message": {"type": "string", "description": "Human-readable status text for GUI and CLI users. Required for `unsupported`, `installable`, and `update_required`; empty for `installed`."},
                                     "action": {"type": "string", "description": "An instruction for the user: for install and update, usually the exact CLI command; for other states it may be empty or another action, such as a URL."},
+                                    "setup_checks": {"type": "array", "items": {"type": "string"}, "description": "For a container backend in the `action_required` state, the ids of its failed setup checks, in the order of `message`'s lines (for example `[\"container_tool\", \"device_groups\"]`). `message` then holds one failed check per line and `action` the numbered steps that fix them. See [Container Backends](../guide/configuration/container-backends.md)."},
                                     "version": {"type": "string", "description": "Installed or configured backend version (when available)"},
                                     "tier": {"enum": ["core", "experimental", "guest"], "description": "`core`, `experimental`, or `guest`. See [Backend Tiers and Formats](#backend-tiers-and-formats)."},
                                     "format": {"enum": ["native", "python", "container"], "description": "`native`, `python`, or `container`. See [Backend Tiers and Formats](#backend-tiers-and-formats)."},
@@ -297,6 +298,15 @@ public:
         }
 
         json system_info = SystemInfoCache::get_system_info_with_cache();
+
+        // Container setup checks run on every request, so a completed setup step
+        // shows up without a restart.
+        if (system_info.contains("recipes") &&
+            SystemInfo::refresh_container_setup(system_info["recipes"])) {
+            SystemInfoCache::invalidate_recipes();
+            ctx_.model_manager->invalidate_models_cache();
+            system_info = SystemInfoCache::get_system_info_with_cache();
+        }
 
         if (system_info.contains("recipes")) {
             enrich_recipes(ctx_.backend_manager, system_info["recipes"]);
