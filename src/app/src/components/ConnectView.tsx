@@ -4,8 +4,7 @@ import { clearClientStorage } from '../storage';
 import { Icon, IconName } from './Icon';
 import GlobalModelSettingsPanel from './GlobalModelSettingsPanel';
 import McpPanel from './McpPanel';
-import NexusPanel from './NexusPanel';
-import { selectNexusInferenceServer } from '../features/nexus/nexus';
+import { NexusAccountPage } from './NexusAccount';
 import WorkspaceSectionRail from './WorkspaceSectionRail';
 import { WORKSPACE_NAVIGATION, type ConnectSection } from '../features/navigation/workspaceNavigation';
 import {
@@ -321,7 +320,7 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
     ?? WORKSPACE_NAVIGATION.connect.sections[0];
 
   return (
-    <div className={`connect connect--workspace${railCollapsed ? ' workspace--rail-collapsed' : ''}`} data-view="connect">
+    <div className={`connect connect--workspace${activeSection === 'nexus' ? ' connect--nexus' : ''}${railCollapsed ? ' workspace--rail-collapsed' : ''}`} data-view="connect">
       <WorkspaceSectionRail
         sections={WORKSPACE_NAVIGATION.connect.sections}
         activeSection={activeSection}
@@ -353,19 +352,12 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
       <section className="workspace-pane connect__main" aria-labelledby="connect-pane-title">
         <WorkspacePaneHeader
           title={t(section.label)}
-          subtitle={t(section.description)}
+          subtitle={activeSection === 'nexus' ? t('Your account and connected devices.') : t(section.description)}
           titleId="connect-pane-title"
         />
 
         <div className="connect__layout workspace-pane__scroll">
-        {activeSection === 'devices-and-mesh' && <NexusPanel isActive={isActive} onConnect={async (nodeId, remoteKey) => {
-          await selectNexusInferenceServer(nodeId, remoteKey);
-          setHost(api.baseUrl);
-          setApiKey(api.apiKey);
-          setRememberApiKey(false);
-          setNotice(`Connected to ${api.baseUrl}.`);
-          onSectionChange('server');
-        }} />}
+        {activeSection === 'nexus' && <NexusAccountPage />}
         {activeSection === 'server' && (
         <section className="connect__section connect__section--server">
           <form className="connect__form" onSubmit={e => { e.preventDefault(); handleConnect(); }}>

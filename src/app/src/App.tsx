@@ -1,6 +1,8 @@
 import React, { lazy, Suspense, useState, useEffect, useCallback, useMemo, useRef, Component, ErrorInfo, ReactNode } from 'react';
 import type { LoadedModel, ModelInfo } from './api';
 import { Icon } from './components/Icon';
+import { NexusAccountMenu } from './components/NexusAccount';
+import { NexusAccountProvider } from './features/nexus/NexusAccountContext';
 import ChatView from './components/ChatView';
 import { scheduleIdleWork } from './startupScheduler';
 import { attachServerModelState, useServerModelState } from './features/models/modelState';
@@ -107,7 +109,6 @@ const BackendManager = backendManagerView.View;
 const AppsView = appsWorkspaceView.View;
 const MonitorView = monitorWorkspaceView.View;
 const ConnectView = connectWorkspaceView.View;
-const NexusShortcut = React.lazy(() => import(/* webpackChunkName: "nexus-shortcut" */ './components/NexusShortcut'));
 const DownloadManager = downloadManagerView.View;
 
 type View = 'chat' | 'models' | 'backends' | 'apps' | 'dashboard' | 'connect';
@@ -399,6 +400,14 @@ const App: React.FC = () => {
   const [clientDataResetNonce, setClientDataResetNonce] = useState(0);
   const [modelHelpers, setModelHelpers] = useState<ModelHelpers | null>(null);
   const [downloadManagerOpen, setDownloadManagerOpen] = useState(false);
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const handleAccountMenuChange = useCallback((open: boolean) => {
+    setAccountMenuOpen(open);
+    if (open) {
+      setDownloadManagerOpen(false);
+      setUtilityMenuOpen(false);
+    }
+  }, []);
   const downloadManagerMountedRef = useRef(false);
   if (downloadManagerOpen) downloadManagerMountedRef.current = true;
   const [modelDetailsRequest, setModelDetailsRequest] = useState<{ modelName: string; nonce: number } | null>(null);
@@ -957,10 +966,10 @@ const App: React.FC = () => {
   }, [handleModelSelect]);
 
   return (
-    <>
+    <NexusAccountProvider>
       <a href="#main-content" className="skip-link">{t('Skip to main content')}</a>
       <div className="app">
-        <header className={`titlebar${isDesktop ? ' titlebar--desktop' : ''}`} data-tauri-drag-region>
+        <header className={`titlebar titlebar--with-account${isDesktop ? ' titlebar--desktop' : ''}`} data-tauri-drag-region>
         <div className="titlebar__brand" data-tauri-drag-region>
           <span className="titlebar__brand-logo" data-tauri-drag-region>
             <span className="titlebar__brand-icon" aria-hidden="true" />
@@ -1001,7 +1010,6 @@ const App: React.FC = () => {
         </nav>
 
         <div className="titlebar__right" data-tauri-drag-region>
-          <Suspense fallback={null}><NexusShortcut onOpen={() => navigateToRoute({ view: 'connect', section: 'devices-and-mesh' })} /></Suspense>
           <div
             ref={utilityMenuRef}
             className={`titlebar__utilities${utilityMenuOpen ? ' is-open' : ''}`}
@@ -1140,7 +1148,7 @@ const App: React.FC = () => {
               </button>
               <button
                 className={`titlebar__download-toggle${downloadManagerOpen ? ' is-active' : ''}${activeDownloadCount > 0 ? ' has-active-downloads' : ''}`}
-                onClick={() => { setDownloadManagerOpen(open => !open); setUtilityMenuOpen(false); }}
+                onClick={() => { setDownloadManagerOpen(open => !open); setUtilityMenuOpen(false); setAccountMenuOpen(false); }}
                 aria-label={t('Open download manager')}
                 aria-expanded={downloadManagerOpen}
                 title={t('Download manager')}
@@ -1151,6 +1159,8 @@ const App: React.FC = () => {
               </button>
             </div>
           </div>
+          <NexusAccountMenu open={accountMenuOpen} onOpenChange={handleAccountMenuChange}
+            onOpenPage={() => navigateToRoute({ view: 'connect', section: 'nexus' })} />
           {isDesktop && (
             <>
               <button
@@ -1284,7 +1294,7 @@ const App: React.FC = () => {
         )}
       </main>
       </div>
-    </>
+    </NexusAccountProvider>
   );
 };
 

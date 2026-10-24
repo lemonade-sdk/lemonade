@@ -52,12 +52,12 @@ export const WORKSPACE_NAVIGATION = {
   ] as const, 'Monitor'),
   connect: defineWorkspace('connect', [
     defineSection('server', 'Endpoint and authentication', 'plug'),
-    defineSection('devices-and-mesh', 'Your network, linked devices and invites', 'router'),
     defineSection('chat', 'History, reasoning, and speech', 'chat'),
     defineSection('memory', 'Budget, Loading and eviction', 'gauge'),
     defineSection('model-storage', 'Cache and custom directories', 'hard-drive'),
     defineSection('cloud-providers', 'OpenAI-compatible services', 'cloud'),
     defineSection('mcp-gateway', 'Tools and external servers', 'tools'),
+    defineSection('nexus', 'Account and devices', 'user-round'),
     defineSection('help-and-support', 'Docs, releases and community', 'book-open'),
   ] as const, 'Settings'),
 } as const;
@@ -80,7 +80,9 @@ export function workspaceRouteFromPath(path: string): WorkspaceRoute | null {
   if (rest.length > 0 || !isRoutedWorkspace(workspaceValue)) return null;
 
   const definition = WORKSPACE_NAVIGATION[workspaceValue];
-  const section = sectionValue || definition.defaultSection;
+  const section = workspaceValue === 'connect' && sectionValue === 'devices-and-mesh'
+    ? 'nexus'
+    : sectionValue || definition.defaultSection;
   if (!definition.sections.some(item => item.id === section)) return null;
   return { workspace: workspaceValue, section } as WorkspaceRoute;
 }

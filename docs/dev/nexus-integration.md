@@ -1,5 +1,10 @@
 # Nexus integration
 
+For this GUI3 checkout, see [Nexus account UI](nexus-account-ui.md) for the
+account dropdown, passwordless sign-in, Basic/Advanced views and recursive
+group-management routes.
+The UI walkthrough below describes the original integration panel.
+
 Lemonade links the client SDK in `src/LemonadeNexusSDK`. SDK headers, sources,
 Rust transport crates and build rules stay in that directory. There is no Nexus
 server, submodule, nested repository, or networking sidecar. The shared C
@@ -153,6 +158,10 @@ Routes are available under `/api/v0/nexus/`, `/api/v1/nexus/`, `/v0/nexus/`,
 | POST | `invites`, `invites/cancel`, `join` | Invite or join a group |
 | GET | `devices` | Group devices with tier, admin flag and permissions |
 | GET | `members` | Devices plus `can_manage` (this device is an admin) |
+| GET | `account` | Verified current account ID, membership identity, device ID, role and devices; local-only |
+| GET | `tree`, `tree/{id}/children` | Current group or a descendant group and direct children |
+| POST | `tree/{id}/groups`, `tree/{id}/rename` | Create a child group or rename a group with `{name}` |
+| POST | `tree/{id}/permissions` | Group assignment with `{member_node_id, admin, permissions}` |
 | POST | `members/{node_id}/role` | `{"role": "admin" \| "member"}` |
 | POST | `members/{node_id}/permissions` | `{"permissions": [...]}` on the group node |
 | GET, POST | `devices/{node_id}/access` | Device access list; POST `{"member_node_id", "see", "connect"}` |
@@ -184,6 +193,11 @@ a local-only route. `LEMONADE_ADMIN_API_KEY` is also accepted once
 `LEMONADE_API_KEY` is set. Keys are compared in constant time. The public
 listener's origin checks still apply. Remote `status` omits `controller_url`
 and reports `remote_management`.
+
+`account` is a local management operation and is refused on remote and mesh
+ingress requests. It requires an unlocked, joined session and known current
+membership permissions. It contains no private key material or client display
+label; those labels belong to the GUI3 client.
 
 The desktop discovers the management listener through `status` and sends the
 local API key directly. It rediscovers the listener once when a request cannot
