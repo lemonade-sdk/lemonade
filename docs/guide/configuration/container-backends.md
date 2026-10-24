@@ -27,6 +27,8 @@ When `lemond` runs under your own account, from a shell, a `systemctl --user` un
 
 Container backends start disabled. Pass `--yes` to `lemonade config set enable_containers=true` to skip the confirmation in scripts. If enabling them is the only step left, `lemonade backends install` and `lemonade run` ask for it themselves.
 
+When `lemond` runs as `lemond.service`, installed by the `.deb`, PPA or `.rpm` package, it runs under the `lemonade` account. The package pulls in Podman, adds `lemonade` to `video` and `render`, and allocates its subordinate UID and GID range, so Podman needs no further setup. To use Docker instead, run `sudo usermod -aG docker lemonade` and `sudo systemctl restart lemond`.
+
 Until setup is complete, the backend's state is `action_required`. `lemonade backends` lists every missing step and the commands that complete them, `lemonade backends install` and `lemonade run` print the same list without downloading anything, and the Backend Manager shows the same. The state updates as soon as a step takes effect.
 
 ## Install and Run
