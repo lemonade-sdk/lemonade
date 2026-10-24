@@ -1,6 +1,32 @@
 import { expect, test } from '@playwright/test';
 import { setupNexusAccount } from './nexusAccountFixture';
 
+test('account and downloads switch on click in both directions', async ({ page }) => {
+  await setupNexusAccount(page);
+  const account = page.locator('.nexus-account-trigger');
+  const downloads = page.getByRole('button', { name: 'Open download manager', exact: true });
+  const accountPanel = page.getByRole('dialog', { name: 'Lemonade Account', exact: true });
+  const downloadPanel = page.getByRole('dialog', { name: 'Download manager', exact: true });
+  await account.click();
+  await downloads.focus();
+  await expect(accountPanel).toBeVisible();
+  await downloads.hover();
+  await page.mouse.down();
+  await expect(accountPanel).toBeVisible();
+  await expect(downloadPanel).toHaveCount(0);
+  await page.mouse.up();
+  await expect(downloadPanel).toBeVisible();
+  await expect(accountPanel).toHaveCount(0);
+  await account.focus();
+  await account.hover();
+  await page.mouse.down();
+  await expect(downloadPanel).toBeVisible();
+  await expect(accountPanel).toHaveCount(0);
+  await page.mouse.up();
+  await expect(accountPanel).toBeVisible();
+  await expect(downloadPanel).toHaveCount(0);
+});
+
 for (const desktop of [true, false]) {
   test(`${desktop ? 'desktop' : 'browser'} search responds to control width`, async ({ page }) => {
     await page.setViewportSize({ width: 1800, height: 800 });
