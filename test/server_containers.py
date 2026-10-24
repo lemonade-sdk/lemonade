@@ -165,10 +165,10 @@ class ContainerSmokeTest(unittest.TestCase):
         self.assertEqual(labeled("network"), [])
 
     def test_05_killed_lemond_leaves_no_container(self):
-        if args.tool == "podman" and args.mode == "rootful":
-            # The container belongs to the Podman service, which outlives a
-            # killed client and keeps it running.
-            self.skipTest("rootful Podman keeps the container after lemond dies")
+        if args.mode == "rootful":
+            # The container belongs to the Podman service or the Docker daemon,
+            # which outlives a killed client and can keep it running.
+            self.skipTest(f"rootful {args.tool} keeps the container after lemond dies")
         recipe, backend = args.backend.split(":")
         response = load_model(
             ENDPOINT_TEST_MODEL, port=self.port, **{f"{recipe}_backend": backend}
