@@ -38,6 +38,11 @@ MIN_SITES = 3
 # repeat of it -- which is exactly the shape a cut should leave behind.
 POINTER_RE = re.compile(r"\bsee\s+\S", re.IGNORECASE)
 
+# Code copied verbatim from another repository keeps that project's comment style and
+# changes only when it is re-vendored, so its diff is not checked. List only such
+# directories; everything else in the tree stays subject to the check.
+VENDORED_PREFIXES = ("src/LemonadeNexusSDK/",)
+
 # A test comment naming the invariant under test is the spec, even when the source
 # explains the same mechanism.
 TEST_PATH_RE = re.compile(r"(^|/)tests?(/|_|\.)|(^|/)testing(/|_)|_tests?\.|(^|/)test_")
@@ -282,7 +287,7 @@ def collect(diff):
     blocks, current, code = [], None, 0
     in_block, expected = False, None
     for path, lineno, text, is_comment in added_lines(diff):
-        if not path.endswith(SOURCE_SUFFIXES):
+        if not path.endswith(SOURCE_SUFFIXES) or path.startswith(VENDORED_PREFIXES):
             continue
 
         # The body of a /* */ block need not start its lines with a star, so whether a

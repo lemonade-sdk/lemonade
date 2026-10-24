@@ -1,0 +1,50 @@
+#!/bin/sh
+# Vendor the locked crates of the Nexus SDK's Rust transport into
+# debian/rust-vendor, so the package builds without network access.
+# Run from the source root after the build dependencies are installed,
+# before building the source or binary package.
+set -eu
+
+crates=src/LemonadeNexusSDK/crates
+out=debian/rust-vendor
+
+cargo=
+for candidate in "$(command -v cargo || true)" $(ls -d /usr/lib/rust-1.*/bin/cargo 2>/dev/null | sort -rV); do
+    [ -x "$candidate" ] || continue
+    version=$("$candidate" --version | sed -n 's/^cargo \([0-9]*\.[0-9]*\).*/\1/p')
+    if [ -n "$version" ] && [ "$(printf '%s\n' 1.85 "$version" | sort -V | head -n1)" = 1.85 ]; then
+        cargo=$candidate
+        break
+    fi
+done
+if [ -z "$cargo" ]; then
+    echo "vendor-rust-crates: Cargo 1.85 or newer is required" >&2
+    exit 1
+fi
+
+rm -rf "$out"
+"$cargo" vendor --locked --versioned-dirs \
+    --manifest-path "$crates/boringtun-ffi/Cargo.toml" \
+    --sync "$crates/virtual-netstack/Cargo.toml" \
+    --quiet "$out" >/dev/null
+
+# Windows import libraries are most of the vendored size and are never linked on
+# Linux. Cargo verifies the files listed in .cargo-checksum.json, so only the
+# entries of the deleted files are dropped.
+for dir in "$out"/winapi-*-pc-windows-gnu-* "$out"/windows_*; do
+    [ -d "$dir/lib" ] || continue
+    rm -rf "$dir/lib"
+    mkdir "$dir/lib"
+    python3 - "$dir/.cargo-checksum.json" <<'PY'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path) as stream:
+    checksum = json.load(stream)
+checksum["files"] = {name: digest for name, digest in checksum["files"].items() if not name.startswith("lib/")}
+with open(path, "w") as stream:
+    json.dump(checksum, stream)
+PY
+done
+du -sh "$out"

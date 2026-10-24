@@ -154,10 +154,19 @@ Server::Server(std::shared_ptr<RuntimeConfig> config,
 
     middleware_ = std::make_unique<RequestMiddleware>(config_.get(), registry_.get());
     web_ui_ = std::make_unique<WebUi>(ctx_);
+    nexus_manager_ = std::make_unique<NexusManager>(
+        config_dir,
+        [this](httplib::Server& server) { middleware_->install(server); },
+        [this](httplib::Server& server) {
+            middleware_->install(server);
+            registry_->apply(server);
+            web_ui_->register_routes(server);
+        });
     listener_ = std::make_unique<HttpListener>(
         config_.get(), router_.get(),
         [this](httplib::Server& server) {
             middleware_->install(server);
+            nexus_manager_->register_routes(server);
             registry_->apply(server);
             web_ui_->register_routes(server);
         },
@@ -234,6 +243,7 @@ void Server::run() {
 
 void Server::stop() {
     std::lock_guard<std::mutex> lock(stop_mutex_);
+    nexus_manager_->stop();
     if (listener_->stop()) {
         LOG(INFO, "Server") << "Unloading models and stopping backend servers..." << std::endl;
         try {

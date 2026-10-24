@@ -233,16 +233,15 @@ input[type="checkbox"]:disabled {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  width: 176px;
+  width: var(--header-search-width);
   height: 32px;
   padding: 0;
   color: var(--text-tertiary);
-  transition: width var(--duration-base) var(--ease-out),
-              color var(--duration-fast) var(--ease-out);
+  transition: color var(--duration-fast) var(--ease-out);
 }
 
 .titlebar__search:focus-within {
-  width: 208px;
+  width: var(--header-search-width);
   color: var(--text-secondary);
 }
 
@@ -498,10 +497,19 @@ input[type="checkbox"]:disabled {
 }
 .titlebar__theme-toggle:hover { background: var(--surface-2); }
 
+.titlebar__window-controls {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
 .titlebar__window-btn {
   display: flex;
   align-items: center;
   justify-content: center;
+  flex: 0 0 var(--icon-button-size);
+  min-width: var(--icon-button-size);
+  max-width: var(--icon-button-size);
   width: var(--icon-button-size);
   height: var(--icon-button-size);
   background: transparent;
@@ -540,6 +548,9 @@ input[type="checkbox"]:disabled {
 }
 
 .titlebar__window-icon {
+  width: 15px;
+  height: 15px;
+  flex: none;
   stroke-width: 1.5;
 }
 
@@ -11249,6 +11260,10 @@ optgroup {
   grid-template-rows: var(--workspace-header) minmax(0, 1fr);
 }
 
+.connect__main > .connect__layout:only-child {
+  grid-row: 1 / -1;
+}
+
 .connect__layout {
   padding: var(--space-5);
 }
@@ -11917,11 +11932,6 @@ a.backend-card__version:focus-visible {
   .titlebar--desktop .titlebar__utility-menu {
     gap: var(--space-1);
   }
-
-  .titlebar--desktop .titlebar__window-btn {
-    width: 32px;
-    height: 32px;
-  }
 }
 
 @media (max-width: 820px) {
@@ -12087,18 +12097,18 @@ a.backend-card__version:focus-visible {
 
 }
 
-@media (min-width: 769px) and (max-width: 1320px) {
-  .titlebar__search,
-  .titlebar__search:focus-within {
+@media (min-width: 769px) {
+  .titlebar--search-collapsed .titlebar__search,
+  .titlebar--search-collapsed .titlebar__search:focus-within {
     width: 32px;
     flex-basis: 32px;
   }
 
-  .titlebar__search-leading-icon { display: none; }
-  .titlebar__search-toggle { display: inline-flex; }
-  .titlebar__search-popover { display: none; }
+  .titlebar--search-collapsed .titlebar__search-leading-icon { display: none; }
+  .titlebar--search-collapsed .titlebar__search-toggle { display: inline-flex; }
+  .titlebar--search-collapsed .titlebar__search-popover { display: none; }
 
-  .titlebar__search.is-open .titlebar__search-popover {
+  .titlebar--search-collapsed .titlebar__search.is-open .titlebar__search-popover {
     width: min(320px, calc(100vw - 24px));
     display: block;
     position: absolute;
@@ -12112,9 +12122,9 @@ a.backend-card__version:focus-visible {
     box-shadow: var(--shadow-lg);
   }
 
-  .titlebar__search.is-open .titlebar__search-entry { width: 100%; }
+  .titlebar--search-collapsed .titlebar__search.is-open .titlebar__search-entry { width: 100%; }
 
-  .titlebar__search.is-open .titlebar__search-results {
+  .titlebar--search-collapsed .titlebar__search.is-open .titlebar__search-results {
     position: static;
     width: 100%;
     max-height: min(420px, calc(100vh - var(--titlebar-height) - 80px));
@@ -12122,92 +12132,6 @@ a.backend-card__version:focus-visible {
     overflow-y: auto;
   }
 
-  /* Apps uses the shared titlebar search as its primary pane search. Keep the
-     actual field visible at the standard Playwright/desktop width instead of
-     collapsing it behind the search icon. */
-  .titlebar__search.is-context-visible,
-  .titlebar__search.is-context-visible:focus-within {
-    width: 176px;
-    flex-basis: 176px;
-  }
-
-  .titlebar__search.is-context-visible .titlebar__search-leading-icon {
-    display: block;
-  }
-
-  .titlebar__search.is-context-visible .titlebar__search-toggle {
-    display: none;
-  }
-
-  .titlebar__search.is-context-visible .titlebar__search-popover,
-  .titlebar__search.is-context-visible.is-open .titlebar__search-popover {
-    position: relative;
-    inset: auto;
-    width: auto;
-    display: flex;
-    flex: 1;
-    padding: 0;
-    border: 0;
-    border-radius: 0;
-    background: transparent;
-    box-shadow: none;
-  }
-
-  .titlebar__search.is-context-visible.is-open .titlebar__search-results {
-    position: absolute;
-    top: calc(100% + var(--space-2));
-    left: 0;
-    width: 100%;
-    max-height: min(420px, calc(100vh - var(--titlebar-height) - 80px));
-    margin-top: 0;
-    overflow-y: auto;
-  }
-}
-
-@media (min-width: 769px) and (max-width: 1320px) {
-  .titlebar--desktop .titlebar__search.is-context-visible,
-  .titlebar--desktop .titlebar__search.is-context-visible:focus-within {
-    width: 32px;
-    flex-basis: 32px;
-  }
-
-  .titlebar--desktop .titlebar__search.is-context-visible .titlebar__search-leading-icon {
-    display: none;
-  }
-
-  .titlebar--desktop .titlebar__search.is-context-visible .titlebar__search-toggle {
-    display: inline-flex;
-  }
-
-  .titlebar--desktop .titlebar__search.is-context-visible .titlebar__search-popover {
-    display: none;
-  }
-
-  .titlebar--desktop .titlebar__search.is-context-visible.is-open .titlebar__search-popover {
-    width: min(320px, calc(100vw - 24px));
-    display: block;
-    position: absolute;
-    inset: auto 0 auto auto;
-    top: calc(100% + var(--space-2));
-    z-index: 80;
-    padding: var(--space-2);
-    border: 1px solid var(--border-strong);
-    border-radius: var(--radius-lg);
-    background: var(--surface-raised);
-    box-shadow: var(--shadow-lg);
-  }
-
-  .titlebar--desktop .titlebar__search.is-context-visible.is-open .titlebar__search-entry {
-    width: 100%;
-  }
-
-  .titlebar--desktop .titlebar__search.is-context-visible.is-open .titlebar__search-results {
-    position: static;
-    width: 100%;
-    max-height: min(420px, calc(100vh - var(--titlebar-height) - 80px));
-    margin-top: var(--space-1);
-    overflow-y: auto;
-  }
 }
 
 @media (max-width: 768px) {
@@ -12510,11 +12434,6 @@ a.backend-card__version:focus-visible {
   .titlebar--desktop .titlebar__utilities,
   .titlebar--desktop .titlebar__utility-menu {
     gap: 2px;
-  }
-
-  .titlebar--desktop .titlebar__window-btn {
-    width: 30px;
-    height: 30px;
   }
 }
 

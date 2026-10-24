@@ -94,7 +94,7 @@ void RequestMiddleware::install(httplib::Server& server) {
 
     server.set_default_headers({
         {"Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS"},
-        {"Access-Control-Allow-Headers", "Content-Type, Authorization, X-Client-Session-Id, X-Account-Session-Id, mcp-protocol-version, traceparent, Mcp-Session-Id"}
+        {"Access-Control-Allow-Headers", "Content-Type, Authorization, X-Client-Session-Id, X-Account-Session-Id, X-Lemonade-Peer-Authorization, mcp-protocol-version, traceparent, Mcp-Session-Id"}
     });
 
     server.Options(".*", [](const httplib::Request&, httplib::Response& res) {

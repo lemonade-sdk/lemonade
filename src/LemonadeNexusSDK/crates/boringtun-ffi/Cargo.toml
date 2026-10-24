@@ -1,0 +1,16 @@
+[package]
+name = "lemonade-boringtun-ffi"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+
+[lib]
+# rlib alongside staticlib so `cargo test` can link the unit tests.
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+boringtun = { version = "0.6", features = ["ffi-bindings"] }
+base64 = "0.13"
+
+[dev-dependencies]
+rand_core = { version = "0.6", features = ["getrandom"] }

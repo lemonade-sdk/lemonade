@@ -1,0 +1,10 @@
+{
+  "repository": "https://github.com/lemonade-sdk/lemonade-nexus.git",
+  "commit": "1c5d901b8c996020b9f9555d1484c29804408c00",
+  "version": "0.9.8",
+  "profile": "Client SDK and required userspace transport only",
+  "local_patches": [
+    "Device-hosted account avatars: signed hash references in the private API; bounded local image cache and authenticated encrypted peer transfers. Requires the companion Nexus reference API patch; see docs/dev/nexus-account-ui.md.",
+    "Virtual netstack: update an existing ingress target when a service is re-registered."
+  ]
+}

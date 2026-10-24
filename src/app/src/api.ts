@@ -784,6 +784,11 @@ class LemonadeAPI {
   private _pollTimer: ReturnType<typeof setInterval> | null = null;
   private _sessionApiKey = '';
   private _sessionAdminApiKey = '';
+  // Key for a mesh peer reached through this server's Nexus relay, sent only with
+  // requests under _peerRelayBase. The relay forwards it to that peer alone;
+  // Authorization keeps authenticating this server.
+  private _peerApiKey = '';
+  private _peerRelayBase = '';
   private _hostBaseUrl: string | null = null;
   private _connectionSettingsPromise: Promise<void> | null = null;
   public readonly clientSessionId: string = createSecureClientSessionId();
@@ -820,6 +825,8 @@ class LemonadeAPI {
 
   set baseUrl(url: string) {
     const normalized = normalizeBaseUrl(url);
+    this._peerApiKey = '';
+    this._peerRelayBase = '';
     this._hostBaseUrl = normalized;
     safeSetLocalStorage(LS_BASE_URL, normalized);
   }
@@ -906,6 +913,8 @@ class LemonadeAPI {
 
   async saveConnectionSettings(baseUrl: string, apiKey: string, rememberApiKey: boolean): Promise<ConnectionSettingsSaveResult> {
     const normalized = normalizeBaseUrl(baseUrl);
+    this._peerApiKey = '';
+    this._peerRelayBase = '';
     this._hostBaseUrl = normalized;
     this._sessionApiKey = apiKey;
     safeSetLocalStorage(LS_BASE_URL, normalized);
@@ -923,6 +932,8 @@ class LemonadeAPI {
   }
 
   async clearConnectionSettings(): Promise<void> {
+    this._peerApiKey = '';
+    this._peerRelayBase = '';
     this._hostBaseUrl = null;
     this._sessionApiKey = '';
     this._sessionAdminApiKey = '';
@@ -1047,10 +1058,14 @@ class LemonadeAPI {
     extra?: Record<string, string>,
     includeSessionHeaders?: boolean,
     auth: 'api' | 'admin' | 'none' = 'api',
+    url = '',
   ): Record<string, string> {
     const h: Record<string, string> = { ...(extra || {}) };
     const credential = auth === 'admin' ? this.adminApiKey : auth === 'api' ? this.apiKey : '';
     if (credential) h['Authorization'] = `Bearer ${credential}`;
+    if (this._peerApiKey && this._peerRelayBase && url.startsWith(`${this._peerRelayBase}/`)) {
+      h['X-Lemonade-Peer-Authorization'] = `Bearer ${this._peerApiKey}`;
+    }
 
     if (includeSessionHeaders && this.sessionHeadersEnabled) {
       h['X-Client-Session-Id'] = this.clientSessionId;
@@ -1067,7 +1082,7 @@ class LemonadeAPI {
     const extraHeaders = requestOpts.headers instanceof Headers
       ? Object.fromEntries(requestOpts.headers.entries())
       : (Array.isArray(requestOpts.headers) ? Object.fromEntries(requestOpts.headers) : (requestOpts.headers as Record<string, string> | undefined));
-    const headers = this._headers(extraHeaders, includeSessionHeaders, auth);
+    const headers = this._headers(extraHeaders, includeSessionHeaders, auth, url);
     const method = (requestOpts.method || 'GET').toUpperCase();
 
     let processedOpts: Omit<LemonadeRequestInit, 'includeSessionHeaders' | 'auth'> = { ...requestOpts };
@@ -1089,7 +1104,7 @@ class LemonadeAPI {
       if (includeSessionHeaders && this.sessionHeadersEnabled
           && (method === 'GET' || method === 'HEAD' || method === 'OPTIONS')) {
         try {
-          const fallbackHeaders = this._headers(extraHeaders, false, auth);
+          const fallbackHeaders = this._headers(extraHeaders, false, auth, url);
           if (processedOpts.body && headers['Content-Type'] === 'application/json') {
             fallbackHeaders['Content-Type'] = 'application/json';
           }
@@ -1121,7 +1136,7 @@ class LemonadeAPI {
       const errorBody = await resp.clone().text().catch(() => '');
       if (/x[-_]client[-_]session[-_]id|client[-_]session[-_]id/i.test(errorBody)) {
         try {
-          const fallbackHeaders = this._headers(extraHeaders, false, auth);
+          const fallbackHeaders = this._headers(extraHeaders, false, auth, url);
           if (processedOpts.body && headers['Content-Type'] === 'application/json') {
             fallbackHeaders['Content-Type'] = 'application/json';
           }
@@ -1331,7 +1346,9 @@ class LemonadeAPI {
   // ── Endpoints ───────────────────────────────────────────────────
 
   async health(): Promise<HealthData> {
+    const endpoint = this.baseUrl;
     const data = normalizeHealth(await this._json<unknown>('/api/v1/health'));
+    if (endpoint !== this.baseUrl) return data;
     const signature = JSON.stringify(data);
     if (!this._healthData || signature !== this._healthDataSignature) {
       this._healthData = data;
@@ -1521,6 +1538,7 @@ class LemonadeAPI {
   }
 
   async systemInfo(): Promise<Record<string, unknown>> {
+    const endpoint = this.baseUrl;
     // Several views use the same expensive system-info endpoint. A workspace
     // preload and the view's first effect can overlap, so share the in-flight
     // request instead of making the server do the same discovery twice.
@@ -1530,7 +1548,7 @@ class LemonadeAPI {
       '/api/v1/system-info',
       { cache: 'no-store' } as LemonadeRequestInit,
     ).then(data => {
-      this._systemInfoData = data;
+      if (endpoint === this.baseUrl) this._systemInfoData = data;
       return data;
     }).finally(() => {
       if (this._systemInfoInFlight === request) this._systemInfoInFlight = null;
@@ -2571,6 +2589,29 @@ class LemonadeAPI {
 
   // ── Connection management ───────────────────────────────────────
 
+  get peerApiKey(): string {
+    return this._peerApiKey;
+  }
+
+  async switchServer(endpoint: string, apiKey: string, peerApiKey = ''): Promise<boolean> {
+    await Promise.allSettled([this._connectInFlight, this._refreshInFlight, this._systemInfoInFlight]);
+    this._hostBaseUrl = normalizeBaseUrl(endpoint);
+    this._sessionAdminApiKey = '';
+    this._peerApiKey = peerApiKey;
+    this._peerRelayBase = peerApiKey ? this._hostBaseUrl : '';
+    this.setSessionApiKey(apiKey);
+    this._healthData = null;
+    this._healthDataSignature = '';
+    this._modelsData = null;
+    this._modelsDataSignature = '';
+    this._systemInfoData = null;
+    this._modelsMutationRevision += 1;
+    this._modelStateGeneration += 1;
+    this._modelsRequestInFlight.clear();
+    this._publishModelState();
+    return this.connect();
+  }
+
   async connect(): Promise<boolean> {
     if (this._connectInFlight) return this._connectInFlight;
 
@@ -2594,10 +2635,12 @@ class LemonadeAPI {
    * in Models/Connect appear to refresh periodically.
    */
   private async _pollConnection(): Promise<boolean> {
+    const endpoint = this.baseUrl;
     try {
       await this.health();
       return true;
     } catch (err) {
+      if (endpoint !== this.baseUrl) return true;
       this._lastConnectionError = friendlyErrorMessage(err);
       this._healthData = null;
       this._healthDataSignature = '';

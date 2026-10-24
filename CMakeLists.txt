@@ -34,6 +34,15 @@ set(LEMONADE_MSI_VERSION
 message(STATUS "Lemonade version: ${PROJECT_VERSION}")
 
 include(CTest)
+# Builders without Cargo 1.85+ default to OFF instead of failing at build time.
+include(${CMAKE_SOURCE_DIR}/cmake/NexusRustToolchain.cmake)
+option(LEMONADE_WITH_NEXUS "Build the Nexus client SDK (requires Cargo 1.85+)" ${_nexus_toolchain_found})
+if(LEMONADE_WITH_NEXUS AND NOT _nexus_toolchain_found)
+    message(FATAL_ERROR "LEMONADE_WITH_NEXUS=ON requires Cargo 1.85 or newer, in PATH or as "
+        "/usr/lib/rust-1.*/bin/cargo. Install Rust with rustup or the cargo-1.85 package, "
+        "set LEMONADE_CARGO_EXECUTABLE, or configure with -DLEMONADE_WITH_NEXUS=OFF.")
+endif()
+message(STATUS "Nexus client SDK: ${LEMONADE_WITH_NEXUS}")
 
 # Aggregate build target for the C++ tests selected by packaging CI.
 # Platform-specific tests add themselves only inside their existing if() block.
@@ -1030,6 +1039,7 @@ file(GLOB_RECURSE HTTP_SERVER_SOURCES CONFIGURE_DEPENDS
 
 set(SOURCES_CORE
     src/cpp/server/server.cpp
+    src/cpp/server/nexus_manager.cpp
     ${HTTP_SERVER_SOURCES}
     src/cpp/server/collection_orchestrator.cpp
     src/cpp/server/jobs/job_ops.cpp
@@ -2227,6 +2237,8 @@ if(UNIX AND NOT APPLE)
     include(CPack)
 endif()
 
+include(src/LemonadeNexusSDK/lemonade.cmake)
+
 # ============================================================
 # Embeddable Archive Target (Cross-Platform)
 # ============================================================
@@ -2274,6 +2286,11 @@ else()
         "${EMBEDDABLE_DIR_NAME}")
 endif()
 
+set(_embeddable_nexus_runtime)
+if(LEMONADE_WITH_NEXUS)
+    set(_embeddable_nexus_runtime COMMAND ${CMAKE_COMMAND} -E copy "${LEMONADE_NEXUS_RUNTIME}" "${EMBEDDABLE_STAGING_DIR}/")
+endif()
+
 add_custom_target(embeddable
     # Clean and create staging directory
     COMMAND ${CMAKE_COMMAND} -E remove_directory "${EMBEDDABLE_STAGING_DIR}"
@@ -2282,6 +2299,7 @@ add_custom_target(embeddable
     # Copy binaries
     COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:lemond>" "${EMBEDDABLE_STAGING_DIR}/"
     COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:lemonade>" "${EMBEDDABLE_STAGING_DIR}/"
+    ${_embeddable_nexus_runtime}
 
     # Copy LICENSE
     COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE" "${EMBEDDABLE_STAGING_DIR}/"
@@ -3584,4 +3602,14 @@ if(BUILD_TESTING AND EXISTS "${_MODEL_SYNC_TEST_SRC}")
 
     include(CTest)
     add_cpp_ci_test(ModelSyncAndAutoUpdateTest CI ON COMMAND test_model_sync_and_auto_update)
+endif()
+
+set(_NEXUS_MANAGER_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_nexus_manager.cpp")
+if(BUILD_TESTING AND EXISTS "${_NEXUS_MANAGER_TEST_SRC}")
+    add_executable(test_nexus_manager test/cpp/test_nexus_manager.cpp)
+    target_link_libraries(test_nexus_manager PRIVATE lemonade-server-core)
+    add_cpp_ci_test(NexusManagerTest CI ON COMMAND test_nexus_manager)
+    if(LEMONADE_WITH_NEXUS)
+        add_dependencies(test_nexus_manager nexus-sdk-runtime)
+    endif()
 endif()
