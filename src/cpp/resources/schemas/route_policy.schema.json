@@ -112,6 +112,11 @@
           "description": "Behavior when the classifier fails to evaluate. match_true = fail-closed authoring. Frozen v1 default when omitted: match_false (fail-open).",
           "enum": ["match_true", "match_false"],
           "default": "match_false"
+        },
+        "on_truncation": {
+          "description": "zero_shot only: behavior when the backend cut the input text to fit its token window. Scoring cut text succeeds, so on_error alone cannot reach that case. fail turns the cut into an evaluation failure, so on_error then applies — pair it with on_error: match_true for a rule whose miss would be a leak rather than a wrong model. Frozen v1 default when omitted: score (use the scores anyway).",
+          "enum": ["score", "fail"],
+          "default": "score"
         }
       },
       "additionalProperties": false,

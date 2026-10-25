@@ -408,6 +408,18 @@ json parse_classifier_configs(const json& routing,
             }
         }
 
+        if (classifier.contains("on_truncation")) {
+            if (type != "zero_shot") {
+                throw std::invalid_argument(
+                    path + ".on_truncation applies to zero_shot only, not '" + type + "'");
+            }
+            const std::string on_truncation =
+                optional_string(classifier, "on_truncation", path);
+            if (on_truncation != "score" && on_truncation != "fail") {
+                throw std::invalid_argument(path + ".on_truncation must be score or fail");
+            }
+        }
+
         json item = classifier;
         if (classifier.contains("model")) {
             const std::string original = optional_string(classifier, "model", path);
@@ -545,7 +557,7 @@ const std::set<std::string>& routing_router_keys() {
 const std::set<std::string>& routing_classifier_keys() {
     static const std::set<std::string> keys = {
         "id", "type", "model", "prompt", "labels", "default_label",
-        "reference_phrases", "on_error"};
+        "reference_phrases", "on_error", "on_truncation"};
     return keys;
 }
 

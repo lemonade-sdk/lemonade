@@ -157,6 +157,19 @@ inline const char* on_error_to_string(OnError e) {
     return e == OnError::MatchTrue ? "match_true" : "match_false";
 }
 
+enum class OnTruncation {
+    Score,
+    Fail,
+};
+
+inline OnTruncation parse_on_truncation(const std::string& s) {
+    return s == "fail" ? OnTruncation::Fail : OnTruncation::Score;
+}
+
+inline const char* on_truncation_to_string(OnTruncation t) {
+    return t == OnTruncation::Fail ? "fail" : "score";
+}
+
 // ---------------------------------------------------------------------------
 // Backend injection seam
 // ---------------------------------------------------------------------------

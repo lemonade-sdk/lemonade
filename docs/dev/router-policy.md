@@ -169,6 +169,27 @@ and every entry's `model` must be one of `components`:
   zero-shot model accepts, and how long each may be, is not checked here: both
   derive from that model's token window and are tunable per model, so the model
   enforces them and names the numbers in its error.
+
+  **`on_truncation`** decides what a cut input means to this classifier. The
+  backend cuts the text, never the labels, when the two together overflow its
+  window, and it keeps the head and the tail, so what disappears is the middle.
+  A score computed from cut text is still a *success*, which means `on_error`
+  can never see it. `on_truncation` is the only way to reach that case:
+
+  | Value | Behaviour |
+  |---|---|
+  | `score` (default) | Use the scores anyway. |
+  | `fail` | Treat the cut as an evaluation failure, so `on_error` applies. |
+
+  Leave it at `score` for topic routing, where the head and the tail represent
+  the prompt well enough. Set `fail` where a miss is a leak rather than a wrong
+  model, pair it with `on_error: match_true`.
+
+  ```json
+  { "id": "pii", "type": "zero_shot", "model": "Prompt-Router-ONNX",
+    "labels": ["contains personal data", "no personal data"],
+    "on_truncation": "fail", "on_error": "match_true" }
+  ```
 - `llm` shows the request to an LLM and asks it to choose one of `labels` (the
   chosen label scores `1.0`). Because it produces a plain label, it's a
   **composable signal** — combine it with any other condition, as in

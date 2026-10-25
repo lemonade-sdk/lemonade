@@ -217,5 +217,25 @@
         { "id": "closed-rule", "match": { "classifier": "fail_closed", "label": "code", "min_score": 0.5 }, "route_to": "MathLLM" }
       ]
     }
+  },
+  "zero_shot_on_truncation": {
+    "version": "1",
+    "model_name": "user.ZeroShot-OnTruncation",
+    "recipe": "collection.router",
+    "components": ["LocalLLM", "CloudLLM", "PrivacyRouter", "TopicRouter"],
+    "routing": {
+      "candidates": ["LocalLLM", "CloudLLM"],
+      "default_model": "CloudLLM",
+      "classifiers": [
+        { "id": "privacy", "type": "zero_shot", "model": "PrivacyRouter", "labels": ["private", "public"],
+          "on_truncation": "fail", "on_error": "match_true" },
+        { "id": "topic", "type": "zero_shot", "model": "TopicRouter", "labels": ["code", "chat"],
+          "on_truncation": "fail" }
+      ],
+      "rules": [
+        { "id": "private-to-local", "match": { "classifier": "privacy", "label": "private", "min_score": 0.5 }, "route_to": "LocalLLM" },
+        { "id": "code-to-local", "match": { "classifier": "topic", "label": "code", "min_score": 0.5 }, "route_to": "LocalLLM" }
+      ]
+    }
   }
 }

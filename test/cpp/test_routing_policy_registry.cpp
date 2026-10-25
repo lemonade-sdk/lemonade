@@ -221,6 +221,66 @@ static void test_zero_shot_classifier_reports_truncation() {
           !evaluate_with(false).truncated);
 }
 
+// on_truncation=fail is the only way a rule reaches a cut input, because a score
+// computed from cut text is a SUCCESS and on_error never sees it.
+static void test_zero_shot_on_truncation() {
+    auto evaluate_with = [](const char* on_truncation, bool truncated) {
+        json cfg{{"id", "pii"}, {"type", "zero_shot"}, {"model", "m"},
+                 {"labels", json::array({"private", "public"})}};
+        if (on_truncation != nullptr) cfg["on_truncation"] = on_truncation;
+        auto classifier = lemon::make_classifier(cfg);
+        auto route = make_route_context();
+        lemon::testing::FakeClassifierServices fake;
+        fake.set_zero_shot_scores("m", {{"private", 0.1}, {"public", 0.9}}, truncated);
+        auto services = fake.make();
+        EvalContext ctx = make_eval_context(route, services);
+        return classifier->evaluate(lemon::ClassifierContext{ctx.request, ctx.services});
+    };
+
+    const auto cut_fail = evaluate_with("fail", true);
+    check("on_truncation=fail turns a cut answer into a failure", !cut_fail.ok);
+    check("on_truncation=fail names the cut as the reason",
+          cut_fail.error.find("cut the input text") != std::string::npos);
+    // The trace must still show WHY it failed, and failed_score() starts clean.
+    check("on_truncation=fail keeps the truncation flag for the trace", cut_fail.truncated);
+    check("on_truncation=fail drops the scores computed from cut text",
+          cut_fail.score_of("public") == 0.0);
+
+    check("on_truncation=fail is inert when nothing was cut", evaluate_with("fail", false).ok);
+
+    const auto cut_score = evaluate_with("score", true);
+    check("on_truncation=score keeps using a cut answer",
+          cut_score.ok && cut_score.truncated && cut_score.score_of("public") == 0.9);
+
+    const auto cut_default = evaluate_with(nullptr, true);
+    check("on_truncation defaults to score",
+          cut_default.ok && cut_default.score_of("public") == 0.9);
+}
+
+static void test_on_truncation_rejections() {
+    check("on_truncation rejects an unknown value",
+          throws_invalid_arg([] {
+              lemon::make_classifier(json{
+                  {"id", "x"}, {"type", "zero_shot"}, {"model", "m"},
+                  {"labels", json::array({"a"})}, {"on_truncation", "match_true"}});
+          }));
+    // Only zero_shot reads a window it can overflow; the others have no cut to act on.
+    for (const char* type : {"classifier", "llm", "semantic_similarity"}) {
+        const std::string label = std::string("on_truncation is rejected on ") + type;
+        check(label.c_str(), throws_invalid_arg([type] {
+                  json cfg{{"id", "x"}, {"type", type}, {"model", "m"},
+                           {"on_truncation", "fail"}};
+                  if (std::string(type) == "semantic_similarity") {
+                      cfg["reference_phrases"] = json{{"a", json::array({"p"})}};
+                  } else {
+                      cfg["labels"] = json::array({"a"});
+                      if (std::string(type) == "llm") cfg["prompt"] = "pick one";
+                  }
+                  lemon::make_classifier(cfg);
+              }));
+    }
+}
+
 static void test_label_list_rejections() {
     auto classifier_with = [](const char* type, json labels) {
         json cfg{{"id", "x"}, {"type", type}, {"model", "m"}, {"labels", std::move(labels)}};
@@ -534,6 +594,8 @@ int main() {
     test_zero_shot_classifier_without_service_fails_soft();
     test_zero_shot_classifier_rejects_mismatched_label_set();
     test_zero_shot_classifier_reports_truncation();
+    test_zero_shot_on_truncation();
+    test_on_truncation_rejections();
     test_label_list_rejections();
     test_make_classifier_rejections();
     test_make_classifiers();

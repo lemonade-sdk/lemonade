@@ -87,6 +87,7 @@ v1** (pinned in the schema field descriptions):
 | `metadata` | reads a request `metadata` key; **case-sensitive** comparison, value decoded into a comma-split, trimmed **token set** (`equals` raw exact / `any` set-intersection / `exists` presence). A missing, empty, or **whitespace-only** value counts as absent (matches only `exists:false`) |
 | multi-key leaf object | interpreted as implicit **`all`**; e.g. `{"keywords_any":[...],"max_chars":1000}` means both leaves must match |
 | `on_error` (omitted) | default **`match_false`** (fail-open) |
+| `on_truncation` (omitted) | `zero_shot` only; default **`score`** a score computed from input the backend cut to fit its token window is a *success*, so `on_error` never sees it. `fail` turns the cut into an evaluation failure, and `on_error` then applies |
 | `routing.router` desugaring | expansion to one `llm` classifier + identity rules is deterministic and behavior-equivalent across versions |
 
 Anything fancier (token/BM25 keyword matching, a different regex engine,

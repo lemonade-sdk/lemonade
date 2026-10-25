@@ -44,6 +44,7 @@ using lemon::EvalContext;
 using lemon::LeafFactory;
 using lemon::MatchExpr;
 using lemon::OnError;
+using lemon::OnTruncation;
 using lemon::RouteContext;
 using lemon::RoutePolicy;
 using lemon::RoutingPolicyEngine;
@@ -112,6 +113,15 @@ static void test_types_construct() {
     check(lemon::parse_on_error("match_false") == OnError::MatchFalse, "parse_on_error match_false");
     check(std::string(lemon::on_error_to_string(OnError::MatchTrue)) == "match_true",
           "on_error_to_string round-trips");
+
+    // on_truncation round-trips through its own single-source-of-truth mapping.
+    check(lemon::parse_on_truncation("fail") == OnTruncation::Fail, "parse_on_truncation fail");
+    check(lemon::parse_on_truncation("score") == OnTruncation::Score,
+          "parse_on_truncation score");
+    check(std::string(lemon::on_truncation_to_string(OnTruncation::Fail)) == "fail",
+          "on_truncation_to_string round-trips");
+    check(std::string(lemon::on_truncation_to_string(OnTruncation::Score)) == "score",
+          "on_truncation_to_string round-trips the default");
 
     // Match AST: any[ leaf, not(leaf) ].
     MatchExpr leaf;

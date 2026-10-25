@@ -29,14 +29,30 @@ Score failed_score(std::string reason) {
     return score;
 }
 
+bool rate_limited(std::atomic<unsigned long long>& counter, unsigned long long& n) {
+    n = ++counter;
+    return n == 1 || n % 100 == 0;
+}
+
 void log_classifier_failure(const std::string& type, const std::string& id,
                             const std::string& model, const std::string& reason,
                             std::atomic<unsigned long long>& counter) {
-    const unsigned long long n = ++counter;
-    if (n != 1 && n % 100 != 0) return;
+    unsigned long long n = 0;
+    if (!rate_limited(counter, n)) return;
     LOG(WARNING, "Routing") << type << " classifier '" << id << "' (model '" << model
                             << "') failed: " << reason
                             << (n == 1 ? std::string() : " [" + std::to_string(n) + " failures]")
+                            << std::endl;
+}
+
+void log_truncated_score_used(const std::string& id, const std::string& model,
+                              std::atomic<unsigned long long>& counter) {
+    unsigned long long n = 0;
+    if (!rate_limited(counter, n)) return;
+    LOG(WARNING, "Routing") << "zero_shot classifier '" << id << "' (model '" << model
+                            << "') scored an input the backend had cut to fit its token "
+                               "window; set on_truncation=fail to treat that as a failure"
+                            << (n == 1 ? std::string() : " [" + std::to_string(n) + " times]")
                             << std::endl;
 }
 
@@ -297,9 +313,11 @@ class ZeroShotClassifier final : public Classifier {
 public:
     ZeroShotClassifier(std::string id, std::string type, std::string model, OnError on_error,
                        std::vector<std::string> labels,
-                       std::optional<std::string> default_label)
+                       std::optional<std::string> default_label,
+                       OnTruncation on_truncation = OnTruncation::Score)
         : Classifier(std::move(id), std::move(type), on_error, std::move(model),
-                     std::move(labels), std::move(default_label)) {
+                     std::move(labels), std::move(default_label)),
+          on_truncation_(on_truncation) {
         if (model_name_.empty()) {
             throw std::invalid_argument("zero_shot classifier requires model");
         }
@@ -338,11 +356,25 @@ public:
             log_classifier_failure(type(), id(), model_name_, kMismatch, failures_);
             score = failed_score(kMismatch);
         }
+        if (score.ok && score.truncated) {
+            static constexpr const char* kTruncated =
+                "the backend cut the input text to fit its token window, so the scores "
+                "cover only part of the request";
+            if (on_truncation_ == OnTruncation::Fail) {
+                log_classifier_failure(type(), id(), model_name_, kTruncated, failures_);
+                score = failed_score(kTruncated);
+                score.truncated = true;
+            } else {
+                log_truncated_score_used(id(), model_name_, truncated_scores_);
+            }
+        }
         return score;
     }
 
 private:
+    OnTruncation on_truncation_ = OnTruncation::Score;
     mutable std::atomic<unsigned long long> failures_{0};
+    mutable std::atomic<unsigned long long> truncated_scores_{0};
 
     // A backend that ignores the request's labels answers with its own head's
     // label set. Accepting that would score every declared label 0.0, a
@@ -1251,6 +1283,13 @@ ClassifierPtr make_classifier(const json& config, bool expose_request_features) 
 
     OnError on_error = parse_on_error(config.value("on_error", "match_false"));
 
+    if (config.contains("on_truncation") && type != "zero_shot") {
+        throw std::invalid_argument(
+            "classifier '" + id + "' of type '" + type +
+            "' does not accept on_truncation; only zero_shot reads a token window it "
+            "can overflow");
+    }
+
     if (type == "classifier") {
         std::vector<std::string> labels = parse_labels(config, id);
         std::optional<std::string> default_label = parse_default_label(config, labels, id);
@@ -1269,11 +1308,18 @@ ClassifierPtr make_classifier(const json& config, bool expose_request_features) 
             throw std::invalid_argument(
                 "zero_shot classifier '" + id + "' does not accept reference_phrases");
         }
+        const std::string on_truncation = config.value("on_truncation", "score");
+        if (on_truncation != "score" && on_truncation != "fail") {
+            throw std::invalid_argument(
+                "zero_shot classifier '" + id +
+                "' on_truncation must be score or fail");
+        }
         std::vector<std::string> labels = parse_labels(config, id);
         std::optional<std::string> default_label = parse_default_label(config, labels, id);
         return std::make_shared<ZeroShotClassifier>(
             id, type, config.value("model", ""), on_error,
-            std::move(labels), std::move(default_label));
+            std::move(labels), std::move(default_label),
+            parse_on_truncation(on_truncation));
     }
 
     if (type == "semantic_similarity") {

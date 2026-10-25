@@ -357,6 +357,36 @@ static void test_inline_component_type_regression_pair() {
     }
 }
 
+// on_truncation reaches a case on_error cannot: a score computed from cut text
+// succeeds, so only this field can turn it into a failure.
+static void test_on_truncation_validation() {
+    auto zero_shot_doc = [](const char* on_truncation) {
+        json doc = fixture("l3_classifier.json");
+        doc["routing"]["classifiers"][0]["type"] = "zero_shot";
+        if (on_truncation != nullptr) {
+            doc["routing"]["classifiers"][0]["on_truncation"] = on_truncation;
+        }
+        return doc;
+    };
+    RoutingPolicyParseOptions options;
+    options.get_model_type = [](const std::string&) -> std::optional<lemon::ModelType> {
+        return lemon::ModelType::CLASSIFICATION;
+    };
+
+    check("zero_shot accepts on_truncation fail", parses_ok(zero_shot_doc("fail"), options));
+    check("zero_shot accepts on_truncation score", parses_ok(zero_shot_doc("score"), options));
+    check("on_truncation is optional", parses_ok(zero_shot_doc(nullptr), options));
+    check("on_truncation rejects an unknown value",
+          throws_with_options(zero_shot_doc("match_true"), options,
+                              "on_truncation must be score or fail"));
+
+    // The other types never see a token window, so the field would be inert.
+    json wrong_type = fixture("l3_classifier.json");
+    wrong_type["routing"]["classifiers"][0]["on_truncation"] = "fail";
+    check("on_truncation is rejected on a non-zero_shot classifier",
+          throws_with_options(wrong_type, options, "on_truncation applies to zero_shot only"));
+}
+
 static void test_schema_parser_key_parity() {
     json schema = load_json_file(ROUTING_SCHEMA_FILE);
     check_keys("root keys match schema",
@@ -429,6 +459,7 @@ int main() {
     test_router_sugar_desugars_and_canonicalizes();
     test_classifier_capability_validation();
     test_inline_component_type_regression_pair();
+    test_on_truncation_validation();
     test_schema_parser_key_parity();
     test_collect_policy_helper_models();
 
