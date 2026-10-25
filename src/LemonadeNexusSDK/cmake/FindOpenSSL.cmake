@@ -5,7 +5,7 @@
 # so it takes precedence over CMake's built-in FindOpenSSL.cmake.
 #
 # When cmake/libraries/openssl.cmake has already provided OpenSSL (either from
-# system find_package or source build), the targets exist and we just report
+# system find_package or the pinned archive), the targets exist and we just report
 # success.  This prevents httplib, jwt-cpp, and other FetchContent deps from
 # re-running the built-in FindOpenSSL and potentially picking up a different one.
 # =============================================================================

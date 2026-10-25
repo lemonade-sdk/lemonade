@@ -24,14 +24,13 @@ ExternalProject_Add(nexus-sdk-build
     BINARY_DIR "${_nexus_build}"
     CMAKE_ARGS
         -DCMAKE_BUILD_TYPE=Release
-        -DOPENSSL_FORCE_BUNDLED=$<BOOL:${APPLE}>
         -DCMAKE_MSVC_RUNTIME_LIBRARY=${CMAKE_MSVC_RUNTIME_LIBRARY}
         -DCMAKE_OSX_ARCHITECTURES=${CMAKE_OSX_ARCHITECTURES}
         -DCMAKE_OSX_DEPLOYMENT_TARGET=${_nexus_deployment_target}
         -DNEXUS_CARGO_EXECUTABLE=${LEMONADE_CARGO_EXECUTABLE}
         -DNEXUS_CARGO_VENDOR_DIR=${LEMONADE_NEXUS_CARGO_VENDOR_DIR}
         ${LEMONADE_NEXUS_CMAKE_ARGS}
-    # The bundled OpenSSL build reads the deployment target from the environment.
+    # Cargo reads the deployment target from the environment.
     BUILD_COMMAND ${CMAKE_COMMAND} -E env MACOSX_DEPLOYMENT_TARGET=${_nexus_deployment_target}
         ${CMAKE_COMMAND} --build <BINARY_DIR> --config Release --target lemonade_nexus_sdk
     INSTALL_COMMAND ""
