@@ -149,6 +149,48 @@ rebuilt for the peer. Other methods and WebSocket routes are not relayed.
   device), 404 (not in the group) or 409 (offline or not an inference node).
   An unreachable peer returns 502, or a JSON error inside a streamed response.
 
+### Selection port
+
+`lemond` also listens on `127.0.0.1:13306`. Tools point at
+`http://127.0.0.1:13306/api/v1` (or the device URLs below) and reach the device
+that the machine-wide selection names. The port gets `lemond`'s request
+middleware, so origin checks, CORS and `LEMONADE_API_KEY` apply as on the main
+port. Mesh peers cannot reach it, and the mesh ingress listener refuses the
+selection routes. A main-port rebind does not touch it.
+
+Choose the target with `GET`/`POST /api/v1/nexus/selection` and the body
+`{"target": "local" | "auto" | "<node_id>" | null, "peer_key": "..."}`. The
+management-route rules apply. `local` serves this `lemond`; a node ID relays to
+that Tier 3 device; `null` clears the selection. The peer key stays in memory, is
+never logged, and is dropped whenever the target changes. Without a selection
+the port answers 409; an offline or unreachable target answers 409 instead of
+falling back to this device.
+
+`auto` decides per request:
+
+1. A model named `<device-name-or-node>/<model>` goes to that device without the
+   prefix.
+2. A model this `lemond` lists stays local.
+3. Otherwise an online Tier 3 peer with the model loaded wins, idle before busy
+   (`is_busy` in its `/health`), then the lowest mesh latency; a peer that only
+   lists the model in `/models` comes next. Peer data is cached for five seconds.
+
+In `auto` mode, `GET /api/v1/models` returns the local models plus
+`<device>/<model>` entries for each online Tier 3 peer. Only peers this device
+can reach count.
+
+Each device has the name `<device-label>.<group-label>.lo.<base>`, and every
+such name resolves to `127.0.0.1`. The device label is the device name in
+lowercase with other characters folded to single hyphens; the node ID also
+works. `lemond` requests the group's certificate with `ln_cert_request` and
+`ln_cert_decrypt` once the mesh is up, switches the port to TLS with it, and
+requests a new one within seven days of expiry. A request is routed by its
+`Host` header, which must match the TLS server name. Another device's name
+relays to that device with the usual checks; this device's name and loopback
+use the selection; any other name is refused. `status` reports
+`local_domain`, `selection` (`target`, `port`, `tls`) and `mesh_urls`, the URL
+of this device and of each reachable Tier 3 device.
+
 ## Control API
 
 Routes are available under `/api/v0/nexus/`, `/api/v1/nexus/`, `/v0/nexus/`,
@@ -173,6 +215,7 @@ Routes are available under `/api/v0/nexus/`, `/api/v1/nexus/`, `/v0/nexus/`,
 | POST | `devices/{node_id}/remove` | Removal; needs `delete_node` on the device |
 | POST | `egress` | Loopback endpoint for a selected group member |
 | any | `peers/{node_id}/<path>` | Relay to a mesh inference device (see [Inference relay](#inference-relay)) |
+| GET, POST | `selection` | Selection port target (see [Selection port](#selection-port)) |
 | GET | `events` | SSE mesh/membership/lock events; `after` cursor, `once=1` snapshot |
 
 Member and access routes send one change at a time to the federation's
