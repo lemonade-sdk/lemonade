@@ -125,9 +125,26 @@ static httplib::Client make_client(const std::string& host, int port, const std:
 
 static void assert_http_ok(const httplib::Result& res) {
     if (!res) {
-        throw std::runtime_error(
-            "Could not connect to Lemonade server (" + httplib::to_string(res.error()) + ").\n"
-            "Make sure the server is running and try again.");
+        const std::string detail = " (" + httplib::to_string(res.error()) + ")";
+        switch (res.error()) {
+        case httplib::Error::Read:
+        case httplib::Error::Write:
+            // The TCP connection was established, so the server was up when we
+            // started. It closed the connection or stopped answering mid-request,
+            // e.g. while it was busy loading, unloading or removing a backend.
+            throw std::runtime_error(
+                "Lemonade server closed the connection or stopped responding" + detail + ".\n"
+                "The server may be busy with a change such as loading or removing a model or "
+                "backend. Wait a moment and try again.");
+        case httplib::Error::ConnectionTimeout:
+            throw std::runtime_error(
+                "Timed out connecting to Lemonade server" + detail + ".\n"
+                "Check the host and port, and that the server is reachable.");
+        default:
+            throw std::runtime_error(
+                "Could not connect to Lemonade server" + detail + ".\n"
+                "Make sure the server is running and try again.");
+        }
     } else if (res->status == 401) {
         throw std::runtime_error("Forbidden by the server. Did you set the API key?");
     } else if (res->status != 200) {
