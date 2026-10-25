@@ -15,7 +15,7 @@ on:
 
 jobs:
   test-runner:
-    runs-on: ${{ inputs.runner }}
+    runs-on: [self-hosted, Windows, strix-halo, devlab-dispatch]
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
