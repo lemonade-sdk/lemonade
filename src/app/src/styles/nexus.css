@@ -107,6 +107,7 @@
 .nexus-account-access p, .nexus-device-empty p { margin: 0 0 var(--space-3); color: var(--text-secondary); line-height: 1.6; }
 .nexus-account-access .nexus-hint { margin: var(--space-2) 0 0; color: var(--text-tertiary); font-size: var(--text-sm); }
 .nexus-account-menu .nexus-account-access > button { width: 100%; }
+.nexus-account-menu .nexus-account-access:has(> button) { margin-bottom: var(--space-2); }
 .nexus-section { min-width: 0; }
 .nexus-section h3 { margin: 0 0 var(--space-4); font-size: var(--text-xs); font-weight: var(--weight-medium); letter-spacing: .08em; text-transform: uppercase; color: var(--text-secondary); }
 .nexus-account-menu .nexus-section { margin-top: var(--space-5); padding-top: var(--space-4); border-top: 1px solid var(--border-subtle); }
@@ -116,6 +117,7 @@
 .nexus-device-empty p { margin: 0; font-size: var(--text-sm); }
 .nexus-account-menu__link { display: flex; align-items: center; justify-content: space-between; width: 100%; margin-top: var(--space-5); padding: var(--space-3) var(--space-2); border-top: 1px solid var(--border-subtle); color: var(--text-secondary); border-radius: var(--radius-sm); }
 .nexus-account-menu__link:hover { color: var(--text-primary); background: var(--surface-2); }
+.nexus-account-menu__link { border-radius: 0; }
 .nexus-account-menu__theme { margin-top: var(--space-2); }
 .nexus-account-menu__theme + .nexus-section { margin-top: var(--space-2); }
 .nexus-device-disclosure > summary { display: flex; align-items: center; gap: var(--space-2); cursor: pointer; list-style: none; color: var(--text-secondary); font-size: var(--text-sm); }
