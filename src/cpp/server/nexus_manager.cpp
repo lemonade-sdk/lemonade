@@ -486,6 +486,11 @@ struct NexusManager::Session {
                 throw NexusError(400, "LEMONADE_NEXUS_GENESIS_PUBKEY is not a base64 Ed25519 public key");
             }
             genesis_key_set = true;
+        } else if (const auto pinned = account.value("genesis_pubkey", std::string{}); !pinned.empty()) {
+            if (ln_set_genesis_key(client.get(), pinned.c_str(), account.value("tier1_epoch", uint64_t{0})) != LN_OK) {
+                throw NexusError(500, "Saved Genesis key is invalid; restore account.json");
+            }
+            genesis_key_set = true;
         }
         pubkey = sdk_string(ln_identity_pubkey(identity.get()));
         const auto avatar_cache = utils::path_to_utf8(root / "avatar-cache");
@@ -515,7 +520,17 @@ struct NexusManager::Session {
         detail = "locked";
         error.clear();
     }
+    // First connect without a configured key: the SDK takes the key only when
+    // several network hosts agree on it over verified HTTPS, then it stays pinned.
+    void ensure_genesis_key() {
+        if (genesis_key_set) return;
+        const auto found = sdk_call([&](auto out) { return ln_discover_genesis_key(client.get(), "[]", out); });
+        account["genesis_pubkey"] = found.at("genesis_pubkey");
+        persist();
+        genesis_key_set = true;
+    }
     json authenticate_identity() {
+        ensure_genesis_key();
         auto result = sdk_call([&](auto out) { return ln_auth_ed25519(client.get(), out); });
         if (account.contains("user_id") && account.at("user_id") != result.at("user_id")) {
             throw NexusError(403, "Account does not belong to this device identity");

@@ -99,7 +99,7 @@ The bootstrap hostname found in Nexus configuration is `lemonade-nexus.io`.
 | `LEMONADE_NEXUS_SERVER` | `lemonade-nexus.io` | Bootstrap HTTPS host |
 | `LEMONADE_NEXUS_PORT` | `9100` | Bootstrap HTTPS port |
 | `LEMONADE_NEXUS_RP_ID` | `lemonade-nexus.io` | RP ID; must match the federation |
-| `LEMONADE_NEXUS_GENESIS_PUBKEY` | none | Federation Genesis public key (base64); required for tree and session calls |
+| `LEMONADE_NEXUS_GENESIS_PUBKEY` | discovered | Federation Genesis public key (base64); overrides first-connect discovery |
 
 The bootstrap hostname must match its HTTPS certificate. Use an advertised
 server FQDN when the bootstrap alias is not covered by that certificate. The
@@ -174,12 +174,18 @@ TLS state, selection and the URL of each reachable device.
 ### Tier 1 servers and the Genesis key
 
 The SDK sends tree, session and private-API calls only to Tier 1 servers that
-it verifies from the network's Genesis public key. Set
-`LEMONADE_NEXUS_GENESIS_PUBKEY` to the federation's `genesis_pubkey` (base64)
-alongside `LEMONADE_NEXUS_SERVER`. `lemond` pins it when the session starts
-and stores the verified Tier 1 epoch in `account.json` so a restart refuses an
-older membership list. Without the key, those calls fail and `status` reports
-`genesis_key_set: false`.
+it verifies from the network's Genesis public key. On first connect without a
+key, `lemond` calls `ln_discover_genesis_key`: the SDK asks at least three
+hosts in the network's DNS domain over verified HTTPS and accepts the key only
+when they all agree and it matches the reported network id. `lemond` stores the
+key in `account.json` and pins it on every later start; discovery never
+replaces a pinned key. This is trust on first use: it rests on verified-HTTPS
+domain ownership and agreement of several hosts.
+
+`LEMONADE_NEXUS_GENESIS_PUBKEY` overrides discovery for another federation.
+`lemond` also stores the verified Tier 1 epoch in `account.json` so a restart
+refuses an older membership list. If discovery fails, those calls fail and
+`status` reports `genesis_key_set: false`.
 
 ## Control API
 
