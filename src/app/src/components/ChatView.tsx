@@ -85,6 +85,7 @@ interface Message {
   toolCalls?: ToolCallEntry[];
   model?: ModelSnapshot | null;
   isError?: boolean;
+  fromBrowserPrompt?: boolean;
 }
 
 interface Conversation {
@@ -303,6 +304,7 @@ function normalizeConversation(raw: unknown): Conversation | null {
       toolCalls: Array.isArray(m.toolCalls) ? m.toolCalls as ToolCallEntry[] : undefined,
       model: normalizeSnapshot(m.model),
       isError: m.isError === true || (typeof m.content === 'string' && /^Error:/i.test(m.content)),
+      fromBrowserPrompt: m.fromBrowserPrompt === true || undefined,
     }));
   return {
     id,
@@ -3080,6 +3082,7 @@ ${finalText}`
       images: hasImages ? [...pendingImages] : undefined,
       audioName: audioFiles[0]?.name,
       model: initialSnapshot,
+      fromBrowserPrompt: fromBrowserPrompt || undefined,
     };
 
     if (!convoId) {
@@ -3105,8 +3108,10 @@ ${finalText}`
     }
 
     setInputValue('');
-    setPendingImages([]);
-    setPendingAudioFiles([]);
+    if (!fromBrowserPrompt) {
+      setPendingImages([]);
+      setPendingAudioFiles([]);
+    }
     void speakWithPinnedTts(text, 'user');
 
     if (connectionStatus !== 'connected') {
@@ -3189,6 +3194,7 @@ ${finalText}`
       trimmedMessages.slice(0, -1),
       [],
       false,
+      !originalUserMessage.fromBrowserPrompt,
     );
   }, [activeId, appendAssistantMessage, connectionStatus, conversations, currentModel, currentModelSnapshot, isBusy, startAssistantResponse]);
 
@@ -3222,7 +3228,15 @@ ${finalText}`
       updatedAt: Date.now(),
     } : c));
 
-    await startAssistantResponse(activeId, currentModelSnapshot, editedUserMessage, priorMessages, [], false);
+    await startAssistantResponse(
+      activeId,
+      currentModelSnapshot,
+      editedUserMessage,
+      priorMessages,
+      [],
+      false,
+      !editedUserMessage.fromBrowserPrompt,
+    );
   }, [activeId, connectionStatus, conversations, currentModel, currentModelSnapshot, isBusy, startAssistantResponse]);
 
   // Keep option-button callbacks stable across unrelated Chat state updates. This
@@ -3241,7 +3255,7 @@ ${finalText}`
     url.hash = '#/chat';
     window.history.replaceState(window.history.state, '', url.toString());
     setShowLoadedOverview(false);
-    void handleSendRef.current(incomingPrompt, true);
+    void handleSendRef.current(undefined, true);
   }, [incomingPrompt, historyHydrated, connectionStatus, currentModelSnapshot, modeSupportsChatCompletions, currentLoadedModel, isBusy]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
