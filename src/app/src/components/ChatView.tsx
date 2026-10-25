@@ -917,7 +917,14 @@ const ChatView: React.FC<ChatViewProps> = ({
   const [historyHydrated, setHistoryHydrated] = useState(() => !loadPersistencePreference());
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [inputValue, setInputValue] = useState('');
+  const [incomingPrompt] = useState(() => {
+    try {
+      return new URLSearchParams(window.location.search).get('q')?.trim() || '';
+    } catch {
+      return '';
+    }
+  });
+  const [inputValue, setInputValue] = useState(incomingPrompt);
   const [imageMode, setImageMode] = useState<ImageMode>('generate');
   const [imageSettings, setImageSettings] = useState<ImageGenerationSettings>(DEFAULT_IMAGE_SETTINGS);
   const [audioGenerationSettings, setAudioGenerationSettings] = useState<AudioGenerationSettings>(DEFAULT_AUDIO_GENERATION_SETTINGS);
@@ -1009,7 +1016,8 @@ const ChatView: React.FC<ChatViewProps> = ({
   const liveFinalizeTimerRef = useRef<number | null>(null);
   const audioLevelRef = useRef(0);
   const autoSpeechRef = useRef<{ audio: HTMLAudioElement; url: string } | null>(null);
-  const handleSendRef = useRef<(overrideText?: string) => Promise<void>>(async () => {});
+  const incomingPromptHandledRef = useRef(false);
+  const handleSendRef = useRef<(overrideText?: string, fromBrowserPrompt?: boolean) => Promise<void>>(async () => {});
 
   const generatedMediaUrlsRef = useRef<Set<string>>(new Set());
   const trackGeneratedMediaUrl = useCallback((url: string): string => {
@@ -2821,6 +2829,7 @@ ${finalText}`
     priorMessages: Message[],
     audioFiles: File[],
     appendUserToConversation: boolean,
+    allowTools = true,
   ) => {
     const api = await getApiClient();
     const text = userMessage.content.trim();
@@ -2869,7 +2878,7 @@ ${finalText}`
     let includeDirectAudioParts = canUseAudioInput && modeSupportsChatCompletions && audioFiles.length > 0;
 
     let omniRuntime: ChatToolRuntime | null = null;
-    if (collectionInfo) {
+    if (collectionInfo && allowTools) {
       const { buildOmniToolRuntime } = await import(
         /* webpackChunkName: "omni-tools" */ '../tools/omniTools'
       );
@@ -2923,7 +2932,7 @@ ${finalText}`
     }
 
     let selectedMcpRuntime: ChatToolRuntime | null = null;
-    if (useMcp && modeSupportsMcp) {
+    if (allowTools && useMcp && modeSupportsMcp) {
       try {
         const { buildSelectedMcpRuntime } = await import(
           /* webpackChunkName: "mcp-runtime" */ '../tools/mcpRuntime'
@@ -3035,10 +3044,10 @@ ${finalText}`
     useMcp,
   ]);
 
-  const handleSend = async (overrideText?: string) => {
+  const handleSend = async (overrideText?: string, fromBrowserPrompt = false) => {
     const text = (overrideText ?? inputValue).trim();
-    const audioFiles = [...pendingAudioFiles];
-    const hasImages = pendingImages.length > 0;
+    const audioFiles = fromBrowserPrompt ? [] : [...pendingAudioFiles];
+    const hasImages = !fromBrowserPrompt && pendingImages.length > 0;
     const canSubmitContent = currentCapability === 'audio' && !modeSupportsChatCompletions
       ? audioFiles.length > 0
       : currentCapability === 'image'
@@ -3051,10 +3060,18 @@ ${finalText}`
               ? (!!text && !openMossDescribeUnavailable && !openMossCloneUnavailable)
               : (!!text || hasImages || (canUseAudioInput && audioFiles.length > 0));
     if (!canSubmitContent || isBusy || !currentModelSnapshot) return;
+    if (!fromBrowserPrompt && incomingPrompt && !incomingPromptHandledRef.current) {
+      incomingPromptHandledRef.current = true;
+      const url = new URL(window.location.href);
+      url.searchParams.delete('q');
+      url.searchParams.delete('view');
+      url.hash = '#/chat';
+      window.history.replaceState(window.history.state, '', url.toString());
+    }
 
     // Sending a new message explicitly resumes following the latest reply.
     threadFollowBottomRef.current = true;
-    let convoId = activeId;
+    let convoId = fromBrowserPrompt ? null : activeId;
     const initialSnapshot = currentModelSnapshot;
     const currentMessages = (conversations.find(c => c.id === convoId)?.messages || []);
     const userMessage: Message = {
@@ -3122,6 +3139,7 @@ ${finalText}`
         currentMessages,
         audioFiles,
         false,
+        !fromBrowserPrompt,
       );
     } catch (error) {
       const errorMessage = friendlyErrorMessage(error);
@@ -3210,6 +3228,21 @@ ${finalText}`
   // Keep option-button callbacks stable across unrelated Chat state updates. This
   // lets memoized completed Markdown messages retain their DOM and selection.
   handleSendRef.current = handleSend;
+
+  useEffect(() => {
+    if (!incomingPrompt || incomingPromptHandledRef.current || !historyHydrated
+        || connectionStatus !== 'connected' || !currentModelSnapshot
+        || !modeSupportsChatCompletions || !currentLoadedModel || isBusy) return;
+
+    incomingPromptHandledRef.current = true;
+    const url = new URL(window.location.href);
+    url.searchParams.delete('q');
+    url.searchParams.delete('view');
+    url.hash = '#/chat';
+    window.history.replaceState(window.history.state, '', url.toString());
+    setShowLoadedOverview(false);
+    void handleSendRef.current(incomingPrompt, true);
+  }, [incomingPrompt, historyHydrated, connectionStatus, currentModelSnapshot, modeSupportsChatCompletions, currentLoadedModel, isBusy]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {

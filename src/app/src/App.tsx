@@ -336,6 +336,9 @@ function canonicalizeLegacyHash(route: AppRoute | null): void {
 }
 
 function loadSavedRoute(): AppRoute {
+  try {
+    if (new URLSearchParams(window.location.search).has('q')) return { view: 'chat' };
+  } catch { /* ignore */ }
   const fromLocation = routeFromCurrentLocation();
   if (fromLocation) {
     canonicalizeLegacyHash(fromLocation);
