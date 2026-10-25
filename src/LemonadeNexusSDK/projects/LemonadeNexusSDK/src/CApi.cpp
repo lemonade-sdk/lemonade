@@ -1,7 +1,8 @@
-#include <LemonadeNexusSDK/AccountAvatarClient.hpp>
-#include <LemonadeNexusSDK/GroupKey.hpp>
-#include <LemonadeNexusSDK/LemonadeNexusClient.hpp>
 #include <LemonadeNexusSDK/lemonade_nexus.h>
+#include <LemonadeNexusSDK/AccountAvatarClient.hpp>
+#include <LemonadeNexusSDK/LemonadeNexusClient.hpp>
+#include <LemonadeNexusSDK/GroupKey.hpp>
+#include <LemonadeNexusSDK/MeshPort.hpp>
 
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
@@ -10,6 +11,7 @@
 #include <cstring>
 #include <filesystem>
 #include <memory>
+#include <mutex>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -37,7 +39,26 @@ static ln_error_t ln_map_error(int http_status) {
 struct ln_client_s {
     lnsdk::LemonadeNexusClient client;
     std::unique_ptr<lnsdk::AccountAvatarClient> avatar;
-    explicit ln_client_s(const lnsdk::ServerConfig& cfg) : client{cfg} {}
+    std::mutex mesh_port_mutex;
+    // Declared after `client` so it is destroyed, and stopped, first.
+    std::unique_ptr<lnsdk::MeshPort> mesh_port;
+    // The application's renewal callback. The client has one renewal callback,
+    // so on_cert_renewed() delivers each event to the mesh port and to this.
+    std::mutex cert_callback_mutex;
+    ln_cert_renewed_fn cert_callback{nullptr};
+    void* cert_callback_user{nullptr};
+
+    explicit ln_client_s(const lnsdk::ServerConfig& cfg) : client{cfg} {
+        client.set_cert_renewed_callback([this](const lnsdk::CertRenewedEvent& event) { on_cert_renewed(event); });
+    }
+    ~ln_client_s() {
+        // Waits for a running callback, so none runs during member destruction.
+        client.set_cert_renewed_callback({});
+    }
+    ln_client_s(const ln_client_s&) = delete;
+    ln_client_s& operator=(const ln_client_s&) = delete;
+
+    void on_cert_renewed(const lnsdk::CertRenewedEvent& event);
 };
 
 struct ln_identity_s {
@@ -487,6 +508,9 @@ ln_error_t ln_relay_ticket(ln_client_t* client,
     j["session_nonce"] = result.value.session_nonce;
     j["issued_at"]     = result.value.issued_at;
     j["expires_at"]    = result.value.expires_at;
+    j["network_id"]    = result.value.network_id;
+    j["epoch"]         = result.value.epoch;
+    j["issuer"]        = result.value.issuer;
     j["signature"]     = result.value.signature;
 
     *out_json = strdup_json(j);
@@ -587,6 +611,97 @@ ln_error_t ln_cert_decrypt(ln_client_t* client,
 
     *out_json = strdup_json(j);
     return result.ok ? LN_OK : LN_ERR_INTERNAL;
+}
+
+ln_error_t ln_cert_request_group(ln_client_t* client, char** out_json) {
+    if (!client || !out_json) return LN_ERR_NULL_ARG;
+    try {
+        auto result = client->client.request_group_loopback_certificate();
+        json j;
+        j["domain"]            = result.value.domain;
+        j["fullchain_pem"]     = result.value.fullchain_pem;
+        j["encrypted_privkey"] = result.value.encrypted_privkey;
+        j["crypto_version"]    = result.value.crypto_version;
+        j["nonce"]             = result.value.nonce;
+        j["ephemeral_pubkey"]  = result.value.ephemeral_pubkey;
+        j["expires_at"]        = result.value.expires_at;
+        if (!result.ok) j["error"] = result.error;
+
+        *out_json = strdup_json(j);
+        return result.ok ? LN_OK : ln_map_error(result.http_status);
+    } catch (...) {
+        return LN_ERR_INTERNAL;
+    }
+}
+
+ln_error_t ln_set_cert_renewed_callback(ln_client_t* client,
+                                        ln_cert_renewed_fn fn,
+                                        void* user) {
+    if (!client) return LN_ERR_NULL_ARG;
+    try {
+        // on_cert_renewed() calls the callback under this lock, so the old
+        // callback is not running when the lock is held here.
+        std::lock_guard lock(client->cert_callback_mutex);
+        client->cert_callback = fn;
+        client->cert_callback_user = fn ? user : nullptr;
+        return LN_OK;
+    } catch (...) {
+        return LN_ERR_INTERNAL;
+    }
+}
+
+void ln_client_s::on_cert_renewed(const lnsdk::CertRenewedEvent& event) {
+    lnsdk::MeshPort* port = nullptr;
+    {
+        std::lock_guard lock(mesh_port_mutex);
+        port = mesh_port.get();
+    }
+    try {
+        if (port) port->certificate_renewed(event.target, event.domain, event.fullchain_path, event.privkey_path);
+    } catch (...) {
+        spdlog::warn("[CApi] mesh port did not reload the renewed certificate");
+    }
+    std::lock_guard lock(cert_callback_mutex);
+    if (!cert_callback) return;
+    try {
+        json j;
+        j["target"]         = event.target;
+        j["domain"]         = event.domain;
+        j["fullchain_path"] = event.fullchain_path;
+        j["privkey_path"]   = event.privkey_path;
+        j["expires_at"]     = event.expires_at;
+        const auto text = j.dump();
+        cert_callback(text.c_str(), cert_callback_user);
+    } catch (...) {
+        spdlog::warn("[CApi] certificate renewed event not delivered");
+    }
+}
+
+ln_error_t ln_cert_renew_if_needed(ln_client_t* client,
+                                   const char* hostname,
+                                   const char* cert_dir,
+                                   char** out_json) {
+    if (!client || !hostname || !cert_dir || !out_json) return LN_ERR_NULL_ARG;
+    try {
+        const auto result = client->client.renew_certificate_if_needed(hostname, cert_dir);
+        json j;
+        switch (result.status) {
+            case lnsdk::CertRenewalStatus::Renewed: j["status"] = "renewed"; break;
+            case lnsdk::CertRenewalStatus::NotDue:  j["status"] = "not_due"; break;
+            case lnsdk::CertRenewalStatus::Failed:  j["status"] = "failed";  break;
+        }
+        j["domain"]         = result.domain;
+        j["expires_at"]     = result.expires_at;
+        j["fullchain_path"] = result.fullchain_path;
+        j["privkey_path"]   = result.privkey_path;
+        if (!result.error.empty()) j["error"] = result.error;
+
+        *out_json = strdup_json(j);
+        if (result.status != lnsdk::CertRenewalStatus::Failed) return LN_OK;
+        return result.http_status != 0 ? ln_map_error(result.http_status) : LN_ERR_CONNECT;
+    } catch (...) {
+        return LN_ERR_INTERNAL;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1278,4 +1393,132 @@ ln_error_t ln_routing_connection_status(ln_client_t* client, const char* connect
               {"expires_at", r.value.expires_at}};
     *out_json = strdup_json(j);
     return LN_OK;
+}
+
+// ---------------------------------------------------------------------------
+// Tier 1 servers
+// ---------------------------------------------------------------------------
+
+static json tier1_membership_json(const lnsdk::Tier1Membership& membership) {
+    json servers = json::array();
+    for (const auto& s : membership.servers) {
+        servers.push_back({{"node_id", s.node_id}, {"host", s.host}, {"port", s.port}});
+    }
+    return json{{"epoch", membership.epoch},
+                {"members", membership.members},
+                {"servers", std::move(servers)}};
+}
+
+// No exception crosses the C ABI: each entry point catches and reports
+// LN_ERR_INTERNAL.
+ln_error_t ln_set_genesis_key(ln_client_t* client, const char* genesis_pubkey_b64,
+                              uint64_t min_epoch) {
+    if (!client || !genesis_pubkey_b64) return LN_ERR_NULL_ARG;
+    try {
+        const auto result = client->client.set_genesis_key(genesis_pubkey_b64, min_epoch);
+        return result.ok ? LN_OK : LN_ERR_REJECTED;
+    } catch (...) {
+        return LN_ERR_INTERNAL;
+    }
+}
+
+ln_error_t ln_tier1_refresh(ln_client_t* client, char** out_json) {
+    if (!client || !out_json) return LN_ERR_NULL_ARG;
+    try {
+        const auto result = client->client.refresh_tier1();
+        if (!result.ok) {
+            *out_json = strdup_json(json{{"error", result.error}});
+            return result.http_status == 0 ? LN_ERR_CONNECT : LN_ERR_REJECTED;
+        }
+        *out_json = strdup_json(tier1_membership_json(result.value));
+        return LN_OK;
+    } catch (...) {
+        return LN_ERR_INTERNAL;
+    }
+}
+
+ln_error_t ln_tier1_membership(ln_client_t* client, char** out_json) {
+    if (!client || !out_json) return LN_ERR_NULL_ARG;
+    try {
+        *out_json = strdup_json(tier1_membership_json(client->client.tier1_membership()));
+        return LN_OK;
+    } catch (...) {
+        return LN_ERR_INTERNAL;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Mesh port
+// ---------------------------------------------------------------------------
+
+// The mesh port is created on first use and lives until ln_destroy, so callers
+// use the returned pointer without holding mesh_port_mutex.
+static lnsdk::MeshPort* ln_mesh_port(ln_client_t* client, bool create) {
+    std::lock_guard lock(client->mesh_port_mutex);
+    if (!client->mesh_port && create) {
+        client->mesh_port = std::make_unique<lnsdk::MeshPort>(lnsdk::make_mesh_port_backend(client->client));
+    }
+    return client->mesh_port.get();
+}
+
+ln_error_t ln_mesh_port_start(ln_client_t* client, uint16_t port, const char* local_service_url) {
+    if (!client) return LN_ERR_NULL_ARG;
+    try {
+        switch (ln_mesh_port(client, true)->start(port, local_service_url ? local_service_url : "")) {
+            case lnsdk::MeshPortStartResult::Ok:              return LN_OK;
+            case lnsdk::MeshPortStartResult::InvalidArgument: return LN_ERR_REJECTED;
+            case lnsdk::MeshPortStartResult::AlreadyRunning:  return LN_ERR_REJECTED;
+            case lnsdk::MeshPortStartResult::PortInUse:       return LN_ERR_PORT_IN_USE;
+            case lnsdk::MeshPortStartResult::BindFailed:      return LN_ERR_INTERNAL;
+        }
+        return LN_ERR_INTERNAL;
+    } catch (...) {
+        return LN_ERR_INTERNAL;
+    }
+}
+
+ln_error_t ln_mesh_port_set_cert_dir(ln_client_t* client, const char* cert_dir) {
+    if (!client) return LN_ERR_NULL_ARG;
+    try {
+        ln_mesh_port(client, true)->set_certificate_dir(cert_dir ? cert_dir : "");
+        return LN_OK;
+    } catch (...) {
+        return LN_ERR_INTERNAL;
+    }
+}
+
+ln_error_t ln_mesh_port_stop(ln_client_t* client) {
+    if (!client) return LN_ERR_NULL_ARG;
+    try {
+        if (auto* mesh_port = ln_mesh_port(client, false)) mesh_port->stop();
+        return LN_OK;
+    } catch (...) {
+        return LN_ERR_INTERNAL;
+    }
+}
+
+ln_error_t ln_mesh_port_set_selection(ln_client_t* client, const char* target, const char* peer_key) {
+    if (!client) return LN_ERR_NULL_ARG;
+    try {
+        auto* mesh_port = ln_mesh_port(client, false);
+        if (!mesh_port) return LN_ERR_REJECTED;
+        switch (mesh_port->set_selection(target ? target : "", peer_key ? peer_key : "")) {
+            case 0:   return LN_OK;
+            case 403: return LN_ERR_AUTH;
+            case 404: return LN_ERR_NOT_FOUND;
+            default:  return LN_ERR_REJECTED;
+        }
+    } catch (...) {
+        return LN_ERR_INTERNAL;
+    }
+}
+
+ln_error_t ln_mesh_port_status(ln_client_t* client, char** out_json) {
+    if (!client || !out_json) return LN_ERR_NULL_ARG;
+    try {
+        *out_json = strdup_json(ln_mesh_port(client, true)->status());
+        return *out_json ? LN_OK : LN_ERR_INTERNAL;
+    } catch (...) {
+        return LN_ERR_INTERNAL;
+    }
 }

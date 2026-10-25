@@ -40,6 +40,9 @@ void MeshOrchestrator::stop() {
     { std::lock_guard lock(mutex_); }
     cv_.notify_all();
     if (thread_.joinable()) thread_.join();
+    // A renewal in progress finishes its request (bounded by the HTTP
+    // timeouts); its callback must not run after stop() returns.
+    if (cert_thread_.joinable()) cert_thread_.join();
 
     // Remove all mesh peers from the dataplane
     {
@@ -87,6 +90,7 @@ void MeshOrchestrator::run_loop() {
     auto next_peer_refresh = clock::now();
     auto next_heartbeat    = clock::now();
     auto next_monitor      = clock::now();
+    auto next_cert_check   = clock::now();
 
     while (running_.load()) {
         auto now = clock::now();
@@ -117,11 +121,40 @@ void MeshOrchestrator::run_loop() {
             next_monitor = now + std::chrono::seconds(5); // 5s monitor interval
         }
 
+        // Certificate renewal
+        if (now >= next_cert_check) {
+            maybe_start_cert_renewal();
+            next_cert_check = now + kCertCheckInterval;
+        }
+
         // Sleep until next event or woken early
-        auto next_wake = std::min({next_peer_refresh, next_heartbeat, next_monitor});
+        auto next_wake = std::min({next_peer_refresh, next_heartbeat, next_monitor,
+                                   next_cert_check});
         std::unique_lock lock(mutex_);
         cv_.wait_until(lock, next_wake,
                        [this] { return !running_.load() || refresh_requested_; });
+    }
+}
+
+void MeshOrchestrator::maybe_start_cert_renewal() {
+    if (cert_busy_.load()) return;
+    try {
+        if (!client_.certificate_renewal_pending()) return;
+        if (cert_thread_.joinable()) cert_thread_.join();  // the previous pass ended
+        cert_busy_ = true;
+        cert_thread_ = std::thread([this] {
+            try {
+                client_.renew_managed_certificates();
+            } catch (const std::exception& e) {
+                spdlog::warn("[MeshOrchestrator] certificate renewal failed: {}", e.what());
+            } catch (...) {
+                spdlog::warn("[MeshOrchestrator] certificate renewal failed");
+            }
+            cert_busy_ = false;
+        });
+    } catch (const std::exception& e) {
+        cert_busy_ = false;
+        spdlog::warn("[MeshOrchestrator] cannot start certificate renewal: {}", e.what());
     }
 }
 

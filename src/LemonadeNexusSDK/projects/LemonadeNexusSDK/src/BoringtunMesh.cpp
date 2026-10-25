@@ -11,6 +11,7 @@
 #include <atomic>
 #include <map>
 #include <mutex>
+#include <optional>
 #include <span>
 #include <unordered_set>
 #include <utility>
@@ -37,11 +38,38 @@ int prefix_part(const std::string& cidr, int fallback) {
     }
 }
 
-/// allowed-ips string for a mesh peer: its tunnel IP plus optional private subnet.
-std::string allowed_for(const std::string& tunnel_ip, const std::string& private_subnet) {
-    std::string out = tunnel_ip;
-    if (!private_subnet.empty()) out += out.empty() ? private_subnet : ("," + private_subnet);
-    return out;
+/// The private pool IPAM assigns peer subnets from (IPAMService kPrivateBase).
+constexpr const char* kPrivatePool = "10.128.0.0/9";
+/// The largest peer subnet accepted (IPAM allocates /24 to /30 blocks).
+constexpr uint8_t kMaxSubnetPrefixLen = 24;
+
+bool overlaps(const Cidr& a, const Cidr& b) {
+    return a.contains(b.network) || b.contains(a.network);
+}
+
+/// `inner` lies entirely inside `outer`.
+bool within(const Cidr& inner, const Cidr& outer) {
+    return inner.prefix_len >= outer.prefix_len && outer.contains(inner.network);
+}
+
+/// A tunnel address: one address, bare or "/32".
+std::optional<Cidr> parse_tunnel_address(const std::string& text) {
+    if (text.empty()) return std::nullopt;
+    const auto slash = text.find('/');
+    if (slash != std::string::npos && text.substr(slash) != "/32") return std::nullopt;
+    auto cidr = Cidr::parse(text);
+    if (!cidr || cidr->prefix_len != 32) return std::nullopt;
+    return cidr;
+}
+
+/// A private subnet given as "network/prefix", with no host bits set.
+std::optional<Cidr> parse_subnet(const std::string& text) {
+    if (text.find('/') == std::string::npos) return std::nullopt;
+    auto cidr = Cidr::parse(text);
+    if (!cidr) return std::nullopt;
+    const auto exact = Cidr::parse(addr_part(text) + "/32");
+    if (!exact || exact->network != cidr->network) return std::nullopt;
+    return cidr;
 }
 
 /// The netstack hands every outbound IP packet here; re-inject into the
@@ -222,11 +250,20 @@ StatusResult BoringtunMesh::sync_peers(const std::vector<MeshPeer>& desired) {
         return result;
     }
 
+    std::string own_tunnel_ip;
+    {
+        std::lock_guard lock(impl_->ns_mtx);
+        own_tunnel_ip = impl_->tunnel_addr;
+    }
+    const auto allowed_list =
+        peer_allowed_ips(desired, impl_->started_cfg.allowed_ips, own_tunnel_ip);
+
     std::unordered_set<std::string> want;
-    for (const auto& p : desired) {
+    for (std::size_t i = 0; i < desired.size(); ++i) {
+        const auto& p = desired[i];
         if (p.mesh_pubkey.empty()) continue;
         const std::string endpoint = p.endpoint.empty() ? p.relay_endpoint : p.endpoint;
-        const std::string allowed = allowed_for(p.tunnel_ip, p.private_subnet);
+        const std::string& allowed = allowed_list[i];
         if (allowed.empty()) continue;
         want.insert(p.mesh_pubkey);
         (void)impl_->dp.add_peer(p.mesh_pubkey, allowed, endpoint,
@@ -241,6 +278,83 @@ StatusResult BoringtunMesh::sync_peers(const std::vector<MeshPeer>& desired) {
 
     result.ok = true;
     return result;
+}
+
+std::vector<std::string> BoringtunMesh::peer_allowed_ips(
+    const std::vector<MeshPeer>& peers, const std::vector<std::string>& tunnel_plane,
+    const std::string& own_tunnel_ip) {
+    std::vector<Cidr> plane;
+    for (const auto& text : tunnel_plane) {
+        if (auto cidr = Cidr::parse(text)) plane.push_back(*cidr);
+    }
+    if (plane.empty()) plane.push_back(*Cidr::parse("10.64.0.0/10"));
+    const Cidr pool = *Cidr::parse(kPrivatePool);
+    const auto own = parse_tunnel_address(addr_part(own_tunnel_ip));
+
+    const auto n = peers.size();
+    std::vector<std::optional<Cidr>> tunnel(n);
+    std::vector<std::optional<Cidr>> subnet(n);
+    for (std::size_t i = 0; i < n; ++i) {
+        auto addr = parse_tunnel_address(peers[i].tunnel_ip);
+        if (addr && (own && addr->network == own->network)) addr.reset();
+        if (addr && std::none_of(plane.begin(), plane.end(),
+                                 [&](const Cidr& c) { return c.contains(addr->network); })) {
+            addr.reset();
+        }
+        tunnel[i] = addr;
+        if (!peers[i].private_subnet.empty()) {
+            auto block = parse_subnet(peers[i].private_subnet);
+            if (block && (block->prefix_len < kMaxSubnetPrefixLen || !within(*block, pool) ||
+                          (own && block->contains(own->network)))) {
+                block.reset();
+            }
+            subnet[i] = block;
+        }
+    }
+
+    // Every route this device installs must have one owner. A claim that
+    // collides with another peer's claim is refused on both sides, so the
+    // order the server lists peers in never decides who wins.
+    std::vector<bool> tunnel_ok(n, true);
+    std::vector<bool> subnet_ok(n, true);
+    for (std::size_t i = 0; i < n; ++i) {
+        for (std::size_t j = i + 1; j < n; ++j) {
+            if (tunnel[i] && tunnel[j] && tunnel[i]->network == tunnel[j]->network) {
+                tunnel_ok[i] = tunnel_ok[j] = false;
+            }
+            if (subnet[i] && subnet[j] && overlaps(*subnet[i], *subnet[j])) {
+                subnet_ok[i] = subnet_ok[j] = false;
+            }
+            if (subnet[i] && tunnel[j] && subnet[i]->contains(tunnel[j]->network)) {
+                subnet_ok[i] = false;
+            }
+            if (subnet[j] && tunnel[i] && subnet[j]->contains(tunnel[i]->network)) {
+                subnet_ok[j] = false;
+            }
+        }
+    }
+
+    std::vector<std::string> out(n);
+    for (std::size_t i = 0; i < n; ++i) {
+        if (!tunnel[i] || !tunnel_ok[i]) {
+            if (!peers[i].tunnel_ip.empty() || !peers[i].private_subnet.empty()) {
+                spdlog::warn("[BoringtunMesh] peer {} claims tunnel address '{}' that is not "
+                             "its own; no route installed",
+                             peers[i].node_id, peers[i].tunnel_ip);
+            }
+            continue;
+        }
+        out[i] = addr_part(peers[i].tunnel_ip) + "/32";
+        if (peers[i].private_subnet.empty()) continue;
+        if (subnet[i] && subnet_ok[i]) {
+            out[i] += "," + peers[i].private_subnet;
+        } else {
+            spdlog::warn("[BoringtunMesh] peer {} private subnet '{}' is outside the private "
+                         "pool, too large, or overlaps another address; subnet not routed",
+                         peers[i].node_id, peers[i].private_subnet);
+        }
+    }
+    return out;
 }
 
 StatusResult BoringtunMesh::remove_peer(const std::string& pubkey) {

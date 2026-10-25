@@ -136,6 +136,16 @@ public:
     [[nodiscard]] std::vector<BoringtunPeer> snapshot_peers() const;
     [[nodiscard]] size_t peer_count() const;
 
+    /// Primary address (host order) -> public key, for every IP-routed peer
+    /// that has a /32 allowed-IPs entry. Identity sessions are left out.
+    /// Thread-safe.
+    [[nodiscard]] std::unordered_map<uint32_t, std::string> primary_address_peers() const;
+
+    /// A counter that changes whenever a peer's routes are added, replaced,
+    /// or removed. Read it before primary_address_peers(): a later change
+    /// then gives a different value. Thread-safe.
+    [[nodiscard]] uint64_t routes_generation() const { return routes_generation_.load(); }
+
     // ---- termination-layer seam ---------------------------------------------
 
     void set_inbound_handler(InboundIpHandler handler);
@@ -230,6 +240,7 @@ private:
     std::vector<uint32_t>                    free_indices_;
     std::shared_ptr<const ForwardPolicy>     forward_policy_;  ///< guarded by tables_mtx_
 
+    std::atomic<uint64_t> routes_generation_{0};  ///< changed under tables_mtx_
     std::atomic<uint64_t> forward_denied_{0};
     std::atomic<int64_t>  forward_denied_logged_ms_{0};
 

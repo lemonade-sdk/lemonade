@@ -6,6 +6,7 @@
 #include <sodium.h>
 #include <spdlog/spdlog.h>
 
+#include <algorithm>
 #include <array>
 #include <cerrno>
 #include <chrono>
@@ -306,6 +307,7 @@ bool UserspaceDataplane::add_peer(const std::string& pubkey_b64,
             it->second->primary_addr = primary_address(cidrs);
             router_.remove_routes_for(it->second);
             router_.add_routes(cidrs, it->second);
+            routes_generation_.fetch_add(1);
             if (packed_endpoint)
                 it->second->endpoint.store(packed_endpoint, std::memory_order_relaxed);
             return true;
@@ -340,6 +342,7 @@ bool UserspaceDataplane::add_peer(const std::string& pubkey_b64,
         by_pubkey_[pubkey_b64] = peer;
         by_index_[index]       = peer;
         router_.add_routes(peer->cidrs, peer);
+        routes_generation_.fetch_add(1);
     }
 
     // Known endpoint (backbone peer): initiate immediately rather than
@@ -461,8 +464,20 @@ bool UserspaceDataplane::remove_peer(const std::string& pubkey_b64) {
     by_index_.erase(peer->index);
     free_indices_.push_back(peer->index);
     by_pubkey_.erase(it);
+    routes_generation_.fetch_add(1);
     // The Tunn is freed by ~Peer once in-flight rx workers drop their refs.
     return true;
+}
+
+std::unordered_map<uint32_t, std::string> UserspaceDataplane::primary_address_peers() const {
+    std::unordered_map<uint32_t, std::string> out;
+    std::shared_lock lock(tables_mtx_);
+    for (const auto& [pubkey, peer] : by_pubkey_) {
+        if (!peer->identity_keyed && peer->primary_addr != 0) {
+            out.emplace(peer->primary_addr, pubkey);
+        }
+    }
+    return out;
 }
 
 bool UserspaceDataplane::has_peer(const std::string& pubkey_b64) const {
@@ -491,20 +506,22 @@ bool UserspaceDataplane::update_endpoint(const std::string& pubkey_b64,
 }
 
 std::vector<BoringtunPeer> UserspaceDataplane::snapshot_peers() const {
-    std::vector<PeerPtr> peers;
+    // add_peer reassigns allowed_ips under the exclusive lock, so copy it
+    // under the shared lock.
+    std::vector<std::pair<PeerPtr, std::string>> peers;
     {
         std::shared_lock lock(tables_mtx_);
         peers.reserve(by_pubkey_.size());
-        for (const auto& [pubkey, peer] : by_pubkey_) peers.push_back(peer);
+        for (const auto& [pubkey, peer] : by_pubkey_) peers.emplace_back(peer, peer->allowed_ips);
     }
 
     std::vector<BoringtunPeer> out;
     out.reserve(peers.size());
     const auto now = static_cast<uint64_t>(std::time(nullptr));
-    for (const auto& peer : peers) {
+    for (const auto& [peer, allowed_ips] : peers) {
         BoringtunPeer snapshot;
         snapshot.public_key           = peer->pubkey_b64;
-        snapshot.allowed_ips          = peer->allowed_ips;
+        snapshot.allowed_ips          = allowed_ips;
         snapshot.endpoint             = endpoint_to_string(peer->endpoint.load(std::memory_order_relaxed));
         snapshot.persistent_keepalive = peer->keepalive;
         auto st = wireguard_stats(peer->tunn);
@@ -703,26 +720,23 @@ void UserspaceDataplane::route_decrypted(std::span<const uint8_t> ip_pkt,
     auto dst_ip = wire::ipv4::dst_addr(ip_pkt);
     if (!src_ip || !dst_ip) return;
 
-    // Cryptokey routing source check: the inner source
-    // address must be inside the sending peer's allowed IPs, or a peer could
-    // spoof traffic from addresses it does not own.
-    bool src_allowed = false;
-    for (const auto& cidr : src->cidrs) {
-        if (cidr.contains(*src_ip)) {
-            src_allowed = true;
-            break;
-        }
-    }
-    if (!src_allowed) {
-        spdlog::debug("[dataplane] dropped packet from {} with spoofed source",
-                      src->pubkey_b64);
-        return;
-    }
-
     IpRouter<PeerPtr>::Result route;
     bool forward = false;
     {
+        // add_peer reassigns cidrs under the exclusive lock, so read them
+        // under the shared lock.
         std::shared_lock lock(tables_mtx_);
+        // Cryptokey routing source check: the inner source address must be
+        // inside the sending peer's allowed IPs, or a peer could spoof traffic
+        // from addresses it does not own.
+        const bool src_allowed =
+            std::any_of(src->cidrs.begin(), src->cidrs.end(),
+                        [&](const Cidr& cidr) { return cidr.contains(*src_ip); });
+        if (!src_allowed) {
+            spdlog::debug("[dataplane] dropped packet from {} with spoofed source",
+                          src->pubkey_b64);
+            return;
+        }
         route = router_.lookup(*dst_ip);
         // No hairpin back out the same peer.
         if (route.verdict == IpRouter<PeerPtr>::Verdict::Peer && route.peer != src)

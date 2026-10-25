@@ -12,10 +12,10 @@ ns_add_tcp_forward on a virtual endpoint that already has a listener now replace
  3 files changed, 10 insertions(+), 4 deletions(-)
 
 diff --git a/crates/virtual-netstack/src/lib.rs b/crates/virtual-netstack/src/lib.rs
-index 96c377a..a3aa9ad 100644
+index 5def6ab..6f44716 100644
 --- a/crates/virtual-netstack/src/lib.rs
 +++ b/crates/virtual-netstack/src/lib.rs
-@@ -328,6 +328,7 @@ pub unsafe extern "C" fn ns_feed_inbound(handle: *mut NsHandle, pkt: *const u8,
+@@ -335,6 +335,7 @@ pub unsafe extern "C" fn ns_feed_inbound(handle: *mut NsHandle, pkt: *const u8,
  
  /// Add an ingress forward: virtual `vip:vport` -> bridge `target`.
  /// `target` is "tcp:127.0.0.1:PORT" or "unix:/path".
@@ -24,10 +24,10 @@ index 96c377a..a3aa9ad 100644
  /// # Safety
  /// `handle` valid; string args NUL-terminated UTF-8.
 diff --git a/crates/virtual-netstack/src/stack.rs b/crates/virtual-netstack/src/stack.rs
-index 1e69881..2993725 100644
+index 9fbfc0e..f8f8f4d 100644
 --- a/crates/virtual-netstack/src/stack.rs
 +++ b/crates/virtual-netstack/src/stack.rs
-@@ -208,11 +208,15 @@ impl Stack {
+@@ -217,11 +217,15 @@ impl Stack {
                      addr: Some(IpAddress::Ipv4(vip)),
                      port: vport,
                  };
@@ -48,7 +48,7 @@ index 1e69881..2993725 100644
                          endpoint,
                          target_spec: spec,
 diff --git a/projects/LemonadeNexusSDK/include/LemonadeNexusSDK/BoringtunMesh.hpp b/projects/LemonadeNexusSDK/include/LemonadeNexusSDK/BoringtunMesh.hpp
-index daae384..83156af 100644
+index 0512cf4..483a43d 100644
 --- a/projects/LemonadeNexusSDK/include/LemonadeNexusSDK/BoringtunMesh.hpp
 +++ b/projects/LemonadeNexusSDK/include/LemonadeNexusSDK/BoringtunMesh.hpp
 @@ -54,6 +54,7 @@ public:

@@ -1,6 +1,6 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Michael Anthony Falabella <falabellamichael@gmail.com>
-Date: Sat, 24 Oct 2026 15:30:57 -0700
+Date: Sat, 24 Oct 2026 23:26:39 -0700
 Subject: [PATCH 2/2] Add device-hosted account images to the client SDK
 
 AccountAvatarClient signs v2 image references, keeps a bounded local cache and transfers images between authorized devices over the encrypted mesh. The C API exposes ln_account_avatar_configure, ln_account_avatar_sign and the get/put calls. It needs the companion reference API on the Nexus server.
@@ -8,8 +8,8 @@ AccountAvatarClient signs v2 image references, keeps a bounded local cache and t
  .../LemonadeNexusSDK/AccountAvatarClient.hpp  |  64 +++
  .../include/LemonadeNexusSDK/lemonade_nexus.h |  32 ++
  .../src/AccountAvatarClient.cpp               | 432 ++++++++++++++++++
- projects/LemonadeNexusSDK/src/CApi.cpp        |  63 ++-
- 4 files changed, 589 insertions(+), 2 deletions(-)
+ projects/LemonadeNexusSDK/src/CApi.cpp        |  58 +++
+ 4 files changed, 586 insertions(+)
  create mode 100644 projects/LemonadeNexusSDK/include/LemonadeNexusSDK/AccountAvatarClient.hpp
  create mode 100644 projects/LemonadeNexusSDK/src/AccountAvatarClient.cpp
 
@@ -84,10 +84,10 @@ index 0000000..289b824
 +
 +} // namespace lnsdk
 diff --git a/projects/LemonadeNexusSDK/include/LemonadeNexusSDK/lemonade_nexus.h b/projects/LemonadeNexusSDK/include/LemonadeNexusSDK/lemonade_nexus.h
-index 12f2439..c84b80f 100644
+index 7e6aadd..508eabe 100644
 --- a/projects/LemonadeNexusSDK/include/LemonadeNexusSDK/lemonade_nexus.h
 +++ b/projects/LemonadeNexusSDK/include/LemonadeNexusSDK/lemonade_nexus.h
-@@ -91,6 +91,38 @@ char* ln_identity_pubkey(const ln_identity_t* identity);
+@@ -93,6 +93,38 @@ char* ln_identity_pubkey(const ln_identity_t* identity);
  /** Destroy an identity and release resources. */
  void ln_identity_destroy(ln_identity_t* identity);
  
@@ -565,38 +565,36 @@ index 0000000..606b70c
 +
 +} // namespace lnsdk
 diff --git a/projects/LemonadeNexusSDK/src/CApi.cpp b/projects/LemonadeNexusSDK/src/CApi.cpp
-index d7ed943..320adca 100644
+index fe3c5f0..031f3e1 100644
 --- a/projects/LemonadeNexusSDK/src/CApi.cpp
 +++ b/projects/LemonadeNexusSDK/src/CApi.cpp
-@@ -1,13 +1,17 @@
--#include <LemonadeNexusSDK/lemonade_nexus.h>
--#include <LemonadeNexusSDK/LemonadeNexusClient.hpp>
+@@ -1,4 +1,5 @@
+ #include <LemonadeNexusSDK/lemonade_nexus.h>
 +#include <LemonadeNexusSDK/AccountAvatarClient.hpp>
+ #include <LemonadeNexusSDK/LemonadeNexusClient.hpp>
  #include <LemonadeNexusSDK/GroupKey.hpp>
-+#include <LemonadeNexusSDK/LemonadeNexusClient.hpp>
-+#include <LemonadeNexusSDK/lemonade_nexus.h>
- 
- #include <nlohmann/json.hpp>
- #include <spdlog/spdlog.h>
+ #include <LemonadeNexusSDK/MeshPort.hpp>
+@@ -8,9 +9,11 @@
  
  #include <cstdlib>
  #include <cstring>
 +#include <filesystem>
-+#include <memory>
+ #include <memory>
+ #include <mutex>
  #include <span>
 +#include <stdexcept>
  #include <string>
  
  using json = nlohmann::json;
-@@ -32,6 +36,7 @@ static ln_error_t ln_map_error(int http_status) {
+@@ -35,6 +38,7 @@ static ln_error_t ln_map_error(int http_status) {
  
  struct ln_client_s {
      lnsdk::LemonadeNexusClient client;
 +    std::unique_ptr<lnsdk::AccountAvatarClient> avatar;
-     explicit ln_client_s(const lnsdk::ServerConfig& cfg) : client{cfg} {}
- };
- 
-@@ -64,6 +69,60 @@ void ln_free(char* ptr) {
+     std::mutex mesh_port_mutex;
+     // Declared after `client` so it is destroyed, and stopped, first.
+     std::unique_ptr<lnsdk::MeshPort> mesh_port;
+@@ -86,6 +90,60 @@ void ln_free(char* ptr) {
      std::free(ptr);
  }
  

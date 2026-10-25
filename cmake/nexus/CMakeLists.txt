@@ -21,7 +21,24 @@ include(libraries/httplib.cmake)
 include(libraries/libsodium.cmake)
 include(RustTransport.cmake)
 file(GLOB_RECURSE _sdk_sources CONFIGURE_DEPENDS "${NEXUS_SDK_PROJECT}/src/*.cpp")
-add_library(lemonade_nexus_sdk SHARED ${_sdk_sources}
+# The SDK's Tier 1 verification compiles these server sources, as upstream's SDK build does.
+set(_nexus_server_sources
+    "${NEXUS_SDK_ROOT}/projects/LemonadeNexus/src/Api/TreeRouteGate.cpp"
+    "${NEXUS_SDK_ROOT}/projects/LemonadeNexus/src/Crypto/CryptoTypes.cpp"
+    "${NEXUS_SDK_ROOT}/projects/LemonadeNexus/src/Crypto/SecureBuffer.cpp"
+    "${NEXUS_SDK_ROOT}/projects/LemonadeNexus/src/Security/CanonicalEncoding.cpp"
+    "${NEXUS_SDK_ROOT}/projects/LemonadeNexus/src/Security/Consensus/CommitProof.cpp"
+    "${NEXUS_SDK_ROOT}/projects/LemonadeNexus/src/Security/Consensus/ConsensusTypes.cpp"
+    "${NEXUS_SDK_ROOT}/projects/LemonadeNexus/src/Security/Consensus/QuorumValidation.cpp"
+    "${NEXUS_SDK_ROOT}/projects/LemonadeNexus/src/Security/Consensus/VoteKey.cpp"
+    "${NEXUS_SDK_ROOT}/projects/LemonadeNexus/src/Security/Epoch/AuthorityChain.cpp"
+    "${NEXUS_SDK_ROOT}/projects/LemonadeNexus/src/Security/Epoch/NextEpochPlan.cpp"
+    "${NEXUS_SDK_ROOT}/projects/LemonadeNexus/src/Security/Epoch/Tier1Membership.cpp"
+    "${NEXUS_SDK_ROOT}/projects/LemonadeNexus/src/Security/Epoch/Tier1Set.cpp"
+    "${NEXUS_SDK_ROOT}/projects/LemonadeNexus/src/Security/Genesis/BootstrapCertificate.cpp"
+    "${NEXUS_SDK_ROOT}/projects/LemonadeNexus/src/Security/Transport/AuthorityChainCodec.cpp"
+)
+add_library(lemonade_nexus_sdk SHARED ${_sdk_sources} ${_nexus_server_sources}
     "${NEXUS_SDK_ROOT}/projects/LemonadeNexus/src/Boringtun/UserspaceDataplane.cpp")
 target_compile_features(lemonade_nexus_sdk PRIVATE cxx_std_20)
 target_include_directories(lemonade_nexus_sdk PUBLIC "${NEXUS_SDK_PROJECT}/include"

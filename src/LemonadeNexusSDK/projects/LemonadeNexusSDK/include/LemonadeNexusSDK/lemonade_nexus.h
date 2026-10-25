@@ -42,6 +42,8 @@ typedef enum {
                             ///< body that is not a valid TreeNode). Distinct from
                             ///< LN_ERR_NOT_FOUND (404), LN_ERR_AUTH (401/403) and
                             ///< LN_ERR_CONNECT (no transport / network error).
+    LN_ERR_PORT_IN_USE = -9, ///< Another socket already owns the requested loopback
+                             ///< port. Returned by ln_mesh_port_start.
     LN_ERR_INTERNAL   = -99
 } ln_error_t;
 
@@ -210,7 +212,10 @@ ln_error_t ln_ipam_allocate(ln_client_t* client,
 /** GET /api/relay/list. Returns JSON array via out_json. */
 ln_error_t ln_relay_list(ln_client_t* client, char** out_json);
 
-/** POST /api/relay/ticket. Returns JSON via out_json. */
+/** POST /api/relay/ticket. Returns JSON via out_json: {peer_id, relay_id,
+ *  session_nonce, issued_at, expires_at, network_id, epoch, issuer, signature}.
+ *  A Tier 1 server signs the ticket; any relay verifies it against its
+ *  verified Tier 1 membership. */
 ln_error_t ln_relay_ticket(ln_client_t* client,
                             const char* peer_id,
                             const char* relay_id,
@@ -242,6 +247,54 @@ ln_error_t ln_cert_request(ln_client_t* client,
 ln_error_t ln_cert_decrypt(ln_client_t* client,
                             const char* bundle_json,
                             char** out_json);
+
+/** The ln_cert_renew_if_needed() target that names this device's group
+ *  loopback wildcard certificate, "*.<group-label>.lo.<base_domain>". */
+#define LN_CERT_GROUP_LOOPBACK "*"
+
+/** POST /api/certs/issue with scope "group_loopback" — request the wildcard
+ *  certificate "*.<group-label>.lo.<base_domain>" of this device's group.
+ *  Every name under it resolves to 127.0.0.1. Every device of the group gets
+ *  the same private key. Requires an identity (ln_set_identity) and the
+ *  session of a joined device of the group; other callers get LN_ERR_AUTH.
+ *  Returns the same bundle JSON as ln_cert_request; decrypt it with
+ *  ln_cert_decrypt. Caller must ln_free(*out_json). */
+ln_error_t ln_cert_request_group(ln_client_t* client, char** out_json);
+
+/** Called once after each certificate renewal, when both files are replaced.
+ *  event_json: {target, domain, fullchain_path, privkey_path, expires_at}.
+ *  event_json is valid only during the call; do not free it. Runs on an SDK
+ *  background thread or on the thread that called ln_cert_renew_if_needed.
+ *  The function must return normally (no longjmp, no C++ exception) and must
+ *  not call ln_set_cert_renewed_callback or ln_destroy for this client. */
+typedef void (*ln_cert_renewed_fn)(const char* event_json, void* user);
+
+/** Set the renewal callback and its user pointer (fn NULL clears it). When
+ *  this returns, the previous callback is not running and is not called
+ *  again, so its user data may be released. No callback runs after
+ *  ln_destroy returns. Returns LN_ERR_NULL_ARG when client is NULL. */
+ln_error_t ln_set_cert_renewed_callback(ln_client_t* client,
+                                        ln_cert_renewed_fn fn,
+                                        void* user);
+
+/** Keep a certificate in cert_dir current. hostname is the node hostname of
+ *  the device certificate, or LN_CERT_GROUP_LOOPBACK. When
+ *  cert_dir/fullchain.pem is missing or less than one third of its lifetime
+ *  remains, requests the certificate (ln_cert_request flow), decrypts it,
+ *  checks that the key matches, and replaces cert_dir/privkey.pem (mode 0600)
+ *  and cert_dir/fullchain.pem through temporary files and rename. Then the
+ *  renewal callback runs. On failure the old files stay. Registers the
+ *  certificate for background renewal while the mesh is enabled; background
+ *  attempts back off from 60 s to 6 h after failures. Blocks on the network
+ *  when a request is due.
+ *  out_json: {status: "renewed"|"not_due"|"failed", domain, expires_at,
+ *  fullchain_path, privkey_path, error?}. Returns LN_OK for "renewed" and
+ *  "not_due"; otherwise an error code (LN_ERR_AUTH, LN_ERR_CONNECT, ...).
+ *  Caller must ln_free(*out_json). */
+ln_error_t ln_cert_renew_if_needed(ln_client_t* client,
+                                   const char* hostname,
+                                   const char* cert_dir,
+                                   char** out_json);
 
 /* ------------------------------------------------------------------ */
 /* Tree: children                                                      */
@@ -536,6 +589,161 @@ ln_error_t ln_mesh_close_egress(ln_client_t* client, const char* dst_ip, uint16_
 
 /** 1 when this client's mesh dataplane is up, 0 otherwise (or for NULL). */
 int ln_mesh_is_active(ln_client_t* client);
+
+/* ------------------------------------------------------------------ */
+/* Tier 1 servers (tree traffic)                                       */
+/* ------------------------------------------------------------------ */
+
+/** Pin the network's Genesis public key and the lowest epoch to accept.
+ *
+ *  Only Tier 1 servers hold the permission tree. The client sends every tree
+ *  read and write, every session request (ln_auth_*, ln_join_network), and
+ *  every private-API call only to a Tier 1 server it verified from this key:
+ *  it walks the authority chain from the key and keeps a member of the
+ *  verified epoch only after the member signs an endpoint proof over a fresh
+ *  nonce. Until a key is pinned those calls are not sent and fail with
+ *  LN_ERR_CONNECT and an "error" that names the missing key.
+ *
+ *  @param genesis_pubkey_b64  The server config's `genesis_pubkey`: base64 of
+ *                             32 bytes. Not retained after the call.
+ *  @param min_epoch           The lowest Tier 1 epoch to accept (0 for none).
+ *                             Store the epoch from ln_tier1_refresh and pass it
+ *                             here after a restart to refuse an older list.
+ *  @return LN_OK, LN_ERR_NULL_ARG, or LN_ERR_REJECTED for a malformed key.
+ *  Changing the key drops the verified membership. Thread-safe. */
+ln_error_t ln_set_genesis_key(ln_client_t* client, const char* genesis_pubkey_b64,
+                              uint64_t min_epoch);
+
+/** Verify the Tier 1 membership now from the client's server pool.
+ *
+ *  On LN_OK, *out_json receives
+ *  {"epoch":N,"members":["<base64 node id>",...],
+ *   "servers":[{"node_id":"<base64>","host":"<fqdn>","port":P},...]}.
+ *  On failure it receives {"error":"..."} and the function returns
+ *  LN_ERR_REJECTED (no pinned key, a chain that does not verify, or a stale
+ *  epoch) or LN_ERR_CONNECT (no server reachable). The caller must ln_free()
+ *  *out_json in both cases. Blocks on network I/O. Thread-safe. */
+ln_error_t ln_tier1_refresh(ln_client_t* client, char** out_json);
+
+/** The last verified Tier 1 membership, in the ln_tier1_refresh shape, with
+ *  no network I/O. "servers" is empty when nothing is verified. The caller
+ *  must ln_free() *out_json. Thread-safe. */
+ln_error_t ln_tier1_membership(ln_client_t* client, char** out_json);
+
+/* ------------------------------------------------------------------ */
+/* Mesh port                                                           */
+/* ------------------------------------------------------------------ */
+
+/** Start the mesh port: a listener on 127.0.0.1:port that serves group devices
+ *  by name. It never binds another address.
+ *
+ *  The listener serves plain HTTP until the group loopback certificate
+ *  "*.<group-label>.lo.<base>" is available, then TLS. The certificate lives in
+ *  the directory set with ln_mesh_port_set_cert_dir. On start, the port runs
+ *  the ln_cert_renew_if_needed flow for LN_CERT_GROUP_LOOPBACK in that
+ *  directory on a background thread. The SDK then renews the certificate in the
+ *  background while the mesh is enabled, and the port reloads each renewed
+ *  certificate in place for new connections. The port does not use a
+ *  certificate that is not a group wildcard under ".lo.", that does not cover
+ *  its own name, or whose key does not match. It then stays on plain HTTP, and
+ *  ln_mesh_port_status reports the reason.
+ *
+ *  Routing uses the TLS server name and the Host header. They must name the
+ *  same host, otherwise the answer is 421.
+ *  - "<device>.<group>.lo.<base>" of another device is forwarded over mesh
+ *    egress to that device's lemond on mesh port 13305. The device must be
+ *    online and Tier 3 (otherwise 409), and this device must hold
+ *    connect_private, connect_shared or admin on it (otherwise 403). The
+ *    caller's own Authorization header is never forwarded to a peer. A request
+ *    header "X-Lemonade-Peer-Authorization" is sent to the peer as
+ *    Authorization. When that header is absent and the device is the selection
+ *    target, the selection peer key is sent.
+ *  - This device's own name, "127.0.0.1" and "localhost" are forwarded to the
+ *    selection (see ln_mesh_port_set_selection).
+ *  - An unknown device name answers 404. A name outside the group's local
+ *    domain answers 421.
+ *  Status codes, Content-Type and streamed bodies pass through unchanged. A
+ *  request with an Origin header other than the requested origin answers 403.
+ *
+ *  Exactly one process owns the port. When another socket already owns
+ *  127.0.0.1:port (for example lemond and the desktop app on the same machine),
+ *  the call returns LN_ERR_PORT_IN_USE. It does not retry or take over the port.
+ *
+ *  @param client             The client. Its mesh session supplies the devices,
+ *                            egress and certificates. Must not be NULL.
+ *  @param port               Loopback port. 0 selects the default, 13306.
+ *  @param local_service_url  The service that the "local" selection serves, for
+ *                            example lemond's "http://127.0.0.1:13305", or NULL
+ *                            for none. Only "http://127.0.0.1:<port>",
+ *                            "http://localhost:<port>" and "http://[::1]:<port>"
+ *                            are accepted. The string is copied.
+ *  @return LN_OK when the port runs. When it already runs on the same port, only
+ *          the local service URL changes. LN_ERR_NULL_ARG for a NULL client.
+ *          LN_ERR_REJECTED for an invalid local service URL, or when the port
+ *          already runs on a different port number. LN_ERR_PORT_IN_USE as
+ *          described above. LN_ERR_INTERNAL when the listener cannot start.
+ *  Thread-safe. ln_destroy stops the port. */
+ln_error_t ln_mesh_port_start(ln_client_t* client, uint16_t port,
+                              const char* local_service_url);
+
+/** Set the directory of the mesh port's group loopback certificate, or NULL or
+ *  "" for none. The directory holds fullchain.pem and privkey.pem (mode 0600),
+ *  as written by ln_cert_renew_if_needed. Use a directory that only this user
+ *  can read. Without a directory the port serves plain HTTP only. The setting
+ *  stays across ln_mesh_port_stop and ln_mesh_port_start. When the port runs,
+ *  a new directory is provisioned at once on the port's background thread. The
+ *  string is copied. Returns LN_OK, or LN_ERR_NULL_ARG for a NULL client.
+ *  Thread-safe. The mesh port receives renewal events in addition to the
+ *  callback set with ln_set_cert_renewed_callback; that callback is unchanged. */
+ln_error_t ln_mesh_port_set_cert_dir(ln_client_t* client, const char* cert_dir);
+
+/** Stop the mesh port, abort its open requests, and clear the selection and its
+ *  peer key. Blocks until the listener stops. Returns LN_OK, also when the port
+ *  is not running, or LN_ERR_NULL_ARG for a NULL client. Thread-safe. */
+ln_error_t ln_mesh_port_stop(ln_client_t* client);
+
+/** Set the device that this device's own name and the loopback names serve.
+ *
+ *  @param client    The client. Must not be NULL.
+ *  @param target    "local" (the local service given to ln_mesh_port_start),
+ *                   "auto", a node ID, or NULL or "" to clear the selection.
+ *                   This device's own node ID is the same as "local".
+ *  @param peer_key  API key of the selected device's lemond, sent to it as
+ *                   "Bearer <key>", or NULL for none. The key is kept only in
+ *                   memory. Every call replaces it, so a new target clears it
+ *                   unless the call passes a key again. The string is copied.
+ *
+ *  "auto" routes each request by its model. A "<device>/<model>" name goes to
+ *  that device with the prefix removed. Then a model of the local service stays
+ *  local. Then an idle online Tier 3 device with the model loaded serves it
+ *  (lowest mesh latency first). Then a device that lists the model serves it.
+ *  A GET of /api/v1/models (also /api/v0/models, /v1/models, /v0/models) returns
+ *  the local models plus "<device>/<model>" entries.
+ *
+ *  Without a selection, or when the selected device is offline, requests answer
+ *  409. The port never falls back to another device.
+ *
+ *  @return LN_OK. LN_ERR_NULL_ARG for a NULL client. LN_ERR_NOT_FOUND for an
+ *          unknown device. LN_ERR_AUTH when this device may not connect to it.
+ *          LN_ERR_REJECTED when the port is not running, "local" has no local
+ *          service, or the device is not Tier 3. An offline Tier 3 device can be
+ *          selected. Thread-safe. */
+ln_error_t ln_mesh_port_set_selection(ln_client_t* client, const char* target,
+                                      const char* peer_key);
+
+/** Get the mesh port state as JSON:
+ *  {running, port, scheme ("http" | "https"), local_domain, local_service,
+ *   error, selection: {target (null | "local" | "auto" | node ID), peer_key_set},
+ *   tls: {state ("off" | "waiting" | "active" | "unsupported_certificate" |
+ *   "error"), domain, expires_at, error},
+ *   urls: [{node_id, device_name, url, self}],
+ *   devices: [{node_id, device_name, is_online}]}.
+ *  `urls` lists this device and each online Tier 3 device that this device may
+ *  connect to. Before TLS is active, only "http://127.0.0.1:<port>" is listed.
+ *  `devices` lists the Tier 3 devices that can be selected. The peer key is
+ *  never included. Caller must ln_free(*out_json). Returns LN_ERR_NULL_ARG for a
+ *  NULL argument. Thread-safe. */
+ln_error_t ln_mesh_port_status(ln_client_t* client, char** out_json);
 
 #if defined(__GNUC__) || defined(__clang__)
 #  pragma GCC visibility pop

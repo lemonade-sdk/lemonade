@@ -1,9 +1,11 @@
 #pragma once
 
+#include <LemonadeNexusSDK/CertRenewal.hpp>
 #include <LemonadeNexusSDK/Error.hpp>
 #include <LemonadeNexusSDK/Identity.hpp>
 #include <LemonadeNexusSDK/LatencyMonitor.hpp>
 #include <LemonadeNexusSDK/RoutingTypes.hpp>
+#include <LemonadeNexusSDK/Tier1Directory.hpp>
 #include <LemonadeNexusSDK/Types.hpp>
 #include <LemonadeNexusSDK/BoringtunMesh.hpp>
 
@@ -44,10 +46,36 @@ public:
     [[nodiscard]] Identity identity() const;
 
     // -----------------------------------------------------------------
+    // Tier 1 servers (tree traffic)
+    // -----------------------------------------------------------------
+
+    /// Pin the network's Genesis public key (base64 Ed25519, the server
+    /// config's `genesis_pubkey`) and the lowest epoch to accept. Every tree
+    /// read and write, every session request (/api/auth...), and every
+    /// private-API call goes only to a Tier 1 server the client verified from
+    /// this key (see Tier1Directory). Without it the SDK sends none of them
+    /// and those calls fail with an error that names the missing key.
+    /// `min_epoch` lets an application that stored the last verified epoch
+    /// refuse an older membership after a restart. Errors: a malformed key.
+    [[nodiscard]] StatusResult set_genesis_key(const std::string& genesis_pubkey_b64,
+                                               uint64_t min_epoch = 0);
+
+    /// Verify the Tier 1 membership now, from the current server pool. Tree
+    /// calls also refresh it on their own when it is older than five minutes
+    /// or a server refused a tree route. Errors: no pinned key, a chain that
+    /// does not verify, a stale epoch, or no verified server reachable.
+    [[nodiscard]] Result<Tier1Membership> refresh_tier1();
+
+    /// The last verified membership (empty when none is verified).
+    [[nodiscard]] Tier1Membership tier1_membership() const;
+
+    // -----------------------------------------------------------------
     // Health
     // -----------------------------------------------------------------
 
-    /// GET /api/health
+    /// GET /api/health. With a session, it also fails when the session's
+    /// server is no longer a verified Tier 1 server, so the caller can join
+    /// again through another one.
     [[nodiscard]] Result<HealthStatus> check_health();
 
     // -----------------------------------------------------------------
@@ -149,6 +177,41 @@ public:
     /// @param bundle The encrypted bundle from request_certificate()
     /// @return Decrypted certificate (fullchain PEM + private key PEM)
     [[nodiscard]] Result<DecryptedCert> decrypt_certificate(const IssuedCertBundle& bundle);
+
+    /// POST /api/certs/issue with scope "group_loopback" — request the
+    /// wildcard certificate "*.<group-label>.lo.<base_domain>" of this
+    /// device's group. Every device of the group receives the same key. The
+    /// server requires a session of a joined endpoint of the group.
+    /// @return Encrypted certificate bundle (call decrypt_certificate to use)
+    [[nodiscard]] Result<IssuedCertBundle> request_group_loopback_certificate();
+
+    /// Callback type for certificate renewals.
+    using CertRenewedCallback = CertRenewer::RenewedCallback;
+
+    /// Set the callback that runs once after each certificate renewal, when
+    /// both files are replaced (empty clears it). It runs on the thread that
+    /// renewed: the mesh orchestrator's renewal thread, or the caller of
+    /// renew_certificate_if_needed(). When this returns, the previous callback
+    /// is not running and is not called again. Do not call this method from
+    /// the callback.
+    void set_cert_renewed_callback(CertRenewedCallback cb);
+
+    /// Keep the certificate of `target` in `cert_dir` current: request and
+    /// decrypt a new one when the stored one is missing or less than one third
+    /// of its lifetime remains, then replace `fullchain.pem` and `privkey.pem`
+    /// (mode 0600) through temporary files. `target` is a node hostname or
+    /// kGroupLoopbackCertTarget. The target is then also renewed in the
+    /// background while the mesh is enabled. Blocks on the network when due.
+    CertRenewalResult renew_certificate_if_needed(const std::string& target,
+                                                  const std::string& cert_dir);
+
+    /// True when a certificate registered with renew_certificate_if_needed()
+    /// is due and outside its backoff delay. Reads only local files.
+    [[nodiscard]] bool certificate_renewal_pending() const;
+
+    /// Renew the registered certificates that are due and outside their
+    /// backoff delay. Used by MeshOrchestrator; blocks on the network.
+    void renew_managed_certificates();
 
     // -----------------------------------------------------------------
     // High-level composite operations
@@ -332,7 +395,10 @@ public:
     // Session state
     // -----------------------------------------------------------------
 
-    /// Set the session token obtained from authentication.
+    /// Set the session token obtained from authentication. A session belongs
+    /// to the Tier 1 server that issued it, and a token set here names no
+    /// server: private-API calls stay refused until authenticate_*() or
+    /// join_network() binds a session to a verified Tier 1 server.
     void set_session_token(const std::string& token);
 
     /// Get the current session token.
@@ -377,6 +443,13 @@ public:
     void close_egress(const std::string& dst_ip, uint16_t dst_port);
 
 private:
+    /// POST /api/certs/issue with this identity's key and `fields` added to
+    /// the request body.
+    [[nodiscard]] Result<IssuedCertBundle> issue_certificate(const nlohmann::json& fields);
+
+    /// Request and decrypt one certificate for a renewal target.
+    [[nodiscard]] Result<DecryptedCert> fetch_certificate(const std::string& target);
+
     struct Impl;
     std::unique_ptr<Impl> impl_;
 };
