@@ -162,7 +162,6 @@ Server::Server(std::shared_ptr<RuntimeConfig> config,
             registry_->apply(server);
             web_ui_->register_routes(server);
         },
-        [this](const httplib::Request& req, httplib::Response& res) { handle_request(req, res); },
         13306);
     listener_ = std::make_unique<HttpListener>(
         config_.get(), router_.get(),

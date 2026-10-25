@@ -99,6 +99,7 @@ The bootstrap hostname found in Nexus configuration is `lemonade-nexus.io`.
 | `LEMONADE_NEXUS_SERVER` | `lemonade-nexus.io` | Bootstrap HTTPS host |
 | `LEMONADE_NEXUS_PORT` | `9100` | Bootstrap HTTPS port |
 | `LEMONADE_NEXUS_RP_ID` | `lemonade-nexus.io` | RP ID; must match the federation |
+| `LEMONADE_NEXUS_GENESIS_PUBKEY` | none | Federation Genesis public key (base64); required for tree and session calls |
 
 The bootstrap hostname must match its HTTPS certificate. Use an advertised
 server FQDN when the bootstrap alias is not covered by that certificate. The
@@ -151,45 +152,34 @@ rebuilt for the peer. Other methods and WebSocket routes are not relayed.
 
 ### Selection port
 
-`lemond` also listens on `127.0.0.1:13306`. Tools point at
-`http://127.0.0.1:13306/api/v1` (or the device URLs below) and reach the device
-that the machine-wide selection names. The port gets `lemond`'s request
-middleware, so origin checks, CORS and `LEMONADE_API_KEY` apply as on the main
-port. Mesh peers cannot reach it, and the mesh ingress listener refuses the
-selection routes. A main-port rebind does not touch it.
+The SDK serves the mesh port on `127.0.0.1:13306` (`ln_mesh_port_*`). `lemond`
+starts it once the mesh is up, with the mesh ingress listener as this device's
+local service, and stops it when the mesh locks or turns off. The mesh ingress
+listener is always on loopback and applies `lemond`'s API-key policy, so a
+request that the port serves locally passes the same checks as on the main
+port. Routing by device name, TLS with the group certificate
+`*.<group-label>.lo.<base>` and its renewal, the selection and the auto router
+are the SDK's; see the Nexus `Client-SDK.md`. When another program, such as the
+Lemonade Nexus desktop app, already owns the port, `lemond` keeps running and
+`status` reports the conflict in `mesh_port.error`.
 
-Choose the target with `GET`/`POST /api/v1/nexus/selection` and the body
-`{"target": "local" | "auto" | "<node_id>" | null, "peer_key": "..."}`. The
-management-route rules apply. `local` serves this `lemond`; a node ID relays to
-that Tier 3 device; `null` clears the selection. The peer key stays in memory, is
-never logged, and is dropped whenever the target changes. Without a selection
-the port answers 409; an offline or unreachable target answers 409 instead of
-falling back to this device.
+`GET`/`POST /api/v1/nexus/selection` with
+`{"target": "local" | "auto" | "<node_id>" | null, "peer_key": "..."}` wraps
+`ln_mesh_port_set_selection`. The management-route rules apply, and mesh
+peers cannot reach it. A missing device answers 404, a device this device may
+not connect to answers 403, and a stopped port or a target that cannot be
+selected answers 409. `status` includes the SDK's `mesh_port` report: port,
+TLS state, selection and the URL of each reachable device.
 
-`auto` decides per request:
+### Tier 1 servers and the Genesis key
 
-1. A model named `<device-name-or-node>/<model>` goes to that device without the
-   prefix.
-2. A model this `lemond` lists stays local.
-3. Otherwise an online Tier 3 peer with the model loaded wins, idle before busy
-   (`is_busy` in its `/health`), then the lowest mesh latency; a peer that only
-   lists the model in `/models` comes next. Peer data is cached for five seconds.
-
-In `auto` mode, `GET /api/v1/models` returns the local models plus
-`<device>/<model>` entries for each online Tier 3 peer. Only peers this device
-can reach count.
-
-Each device has the name `<device-label>.<group-label>.lo.<base>`, and every
-such name resolves to `127.0.0.1`. The device label is the device name in
-lowercase with other characters folded to single hyphens; the node ID also
-works. `lemond` requests the group's certificate with `ln_cert_request` and
-`ln_cert_decrypt` once the mesh is up, switches the port to TLS with it, and
-requests a new one within seven days of expiry. A request is routed by its
-`Host` header, which must match the TLS server name. Another device's name
-relays to that device with the usual checks; this device's name and loopback
-use the selection; any other name is refused. `status` reports
-`local_domain`, `selection` (`target`, `port`, `tls`) and `mesh_urls`, the URL
-of this device and of each reachable Tier 3 device.
+The SDK sends tree, session and private-API calls only to Tier 1 servers that
+it verifies from the network's Genesis public key. Set
+`LEMONADE_NEXUS_GENESIS_PUBKEY` to the federation's `genesis_pubkey` (base64)
+alongside `LEMONADE_NEXUS_SERVER`. `lemond` pins it when the session starts
+and stores the verified Tier 1 epoch in `account.json` so a restart refuses an
+older membership list. Without the key, those calls fail and `status` reports
+`genesis_key_set: false`.
 
 ## Control API
 

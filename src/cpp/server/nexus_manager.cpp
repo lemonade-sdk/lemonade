@@ -7,7 +7,6 @@
 #include <lemon/utils/aixlog.hpp>
 
 #include <algorithm>
-#include <cctype>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -403,128 +402,6 @@ void relay_http(uint16_t port, const std::string& path, const httplib::Request& 
     }
 }
 
-namespace {
-bool names_member(const json& member, const std::string& name) {
-    return !name.empty() && (member.value("node_id", "") == name || member.value("device_name", "") == name);
-}
-}
-
-AutoRoute auto_route(const std::string& model, const json& members, const std::string& self_node_id,
-                     const std::vector<std::string>& local_models, const std::vector<PeerModels>& peers) {
-    if (model.empty()) return {"local", model};
-    std::vector<json> candidates;
-    json self = nullptr;
-    for (const auto& member : members) {
-        if (member.value("node_id", "") == self_node_id) { self = member; continue; }
-        if (member.value("is_inference", false) && member.value("is_online", false)) candidates.push_back(member);
-    }
-    if (const auto slash = model.find('/'); slash != std::string::npos) {
-        const auto prefix = model.substr(0, slash);
-        const auto rest = model.substr(slash + 1);
-        if (self.is_object() && names_member(self, prefix)) return {"local", rest};
-        for (const auto& member : candidates) {
-            if (names_member(member, prefix)) return {member.value("node_id", ""), rest};
-        }
-        for (const auto& member : members) {
-            if (names_member(member, prefix)) {
-                return {"", model, 409, "That device is offline, not an inference server, or not reachable from this device"};
-            }
-        }
-    }
-    if (std::find(local_models.begin(), local_models.end(), model) != local_models.end()) return {"local", model};
-    const PeerModels* best = nullptr;
-    int best_rank = 3;  // 0 loaded and idle, 1 loaded and busy, 2 listed only
-    for (const auto& peer : peers) {
-        const bool reachable = std::any_of(candidates.begin(), candidates.end(),
-            [&](const json& member) { return member.value("node_id", "") == peer.node_id; });
-        if (!reachable) continue;
-        int rank = 3;
-        for (const auto& entry : peer.loaded) {
-            if (entry.is_object() && entry.value("model_name", "") == model) rank = entry.value("is_busy", false) ? 1 : 0;
-        }
-        if (rank == 3 && std::find(peer.available.begin(), peer.available.end(), model) != peer.available.end()) rank = 2;
-        if (rank < best_rank || (rank == best_rank && rank < 3 && peer.latency_ms < best->latency_ms)) {
-            best = &peer;
-            best_rank = rank;
-        }
-    }
-    if (best) return {best->node_id, model};
-    return {"", model, 404, "No reachable device serves the model " + model};
-}
-
-json merge_models(const json& local, const std::vector<PeerModels>& peers) {
-    json result = local.is_object() ? local : json{{"object", "list"}, {"data", json::array()}};
-    if (!result.contains("data") || !result["data"].is_array()) result["data"] = json::array();
-    for (const auto& peer : peers) {
-        const auto owner = peer.device_name.empty() ? peer.node_id : peer.device_name;
-        for (const auto& id : peer.available) {
-            if (!id.is_string()) continue;
-            result["data"].push_back({{"id", owner + "/" + id.get<std::string>()}, {"object", "model"},
-                {"owned_by", owner}, {"nexus_node_id", peer.node_id}});
-        }
-    }
-    return result;
-}
-
-std::string device_label(const std::string& device_name) {
-    std::string label;
-    for (const unsigned char c : device_name) {
-        if (std::isalnum(c)) label += static_cast<char>(std::tolower(c));
-        else if (!label.empty() && label.back() != '-') label += '-';
-    }
-    while (!label.empty() && label.back() == '-') label.pop_back();
-    if (label.size() > 63) label.resize(63);
-    while (!label.empty() && label.back() == '-') label.pop_back();
-    return label;
-}
-
-json device_urls(const json& members, const std::string& self_node_id, const std::string& local_domain, int port, bool tls) {
-    json urls = json::array();
-    if (port <= 0) return urls;
-    const auto suffix = local_domain + ":" + std::to_string(port);
-    const auto scheme = tls ? std::string("https://") : std::string("http://");
-    if (local_domain.empty()) {
-        urls.push_back({{"node_id", self_node_id}, {"device_name", ""}, {"url", "http://127.0.0.1:" + std::to_string(port)}});
-        return urls;
-    }
-    for (const auto& member : members) {
-        const auto node_id = member.value("node_id", "");
-        const bool self = node_id == self_node_id;
-        if (!self && !(member.value("is_inference", false) && member.value("is_online", false))) continue;
-        const auto device_name = member.value("device_name", "");
-        const auto label = device_name.empty() ? node_id : device_label(device_name);
-        urls.push_back({{"node_id", node_id}, {"device_name", device_name}, {"url", scheme + label + suffix}});
-    }
-    return urls;
-}
-
-std::pair<int, std::string> host_target(const std::string& host, const std::string& sni,
-                                        const std::string& local_domain, const json& members, const std::string& self_node_id) {
-    const auto lower = [](std::string text) {
-        std::transform(text.begin(), text.end(), text.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-        return text;
-    };
-    auto name = lower(host);
-    if (!name.empty() && name.front() == '[') {
-        name = name.substr(0, name.find(']') + 1);
-    } else if (const auto colon = name.rfind(':'); colon != std::string::npos && name.find(':') == colon) {
-        name.resize(colon);
-    }
-    if (!sni.empty() && lower(sni) != name) return {421, "The TLS server name and the Host header name different hosts"};
-    if (name == "127.0.0.1" || name == "localhost" || name == "[::1]") return {0, "local"};
-    const auto domain = lower(local_domain);
-    if (domain.empty() || name.size() <= domain.size() || name.compare(name.size() - domain.size(), domain.size(), domain) != 0) {
-        return {421, "This port serves only names under the group's local domain"};
-    }
-    const auto label = name.substr(0, name.size() - domain.size());
-    if (label.find('.') != std::string::npos) return {404, "No device in your group is named " + name};
-    for (const auto& member : members) {
-        const auto node_id = member.value("node_id", "");
-        if (label != lower(node_id) && label != device_label(member.value("device_name", ""))) continue;
-        return {0, node_id == self_node_id ? std::string("local") : node_id};
-    }
-    return {404, "No device in your group is named " + name};
-}
 }
 
 #ifdef LEMONADE_WITH_NEXUS
@@ -552,6 +429,9 @@ struct NexusManager::Session {
     std::unique_ptr<ln_identity_t, decltype(&ln_identity_destroy)> identity{nullptr, ln_identity_destroy};
     std::filesystem::path root;
     int ingress_port;
+    int mesh_port;
+    bool genesis_key_set{false};
+    std::string mesh_port_error;
     json account = json::object();
     bool locked{true};
     bool joined{false};
@@ -571,7 +451,8 @@ struct NexusManager::Session {
     json devices = json::array();
     std::chrono::system_clock::time_point last_poll{std::chrono::system_clock::now()};
 
-    Session(const std::string& data_root, int port) : root(utils::path_from_utf8(data_root)), ingress_port(port) {
+    Session(const std::string& data_root, int port, int mesh_listener_port)
+        : root(utils::path_from_utf8(data_root)), ingress_port(port), mesh_port(mesh_listener_port) {
         std::filesystem::create_directories(root);
 #ifndef _WIN32
         std::filesystem::permissions(root, std::filesystem::perms::owner_all);
@@ -598,6 +479,14 @@ struct NexusManager::Session {
             if (!identity || ln_identity_save(identity.get(), path.c_str()) != LN_OK) throw NexusError(500, "Cannot save device identity");
         }
         if (ln_set_identity(client.get(), identity.get()) != LN_OK) throw NexusError(500, "Cannot load device identity");
+        // Tree, session and private-API calls go only to Tier 1 servers verified from this key.
+        if (const auto genesis = utils::get_environment_variable_utf8("LEMONADE_NEXUS_GENESIS_PUBKEY"); !genesis.empty()) {
+            const auto min_epoch = account.value("tier1_epoch", uint64_t{0});
+            if (ln_set_genesis_key(client.get(), genesis.c_str(), min_epoch) != LN_OK) {
+                throw NexusError(400, "LEMONADE_NEXUS_GENESIS_PUBKEY is not a base64 Ed25519 public key");
+            }
+            genesis_key_set = true;
+        }
         pubkey = sdk_string(ln_identity_pubkey(identity.get()));
         const auto avatar_cache = utils::path_to_utf8(root / "avatar-cache");
         avatar_configured = ln_account_avatar_configure(client.get(), identity.get(), avatar_cache.c_str()) == LN_OK;
@@ -618,6 +507,7 @@ struct NexusManager::Session {
         joined = false;
         reconnect = false;
         egress_ips.clear();
+        ln_mesh_port_stop(client.get());
         ln_mesh_disable(client.get());
         ln_set_session_token(client.get(), "");
         ln_set_link_token(client.get(), "");
@@ -737,19 +627,55 @@ struct NexusManager::Session {
         egress_ips[id] = target.second;
         return port;
     }
-    json request_certificate() {
-        const auto name = device_name();
-        const auto bundle = sdk_call([&](auto out) { return ln_cert_request(client.get(), name.c_str(), out); });
-        const auto encoded = bundle.dump();
-        return sdk_call([&](auto out) { return ln_cert_decrypt(client.get(), encoded.c_str(), out); });
-    }
     json status() {
         auto mesh = sdk_call([&](auto out) { return ln_mesh_status(client.get(), out); });
         return {{"status", detail}, {"locked", locked}, {"mesh_up", !locked && ln_mesh_is_active(client.get()) != 0},
             {"node_id", node_id}, {"group_node_id", group_id}, {"tunnel_ip", tunnel_ip},
             {"peer_count", mesh.value("peer_count", 0)}, {"device_name", device_name()}, {"server", host},
             {"registered", account.contains("credential_id")}, {"members", devices},
-            {"exposed", json::array({{{"vport", 13305}, {"local_port", ingress_port}}})}, {"error", error}};
+            {"exposed", json::array({{{"vport", 13305}, {"local_port", ingress_port}}})}, {"error", error},
+            {"genesis_key_set", genesis_key_set}, {"mesh_port", mesh_port_status()}};
+    }
+    json mesh_port_status() {
+        json port = sdk_call([&](auto out) { return ln_mesh_port_status(client.get(), out); });
+        if (!mesh_port_error.empty()) port["error"] = mesh_port_error;
+        return port;
+    }
+    // The SDK owns the mesh port; lemond is its local service through the mesh ingress
+    // listener, which is always on loopback and applies lemond's API-key policy.
+    void start_mesh_port() {
+        mesh_port_error.clear();
+        const auto cert_dir = utils::path_to_utf8(root / "certs" / "group-loopback");
+        std::error_code ec;
+        std::filesystem::create_directories(root / "certs" / "group-loopback", ec);
+        ln_mesh_port_set_cert_dir(client.get(), cert_dir.c_str());
+        const auto local = "http://127.0.0.1:" + std::to_string(ingress_port);
+        const auto started = ln_mesh_port_start(client.get(), static_cast<uint16_t>(mesh_port), local.c_str());
+        if (started == LN_ERR_PORT_IN_USE) {
+            mesh_port_error = "Another program, such as the Lemonade Nexus app, already uses the mesh port";
+        } else if (started != LN_OK) {
+            mesh_port_error = "The mesh port could not start (SDK error " + std::to_string(started) + ")";
+        }
+    }
+    json selection(const std::string& method, const json& body) {
+        if (method == "POST") {
+            const auto value = body.contains("target") ? body["target"] : json(nullptr);
+            if (!value.is_null() && !value.is_string()) throw NexusError(400, "Send target as \"local\", \"auto\", a node ID or null");
+            if (body.contains("peer_key") && !body["peer_key"].is_string()) throw NexusError(400, "Send peer_key as a string");
+            const auto target = value.is_string() ? value.get<std::string>() : std::string();
+            const auto key = body.value("peer_key", std::string());
+            const auto code = ln_mesh_port_set_selection(client.get(), target.empty() ? nullptr : target.c_str(),
+                key.empty() ? nullptr : key.c_str());
+            if (code == LN_ERR_NOT_FOUND) throw NexusError(404, "That device is not in your group");
+            if (code == LN_ERR_AUTH) throw NexusError(403, "This device may not connect to that device");
+            if (code == LN_ERR_REJECTED) throw NexusError(409, "The mesh port is not running, or that target cannot be selected");
+            if (code != LN_OK) throw NexusError(502, "The mesh port refused the selection");
+        }
+        const auto port = mesh_port_status();
+        auto reply = port.value("selection", json::object());
+        reply["port"] = port.value("port", 0);
+        reply["running"] = port.value("running", false);
+        return reply;
     }
     void join(const std::string& code) {
         if (locked) throw NexusError(423, "Unlock with your passkey before joining");
@@ -778,11 +704,24 @@ struct NexusManager::Session {
         retry_delay = std::chrono::seconds(5);
         detail = "running";
         error.clear();
+        start_mesh_port();
+        remember_tier1_epoch();
         try {
             const auto updates = json{{"hostname", device_name()}}.dump();
             sdk_call([&](auto out) { return ln_update_node(client.get(), node_id.c_str(), updates.c_str(), out); });
             refresh_devices();
         } catch (const std::exception& e) { error = e.what(); }
+    }
+    // Keeps the verified Tier 1 epoch so a restart refuses an older membership list.
+    void remember_tier1_epoch() {
+        try {
+            const auto membership = sdk_call([&](auto out) { return ln_tier1_membership(client.get(), out); });
+            const auto epoch = membership.value("epoch", uint64_t{0});
+            if (epoch > account.value("tier1_epoch", uint64_t{0})) {
+                account["tier1_epoch"] = epoch;
+                persist();
+            }
+        } catch (const std::exception&) {}
     }
     void poll() {
         const auto now = std::chrono::system_clock::now();
@@ -806,6 +745,7 @@ struct NexusManager::Session {
     }
     json request(const std::string& method, const std::string& path, const json& body) {
         if (path == "/status") return status();
+        if (path == "/selection") return selection(method, body);
         if (path == "/device") {
             const auto name = body.at("device_name").get<std::string>();
             if (name.empty() || name.size() > 128) throw NexusError(400, "Enter a device name (up to 128 characters)");
@@ -1029,8 +969,8 @@ struct NexusManager::Session {};
 NexusManager::NexusManager(const std::string& config_dir,
                            const std::function<void(httplib::Server&)>& install_policy,
                            const std::function<void(httplib::Server&)>& install_api,
-                           LocalHandler local, int selection_port)
-    : data_root_(utils::path_to_utf8(utils::path_from_utf8(config_dir) / "nexus")), local_(std::move(local)) {
+                           int mesh_port)
+    : data_root_(utils::path_to_utf8(utils::path_from_utf8(config_dir) / "nexus")), selection_port_(mesh_port) {
     // Built once and never rebound: a main-port rebind leaves the mesh listener alone.
     register_routes(mesh_server_, NexusListener::MeshIngress);
     install_api(mesh_server_);
@@ -1059,101 +999,6 @@ NexusManager::NexusManager(const std::string& config_dir,
     management_thread_ = std::thread([this] { management_server_.listen_after_bind(); });
     management_server_.wait_until_ready();
 
-    // Bound once on loopback, like the mesh listener; a main-port rebind leaves it alone.
-    install_policy_ = install_policy;
-    selection_server_ = std::make_unique<httplib::Server>();
-    configure_selection_server(*selection_server_);
-    start_selection_server(selection_port);
-}
-
-void NexusManager::configure_selection_server(httplib::Server& server) {
-    install_policy_(server);
-    const auto serve = [this](const httplib::Request& req, httplib::Response& res) { serve_selected(req, res); };
-    server.Get(".*", serve);
-    server.Post(".*", serve);
-    server.Put(".*", serve);
-    server.Delete(".*", serve);
-    server.set_read_timeout(30, 0);
-    server.set_write_timeout(300, 0);
-}
-
-void NexusManager::start_selection_server(int port) {
-    int bound = 0;
-    if (port == 0) bound = std::max(selection_server_->bind_to_any_port("127.0.0.1"), 0);
-    else if (selection_server_->bind_to_port("127.0.0.1", port)) bound = port;
-    selection_port_ = bound;
-    if (bound == 0) {
-        LOG(WARNING, "Nexus") << "Cannot bind the selection listener on 127.0.0.1:" << port << std::endl;
-        return;
-    }
-    auto* server = selection_server_.get();
-    selection_thread_ = std::thread([server] { server->listen_after_bind(); });
-    server->wait_until_ready();
-}
-
-bool NexusManager::install_certificate(const std::string& domain, const std::string& fullchain_pem,
-                                       const std::string& private_key_pem) {
-#ifdef CPPHTTPLIB_SSL_ENABLED
-    if (selection_tls_) {
-        auto* server = static_cast<httplib::SSLServer*>(selection_server_.get());
-        if (!server->update_certs_pem(fullchain_pem.c_str(), private_key_pem.c_str())) return false;
-    } else {
-        httplib::SSLServer::PemMemory pem{fullchain_pem.c_str(), fullchain_pem.size(),
-            private_key_pem.c_str(), private_key_pem.size(), nullptr, 0, nullptr};
-        auto replacement = std::make_unique<httplib::SSLServer>(pem);
-        if (!replacement->is_valid()) return false;
-        configure_selection_server(*replacement);
-        const int port = selection_port_;
-        selection_server_->stop();
-        if (selection_thread_.joinable()) selection_thread_.join();
-        selection_server_ = std::move(replacement);
-        selection_tls_ = true;
-        start_selection_server(port);
-    }
-    set_local_domain(domain.rfind("*.", 0) == 0 ? domain.substr(1) : "." + domain.substr(domain.find('.') + 1));
-    return true;
-#else
-    (void)domain;
-    (void)fullchain_pem;
-    (void)private_key_pem;
-    return false;
-#endif
-}
-
-void NexusManager::set_local_domain(const std::string& local_domain) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    local_domain_ = local_domain;
-}
-
-void NexusManager::renew_certificate() {
-#ifdef LEMONADE_WITH_NEXUS
-    json issued;
-    {
-        std::lock_guard<std::mutex> session_lock(session_mutex_);
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            if (!enabled_ || !session_ || !snapshot_.value("mesh_up", false)) return;
-        }
-        const auto now = std::chrono::steady_clock::now();
-        const auto epoch = std::chrono::duration_cast<std::chrono::seconds>(
-            std::chrono::system_clock::now().time_since_epoch()).count();
-        const bool due = certificate_expires_at_ == 0 || epoch > certificate_expires_at_ - 7 * 24 * 3600;
-        const auto retry = certificate_expires_at_ == 0 ? std::chrono::minutes(10) : std::chrono::hours(1);
-        if (!due || now - certificate_attempt_ < retry) return;
-        certificate_attempt_ = now;
-        try { issued = session_->request_certificate(); }
-        catch (const std::exception& e) {
-            LOG(WARNING, "Nexus") << "Device certificate request failed: " << e.what() << std::endl;
-            return;
-        }
-        if (issued.contains("expires_at") && issued["expires_at"].is_number()) {
-            certificate_expires_at_ = issued["expires_at"].get<int64_t>();
-        }
-    }
-    if (!install_certificate(issued.value("domain", ""), issued.value("fullchain_pem", ""), issued.value("privkey_pem", ""))) {
-        LOG(WARNING, "Nexus") << "The selection listener could not use the device certificate" << std::endl;
-    }
-#endif
 }
 
 NexusManager::~NexusManager() { stop(); }
@@ -1168,8 +1013,6 @@ void NexusManager::stop() {
     if (management_thread_.joinable()) management_thread_.join();
     mesh_server_.stop();
     if (mesh_thread_.joinable()) mesh_thread_.join();
-    if (selection_server_) selection_server_->stop();
-    if (selection_thread_.joinable()) selection_thread_.join();
     std::lock_guard<std::mutex> session_lock(session_mutex_);
     std::lock_guard<std::mutex> lock(mutex_);
     session_.reset();
@@ -1180,11 +1023,6 @@ NexusManager::json NexusManager::status() const {
     result["enabled"] = enabled_;
     result["controller_url"] = "http://127.0.0.1:" + std::to_string(management_port_);
     result["remote_management"] = !api_key().empty();
-    result["local_domain"] = local_domain_;
-    result["selection"] = {{"target", selection_target_.empty() ? json(nullptr) : json(selection_target_)},
-        {"port", selection_port_}, {"tls", selection_tls_.load()}};
-    result["mesh_urls"] = nexus_access::device_urls(snapshot_.value("members", json::array()),
-        snapshot_.value("node_id", std::string()), local_domain_, selection_port_, selection_tls_.load());
 #ifdef LEMONADE_WITH_NEXUS
     result["available"] = true;
 #else
@@ -1214,7 +1052,7 @@ bool NexusManager::enable(std::string& error) {
 #else
     try {
         if (stopping_) throw std::runtime_error("Server is shutting down");
-        if (!session_) session_ = std::make_unique<Session>(data_root_, ingress_port_);
+        if (!session_) session_ = std::make_unique<Session>(data_root_, ingress_port_, selection_port_);
         enabled_ = true;
         persist_enabled_locked();
         update_snapshot_locked(session_->status());
@@ -1313,7 +1151,6 @@ void NexusManager::supervise() {
                 else if (!error.empty()) snapshot_["error"] = error;
             }
         }
-        renew_certificate();
 #endif
         std::unique_lock<std::mutex> lock(mutex_);
         if (wake_.wait_for(lock, std::chrono::seconds(5), [this] { return stopping_; })) return;
@@ -1334,14 +1171,6 @@ void NexusManager::handle(const httplib::Request& req, httplib::Response& res,
         return;
     }
     try {
-        if (operation == "selection") {
-            if (req.method == "POST") {
-                const auto failure = select(body);
-                if (failure.first != 0) { reply(failure.first, {{"error", failure.second}}); return; }
-            }
-            reply(200, selection_reply());
-            return;
-        }
         if (operation == "status" || operation == "join/status") {
             auto current = status();
             if (remote) current.erase("controller_url");
@@ -1418,243 +1247,24 @@ void NexusManager::handle(const httplib::Request& req, httplib::Response& res,
     }
 }
 
-void NexusManager::set_peer_directory(PeerDirectory directory) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    test_directory_ = std::move(directory);
-}
-
-NexusManager::PeerDirectory NexusManager::directory() {
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        if (test_directory_.open) return test_directory_;
-    }
-    PeerDirectory result;
-    result.members = [this] {
-        std::lock_guard<std::mutex> lock(mutex_);
-        return snapshot_.value("members", json::array());
-    };
-    result.self_node_id = [this] {
-        std::lock_guard<std::mutex> lock(mutex_);
-        return snapshot_.value("node_id", std::string());
-    };
-    result.open = [this](const std::string& node_id, uint16_t& port) -> std::pair<int, std::string> {
+void NexusManager::relay(const httplib::Request& req, httplib::Response& res) {
 #ifdef LEMONADE_WITH_NEXUS
+    uint16_t port = 0;
+    {
         std::lock_guard<std::mutex> session_lock(session_mutex_);
         {
             std::lock_guard<std::mutex> lock(mutex_);
-            if (!enabled_ || !session_) return {409, "Turn on the mesh first"};
+            if (!enabled_ || !session_) { reply_error(res, 409, "Turn on the mesh first"); return; }
         }
-        try { port = session_->relay_port(node_id); }
-        catch (const NexusError& e) { return {e.status, e.what()}; }
-        return {0, ""};
-#else
-        (void)node_id;
-        (void)port;
-        return {503, "This build does not include the Nexus SDK"};
-#endif
-    };
-    return result;
-}
-
-void NexusManager::forward_to(const std::string& node_id, const std::string& path, const httplib::Request& req,
-                              httplib::Response& res, const std::string& peer_authorization, const std::string& body) {
-    uint16_t port = 0;
-    const auto opened = directory().open(node_id, port);
-    if (opened.first != 0) { reply_error(res, opened.first, opened.second); return; }
-    nexus_access::relay_http(port, path, req, res, peer_authorization, body);
-}
-
-void NexusManager::relay(const httplib::Request& req, httplib::Response& res) {
+        try { port = session_->relay_port(req.matches[1].str()); }
+        catch (const NexusError& e) { reply_error(res, e.status, e.what()); return; }
+    }
     auto path = req.matches[2].str();
     if (const auto query = req.target.find('?'); query != std::string::npos) path += req.target.substr(query);
-    forward_to(req.matches[1].str(), path, req, res, req.get_header_value(nexus_access::kPeerAuthorizationHeader), req.body);
-}
-
-NexusManager::json NexusManager::selection_reply() const {
-    std::lock_guard<std::mutex> lock(mutex_);
-    return {{"target", selection_target_.empty() ? json(nullptr) : json(selection_target_)},
-        {"peer_key_set", !selection_key_.empty()}, {"port", selection_port_}};
-}
-
-std::pair<int, std::string> NexusManager::select(const json& body) {
-    const auto value = body.contains("target") ? body["target"] : json(nullptr);
-    if (!value.is_null() && !value.is_string()) return {400, "Send target as \"local\", \"auto\", a node ID or null"};
-    if (body.contains("peer_key") && !body["peer_key"].is_string()) return {400, "Send peer_key as a string"};
-    auto target = value.is_string() ? value.get<std::string>() : std::string();
-    if (!target.empty() && target != "local" && target != "auto") {
-        auto peers = directory();
-        if (target == peers.self_node_id()) {
-            target = "local";
-        } else {
-            const auto member = find_member(peers.members(), target);
-            if (member.is_null()) return {404, "That device is not in your group"};
-            if (!member.value("is_inference", false)) return {409, "That device is not an inference server"};
-        }
-    }
-    std::lock_guard<std::mutex> lock(mutex_);
-    selection_target_ = target;
-    selection_key_ = target.empty() ? std::string() : body.value("peer_key", std::string());
-    return {0, ""};
-}
-
-namespace {
-bool is_models_path(const std::string& path) {
-    return path == "/api/v1/models" || path == "/api/v0/models" || path == "/v1/models" || path == "/v0/models";
-}
-}
-
-void NexusManager::serve_selected(const httplib::Request& req, httplib::Response& res) {
-    std::string target;
-    std::string key;
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        target = selection_target_;
-        key = selection_key_;
-    }
-    auto path = req.path;
-    if (const auto query = req.target.find('?'); query != std::string::npos) path += req.target.substr(query);
-    std::string sni;
-#ifdef CPPHTTPLIB_SSL_ENABLED
-    if (selection_tls_) sni = req.sni();
+    nexus_access::relay_http(port, path, req, res, req.get_header_value(nexus_access::kPeerAuthorizationHeader), req.body);
+#else
+    reply_error(res, 503, "This build does not include the Nexus SDK");
 #endif
-    auto peers = directory();
-    std::string domain;
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        domain = local_domain_;
-    }
-    const auto named = nexus_access::host_target(req.get_header_value("Host"), sni, domain, peers.members(), peers.self_node_id());
-    if (named.first != 0) { reply_error(res, named.first, named.second); return; }
-    if (named.second != "local") {
-        const auto supplied = req.get_header_value(nexus_access::kPeerAuthorizationHeader);
-        const auto stored = named.second == target && !key.empty() ? "Bearer " + key : std::string();
-        forward_to(named.second, path, req, res, supplied.empty() ? stored : supplied, req.body);
-        return;
-    }
-    const auto peer_authorization = key.empty() ? std::string() : "Bearer " + key;
-    if (target.empty()) {
-        reply_error(res, 409, "No inference device is selected. POST /api/v1/nexus/selection with a target first.");
-        return;
-    }
-    if (target == "auto") { serve_auto(req, res, path, peer_authorization); return; }
-    if (target != "local") { forward_to(target, path, req, res, peer_authorization, req.body); return; }
-    if (!local_) { reply_error(res, 503, "This server cannot serve local requests on this port"); return; }
-    local_(req, res);
-}
-
-void NexusManager::serve_auto(const httplib::Request& req, httplib::Response& res, const std::string& path,
-                              const std::string& peer_authorization) {
-    auto peers = directory();
-    const auto members = peers.members();
-    const auto self = peers.self_node_id();
-    const auto serve_local = [&](const httplib::Request& request) {
-        if (!local_) { reply_error(res, 503, "This server cannot serve local requests on this port"); return; }
-        local_(request, res);
-    };
-    if (req.method == "GET" && is_models_path(req.path)) {
-        httplib::Request listing;
-        listing.method = "GET";
-        listing.path = "/api/v1/models";
-        httplib::Response local_reply;
-        if (local_) local_(listing, local_reply);
-        const auto local = json::parse(local_reply.body, nullptr, false);
-        const auto merged = nexus_access::merge_models(local.is_discarded() ? json() : local,
-            peer_models(members, self, peer_authorization));
-        res.set_header("Cache-Control", "no-store");
-        res.set_content(merged.dump(), "application/json");
-        return;
-    }
-    auto body = req.is_multipart_form_data() ? json() : json::parse(req.body, nullptr, false);
-    const auto model = body.is_object() && body.contains("model") && body["model"].is_string()
-        ? body["model"].get<std::string>() : std::string();
-    const auto local_models = local_model_ids();
-    auto route = nexus_access::auto_route(model, members, self, local_models, {});
-    if (route.target.empty() && route.status == 404) {
-        route = nexus_access::auto_route(model, members, self, local_models, peer_models(members, self, peer_authorization));
-    }
-    if (route.target.empty()) { reply_error(res, route.status, route.error); return; }
-    auto forwarded = req.body;
-    if (route.model != model) {
-        body["model"] = route.model;
-        forwarded = body.dump();
-    }
-    if (route.target != "local") { forward_to(route.target, path, req, res, peer_authorization, forwarded); return; }
-    if (forwarded == req.body) { serve_local(req); return; }
-    auto rewritten = req;
-    rewritten.body = forwarded;
-    serve_local(rewritten);
-}
-
-std::vector<std::string> NexusManager::local_model_ids() {
-    constexpr auto kFresh = std::chrono::seconds(5);
-    {
-        std::lock_guard<std::mutex> lock(peer_cache_mutex_);
-        if (std::chrono::steady_clock::now() - local_models_fetched_ < kFresh) return local_models_;
-    }
-    std::vector<std::string> ids;
-    if (local_) {
-        httplib::Request listing;
-        listing.method = "GET";
-        listing.path = "/api/v1/models";
-        httplib::Response reply;
-        local_(listing, reply);
-        const auto models = json::parse(reply.body, nullptr, false);
-        if (models.is_object() && models.contains("data") && models["data"].is_array()) {
-            for (const auto& model : models["data"]) {
-                if (model.is_object() && model.contains("id") && model["id"].is_string()) ids.push_back(model["id"].get<std::string>());
-            }
-        }
-    }
-    std::lock_guard<std::mutex> lock(peer_cache_mutex_);
-    local_models_ = ids;
-    local_models_fetched_ = std::chrono::steady_clock::now();
-    return ids;
-}
-
-std::vector<nexus_access::PeerModels> NexusManager::peer_models(const json& members, const std::string& self,
-                                                                const std::string& peer_authorization) {
-    constexpr auto kFresh = std::chrono::seconds(5);
-    auto peers = directory();
-    std::vector<nexus_access::PeerModels> result;
-    for (const auto& member : members) {
-        const auto node_id = member.value("node_id", "");
-        if (node_id.empty() || node_id == self || !member.value("is_inference", false) || !member.value("is_online", false)) continue;
-        {
-            std::lock_guard<std::mutex> lock(peer_cache_mutex_);
-            const auto cached = peer_cache_.find(node_id);
-            if (cached != peer_cache_.end() && std::chrono::steady_clock::now() - cached->second.fetched < kFresh) {
-                result.push_back(cached->second.models);
-                continue;
-            }
-        }
-        nexus_access::PeerModels models;
-        models.node_id = node_id;
-        models.device_name = member.value("device_name", "");
-        models.latency_ms = member.contains("latency_ms") && member["latency_ms"].is_number() ? member["latency_ms"].get<double>() : 0.0;
-        uint16_t port = 0;
-        if (peers.open(node_id, port).first != 0) continue;
-        std::map<std::string, std::string> headers;
-        if (!peer_authorization.empty()) headers["Authorization"] = peer_authorization;
-        const auto base = "http://127.0.0.1:" + std::to_string(port);
-        try {
-            const auto health = utils::HttpClient::get(base + "/api/v1/health", headers, 5, utils::HttpSecurityPolicy::TrustedLoopback);
-            const auto parsed = json::parse(health.body, nullptr, false);
-            if (health.status_code == 200 && parsed.is_object() && parsed.contains("all_models_loaded")) models.loaded = parsed["all_models_loaded"];
-            const auto listing = utils::HttpClient::get(base + "/api/v1/models", headers, 5, utils::HttpSecurityPolicy::TrustedLoopback);
-            const auto list = json::parse(listing.body, nullptr, false);
-            if (listing.status_code == 200 && list.is_object() && list.contains("data") && list["data"].is_array()) {
-                for (const auto& model : list["data"]) {
-                    if (model.is_object() && model.contains("id") && model["id"].is_string()) models.available.push_back(model["id"]);
-                }
-            }
-        } catch (const std::exception&) {
-            continue;
-        }
-        std::lock_guard<std::mutex> lock(peer_cache_mutex_);
-        peer_cache_[node_id] = {std::chrono::steady_clock::now(), models};
-        result.push_back(models);
-    }
-    return result;
 }
 
 void NexusManager::register_routes(httplib::Server& server, NexusListener listener) {

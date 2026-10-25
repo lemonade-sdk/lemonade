@@ -187,7 +187,7 @@ void check_listener_isolation(const std::filesystem::path& root, const std::func
     set_environment("LEMONADE_ADMIN_API_KEY", "");
     set_environment("LEMONADE_API_KEY", "remote-test-key");
     {
-        lemon::NexusManager manager((root / "isolation").string(), listener_policy, listener_policy, nullptr, 0);
+        lemon::NexusManager manager((root / "isolation").string(), listener_policy, listener_policy, 0);
         httplib::Server mesh;
         manager.register_routes(mesh, lemon::NexusListener::MeshIngress);
         const int mesh_port = mesh.bind_to_any_port("127.0.0.1");
@@ -201,6 +201,8 @@ void check_listener_isolation(const std::filesystem::path& root, const std::func
         check(enable && enable->status == 403 && !manager.status().at("enabled"), "Mesh peers cannot enable Nexus");
         auto role = peer.Post("/api/v1/nexus/members/peer/role", R"({"role":"admin"})", "application/json");
         check(role && role->status == 403, "Mesh peers cannot change member roles");
+        auto selection = peer.Post("/api/v1/nexus/selection", R"({"target":"local"})", "application/json");
+        check(selection && selection->status == 403, "Mesh peers cannot change the mesh port selection");
         auto bounced = peer.Post("/api/v1/nexus/peers/gpu/api/v1/chat/completions", "{}", "application/json");
         check(bounced && bounced->status == 403, "Mesh peers cannot relay through this device");
         mesh.stop(); mesh_worker.join();
@@ -257,222 +259,6 @@ void check_listener_isolation(const std::filesystem::path& root, const std::func
     }
     set_environment("LEMONADE_API_KEY", saved_key);
     set_environment("LEMONADE_ADMIN_API_KEY", saved_admin);
-}
-
-// Self-signed test certificate for *.team.lo.example. It protects nothing.
-const char* const kTestCertificate = R"pem(-----BEGIN CERTIFICATE-----
-MIIBrjCCAVOgAwIBAgIUL0rXEyag3UU9DPLndX5iNl8FgfgwCgYIKoZIzj0EAwIw
-HDEaMBgGA1UEAwwRKi50ZWFtLmxvLmV4YW1wbGUwIBcNMjYxMDI1MDA1ODAyWhgP
-MjEyNjEwMDEwMDU4MDJaMBwxGjAYBgNVBAMMESoudGVhbS5sby5leGFtcGxlMFkw
-EwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEZn/Rtq2QYuAvA0a4rShsB0t907g5ijmw
-P40aKcJll+uRUgSLWk/Fr3oL/AOdqKb8nOv1vbmlbwyMGfEhbd7ipaNxMG8wHQYD
-VR0OBBYEFLbykd5cS6zoJE/RVcnOoT8QppODMB8GA1UdIwQYMBaAFLbykd5cS6zo
-JE/RVcnOoT8QppODMA8GA1UdEwEB/wQFMAMBAf8wHAYDVR0RBBUwE4IRKi50ZWFt
-LmxvLmV4YW1wbGUwCgYIKoZIzj0EAwIDSQAwRgIhAJAPCV3fcwQf9YjLra7Czze9
-wTyoazW0WwFey2HsOexnAiEAvkMqQ2UD6FPdpJrcMDXzBpJfU8qEBIqdUDax+em4
-YyM=
------END CERTIFICATE-----
-)pem";
-const char* const kTestPrivateKey = R"pem(-----BEGIN PRIVATE KEY-----
-MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgfRZYFhKOPUfU5oiD
-j/4L8ncLmKfxWUWqU2sA1efypgahRANCAARmf9G2rZBi4C8DRritKGwHS33TuDmK
-ObA/jRopwmWX65FSBItaT8Wvegv8A52opvyc6/W9uaVvDIwZ8SFt3uKl
------END PRIVATE KEY-----
-)pem";
-void check_auto_routing(const std::function<void(bool, const char*)>& check) {
-    const json members = json::array({
-        {{"node_id", "self"}, {"device_name", "My Laptop"}, {"is_inference", true}, {"is_online", true}},
-        {{"node_id", "gpu"}, {"device_name", "GPU tower"}, {"is_inference", true}, {"is_online", true}, {"latency_ms", 20.0}},
-        {{"node_id", "fast"}, {"device_name", "Fast box"}, {"is_inference", true}, {"is_online", true}, {"latency_ms", 2.0}},
-        {{"node_id", "sleeper"}, {"device_name", "Sleeper"}, {"is_inference", true}, {"is_online", false}},
-        {{"node_id", "laptop"}, {"device_name", "Laptop"}, {"is_inference", false}, {"is_online", true}}});
-    std::vector<access::PeerModels> peers(2);
-    peers[0].node_id = "gpu";
-    peers[0].device_name = "GPU tower";
-    peers[0].latency_ms = 20;
-    peers[0].loaded = json::array({{{"model_name", "Big"}, {"is_busy", false}}, {{"model_name", "Both"}, {"is_busy", false}}});
-    peers[0].available = json::array({"Big", "Both", "Spare"});
-    peers[1].node_id = "fast";
-    peers[1].device_name = "Fast box";
-    peers[1].latency_ms = 2;
-    peers[1].loaded = json::array({{{"model_name", "Big"}, {"is_busy", true}}, {{"model_name", "Both"}, {"is_busy", false}}});
-    peers[1].available = json::array({"Big", "Both"});
-    const std::vector<std::string> local = {"Small"};
-    const auto route = [&](const std::string& model) { return access::auto_route(model, members, "self", local, peers); };
-    check(route("GPU tower/Big").target == "gpu" && route("GPU tower/Big").model == "Big", "Auto routes a device-name prefix and strips it");
-    check(route("fast/Big").target == "fast", "Auto routes a node-ID prefix");
-    check(route("My Laptop/Small").target == "local" && route("My Laptop/Small").model == "Small", "Auto routes this device's prefix locally");
-    check(route("Sleeper/Big").status == 409, "Auto refuses an offline prefixed device");
-    check(route("Small").target == "local", "Local model names stay local");
-    check(route("Big").target == "gpu", "An idle loaded peer beats a busy one");
-    check(route("Both").target == "fast", "Among idle loaded peers the lowest latency wins");
-    check(route("Spare").target == "gpu", "A peer that lists the model is used when none has it loaded");
-    check(route("Missing").status == 404, "An unknown model is refused");
-    check(route("").target == "local", "Requests without a model stay local");
-    const auto merged = access::merge_models({{"object", "list"}, {"data", json::array({{{"id", "Small"}}})}}, peers);
-    check(merged["data"].size() == 6 && merged["data"][0]["id"] == "Small" && merged["data"][1]["id"] == "GPU tower/Big"
-        && merged["data"][4]["id"] == "Fast box/Big", "Model list merges local and peer models");
-
-    check(access::device_label("GPU Tower #2") == "gpu-tower-2", "Device names become DNS labels");
-    const std::string domain = ".team.lo.example";
-    const auto host = [&](const std::string& h, const std::string& sni = "") { return access::host_target(h, sni, domain, members, "self"); };
-    check(host("gpu-tower.team.lo.example:13306") == std::make_pair(0, std::string("gpu")), "A device name routes to that device");
-    check(host("my-laptop.team.lo.example") == std::make_pair(0, std::string("local")), "This device's name is local");
-    check(host("127.0.0.1:13306").second == "local", "Loopback is local");
-    check(host("gpu-tower.team.lo.example", "fast-box.team.lo.example").first == 421, "SNI and Host must agree");
-    check(host("nobody.team.lo.example").first == 404, "An unknown device name is refused");
-    check(host("gpu-tower.other.example").first == 421, "Names outside the local domain are refused");
-    const auto urls = access::device_urls(members, "self", domain, 13306, true);
-    check(urls.size() == 3 && urls[1]["url"] == "https://gpu-tower.team.lo.example:13306", "Status lists reachable device URLs");
-    check(access::device_urls(members, "self", "", 13306, false)[0]["url"] == "http://127.0.0.1:13306", "Without a domain only loopback is listed");
-}
-
-void check_selection_listener(const std::filesystem::path& root, const std::function<void(bool, const char*)>& check) {
-    const auto saved_key = lemon::utils::get_environment_variable_utf8("LEMONADE_API_KEY");
-    set_environment("LEMONADE_API_KEY", "");
-    httplib::Server peer;
-    std::string seen_authorization;
-    std::string seen_model;
-    peer.Get("/api/v1/health", [](const httplib::Request&, httplib::Response& res) {
-        res.set_content(R"({"status":"ok","all_models_loaded":[{"model_name":"PeerModel","is_busy":false}]})", "application/json");
-    });
-    peer.Get("/api/v1/models", [](const httplib::Request&, httplib::Response& res) {
-        res.set_content(R"({"object":"list","data":[{"id":"PeerModel"},{"id":"Shared"}]})", "application/json");
-    });
-    peer.Post("/api/v1/chat/completions", [&](const httplib::Request& req, httplib::Response& res) {
-        seen_authorization = req.get_header_value("Authorization");
-        const auto body = json::parse(req.body, nullptr, false);
-        seen_model = body.is_object() ? body.value("model", "") : "";
-        if (body.is_object() && body.value("stream", false)) {
-            res.set_content("data: {\"peer\":true}\n\ndata: [DONE]\n\n", "text/event-stream");
-        } else {
-            res.set_content(json{{"served_by", "peer"}, {"model", seen_model}}.dump(), "application/json");
-        }
-    });
-    const int peer_port = peer.bind_to_any_port("127.0.0.1");
-    std::thread peer_worker([&] { peer.listen_after_bind(); });
-    peer.wait_until_ready();
-
-    std::string local_model;
-    const auto local = [&](const httplib::Request& req, httplib::Response& res) {
-        if (req.method == "GET" && req.path == "/api/v1/models") {
-            res.set_content(R"({"object":"list","data":[{"id":"LocalModel"}]})", "application/json");
-            return;
-        }
-        local_model = json::parse(req.body, nullptr, false).value("model", "");
-        res.set_content(json{{"served_by", "local"}, {"model", local_model}}.dump(), "application/json");
-    };
-    {
-        lemon::NexusManager manager((root / "selection").string(), listener_policy, listener_policy, local, 0);
-        lemon::NexusManager::PeerDirectory directory;
-        directory.members = [] {
-            return json::array({
-                {{"node_id", "self"}, {"device_name", "My Laptop"}, {"is_inference", true}, {"is_online", true}},
-                {{"node_id", "gpu"}, {"device_name", "GPU tower"}, {"is_inference", true}, {"is_online", true}, {"latency_ms", 4.0}},
-                {{"node_id", "sleeper"}, {"device_name", "Sleeper"}, {"is_inference", true}, {"is_online", false}},
-                {{"node_id", "laptop"}, {"device_name", "Laptop"}, {"is_inference", false}, {"is_online", true}}});
-        };
-        directory.self_node_id = [] { return std::string("self"); };
-        directory.open = [peer_port](const std::string& node_id, uint16_t& port) -> std::pair<int, std::string> {
-            if (node_id == "gpu") { port = static_cast<uint16_t>(peer_port); return {0, ""}; }
-            if (node_id == "sleeper") return {409, "That device is offline or not reachable from this device"};
-            return {404, "That device is not in your group"};
-        };
-        manager.set_peer_directory(directory);
-        check(manager.selection_port() > 0, "Selection listener binds");
-        const int control_port = std::stoi(manager.status().at("controller_url").get<std::string>().substr(17));
-        httplib::Client control("127.0.0.1", control_port);
-        httplib::Client selected("127.0.0.1", manager.selection_port());
-        const auto select = [&](const json& body) {
-            auto result = control.Post("/api/v1/nexus/selection", body.dump(), "application/json");
-            return result ? result->status : 0;
-        };
-        const auto chat = [&](const std::string& model, bool stream = false) {
-            return selected.Post("/api/v1/chat/completions", json{{"model", model}, {"stream", stream}}.dump(), "application/json");
-        };
-
-        auto unselected = chat("LocalModel");
-        check(unselected && unselected->status == 409, "Nothing is served before a selection");
-        check(select({{"target", "gpu"}, {"peer_key", "peer-key"}}) == 200, "A Tier 3 peer can be selected");
-        auto shown = control.Get("/api/v1/nexus/selection");
-        check(shown && json::parse(shown->body).at("target") == "gpu" && json::parse(shown->body).at("peer_key_set") == true,
-            "The selection is reported without the key");
-        auto streamed = chat("PeerModel", true);
-        check(streamed && streamed->status == 200 && streamed->body == "data: {\"peer\":true}\n\ndata: [DONE]\n\n"
-            && seen_authorization == "Bearer peer-key", "The selected peer streams through the selection port with its key");
-        check(select({{"target", "laptop"}}) == 409, "A Tier 4 device cannot be selected");
-        check(select({{"target", "missing"}}) == 404, "An unknown device cannot be selected");
-        check(select({{"target", "sleeper"}}) == 200, "An offline Tier 3 device can be selected");
-        auto offline = chat("PeerModel");
-        check(offline && offline->status == 409, "An offline selection is refused, not served locally");
-        check(select({{"target", "local"}}) == 200, "Local can be selected");
-        shown = control.Get("/api/v1/nexus/selection");
-        check(shown && json::parse(shown->body).at("peer_key_set") == false, "Changing the selection clears the peer key");
-        auto served = chat("LocalModel");
-        check(served && json::parse(served->body).at("served_by") == "local", "Local selection serves this lemond");
-        check(select({{"target", nullptr}}) == 200, "The selection can be cleared");
-        unselected = chat("LocalModel");
-        check(unselected && unselected->status == 409, "A cleared selection serves nothing");
-
-        check(select({{"target", "auto"}}) == 200, "Auto can be selected");
-        auto prefixed = chat("GPU tower/PeerModel");
-        check(prefixed && json::parse(prefixed->body).at("served_by") == "peer" && seen_model == "PeerModel",
-            "Auto routes a device prefix to the peer and strips it");
-        auto loaded = chat("PeerModel");
-        check(loaded && json::parse(loaded->body).at("served_by") == "peer", "Auto routes a model a peer has loaded");
-        auto kept = chat("LocalModel");
-        check(kept && json::parse(kept->body).at("served_by") == "local", "Auto keeps local model names local");
-        auto listing = selected.Get("/api/v1/models");
-        const auto ids = listing ? json::parse(listing->body).at("data") : json::array();
-        check(ids.size() == 3 && ids[0]["id"] == "LocalModel" && ids[1]["id"] == "GPU tower/PeerModel",
-            "Auto lists local models and each peer's models");
-
-        manager.set_local_domain(".team.lo.example");
-        auto named = selected.Post("/api/v1/chat/completions", httplib::Headers{{"Host", "gpu-tower.team.lo.example:13306"}},
-            json{{"model", "PeerModel"}}.dump(), "application/json");
-        check(named && json::parse(named->body).at("served_by") == "peer", "A device name routes to that device");
-        auto own = selected.Post("/api/v1/chat/completions", httplib::Headers{{"Host", "my-laptop.team.lo.example"}},
-            json{{"model", "LocalModel"}}.dump(), "application/json");
-        check(own && json::parse(own->body).at("served_by") == "local", "This device's name uses the selection");
-        auto unknown = selected.Post("/api/v1/chat/completions", httplib::Headers{{"Host", "nobody.team.lo.example"}},
-            json{{"model", "PeerModel"}}.dump(), "application/json");
-        check(unknown && unknown->status == 404, "An unknown device name is refused");
-
-        set_environment("LEMONADE_API_KEY", "selection-key");
-        auto keyless = selected.Get("/api/v1/models");
-        check(keyless && keyless->status == 401, "The selection port enforces the API key");
-        set_environment("LEMONADE_API_KEY", "");
-
-#ifdef CPPHTTPLIB_SSL_ENABLED
-        check(!manager.install_certificate("*.team.lo.example", "not a certificate", "not a key"), "A bad certificate is rejected");
-        check(manager.install_certificate("*.team.lo.example", kTestCertificate, kTestPrivateKey), "The device certificate is installed");
-        check(manager.status().at("selection").at("tls") == true, "The selection listener reports TLS");
-        httplib::SSLClient secure("gpu-tower.team.lo.example", manager.selection_port());
-        secure.set_hostname_addr_map({{"gpu-tower.team.lo.example", "127.0.0.1"}});
-        secure.enable_server_certificate_verification(false);
-        auto tls_named = secure.Post("/api/v1/chat/completions", json{{"model", "PeerModel"}}.dump(), "application/json");
-        check(tls_named && json::parse(tls_named->body).at("served_by") == "peer", "TLS routes by the device name");
-        auto mismatch = secure.Post("/api/v1/chat/completions", httplib::Headers{{"Host", "my-laptop.team.lo.example"}},
-            json{{"model", "LocalModel"}}.dump(), "application/json");
-        check(mismatch && mismatch->status == 421, "A Host that differs from SNI is refused");
-        check(manager.install_certificate("*.team.lo.example", kTestCertificate, kTestPrivateKey), "A renewed certificate replaces the old one");
-#endif
-
-        httplib::Server mesh;
-        manager.register_routes(mesh, lemon::NexusListener::MeshIngress);
-        const int mesh_port = mesh.bind_to_any_port("127.0.0.1");
-        std::thread mesh_worker([&] { mesh.listen_after_bind(); });
-        mesh.wait_until_ready();
-        httplib::Client from_peer("127.0.0.1", mesh_port);
-        auto refused = from_peer.Post("/api/v1/nexus/selection", R"({"target":"local"})", "application/json");
-        check(refused && refused->status == 403, "Mesh peers cannot change the selection");
-        mesh.stop();
-        mesh_worker.join();
-        manager.stop();
-    }
-    peer.stop();
-    peer_worker.join();
-    set_environment("LEMONADE_API_KEY", saved_key);
 }
 
 void check_access_rules(const std::function<void(bool, const char*)>& check) {
@@ -604,10 +390,8 @@ int main() {
         check_route_access(check);
         check_relay_stream(check);
         check_listener_isolation(root, check);
-        check_auto_routing(check);
-        check_selection_listener(root, check);
         {
-            lemon::NexusManager manager(root.string(), listener_policy, listener_policy, nullptr, 0);
+            lemon::NexusManager manager(root.string(), listener_policy, listener_policy, 0);
             httplib::Server server;
             manager.register_routes(server);
             const int port = server.bind_to_any_port("127.0.0.1");
@@ -659,7 +443,13 @@ int main() {
             request("enable", "[]", 400);
             request("enable", "{", 400);
 #ifdef LEMONADE_WITH_NEXUS
+            request("selection", R"({"target":"local"})", 409);
+#endif
+#ifdef LEMONADE_WITH_NEXUS
             auto enabled = request("enable", "{}", 200);
+            request("selection", R"({"target":"local"})", 409);
+            request("selection", R"({"target":5})", 400);
+            check(enabled.contains("mesh_port") && enabled.contains("genesis_key_set"), "Status reports the SDK mesh port and Genesis key state");
             check(enabled.at("available") && enabled.at("enabled") && enabled.at("locked"), "SDK enabled without unlocking");
             check(std::filesystem::exists(root / "nexus/identity.json"), "Device identity persisted");
             request("join", R"({"code":"12345678"})", 423);
@@ -688,6 +478,7 @@ int main() {
             request("lock", "{}", 200);
 #else
             request("enable", "{}", 503);
+            request("selection", R"({"target":"local"})", 503);
             request("members/peer/role", R"({"role":"admin"})", 503);
 #endif
             auto events = management.Get("/api/v1/nexus/events?after=0&once=1");
@@ -696,14 +487,14 @@ int main() {
         }
 #ifdef LEMONADE_WITH_NEXUS
         {
-            lemon::NexusManager restored(root.string(), listener_policy, listener_policy, nullptr, 0);
+            lemon::NexusManager restored(root.string(), listener_policy, listener_policy, 0);
             const auto status = restored.status();
             check(status.at("enabled") && status.at("locked") && !status.at("mesh_up"), "Restarts enabled and locked");
             check(status.at("device_name") == "My laptop", "Name survives restart");
             restored.disable();
         }
         {
-            lemon::NexusManager disabled(root.string(), listener_policy, listener_policy, nullptr, 0);
+            lemon::NexusManager disabled(root.string(), listener_policy, listener_policy, 0);
             check(!disabled.status().at("enabled"), "Disable survives restart");
         }
 #endif
