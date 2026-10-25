@@ -3,6 +3,7 @@
 #include <LemonadeNexusSDK/Error.hpp>
 #include <LemonadeNexusSDK/Types.hpp>
 
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -42,6 +43,19 @@ struct Tier1Membership {
     std::vector<Tier1Server> servers;
 };
 
+/// A Genesis public key that first-connect discovery found and pinned.
+struct GenesisKeyDiscovery {
+    std::string              genesis_pubkey;  ///< canonical standard base64 (32 bytes)
+    std::string              network_id;      ///< lowercase hex of the derived network id
+    std::string              dns_base_domain; ///< the network DNS domain the hosts reported
+    std::vector<std::string> hosts;           ///< the agreeing hosts inside that domain
+};
+
+/// Distinct hosts inside the network DNS domain that must report the same
+/// Genesis key before first-connect discovery pins it. A network with fewer
+/// reachable servers needs an explicit set_genesis_key().
+inline constexpr std::size_t kGenesisDiscoveryMinHosts = 3;
+
 /// Finds and verifies the Tier 1 servers that every tree read and write goes
 /// to. Only Tier 1 servers hold the tree; a Tier 2 server refuses every tree
 /// route.
@@ -80,6 +94,29 @@ public:
     bool set_genesis_key(const std::string& genesis_pubkey_b64, uint64_t min_epoch = 0);
 
     [[nodiscard]] bool has_genesis_key() const;
+
+    /// First-connect discovery: find the Genesis key from the servers
+    /// themselves and pin it. Runs only when no key is pinned; it never
+    /// replaces a pinned key, even one pinned while it runs.
+    ///
+    /// Asks each host in `hosts` (at most 16, in order, duplicates removed)
+    /// for GET /api/onboard/info through the verified-TLS transport. A host
+    /// that does not answer 200, or answers without a key, is not counted.
+    /// Every host that reports a key must report the same key, network id,
+    /// and DNS domain, and the network id must derive from the key under the
+    /// compiled ruleset versions. At least kGenesisDiscoveryMinHosts distinct
+    /// agreeing hosts must sit inside the reported DNS domain. A disagreement,
+    /// a malformed key or network id, a network id that does not derive from
+    /// the key, or no DNS domain fails closed and pins nothing.
+    ///
+    /// Trust limit: this is trust on first use. It rests on verified-HTTPS
+    /// ownership of the network's DNS domain and on agreement of several
+    /// hosts, not on a signature. After it succeeds the key is pinned like
+    /// one set with set_genesis_key().
+    ///
+    /// Errors: http_status 409 when a key is already pinned, 403 when the
+    /// answers are refused, 0 when too few hosts agreed.
+    Result<GenesisKeyDiscovery> discover_genesis_key(const std::vector<ServerEndpoint>& hosts);
 
     /// Walk the chain from `sources`, then probe candidate servers: each
     /// source, and each server those sources list in GET /api/servers whose

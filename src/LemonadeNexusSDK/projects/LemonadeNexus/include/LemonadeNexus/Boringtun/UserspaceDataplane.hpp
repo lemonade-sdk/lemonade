@@ -133,6 +133,17 @@ public:
     [[nodiscard]] bool has_peer(const std::string& pubkey_b64) const;
     [[nodiscard]] bool update_endpoint(const std::string& pubkey_b64,
                                        const std::string& endpoint);
+
+    /// Send a fresh handshake initiation for `pubkey_b64` to `endpoint`
+    /// ("a.b.c.d:port") without changing the peer's stored endpoint. This is
+    /// the hole-punch probe: the outbound packet opens this side's NAT
+    /// mapping toward `endpoint`. Only a valid handshake response from that
+    /// address moves the peer there (normal authenticated roaming). The
+    /// peer's current session stays in use until a new handshake completes.
+    /// False when the dataplane is stopped, the peer is unknown, or the
+    /// endpoint does not parse. Thread-safe.
+    [[nodiscard]] bool probe_endpoint(const std::string& pubkey_b64,
+                                      const std::string& endpoint);
     [[nodiscard]] std::vector<BoringtunPeer> snapshot_peers() const;
     [[nodiscard]] size_t peer_count() const;
 
@@ -149,6 +160,20 @@ public:
     // ---- termination-layer seam ---------------------------------------------
 
     void set_inbound_handler(InboundIpHandler handler);
+
+    /// Receives STUN messages (stun::is_stun_message) that arrive on the
+    /// dataplane socket, with the sender as "a.b.c.d:port". These datagrams
+    /// never reach a Noise session and change no peer state. Called from
+    /// dataplane rx threads: must not block. Without a handler they are
+    /// dropped.
+    using StunHandler = std::function<void(std::span<const uint8_t>, const std::string&)>;
+    void set_stun_handler(StunHandler handler);
+
+    /// Send one STUN message from the dataplane socket to `endpoint`
+    /// ("a.b.c.d:port"), so the reply reports the NAT mapping that the mesh
+    /// traffic uses. False when the dataplane is stopped, the endpoint does
+    /// not parse, or `message` is not a STUN message. Thread-safe.
+    [[nodiscard]] bool send_stun(const std::string& endpoint, std::span<const uint8_t> message);
 
     /// Route + encrypt a locally-originated IP packet. Returns false if the
     /// destination has no route or no usable endpoint.
@@ -246,6 +271,7 @@ private:
 
     mutable std::shared_mutex inbound_mtx_;
     InboundIpHandler          inbound_;
+    StunHandler               stun_handler_;  ///< guarded by inbound_mtx_
 
     std::vector<std::thread> rx_workers_;
     std::thread              timer_thread_;

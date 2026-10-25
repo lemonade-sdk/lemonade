@@ -1,6 +1,7 @@
 #include <LemonadeNexus/Boringtun/UserspaceDataplane.hpp>
 
 #include <LemonadeNexus/Boringtun/WireProtocol.hpp>
+#include <LemonadeNexus/Network/StunWire.hpp>
 
 #include <boringtun_ffi.h>
 #include <sodium.h>
@@ -505,6 +506,22 @@ bool UserspaceDataplane::update_endpoint(const std::string& pubkey_b64,
     return true;
 }
 
+bool UserspaceDataplane::probe_endpoint(const std::string& pubkey_b64,
+                                        const std::string& endpoint) {
+    if (!running_) return false;
+    auto parsed = parse_endpoint(endpoint);
+    if (!parsed) return false;
+    PeerPtr peer = peer_by_pubkey(pubkey_b64);
+    if (!peer) return false;
+
+    std::vector<uint8_t> buf(wire::kMaxOverhead + 64);
+    auto r = wireguard_force_handshake(peer->tunn, buf.data(),
+                                       static_cast<uint32_t>(buf.size()));
+    if (r.op != WRITE_TO_NETWORK || r.size == 0) return false;
+    send_udp(buf.data(), r.size, *parsed);
+    return true;
+}
+
 std::vector<BoringtunPeer> UserspaceDataplane::snapshot_peers() const {
     // add_peer reassigns allowed_ips under the exclusive lock, so copy it
     // under the shared lock.
@@ -542,6 +559,20 @@ size_t UserspaceDataplane::peer_count() const {
 void UserspaceDataplane::set_inbound_handler(InboundIpHandler handler) {
     std::unique_lock lock(inbound_mtx_);
     inbound_ = std::move(handler);
+}
+
+void UserspaceDataplane::set_stun_handler(StunHandler handler) {
+    std::unique_lock lock(inbound_mtx_);
+    stun_handler_ = std::move(handler);
+}
+
+bool UserspaceDataplane::send_stun(const std::string& endpoint,
+                                   std::span<const uint8_t> message) {
+    if (!running_ || !network::stun::is_stun_message(message)) return false;
+    auto parsed = parse_endpoint(endpoint);
+    if (!parsed) return false;
+    send_udp(message.data(), message.size(), *parsed);
+    return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -629,6 +660,15 @@ void UserspaceDataplane::handle_datagram(std::span<const uint8_t> pkt,
                                          uint64_t from_packed,
                                          std::vector<uint8_t>& scratch_a,
                                          std::vector<uint8_t>& scratch_b) {
+    // A STUN reply to this socket's reflexive-address query. The two formats
+    // cannot overlap (see stun::is_stun_message), and a STUN message never
+    // reaches a Noise session.
+    if (network::stun::is_stun_message(pkt)) {
+        std::shared_lock lock(inbound_mtx_);
+        if (stun_handler_) stun_handler_(pkt, endpoint_to_string(from_packed));
+        return;
+    }
+
     auto type = wire::parse_type(pkt);
     if (!type) return;  // not a boringtun/Noise packet
 

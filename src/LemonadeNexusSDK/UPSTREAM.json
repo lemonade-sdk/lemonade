@@ -1,6 +1,6 @@
 {
   "repository": "https://github.com/lemonade-sdk/lemonade-nexus.git",
-  "commit": "0459e31bcfda36fb9c9e341e1826804fb66f0c55",
+  "commit": "f15ad4b01afc59fa3a8fde5de89983f2bdf21509",
   "version": "0.9.8",
   "paths": [
     "LICENSE",
@@ -25,6 +25,9 @@
     "projects/LemonadeNexus/include/LemonadeNexus/Boringtun/WireProtocol.hpp",
     "projects/LemonadeNexus/include/LemonadeNexus/Crypto/CryptoTypes.hpp",
     "projects/LemonadeNexus/include/LemonadeNexus/Crypto/SecureBuffer.hpp",
+    "projects/LemonadeNexus/include/LemonadeNexus/Network/StunWire.hpp",
+    "projects/LemonadeNexus/include/LemonadeNexus/Relay/RelayTypes.hpp",
+    "projects/LemonadeNexus/include/LemonadeNexus/Relay/RelayWire.hpp",
     "projects/LemonadeNexus/include/LemonadeNexus/Security/Attestation/AttestationProfileId.hpp",
     "projects/LemonadeNexus/include/LemonadeNexus/Security/CanonicalEncoding.hpp",
     "projects/LemonadeNexus/include/LemonadeNexus/Security/Consensus/CommitProof.hpp",
@@ -45,6 +48,8 @@
     "projects/LemonadeNexus/src/Boringtun/UserspaceDataplane.cpp",
     "projects/LemonadeNexus/src/Crypto/CryptoTypes.cpp",
     "projects/LemonadeNexus/src/Crypto/SecureBuffer.cpp",
+    "projects/LemonadeNexus/src/Network/StunWire.cpp",
+    "projects/LemonadeNexus/src/Relay/RelayWire.cpp",
     "projects/LemonadeNexus/src/Security/CanonicalEncoding.cpp",
     "projects/LemonadeNexus/src/Security/Consensus/CommitProof.cpp",
     "projects/LemonadeNexus/src/Security/Consensus/ConsensusTypes.cpp",
@@ -64,9 +69,5 @@
   "exclude": [
     "projects/LemonadeNexusSDK/src/main.cpp"
   ],
-  "patches": [
-    "0001-Update-an-existing-ingress-target-when-a-service-is-.patch",
-    "0002-Add-device-hosted-account-images-to-the-client-SDK.patch",
-    "0003-Read-multipart-parts-from-cpp-httplib-0.23-and-newer.patch"
-  ]
+  "patches": []
 }

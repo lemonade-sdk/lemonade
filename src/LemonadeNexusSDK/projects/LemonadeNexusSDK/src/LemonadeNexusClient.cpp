@@ -898,6 +898,21 @@ StatusResult LemonadeNexusClient::set_genesis_key(const std::string& genesis_pub
     return result;
 }
 
+Result<GenesisKeyDiscovery> LemonadeNexusClient::discover_genesis_key(
+    const std::vector<ServerEndpoint>& hosts) {
+    if (impl_->tier1.has_genesis_key()) {
+        Result<GenesisKeyDiscovery> refused;
+        refused.error = "a Genesis key is already pinned; discovery never replaces it";
+        refused.http_status = 409;
+        return refused;
+    }
+    if (impl_->config.auto_discover) impl_->discover_servers();
+    auto candidates = hosts;
+    const auto pool = impl_->tier1_sources();
+    candidates.insert(candidates.end(), pool.begin(), pool.end());
+    return impl_->tier1.discover_genesis_key(candidates);
+}
+
 Result<Tier1Membership> LemonadeNexusClient::refresh_tier1() {
     return impl_->tier1.refresh(impl_->tier1_sources());
 }
@@ -1671,6 +1686,11 @@ Result<RelayTicket> LemonadeNexusClient::request_relay_ticket(const std::string&
 
     if (!resp) {
         result.error = "server unreachable";
+        return result;
+    }
+    if (status != 200 || !resp->is_object()) {
+        result.error = resp->is_object() ? resp->value("error", "relay ticket refused")
+                                         : "relay ticket refused";
         return result;
     }
 

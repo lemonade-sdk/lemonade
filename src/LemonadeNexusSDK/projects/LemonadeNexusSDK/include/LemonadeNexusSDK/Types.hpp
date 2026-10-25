@@ -370,8 +370,13 @@ struct MeshTunnelStatus {
 struct MeshConfig {
     uint32_t peer_refresh_interval_sec{30};  ///< How often to poll for peer updates
     uint32_t heartbeat_interval_sec{5};      ///< How often to send heartbeat
-    uint32_t stun_refresh_interval_sec{60};  ///< How often to re-probe STUN
-    bool     prefer_direct{true};            ///< Prefer direct P2P over relay
+    /// How often to learn and publish the reflexive address (STUN query from
+    /// the dataplane socket to the session server). 0 turns it off.
+    uint32_t stun_refresh_interval_sec{60};
+    /// Prefer direct P2P over relay: keep probing a relayed peer's direct
+    /// endpoint and leave the relay when a probe gets a handshake. False puts
+    /// every peer on a relay when one is available.
+    bool     prefer_direct{true};
     bool     auto_connect{true};             ///< Auto-connect to discovered peers
 };
 

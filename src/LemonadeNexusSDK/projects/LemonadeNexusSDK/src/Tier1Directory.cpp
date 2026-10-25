@@ -2,6 +2,8 @@
 
 #include <LemonadeNexus/Crypto/CryptoTypes.hpp>
 #include <LemonadeNexus/Security/Epoch/Tier1Membership.hpp>
+#include <LemonadeNexus/Security/Genesis/BootstrapCertificate.hpp>
+#include <LemonadeNexus/Security/Policy/SecurityConstants.hpp>
 #include <LemonadeNexus/Security/Transport/AuthorityChainCodec.hpp>
 
 #include <nlohmann/json.hpp>
@@ -28,6 +30,8 @@ constexpr int kMaxChainPages = 4096;
 constexpr std::size_t kMaxProbes = 32;
 /// Chain walks a refresh starts again after a proof names a later epoch.
 constexpr int kMaxRewalks = 2;
+/// Hosts one Genesis key discovery asks.
+constexpr std::size_t kMaxGenesisDiscoveryHosts = 16;
 
 int64_t steady_ms() {
     return std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -73,6 +77,27 @@ std::optional<std::array<uint8_t, N>> fixed_b64(const json& doc, const char* fie
 
 enum class Walk { Done, Advanced, Unreachable, Refused };
 
+/// A DNS name in compare form: lowercase, without a trailing dot.
+std::string dns_name(std::string name) {
+    name = lower(std::move(name));
+    if (!name.empty() && name.back() == '.') name.pop_back();
+    return name;
+}
+
+/// True when `host` is `domain` or a name below it.
+bool inside_domain(const std::string& host, const std::string& domain) {
+    return host == domain ||
+           (host.size() > domain.size() + 1 && host.ends_with(domain) &&
+            host[host.size() - domain.size() - 1] == '.');
+}
+
+/// What one host reported on GET /api/onboard/info.
+struct GenesisClaim {
+    nexus::crypto::Ed25519PublicKey key{};
+    std::string network_id;  // lowercase hex
+    std::string domain;      // compare form
+};
+
 }  // namespace
 
 struct Tier1Directory::State {
@@ -91,6 +116,20 @@ struct Tier1Directory::State {
     std::mutex refresh_mutex;  // serializes refresh(); guards the walker
     std::unique_ptr<sec::AuthorityChainWalker> walker;
     uint64_t walker_generation = 0;
+
+    /// Pins `key` and raises the epoch floor. A different key drops every
+    /// verified result. Caller holds `mutex`.
+    void pin_locked(const nexus::crypto::Ed25519PublicKey& key, uint64_t floor) {
+        if (!genesis || *genesis != key) {
+            genesis = key;
+            ++generation;
+            membership = {};
+            authority.reset();
+            stale = true;
+            preferred.clear();
+        }
+        min_epoch = std::max(min_epoch, floor);
+    }
 
     /// Walks pages from `server` until it has nothing newer. io: network.
     Walk walk_from(const ServerEndpoint& server, std::string& error) {
@@ -146,21 +185,105 @@ bool Tier1Directory::set_genesis_key(const std::string& genesis_pubkey_b64, uint
     nexus::crypto::Ed25519PublicKey key{};
     std::memcpy(key.data(), bytes->data(), key.size());
     std::lock_guard lock(state_->mutex);
-    if (!state_->genesis || *state_->genesis != key) {
-        state_->genesis = key;
-        ++state_->generation;
-        state_->membership = {};
-        state_->authority.reset();
-        state_->stale = true;
-        state_->preferred.clear();
-    }
-    state_->min_epoch = std::max(state_->min_epoch, min_epoch);
+    state_->pin_locked(key, min_epoch);
     return true;
 }
 
 bool Tier1Directory::has_genesis_key() const {
     std::lock_guard lock(state_->mutex);
     return state_->genesis.has_value();
+}
+
+Result<GenesisKeyDiscovery> Tier1Directory::discover_genesis_key(
+    const std::vector<ServerEndpoint>& hosts) {
+    Result<GenesisKeyDiscovery> result;
+    const auto fail = [&result](std::string why, int status) {
+        result.error = std::move(why);
+        result.http_status = status;
+        return result;
+    };
+    constexpr const char* kPinned =
+        "a Genesis key is already pinned; discovery never replaces it";
+    // Server answers are hostile input. Nothing below should throw on them;
+    // the catch is the backstop, so no exception leaves the SDK.
+    try {
+        std::lock_guard discovery_lock(state_->refresh_mutex);
+        if (has_genesis_key()) return fail(kPinned, 409);
+
+        // One question per distinct host name; ports do not make hosts distinct.
+        std::vector<ServerEndpoint> targets;
+        std::vector<std::string> seen;
+        for (const auto& ep : hosts) {
+            const auto name = dns_name(ep.host);
+            if (name.empty() || std::find(seen.begin(), seen.end(), name) != seen.end()) {
+                continue;
+            }
+            seen.push_back(name);
+            targets.push_back(ep);
+            if (targets.size() == kMaxGenesisDiscoveryHosts) break;
+        }
+
+        std::optional<GenesisClaim> agreed;
+        std::string agreed_from;
+        std::vector<std::string> agreeing;
+        for (const auto& ep : targets) {
+            const auto reply = state_->get(ep, "/api/onboard/info");
+            if (!reply || reply->status != 200) continue;
+            const auto doc = json::parse(reply->body, nullptr, false);
+            if (doc.is_discarded() || !doc.is_object() || !doc.contains("genesis_pubkey")) {
+                continue;  // no claim: a server without a configured key, or an older one
+            }
+            const auto key = fixed_b64<nexus::crypto::kEd25519PublicKeySize>(doc, "genesis_pubkey");
+            if (!key) return fail("malformed Genesis key from " + ep.host, 403);
+            const auto reported = lower(string_field(doc, "network_id"));
+            const auto derived = nexus::crypto::to_hex(sec::derive_network_id(
+                *key, sec::constants::kSecurityRulesetVersion,
+                sec::constants::kConsensusRulesetVersion));
+            if (reported != derived) {
+                return fail("the network id from " + ep.host +
+                                " does not derive from its Genesis key",
+                            403);
+            }
+            GenesisClaim claim{*key, derived, dns_name(string_field(doc, "dns_base_domain"))};
+            if (!agreed) {
+                agreed = claim;
+                agreed_from = ep.host;
+            } else if (claim.key != agreed->key || claim.domain != agreed->domain) {
+                return fail("servers disagree on the Genesis key or network domain: " +
+                                agreed_from + " and " + ep.host,
+                            403);
+            }
+            if (inside_domain(dns_name(ep.host), claim.domain)) agreeing.push_back(ep.host);
+        }
+
+        if (agreed && agreed->domain.empty()) {
+            return fail("the servers report no network DNS domain, so their agreement "
+                        "proves nothing; set the Genesis key explicitly",
+                        403);
+        }
+        if (agreeing.size() < kGenesisDiscoveryMinHosts) {
+            return fail("Genesis key discovery needs " +
+                            std::to_string(kGenesisDiscoveryMinHosts) +
+                            " agreeing servers inside the network domain, found " +
+                            std::to_string(agreeing.size()) +
+                            "; set the Genesis key explicitly",
+                        0);
+        }
+
+        {
+            std::lock_guard lock(state_->mutex);
+            if (state_->genesis) return fail(kPinned, 409);
+            state_->pin_locked(agreed->key, 0);
+        }
+        result.ok = true;
+        result.value.genesis_pubkey = nexus::crypto::to_base64(agreed->key);
+        result.value.network_id = agreed->network_id;
+        result.value.dns_base_domain = agreed->domain;
+        result.value.hosts = std::move(agreeing);
+        return result;
+    } catch (const std::exception& e) {
+        return fail(std::string("Genesis key discovery failed: ") + e.what(), 403);
+    }
 }
 
 Result<Tier1Membership> Tier1Directory::refresh(const std::vector<ServerEndpoint>& sources) {

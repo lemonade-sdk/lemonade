@@ -274,6 +274,11 @@ inline constexpr uint64_t kChallengeProductionWindowMs = 1000;
 // The uncommitted chain is at most a few blocks in chained HotStuff; the
 // sync reply is bounded well above that and well below the envelope limit.
 inline constexpr std::size_t kMaxSyncChainBlocks = 8;
+// A running replica further behind than one sync reply fetches the gap in
+// pages of kMaxSyncChainBlocks. It asks one peer for the same page again only
+// after this interval, so a peer that cannot serve the page is not asked in a
+// loop.
+inline constexpr uint64_t kSyncPageRetryMs = 1000;
 
 // Handoff-chain links per page. A link at the largest population is under
 // 10 KB on the wire, so four keep the page inside the envelope limit with the

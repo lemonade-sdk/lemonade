@@ -215,7 +215,9 @@ ln_error_t ln_relay_list(ln_client_t* client, char** out_json);
 /** POST /api/relay/ticket. Returns JSON via out_json: {peer_id, relay_id,
  *  session_nonce, issued_at, expires_at, network_id, epoch, issuer, signature}.
  *  A Tier 1 server signs the ticket; any relay verifies it against its
- *  verified Tier 1 membership. */
+ *  verified Tier 1 membership. relay_id must be the relay's base64 node
+ *  identity key. peer_id must be the caller's own node id. On failure the
+ *  JSON carries "error" and the code reflects the HTTP status. */
 ln_error_t ln_relay_ticket(ln_client_t* client,
                             const char* peer_id,
                             const char* relay_id,
@@ -405,7 +407,13 @@ ln_error_t ln_mesh_enable(ln_client_t* client);
 
 /** Enable mesh networking with custom config (JSON string).
  *  Config JSON keys: peer_refresh_interval_sec, heartbeat_interval_sec,
- *  stun_refresh_interval_sec, prefer_direct, auto_connect. */
+ *  stun_refresh_interval_sec, prefer_direct, auto_connect.
+ *  stun_refresh_interval_sec (default 60) sets how often the client learns
+ *  its reflexive address from the server's STUN service and publishes it for
+ *  hole punching; 0 turns this off. prefer_direct (default true) keeps
+ *  probing a relayed peer's direct endpoint and moves the peer back to a
+ *  direct path when a probe gets an authenticated handshake; false keeps
+ *  every peer on a relay when one is available. */
 ln_error_t ln_mesh_enable_config(ln_client_t* client, const char* config_json);
 
 /** Disable mesh networking and remove all mesh peers from the tunnel. */
@@ -421,6 +429,9 @@ ln_error_t ln_mesh_status(ln_client_t* client, char** out_json);
  *  Each peer: {node_id, hostname, mesh_pubkey, tunnel_ip, private_subnet,
  *  endpoint, relay_endpoint, is_online, last_handshake, rx_bytes, tx_bytes,
  *  latency_ms, keepalive}.
+ *  A peer whose traffic goes through a relay (relay fallback) has a non-empty
+ *  relay_endpoint ("ip:port" of the relay); ln_mesh_status also reports its
+ *  endpoint as empty.
  *  Caller must ln_free(*out_json). */
 ln_error_t ln_mesh_peers(ln_client_t* client, char** out_json);
 
@@ -629,6 +640,41 @@ ln_error_t ln_tier1_refresh(ln_client_t* client, char** out_json);
  *  no network I/O. "servers" is empty when nothing is verified. The caller
  *  must ln_free() *out_json. Thread-safe. */
 ln_error_t ln_tier1_membership(ln_client_t* client, char** out_json);
+
+/** First-connect discovery of the network's Genesis key, for a client with no
+ *  pinned key. It never replaces a pinned key; changing the key stays an
+ *  explicit ln_set_genesis_key call.
+ *
+ *  The client asks each candidate server for GET /api/onboard/info over
+ *  verified HTTPS: the servers in hosts_json first, then the configured
+ *  server and the servers it lists in /api/servers. At most 16 distinct hosts
+ *  are asked. Every server that reports a key must report the same key,
+ *  network id, and DNS domain; the network id must derive from the key; and at
+ *  least 3 distinct agreeing hosts must sit inside that DNS domain. Anything
+ *  else fails closed and pins nothing.
+ *
+ *  Trust limit: this is trust on first use. It rests on verified-HTTPS
+ *  ownership of the network's DNS domain and on agreement of several servers,
+ *  not on a signature. The application must store the returned key and pin it
+ *  with ln_set_genesis_key on later runs.
+ *
+ *  @param hosts_json  NULL, or a JSON array of extra candidate servers, for
+ *                     example servers found through DNS discovery:
+ *                     [{"host":"<certificate fqdn>","port":9100},...]. "port"
+ *                     is optional (default 9100). Not retained after the call.
+ *  @param out_json    Receives, on LN_OK,
+ *                     {"genesis_pubkey":"<base64>","network_id":"<hex>",
+ *                      "dns_base_domain":"<domain>","hosts":["<fqdn>",...]}
+ *                     and on failure {"error":"..."}. The caller must ln_free()
+ *                     *out_json in both cases. It stays NULL only for
+ *                     LN_ERR_NULL_ARG and LN_ERR_INTERNAL.
+ *  @return LN_OK and the key is pinned; LN_ERR_REJECTED when a key is already
+ *          pinned, hosts_json is malformed, a server sent a malformed key or a
+ *          network id that does not derive from its key, or servers disagree;
+ *          LN_ERR_CONNECT when fewer than 3 agreeing servers answered.
+ *  Blocks on network I/O. Thread-safe. */
+ln_error_t ln_discover_genesis_key(ln_client_t* client, const char* hosts_json,
+                                   char** out_json);
 
 /* ------------------------------------------------------------------ */
 /* Mesh port                                                           */

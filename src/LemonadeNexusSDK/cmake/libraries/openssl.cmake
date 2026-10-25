@@ -1,13 +1,37 @@
 cmake_minimum_required(VERSION 3.25.1)
 
 # =============================================================================
-# OpenSSL — prefer system/package-manager version, build from source as fallback
+# OpenSSL — a pinned version, linked statically
 # =============================================================================
-# CI environments install OpenSSL via system packages on Linux (libssl-dev,
-# openssl-devel) and vcpkg on Windows.  On macOS, set OPENSSL_FORCE_BUNDLED=ON
-# to build statically from source so distributed binaries carry no Homebrew
-# (or other /usr/local) dylib dependencies.
+# With LEMONADE_NEXUS_STATIC_DEPS=ON (the default for a top-level build), every
+# target that uses OpenSSL links a pinned OpenSSL statically. A binary then
+# carries no libssl/libcrypto dependency, so an OS update of OpenSSL, or of a
+# library that the OS libcrypto loads (zlib, zstd), cannot change the code that
+# Tier 1 attestation measures. An OpenSSL fix ships in a Nexus release that
+# changes a pin below. Change a pin and its source in the same reviewed change.
+#
+#   Linux          The static libraries of Ubuntu 24.04 libssl-dev, at exactly
+#                  LEMONADE_NEXUS_OPENSSL_VERSION_UBUNTU. release.yml installs
+#                  the package from the Ubuntu snapshot UBUNTU_SNAPSHOT, so the
+#                  package build is fixed too. Its libcrypto.a needs no zlib or
+#                  zstd.
+#   macOS, Windows A static OpenSSL archive that .github/workflows/deps-openssl.yml
+#                  builds from the official source tarball and publishes on the
+#                  release deps-openssl-<version> of this repository. CMake
+#                  downloads it and checks its SHA-256 below.
+#
+# LEMONADE_NEXUS_STATIC_DEPS=OFF uses the legacy logic at the end of this file:
+# a system OpenSSL, or the OPENSSL_FORCE_BUNDLED source build.
 # =============================================================================
+
+set(LEMONADE_NEXUS_OPENSSL_VERSION_UBUNTU "3.0.13")
+set(LEMONADE_NEXUS_OPENSSL_PREBUILT_VERSION "3.5.9")
+set(LEMONADE_NEXUS_OPENSSL_PREBUILT_URL
+    "https://github.com/lemonade-sdk/lemonade-nexus/releases/download/deps-openssl-${LEMONADE_NEXUS_OPENSSL_PREBUILT_VERSION}")
+# FOLLOW-UP: set these from the output of deps-openssl.yml. While a value is
+# empty, that platform keeps the legacy logic below.
+set(LEMONADE_NEXUS_OPENSSL_PREBUILT_SHA256_MACOS_ARM64 "")
+set(LEMONADE_NEXUS_OPENSSL_PREBUILT_SHA256_WINDOWS_X64 "")
 
 option(OPENSSL_FORCE_BUNDLED "Always build OpenSSL from source, ignoring any system copy" OFF)
 
@@ -16,6 +40,111 @@ if(TARGET OpenSSL::SSL AND TARGET OpenSSL::Crypto)
     message(STATUS "OpenSSL targets already defined — skipping")
     return()
 endif()
+
+# ---------------------------------------------------------------------------
+# Linux: the pinned Ubuntu static libraries
+# ---------------------------------------------------------------------------
+if(LEMONADE_NEXUS_STATIC_DEPS AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set(OPENSSL_USE_STATIC_LIBS ON)
+    find_package(OpenSSL ${LEMONADE_NEXUS_OPENSSL_VERSION_UBUNTU} EXACT QUIET)
+    if(NOT OPENSSL_FOUND OR NOT OPENSSL_CRYPTO_LIBRARY MATCHES "\\.a$"
+            OR NOT OPENSSL_SSL_LIBRARY MATCHES "\\.a$")
+        message(FATAL_ERROR
+            "LEMONADE_NEXUS_STATIC_DEPS=ON requires the static libraries of OpenSSL "
+            "${LEMONADE_NEXUS_OPENSSL_VERSION_UBUNTU} (Ubuntu 24.04 libssl-dev). Found version "
+            "'${OPENSSL_VERSION}', libraries '${OPENSSL_SSL_LIBRARY}' and "
+            "'${OPENSSL_CRYPTO_LIBRARY}'. Install that libssl-dev, or configure with "
+            "-DLEMONADE_NEXUS_STATIC_DEPS=OFF.")
+    endif()
+    message(STATUS "Using pinned OpenSSL ${OPENSSL_VERSION} (static): ${OPENSSL_CRYPTO_LIBRARY}")
+    return()
+endif()
+
+# ---------------------------------------------------------------------------
+# macOS and Windows: the pinned prebuilt archive
+# ---------------------------------------------------------------------------
+set(_LN_OPENSSL_PLATFORM "")
+if(APPLE AND CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
+    set(_LN_OPENSSL_PLATFORM "macos-arm64")
+    set(_LN_OPENSSL_SHA256 "${LEMONADE_NEXUS_OPENSSL_PREBUILT_SHA256_MACOS_ARM64}")
+elseif(WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+    set(_LN_OPENSSL_PLATFORM "windows-x64")
+    set(_LN_OPENSSL_SHA256 "${LEMONADE_NEXUS_OPENSSL_PREBUILT_SHA256_WINDOWS_X64}")
+endif()
+
+if(LEMONADE_NEXUS_STATIC_DEPS AND _LN_OPENSSL_PLATFORM AND _LN_OPENSSL_SHA256)
+    set(_LN_OPENSSL_ARCHIVE
+        "openssl-${LEMONADE_NEXUS_OPENSSL_PREBUILT_VERSION}-${_LN_OPENSSL_PLATFORM}.tar.gz")
+    set(_LN_OPENSSL_DOWNLOAD "${CMAKE_BINARY_DIR}/_download/openssl/${_LN_OPENSSL_ARCHIVE}")
+    set(_LN_OPENSSL_ROOT
+        "${CMAKE_BINARY_DIR}/_deps/openssl-${LEMONADE_NEXUS_OPENSSL_PREBUILT_VERSION}-${_LN_OPENSSL_PLATFORM}")
+    file(DOWNLOAD "${LEMONADE_NEXUS_OPENSSL_PREBUILT_URL}/${_LN_OPENSSL_ARCHIVE}"
+         "${_LN_OPENSSL_DOWNLOAD}"
+         EXPECTED_HASH SHA256=${_LN_OPENSSL_SHA256}
+         TLS_VERIFY ON
+         STATUS _LN_OPENSSL_STATUS)
+    list(GET _LN_OPENSSL_STATUS 0 _LN_OPENSSL_STATUS_CODE)
+    if(NOT _LN_OPENSSL_STATUS_CODE EQUAL 0)
+        message(FATAL_ERROR "OpenSSL archive download failed: ${_LN_OPENSSL_STATUS}")
+    endif()
+    file(REMOVE_RECURSE "${_LN_OPENSSL_ROOT}")
+    file(ARCHIVE_EXTRACT INPUT "${_LN_OPENSSL_DOWNLOAD}" DESTINATION "${_LN_OPENSSL_ROOT}")
+
+    if(WIN32)
+        set(_LN_SSL_LIB "${_LN_OPENSSL_ROOT}/lib/libssl.lib")
+        set(_LN_CRYPTO_LIB "${_LN_OPENSSL_ROOT}/lib/libcrypto.lib")
+    else()
+        set(_LN_SSL_LIB "${_LN_OPENSSL_ROOT}/lib/libssl.a")
+        set(_LN_CRYPTO_LIB "${_LN_OPENSSL_ROOT}/lib/libcrypto.a")
+    endif()
+    foreach(_ln_file IN ITEMS "${_LN_SSL_LIB}" "${_LN_CRYPTO_LIB}"
+                              "${_LN_OPENSSL_ROOT}/include/openssl/opensslv.h")
+        if(NOT EXISTS "${_ln_file}")
+            message(FATAL_ERROR "The OpenSSL archive ${_LN_OPENSSL_ARCHIVE} has no ${_ln_file}")
+        endif()
+    endforeach()
+
+    add_library(OpenSSL::Crypto STATIC IMPORTED GLOBAL)
+    set_target_properties(OpenSSL::Crypto PROPERTIES
+        IMPORTED_LOCATION             "${_LN_CRYPTO_LIB}"
+        INTERFACE_INCLUDE_DIRECTORIES "${_LN_OPENSSL_ROOT}/include")
+    add_library(OpenSSL::SSL STATIC IMPORTED GLOBAL)
+    set_target_properties(OpenSSL::SSL PROPERTIES
+        IMPORTED_LOCATION             "${_LN_SSL_LIB}"
+        INTERFACE_INCLUDE_DIRECTORIES "${_LN_OPENSSL_ROOT}/include"
+        INTERFACE_LINK_LIBRARIES      OpenSSL::Crypto)
+    if(APPLE)
+        set_property(TARGET OpenSSL::Crypto APPEND PROPERTY
+            INTERFACE_LINK_LIBRARIES "-framework Security" "-framework CoreFoundation")
+    else()
+        set_property(TARGET OpenSSL::Crypto APPEND PROPERTY
+            INTERFACE_LINK_LIBRARIES ws2_32 crypt32 advapi32 user32)
+    endif()
+
+    # Downstream find_package(OpenSSL) calls (httplib, jwt-cpp) resolve to these
+    # targets through cmake/FindOpenSSL.cmake.
+    set(OPENSSL_ROOT_DIR       "${_LN_OPENSSL_ROOT}" CACHE PATH "OpenSSL root (pinned archive)" FORCE)
+    set(OPENSSL_INCLUDE_DIR    "${_LN_OPENSSL_ROOT}/include" CACHE PATH "OpenSSL include directory" FORCE)
+    set(OPENSSL_CRYPTO_LIBRARY "${_LN_CRYPTO_LIB}" CACHE FILEPATH "OpenSSL crypto library" FORCE)
+    set(OPENSSL_SSL_LIBRARY    "${_LN_SSL_LIB}" CACHE FILEPATH "OpenSSL SSL library" FORCE)
+    set(OPENSSL_FOUND TRUE)
+    set(OPENSSL_VERSION "${LEMONADE_NEXUS_OPENSSL_PREBUILT_VERSION}")
+    message(STATUS "Using pinned OpenSSL ${OPENSSL_VERSION} (static archive ${_LN_OPENSSL_ARCHIVE})")
+    return()
+endif()
+
+if(LEMONADE_NEXUS_STATIC_DEPS AND _LN_OPENSSL_PLATFORM)
+    message(STATUS "No pinned OpenSSL archive for ${_LN_OPENSSL_PLATFORM} yet; using the legacy "
+                   "OpenSSL logic (see LEMONADE_NEXUS_OPENSSL_PREBUILT_SHA256_*)")
+endif()
+
+# =============================================================================
+# Legacy: prefer a system/package-manager OpenSSL, build from source as fallback
+# =============================================================================
+# CI installs OpenSSL with vcpkg on Windows. On macOS, OPENSSL_FORCE_BUNDLED=ON
+# builds it statically from source so distributed binaries carry no Homebrew
+# (or other /usr/local) dylib dependencies.
+# =============================================================================
 
 # ---------------------------------------------------------------------------
 # Try system OpenSSL first (respects OPENSSL_ROOT_DIR if set)

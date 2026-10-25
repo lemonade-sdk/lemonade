@@ -7,6 +7,7 @@
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
 
+#include <algorithm>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
@@ -512,9 +513,10 @@ ln_error_t ln_relay_ticket(ln_client_t* client,
     j["epoch"]         = result.value.epoch;
     j["issuer"]        = result.value.issuer;
     j["signature"]     = result.value.signature;
+    if (!result.ok) j["error"] = result.error;
 
     *out_json = strdup_json(j);
-    return result.ok ? LN_OK : LN_ERR_CONNECT;
+    return result.ok ? LN_OK : ln_map_error(result.http_status);
 }
 
 ln_error_t ln_relay_register(ln_client_t* client,
@@ -1441,6 +1443,48 @@ ln_error_t ln_tier1_membership(ln_client_t* client, char** out_json) {
     if (!client || !out_json) return LN_ERR_NULL_ARG;
     try {
         *out_json = strdup_json(tier1_membership_json(client->client.tier1_membership()));
+        return LN_OK;
+    } catch (...) {
+        return LN_ERR_INTERNAL;
+    }
+}
+
+ln_error_t ln_discover_genesis_key(ln_client_t* client, const char* hosts_json,
+                                   char** out_json) {
+    if (!client || !out_json) return LN_ERR_NULL_ARG;
+    try {
+        std::vector<lnsdk::ServerEndpoint> hosts;
+        if (hosts_json) {
+            const auto parsed = json::parse(hosts_json, nullptr, false);
+            const auto valid_entry = [](const json& e) {
+                if (!e.is_object() || !e.contains("host") || !e["host"].is_string() ||
+                    e["host"].get_ref<const std::string&>().empty()) {
+                    return false;
+                }
+                if (!e.contains("port")) return true;
+                return e["port"].is_number_unsigned() && e["port"].get<uint64_t>() >= 1 &&
+                       e["port"].get<uint64_t>() <= 65535;
+            };
+            if (parsed.is_discarded() || !parsed.is_array() ||
+                !std::all_of(parsed.begin(), parsed.end(), valid_entry)) {
+                *out_json = strdup_json(json{
+                    {"error", "hosts_json must be an array of {\"host\", \"port\"} objects"}});
+                return LN_ERR_REJECTED;
+            }
+            for (const auto& e : parsed) {
+                hosts.push_back({e["host"].get<std::string>(),
+                                 static_cast<uint16_t>(e.value("port", uint64_t{9100})), true});
+            }
+        }
+        const auto result = client->client.discover_genesis_key(hosts);
+        if (!result.ok) {
+            *out_json = strdup_json(json{{"error", result.error}});
+            return result.http_status == 0 ? LN_ERR_CONNECT : LN_ERR_REJECTED;
+        }
+        *out_json = strdup_json(json{{"genesis_pubkey", result.value.genesis_pubkey},
+                                     {"network_id", result.value.network_id},
+                                     {"dns_base_domain", result.value.dns_base_domain},
+                                     {"hosts", result.value.hosts}});
         return LN_OK;
     } catch (...) {
         return LN_ERR_INTERNAL;

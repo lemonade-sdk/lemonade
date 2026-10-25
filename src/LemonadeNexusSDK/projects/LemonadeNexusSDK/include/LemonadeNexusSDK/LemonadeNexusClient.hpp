@@ -60,6 +60,20 @@ public:
     [[nodiscard]] StatusResult set_genesis_key(const std::string& genesis_pubkey_b64,
                                                uint64_t min_epoch = 0);
 
+    /// First-connect discovery of the Genesis key, for a client with no
+    /// pinned key. Asks `hosts` (for example, servers the application found
+    /// through DNS discovery), then the configured servers and the servers
+    /// they list in /api/servers (when `auto_discover` is set), for
+    /// GET /api/onboard/info over verified HTTPS. On success the key is
+    /// pinned as with set_genesis_key(); store the returned key and pass it
+    /// to set_genesis_key() on later runs. It never replaces a pinned key.
+    /// See Tier1Directory::discover_genesis_key for the agreement rules and
+    /// the trust limit (trust on first use). Errors: a key is already pinned,
+    /// the servers disagree or send a malformed key, or too few servers
+    /// agree. Blocks on network I/O.
+    [[nodiscard]] Result<GenesisKeyDiscovery> discover_genesis_key(
+        const std::vector<ServerEndpoint>& hosts = {});
+
     /// Verify the Tier 1 membership now, from the current server pool. Tree
     /// calls also refresh it on their own when it is older than five minutes
     /// or a server refused a tree route. Errors: no pinned key, a chain that
