@@ -160,9 +160,15 @@ and every entry's `model` must be one of `components`:
 - `classifier` uses the model's `{label: score}` output; declare its `labels`
   (an onnxruntime encoder serves `/v1/classify`, else it runs as an
   LLM-as-classifier via chat).
-- `zero_shot` sends your `labels` to the model on every request, because the
-  model has no per-label head to read them off, the label list is an input to
-  the graph.
+- `zero_shot` sends your `labels` to the model on every request: the model has
+  no per-label head to read them off, so the label list is an input to the graph.
+
+  Every classifier's `labels` are checked at registration: unique, not blank,
+  and free of control characters because a label the backend would reject
+  turns every request into an `on_error` fallback. **How many** labels a
+  zero-shot model accepts, and how long each may be, is not checked here: both
+  derive from that model's token window and are tunable per model, so the model
+  enforces them and names the numbers in its error.
 - `llm` shows the request to an LLM and asks it to choose one of `labels` (the
   chosen label scores `1.0`). Because it produces a plain label, it's a
   **composable signal** — combine it with any other condition, as in
@@ -243,6 +249,17 @@ also carries an **`x_lemonade_route`** object:
 
 `route_to` is the candidate that actually answered. For streaming responses the
 same object is attached to the first SSE event as `x_lemonade_route`.
+
+A failing **`classifier`** or **`zero_shot`** condition adds an **`error`** string
+to its own trace entry, naming the reason the backend gave. Without it a failed
+condition and one that simply scored below its threshold both read as
+`"result": false`, and `on_error` hides which of the two happened.
+
+A **`zero_shot`** entry also carries **`"truncated": true`** when the backend had
+to cut the input text to fit its token window before scoring. Labels are never
+cut — a label pooled from half its tokens would score something the model only
+partly read. The key is absent whenever the whole input was scored, so its
+absence is the signal, not `false`.
 
 ## Cloud candidates
 

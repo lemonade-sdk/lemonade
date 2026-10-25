@@ -198,6 +198,73 @@ static void test_zero_shot_classifier_rejects_mismatched_label_set() {
           exact.ok && exact.score_of("pii") == 0.8);
 }
 
+// The backend cuts the text, never the labels, so a truncated answer is still a
+// complete label set and must stay usable — carrying the cut forward, not failing.
+static void test_zero_shot_classifier_reports_truncation() {
+    auto classifier = lemon::make_classifier(json{
+        {"id", "route"}, {"type", "zero_shot"}, {"model", "m"},
+        {"labels", json::array({"pii", "chit-chat"})}});
+    auto route = make_route_context();
+
+    auto evaluate_with = [&](bool truncated) {
+        lemon::testing::FakeClassifierServices fake;
+        fake.set_zero_shot_scores("m", {{"pii", 0.8}, {"chit-chat", 0.2}}, truncated);
+        auto services = fake.make();
+        EvalContext ctx = make_eval_context(route, services);
+        return classifier->evaluate(lemon::ClassifierContext{ctx.request, ctx.services});
+    };
+
+    auto cut = evaluate_with(true);
+    check("zero_shot carries the backend's truncation flag",
+          cut.ok && cut.truncated && cut.score_of("pii") == 0.8);
+    check("zero_shot reports no truncation when the backend scored the whole input",
+          !evaluate_with(false).truncated);
+}
+
+static void test_label_list_rejections() {
+    auto classifier_with = [](const char* type, json labels) {
+        json cfg{{"id", "x"}, {"type", type}, {"model", "m"}, {"labels", std::move(labels)}};
+        if (std::string(type) == "llm") cfg["prompt"] = "pick one";
+        return [cfg] { lemon::make_classifier(cfg); };
+    };
+
+    for (const char* type : {"classifier", "zero_shot", "llm"}) {
+        const std::string prefix = std::string(type) + ": ";
+        const std::string dup = prefix + "rejects a duplicate label";
+        const std::string blank = prefix + "rejects a blank label";
+        const std::string tab = prefix + "rejects a tab-only label";
+        const std::string lf = prefix + "rejects a label holding a line feed";
+        const std::string crlf = prefix + "rejects a label holding a carriage return";
+        const std::string inner_tab = prefix + "rejects a label holding an inner tab";
+        const std::string del = prefix + "rejects a label holding DEL";
+        const std::string ok = prefix + "accepts distinct labels with inner spaces";
+        const std::string utf8 = prefix + "accepts a multi-byte UTF-8 label";
+        check(dup.c_str(),
+              throws_invalid_arg(classifier_with(type, json::array({"coding", "coding"}))));
+        check(blank.c_str(),
+              throws_invalid_arg(classifier_with(type, json::array({"coding", "   "}))));
+        check(tab.c_str(),
+              throws_invalid_arg(classifier_with(type, json::array({"coding", "\t"}))));
+        check(lf.c_str(),
+              throws_invalid_arg(classifier_with(type, json::array({"coding\ncooking"}))));
+        check(crlf.c_str(),
+              throws_invalid_arg(classifier_with(type, json::array({"coding\r\ncooking"}))));
+        // A tab is neither blank nor a line break, so it only fails once the
+        // rule covers every control character, as ort-server's does.
+        check(inner_tab.c_str(),
+              throws_invalid_arg(classifier_with(type, json::array({"coding\tcooking"}))));
+        check(del.c_str(),
+              throws_invalid_arg(classifier_with(type, json::array({"coding\x7F"}))));
+        check(ok.c_str(),
+              !throws_invalid_arg(
+                  classifier_with(type, json::array({"customer support", "billing"}))));
+        // The control-character scan walks bytes, so a continuation byte must
+        // not read as one.
+        check(utf8.c_str(),
+              !throws_invalid_arg(classifier_with(type, json::array({"café", "日本語"}))));
+    }
+}
+
 static void test_make_classifier_rejections() {
     check("make_classifier rejects missing id",
           throws_invalid_arg([] {
@@ -466,6 +533,8 @@ int main() {
     test_make_zero_shot_classifier_rejections();
     test_zero_shot_classifier_without_service_fails_soft();
     test_zero_shot_classifier_rejects_mismatched_label_set();
+    test_zero_shot_classifier_reports_truncation();
+    test_label_list_rejections();
     test_make_classifier_rejections();
     test_make_classifiers();
     test_leaf_factory_classifier_refs();

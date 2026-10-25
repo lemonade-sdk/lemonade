@@ -89,9 +89,10 @@
         "model": { "type": "string" },
         "prompt": { "type": "string" },
         "labels": {
-          "description": "classifier output labels; dangling condition `label` refs are rejected.",
+          "description": "classifier output labels; dangling condition `label` refs are rejected. Entries are unique, not blank, and free of control characters, matching what POST /v1/classify enforces on a request's `labels`. How many a zero_shot model accepts is its token window's call, not a schema limit.",
           "type": "array",
-          "items": { "type": "string", "minLength": 1 }
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "pattern": "^[^\\u0000-\\u001F\\u007F]*[^\\u0000-\\u0020\\u007F][^\\u0000-\\u001F\\u007F]*$" }
         },
         "default_label": {
           "description": "Used when a condition omits `label`.",

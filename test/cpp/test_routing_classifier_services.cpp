@@ -212,7 +212,9 @@ static void test_run_zero_shot_classifier_forwards_labels() {
           seen_classify_request["labels"] ==
               json::array({"coding", "cooking", "pii"}));
     check("run_zero_shot_classifier parses classify label scores",
-          near(scores.at("cooking"), 0.93) && near(scores.at("coding"), 0.02));
+          near(scores.scores.at("cooking"), 0.93) && near(scores.scores.at("coding"), 0.02));
+    check("run_zero_shot_classifier reports no cut when the backend omits truncated",
+          !scores.truncated);
 }
 
 static void test_run_zero_shot_classifier_loads_before_resolving_type() {
@@ -234,7 +236,7 @@ static void test_run_zero_shot_classifier_loads_before_resolving_type() {
 
     auto scores = services.run_zero_shot_classifier("router-model", "text", {"a", "b"});
     check("run_zero_shot_classifier loads the model before resolving its type",
-          loaded && classify_called && near(scores.at("b"), 0.7));
+          loaded && classify_called && near(scores.scores.at("b"), 0.7));
 }
 
 static void test_run_zero_shot_classifier_rejects_non_classification_model() {
@@ -435,7 +437,7 @@ static void test_zero_shot_residency_conflict_propagates_through_route() {
     lemon::ClassifierServices services;
     services.run_zero_shot_classifier =
         [](const std::string&, const std::string&,
-           const std::vector<std::string>&) -> std::map<std::string, double> {
+           const std::vector<std::string>&) -> lemon::ZeroShotScores {
         throw residency_conflict();
     };
 
@@ -510,7 +512,7 @@ static void test_ordinary_backend_failure_still_applies_on_error() {
     lemon::ClassifierServices services;
     services.run_zero_shot_classifier =
         [](const std::string&, const std::string&,
-           const std::vector<std::string>&) -> std::map<std::string, double> {
+           const std::vector<std::string>&) -> lemon::ZeroShotScores {
         throw std::runtime_error("backend down");
     };
 

@@ -57,6 +57,14 @@
         "rationale": {
           "description": "Optional; the classifier's short reasoning for its score. The `llm` router records the model's pick rationale here.",
           "type": "string"
+        },
+        "error": {
+          "description": "Optional; why a model-backed classifier failed, so a condition that errored is distinguishable from one that simply scored below its band. Present only when the classifier failed and the backend gave a reason; the entry's `result` then reflects the classifier's `on_error`.",
+          "type": "string"
+        },
+        "truncated": {
+          "description": "Optional; the `zero_shot` backend cut the input text to fit its token window before scoring. Labels are never cut, so the score still covers every label the policy declared.",
+          "const": true
         }
       },
       "additionalProperties": false

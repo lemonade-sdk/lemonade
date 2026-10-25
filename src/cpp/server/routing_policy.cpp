@@ -1,7 +1,9 @@
 #include "lemon/routing_policy.h"
+#include "lemon/classification_labels.h"
 #include "lemon/error_types.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstddef>
 #include <mutex>
@@ -19,6 +21,23 @@ Score failed_score() {
     Score score;
     score.ok = false;
     return score;
+}
+
+Score failed_score(std::string reason) {
+    Score score = failed_score();
+    score.error = std::move(reason);
+    return score;
+}
+
+void log_classifier_failure(const std::string& type, const std::string& id,
+                            const std::string& model, const std::string& reason,
+                            std::atomic<unsigned long long>& counter) {
+    const unsigned long long n = ++counter;
+    if (n != 1 && n % 100 != 0) return;
+    LOG(WARNING, "Routing") << type << " classifier '" << id << "' (model '" << model
+                            << "') failed: " << reason
+                            << (n == 1 ? std::string() : " [" + std::to_string(n) + " failures]")
+                            << std::endl;
 }
 
 // Trim leading/trailing ASCII whitespace. Used by the llm router to normalize a
@@ -172,6 +191,10 @@ public:
             if (score.ok && !score.rationale.empty() && rationale_applies) {
                 entry.rationale = score.rationale;
             }
+            if (!score.ok && !score.error.empty()) {
+                entry.error = score.error;
+            }
+            entry.truncated = score.truncated;
             ctx.trace.push_back(std::move(entry));
         }
         return result;
@@ -198,12 +221,12 @@ private:
                 LOG(WARNING, "Routing") << "Classifier '" << classifier_->id()
                                         << "' threw during evaluation: " << e.what()
                                         << std::endl;
-                it->second = failed_score();
+                it->second = failed_score(e.what());
             } catch (...) {
                 LOG(WARNING, "Routing") << "Classifier '" << classifier_->id()
                                         << "' threw an unknown exception during evaluation"
                                         << std::endl;
-                it->second = failed_score();
+                it->second = failed_score("unknown exception");
             }
         }
         return it->second;
@@ -248,7 +271,7 @@ public:
     Score evaluate(const ClassifierContext& ctx) const override {
         Score score;
         if (!ctx.services.run_classifier) {
-            return failed_score();
+            return failed_score("no classification service is configured");
         }
 
         try {
@@ -256,11 +279,18 @@ public:
             score.ok = true;
         } catch (const RouterResidencyConflictException&) {
             throw;
+        } catch (const std::exception& e) {
+            log_classifier_failure(type(), id(), model_name_, e.what(), failures_);
+            score = failed_score(e.what());
         } catch (...) {
-            score = failed_score();
+            log_classifier_failure(type(), id(), model_name_, "unknown exception", failures_);
+            score = failed_score("unknown exception");
         }
         return score;
     }
+
+private:
+    mutable std::atomic<unsigned long long> failures_{0};
 };
 
 class ZeroShotClassifier final : public Classifier {
@@ -283,29 +313,37 @@ public:
     Score evaluate(const ClassifierContext& ctx) const override {
         Score score;
         if (!ctx.services.run_zero_shot_classifier) {
-            return failed_score();
+            return failed_score("no zero-shot classification service is configured");
         }
 
         try {
-            score.labels =
+            ZeroShotScores answer =
                 ctx.services.run_zero_shot_classifier(model_name_, ctx.request.input, labels());
+            score.labels = std::move(answer.scores);
+            score.truncated = answer.truncated;
             score.ok = true;
         } catch (const RouterResidencyConflictException&) {
             throw;
+        } catch (const std::exception& e) {
+            log_classifier_failure(type(), id(), model_name_, e.what(), failures_);
+            score = failed_score(e.what());
         } catch (...) {
-            score = failed_score();
+            log_classifier_failure(type(), id(), model_name_, "unknown exception", failures_);
+            score = failed_score("unknown exception");
         }
         if (score.ok && !scores_declared_labels(score)) {
-            LOG(WARNING, "Routing") << "zero_shot classifier '" << id()
-                                    << "' got scores for a different label set than it sent; "
-                                       "the backend did not score the request's labels"
-                                    << std::endl;
-            score = failed_score();
+            static constexpr const char* kMismatch =
+                "the backend scored a different label set than the request sent, so it "
+                "ignored the per-request labels";
+            log_classifier_failure(type(), id(), model_name_, kMismatch, failures_);
+            score = failed_score(kMismatch);
         }
         return score;
     }
 
 private:
+    mutable std::atomic<unsigned long long> failures_{0};
+
     // A backend that ignores the request's labels answers with its own head's
     // label set. Accepting that would score every declared label 0.0, a
     // confident miss that skips on_error instead of triggering it.
@@ -631,11 +669,25 @@ std::vector<std::string> parse_labels(const json& config, const std::string& id)
         if (!config["labels"].is_array()) {
             throw std::invalid_argument("classifier '" + id + "' labels must be an array");
         }
+        std::set<std::string> seen;
         for (const auto& item : config["labels"]) {
             if (!item.is_string() || item.get<std::string>().empty()) {
                 throw std::invalid_argument("classifier '" + id + "' labels must be non-empty strings");
             }
-            labels.push_back(item.get<std::string>());
+            std::string label = item.get<std::string>();
+            if (label_is_blank(label)) {
+                throw std::invalid_argument("classifier '" + id + "' labels must not be blank");
+            }
+            if (label_has_control_char(label)) {
+                throw std::invalid_argument(
+                    "classifier '" + id +
+                    "' labels must not contain control characters such as newline or tab");
+            }
+            if (!seen.insert(label).second) {
+                throw std::invalid_argument("classifier '" + id + "' has a duplicate label: '" +
+                                            label + "'");
+            }
+            labels.push_back(std::move(label));
         }
     }
     return labels;

@@ -214,9 +214,17 @@ static bool parse_vector(const json& value, std::vector<float>& out) {
 // for, including the routing input's own text. A null answer makes that service
 // fail, so the classifier's on_error applies.
 //
-//   {"embed":          {"<model>": {"<text>": [numbers] | null}},
-//    "run_classifier": {"<model>": {"<label>": number} | null},
-//    "chat":           {"<model>": "<reply>" | null}}
+//   {"embed":                    {"<model>": {"<text>": [numbers] | null}},
+//    "run_classifier":           {"<model>": {"<label>": number} | null},
+//    "run_zero_shot_classifier": {"<model>": {"<label>": number} | null
+//                                            | {"scores": {"<label>": number},
+//                                               "truncated": bool}},
+//    "chat":                     {"<model>": "<reply>" | null}}
+//
+// A zero_shot classifier only accepts scores for exactly the labels it declared,
+// so its answer must name every one of them and no others. Its wrapper form adds
+// the backend's report that it cut the input text to fit its window; a row that
+// uses the wrapper must state `truncated` either way.
 static bool apply_row_services(lemon::testing::FakeClassifierServices& fake, const json& spec,
                                const std::string& where) {
     if (!spec.is_object()) {
@@ -258,14 +266,36 @@ static bool apply_row_services(lemon::testing::FakeClassifierServices& fake, con
                         ok = false;
                     }
                 }
-            } else if (name == "run_classifier") {
+            } else if (name == "run_classifier" || name == "run_zero_shot_classifier") {
+                const bool zero_shot = (name == "run_zero_shot_classifier");
                 if (answer.is_null()) {
-                    fake.set_classifier_failure(model.key());
+                    if (zero_shot) {
+                        fake.set_zero_shot_failure(model.key());
+                    } else {
+                        fake.set_classifier_failure(model.key());
+                    }
                     continue;
                 }
+                // A zero-shot answer may wrap its scores to also declare the cut:
+                // {"scores": {...}, "truncated": true}. The bare form stays the
+                // common case, so only the wrapper carries the extra key.
+                const bool wrapped = zero_shot && answer.is_object() &&
+                                     answer.contains("scores") && answer["scores"].is_object();
+                const json& score_map = wrapped ? answer["scores"] : answer;
+                bool truncated = false;
+                if (wrapped) {
+                    if (!answer.contains("truncated") || !answer["truncated"].is_boolean()) {
+                        check(label + ".truncated: the wrapper form declares a boolean", false);
+                        ok = false;
+                        continue;
+                    }
+                    truncated = answer["truncated"].get<bool>();
+                }
+
                 std::map<std::string, double> scores;
-                bool scores_ok = answer.is_object();
-                for (auto score = answer.begin(); scores_ok && score != answer.end(); ++score) {
+                bool scores_ok = score_map.is_object();
+                for (auto score = score_map.begin(); scores_ok && score != score_map.end();
+                     ++score) {
                     if (!score.value().is_number()) {
                         scores_ok = false;
                         break;
@@ -277,7 +307,11 @@ static bool apply_row_services(lemon::testing::FakeClassifierServices& fake, con
                     ok = false;
                     continue;
                 }
-                fake.set_classifier_scores(model.key(), std::move(scores));
+                if (zero_shot) {
+                    fake.set_zero_shot_scores(model.key(), std::move(scores), truncated);
+                } else {
+                    fake.set_classifier_scores(model.key(), std::move(scores));
+                }
             } else {
                 if (answer.is_null()) {
                     fake.set_chat_failure(model.key());

@@ -149,10 +149,36 @@ class ClassifyTests(ServerTestBase):
             (["coding", 7], "Non-string label"),
             (["coding", "   "], "Whitespace-only label"),
             (["coding", "coding"], "Duplicate label"),
+            (["coding\ncooking"], "Label with a line feed"),
+            (["coding\r\ncooking"], "Label with a carriage return"),
+            (["coding\tcooking"], "Label with an inner tab"),
+            (["coding\x7f"], "Label with a DEL character"),
         ]:
             self._assert_rejected(
                 self._payload(labels=labels), context, expected_status=400
             )
+
+    def test_006_labels_with_non_ascii_pass_the_control_char_check(self):
+        """The control-character scan walks bytes; UTF-8 must survive it.
+
+        A continuation byte is >= 0x80 and so can never read as a control
+        character -- but only if the scan compares bytes rather than sign-
+        extended chars. The request may still fail for an unrelated reason
+        (no model pulled, a fixed-label model refusing labels), so this asserts
+        on the rejection reason rather than the status.
+        """
+        response = requests.post(
+            f"{self.base_url}/classify",
+            json=self._payload(labels=["café", "日本語", "naïve"]),
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertNotIn(
+            "control character",
+            response.text,
+            f"multi-byte UTF-8 labels tripped the control-character check: "
+            f"{response.text[:1000]}",
+        )
+        print("[OK] Multi-byte UTF-8 labels pass the control-character check")
 
     def test_506_labels_rejected_by_fixed_label_model(self):
         """Only the backend knows its task: a fixed-label model refuses labels."""

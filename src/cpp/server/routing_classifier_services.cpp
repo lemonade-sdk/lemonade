@@ -329,7 +329,7 @@ ClassifierServices make_classifier_services_from_router_calls(
     services.run_zero_shot_classifier =
         [classify_call, get_model_type, ensure_loaded](
             const std::string& model, const std::string& input,
-            const std::vector<std::string>& labels) -> std::map<std::string, double> {
+            const std::vector<std::string>& labels) -> ZeroShotScores {
         if (!classify_call || !*classify_call) {
             throw std::runtime_error("Router classify call is not configured");
         }
@@ -348,7 +348,14 @@ ClassifierServices make_classifier_services_from_router_calls(
             {"input", input},
             {"labels", labels},
         };
-        return parse_classifier_scores((*classify_call)(request));
+        const json response = (*classify_call)(request);
+
+        ZeroShotScores answer;
+        answer.scores = parse_classifier_scores(response);
+        answer.truncated = response.contains("truncated") &&
+                           response["truncated"].is_boolean() &&
+                           response["truncated"].get<bool>();
+        return answer;
     };
 
     services.chat = [chat_completion_call,

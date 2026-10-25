@@ -63,9 +63,9 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `model` | No | The classifier model. Optional when exactly one classification model is loaded; that model is used. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `input` or `text` | Yes | Text to classify. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `top_k` | No | Return only the highest-scoring `k` labels. Defaults to every label. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `labels` | No | The labels to score `input` against. Required by a zero-shot model, and refused by every other model. The entries are unique and not blank. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `labels` | No | The labels to score `input` against. Required by a zero-shot model, and refused by every other model. The entries are unique, not blank, and carry no control character. How many are accepted, and how long each may be, is the model's token window to decide. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-A malformed request, such as one with a blank `input`, a non-positive `top_k`, or an empty or repeated `labels` entry, is rejected before any model loads.
+A malformed request, such as one with a blank `input`, a non-positive `top_k`, or a `labels` entry that is blank, repeated or holds a control character, is rejected before any model loads. How many labels a zero-shot model accepts, and how long each may be, depends on its token window, so the model enforces those limits itself and names both numbers when it refuses.
 
 ### Supported Models
 
@@ -117,6 +117,7 @@ Some upstream models declare only generic `LABEL_<n>` label names; their model c
 - `model` - The model that classified the input, including one chosen because it was the only one loaded.
 - `labels` - Each label's score, keyed by label name.
   - The label's score, in `[0, 1]`.
+- `truncated` - Present only when the model had to cut the input text to fit its token window before scoring. Labels are never cut, so the scores still cover every label sent. Absent whenever the whole input was scored.
 
 ### Errors
 

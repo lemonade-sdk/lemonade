@@ -8,6 +8,7 @@ Run:  python test/test_routing_fixtures.py
 or:   python -m unittest test.test_routing_fixtures
 """
 
+import glob
 import json
 import os
 import unittest
@@ -17,6 +18,7 @@ import jsonschema
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCHEMA_DIR = os.path.join(REPO_ROOT, "src", "cpp", "resources", "schemas")
 FIXTURE_DIR = os.path.join(REPO_ROOT, "test", "cpp", "fixtures", "routing")
+CORPUS_DIR = os.path.join(REPO_ROOT, "test", "conformance", "routing")
 
 ROUTE_POLICY_FIXTURES = [
     "l0a_llm_router.json",
@@ -60,6 +62,40 @@ class RoutingFixtureSchemaTest(unittest.TestCase):
     def test_decision_example_validates(self):
         doc = _load(os.path.join(FIXTURE_DIR, "decision_example.json"))
         jsonschema.validate(doc, self.decision_schema)
+
+    def test_recorded_corpus_decisions_validate(self):
+        """Every decision the conformance corpus records must satisfy the schema.
+
+        The corpus is the one place that exercises the serializer's optional
+        trace keys (`label`, `rationale`, `error`, `truncated`). `trace_entry`
+        is `additionalProperties: false`, so a key the serializer learns to emit
+        without being declared in the schema makes every such response invalid
+        -- and the single-fixture check above would not notice.
+        """
+        validator = jsonschema.Draft202012Validator(self.decision_schema)
+        cases = glob.glob(os.path.join(CORPUS_DIR, "**", "cases.jsonl"), recursive=True)
+        self.assertTrue(cases, "no conformance cases found")
+        for path in cases:
+            rel = os.path.relpath(path, CORPUS_DIR)
+            with open(path, "r", encoding="utf-8") as handle:
+                for number, line in enumerate(handle, start=1):
+                    if not line.strip():
+                        continue
+                    row = json.loads(line)
+                    decision = row.get("decision")
+                    if decision is None:
+                        continue
+                    with self.subTest(corpus=rel, case=row.get("case_name", number)):
+                        errors = sorted(
+                            validator.iter_errors(decision), key=lambda e: e.path
+                        )
+                        self.assertEqual(
+                            errors,
+                            [],
+                            msg="\n".join(
+                                f"{list(e.path)}: {e.message}" for e in errors
+                            ),
+                        )
 
     def test_request_example_validates(self):
         doc = _load(os.path.join(FIXTURE_DIR, "request_example.json"))
