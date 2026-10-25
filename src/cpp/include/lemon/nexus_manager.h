@@ -127,8 +127,8 @@ public:
     struct PeerDirectory {
         std::function<nlohmann::json()> members;
         std::function<std::string()> self_node_id;
-        /// Returns {0, ""} and sets the loopback port of a relay to `node_id`, or an HTTP
-        /// error status and message.
+        /// Opens a relay to `node_id` and sets its loopback port; see route_access for the
+        /// result pair.
         std::function<std::pair<int, std::string>(const std::string& node_id, uint16_t& port)> open;
     };
     /// Also starts the selection listener on 127.0.0.1:`selection_port` (0 picks a free
