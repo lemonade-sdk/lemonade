@@ -48,23 +48,15 @@ The federation returns a node's full assignment list only to a caller with
 admin without `edit_node` on a device sees a notice instead of that device's
 access list. Removing a device requires `delete_node` on the device node.
 
-The header's **Inference server** selector chooses this device or a linked mesh
-device without leaving Chat. It works in the desktop app and in a browser, on
-this device or on another machine. It always offers **Local Server**, also
-without Nexus support, with the mesh off or without inference devices, and adds
-the group's Tier 3 devices that are online. On screens 768 px wide or less it is
-hidden like the Nexus shortcut unless a mesh device is selected; the connection
-settings still reach the local server. Health and models reload from the
-selected server. Failed switches restore the previous connection, and choosing
-Local Server restores the normal connection and drops the peer key.
-
-The client keeps talking to its own `lemond`, which relays the requests to the
-selected device over the mesh (see [Inference relay](#inference-relay)). The
-selection lives in that client only; other clients of the same `lemond` keep
-their own server. Enter the peer's API key when prompted, or in Devices & mesh.
-The client holds peer keys in memory and sends them in the relay header only with
-requests to that relay URL, and `lemond` forwards them to that peer alone. Any
-change to the connection settings drops the peer key. Relay URLs are not saved as
+Inference server selection is not exposed in the UI yet. `lemond` provides the
+[inference relay](#inference-relay), and `selectNexusInferenceServer(nodeId, key?)`
+in `src/app/src/features/nexus/nexus.ts` implements the client side: `'local'`
+restores the Local Server connection and drops the peer key; another node ID
+connects through `<server>/api/v1/nexus/peers/{node_id}` with that peer's key.
+`isNexusInferencePeer` selects the online Tier 3 devices to offer. The client
+holds peer keys in memory and sends them in the relay header only with requests
+to that relay URL, and `lemond` forwards them to that peer alone. Any change to
+the connection settings drops the peer key. Relay URLs are not saved as
 connection settings.
 
 Native passkeys require user presence and user verification. Windows uses the
