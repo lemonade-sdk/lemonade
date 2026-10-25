@@ -95,16 +95,40 @@ bool is_models_path(const std::string& path) {
     return path == "/api/v1/models" || path == "/api/v0/models" || path == "/v1/models" || path == "/v0/models";
 }
 
-/// httplib parses a multipart body into req.files and leaves req.body empty, so a
+struct FormPart {
+    std::string name;
+    std::string filename;
+    std::string content_type;
+    std::string content;
+};
+
+/// cpp-httplib 0.23 replaced Request::files with Request::form (fields and files);
+/// distributions ship both generations, so read whichever the header provides.
+template <typename Request>
+auto form_parts(const Request& req, int) -> decltype(req.form.files, std::vector<FormPart>()) {
+    std::vector<FormPart> parts;
+    for (const auto& [name, field] : req.form.fields) parts.push_back({field.name, "", "", field.content});
+    for (const auto& [name, file] : req.form.files) parts.push_back({file.name, file.filename, file.content_type, file.content});
+    return parts;
+}
+template <typename Request>
+std::vector<FormPart> form_parts(const Request& req, long) {
+    std::vector<FormPart> parts;
+    for (const auto& [name, part] : req.files) parts.push_back({part.name, part.filename, part.content_type, part.content});
+    return parts;
+}
+
+/// httplib parses a multipart body into its form parts and leaves req.body empty, so a
 /// forwarded multipart request is encoded again with a fresh boundary.
 std::pair<std::string, std::string> multipart_body(const httplib::Request& req) {
+    const auto parts = form_parts(req, 0);
     std::random_device random;
     std::string boundary;
     std::string body;
     for (int attempt = 0; attempt < 4; ++attempt) {
         boundary = "lemonade-mesh-port-" + std::to_string(random()) + std::to_string(random()) + std::to_string(random());
         body.clear();
-        for (const auto& [name, part] : req.files) {
+        for (const auto& part : parts) {
             body += "--" + boundary + "\r\nContent-Disposition: form-data; name=\"" + part.name + "\"";
             if (!part.filename.empty()) {
                 body += "; filename=\"" + part.filename + "\"\r\nContent-Type: " +
@@ -114,7 +138,7 @@ std::pair<std::string, std::string> multipart_body(const httplib::Request& req) 
         }
         body += "--" + boundary + "--\r\n";
         bool collides = false;
-        for (const auto& [name, part] : req.files) {
+        for (const auto& part : parts) {
             if (part.content.find(boundary) != std::string::npos) collides = true;
         }
         if (!collides) break;

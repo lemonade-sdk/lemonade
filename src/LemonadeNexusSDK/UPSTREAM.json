@@ -66,6 +66,7 @@
   ],
   "patches": [
     "0001-Update-an-existing-ingress-target-when-a-service-is-.patch",
-    "0002-Add-device-hosted-account-images-to-the-client-SDK.patch"
+    "0002-Add-device-hosted-account-images-to-the-client-SDK.patch",
+    "0003-Read-multipart-parts-from-cpp-httplib-0.23-and-newer.patch"
   ]
 }
