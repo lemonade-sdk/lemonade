@@ -724,6 +724,34 @@ jobs:
           # score on the same model, so a model that is merely weak doesn't fail.
           ACCURACY_TOLERANCE = 0.06
           ref_forks = {f["fork_id"] for f in forks_config["forks"] if f.get("accuracy_reference")}
+          accuracy_detail = {}
+          for entries in leaderboard.values():
+            for e in entries:
+              if e.get("accuracy") is not None:
+                accuracy_detail.setdefault(e["model"], {})[e["fork_id"]] = {"run_id": e.get("run_id")}
+          for run_file in sorted(results_dir.rglob("run-*.json")):
+            try:
+              rd = json.loads(run_file.read_text())
+            except Exception:
+              continue
+            fid = rd.get("fork_id")
+            for me in rd.get("models") or []:
+              acc = me.get("accuracy")
+              mdl = MODEL_ALIASES.get(me.get("model"), me.get("model"))
+              slot = accuracy_detail.get(mdl, {}).get(fid)
+              if acc and slot is not None and slot["run_id"] == rd.get("run_id"):
+                slot.update(passed=acc["passed"], total=acc["total"],
+                            failed={f["id"]: f["response"] for f in acc.get("failures", [])})
+          accuracy_questions = {}
+          qpath = Path(".github/scripts/accuracy_questions.json")
+          if qpath.exists():
+            for q in json.loads(qpath.read_text())["questions"]:
+              g = q["grade"]
+              expected = (" / ".join(g["values"]) if g["type"] == "one_of"
+                          else json.dumps(g["value"]) if g["type"] == "json"
+                          else g["pattern"] if g["type"] == "regex"
+                          else f'{g["value"]}' + (f' ± {g["tolerance"]}' if g.get("tolerance") else ""))
+              accuracy_questions[q["id"]] = {"category": q["category"], "prompt": q["prompt"], "expected": expected}
           for entries in leaderboard.values():
             ref = next((e["accuracy"] for e in entries if e["fork_id"] in ref_forks and e.get("accuracy") is not None), None)
             for e in entries:
@@ -819,6 +847,9 @@ jobs:
             "lemonade_versions_seen": sorted(lemonade_versions, key=_vkey),
             "systems": list(systems.values()),
             "experimental_forks": experimental_forks,
+            "accuracy_reference": next(iter(sorted(ref_forks)), None),
+            "accuracy_questions": accuracy_questions,
+            "accuracy_detail": accuracy_detail,
             "by_model_scenario": leaderboard,
             "history": history,
           }
