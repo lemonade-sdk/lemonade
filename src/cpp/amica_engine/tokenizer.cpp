@@ -1,11 +1,7 @@
 #include "tokenizer.h"
 
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
+#include "unicode.h"
 
-#include <icu.h>
 #include <nlohmann/json.hpp>
 
 #include <cctype>
@@ -21,11 +17,6 @@ namespace amica_engine {
 namespace {
 
 using json = nlohmann::json;
-using UString = std::basic_string<UChar>;
-
-// The pattern the ByteLevel pre-tokenizer splits with when use_regex is set.
-constexpr const char* kByteLevelPattern =
-    R"('s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+)";
 
 std::string read_file(const std::string& path) {
     std::ifstream file(std::filesystem::u8path(path), std::ios::binary);
@@ -37,111 +28,6 @@ std::string read_file(const std::string& path) {
     return text.str();
 }
 
-void check_icu(UErrorCode status, const char* what) {
-    if (U_FAILURE(status)) {
-        throw std::runtime_error(std::string(what) + " failed: " + u_errorName(status));
-    }
-}
-
-UString to_utf16(const std::string& text) {
-    UErrorCode status = U_ZERO_ERROR;
-    std::int32_t length = 0;
-    u_strFromUTF8(nullptr, 0, &length, text.data(), static_cast<std::int32_t>(text.size()), &status);
-    if (status != U_BUFFER_OVERFLOW_ERROR) check_icu(status, "u_strFromUTF8");
-    UString result(static_cast<std::size_t>(length), 0);
-    status = U_ZERO_ERROR;
-    u_strFromUTF8(result.data(), length, &length, text.data(), static_cast<std::int32_t>(text.size()), &status);
-    check_icu(status, "u_strFromUTF8");
-    return result;
-}
-
-std::string to_utf8(const UChar* text, std::int32_t size) {
-    UErrorCode status = U_ZERO_ERROR;
-    std::int32_t length = 0;
-    u_strToUTF8(nullptr, 0, &length, text, size, &status);
-    if (status != U_BUFFER_OVERFLOW_ERROR) check_icu(status, "u_strToUTF8");
-    std::string result(static_cast<std::size_t>(length), '\0');
-    status = U_ZERO_ERROR;
-    u_strToUTF8(result.data(), length, &length, text, size, &status);
-    check_icu(status, "u_strToUTF8");
-    return result;
-}
-
-std::string nfc(const std::string& text) {
-    UErrorCode status = U_ZERO_ERROR;
-    const UNormalizer2* normalizer = unorm2_getNFCInstance(&status);
-    check_icu(status, "unorm2_getNFCInstance");
-    const UString source = to_utf16(text);
-    UString result(source.size() + 16, 0);
-    std::int32_t length = unorm2_normalize(normalizer, source.data(), static_cast<std::int32_t>(source.size()),
-                                           result.data(), static_cast<std::int32_t>(result.size()), &status);
-    if (status == U_BUFFER_OVERFLOW_ERROR) {
-        status = U_ZERO_ERROR;
-        result.assign(static_cast<std::size_t>(length), 0);
-        length = unorm2_normalize(normalizer, source.data(), static_cast<std::int32_t>(source.size()),
-                                  result.data(), length, &status);
-    }
-    check_icu(status, "unorm2_normalize");
-    return to_utf8(result.data(), length);
-}
-
-// tokenizers matches \s and \S against Unicode White_Space; ICU's \s omits a
-// few of its characters (U+000B, U+0085), so they are spelled out.
-std::string to_icu_pattern(const std::string& pattern) {
-    std::string result;
-    for (std::size_t i = 0; i < pattern.size(); ++i) {
-        if (pattern[i] == '\\' && i + 1 < pattern.size()) {
-            const char next = pattern[++i];
-            if (next == 's') {
-                result += "\\p{White_Space}";
-            } else if (next == 'S') {
-                result += "\\P{White_Space}";
-            } else {
-                result += '\\';
-                result += next;
-            }
-        } else {
-            result += pattern[i];
-        }
-    }
-    return result;
-}
-
-void append_utf8(std::string& out, std::uint32_t code_point) {
-    if (code_point < 0x80) {
-        out += static_cast<char>(code_point);
-    } else if (code_point < 0x800) {
-        out += static_cast<char>(0xC0 | (code_point >> 6));
-        out += static_cast<char>(0x80 | (code_point & 0x3F));
-    } else if (code_point < 0x10000) {
-        out += static_cast<char>(0xE0 | (code_point >> 12));
-        out += static_cast<char>(0x80 | ((code_point >> 6) & 0x3F));
-        out += static_cast<char>(0x80 | (code_point & 0x3F));
-    } else {
-        out += static_cast<char>(0xF0 | (code_point >> 18));
-        out += static_cast<char>(0x80 | ((code_point >> 12) & 0x3F));
-        out += static_cast<char>(0x80 | ((code_point >> 6) & 0x3F));
-        out += static_cast<char>(0x80 | (code_point & 0x3F));
-    }
-}
-
-// Decodes one code point of valid UTF-8 starting at text[i] and advances i.
-std::uint32_t next_code_point(const std::string& text, std::size_t& i) {
-    const auto byte = [&](std::size_t k) { return static_cast<std::uint8_t>(text[k]); };
-    const std::uint8_t lead = byte(i);
-    if (lead < 0x80) {
-        ++i;
-        return lead;
-    }
-    const int length = lead >= 0xF0 ? 4 : lead >= 0xE0 ? 3 : 2;
-    std::uint32_t code_point = lead & (0x7F >> length);
-    for (int k = 1; k < length && i + k < text.size(); ++k) {
-        code_point = (code_point << 6) | (byte(i + k) & 0x3F);
-    }
-    i += length;
-    return code_point;
-}
-
 bool flag(const json& object, const char* key) {
     const auto it = object.find(key);
     return it != object.end() && it->is_boolean() && it->get<bool>();
@@ -149,55 +35,6 @@ bool flag(const json& object, const char* key) {
 
 [[noreturn]] void unsupported(const std::string& path, const std::string& what) {
     throw std::runtime_error(path + " uses " + what + ", which amica-engine's tokenizer does not support");
-}
-
-}  // namespace
-
-struct Tokenizer::Regex {
-    URegularExpression* pattern = nullptr;
-    ~Regex() {
-        if (pattern) uregex_close(pattern);
-    }
-};
-
-namespace {
-
-std::shared_ptr<Tokenizer::Regex> compile_regex(const std::string& pattern, bool literal) {
-    auto regex = std::make_shared<Tokenizer::Regex>();
-    const UString pattern16 = to_utf16(pattern);
-    UParseError parse_error{};
-    UErrorCode status = U_ZERO_ERROR;
-    regex->pattern = uregex_open(pattern16.data(), static_cast<std::int32_t>(pattern16.size()),
-                                 literal ? UREGEX_LITERAL : 0, &parse_error, &status);
-    check_icu(status, "compiling a pre-tokenizer pattern");
-    return regex;
-}
-
-// Pieces of text with whether each is a pattern match, in order.
-std::vector<std::pair<std::string, bool>> split_by(const Tokenizer::Regex& compiled, const std::string& piece) {
-    const UString text = to_utf16(piece);
-    UErrorCode status = U_ZERO_ERROR;
-    std::unique_ptr<URegularExpression, decltype(&uregex_close)> regex(uregex_clone(compiled.pattern, &status),
-                                                                       &uregex_close);
-    check_icu(status, "uregex_clone");
-    uregex_setText(regex.get(), text.data(), static_cast<std::int32_t>(text.size()), &status);
-    check_icu(status, "uregex_setText");
-    std::vector<std::pair<std::string, bool>> parts;
-    std::int32_t position = 0;
-    while (uregex_findNext(regex.get(), &status)) {
-        const std::int32_t start = uregex_start(regex.get(), 0, &status);
-        const std::int32_t end = uregex_end(regex.get(), 0, &status);
-        check_icu(status, "uregex_findNext");
-        if (end == start) continue;
-        if (start > position) parts.emplace_back(to_utf8(text.data() + position, start - position), false);
-        parts.emplace_back(to_utf8(text.data() + start, end - start), true);
-        position = end;
-    }
-    check_icu(status, "uregex_findNext");
-    if (position < static_cast<std::int32_t>(text.size())) {
-        parts.emplace_back(to_utf8(text.data() + position, static_cast<std::int32_t>(text.size()) - position), false);
-    }
-    return parts;
 }
 
 void replace_all(std::string& text, const std::string& from, const std::string& to) {
@@ -213,8 +50,6 @@ std::size_t previous_char_length(const std::string& text, std::size_t end) {
     while (begin > 0 && (static_cast<std::uint8_t>(text[begin]) & 0xC0) == 0x80) --begin;
     return end - begin;
 }
-
-bool is_whitespace(std::uint32_t code_point) { return u_isUWhiteSpace(static_cast<UChar32>(code_point)) != 0; }
 
 std::string string_pattern(const json& step, const std::string& path, const char* what) {
     const json& pattern = step.at("pattern");
@@ -324,8 +159,8 @@ Tokenizer::Tokenizer(const std::string& path) {
             PreTokenizer split{PreTokenizer::Kind::Split};
             const json& pattern = step.at("pattern");
             split.regex = pattern.contains("Regex")
-                              ? compile_regex(to_icu_pattern(pattern.at("Regex").get<std::string>()), false)
-                              : compile_regex(pattern.at("String").get<std::string>(), true);
+                              ? std::make_shared<Regex>(to_icu_pattern(pattern.at("Regex").get<std::string>()), false)
+                              : std::make_shared<Regex>(pattern.at("String").get<std::string>(), true);
             split.removed = behavior == "Removed";
             split.invert = flag(step, "invert");
             pre_tokenizers_.push_back(split);
@@ -333,7 +168,7 @@ Tokenizer::Tokenizer(const std::string& path) {
             if (flag(step, "add_prefix_space")) unsupported(path, "ByteLevel with add_prefix_space");
             PreTokenizer byte_level{PreTokenizer::Kind::ByteLevel};
             if (step.value("use_regex", true)) {
-                byte_level.regex = compile_regex(to_icu_pattern(kByteLevelPattern), false);
+                byte_level.regex = std::make_shared<Regex>(to_icu_pattern(kByteLevelPattern), false);
             }
             pre_tokenizers_.push_back(byte_level);
         } else {
@@ -465,7 +300,7 @@ void Tokenizer::encode_segment(const std::string& segment, std::vector<std::int6
             }
             // Isolated keeps every match and every gap as its own piece;
             // Removed drops the matches. invert swaps which parts are matches.
-            for (const auto& [part, matched] : split_by(*step.regex, piece)) {
+            for (const auto& [part, matched] : step.regex->split(piece)) {
                 if (step.kind == PreTokenizer::Kind::Split && step.removed && matched != step.invert) continue;
                 next.push_back(part);
             }

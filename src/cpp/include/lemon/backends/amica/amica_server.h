@@ -40,6 +40,12 @@ constexpr uint32_t capabilities() { return capability_mask_of<AmicaServer>(); }
 // serves the OpenAI-compatible API Lemonade forwards to.
 std::string engine_path();
 
+// Throws with setup instructions when anything the command needs is missing.
+ServerCommand engine_command(const ModelInfo& model_info,
+                             const std::string& model_name,
+                             int port,
+                             const std::string& amica_args);
+
 std::vector<std::string> build_engine_argv(const std::string& model_dir,
                                            const std::string& amica_dir,
                                            const std::string& model_name,

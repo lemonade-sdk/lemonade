@@ -9,6 +9,8 @@
 
 namespace amica_engine {
 
+class Regex;
+
 // A BPE tokenizer read from a Hugging Face tokenizer.json, reproducing the
 // tokenizers library for the components ChatApp bundles use: NFC, Prepend and
 // Replace normalizers; Split and ByteLevel pre-tokenizers; BPE with byte
@@ -33,7 +35,6 @@ public:
     // Contents of the added tokens marked special.
     std::vector<std::string> special_tokens() const;
 
-    struct Regex;
     struct Normalizer {
         enum class Kind { Nfc, Prepend, Replace } kind;
         std::string from;  // Replace pattern

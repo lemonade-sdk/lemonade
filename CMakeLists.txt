@@ -216,6 +216,7 @@ set(LEMON_BACKENDS
     "trellis|trellis"
     "openmoss|openmoss"
     "amica|amica"
+    "amica-image|amicaimage"
 )
 
 # ============================================================
@@ -1469,20 +1470,29 @@ if(WIN32 AND LEMON_AMICA_ROOT)
 
     add_executable(amica-engine
         src/cpp/amica_engine/amica_engine.cpp
+        src/cpp/amica_engine/amica_runtime.cpp
         src/cpp/amica_engine/app_manifest.cpp
         src/cpp/amica_engine/bundle.cpp
+        src/cpp/amica_engine/cgc_graph.cpp
         src/cpp/amica_engine/chat_frontend.cpp
         src/cpp/amica_engine/graph_abi.cpp
+        src/cpp/amica_engine/image_api.cpp
+        src/cpp/amica_engine/image_bundle.cpp
+        src/cpp/amica_engine/image_engine.cpp
+        src/cpp/amica_engine/onnx_tokenizers.cpp
         src/cpp/amica_engine/openai_api.cpp
-        src/cpp/amica_engine/tokenizer.cpp)
+        src/cpp/amica_engine/png.cpp
+        src/cpp/amica_engine/tokenizer.cpp
+        src/cpp/amica_engine/unicode.cpp)
     target_include_directories(amica-engine PRIVATE "${LEMON_AMICA_ROOT}/include")
     target_include_directories(amica-engine SYSTEM PRIVATE "${CMAKE_BINARY_DIR}/minja/include")
     # amica.dll is delay-loaded from the AMICA install configured at run time
     # (amica.dx12_bin), not from the package the engine was built against.
     # icu.lib is the Windows SDK's ICU (Windows 10 1903+), used for Unicode
     # normalization and the tokenizers' Unicode regular expressions.
+    # windowscodecs (WIC) encodes generated images as PNG.
     target_link_libraries(amica-engine PRIVATE
-        "${LEMON_AMICA_ROOT}/lib/amica.lib" delayimp d3d12 dxgi icu
+        "${LEMON_AMICA_ROOT}/lib/amica.lib" delayimp d3d12 dxgi icu ole32 windowscodecs
         lemonade-httplib nlohmann_json::nlohmann_json)
     if(MSVC)
         target_compile_options(amica-engine PRIVATE /bigobj)

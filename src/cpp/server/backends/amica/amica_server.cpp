@@ -54,39 +54,9 @@ void AmicaServer::load(const std::string& model_name,
     LOG(INFO, "AMICA") << "Loading model: " << model_name << std::endl;
     LOG(DEBUG, "AMICA") << "Per-model settings: " << options.to_log_string() << std::endl;
 
-    std::string tools_dir;
-    try {
-        tools_dir = path_to_utf8(
-            path_from_utf8(BackendUtils::get_backend_binary_path(*amica::spec(), "dx12")).parent_path());
-    } catch (const std::exception&) {
-        throw std::runtime_error(kToolsNotConfigured);
-    }
-
-    const std::string engine = amica::engine_path();
-    if (!fs::is_regular_file(path_from_utf8(engine))) {
-        throw std::runtime_error(kEngineNotBuilt);
-    }
-
-    const std::string model_dir = model_info.resolved_path();
-    if (model_dir.empty() || !fs::is_directory(path_from_utf8(model_dir))) {
-        throw std::runtime_error("AMICA model directory not found for checkpoint: " +
-                                 model_info.checkpoint());
-    }
-
-    const std::string amica_dir = path_to_utf8(path_from_utf8(tools_dir).parent_path() / "amica");
-    if (!fs::is_regular_file(path_from_utf8(amica_dir) / "amica.dll")) {
-        throw std::runtime_error("amica.dll was not found in " + amica_dir + ". " + kToolsNotConfigured);
-    }
-
     port_ = choose_port();
-    ServerCommand command;
-    command.program = engine;
-    command.args = amica::build_engine_argv(model_dir, amica_dir, model_name, port_,
-                                            options.get_option("amica_args"));
-    command.port = port_;
-
-    LOG(INFO, "AMICA") << "Using AMICA: " << amica_dir << std::endl;
-
+    const ServerCommand command =
+        amica::engine_command(model_info, model_name, port_, options.get_option("amica_args"));
     const bool inherit_output = log_level_ == "info" || is_debug();
     start_server(std::make_unique<NativeProcess>(ProcessOutput{inherit_output, true}), command);
 }
@@ -108,6 +78,43 @@ std::string engine_path() {
     const char* name = "amica-engine";
 #endif
     return path_to_utf8(path_from_utf8(get_executable_dir()) / name);
+}
+
+ServerCommand engine_command(const ModelInfo& model_info,
+                             const std::string& model_name,
+                             int port,
+                             const std::string& amica_args) {
+    std::string tools_dir;
+    try {
+        tools_dir = path_to_utf8(
+            path_from_utf8(BackendUtils::get_backend_binary_path(*spec(), "dx12")).parent_path());
+    } catch (const std::exception&) {
+        throw std::runtime_error(kToolsNotConfigured);
+    }
+
+    const std::string engine = engine_path();
+    if (!fs::is_regular_file(path_from_utf8(engine))) {
+        throw std::runtime_error(kEngineNotBuilt);
+    }
+
+    const std::string model_dir = model_info.resolved_path();
+    if (model_dir.empty() || !fs::is_directory(path_from_utf8(model_dir))) {
+        throw std::runtime_error("AMICA model directory not found for checkpoint: " +
+                                 model_info.checkpoint());
+    }
+
+    const std::string amica_dir = path_to_utf8(path_from_utf8(tools_dir).parent_path() / "amica");
+    if (!fs::is_regular_file(path_from_utf8(amica_dir) / "amica.dll")) {
+        throw std::runtime_error("amica.dll was not found in " + amica_dir + ". " + kToolsNotConfigured);
+    }
+
+    LOG(INFO, "AMICA") << "Using AMICA: " << amica_dir << std::endl;
+
+    ServerCommand command;
+    command.program = engine;
+    command.args = build_engine_argv(model_dir, amica_dir, model_name, port, amica_args);
+    command.port = port;
+    return command;
 }
 
 std::vector<std::string> build_engine_argv(const std::string& model_dir,
@@ -145,7 +152,7 @@ public:
                         DownloadProgressCallback /*progress*/,
                         const BackendOpsContext& /*ctx*/) const override {
         throw std::runtime_error(
-            "AMICA models are local ChatApp bundles and cannot be downloaded. Register '" +
+            "AMICA models are local ChatApp or GenaiApp bundles and cannot be downloaded. Register '" +
             info.model_name + "' in user_models.json with \"source\": \"local_path\" and its "
             "bundle directory as the checkpoint.");
     }

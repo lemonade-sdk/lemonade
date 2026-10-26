@@ -13,7 +13,7 @@ client ──HTTP──▶ lemond ──HTTP──▶ amica-engine.exe ──▶
 ```
 
 - **`lemond`** routes OpenAI-style requests to the backend for the loaded model.
-- **`amica-engine.exe`** (built from this directory) is the whole AMICA backend. It compiles the bundle's graphs through the public AMICA API, keeps the weights resident on the GPU, tokenizes and renders prompts, and serves `/v1/chat/completions` and `/v1/completions`. It needs no Python.
+- **`amica-engine.exe`** (built from this directory) is the whole AMICA backend. It compiles the bundle's graphs through the public AMICA API, keeps the weights resident on the GPU, tokenizes and renders prompts, and serves `/v1/chat/completions` and `/v1/completions`, or `/v1/images/generations` for an image bundle (see [step 7](#7-image-generation)). It needs no Python.
 - **`amica.dll`** comes from your AMICA install and is loaded at run time from the install Lemonade is configured with, so you can update AMICA without rebuilding Lemonade unless its API changes.
 
 ## 1. Prerequisites
@@ -251,6 +251,73 @@ foreach ($t in "test_backend_mode_contract", "test_custom_args", "test_recipe_op
                 "test_recipe_arg_resolution", "test_model_registry") { & ".\build\Release\$t.exe" }
 ```
 
+## 7. Image generation
+
+The `amica-image` recipe serves FLUX.1-schnell from the bundle GenaiApp prepares. Generate one image with GenaiApp first, so the bundle is downloaded and prepared:
+
+```powershell
+cd C:\Develop\amd-mlcompiler\test\amica
+.\GenaiApp.ps1 --model flux-schnell --prompt "a big cat"
+```
+
+That leaves the bundle in `test\amica\mlir\models\flux-schnell`. `amica-engine` serves it with no Python: it compiles the component graphs (`text_encoder`, `text_encoder_2`, `transformer`, `vae_decoder`), generates the latent and scheduler graphs GenaiApp would otherwise write, and reads the tokenizers out of the bundle's ONNX tokenizer files. It treats any `--model-dir` that contains `cgc_pipeline.json` as an image bundle.
+
+Register it in `user_models.json`. The size is fixed when GenaiApp prepares the bundle (256x256 by default), so give `image_defaults` that size:
+
+```json
+{
+    "FLUX.1-schnell-AMICA": {
+        "source": "local_path",
+        "checkpoint": "C:\\Develop\\amd-mlcompiler\\test\\amica\\mlir\\models\\flux-schnell",
+        "recipe": "amica-image",
+        "labels": ["image"],
+        "image_defaults": {"steps": 4, "width": 256, "height": 256}
+    }
+}
+```
+
+`amica-image` uses the `amica` section of the config, so `amica.dx12_bin` from step 4 is enough. Load the model and generate:
+
+```powershell
+.\build\Release\lemonade.exe load FLUX.1-schnell-AMICA
+
+$body = @{ model = "FLUX.1-schnell-AMICA"; prompt = "a big cat"; steps = 4; seed = 42 } | ConvertTo-Json
+$image = (Invoke-RestMethod "http://localhost:13305/api/v1/images/generations" -Method Post `
+            -ContentType "application/json" -Body $body).data[0].b64_json
+[IO.File]::WriteAllBytes("$PWD\cat.png", [Convert]::FromBase64String($image))
+```
+
+On a 16 GB RX 9070 XT the engine keeps about 13.7 GiB of the 25 GiB of FP16 weights in VRAM and reads the rest from system memory. It sizes that split from the VRAM the OS grants it, unless `--weights-vram-mib` is given. Loading takes about 16 s, and an image about 5 minutes.
+
+For usable speed on a 16 GB GPU, use the bundle's INT4 weight-only transformer with `--transformer-precision int4-weight-only`. The whole model then fits in VRAM: about 12 s to load and 9 s per image. Its weights (5.8 GiB) are not downloaded by default. `tools\amica\download_tests_from_artifactory.ps1 -Path mlir/models/flux-schnell/transformer/int4-weight-only` fetches the graph and manifests, but can report the weights failed even though every chunk arrived. Fetch the weights directly in that case, and check the SHA-256 against the one Artifactory reports (`X-Checksum-Sha256`):
+
+```powershell
+cd C:\Develop\amd-mlcompiler\test\amica\mlir\models\flux-schnell\transformer\int4-weight-only
+curl.exe -f -C - -o weights.safetensors `
+  https://mkmartifactory.amd.com:8443/artifactory/SW-MLArtfactory-DEV-LOCAL/dxcgc/tests/mlir/models/flux-schnell/transformer/int4-weight-only/weights.safetensors
+```
+
+and add `"recipe_options": {"amica_args": "--transformer-precision int4-weight-only"}` to the model's `user_models.json` entry.
+
+To run the engine without Lemonade, start it on the bundle and post to `http://127.0.0.1:8090/v1/images/generations`:
+
+```powershell
+.\build\Release\amica-engine.exe `
+  --model-dir C:\Develop\amd-mlcompiler\test\amica\mlir\models\flux-schnell `
+  --amica-dir C:\Develop\amd-mlcompiler\build\WinRelWithDebInfo\install\amica `
+  --port 8090 --model-name flux
+```
+
+`--generate "a big cat" --output cat.png` (with `--model-dir` and `--amica-dir`, without `--port`) loads the model, writes one image and exits, without HTTP.
+
+`--print-tokens` prints the CLIP and T5 token IDs the engine computes for a prompt, without loading the model. They should equal the IDs the bundle's ONNX tokenizers give under GenaiApp's Python environment:
+
+```powershell
+.\build\Release\amica-engine.exe --model-dir C:\Develop\amd-mlcompiler\test\amica\mlir\models\flux-schnell `
+  --print-tokens "a big cat"
+# {"clip":[49406,320,1205,2368,49407],"t5":[3,9,600,1712,1]}
+```
+
 ## Troubleshooting
 
 | Symptom | Cause and fix |
@@ -262,4 +329,6 @@ foreach ($t in "test_backend_mode_contract", "test_custom_args", "test_recipe_op
 | `tokenizer.json uses ..., which amica-engine's tokenizer does not support` | The bundle's tokenizer is not one of the byte-level BPE tokenizers the engine implements. |
 | The load fails with out-of-memory errors, or Windows becomes unresponsive while loading | The weights do not fit. Lower `--weights-vram-mib` if VRAM is short, and free system RAM for the offloaded part (see the table in step 1). |
 | `GPU execution (device removed) failed: HRESULT 0x887A0006` | The GPU hung or was reset. The engine exits and Lemonade reloads the model on the next request. Check the driver, the AMICA build, and VRAM headroom; running on a GPU that does not drive a display (`--adapter`) avoids desktop freezes while investigating. |
+| `... was not found; prepare the bundle with GenaiApp first` | The image bundle lacks a component's `source_fp16act.mlir` or `weights.safetensors`. Run `GenaiApp.ps1 --model flux-schnell` once (step 7). |
+| `this AMICA model generates 256x256 images; size ... is not available` | The request asked for a size the bundle was not prepared for. Set the model's `image_defaults` to the bundle's size. |
 | `amica-engine.exe` keeps running after `lemond` was killed | A forced kill skips Lemonade's child cleanup. End it with `taskkill /IM amica-engine.exe /F`. |

@@ -11,6 +11,7 @@ the generator instead. Prose outside the markers is preserved. -->
 |--------|------|--------------------|---------------|----------|
 | `acestep` | ACE-Step | yes | no | cuda, rocm, vulkan |
 | `amica` | AMICA DX12 | no | no | dx12 |
+| `amica-image` | AMICA DX12 Image | no | no | dx12 |
 | `ds4` | DwarfStar4 | no | yes | rocm |
 | `flm` | FastFlowLM NPU | no | yes | npu |
 | `kokoro` | Kokoro | no | no | cpu, metal |
@@ -39,6 +40,7 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 | `acestep` | vulkan | experimental | native | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `acestep` | rocm | experimental | native | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
 | `amica` | dx12 | experimental | native | windows | amd_gpu (gfx110X, gfx1150, gfx1151, gfx120X) |
+| `amica-image` | dx12 | experimental | native | windows | amd_gpu (gfx110X, gfx1150, gfx1151, gfx120X) |
 | `ds4` | rocm | guest | native | linux | amd_gpu (gfx1151) |
 | `flm` | npu | core | native | linux, windows | amd_npu (XDNA2) |
 | `kokoro` | metal | core | native | macos | metal |
@@ -96,6 +98,12 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 | `acestep_backend` | `--acestep` | BACKEND | "" | ACE-Step backend to use |
 
 #### `amica` — AMICA DX12
+
+| Option | CLI flag | Type | Default | Description |
+|--------|----------|------|---------|-------------|
+| `amica_args` | `--amica-args` | ARGS | "" | Custom arguments to pass to amica-engine (--adapter, --arch, --weights-vram-mib) |
+
+#### `amica-image` — AMICA DX12 Image
 
 | Option | CLI flag | Type | Default | Description |
 |--------|----------|------|---------|-------------|

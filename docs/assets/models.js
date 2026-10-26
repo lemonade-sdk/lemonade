@@ -6,6 +6,7 @@ const RAW_BASE = 'https://raw.githubusercontent.com/lemonade-sdk/lemonade';
 const RECIPE_PRIORITY = [
   'acestep',
   'amica',
+  'amica-image',
   'ds4',
   'flm',
   'llamacpp-hrx',
@@ -38,7 +39,8 @@ const RECIPE_DISPLAY_NAMES = {
   onnxruntime: 'ONNX Runtime',
   trellis: 'TRELLIS.2',
   openmoss: 'OpenMOSS TTS',
-  amica: 'AMICA'
+  amica: 'AMICA',
+  'amica-image': 'AMICA'
 };
 /* END GENERATED: models-js-recipes */
 
