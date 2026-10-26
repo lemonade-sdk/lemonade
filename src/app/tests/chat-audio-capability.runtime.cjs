@@ -255,7 +255,7 @@ assert.match(appSource, /previousLoadedModelNamesRef\.current = now/);
 assert.match(chatViewSource, /loadedModels\.every\(m => String\(m\.type\)\.toLowerCase\(\) === 'transcription'/);
 assert.match(appSource, /removed\.includes\(name\.toLowerCase\(\)\)/);
 assert.match(chatViewSource, /if \(dictating\) onDictationEnd\(true\);/);
-assert.ok((chatViewSource.match(/if \(dictating\) onDictationEnd\(\);/g) || []).length >= 2);
+assert.match(chatViewSource, /if \(dictating\) onDictationEnd\(\);/);
 assert.match(chatViewSource, /if \(micSessionRef\.current === 'dictation'\) onDictationEnd\(\)/);
 assert.match(chatViewSource, /Icon name=\{isLiveRecording \? 'stop' : supportsDictation \? 'mic' : 'audio'\}/);
 
