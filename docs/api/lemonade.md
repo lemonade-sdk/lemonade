@@ -1812,8 +1812,8 @@ This endpoint does not take any parameters.
 
 ### Response format
 
-- `time_to_first_token` - Time in seconds until the first token was generated
-- `tokens_per_second` - Generation speed in tokens per second
+- `time_to_first_token` - Time in seconds until the first token was generated, as reported by the backend for the latest request; a reliable TTFT requires backend timing, since the first streamed chunk is not necessarily the first token. `null` when no timing was available (e.g. non-streaming OpenAI-compatible cloud completions)
+- `tokens_per_second` - Generation speed in tokens per second, as reported by the backend or calculated from a streamed response for the latest request; `null` when no timing was available (e.g. non-streaming OpenAI-compatible cloud completions)
 - `input_tokens` - Number of tokens processed
 - `output_tokens` - Number of tokens generated
 - `prompt_tokens` - Total prompt tokens including cached tokens
