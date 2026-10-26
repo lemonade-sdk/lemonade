@@ -734,8 +734,9 @@ const App: React.FC = () => {
   useEffect(() => {
     const now = new Set(rawLoadedModels.map(m => m.model_name.toLowerCase()));
     const removed = [...previousLoadedModelNamesRef.current].filter(name => !now.has(name));
+    if (dictationTarget && dictationActive) return;
     previousLoadedModelNamesRef.current = now;
-    if (!dictationTarget || dictationActive || removed.length === 0 || !modelHelpers) return;
+    if (!dictationTarget || removed.length === 0 || !modelHelpers) return;
     const info = modelHelpers.findModelInfoByName(serverModels, dictationTarget);
     const recipe = String((info as any)?.recipe || '').toLowerCase();
     if (recipe !== 'router' && !recipe.startsWith('router.')) return;
