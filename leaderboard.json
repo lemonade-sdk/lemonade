@@ -1,7 +1,7 @@
 {
-  "generated_at": "2026-10-25T10:12:35.123077+00:00",
-  "run_id": "40153374647",
-  "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/40153374647",
+  "generated_at": "2026-10-26T08:11:09.306429+00:00",
+  "run_id": "40257979445",
+  "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/40257979445",
   "repo": "lemonade-sdk/lemonade",
   "repo_url": "https://github.com/lemonade-sdk/lemonade",
   "actions_url": "https://github.com/lemonade-sdk/lemonade/actions/workflows/benchmark-regression.yml",
