@@ -163,21 +163,31 @@ class ClassifyTests(ServerTestBase):
 
         A continuation byte is >= 0x80 and so can never read as a control
         character -- but only if the scan compares bytes rather than sign-
-        extended chars. The request may still fail for an unrelated reason
-        (no model pulled, a fixed-label model refusing labels), so this asserts
-        on the rejection reason rather than the status.
+        extended chars. Asserting only "control character" is absent would pass
+        when the request never reached the scan, so this pins the outcome to the
+        two results that prove it ran: the labels are accepted, or the loaded
+        fixed-label model refuses labels as a whole.
         """
+        self._ensure_model_pulled()
         response = requests.post(
             f"{self.base_url}/classify",
             json=self._payload(labels=["café", "日本語", "naïve"]),
             timeout=TIMEOUT_DEFAULT,
         )
-        self.assertNotIn(
-            "control character",
-            response.text,
-            f"multi-byte UTF-8 labels tripped the control-character check: "
-            f"{response.text[:1000]}",
+        self.assertIn(
+            response.status_code,
+            (200, 400),
+            f"unexpected status {response.status_code}, so the control-character "
+            f"scan was never reached: {response.text[:1000]}",
         )
+        if response.status_code == 400:
+            self.assertIn(
+                "fixed label set",
+                response.text,
+                f"the only acceptable 400 here is the fixed-label refusal; "
+                f"multi-byte UTF-8 labels were rejected instead: "
+                f"{response.text[:1000]}",
+            )
         print("[OK] Multi-byte UTF-8 labels pass the control-character check")
 
     def test_506_labels_rejected_by_fixed_label_model(self):

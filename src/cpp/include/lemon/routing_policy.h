@@ -5,6 +5,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -163,20 +164,18 @@ enum class OnTruncation {
 };
 
 inline OnTruncation parse_on_truncation(const std::string& s) {
-    return s == "fail" ? OnTruncation::Fail : OnTruncation::Score;
-}
-
-inline const char* on_truncation_to_string(OnTruncation t) {
-    return t == OnTruncation::Fail ? "fail" : "score";
+    if (s == "fail") return OnTruncation::Fail;
+    if (s == "score") return OnTruncation::Score;
+    throw std::invalid_argument("on_truncation must be score or fail, got '" + s + "'");
 }
 
 // ---------------------------------------------------------------------------
 // Backend injection seam
 // ---------------------------------------------------------------------------
 
-// What a zero-shot backend answers: the per-label scores, plus whether it had
-// to cut the input text to fit its token window.
-struct ZeroShotScores {
+// What a classification backend answers: the per-label scores, plus whether it
+// had to cut the input text to fit its token window.
+struct ClassifierScores {
     std::map<std::string, double> scores;
     bool truncated = false;
 };
@@ -191,16 +190,16 @@ struct ClassifierServices {
     std::function<std::vector<float>(const std::string& model,
                                      const std::string& text)> embed;
 
-    // Run a text-classification `model` over `text`; returns label -> score.
-    // Powers the generic `classifier` type.
-    std::function<std::map<std::string, double>(const std::string& model,
-                                                const std::string& text)> run_classifier;
+    // Run a text-classification `model` over `text`. Powers the generic
+    // `classifier` type.
+    std::function<ClassifierScores(const std::string& model,
+                                   const std::string& text)> run_classifier;
 
     // Score `text` against a caller-supplied `labels` list. Powers the
     // `zero_shot` type.
-    std::function<ZeroShotScores(const std::string& model,
-                                 const std::string& text,
-                                 const std::vector<std::string>& labels)>
+    std::function<ClassifierScores(const std::string& model,
+                                   const std::string& text,
+                                   const std::vector<std::string>& labels)>
         run_zero_shot_classifier;
 
     // Run a chat `model` with a system `prompt` over `input`; returns the raw
@@ -353,8 +352,9 @@ struct TraceEntry {
                                     // model's short pick-reason here (empty otherwise)
     std::string error;              // optional; why a model-backed classifier failed
                                     // (empty unless the score failed with a reason)
-    bool truncated = false;         // optional; the zero_shot backend cut the input
-                                    // text to fit its window before scoring
+    bool truncated = false;         // optional; the backend cut the input text to
+                                    // fit its window before scoring (either
+                                    // model-backed type)
 };
 
 // The engine's output for one request. Pure selection — no verdict /

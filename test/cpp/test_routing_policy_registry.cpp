@@ -264,8 +264,26 @@ static void test_on_truncation_rejections() {
                   {"id", "x"}, {"type", "zero_shot"}, {"model", "m"},
                   {"labels", json::array({"a"})}, {"on_truncation", "match_true"}});
           }));
-    // Only zero_shot reads a window it can overflow; the others have no cut to act on.
-    for (const char* type : {"classifier", "llm", "semantic_similarity"}) {
+    check("on_truncation=fail is accepted on classifier", [] {
+        try {
+            lemon::make_classifier(json{{"id", "x"},
+                                        {"type", "classifier"},
+                                        {"model", "m"},
+                                        {"labels", json::array({"a"})},
+                                        {"on_truncation", "fail"}});
+            return true;
+        } catch (const std::exception&) {
+            return false;
+        }
+    }());
+    check("classifier still rejects an unknown on_truncation",
+          throws_invalid_arg([] {
+              lemon::make_classifier(json{
+                  {"id", "x"}, {"type", "classifier"}, {"model", "m"},
+                  {"labels", json::array({"a"})}, {"on_truncation", "match_true"}});
+          }));
+
+    for (const char* type : {"llm", "semantic_similarity"}) {
         const std::string label = std::string("on_truncation is rejected on ") + type;
         check(label.c_str(), throws_invalid_arg([type] {
                   json cfg{{"id", "x"}, {"type", type}, {"model", "m"},

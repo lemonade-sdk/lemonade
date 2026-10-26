@@ -1,4 +1,5 @@
-#include <set>
+#include <string>
+#include <vector>
 
 #include "lemon/classification_labels.h"
 #include "lemon/model_types.h"
@@ -27,7 +28,7 @@ const RouteArg kInput{"input", ArgIn::JsonBody, {{"type", "string"}, {"pattern",
                       "Text to classify.", {"text"}};
 const RouteArg kTopK{"top_k", ArgIn::JsonBody, {{"type", "integer"}, {"minimum", 1}, {"maximum", 1000000}}, false, Support::Available,
                      "Return only the highest-scoring `k` labels. Defaults to every label."};
-const RouteArg kLabels{"labels", ArgIn::JsonBody, {{"type", "array"}, {"items", {{"type", "string"}, {"pattern", "\\S"}}}},
+const RouteArg kLabels{"labels", ArgIn::JsonBody, {{"type", "array"}, {"items", {{"type", "string"}}}},
                        false, Support::Available,
                        "The labels to score `input` against. Required by a zero-shot model, and refused by "
                        "every other model. The entries are unique, not blank, and carry no control "
@@ -128,20 +129,15 @@ protected:
                 write_openai_error(res, kArgInvalid, "'labels' must contain at least one label");
                 return false;
             }
-            std::set<std::string> seen;
+            std::vector<std::string> values;
+            values.reserve(labels.size());
             for (const auto& entry : labels) {
-                const std::string label = entry.get<std::string>();
-                if (label_has_control_char(label)) {
-                    write_openai_error(res, kArgInvalid,
-                        "'labels' entry must not contain control characters such as "
-                        "newline or tab");
-                    return false;
-                }
-                if (!seen.insert(label).second) {
-                    write_openai_error(res, kArgInvalid,
-                        "'labels' contains a duplicate entry: '" + label + "'");
-                    return false;
-                }
+                values.push_back(entry.get<std::string>());
+            }
+            const std::string reason = validate_label_list(values);
+            if (!reason.empty()) {
+                write_openai_error(res, kArgInvalid, "'labels': " + reason);
+                return false;
             }
         }
 

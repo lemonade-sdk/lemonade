@@ -114,14 +114,16 @@ static void test_types_construct() {
     check(std::string(lemon::on_error_to_string(OnError::MatchTrue)) == "match_true",
           "on_error_to_string round-trips");
 
-    // on_truncation round-trips through its own single-source-of-truth mapping.
     check(lemon::parse_on_truncation("fail") == OnTruncation::Fail, "parse_on_truncation fail");
     check(lemon::parse_on_truncation("score") == OnTruncation::Score,
           "parse_on_truncation score");
-    check(std::string(lemon::on_truncation_to_string(OnTruncation::Fail)) == "fail",
-          "on_truncation_to_string round-trips");
-    check(std::string(lemon::on_truncation_to_string(OnTruncation::Score)) == "score",
-          "on_truncation_to_string round-trips the default");
+    bool threw = false;
+    try {
+        lemon::parse_on_truncation("match_true");
+    } catch (const std::invalid_argument&) {
+        threw = true;
+    }
+    check(threw, "parse_on_truncation throws on an unknown value");
 
     // Match AST: any[ leaf, not(leaf) ].
     MatchExpr leaf;
@@ -253,7 +255,7 @@ static void test_fake_services() {
     auto vec = svc.embed("nomic-embed-text-v1.5-GGUF", "anything");
     check(vec.size() == 3 && vec[1] == 1.0f, "fake embed returns configured vector");
 
-    auto scores = svc.run_classifier("pii-detector-small", "my ssn is ...");
+    auto scores = svc.run_classifier("pii-detector-small", "my ssn is ...").scores;
     check(scores.at("PII") == 0.9, "fake run_classifier returns configured scores");
 
     auto reply = svc.chat("Qwen3-1.7B-GGUF", "route this", "hard reasoning task");

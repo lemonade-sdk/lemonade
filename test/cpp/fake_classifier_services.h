@@ -94,6 +94,13 @@ public:
         declare("run_classifier", model);
     }
 
+    // Make a fixed-label classifier report that the backend cut the input to
+    // fit its token window, the way ort-server's encoder path does.
+    void set_classifier_truncated(const std::string& model) {
+        truncating_classifiers_.insert(model);
+        declare("run_classifier", model);
+    }
+
     void set_chat_failure(const std::string& model) {
         failing_chats_.insert(model);
         declare("chat", model);
@@ -178,13 +185,14 @@ public:
                 self->mark_used("run_classifier", model);
                 throw std::runtime_error("fake classifier failure: " + model);
             }
+            const bool truncated = self->truncating_classifiers_.count(model) != 0;
             auto it = self->classifier_scores_.find(model);
             if (it != self->classifier_scores_.end()) {
                 self->mark_used("run_classifier", model);
-                return it->second;
+                return ClassifierScores{it->second, truncated};
             }
             self->record_unexpected("run_classifier", model);
-            return std::map<std::string, double>{};
+            return ClassifierScores{};
         };
         svc.run_zero_shot_classifier = [self](const std::string& model, const std::string&,
                                               const std::vector<std::string>& labels) {
@@ -202,7 +210,7 @@ public:
                 return it->second;
             }
             self->record_unexpected("run_zero_shot_classifier", model);
-            return ZeroShotScores{};
+            return ClassifierScores{};
         };
         svc.chat = [self](const std::string& model, const std::string&,
                           const std::string&) {
@@ -251,11 +259,12 @@ private:
     std::map<std::string, int> embed_calls_;
     int total_embed_calls_ = 0;
     std::map<std::string, std::map<std::string, double>> classifier_scores_;
-    std::map<std::string, ZeroShotScores> zero_shot_scores_;
+    std::map<std::string, ClassifierScores> zero_shot_scores_;
     std::vector<std::string> last_zero_shot_labels_;
     std::map<std::string, std::string> chat_replies_;
     std::set<std::pair<std::string, std::string>> failing_embeds_;
     std::set<std::string> failing_classifiers_;
+    std::set<std::string> truncating_classifiers_;
     std::set<std::string> failing_chats_;
     std::set<std::string> failing_zero_shots_;
 };

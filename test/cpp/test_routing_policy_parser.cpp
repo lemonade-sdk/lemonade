@@ -380,11 +380,29 @@ static void test_on_truncation_validation() {
           throws_with_options(zero_shot_doc("match_true"), options,
                               "on_truncation must be score or fail"));
 
-    // The other types never see a token window, so the field would be inert.
+    auto classifier_doc = [](const char* on_truncation) {
+        json doc = fixture("l3_classifier.json");
+        if (on_truncation != nullptr) {
+            doc["routing"]["classifiers"][0]["on_truncation"] = on_truncation;
+        }
+        return doc;
+    };
+    check("classifier accepts on_truncation fail",
+          parses_ok(classifier_doc("fail"), options));
+    check("classifier accepts on_truncation score",
+          parses_ok(classifier_doc("score"), options));
+    check("classifier rejects an unknown on_truncation",
+          throws_with_options(classifier_doc("match_true"), options,
+                              "on_truncation must be score or fail"));
+
+    // The types that are not model-backed never see a token window, so the
+    // option is refused rather than silently inert.
     json wrong_type = fixture("l3_classifier.json");
+    wrong_type["routing"]["classifiers"][0]["type"] = "keyword";
     wrong_type["routing"]["classifiers"][0]["on_truncation"] = "fail";
-    check("on_truncation is rejected on a non-zero_shot classifier",
-          throws_with_options(wrong_type, options, "on_truncation applies to zero_shot only"));
+    check("on_truncation is rejected on a type that reads no token window",
+          throws_with_options(wrong_type, options,
+                              "on_truncation is accepted on the model-backed types"));
 }
 
 static void test_schema_parser_key_parity() {

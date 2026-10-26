@@ -117,6 +117,59 @@ static void test_rule_match_path() {
     check("trace empty when not requested", d.trace.empty());
 }
 
+// A fixed-label PII classifier is cut by its backend like any other. ort-server
+// keeps the HEAD of the prompt and drops the END, so an SSN written at the end
+// is never scored and the model answers NO_PII with high confidence. These two
+// tests pin both halves of what the policy may do about that.
+static void test_classifier_truncation_scores_by_default() {
+    lemon::testing::FakeClassifierServices fake;
+    fake.set_classifier_scores("pii-model", {{"PII", 0.9}, {"NO_PII", 0.1}});
+    fake.set_classifier_truncated("pii-model");
+    RoutingPolicyEngine engine(make_pii_policy(), fake.make());
+
+    RouteContext ctx;
+    ctx.input = "my ssn is 123-45-6789";
+    Decision d = engine.route(ctx, /*want_trace=*/true);
+
+    check("a cut fixed-label input still scores by default", d.route_to == "local-llm");
+    check("the default does not turn a cut into a failure",
+          d.matched_rule == "keep-private");
+    bool reported = false;
+    for (const auto& entry : d.trace) {
+        if (entry.condition == "classifier:pii" && entry.truncated) reported = true;
+    }
+    check("the trace reports the cut on a fixed-label classifier", reported);
+}
+
+static void test_classifier_truncation_can_fail() {
+    lemon::testing::FakeClassifierServices fake;
+    // The scores say "no PII", which is exactly the answer a cut input
+    // produces when the entity sat in the part that was dropped.
+    fake.set_classifier_scores("pii-model", {{"PII", 0.1}, {"NO_PII", 0.9}});
+    fake.set_classifier_truncated("pii-model");
+
+    RoutePolicy policy = make_pii_policy();
+    policy.classifiers = lemon::make_classifiers(json::array({
+        json{{"id", "pii"},
+             {"type", "classifier"},
+             {"model", "pii-model"},
+             {"labels", {"PII", "NO_PII"}},
+             {"default_label", "PII"},
+             {"on_error", "match_true"},
+             {"on_truncation", "fail"}},
+    }));
+    RoutingPolicyEngine engine(std::move(policy), fake.make());
+
+    RouteContext ctx;
+    ctx.input = "my ssn is 123-45-6789";
+    Decision d = engine.route(ctx, /*want_trace=*/false);
+
+    check("on_truncation=fail turns a cut fixed-label score into a failure, "
+          "and on_error=match_true then keeps the request local",
+          d.route_to == "local-llm");
+    check("the failing path still names the rule", d.matched_rule == "keep-private");
+}
+
 static void test_default_path() {
     lemon::testing::FakeClassifierServices fake;
     fake.set_classifier_scores("pii-model", {{"PII", 0.1}, {"NO_PII", 0.9}});
@@ -177,7 +230,7 @@ static void test_trace_on_and_off() {
 static void test_classifier_failure_falls_open() {
     lemon::ClassifierServices services;
     services.run_classifier = [](const std::string&, const std::string&)
-        -> std::map<std::string, double> { throw std::runtime_error("model down"); };
+        -> lemon::ClassifierScores { throw std::runtime_error("model down"); };
     RoutingPolicyEngine engine(make_pii_policy(), std::move(services));
 
     RouteContext ctx;
@@ -186,6 +239,34 @@ static void test_classifier_failure_falls_open() {
     check("classifier failure path lands on default_model", d.route_to == "cloud-llm");
     check("classifier failure path leaves matched_rule empty", d.matched_rule.empty());
     check("classifier failure path sets default_used", d.default_used);
+}
+
+// The trace caps `error`; a cut through a multi-byte character would make the
+// strict json dump of the decision throw.
+static void test_long_error_is_capped_on_a_character_boundary() {
+    std::string reason = "xx";  // puts the 253-byte cut inside a character
+    for (int i = 0; i < 200; ++i) reason += "\xE6\x97\xA5";  // U+65E5, 3 bytes
+    lemon::ClassifierServices services;
+    services.run_classifier = [reason](const std::string&, const std::string&)
+        -> lemon::ClassifierScores { throw std::runtime_error(reason); };
+    RoutingPolicyEngine engine(make_pii_policy(), std::move(services));
+
+    RouteContext ctx;
+    ctx.input = "anything";
+    Decision d = engine.route(ctx, /*want_trace=*/true);
+
+    std::string error;
+    for (const auto& entry : d.trace) {
+        if (entry.condition == "classifier:pii") error = entry.error;
+    }
+    check("a long error is capped", !error.empty() && error.size() < reason.size());
+    bool dumps = true;
+    try {
+        (void)json(error).dump();
+    } catch (const json::exception&) {
+        dumps = false;
+    }
+    check("the capped error is still valid UTF-8", dumps);
 }
 
 // on_error=match_true means a failed classifier trips its rule (fail-closed
@@ -210,7 +291,7 @@ static void test_on_error_match_true_routes_to_rule() {
 
     lemon::ClassifierServices services;
     services.run_classifier = [](const std::string&, const std::string&)
-        -> std::map<std::string, double> { throw std::runtime_error("model down"); };
+        -> lemon::ClassifierScores { throw std::runtime_error("model down"); };
     RoutingPolicyEngine engine(std::move(policy), std::move(services));
 
     RouteContext ctx;
@@ -331,9 +412,12 @@ static void test_concurrent_route_is_consistent() {
 
 int main() {
     test_rule_match_path();
+    test_classifier_truncation_scores_by_default();
+    test_classifier_truncation_can_fail();
     test_default_path();
     test_first_match_wins();
     test_trace_on_and_off();
+    test_long_error_is_capped_on_a_character_boundary();
     test_classifier_failure_falls_open();
     test_on_error_match_true_routes_to_rule();
     test_deterministic_keywords_route();

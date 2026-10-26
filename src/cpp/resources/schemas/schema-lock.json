@@ -1,10 +1,10 @@
 {
   "route_policy.schema.json": {
-    "sha256": "4453742c2375f8971c6706a15c002120bed3ff72f3463667a69e8dfcfb20bdf2",
+    "sha256": "43df5aaba1e898bfd7bbb80fb32dd081d9fafcfcdf37ab1296f66d079fb255fa",
     "released": false
   },
   "decision.schema.json": {
-    "sha256": "11c4ff8afd51597f352a82f5f723aafe676a7aa37cba5655ebfde5aa582275a5",
+    "sha256": "1ed38b849c52ed4629dda1f05894145bf528beb47e8d01fbc9f86fec0adb3ef9",
     "released": false
   },
   "request.schema.json": {

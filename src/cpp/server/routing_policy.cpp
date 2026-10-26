@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <mutex>
@@ -23,37 +24,78 @@ Score failed_score() {
     return score;
 }
 
+constexpr size_t kMaxErrorChars = 256;
+
 Score failed_score(std::string reason) {
     Score score = failed_score();
+    if (reason.size() > kMaxErrorChars) {
+        size_t cut = kMaxErrorChars - 3;
+        while (cut > 0 && (static_cast<unsigned char>(reason[cut]) & 0xC0) == 0x80) --cut;
+        reason.resize(cut);
+        reason += "...";
+    }
     score.error = std::move(reason);
     return score;
 }
 
-bool rate_limited(std::atomic<unsigned long long>& counter, unsigned long long& n) {
+constexpr long long kLogIntervalSeconds = 60;
+
+bool rate_limited(std::atomic<unsigned long long>& counter,
+                  std::atomic<long long>& last_log_s, unsigned long long& n) {
     n = ++counter;
-    return n == 1 || n % 100 == 0;
+    const long long now = std::chrono::duration_cast<std::chrono::seconds>(
+                              std::chrono::steady_clock::now().time_since_epoch())
+                              .count();
+    const long long previous = last_log_s.load(std::memory_order_relaxed);
+    if (n != 1 && now - previous < kLogIntervalSeconds) return false;
+    last_log_s.store(now, std::memory_order_relaxed);
+    return true;
 }
 
 void log_classifier_failure(const std::string& type, const std::string& id,
                             const std::string& model, const std::string& reason,
-                            std::atomic<unsigned long long>& counter) {
+                            std::atomic<unsigned long long>& counter,
+                            std::atomic<long long>& last_log_s) {
     unsigned long long n = 0;
-    if (!rate_limited(counter, n)) return;
-    LOG(WARNING, "Routing") << type << " classifier '" << id << "' (model '" << model
+    if (!rate_limited(counter, last_log_s, n)) return;
+    LOG(WARNING, "Routing") << "classifier '" << id << "' (" << type << ", model '" << model
                             << "') failed: " << reason
                             << (n == 1 ? std::string() : " [" + std::to_string(n) + " failures]")
                             << std::endl;
 }
 
-void log_truncated_score_used(const std::string& id, const std::string& model,
-                              std::atomic<unsigned long long>& counter) {
+void log_truncated_score_used(const std::string& type, const std::string& id,
+                              const std::string& model,
+                              std::atomic<unsigned long long>& counter,
+                              std::atomic<long long>& last_log_s) {
     unsigned long long n = 0;
-    if (!rate_limited(counter, n)) return;
-    LOG(WARNING, "Routing") << "zero_shot classifier '" << id << "' (model '" << model
+    if (!rate_limited(counter, last_log_s, n)) return;
+    LOG(WARNING, "Routing") << "classifier '" << id << "' (" << type << ", model '" << model
                             << "') scored an input the backend had cut to fit its token "
                                "window; set on_truncation=fail to treat that as a failure"
                             << (n == 1 ? std::string() : " [" + std::to_string(n) + " times]")
                             << std::endl;
+}
+
+// Under `fail` the cut IS the evaluation failure, so the entry carries `error`
+// and no score, and the classifier's `on_error` then applies.
+void apply_on_truncation(Score& score, OnTruncation on_truncation,
+                         const std::string& type, const std::string& id,
+                         const std::string& model,
+                         std::atomic<unsigned long long>& truncated_scores,
+                         std::atomic<long long>& last_truncation_log_s) {
+    if (!score.ok || !score.truncated) return;
+    static constexpr const char* kTruncated =
+        "the backend cut the input text to fit its token window, so the scores "
+        "cover only part of the request";
+    if (on_truncation == OnTruncation::Fail) {
+        log_classifier_failure(type, id, model, kTruncated, truncated_scores,
+                               last_truncation_log_s);
+        score = failed_score(kTruncated);
+        score.truncated = true;
+    } else {
+        log_truncated_score_used(type, id, model, truncated_scores, last_truncation_log_s);
+    }
 }
 
 // Trim leading/trailing ASCII whitespace. Used by the llm router to normalize a
@@ -276,9 +318,11 @@ class ModelClassifier final : public Classifier {
 public:
     ModelClassifier(std::string id, std::string type, std::string model, OnError on_error,
                     std::vector<std::string> labels,
-                    std::optional<std::string> default_label)
+                    std::optional<std::string> default_label,
+                    OnTruncation on_truncation)
         : Classifier(std::move(id), std::move(type), on_error, std::move(model),
-                     std::move(labels), std::move(default_label)) {
+                     std::move(labels), std::move(default_label)),
+          on_truncation_(on_truncation) {
         if (model_name_.empty()) {
             throw std::invalid_argument("classifier requires model");
         }
@@ -291,22 +335,32 @@ public:
         }
 
         try {
-            score.labels = ctx.services.run_classifier(model_name_, ctx.request.input);
+            ClassifierScores answer = ctx.services.run_classifier(model_name_, ctx.request.input);
+            score.labels = std::move(answer.scores);
+            score.truncated = answer.truncated;
             score.ok = true;
         } catch (const RouterResidencyConflictException&) {
             throw;
         } catch (const std::exception& e) {
-            log_classifier_failure(type(), id(), model_name_, e.what(), failures_);
+            log_classifier_failure(type(), id(), model_name_, e.what(), failures_,
+                                   last_failure_log_s_);
             score = failed_score(e.what());
         } catch (...) {
-            log_classifier_failure(type(), id(), model_name_, "unknown exception", failures_);
+            log_classifier_failure(type(), id(), model_name_, "unknown exception", failures_,
+                                   last_failure_log_s_);
             score = failed_score("unknown exception");
         }
+        apply_on_truncation(score, on_truncation_, type(), id(), model_name_,
+                            truncated_scores_, last_truncation_log_s_);
         return score;
     }
 
 private:
+    const OnTruncation on_truncation_;
     mutable std::atomic<unsigned long long> failures_{0};
+    mutable std::atomic<long long> last_failure_log_s_{0};
+    mutable std::atomic<unsigned long long> truncated_scores_{0};
+    mutable std::atomic<long long> last_truncation_log_s_{0};
 };
 
 class ZeroShotClassifier final : public Classifier {
@@ -314,7 +368,7 @@ public:
     ZeroShotClassifier(std::string id, std::string type, std::string model, OnError on_error,
                        std::vector<std::string> labels,
                        std::optional<std::string> default_label,
-                       OnTruncation on_truncation = OnTruncation::Score)
+                       OnTruncation on_truncation)
         : Classifier(std::move(id), std::move(type), on_error, std::move(model),
                      std::move(labels), std::move(default_label)),
           on_truncation_(on_truncation) {
@@ -335,7 +389,7 @@ public:
         }
 
         try {
-            ZeroShotScores answer =
+            ClassifierScores answer =
                 ctx.services.run_zero_shot_classifier(model_name_, ctx.request.input, labels());
             score.labels = std::move(answer.scores);
             score.truncated = answer.truncated;
@@ -343,38 +397,33 @@ public:
         } catch (const RouterResidencyConflictException&) {
             throw;
         } catch (const std::exception& e) {
-            log_classifier_failure(type(), id(), model_name_, e.what(), failures_);
+            log_classifier_failure(type(), id(), model_name_, e.what(), failures_,
+                                   last_failure_log_s_);
             score = failed_score(e.what());
         } catch (...) {
-            log_classifier_failure(type(), id(), model_name_, "unknown exception", failures_);
+            log_classifier_failure(type(), id(), model_name_, "unknown exception", failures_,
+                                   last_failure_log_s_);
             score = failed_score("unknown exception");
         }
         if (score.ok && !scores_declared_labels(score)) {
             static constexpr const char* kMismatch =
                 "the backend scored a different label set than the request sent, so it "
                 "ignored the per-request labels";
-            log_classifier_failure(type(), id(), model_name_, kMismatch, failures_);
+            log_classifier_failure(type(), id(), model_name_, kMismatch, failures_,
+                                   last_failure_log_s_);
             score = failed_score(kMismatch);
         }
-        if (score.ok && score.truncated) {
-            static constexpr const char* kTruncated =
-                "the backend cut the input text to fit its token window, so the scores "
-                "cover only part of the request";
-            if (on_truncation_ == OnTruncation::Fail) {
-                log_classifier_failure(type(), id(), model_name_, kTruncated, failures_);
-                score = failed_score(kTruncated);
-                score.truncated = true;
-            } else {
-                log_truncated_score_used(id(), model_name_, truncated_scores_);
-            }
-        }
+        apply_on_truncation(score, on_truncation_, type(), id(), model_name_,
+                            truncated_scores_, last_truncation_log_s_);
         return score;
     }
 
 private:
-    OnTruncation on_truncation_ = OnTruncation::Score;
+    const OnTruncation on_truncation_;
     mutable std::atomic<unsigned long long> failures_{0};
+    mutable std::atomic<long long> last_failure_log_s_{0};
     mutable std::atomic<unsigned long long> truncated_scores_{0};
+    mutable std::atomic<long long> last_truncation_log_s_{0};
 
     // A backend that ignores the request's labels answers with its own head's
     // label set. Accepting that would score every declared label 0.0, a
@@ -701,25 +750,15 @@ std::vector<std::string> parse_labels(const json& config, const std::string& id)
         if (!config["labels"].is_array()) {
             throw std::invalid_argument("classifier '" + id + "' labels must be an array");
         }
-        std::set<std::string> seen;
         for (const auto& item : config["labels"]) {
             if (!item.is_string() || item.get<std::string>().empty()) {
                 throw std::invalid_argument("classifier '" + id + "' labels must be non-empty strings");
             }
-            std::string label = item.get<std::string>();
-            if (label_is_blank(label)) {
-                throw std::invalid_argument("classifier '" + id + "' labels must not be blank");
-            }
-            if (label_has_control_char(label)) {
-                throw std::invalid_argument(
-                    "classifier '" + id +
-                    "' labels must not contain control characters such as newline or tab");
-            }
-            if (!seen.insert(label).second) {
-                throw std::invalid_argument("classifier '" + id + "' has a duplicate label: '" +
-                                            label + "'");
-            }
-            labels.push_back(std::move(label));
+            labels.push_back(item.get<std::string>());
+        }
+        const std::string reason = validate_label_list(labels);
+        if (!reason.empty()) {
+            throw std::invalid_argument("classifier '" + id + "' " + reason);
         }
     }
     return labels;
@@ -1283,19 +1322,21 @@ ClassifierPtr make_classifier(const json& config, bool expose_request_features) 
 
     OnError on_error = parse_on_error(config.value("on_error", "match_false"));
 
-    if (config.contains("on_truncation") && type != "zero_shot") {
+    if (config.contains("on_truncation") && type != "zero_shot" && type != "classifier") {
         throw std::invalid_argument(
             "classifier '" + id + "' of type '" + type +
-            "' does not accept on_truncation; only zero_shot reads a token window it "
-            "can overflow");
+            "' does not accept on_truncation; only the model-backed types "
+            "('classifier' and 'zero_shot') read a token window they can overflow");
     }
+    const OnTruncation on_truncation =
+        parse_on_truncation(config.value("on_truncation", "score"));
 
     if (type == "classifier") {
         std::vector<std::string> labels = parse_labels(config, id);
         std::optional<std::string> default_label = parse_default_label(config, labels, id);
         return std::make_shared<ModelClassifier>(
             id, type, config.value("model", ""), on_error,
-            std::move(labels), std::move(default_label));
+            std::move(labels), std::move(default_label), on_truncation);
     }
 
     if (type == "zero_shot") {
@@ -1308,18 +1349,11 @@ ClassifierPtr make_classifier(const json& config, bool expose_request_features) 
             throw std::invalid_argument(
                 "zero_shot classifier '" + id + "' does not accept reference_phrases");
         }
-        const std::string on_truncation = config.value("on_truncation", "score");
-        if (on_truncation != "score" && on_truncation != "fail") {
-            throw std::invalid_argument(
-                "zero_shot classifier '" + id +
-                "' on_truncation must be score or fail");
-        }
         std::vector<std::string> labels = parse_labels(config, id);
         std::optional<std::string> default_label = parse_default_label(config, labels, id);
         return std::make_shared<ZeroShotClassifier>(
             id, type, config.value("model", ""), on_error,
-            std::move(labels), std::move(default_label),
-            parse_on_truncation(on_truncation));
+            std::move(labels), std::move(default_label), on_truncation);
     }
 
     if (type == "semantic_similarity") {

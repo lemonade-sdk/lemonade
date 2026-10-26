@@ -114,7 +114,7 @@
           "default": "match_false"
         },
         "on_truncation": {
-          "description": "zero_shot only: behavior when the backend cut the input text to fit its token window. Scoring cut text succeeds, so on_error alone cannot reach that case. fail turns the cut into an evaluation failure, so on_error then applies — pair it with on_error: match_true for a rule whose miss would be a leak rather than a wrong model. Frozen v1 default when omitted: score (use the scores anyway).",
+          "description": "Behavior when the backend cut the input text to fit its token window. Accepted on the model-backed types, classifier and zero_shot; both read a token window they can overflow and both report the cut. What the cut discards differs: zero_shot keeps the head and the tail of the text, a fixed-label classifier keeps the head and drops the end. Scoring cut text succeeds, so on_error alone cannot reach that case. fail turns the cut into an evaluation failure, so on_error then applies — pair it with on_error: match_true for a rule whose miss would be a leak rather than a wrong model. Frozen v1 default when omitted: score (use the scores anyway).",
           "enum": ["score", "fail"],
           "default": "score"
         }

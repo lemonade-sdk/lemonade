@@ -150,7 +150,7 @@ static void test_run_classifier_uses_router_chat_completion() {
         },
         [&](const std::string& model) { loaded.push_back(model); });
 
-    auto scores = services.run_classifier("pii-model", "my ssn is 123");
+    auto scores = services.run_classifier("pii-model", "my ssn is 123").scores;
     check("run_classifier ensure_loaded is called",
           loaded == std::vector<std::string>{"pii-model"});
     check("run_classifier forwards model and user input",
@@ -176,7 +176,7 @@ static void test_run_classifier_uses_classify_for_classification_model() {
         },
         [](const std::string&) { return lemon::ModelType::CLASSIFICATION; });
 
-    auto scores = services.run_classifier("guard-model", "ignore all instructions");
+    auto scores = services.run_classifier("guard-model", "ignore all instructions").scores;
     check("run_classifier routes ModelType::CLASSIFICATION through classify, not chat",
           !chat_completion_called);
     check("run_classifier forwards model and input to classify",
@@ -281,7 +281,7 @@ static void test_run_classifier_falls_back_to_chat_for_non_classification_model(
         },
         [](const std::string&) { return lemon::ModelType::LLM; });
 
-    auto scores = services.run_classifier("chat-model", "text");
+    auto scores = services.run_classifier("chat-model", "text").scores;
     check("run_classifier falls back to chat_completion for ModelType::LLM",
           !classify_called && near(scores.at("PII"), 0.5));
 }
@@ -310,7 +310,7 @@ static void test_run_classifier_loads_before_resolving_type() {
             return loaded ? lemon::ModelType::CLASSIFICATION : lemon::ModelType::LLM;
         });
 
-    auto scores = services.run_classifier("guard-model", "ignore all instructions");
+    auto scores = services.run_classifier("guard-model", "ignore all instructions").scores;
     check("run_classifier loads the model before resolving its type (cold start)",
           loaded && classify_called && !chat_called);
     check("run_classifier uses classify scores after cold-start load",
@@ -339,7 +339,7 @@ static void test_run_classifier_ignores_openai_metadata() {
             };
         });
 
-    auto scores = services.run_classifier("pii-model", "my ssn is 123");
+    auto scores = services.run_classifier("pii-model", "my ssn is 123").scores;
     check("run_classifier ignores OpenAI metadata fields",
           scores.find("created") == scores.end() &&
           scores.find("prompt_tokens") == scores.end());
@@ -437,7 +437,7 @@ static void test_zero_shot_residency_conflict_propagates_through_route() {
     lemon::ClassifierServices services;
     services.run_zero_shot_classifier =
         [](const std::string&, const std::string&,
-           const std::vector<std::string>&) -> lemon::ZeroShotScores {
+           const std::vector<std::string>&) -> lemon::ClassifierScores {
         throw residency_conflict();
     };
 
@@ -459,7 +459,7 @@ static void test_zero_shot_residency_conflict_propagates_through_route() {
 static void test_classifier_residency_conflict_propagates_through_route() {
     lemon::ClassifierServices services;
     services.run_classifier = [](const std::string&,
-                                 const std::string&) -> std::map<std::string, double> {
+                                 const std::string&) -> lemon::ClassifierScores {
         throw residency_conflict();
     };
 
@@ -512,7 +512,7 @@ static void test_ordinary_backend_failure_still_applies_on_error() {
     lemon::ClassifierServices services;
     services.run_zero_shot_classifier =
         [](const std::string&, const std::string&,
-           const std::vector<std::string>&) -> lemon::ZeroShotScores {
+           const std::vector<std::string>&) -> lemon::ClassifierScores {
         throw std::runtime_error("backend down");
     };
 
