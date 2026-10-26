@@ -96,10 +96,14 @@ void check_route_access(const std::function<void(bool, const char*)>& check) {
     check(access(NexusListener::Public, false, "members", "Bearer keyx", "key").first == 401, "Remote management rejects a longer key");
     check(access(NexusListener::Public, false, "members", "Bearer admin", "key", "admin").first == 0, "The admin key also authorizes remote management");
     for (const auto* operation : {"status", "join/status", "devices", "members", "members/role", "members/permissions",
-                                  "devices/access", "devices/remove", "invites", "invites/cancel", "join", "tree", "tree/children", "tree/groups", "tree/rename", "tree/permissions"}) {
+                                  "devices/access", "devices/remove", "invites", "invites/cancel", "join", "tree", "tree/children", "tree/groups", "tree/rename", "tree/permissions",
+                                  "tree/invites", "tree/move", "invites/accept", "memberships", "memberships/leave"}) {
         check(access(NexusListener::Public, false, operation, "Bearer key", "key").first == 0, "Group operations are available remotely");
     }
-    for (const auto* operation : {"passkey/challenge", "passkey/register", "passkey/unlock", "enable", "disable", "lock", "device", "events", "egress", "account"}) {
+    for (const auto* operation : {"tree/invites", "tree/move", "invites/accept", "memberships", "memberships/leave", "account/delete"}) {
+        check(access(NexusListener::MeshIngress, true, operation, "Bearer key", "key").first == 403, "Mesh ingress refuses invite, membership, move and deletion routes");
+    }
+    for (const auto* operation : {"passkey/challenge", "passkey/register", "passkey/unlock", "enable", "disable", "lock", "device", "events", "egress", "account", "account/delete"}) {
         check(access(NexusListener::Public, false, operation, "Bearer key", "key").first == 403, "Local device operations stay local");
     }
     check(access(NexusListener::MeshIngress, true, "relay", "Bearer key", "key").first == 403, "Mesh peers cannot use the relay");
@@ -353,6 +357,16 @@ int main() {
         check(throws([&] { access::tree_path("cycle", "root", [](const auto& id) { return json{{"id", id}, {"parent_id", id}, {"type", "customer"}}; }); }), "Cyclic trees fail without looping");
         check(throws([&] { access::tree_path("child", "root", [](const auto& id) { return json{{"id", id}, {"parent_id", "root"}, {"type", "endpoint"}}; }); }), "Device nodes cannot contain children");
         check(throws([&] { access::tree_path("root", "root", [](const auto&) { return json{{"id", "other"}}; }); }), "Tree replies must match the requested identity");
+        check(access::tree_path("child", std::vector<std::string>{"elsewhere", "child"}, fetch).size() == 1, "A membership group is a tree root");
+        check(access::tree_path("device", std::vector<std::string>{"elsewhere", "root"}, fetch).size() == 3, "Several roots still keep the whole path");
+        check(throws([&] { access::tree_path("outside", std::vector<std::string>{"elsewhere", "root"}, fetch); }), "Tree reads cannot escape every membership");
+        check(access::invite_permissions(nullptr).is_null(), "An invite without permissions uses the federation default");
+        check(access::invite_permissions(json::array({"connect_private", "read", "read"})) == json::array({"read", "connect_private"}), "Invite permissions are ordered and unique");
+        check(throws([&] { access::invite_permissions(json::array({"admin"})); }), "An invite cannot grant admin");
+        check(throws([&] { access::invite_permissions(json::array({"delete_node"})); }), "An invite grants only invite permissions");
+        check(throws([&] { access::invite_permissions(json::array()); }) && throws([&] { access::invite_permissions("read"); }), "Invite permissions are a nonempty list");
+        check(access::invite_code("12345678") && access::invite_code("lnk_" + std::string(64, 'a')), "Invite codes and full tokens are accepted");
+        check(!access::invite_code("1234567") && !access::invite_code("lnk_" + std::string(64, 'G')) && !access::invite_code(""), "Malformed invite codes are refused");
         const auto readonly = access::tree_entry(child, "self");
         check(!readonly.at("can_add_group") && !readonly.at("can_rename") && !readonly.at("can_manage"), "Read-only groups have no mutation capabilities");
         check(!readonly.contains("wrapped_mgmt_privkey"), "Tree responses omit wrapped private material");
@@ -431,11 +445,12 @@ int main() {
                 auto result = client.Get(std::string(prefix) + "nexus/status");
                 check(result && result->status == 200, "Status prefix registered");
                 if (result) check(nlohmann::json::parse(result->body).at("locked") == true, "Starts locked");
-                for (const auto* path : {"tree", "tree/root/children", "account"}) {
+                for (const auto* path : {"tree", "tree/root/children", "account", "memberships"}) {
                     const auto redirected = client.Get(std::string(prefix) + "nexus/" + path);
                     check(redirected && redirected->status == 307, "Tree reads use the management listener on every prefix");
                 }
-                for (const auto* path : {"tree/root/groups", "tree/root/rename", "tree/root/permissions", "account/avatar"}) {
+                for (const auto* path : {"tree/root/groups", "tree/root/rename", "tree/root/permissions", "account/avatar",
+                                         "tree/root/invites", "tree/device/move", "invites/accept", "memberships/root/leave", "account/delete"}) {
                     const auto redirected = client.Post(std::string(prefix) + "nexus/" + path, "{}", "application/json");
                     check(redirected && redirected->status == 307, "Tree writes use the management listener on every prefix");
                 }
@@ -463,6 +478,13 @@ int main() {
             request("tree/root/rename", R"({"name":"Team"})", 423);
             request("tree/root/permissions", R"({"member_node_id":"peer","admin":true,"permissions":["read"]})", 423);
             request("account/avatar", R"({"account_id":"cluster","image":null,"revision":0})", 423);
+            request("tree/root/invites", R"({"permissions":["read"]})", 423);
+            request("tree/device/move", R"({"parent_id":"root"})", 423);
+            request("invites/accept", R"({"code":"12345678"})", 423);
+            request("memberships/root/leave", "{}", 423);
+            request("account/delete", R"({"account_id":"cluster","confirm":"delete"})", 423);
+            auto locked_memberships = management.Get("/api/v1/nexus/memberships");
+            check(locked_memberships && locked_memberships->status == 423, "Memberships require an unlocked network");
             auto locked_tree = management.Get("/api/v1/nexus/tree");
             check(locked_tree && locked_tree->status == 423, "Tree requires an unlocked network");
             auto locked_account = management.Get("/api/v1/nexus/account");

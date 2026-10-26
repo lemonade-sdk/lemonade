@@ -198,7 +198,13 @@ Routes are available under `/api/v0/nexus/`, `/api/v1/nexus/`, `/v0/nexus/`,
 | GET | `passkey/challenge` | Federation challenge (`register=1` for enrollment) |
 | POST | `passkey/register`, `passkey/unlock` | Register or verify the device's credential |
 | POST | `enable`, `disable`, `lock`, `device` | Local state and device name |
-| POST | `invites`, `invites/cancel`, `join` | Invite or join a group |
+| POST | `invites`, `invites/cancel`, `join` | Invite a device into this account's top-level group with `{device_name, permissions?, ttl_sec?}`, or join as a new device with `{code}` |
+| POST | `tree/{id}/invites` | Invite into group `{id}` with `{permissions?, ttl_sec?, device_name?}`; needs `add_child` or admin above it |
+| POST | `invites/accept` | Join another network: accept `{code}` as an account that already joined |
+| GET | `memberships` | Groups this identity belongs to (`role` is `home` or `member`) and `group_node_id` |
+| POST | `memberships/{id}/leave` | Leave a group entered through an invite |
+| POST | `tree/{id}/move` | Move device or group `{id}` under `{parent_id}` |
+| POST | `account/delete` | Delete this account permanently with `{account_id, member_id, device_node_id, confirm: "delete"}`; local-only |
 | GET | `devices` | Group devices with tier, admin flag and permissions |
 | GET | `members` | Devices plus `can_manage` (this device is an admin) |
 | GET | `account` | Verified current account ID, membership identity, device ID, role and devices; local-only |
@@ -214,6 +220,23 @@ Routes are available under `/api/v0/nexus/`, `/api/v1/nexus/`, `/v0/nexus/`,
 | GET, POST | `selection` | Selection port target (see [Selection port](#selection-port)) |
 | GET | `events` | SSE mesh/membership/lock events; `after` cursor, `once=1` snapshot |
 
+Invite permissions are optional. Without them the federation grants `read` and
+`connect_private`, reduced to what the inviter holds. Otherwise they are a list
+from `read`, `write`, `add_child`, `connect_private` and `connect_shared`.
+`lemond` refuses `admin` and other names with 400. The reply carries the
+`link_token`, `target_node_id`, `permissions` and `expires_at`. A new device
+joins with the token through `join`. An account that already joined accepts it
+through `invites/accept` and becomes a member of that group; nothing it owns
+moves. Tree routes also accept nodes under a membership group, so the desktop
+can show, invite into and move into a network it joined. The federation checks
+every permission. A move keeps the node's ID, tunnel address and own
+assignments, and grants nothing in the new group.
+
+`account/delete` is irreversible. When the federation answers `deleted`,
+`lemond` removes `identity.json`, `account.json`, the account image cache and
+the certificate directory, then turns the mesh off. A `pending` answer means
+Tier 1 has not committed the deletion yet; the local files stay.
+
 Member and access routes send one change at a time to the federation's
 `POST /api/tree/node/assignments/{node_id}` through `ln_add_group_member`, which
 replaces the member's entry on that node. `lemond` rejects a change to its own
@@ -227,7 +250,7 @@ Each listener applies its own rules:
 | Listener | Client | Nexus routes |
 | --- | --- | --- |
 | Public | Loopback | `status` and the relay directly; every other route redirects with HTTP 307 to the management listener |
-| Public | Other machines | `status`, `join/status`, `devices`, `members`, `members/{id}/role`, `members/{id}/permissions`, `devices/{id}/access`, `devices/{id}/remove`, `invites`, `invites/cancel`, `join` and the relay, only with `LEMONADE_API_KEY` set and `Authorization: Bearer <key>` |
+| Public | Other machines | `status`, `join/status`, `devices`, `members`, `members/{id}/role`, `members/{id}/permissions`, `devices/{id}/access`, `devices/{id}/remove`, `invites`, `invites/cancel`, `join`, the tree routes, `invites/accept`, `memberships`, `memberships/{id}/leave` and the relay, only with `LEMONADE_API_KEY` set and `Authorization: Bearer <key>` |
 | Management (`127.0.0.1`, ephemeral port) | Local desktop | All routes |
 | Mesh ingress (`127.0.0.1`, ephemeral port) | Mesh peers | None (HTTP 403) |
 

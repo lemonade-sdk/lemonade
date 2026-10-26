@@ -33,6 +33,17 @@ nlohmann::json account_summary(const nlohmann::json& members, const std::string&
 nlohmann::json account_avatar(const nlohmann::json& value, const std::string& group_id);
 nlohmann::json tree_path(const std::string& id, const std::string& root_id,
     const std::function<nlohmann::json(const std::string&)>& fetch);
+/// Same as tree_path, but the walk may end at any of `root_ids`: this device's group and
+/// the groups this identity belongs to (ln_memberships_list). Throws 403 when no root is
+/// an ancestor of `id`.
+nlohmann::json tree_path(const std::string& id, const std::vector<std::string>& root_ids,
+    const std::function<nlohmann::json(const std::string&)>& fetch);
+/// Validates the permissions of an invite. Null selects the federation default and returns
+/// null. Otherwise returns the ordered list. Throws 400 for a value that is not a list of
+/// names, for "admin", and for a name an invite cannot grant.
+nlohmann::json invite_permissions(const nlohmann::json& requested);
+/// True for an 8-digit invite code or a full "lnk_" invite token.
+bool invite_code(const std::string& code);
 nlohmann::json tree_entry(const nlohmann::json& node, const std::string& self_key,
     bool ancestor_admin = false);
 nlohmann::json merge_members(const nlohmann::json& group, const nlohmann::json& children,

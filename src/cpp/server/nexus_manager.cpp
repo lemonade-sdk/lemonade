@@ -152,6 +152,11 @@ json account_avatar(const json& value, const std::string& group_id) {
 
 json tree_path(const std::string& id, const std::string& root_id,
                const std::function<json(const std::string&)>& fetch) {
+    return tree_path(id, std::vector<std::string>{root_id}, fetch);
+}
+
+json tree_path(const std::string& id, const std::vector<std::string>& root_ids,
+               const std::function<json(const std::string&)>& fetch) {
     json path = json::array();
     std::set<std::string> visited;
     auto current = id;
@@ -165,10 +170,34 @@ json tree_path(const std::string& id, const std::string& root_id,
             throw NexusError(400, "Only groups can contain other nodes");
         }
         path.push_back(node);
-        if (current == root_id) return path;
+        if (std::find(root_ids.begin(), root_ids.end(), current) != root_ids.end()) return path;
         current = text(node, "parent_id");
     }
     throw NexusError(403, "That node is outside your group or its hierarchy is too deep");
+}
+
+json invite_permissions(const json& requested) {
+    if (requested.is_null()) return nullptr;
+    // The federation refuses any other name in an invite.
+    static const std::vector<std::string> grantable = {"read", "write", "add_child", "connect_private", "connect_shared"};
+    if (!requested.is_array() || requested.empty()) throw NexusError(400, "Send permissions as a list of names");
+    json result = json::array();
+    for (const auto& name : requested) {
+        if (!name.is_string()) throw NexusError(400, "Send permissions as a list of names");
+        const auto value = name.get<std::string>();
+        if (value == "admin") throw NexusError(400, "An invite cannot grant admin. Change the member's role after it joins.");
+        if (std::find(grantable.begin(), grantable.end(), value) == grantable.end()) {
+            throw NexusError(400, "An invite cannot grant this permission: " + value);
+        }
+        if (!contains(result, value)) result.push_back(value);
+    }
+    return ordered(result);
+}
+
+bool invite_code(const std::string& code) {
+    const bool full_token = code.size() == 68 && code.rfind("lnk_", 0) == 0 &&
+        code.substr(4).find_first_not_of("0123456789abcdef") == std::string::npos;
+    return full_token || (code.size() == 8 && code.find_first_not_of("0123456789") == std::string::npos);
 }
 
 json tree_entry(const json& node, const std::string& self_key, bool ancestor_admin) {
@@ -324,7 +353,8 @@ bool bearer_matches(const std::string& authorization, const std::string& api_key
 bool remote_operation(const std::string& operation) {
     static const std::vector<std::string> operations = {"status", "join/status", "devices", "members",
         "members/role", "members/permissions", "devices/access", "devices/remove", "invites", "invites/cancel", "join", "relay",
-        "selection", "tree", "tree/children", "tree/groups", "tree/rename", "tree/permissions"};
+        "selection", "tree", "tree/children", "tree/groups", "tree/rename", "tree/permissions", "tree/invites",
+        "tree/move", "invites/accept", "memberships", "memberships/leave"};
     return std::find(operations.begin(), operations.end(), operation) != operations.end();
 }
 
@@ -406,7 +436,9 @@ void relay_http(uint16_t port, const std::string& path, const httplib::Request& 
 
 #ifdef LEMONADE_WITH_NEXUS
 namespace {
-json sdk_call(const std::function<ln_error_t(char**)>& operation) {
+// `rejected_status` is the HTTP status for LN_ERR_REJECTED (the federation refused the
+// request as invalid for the current state).
+json sdk_call(const std::function<ln_error_t(char**)>& operation, int rejected_status = 502) {
     char* output = nullptr;
     const auto code = operation(&output);
     std::unique_ptr<char, decltype(&ln_free)> owned(output, ln_free);
@@ -414,7 +446,7 @@ json sdk_call(const std::function<ln_error_t(char**)>& operation) {
     if (value.is_discarded()) throw NexusError(502, "The network returned invalid data");
     if (code != LN_OK) {
         const auto fallback = "Network request failed (SDK error " + std::to_string(code) + ")";
-        throw NexusError(code == LN_ERR_AUTH ? 403 : code == LN_ERR_NOT_FOUND ? 404 : 502,
+        throw NexusError(code == LN_ERR_AUTH ? 403 : code == LN_ERR_NOT_FOUND ? 404 : code == LN_ERR_REJECTED ? rejected_status : 502,
             value.is_object() ? value.value("error", fallback) : fallback);
     }
     return value;
@@ -584,9 +616,48 @@ struct NexusManager::Session {
         return children;
     }
     json scoped_tree_path(const std::string& id) {
-        return nexus_access::tree_path(id, group_id, [&](const std::string& current) {
-            return private_call("GET", "/api/tree/node/" + current);
-        });
+        const auto fetch = [&](const std::string& current) { return private_call("GET", "/api/tree/node/" + current); };
+        try {
+            return nexus_access::tree_path(id, group_id, fetch);
+        } catch (const NexusError& e) {
+            if (e.status != 403) throw;
+        }
+        // A node outside this device's group may sit under a group this identity entered
+        // through an invite. The federation still checks every permission.
+        std::vector<std::string> roots{group_id};
+        const auto listed = memberships().value("memberships", json::array());
+        for (const auto& membership : listed.is_array() ? listed : json::array()) {
+            if (const auto root = text(membership, "node_id"); !root.empty()) roots.push_back(root);
+        }
+        return nexus_access::tree_path(id, roots, fetch);
+    }
+    json memberships() {
+        auto result = sdk_call([&](auto out) { return ln_memberships_list(client.get(), out); }, 409);
+        if (!result.is_object() || (result.contains("memberships") && !result["memberships"].is_array())) {
+            throw NexusError(502, "The network returned invalid memberships");
+        }
+        return result;
+    }
+    // An empty target selects this account's own top-level group.
+    json create_invite(const std::string& target, const json& body) {
+        const auto ttl = body.value("ttl_sec", 600);
+        if (ttl < 60 || ttl > 600) throw NexusError(400, "Invite lifetime must be 60 to 600 seconds");
+        const auto permissions = nexus_access::invite_permissions(body.contains("permissions") ? body["permissions"] : json());
+        const auto list = permissions.is_null() ? std::string() : permissions.dump();
+        return sdk_call([&](auto out) {
+            return ln_invite_create(client.get(), target.empty() ? nullptr : target.c_str(),
+                list.empty() ? nullptr : list.c_str(), static_cast<uint32_t>(ttl), out);
+        }, 409);
+    }
+    // After the federation deletes the account, the local identity has no use. Remove the
+    // files the SDK leaves to the caller; preferences.json stays with NexusManager.
+    void remove_local_account() {
+        lock();
+        std::error_code ec;
+        for (const auto* name : {"identity.json", "account.json", "account.json.tmp"}) std::filesystem::remove(root / name, ec);
+        std::filesystem::remove_all(root / "avatar-cache", ec);
+        std::filesystem::remove_all(root / "certs", ec);
+        account = json::object();
     }
     json describe_tree_node(const json& path) {
         bool ancestor_admin = false;
@@ -819,13 +890,40 @@ struct NexusManager::Session {
         if (locked) throw NexusError(423, "Unlock your network first");
         if (path == "/join") {
             const auto code = body.at("code").get<std::string>();
-            const bool full_token = code.size() == 68 && code.rfind("lnk_", 0) == 0 && code.substr(4).find_first_not_of("0123456789abcdef") == std::string::npos;
-            if (!full_token && (code.size() != 8 || code.find_first_not_of("0123456789") != std::string::npos)) throw NexusError(400, "Enter an 8-digit code or a full invite token");
-            if (joined) throw NexusError(409, "Lock this device before joining another group");
+            if (!nexus_access::invite_code(code)) throw NexusError(400, "Enter an 8-digit code or a full invite token");
+            if (joined) throw NexusError(409, "This device already joined. Accept the invite to join another network.");
             join(code);
             return status();
         }
         if (!joined) throw NexusError(409, "Join the network first");
+        if (path == "/invites/accept") {
+            const auto code = body.at("code").get<std::string>();
+            if (!nexus_access::invite_code(code)) throw NexusError(400, "Enter an 8-digit code or a full invite token");
+            auto result = sdk_call([&](auto out) { return ln_invite_accept(client.get(), code.c_str(), out); }, 409);
+            refresh_devices();
+            return result;
+        }
+        if (path == "/memberships") {
+            auto result = memberships();
+            result["group_node_id"] = group_id;
+            return result;
+        }
+        if (path.rfind("/memberships/", 0) == 0) {
+            const auto separator = path.find('/', 13);
+            if (separator == std::string::npos || path.substr(separator) != "/leave") throw NexusError(404, "Unknown membership operation");
+            const auto id = path.substr(13, separator - 13);
+            if (id == group_id) throw NexusError(403, "This device's own group cannot be left. Remove the device instead.");
+            sdk_call([&](auto out) { return ln_membership_leave(client.get(), id.c_str(), out); }, 409);
+            return {{"left", true}, {"node_id", id}};
+        }
+        if (path == "/account/delete" && method == "POST") {
+            if (body.value("account_id", "") != group_id || body.value("member_id", "") != account.value("user_id", "") ||
+                body.value("device_node_id", "") != node_id) throw NexusError(409, "The account changed. Sign in again.");
+            if (body.value("confirm", "") != "delete") throw NexusError(400, "Send \"confirm\": \"delete\" to delete this account permanently");
+            auto result = sdk_call([&](auto out) { return ln_account_delete(client.get(), out); }, 409);
+            if (text(result, "status") == "deleted") remove_local_account();
+            return result;
+        }
         if (path == "/account") {
             refresh_devices();
             auto result = nexus_access::account_summary(devices, group_id, node_id, account.value("user_id", ""));
@@ -868,7 +966,25 @@ struct NexusManager::Session {
             if (method == "GET" && action == "children") return tree_children(id);
             const auto chain = scoped_tree_path(id);
             const auto target = describe_tree_node(chain);
+            if (method == "POST" && action == "move") {
+                const auto parent_id = body.at("parent_id").get<std::string>();
+                if (parent_id == id) throw NexusError(400, "A node cannot move under itself");
+                const auto destination = describe_tree_node(scoped_tree_path(parent_id));
+                if (destination.at("kind") != "group") throw NexusError(400, "Move a device or group into a group");
+                if (!destination.at("can_add_group").get<bool>()) throw NexusError(403, "You do not have permission to add to that group");
+                auto result = sdk_call([&](auto out) { return ln_move_node(client.get(), id.c_str(), parent_id.c_str(), out); }, 409);
+                refresh_devices();
+                return result;
+            }
             if (target.at("kind") != "group") throw NexusError(400, "Select a group for this action");
+            if (method == "POST" && action == "invites") {
+                if (!target.at("can_add_group").get<bool>()) throw NexusError(403, "You do not have permission to invite members to this group");
+                const auto name = body.value("device_name", std::string());
+                if (name.size() > 128) throw NexusError(400, "Enter a name of up to 128 characters");
+                auto result = create_invite(id, body);
+                if (!name.empty()) result["device_name"] = name;
+                return result;
+            }
             if (method == "POST" && (action == "groups" || action == "rename")) {
                 if (!target.at(action == "groups" ? "can_add_group" : "can_rename").get<bool>()) throw NexusError(403, "You do not have permission to change this group");
                 const auto name = body.at("name").get<std::string>();
@@ -899,11 +1015,9 @@ struct NexusManager::Session {
             return {{"group_node_id", group_id}, {"can_manage", group_admin()}, {"members", devices}};
         }
         if (path == "/link-token") {
-            const auto ttl = body.value("ttl_sec", 600);
-            if (ttl < 60 || ttl > 600) throw NexusError(400, "Invite lifetime must be 60 to 600 seconds");
             const auto name = body.at("device_name").get<std::string>();
             if (name.empty() || name.size() > 128) throw NexusError(400, "Enter the name of the device you're inviting");
-            auto result = sdk_call([&](auto out) { return ln_link_token_create(client.get(), ttl, out); });
+            auto result = create_invite("", body);
             result["device_name"] = name;
             return result;
         }
@@ -1245,9 +1359,12 @@ void NexusManager::handle(const httplib::Request& req, httplib::Response& res,
         else if (operation == "devices/access") path = "/devices/" + req.matches[1].str() + "/access";
         else if (operation == "members/role") path = "/members/" + req.matches[1].str() + "/role";
         else if (operation == "members/permissions") path = "/members/" + req.matches[1].str() + "/permissions";
+        else if (operation == "memberships/leave") path = "/memberships/" + req.matches[1].str() + "/leave";
         else if (operation.rfind("tree/", 0) == 0) path = "/tree/" + req.matches[1].str() + "/" + operation.substr(5);
         else path = "/" + operation;
         auto result = control(req.method, path, body);
+        // The federation deleted the account and the session removed its local files.
+        if (operation == "account/delete" && result.first == 200 && result.second.value("status", "") == "deleted") disable();
         std::lock_guard<std::mutex> lock(mutex_);
         if (result.first == 200) {
             if (operation == "invites") active_invite_ = result.second;
@@ -1300,10 +1417,10 @@ void NexusManager::register_routes(httplib::Server& server, NexusListener listen
         handle(req, res, operation, listener == NexusListener::Public && !loopback);
     };
     for (const auto* prefix : {"/api/v0/nexus/", "/api/v1/nexus/", "/v0/nexus/", "/v1/nexus/", "/api/nexus/"}) {
-        for (const auto* operation : {"status", "passkey/challenge", "devices", "members", "join/status", "events", "tree", "account", "selection"}) {
+        for (const auto* operation : {"status", "passkey/challenge", "devices", "members", "join/status", "events", "tree", "account", "selection", "memberships"}) {
             server.Get(std::string(prefix) + operation, [dispatch, operation](const auto& req, auto& res) { dispatch(req, res, operation); });
         }
-        for (const auto* operation : {"enable", "disable", "passkey/register", "passkey/unlock", "invites", "invites/cancel", "join", "egress", "lock", "device", "account/avatar", "selection"}) {
+        for (const auto* operation : {"enable", "disable", "passkey/register", "passkey/unlock", "invites", "invites/cancel", "join", "egress", "lock", "device", "account/avatar", "selection", "invites/accept", "account/delete"}) {
             server.Post(std::string(prefix) + operation, [dispatch, operation](const auto& req, auto& res) { dispatch(req, res, operation); });
         }
         server.Post(std::string(prefix) + R"(devices/([A-Za-z0-9_-]+)/remove)",
@@ -1316,9 +1433,11 @@ void NexusManager::register_routes(httplib::Server& server, NexusListener listen
             [dispatch](const auto& req, auto& res) { dispatch(req, res, "members/role"); });
         server.Post(std::string(prefix) + R"(members/([A-Za-z0-9_-]+)/permissions)",
             [dispatch](const auto& req, auto& res) { dispatch(req, res, "members/permissions"); });
+        server.Post(std::string(prefix) + R"(memberships/([A-Za-z0-9_-]+)/leave)",
+            [dispatch](const auto& req, auto& res) { dispatch(req, res, "memberships/leave"); });
         server.Get(std::string(prefix) + R"(tree/([A-Za-z0-9_-]+)/children)",
             [dispatch](const auto& req, auto& res) { dispatch(req, res, "tree/children"); });
-        for (const auto* action : {"groups", "rename", "permissions"}) {
+        for (const auto* action : {"groups", "rename", "permissions", "invites", "move"}) {
             server.Post(std::string(prefix) + R"(tree/([A-Za-z0-9_-]+)/)" + action,
                 [dispatch, action](const auto& req, auto& res) { dispatch(req, res, std::string("tree/") + action); });
         }
