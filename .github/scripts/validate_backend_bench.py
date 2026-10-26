@@ -24,6 +24,7 @@ import shutil
 import subprocess
 import sys
 import tarfile
+import tempfile
 import unicodedata
 import urllib.error
 import urllib.parse
@@ -559,9 +560,86 @@ def _norm(s: str) -> str:
     return re.sub(r"[^a-z0-9 ]", "", s.lower()).strip()
 
 
-def grade_answer(text: str, grade: dict) -> bool:
-    ans = _final_answer(text)
+def _first_json(text: str):
+    text = re.sub(r"```[a-zA-Z]*", "", _clean(text))
+    dec = json.JSONDecoder()
+    for i, ch in enumerate(text):
+        if ch in "[{":
+            try:
+                return dec.raw_decode(text[i:])[0]
+            except ValueError:
+                continue
+    raise ValueError("no JSON value found")
+
+
+def _python_block(text: str) -> str:
+    blocks = re.findall(r"```(?:python|py)?\s*\n(.*?)```", _clean(text), re.S)
+    return blocks[-1] if blocks else _clean(text)
+
+
+def _run_python_tests(code: str, tests: list[str]) -> bool:
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "solution.py"
+        path.write_text(code + "\n\n" + "\n".join(tests) + "\n", encoding="utf-8")
+        try:
+            r = subprocess.run(
+                [sys.executable, "-I", str(path)],
+                cwd=tmp,
+                capture_output=True,
+                timeout=10,
+                env={"PATH": os.environ.get("PATH", "")},
+            )
+        except subprocess.TimeoutExpired:
+            return False
+        return r.returncode == 0
+
+
+def _arg_matches(expected, actual) -> bool:
+    if isinstance(expected, dict) and "contains" in expected:
+        return (
+            isinstance(actual, str) and expected["contains"].lower() in actual.lower()
+        )
+    if isinstance(expected, bool) or isinstance(actual, bool):
+        return expected is actual
+    if isinstance(expected, (int, float)):
+        try:
+            return abs(float(actual) - expected) < 1e-9
+        except (TypeError, ValueError):
+            return False
+    if isinstance(expected, list):
+        return isinstance(actual, list) and sorted(
+            str(x).strip().lower() for x in expected
+        ) == sorted(str(x).strip().lower() for x in actual)
+    return (
+        isinstance(actual, str)
+        and actual.strip().lower() == str(expected).strip().lower()
+    )
+
+
+def grade_answer(text: str, grade: dict, tool_calls: list | None = None) -> bool:
     kind = grade["type"]
+    if kind == "tool_call":
+        if not tool_calls or len(tool_calls) != 1:
+            return False
+        fn = tool_calls[0].get("function", {})
+        try:
+            args = fn.get("arguments") or {}
+            args = json.loads(args) if isinstance(args, str) else args
+        except ValueError:
+            return False
+        return fn.get("name") == grade["name"] and all(
+            _arg_matches(v, args.get(k)) for k, v in grade["args"].items()
+        )
+    if kind == "no_tool_call":
+        return not tool_calls and grade_answer(text, grade["answer"])
+    if kind == "python_tests":
+        return _run_python_tests(_python_block(text), grade["tests"])
+    if kind == "json":
+        try:
+            return _first_json(text) == grade["value"]
+        except ValueError:
+            return False
+    ans = _final_answer(text)
     if kind == "number":
         nums = re.findall(r"-?\d+(?:\.\d+)?", ans.replace(",", ""))
         return bool(nums) and abs(float(nums[-1]) - grade["value"]) <= grade.get(
@@ -576,69 +654,126 @@ def grade_answer(text: str, grade: dict) -> bool:
         )
     if kind == "regex":
         return re.fullmatch(grade["pattern"], ans) is not None
-    if kind == "json":
-        m = re.search(r"\{.*\}", _clean(text), re.S)
-        try:
-            return m is not None and json.loads(m.group(0)) == grade["value"]
-        except ValueError:
-            return False
     raise ValueError(f"unknown grade type {kind}")
 
 
+def _needle_document(needle: dict) -> str:
+    # Sized at ~22 tokens per line (digit-heavy text tokenizes densely) so the
+    # prompt stays well inside the load ctx; lines differ so retrieval is real.
+    lines = [
+        f"Entry {i:05d}: section {i % 97} checked at "
+        f"{(i * 7) % 24:02d}:{(i * 13) % 60:02d}, all nominal."
+        for i in range(max(1, needle["target_tokens"] // 22))
+    ]
+    lines.insert(int(len(lines) * needle["depth"]), needle["sentence"])
+    return "\n".join(lines)
+
+
+def _accuracy_messages(q: dict, suite: dict) -> list[dict]:
+    msgs = [{"role": "system", "content": q.get("system", suite["system_prompt"])}]
+    if "messages" in q:
+        return msgs + q["messages"]
+    prompt = q["prompt"]
+    if "needle" in q:
+        prompt = f"{_needle_document(q['needle'])}\n\n{prompt}"
+    return msgs + [{"role": "user", "content": prompt}]
+
+
 def run_accuracy(base_url: str, fork: dict, model: str) -> dict | None:
-    """Ask the fixed question set on this fork's backend; deterministic, thinking off."""
-    qs = json.loads(ACCURACY_FILE.read_text())
-    load = {"model_name": model, "save_options": False, "ctx_size": 4096}
-    if fork.get("recipe", "llamacpp") == "llamacpp":
-        load["llamacpp_backend"] = fork.get("install_as", fork["backend"])
-    try:
-        _lemond_post(base_url, "/api/v1/load", load, 3600)
-    except Exception as e:
-        print(f"    [accuracy] load failed for {model}: {e}")
-        return None
+    """Ask the fixed accuracy suite on this fork's backend; deterministic, thinking off."""
+    raw = ACCURACY_FILE.read_bytes()
+    suite = json.loads(raw)
+    version = hashlib.sha256(raw).hexdigest()[:12]
+    defaults = suite.get("defaults", {})
+    by_ctx: dict[int, list[dict]] = {}
+    for q in suite["questions"]:
+        by_ctx.setdefault(q.get("ctx", defaults.get("ctx", 4096)), []).append(q)
+    repeat = set(suite.get("health_checks", {}).get("repeat", []))
+
     passed, failures, errors = 0, [], []
-    for q in qs["questions"]:
+    replies, nondeterministic, empty, cut = {}, [], 0, 0
+
+    def ask(q: dict) -> dict:
         body = {
             "model": model,
-            "messages": [
-                {"role": "system", "content": qs["system_prompt"]},
-                {"role": "user", "content": q["prompt"]},
-            ],
+            "messages": _accuracy_messages(q, suite),
             "temperature": 0,
             "seed": 42,
-            "max_tokens": 1024,
+            "max_tokens": q.get("max_tokens", defaults.get("max_tokens", 1024)),
             "enable_thinking": False,
         }
+        if "tools" in q:
+            body["tools"] = suite["tool_sets"][q["tools"]]
+        return _lemond_post(base_url, "/api/v1/chat/completions", body, 600)
+
+    for ctx, items in sorted(by_ctx.items()):
+        load = {"model_name": model, "save_options": False, "ctx_size": ctx}
+        if fork.get("recipe", "llamacpp") == "llamacpp":
+            load["llamacpp_backend"] = fork.get("install_as", fork["backend"])
         try:
-            r = _lemond_post(base_url, "/api/v1/chat/completions", body, 300)
+            _lemond_post(base_url, "/api/v1/load", load, 3600)
         except Exception as e:
-            errors.append({"id": q["id"], "error": str(e)[:200]})
-            continue
-        choice = r["choices"][0]
-        msg = choice.get("message", {})
-        # Reasoning models (e.g. gpt-oss) can ignore enable_thinking and leave
-        # content empty; their final answer is then in the reasoning field.
-        text = msg.get("content") or msg.get("reasoning_content") or ""
-        if grade_answer(text, q["grade"]):
-            passed += 1
-        else:
-            failures.append(
-                {
-                    "id": q["id"],
-                    "response": text[-300:],
-                    "cut_off": choice.get("finish_reason") == "length",
-                }
+            print(f"    [accuracy] load at ctx {ctx} failed for {model}: {e}")
+            errors.extend(
+                {"id": q["id"], "error": f"load failed: {e}"[:200]} for q in items
             )
-    total = len(qs["questions"]) - len(errors)
+            continue
+        for q in items:
+            try:
+                r = ask(q)
+            except urllib.error.HTTPError as e:
+                if e.code >= 500:
+                    errors.append({"id": q["id"], "error": f"HTTP {e.code}"})
+                    continue
+                r = {"choices": [{"message": {"content": f"<HTTP {e.code} rejected>"}}]}
+            except Exception as e:
+                errors.append({"id": q["id"], "error": str(e)[:200]})
+                continue
+            choice = r["choices"][0]
+            msg = choice.get("message", {})
+            # Reasoning models (e.g. gpt-oss) can ignore enable_thinking and leave
+            # content empty; their final answer is then in the reasoning field.
+            text = msg.get("content") or msg.get("reasoning_content") or ""
+            calls = msg.get("tool_calls") or []
+            is_cut = choice.get("finish_reason") == "length"
+            empty += not text.strip() and not calls
+            cut += is_cut
+            if q["id"] in repeat:
+                replies[q["id"]] = (text, json.dumps(calls, sort_keys=True))
+            if grade_answer(text, q["grade"], calls):
+                passed += 1
+            else:
+                shown = text or json.dumps([c.get("function") for c in calls])
+                failures.append(
+                    {"id": q["id"], "response": shown[-300:], "cut_off": is_cut}
+                )
+            if q["id"] in repeat:
+                try:
+                    again = ask(q)["choices"][0].get("message", {})
+                    second = (
+                        again.get("content") or again.get("reasoning_content") or "",
+                        json.dumps(again.get("tool_calls") or [], sort_keys=True),
+                    )
+                    if second != replies[q["id"]]:
+                        nondeterministic.append(q["id"])
+                except Exception:
+                    pass
+
+    total = len(suite["questions"]) - len(errors)
     note = f" ({len(errors)} request errors)" if errors else ""
     print(f"    [{model}] accuracy = {passed}/{total}{note}", flush=True)
     return {
         "passed": passed,
         "total": total,
         "score": round(passed / total, 4) if total else None,
-        "questions_version": qs["version"],
+        "questions_version": version,
         "failures": failures,
         "errors": errors,
+        "health": {
+            "nondeterministic": nondeterministic,
+            "empty_replies": empty,
+            "cut_off": cut,
+        },
     }
 
 

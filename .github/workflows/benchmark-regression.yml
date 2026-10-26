@@ -744,6 +744,7 @@ jobs:
                 slot.update(passed=acc["passed"], total=acc["total"],
                             version=acc.get("questions_version"),
                             complete=not acc.get("errors"),
+                            health=acc.get("health"),
                             failed={f["id"]: {"response": f["response"], "cut_off": f.get("cut_off", False)}
                                     for f in acc.get("failures", [])})
           for mdl, forks in accuracy_detail.items():
@@ -770,13 +771,29 @@ jobs:
           accuracy_questions = {}
           qpath = Path(".github/scripts/accuracy_questions.json")
           if qpath.exists():
+            def _expected(g):
+              t = g["type"]
+              if t == "one_of":
+                return " / ".join(g["values"])
+              if t == "json":
+                return json.dumps(g["value"])
+              if t == "regex":
+                return g["pattern"]
+              if t == "python_tests":
+                return f'passes {len(g["tests"])} unit tests'
+              if t == "tool_call":
+                return f'{g["name"]}({json.dumps(g["args"])})'
+              if t == "no_tool_call":
+                return "no tool call; " + _expected(g["answer"])
+              return f'{g["value"]}' + (f' ± {g["tolerance"]}' if g.get("tolerance") else "")
             for q in json.loads(qpath.read_text())["questions"]:
-              g = q["grade"]
-              expected = (" / ".join(g["values"]) if g["type"] == "one_of"
-                          else json.dumps(g["value"]) if g["type"] == "json"
-                          else g["pattern"] if g["type"] == "regex"
-                          else f'{g["value"]}' + (f' ± {g["tolerance"]}' if g.get("tolerance") else ""))
-              accuracy_questions[q["id"]] = {"category": q["category"], "prompt": q["prompt"], "expected": expected}
+              if "messages" in q:
+                prompt = "(conversation) " + q["messages"][-1]["content"]
+              elif "needle" in q:
+                prompt = f'({q.get("ctx", 4096) // 1024}k document) ' + q["prompt"]
+              else:
+                prompt = q["prompt"]
+              accuracy_questions[q["id"]] = {"category": q["category"], "prompt": prompt, "expected": _expected(q["grade"])}
           for entries in leaderboard.values():
             for e in entries:
               d = accuracy_detail.get(e["model"], {}).get(e["fork_id"], {})
