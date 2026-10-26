@@ -46,6 +46,15 @@ std::string target_directory_of(const DownloadPlan& plan, const DownloadFile& fi
     return file.download_path.empty() ? plan.download_path : file.download_path;
 }
 
+bool placement_stays_inside(const fs::path& placed, const fs::path& target) {
+    if (path_inside(placed, target)) {
+        return true;
+    }
+    const fs::path snapshots = target.parent_path();
+    return snapshots.filename() == "snapshots" &&
+           path_inside(placed, snapshots.parent_path() / "blobs");
+}
+
 void require_placed_inside(const std::string& target_dir, const std::string& name) {
     const fs::path name_fs = path_from_utf8(name);
     const fs::path target = path_from_utf8(target_dir);
@@ -54,21 +63,33 @@ void require_placed_inside(const std::string& target_dir, const std::string& nam
     // The grammar first: `is_absolute()` misses a drive-relative name, which Windows
     // appends by replacing the target, and only a name check sees the separator in `\`.
     if (name.empty() || !utils::is_safe_relative_path(name) || name_fs.is_absolute() ||
-        lands_on_the_directory || !path_inside(placed, target)) {
+        lands_on_the_directory || !placement_stays_inside(placed, target)) {
         throw std::runtime_error("Refusing to write '" + name + "' outside its directory: " +
                                  target_dir);
     }
 }
 
-// Resolving the final name catches a link standing there; the staged `.partial` beside
-// it is another path, and a link in either takes the write wherever it points.
-void require_no_link_in_place(const fs::path& placed) {
+// The staged file is opened for writing, so a link there takes bytes wherever it points
+// no matter where the link resolves.
+void require_no_staged_link(const fs::path& staged) {
     std::error_code ec;
-    const fs::file_status status = fs::symlink_status(placed, ec);
+    const fs::file_status status = fs::symlink_status(staged, ec);
     if (ec) {
         return;
     }
     if (fs::is_symlink(status)) {
+        throw std::runtime_error("Refusing to write through a symlink: " +
+                                 utils::path_to_utf8(staged));
+    }
+}
+
+void require_final_link_owns_its_target(const fs::path& placed, const fs::path& target) {
+    std::error_code ec;
+    const fs::file_status status = fs::symlink_status(placed, ec);
+    if (ec || !fs::is_symlink(status)) {
+        return;
+    }
+    if (!placement_stays_inside(placed, target)) {
         throw std::runtime_error("Refusing to write through a symlink: " +
                                  utils::path_to_utf8(placed));
     }
@@ -193,11 +214,12 @@ void ArtifactTransfer::execute(const DownloadPlan& plan,
     for (const auto& file : plan.files) {
         const std::string target_dir = target_directory_of(plan, file);
         require_placed_inside(target_dir, file.name);
-        fs::path placed = path_from_utf8(target_dir);
+        const fs::path target = path_from_utf8(target_dir);
+        fs::path placed = target;
         placed /= path_from_utf8(file.name);
-        require_no_link_in_place(placed);
+        require_final_link_owns_its_target(placed, target);
         placed += ".partial";
-        require_no_link_in_place(placed);
+        require_no_staged_link(placed);
 
         const FileTransfer* match = nullptr;
         for (const auto& transfer : transfers_) {

@@ -448,6 +448,68 @@ int main() {
         fs::remove_all(dir);
     }
 
+    // --- a shared hub cache filled by another tool -------------------------
+    // huggingface_hub writes snapshots/<commit>/<name> as a relative link into the
+    // repository's own blobs/. Such an entry already holds the bytes the plan asks for.
+    {
+        const fs::path dir = make_temp_dir("shared_hub_cache");
+        const std::string fetched = "bytes lemonade would have written";
+        write_file(dir / "source.bin", fetched);
+
+        const fs::path repo = dir / "models--unsloth--Qwen3-0.6B-GGUF";
+        const fs::path snapshot = repo / "snapshots" / "commitsha";
+        fs::create_directories(snapshot);
+        const std::string shared = "bytes hf download already put here";
+        write_file(repo / "blobs" / "sha256-bbb", shared);
+        const std::string foreign = "bytes that belong to another application";
+        write_file(dir / "outside.bin", foreign);
+
+        // A sibling repository's blob is as foreign as a file outside the cache: only
+        // this repository's own blobs/ holds bytes the plan may share.
+        write_file(dir / "models--other--repo" / "blobs" / "blob.bin", foreign);
+
+        const fs::path entry = snapshot / "model.bin";
+        std::string why;
+        const std::vector<std::pair<std::string, bool>> links = {
+            {"../../blobs/sha256-bbb", true},
+            {"../../../outside.bin", false},
+            {"../../../models--other--repo/blobs/blob.bin", false}};
+        for (const auto& [link_target, shares_the_repository] : links) {
+            fs::remove(entry);
+            if (!make_symlink(link_target, entry, why)) {
+                std::printf("[SKIP] shared hub cache symlink unavailable (%s)\n", why.c_str());
+                break;
+            }
+
+            DownloadPlan plan;
+            plan.download_path = lemon::utils::path_to_utf8(snapshot);
+            plan.files.push_back(DownloadFile{"model.bin", file_url(dir / "source.bin"),
+                                              fetched.size(), {}, {}, {}});
+            bool threw = false;
+            std::string message;
+            try {
+                ArtifactTransfer::with_default_transfers().execute(plan, {}, nullptr, {});
+            } catch (const std::exception& e) {
+                threw = true;
+                message = e.what();
+            }
+            check("a snapshot entry linking " + link_target +
+                      (shares_the_repository ? " counts as already downloaded"
+                                             : " is refused"),
+                  threw != shares_the_repository);
+            if (threw) {
+                std::printf("       %s\n", display(message).c_str());
+            }
+            check("the shared blob keeps its bytes", read_file(repo / "blobs" / "sha256-bbb") == shared);
+            check("every foreign byte is untouched",
+                  read_file(dir / "outside.bin") == foreign &&
+                      read_file(dir / "models--other--repo" / "blobs" / "blob.bin") == foreign);
+            check("the snapshot entry is still a link", fs::is_symlink(entry));
+            check("nothing was staged beside it", !fs::exists(snapshot / "model.bin.partial"));
+        }
+        fs::remove_all(dir);
+    }
+
     // --- the token stops bytes in flight -----------------------------------
     {
         const fs::path dir = make_temp_dir("mid_cancel");
