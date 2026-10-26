@@ -31,8 +31,10 @@ inline constexpr uint16_t kBftProtocolVersion = 1;
 inline constexpr uint16_t kQcFormatVersion = 1;
 
 // On-disk format of the durable consensus store records
-// (hotstuff-safety-<epoch>.json and hotstuff-commit-<epoch>.json). The format
-// is new; every write carries this version and every read requires it.
+// (hotstuff-safety-<epoch>.json, hotstuff-commit-<epoch>.json, and
+// hotstuff-chain-<epoch>.json). Every write carries this version and every
+// read requires it. A chain file can be absent: the releases before it did
+// not write one.
 inline constexpr uint32_t kConsensusStoreFormatVersion = 1;
 
 // --- Domain-separation strings ----------------------------------------------
@@ -210,7 +212,7 @@ inline constexpr std::size_t kMaxQcSignatures = kMaxActiveTier1;
 //
 // The optional block payload at the end of a proposal and the TreeOpSubmit
 // message are additions, not layout changes: a message without them keeps its
-// v3 bytes, and only a node with tree operations on sends them. The
+// v3 bytes. A release from before tree operations does not send them. The
 // storage-key messages (kinds 32 to 37) and the StorageUnlock attestation
 // purpose are additions of the same sort. The storage key runs on every
 // server, so every server sends them; a peer without them drops the kinds it

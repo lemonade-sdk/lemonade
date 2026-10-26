@@ -57,12 +57,16 @@ struct NextEpochPlan {
 
 [[nodiscard]] Digest next_epoch_plan_digest(const NextEpochPlan& plan);
 
-/// One selected node's proved preparation, as its verifiers recorded it.
+/// One selected node's proved preparation, as every current member derives it.
 struct ReadinessEntry {
     NodeId node{};
     IncarnationId incarnation{};
-    /// The fresh final attestation this readiness rests on.
-    Digest evidence_digest{};
+    /// The plan-bound final-attestation context the node's evidence answered
+    /// (SecurityDriver::plan_attest_context). Every member verified its own
+    /// fresh evidence for this context; the evidence digests differ per
+    /// verifier because each challenge carries its own nonce, so they cannot
+    /// be part of a record that every member must derive identically.
+    Digest attestation_context{};
     /// The next-epoch BFT vote key the evidence bound.
     crypto::Ed25519PublicKey vote_key{};
 
@@ -105,6 +109,8 @@ struct EpochHandoff {
     Digest dkg_transcript_digest{};
     KeyGeneration key_generation{};
 
+    /// Commits to each new member and the plan-bound attestation context its
+    /// readiness rests on (EpochManager::computed_attestation_root).
     Digest attestation_root{};
     SecurityRulesetVersion security_ruleset{};
     ConsensusRulesetVersion consensus_ruleset{};

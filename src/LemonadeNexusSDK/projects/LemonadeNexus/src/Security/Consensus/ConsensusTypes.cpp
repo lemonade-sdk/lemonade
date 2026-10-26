@@ -157,4 +157,17 @@ Digest consensus_commit_record_digest(const ConsensusCommit& commit) {
     return encoder.digest();
 }
 
+Digest consensus_chain_record_digest(EpochId epoch, const CertifiedChain& chain) {
+    auto encoder = make_encoder("chain-record");
+    encoder.add_u32(constants::kConsensusStoreFormatVersion);
+    encoder.add_u64(epoch.underlying());
+    encoder.add_u64(chain.chain.size());
+    for (const auto& [proposal, justify] : chain.chain) {
+        encoder.add_bytes(proposal_digest(proposal));
+        encoder.add_bytes(qc_digest(justify));
+    }
+    encoder.add_bytes(qc_digest(chain.certifying));
+    return encoder.digest();
+}
+
 }  // namespace nexus::security

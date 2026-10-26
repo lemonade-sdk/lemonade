@@ -436,10 +436,61 @@ public:
     /// "client-..."). Default false.
     void set_inference_node(bool inference);
 
-    /// Mint a device link token so another device can join this account's
-    /// group (requires an established mesh session; calls the private API).
-    /// Response JSON: {link_token, group_node_id, expires_at}.
-    [[nodiscard]] Result<nlohmann::json> create_link_token(uint32_t ttl_sec = 600);
+    /// Mint a single-use link token (an invite) for a target group (requires
+    /// an established mesh session; calls the private API). An empty
+    /// `target_node_id` targets this account's own group. An empty
+    /// `permissions` list lets the server choose the default ("read",
+    /// "connect_private", reduced to what the caller holds). A new device
+    /// joins under the target with the token (set_link_token + join_network);
+    /// an account that already joined becomes a member (accept_invite). The
+    /// server refuses a target where the caller lacks add_child, and any
+    /// permission the caller does not hold or an invite cannot grant.
+    /// Response JSON: {link_token, group_node_id, target_node_id, permissions,
+    /// expires_at}.
+    [[nodiscard]] Result<nlohmann::json> create_link_token(
+            uint32_t ttl_sec = 600, const std::string& target_node_id = {},
+            const std::vector<std::string>& permissions = {});
+
+    /// Accept an invite as an account that already joined: this identity
+    /// becomes a member of the token's target group with the token's
+    /// permissions. Nothing this account owns moves. The token is single use.
+    /// Response JSON: {success, node_id, permissions, status: "member" |
+    /// "pending", op_id?}. A refusal carries the server's "error".
+    [[nodiscard]] Result<nlohmann::json> accept_invite(const std::string& link_token);
+
+    /// The groups this identity belongs to. Response JSON:
+    /// {memberships: [{node_id, hostname, parent_id, owner_pubkey,
+    /// role: "home" | "member", permissions}]}.
+    [[nodiscard]] Result<nlohmann::json> list_memberships();
+
+    /// Leave a group this identity entered through an invite: removes this
+    /// identity's own entry on `group_node_id`. The server refuses it for a
+    /// home group (a group this identity joined or administers).
+    [[nodiscard]] Result<DeltaResult> leave_membership(const std::string& group_node_id);
+
+    /// Move a device or a subgroup under another group. Needs delete_node on
+    /// the device (or admin above it), admin above a subgroup, and add_child
+    /// on the new parent. A top-level group never moves. The node keeps its
+    /// id, tunnel address, and own assignments. Response JSON: {success,
+    /// node_id, parent_id}, or the server's "error".
+    [[nodiscard]] Result<nlohmann::json> move_node(const std::string& node_id,
+                                                   const std::string& new_parent_id);
+
+    /// Permanently delete this identity's account. Irreversible. Requests a
+    /// challenge from the session's server (POST /api/account/delete/challenge),
+    /// signs the account deletion proof with this identity's key, and sends
+    /// it (POST /api/account/delete). The server removes the account's groups,
+    /// devices, and everything beneath them (other users' devices placed
+    /// there lose access to this network), this identity's memberships and
+    /// grants, its key envelopes, chat blobs, link tokens, passkey
+    /// credentials, certificates, and DNS names, and revokes its key. The
+    /// root node is never removed. On success the client stops the mesh and
+    /// clears its session and node id. Local files (the identity key file,
+    /// account image cache, certificate directory) stay; the caller deletes
+    /// them (see Client SDK documentation). Response JSON: {success, status:
+    /// "deleted" | "pending", account_id, removed_nodes?, op_id?}, or the
+    /// server's "error". Requires an identity and an established mesh session.
+    [[nodiscard]] Result<nlohmann::json> delete_account();
 
     /// Publish a local service to mesh peers: our mesh IP:vport bridges to
     /// `target` ("tcp:127.0.0.1:PORT"). Requires an active mesh (join first);

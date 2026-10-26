@@ -3,6 +3,7 @@
 #include <LemonadeNexusSDK/MeshOrchestrator.hpp>
 
 #include <LemonadeNexus/Api/TreeRouteGate.hpp>
+#include <LemonadeNexus/Auth/AccountDeletionProof.hpp>
 
 #include <httplib.h>
 #include <spdlog/spdlog.h>
@@ -88,7 +89,7 @@ bool request_not_sent(httplib::Error error) {
 
 /// Resolve a hostname to its first IPv4 address (dotted string), or "" on
 /// failure. Used to learn the server's mesh IP from its private FQDN (which the
-/// authoritative DNS maps to the in-mesh address, e.g. 10.64.0.1).
+/// authoritative DNS maps to the in-mesh address, e.g. 10.64.252.37).
 std::string resolve_ipv4(const std::string& host) {
     struct addrinfo hints{};
     hints.ai_family   = AF_INET;
@@ -117,7 +118,7 @@ struct LemonadeNexusClient::Impl {
     std::vector<std::pair<uint16_t, std::string>> exposed_services;  // vport -> target
     std::string  server_seip_fqdn;     // e.g. "<id>.<region>.seip.lemonade-nexus.io" — public API after join
     std::string  server_private_fqdn;  // e.g. "private.<id>.<region>.seip.lemonade-nexus.io"
-    std::string  server_tunnel_ip;    // e.g. "10.64.0.1" — HTTPS fallback
+    std::string  server_tunnel_ip;    // session server in-mesh address, e.g. "10.64.252.37"
     uint16_t     private_port{9101};
     mutable std::mutex mutex;
 
@@ -959,9 +960,13 @@ void LemonadeNexusClient::set_inference_node(bool inference) {
     impl_->inference_node = inference;
 }
 
-Result<nlohmann::json> LemonadeNexusClient::create_link_token(uint32_t ttl_sec) {
+Result<nlohmann::json> LemonadeNexusClient::create_link_token(
+        uint32_t ttl_sec, const std::string& target_node_id,
+        const std::vector<std::string>& permissions) {
     Result<nlohmann::json> result;
     json body = {{"ttl_sec", ttl_sec}};
+    if (!target_node_id.empty()) body["target_node_id"] = target_node_id;
+    if (!permissions.empty()) body["permissions"] = permissions;
     int status = 0;
     auto resp = impl_->private_http_post("/api/link/token", body, status);
     result.http_status = status;
@@ -977,6 +982,133 @@ Result<nlohmann::json> LemonadeNexusClient::create_link_token(uint32_t ttl_sec) 
 
     result.ok    = true;
     result.value = *resp;
+    return result;
+}
+
+namespace {
+
+/// A private-API JSON answer as a Result: ok for 200 and for 202 (a tree
+/// operation that has not committed yet), else the server's "error".
+Result<nlohmann::json> json_result(const std::optional<json>& resp, int status,
+                                   const char* what) {
+    Result<nlohmann::json> result;
+    result.http_status = status;
+    if (!resp) {
+        result.error = std::string(what) + " failed (server unreachable)";
+        return result;
+    }
+    if (status != 200 && status != 202) {
+        result.error = resp->value("error", std::string(what) + " failed");
+        result.value = *resp;
+        return result;
+    }
+    result.ok = true;
+    result.value = *resp;
+    return result;
+}
+
+}  // namespace
+
+Result<nlohmann::json> LemonadeNexusClient::accept_invite(const std::string& link_token) {
+    if (link_token.empty()) {
+        Result<nlohmann::json> result;
+        result.error = "link token required";
+        return result;
+    }
+    int status = 0;
+    auto resp = impl_->private_http_post("/api/link/accept", json{{"link_token", link_token}},
+                                         status);
+    return json_result(resp, status, "invite acceptance");
+}
+
+Result<nlohmann::json> LemonadeNexusClient::list_memberships() {
+    int status = 0;
+    auto resp = impl_->private_http_get("/api/tree/memberships", status);
+    return json_result(resp, status, "membership list");
+}
+
+Result<DeltaResult> LemonadeNexusClient::leave_membership(const std::string& group_node_id) {
+    std::string own_key;
+    {
+        std::lock_guard lock(impl_->mutex);
+        if (impl_->identity.is_valid()) own_key = impl_->identity.pubkey_string();
+    }
+    if (own_key.empty()) {
+        Result<DeltaResult> result;
+        result.error = "no identity";
+        return result;
+    }
+    // Removing this identity's own entry is the leave; the server allows it
+    // without admin only for a group entered through an invite.
+    return set_member_permissions(group_node_id, own_key, {});
+}
+
+Result<nlohmann::json> LemonadeNexusClient::move_node(const std::string& node_id,
+                                                      const std::string& new_parent_id) {
+    if (node_id.empty() || new_parent_id.empty()) {
+        Result<nlohmann::json> result;
+        result.error = "node_id and new_parent_id required";
+        return result;
+    }
+    int status = 0;
+    auto resp = impl_->private_http_post("/api/tree/node/move/" + node_id,
+                                         json{{"parent_id", new_parent_id}}, status);
+    return json_result(resp, status, "move");
+}
+
+Result<nlohmann::json> LemonadeNexusClient::delete_account() {
+    Identity local_identity;
+    {
+        std::lock_guard lock(impl_->mutex);
+        local_identity = impl_->identity;
+    }
+    if (!local_identity.is_valid()) {
+        Result<nlohmann::json> result;
+        result.error = "no identity set — call set_identity() first";
+        return result;
+    }
+
+    // The challenge comes from the session's server over the private API, so
+    // the server that verifies the proof is the one that issued it.
+    int status = 0;
+    auto challenge_resp =
+        impl_->private_http_post("/api/account/delete/challenge", json::object(), status);
+    if (!challenge_resp || status != 200) {
+        return json_result(challenge_resp, status, "account deletion challenge");
+    }
+    const auto challenge_b64 = challenge_resp->value("challenge", std::string{});
+    std::vector<uint8_t> challenge;
+    try {
+        challenge = Identity::from_base64(challenge_b64);
+    } catch (const std::exception&) {
+        challenge.clear();
+    }
+    if (challenge.empty()) {
+        Result<nlohmann::json> result;
+        result.http_status = status;
+        result.error = "server returned an invalid challenge";
+        return result;
+    }
+
+    const auto& pubkey = local_identity.public_key();
+    const auto message = nexus::auth::account_delete_proof_message(
+        challenge, std::span<const uint8_t>(pubkey.data(), pubkey.size()));
+    const auto signature = local_identity.sign(std::span<const uint8_t>(message));
+    const json body = {{"challenge", challenge_b64},
+                       {"signature", Identity::to_base64(std::span<const uint8_t>(signature))}};
+    auto resp = impl_->private_http_post("/api/account/delete", body, status);
+    auto result = json_result(resp, status, "account deletion");
+    if (result.ok && status == 200) {
+        // The account is gone: its key is revoked and its node removed, so
+        // the session and the mesh session end here.
+        disable_mesh();
+        impl_->meshplane.stop();
+        std::lock_guard lock(impl_->mutex);
+        impl_->node_id.clear();
+        impl_->set_token({});
+        spdlog::info("[LemonadeNexusClient] deleted account {}",
+                     result.value.value("account_id", std::string{}));
+    }
     return result;
 }
 
@@ -2114,12 +2246,11 @@ Result<JoinResult> LemonadeNexusClient::join_network(const std::string& username
         std::lock_guard lock(impl_->mutex);
         impl_->node_id = node_id;
         impl_->link_token.clear();  // consumed server-side on successful join
-        // Store server private FQDN for HTTPS over the mesh
-        // Store server tunnel IP for HTTP fallback
+        // The private API lives at the tunnel address of the server that
+        // answered this join. Each server has its own address, so never keep
+        // the address of a server from an earlier join.
         auto srv_tunnel = resp->value("server_tunnel_ip", std::string{});
-        if (!srv_tunnel.empty()) {
-            impl_->server_tunnel_ip = srv_tunnel;
-        }
+        impl_->server_tunnel_ip = srv_tunnel;
 
         // Store SEIP FQDN — this is the server's canonical hostname
         auto srv_seip_fqdn = resp->value("server_seip_fqdn", std::string{});
@@ -2138,7 +2269,7 @@ Result<JoinResult> LemonadeNexusClient::join_network(const std::string& username
 
         // Store private FQDN, and resolve it to the server's in-mesh IP so the
         // mesh dataplane can egress to the private API (the FQDN maps to the
-        // server's tunnel IP, e.g. 10.64.0.1, via the authoritative DNS).
+        // server's tunnel IP via the authoritative DNS).
         auto srv_priv_fqdn = resp->value("server_private_fqdn", std::string{});
         impl_->private_port = static_cast<uint16_t>(
             resp->value("private_api_port", 9101));
@@ -2175,6 +2306,7 @@ Result<JoinResult> LemonadeNexusClient::join_network(const std::string& username
 
         {
             std::lock_guard lock(impl_->mutex);
+            bt.server_tunnel_ip = impl_->server_tunnel_ip;
             impl_->boringtun_config = bt;
         }
         if (!impl_->meshplane.start(bt)) {

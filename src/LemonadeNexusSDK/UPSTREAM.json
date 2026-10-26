@@ -1,6 +1,6 @@
 {
   "repository": "https://github.com/lemonade-sdk/lemonade-nexus.git",
-  "commit": "f4d7fa34675472b1c736a0b35cce732f39944a1f",
+  "commit": "71e7c8b835f44a45f3880faf15d1033b7f9ddc10",
   "version": "0.9.8",
   "paths": [
     "LICENSE",
@@ -19,6 +19,7 @@
     "crates/virtual-netstack/include",
     "crates/virtual-netstack/src",
     "projects/LemonadeNexus/include/LemonadeNexus/Api/TreeRouteGate.hpp",
+    "projects/LemonadeNexus/include/LemonadeNexus/Auth/AccountDeletionProof.hpp",
     "projects/LemonadeNexus/include/LemonadeNexus/Boringtun/IBoringtunProvider.hpp",
     "projects/LemonadeNexus/include/LemonadeNexus/Boringtun/IpRouter.hpp",
     "projects/LemonadeNexus/include/LemonadeNexus/Boringtun/UserspaceDataplane.hpp",

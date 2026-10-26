@@ -132,18 +132,21 @@ public:
     /// another peer:
     ///   - tunnel_ip must be one address ("a.b.c.d" or "a.b.c.d/32") inside
     ///     `tunnel_plane` (the server peer's allowed IPs; 10.64.0.0/10 when
-    ///     empty) and must not be `own_tunnel_ip`. A tunnel address that two
+    ///     empty) and must not be `own_tunnel_ip` or `server_tunnel_ip` (the
+    ///     session server's address, where the private API answers; empty
+    ///     when unknown). A peer route on the server's address would take the
+    ///     private API traffic away from the server. A tunnel address that two
     ///     peers claim is refused for both.
     ///   - private_subnet must be a /24 or smaller block inside the private
     ///     pool 10.128.0.0/9 (so it never overlaps the tunnel plane), must
-    ///     not contain `own_tunnel_ip`, and must not overlap another peer's
-    ///     tunnel address or private subnet. Overlapping subnets are refused
-    ///     for every peer involved.
+    ///     not contain `own_tunnel_ip` or `server_tunnel_ip`, and must not
+    ///     overlap another peer's tunnel address or private subnet.
+    ///     Overlapping subnets are refused for every peer involved.
     /// A refused tunnel address gives the peer an empty entry (no route). A
     /// refused subnet leaves the peer its tunnel address only. Pure function.
     [[nodiscard]] static std::vector<std::string> peer_allowed_ips(
         const std::vector<MeshPeer>& peers, const std::vector<std::string>& tunnel_plane,
-        const std::string& own_tunnel_ip);
+        const std::string& own_tunnel_ip, const std::string& server_tunnel_ip = {});
 
     /// Remove a single mesh peer (the server peer is never removed).
     StatusResult remove_peer(const std::string& pubkey);

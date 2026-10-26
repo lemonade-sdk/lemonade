@@ -156,6 +156,7 @@ bool BoringtunMesh::start(const BoringtunConfig& config) {
         const auto& live = impl_->started_cfg;
         if (live.private_key == config.private_key &&
             live.tunnel_ip == config.tunnel_ip &&
+            live.server_tunnel_ip == config.server_tunnel_ip &&
             live.server_public_key == config.server_public_key &&
             live.server_endpoint == config.server_endpoint) {
             return true;
@@ -364,8 +365,8 @@ StatusResult BoringtunMesh::sync_peers(const std::vector<MeshPeer>& desired) {
         std::lock_guard lock(impl_->ns_mtx);
         own_tunnel_ip = impl_->tunnel_addr;
     }
-    const auto allowed_list =
-        peer_allowed_ips(desired, impl_->started_cfg.allowed_ips, own_tunnel_ip);
+    const auto allowed_list = peer_allowed_ips(desired, impl_->started_cfg.allowed_ips,
+                                               own_tunnel_ip, impl_->started_cfg.server_tunnel_ip);
 
     std::map<std::string, Impl::RelayPath> relayed;
     std::map<std::string, std::string> written;
@@ -425,21 +426,35 @@ StatusResult BoringtunMesh::sync_peers(const std::vector<MeshPeer>& desired) {
 
 std::vector<std::string> BoringtunMesh::peer_allowed_ips(
     const std::vector<MeshPeer>& peers, const std::vector<std::string>& tunnel_plane,
-    const std::string& own_tunnel_ip) {
+    const std::string& own_tunnel_ip, const std::string& server_tunnel_ip) {
     std::vector<Cidr> plane;
     for (const auto& text : tunnel_plane) {
         if (auto cidr = Cidr::parse(text)) plane.push_back(*cidr);
     }
     if (plane.empty()) plane.push_back(*Cidr::parse("10.64.0.0/10"));
     const Cidr pool = *Cidr::parse(kPrivatePool);
-    const auto own = parse_tunnel_address(addr_part(own_tunnel_ip));
+    // Addresses no peer may claim: this device's own, and the session
+    // server's, which the server peer's plane route carries.
+    std::vector<uint32_t> reserved;
+    for (const auto* text : {&own_tunnel_ip, &server_tunnel_ip}) {
+        if (const auto addr = parse_tunnel_address(addr_part(*text))) {
+            reserved.push_back(addr->network);
+        }
+    }
+    const auto is_reserved = [&](uint32_t address) {
+        return std::find(reserved.begin(), reserved.end(), address) != reserved.end();
+    };
+    const auto holds_reserved = [&](const Cidr& block) {
+        return std::any_of(reserved.begin(), reserved.end(),
+                           [&](uint32_t address) { return block.contains(address); });
+    };
 
     const auto n = peers.size();
     std::vector<std::optional<Cidr>> tunnel(n);
     std::vector<std::optional<Cidr>> subnet(n);
     for (std::size_t i = 0; i < n; ++i) {
         auto addr = parse_tunnel_address(peers[i].tunnel_ip);
-        if (addr && (own && addr->network == own->network)) addr.reset();
+        if (addr && is_reserved(addr->network)) addr.reset();
         if (addr && std::none_of(plane.begin(), plane.end(),
                                  [&](const Cidr& c) { return c.contains(addr->network); })) {
             addr.reset();
@@ -448,7 +463,7 @@ std::vector<std::string> BoringtunMesh::peer_allowed_ips(
         if (!peers[i].private_subnet.empty()) {
             auto block = parse_subnet(peers[i].private_subnet);
             if (block && (block->prefix_len < kMaxSubnetPrefixLen || !within(*block, pool) ||
-                          (own && block->contains(own->network)))) {
+                          holds_reserved(*block))) {
                 block.reset();
             }
             subnet[i] = block;

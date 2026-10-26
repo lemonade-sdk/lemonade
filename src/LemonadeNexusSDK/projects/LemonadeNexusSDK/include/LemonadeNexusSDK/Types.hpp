@@ -321,6 +321,10 @@ struct BoringtunConfig {
     uint16_t    listen_port{0};             ///< Local UDP port (0 = random)
     std::vector<std::string> allowed_ips;   ///< Mesh plane, e.g. ["10.64.0.0/10"]
     uint32_t    keepalive{5};               ///< Persistent keepalive interval (seconds)
+    /// The session server's in-mesh address (e.g. "10.64.252.37"), where its
+    /// private API answers. No mesh peer may claim it (see
+    /// BoringtunMesh::peer_allowed_ips). Empty when unknown.
+    std::string server_tunnel_ip;
 };
 
 struct TunnelStatus {

@@ -14,7 +14,7 @@ namespace {
     return path.size() == prefix.size() || path[prefix.size()] == '/';
 }
 
-constexpr std::array<std::string_view, 17> kTreeRoutePrefixes = {
+constexpr std::array<std::string_view, 18> kTreeRoutePrefixes = {
     "/api/join",
     "/api/auth",
     "/api/link",
@@ -24,6 +24,7 @@ constexpr std::array<std::string_view, 17> kTreeRoutePrefixes = {
     "/api/routing",
     "/api/chats",
     "/api/account/keys",
+    "/api/account/delete",
     "/api/certs",
     // Root-admin routes: the admin permission is a tree permission.
     "/api/relay/register",

@@ -581,9 +581,122 @@ ln_error_t ln_set_link_token(ln_client_t* client, const char* token);
 ln_error_t ln_set_inference_node(ln_client_t* client, int inference);
 
 /** Mint a device link token for adding another device to this account's group.
+ *  Same as ln_invite_create(client, NULL, NULL, ttl_sec, out_json).
  *  Requires an established mesh session. Returns {link_token, group_node_id,
- *  expires_at} JSON. ln_free(*out_json). */
+ *  target_node_id, permissions, expires_at} JSON. ln_free(*out_json). */
 ln_error_t ln_link_token_create(ln_client_t* client, uint32_t ttl_sec, char** out_json);
+
+/* ------------------------------------------------------------------ */
+/* Invites, memberships, and moves                                     */
+/* ------------------------------------------------------------------ */
+
+/** Mint a single-use invite (link token) into a group. One call serves both
+ *  invite flows:
+ *   - target_node_id NULL or "": this account's own top-level group.
+ *   - target_node_id a group id: that group (for example a subgroup, or
+ *     another user's group where this account holds add_child).
+ *  permissions_json: NULL for the server default (["read","connect_private"],
+ *  reduced to what the caller holds), or a JSON array of permission names
+ *  from "read", "write", "add_child", "connect_private", "connect_shared".
+ *  The server refuses a target where the caller lacks add_child (403), a
+ *  permission the caller does not hold (403), a name an invite cannot grant
+ *  such as "admin" (400), and a target that is not a group (400).
+ *  A new device joins under the target with the token (ln_set_link_token and
+ *  ln_join_network). An account that already joined becomes a member with
+ *  ln_invite_accept. Requires an established mesh session.
+ *  On success *out_json is {link_token, group_node_id, target_node_id,
+ *  permissions, expires_at}; on failure it carries "error" when the server
+ *  answered. The strings passed in are not retained. The caller owns
+ *  *out_json and must release it with ln_free(). Returns LN_ERR_NULL_ARG when
+ *  client or out_json is NULL, LN_ERR_REJECTED for malformed
+ *  permissions_json, else the mapped HTTP result. */
+ln_error_t ln_invite_create(ln_client_t* client,
+                            const char* target_node_id,
+                            const char* permissions_json,
+                            uint32_t ttl_sec,
+                            char** out_json);
+
+/** Accept an invite as an account that already joined ("join another
+ *  network"). This identity becomes a member of the invite's group with the
+ *  invite's permissions; nothing this account owns moves. Its own device can
+ *  then reach the group's devices, and they can reach it, as the
+ *  permissions allow. The token is single use and is not spent by a refusal.
+ *  On success *out_json is {success, node_id, permissions, status}, where
+ *  status is "member", or "pending" with an op_id while a tree operation
+ *  commits. LN_ERR_AUTH for an invalid, expired, or used token or an inviter
+ *  that lost its permission; LN_ERR_REJECTED when this identity already
+ *  belongs to the group or has not joined. The caller owns *out_json and
+ *  must release it with ln_free(). Requires an established mesh session. */
+ln_error_t ln_invite_accept(ln_client_t* client,
+                            const char* link_token,
+                            char** out_json);
+
+/** List the groups this identity belongs to. *out_json is {memberships:
+ *  [{node_id, hostname, parent_id, owner_pubkey, role, permissions}]} where
+ *  role is "home" (a group this identity joined or owns) or "member" (a
+ *  group entered through an invite). permissions are this identity's own.
+ *  The caller owns *out_json and must release it with ln_free(). Requires an
+ *  established mesh session. */
+ln_error_t ln_memberships_list(ln_client_t* client, char** out_json);
+
+/** Leave a group entered through an invite: removes this identity's own
+ *  entry on group_node_id. A group owner removes a member with
+ *  ln_remove_group_member instead. Refused (LN_ERR_AUTH) for a home group.
+ *  *out_json is {success, node_id, error?}. The caller owns *out_json and
+ *  must release it with ln_free(). Requires an identity (ln_set_identity). */
+ln_error_t ln_membership_leave(ln_client_t* client,
+                               const char* group_node_id,
+                               char** out_json);
+
+/** Move a device (Endpoint) or a subgroup under another group. Needs
+ *  delete_node on the device or admin above it (admin above a subgroup), and
+ *  add_child on new_parent_id or admin above it. A top-level group and the
+ *  root never move, and a node never moves under itself. The node keeps its
+ *  id, tunnel address, and own assignments; the move grants nothing in the
+ *  new group. *out_json is {success, node_id, parent_id}, or carries "error".
+ *  LN_ERR_AUTH when the caller lacks a right, LN_ERR_NOT_FOUND for an unknown
+ *  node, LN_ERR_REJECTED for an invalid move. The caller owns *out_json and
+ *  must release it with ln_free(). Requires an established mesh session. */
+ln_error_t ln_move_node(ln_client_t* client,
+                        const char* node_id,
+                        const char* new_parent_id,
+                        char** out_json);
+
+/* ------------------------------------------------------------------ */
+/* Account deletion                                                    */
+/* ------------------------------------------------------------------ */
+
+/** Permanently delete this identity's account. IRREVERSIBLE.
+ *  The SDK asks the session's server for a challenge, signs an account
+ *  deletion proof with the identity set by ln_set_identity (a session token
+ *  alone cannot delete an account), and sends it. The server removes:
+ *   - this account's groups (its "customer-<user_id>" group and every group
+ *     or device its key owns) and everything beneath them, including devices
+ *     that other users placed there through invites (those users keep their
+ *     own accounts and lose access to this network);
+ *   - this identity's memberships in other users' groups and every grant
+ *     that names its keys;
+ *   - its group-key envelopes, chat blobs, link tokens (invites), passkey
+ *     credentials, device certificates, DNS names, and tunnel addresses;
+ *   - its key: it can no longer authenticate, and its sessions end.
+ *  The application root is never removed or changed. When this key also
+ *  owns the root, the root and the key stay; only the account goes.
+ *  On success (status "deleted") the client stops the mesh, clears its
+ *  session token and node id, and stops the account image service. With tree
+ *  operations on, the answer can be status "pending" with an op_id while
+ *  Tier 1 commits the deletion.
+ *  Local files stay. The caller deletes them after success: the identity
+ *  file (ln_identity_save path), the account image cache
+ *  (ln_account_avatar_configure cache_root), the certificate directory
+ *  (ln_mesh_port_set_cert_dir), and any copy of the session token.
+ *  On success *out_json is {success, status, account_id, removed_nodes?,
+ *  op_id?}; on failure it carries "error". The caller owns *out_json and must
+ *  release it with ln_free(). Returns LN_ERR_NULL_ARG for a NULL argument,
+ *  LN_ERR_NO_IDENTITY without an identity, LN_ERR_AUTH for a refused proof or
+ *  session, LN_ERR_CONNECT when the server cannot be reached, else the mapped
+ *  HTTP result. Requires an established mesh session. Not thread-safe with
+ *  other calls on the same client. */
+ln_error_t ln_account_delete(ln_client_t* client, char** out_json);
 
 /** Publish a local service to mesh peers: our mesh IP:vport bridges to `target`
  *  ("tcp:127.0.0.1:PORT"). Requires an active mesh; re-applied on re-join. */

@@ -45,7 +45,7 @@ Digest candidate_readiness_digest(const CandidateReadiness& readiness) {
     for (const auto& entry : readiness.entries) {
         encoder.add_bytes(entry.node.bytes);
         encoder.add_u64(entry.incarnation.underlying());
-        encoder.add_bytes(entry.evidence_digest);
+        encoder.add_bytes(entry.attestation_context);
         encoder.add_bytes(entry.vote_key);
     }
     return encoder.digest();

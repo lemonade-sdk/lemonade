@@ -14,6 +14,7 @@
 #include <LemonadeNexus/Security/Policy/SecurityTypes.hpp>
 
 #include <cstdint>
+#include <utility>
 #include <vector>
 
 namespace nexus::security {
@@ -119,6 +120,20 @@ struct ConsensusCommit {
                                                   EpochId epoch,
                                                   View last_voted_view);
 [[nodiscard]] Digest consensus_commit_record_digest(const ConsensusCommit& commit);
+
+/// A run of certified blocks, oldest first, each with the justify it shipped
+/// with. Block k is certified by block k+1's justify, and the last block by
+/// `certifying`. It is the form of a restart sync reply, a sync page, and the
+/// stored blocks of a replica. Holding one proves nothing: a reader validates
+/// every certificate before it uses a block.
+struct CertifiedChain {
+    std::vector<std::pair<Proposal, QuorumCertificate>> chain;
+    QuorumCertificate certifying;
+};
+
+/// The record digest of a stored CertifiedChain: the format version, the
+/// epoch, and the digest of every block, justify, and the certifying QC.
+[[nodiscard]] Digest consensus_chain_record_digest(EpochId epoch, const CertifiedChain& chain);
 
 enum class ConsensusFailure : uint16_t {
     FormatVersion,

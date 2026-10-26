@@ -1213,6 +1213,107 @@ ln_error_t ln_link_token_create(ln_client_t* client, uint32_t ttl_sec, char** ou
     return result.ok ? LN_OK : LN_ERR_CONNECT;
 }
 
+/// The out_json and return code for a JSON result of the invite, membership,
+/// and move calls.
+static ln_error_t json_call_result(const lnsdk::Result<json>& result, char** out_json) {
+    json j = result.value.is_object() ? result.value : json::object();
+    if (!result.ok) j["error"] = result.error;
+    *out_json = strdup_json(j);
+    if (!*out_json) return LN_ERR_INTERNAL;
+    return result.ok ? LN_OK : ln_map_error(result.http_status);
+}
+
+ln_error_t ln_invite_create(ln_client_t* client, const char* target_node_id,
+                            const char* permissions_json, uint32_t ttl_sec, char** out_json) {
+    if (!client || !out_json) return LN_ERR_NULL_ARG;
+    *out_json = nullptr;
+    try {
+        std::vector<std::string> permissions;
+        if (permissions_json) {
+            auto perms = json::parse(permissions_json, nullptr, false);
+            if (perms.is_discarded() || !perms.is_array()) return LN_ERR_REJECTED;
+            for (const auto& p : perms) {
+                if (!p.is_string()) return LN_ERR_REJECTED;
+                permissions.push_back(p.get<std::string>());
+            }
+        }
+        auto result = client->client.create_link_token(
+            ttl_sec, target_node_id ? std::string(target_node_id) : std::string{}, permissions);
+        return json_call_result(result, out_json);
+    } catch (...) {
+        return LN_ERR_INTERNAL;
+    }
+}
+
+ln_error_t ln_invite_accept(ln_client_t* client, const char* link_token, char** out_json) {
+    if (!client || !link_token || !out_json) return LN_ERR_NULL_ARG;
+    *out_json = nullptr;
+    try {
+        return json_call_result(client->client.accept_invite(link_token), out_json);
+    } catch (...) {
+        return LN_ERR_INTERNAL;
+    }
+}
+
+ln_error_t ln_memberships_list(ln_client_t* client, char** out_json) {
+    if (!client || !out_json) return LN_ERR_NULL_ARG;
+    *out_json = nullptr;
+    try {
+        return json_call_result(client->client.list_memberships(), out_json);
+    } catch (...) {
+        return LN_ERR_INTERNAL;
+    }
+}
+
+ln_error_t ln_membership_leave(ln_client_t* client, const char* group_node_id,
+                               char** out_json) {
+    if (!client || !group_node_id || !out_json) return LN_ERR_NULL_ARG;
+    *out_json = nullptr;
+    try {
+        auto result = client->client.leave_membership(group_node_id);
+        json j;
+        j["success"] = result.value.success;
+        j["node_id"] = result.value.node_id;
+        if (!result.ok) j["error"] = result.error;
+        *out_json = strdup_json(j);
+        if (!*out_json) return LN_ERR_INTERNAL;
+        return result.ok ? LN_OK : ln_map_error(result.http_status);
+    } catch (...) {
+        return LN_ERR_INTERNAL;
+    }
+}
+
+ln_error_t ln_move_node(ln_client_t* client, const char* node_id, const char* new_parent_id,
+                        char** out_json) {
+    if (!client || !node_id || !new_parent_id || !out_json) return LN_ERR_NULL_ARG;
+    *out_json = nullptr;
+    try {
+        return json_call_result(client->client.move_node(node_id, new_parent_id), out_json);
+    } catch (...) {
+        return LN_ERR_INTERNAL;
+    }
+}
+
+ln_error_t ln_account_delete(ln_client_t* client, char** out_json) {
+    if (!client || !out_json) return LN_ERR_NULL_ARG;
+    *out_json = nullptr;
+    try {
+        if (!client->client.identity().is_valid()) {
+            *out_json = strdup_json(json{{"success", false}, {"error", "no identity"}});
+            return LN_ERR_NO_IDENTITY;
+        }
+        auto result = client->client.delete_account();
+        if (result.ok && result.value.value("status", std::string{}) == "deleted") {
+            // The account image service serves this account's cached images
+            // to mesh peers; stop it with the account.
+            client->avatar.reset();
+        }
+        return json_call_result(result, out_json);
+    } catch (...) {
+        return LN_ERR_INTERNAL;
+    }
+}
+
 ln_error_t ln_mesh_expose_service(ln_client_t* client, uint16_t vport, const char* target) {
     if (!client || !target) return LN_ERR_NULL_ARG;
     auto result = client->client.expose_service(vport, target);
