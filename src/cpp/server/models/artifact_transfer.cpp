@@ -69,8 +69,6 @@ void require_placed_inside(const std::string& target_dir, const std::string& nam
     }
 }
 
-// The staged file is opened for writing, so a link there takes bytes wherever it points
-// no matter where the link resolves.
 void require_no_staged_link(const fs::path& staged) {
     std::error_code ec;
     const fs::file_status status = fs::symlink_status(staged, ec);

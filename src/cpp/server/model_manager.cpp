@@ -138,8 +138,8 @@ models::SyncService::Deps ModelManager::make_sync_deps() {
     models::SyncService::Deps deps;
     deps.scan = [this](const std::vector<std::string>& targets) { return run_update_scan(targets); };
     deps.download = [this](const std::string& name, const json& options, bool do_not_upgrade,
-                           DownloadProgressCallback progress) {
-        download_model(name, options, do_not_upgrade, progress);
+                           DownloadProgressCallback progress, const utils::CancelToken& cancel) {
+        download_model(name, options, do_not_upgrade, progress, cancel);
     };
     deps.store = &store_;
     return deps;

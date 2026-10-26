@@ -107,6 +107,19 @@ int main() {
     check(":latest is the same model",
           resolves_to(manager, "Resolution-Model:latest", "Resolution-Model"));
 
+    std::string tagged_err;
+    check("an alias may carry the :latest tag",
+          manager.set_alias("ollama-ish:latest", "Resolution-Model", tagged_err));
+    const auto tagged = manager.resolve("ollama-ish:latest");
+    check("and answers the client that asks for it",
+          tagged && tagged->canonical_id == "Resolution-Model" && tagged->via_alias);
+    check("answered with the tagged alias the client used",
+          tagged && tagged->wire_id == "ollama-ish:latest");
+    check("the shortened name is not an alias of its own",
+          !manager.resolve("ollama-ish").has_value());
+    check("and it settles to the model behind it for a caller that acts on names",
+          manager.canonical_for_request("ollama-ish:latest") == "Resolution-Model");
+
     check("an input alias resolves to the model that claimed it",
           resolves_to(manager, "Contested-Name", "Claimant-Model"));
     check("and the model it displaced keeps its canonical id",

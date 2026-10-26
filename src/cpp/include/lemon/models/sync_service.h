@@ -2,9 +2,11 @@
 
 #include <lemon/models/download_progress.h>
 #include <lemon/models/update_scan.h>
+#include <lemon/utils/cancel_token.h>
 
 #include <nlohmann/json.hpp>
 
+#include <atomic>
 #include <condition_variable>
 #include <cstdint>
 #include <functional>
@@ -33,7 +35,8 @@ class SyncService {
         std::function<UpdateScanResult(const std::vector<std::string>&)> scan;
         std::function<void(const std::string& name, const nlohmann::json& options,
                            bool do_not_upgrade,
-                           DownloadProgressCallback progress)> download;
+                           DownloadProgressCallback progress,
+                           const utils::CancelToken& cancel)> download;
         // Reads the published set: which name is which, and what a row says.
         ModelStore* store;
         std::function<void(const std::string& phase)> phase;
@@ -104,6 +107,7 @@ class SyncService {
     nlohmann::json status_locked() const;
 
     Deps deps_;
+    std::atomic<bool> cancel_flag_{false};
     State state_;
     // Startup, an explicit check request and the worker's own pass may all want
     // to scan; one at a time.

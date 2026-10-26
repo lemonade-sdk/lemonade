@@ -19,6 +19,7 @@ SyncService::~SyncService() {
         state_.stop = true;
         state_.cancel_requested = true;
     }
+    cancel_flag_.store(true);
     state_.cv.notify_all();
     if (worker_.joinable()) {
         worker_.join();
@@ -204,6 +205,7 @@ void SyncService::cancel() {
 
     std::lock_guard<std::mutex> lock(state_.mutex);
     state_.cancel_requested = true;
+    cancel_flag_.store(true);
 }
 
 SyncService::Enqueued SyncService::enqueue(const std::vector<std::string>& target_models,
@@ -251,6 +253,7 @@ SyncService::Enqueued SyncService::enqueue(const std::vector<std::string>& targe
     state_.is_sync_running = true;
     state_.is_full_sync = target_models.empty();
     state_.cancel_requested = false;
+    cancel_flag_.store(false);
     state_.active_targets.clear();
     state_.pending_targets.clear();
     state_.completed_targets.clear();
@@ -508,7 +511,8 @@ void SyncService::run_generation() {
                         return true;
                     };
 
-                    deps_.download(model_name, json::object(), false, progress_cb);
+                    deps_.download(model_name, json::object(), false, progress_cb,
+                                   utils::CancelToken{&cancel_flag_, nullptr});
 
                     std::lock_guard<std::mutex> lock(state_.mutex);
                     state_.active_targets.erase(model_name);

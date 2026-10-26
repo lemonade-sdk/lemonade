@@ -13,6 +13,7 @@
 #include "lemon/models/sync_service.h"
 #include "lemon/recipe_options.h"
 #include "lemon/runtime_config.h"
+#include "lemon/utils/cancel_token.h"
 #include "support/test_state_isolation.h"
 
 #include <lemon/utils/path_utils.h>
@@ -87,9 +88,11 @@ struct PhaseBus {
 struct SyncFixture {
     std::function<UpdateScanResult(const std::vector<std::string>&)> check_fn =
         [](const std::vector<std::string>&) { return UpdateScanResult{}; };
-    std::function<void(const std::string&, const json&, bool, lemon::DownloadProgressCallback)>
+    std::function<void(const std::string&, const json&, bool, lemon::DownloadProgressCallback,
+                       const lemon::utils::CancelToken&)>
         download_fn =
-            [](const std::string&, const json&, bool, lemon::DownloadProgressCallback) {};
+            [](const std::string&, const json&, bool, lemon::DownloadProgressCallback,
+               const lemon::utils::CancelToken&) {};
     AliasManager aliases{""};
     ModelStore store{aliases};
     std::atomic<int> scan_calls{0};
@@ -104,8 +107,9 @@ struct SyncFixture {
             return check_fn(targets);
         };
         d.download = [this](const std::string& name, const json& options, bool do_not_upgrade,
-                            lemon::DownloadProgressCallback progress) {
-            download_fn(name, options, do_not_upgrade, progress);
+                            lemon::DownloadProgressCallback progress,
+                            const lemon::utils::CancelToken& cancel) {
+            download_fn(name, options, do_not_upgrade, progress, cancel);
         };
         d.store = &store;
         d.phase = [this](const std::string& phase) { bus(phase); };
@@ -543,7 +547,8 @@ int main() {
         std::mutex download_m;
         std::vector<std::string> downloaded_models;
         stale_fixture.download_fn = [&](const std::string& name, const json&, bool,
-                                        lemon::DownloadProgressCallback) {
+                                        lemon::DownloadProgressCallback,
+                                        const lemon::utils::CancelToken&) {
             std::lock_guard<std::mutex> lock(download_m);
             downloaded_models.push_back(name);
         };
@@ -669,7 +674,8 @@ int main() {
             return r;
         };
         fresh_fixture.download_fn = [&](const std::string& m, const json&, bool,
-                                        lemon::DownloadProgressCallback) {
+                                        lemon::DownloadProgressCallback,
+                                        const lemon::utils::CancelToken&) {
             std::lock_guard<std::mutex> lock(downloaded_m);
             downloaded_models.push_back(m);
         };
@@ -750,14 +756,12 @@ int main() {
         std::atomic<int> downloads_finished{0};
         std::atomic<bool> saw_cancel{false};
 
-        // Stands in for a download: it keeps reporting progress until the sync
-        // tells it to stop, which is the only way cancellation reaches a worker
-        // already transferring bytes.
         teardown_fixture.download_fn = [&](const std::string&, const json&, bool,
-                                           lemon::DownloadProgressCallback progress) {
+                                           lemon::DownloadProgressCallback progress,
+                                           const lemon::utils::CancelToken& cancel) {
             ++downloads_started;
             for (int i = 0; i < 2000; ++i) {
-                if (!progress(lemon::DownloadProgress{})) {
+                if (cancel.cancelled()) {
                     saw_cancel = true;
                     // The cleanup a real transfer does after aborting: work
                     // still in flight, so it must not outlive the queue.
@@ -765,6 +769,7 @@ int main() {
                     ++downloads_finished;
                     return;
                 }
+                progress(lemon::DownloadProgress{});
                 std::this_thread::sleep_for(std::chrono::milliseconds(5));
             }
         };
@@ -785,6 +790,14 @@ int main() {
             std::this_thread::sleep_for(std::chrono::milliseconds(5));
         }
         check("cancellation reaches the worker mid-transfer", saw_cancel.load());
+
+        const auto idle_started = std::chrono::steady_clock::now();
+        service->wait_until_idle();
+        const auto idle_ms =
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - idle_started)
+                .count();
+        check("a cancelled download releases wait_until_idle", idle_ms < 3000);
 
         const auto cancel_started = std::chrono::steady_clock::now();
         service.reset();

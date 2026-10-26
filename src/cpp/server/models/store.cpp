@@ -34,6 +34,15 @@ std::string public_name_in(const StoreSnapshot& snapshot, const std::string& can
     return public_name.empty() ? canonical_id : public_name;
 }
 
+std::string without_latest_tag(const std::string& name) {
+    constexpr const char kLatest[] = ":latest";
+    if (name.size() > strlen(kLatest) &&
+        name.compare(name.size() - strlen(kLatest), strlen(kLatest), kLatest) == 0) {
+        return name.substr(0, name.size() - strlen(kLatest));
+    }
+    return name;
+}
+
 }  // namespace
 
 ModelStore::ModelStore(const AliasManager& aliases, Composer composer)
@@ -55,12 +64,7 @@ std::shared_ptr<const StoreSnapshot> ModelStore::current() {
 std::optional<ResolvedModel> ModelStore::resolve(const std::string& requested) {
     auto snapshot = current();
 
-    std::string name = utils::normalize_model_name(requested);
-    constexpr const char kLatest[] = ":latest";
-    if (name.size() > strlen(kLatest) &&
-        name.compare(name.size() - strlen(kLatest), strlen(kLatest), kLatest) == 0) {
-        name.erase(name.size() - strlen(kLatest));
-    }
+    const std::string name = utils::normalize_model_name(requested);
 
     // A snapshot name wins over an alias, so an alias can never hide a model.
     const auto from_snapshot = [&snapshot](const std::string& candidate) {
@@ -70,23 +74,32 @@ std::optional<ResolvedModel> ModelStore::resolve(const std::string& requested) {
         return std::pair<std::string, const ModelInfo*>{canonical, found};
     };
 
-    auto hit = from_snapshot(name);
-    bool via_alias = false;
-    if (hit.second == nullptr) {
-        const std::string target = aliases_.resolve_alias(name).value_or("");
-        if (target.empty()) return std::nullopt;
-        hit = from_snapshot(target);
-        if (hit.second == nullptr) return std::nullopt;
-        via_alias = true;
-    }
+    const auto lookup = [&snapshot, &from_snapshot, this](const std::string& candidate)
+        -> std::optional<ResolvedModel> {
+        auto hit = from_snapshot(candidate);
+        bool via_alias = false;
+        if (hit.second == nullptr) {
+            const std::string target = aliases_.resolve_alias(candidate).value_or("");
+            if (target.empty()) return std::nullopt;
+            hit = from_snapshot(target);
+            if (hit.second == nullptr) return std::nullopt;
+            via_alias = true;
+        }
 
-    ResolvedModel resolved;
-    resolved.canonical_id = hit.first;
-    resolved.info = std::shared_ptr<const ModelInfo>(snapshot, hit.second);
-    resolved.via_alias = via_alias;
-    // A client that asked by alias is answered under that alias.
-    resolved.wire_id = via_alias ? name : public_name_in(*snapshot, hit.first);
-    return resolved;
+        ResolvedModel resolved;
+        resolved.canonical_id = hit.first;
+        resolved.info = std::shared_ptr<const ModelInfo>(snapshot, hit.second);
+        resolved.via_alias = via_alias;
+        // A client that asked by alias is answered under that alias.
+        resolved.wire_id = via_alias ? candidate : public_name_in(*snapshot, hit.first);
+        return resolved;
+    };
+
+    if (auto named = lookup(name)) {
+        return named;
+    }
+    const std::string stripped = without_latest_tag(name);
+    return stripped == name ? std::nullopt : lookup(stripped);
 }
 
 bool ModelStore::exists(const std::string& requested) {

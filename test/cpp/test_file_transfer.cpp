@@ -449,8 +449,6 @@ int main() {
     }
 
     // --- a shared hub cache filled by another tool -------------------------
-    // huggingface_hub writes snapshots/<commit>/<name> as a relative link into the
-    // repository's own blobs/. Such an entry already holds the bytes the plan asks for.
     {
         const fs::path dir = make_temp_dir("shared_hub_cache");
         const std::string fetched = "bytes lemonade would have written";
@@ -464,8 +462,6 @@ int main() {
         const std::string foreign = "bytes that belong to another application";
         write_file(dir / "outside.bin", foreign);
 
-        // A sibling repository's blob is as foreign as a file outside the cache: only
-        // this repository's own blobs/ holds bytes the plan may share.
         write_file(dir / "models--other--repo" / "blobs" / "blob.bin", foreign);
 
         const fs::path entry = snapshot / "model.bin";
