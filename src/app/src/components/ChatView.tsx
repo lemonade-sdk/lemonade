@@ -1001,6 +1001,7 @@ const ChatView: React.FC<ChatViewProps> = ({
   const realtimeRef = useRef<RealtimeTranscriptionHandle | null>(null);
   // Dictation uses an independent ASR model; the selected chat model stays the target for Send.
   const micSessionRef = useRef<'dictation' | 'transcription' | null>(null);
+  const micSessionIdRef = useRef(0);
   const lastDictationTextRef = useRef('');
   const finishDictationRef = useRef<(() => void) | null>(null);
   const isLiveRecordingRef = useRef(false);
@@ -2461,6 +2462,7 @@ ${finalText}`
   const handleMicStart = useCallback(async () => {
     if (!currentModel || !currentModelSnapshot || micPreparation !== null || isStreaming || capabilityBusy
       || (!supportsDictation && !supportsRealtimeAudio)) return;
+    const sessionId = ++micSessionIdRef.current;
     if (liveFinalizeTimerRef.current) {
       window.clearTimeout(liveFinalizeTimerRef.current);
       liveFinalizeTimerRef.current = null;
@@ -2476,6 +2478,20 @@ ${finalText}`
     micSessionRef.current = dictating ? 'dictation' : 'transcription';
     if (dictating) onDictationStart(currentModel);
     setMicPreparation(dictating ? t('Preparing dictation...') : t('Connecting microphone…'));
+    const isCurrent = () => sessionId === micSessionIdRef.current;
+    const failDictation = () => {
+      if (!dictating || !isCurrent() || micSessionRef.current !== 'dictation') return;
+      // Keep committed draft text when the socket closes after Stop.
+      if (liveFinalizeTimerRef.current !== null) return finishDictationRef.current?.();
+      ++micSessionIdRef.current;
+      micSessionRef.current = null;
+      const handle = realtimeRef.current;
+      realtimeRef.current = null;
+      handle?.close();
+      stopRecording();
+      clearLiveMicState();
+      onDictationEnd(true);
+    };
     try {
       const api = await getApiClient();
       let transcriptionModel = currentModel;
@@ -2502,26 +2518,38 @@ ${finalText}`
         }
       }
       const handle = await api.connectRealtimeTranscription(transcriptionModel, {
-        onConnected: () => setIsLiveConnected(true),
-        onDisconnected: () => setIsLiveConnected(false),
-        onError: message => setLiveError(message),
-        onSpeechEvent: handleLiveSpeechEvent,
-        onTranscription: handleLiveTranscription,
+        onConnected: () => { if (isCurrent()) setIsLiveConnected(true); },
+        onDisconnected: () => {
+          // A failed primary socket may still close while the legacy port connects.
+          if (!isCurrent() || !realtimeRef.current) return;
+          setIsLiveConnected(false);
+          if (dictating && liveFinalizeTimerRef.current === null) setLiveError('Realtime microphone disconnected.');
+          failDictation();
+        },
+        onError: message => { if (isCurrent()) { setLiveError(message); failDictation(); } },
+        onSpeechEvent: event => { if (isCurrent()) handleLiveSpeechEvent(event); },
+        onTranscription: (text, final) => { if (isCurrent()) handleLiveTranscription(text, final); },
       });
+      if (!isCurrent()) { handle.close(); return; }
+      if (!handle.isConnected()) throw new Error('Realtime microphone disconnected.');
       realtimeRef.current = handle;
       isLiveRecordingRef.current = true;
       await startRecording();
+      if (!isCurrent()) { stopRecording(); return; }
+      if (!handle.isConnected()) throw new Error('Realtime microphone disconnected.');
       setIsLiveRecording(true);
     } catch (err) {
+      if (!isCurrent()) return;
+      ++micSessionIdRef.current;
+      micSessionRef.current = null;
       realtimeRef.current?.close();
       realtimeRef.current = null;
       stopRecording();
       clearLiveMicState();
-      micSessionRef.current = null;
       if (dictating) onDictationEnd(true);
       setLiveError(friendlyErrorMessage(err));
     } finally {
-      setMicPreparation(null);
+      if (isCurrent() || micSessionRef.current === null) setMicPreparation(null);
     }
   }, [
     capabilityBusy,
@@ -2546,6 +2574,7 @@ ${finalText}`
   ]);
 
   const handleMicStop = useCallback(() => {
+    const sessionId = micSessionIdRef.current;
     stopRecording();
     const handle = realtimeRef.current;
     const dictating = micSessionRef.current === 'dictation';
@@ -2555,16 +2584,18 @@ ${finalText}`
     // A final ASR segment may arrive well after Stop on slower CPUs.
     // Finish when the server sends it, with a bounded fallback for silence/errors.
     const finish = () => {
+      if (sessionId !== micSessionIdRef.current) return;
       if (liveFinalizeTimerRef.current !== null) window.clearTimeout(liveFinalizeTimerRef.current);
       const finalText = liveTranscriptRef.current.trim();
       if (!dictating && finalText) appendLiveTranscript(finalText);
       if (dictating) requestAnimationFrame(() => inputRef.current?.focus());
       setLiveTranscript('');
       liveTranscriptRef.current = '';
-      handle?.close();
-      if (realtimeRef.current === handle) realtimeRef.current = null;
+      ++micSessionIdRef.current;
       micSessionRef.current = null;
+      if (realtimeRef.current === handle) realtimeRef.current = null;
       finishDictationRef.current = null;
+      handle?.close();
       liveFinalizeTimerRef.current = null;
       if (dictating) onDictationEnd();
     };
@@ -2574,10 +2605,12 @@ ${finalText}`
 
   useEffect(() => {
     return () => {
+      ++micSessionIdRef.current;
       stopRecording();
       realtimeRef.current?.close();
       if (liveFinalizeTimerRef.current) window.clearTimeout(liveFinalizeTimerRef.current);
       if (micSessionRef.current === 'dictation') onDictationEnd();
+      micSessionRef.current = null;
     };
   }, [onDictationEnd, stopRecording]);
 
