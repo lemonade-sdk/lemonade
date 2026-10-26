@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "comment": "Registry of AMD-maintained and community llama.cpp forks for nightly perf regression tracking. Add new forks by appending entries \u2014 no code changes needed. binary_url uses {version} as a placeholder substituted at runtime from the latest GitHub release tag.",
+  "comment": "Registry of AMD-maintained and community llama.cpp forks for nightly perf regression tracking. Add new forks by appending entries — no code changes needed. binary_url uses {version} as a placeholder substituted at runtime from the latest GitHub release tag.",
   "forks": [
     {
       "fork_id": "llamacpp-rocm-nightly",
@@ -54,7 +54,7 @@
       "runner_os": "linux",
       "arch": "gfx1151",
       "tracked": true,
-      "notes": "Nightly dated builds. Tag format: gfx11-rocm-nightly-YYYYMMDD. Single multiarch binary \u2014 covers all RDNA3/3.5 targets. Linux only, no Windows binary. Runs on Linux ROCm self-hosted runner."
+      "notes": "Nightly dated builds. Tag format: gfx11-rocm-nightly-YYYYMMDD. Single multiarch binary — covers all RDNA3/3.5 targets. Linux only, no Windows binary. Runs on Linux ROCm self-hosted runner."
     },
     {
       "fork_id": "llamacpp-upstream-vulkan",
