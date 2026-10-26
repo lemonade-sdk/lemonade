@@ -6,7 +6,7 @@
 
 namespace lemon {
 
-// Who stands behind a backend.
+// Support tier, defined in docs/dev/adding-a-backend.md#support-tier.
 enum class BackendTier {
     Core,
     Experimental,

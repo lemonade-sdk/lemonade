@@ -318,8 +318,8 @@ std::string build_prometheus_metrics(Router& router, const SystemMetrics& system
     metrics.describe("lemonade_model_output_tokens", "Latest output token count reported by a model.", "gauge");
     metrics.describe("lemonade_model_prompt_tokens", "Latest prompt token count reported by a model.", "gauge");
     metrics.describe("lemonade_model_cache_tokens", "Latest prompt tokens served from the backend prefix cache for a model.", "gauge");
-    metrics.describe("lemonade_model_time_to_first_token_seconds", "Latest time to first token reported by a model.", "gauge");
-    metrics.describe("lemonade_model_tokens_per_second", "Latest generation throughput reported by a model.", "gauge");
+    metrics.describe("lemonade_model_time_to_first_token_seconds", "Latest time to first token reported by a model; when the latest request's backend reports no timing, no sample is emitted and the series goes stale.", "gauge");
+    metrics.describe("lemonade_model_tokens_per_second", "Latest generation throughput reported by a model; when the latest request's backend reports no timing, no sample is emitted and the series goes stale.", "gauge");
     metrics.describe("lemonade_model_requests_total", "Cumulative inference requests observed for a model.", "counter");
     metrics.describe("lemonade_model_input_tokens_total", "Cumulative input tokens observed for a model.", "counter");
     metrics.describe("lemonade_model_output_tokens_total", "Cumulative output tokens observed for a model.", "counter");
