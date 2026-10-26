@@ -720,10 +720,11 @@ jobs:
                   leaderboard[key].append(entry)
                   leaderboard[key].sort(key=lambda e: e["tps_mean"], reverse=True)
 
-          # Accuracy pass/fail: within ACCURACY_TOLERANCE of the reference fork's
-          # score on the same model, so a model that is merely weak doesn't fail.
-          ACCURACY_TOLERANCE = 0.06
-          ref_forks = {f["fork_id"] for f in forks_config["forks"] if f.get("accuracy_reference")}
+          # Accuracy verdict by cross-backend vote: a backend deviates on a question
+          # it missed that >=75% of the other backends answered correctly, so
+          # questions the model itself is unsure of don't count. Needs 3+ complete
+          # results on the same question-set version.
+          MAX_DEVIATIONS = 2
           accuracy_detail = {}
           for entries in leaderboard.values():
             for e in entries:
@@ -741,7 +742,31 @@ jobs:
               slot = accuracy_detail.get(mdl, {}).get(fid)
               if acc and slot is not None and slot["run_id"] == rd.get("run_id"):
                 slot.update(passed=acc["passed"], total=acc["total"],
-                            failed={f["id"]: f["response"] for f in acc.get("failures", [])})
+                            version=acc.get("questions_version"),
+                            complete=not acc.get("errors"),
+                            failed={f["id"]: {"response": f["response"], "cut_off": f.get("cut_off", False)}
+                                    for f in acc.get("failures", [])})
+          for mdl, forks in accuracy_detail.items():
+            done = {f: d for f, d in forks.items() if "failed" in d}
+            versions = [d["version"] for d in done.values()]
+            current = max(set(versions), key=versions.count) if versions else None
+            voters = {f: d for f, d in done.items() if d["complete"] and d["version"] == current}
+            for d in done.values():
+              d["voters"] = len(voters)
+            if len(voters) < 3:
+              continue
+            missed = {}
+            for d in voters.values():
+              for qid in d["failed"]:
+                missed[qid] = missed.get(qid, 0) + 1
+            total = max(d["total"] for d in voters.values())
+            if total - sum(1 for n in missed.values() if n >= len(voters) / 2) < total / 2:
+              continue
+            others = len(voters) - 1
+            for f, d in done.items():
+              if f in voters:
+                d["deviations"] = sorted(q for q in d["failed"]
+                                         if (others - (missed[q] - 1)) / others >= 0.75)
           accuracy_questions = {}
           qpath = Path(".github/scripts/accuracy_questions.json")
           if qpath.exists():
@@ -753,11 +778,11 @@ jobs:
                           else f'{g["value"]}' + (f' ± {g["tolerance"]}' if g.get("tolerance") else ""))
               accuracy_questions[q["id"]] = {"category": q["category"], "prompt": q["prompt"], "expected": expected}
           for entries in leaderboard.values():
-            ref = next((e["accuracy"] for e in entries if e["fork_id"] in ref_forks and e.get("accuracy") is not None), None)
             for e in entries:
-              e["accuracy_ref"] = ref
-              e["accuracy_pass"] = (None if ref is None or e.get("accuracy") is None
-                                    else e["accuracy"] >= ref - ACCURACY_TOLERANCE)
+              d = accuracy_detail.get(e["model"], {}).get(e["fork_id"], {})
+              dev = d.get("deviations")
+              e["accuracy_deviations"] = None if dev is None else len(dev)
+              e["accuracy_pass"] = None if dev is None else len(dev) <= MAX_DEVIATIONS
 
           # Per-fork build-history series (for the trend/regression chart):
           # model -> scenario -> fork_id -> [ {version, timestamp, tps, run_url} ]
@@ -847,7 +872,6 @@ jobs:
             "lemonade_versions_seen": sorted(lemonade_versions, key=_vkey),
             "systems": list(systems.values()),
             "experimental_forks": experimental_forks,
-            "accuracy_reference": next(iter(sorted(ref_forks)), None),
             "accuracy_questions": accuracy_questions,
             "accuracy_detail": accuracy_detail,
             "by_model_scenario": leaderboard,

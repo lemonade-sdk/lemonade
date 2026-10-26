@@ -596,7 +596,7 @@ def run_accuracy(base_url: str, fork: dict, model: str) -> dict | None:
     except Exception as e:
         print(f"    [accuracy] load failed for {model}: {e}")
         return None
-    passed, failures = 0, []
+    passed, failures, errors = 0, [], []
     for q in qs["questions"]:
         body = {
             "model": model,
@@ -606,26 +606,39 @@ def run_accuracy(base_url: str, fork: dict, model: str) -> dict | None:
             ],
             "temperature": 0,
             "seed": 42,
-            "max_tokens": 512,
+            "max_tokens": 1024,
             "enable_thinking": False,
         }
         try:
             r = _lemond_post(base_url, "/api/v1/chat/completions", body, 300)
-            text = r["choices"][0]["message"].get("content") or ""
         except Exception as e:
-            text = f"<error: {e}>"
+            errors.append({"id": q["id"], "error": str(e)[:200]})
+            continue
+        choice = r["choices"][0]
+        msg = choice.get("message", {})
+        # Reasoning models (e.g. gpt-oss) can ignore enable_thinking and leave
+        # content empty; their final answer is then in the reasoning field.
+        text = msg.get("content") or msg.get("reasoning_content") or ""
         if grade_answer(text, q["grade"]):
             passed += 1
         else:
-            failures.append({"id": q["id"], "response": text[-300:]})
-    total = len(qs["questions"])
-    print(f"    [{model}] accuracy = {passed}/{total}", flush=True)
+            failures.append(
+                {
+                    "id": q["id"],
+                    "response": text[-300:],
+                    "cut_off": choice.get("finish_reason") == "length",
+                }
+            )
+    total = len(qs["questions"]) - len(errors)
+    note = f" ({len(errors)} request errors)" if errors else ""
+    print(f"    [{model}] accuracy = {passed}/{total}{note}", flush=True)
     return {
         "passed": passed,
         "total": total,
-        "score": round(passed / total, 4),
+        "score": round(passed / total, 4) if total else None,
         "questions_version": qs["version"],
         "failures": failures,
+        "errors": errors,
     }
 
 
