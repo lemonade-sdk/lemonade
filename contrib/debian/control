@@ -4,6 +4,7 @@ Maintainer: Mario Limonciello <superm1@debian.org>
 Section: utils
 Testsuite: autopkgtest-pkg-python
 Build-Depends:
+ cargo (>= 1.85) | cargo-1.85,
  cmake,
  debhelper-compat (= 13),
  dh-cmake,
@@ -17,6 +18,8 @@ Build-Depends:
  libcurl4-openssl-dev,
  libjs-katex,
  libmbedtls-dev,
+ libsodium-dev (>= 1.0.18),
+ libspdlog-dev,
  libssl-dev,
  libsystemd-dev,
  libwebsockets-dev,
@@ -41,6 +44,7 @@ Build-Depends:
  nodejs,
  pkgconf,
  python3,
+ rustc (>= 1.85) | rustc-1.85,
 Vcs-Browser: https://salsa.debian.org/debian/lemonade
 Vcs-Git: https://salsa.debian.org/debian/lemonade.git
 Homepage: https://lemonade-server.ai/

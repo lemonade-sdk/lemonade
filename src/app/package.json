@@ -39,6 +39,7 @@
     "test:directory-settings": "node tests/directory-settings.runtime.cjs",
     "test:model-list-backends": "node tests/model-list-backend-layout.runtime.cjs",
     "test:ui-regressions": "node tests/ui-regression-contracts.runtime.cjs && node tests/backend-manager-lifecycle.runtime.cjs",
+    "test:nexus-client": "node tests/nexus-client.runtime.cjs",
     "test:model-nav-filters": "node tests/model-nav-filter-layout.runtime.cjs",
     "test:model-state": "node tests/model-state-deduplication.runtime.cjs",
     "test:download-polling": "node tests/download-polling-lifecycle.runtime.cjs",

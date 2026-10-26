@@ -1,6 +1,8 @@
 import React, { lazy, Suspense, useState, useEffect, useCallback, useMemo, useRef, Component, ErrorInfo, ReactNode } from 'react';
 import type { LoadedModel, ModelInfo } from './api';
 import { Icon } from './components/Icon';
+import { NexusAccountMenu } from './components/NexusAccount';
+import { NexusAccountProvider } from './features/nexus/NexusAccountContext';
 import ChatView from './components/ChatView';
 import { scheduleIdleWork } from './startupScheduler';
 import { attachServerModelState, useServerModelState } from './features/models/modelState';
@@ -398,6 +400,16 @@ const App: React.FC = () => {
   const [clientDataResetNonce, setClientDataResetNonce] = useState(0);
   const [modelHelpers, setModelHelpers] = useState<ModelHelpers | null>(null);
   const [downloadManagerOpen, setDownloadManagerOpen] = useState(false);
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const openHeaderMenu = useCallback((menu: 'account' | 'downloads' | null) => {
+    setAccountMenuOpen(menu === 'account');
+    setDownloadManagerOpen(menu === 'downloads');
+    setUtilityMenuOpen(false);
+  }, []);
+  const handleAccountMenuChange = useCallback((open: boolean) => {
+    if (open) openHeaderMenu('account');
+    else setAccountMenuOpen(false);
+  }, [openHeaderMenu]);
   const downloadManagerMountedRef = useRef(false);
   if (downloadManagerOpen) downloadManagerMountedRef.current = true;
   const [modelDetailsRequest, setModelDetailsRequest] = useState<{ modelName: string; nonce: number } | null>(null);
@@ -413,6 +425,42 @@ const App: React.FC = () => {
   const utilityMenuRef = useRef<HTMLDivElement>(null);
   const utilityMenuTriggerRef = useRef<HTMLButtonElement>(null);
   const navigationSearchRef = useRef<HTMLInputElement>(null);
+  const titlebarRef = useRef<HTMLElement>(null);
+  const [searchCollapsed, setSearchCollapsed] = useState(true);
+  useEffect(() => {
+    const header = titlebarRef.current;
+    if (!header) return;
+    const nav = header.querySelector<HTMLElement>('.titlebar__nav')!;
+    const right = header.querySelector<HTMLElement>('.titlebar__right')!;
+    const search = header.querySelector<HTMLElement>('.titlebar__search')!;
+    const measure = () => {
+      if (window.innerWidth <= 768) return;
+      const style = getComputedStyle(header);
+      const expandedWidth = parseFloat(style.getPropertyValue('--header-search-width'));
+      const minimumGap = parseFloat(style.getPropertyValue('--header-control-gap'));
+      const wasCollapsed = header.classList.contains('titlebar--search-collapsed');
+      // Measure both controls expanded so compacting the account cannot cause a resize loop.
+      header.classList.remove('titlebar--search-collapsed');
+      const bounds = header.getBoundingClientRect();
+      const navBounds = nav.getBoundingClientRect();
+      const available = bounds.right - parseFloat(style.paddingRight)
+        - (bounds.left + bounds.width / 2 + navBounds.width / 2);
+      const controlsWidth = right.getBoundingClientRect().right - right.firstElementChild!.getBoundingClientRect().left;
+      const expandedControls = controlsWidth - search.getBoundingClientRect().width + expandedWidth;
+      header.classList.toggle('titlebar--search-collapsed', wasCollapsed);
+      setSearchCollapsed(previous => expandedControls + minimumGap + (previous ? 4 : 0) > available);
+    };
+    const observer = new ResizeObserver(measure);
+    const observeControls = () => {
+      observer.disconnect();
+      [header, nav, right, search, ...right.children].forEach(element => observer.observe(element));
+      measure();
+    };
+    const mutations = new MutationObserver(observeControls);
+    mutations.observe(right, { childList: true, subtree: true });
+    observeControls();
+    return () => { observer.disconnect(); mutations.disconnect(); };
+  }, []);
   const [isDesktop, setIsDesktop] = useState(false);
   const navigationSearchShortcut = /Mac|iPhone|iPad|iPod/.test(navigator.userAgent) ? '⌘ K' : 'Ctrl+K';
 
@@ -461,6 +509,8 @@ const App: React.FC = () => {
       });
 
       if (cancelled) return;
+
+      void downloadManagerView.preload().catch(() => undefined);
 
       // First warm only the two interactions users can notice immediately:
       // Models -> Details and Monitor -> Telemetry. This starts after reveal,
@@ -956,10 +1006,10 @@ const App: React.FC = () => {
   }, [handleModelSelect]);
 
   return (
-    <>
+    <NexusAccountProvider>
       <a href="#main-content" className="skip-link">{t('Skip to main content')}</a>
       <div className="app">
-        <header className={`titlebar${isDesktop ? ' titlebar--desktop' : ''}`} data-tauri-drag-region>
+        <header ref={titlebarRef} className={`titlebar titlebar--with-account${searchCollapsed ? ' titlebar--search-collapsed' : ''}${isDesktop ? ' titlebar--desktop' : ''}`} data-tauri-drag-region>
         <div className="titlebar__brand" data-tauri-drag-region>
           <span className="titlebar__brand-logo" data-tauri-drag-region>
             <span className="titlebar__brand-icon" aria-hidden="true" />
@@ -1128,17 +1178,11 @@ const App: React.FC = () => {
                 </span>
               </div>
               <button
-                className="titlebar__theme-toggle"
-                onClick={() => { toggleTheme(); setUtilityMenuOpen(false); }}
-                aria-label={t('Toggle theme')}
-                title={theme === 'dark' ? t('Switch to light mode') : t('Switch to dark mode')}
-              >
-                <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={16} />
-                <span className="titlebar__utility-label">{theme === 'dark' ? t('Light mode') : t('Dark mode')}</span>
-              </button>
-              <button
                 className={`titlebar__download-toggle${downloadManagerOpen ? ' is-active' : ''}${activeDownloadCount > 0 ? ' has-active-downloads' : ''}`}
-                onClick={() => { setDownloadManagerOpen(open => !open); setUtilityMenuOpen(false); }}
+                onClick={() => openHeaderMenu(downloadManagerOpen ? null : 'downloads')}
+                data-header-menu-trigger="downloads"
+                onPointerEnter={() => { void downloadManagerView.preload().catch(() => undefined); }}
+                onFocus={() => { void downloadManagerView.preload().catch(() => undefined); }}
                 aria-label={t('Open download manager')}
                 aria-expanded={downloadManagerOpen}
                 title={t('Download manager')}
@@ -1149,8 +1193,11 @@ const App: React.FC = () => {
               </button>
             </div>
           </div>
+          <NexusAccountMenu open={accountMenuOpen} onOpenChange={handleAccountMenuChange}
+            theme={theme} onToggleTheme={toggleTheme}
+            onOpenPage={() => navigateToRoute({ view: 'connect', section: 'nexus' })} />
           {isDesktop && (
-            <>
+            <div className="titlebar__window-controls" data-tauri-drag-region="false">
               <button
                 className="titlebar__window-btn titlebar__window-btn--minimize"
                 data-tauri-drag-region="false"
@@ -1178,13 +1225,19 @@ const App: React.FC = () => {
               >
                 <Icon name="x" size={15} className="titlebar__window-icon" />
               </button>
-            </>
+            </div>
           )}
         </div>
       </header>
 
       {downloadManagerMountedRef.current && (
-        <Suspense fallback={downloadManagerOpen ? <ViewLoadingFallback label={t('Loading downloads')} /> : null}>
+        <Suspense fallback={downloadManagerOpen ? (
+          <div className="download-manager" role="dialog" aria-modal="false" aria-label={t('Download manager')} onClick={() => setDownloadManagerOpen(false)}>
+            <div className="download-manager__panel" onClick={event => event.stopPropagation()}>
+              <ViewLoadingFallback label={t('Loading downloads')} />
+            </div>
+          </div>
+        ) : null}>
           <DownloadManager isVisible={downloadManagerOpen} onClose={() => setDownloadManagerOpen(false)} />
         </Suspense>
       )}
@@ -1282,7 +1335,7 @@ const App: React.FC = () => {
         )}
       </main>
       </div>
-    </>
+    </NexusAccountProvider>
   );
 };
 

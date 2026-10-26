@@ -44,6 +44,11 @@ runs:
         done
         $success
 
+    - name: Vendor Rust crates
+      # The package must build offline (Launchpad), so its source carries the crates.
+      shell: bash
+      run: debian/vendor-rust-crates
+
     - name: Build Debian package
       id: build
       shell: bash

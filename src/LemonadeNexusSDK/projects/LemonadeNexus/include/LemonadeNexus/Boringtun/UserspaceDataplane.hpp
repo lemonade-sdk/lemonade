@@ -1,0 +1,280 @@
+#pragma once
+
+/// Fully in-process boringtun dataplane.
+///
+/// One UDP socket + one boringtun Noise session per peer + a userspace
+/// cryptokey router. No TUN device, no kernel interface, no elevated
+/// privileges: tunnel keys and plaintext never leave this process.
+///
+/// Decrypted packets are routed in userspace:
+///   - dst == one of our virtual IPs  -> inbound handler (in-process netstack)
+///   - dst in another peer's allowed IPs -> re-encrypted and sent (hairpin),
+///     when the forwarding policy allows it (see ForwardPolicy)
+///   - anything else -> dropped by cryptokey routing
+///
+/// Incoming UDP datagrams are demultiplexed O(1): boringtun tags each local
+/// session receiver index with the tunnel index we assign per peer
+/// (receiver_idx >> 8), so transport packets never trial-decrypt. Handshake
+/// initiations (rare) are identified with a single anonymous parse.
+///
+/// Plain class (not a CRTP service) so tests can run several instances in
+/// one process. BoringtunService owns one and delegates to it.
+
+#include <LemonadeNexus/Boringtun/IBoringtunProvider.hpp>
+#include <LemonadeNexus/Boringtun/IpRouter.hpp>
+
+#include <atomic>
+#include <cstdint>
+#include <functional>
+#include <memory>
+#include <shared_mutex>
+#include <span>
+#include <string>
+#include <thread>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
+
+struct Tunn;  // boringtun_ffi.h
+
+namespace nexus::boringtun {
+
+/// Authorization for packets that the dataplane forwards from one peer to
+/// another peer. It does not affect packets for our own virtual addresses.
+///
+/// Each peer is identified by its primary address: the first /32 entry of its
+/// allowed IPs (its tunnel IP). The inner source address is checked against
+/// the sending peer's allowed IPs before this policy applies, so a peer cannot
+/// claim another peer's primary address.
+///
+/// Rules, in order:
+///   1. A peer without a /32 allowed-IPs entry is unknown: drop.
+///   2. A peer whose primary address is outside `governed` is
+///      infrastructure (for example a backbone server): forward.
+///   3. A primary address in `open` (for example a relay): forward.
+///   4. The pair (source, destination) is in `allowed`: forward.
+///   5. The pair (destination, source) is in `allowed`, and the packet is a
+///      reply: forward. A reply is a TCP segment that is not a bare SYN, or
+///      an ICMP echo reply, destination-unreachable, or time-exceeded
+///      message. A non-first IPv4 fragment is not a reply.
+///   6. Anything else: drop.
+/// The policy is immutable after it is built; replace it to change it.
+struct ForwardPolicy {
+    Cidr                         governed;
+    std::unordered_set<uint32_t> open;
+    std::unordered_set<uint64_t> allowed;  ///< key(source, destination)
+
+    /// Key for an ordered pair of primary addresses (host byte order).
+    [[nodiscard]] static constexpr uint64_t key(uint32_t src, uint32_t dst) {
+        return (static_cast<uint64_t>(src) << 32) | dst;
+    }
+};
+
+class UserspaceDataplane {
+public:
+    struct Config {
+        std::string private_key_b64;   ///< Our Curve25519 private key
+        std::string public_key_b64;    ///< Our Curve25519 public key
+        uint16_t    listen_port{51940};
+        int         rx_threads{2};
+        /// Maximum plaintext IP packet we will emit/accept on the local seam.
+        uint32_t    mtu{1420};
+    };
+
+    /// Receives decrypted IP packets addressed to one of our virtual IPs.
+    /// Called from dataplane rx threads — must not block.
+    using InboundIpHandler = std::function<void(std::span<const uint8_t>)>;
+
+    UserspaceDataplane() = default;
+    ~UserspaceDataplane();
+
+    UserspaceDataplane(const UserspaceDataplane&)            = delete;
+    UserspaceDataplane& operator=(const UserspaceDataplane&) = delete;
+
+    /// Bind the UDP socket and start rx/timer threads.
+    [[nodiscard]] bool start(const Config& config);
+    void stop();
+    [[nodiscard]] bool is_running() const { return running_.load(std::memory_order_relaxed); }
+
+    /// Port the socket actually bound (useful when config.listen_port == 0).
+    [[nodiscard]] uint16_t bound_port() const { return bound_port_; }
+
+    // ---- control plane -----------------------------------------------------
+
+    /// Register a virtual local address (host order) the router answers for.
+    void add_local_ip(uint32_t ip_host_order);
+    void remove_local_ip(uint32_t ip_host_order);
+
+    [[nodiscard]] bool add_peer(const std::string& pubkey_b64,
+                                const std::string& allowed_ips,
+                                const std::string& endpoint,
+                                uint16_t persistent_keepalive = 25);
+
+    /// Add an identity-keyed E2E session for the routing layer: keyed purely by
+    /// the peer's Noise static (which the caller MUST take from a verified,
+    /// root-signed IdentityBinding), with NO virtual-IP routing — it is not
+    /// added to the cryptokey router. Decrypted frames are delivered to `sink`.
+    /// This is the add-time authorization gate: only an authorized peer is ever
+    /// added, and revocation is `remove_peer`. The HELLO handshake and payload
+    /// gate are an app-layer protocol carried over this session (the dataplane
+    /// only moves encrypted IP frames).
+    [[nodiscard]] bool add_identity_session(const std::string& pubkey_b64,
+                                            const std::string& conn_id,
+                                            const std::string& endpoint,
+                                            bool is_initiator,
+                                            InboundIpHandler sink,
+                                            uint16_t persistent_keepalive = 25);
+
+    /// Encrypt and send an IP packet over an existing identity session.
+    [[nodiscard]] bool send_on_session(const std::string& pubkey_b64,
+                                       std::span<const uint8_t> ip_packet);
+
+    [[nodiscard]] bool remove_peer(const std::string& pubkey_b64);
+    [[nodiscard]] bool has_peer(const std::string& pubkey_b64) const;
+    [[nodiscard]] bool update_endpoint(const std::string& pubkey_b64,
+                                       const std::string& endpoint);
+
+    /// Send a fresh handshake initiation for `pubkey_b64` to `endpoint`
+    /// ("a.b.c.d:port") without changing the peer's stored endpoint. This is
+    /// the hole-punch probe: the outbound packet opens this side's NAT
+    /// mapping toward `endpoint`. Only a valid handshake response from that
+    /// address moves the peer there (normal authenticated roaming). The
+    /// peer's current session stays in use until a new handshake completes.
+    /// False when the dataplane is stopped, the peer is unknown, or the
+    /// endpoint does not parse. Thread-safe.
+    [[nodiscard]] bool probe_endpoint(const std::string& pubkey_b64,
+                                      const std::string& endpoint);
+    [[nodiscard]] std::vector<BoringtunPeer> snapshot_peers() const;
+    [[nodiscard]] size_t peer_count() const;
+
+    /// Primary address (host order) -> public key, for every IP-routed peer
+    /// that has a /32 allowed-IPs entry. Identity sessions are left out.
+    /// Thread-safe.
+    [[nodiscard]] std::unordered_map<uint32_t, std::string> primary_address_peers() const;
+
+    /// A counter that changes whenever a peer's routes are added, replaced,
+    /// or removed. Read it before primary_address_peers(): a later change
+    /// then gives a different value. Thread-safe.
+    [[nodiscard]] uint64_t routes_generation() const { return routes_generation_.load(); }
+
+    // ---- termination-layer seam ---------------------------------------------
+
+    void set_inbound_handler(InboundIpHandler handler);
+
+    /// Receives STUN messages (stun::is_stun_message) that arrive on the
+    /// dataplane socket, with the sender as "a.b.c.d:port". These datagrams
+    /// never reach a Noise session and change no peer state. Called from
+    /// dataplane rx threads: must not block. Without a handler they are
+    /// dropped.
+    using StunHandler = std::function<void(std::span<const uint8_t>, const std::string&)>;
+    void set_stun_handler(StunHandler handler);
+
+    /// Send one STUN message from the dataplane socket to `endpoint`
+    /// ("a.b.c.d:port"), so the reply reports the NAT mapping that the mesh
+    /// traffic uses. False when the dataplane is stopped, the endpoint does
+    /// not parse, or `message` is not a STUN message. Thread-safe.
+    [[nodiscard]] bool send_stun(const std::string& endpoint, std::span<const uint8_t> message);
+
+    /// Route + encrypt a locally-originated IP packet. Returns false if the
+    /// destination has no route or no usable endpoint.
+    bool send_outbound_ip_packet(std::span<const uint8_t> ip_packet);
+
+    // ---- forwarding authorization --------------------------------------------
+
+    /// Replace the policy for peer-to-peer forwarding. The swap is atomic for
+    /// the receive path. Without a policy (the default, and after nullptr),
+    /// every route is forwarded: a client dataplane uses no policy. A server
+    /// installs one before it accepts peers. Thread-safe.
+    void set_forward_policy(std::shared_ptr<const ForwardPolicy> policy);
+
+    /// Number of forwarded packets the policy has dropped since start.
+    [[nodiscard]] uint64_t forward_denied_count() const {
+        return forward_denied_.load(std::memory_order_relaxed);
+    }
+
+private:
+    struct Peer {
+        Tunn*            tunn{nullptr};
+        uint32_t         index{0};        ///< 24-bit tunnel index (>=1)
+        std::string      pubkey_b64;
+        std::string      allowed_ips;
+        std::vector<Cidr> cidrs;
+        /// First /32 entry of `cidrs` (the tunnel IP), 0 when there is none.
+        /// Written with cidrs under tables_mtx_.
+        uint32_t         primary_addr{0};
+        /// Packed endpoint: (ipv4_host << 16) | port. 0 = unknown (NATed
+        /// client not yet heard from). Atomic so the hot path never takes
+        /// the table lock to roam.
+        std::atomic<uint64_t> endpoint{0};
+        uint16_t         keepalive{25};
+
+        // Identity-keyed routing-layer session: not in the IpRouter; decrypted
+        // frames go straight to `sink` (set once at creation, never reassigned).
+        bool             identity_keyed{false};
+        std::string      conn_id;
+        InboundIpHandler sink;
+
+        ~Peer();
+    };
+    using PeerPtr = std::shared_ptr<Peer>;
+
+    void rx_loop();
+    void timer_loop();
+
+    /// Process one received datagram.
+    void handle_datagram(std::span<const uint8_t> pkt, uint64_t from_packed,
+                         std::vector<uint8_t>& scratch_a,
+                         std::vector<uint8_t>& scratch_b);
+
+    /// Route a decrypted IPv4 packet from `src` (already authenticated).
+    void route_decrypted(std::span<const uint8_t> ip_pkt, const PeerPtr& src,
+                         std::vector<uint8_t>& scratch);
+
+    /// Encrypt `ip_pkt` for `dst` and send it to its current endpoint.
+    bool encrypt_and_send(const PeerPtr& dst, std::span<const uint8_t> ip_pkt,
+                          std::vector<uint8_t>& scratch);
+
+    /// Drain queued follow-up output from a Tunn after a read/handshake.
+    void drain_followups(const PeerPtr& peer, uint64_t to_packed,
+                         std::vector<uint8_t>& scratch_a,
+                         std::vector<uint8_t>& scratch_b);
+
+    void send_udp(const uint8_t* data, size_t len, uint64_t to_packed);
+
+    /// Apply forward_policy_ to a packet from `src` routed to `dst`. Caller
+    /// holds tables_mtx_ (shared or exclusive).
+    [[nodiscard]] bool forward_allowed_locked(const Peer& src, const Peer& dst,
+                                              std::span<const uint8_t> ip_pkt) const;
+
+    /// Count a policy drop and log at most once per interval.
+    void note_forward_denied(const Peer& src, const Peer& dst);
+
+    [[nodiscard]] PeerPtr peer_by_index(uint32_t index) const;
+    [[nodiscard]] PeerPtr peer_by_pubkey(const std::string& pubkey_b64) const;
+
+    Config config_;
+    std::atomic<bool> running_{false};
+    uint16_t bound_port_{0};
+    intptr_t socket_{-1};
+
+    mutable std::shared_mutex tables_mtx_;
+    std::unordered_map<std::string, PeerPtr> by_pubkey_;
+    std::unordered_map<uint32_t, PeerPtr>    by_index_;
+    IpRouter<PeerPtr>                        router_;
+    uint32_t                                 next_index_{1};
+    std::vector<uint32_t>                    free_indices_;
+    std::shared_ptr<const ForwardPolicy>     forward_policy_;  ///< guarded by tables_mtx_
+
+    std::atomic<uint64_t> routes_generation_{0};  ///< changed under tables_mtx_
+    std::atomic<uint64_t> forward_denied_{0};
+    std::atomic<int64_t>  forward_denied_logged_ms_{0};
+
+    mutable std::shared_mutex inbound_mtx_;
+    InboundIpHandler          inbound_;
+    StunHandler               stun_handler_;  ///< guarded by inbound_mtx_
+
+    std::vector<std::thread> rx_workers_;
+    std::thread              timer_thread_;
+};
+
+} // namespace nexus::boringtun

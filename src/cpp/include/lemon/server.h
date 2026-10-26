@@ -17,6 +17,7 @@
 
 #include <httplib.h>
 
+#include "lemon/nexus_manager.h"
 #include "lemon/runtime_config.h"
 #include "lemon/server/server_context.h"
 
@@ -87,6 +88,8 @@ private:
     std::unique_ptr<RequestMiddleware> middleware_;
     std::unique_ptr<WebUi> web_ui_;
     std::unique_ptr<HttpListener> listener_;
+    // Last, so it is destroyed first: its listeners serve the middleware and routes above.
+    std::unique_ptr<NexusManager> nexus_manager_;
 
     std::thread model_cache_warmup_thread_;
     struct SyncTaskThread {

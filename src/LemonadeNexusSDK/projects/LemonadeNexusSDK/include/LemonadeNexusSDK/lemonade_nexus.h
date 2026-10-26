@@ -1,0 +1,915 @@
+#ifndef LEMONADE_NEXUS_SDK_H
+#define LEMONADE_NEXUS_SDK_H
+
+/**
+ * @file lemonade_nexus.h
+ * @brief C API for the Lemonade Nexus Client SDK.
+ *
+ * Opaque-handle API suitable for FFI from Python, Go, Rust, Swift, etc.
+ * All complex outputs are returned as JSON strings via char** out_json.
+ * Use ln_free() to release any string returned by the API.
+ */
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#include <stdint.h>
+#include <stddef.h>
+
+/* Shared FFI build is compiled with hidden visibility; mark the ln_* C API
+ * default-visible so only it is exported (MSVC uses WINDOWS_EXPORT_ALL_SYMBOLS). */
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC visibility push(default)
+#endif
+
+/* ------------------------------------------------------------------ */
+/* Error codes                                                         */
+/* ------------------------------------------------------------------ */
+
+typedef enum {
+    LN_OK             =  0,
+    LN_ERR_NULL_ARG   = -1,
+    LN_ERR_CONNECT    = -2,
+    LN_ERR_AUTH       = -3,
+    LN_ERR_NOT_FOUND  = -4,
+    LN_ERR_REJECTED   = -5,
+    LN_ERR_NO_IDENTITY = -6,
+    LN_ERR_PARSE      = -7, ///< Malformed response: HTTP 2xx with a body that did not
+    LN_ERR_UNSUPPORTED = -8, ///< Retired operation: no server endpoint exists; kept
+                            ///< exported so existing bindings fail explicitly.
+                            ///< deserialize (e.g. a node endpoint returned 200 with a
+                            ///< body that is not a valid TreeNode). Distinct from
+                            ///< LN_ERR_NOT_FOUND (404), LN_ERR_AUTH (401/403) and
+                            ///< LN_ERR_CONNECT (no transport / network error).
+    LN_ERR_PORT_IN_USE = -9, ///< Another socket already owns the requested loopback
+                             ///< port. Returned by ln_mesh_port_start.
+    LN_ERR_INTERNAL   = -99
+} ln_error_t;
+
+/* ------------------------------------------------------------------ */
+/* Opaque handles                                                      */
+/* ------------------------------------------------------------------ */
+
+typedef struct ln_client_s  ln_client_t;
+typedef struct ln_identity_s ln_identity_t;
+
+/* ------------------------------------------------------------------ */
+/* Memory management                                                   */
+/* ------------------------------------------------------------------ */
+
+/** Free a string returned by any ln_* function. */
+void ln_free(char* ptr);
+
+/* ------------------------------------------------------------------ */
+/* Client lifecycle                                                    */
+/* ------------------------------------------------------------------ */
+
+/** Create a client connecting to host:port (plaintext HTTP). */
+ln_client_t* ln_create(const char* host, uint16_t port);
+
+/** Create a client connecting to host:port (TLS). */
+ln_client_t* ln_create_tls(const char* host, uint16_t port);
+
+/** Destroy a client and release resources. */
+void ln_destroy(ln_client_t* client);
+
+/* ------------------------------------------------------------------ */
+/* Identity management                                                 */
+/* ------------------------------------------------------------------ */
+
+/** Generate a new Ed25519 identity keypair. */
+ln_identity_t* ln_identity_generate(void);
+
+/** Load an identity from a JSON file. */
+ln_identity_t* ln_identity_load(const char* path);
+
+/** Save an identity to a JSON file. */
+ln_error_t ln_identity_save(const ln_identity_t* identity, const char* path);
+
+/** Get the public key string ("ed25519:<base64>"). Caller must ln_free(). */
+char* ln_identity_pubkey(const ln_identity_t* identity);
+
+/** Destroy an identity and release resources. */
+void ln_identity_destroy(ln_identity_t* identity);
+
+/** Configure device-hosted account images after ln_set_identity.
+ * cache_root is an absolute UTF-8 directory on this device, scoped to its identity.
+ * The client owns the image service and a copy of the identity until destruction.
+ * Do not configure concurrently with other avatar calls. No mesh connection is
+ * needed until get/put. No image bytes are uploaded to the Nexus API.
+ */
+ln_error_t ln_account_avatar_configure(ln_client_t* client, const ln_identity_t* identity, const char* cache_root);
+
+/** Sign a v2 image reference containing only group, author, revision and SHA-256.
+ * image is a normalized PNG data URL up to 128 KiB and 128x128 pixels, or "" to
+ * remove. revision is 1..2^53-1. Membership and Read/Write are checked separately.
+ * No network request. Caller owns *out_json on success and must ln_free it.
+ * Failure sets *out_json to null. Identity must remain alive during this call.
+ */
+ln_error_t ln_account_avatar_sign(const ln_identity_t* identity, const char* group_id,
+                                  const char* image, uint64_t revision, char** out_json);
+
+/** Read current references/permissions over the private API, then obtain bytes
+ * from the local cache or authorized devices over the encrypted mesh. Returns
+ * {group_id,revision,can_write,image,pending}. pending=true means no copy was
+ * available; it is not a removal. Requires configure, authentication and join.
+ * Caller owns *out_json (success or refusal); release it with ln_free. Unsupported
+ * reference protocols return LN_ERR_UNSUPPORTED; missing APIs LN_ERR_NOT_FOUND.
+ */
+ln_error_t ln_account_avatar_get(ln_client_t* client, char** out_json);
+
+/** Cache image locally and publish only the matching signed reference. Empty
+ * image is removal. Does not retry conflicting writes. Ownership/errors follow
+ * avatar_get. Lost responses retain the staged local copy for later retrieval.
+ */
+ln_error_t ln_account_avatar_put(ln_client_t* client, const char* record_json, const char* image, char** out_json);
+
+/** Attach an identity to a client for delta signing. */
+ln_error_t ln_set_identity(ln_client_t* client, const ln_identity_t* identity);
+
+/* ------------------------------------------------------------------ */
+/* Health                                                              */
+/* ------------------------------------------------------------------ */
+
+/** GET /api/health. Returns JSON via out_json. Caller must ln_free(*out_json). */
+ln_error_t ln_health(ln_client_t* client, char** out_json);
+
+/* ------------------------------------------------------------------ */
+/* Authentication                                                      */
+/* ------------------------------------------------------------------ */
+
+/** Authenticate with username/password. Returns JSON via out_json. */
+ln_error_t ln_auth_password(ln_client_t* client,
+                             const char* username,
+                             const char* password,
+                             char** out_json);
+
+/** Authenticate with passkey/FIDO2 data (JSON string). Returns JSON via out_json. */
+ln_error_t ln_auth_passkey(ln_client_t* client,
+                            const char* passkey_json,
+                            char** out_json);
+
+/** Issue the WebAuthn assertion challenge bound to user_id (POST /api/auth/challenge).
+ *  The assertion's clientDataJSON must carry the returned challenge. Returns
+ *  {"challenge":"base64url"} via out_json. */
+ln_error_t ln_auth_passkey_challenge(ln_client_t* client,
+                                     const char* user_id,
+                                     char** out_json);
+
+/** Authenticate with a token-link token. Returns JSON via out_json. */
+ln_error_t ln_auth_token(ln_client_t* client,
+                          const char* token,
+                          char** out_json);
+
+/* ------------------------------------------------------------------ */
+/* Tree operations                                                     */
+/* ------------------------------------------------------------------ */
+
+/** GET /api/tree/node/{id}. Returns JSON via out_json. */
+ln_error_t ln_tree_get_node(ln_client_t* client,
+                             const char* node_id,
+                             char** out_json);
+
+/** POST /api/tree/delta. delta_json is a JSON string of the delta. */
+ln_error_t ln_tree_submit_delta(ln_client_t* client,
+                                 const char* delta_json,
+                                 char** out_json);
+
+/** Create a child node under parent_id. SDK handles delta signing.
+ *  node_type: "endpoint", "customer", "relay". Returns JSON via out_json. */
+ln_error_t ln_create_child_node(ln_client_t* client,
+                                 const char* parent_id,
+                                 const char* node_type,
+                                 char** out_json);
+
+/** Update an existing node. updates_json is a JSON object with fields to change.
+ *  SDK handles delta signing. Returns JSON via out_json. */
+ln_error_t ln_update_node(ln_client_t* client,
+                           const char* node_id,
+                           const char* updates_json,
+                           char** out_json);
+
+/** Delete a node. SDK handles delta signing. Returns JSON via out_json. */
+ln_error_t ln_delete_node(ln_client_t* client,
+                           const char* node_id,
+                           char** out_json);
+
+/* ------------------------------------------------------------------ */
+/* IPAM                                                                */
+/* ------------------------------------------------------------------ */
+
+/** POST /api/ipam/allocate. block_type: "tunnel", "private", "shared". */
+ln_error_t ln_ipam_allocate(ln_client_t* client,
+                             const char* node_id,
+                             const char* block_type,
+                             char** out_json);
+
+/* ------------------------------------------------------------------ */
+/* Relay                                                               */
+/* ------------------------------------------------------------------ */
+
+/** GET /api/relay/list. Returns JSON array via out_json. */
+ln_error_t ln_relay_list(ln_client_t* client, char** out_json);
+
+/** POST /api/relay/ticket. Returns JSON via out_json: {peer_id, relay_id,
+ *  session_nonce, issued_at, expires_at, network_id, epoch, issuer, signature}.
+ *  A Tier 1 server signs the ticket; any relay verifies it against its
+ *  verified Tier 1 membership. relay_id must be the relay's base64 node
+ *  identity key. peer_id must be the caller's own node id. On failure the
+ *  JSON carries "error" and the code reflects the HTTP status. */
+ln_error_t ln_relay_ticket(ln_client_t* client,
+                            const char* peer_id,
+                            const char* relay_id,
+                            char** out_json);
+
+/** POST /api/relay/register. reg_json is a JSON string. */
+ln_error_t ln_relay_register(ln_client_t* client,
+                              const char* reg_json,
+                              char** out_json);
+
+/* ------------------------------------------------------------------ */
+/* Certificates                                                        */
+/* ------------------------------------------------------------------ */
+
+/** GET /api/certs/{domain}. Returns JSON via out_json. */
+ln_error_t ln_cert_status(ln_client_t* client,
+                           const char* domain,
+                           char** out_json);
+
+/** POST /api/certs/issue — request a TLS cert for this client's hostname.
+ *  Returns JSON with encrypted cert bundle. Caller must ln_free(*out_json). */
+ln_error_t ln_cert_request(ln_client_t* client,
+                            const char* hostname,
+                            char** out_json);
+
+/** Decrypt an issued certificate bundle. bundle_json is the JSON from ln_cert_request.
+ *  Returns JSON with {domain, fullchain_pem, privkey_pem, expires_at}.
+ *  Caller must ln_free(*out_json). */
+ln_error_t ln_cert_decrypt(ln_client_t* client,
+                            const char* bundle_json,
+                            char** out_json);
+
+/** The ln_cert_renew_if_needed() target that names this device's group
+ *  loopback wildcard certificate, "*.<group-label>.lo.<base_domain>". */
+#define LN_CERT_GROUP_LOOPBACK "*"
+
+/** POST /api/certs/issue with scope "group_loopback" — request the wildcard
+ *  certificate "*.<group-label>.lo.<base_domain>" of this device's group.
+ *  Every name under it resolves to 127.0.0.1. Every device of the group gets
+ *  the same private key. Requires an identity (ln_set_identity) and the
+ *  session of a joined device of the group; other callers get LN_ERR_AUTH.
+ *  Returns the same bundle JSON as ln_cert_request; decrypt it with
+ *  ln_cert_decrypt. Caller must ln_free(*out_json). */
+ln_error_t ln_cert_request_group(ln_client_t* client, char** out_json);
+
+/** Called once after each certificate renewal, when both files are replaced.
+ *  event_json: {target, domain, fullchain_path, privkey_path, expires_at}.
+ *  event_json is valid only during the call; do not free it. Runs on an SDK
+ *  background thread or on the thread that called ln_cert_renew_if_needed.
+ *  The function must return normally (no longjmp, no C++ exception) and must
+ *  not call ln_set_cert_renewed_callback or ln_destroy for this client. */
+typedef void (*ln_cert_renewed_fn)(const char* event_json, void* user);
+
+/** Set the renewal callback and its user pointer (fn NULL clears it). When
+ *  this returns, the previous callback is not running and is not called
+ *  again, so its user data may be released. No callback runs after
+ *  ln_destroy returns. Returns LN_ERR_NULL_ARG when client is NULL. */
+ln_error_t ln_set_cert_renewed_callback(ln_client_t* client,
+                                        ln_cert_renewed_fn fn,
+                                        void* user);
+
+/** Keep a certificate in cert_dir current. hostname is the node hostname of
+ *  the device certificate, or LN_CERT_GROUP_LOOPBACK. When
+ *  cert_dir/fullchain.pem is missing or less than one third of its lifetime
+ *  remains, requests the certificate (ln_cert_request flow), decrypts it,
+ *  checks that the key matches, and replaces cert_dir/privkey.pem (mode 0600)
+ *  and cert_dir/fullchain.pem through temporary files and rename. Then the
+ *  renewal callback runs. On failure the old files stay. Registers the
+ *  certificate for background renewal while the mesh is enabled; background
+ *  attempts back off from 60 s to 6 h after failures. Blocks on the network
+ *  when a request is due.
+ *  out_json: {status: "renewed"|"not_due"|"failed", domain, expires_at,
+ *  fullchain_path, privkey_path, error?}. Returns LN_OK for "renewed" and
+ *  "not_due"; otherwise an error code (LN_ERR_AUTH, LN_ERR_CONNECT, ...).
+ *  Caller must ln_free(*out_json). */
+ln_error_t ln_cert_renew_if_needed(ln_client_t* client,
+                                   const char* hostname,
+                                   const char* cert_dir,
+                                   char** out_json);
+
+/* ------------------------------------------------------------------ */
+/* Tree: children                                                      */
+/* ------------------------------------------------------------------ */
+
+/** GET /api/tree/children/{parent_id}. Returns JSON array via out_json. */
+ln_error_t ln_tree_get_children(ln_client_t* client,
+                                 const char* parent_id,
+                                 char** out_json);
+
+/* ------------------------------------------------------------------ */
+/* Passkey registration                                                */
+/* ------------------------------------------------------------------ */
+
+/** POST /api/auth/register — register a passkey credential. */
+ln_error_t ln_register_passkey(ln_client_t* client,
+                                const char* user_id,
+                                const char* credential_id,
+                                const char* public_key_x,
+                                const char* public_key_y,
+                                char** out_json);
+
+/* ------------------------------------------------------------------ */
+/* Group membership                                                    */
+/* ------------------------------------------------------------------ */
+
+/** Set a member's permissions on a node, replacing its entry. permissions_json
+ *  is a JSON array of permission names. The caller must hold "admin" on the node
+ *  or an ancestor, and pubkey must belong to a device that joined inside that
+ *  admin's group; the server refuses anything else. */
+ln_error_t ln_add_group_member(ln_client_t* client,
+                                const char* node_id,
+                                const char* pubkey,
+                                const char* permissions_json,
+                                char** out_json);
+
+/** Remove a member's entry from a node. Same rules as ln_add_group_member. */
+ln_error_t ln_remove_group_member(ln_client_t* client,
+                                   const char* node_id,
+                                   const char* pubkey,
+                                   char** out_json);
+
+/** Get members (assignments) of a group node. Returns JSON array via out_json. */
+ln_error_t ln_get_group_members(ln_client_t* client,
+                                 const char* node_id,
+                                 char** out_json);
+
+/** Join an existing group: create endpoint child + allocate tunnel IP. */
+ln_error_t ln_join_group(ln_client_t* client,
+                          const char* parent_node_id,
+                          char** out_json);
+
+/* ------------------------------------------------------------------ */
+/* High-level operations                                               */
+/* ------------------------------------------------------------------ */
+
+/** Authenticate + create node + allocate IP. Returns JSON via out_json. */
+ln_error_t ln_join_network(ln_client_t* client,
+                            const char* username,
+                            const char* password,
+                            char** out_json);
+
+/** Submit delete_node delta for current node. */
+ln_error_t ln_leave_network(ln_client_t* client, char** out_json);
+
+/* ------------------------------------------------------------------ */
+/* Latency-based auto-switching                                        */
+/* ------------------------------------------------------------------ */
+
+/** Enable automatic server switching based on latency.
+ *  @param threshold_ms  RTT threshold to trigger switch evaluation (default 200.0)
+ *  @param hysteresis    Fraction by which new server must be better (default 0.3 = 30%)
+ *  @param cooldown_sec  Minimum seconds between switches (default 60)
+ */
+ln_error_t ln_enable_auto_switching(ln_client_t* client,
+                                     double threshold_ms,
+                                     double hysteresis,
+                                     uint32_t cooldown_sec);
+
+/** Disable automatic server switching. */
+ln_error_t ln_disable_auto_switching(ln_client_t* client);
+
+/** Get current latency to the active server in milliseconds.
+ *  Returns 0.0 if auto-switching is not enabled. */
+double ln_current_latency_ms(ln_client_t* client);
+
+/** Get latency stats for all known servers. Returns JSON array via out_json.
+ *  Each element: {host, port, smoothed_rtt_ms, reachable, consecutive_failures}.
+ *  Caller must ln_free(*out_json). */
+ln_error_t ln_server_latencies(ln_client_t* client, char** out_json);
+
+/* ------------------------------------------------------------------ */
+/* Mesh dataplane                                                      */
+/* ------------------------------------------------------------------ */
+
+/** Generate a Curve25519 keypair for the mesh dataplane.
+ *  Returns JSON: {private_key: "base64", public_key: "base64"}.
+ *  Caller must ln_free(). */
+char* ln_generate_keypair(void);
+
+/* ------------------------------------------------------------------ */
+/* Mesh P2P networking                                                 */
+/* ------------------------------------------------------------------ */
+
+/** Enable mesh networking with default config.
+ *  Requires node_id to be set (via ln_set_node_id or ln_join_network). */
+ln_error_t ln_mesh_enable(ln_client_t* client);
+
+/** Enable mesh networking with custom config (JSON string).
+ *  Config JSON keys: peer_refresh_interval_sec, heartbeat_interval_sec,
+ *  stun_refresh_interval_sec, prefer_direct, auto_connect.
+ *  stun_refresh_interval_sec (default 60) sets how often the client learns
+ *  its reflexive address from the server's STUN service and publishes it for
+ *  hole punching; 0 turns this off. prefer_direct (default true) keeps
+ *  probing a relayed peer's direct endpoint and moves the peer back to a
+ *  direct path when a probe gets an authenticated handshake; false keeps
+ *  every peer on a relay when one is available. */
+ln_error_t ln_mesh_enable_config(ln_client_t* client, const char* config_json);
+
+/** Disable mesh networking and remove all mesh peers from the tunnel. */
+ln_error_t ln_mesh_disable(ln_client_t* client);
+
+/** Get mesh tunnel status as JSON.
+ *  Returns: {is_up, tunnel_ip, peer_count, online_count,
+ *  total_rx_bytes, total_tx_bytes, peers: [...]}.
+ *  Caller must ln_free(*out_json). */
+ln_error_t ln_mesh_status(ln_client_t* client, char** out_json);
+
+/** Get current mesh peers as JSON array.
+ *  Each peer: {node_id, hostname, mesh_pubkey, tunnel_ip, private_subnet,
+ *  endpoint, relay_endpoint, is_online, last_handshake, rx_bytes, tx_bytes,
+ *  latency_ms, keepalive}.
+ *  A peer whose traffic goes through a relay (relay fallback) has a non-empty
+ *  relay_endpoint ("ip:port" of the relay); ln_mesh_status also reports its
+ *  endpoint as empty.
+ *  Caller must ln_free(*out_json). */
+ln_error_t ln_mesh_peers(ln_client_t* client, char** out_json);
+
+/** Force an immediate mesh peer refresh (fetch from server + sync tunnel). */
+ln_error_t ln_mesh_refresh(ln_client_t* client);
+
+/* ------------------------------------------------------------------ */
+/* Identity: seed-based creation                                       */
+/* ------------------------------------------------------------------ */
+
+/** Create an Ed25519 identity from a 32-byte seed.
+ *  Useful when the seed is derived from PBKDF2(username, password). */
+ln_identity_t* ln_identity_from_seed(const uint8_t* seed, uint32_t seed_len);
+
+/** Derive a 32-byte Ed25519 seed from username + password via PBKDF2-SHA256.
+ *  Returns base64-encoded seed string. Caller must ln_free().
+ *  Uses 100,000 iterations with salt "lemonade-nexus:{username}". */
+char* ln_derive_seed(const char* username, const char* password);
+
+/* ------------------------------------------------------------------ */
+/* Account group-key envelopes (zero-knowledge multi-device sharing)   */
+/* ------------------------------------------------------------------ */
+
+/** Generate a fresh 32-byte account group key (base64). Caller must ln_free().
+ *  Returns NULL on failure. */
+char* ln_group_key_generate(void);
+
+/** Seal a group key to a recipient device's Ed25519 public key
+ *  ("ed25519:<b64>" or raw base64). Returns JSON {ephemeral_pubkey, wrapped_key}
+ *  (base64). Caller must ln_free(). Returns NULL on malformed input. */
+char* ln_group_key_wrap(const char* recipient_ed25519_pubkey, const char* group_key_b64);
+
+/** Open a group-key envelope (JSON {ephemeral_pubkey, wrapped_key}) with the
+ *  given identity's private key. Returns the group key (base64). Caller must
+ *  ln_free(). Returns NULL if the envelope is not addressed to us / is corrupt. */
+char* ln_group_key_unwrap(const ln_identity_t* identity, const char* envelope_json);
+
+/* ------------------------------------------------------------------ */
+/* Ed25519 challenge-response authentication                           */
+/* ------------------------------------------------------------------ */
+
+/** Authenticate using the client's Ed25519 identity (challenge-response).
+ *  Requires ln_set_identity() to have been called first.
+ *  Returns JSON: {authenticated, user_id, session_token, error}. */
+ln_error_t ln_auth_ed25519(ln_client_t* client, char** out_json);
+
+/* ------------------------------------------------------------------ */
+/* Stats & server listing                                              */
+/* ------------------------------------------------------------------ */
+
+/** GET /api/stats. Returns JSON: {service, peer_count, private_api_enabled}. */
+ln_error_t ln_stats(ln_client_t* client, char** out_json);
+
+/** GET /api/servers. Returns JSON array of server entries. */
+ln_error_t ln_servers(ln_client_t* client, char** out_json);
+
+/* ------------------------------------------------------------------ */
+/* Retired endpoints (kept for ABI stability)                          */
+/* ------------------------------------------------------------------ */
+
+/** Retired: /api/trust/status no longer exists. Returns LN_ERR_UNSUPPORTED. */
+ln_error_t ln_trust_status(ln_client_t* client, char** out_json);
+
+/// Generic authenticated call to a private-API route over the mesh.
+/// `method` is "GET" or "POST"; `body_json` is the request body ("" for GET).
+/// On success `*out_json` receives the raw JSON response body (free with
+/// ln_free). Reachable only once the mesh tunnel is up.
+ln_error_t ln_private_api_call(ln_client_t* client, const char* method,
+                               const char* path, const char* body_json,
+                               char** out_json);
+
+/** Retired: /api/trust/peer/{pubkey} no longer exists. Returns LN_ERR_UNSUPPORTED. */
+ln_error_t ln_trust_peer(ln_client_t* client, const char* pubkey, char** out_json);
+
+/* ------------------------------------------------------------------ */
+/* DDNS status                                                         */
+/* ------------------------------------------------------------------ */
+
+/** GET /api/ddns/status. Returns JSON with DDNS credential status. */
+ln_error_t ln_ddns_status(ln_client_t* client, char** out_json);
+
+/* ------------------------------------------------------------------ */
+/* Retired endpoints (kept for ABI stability)                          */
+/* ------------------------------------------------------------------ */
+
+/** Retired: /api/enrollment/status no longer exists. Returns LN_ERR_UNSUPPORTED. */
+ln_error_t ln_enrollment_status(ln_client_t* client, char** out_json);
+
+/** Retired: /api/governance/proposals no longer exists. Returns LN_ERR_UNSUPPORTED. */
+ln_error_t ln_governance_proposals(ln_client_t* client, char** out_json);
+
+/** Retired: /api/governance/propose no longer exists. Returns LN_ERR_UNSUPPORTED. */
+ln_error_t ln_governance_propose(ln_client_t* client,
+                                   uint8_t parameter,
+                                   const char* new_value,
+                                   const char* rationale,
+                                   char** out_json);
+
+/* ------------------------------------------------------------------ */
+/* Attestation manifests                                               */
+/* ------------------------------------------------------------------ */
+
+/** GET /api/attestation/manifests. Returns JSON with manifest list. */
+ln_error_t ln_attestation_manifests(ln_client_t* client, char** out_json);
+
+/* ------------------------------------------------------------------ */
+/* Routing layer (connect-by-identifier)                               */
+/* ------------------------------------------------------------------ */
+
+/** GET /api/routing/profile. Returns the authorized endpoint profile JSON.
+ *  Caller must ln_free(*out_json). */
+ln_error_t ln_routing_profile(ln_client_t* client, int page, int page_size,
+                              char** out_json);
+
+/** POST /api/routing/request. conn_nonce_b64 is a client-chosen 16-byte nonce
+ *  (base64). Returns {connection_id,state} JSON. Caller must ln_free(*out_json). */
+ln_error_t ln_routing_request(ln_client_t* client, const char* identifier,
+                              const char* conn_nonce_b64, const char* client_mesh_pubkey,
+                              char** out_json);
+
+/** GET /api/routing/session/{id}. Returns session-state JSON. ln_free(*out_json). */
+ln_error_t ln_routing_connection_status(ln_client_t* client, const char* connection_id,
+                                        char** out_json);
+
+/* ------------------------------------------------------------------ */
+/* Session management                                                  */
+/* ------------------------------------------------------------------ */
+
+/** Set the session token for authenticated API calls. */
+ln_error_t ln_set_session_token(ln_client_t* client, const char* token);
+
+/** Get the current session token. Caller must ln_free(). Returns NULL if not set. */
+char* ln_get_session_token(ln_client_t* client);
+
+/** Set the node ID. */
+ln_error_t ln_set_node_id(ln_client_t* client, const char* node_id);
+
+/** Get the current node ID. Caller must ln_free(). Returns NULL if not set. */
+char* ln_get_node_id(ln_client_t* client);
+
+/** Set a single-use device link token to include in the next ln_join_network. */
+ln_error_t ln_set_link_token(ln_client_t* client, const char* token);
+
+/** Join as an inference node (Tier 3, nonzero) or a client (Tier 4, zero, the
+ *  default). Applies to the next ln_join_network; the server records it when it
+ *  creates this device's endpoint. */
+ln_error_t ln_set_inference_node(ln_client_t* client, int inference);
+
+/** Mint a device link token for adding another device to this account's group.
+ *  Same as ln_invite_create(client, NULL, NULL, ttl_sec, out_json).
+ *  Requires an established mesh session. Returns {link_token, group_node_id,
+ *  target_node_id, permissions, expires_at} JSON. ln_free(*out_json). */
+ln_error_t ln_link_token_create(ln_client_t* client, uint32_t ttl_sec, char** out_json);
+
+/* ------------------------------------------------------------------ */
+/* Invites, memberships, and moves                                     */
+/* ------------------------------------------------------------------ */
+
+/** Mint a single-use invite (link token) into a group. One call serves both
+ *  invite flows:
+ *   - target_node_id NULL or "": this account's own top-level group.
+ *   - target_node_id a group id: that group (for example a subgroup, or
+ *     another user's group where this account holds add_child).
+ *  permissions_json: NULL for the server default (["read","connect_private"],
+ *  reduced to what the caller holds), or a JSON array of permission names
+ *  from "read", "write", "add_child", "connect_private", "connect_shared".
+ *  The server refuses a target where the caller lacks add_child (403), a
+ *  permission the caller does not hold (403), a name an invite cannot grant
+ *  such as "admin" (400), and a target that is not a group (400).
+ *  A new device joins under the target with the token (ln_set_link_token and
+ *  ln_join_network). An account that already joined becomes a member with
+ *  ln_invite_accept. Requires an established mesh session.
+ *  On success *out_json is {link_token, group_node_id, target_node_id,
+ *  permissions, expires_at}; on failure it carries "error" when the server
+ *  answered. The strings passed in are not retained. The caller owns
+ *  *out_json and must release it with ln_free(). Returns LN_ERR_NULL_ARG when
+ *  client or out_json is NULL, LN_ERR_REJECTED for malformed
+ *  permissions_json, else the mapped HTTP result. */
+ln_error_t ln_invite_create(ln_client_t* client,
+                            const char* target_node_id,
+                            const char* permissions_json,
+                            uint32_t ttl_sec,
+                            char** out_json);
+
+/** Accept an invite as an account that already joined ("join another
+ *  network"). This identity becomes a member of the invite's group with the
+ *  invite's permissions; nothing this account owns moves. Its own device can
+ *  then reach the group's devices, and they can reach it, as the
+ *  permissions allow. The token is single use and is not spent by a refusal.
+ *  On success *out_json is {success, node_id, permissions, status}, where
+ *  status is "member", or "pending" with an op_id while a tree operation
+ *  commits. LN_ERR_AUTH for an invalid, expired, or used token or an inviter
+ *  that lost its permission; LN_ERR_REJECTED when this identity already
+ *  belongs to the group or has not joined. The caller owns *out_json and
+ *  must release it with ln_free(). Requires an established mesh session. */
+ln_error_t ln_invite_accept(ln_client_t* client,
+                            const char* link_token,
+                            char** out_json);
+
+/** List the groups this identity belongs to. *out_json is {memberships:
+ *  [{node_id, hostname, parent_id, owner_pubkey, role, permissions}]} where
+ *  role is "home" (a group this identity joined or owns) or "member" (a
+ *  group entered through an invite). permissions are this identity's own.
+ *  The caller owns *out_json and must release it with ln_free(). Requires an
+ *  established mesh session. */
+ln_error_t ln_memberships_list(ln_client_t* client, char** out_json);
+
+/** Leave a group entered through an invite: removes this identity's own
+ *  entry on group_node_id. A group owner removes a member with
+ *  ln_remove_group_member instead. Refused (LN_ERR_AUTH) for a home group.
+ *  *out_json is {success, node_id, error?}. The caller owns *out_json and
+ *  must release it with ln_free(). Requires an identity (ln_set_identity). */
+ln_error_t ln_membership_leave(ln_client_t* client,
+                               const char* group_node_id,
+                               char** out_json);
+
+/** Move a device (Endpoint) or a subgroup under another group. Needs
+ *  delete_node on the device or admin above it (admin above a subgroup), and
+ *  add_child on new_parent_id or admin above it. A top-level group and the
+ *  root never move, and a node never moves under itself. The node keeps its
+ *  id, tunnel address, and own assignments; the move grants nothing in the
+ *  new group. *out_json is {success, node_id, parent_id}, or carries "error".
+ *  LN_ERR_AUTH when the caller lacks a right, LN_ERR_NOT_FOUND for an unknown
+ *  node, LN_ERR_REJECTED for an invalid move. The caller owns *out_json and
+ *  must release it with ln_free(). Requires an established mesh session. */
+ln_error_t ln_move_node(ln_client_t* client,
+                        const char* node_id,
+                        const char* new_parent_id,
+                        char** out_json);
+
+/* ------------------------------------------------------------------ */
+/* Account deletion                                                    */
+/* ------------------------------------------------------------------ */
+
+/** Permanently delete this identity's account. IRREVERSIBLE.
+ *  The SDK asks the session's server for a challenge, signs an account
+ *  deletion proof with the identity set by ln_set_identity (a session token
+ *  alone cannot delete an account), and sends it. The server removes:
+ *   - this account's groups (its "customer-<user_id>" group and every group
+ *     or device its key owns) and everything beneath them, including devices
+ *     that other users placed there through invites (those users keep their
+ *     own accounts and lose access to this network);
+ *   - this identity's memberships in other users' groups and every grant
+ *     that names its keys;
+ *   - its group-key envelopes, chat blobs, link tokens (invites), passkey
+ *     credentials, device certificates, DNS names, and tunnel addresses;
+ *   - its key: it can no longer authenticate, and its sessions end.
+ *  The application root is never removed or changed. When this key also
+ *  owns the root, the root and the key stay; only the account goes.
+ *  On success (status "deleted") the client stops the mesh, clears its
+ *  session token and node id, and stops the account image service. With tree
+ *  operations on, the answer can be status "pending" with an op_id while
+ *  Tier 1 commits the deletion.
+ *  Local files stay. The caller deletes them after success: the identity
+ *  file (ln_identity_save path), the account image cache
+ *  (ln_account_avatar_configure cache_root), the certificate directory
+ *  (ln_mesh_port_set_cert_dir), and any copy of the session token.
+ *  On success *out_json is {success, status, account_id, removed_nodes?,
+ *  op_id?}; on failure it carries "error". The caller owns *out_json and must
+ *  release it with ln_free(). Returns LN_ERR_NULL_ARG for a NULL argument,
+ *  LN_ERR_NO_IDENTITY without an identity, LN_ERR_AUTH for a refused proof or
+ *  session, LN_ERR_CONNECT when the server cannot be reached, else the mapped
+ *  HTTP result. Requires an established mesh session. Not thread-safe with
+ *  other calls on the same client. */
+ln_error_t ln_account_delete(ln_client_t* client, char** out_json);
+
+/** Publish a local service to mesh peers: our mesh IP:vport bridges to `target`
+ *  ("tcp:127.0.0.1:PORT"). Requires an active mesh; re-applied on re-join. */
+ln_error_t ln_mesh_expose_service(ln_client_t* client, uint16_t vport, const char* target);
+
+/** Open (or reuse) a loopback bridge to a mesh peer's dst_ip:dst_port.
+ *  On success *out_port is the bound 127.0.0.1 port to dial. */
+ln_error_t ln_mesh_open_egress(ln_client_t* client, const char* dst_ip,
+                               uint16_t dst_port, uint16_t* out_port);
+
+/** Close the loopback bridge to a mesh peer's dst_ip:dst_port and abort its
+ *  open connections (for example after the peer is removed or re-addressed). */
+ln_error_t ln_mesh_close_egress(ln_client_t* client, const char* dst_ip, uint16_t dst_port);
+
+/** 1 when this client's mesh dataplane is up, 0 otherwise (or for NULL). */
+int ln_mesh_is_active(ln_client_t* client);
+
+/* ------------------------------------------------------------------ */
+/* Tier 1 servers (tree traffic)                                       */
+/* ------------------------------------------------------------------ */
+
+/** Pin the network's Genesis public key and the lowest epoch to accept.
+ *
+ *  Only Tier 1 servers hold the permission tree. The client sends every tree
+ *  read and write, every session request (ln_auth_*, ln_join_network), and
+ *  every private-API call only to a Tier 1 server it verified from this key:
+ *  it walks the authority chain from the key and keeps a member of the
+ *  verified epoch only after the member signs an endpoint proof over a fresh
+ *  nonce. Until a key is pinned those calls are not sent and fail with
+ *  LN_ERR_CONNECT and an "error" that names the missing key.
+ *
+ *  @param genesis_pubkey_b64  The server config's `genesis_pubkey`: base64 of
+ *                             32 bytes. Not retained after the call.
+ *  @param min_epoch           The lowest Tier 1 epoch to accept (0 for none).
+ *                             Store the epoch from ln_tier1_refresh and pass it
+ *                             here after a restart to refuse an older list.
+ *  @return LN_OK, LN_ERR_NULL_ARG, or LN_ERR_REJECTED for a malformed key.
+ *  Changing the key drops the verified membership. Thread-safe. */
+ln_error_t ln_set_genesis_key(ln_client_t* client, const char* genesis_pubkey_b64,
+                              uint64_t min_epoch);
+
+/** Verify the Tier 1 membership now from the client's server pool.
+ *
+ *  On LN_OK, *out_json receives
+ *  {"epoch":N,"members":["<base64 node id>",...],
+ *   "servers":[{"node_id":"<base64>","host":"<fqdn>","port":P},...]}.
+ *  On failure it receives {"error":"..."} and the function returns
+ *  LN_ERR_REJECTED (no pinned key, a chain that does not verify, or a stale
+ *  epoch) or LN_ERR_CONNECT (no server reachable). The caller must ln_free()
+ *  *out_json in both cases. Blocks on network I/O. Thread-safe. */
+ln_error_t ln_tier1_refresh(ln_client_t* client, char** out_json);
+
+/** The last verified Tier 1 membership, in the ln_tier1_refresh shape, with
+ *  no network I/O. "servers" is empty when nothing is verified. The caller
+ *  must ln_free() *out_json. Thread-safe. */
+ln_error_t ln_tier1_membership(ln_client_t* client, char** out_json);
+
+/** First-connect discovery of the network's Genesis key, for a client with no
+ *  pinned key. It never replaces a pinned key; changing the key stays an
+ *  explicit ln_set_genesis_key call.
+ *
+ *  The client asks each candidate server for GET /api/onboard/info over
+ *  verified HTTPS: the servers in hosts_json first, then the configured
+ *  server and the servers it lists in /api/servers. At most 16 distinct hosts
+ *  are asked. Every server that reports a key must report the same key,
+ *  network id, and DNS domain; the network id must derive from the key; and at
+ *  least 3 distinct agreeing hosts must sit inside that DNS domain. Anything
+ *  else fails closed and pins nothing.
+ *
+ *  Trust limit: this is trust on first use. It rests on verified-HTTPS
+ *  ownership of the network's DNS domain and on agreement of several servers,
+ *  not on a signature. The application must store the returned key and pin it
+ *  with ln_set_genesis_key on later runs.
+ *
+ *  @param hosts_json  NULL, or a JSON array of extra candidate servers, for
+ *                     example servers found through DNS discovery:
+ *                     [{"host":"<certificate fqdn>","port":9100},...]. "port"
+ *                     is optional (default 9100). Not retained after the call.
+ *  @param out_json    Receives, on LN_OK,
+ *                     {"genesis_pubkey":"<base64>","network_id":"<hex>",
+ *                      "dns_base_domain":"<domain>","hosts":["<fqdn>",...]}
+ *                     and on failure {"error":"..."}. The caller must ln_free()
+ *                     *out_json in both cases. It stays NULL only for
+ *                     LN_ERR_NULL_ARG and LN_ERR_INTERNAL.
+ *  @return LN_OK and the key is pinned; LN_ERR_REJECTED when a key is already
+ *          pinned, hosts_json is malformed, a server sent a malformed key or a
+ *          network id that does not derive from its key, or servers disagree;
+ *          LN_ERR_CONNECT when fewer than 3 agreeing servers answered.
+ *  Blocks on network I/O. Thread-safe. */
+ln_error_t ln_discover_genesis_key(ln_client_t* client, const char* hosts_json,
+                                   char** out_json);
+
+/* ------------------------------------------------------------------ */
+/* Mesh port                                                           */
+/* ------------------------------------------------------------------ */
+
+/** Start the mesh port: a listener on 127.0.0.1:port that serves group devices
+ *  by name. It never binds another address.
+ *
+ *  The listener serves plain HTTP until the group loopback certificate
+ *  "*.<group-label>.lo.<base>" is available, then TLS. The certificate lives in
+ *  the directory set with ln_mesh_port_set_cert_dir. On start, the port runs
+ *  the ln_cert_renew_if_needed flow for LN_CERT_GROUP_LOOPBACK in that
+ *  directory on a background thread. The SDK then renews the certificate in the
+ *  background while the mesh is enabled, and the port reloads each renewed
+ *  certificate in place for new connections. The port does not use a
+ *  certificate that is not a group wildcard under ".lo.", that does not cover
+ *  its own name, or whose key does not match. It then stays on plain HTTP, and
+ *  ln_mesh_port_status reports the reason.
+ *
+ *  Routing uses the TLS server name and the Host header. They must name the
+ *  same host, otherwise the answer is 421.
+ *  - "<device>.<group>.lo.<base>" of another device is forwarded over mesh
+ *    egress to that device's lemond on mesh port 13305. The device must be
+ *    online and Tier 3 (otherwise 409), and this device must hold
+ *    connect_private, connect_shared or admin on it (otherwise 403). The
+ *    caller's own Authorization header is never forwarded to a peer. A request
+ *    header "X-Lemonade-Peer-Authorization" is sent to the peer as
+ *    Authorization. When that header is absent and the device is the selection
+ *    target, the selection peer key is sent.
+ *  - This device's own name, "127.0.0.1" and "localhost" are forwarded to the
+ *    selection (see ln_mesh_port_set_selection).
+ *  - An unknown device name answers 404. A name outside the group's local
+ *    domain answers 421.
+ *  Status codes, Content-Type and streamed bodies pass through unchanged. A
+ *  request with an Origin header other than the requested origin answers 403.
+ *
+ *  Exactly one process owns the port. When another socket already owns
+ *  127.0.0.1:port (for example lemond and the desktop app on the same machine),
+ *  the call returns LN_ERR_PORT_IN_USE. It does not retry or take over the port.
+ *
+ *  @param client             The client. Its mesh session supplies the devices,
+ *                            egress and certificates. Must not be NULL.
+ *  @param port               Loopback port. 0 selects the default, 13306.
+ *  @param local_service_url  The service that the "local" selection serves, for
+ *                            example lemond's "http://127.0.0.1:13305", or NULL
+ *                            for none. Only "http://127.0.0.1:<port>",
+ *                            "http://localhost:<port>" and "http://[::1]:<port>"
+ *                            are accepted. The string is copied.
+ *  @return LN_OK when the port runs. When it already runs on the same port, only
+ *          the local service URL changes. LN_ERR_NULL_ARG for a NULL client.
+ *          LN_ERR_REJECTED for an invalid local service URL, or when the port
+ *          already runs on a different port number. LN_ERR_PORT_IN_USE as
+ *          described above. LN_ERR_INTERNAL when the listener cannot start.
+ *  Thread-safe. ln_destroy stops the port. */
+ln_error_t ln_mesh_port_start(ln_client_t* client, uint16_t port,
+                              const char* local_service_url);
+
+/** Set the directory of the mesh port's group loopback certificate, or NULL or
+ *  "" for none. The directory holds fullchain.pem and privkey.pem (mode 0600),
+ *  as written by ln_cert_renew_if_needed. Use a directory that only this user
+ *  can read. Without a directory the port serves plain HTTP only. The setting
+ *  stays across ln_mesh_port_stop and ln_mesh_port_start. When the port runs,
+ *  a new directory is provisioned at once on the port's background thread. The
+ *  string is copied. Returns LN_OK, or LN_ERR_NULL_ARG for a NULL client.
+ *  Thread-safe. The mesh port receives renewal events in addition to the
+ *  callback set with ln_set_cert_renewed_callback; that callback is unchanged. */
+ln_error_t ln_mesh_port_set_cert_dir(ln_client_t* client, const char* cert_dir);
+
+/** Stop the mesh port, abort its open requests, and clear the selection and its
+ *  peer key. Blocks until the listener stops. Returns LN_OK, also when the port
+ *  is not running, or LN_ERR_NULL_ARG for a NULL client. Thread-safe. */
+ln_error_t ln_mesh_port_stop(ln_client_t* client);
+
+/** Set the device that this device's own name and the loopback names serve.
+ *
+ *  @param client    The client. Must not be NULL.
+ *  @param target    "local" (the local service given to ln_mesh_port_start),
+ *                   "auto", a node ID, or NULL or "" to clear the selection.
+ *                   This device's own node ID is the same as "local".
+ *  @param peer_key  API key of the selected device's lemond, sent to it as
+ *                   "Bearer <key>", or NULL for none. The key is kept only in
+ *                   memory. Every call replaces it, so a new target clears it
+ *                   unless the call passes a key again. The string is copied.
+ *
+ *  "auto" routes each request by its model. A "<device>/<model>" name goes to
+ *  that device with the prefix removed. Then a model of the local service stays
+ *  local. Then an idle online Tier 3 device with the model loaded serves it
+ *  (lowest mesh latency first). Then a device that lists the model serves it.
+ *  A GET of /api/v1/models (also /api/v0/models, /v1/models, /v0/models) returns
+ *  the local models plus "<device>/<model>" entries.
+ *
+ *  Without a selection, or when the selected device is offline, requests answer
+ *  409. The port never falls back to another device.
+ *
+ *  @return LN_OK. LN_ERR_NULL_ARG for a NULL client. LN_ERR_NOT_FOUND for an
+ *          unknown device. LN_ERR_AUTH when this device may not connect to it.
+ *          LN_ERR_REJECTED when the port is not running, "local" has no local
+ *          service, or the device is not Tier 3. An offline Tier 3 device can be
+ *          selected. Thread-safe. */
+ln_error_t ln_mesh_port_set_selection(ln_client_t* client, const char* target,
+                                      const char* peer_key);
+
+/** Get the mesh port state as JSON:
+ *  {running, port, scheme ("http" | "https"), local_domain, local_service,
+ *   error, selection: {target (null | "local" | "auto" | node ID), peer_key_set},
+ *   tls: {state ("off" | "waiting" | "active" | "unsupported_certificate" |
+ *   "error"), domain, expires_at, error},
+ *   urls: [{node_id, device_name, url, self}],
+ *   devices: [{node_id, device_name, is_online}]}.
+ *  `urls` lists this device and each online Tier 3 device that this device may
+ *  connect to. Before TLS is active, only "http://127.0.0.1:<port>" is listed.
+ *  `devices` lists the Tier 3 devices that can be selected. The peer key is
+ *  never included. Caller must ln_free(*out_json). Returns LN_ERR_NULL_ARG for a
+ *  NULL argument. Thread-safe. */
+ln_error_t ln_mesh_port_status(ln_client_t* client, char** out_json);
+
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC visibility pop
+#endif
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* LEMONADE_NEXUS_SDK_H */

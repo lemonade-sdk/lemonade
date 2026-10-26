@@ -1,0 +1,322 @@
+.titlebar.titlebar--with-account {
+  --header-search-width: 176px;
+  --header-control-gap: 16px;
+  grid-template-columns: minmax(0, 1fr) auto minmax(max-content, 1fr);
+  column-gap: var(--header-control-gap);
+}
+
+.titlebar.titlebar--with-account.titlebar--desktop .titlebar__nav { transform: none; }
+
+.nexus-account-trigger {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: var(--space-2);
+  min-width: 0;
+  height: 34px;
+  padding: 3px 10px 3px 4px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+.nexus-account-trigger:hover,
+.nexus-account-trigger[aria-expanded="true"] {
+  background: var(--surface-3);
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+
+.nexus-account-trigger__label {
+  max-width: 120px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+@media (min-width: 769px) {
+  .titlebar--search-collapsed .nexus-account-trigger {
+    width: 34px;
+    padding: 3px;
+    justify-content: center;
+  }
+
+  .titlebar--search-collapsed .nexus-account-trigger__label,
+  .titlebar--search-collapsed .nexus-account-trigger > .app-icon {
+    display: none;
+  }
+}
+
+.nexus-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  flex: 0 0 auto;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: 50%;
+  background: var(--surface-raised);
+  color: var(--text-secondary);
+  font-size: 26px;
+  font-weight: var(--weight-medium);
+}
+
+.nexus-avatar--small { width: 25px; height: 25px; font-size: var(--text-sm); }
+.nexus-avatar img { width: 100%; height: 100%; object-fit: cover; }
+
+.nexus-account-menu {
+  position: fixed;
+  top: calc(var(--titlebar-height) + var(--space-2));
+  right: var(--space-3);
+  z-index: 85;
+  width: min(360px, calc(100vw - 24px));
+  max-height: calc(100dvh - var(--titlebar-height) - 24px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--space-4);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--surface-1);
+  box-shadow: var(--shadow-lg);
+  color: var(--text-primary);
+  font-size: var(--text-md);
+}
+
+.nexus-account-menu__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+.nexus-account-menu__header > div { min-width: 0; flex: 1; }
+.nexus-account-menu__header > button { flex-shrink: 0; }
+.nexus-account-menu__header h2 { margin: 0; font-size: var(--text-lg); font-weight: var(--weight-semibold); }
+.nexus-account-summary { display: flex; align-items: flex-start; gap: var(--space-4); }
+.nexus-account-summary__details { min-width: 0; padding-top: var(--space-2); }
+.nexus-account-summary__name { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.nexus-account-summary__name strong { font-size: var(--text-lg); font-weight: var(--weight-semibold); overflow-wrap: anywhere; }
+.nexus-role { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 1px 7px; color: var(--text-secondary); font-size: var(--text-xs); }
+.nexus-account-status { display: flex; align-items: center; gap: var(--space-1); margin-top: var(--space-1); color: var(--text-tertiary); font-size: var(--text-sm); }
+.nexus-account-status--signed-in { color: var(--success); }
+.nexus-account-access { margin-top: var(--space-4); }
+.nexus-account-access p, .nexus-device-empty p { margin: 0 0 var(--space-3); color: var(--text-secondary); line-height: 1.6; }
+.nexus-account-access .nexus-hint { margin: var(--space-2) 0 0; color: var(--text-tertiary); font-size: var(--text-sm); }
+.nexus-account-menu .nexus-account-access > button { width: 100%; }
+.nexus-account-menu .nexus-account-access:has(> button) { margin-bottom: var(--space-2); }
+.nexus-section { min-width: 0; }
+.nexus-section h3 { margin: 0 0 var(--space-4); font-size: var(--text-xs); font-weight: var(--weight-medium); letter-spacing: .08em; text-transform: uppercase; color: var(--text-secondary); }
+.nexus-account-menu .nexus-section { margin-top: var(--space-5); padding-top: var(--space-4); border-top: 1px solid var(--border-subtle); }
+.nexus-device-empty { display: flex; gap: var(--space-3); align-items: flex-start; }
+.nexus-device-empty > .app-icon { flex-shrink: 0; margin-top: 2px; color: var(--text-tertiary); }
+.nexus-device-empty strong { display: block; margin-bottom: var(--space-1); font-size: var(--text-md); font-weight: var(--weight-medium); }
+.nexus-device-empty p { margin: 0; font-size: var(--text-sm); }
+.nexus-account-menu__link { display: flex; align-items: center; justify-content: space-between; width: 100%; margin-top: var(--space-5); padding: var(--space-3) var(--space-2); border-top: 1px solid var(--border-subtle); color: var(--text-secondary); border-radius: var(--radius-sm); }
+.nexus-account-menu__link:hover { color: var(--text-primary); background: var(--surface-2); }
+.nexus-account-menu__link { border-radius: 0; }
+.nexus-account-menu__theme { margin-top: var(--space-2); }
+.nexus-account-menu__theme + .nexus-section { margin-top: var(--space-2); }
+.nexus-device-disclosure > summary { display: flex; align-items: center; gap: var(--space-2); cursor: pointer; list-style: none; color: var(--text-secondary); font-size: var(--text-sm); }
+.nexus-device-disclosure > summary::-webkit-details-marker { display: none; }
+.nexus-device-disclosure[open] > summary > .app-icon { transform: rotate(90deg); }
+.nexus-device-disclosure__content { padding-top: var(--space-3); }
+.nexus-account-menu .nexus-account-menu__theme,
+.nexus-account-menu .nexus-device-disclosure + .nexus-account-menu__link {
+  margin-top: 0;
+  padding-block: var(--space-3);
+}
+.nexus-account-menu .nexus-device-disclosure {
+  margin-top: 0;
+  padding-block: 0;
+}
+.nexus-account-menu .nexus-device-disclosure > summary {
+  justify-content: space-between;
+  min-height: 44px;
+  padding: var(--space-3) var(--space-2);
+}
+.nexus-account-menu .nexus-device-disclosure__content {
+  padding: 0 var(--space-2) var(--space-3);
+}
+.nexus-account-menu__sign-out { width: 100%; margin-top: var(--space-1); }
+.nexus-page { width: 100%; max-width: 1120px; }
+.nexus-page > .nexus-section + .nexus-section { margin-top: var(--space-6); }
+.nexus-page .nexus-section h3 { padding-bottom: var(--space-3); border-bottom: 1px solid var(--border-subtle); }
+.nexus-page .nexus-account-summary__name strong { font-size: var(--text-xl); }
+.nexus-page .nexus-account-access { margin-left: 80px; }
+.nexus-page .nexus-device-empty { padding: var(--space-3) 0; }
+.nexus-devices { list-style: none; margin: 0 0 var(--space-3); padding: 0; }
+.nexus-devices li { display: flex; align-items: center; gap: var(--space-4); padding: var(--space-3) 0; }
+.nexus-devices li + li { border-top: 1px solid var(--border-subtle); }
+.nexus-devices li > .app-icon { flex-shrink: 0; color: var(--text-secondary); }
+.nexus-devices li div { min-width: 0; overflow-wrap: anywhere; }
+.nexus-devices strong { display: block; font-size: var(--text-md); font-weight: var(--weight-medium); }
+.nexus-devices span { display: block; margin-top: var(--space-1); color: var(--text-tertiary); font-size: var(--text-sm); }
+.nexus-avatar-picker { display: flex; flex-direction: column; align-items: center; gap: var(--space-1); width: 76px; flex-shrink: 0; }
+.nexus-avatar-picker__button { display: flex; flex-direction: column; align-items: center; gap: var(--space-2); color: var(--text-secondary); font-size: var(--text-xs); border-radius: var(--radius-sm); }
+.nexus-avatar-picker__preview { position: relative; display: inline-flex; }
+.nexus-avatar-picker__badge { position: absolute; bottom: 0; right: 0; display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border: 1px solid var(--border-strong); border-radius: 50%; background: var(--surface-3); }
+.nexus-avatar-picker__button:hover { color: var(--text-primary); }
+.nexus-text-button { color: var(--text-tertiary); font-size: var(--text-xs); border-radius: var(--radius-sm); }
+.nexus-text-button:hover { color: var(--text-primary); text-decoration: underline; }
+.nexus-error { margin: var(--space-1) 0; color: var(--danger); font-size: var(--text-xs); overflow-wrap: anywhere; }
+.nexus-error:empty { display: none; }
+
+.nexus-view-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin: 32px 0 22px; padding-top: 24px; border-top: 1px solid var(--border-subtle); }
+.nexus-view-heading h3 { margin: 0 0 6px; font-size: var(--text-lg); font-weight: var(--weight-semibold); }
+.nexus-view-heading p, .nexus-hierarchy__toolbar p { margin: 0; font-size: var(--text-sm); line-height: 1.6; color: var(--text-tertiary); }
+.nexus-view-heading p[aria-hidden="true"] { visibility: hidden; }
+.nexus-view-mode { display: flex; flex-shrink: 0; gap: 3px; margin: 0; padding: 4px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-2); }
+.nexus-view-mode label { display: flex; align-items: center; gap: 7px; padding: 8px 12px; border: 1px solid transparent; border-radius: var(--radius-sm); font-size: var(--text-sm); cursor: pointer; color: var(--text-secondary); }
+.nexus-view-mode label.is-selected { color: var(--text-primary); background: var(--surface-raised); border-color: var(--border); }
+.nexus-view-mode label:focus-within { outline: 2px solid var(--accent); outline-offset: 1px; }
+.nexus-view-mode input { margin: 0; accent-color: var(--accent); width: 13px; height: 13px; }
+.nexus-hierarchy { border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; margin-top: 20px; background: var(--surface-1); }
+.nexus-hierarchy__toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 20px; }
+.nexus-hierarchy__toolbar strong { display: block; margin-bottom: 4px; font-size: var(--text-md); font-weight: var(--weight-semibold); }
+.nexus-hierarchy__search { display: flex; align-items: center; gap: 9px; margin: 0 20px 18px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text-tertiary); background: var(--surface-2); }
+.nexus-hierarchy__search:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+.nexus-hierarchy__search input { width: 100%; min-width: 0; padding: 0; border: 0; border-radius: 0; outline: none; box-shadow: none; background: transparent; color: var(--text-primary); font-size: var(--text-sm); }
+.nexus-hierarchy__workspace { display: grid; grid-template-columns: minmax(210px, .85fr) minmax(0, 1.2fr); border-top: 1px solid var(--border-subtle); min-height: 320px; }
+.nexus-tree { padding: 12px 8px; border-right: 1px solid var(--border-subtle); background: var(--surface-2); max-height: 600px; overflow: auto; }
+.nexus-tree__row { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 7px 9px 7px calc(5px + var(--tree-depth) * 16px); border: 1px solid transparent; border-radius: var(--radius-sm); cursor: pointer; color: var(--text-secondary); font-size: var(--text-sm); }
+.nexus-tree__row:hover { background: var(--surface-3); }
+.nexus-tree__row.is-selected { background: var(--surface-raised); border-color: var(--border); color: var(--text-primary); }
+.nexus-tree__row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.nexus-tree__row > .app-icon { flex-shrink: 0; }
+.nexus-tree__disclosure { display: flex; align-items: center; justify-content: center; flex: 0 0 18px; height: 24px; border-radius: 3px; }
+.nexus-tree__disclosure:hover { background: var(--surface-alpha-1); }
+.nexus-tree__name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.nexus-tree__you { font-size: 10px; color: var(--text-tertiary); white-space: nowrap; }
+.nexus-tree-detail { padding: 20px; min-width: 0; }
+.nexus-tree-breadcrumbs { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; color: var(--text-tertiary); font-size: var(--text-xs); margin-bottom: 22px; }
+.nexus-tree-breadcrumbs button { padding: 3px 4px; border-radius: 4px; color: inherit; overflow-wrap: anywhere; text-align: left; }
+.nexus-tree-breadcrumbs button:hover { color: var(--text-primary); background: var(--surface-3); }
+.nexus-tree-breadcrumbs [aria-current] { color: var(--text-secondary); }
+.nexus-tree-detail__heading { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+.nexus-tree-detail__icon { display: flex; align-items: center; justify-content: center; flex-shrink: 0; width: 44px; height: 44px; border-radius: var(--radius-md); border: 1px solid var(--border); background: var(--surface-2); color: var(--text-secondary); }
+.nexus-tree-detail h4 { margin: 0 0 4px; font-size: var(--text-lg); font-weight: var(--weight-semibold); overflow-wrap: anywhere; }
+.nexus-tree-detail__heading p { margin: 0; color: var(--text-tertiary); font-size: var(--text-xs); }
+.nexus-hierarchy .nexus-hint, .nexus-network-empty .nexus-hint { font-size: var(--text-sm); line-height: 1.6; color: var(--text-tertiary); }
+.nexus-tree-counts { display: flex; gap: 16px; margin: 16px 0; color: var(--text-secondary); font-size: var(--text-sm); }
+.nexus-group-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.nexus-group-editor { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border-subtle); }
+.nexus-group-editor h5 { font-size: var(--text-md); font-weight: var(--weight-medium); margin: 0 0 16px; overflow-wrap: anywhere; }
+.nexus-group-editor fieldset { border: 0; padding: 0; margin: 0 0 14px; min-width: 0; }
+.nexus-group-editor fieldset > label, .nexus-network-empty form > label, .nexus-verification label { display: block; font-size: var(--text-sm); color: var(--text-secondary); margin-bottom: 7px; }
+.nexus-group-editor .input { width: 100%; }
+.nexus-group-editor input[type="checkbox"] { accent-color: var(--accent); flex-shrink: 0; }
+.nexus-group-editor .nexus-permission-choice { display: flex; gap: 7px; align-items: center; margin: 18px 0 8px; }
+.nexus-permissions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 8px; margin: 14px 0; }
+.nexus-permissions label { display: flex; align-items: flex-start; gap: 6px; font-size: var(--text-xs); color: var(--text-secondary); line-height: 1.5; }
+.nexus-tree-facts { margin: 12px 0; font-size: var(--text-sm); }
+.nexus-tree-facts div { margin-top: 12px; }
+.nexus-tree-facts dt { color: var(--text-tertiary); font-size: var(--text-xs); }
+.nexus-tree-facts dd { margin: 5px 0 0; overflow-wrap: anywhere; }
+.nexus-tree-identifiers { margin-top: 24px; padding-top: 14px; border-top: 1px solid var(--border-subtle); }
+.nexus-tree-identifiers summary { cursor: pointer; font-size: var(--text-xs); color: var(--text-tertiary); }
+.nexus-tree-notice { color: var(--success); font-size: var(--text-sm); line-height: 1.6; }
+.nexus-tree-message { margin: 0; padding: 20px; font-size: var(--text-sm); color: var(--text-secondary); overflow-wrap: anywhere; }
+.nexus-tree-search-results { padding: 0 20px 18px; }
+.nexus-tree-search-results > button { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; padding: 12px 6px; border-bottom: 1px solid var(--border-subtle); }
+.nexus-tree-search-results > button:hover { background: var(--surface-2); }
+.nexus-tree-search-results > button > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.nexus-tree-search-results small { display: block; margin-top: 5px; color: var(--text-tertiary); font-size: var(--text-xs); }
+.nexus-compact { padding: 0 20px 12px; }
+.nexus-compact .nexus-tree-breadcrumbs { margin-bottom: 10px; }
+.nexus-compact__row { display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 4px; text-align: left; border-top: 1px solid var(--border-subtle); }
+.nexus-compact__row:disabled { cursor: default; opacity: 1; }
+.nexus-compact__row:not(:disabled):hover { background: var(--surface-2); }
+.nexus-compact__row > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.nexus-compact__row strong { display: block; font-size: var(--text-sm); font-weight: var(--weight-medium); }
+.nexus-compact__row small { display: block; margin-top: 4px; color: var(--text-tertiary); font-size: var(--text-xs); }
+.nexus-network-empty { padding: 36px 24px; border: 1px dashed var(--border); border-radius: var(--radius-lg); text-align: center; }
+.nexus-network-empty__icon { display: inline-flex; padding: 14px; border-radius: var(--radius-lg); background: var(--surface-2); color: var(--text-secondary); }
+.nexus-network-empty h4 { font-size: var(--text-lg); margin: 18px 0 10px; font-weight: var(--weight-semibold); }
+.nexus-network-empty > p { max-width: 420px; margin: 0 auto 16px; font-size: var(--text-sm); color: var(--text-secondary); line-height: 1.7; }
+.nexus-network-empty form { max-width: 320px; margin: 20px auto 0; }
+.nexus-network-empty form > .input { width: 100%; margin-bottom: 12px; }
+.nexus-verification-backdrop { position: fixed; inset: 0; display: grid; place-items: center; padding: 16px; background: var(--surface-overlay); z-index: 200; }
+.nexus-verification { width: min(440px, 100%); max-height: 90dvh; overflow: auto; padding: 24px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface-1); box-shadow: var(--shadow-lg); }
+.nexus-verification h3 { margin-top: 0; }
+.nexus-verification p { color: var(--text-secondary); line-height: 1.6; }
+.nexus-verification .input { display: block; width: 100%; margin-bottom: 12px; }
+.nexus-verification form { margin-bottom: 12px; }
+
+.nexus-account-dialog-backdrop { position: fixed; inset: 0; z-index: 160; display: grid; place-items: center; padding: 20px; background: var(--surface-overlay); }
+.nexus-account-dialog { width: min(480px, 100%); max-height: calc(100dvh - 40px); overflow: auto; padding: 24px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface-1); box-shadow: var(--shadow-lg); color: var(--text-primary); }
+.nexus-account-dialog__header { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+.nexus-account-dialog__header > div { flex: 1; min-width: 0; }
+.nexus-account-dialog__header > .workspace-action-button { margin-left: auto; flex-shrink: 0; }
+.nexus-account-dialog h2 { margin: 0; font-size: var(--text-xl); font-weight: var(--weight-semibold); }
+.nexus-account-dialog__header p { margin: 4px 0 0; font-size: var(--text-sm); color: var(--text-tertiary); }
+.nexus-account-dialog p { line-height: 1.6; font-size: var(--text-sm); }
+.nexus-account-dialog .nexus-hint { color: var(--text-tertiary); }
+.nexus-sign-in__fields { min-width: 0; border: 0; padding: 0; margin: 20px 0; }
+.nexus-sign-in__fields > label, .nexus-account-dialog form > label { display: block; font-size: var(--text-sm); color: var(--text-secondary); margin: 16px 0 7px; }
+.nexus-account-dialog .input { width: 100%; }
+.nexus-sign-in__choices { display: flex; flex-wrap: wrap; gap: 8px 16px; padding-bottom: 6px; }
+.nexus-sign-in__choices label { display: flex; align-items: center; gap: 7px; font-size: var(--text-sm); color: var(--text-secondary); cursor: pointer; }
+.nexus-sign-in__choices input { margin: 0; accent-color: var(--accent); }
+.nexus-account-dialog .nexus-group-actions { margin-top: 18px; justify-content: flex-end; }
+.nexus-account-dialog form > .workspace-action-button[type="submit"] { width: 100%; margin-top: 10px; }
+.nexus-account-invitation { margin: 20px 0 12px; padding: 16px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-2); font-family: monospace; font-size: var(--text-lg); text-align: center; overflow-wrap: anywhere; user-select: all; }
+@media (max-width: 480px) {
+  .nexus-account-dialog-backdrop { padding: 12px; }
+  .nexus-account-dialog { padding: 20px; max-height: calc(100dvh - 24px); }
+  .nexus-account-dialog__header .nexus-tree-detail__icon { display: none; }
+  .nexus-account-dialog h2 { font-size: var(--text-lg); }
+  .nexus-sign-in__choices { flex-direction: column; gap: 14px; }
+}
+
+@media (max-width: 900px) {
+  .nexus-hierarchy__workspace { grid-template-columns: minmax(0, 1fr); }
+  .nexus-tree { border-right: 0; border-bottom: 1px solid var(--border-subtle); max-height: 320px; }
+}
+@media (max-width: 560px) {
+  .nexus-view-heading { align-items: flex-start; flex-direction: column; gap: 14px; }
+  .nexus-view-mode { width: 100%; }
+  .nexus-view-mode label { flex: 1; justify-content: center; }
+  .nexus-hierarchy__toolbar, .nexus-tree-detail { padding: 16px; }
+  .nexus-hierarchy__search { margin-left: 16px; margin-right: 16px; }
+  .nexus-hierarchy__toolbar { align-items: flex-start; }
+  .nexus-hierarchy__toolbar > .workspace-action-button { flex-shrink: 0; }
+  .nexus-network-empty { padding: 28px 16px; }
+}
+
+@media (max-width: 1100px) {
+  .nexus-account-trigger__label { max-width: 65px; }
+}
+
+@media (max-width: 768px) {
+  .app .titlebar.titlebar--with-account { grid-template-columns: 40px minmax(0, 1fr) auto; column-gap: 4px; }
+  .titlebar.titlebar--with-account .titlebar__nav { max-width: 100%; transform: none; }
+  .titlebar.titlebar--with-account .titlebar__nav button { width: 42px; min-width: 0; padding: 0; }
+  .titlebar.titlebar--with-account.titlebar--desktop .titlebar__nav button { width: 32px; }
+  .titlebar--with-account.titlebar--desktop .nexus-account-trigger { width: 32px; padding: 3px; flex-shrink: 0; justify-content: center; }
+  .titlebar--with-account.titlebar--desktop .nexus-account-trigger__label,
+  .titlebar--with-account.titlebar--desktop .nexus-account-trigger > .app-icon { display: none; }
+  .nexus-account-trigger { gap: var(--space-1); padding-right: 6px; }
+  .nexus-account-trigger__label { max-width: 60px; }
+  .nexus-account-menu__header .workspace-action-button { min-width: 40px; min-height: 40px; }
+  .nexus-account-menu__link { min-height: 44px; }
+  .nexus-text-button { min-height: 32px; }
+}
+
+@media (max-width: 480px) {
+  .titlebar--with-account .titlebar__right { gap: 4px; }
+  .titlebar--with-account.titlebar--desktop .titlebar__right { gap: 2px; }
+  .titlebar.titlebar--with-account .titlebar__nav button { width: 32px; }
+  .titlebar.titlebar--with-account.titlebar--desktop .titlebar__nav button { width: 28px; }
+  .nexus-account-trigger { width: 32px; padding: 3px; flex-shrink: 0; justify-content: center; }
+  .nexus-account-trigger > .app-icon { display: none; }
+  .nexus-account-trigger__label { display: none; }
+  .nexus-page .nexus-account-access { margin-left: 0; }
+}
+
+@media (max-width: 360px) {
+  .titlebar.titlebar--with-account .titlebar__nav button { width: 28px; }
+}

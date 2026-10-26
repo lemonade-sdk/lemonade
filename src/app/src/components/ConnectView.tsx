@@ -1,9 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import api, { CloudProviderRow, ConnectionStatus, DirectorySettings, friendlyErrorMessage, normalizeBaseUrl, type LoadedModel, type ModelInfo } from '../api';
 import { clearClientStorage } from '../storage';
 import { Icon, IconName } from './Icon';
 import GlobalModelSettingsPanel from './GlobalModelSettingsPanel';
 import McpPanel from './McpPanel';
+import { NexusAccountPage } from './NexusAccount';
 import WorkspaceSectionRail from './WorkspaceSectionRail';
 import { WORKSPACE_NAVIGATION, type ConnectSection } from '../features/navigation/workspaceNavigation';
 import {
@@ -46,6 +47,7 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
   const [railCollapsed, setRailCollapsed] = useState(false);
   const [host, setHost] = useState(api.baseUrl);
   const [apiKey, setApiKey] = useState(api.apiKey);
+  const observedConnection = useRef({ endpoint: api.baseUrl, key: api.apiKey });
   const [canPersistApiKey, setCanPersistApiKey] = useState(api.canPersistApiKey);
   const [rememberApiKey, setRememberApiKey] = useState(api.canPersistApiKey && Boolean(api.apiKey));
   const [connecting, setConnecting] = useState(false);
@@ -125,6 +127,16 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
     setDirectoryNotice(null);
     setDirectoryError(null);
   }, [isActive, activeSection]);
+
+  useEffect(() => {
+    if (status !== 'connected') return;
+    const connection = { endpoint: api.baseUrl, key: api.apiKey };
+    if (observedConnection.current.endpoint === connection.endpoint && observedConnection.current.key === connection.key) return;
+    observedConnection.current = connection;
+    setHost(connection.endpoint);
+    setApiKey(connection.key);
+    setRememberApiKey(false);
+  }, [status, isActive]);
 
   const handleConnect = async () => {
     setConnecting(true);
@@ -308,7 +320,7 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
     ?? WORKSPACE_NAVIGATION.connect.sections[0];
 
   return (
-    <div className={`connect connect--workspace${railCollapsed ? ' workspace--rail-collapsed' : ''}`} data-view="connect">
+    <div className={`connect connect--workspace${activeSection === 'nexus' ? ' connect--nexus' : ''}${railCollapsed ? ' workspace--rail-collapsed' : ''}`} data-view="connect">
       <WorkspaceSectionRail
         sections={WORKSPACE_NAVIGATION.connect.sections}
         activeSection={activeSection}
@@ -337,14 +349,15 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
         </div>}
       />
 
-      <section className="workspace-pane connect__main" aria-labelledby="connect-pane-title">
-        <WorkspacePaneHeader
+      <section className="workspace-pane connect__main" aria-labelledby={activeSection === 'nexus' ? 'nexus-account-heading' : 'connect-pane-title'}>
+        {activeSection !== 'nexus' && <WorkspacePaneHeader
           title={t(section.label)}
           subtitle={t(section.description)}
           titleId="connect-pane-title"
-        />
+        />}
 
         <div className="connect__layout workspace-pane__scroll">
+        {activeSection === 'nexus' && <NexusAccountPage />}
         {activeSection === 'server' && (
         <section className="connect__section connect__section--server">
           <form className="connect__form" onSubmit={e => { e.preventDefault(); handleConnect(); }}>
