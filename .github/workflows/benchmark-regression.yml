@@ -99,7 +99,7 @@ jobs:
     name: Bench ${{ matrix.fork_id }}
     needs: [setup]
     runs-on: [self-hosted, Linux, strix-halo, devlab-dispatch]
-    timeout-minutes: 180
+    timeout-minutes: 360
     strategy:
       fail-fast: false
       max-parallel: 1
