@@ -6,10 +6,10 @@ GitHub comment tagging the right maintainer — but only if no triage-notify
 comment has been posted in the last 7 days, to avoid spam.
 
 Rules (in priority order):
-  1. rfc-blocked  — rfc:required label + 14d+ no update → ping @jeremyfowers
-  2. wg-stale     — wg::* label + 21d+ no update        → ping WG lead
-  3. first-timer  — FIRST_TIME_CONTRIBUTOR + 5d+ open   → ping @jeremyfowers
-  4. stale-unassigned — 45d+ no update + unassigned     → ping @jeremyfowers
+  1. rfc-blocked       — rfc:required label + 14d+ no update → @jeremyfowers
+  2. wg-stale          — WG declared in body + 21d+ no update → WG lead
+  3. first-timer       — FIRST_TIME_CONTRIBUTOR + 5d+ with no review
+  4. stale-unassigned  — 45d+ no update + unassigned → @jeremyfowers
 
 Usage:
     python .github/scripts/triage_notify.py [--repo OWNER/REPO] [--dry-run]
@@ -21,6 +21,7 @@ Requirements:
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
@@ -35,18 +36,49 @@ ADMIN_MAINTAINERS = {
     "Geramy",
 }
 
+# Maps canonical WG display names (from parse_wg) to their lead's GitHub login.
 WG_LEADS = {
-    "wg::auto-tune": "bitgamma",
-    "wg::cross-vendor-support": "kenvandine",
-    "wg::cloud-hybrid": "ramkrishna2910",
-    "wg::remote-use": "Geramy",
-    "wg::gui-app": "kpoineal",
-    "wg::enterprise-grade": "jeremyfowers",
+    "Auto-Tune": "bitgamma",
+    "Cross-Vendor Support": "kenvandine",
+    "Cloud Hybrid": "ramkrishna2910",
+    "Remote Use": "Geramy",
+    "GUI App": "kpoineal",
+    "Enterprise Grade": "jeremyfowers",
+    "Platform Core": "superm1",
+}
+
+CANONICAL_WGS = {
+    "auto-tune": "Auto-Tune",
+    "autotune": "Auto-Tune",
+    "auto tune": "Auto-Tune",
+    "cross-vendor support": "Cross-Vendor Support",
+    "cross-vendor": "Cross-Vendor Support",
+    "cross vendor support": "Cross-Vendor Support",
+    "cross vendor": "Cross-Vendor Support",
+    "cloud hybrid": "Cloud Hybrid",
+    "remote use": "Remote Use",
+    "gui app": "GUI App",
+    "enterprise grade": "Enterprise Grade",
+    "platform-core": "Platform Core",
+    "platform core": "Platform Core",
 }
 
 SENTINEL = "<!-- triage-notify:"
 DEDUP_DAYS = 7
 MAX_PRS_PER_RUN = 20
+
+
+def parse_wg(body):
+    if not body:
+        return None
+    m = re.search(r"scope of WG:\s*([^\n\r<]{1,60})", body, re.IGNORECASE)
+    if m:
+        return CANONICAL_WGS.get(m.group(1).strip().lower())
+    body_lower = body.lower()
+    for key in sorted(CANONICAL_WGS, key=len, reverse=True):
+        if key in body_lower:
+            return CANONICAL_WGS[key]
+    return None
 
 
 def run(cmd):
@@ -80,6 +112,7 @@ def fetch_open_prs(repo):
         updated = datetime.fromisoformat(it["updated_at"].replace("Z", "+00:00"))
         created = datetime.fromisoformat(it["created_at"].replace("Z", "+00:00"))
         labels = [lbl["name"] for lbl in it.get("labels", [])]
+        body = it.get("body") or ""
         prs.append(
             {
                 "number": it["number"],
@@ -92,6 +125,7 @@ def fetch_open_prs(repo):
                 "days_stale": (now - updated).days,
                 "days_old": (now - created).days,
                 "comments": it.get("comments", 0),
+                "wg": parse_wg(body),
             }
         )
     return prs
@@ -107,8 +141,7 @@ def already_notified(repo, pr_number):
     except subprocess.CalledProcessError:
         return False
     for c in comments:
-        body = c.get("body", "")
-        if SENTINEL not in body:
+        if SENTINEL not in c.get("body", ""):
             continue
         created = datetime.fromisoformat(c["created_at"].replace("Z", "+00:00"))
         if created >= cutoff:
@@ -124,10 +157,10 @@ def classify_pr(pr):
     if "rfc:required" in labels and pr["days_stale"] >= 14:
         return ("rfc-blocked", "jeremyfowers")
 
-    # Rule 2: WG-labeled but quiet
-    for wg_label, lead in WG_LEADS.items():
-        if wg_label in labels and pr["days_stale"] >= 21:
-            return ("wg-stale", lead)
+    # Rule 2: WG declared in body but quiet
+    if pr.get("wg") and pr["days_stale"] >= 21:
+        lead = WG_LEADS.get(pr["wg"], "jeremyfowers")
+        return ("wg-stale", lead)
 
     # Rule 3: First-timer with no engagement yet
     if (
@@ -151,12 +184,12 @@ def build_comment(pr, rule, ping_login):
             "It looks like it needs an RFC decision before it can move forward."
         ),
         "wg-stale": (
-            f"This PR has been quiet for {pr['days_stale']}d and carries a workgroup label "
-            "that falls under your charter."
+            f"This PR has been quiet for {pr['days_stale']}d and carries a workgroup "
+            f"declaration ({pr.get('wg', '')}) that falls under your charter."
         ),
         "first-timer": (
-            f"This is @{pr['author']}'s first contribution and it's been open {pr['days_old']}d "
-            "with no review yet."
+            f"This is @{pr['author']}'s first contribution and it's been open "
+            f"{pr['days_old']}d with no review yet."
         ),
         "stale-unassigned": (
             f"This PR has had no activity for {pr['days_stale']}d and has no assignee."
@@ -166,7 +199,7 @@ def build_comment(pr, rule, ping_login):
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     return (
         f"Hey @{ping_login} — {reason} "
-        f"Would be sweet to get a look at this when you have a moment!\n\n"
+        f"Would be sweet to get a look when you have a moment!\n\n"
         f"{SENTINEL} {rule} {today} -->"
     )
 
@@ -175,14 +208,15 @@ def post_comment(repo, pr_number, body, dry_run):
     if dry_run:
         print(f"  [dry-run] would post:\n{body}\n")
         return
-    cmd = [
-        "gh",
-        "api",
-        f"/repos/{repo}/issues/{pr_number}/comments",
-        "-f",
-        f"body={body}",
-    ]
-    run(cmd)
+    run(
+        [
+            "gh",
+            "api",
+            f"/repos/{repo}/issues/{pr_number}/comments",
+            "-f",
+            f"body={body}",
+        ]
+    )
 
 
 def main():

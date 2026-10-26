@@ -32,6 +32,7 @@ ACTIVE_WGS = [
     "Remote Use",
     "GUI App",
     "Enterprise Grade",
+    "Platform Core",
 ]
 
 WG_LEADS = {
@@ -41,6 +42,7 @@ WG_LEADS = {
     "Remote Use": "@Geramy",
     "GUI App": "@kpoineal",
     "Enterprise Grade": "@jeremyfowers",
+    "Platform Core": "@superm1 / @jeremyfowers",
 }
 
 ADMIN_MAINTAINERS = {
@@ -79,6 +81,9 @@ CANONICAL_WGS = {
     "remote use": "Remote Use",
     "gui app": "GUI App",
     "enterprise grade": "Enterprise Grade",
+    "platform-core": "Platform Core",
+    "platform core": "Platform Core",
+    "platformcore": "Platform Core",
 }
 
 
