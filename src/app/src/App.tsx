@@ -684,6 +684,7 @@ const App: React.FC = () => {
   }, [customModelInfos, modelHelpers, rawLoadedModels, serverModels]);
 
   const loadedModels = loadedModelViewState.models;
+  const previousLoadedModelNamesRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (!modelHelpers) return;
@@ -695,8 +696,16 @@ const App: React.FC = () => {
       );
     };
     setCurrentModel(current => {
-      if (current && current === dictationTarget) return current;
+      if (dictationTarget && (!current || current === dictationTarget)) return dictationTarget;
       if (current && loadedModels.some(m => m.model_name === current && (modelHelpers.canSelectInComposer(m) || infoSelectable(m.model_name)))) return current;
+      // A microphone-only ASR load must not replace an existing prompt mode,
+      // including when the browser denies capture after ASR starts.
+      if (current && loadedModels.length > 0 && loadedModels.every(m => String(m.type).toLowerCase() === 'transcription')) {
+        const info = modelHelpers.findModelInfoByName(knownInfos, current);
+        const recipe = String((info as any)?.recipe || '').toLowerCase();
+        if (recipe !== 'router' && !recipe.startsWith('router.')
+            && (!info || modelHelpers.capabilityFromModelInfo(info) !== 'audio')) return current;
+      }
       if (current) {
         const info = modelHelpers.findModelInfoByName(knownInfos, current);
         if (info && modelHelpers.isCollectionModel(info) && modelHelpers.isCollectionFullyLoaded(info, rawLoadedModels)) return current;
@@ -719,6 +728,23 @@ const App: React.FC = () => {
       setDictationTarget(null);
     }
   }, [dictationActive, dictationTarget, loadedModels]);
+
+  // A router is virtual and never appears as a loaded model. If a router
+  // candidate is unloaded after dictation, release its stale selection pin.
+  useEffect(() => {
+    const now = new Set(rawLoadedModels.map(m => m.model_name.toLowerCase()));
+    const removed = [...previousLoadedModelNamesRef.current].filter(name => !now.has(name));
+    previousLoadedModelNamesRef.current = now;
+    if (!dictationTarget || dictationActive || removed.length === 0 || !modelHelpers) return;
+    const info = modelHelpers.findModelInfoByName(serverModels, dictationTarget);
+    const recipe = String((info as any)?.recipe || '').toLowerCase();
+    if (recipe !== 'router' && !recipe.startsWith('router.')) return;
+    const candidates = (info as any)?.routing?.candidates;
+    if (Array.isArray(candidates) && candidates.some((name: unknown) =>
+      typeof name === 'string' && removed.includes(name.toLowerCase()))) {
+      setDictationTarget(null);
+    }
+  }, [dictationActive, dictationTarget, modelHelpers, rawLoadedModels, serverModels]);
 
   const navigateToRoute = useCallback((nextRoute: AppRoute) => {
     if (nextRoute.view === 'dashboard') lastWorkspaceSectionsRef.current.dashboard = nextRoute.section;
@@ -961,7 +987,10 @@ const App: React.FC = () => {
     setCurrentModel(model);
   }, []);
 
-  const handleDictationEnd = useCallback(() => setDictationActive(false), []);
+  const handleDictationEnd = useCallback((failed = false) => {
+    setDictationActive(false);
+    if (failed) setDictationTarget(null);
+  }, []);
 
   const handleModelSelect = useCallback((modelName: string) => {
     setDictationTarget(null);

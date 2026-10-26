@@ -520,7 +520,7 @@ interface ChatViewProps {
   connectionStatus: ConnectionStatus;
   onModelSelect: (model: string) => void;
   onDictationStart: (model: string) => void;
-  onDictationEnd: () => void;
+  onDictationEnd: (failed?: boolean) => void;
   onOpenModelDetails: (model: string) => void;
   onRefresh: () => void | Promise<void>;
 }
@@ -1765,6 +1765,10 @@ const ChatView: React.FC<ChatViewProps> = ({
     );
     const selectedDefault = lemonadeDefaultModel(selectedModel);
     if (selectedStillUsable || selectedDefault || !selectedModel || loadedModels.length === 0) return;
+    // Do not turn an unloaded prompt model into standalone transcription
+    // merely because the dictation ASR model is running.
+    if (loadedModels.every(m => String(m.type).toLowerCase() === 'transcription')
+        && (!selectedInfo || capabilityFromModelInfo(selectedInfo) !== 'audio')) return;
     const preferred = selectPreferredLoadedModel(loadedModels);
     if (preferred && canSelectInComposer(preferred)) onModelSelect(preferred.model_name);
   }, [dictationTarget, knownModelInfos, loadedModels, onModelSelect, selectedModel]);
@@ -2514,7 +2518,7 @@ ${finalText}`
       stopRecording();
       clearLiveMicState();
       micSessionRef.current = null;
-      if (dictating) onDictationEnd();
+      if (dictating) onDictationEnd(true);
       setLiveError(friendlyErrorMessage(err));
     } finally {
       setMicPreparation(null);
