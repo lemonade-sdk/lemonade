@@ -217,13 +217,15 @@ The other types never read a token window and refuse the option.
 
 For a privacy rule, where a missed entity is a leak rather than a wrong model,
 pair `fail` with `on_error: match_true`. That forces the condition true and
-**fires the rule**, which protects the request only when both hold:
+**fires the rule**, which protects the request only when all three hold:
 
 1. The rule routes to a **local** model. A rule that fires into a cloud model
    sends the whole uncut prompt there.
 2. The engine reaches the rule **before** any cloud rule. Rules are read in
    order and the first match wins, so a cloud rule placed above this one takes
    the request first and the guard never runs.
+3. The personal data is in the **routing input**. The classifier reads only the
+   last user message, so data in an earlier turn is never scored.
 
 ```json
 "classifiers": [
