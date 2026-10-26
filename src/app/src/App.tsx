@@ -348,7 +348,7 @@ function loadSavedRoute(): AppRoute {
   return { view: 'chat' };
 }
 
-type ModelHelpers = Pick<typeof import('./modelCapabilities'), 'canSelectInComposer' | 'capabilityFromModelInfo' | 'isComposerSelectableCapability' | 'selectPreferredLoadedModel'>
+type ModelHelpers = Pick<typeof import('./modelCapabilities'), 'canSelectInComposer' | 'capabilityFromModelInfo' | 'isComposerSelectableCapability' | 'selectPreferredLoadedModel' | 'isRouterRecipe'>
   & Pick<typeof import('./features/collections/collectionModels'), 'findModelInfoByName' | 'isCollectionFullyLoaded' | 'isCollectionModel' | 'withVirtualLoadedCollections'>;
 type AppApiClient = (typeof import('./api'))['default'];
 
@@ -658,6 +658,7 @@ const App: React.FC = () => {
         capabilityFromModelInfo: capabilities.capabilityFromModelInfo,
         isComposerSelectableCapability: capabilities.isComposerSelectableCapability,
         selectPreferredLoadedModel: capabilities.selectPreferredLoadedModel,
+        isRouterRecipe: capabilities.isRouterRecipe,
         findModelInfoByName: collections.findModelInfoByName,
         isCollectionFullyLoaded: collections.isCollectionFullyLoaded,
         isCollectionModel: collections.isCollectionModel,
@@ -702,9 +703,7 @@ const App: React.FC = () => {
       // including when the browser denies capture after ASR starts.
       if (current && loadedModels.length > 0 && loadedModels.every(m => String(m.type).toLowerCase() === 'transcription')) {
         const info = modelHelpers.findModelInfoByName(knownInfos, current);
-        const recipe = String((info as any)?.recipe || '').toLowerCase();
-        if (recipe !== 'router' && !recipe.startsWith('router.')
-            && (!info || modelHelpers.capabilityFromModelInfo(info) !== 'audio')) return current;
+        if (!info || modelHelpers.capabilityFromModelInfo(info) !== 'audio') return current;
       }
       if (current) {
         const info = modelHelpers.findModelInfoByName(knownInfos, current);
@@ -738,8 +737,7 @@ const App: React.FC = () => {
     previousLoadedModelNamesRef.current = now;
     if (!dictationTarget || removed.length === 0 || !modelHelpers) return;
     const info = modelHelpers.findModelInfoByName(serverModels, dictationTarget);
-    const recipe = String((info as any)?.recipe || '').toLowerCase();
-    if (recipe !== 'router' && !recipe.startsWith('router.')) return;
+    if (!modelHelpers.isRouterRecipe((info as any)?.recipe)) return;
     const candidates = (info as any)?.routing?.candidates;
     if (Array.isArray(candidates) && candidates.some((name: unknown) =>
       typeof name === 'string' && removed.includes(name.toLowerCase()))) {
