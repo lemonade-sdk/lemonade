@@ -176,12 +176,16 @@ def step_payload(specs: dict, step: dict) -> dict:
 
 def pinned_backend(examples: list[dict], backend_versions: dict, server_models: dict):
     """A pass-through route's response depends on the backend serving its model, which
-    its own example names, or else the setup example that loads it."""
+    its own example names, or else the setup example that loads it. Examples are
+    recorded on a recipe's Vulkan backend when it has one, so only that pin counts."""
     for example in examples:
         model = example.get("model", example.get("model_name"))
         if isinstance(model, str):
             recipe = server_models.get(model, {}).get("recipe")
-            return backend_versions.get(recipe) if recipe else None
+            pins = backend_versions.get(recipe) if recipe else None
+            if isinstance(pins, dict) and "vulkan" in pins:
+                return pins["vulkan"]
+            return pins
     return None
 
 
