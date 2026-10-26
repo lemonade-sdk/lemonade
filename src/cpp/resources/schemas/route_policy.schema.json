@@ -132,7 +132,9 @@
                                        { "required": ["reference_phrases"] }] } } },
         { "if":   { "required": ["type"], "properties": { "type": { "const": "llm" } } },
           "then": { "required": ["model", "prompt", "labels"],
-                    "properties": { "labels": { "minItems": 1 } } } }
+                    "properties": { "labels": { "minItems": 1 } } } },
+        { "if":   { "required": ["on_truncation"] },
+          "then": { "properties": { "type": { "enum": ["classifier", "zero_shot"] } } } }
       ]
     },
     "rule": {

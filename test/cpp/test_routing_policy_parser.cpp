@@ -395,6 +395,16 @@ static void test_on_truncation_validation() {
           throws_with_options(classifier_doc("match_true"), options,
                               "on_truncation must be score or fail"));
 
+    RoutingPolicyParseOptions llm_options;
+    llm_options.get_model_type = [](const std::string&) -> std::optional<lemon::ModelType> {
+        return lemon::ModelType::LLM;
+    };
+    check("chat-backed classifier rejects on_truncation",
+          throws_with_options(classifier_doc("fail"), llm_options,
+                              "a chat model reports no truncation"));
+    check("chat-backed classifier still parses without on_truncation",
+          parses_ok(classifier_doc(nullptr), llm_options));
+
     // The types that are not model-backed never see a token window, so the
     // option is refused rather than silently inert.
     json wrong_type = fixture("l3_classifier.json");

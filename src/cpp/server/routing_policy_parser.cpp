@@ -451,6 +451,12 @@ json parse_classifier_configs(const json& routing,
                         "', which cannot serve as a classifier (needs an LLM or "
                         "classification model)");
                 }
+                if (type == "classifier" && model_type == ModelType::LLM &&
+                    classifier.contains("on_truncation")) {
+                    throw std::invalid_argument(
+                        path + ".on_truncation needs a classification model; '" + original +
+                        "' is an LLM, and a chat model reports no truncation");
+                }
 
                 if (type == "zero_shot" && model_type != ModelType::CLASSIFICATION) {
                     throw std::invalid_argument(

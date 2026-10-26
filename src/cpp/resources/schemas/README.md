@@ -87,7 +87,7 @@ v1** (pinned in the schema field descriptions):
 | `metadata` | reads a request `metadata` key; **case-sensitive** comparison, value decoded into a comma-split, trimmed **token set** (`equals` raw exact / `any` set-intersection / `exists` presence). A missing, empty, or **whitespace-only** value counts as absent (matches only `exists:false`) |
 | multi-key leaf object | interpreted as implicit **`all`**; e.g. `{"keywords_any":[...],"max_chars":1000}` means both leaves must match |
 | `on_error` (omitted) | default **`match_false`** (fail-open) |
-| `on_truncation` (omitted) | default **`score`**. A score computed from input the backend cut to fit its token window is a *success*, so `on_error` never sees it. `fail` turns the cut into an evaluation failure, and `on_error` then applies. Accepted on the model-backed types, `classifier` and `zero_shot`; both read a token window they can overflow. |
+| `on_truncation` (omitted) | default **`score`**. A score computed from input the backend cut to fit its token window is a *success*, so `on_error` never sees it. `fail` turns the cut into an evaluation failure, and `on_error` then applies. Accepted on the model-backed types, `classifier` and `zero_shot`; both read a token window they can overflow. Registration also refuses it on a `classifier` whose model is a chat LLM, which reports no cut. |
 | `routing.router` desugaring | expansion to one `llm` classifier + identity rules is deterministic and behavior-equivalent across versions |
 
 Anything fancier (token/BM25 keyword matching, a different regex engine,

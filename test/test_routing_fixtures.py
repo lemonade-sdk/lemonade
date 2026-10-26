@@ -126,6 +126,38 @@ class RoutingFixtureSchemaTest(unittest.TestCase):
         # Missing reference_phrases for semantic_similarity -> invalid.
         self.assertTrue(list(validator.iter_errors(base)))
 
+    def test_on_truncation_only_on_model_backed_types(self):
+        """The parser refuses on_truncation outside classifier and zero_shot;
+        the schema must refuse the same documents."""
+        validator = jsonschema.Draft202012Validator(self.route_policy_schema)
+        classifiers = {
+            "classifier": {"model": "m"},
+            "zero_shot": {"model": "m", "labels": ["x"]},
+            "llm": {"model": "m", "prompt": "p", "labels": ["x"]},
+            "semantic_similarity": {"model": "m", "reference_phrases": {"x": ["a"]}},
+        }
+        for type_, fields in classifiers.items():
+            policy = {
+                "version": "1",
+                "recipe": "collection.router",
+                "routing": {
+                    "candidates": ["a"],
+                    "default_model": "a",
+                    "classifiers": [
+                        {"id": "c", "type": type_, "on_truncation": "fail", **fields}
+                    ],
+                    "rules": [
+                        {"id": "r", "match": {"classifier": "c"}, "route_to": "a"}
+                    ],
+                },
+            }
+            errors = list(validator.iter_errors(policy))
+            with self.subTest(type=type_):
+                if type_ in ("classifier", "zero_shot"):
+                    self.assertFalse(errors)
+                else:
+                    self.assertTrue(errors)
+
     def test_locked_structural_invariants(self):
         """Cross-field invariants the JSON Schema cannot express: default_model
         and every rule.route_to must be a candidate; classifier condition refs

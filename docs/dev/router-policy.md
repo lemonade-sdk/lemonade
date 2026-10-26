@@ -200,9 +200,7 @@ reports the cut, and each type loses a different part:
 
 | Type | The cut keeps | What disappears |
 |---|---|---|
-| `zero_shot` | the head and the tail, with `
-...
-` between | the middle |
+| `zero_shot` | the head and the tail, with `\n...\n` between | the middle |
 | `classifier` | the head, plus the final separator | **the end** |
 
 A score computed from cut text is still a *success*, so `on_error` never sees
@@ -213,7 +211,9 @@ it. `on_truncation` decides what the cut means:
 | `score` (default) | Use the scores anyway. Fine for topic routing. |
 | `fail` | Treat the cut as an evaluation failure, so `on_error` applies. |
 
-The other types never read a token window and refuse the option.
+The other types never read a token window and refuse the option. A `classifier`
+backed by a chat LLM refuses it too: a chat model reports no cut, so `fail`
+could never fire.
 
 For a privacy rule, where a missed entity is a leak rather than a wrong model,
 pair `fail` with `on_error: match_true`. That forces the condition true and
@@ -231,7 +231,9 @@ pair `fail` with `on_error: match_true`. That forces the condition true and
 "classifiers": [
   { "id": "pii", "type": "zero_shot", "model": "Prompt-Router-ONNX",
     "labels": ["contains personal data", "no personal data"],
-    "on_truncation": "fail", "on_error": "match_true" }
+    "on_truncation": "fail", "on_error": "match_true" },
+  { "id": "topic", "type": "zero_shot", "model": "Prompt-Router-ONNX",
+    "labels": ["code", "general"] }
 ],
 "rules": [
   { "id": "pii-to-local",
@@ -306,11 +308,11 @@ to its own trace entry, naming the reason the backend gave. Without it a failed
 condition and one that simply scored below its threshold both read as
 `"result": false`, and `on_error` hides which of the two happened.
 
-A **`zero_shot`** entry also carries **`"truncated": true`** when the backend had
-to cut the input text to fit its token window before scoring. Labels are never
-cut — a label pooled from half its tokens would score something the model only
-partly read. The key is absent whenever the whole input was scored, so its
-absence is the signal, not `false`.
+A **`classifier`** or **`zero_shot`** entry also carries **`"truncated": true`**
+when the backend had to cut the input text to fit its token window before
+scoring. A `zero_shot` model never cuts its labels, a label pooled from half
+its tokens would score something the model only partly read. The key is absent
+whenever the whole input was scored, so its absence is the signal, not `false`.
 
 ## Cloud candidates
 
