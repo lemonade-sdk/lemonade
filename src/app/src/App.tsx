@@ -6,6 +6,7 @@ import { scheduleIdleWork } from './startupScheduler';
 import { attachServerModelState, useServerModelState } from './features/models/modelState';
 import { preloadInteractionSurfaces } from './interactionPreload';
 import { I18nContext, translate, useI18n, type I18nContextValue } from './i18n';
+import { routerDependencies } from './features/router/routerRuntime';
 const MARKETPLACE_URL = 'https://raw.githubusercontent.com/lemonade-sdk/marketplace/main/apps.json';
 type MarketplaceApp = {
   id: string;
@@ -348,7 +349,7 @@ function loadSavedRoute(): AppRoute {
   return { view: 'chat' };
 }
 
-type ModelHelpers = Pick<typeof import('./modelCapabilities'), 'canSelectInComposer' | 'capabilityFromModelInfo' | 'isComposerSelectableCapability' | 'selectPreferredLoadedModel' | 'isRouterRecipe'>
+type ModelHelpers = Pick<typeof import('./modelCapabilities'), 'canSelectInComposer' | 'capabilityFromModelInfo' | 'isComposerSelectableCapability' | 'selectPreferredLoadedModel'>
   & Pick<typeof import('./features/collections/collectionModels'), 'findModelInfoByName' | 'isCollectionFullyLoaded' | 'isCollectionModel' | 'withVirtualLoadedCollections'>;
 type AppApiClient = (typeof import('./api'))['default'];
 
@@ -658,7 +659,6 @@ const App: React.FC = () => {
         capabilityFromModelInfo: capabilities.capabilityFromModelInfo,
         isComposerSelectableCapability: capabilities.isComposerSelectableCapability,
         selectPreferredLoadedModel: capabilities.selectPreferredLoadedModel,
-        isRouterRecipe: capabilities.isRouterRecipe,
         findModelInfoByName: collections.findModelInfoByName,
         isCollectionFullyLoaded: collections.isCollectionFullyLoaded,
         isCollectionModel: collections.isCollectionModel,
@@ -737,10 +737,8 @@ const App: React.FC = () => {
     previousLoadedModelNamesRef.current = now;
     if (!dictationTarget || removed.length === 0 || !modelHelpers) return;
     const info = modelHelpers.findModelInfoByName(serverModels, dictationTarget);
-    if (!modelHelpers.isRouterRecipe((info as any)?.recipe)) return;
-    const candidates = (info as any)?.routing?.candidates;
-    if (Array.isArray(candidates) && candidates.some((name: unknown) =>
-      typeof name === 'string' && removed.includes(name.toLowerCase()))) {
+    // Includes candidates, default, LLM router helper, classifiers and components.
+    if (routerDependencies(info).some(({ name }) => removed.includes(name.toLowerCase()))) {
       setDictationTarget(null);
     }
   }, [dictationActive, dictationTarget, modelHelpers, rawLoadedModels, serverModels]);

@@ -254,6 +254,7 @@ assert.match(appSource, /loadedModels\.every\(m => String\(m\.type\)\.toLowerCas
 assert.match(appSource, /previousLoadedModelNamesRef\.current = now/);
 assert.match(chatViewSource, /loadedModels\.every\(m => String\(m\.type\)\.toLowerCase\(\) === 'transcription'/);
 assert.match(appSource, /removed\.includes\(name\.toLowerCase\(\)\)/);
+assert.match(appSource, /routerDependencies\(info\)\.some/, 'router pin invalidation must use all Router dependencies');
 assert.match(chatViewSource, /if \(dictating\) onDictationEnd\(true\);/);
 assert.match(chatViewSource, /if \(dictating\) onDictationEnd\(\);/);
 assert.match(chatViewSource, /if \(micSessionRef\.current === 'dictation'\) onDictationEnd\(\)/);
