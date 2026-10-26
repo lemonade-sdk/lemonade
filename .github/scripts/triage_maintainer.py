@@ -179,7 +179,18 @@ def fetch_prs(repo, top_contributors):
                 "updated_at": it["updated_at"],
                 "days_stale": days_stale,
                 "days_old": (now - created).days,
-                "wg": parse_wg(body),
+                "wg": next(
+                    (
+                        l.replace("wg::", "")
+                        .replace("-", " ")
+                        .title()
+                        .replace("Wg::", "")
+                        for l in [lbl["name"] for lbl in it.get("labels", [])]
+                        if l.startswith("wg::")
+                    ),
+                    None,
+                )
+                or parse_wg(body),
                 "rfc_status": parse_rfc_status(
                     [lbl["name"] for lbl in it.get("labels", [])]
                 ),

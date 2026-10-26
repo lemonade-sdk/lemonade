@@ -64,6 +64,14 @@ Runtime — apply AT MOST ONE total. Same hard rule. Skip if the item is not spe
 - runtime::metal  — Apple Metal path (macOS)
 - runtime::cpu    — CPU-only execution path (only when the issue is specifically about CPU fallback / CPU-only behavior, not when CPU is just one of many devices mentioned)
 
+Workgroup — apply AT MOST ONE total. Only apply when the item is clearly and primarily scoped to one active WG charter. Skip if cross-cutting or unclear:
+- wg::auto-tune            — self-optimizing models/backends: auto-selecting backend, benchmarking, auto-tuning inference params
+- wg::cross-vendor-support — hardware vendor support beyond AMD: NVIDIA CUDA, ARM, Intel, cross-platform compatibility
+- wg::cloud-hybrid         — routing between local and cloud models, cloud provider integrations, hybrid inference
+- wg::remote-use           — serving inference to remote devices or locations, networking, multi-client access
+- wg::gui-app              — Tauri desktop app UI (src/app/), user-facing GUI features, app design
+- wg::enterprise-grade     — systematic testing, CI quality, observability, reliability, production hardening
+
 Existing component labels — apply only if clearly relevant. Don't double up with area:: (e.g., don't add `cpp` if area::api fits):
 - cpp     — C++ server-side code that doesn't fit area::api or area::cli
 - app     — Tauri desktop app (src/app/)
@@ -189,6 +197,12 @@ KNOWN_LABELS = {
     "runtime::cuda",
     "runtime::metal",
     "runtime::cpu",
+    "wg::auto-tune",
+    "wg::cross-vendor-support",
+    "wg::cloud-hybrid",
+    "wg::remote-use",
+    "wg::gui-app",
+    "wg::enterprise-grade",
     "cpp",
     "app",
     "web ui",
@@ -200,7 +214,7 @@ KNOWN_LABELS = {
 }
 
 # Label families where at most one label may be applied per item.
-AT_MOST_ONE_PREFIXES = ("engine::", "area::", "runtime::")
+AT_MOST_ONE_PREFIXES = ("engine::", "area::", "runtime::", "wg::")
 
 # Deterministic community-priority labels. Computed from engagement counts
 # (author + commenters + supporting reactions), excluding bots and anyone with

@@ -1,0 +1,39 @@
+name: Triage notify
+
+# Posts attention-needed comments on PRs that have gone quiet.
+# Runs weekday mornings so maintainers see pings at the start of their day.
+
+on:
+  schedule:
+    - cron: "0 9 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (print only, no comments posted)"
+        type: boolean
+        default: true
+
+concurrency:
+  group: triage-notify
+  cancel-in-progress: false
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Post triage notifications
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python .github/scripts/triage_notify.py \
+            --repo "${{ github.repository }}" \
+            ${{ (github.event_name == 'workflow_dispatch' && inputs.dry_run) && '--dry-run' || '' }}
