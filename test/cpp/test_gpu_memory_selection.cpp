@@ -77,7 +77,7 @@ int main() {
         GpuMemoryVendor::Amd, amd_igpu, two_amd, nvidia, unavailable, "ROCm0");
     check(rocm0.unified && rocm0.total_gb == 8.0 &&
           rocm0.physical_total_gb == 0.0,
-          "ROCm iGPU pool does not report its GTT window as physical RAM");
+          "ROCm iGPU pool does not mistake GPU aperture for physical RAM");
 
     auto cuda_list = select_gpu_memory_pool(
         gpu_memory_vendor_for_target("system", "CUDA0,CUDA1"), unavailable, amd, two_nvidia,
