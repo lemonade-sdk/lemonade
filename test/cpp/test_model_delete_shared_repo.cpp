@@ -321,6 +321,33 @@ int main() {
                R"("files":[{"name":"main.gguf"},{"name":"mmproj.gguf"}]})");
     write_file(ownmulti_repo / "refs" / "main", "snap");
 
+    fs::path lone_repo = hf_root / "models--org--lone";
+    write_file(lone_repo / "snapshots" / "snap" / "q4.gguf.partial", "partial");
+    write_file(lone_repo / "snapshots" / "snap" / "q8.gguf.partial", "other tool's draft");
+    write_file(lone_repo / "refs" / "main", "snap");
+
+    fs::path basenam_repo = hf_root / "models--org--basenam";
+    write_file(basenam_repo / "snapshots" / "snap" / "onnx" / "tiny" / "encoder.ort.partial",
+               "partial");
+    write_file(basenam_repo / "snapshots" / "snap" / "onnx" / "small" / "encoder.ort",
+               "another model's copy");
+    write_file(basenam_repo / "refs" / "main", "snap");
+
+    fs::path twoown_repo = hf_root / "models--org--twoown";
+    write_file(twoown_repo / "snapshots" / "rev-a" / "a.gguf.partial", "partial");
+    write_file(twoown_repo / "snapshots" / "rev-a" / ".download_manifest.json",
+               R"({"model_name":"user.twoown-a","files":[{"name":"a.gguf"}]})");
+    write_file(twoown_repo / "snapshots" / "rev-b" / "b.gguf.partial", "partial");
+    write_file(twoown_repo / "snapshots" / "rev-b" / ".download_manifest.json",
+               R"({"model_name":"user.twoown-b","files":[{"name":"b.gguf"}]})");
+    write_file(twoown_repo / "refs" / "main", "rev-a");
+
+    fs::path trunc_repo = hf_root / "models--org--trunc";
+    write_file(trunc_repo / "snapshots" / "snap" / "a.gguf.partial", "partial");
+    write_file(trunc_repo / "snapshots" / "snap" / ".download_manifest.json",
+               R"({"model_name":"user.trunc-a","files":[{"name":"a.gguf")");
+    write_file(trunc_repo / "refs" / "main", "snap");
+
     // Repos used by the late-arrival cases further down.
     fs::path late_repo = make_repo(hf_root, "models--org--late", {"a.gguf"});
     fs::path arrive_repo = hf_root / "models--org--arrive";
@@ -422,6 +449,12 @@ int main() {
         {"guest-a", json{{"checkpoint", "org/guest:q4.gguf"}, {"recipe", "llamacpp"}}},
         {"ownmulti-a", json{{"checkpoint", "org/ownmulti:mmproj.gguf"},
                             {"recipe", "llamacpp"}}},
+        {"lone-a", json{{"checkpoint", "org/lone:q4.gguf"}, {"recipe", "llamacpp"}}},
+        {"basenam-a", json{{"checkpoint", "org/basenam:onnx/tiny/encoder.ort"},
+                           {"recipe", "llamacpp"}}},
+        {"twoown-a", json{{"checkpoint", "org/twoown:a.gguf"}, {"recipe", "llamacpp"}}},
+        {"twoown-b", json{{"checkpoint", "org/twoown:b.gguf"}, {"recipe", "llamacpp"}}},
+        {"trunc-a", json{{"checkpoint", "org/trunc:a.gguf"}, {"recipe", "llamacpp"}}},
         {"late-a", json{{"checkpoint", "org/late:a.gguf"}, {"recipe", "llamacpp"}}},
         {"late-b", json{{"checkpoint", "org/late:b.gguf"}, {"recipe", "llamacpp"}}},
         {"arrive-a", json{{"checkpoint", "org/arrive:a.gguf"}, {"recipe", "llamacpp"}}},
@@ -722,6 +755,45 @@ int main() {
         manager.delete_model("user.ownmulti-a");
         check("a download this model started accounts for the files it finished",
               !fs::exists(ownmulti_repo));
+
+        manager.delete_model("user.lone-a");
+        check("an unrelated partial survives the last model naming the repo",
+              fs::exists(lone_repo / "snapshots" / "snap" / "q8.gguf.partial"));
+        check("the only model's own partial is still reclaimed",
+              !fs::exists(lone_repo / "snapshots" / "snap" / "q4.gguf.partial"));
+
+        manager.delete_model("user.basenam-a");
+        check("the same file name in another folder is not this model's",
+              fs::exists(basenam_repo / "snapshots" / "snap" / "onnx" / "small" /
+                         "encoder.ort"));
+        check("the model's own marker under its own folder is reclaimed",
+              !fs::exists(basenam_repo / "snapshots" / "snap" / "onnx" / "tiny" /
+                          "encoder.ort.partial"));
+
+        manager.delete_model("user.twoown-a");
+        check("one model's interrupted download is reclaimed beside another's",
+              !fs::exists(twoown_repo / "snapshots" / "rev-a" / "a.gguf.partial") &&
+                  !fs::exists(twoown_repo / "snapshots" / "rev-a" /
+                              ".download_manifest.json"));
+        check("the other model's interrupted download keeps its resume marker",
+              fs::exists(twoown_repo / "snapshots" / "rev-b" / "b.gguf.partial") &&
+                  fs::exists(twoown_repo / "snapshots" / "rev-b" /
+                             ".download_manifest.json"));
+
+        bool survived_truncated_manifest = true;
+        try {
+            manager.delete_model("user.trunc-a");
+        } catch (const std::exception&) {
+            survived_truncated_manifest = false;
+        }
+        check("a truncated download manifest does not stop the delete",
+              survived_truncated_manifest);
+        check("a manifest whose owner cannot be read is kept",
+              survived_truncated_manifest &&
+                  fs::exists(trunc_repo / "snapshots" / "snap" / ".download_manifest.json"));
+        check("the partial that names this model's variant is reclaimed anyway",
+              survived_truncated_manifest &&
+                  !fs::exists(trunc_repo / "snapshots" / "snap" / "a.gguf.partial"));
     }
 
     // Files that arrive after the model cache was built. The Hugging Face cache

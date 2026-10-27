@@ -400,6 +400,7 @@ void ModelIngest::download_from_registry(const ModelInfo& info,
     // paths, then handed to the one place a plan is executed.
     json manifest;
     manifest["repo_id"] = main_repo_id;
+    manifest["model_name"] = info.model_name;
     manifest["registry_source"] = source_name;
     manifest["commit_hash"] = repo_snapshot_ids.at(main_repo_id);
     manifest["download_path"] = repo_snapshot_paths.at(main_repo_id);

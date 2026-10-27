@@ -211,17 +211,40 @@ bool pending_matches_variant(const std::string& name, const std::string& variant
     if (n == v) return true;
     if (ends_with(n, "/" + v)) return true;
     if (inside_variant_folder(n, v)) return true;
-    if (marker_key(n) == marker_key(v)) return true;
+    if (v.find('/') != std::string::npos) return false;
+    const std::string key = marker_key(v);
+    if (marker_key(n) == key) return true;
     const std::string token = lower(gguf_quant_token(file_name(n)));
-    return !token.empty() && marker_key(v).find('/') == std::string::npos && token == marker_key(v);
+    return !token.empty() && token == key;
 }
 
-json read_json_file(const fs::path& path) {
+struct ManifestFacts {
+    bool readable = false;
+    std::string owner;
+    std::vector<std::string> files;
+};
+
+ManifestFacts read_manifest(const fs::path& path) {
+    ManifestFacts facts;
     std::ifstream in(path, std::ios::binary);
-    json doc;
-    if (!in) return doc;
-    in >> doc;
-    return in.fail() ? json() : doc;
+    if (!in) return facts;
+    const json doc = json::parse(in, nullptr, /*allow_exceptions=*/false);
+    if (doc.is_discarded() || !doc.is_object()) return facts;
+    facts.readable = true;
+    if (doc.contains("model_name") && doc["model_name"].is_string()) {
+        facts.owner = doc["model_name"].get<std::string>();
+    }
+    if (doc.contains("files") && doc["files"].is_array()) {
+        for (const auto& entry : doc["files"]) {
+            if (entry.is_string()) {
+                facts.files.push_back(entry.get<std::string>());
+            } else if (entry.is_object() && entry.contains("name") &&
+                       entry["name"].is_string()) {
+                facts.files.push_back(entry["name"].get<std::string>());
+            }
+        }
+    }
+    return facts;
 }
 
 // An interrupted download leaves .partial files and the manifest that counts them;
@@ -246,23 +269,6 @@ DownloadMarkers collect_download_markers(const fs::path& repo_dir) {
     return markers;
 }
 
-bool manifest_lists(const json& doc, std::vector<std::string>& files) {
-    if (!doc.is_object() || !doc.contains("files") || !doc["files"].is_array()) return false;
-    for (const auto& entry : doc["files"]) {
-        if (entry.is_string()) {
-            files.push_back(entry.get<std::string>());
-        } else if (entry.is_object() && entry.contains("name") && entry["name"].is_string()) {
-            files.push_back(entry["name"].get<std::string>());
-        }
-    }
-    return !files.empty();
-}
-
-bool manifest_owner(const json& doc, std::string& owner) {
-    owner = doc.is_object() ? doc.value("model_name", std::string()) : std::string();
-    return !owner.empty();
-}
-
 std::vector<std::string> own_download_files(const fs::path& repo_dir,
                                             const std::string& model_name) {
     std::vector<std::string> files;
@@ -270,10 +276,9 @@ std::vector<std::string> own_download_files(const fs::path& repo_dir,
     for (const auto& entry : fs::recursive_directory_iterator(repo_dir, safe_dir_options, ec)) {
         if (ec) break;
         if (entry.path().filename() != ".download_manifest.json") continue;
-        const json doc = read_json_file(entry.path());
-        std::string owner;
-        if (!manifest_owner(doc, owner) || owner != model_name) continue;
-        manifest_lists(doc, files);
+        const ManifestFacts manifest = read_manifest(entry.path());
+        if (manifest.owner != model_name) continue;
+        files.insert(files.end(), manifest.files.begin(), manifest.files.end());
     }
     return files;
 }
@@ -491,26 +496,40 @@ PendingOwnership classify_pending(const fs::path& repo_dir, const std::string& v
 
     const DownloadMarkers markers = collect_download_markers(repo_dir);
 
-    std::string recorded_owner;
-    std::vector<json> documents;
-    documents.reserve(markers.manifests.size());
+    std::vector<ManifestFacts> manifests;
+    manifests.reserve(markers.manifests.size());
+    bool named_for_us = false;
     for (const fs::path& path : markers.manifests) {
-        json doc = read_json_file(path);
-        std::string owner;
-        if (manifest_owner(doc, owner)) recorded_owner = owner;
-        documents.push_back(std::move(doc));
+        ManifestFacts facts = read_manifest(path);
+        named_for_us = named_for_us || facts.owner == model_name;
+        manifests.push_back(std::move(facts));
     }
-    const bool named_for_us = !recorded_owner.empty() && recorded_owner == model_name;
-    const bool named_for_other = !recorded_owner.empty() && recorded_owner != model_name;
+
+    std::vector<std::string> ours_listed;
+    std::vector<std::string> others_listed;
+    for (const auto& manifest : manifests) {
+        if (manifest.owner.empty()) continue;
+        std::vector<std::string>& into =
+            manifest.owner == model_name ? ours_listed : others_listed;
+        into.insert(into.end(), manifest.files.begin(), manifest.files.end());
+    }
+    const auto listed_in = [](const std::vector<std::string>& listed,
+                              const std::string& name) {
+        return std::any_of(listed.begin(), listed.end(), [&name](const std::string& file) {
+            return pending_matches_variant(name, file);
+        });
+    };
 
     PendingOwnership out;
     for (const fs::path& partial : markers.partials) {
         std::string target = repo_relative(partial, repo_dir);
         target.erase(target.size() - strlen(".partial"));
         const bool ours_partial =
-            unattributed_is_mine ||
-            (pending_matches_variant(target, variant) &&
-             (named_for_us || !claimed_by_sibling(target)) && !named_for_other);
+            !listed_in(others_listed, target) &&
+            (listed_in(ours_listed, target) ||
+             (unattributed_is_mine && !claimed_by_sibling(target)) ||
+             (pending_matches_variant(target, variant) &&
+              (named_for_us || !claimed_by_sibling(target))));
         if (ours_partial) {
             out.ours.push_back(partial);
         } else {
@@ -519,14 +538,17 @@ PendingOwnership classify_pending(const fs::path& repo_dir, const std::string& v
     }
 
     for (size_t i = 0; i < markers.manifests.size(); ++i) {
-        std::vector<std::string> listed;
+        const ManifestFacts& manifest = manifests[i];
         const bool ours_manifest =
-            named_for_us ||
-            (!named_for_other && manifest_lists(documents[i], listed) &&
-             !std::any_of(listed.begin(), listed.end(), claimed_by_sibling) &&
-             std::any_of(listed.begin(), listed.end(), [&variant](const std::string& name) {
-                 return pending_matches_variant(name, variant);
-             }));
+            manifest.readable &&
+            (manifest.owner == model_name ||
+             (!manifest.files.empty() &&
+              !std::any_of(manifest.files.begin(), manifest.files.end(), claimed_by_sibling) &&
+              (unattributed_is_mine ||
+               std::any_of(manifest.files.begin(), manifest.files.end(),
+                           [&variant](const std::string& name) {
+                               return pending_matches_variant(name, variant);
+                           }))));
         if (ours_manifest) {
             out.ours.push_back(markers.manifests[i]);
         } else {
@@ -621,14 +643,14 @@ RepositoryClaims claims_in_repo(const ModelInfo& victim, const std::string& repo
     RepositoryClaims claims;
 
     const DownloadMarkers markers = collect_download_markers(repo_dir);
-    std::string recorded_owner;
+    std::vector<ManifestFacts> manifests;
     std::vector<std::string> resumed;
+    bool markers_uncertain = false;
     for (const fs::path& path : markers.manifests) {
-        json doc = read_json_file(path);
-        std::string owner;
-        if (manifest_owner(doc, owner)) recorded_owner = owner;
-        std::vector<std::string> listed;
-        if (manifest_lists(doc, listed)) resumed.insert(resumed.end(), listed.begin(), listed.end());
+        ManifestFacts facts = read_manifest(path);
+        markers_uncertain = markers_uncertain || !facts.readable;
+        resumed.insert(resumed.end(), facts.files.begin(), facts.files.end());
+        manifests.push_back(std::move(facts));
     }
     for (const fs::path& partial : markers.partials) {
         std::string target = repo_relative(partial, repo_dir);
@@ -671,17 +693,24 @@ RepositoryClaims claims_in_repo(const ModelInfo& victim, const std::string& repo
         // repository with no refs/main resolves to nothing at all.
         for (const fs::path& file : files) {
             if (victim_named.count(file) || needs.count(file)) continue;
-            if (any_variant_matches(variants, file.filename().string())) own.insert(file);
+            if (any_variant_matches(variants, repo_relative(file, repo_dir))) own.insert(file);
         }
 
         if (own.empty() && !other.downloaded) {
+            bool named_for_them = markers_uncertain;
+            bool named_for_anyone = markers_uncertain;
+            for (const auto& manifest : manifests) {
+                if (manifest.owner.empty()) continue;
+                named_for_anyone = true;
+                named_for_them = named_for_them || manifest.owner == other.model_name;
+            }
             const bool awaited =
-                recorded_owner.empty()
-                    ? std::any_of(resumed.begin(), resumed.end(),
-                                  [&variants](const std::string& target) {
-                                      return any_variant_matches(variants, target);
-                                  })
-                    : recorded_owner == other.model_name;
+                named_for_them ||
+                (!named_for_anyone &&
+                 std::any_of(resumed.begin(), resumed.end(),
+                             [&variants](const std::string& target) {
+                                 return any_variant_matches(variants, target);
+                             }));
             if (!awaited) continue;
         }
 
@@ -895,8 +924,9 @@ bool ModelArtifactStore::cleanup_incomplete_download(const ModelInfo& info,
     const std::string variant = variant_from_checkpoint(main_checkpoint);
     const bool alone_here =
         !repo_shared(main_repo, registry_source, info.model_name, all_models);
-    PendingOwnership pending = classify_pending(repo_dir, variant, info.model_name, claims.variants,
-                                                /*unattributed_is_mine=*/alone_here);
+    PendingOwnership pending =
+        classify_pending(repo_dir, variant, info.model_name, claims.variants,
+                         /*unattributed_is_mine=*/alone_here && claims_whole_repo(variant));
 
     if (snapshot_holds_unclaimed_file(repo_dir, variant,
                                       own_download_files(repo_dir, info.model_name))) {
