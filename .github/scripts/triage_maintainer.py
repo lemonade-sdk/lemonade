@@ -9,6 +9,7 @@ All filters AND together; total always visible.
 
 Usage:
     python .github/scripts/triage_maintainer.py [--output PATH] [--repo OWNER/REPO]
+        [--wg-predictions PATH]
 
 Requirements:
     - gh CLI authenticated
@@ -125,19 +126,41 @@ def community_tier(login, author_association, top_contributors):
     return "returning"
 
 
-def parse_wg(body):
-    if not body:
+def declared_wg(body):
+    m = re.search(r"scope of WG:\s*([^\n\r<]{1,60})", body or "", re.IGNORECASE)
+    if not m:
         return None
-    m = re.search(r"scope of WG:\s*([^\n\r<]{1,60})", body, re.IGNORECASE)
-    if m:
-        candidate = m.group(1).strip()
-        # Only accept known canonical WGs — rejects RFC/checkbox garbage
-        return CANONICAL_WGS.get(candidate.lower())
-    body_lower = body.lower()
+    # Only accept known canonical WGs — rejects RFC/checkbox garbage
+    return CANONICAL_WGS.get(m.group(1).strip().lower())
+
+
+def mentioned_wg(body):
+    body_lower = (body or "").lower()
     for key in sorted(CANONICAL_WGS, key=len, reverse=True):
         if key in body_lower:
             return CANONICAL_WGS[key]
     return None
+
+
+def label_wg(labels):
+    for name in labels:
+        if name.startswith("wg::"):
+            return CANONICAL_WGS.get(name[4:].replace("-", " ").lower())
+    return None
+
+
+def resolve_wg(labels, body, prediction):
+    """Return (wg, source, reason). Explicit signals beat predictions;
+    predictions beat a loose body mention."""
+    if wg := label_wg(labels):
+        return wg, "label", None
+    if wg := declared_wg(body):
+        return wg, "declared", None
+    if prediction:
+        return prediction[0], "predicted", prediction[1]
+    if wg := mentioned_wg(body):
+        return wg, "mentioned", None
+    return None, None, None
 
 
 def parse_rfc_status(labels):
@@ -153,7 +176,20 @@ def parse_rfc_status(labels):
     return None
 
 
-def fetch_prs(repo, top_contributors):
+def load_wg_predictions(path):
+    """Load {"<pr number>": ["<WG name>", "<reason>"]}, rejecting unknown WGs."""
+    if not path:
+        return {}
+    raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    preds = {}
+    for num, (wg, reason) in raw.items():
+        if wg not in ACTIVE_WGS:
+            sys.exit(f"{path}: PR #{num} has unknown WG {wg!r}")
+        preds[int(num)] = (wg, reason)
+    return preds
+
+
+def fetch_prs(repo, top_contributors, wg_predictions):
     now = datetime.now(timezone.utc)
     raw = gh_api_pages(f"/repos/{repo}/issues?state=open&per_page=100")
     prs = []
@@ -168,14 +204,18 @@ def fetch_prs(repo, top_contributors):
         assoc = it.get("author_association", "NONE")
         is_maint = assoc in WRITE_ASSOCIATIONS or login in ADMIN_MAINTAINERS
         body = it.get("body") or ""
+        labels = [lbl["name"] for lbl in it.get("labels", [])]
         days_stale = (now - updated).days
+        wg, wg_source, wg_reason = resolve_wg(
+            labels, body, wg_predictions.get(it["number"])
+        )
         prs.append(
             {
                 "number": it["number"],
                 "title": it["title"],
                 "url": it["html_url"],
                 "author": login,
-                "labels": [lbl["name"] for lbl in it.get("labels", [])],
+                "labels": labels,
                 "assignees": [
                     a["login"] for a in it.get("assignees", []) if a and a.get("login")
                 ],
@@ -184,21 +224,10 @@ def fetch_prs(repo, top_contributors):
                 "updated_at": it["updated_at"],
                 "days_stale": days_stale,
                 "days_old": (now - created).days,
-                "wg": next(
-                    (
-                        l.replace("wg::", "")
-                        .replace("-", " ")
-                        .title()
-                        .replace("Wg::", "")
-                        for l in [lbl["name"] for lbl in it.get("labels", [])]
-                        if l.startswith("wg::")
-                    ),
-                    None,
-                )
-                or parse_wg(body),
-                "rfc_status": parse_rfc_status(
-                    [lbl["name"] for lbl in it.get("labels", [])]
-                ),
+                "wg": wg,
+                "wg_source": wg_source,
+                "wg_reason": wg_reason,
+                "rfc_status": parse_rfc_status(labels),
                 "is_maintainer": is_maint,
                 "community_tier": (
                     None if is_maint else community_tier(login, assoc, top_contributors)
@@ -444,6 +473,9 @@ MAINTAINER_TEMPLATE = r"""<!doctype html>
   .chip { display:inline-block; padding:1px 8px; border-radius:10px;
           font-size:11px; font-weight:600; margin:0 2px; }
   .chip.wg     { background:#1f3a5f; border:1px solid #79c0ff; color:#79c0ff; }
+  .chip.wg.predicted { background:transparent; border-style:dashed; }
+  .suggest { color:#56d364; }
+  .suggest strong { cursor:help; border-bottom:1px dotted #56d364; }
   .chip.maint  { background:#21262d; border:1px solid var(--border); color:var(--muted); }
   .chip.first  { background:#1f6feb; color:#fff; }
   .chip.lead   { background:#3d3000; border:1px solid var(--tier-lead); color:var(--tier-lead); }
@@ -581,6 +613,13 @@ MAINTAINER_TEMPLATE = r"""<!doctype html>
       <button class="toggle" id="tog-rfc-required">RFC Required</button>
     </div>
   </div>
+
+  <div class="filter-group">
+    <label>Routing</label>
+    <div class="toggle-row">
+      <button class="toggle" id="tog-suggested">Suggested reviewer</button>
+    </div>
+  </div>
   <button id="clear-btn">Clear all</button>
 </div>
 
@@ -608,6 +647,7 @@ const state = {
   wgLead: false,
   staleDays: 0,     // 0 = any, 14, 30, or 60
   rfcRequired: false,
+  suggested: false,
 };
 
 // ── helpers ──
@@ -628,7 +668,9 @@ function prChips(pr) {
     chips.push('<span class="chip hot">HOT</span>');
   else if(pr.labels.some(l=>l.startsWith("priority::")&&l.includes("warm")))
     chips.push('<span class="chip warm">WARM</span>');
-  if(pr.wg) chips.push(`<span class="chip wg">${esc(pr.wg)}</span>`);
+  if(pr.wg && pr.wg_source==="predicted")
+    chips.push(`<span class="chip wg predicted" title="auto-classified: ${esc(pr.wg_reason||"")}">${esc(pr.wg)} (auto)</span>`);
+  else if(pr.wg) chips.push(`<span class="chip wg">${esc(pr.wg)}</span>`);
   if(pr.is_maintainer) chips.push('<span class="chip maint">maintainer</span>');
   else if(pr.community_tier==="wg-lead") chips.push('<span class="chip lead">WG lead / owner</span>');
   else if(pr.community_tier==="active") chips.push('<span class="chip active">active contributor</span>');
@@ -665,6 +707,8 @@ function prCard(pr) {
         <span class="${ageC}">updated ${ageText(pr.days_stale)} ago</span>
         <span>${pr.comments} comment${pr.comments===1?"":"s"}</span>
         <span>→ ${assignees}</span>
+        ${pr.suggested_reviewers.length ? `<span class="suggest">suggested: ${pr.suggested_reviewers
+          .map(r=>`<strong title="${esc(r.why)}">@${esc(r.login)}</strong>`).join(", ")}</span>` : ""}
       </div>
       <div class="pr-chips">${chips}${labelPills?`<span style="margin-left:4px">${labelPills}</span>`:""}</div>
     </div>`;
@@ -683,6 +727,7 @@ function matchesPR(pr) {
   if(state.wgLead && pr.community_tier !== "wg-lead") return false;
   if(state.staleDays && pr.days_stale < state.staleDays) return false;
   if(state.rfcRequired && pr.rfc_status !== "required") return false;
+  if(state.suggested && !pr.suggested_reviewers.length) return false;
   return true;
 }
 
@@ -771,6 +816,7 @@ function render() {
   if(state.wgLead) parts.push("WG leads / owners only");
   if(state.staleDays) parts.push(`${state.staleDays}d+ stale`);
   if(state.rfcRequired) parts.push("RFC required");
+  if(state.suggested) parts.push("has suggested reviewer");
   document.getElementById("result-breakdown").textContent =
     parts.length ? "Filters: " + parts.join(" · ") : "All open PRs";
 }
@@ -805,6 +851,7 @@ wireToggle("tog-maintainer", "maintainer");
 wireToggle("tog-first",      "firstTimer");
 wireToggle("tog-lead",       "wgLead");
 wireToggle("tog-rfc-required", "rfcRequired");
+wireToggle("tog-suggested",    "suggested");
 
 // Stale toggles are exclusive (picking one clears others)
 const staleToggles = [
@@ -825,7 +872,7 @@ for(const {id, days} of staleToggles) {
 
 document.getElementById("clear-btn").addEventListener("click", ()=>{
   state.wg=""; state.maintainer=false; state.firstTimer=false;
-  state.wgLead=false; state.staleDays=0; state.rfcRequired=false;
+  state.wgLead=false; state.staleDays=0; state.rfcRequired=false; state.suggested=false;
   document.getElementById("wg-select").value = "";
   document.querySelectorAll(".toggle").forEach(b=>b.classList.remove("on"));
   render();
@@ -1032,15 +1079,37 @@ def main():
         "--output", default="triage_maintainer.html", help="Output HTML path"
     )
     p.add_argument("--repo", default="lemonade-sdk/lemonade", help="OWNER/REPO")
+    p.add_argument(
+        "--wg-predictions",
+        help='JSON {"<pr>": ["<WG>", "<reason>"]}; fills WG for PRs with no '
+        "wg:: label or declared WG, shown as (auto)",
+    )
+    p.add_argument(
+        "--reviewer-suggestions",
+        help="JSON written by auto_assign.py --json; shown as suggested reviewers",
+    )
     args = p.parse_args()
+    wg_predictions = load_wg_predictions(args.wg_predictions)
+    reviewer_suggestions = {}
+    if args.reviewer_suggestions:
+        raw = Path(args.reviewer_suggestions).read_text(encoding="utf-8")
+        reviewer_suggestions = {int(k): v for k, v in json.loads(raw).items()}
 
     print("Fetching top contributors…", file=sys.stderr)
     top_contributors = fetch_top_contributors(args.repo)
 
     print(f"Fetching open PRs from {args.repo}…", file=sys.stderr)
-    prs = fetch_prs(args.repo, top_contributors)
+    prs = fetch_prs(args.repo, top_contributors, wg_predictions)
     community = sum(1 for pr in prs if not pr["is_maintainer"])
     print(f"  fetched {len(prs)} open PRs ({community} community)", file=sys.stderr)
+    sources = {}
+    for pr in prs:
+        sources[pr["wg_source"] or "none"] = (
+            sources.get(pr["wg_source"] or "none", 0) + 1
+        )
+    print(f"  WG sources: {sources}", file=sys.stderr)
+    for pr in prs:
+        pr["suggested_reviewers"] = reviewer_suggestions.get(pr["number"], [])
 
     print("Fetching 30-day activity…", file=sys.stderr)
     activity = fetch_activity(args.repo, days=30)  # JS window slider slices client-side
