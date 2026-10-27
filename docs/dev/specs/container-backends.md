@@ -38,11 +38,7 @@ Lemonade follows [Ramalama](https://github.com/containers/ramalama)'s container 
 
 Users and clients will be able to assess critical information about each backend at a glance using these two new labels.
 
-Its **tier** is one of:
-
-1. `core`: supported by Lemonade's maintainers for production use.
-2. `community`: provided by Lemonade's maintainers, but not supported for production use.
-3. `experimental`: developed in the community and listed in Lemonade. Use at your own risk.
+Its **tier** is `core`, `experimental`, or `guest`, as defined by the [backend support tier policy](../adding-a-backend.md#support-tier).
 
 Its **format** is one of:
 
@@ -52,12 +48,12 @@ Its **format** is one of:
 
 Tier and format are set per backend. Examples:
 - `llamacpp:rocm`: core, native
-- `vllm:rocm`: community, python
-- `halogen:rocm`: experimental, container
+- `vllm:rocm`: experimental, python
+- `halogen:rocm`: guest, container
 
-Lemonade's GUI and CLI will display a disclaimer the first time the user attempts to install an experimental backend. Models specific to an experimental backend should not be displayed in `/v1/models?show_all=true` until the backend has been installed.
+Lemonade's GUI and CLI will display a disclaimer the first time the user attempts to install a guest backend. Models specific to a guest backend should not be displayed in `/v1/models?show_all=true` until the backend has been installed.
 
-> Note: we can keep the experimental boolean label in the descriptor to avoid a breaking change.
+> Note: tier replaces the descriptor's `experimental` boolean. `/system-info` keeps each recipe's `experimental` field, `true` when its `default_backend` has the `experimental` or `guest` tier.
 
 ## Class Architecture
 

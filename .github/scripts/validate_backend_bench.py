@@ -32,13 +32,14 @@ from pathlib import Path
 
 IS_WINDOWS = platform.system() == "Windows"
 BACKEND_VERSIONS_PATH = Path("src/cpp/resources/backend_versions.json")
-# Long-context scenarios (context-32k/64k/128k) need the model loaded with a
-# matching ctx window; bench loads once at 4096 by default, so a 32k prompt gets
-# HTTP 400. Until per-scenario ctx is wired up, run only the short scenarios
-# that fit the default window. See issue #2858.
-SCENARIOS = ["chat-short", "code-short"]
+SCENARIO_FILE = Path("src/cpp/resources/bench_scenarios.json")
+# ctx window -> scenarios run at it. Forks override via "scenario_ctx".
+SCENARIO_CTX = {
+    4096: ["context-4k"],
+    32768: ["context-32k"],
+}
 WARMUP_RUNS = 1
-MEASUREMENT_RUNS = 5
+MEASUREMENT_RUNS = 3
 THRESHOLDS = {
     "tps_warn": -0.05,
     "tps_critical": -0.15,
@@ -330,6 +331,20 @@ def install_backend(base_url: str, recipe: str, backend: str) -> None:
         raise RuntimeError(f"Backend install failed ({e.code}): {body}") from e
 
 
+def merge_bench_outputs(base: dict | None, incoming: dict) -> dict:
+    """Merge per-ctx bench outputs by appending results per model."""
+    if base is None:
+        return incoming
+    base_models = {m.get("model"): m for m in base.get("models", [])}
+    for m in incoming.get("models", []):
+        name = m.get("model")
+        if name in base_models:
+            base_models[name].setdefault("results", []).extend(m.get("results", []))
+        else:
+            base.setdefault("models", []).append(m)
+    return base
+
+
 def run_bench(
     fork: dict,
     version: str,
@@ -350,62 +365,95 @@ def run_bench(
     # lemond never reads one.
     bench_as = fork.get("install_as", backend)
 
-    cmd = [
-        lemonade_bin,
-        "bench",
-        model,
-        "--backend",
-        bench_as,
-        "--scenarios",
-        *SCENARIOS,
-        "--runs",
-        str(MEASUREMENT_RUNS),
-        "--warmup",
-        str(WARMUP_RUNS),
-        "--auto-pull",
-        "--json",
-        "--output",
-        str(output_file),
-    ]
-    if compare_file and compare_file.exists():
-        cmd += ["--compare", str(compare_file)]
+    if not SCENARIO_FILE.exists():
+        raise RuntimeError(f"{SCENARIO_FILE} not found — run from the repo root")
 
-    env = os.environ.copy()
+    ctx_groups = fork.get("scenario_ctx") or SCENARIO_CTX
 
-    print(f"    cmd: {' '.join(cmd)}")
     recipe = fork.get("recipe", "llamacpp")
     cfg_section = fork.get("config_section", recipe)
     print(
         f"    backend key: {bench_as}  (binary routed via {cfg_section}.{bench_as}_bin)"
     )
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    env = os.environ.copy()
+
+    # One bench invocation per ctx group, then merge.
+    merged = None
+    for ctx_size, group_scenarios in sorted(ctx_groups.items()):
+        group_out = output_file.with_suffix(f".ctx{ctx_size}.json")
+        cmd = [
+            lemonade_bin,
+            "bench",
+            model,
+            "--backend",
+            bench_as,
+            "--scenarios",
+            *group_scenarios,
+            "--runs",
+            str(MEASUREMENT_RUNS),
+            "--warmup",
+            str(WARMUP_RUNS),
+            "--auto-pull",
+            "--json",
+            "--output",
+            str(group_out),
+            "--scenario-file",
+            str(SCENARIO_FILE),
+            "--ctx-size",
+            str(ctx_size),
+        ]
+        if compare_file and compare_file.exists():
+            cmd += ["--compare", str(compare_file)]
+
+        print(f"    cmd (ctx={ctx_size}): {' '.join(cmd)}")
+        if dry_run:
+            print("    [dry-run] skipping execution")
+            continue
+
+        print("    [running — streaming output below]", flush=True)
+        proc = subprocess.Popen(
+            cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+        )
+        for line in proc.stdout:
+            print(f"    {line}", end="", flush=True)
+        proc.wait()
+
+        if proc.returncode != 0:
+            print(
+                f"    [ERROR] lemonade bench failed (ctx={ctx_size}, exit {proc.returncode})"
+            )
+            continue
+        if not group_out.exists():
+            print(f"    [ERROR] output file not created: {group_out}")
+            continue
+
+        with open(group_out) as f:
+            group_data = json.load(f)
+        group_out.unlink(missing_ok=True)
+        merged = merge_bench_outputs(merged, group_data)
 
     if dry_run:
-        print("    [dry-run] skipping execution")
+        return None
+    if merged is None:
+        print(f"    [ERROR] no bench output produced for {model}")
         return None
 
-    output_file.parent.mkdir(parents=True, exist_ok=True)
+    data = merged
+    with open(output_file, "w") as f:
+        json.dump(data, f, indent=2)
 
-    # Stream output live so CI logs show progress (model pulls, scenario runs)
-    print("    [running — streaming output below]", flush=True)
-    proc = subprocess.Popen(
-        cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
-    )
-    output_lines = []
-    for line in proc.stdout:
-        print(f"    {line}", end="", flush=True)
-        output_lines.append(line)
-    proc.wait()
-
-    if proc.returncode != 0:
-        print(f"    [ERROR] lemonade bench failed (exit {proc.returncode})")
-        return None
-
-    if not output_file.exists():
-        print(f"    [ERROR] output file not created: {output_file}")
-        return None
-
-    with open(output_file) as f:
-        data = json.load(f)
+    annotate_pp(data)
+    for br in backend_results(data, model):
+        for sc in br.get("scenarios", []):
+            print(
+                f"    [{model} / {sc.get('name')}] "
+                f"TG = {sc.get('tps', {}).get('mean', 'n/a')} tok/s  |  "
+                f"PP = {sc.get('pp_tps', 'n/a')} tok/s  "
+                f"(best TTFT {round(sc.get('ttft_ms', {}).get('min', 0), 1)} ms, "
+                f"in={sc.get('input_tokens')} out={sc.get('output_tokens')})",
+                flush=True,
+            )
 
     data.update(
         {
@@ -469,62 +517,75 @@ def backend_results(data: dict, model: str | None = None) -> list[dict]:
     return data.get("results", [])
 
 
+def annotate_pp(data: dict) -> None:
+    """Derive pp_tps (input_tokens / fastest TTFT) for each scenario."""
+    for br in backend_results(data):
+        for sc in br.get("scenarios", []):
+            in_tok = sc.get("input_tokens")
+            best_ttft = sc.get("ttft_ms", {}).get("min", 0)
+            if in_tok and best_ttft > 0:
+                sc["pp_tps"] = round(in_tok * 1000.0 / best_ttft, 2)
+
+
 def check_regression(
     current: dict, previous: dict, fork_id: str, model: str
 ) -> list[dict]:
     alerts = []
-    curr_results = {r["backend"]: r for r in backend_results(current, model)}
-    prev_results = {r["backend"]: r for r in backend_results(previous, model)}
-    for backend, curr in curr_results.items():
-        prev = prev_results.get(backend)
-        if not prev:
+
+    # Key scenarios by (backend, scenario) — merged per-ctx results can repeat a
+    # backend, so keying by backend alone would drop all but the last ctx group.
+    def by_backend_scenario(data):
+        out = {}
+        for r in backend_results(data, model):
+            for sc in r.get("scenarios", []):
+                out[(r["backend"], sc["name"])] = sc
+        return out
+
+    curr_scenarios = by_backend_scenario(current)
+    prev_scenarios = by_backend_scenario(previous)
+    for (backend, sc_name), curr_sc in curr_scenarios.items():
+        prev_sc = prev_scenarios.get((backend, sc_name))
+        if not prev_sc:
             continue
-        for curr_sc in curr.get("scenarios", []):
-            sc_name = curr_sc["name"]
-            prev_sc = next(
-                (s for s in prev.get("scenarios", []) if s["name"] == sc_name), None
+        curr_tps = curr_sc.get("tps", {}).get("mean", 0)
+        prev_tps = prev_sc.get("tps", {}).get("mean", 0)
+        curr_ttft = curr_sc.get("ttft_ms", {}).get("mean", 0)
+        prev_ttft = prev_sc.get("ttft_ms", {}).get("mean", 0)
+        if prev_tps > 0:
+            delta = (curr_tps - prev_tps) / prev_tps
+            sev = (
+                "CRITICAL"
+                if delta <= THRESHOLDS["tps_critical"]
+                else "WARN" if delta <= THRESHOLDS["tps_warn"] else None
             )
-            if not prev_sc:
-                continue
-            curr_tps = curr_sc.get("tps", {}).get("mean", 0)
-            prev_tps = prev_sc.get("tps", {}).get("mean", 0)
-            curr_ttft = curr_sc.get("ttft_ms", {}).get("mean", 0)
-            prev_ttft = prev_sc.get("ttft_ms", {}).get("mean", 0)
-            if prev_tps > 0:
-                delta = (curr_tps - prev_tps) / prev_tps
-                sev = (
-                    "CRITICAL"
-                    if delta <= THRESHOLDS["tps_critical"]
-                    else "WARN" if delta <= THRESHOLDS["tps_warn"] else None
+            if sev:
+                alerts.append(
+                    {
+                        "severity": sev,
+                        "fork_id": fork_id,
+                        "model": model,
+                        "scenario": sc_name,
+                        "metric": "tps",
+                        "delta_pct": round(delta * 100, 2),
+                        "prev": round(prev_tps, 2),
+                        "curr": round(curr_tps, 2),
+                    }
                 )
-                if sev:
-                    alerts.append(
-                        {
-                            "severity": sev,
-                            "fork_id": fork_id,
-                            "model": model,
-                            "scenario": sc_name,
-                            "metric": "tps",
-                            "delta_pct": round(delta * 100, 2),
-                            "prev": round(prev_tps, 2),
-                            "curr": round(curr_tps, 2),
-                        }
-                    )
-            if prev_ttft > 0:
-                delta = (curr_ttft - prev_ttft) / prev_ttft
-                if delta >= THRESHOLDS["ttft_warn"]:
-                    alerts.append(
-                        {
-                            "severity": "WARN",
-                            "fork_id": fork_id,
-                            "model": model,
-                            "scenario": sc_name,
-                            "metric": "ttft_ms",
-                            "delta_pct": round(delta * 100, 2),
-                            "prev": round(prev_ttft, 2),
-                            "curr": round(curr_ttft, 2),
-                        }
-                    )
+        if prev_ttft > 0:
+            delta = (curr_ttft - prev_ttft) / prev_ttft
+            if delta >= THRESHOLDS["ttft_warn"]:
+                alerts.append(
+                    {
+                        "severity": "WARN",
+                        "fork_id": fork_id,
+                        "model": model,
+                        "scenario": sc_name,
+                        "metric": "ttft_ms",
+                        "delta_pct": round(delta * 100, 2),
+                        "prev": round(prev_ttft, 2),
+                        "curr": round(curr_ttft, 2),
+                    }
+                )
     return alerts
 
 
@@ -546,8 +607,9 @@ def update_leaderboard(
                 "fork_version": version,
                 "backend": br.get("backend"),
                 "tps_mean": round(tps_mean, 2),
-                "tps_p95": round(sc["tps"].get("p95", 0), 2),
+                "tps_p95": round(sc.get("tps", {}).get("p95", 0), 2),
                 "ttft_ms_mean": round(sc.get("ttft_ms", {}).get("mean", 0), 2),
+                "pp_tps": sc.get("pp_tps"),
                 "vram_peak_gb": sc.get("vram_peak_gb"),
                 "timestamp": result.get("timestamp"),
             }
@@ -624,7 +686,9 @@ def main() -> int:
     if models:
         print(f"Models (from filter): {models}")
 
-    print(f"Scenarios: {SCENARIOS}")
+    print(
+        f"Default scenario/ctx map: {SCENARIO_CTX} (forks may override via scenario_ctx)"
+    )
     print()
 
     leaderboard: dict = {}
@@ -803,7 +867,7 @@ def main() -> int:
             json.dumps(
                 {
                     "generated_at": datetime.now(timezone.utc).isoformat(),
-                    "scenarios": SCENARIOS,
+                    "scenarios": [s for g in SCENARIO_CTX.values() for s in g],
                     "by_model_scenario": leaderboard,
                 },
                 indent=2,

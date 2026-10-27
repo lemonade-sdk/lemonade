@@ -125,8 +125,15 @@ static httplib::Client make_client(const std::string& host, int port, const std:
 
 static void assert_http_ok(const httplib::Result& res) {
     if (!res) {
+        const std::string detail = " (" + httplib::to_string(res.error()) + ")";
+        if (res.error() == httplib::Error::Read || res.error() == httplib::Error::Write) {
+            throw std::runtime_error(
+                "Lemonade server closed the connection or stopped responding" + detail + ".\n"
+                "The server may be busy with a change such as loading or removing a model or "
+                "backend. Wait a moment and try again.");
+        }
         throw std::runtime_error(
-            "Could not connect to Lemonade server (" + httplib::to_string(res.error()) + ").\n"
+            "Could not connect to Lemonade server" + detail + ".\n"
             "Make sure the server is running and try again.");
     } else if (res->status == 401) {
         throw std::runtime_error("Forbidden by the server. Did you set the API key?");
@@ -1326,6 +1333,9 @@ int LemonadeClient::list_recipes(bool show_all) const {
                         backend.action = backend_data["action"].get<std::string>();
                     }
 
+                    backend.tier = backend_data.value("tier", "");
+                    backend.format = backend_data.value("format", "");
+
                     status.backends.push_back(backend);
                 }
             }
@@ -1335,10 +1345,12 @@ int LemonadeClient::list_recipes(bool show_all) const {
 
         std::cout << std::left << std::setw(20) << "Recipe"
                   << std::setw(12) << "Backend"
+                  << std::setw(14) << "Tier"
+                  << std::setw(11) << "Format"
                   << std::setw(16) << "Status"
                   << std::setw(46) << "Message/Version"
                   << "Action" << std::endl;
-        std::cout << std::string(148, '-') << std::endl;
+        std::cout << std::string(173, '-') << std::endl;
 
         for (const auto& recipe : recipes) {
             bool first_backend = true;
@@ -1347,6 +1359,8 @@ int LemonadeClient::list_recipes(bool show_all) const {
                 if (show_all) {
                     std::cout << std::left << std::setw(20) << recipe.name
                             << std::setw(12) << "-"
+                            << std::setw(14) << "-"
+                            << std::setw(11) << "-"
                             << std::setw(16) << "unsupported"
                             << std::setw(46) << "No backend definitions"
                             << "-" << std::endl;
@@ -1368,6 +1382,8 @@ int LemonadeClient::list_recipes(bool show_all) const {
                     if (show_all || status_str != "unsupported") {
                         std::cout << std::left << std::setw(20) << recipe_col
                                 << std::setw(12) << backend.name
+                                << std::setw(14) << (backend.tier.empty() ? "-" : backend.tier)
+                                << std::setw(11) << (backend.format.empty() ? "-" : backend.format)
                                 << std::setw(16) << status_str
                                 << std::setw(46) << info_col
                                 << " " << action_col << std::endl;
@@ -1378,7 +1394,7 @@ int LemonadeClient::list_recipes(bool show_all) const {
             }
         }
 
-        std::cout << std::string(148, '-') << std::endl;
+        std::cout << std::string(173, '-') << std::endl;
         return 0;
 
     } catch (const HttpError& e) {

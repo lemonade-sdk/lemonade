@@ -38,6 +38,7 @@ struct GPUInfo : DeviceInfo {
     double vram_used_gb = -1.0;  // -1 when per-device usage is unavailable
     double virtual_gb = 0.0;
     double virtual_used_gb = -1.0;
+    bool unified_memory = false;
 };
 
 struct NPUInfo : DeviceInfo {
@@ -98,6 +99,12 @@ public:
     // Check if a recipe is supported on the current system
     // Returns empty string if supported, or a reason string if not supported
     static std::string check_recipe_supported(const std::string& recipe);
+
+    // Why the models of `recipe` stay hidden, or "" when they show. A recipe
+    // whose only backends on this host are guest backends keeps its models hidden
+    // until one of those backends is installed.
+    static std::string check_guest_backend_installed(const std::string& recipe,
+                                                     const json& system_info);
 
     // Get all recipes with their backend state info
     // Returns a vector of {recipe_name, backends}

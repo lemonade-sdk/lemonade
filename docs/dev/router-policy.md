@@ -62,6 +62,9 @@ A **rule** is `{ id, match, route_to, outputs? }`. `route_to` must be one of
 
 A `match` is a match-expression. Combine with the logical operators `any` (OR),
 `all` (AND), and `not`; a leaf object with several keys is an implicit `all`.
+The order in which the keys of such a leaf are evaluated is not specified, so
+its entries in the decision trace may change between versions. The children of
+an explicit `all` or `any` run in list order.
 
 **Deterministic (no model needed):**
 
@@ -199,7 +202,7 @@ client.chat.completions.create(model="user.My-Router", messages=[...])
 
 ## Testing a policy before registering it
 
-[`POST /v1/routing/validate`](../api/lemonade.md#post-v1routingvalidate) evaluates a
+[`POST /v1/routing/validate`](../api/router.md#post-v1routingvalidate) evaluates a
 policy document against a prompt and returns the decision plus its full trace,
 without registering the policy or dispatching the user request to the selected
 candidate. Component names are accepted without resolving against the model

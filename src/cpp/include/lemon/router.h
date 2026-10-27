@@ -17,6 +17,7 @@
 #include <nlohmann/json.hpp>
 #include <httplib.h>
 #include "wrapped_server.h"
+#include "lemon/live_throughput.h"
 #include "model_residency.h"
 #include "model_manager.h"
 #include "backend_manager.h"
@@ -294,6 +295,7 @@ private:
     mutable std::mutex telemetry_mutex_;
     Telemetry aggregate_telemetry_;
     std::map<std::string, ModelTelemetryRecord> telemetry_by_model_;
+    LiveThroughput live_throughput_;
 
     uint64_t routing_decisions_total_ = 0;
     uint64_t routing_switches_total_ = 0;

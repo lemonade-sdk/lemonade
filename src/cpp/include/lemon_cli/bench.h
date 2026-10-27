@@ -28,12 +28,14 @@ struct BenchScenario {
     std::string image_path;      // Path to image file for vision benchmarks (relative to scenario file)
     std::string source_file;     // The scenario JSON file path (for resolving relative image paths at run time)
     int max_tokens;
+    int minimum_ctx_size = 0;  // From optional context.target_tokens
     int warmup_runs = 0;
     int measurement_runs = 3;
 };
 
 struct BenchRunResult {
     double ttft_ms = 0.0;
+    double pp_tps = 0.0;        // Prefill throughput (prompt tokens / TTFT)
     double tps = 0.0;
     int input_tokens = 0;
     int output_tokens = 0;
@@ -56,6 +58,11 @@ struct BenchScenarioResult {
     double ttft_max_ms() const;
     double ttft_p50_ms() const;
     double ttft_p95_ms() const;
+    double pp_tps_mean() const;
+    double pp_tps_min() const;
+    double pp_tps_max() const;
+    double pp_tps_p50() const;
+    double pp_tps_p95() const;
     double tps_mean() const;
     double tps_min() const;
     double tps_max() const;

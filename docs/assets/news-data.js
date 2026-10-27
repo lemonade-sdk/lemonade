@@ -1,6 +1,33 @@
 // News content data - easy to add new entries
 const newsData = [
     {
+        title: "Vision: your auto-optimizing local stack of agents, models, and engines",
+        url: "https://lemonade-server.ai/news/auto-opt-vision.html",
+        date: "October 20, 2026",
+        description: "A blog laying out a vision for Lemonade's technical development in the coming months. Pick an agent, and Lemonade installs and configures the best known model and engine for your system in one click.",
+        image: "https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/banner.png",
+        imageStyle: "width: 100%; height: 100%; object-position: center top; ",
+        type: "blog"
+        },
+    {
+        title: "Why AnythingLLM is moving from Ollama to Lemonade and llama.cpp",
+        url: "https://anythingllm.com/blog/lemonade-llama-cpp",
+        date: "October 13, 2026",
+        description: "AnythingLLM Desktop is replacing its bundled Ollama engine with llama.cpp managed by Lemonade, citing faster inference, fewer breaking updates, direct Hugging Face downloads, and a much smaller install.",
+        image: "https://raw.githubusercontent.com/lemonade-sdk/marketplace/main/apps/anythingllm/logo.png",
+        imageStyle: "width: 100%; height: 100%; object-fit: contain; background: #fff; ",
+        type: "blog"
+        },
+    {
+        title: "Lemonade 11.9 Local AI Server Released With Super Exciting AMD ROCm HRX Backend",
+        url: "https://www.phoronix.com/news/Lemonade-11.9-ROCm-HRX",
+        date: "September 2, 2026",
+        description: "Phoronix covers the Lemonade 11.9 release: an experimental llama.cpp backend built on AMD's new ROCm HRX.",
+        image: "https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/phoronix.svg",
+        imageStyle: "width: 100%; height: 100%; object-position: center top; ",
+        type: "blog"
+        },
+    {
         title: "The easiest free local coding setup with Pi and Qwen3.8 27B!",
         url: "https://www.youtube.com/watch?v=AT10gUUgTrE",
         date: "August 19, 2026",
