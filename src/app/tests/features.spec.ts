@@ -142,7 +142,13 @@ test.describe('Lemonade UI — Feature Parity', () => {
 
     await page.goto('/?view=monitor/telemetry');
     await page.waitForSelector('[data-view="monitor"]');
-    await expect(page).toHaveURL(/#\/monitor\/telemetry$/);
+    await expect(page).toHaveURL(/\/#\/monitor\/telemetry$/);
+
+    await page.goto('/?logs=true&keep=1#/monitor/logs');
+    await expect(page).toHaveURL(/\/\?keep=1#\/monitor\/logs$/);
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    await page.reload();
+    await expect(page).toHaveURL(/\/\?keep=1#\/models$/);
   });
 
   test('01a — Monitor labels and URL sections stay aligned', async ({ page }) => {

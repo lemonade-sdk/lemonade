@@ -749,7 +749,13 @@ const App: React.FC = () => {
     setRouteState(nextRoute);
     const newHash = hashForRoute(nextRoute);
     try { localStorage.setItem('lemonade_current_view', newHash.slice(2)); } catch { /* ignore */ }
-    if (window.location.hash !== newHash) {
+    const url = new URL(window.location.href);
+    if (url.searchParams.has('view') || url.searchParams.has('logs')) {
+      url.searchParams.delete('view');
+      url.searchParams.delete('logs');
+      url.hash = newHash;
+      window.history.replaceState(null, '', url);
+    } else if (window.location.hash !== newHash) {
       window.history.pushState(null, '', newHash);
     }
   }, []);
