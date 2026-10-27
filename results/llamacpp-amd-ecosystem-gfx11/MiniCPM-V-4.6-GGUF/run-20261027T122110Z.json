@@ -1,0 +1,224 @@
+{
+  "hardware": {
+    "backends": {
+      "llamacpp/rocm": "b1338"
+    },
+    "cpu": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S",
+    "gpu": [
+      {
+        "integrated": true,
+        "name": "AMD Radeon Graphics (gfx1151)",
+        "type": "amd",
+        "vram_gb": 0.5
+      }
+    ],
+    "lemonade_version": "2026.43.3",
+    "os": "linux",
+    "ram_gb": 124.95
+  },
+  "models": [
+    {
+      "checkpoints": {
+        "main": "OpenBMB/MiniCPM-V-4.6-gguf:MiniCPM-V-4_6-Q4_K_M.gguf",
+        "mmproj": "OpenBMB/MiniCPM-V-4.6-gguf:mmproj-model-f16.gguf"
+      },
+      "config": {
+        "measurement_runs": 3,
+        "memory_tracking": true,
+        "warmup_runs": 1
+      },
+      "model": "MiniCPM-V-4.6-GGUF",
+      "results": [
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 4096,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 525.486833,
+                "mean": 522.656343,
+                "min": 519.058427,
+                "p50": 523.423769,
+                "p95": 525.2805266
+              },
+              "failed_runs": 0,
+              "input_tokens": 3210,
+              "memory_peak_gb": 8.1,
+              "name": "context-4k",
+              "output_tokens": 20,
+              "pp_tps": 7814.77138572191,
+              "tps": {
+                "max": 187.99968336895435,
+                "mean": 185.01949591084426,
+                "min": 179.99753687581116,
+                "p50": 187.0612674877672,
+                "p95": 187.90584178083563
+              },
+              "ttft_ms": {
+                "max": 414.849,
+                "mean": 410.7863333333333,
+                "min": 406.884,
+                "p50": 410.626,
+                "p95": 414.4267
+              },
+              "vram_peak_gb": 2.1293907165527344
+            }
+          ]
+        },
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 32768,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 4043.19493,
+                "mean": 4036.9776756666665,
+                "min": 4033.314626,
+                "p50": 4034.423471,
+                "p95": 4042.3177841
+              },
+              "failed_runs": 0,
+              "input_tokens": 24790,
+              "memory_peak_gb": 8.5,
+              "name": "context-32k",
+              "output_tokens": 20,
+              "pp_tps": 6411.451925674036,
+              "tps": {
+                "max": 146.07631334138034,
+                "mean": 143.35032388669197,
+                "min": 141.01755297435705,
+                "p50": 142.95710534433852,
+                "p95": 145.76439254167616
+              },
+              "ttft_ms": {
+                "max": 3875.32,
+                "mean": 3866.5293333333334,
+                "min": 3860.505,
+                "p50": 3863.763,
+                "p95": 3874.1643000000004
+              },
+              "vram_peak_gb": 2.484966278076172
+            }
+          ]
+        }
+      ],
+      "timestamp": "2026-10-27T13:36:24Z",
+      "accuracy": {
+        "passed": 28,
+        "total": 45,
+        "score": 0.6222,
+        "questions_version": "2dbb1ea20981",
+        "failures": [
+          {
+            "id": "reason-widgets",
+            "response": " widgets, which is 1 widget per machine per minute).\n\nNow, we need to find out how long it takes for 100 machines to make 100 widgets.\n\nSince each machine makes 1 widget per minute, 100 machines would make 100 widgets in 100 minutes.\n\nTherefore, the time required is 100 minutes.\n\nAnswer: 100 minutes",
+            "cut_off": false
+          },
+          {
+            "id": "reason-batball",
+            "response": "s).\n\nThe total cost is $1.10, which is 110 cents. So, we can write the equation:\n\n\\[ b + (b + 10) = 110 \\]\n\nSimplify the equation:\n\n\\[ 2b + 10 = 110 \\]\n\nSubtract 10 from both sides:\n\n\\[ 2b = 100 \\]\n\nDivide both sides by 2:\n\n\\[ b = 50 \\]\n\nSo, the ball costs 50 cents.\n\nAnswer: The ball costs 50 cents.",
+            "cut_off": false
+          },
+          {
+            "id": "reason-sisters",
+            "response": "s are: Alice (sister), and her 3 brothers. So, each brother is a brother to Alice, and they all have the same sisters: Alice. So, each brother has one sister, which is Alice. Therefore, each of Alice's brothers has one sister (Alice).\n\nAnswer: Each of Alice's brothers has one sister, which is Alice.",
+            "cut_off": false
+          },
+          {
+            "id": "reason-day-fwd",
+            "response": "We know that adding 10 days to a Monday brings us to Friday. So, the day of the week for 10 days after a Monday is a Friday.\n\nAnswer: Friday",
+            "cut_off": false
+          },
+          {
+            "id": "unit-fahrenheit",
+            "response": "To convert Fahrenheit to Celsius, we use the formula:  \n\u00b0C = (\u00b0F - 32) \u00d7 5/9  \n\nPlug in 100\u00b0F:  \n\u00b0C = (100 - 32) \u00d7 5/9  \n\u00b0C = 68 \u00d7 5/9  \n\u00b0C = 350/9 \u2248 38.888...  \n\nRounded to the nearest whole number, that\u2019s 39.  \n\nAnswer: 39",
+            "cut_off": false
+          },
+          {
+            "id": "json-primes",
+            "response": "[\"2\", \"3\", \"5\", \"7\", \"11\"]",
+            "cut_off": false
+          },
+          {
+            "id": "py-palindrome",
+            "response": "```python\ndef is_palindrome(s):\n    cleaned = ''.join(char for char in s if char.isalnum())\n    return cleaned == cleaned[::-1]\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-fizzbuzz",
+            "response": "ult = []\n    for i in range(1, n+1):\n        if i % 3 == 0 and i % 5 == 0:\n            result.append(\"FizzBuzz\")\n        elif i % 3 == 0:\n            result.append(\"Fizz\")\n        elif i % 5 == 0:\n            result.append(\"Buzz\")\n        else:\n            result.append(str(i))\n    return result\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-flatten",
+            "response": "```python\ndef flatten(lst):\n    result = []\n    for item in lst:\n        if type(item) is list:\n            result.extend(flatten(item))\n        else:\n            result.append(item)\n    return result\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-anagram",
+            "response": "```python\ndef is_anagram(a, b):\n    # Remove spaces and convert to lower case\n    cleaned_a = a.replace(\" \", \"\").lower()\n    cleaned_b = b.replace(\" \", \"\").lower()\n    # Check if the cleaned strings are equal\n    return cleaned_a == cleaned_b\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-prime",
+            "response": "```python\ndef is_prime(n):\n    if n <= 1:\n        return False\n    for i in range(2, int(n**0.5) + 1):\n        if n % i == 0:\n            return False\n    return True\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-intervals",
+            "response": "rged = []\n    for interval in sorted_intervals:\n        # Check if this interval can be merged with the previous one\n        if merged and merged[-1][0] >= interval[0]:\n            merged[-1][1] = max(merged[-1][1], interval[1])\n        else:\n            merged.append(interval)\n    return merged\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-roman",
+            "response": " += roman_map[s[i]]\n        \n        # If it's the last character, don't add the next one\n        if i + 1 < len(s):\n            # Subtract the value of the next Roman numeral if it's smaller\n            if s[i+1] in roman_map:\n                integer -= roman_map[s[i+1]]\n    \n    return integer\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-second-largest",
+            "response": "argest(nums):\n    # Find the maximum value in the list\n    max_val = max(nums)\n    # Filter values smaller than the maximum and find the second largest\n    smaller_values = [num for num in nums if num < max_val]\n    if not smaller_values:\n        return None\n    return sorted(smaller_values)[-1]\n```",
+            "cut_off": false
+          },
+          {
+            "id": "turn-list",
+            "response": "Let's start with the shopping list: apples, bread, milk, eggs. We need to remove bread and add cheese at the end. So, the list becomes: apples, milk, eggs, cheese. Now, counting the items, the third item is \"eggs\".\n\nAnswer: The third item on the list after removing bread and adding cheese is eggs.",
+            "cut_off": false
+          },
+          {
+            "id": "turn-uppercase",
+            "response": "Let's analyze the question. THE CAPITAL OF FRANCE IS PARIS.\n\nTHE ANSWER IS PARIS.",
+            "cut_off": false
+          },
+          {
+            "id": "turn-correction",
+            "response": "Based on the information provided, your flight leaves at 3pm. However, considering the earlier correction, it actually leaves two hours later than initially stated.\n\nAnswer: Your flight leaves at 3pm, but it actually leaves two hours later than initially mentioned.",
+            "cut_off": false
+          }
+        ],
+        "errors": [],
+        "health": {
+          "nondeterministic": [],
+          "empty_replies": 0,
+          "cut_off": 0
+        }
+      }
+    }
+  ],
+  "timestamp": "2026-10-27T13:13:51Z",
+  "fork_id": "llamacpp-amd-ecosystem-gfx11",
+  "fork_label": "llama.cpp gfx11 (AMD-Ecosystem)",
+  "fork_repo": "AMD-Ecosystem/llama.cpp",
+  "fork_version": "gfx11-rocm-nightly-20261026",
+  "fork_backend": "rocm-gfx11",
+  "experimental": false,
+  "run_id": "40459300755",
+  "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/40459300755",
+  "commit": "4830d4819ef56549a723a1d23208d2a0927b7999",
+  "lemonade_version": "v2026.43.3"
+}

@@ -1,0 +1,219 @@
+{
+  "hardware": {
+    "backends": {
+      "llamacpp/rocm": "b1338"
+    },
+    "cpu": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S",
+    "gpu": [
+      {
+        "integrated": true,
+        "name": "AMD Radeon Graphics (gfx1151)",
+        "type": "amd",
+        "vram_gb": 0.5
+      }
+    ],
+    "lemonade_version": "2026.43.3",
+    "os": "linux",
+    "ram_gb": 124.95
+  },
+  "models": [
+    {
+      "checkpoints": {
+        "main": "OpenBMB/MiniCPM-V-4.6-gguf:MiniCPM-V-4_6-Q4_K_M.gguf",
+        "mmproj": "OpenBMB/MiniCPM-V-4.6-gguf:mmproj-model-f16.gguf"
+      },
+      "config": {
+        "measurement_runs": 3,
+        "memory_tracking": true,
+        "warmup_runs": 1
+      },
+      "model": "MiniCPM-V-4.6-GGUF",
+      "results": [
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 4096,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 515.703012,
+                "mean": 514.0127549999999,
+                "min": 510.950563,
+                "p50": 515.38469,
+                "p95": 515.6711798
+              },
+              "failed_runs": 0,
+              "input_tokens": 3210,
+              "memory_peak_gb": 8.2,
+              "name": "context-4k",
+              "output_tokens": 20,
+              "pp_tps": 7910.6343612955725,
+              "tps": {
+                "max": 189.3882758689433,
+                "mean": 188.40513676779923,
+                "min": 186.70466270328697,
+                "p50": 189.1224717311674,
+                "p95": 189.36169545516572
+              },
+              "ttft_ms": {
+                "max": 407.231,
+                "mean": 405.788,
+                "min": 403.822,
+                "p50": 406.311,
+                "p95": 407.139
+              },
+              "vram_peak_gb": 2.112995147705078
+            }
+          ]
+        },
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 32768,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 3658.135349,
+                "mean": 3633.265778333333,
+                "min": 3608.337858,
+                "p50": 3633.324128,
+                "p95": 3655.6542269
+              },
+              "failed_runs": 0,
+              "input_tokens": 24790,
+              "memory_peak_gb": 8.5,
+              "name": "context-32k",
+              "output_tokens": 20,
+              "pp_tps": 7150.143673980802,
+              "tps": {
+                "max": 151.082626293148,
+                "mean": 149.23645796972042,
+                "min": 146.68869570588143,
+                "p50": 149.93805191013186,
+                "p95": 150.96816885484637
+              },
+              "ttft_ms": {
+                "max": 3492.442,
+                "mean": 3467.1963333333333,
+                "min": 3439.952,
+                "p50": 3469.195,
+                "p95": 3490.1173000000003
+              },
+              "vram_peak_gb": 2.468517303466797
+            }
+          ]
+        }
+      ],
+      "timestamp": "2026-10-27T07:10:11Z",
+      "accuracy": {
+        "passed": 29,
+        "total": 45,
+        "score": 0.6444,
+        "questions_version": "2dbb1ea20981",
+        "failures": [
+          {
+            "id": "reason-batball",
+            "response": "s).\n\nThe total cost is $1.10, which is 110 cents. So, we can write the equation:\n\n\\[ b + (b + 10) = 110 \\]\n\nSimplify the equation:\n\n\\[ 2b + 10 = 110 \\]\n\nSubtract 10 from both sides:\n\n\\[ 2b = 100 \\]\n\nDivide both sides by 2:\n\n\\[ b = 50 \\]\n\nSo, the ball costs 50 cents.\n\nAnswer: The ball costs 50 cents.",
+            "cut_off": false
+          },
+          {
+            "id": "reason-sisters",
+            "response": " sisters are Alice and her siblings (like her mother's sister). But typically, we consider the number of sisters as the number of girls, so if Alice is the only sister, then each brother has 1 sister (Alice). So the answer is 1.\n\nAnswer: Each of Alice's brothers has 1 sister, which is Alice herself.",
+            "cut_off": false
+          },
+          {
+            "id": "reason-day-fwd",
+            "response": "We know that adding 10 days to a Monday brings us to Friday, because Monday is the 1st, Tuesday the 2nd, ..., and 10 days later is the 10th, which is a Friday.\n\nTherefore, the day of the week 10 days after a Monday is a Friday.\n\nAnswer: Friday",
+            "cut_off": false
+          },
+          {
+            "id": "code-typeof",
+            "response": "Let's analyze the code. The `typeof` operator is used to determine the type of a given object or symbol. For the value `null`, its type is \"null\". Therefore, `console.log(typeof null)` will print \"null\".\n\nAnswer: null",
+            "cut_off": false
+          },
+          {
+            "id": "unit-fahrenheit",
+            "response": "To convert Fahrenheit to Celsius, we use the formula:\n\n\u00b0C = (\u00b0F - 32) \u00d7 5/9\n\nFor 100\u00b0F:\n\n\u00b0C = (100 - 32) \u00d7 5/9  \n\u00b0C = 68 \u00d7 5/9  \n\u00b0C = 350/9  \n\u00b0C \u2248 38.888...\n\nRounded to the nearest whole number, that's 39.\n\nAnswer: 39",
+            "cut_off": false
+          },
+          {
+            "id": "json-primes",
+            "response": "[\"2\", \"3\", \"5\", \"7\", \"11\"]",
+            "cut_off": false
+          },
+          {
+            "id": "py-palindrome",
+            "response": "```python\ndef is_palindrome(s):\n    cleaned = ''.join(char for char in s if char.isalnum())\n    return cleaned == cleaned[::-1]\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-fizzbuzz",
+            "response": "ult = []\n    for i in range(1, n+1):\n        if i % 3 == 0 and i % 5 == 0:\n            result.append(\"FizzBuzz\")\n        elif i % 3 == 0:\n            result.append(\"Fizz\")\n        elif i % 5 == 0:\n            result.append(\"Buzz\")\n        else:\n            result.append(str(i))\n    return result\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-flatten",
+            "response": "```python\ndef flatten(lst):\n    result = []\n    for item in lst:\n        if type(item) is list:\n            result.extend(flatten(item))\n        else:\n            result.append(item)\n    return result\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-anagram",
+            "response": "```python\ndef is_anagram(a, b):\n    # Remove spaces and convert to lower case\n    cleaned_a = a.replace(\" \", \"\").lower()\n    cleaned_b = b.replace(\" \", \"\").lower()\n    # Check if the cleaned strings are equal\n    return cleaned_a == cleaned_b\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-prime",
+            "response": "```python\ndef is_prime(n):\n    if n <= 1:\n        return False\n    for i in range(2, int(n**0.5) + 1):\n        if n % i == 0:\n            return False\n    return True\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-intervals",
+            "response": "if merged and merged[-1][1] >= interval[0]:\n            # Merge the current and merged intervals\n            merged[-1] = (merged[-1][0], max(merged[-1][1], interval[1]))\n        else:\n            # Add the current interval to the merged list\n            merged.append(interval)\n    return merged\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-roman",
+            "response": "t of a larger numeral\n        if i > 0 and roman_map[s[i-1]] >= roman_map[s[i]]:\n            # Add the difference in value\n            integer += roman_map[s[i-1]] * 10\n        else:\n            # Add the value of the current numeral\n            integer += roman_map[s[i]]\n    \n    return integer\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-second-largest",
+            "response": "argest(nums):\n    # Find the maximum value in the list\n    max_val = max(nums)\n    # Filter values smaller than the maximum and find the second largest\n    smaller_values = [num for num in nums if num < max_val]\n    if not smaller_values:\n        return None\n    return sorted(smaller_values)[-1]\n```",
+            "cut_off": false
+          },
+          {
+            "id": "turn-uppercase",
+            "response": "Let's analyze the question. THE CAPITAL OF FRANCE IS PARIS.\n\nThe answer is PARIS.",
+            "cut_off": false
+          },
+          {
+            "id": "turn-correction",
+            "response": "Based on the information provided, your flight leaves at 3pm. However, considering the earlier correction, it actually leaves two hours later than initially stated.\n\nAnswer: Your flight leaves at 3pm, but it actually leaves two hours later than initially said.",
+            "cut_off": false
+          }
+        ],
+        "errors": [],
+        "health": {
+          "nondeterministic": [],
+          "empty_replies": 0,
+          "cut_off": 0
+        }
+      }
+    }
+  ],
+  "timestamp": "2026-10-27T07:07:08Z",
+  "fork_id": "llamacpp-rocm-nightly",
+  "fork_label": "llama.cpp ROCm Nightly (lemonade-sdk)",
+  "fork_repo": "lemonade-sdk/llamacpp-rocm",
+  "fork_version": "b1355",
+  "fork_backend": "rocm-nightly",
+  "experimental": false,
+  "run_id": "40459300755",
+  "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/40459300755",
+  "commit": "4830d4819ef56549a723a1d23208d2a0927b7999",
+  "lemonade_version": "v2026.43.3"
+}
