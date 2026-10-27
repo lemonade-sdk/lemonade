@@ -15,6 +15,8 @@
 #include <functional>
 #include <map>
 #include <mutex>
+#include <optional>
+#include <thread>
 #include <utility>
 
 // Cross-platform name resolution (getaddrinfo / inet_ntop / sockaddr_in).
@@ -2176,49 +2178,73 @@ Result<JoinResult> LemonadeNexusClient::join_network(const std::string& username
         join_body["is_inference"] = impl_->inference_node;
     }
 
-    // Include auth credentials so /api/join can authenticate inline
-    if (local_identity.is_valid()) {
-        // Get a challenge nonce for Ed25519 auth
-        auto pubkey_b64 = Identity::to_base64(
-            std::span<const uint8_t>(local_identity.public_key()));
+    // Include auth credentials so /api/join can authenticate inline. The
+    // challenge nonce is single use, so each attempt signs a fresh one.
+    const auto authenticated_join = [&]() {
+        json body = join_body;
+        if (local_identity.is_valid()) {
+            auto pubkey_b64 = Identity::to_base64(
+                std::span<const uint8_t>(local_identity.public_key()));
 
-        json challenge_body;
-        challenge_body["pubkey"] = pubkey_b64;
+            json challenge_body;
+            challenge_body["pubkey"] = pubkey_b64;
 
-        int challenge_status = 0;
-        auto challenge_resp = impl_->http_post("/api/auth/challenge",
-                                                challenge_body, challenge_status);
-        if (challenge_resp) {
-            auto challenge_b64 = challenge_resp->value("challenge", std::string{});
-            if (!challenge_b64.empty()) {
-                auto challenge_bytes = Identity::from_base64(challenge_b64);
-                auto signature = local_identity.sign(
-                    std::span<const uint8_t>(challenge_bytes));
-                auto signature_b64 = Identity::to_base64(
-                    std::span<const uint8_t>(signature));
+            int challenge_status = 0;
+            auto challenge_resp = impl_->http_post("/api/auth/challenge",
+                                                    challenge_body, challenge_status);
+            if (challenge_resp) {
+                auto challenge_b64 = challenge_resp->value("challenge", std::string{});
+                if (!challenge_b64.empty()) {
+                    auto challenge_bytes = Identity::from_base64(challenge_b64);
+                    auto signature = local_identity.sign(
+                        std::span<const uint8_t>(challenge_bytes));
+                    auto signature_b64 = Identity::to_base64(
+                        std::span<const uint8_t>(signature));
 
-                join_body["method"]    = "ed25519";
-                join_body["pubkey"]    = pubkey_b64;
-                join_body["challenge"] = challenge_b64;
-                join_body["signature"] = signature_b64;
+                    body["method"]    = "ed25519";
+                    body["pubkey"]    = pubkey_b64;
+                    body["challenge"] = challenge_b64;
+                    body["signature"] = signature_b64;
+                }
             }
         }
-    }
 
-    if (!join_body.contains("method")) {
-        // Fallback to password auth in join body
-        join_body["method"]   = "password";
-        join_body["username"] = username;
-        join_body["password"] = password;
-    }
+        if (!body.contains("method")) {
+            // Fallback to password auth in join body
+            body["method"]   = "password";
+            body["username"] = username;
+            body["password"] = password;
+        }
+        return body;
+    };
 
+    // A join that places the device under another identity's group (a link
+    // token) commits through Tier 1 consensus. When the commit outlasts the
+    // server's wait, /api/join answers 202 {"status":"pending"} without a
+    // tunnel address or session token. The token is settled with that
+    // operation, so the device joins again without it (a returning-device
+    // join) until the committed node answers 200.
+    const auto pending_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
     int status = 0;
-    auto resp = impl_->http_post("/api/join", join_body, status);
-    result.http_status = status;
-
-    if (!resp) {
-        result.error = "join request failed (server unreachable)";
-        return result;
+    std::optional<json> resp;
+    for (;;) {
+        resp = impl_->http_post("/api/join", authenticated_join(), status);
+        result.http_status = status;
+        if (!resp) {
+            result.error = "join request failed (server unreachable)";
+            return result;
+        }
+        if (status != 202 || resp->value("status", std::string{}) != "pending") break;
+        {
+            std::lock_guard lock(impl_->mutex);
+            impl_->link_token.clear();
+        }
+        join_body.erase("link_token");
+        if (std::chrono::steady_clock::now() >= pending_deadline) {
+            result.error = "join is waiting for the network to commit; sign in again shortly";
+            return result;
+        }
+        std::this_thread::sleep_for(std::chrono::seconds(1));
     }
 
     if (status != 200) {
