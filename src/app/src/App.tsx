@@ -6,6 +6,7 @@ import { scheduleIdleWork } from './startupScheduler';
 import { attachServerModelState, useServerModelState } from './features/models/modelState';
 import { preloadInteractionSurfaces } from './interactionPreload';
 import { I18nContext, translate, useI18n, type I18nContextValue } from './i18n';
+import { routerDependencies } from './features/router/routerRuntime';
 const MARKETPLACE_URL = 'https://raw.githubusercontent.com/lemonade-sdk/marketplace/main/apps.json';
 type MarketplaceApp = {
   id: string;
@@ -392,6 +393,8 @@ const App: React.FC = () => {
   const customModelInfos = useMemo(() => serverModels.filter(model => (model as any).custom === true), [serverModels]);
   const rawLoadedModels = serverModelState.health?.all_models_loaded ?? EMPTY_LOADED_MODELS;
   const [currentModel, setCurrentModel] = useState<string | null>(null);
+  const [dictationTarget, setDictationTarget] = useState<string | null>(null);
+  const [dictationActive, setDictationActive] = useState(false);
   const [modelSelectionEpoch, setModelSelectionEpoch] = useState(0);
   const [composerFocusEpoch, setComposerFocusEpoch] = useState(0);
   const [theme, setTheme] = useState<Theme>(loadTheme);
@@ -682,6 +685,7 @@ const App: React.FC = () => {
   }, [customModelInfos, modelHelpers, rawLoadedModels, serverModels]);
 
   const loadedModels = loadedModelViewState.models;
+  const previousLoadedModelNamesRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (!modelHelpers) return;
@@ -693,7 +697,14 @@ const App: React.FC = () => {
       );
     };
     setCurrentModel(current => {
+      if (dictationTarget && (!current || current === dictationTarget)) return dictationTarget;
       if (current && loadedModels.some(m => m.model_name === current && (modelHelpers.canSelectInComposer(m) || infoSelectable(m.model_name)))) return current;
+      // A microphone-only ASR load must not replace an existing prompt mode,
+      // including when the browser denies capture after ASR starts.
+      if (current && loadedModels.length > 0 && loadedModels.every(m => String(m.type).toLowerCase() === 'transcription')) {
+        const info = modelHelpers.findModelInfoByName(knownInfos, current);
+        if (!info || modelHelpers.capabilityFromModelInfo(info) !== 'audio') return current;
+      }
       if (current) {
         const info = modelHelpers.findModelInfoByName(knownInfos, current);
         if (info && modelHelpers.isCollectionModel(info) && modelHelpers.isCollectionFullyLoaded(info, rawLoadedModels)) return current;
@@ -707,7 +718,30 @@ const App: React.FC = () => {
         || loadedModels.find(m => infoSelectable(m.model_name))?.model_name
         || null;
     });
-  }, [loadedModelViewState, loadedModels, modelHelpers, rawLoadedModels]);
+  }, [dictationTarget, loadedModelViewState, loadedModels, modelHelpers, rawLoadedModels]);
+
+  // An unloaded prompt model must survive ASR-only health updates.
+  // After dictation, release the pin once that model is actually loaded.
+  useEffect(() => {
+    if (!dictationActive && dictationTarget && loadedModels.some(m => m.model_name === dictationTarget)) {
+      setDictationTarget(null);
+    }
+  }, [dictationActive, dictationTarget, loadedModels]);
+
+  // A router is virtual and never appears as a loaded model. If a router
+  // candidate is unloaded after dictation, release its stale selection pin.
+  useEffect(() => {
+    const now = new Set(rawLoadedModels.map(m => m.model_name.toLowerCase()));
+    const removed = [...previousLoadedModelNamesRef.current].filter(name => !now.has(name));
+    if (dictationTarget && dictationActive) return;
+    previousLoadedModelNamesRef.current = now;
+    if (!dictationTarget || removed.length === 0 || !modelHelpers) return;
+    const info = modelHelpers.findModelInfoByName(serverModels, dictationTarget);
+    // Includes candidates, default, LLM router helper, classifiers and components.
+    if (routerDependencies(info).some(({ name }) => removed.includes(name.toLowerCase()))) {
+      setDictationTarget(null);
+    }
+  }, [dictationActive, dictationTarget, modelHelpers, rawLoadedModels, serverModels]);
 
   const navigateToRoute = useCallback((nextRoute: AppRoute) => {
     if (nextRoute.view === 'monitor') lastWorkspaceSectionsRef.current.monitor = nextRoute.section;
@@ -944,7 +978,19 @@ const App: React.FC = () => {
     await api.refresh();
   }, []);
 
+  const handleDictationStart = useCallback((model: string) => {
+    setDictationActive(true);
+    setDictationTarget(model);
+    setCurrentModel(model);
+  }, []);
+
+  const handleDictationEnd = useCallback((failed = false) => {
+    setDictationActive(false);
+    if (failed) setDictationTarget(null);
+  }, []);
+
   const handleModelSelect = useCallback((modelName: string) => {
+    setDictationTarget(null);
     setCurrentModel(modelName);
     setModelSelectionEpoch(epoch => epoch + 1);
     setView('chat');
@@ -1202,6 +1248,9 @@ const App: React.FC = () => {
                 serverModels={serverModels}
                 connectionStatus={status}
                 onModelSelect={handleModelSelect}
+                dictationTarget={dictationTarget}
+                onDictationStart={handleDictationStart}
+                onDictationEnd={handleDictationEnd}
                 onOpenModelDetails={openModelDetails}
                 onRefresh={handleRefreshModels}
               />
