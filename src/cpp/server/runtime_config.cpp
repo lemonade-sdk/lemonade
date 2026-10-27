@@ -317,6 +317,9 @@ RuntimeConfig::RuntimeConfig(const json& config)
     if (ci_mode && (std::string(ci_mode) == "1" || std::string(ci_mode) == "true" ||
                     std::string(ci_mode) == "True" || std::string(ci_mode) == "TRUE")) {
         config_["log_level"] = "debug";
+        // Dozens of CI servers start at once sharing one token, and the
+        // per-repo startup check alone is enough to exhaust its rate limit.
+        config_["auto_check_model_updates"] = false;
     }
 }
 

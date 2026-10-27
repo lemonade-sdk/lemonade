@@ -72,6 +72,12 @@ int main() {
         unavailable, "ROCm1");
     check(rocm1.total_gb == 16.0 && rocm1.used_gb == 3.0 && rocm1.label == "AMD ROCm1",
           "ROCm1 selects AMD device 1");
+    check(!rocm1.unified, "ROCm dGPU pool is discrete");
+    auto rocm0 = select_gpu_memory_pool(
+        GpuMemoryVendor::Amd, amd_igpu, two_amd, nvidia, unavailable, "ROCm0");
+    check(rocm0.unified && rocm0.total_gb == 8.0 &&
+          rocm0.physical_total_gb == 8.0,
+          "ROCm iGPU pool marks unified physical RAM");
 
     auto cuda_list = select_gpu_memory_pool(
         gpu_memory_vendor_for_target("system", "CUDA0,CUDA1"), unavailable, amd, two_nvidia,
@@ -156,6 +162,28 @@ int main() {
         GpuMemoryVendor::Metal, unavailable, amd, nvidia, apple);
     check(metal.vendor == GpuMemoryVendor::Metal,
           "Metal pool carries typed vendor identity");
+
+    GPUInfo apple_unified = gpu(24.0, 2.0);
+    apple_unified.virtual_gb = 32.0;
+    apple_unified.unified_memory = true;
+    auto shared_metal = select_gpu_memory_pool(
+        GpuMemoryVendor::Metal, unavailable, amd, nvidia, apple_unified);
+    check(shared_metal.unified && shared_metal.total_gb == 24.0 &&
+          shared_metal.used_gb == 2.0 && shared_metal.physical_total_gb == 32.0,
+          "Apple Silicon separates Metal working set from physical RAM");
+
+    apple_unified.unified_memory = false;
+    auto discrete_metal = select_gpu_memory_pool(
+        GpuMemoryVendor::Metal, unavailable, amd, nvidia, apple_unified);
+    check(!discrete_metal.unified && discrete_metal.total_gb == 24.0 &&
+          discrete_metal.physical_total_gb == 0.0,
+          "Discrete Metal does not claim a shared physical RAM pool");
+
+    GPUInfo unmetered_metal = gpu(24.0, -1.0);
+    auto unknown_metal = select_gpu_memory_pool(
+        GpuMemoryVendor::Metal, unavailable, amd, nvidia, unmetered_metal);
+    check(unknown_metal.used_gb < 0.0 && !unknown_metal.unified,
+          "Unknown discrete Metal VRAM usage stays unknown");
 
     auto automatic = select_gpu_memory_pool(
         GpuMemoryVendor::Any, unavailable, amd, nvidia, unavailable);

@@ -382,7 +382,7 @@ The following options are available depending on the recipe being used:
 | `--llamacpp-device DEVICES` | Comma-separated list of accelerator devices to use (e.g. Vulkan0) | `""` |
 | `--llamacpp-args ARGS` | Custom arguments to pass to llama-server | `""` |
 
-#### HRX GPU (experimental) (`llamacpp-hrx` recipe)
+#### HRX GPU (`llamacpp-hrx` recipe)
 
 | Option | Description | Default |
 |--------|-------------|---------|
@@ -422,7 +422,7 @@ The following options are available depending on the recipe being used:
 |--------|-------------|---------|
 | `--ctx-size SIZE` | Context size for the model | auto |
 
-#### vLLM ROCm (experimental) (`vllm` recipe)
+#### vLLM ROCm (`vllm` recipe)
 
 | Option | Description | Default |
 |--------|-------------|---------|
@@ -436,7 +436,7 @@ The following options are available depending on the recipe being used:
 |--------|-------------|---------|
 | `--thenoise BACKEND` | TheNoise backend to use | Auto-detected |
 
-#### DwarfStar4 (experimental) (`ds4` recipe)
+#### DwarfStar4 (`ds4` recipe)
 
 | Option | Description | Default |
 |--------|-------------|---------|
@@ -627,6 +627,7 @@ lemonade backends uninstall SPEC
 **Notes:**
 - Supported backends depend on your system and the recipe
 - Use `lemonade backends --all` to list all available recipes and backends
+- Each backend lists its tier and format. See [Backend Tiers and Formats](../api/lemonade.md#backend-tiers-and-formats) for what each value means.
 
 **Examples:**
 
@@ -672,8 +673,15 @@ Codex-only option:
 |-----------------|-------------|----------|
 | `--provider,-p [PROVIDER]` | Select provider name for Codex config; Lemonade does not read or modify `config.toml` (defaults to `lemonade`) | No |
 
+Pi-only options:
+
+| Option/Argument | Description | Required |
+|-----------------|-------------|----------|
+| `--mcp`, `--no-mcp` | Add or remove the `lemonade` server in pi's `mcp.json`, giving pi Lemonade's MCP tools. The choice is kept for later launches. Needs pi 1.0 or newer. | No |
+| `--codemode` | Enable pi's `codemode` tool for this launch. Combine with `--mcp` so its scripts can call Lemonade's tools. Needs pi 1.1 or newer. | No |
+
 **Notes:**
-- The model load request is asynchronous: launch starts the agent immediately while loading continues in the background.
+- The model load request is asynchronous: launch starts the agent immediately while loading continues in the background. The exception is `pi` with an automatic context size: launch waits for the load so it can give pi the size Lemonade picked.
 - If a model is already provided, launch skips recipe import prompts.
 - `--directory` and `--recipe-file` are only used for remote recipe import at prompt time.
 - For local recipe files, run `lemonade import <LOCAL_RECIPE_JSON>` first, then launch with the imported model id.
@@ -684,9 +692,9 @@ Codex-only option:
 - `--agent-args` is parsed and appended to the launched agent command.
 - Supported agents: `claude`, `codex`, `opencode`, `pi`, `junie`
 - `opencode` uses an auto-managed config file at `~/.config/opencode/opencode.json`.
-- `pi` uses auto-managed config files at `~/.pi/agent/models.json` and `~/.pi/agent/settings.json`.
+- `pi` uses auto-managed config files at `~/.pi/agent/models.json` and `~/.pi/agent/settings.json` (honors `PI_CODING_AGENT_DIR`), plus `mcp.json` with `--mcp`. See [Pi](../integrations/pi.md).
 - `junie` uses an auto-managed custom model profile at `~/.junie/models/lemonade.json` (honors `JUNIE_HOME`) and is launched with `--model custom:lemonade`.
-- When no `--api-key` is provided, the generated `opencode`, `pi`, and `junie` providers use a default `apiKey` value of `lemonade`.
+- When no `--api-key` is provided, the generated `opencode`, `pi`, and `junie` providers use a default `apiKey` value of `lemonade`. With an API key, `pi`'s config references `${LEMONADE_API_KEY}`, which launch exports to pi, instead of storing the key.
 
 **Examples:**
 
@@ -699,6 +707,9 @@ lemonade launch codex --model Qwen3.5-0.8B-GGUF -p
 
 # Launch codex using a custom provider name from your Codex config.toml
 lemonade launch codex --model Qwen3.5-0.8B-GGUF --provider my-provider
+
+# Launch pi with Lemonade's MCP tools and codemode
+lemonade launch pi --model Qwen3.5-35B-A3B-GGUF --mcp --codemode
 
 # Launch junie against a local model (writes the custom:lemonade profile)
 lemonade launch junie --model Qwen3.5-0.8B-GGUF
@@ -886,7 +897,7 @@ lemonade telemetry off
 
 ## Options for bench
 
-The `bench` command measures chat completion performance (TTFT and tokens-per-second) for one or more models across one or more installed backends, context sizes, and scenario workloads. It sends `POST /api/v1/chat/completions` requests and extracts timing data from the server response.
+The `bench` command measures chat completion performance (TTFT, prefill throughput, and decode tokens-per-second) for one or more models across one or more installed backends, context sizes, and scenario workloads. It sends `POST /api/v1/chat/completions` requests and extracts timing data from the server response.
 
 ```
 lemonade bench [options] MODEL_NAME [MODEL_NAME ...]
@@ -903,7 +914,7 @@ lemonade bench [options] MODEL_NAME [MODEL_NAME ...]
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--backend BACKEND` | Backend to test (e.g., `vulkan`, `metal`, `cpu`). Repeat for multiple backends. | All installed backends |
-| `--ctx-size SIZE` | Context size to test. Repeat for multiple sizes. | Model's default context size |
+| `--ctx-size SIZE` | Context size to test. Repeat for multiple sizes. | Model default, raised per scenario when a context target requires more |
 | `--runs N` | Number of measurement runs per scenario | `3` |
 | `--warmup N` | Number of warmup runs per scenario (not included in stats) | `0` |
 | `--scenarios NAME\|CATEGORY` | Scenario name(s) or category (e.g. `chat`, `coding`, `long-context`). Use `all` to include every scenario. Repeat for multiple. | All scenarios except `long-context` |
@@ -953,7 +964,7 @@ The optional `context` block generates large input contexts by repeating a fille
 | `target_tokens` | int | Target token count (~4 chars per token for English) |
 | `position` | string | Where to place the question relative to filler: `"end"` (default), `"start"`, or `"middle"` |
 
-When `context` is present, the user message content is replaced with the expanded text. The question (extracted from the user message) is positioned relative to the filler according to `position`.
+When `context` is present, the user message content is replaced with the expanded text. The question (extracted from the user message) is positioned relative to the filler according to `position`. Without an explicit `--ctx-size`, bench rounds the target up to a suitable context size for that scenario. With an explicit `--ctx-size` sweep, scenarios needing more context are skipped at smaller sizes. Token counts are approximate and depend on the model tokenizer. If server-managed context selection is explicitly requested, the effective size may be unknown until the model is loaded.
 
 #### Default Scenarios
 
@@ -1027,7 +1038,7 @@ Vision scenarios are excluded by default both because they require a vision-capa
 
 #### Table Output (default)
 
-Results are printed as a table grouped by backend. Columns show TTFT (Time To First Token) and TPS (Tokens Per Second) with mean, min/max (or p50/p95 when `--runs >= 10`), and peak VRAM usage:
+Results are printed as a table grouped by backend. Columns show TTFT (Time To First Token) and TPS (decode Tokens Per Second) with mean, min/max (or p50/p95 when `--runs >= 10`), PP t/s, and peak VRAM usage:
 
 ```
 Benchmark: Qwen3-0.6B-GGUF
@@ -1035,25 +1046,27 @@ Benchmark: Qwen3-0.6B-GGUF
 
 Backend: llamacpp/vulkan (ctx=4096)
 ----------------------------------------------------------------------------------------------------
-Scenario            TTFT    min     max     TPS     min     max     VRAM (GB)
+Scenario            TTFT     min      max      PP t/s  TPS      min      max      VRAM (GB)
 ----------------------------------------------------------------------------------------------------
-chat-short          45.2    42.1    48.3    185.3   178.2   192.1   1.2
-chat-long-output    48.7    46.5    51.2    142.6   138.4   147.8   1.2
-code-short          46.1    44.3    47.8    168.9   162.3   175.4   1.2
+chat-short          45.2     42.1     48.3     1327.4  185.3    178.2    192.1    1.2
+chat-long-output    48.7     46.5     51.2     1330.5  142.6    138.4    147.8    1.2
+code-short          46.1     44.3     47.8     1296.8  168.9    162.3    175.4    1.2
 ```
+
+**Note:** `PP t/s` is prefill throughput — the prompt tokens divided by TTFT. Backends that report a prompt-eval time (`timings.prompt_ms`, as llama.cpp does) yield the backend's own prefill rate; backends that only report a wall-clock TTFT (`usage.prefill_duration_ttft`, as cloud models do) include request routing and transfer overhead, so their `PP t/s` reads lower than raw compute speed. Workloads without a prefill timing, such as embedding and image generation, show `-`.
 
 #### JSON Output
 
 With `--json`, results are emitted as structured JSON. Use `--output FILE` to save them for later comparison with `--compare`.
 The top-level JSON always includes a `models` array, even for single-model runs, so downstream tooling can handle a single schema for all benchmark results.
-Each scenario includes `duration_ms` stats (`mean`, `min`, `max`, `p50`, `p95`) representing end-to-end request time per run.
+Each scenario includes `duration_ms` stats (`mean`, `min`, `max`, `p50`, `p95`) representing end-to-end request time per run, and `pp_tps` stats with the same keys when the workload reported a prefill timing.
 
 With `--response-log FILE`, the actual model output will be saved to the named destination as JSONL (one JSON object per line),
 along with test parameters such as backend, model, scenario, and context size.
 
 ### Comparison Mode
 
-Pass `--compare PREVIOUS.json` to compare current results against a saved JSON file. This shows percentage change in TTFT and TPS, plus VRAM delta.
+Pass `--compare PREVIOUS.json` to compare current results against a saved JSON file. This shows percentage change in TTFT, prefill throughput, and TPS, plus VRAM delta.
 
 Model matching behavior:
 - Models are matched by model name.
@@ -1079,7 +1092,7 @@ The comparison table marks each scenario as:
 - **failed** — all measurement runs errored
 - **prev_failed** — previous run errored, no baseline
 
-**Note:** TTFT change > 0 means slower (worse). TPS change > 0 means faster (better).
+**Note:** TTFT change > 0 means slower (worse). TPS and PP (prefill throughput) change > 0 means faster (better). PP is reported as `-` when either run lacks prefill data, for example when comparing against a file written by an older `lemonade`.
 
 ### Examples
 

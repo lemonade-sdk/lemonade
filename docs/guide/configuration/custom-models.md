@@ -190,7 +190,7 @@ curl -X POST http://localhost:13305/v1/pull \
 ## Share a Collection Between Machines
 
 `lemonade export <collection>` (and the desktop app's Export button) writes a *collection file*: the
-collection's [`/v1/models/{model_id}`](../../api/openai.md#get-v1modelsmodel_id) object normalized into
+collection's [`/v1/models/{id}`](../../api/openai.md#get-v1modelsid) object normalized into
 an import-ready [`/v1/pull`](../../api/lemonade.md#post-v1pull) body. The file carries `model_name`,
 `recipe`, `components`, and a `models` array embedding each component's definition, so it is
 self-contained — the importing machine does not need any of the components registered beforehand.
@@ -292,7 +292,7 @@ The Tauri desktop app and the web app apply a display transformation on top of t
 
 You can define custom **aliases for model names** in `aliases.json` — alternative high-level names that resolve to any target model name. The target model does not define or need to be aware of being aliased:
 
-1. **Standalone Alias Management**: Model aliases live in a dedicated `aliases.json` file in the Lemonade cache directory (`<cache_dir>/aliases.json`). They are managed via the CLI (`lemonade alias add ALIAS TARGET_MODEL`) or administrative REST API (`POST /internal/aliases`).
+1. **Standalone Alias Management**: Model aliases live in a dedicated `aliases.json` file in the Lemonade cache directory (`<cache_dir>/aliases.json`). They are managed via the CLI (`lemonade alias add ALIAS TARGET_MODEL`) or administrative REST API ([`POST /internal/aliases`](../../api/internal.md#post-internalaliases)).
 2. **Persistence**: `aliases.json` is automatically loaded on server startup and saved on every alias mutation.
 3. **Decoupled Architecture**: Aliases function purely at the symbolic routing layer. They do not pollute model definition files (`user_models.json` or `server_models.json`).
 
@@ -325,7 +325,7 @@ response = client.chat.completions.create(
 )
 ```
 
-If the underlying target model changes, update the alias on the server using `lemonade alias add production-llm new-target` or `POST /internal/aliases`. Client application code requires no updates.
+If the underlying target model changes, update the alias on the server using `lemonade alias add production-llm new-target` or [`POST /internal/aliases`](../../api/internal.md#post-internalaliases). Client application code requires no updates.
 
 #### Alias Resolution & Target Model Independence
 
@@ -363,6 +363,19 @@ lemonade config set extra_models_dir="/home/you/.lmstudio/models"
 | LM Studio | `~/.lmstudio/models`, or `C:\Users\You\.lmstudio\models` |
 | A Hugging Face or ModelScope cache | `~/.cache/huggingface/hub` |
 | Your own folder of GGUFs | anywhere readable, absolute or relative |
+
+> Note: With the Linux `.deb`/`.rpm` packages, `lemond` runs as the `lemonade` system user under a systemd unit with `ProtectHome=yes`, which hides `/home` from the service. A folder under `/home` is then rejected as "not accessible by the Lemonade server (Permission denied)" even when its permissions allow the `lemonade` user. Either keep the models outside `/home` (for example `/srv/models`), or expose just that folder to the service with a drop-in, and make sure the `lemonade` user can read the folder:
+>
+> ```bash
+> sudo mkdir -p /etc/systemd/system/lemond.service.d
+> printf '[Service]\nProtectHome=tmpfs\nBindReadOnlyPaths=/home/you/.lmstudio/models\n' | sudo tee /etc/systemd/system/lemond.service.d/models.conf
+> sudo systemctl daemon-reload && sudo systemctl restart lemond
+> lemonade config set extra_models_dir="/home/you/.lmstudio/models"
+> ```
+>
+> The rejected value was not saved, so run `config set` again after the restart. `ProtectHome=tmpfs` keeps the rest of `/home` hidden.
+>
+> The drop-in exposes only that one folder. If you later point `extra_models_dir` at a path outside it, change `BindReadOnlyPaths` to match, then run `daemon-reload` and restart `lemond` again. `config set` alone is not enough, because systemd sets up the mount when the service starts.
 
 ### Model Naming Scheme
 
@@ -462,7 +475,7 @@ Imported models are yours to manage, so `/v1/delete` on one returns an error nam
 
 ### Access and failure behavior
 
-An `extra_models_dir` that already exists must be a directory the `lemond` process can enumerate; permission and I/O failures reject the config update and leave your current model view in place. A path that has yet to be created is accepted, so a directory watcher can pick it up later. See [`POST /internal/set`](../../embeddable/runtime.md).
+An `extra_models_dir` that already exists must be a directory the `lemond` process can enumerate; permission and I/O failures reject the config update and leave your current model view in place. A path that has yet to be created is accepted, so a directory watcher can pick it up later. See [`POST /internal/set`](../../api/internal.md#post-internalset).
 
 During a scan, unreadable nested directories are skipped. Discovery is best-effort by design, so your registered and built-in catalogs stay intact through a filesystem failure.
 
@@ -573,7 +586,11 @@ The equivalent CLI registration is shown in [Pull an Omni Collection](#pull-an-o
 
 ### Image defaults
 
-For `sd-cpp` recipe models, you can specify default image generation parameters:
+For image models (including `sd-cpp` and `thenoise`), you can specify default generation parameters.
+The optional `soft_pixel_cap` limits the **inferred output area** of `/images/edits` when
+`size` is omitted; Lemonade preserves the input aspect ratio. If this field is
+missing or zero, the global 4,194,304-pixel (~4 MP) fallback applies.
+Explicitly requested output sizes are not subject to this soft cap:
 
 ```json
 {
@@ -585,7 +602,8 @@ For `sd-cpp` recipe models, you can specify default image generation parameters:
             "steps": 20,
             "cfg_scale": 7.0,
             "width": 512,
-            "height": 512
+            "height": 512,
+            "soft_pixel_cap": 262144
         }
     }
 }
@@ -620,7 +638,7 @@ This file configures per-model runtime settings. Each key is a **canonical model
 
 > **Note:** Per-model options can also be configured through the Lemonade desktop app's model settings, or via the `save_options` parameter in the [`/api/v1/load` endpoint](../../api/lemonade.md#post-v1load).
 
-> **Editing options without loading:** [`POST /api/v1/models/{id}/options`](../../api/lemonade.md#post-v1modelsidoptions) writes this file directly, so options can be saved without bringing a model into memory. It merges rather than replaces, and `"ctx_size": -1` saves automatic context sizing even when the server-wide `ctx_size` is an explicit number. [`DELETE`](../../api/lemonade.md#delete-v1modelsidoptions) on the same path resets the model by removing its entry entirely.
+> **Editing options without loading:** [`POST /api/v1/models/{id}/options`](../../api/openai.md#post-v1modelsidoptions) writes this file directly, so options can be saved without bringing a model into memory. It merges rather than replaces, and `"ctx_size": -1` saves automatic context sizing even when the server-wide `ctx_size` is an explicit number. [`DELETE`](../../api/openai.md#delete-v1modelsidoptions) on the same path resets the model by removing its entry entirely.
 
 ## Complete Examples
 
