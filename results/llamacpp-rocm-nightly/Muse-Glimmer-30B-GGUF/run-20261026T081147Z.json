@@ -1,0 +1,334 @@
+{
+  "hardware": {
+    "backends": {
+      "llamacpp/rocm": "b1338"
+    },
+    "cpu": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S",
+    "gpu": [
+      {
+        "integrated": true,
+        "name": "AMD Radeon Graphics (gfx1151)",
+        "type": "amd",
+        "vram_gb": 0.5
+      }
+    ],
+    "lemonade_version": "2026.43.3",
+    "os": "linux",
+    "ram_gb": 124.95
+  },
+  "models": [
+    {
+      "checkpoints": {
+        "draft": "unsloth/Muse-Glimmer-30B-GGUF:dflash-kquant.gguf",
+        "main": "unsloth/Muse-Glimmer-30B-GGUF:UD-Q4_K_XL",
+        "mmproj": "unsloth/Muse-Glimmer-30B-GGUF:mmproj-Muse-Glimmer-30B-BF16.gguf"
+      },
+      "config": {
+        "measurement_runs": 3,
+        "memory_tracking": true,
+        "warmup_runs": 1
+      },
+      "model": "Muse-Glimmer-30B-GGUF",
+      "results": [
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 4096,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 8715.428488,
+                "mean": 8708.627125666666,
+                "min": 8704.051878,
+                "p50": 8706.401011,
+                "p95": 8714.5257403
+              },
+              "failed_runs": 0,
+              "input_tokens": 3109,
+              "memory_peak_gb": 28.3,
+              "name": "context-4k",
+              "output_tokens": 20,
+              "pp_tps": 392.02292194700493,
+              "tps": {
+                "max": 25.158964933699508,
+                "mean": 25.14450846563277,
+                "min": 25.13247459635923,
+                "p50": 25.142085866839572,
+                "p95": 25.157277027013514
+              },
+              "ttft_ms": {
+                "max": 7937.814,
+                "mean": 7930.662,
+                "min": 7926.189,
+                "p50": 7927.983,
+                "p95": 7936.8309
+              },
+              "vram_peak_gb": 21.105518341064453
+            }
+          ]
+        },
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 32768,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 65097.559037,
+                "mean": 65008.12963066667,
+                "min": 64956.133878,
+                "p50": 64970.695977,
+                "p95": 65084.872731
+              },
+              "failed_runs": 0,
+              "input_tokens": 23693,
+              "memory_peak_gb": 28.6,
+              "name": "context-32k",
+              "output_tokens": 20,
+              "pp_tps": 369.8505231033321,
+              "tps": {
+                "max": 22.001079210832867,
+                "mean": 21.668244171217776,
+                "min": 21.46126354883454,
+                "p50": 21.542389753985912,
+                "p95": 21.955210265148175
+              },
+              "ttft_ms": {
+                "max": 64139.628,
+                "mean": 64061.065,
+                "min": 64009.366,
+                "p50": 64034.201,
+                "p95": 64129.08529999999
+              },
+              "vram_peak_gb": 21.488384246826172
+            }
+          ]
+        }
+      ],
+      "timestamp": "2026-10-26T08:52:46Z",
+      "accuracy": {
+        "passed": 0,
+        "total": 50,
+        "score": 0.0,
+        "questions_version": 1,
+        "failures": [
+          {
+            "id": "arith-mul",
+            "response": ""
+          },
+          {
+            "id": "arith-add",
+            "response": ""
+          },
+          {
+            "id": "arith-div",
+            "response": ""
+          },
+          {
+            "id": "arith-pow",
+            "response": ""
+          },
+          {
+            "id": "arith-pct",
+            "response": ""
+          },
+          {
+            "id": "arith-sub",
+            "response": ""
+          },
+          {
+            "id": "arith-sqrt",
+            "response": ""
+          },
+          {
+            "id": "arith-fact",
+            "response": ""
+          },
+          {
+            "id": "arith-paren",
+            "response": ""
+          },
+          {
+            "id": "arith-dec",
+            "response": ""
+          },
+          {
+            "id": "reason-train",
+            "response": ""
+          },
+          {
+            "id": "reason-widgets",
+            "response": ""
+          },
+          {
+            "id": "reason-batball",
+            "response": ""
+          },
+          {
+            "id": "reason-sisters",
+            "response": ""
+          },
+          {
+            "id": "reason-day-fwd",
+            "response": ""
+          },
+          {
+            "id": "reason-day-back",
+            "response": ""
+          },
+          {
+            "id": "reason-minutes",
+            "response": ""
+          },
+          {
+            "id": "reason-area",
+            "response": ""
+          },
+          {
+            "id": "reason-seq-geo",
+            "response": ""
+          },
+          {
+            "id": "reason-seq-fib",
+            "response": ""
+          },
+          {
+            "id": "fact-tokyo",
+            "response": ""
+          },
+          {
+            "id": "fact-gold",
+            "response": ""
+          },
+          {
+            "id": "fact-jupiter",
+            "response": ""
+          },
+          {
+            "id": "fact-boil",
+            "response": ""
+          },
+          {
+            "id": "fact-austen",
+            "response": ""
+          },
+          {
+            "id": "fact-continents",
+            "response": ""
+          },
+          {
+            "id": "fact-water",
+            "response": ""
+          },
+          {
+            "id": "fact-light",
+            "response": ""
+          },
+          {
+            "id": "fact-ww2",
+            "response": ""
+          },
+          {
+            "id": "fact-prime",
+            "response": ""
+          },
+          {
+            "id": "fact-hexagon",
+            "response": ""
+          },
+          {
+            "id": "fact-mars",
+            "response": ""
+          },
+          {
+            "id": "code-len",
+            "response": ""
+          },
+          {
+            "id": "code-sorted",
+            "response": ""
+          },
+          {
+            "id": "code-floordiv",
+            "response": ""
+          },
+          {
+            "id": "code-powassoc",
+            "response": ""
+          },
+          {
+            "id": "code-reverse",
+            "response": ""
+          },
+          {
+            "id": "code-typeof",
+            "response": ""
+          },
+          {
+            "id": "code-append",
+            "response": ""
+          },
+          {
+            "id": "code-bool",
+            "response": ""
+          },
+          {
+            "id": "unit-miles",
+            "response": ""
+          },
+          {
+            "id": "unit-fahrenheit",
+            "response": ""
+          },
+          {
+            "id": "unit-grams",
+            "response": ""
+          },
+          {
+            "id": "unit-seconds",
+            "response": ""
+          },
+          {
+            "id": "fmt-yes",
+            "response": ""
+          },
+          {
+            "id": "fmt-backwards",
+            "response": ""
+          },
+          {
+            "id": "fmt-count-r",
+            "response": ""
+          },
+          {
+            "id": "fmt-abc",
+            "response": ""
+          },
+          {
+            "id": "fmt-json",
+            "response": ""
+          },
+          {
+            "id": "fmt-third-word",
+            "response": ""
+          }
+        ]
+      }
+    }
+  ],
+  "timestamp": "2026-10-26T08:48:59Z",
+  "fork_id": "llamacpp-rocm-nightly",
+  "fork_label": "llama.cpp ROCm Nightly (lemonade-sdk)",
+  "fork_repo": "lemonade-sdk/llamacpp-rocm",
+  "fork_version": "b1354",
+  "fork_backend": "rocm-nightly",
+  "experimental": false,
+  "run_id": "40290464171",
+  "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/40290464171",
+  "commit": "9de0e089c8a55ea080d7827e1188510915f706c1",
+  "lemonade_version": "v2026.43.3"
+}

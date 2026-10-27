@@ -1,0 +1,233 @@
+{
+  "hardware": {
+    "backends": {
+      "llamacpp/rocm": "b1338"
+    },
+    "cpu": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S",
+    "gpu": [
+      {
+        "integrated": true,
+        "name": "AMD Radeon Graphics (gfx1151)",
+        "type": "amd",
+        "vram_gb": 0.5
+      }
+    ],
+    "lemonade_version": "2026.43.3",
+    "os": "linux",
+    "ram_gb": 124.95
+  },
+  "models": [
+    {
+      "checkpoints": {
+        "main": "OpenBMB/MiniCPM-V-4.6-gguf:MiniCPM-V-4_6-Q4_K_M.gguf",
+        "mmproj": "OpenBMB/MiniCPM-V-4.6-gguf:mmproj-model-f16.gguf"
+      },
+      "config": {
+        "measurement_runs": 3,
+        "memory_tracking": true,
+        "warmup_runs": 1
+      },
+      "model": "MiniCPM-V-4.6-GGUF",
+      "results": [
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 4096,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 533.079265,
+                "mean": 526.143452,
+                "min": 520.557767,
+                "p50": 524.793324,
+                "p95": 532.2506708999999
+              },
+              "failed_runs": 0,
+              "input_tokens": 3210,
+              "memory_peak_gb": 8.4,
+              "name": "context-4k",
+              "output_tokens": 20,
+              "pp_tps": 7770.490165470553,
+              "tps": {
+                "max": 184.31927979666676,
+                "mean": 181.88703443330405,
+                "min": 180.31013342949876,
+                "p50": 181.03169007374663,
+                "p95": 183.99052082437476
+              },
+              "ttft_ms": {
+                "max": 420.381,
+                "mean": 413.1703333333333,
+                "min": 407.568,
+                "p50": 411.562,
+                "p95": 419.4991
+              },
+              "vram_peak_gb": 2.10791015625
+            }
+          ]
+        },
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 32768,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 4021.186484,
+                "mean": 4012.2931293333336,
+                "min": 4002.412871,
+                "p50": 4013.280033,
+                "p95": 4020.3958389
+              },
+              "failed_runs": 0,
+              "input_tokens": 24790,
+              "memory_peak_gb": 8.6,
+              "name": "context-32k",
+              "output_tokens": 20,
+              "pp_tps": 6454.323959322485,
+              "tps": {
+                "max": 146.62982913766226,
+                "mean": 145.99429324300135,
+                "min": 145.3788649736405,
+                "p50": 145.9741856177013,
+                "p95": 146.56426478566618
+              },
+              "ttft_ms": {
+                "max": 3846.434,
+                "mean": 3840.842666666667,
+                "min": 3834.202,
+                "p50": 3841.892,
+                "p95": 3845.9798
+              },
+              "vram_peak_gb": 2.463409423828125
+            }
+          ]
+        }
+      ],
+      "timestamp": "2026-10-26T13:54:31Z",
+      "accuracy": {
+        "passed": 25,
+        "total": 50,
+        "score": 0.5,
+        "questions_version": 1,
+        "failures": [
+          {
+            "id": "arith-mul",
+            "response": "To find the product of 17 and 23, we can multiply them:\n\n17 \u00d7 23 = 17 \u00d7 (20 + 3)  \n= 17 \u00d7 20 + 17 \u00d7 3  \n= 340 + 51  \n"
+          },
+          {
+            "id": "arith-pow",
+            "response": "We need to calculate \\(2^{10}\\).\n\nStarting with the basic exponentiation:\n\\(2^1 = 2\\)\n\\(2^2 = 4\\)\n\\(2^3 = 8\\)\n\\(2^4 = 16\\)\n\\(2^5 = 3"
+          },
+          {
+            "id": "arith-pct",
+            "response": "To find 15% of 240, we can calculate:\n\n15% of 240 = (15/100) \u00d7 240\n\nNow, compute:\n\n(15/100) \u00d7 240 = 0.15"
+          },
+          {
+            "id": "arith-sqrt",
+            "response": "The square root of 169 is 13, because 13 times 13 equals 169."
+          },
+          {
+            "id": "arith-fact",
+            "response": "To find 7 factorial (7!), we compute the product of all positive integers up to 7:\n\n7! = 7 \u00d7 6 \u00d7 5 \u00d7 4 \u00d7 3 \u00d7 2 \u00d7 1\n\nCalculating step by step:\n\n7 \u00d7 6 = 42  \n42"
+          },
+          {
+            "id": "reason-train",
+            "response": "We are given the speed of the train and the time it travels. To find the distance traveled, we use the formula:\n\nDistance = speed \u00d7 time\n\nFirst, convert the speed from km/h to km per hour (which it is"
+          },
+          {
+            "id": "reason-widgets",
+            "response": "We are given that 5 machines make 5 widgets in 5 minutes. Let's find out how many widgets one machine makes in one minute, and then determine how long it takes for 100 machines to make 100 widgets.\n\nF"
+          },
+          {
+            "id": "reason-batball",
+            "response": "Let's let the cost of the ball be \\( b \\) cents. Then the cost of the bat is \\( b + 10 \\) cents (since the bat costs $1.00 more than the ball, and $1.00 is 100 cents). The total cost is $"
+          },
+          {
+            "id": "reason-sisters",
+            "response": "Each of Alice's brothers has a sister, and since Alice is also a sister to the brothers, each brother has one sister (Alice). Therefore, each of Alice's brothers has one sister.\n\nBut the question asks"
+          },
+          {
+            "id": "reason-day-fwd",
+            "response": "We are given a Monday and need to find the day of the week 10 days later.\n\nWe can calculate the day of the week by computing:\n\n10 days after Monday.\n\nWe know that moving forward in days, the day of th"
+          },
+          {
+            "id": "reason-day-back",
+            "response": "If today is Wednesday, then counting 3 days back, we go to Monday. Therefore, it was Monday 3 days ago."
+          },
+          {
+            "id": "reason-minutes",
+            "response": "To convert hours to minutes, we know that 1 hour equals 60 minutes. So, for 3.5 hours, we calculate:\n\n3.5 \u00d7 60 = 210\n\nTherefore, there are 210 minutes in 3.5 hours.\n\nThe final answer"
+          },
+          {
+            "id": "reason-seq-fib",
+            "response": "The sequence given is a classic Fibonacci sequence, where each number is the sum of the two preceding ones. Starting from 1, 1, the next numbers are:\n\n- After 1, 1: 2 (since 1 + 1 = 2)\n- Then 2, 3"
+          },
+          {
+            "id": "fact-jupiter",
+            "response": "The largest planet in our solar system is Jupiter."
+          },
+          {
+            "id": "fact-continents",
+            "response": "There are currently five continents recognized by the most common convention."
+          },
+          {
+            "id": "fact-mars",
+            "response": "The planet known as the Red Planet is Earth's Moon, but more accurately, it's the planet Mars that is commonly referred to as the Red Planet due to its reddish appearance from space. However, if consi"
+          },
+          {
+            "id": "code-powassoc",
+            "response": "The code calculates the value of 2 raised to the power of 3, then raises that result to the power of 2. Therefore, it prints 2^3^2, which evaluates to 8^2, resulting in 64. Hence, the code will print "
+          },
+          {
+            "id": "code-reverse",
+            "response": "The code `print(\"abc\"[::-1])` reverses the string \"abc\", which results in \"cba\". Therefore, it prints \"cba\"."
+          },
+          {
+            "id": "code-append",
+            "response": "The code initializes a list x with the values [1, 2, 3], appends the value 4 to it, and then prints the sum of the list x. After appending, the list becomes [1, 2, 3, 4], and the sum is calculated, wh"
+          },
+          {
+            "id": "code-bool",
+            "response": "The code `print(bool(\"\"))` evaluates the boolean value of an empty string, which is `False`. Therefore, it will print `False`."
+          },
+          {
+            "id": "unit-fahrenheit",
+            "response": "To convert Fahrenheit to Celsius, we use the formula:  \n\n\\[ C = \\frac{5}{9} \\times (F - 32) \\]  \n\nSubstitute \\( F = 100 \\):  \n\n\\[ C = \\frac{5}{9} \\times (100 - "
+          },
+          {
+            "id": "unit-grams",
+            "response": "To convert kilograms to grams, we use the conversion factor that 1 kilogram = 1000 grams.\n\nSo, for 2.5 kilograms:\n\n2.5 kg \u00d7 1000 g/kg = 2500 grams.\n\nThe number of grams in 2.5"
+          },
+          {
+            "id": "fmt-backwards",
+            "response": "The word 'banana' reversed spells nanaaban."
+          },
+          {
+            "id": "fmt-count-r",
+            "response": "The word \"strawberry\" contains 7 times the letter 'r'."
+          },
+          {
+            "id": "fmt-third-word",
+            "response": "The third word in the phrase 'the quick brown fox' is 'quick'."
+          }
+        ]
+      }
+    }
+  ],
+  "timestamp": "2026-10-26T13:52:46Z",
+  "fork_id": "llamacpp-amd-ecosystem-gfx11",
+  "fork_label": "llama.cpp gfx11 (AMD-Ecosystem)",
+  "fork_repo": "AMD-Ecosystem/llama.cpp",
+  "fork_version": "gfx11-rocm-nightly-20261025",
+  "fork_backend": "rocm-gfx11",
+  "experimental": false,
+  "run_id": "40290464171",
+  "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/40290464171",
+  "commit": "9de0e089c8a55ea080d7827e1188510915f706c1",
+  "lemonade_version": "v2026.43.3"
+}

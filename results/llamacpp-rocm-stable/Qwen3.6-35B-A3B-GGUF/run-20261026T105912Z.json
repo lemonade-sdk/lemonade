@@ -1,0 +1,137 @@
+{
+  "hardware": {
+    "backends": {
+      "llamacpp/rocm": "b11580"
+    },
+    "cpu": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S",
+    "gpu": [
+      {
+        "integrated": true,
+        "name": "AMD Radeon Graphics (gfx1151)",
+        "type": "amd",
+        "vram_gb": 0.5
+      }
+    ],
+    "lemonade_version": "2026.43.3",
+    "os": "linux",
+    "ram_gb": 124.95
+  },
+  "models": [
+    {
+      "checkpoints": {
+        "main": "unsloth/Qwen3.6-35B-A3B-GGUF:Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf",
+        "mmproj": "unsloth/Qwen3.6-35B-A3B-GGUF:mmproj-F16.gguf"
+      },
+      "config": {
+        "measurement_runs": 3,
+        "memory_tracking": true,
+        "warmup_runs": 1
+      },
+      "model": "Qwen3.6-35B-A3B-GGUF",
+      "results": [
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 4096,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 2543.923567,
+                "mean": 2531.1319129999997,
+                "min": 2522.927494,
+                "p50": 2526.544678,
+                "p95": 2542.1856780999997
+              },
+              "failed_runs": 0,
+              "input_tokens": 3210,
+              "memory_peak_gb": 28.7,
+              "name": "context-4k",
+              "output_tokens": 20,
+              "pp_tps": 1501.7149976103494,
+              "tps": {
+                "max": 49.876228202119485,
+                "mean": 49.52822878057381,
+                "min": 48.91549205123254,
+                "p50": 49.79296608836941,
+                "p95": 49.86790199074448
+              },
+              "ttft_ms": {
+                "max": 2145.833,
+                "mean": 2137.5730000000003,
+                "min": 2131.651,
+                "p50": 2135.235,
+                "p95": 2144.7732
+              },
+              "vram_peak_gb": 22.117721557617188
+            }
+          ]
+        },
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 32768,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 20883.975019,
+                "mean": 20797.074327,
+                "min": 20675.61657,
+                "p50": 20831.631392,
+                "p95": 20878.7406563
+              },
+              "failed_runs": 0,
+              "input_tokens": 24790,
+              "memory_peak_gb": 29.3,
+              "name": "context-32k",
+              "output_tokens": 20,
+              "pp_tps": 1219.4444512299765,
+              "tps": {
+                "max": 44.50347009952381,
+                "mean": 44.30106361400217,
+                "min": 44.01051619702814,
+                "p50": 44.38920454545455,
+                "p95": 44.49204354411688
+              },
+              "ttft_ms": {
+                "max": 20418.153,
+                "mean": 20329.312666666665,
+                "min": 20209.084,
+                "p50": 20360.701,
+                "p95": 20412.407799999997
+              },
+              "vram_peak_gb": 22.692283630371094
+            }
+          ]
+        }
+      ],
+      "timestamp": "2026-10-26T12:44:47Z",
+      "accuracy": {
+        "passed": 49,
+        "total": 50,
+        "score": 0.98,
+        "questions_version": 1,
+        "failures": [
+          {
+            "id": "fact-light",
+            "response": "300"
+          }
+        ]
+      }
+    }
+  ],
+  "timestamp": "2026-10-26T12:40:46Z",
+  "fork_id": "llamacpp-rocm-stable",
+  "fork_label": "llama.cpp ROCm Stable (lemonade-sdk)",
+  "fork_repo": "lemonade-sdk/llama.cpp",
+  "fork_version": "b11889",
+  "fork_backend": "rocm-stable",
+  "experimental": false,
+  "run_id": "40290464171",
+  "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/40290464171",
+  "commit": "9de0e089c8a55ea080d7827e1188510915f706c1",
+  "lemonade_version": "v2026.43.3"
+}

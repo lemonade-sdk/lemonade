@@ -1,0 +1,216 @@
+{
+  "hardware": {
+    "backends": {
+      "llamacpp/rocm": "b11580"
+    },
+    "cpu": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S",
+    "gpu": [
+      {
+        "integrated": true,
+        "name": "AMD Radeon Graphics (gfx1151)",
+        "type": "amd",
+        "vram_gb": 0.5
+      }
+    ],
+    "lemonade_version": "2026.43.3",
+    "os": "linux",
+    "ram_gb": 124.95
+  },
+  "models": [
+    {
+      "checkpoints": {
+        "main": "OpenBMB/MiniCPM5-1B-GGUF:MiniCPM5-1B-Q4_K_M.gguf"
+      },
+      "config": {
+        "measurement_runs": 3,
+        "memory_tracking": true,
+        "warmup_runs": 1
+      },
+      "model": "MiniCPM5-1B-GGUF",
+      "results": [
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 4096,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 517.100504,
+                "mean": 514.208659,
+                "min": 510.778156,
+                "p50": 514.747317,
+                "p95": 516.8651853
+              },
+              "failed_runs": 0,
+              "input_tokens": 3065,
+              "memory_peak_gb": 7.2,
+              "name": "context-4k",
+              "output_tokens": 20,
+              "pp_tps": 7629.724903579609,
+              "tps": {
+                "max": 182.7309623189521,
+                "mean": 179.0631726644327,
+                "min": 172.84197694833844,
+                "p50": 181.6165787260075,
+                "p95": 182.6195239596576
+              },
+              "ttft_ms": {
+                "max": 403.659,
+                "mean": 401.72299999999996,
+                "min": 400.563,
+                "p50": 400.947,
+                "p95": 403.3878
+              },
+              "vram_peak_gb": 1.1345901489257812
+            }
+          ]
+        },
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 32768,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 5977.564568,
+                "mean": 5957.666317333334,
+                "min": 5926.478985,
+                "p50": 5968.955399,
+                "p95": 5976.7036511
+              },
+              "failed_runs": 0,
+              "input_tokens": 23649,
+              "memory_peak_gb": 8.0,
+              "name": "context-32k",
+              "output_tokens": 20,
+              "pp_tps": 4098.369155264624,
+              "tps": {
+                "max": 114.48196908986834,
+                "mean": 112.47370073863401,
+                "min": 109.10260238417898,
+                "p50": 113.8365307418547,
+                "p95": 114.41742525506697
+              },
+              "ttft_ms": {
+                "max": 5784.746,
+                "mean": 5770.415000000001,
+                "min": 5741.832,
+                "p50": 5784.667,
+                "p95": 5784.7381000000005
+              },
+              "vram_peak_gb": 1.8186836242675781
+            }
+          ]
+        }
+      ],
+      "timestamp": "2026-10-26T11:38:47Z",
+      "accuracy": {
+        "passed": 29,
+        "total": 50,
+        "score": 0.58,
+        "questions_version": 1,
+        "failures": [
+          {
+            "id": "arith-paren",
+            "response": "The answer is 3 * 8 = 24."
+          },
+          {
+            "id": "reason-train",
+            "response": "The problem asks us to calculate the distance traveled by a train.\nWe are given the speed of the train and the time it traveled.\nThe formula to calculate distance is: Distance = Speed \u00d7 Time.\n\nGiven:\n"
+          },
+          {
+            "id": "reason-batball",
+            "response": "Let's break down the problem step by step.\n\n1. **Define the variables:**\n   - Let \\( b \\) represent the cost of the ball in dollars.\n   - Let \\( c \\) represent the cost of the bat in dollars.\n\n2. **Tr"
+          },
+          {
+            "id": "reason-sisters",
+            "response": "Let's break down the information given:\n\n1. Alice has 3 brothers and 1 sister.\n2. The question asks about how many sisters each of Alice's brothers has.\n\nSince the question is asking about the number "
+          },
+          {
+            "id": "reason-day-fwd",
+            "response": "Wednesday"
+          },
+          {
+            "id": "reason-day-back",
+            "response": "Wednesday minus 3 days is Tuesday."
+          },
+          {
+            "id": "fact-jupiter",
+            "response": "The largest planet in our solar system is Jupiter."
+          },
+          {
+            "id": "fact-light",
+            "response": "The speed of light in a vacuum is approximately 299,792 kilometers per second. Rounded to the nearest thousand, the speed is 300 kilometers per second."
+          },
+          {
+            "id": "code-len",
+            "response": "The code `print(len(\"hello world\"))` will print the length of the string `\"hello world\"`. The output will be `6`, because the string `\"hello world\"` has 6 characters."
+          },
+          {
+            "id": "code-sorted",
+            "response": "The code `print(sorted([3, 1, 2])[0])` will print `1`. Here's the breakdown:\n\n1. `[3, 1, 2]` creates a list with the elements `3`, `1`, and `2`.\n2. `sorted(["
+          },
+          {
+            "id": "code-powassoc",
+            "response": "The Python code `print(2 ** 3 ** 2)` will print the result of the expression `2 ** 3 ** 2`.\n\nHere's how the expression works:\n1. `2 ** 3` calculates 2 raised to the power of 3, which equals 8.\n2."
+          },
+          {
+            "id": "code-reverse",
+            "response": "The code `print(\"abc\"[::-1])` will print the string `\"abc\"` reversed. The expression `\"abc\"[::-1]` creates a new string by slicing the original string `\"abc\"` from the end to the beginning, resulting "
+          },
+          {
+            "id": "code-typeof",
+            "response": "null"
+          },
+          {
+            "id": "code-append",
+            "response": "The Python code provided will print the sum of the list `x` after appending the value `4` to it. Here's a step-by-step explanation:\n\n1. The list `x` is initialized as `[1, 2, 3]`.\n2. The `append` meth"
+          },
+          {
+            "id": "code-bool",
+            "response": "The code `print(bool(\"\"))` will print `False` because the `bool()` function converts the string `\"\"` to `False`."
+          },
+          {
+            "id": "unit-miles",
+            "response": "The problem asks for the number of kilometers in 5 miles, rounded to one decimal place. This is a straightforward conversion problem.\n\nStep 1: Convert miles to kilometers.\nWe know that 1 mile is appro"
+          },
+          {
+            "id": "unit-grams",
+            "response": "The question \"How many grams are in 2.5 kilograms?\" is not a mathematical problem that can be solved with a numerical answer. It is a conceptual question about unit conversion.\n\nTo answer this questio"
+          },
+          {
+            "id": "fmt-backwards",
+            "response": "banana"
+          },
+          {
+            "id": "fmt-count-r",
+            "response": "The letter 'r' appears 2 times in the word \"strawberry\"."
+          },
+          {
+            "id": "fmt-json",
+            "response": "{\"sum\": 2}"
+          },
+          {
+            "id": "fmt-third-word",
+            "response": "The third word in the phrase \"the quick brown fox\" is \"brown\"."
+          }
+        ]
+      }
+    }
+  ],
+  "timestamp": "2026-10-26T11:37:36Z",
+  "fork_id": "llamacpp-rocm-stable",
+  "fork_label": "llama.cpp ROCm Stable (lemonade-sdk)",
+  "fork_repo": "lemonade-sdk/llama.cpp",
+  "fork_version": "b11889",
+  "fork_backend": "rocm-stable",
+  "experimental": false,
+  "run_id": "40290464171",
+  "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/40290464171",
+  "commit": "9de0e089c8a55ea080d7827e1188510915f706c1",
+  "lemonade_version": "v2026.43.3"
+}

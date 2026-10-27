@@ -1,0 +1,140 @@
+{
+  "hardware": {
+    "backends": {
+      "llamacpp/rocm": "b1338"
+    },
+    "cpu": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S",
+    "gpu": [
+      {
+        "integrated": true,
+        "name": "AMD Radeon Graphics (gfx1151)",
+        "type": "amd",
+        "vram_gb": 0.5
+      }
+    ],
+    "lemonade_version": "2026.43.3",
+    "os": "linux",
+    "ram_gb": 124.95
+  },
+  "models": [
+    {
+      "checkpoints": {
+        "main": "unsloth/Qwen3-Coder-Next-GGUF:Qwen3-Coder-Next-MXFP4_MOE.gguf"
+      },
+      "config": {
+        "measurement_runs": 3,
+        "memory_tracking": true,
+        "warmup_runs": 1
+      },
+      "model": "Qwen3-Coder-Next-GGUF",
+      "results": [
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 4096,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 3035.752685,
+                "mean": 2985.812078333333,
+                "min": 2944.080661,
+                "p50": 2977.602889,
+                "p95": 3029.9377054
+              },
+              "failed_runs": 0,
+              "input_tokens": 3208,
+              "memory_peak_gb": 51.3,
+              "name": "context-4k",
+              "output_tokens": 2,
+              "pp_tps": 1095.4899658555805,
+              "tps": {
+                "max": 22.08090443384561,
+                "mean": 21.152846121382947,
+                "min": 19.522099016086212,
+                "p50": 21.855534914217024,
+                "p95": 22.05836748188275
+              },
+              "ttft_ms": {
+                "max": 2974.534,
+                "mean": 2928.789666666667,
+                "min": 2889.195,
+                "p50": 2922.64,
+                "p95": 2969.3446
+              },
+              "vram_peak_gb": 45.20443344116211
+            }
+          ]
+        },
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 32768,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 26585.447683,
+                "mean": 26514.509614,
+                "min": 26465.693432,
+                "p50": 26492.387727,
+                "p95": 26576.1416874
+              },
+              "failed_runs": 0,
+              "input_tokens": 24788,
+              "memory_peak_gb": 52.1,
+              "name": "context-32k",
+              "output_tokens": 2,
+              "pp_tps": 937.7726978604022,
+              "tps": {
+                "max": 20.07628990162618,
+                "mean": 19.021500596367115,
+                "min": 17.38344400792685,
+                "p50": 19.604767879548305,
+                "p95": 20.029137699418392
+              },
+              "ttft_ms": {
+                "max": 26500.83,
+                "mean": 26432.93633333333,
+                "min": 26385.446,
+                "p50": 26412.533,
+                "p95": 26492.0003
+              },
+              "vram_peak_gb": 45.913352966308594
+            }
+          ]
+        }
+      ],
+      "timestamp": "2026-10-26T14:32:45Z",
+      "accuracy": {
+        "passed": 48,
+        "total": 50,
+        "score": 0.96,
+        "questions_version": 1,
+        "failures": [
+          {
+            "id": "reason-batball",
+            "response": "Let the cost of the ball be $ x $ dollars.  \nThen the bat costs $ x + 1.00 $ dollars.\n\nTotal cost:  \n$$\nx + (x + 1.00) = 1.10\n$$\n$$\n2x + 1.00"
+          },
+          {
+            "id": "reason-day-fwd",
+            "response": "Wednesday"
+          }
+        ]
+      }
+    }
+  ],
+  "timestamp": "2026-10-26T14:23:24Z",
+  "fork_id": "llamacpp-amd-ecosystem-gfx11",
+  "fork_label": "llama.cpp gfx11 (AMD-Ecosystem)",
+  "fork_repo": "AMD-Ecosystem/llama.cpp",
+  "fork_version": "gfx11-rocm-nightly-20261025",
+  "fork_backend": "rocm-gfx11",
+  "experimental": false,
+  "run_id": "40290464171",
+  "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/40290464171",
+  "commit": "9de0e089c8a55ea080d7827e1188510915f706c1",
+  "lemonade_version": "v2026.43.3"
+}

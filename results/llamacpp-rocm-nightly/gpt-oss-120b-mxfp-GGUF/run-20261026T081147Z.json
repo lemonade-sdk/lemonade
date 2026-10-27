@@ -1,0 +1,228 @@
+{
+  "hardware": {
+    "backends": {
+      "llamacpp/rocm": "b1338"
+    },
+    "cpu": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S",
+    "gpu": [
+      {
+        "integrated": true,
+        "name": "AMD Radeon Graphics (gfx1151)",
+        "type": "amd",
+        "vram_gb": 0.5
+      }
+    ],
+    "lemonade_version": "2026.43.3",
+    "os": "linux",
+    "ram_gb": 124.95
+  },
+  "models": [
+    {
+      "checkpoints": {
+        "main": "ggml-org/gpt-oss-120b-GGUF:gpt-oss-120b-MXFP4.gguf"
+      },
+      "config": {
+        "measurement_runs": 3,
+        "memory_tracking": true,
+        "warmup_runs": 1
+      },
+      "model": "gpt-oss-120b-mxfp-GGUF",
+      "results": [
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 4096,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 4602.913909,
+                "mean": 4272.914655333333,
+                "min": 3903.851183,
+                "p50": 4311.978874,
+                "p95": 4573.8204055
+              },
+              "failed_runs": 0,
+              "input_tokens": 3120,
+              "memory_peak_gb": 65.2,
+              "name": "context-4k",
+              "output_tokens": 20,
+              "pp_tps": 816.2522739631214,
+              "tps": {
+                "max": 47.36890655111977,
+                "mean": 46.76375397962028,
+                "min": 46.41368764076782,
+                "p50": 46.508667746973266,
+                "p95": 47.28288267070512
+              },
+              "ttft_ms": {
+                "max": 4172.819,
+                "mean": 3844.5113333333334,
+                "min": 3469.694,
+                "p50": 3891.021,
+                "p95": 4144.6392000000005
+              },
+              "vram_peak_gb": 59.17564010620117
+            }
+          ]
+        },
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 32768,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 33424.712806,
+                "mean": 33220.19978266666,
+                "min": 33117.376038,
+                "p50": 33118.510504,
+                "p95": 33394.0925758
+              },
+              "failed_runs": 0,
+              "input_tokens": 23704,
+              "memory_peak_gb": 66.2,
+              "name": "context-32k",
+              "output_tokens": 20,
+              "pp_tps": 725.6332249348023,
+              "tps": {
+                "max": 38.755894975604186,
+                "mean": 38.69280229962567,
+                "min": 38.625501369172376,
+                "p50": 38.69701055410045,
+                "p95": 38.75000653345381
+              },
+              "ttft_ms": {
+                "max": 32881.519,
+                "mean": 32667.341333333334,
+                "min": 32554.873,
+                "p50": 32565.632,
+                "p95": 32849.9303
+              },
+              "vram_peak_gb": 60.1793327331543
+            }
+          ]
+        }
+      ],
+      "timestamp": "2026-10-26T10:46:56Z",
+      "accuracy": {
+        "passed": 26,
+        "total": 50,
+        "score": 0.52,
+        "questions_version": 1,
+        "failures": [
+          {
+            "id": "arith-mul",
+            "response": ""
+          },
+          {
+            "id": "arith-pow",
+            "response": ""
+          },
+          {
+            "id": "arith-dec",
+            "response": ""
+          },
+          {
+            "id": "reason-train",
+            "response": ""
+          },
+          {
+            "id": "reason-widgets",
+            "response": ""
+          },
+          {
+            "id": "reason-batball",
+            "response": ""
+          },
+          {
+            "id": "reason-sisters",
+            "response": ""
+          },
+          {
+            "id": "reason-minutes",
+            "response": ""
+          },
+          {
+            "id": "reason-area",
+            "response": ""
+          },
+          {
+            "id": "reason-seq-geo",
+            "response": ""
+          },
+          {
+            "id": "reason-seq-fib",
+            "response": ""
+          },
+          {
+            "id": "fact-gold",
+            "response": ""
+          },
+          {
+            "id": "fact-austen",
+            "response": ""
+          },
+          {
+            "id": "fact-light",
+            "response": ""
+          },
+          {
+            "id": "code-len",
+            "response": ""
+          },
+          {
+            "id": "code-sorted",
+            "response": ""
+          },
+          {
+            "id": "code-powassoc",
+            "response": ""
+          },
+          {
+            "id": "code-append",
+            "response": ""
+          },
+          {
+            "id": "unit-miles",
+            "response": ""
+          },
+          {
+            "id": "unit-fahrenheit",
+            "response": ""
+          },
+          {
+            "id": "unit-grams",
+            "response": ""
+          },
+          {
+            "id": "unit-seconds",
+            "response": ""
+          },
+          {
+            "id": "fmt-count-r",
+            "response": ""
+          },
+          {
+            "id": "fmt-third-word",
+            "response": ""
+          }
+        ]
+      }
+    }
+  ],
+  "timestamp": "2026-10-26T10:35:46Z",
+  "fork_id": "llamacpp-rocm-nightly",
+  "fork_label": "llama.cpp ROCm Nightly (lemonade-sdk)",
+  "fork_repo": "lemonade-sdk/llamacpp-rocm",
+  "fork_version": "b1354",
+  "fork_backend": "rocm-nightly",
+  "experimental": false,
+  "run_id": "40290464171",
+  "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/40290464171",
+  "commit": "9de0e089c8a55ea080d7827e1188510915f706c1",
+  "lemonade_version": "v2026.43.3"
+}
