@@ -3472,6 +3472,13 @@ if(BUILD_TESTING AND EXISTS "${_ANTHROPIC_RELAY_HEADERS_TEST_SRC}")
     add_cpp_ci_test(AnthropicRelayHeadersTest CI ON COMMAND test_anthropic_relay_headers)
 endif()
 
+set(_MESSAGE_CONTENT_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_message_content.cpp")
+if(BUILD_TESTING AND EXISTS "${_MESSAGE_CONTENT_TEST_SRC}")
+    add_executable(test_message_content test/cpp/test_message_content.cpp)
+    target_link_libraries(test_message_content PRIVATE lemonade-server-core)
+    add_cpp_ci_test(MessageContentTest CI ON COMMAND test_message_content)
+endif()
+
 set(_ORIGIN_UTILS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_origin_utils.cpp")
 if(BUILD_TESTING AND EXISTS "${_ORIGIN_UTILS_TEST_SRC}")
     add_executable(test_origin_utils test/cpp/test_origin_utils.cpp)
