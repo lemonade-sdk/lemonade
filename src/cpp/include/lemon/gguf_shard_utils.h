@@ -52,12 +52,11 @@ inline bool same_shard_family(const std::string& filename, const std::string& ba
 }
 
 // Total on-disk size of every sibling shard sharing `shard_path`'s family.
-// Returns 0 when `shard_path` is not a shard. Defined in model_manager.cpp,
-// which owns the Windows-safe filesystem helpers.
+// Returns 0 when `shard_path` is not a shard.
 std::uintmax_t sharded_gguf_size_bytes(const std::filesystem::path& shard_path);
 
 // Every file llama-server opens for `gguf_path`: all shards of a split GGUF,
-// or the file alone. Defined in model_manager.cpp.
+// or the file alone.
 std::vector<std::string> gguf_files(const std::string& gguf_path);
 
 } // namespace lemon

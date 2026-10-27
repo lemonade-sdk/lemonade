@@ -38,11 +38,7 @@ Lemonade follows [Ramalama](https://github.com/containers/ramalama)'s container 
 
 Users and clients will be able to assess critical information about each backend at a glance using these two new labels.
 
-Its **tier** is one of:
-
-1. `core`: supported by Lemonade's maintainers for production use.
-2. `experimental`: provided by Lemonade's maintainers, but not supported for production use.
-3. `guest`: developed and published outside Lemonade's maintainers. Use at your own risk.
+Its **tier** is `core`, `experimental`, or `guest`, as defined by the [backend support tier policy](../adding-a-backend.md#support-tier).
 
 Its **format** is one of:
 
