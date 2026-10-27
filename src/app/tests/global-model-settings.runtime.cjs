@@ -116,7 +116,7 @@ const listSource = fs.readFileSync(path.join(root, 'src/components/ModelListPane
 const managerSource = fs.readFileSync(path.join(root, 'src/components/ModelManager.tsx'), 'utf8');
 const panelSource = fs.readFileSync(path.join(root, 'src/components/GlobalModelSettingsPanel.tsx'), 'utf8');
 const connectSource = fs.readFileSync(path.join(root, 'src/components/ConnectView.tsx'), 'utf8');
-const dashboardSource = fs.readFileSync(path.join(root, 'src/components/Dashboard.tsx'), 'utf8');
+const monitorSource = fs.readFileSync(path.join(root, 'src/components/Monitor.tsx'), 'utf8');
 const navigationSource = fs.readFileSync(path.join(root, 'src/features/navigation/workspaceNavigation.ts'), 'utf8');
 const stylesSource = fs.readFileSync(path.join(root, 'src/styles/styles.css'), 'utf8');
 const chatSource = fs.readFileSync(path.join(root, 'src/components/ChatView.tsx'), 'utf8');
@@ -184,17 +184,17 @@ assert.match(chatSource, /defaultThinkingOpen=\{!globalModelSettings\.collapseTh
 assert.match(chatSource, /GLOBAL_MODEL_SETTINGS_EVENT/);
 assert.doesNotMatch(chatSource, /loadWithGlobalModelPolicy|isMemoryPressureError|evictionPlanForLoad/);
 assert.match(chatSource, /return api\.loadModel\(modelName, recipeOptions, target\)/);
-assert.match(dashboardSource, /evictionRuntimeSettingsFromConfig/);
-assert.match(dashboardSource, /eviction\.autoEvict \? eviction\.autoEvictThresholdPercent : null/);
-assert.match(dashboardSource, /dash2-gauge__threshold/);
-assert.match(dashboardSource, /thresholdPercent=\{memoryTopology\.hostTotalGb != null \? evictionThresholdPercent : null\}/);
-assert.match(dashboardSource, /thresholdPercent=\{memoryTopology\.gpuTotalGb != null \? evictionThresholdPercent : null\}/);
-assert.match(dashboardSource, /memoryTopology\.hostTotalGb == null \? evictionThresholdText : null/);
-assert.match(dashboardSource, /memoryTopology\.gpuTotalGb == null \? evictionThresholdText : null/);
-assert.match(dashboardSource, /label=\{t\('RAM \/ VRAM'\)\}/);
+assert.match(monitorSource, /evictionRuntimeSettingsFromConfig/);
+assert.match(monitorSource, /eviction\.autoEvict \? eviction\.autoEvictThresholdPercent : null/);
+assert.match(monitorSource, /dash2-gauge__threshold/);
+assert.match(monitorSource, /thresholdPercent=\{memoryTopology\.hostTotalGb != null \? evictionThresholdPercent : null\}/);
+assert.match(monitorSource, /thresholdPercent=\{memoryTopology\.gpuTotalGb != null \? evictionThresholdPercent : null\}/);
+assert.match(monitorSource, /memoryTopology\.hostTotalGb == null \? evictionThresholdText : null/);
+assert.match(monitorSource, /memoryTopology\.gpuTotalGb == null \? evictionThresholdText : null/);
+assert.match(monitorSource, /label=\{t\('RAM \/ VRAM'\)\}/);
 assert.match(stylesSource, /\.dash2-gauge__threshold line/);
 
-const memoryTopologyFilename = path.join(root, 'src/features/dashboard/memoryTopology.ts');
+const memoryTopologyFilename = path.join(root, 'src/features/monitor/memoryTopology.ts');
 const memoryTopologyCompiled = ts.transpileModule(fs.readFileSync(memoryTopologyFilename, 'utf8'), {
   compilerOptions: { target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.CommonJS },
   fileName: memoryTopologyFilename,
@@ -209,7 +209,7 @@ Function('exports', 'require', 'module', '__filename', '__dirname', memoryTopolo
   memoryTopologyFilename,
   path.dirname(memoryTopologyFilename),
 );
-assert.deepEqual(memoryTopologyModule.exports.dashboardMemoryTopology({
+assert.deepEqual(memoryTopologyModule.exports.monitorMemoryTopology({
   'Physical Memory': '32 GB',
   devices: {
     amd_igpu: { available: true, integrated: true, vram_gb: 4, virtual_mem_gb: 32 },

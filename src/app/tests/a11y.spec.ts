@@ -37,7 +37,7 @@ async function navigateToView(page: Page, label: string): Promise<void> {
 
 async function navigateToMonitorSection(page: Page, label: 'Performance' | 'Telemetry' | 'Logs'): Promise<void> {
   await navigateToView(page, 'Monitor');
-  await page.waitForSelector('[data-view="dashboard"]');
+  await page.waitForSelector('[data-view="monitor"]');
   if (label !== 'Performance') {
     await page.getByRole('navigation', { name: 'Monitor sections' }).getByRole('button', { name: label, exact: true }).click();
     await page.waitForTimeout(300);
@@ -153,7 +153,7 @@ test.describe('Accessibility — axe-core automated scans', () => {
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
     await navigateToMonitorSection(page, 'Performance');
-    await page.waitForTimeout(500); // allow async dashboard data fetch to settle
+    await page.waitForTimeout(500); // allow async monitor data fetch to settle
 
     const results = await new AxeBuilder({ page })
       .withTags([...WCAG_TAGS])
