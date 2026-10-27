@@ -1124,7 +1124,12 @@ void MeshPort::handle(const httplib::Request& req, httplib::Response& res, bool 
         }
         std::string sni;
         if (tls && req.ssl) {
-            if (const char* name = SSL_get_servername(req.ssl, TLSEXT_NAMETYPE_host_name)) sni = name;
+            // req.ssl is `const SSL*` in cpp-httplib before 0.28 and an opaque
+            // `tls::const_session_t` (const void*) from 0.28 on; both cast.
+            const auto* session = static_cast<const SSL*>(req.ssl);
+            if (const char* name = SSL_get_servername(session, TLSEXT_NAMETYPE_host_name)) {
+                sni = name;
+            }
         }
         std::vector<MeshPortMember> members;
         std::string domain;
