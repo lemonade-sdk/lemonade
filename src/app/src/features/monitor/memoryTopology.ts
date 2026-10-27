@@ -20,7 +20,7 @@ function parseGb(value: unknown): number | null {
   return value.toLowerCase().includes('mb') ? parsed / 1024 : parsed;
 }
 
-export interface DashboardMemoryTopology {
+export interface MonitorMemoryTopology {
   unified: boolean;
   hostTotalGb: number | null;
   gpuTotalGb: number | null;
@@ -32,7 +32,7 @@ export interface DashboardMemoryTopology {
  * memory pool; treating that pool as a second budget is misleading because the
  * same physical memory backs both CPU and GPU allocations.
  */
-export function dashboardMemoryTopology(systemInfo: Record<string, unknown> | null): DashboardMemoryTopology {
+export function monitorMemoryTopology(systemInfo: Record<string, unknown> | null): MonitorMemoryTopology {
   const info = objectValue(systemInfo);
   const devices = objectValue(info.devices);
   const amdPrimary = arrayValue(devices.amd_gpu);

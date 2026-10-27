@@ -17,7 +17,7 @@ const CHART_TOOLTIP_STYLE: React.CSSProperties = {
   whiteSpace: 'nowrap',
 };
 
-export interface DashboardChartProps {
+export interface MonitorChartProps {
   data: Record<string, number>[];
   series: { key: string; color: string; name?: string }[];
   height?: number;
@@ -83,7 +83,7 @@ function linePath(points: Point[]): string {
   return path.join(' ');
 }
 
-const DashboardChart: React.FC<DashboardChartProps> = ({
+const MonitorChart: React.FC<MonitorChartProps> = ({
   data,
   series,
   height = 80,
@@ -195,4 +195,4 @@ const DashboardChart: React.FC<DashboardChartProps> = ({
   );
 };
 
-export default React.memo(DashboardChart);
+export default React.memo(MonitorChart);

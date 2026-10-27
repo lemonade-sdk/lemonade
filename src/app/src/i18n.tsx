@@ -19,7 +19,7 @@ const ZH_CN: Record<string, string> = {
   'model manager download load': '模型管理 下载 加载',
   'runtime inference engine': '运行时 推理 引擎',
   'clients integrations': '客户端 集成',
-  'dashboard monitor system hardware statistics': '仪表盘 监控 系统 硬件 统计',
+  'monitor system hardware statistics': '监控 系统 硬件 统计',
   'connect configuration preferences server': '连接 配置 偏好设置 服务器',
   'Loading view': '正在加载视图',
   'Loading downloads': '正在加载下载',

@@ -2,8 +2,8 @@ import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useStat
 import { api, LoadedModel } from '../api';
 import { capabilityFromLoaded } from '../modelCapabilities';
 import { backendCompactLabel } from '../modelPresentation';
-import { useDashboardData } from '../hooks/useDashboardData';
-import { dashboardMemoryTopology } from '../features/dashboard/memoryTopology';
+import { useMonitorData } from '../hooks/useMonitorData';
+import { monitorMemoryTopology } from '../features/monitor/memoryTopology';
 import { evictionRuntimeSettingsFromConfig } from '../features/modelSettings/globalModelSettings';
 import { WorkspaceActionButton, WorkspaceList, WorkspaceListRow, WorkspacePaneHeader } from './WorkspacePanels';
 import { useI18n } from '../i18n';
@@ -170,9 +170,9 @@ const RingGauge = React.memo<{
 /* ── Smooth chart wrapper ───────────────────────────────────── */
 
 // Keep chart rendering in a nested async chunk so opening Monitor does not
-// delay the dashboard shell.
-const LazyDashboardChart = lazy(() =>
-  import(/* webpackChunkName: "monitor-charts" */ './DashboardChart')
+// delay the monitor shell.
+const LazyMonitorChart = lazy(() =>
+  import(/* webpackChunkName: "monitor-charts" */ './MonitorChart')
 );
 
 const SmoothChart = React.memo<{
@@ -182,7 +182,7 @@ const SmoothChart = React.memo<{
   unit?: string;
 }>(({ data, series, height = 80, unit = '' }) => (
   <Suspense fallback={<div aria-hidden="true" style={{ height }} />}>
-    <LazyDashboardChart data={data} series={series} height={height} unit={unit} />
+    <LazyMonitorChart data={data} series={series} height={height} unit={unit} />
   </Suspense>
 ));
 
@@ -226,14 +226,14 @@ const ModelRow = React.memo<{ model: LoadedModel; onEject: (name: string) => voi
 );
 
 /* ══════════════════════════════════════════════════════════════
-   ██  MAIN DASHBOARD
+   ██  MAIN MONITOR
    ══════════════════════════════════════════════════════════════ */
 
-interface DashboardProps {
+interface MonitorProps {
   isActive: boolean;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
+const Monitor: React.FC<MonitorProps> = ({ isActive }) => {
   const { t } = useI18n();
   const {
     health, stats, sysStats, systemInfo, slots, slotLive,
@@ -242,7 +242,7 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
     latestTps, latestPP, activeSlotCount, overallCacheUtil,
     hasGpu, hasNpu, modelsByType,
     aggChartData, slotChartData, sysChartData, cacheChartData,
-  } = useDashboardData(isActive);
+  } = useMonitorData(isActive);
 
   const [ejecting, setEjecting] = useState<string | null>(null);
   const [evictionThresholdPercent, setEvictionThresholdPercent] = useState<number | null>(null);
@@ -277,7 +277,7 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
     return () => { cancelled = true; };
   }, [isActive]);
 
-  const memoryTopology = useMemo(() => dashboardMemoryTopology(systemInfo), [systemInfo]);
+  const memoryTopology = useMemo(() => monitorMemoryTopology(systemInfo), [systemInfo]);
   const ramUsedGb = sysStats?.memory_gb ?? null;
   const ramGaugeMax = memoryTopology.hostTotalGb
     ?? Math.max(64, Math.ceil((ramUsedGb || 0) / 16) * 16);
@@ -290,15 +290,15 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
   /* ── Render ──────────────────────────────────────────────── */
 
   return (
-    <section className="dash2 dashboard-workspace" data-view="dashboard">
-      <div className="workspace-pane dashboard-main">
+    <section className="dash2 monitor-performance" data-view="monitor-performance">
+      <div className="workspace-pane monitor-main">
         <WorkspacePaneHeader
-          className="dashboard-header"
+          className="monitor-header"
           headingLevel={1}
           title={t('Performance')}
           subtitle={t('Throughput, capacity and resource utilization for this server session.')}
-          actions={<div className="dashboard-header__actions">
-            <div className="dashboard-header__server" data-connected={!!health}>
+          actions={<div className="monitor-header__actions">
+            <div className="monitor-header__server" data-connected={!!health}>
               <span className="dash2-bar__dot" data-connected={!!health} />
               <span><strong>{health ? `Lemonade ${health.version}` : t('Disconnected')}</strong>{health && <small>{elapsed(counters.sessionStart)}</small>}</span>
             </div>
@@ -310,7 +310,7 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
               onClick={() => setPaused(p => !p)}
               title={paused ? t('Resume monitor updates') : t('Pause monitor updates')}
               aria-label={paused ? t('Resume monitor updates') : t('Pause monitor updates')}
-              data-dashboard-poll-toggle>
+              data-monitor-poll-toggle>
               {paused ? t('Resume') : t('Pause')}
             </WorkspaceActionButton>
           </div>}
@@ -599,4 +599,4 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
   );
 };
 
-export default Dashboard;
+export default Monitor;
