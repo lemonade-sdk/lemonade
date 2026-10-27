@@ -1,7 +1,8 @@
 #include <lemon/utils/aixlog.hpp>
 
 #include "lemon/server/model_sync.h"
-#include "lemon/model_registry.h"
+#include "lemon/model_manager.h"
+#include "lemon/models/registry_types.h"
 #include "lemon/runtime_config.h"
 #include "lemon/server/api_route.h"
 
@@ -149,7 +150,8 @@ public:
                 return;
             }
 
-            const auto search = search_registry_models(source, query, limit, gguf_only);
+            const auto search = ctx_.model_manager->search_registry(
+                remote_registry_source_name(source), query, limit, gguf_only);
             json results = json::array();
             for (const auto& model : search.results) {
                 results.push_back({

@@ -6,12 +6,14 @@
 #include <httplib.h>
 #include <nlohmann/json.hpp>
 
-#include "lemon/model_manager.h"
 #include "lemon/model_residency.h"
 #include "lemon/router.h"
 #include "lemon/server/route_error.h"
 
 namespace lemon {
+
+class ModelManager;
+struct ModelInfo;
 
 // Inference routes and the gateways load a model on first use. Keeping that path,
 // collection loading and the load-error response in one class means every route
