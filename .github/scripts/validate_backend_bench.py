@@ -475,6 +475,8 @@ def run_bench(
         data["commit"] = os.environ["GITHUB_SHA"]
     if os.environ.get("LEMONADE_VERSION"):
         data["lemonade_version"] = os.environ["LEMONADE_VERSION"]
+    if os.environ.get("RUNNER_NAME"):
+        data["runner"] = os.environ["RUNNER_NAME"]
     with open(output_file, "w") as f:
         json.dump(data, f, indent=2)
     return data

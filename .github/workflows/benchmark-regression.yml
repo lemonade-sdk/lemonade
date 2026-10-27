@@ -590,6 +590,7 @@ jobs:
                     "lemonade_version": lem_ver,
                     "hw_id": hw_id,
                     "run_id": data.get("run_id"),
+                    "runner": data.get("runner"),
                     "run_url": data.get("run_url"),
                     "commit": data.get("commit"),
                   }
@@ -648,6 +649,7 @@ jobs:
                     "quant": quant,
                     "lemonade_version": lem_ver,
                     "run_id": data.get("run_id"), "run_url": data.get("run_url"),
+                    "runner": data.get("runner"),
                   })
           # sort each series chronologically and keep the last 30 points
           for mdl in history:
