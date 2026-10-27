@@ -1,10 +1,27 @@
 export const BROWSER_PROMPT_DRAFT_KEY = 'lemonade:pending_browser_prompt';
 
-export function saveBrowserPromptDraft(text: string): void {
+export function saveBrowserPromptDraft(text: string): boolean {
+  const hasDraft = !!text.trim();
+  let stored = false;
   try {
-    if (text.trim()) sessionStorage.setItem(BROWSER_PROMPT_DRAFT_KEY, text);
+    if (hasDraft) sessionStorage.setItem(BROWSER_PROMPT_DRAFT_KEY, text);
     else sessionStorage.removeItem(BROWSER_PROMPT_DRAFT_KEY);
-  } catch { /* Session storage is best-effort for a tab-local draft. */ }
+    stored = true;
+  } catch { /* Fall back to the URL if tab storage is blocked. */ }
+
+  // Keep unsent edits recoverable if storage fails, and always clear the URL
+  // fallback after the draft is submitted or discarded.
+  if (!stored || !hasDraft) {
+    try {
+      const url = new URL(window.location.href);
+      if (!stored && hasDraft) url.searchParams.set('q', text);
+      else url.searchParams.delete('q');
+      if (url.href !== window.location.href) {
+        window.history.replaceState(window.history.state, '', url.toString());
+      }
+    } catch { /* History access can also be unavailable. */ }
+  }
+  return stored;
 }
 
 export function readBrowserPromptDraft(): string {
@@ -22,8 +39,9 @@ export function captureBrowserPromptFromUrl(): void {
   try {
     const url = new URL(window.location.href);
     if (!url.searchParams.has('q')) return;
-    saveBrowserPromptDraft(url.searchParams.get('q')?.trim() || '');
-    url.searchParams.delete('q');
+    const text = url.searchParams.get('q')?.trim() || '';
+    const stored = saveBrowserPromptDraft(text);
+    if (stored || !text) url.searchParams.delete('q');
     url.searchParams.delete('view');
     url.searchParams.delete('logs');
     url.hash = '#/chat';

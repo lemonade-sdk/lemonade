@@ -76,6 +76,48 @@ assert.equal(prompt.hasBrowserPromptContext([{ role: 'user' }]), false);
 assert.equal(prompt.hasBrowserPromptContext([{ fromBrowserPrompt: true }, { role: 'assistant' }]), true);
 assert.equal(prompt.hasBrowserPromptContext([{ role: 'user' }, { fromBrowserPrompt: true }]), true);
 
+// Session storage is not guaranteed (e.g. restrictive Firefox privacy settings).
+// In that case the URL keeps the draft until it is sent or discarded.
+const writableSessionStorage = global.sessionStorage;
+global.sessionStorage = {
+  getItem() { throw new Error('storage blocked'); },
+  setItem() { throw new Error('storage blocked'); },
+  removeItem() { throw new Error('storage blocked'); },
+};
+navigate('http://localhost:13305/?q=Original%20page&view=models&logs=true#/models');
+prompt.captureBrowserPromptFromUrl();
+assert.equal(new URLSearchParams(location.search).get('q'), 'Original page');
+assert.equal(location.hash, '#/chat', 'blocked storage must still route to Chat');
+assert.equal(prompt.readBrowserPromptDraft(), 'Original page');
+prompt.saveBrowserPromptDraft('Revised page');
+assert.equal(new URLSearchParams(location.search).get('q'), 'Revised page', 'edits survive storage failure');
+const pendingUrl = location.href;
+navigate(pendingUrl); // simulate refresh without working session storage
+prompt.captureBrowserPromptFromUrl();
+assert.equal(prompt.readBrowserPromptDraft(), 'Revised page', 'draft survives reload');
+prompt.saveBrowserPromptDraft(''); // sending or clearing the draft
+assert.equal(new URLSearchParams(location.search).has('q'), false, 'consumed draft must not replay');
+assert.equal(prompt.readBrowserPromptDraft(), '');
+navigate('http://localhost:13305/?q=&view=models');
+prompt.captureBrowserPromptFromUrl();
+assert.equal(new URLSearchParams(location.search).has('q'), false, 'empty prompt must not linger');
+
+// Also handle storage becoming unavailable *after* the original URL was scrubbed.
+global.sessionStorage = writableSessionStorage;
+navigate('http://localhost:13305/?q=Stored%20first');
+prompt.captureBrowserPromptFromUrl();
+assert.equal(new URLSearchParams(location.search).has('q'), false);
+global.sessionStorage = {
+  ...writableSessionStorage,
+  setItem() { throw new Error('quota exceeded'); },
+};
+prompt.saveBrowserPromptDraft('Updated after failure');
+assert.equal(new URLSearchParams(location.search).get('q'), 'Updated after failure');
+assert.equal(prompt.readBrowserPromptDraft(), 'Updated after failure');
+prompt.saveBrowserPromptDraft('');
+assert.equal(new URLSearchParams(location.search).has('q'), false);
+global.sessionStorage = writableSessionStorage;
+
 const chat = fs.readFileSync(path.join(root, 'src/components/ChatView.tsx'), 'utf8');
 const app = fs.readFileSync(path.join(root, 'src/App.tsx'), 'utf8');
 assert.ok(app.indexOf('captureBrowserPromptFromUrl();') < app.indexOf('const App: React.FC'), 'capture must happen before first render');
