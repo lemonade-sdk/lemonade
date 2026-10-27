@@ -624,3 +624,7 @@ lemonade config set host=0.0.0.0
 The [Server Specification](../../api/README.md) provides more information about how to integrate Lemonade Server into an application.
 
 <!--Copyright (c) 2025 AMD-->
+
+### Stricter automatic context admission
+
+`auto_context_safer` defaults to `false`. When enabled with `lemonade config set auto_context_safer=true`, automatic model loading rejects estimates below the minimum context (4096 tokens for text LLMs; 8192 for embeddings) instead of trying the minimum with uncertain KV memory. Explicit `ctx_size` overrides remain the user's responsibility. Weights known not to fit are rejected in either mode. A streaming backend uses its own resident working-set budget.
