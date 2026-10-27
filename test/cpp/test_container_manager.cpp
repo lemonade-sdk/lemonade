@@ -319,9 +319,14 @@ std::string network_create(const FakeHost& fake) {
 void test_create_network() {
     FakeHost podman;
     podman.tools = {"podman"};
-    check("Podman's per-model network is internal and has no DNS server",
+    check("rootless Podman's per-model network is internal and has no DNS server",
           network_create(podman) ==
               "podman network create --internal --label ai.lemonade --disable-dns lemonade-n");
+    FakeHost rootful;
+    rootful.tools = {"podman"};
+    rootful.podman_rootless = "false";
+    check("rootful Podman's per-model network keeps its DNS server",
+          network_create(rootful) == "podman network create --internal --label ai.lemonade lemonade-n");
     FakeHost docker;
     docker.tools = {"docker"};
     check("Docker's per-model network is internal",
