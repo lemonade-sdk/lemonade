@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const ts = require('typescript');
 
-const filename = path.resolve(__dirname, '../src/features/dashboard/throughput.ts');
+const filename = path.resolve(__dirname, '../src/features/monitor/throughput.ts');
 const compiled = ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
   compilerOptions: { target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.CommonJS },
   fileName: filename,
@@ -12,7 +12,7 @@ const compiled = ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
 assert.deepEqual(
   (compiled.diagnostics || []).filter(d => d.category === ts.DiagnosticCategory.Error),
   [],
-  'dashboard throughput helpers must compile',
+  'monitor throughput helpers must compile',
 );
 
 // The import is type-only and disappears during transpilation.
@@ -89,7 +89,7 @@ assert.equal(selectGenerationTps(0, quietStats, true, false), 65,
   'a completed FLM request may be sampled once');
 
 // Protect the backend routing contract: FLM must not trigger a /slots request.
-const hookSource = fs.readFileSync(path.resolve(__dirname, '../src/hooks/useDashboardData.ts'), 'utf8');
+const hookSource = fs.readFileSync(path.resolve(__dirname, '../src/hooks/useMonitorData.ts'), 'utf8');
 assert.match(hookSource, /activeModel && \(activeModel\.recipe === 'llamacpp' \|\| activeModel\.recipe === 'vllm'\)/);
 assert.match(hookSource, /if \(supportsSlots\) \{[\s\S]*?const response = await api\.slots\(\)/);
 assert.match(hookSource, /selectGenerationTps\(aggTps, st, newCompletion, supportsSlots\)/);
@@ -103,4 +103,4 @@ assert.match(hookSource, /if \(currDecoded > 0\) slotPpTps = 0;/,
 assert.match(hookSource, /aI\.ppTps = aTarget\.ppTps/,
   'prompt samples should not exhibit an exponential release tail');
 
-console.log('Dashboard throughput regression checks passed.');
+console.log('Monitor throughput regression checks passed.');
