@@ -71,6 +71,7 @@ assert.doesNotMatch(managerSource, /useState<ModelInfo\[]>\(\[\]\)/);
 assert.doesNotMatch(managerSource, /useState<LoadedModel\[]>\(\[\]\)/);
 assert.doesNotMatch(managerSource, /api\.onStatusChange\(/);
 assert.doesNotMatch(managerSource, /api\.onModelsChanged\(/);
+assert.match(managerSource, /api\.onSystemInfoChange\(applySystemInfo\)/);
 
 const originalTsLoader = require.extensions['.ts'];
 require.extensions['.ts'] = function transpileTs(module, filename) {
@@ -92,6 +93,7 @@ let healthAvailable = true;
 let modelRequests = 0;
 let deleteRequests = 0;
 let registerRequests = 0;
+let backendState = 'update_required';
 let modelRows = [
   { id: 'test-model', model_name: 'test-model', downloaded: true },
 ];
@@ -177,6 +179,12 @@ global.fetch = async (url, init = {}) => {
     });
   }
 
+  if (target.endsWith('/api/v1/system-info') && method === 'GET') {
+    return new Response(JSON.stringify({
+      recipes: { thenoise: { default_backend: 'cuda', backends: { cuda: { state: backendState } } } },
+    }), { status: 200, headers: { 'content-type': 'application/json' } });
+  }
+
   throw new Error(`Unexpected request: ${method} ${target}`);
 };
 
@@ -208,6 +216,20 @@ async function waitFor(predicate, timeoutMs = 1500) {
     assert.equal(api.modelStateSnapshot.status, 'connected');
     assert.equal(api.modelStateSnapshot.refreshing, false);
     assert.equal(api.modelStateSnapshot.models.data.length, 1);
+
+    // An updated backend snapshot must reach an already-mounted Models view.
+    const backendStates = [];
+    const unsubscribeSystemInfo = api.onSystemInfoChange(info => {
+      backendStates.push(info.recipes.thenoise.backends.cuda.state);
+    });
+    await api.systemInfo();
+    backendState = 'installed';
+    await api.systemInfo();
+    assert.deepEqual(backendStates, ['update_required', 'installed']);
+    unsubscribeSystemInfo();
+    await api.systemInfo();
+    assert.equal(backendStates.length, 2, 'system-info observers must unsubscribe cleanly');
+    assert.equal(modelRequests, 1, 'backend updates must not force a models registry refresh');
 
     const stableNotificationCount = notifications;
     await api.health();

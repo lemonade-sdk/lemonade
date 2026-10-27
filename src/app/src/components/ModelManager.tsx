@@ -1193,6 +1193,13 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     return () => { cancelled = true; };
   }, [visibleServerModels.length]);
 
+  const applySystemInfo = useCallback((info: Record<string, unknown>) => {
+    const hasRecipeData = Boolean(systemRecipeEntries(info));
+    setSystemInfo(info);
+    setDynamicRecipeOptions(hasRecipeData ? recipeOptionsFromSystemInfo(info) : {});
+    setCustomRecipeAvailabilityLoaded(hasRecipeData);
+  }, []);
+
   const refreshCustomRecipeAvailability = useCallback(async () => {
     if (!api.isConnected) {
       setDynamicRecipeOptions({});
@@ -1202,17 +1209,16 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     }
 
     try {
-      const info = await api.systemInfo();
-      const hasRecipeData = Boolean(systemRecipeEntries(info));
-      setSystemInfo(info);
-      setDynamicRecipeOptions(hasRecipeData ? recipeOptionsFromSystemInfo(info) : {});
-      setCustomRecipeAvailabilityLoaded(hasRecipeData);
+      // The system-info subscriber applies the fresh snapshot to the model list.
+      await api.systemInfo();
     } catch {
       setSystemInfo(null);
       setDynamicRecipeOptions({});
       setCustomRecipeAvailabilityLoaded(false);
     }
   }, []);
+
+  useEffect(() => api.onSystemInfoChange(applySystemInfo), [applySystemInfo]);
 
   useEffect(() => {
     void refreshCustomRecipeAvailability();

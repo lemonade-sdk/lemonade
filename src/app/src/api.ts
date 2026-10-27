@@ -771,6 +771,7 @@ class LemonadeAPI {
   private _modelsDataSignature = '';
   private _modelsFetchRevision = 0;
   private _systemInfoData: Record<string, unknown> | null = null;
+  private _systemInfoListeners = new Set<(info: Record<string, unknown>) => void>();
   private _systemInfoInFlight: Promise<Record<string, unknown>> | null = null;
   private _modelStateSnapshot: ModelStateSnapshot = {
     status: 'disconnected',
@@ -1048,6 +1049,11 @@ class LemonadeAPI {
   onModelsChanged(fn: () => void): () => void {
     this._modelsChangedListeners.push(fn);
     return () => { this._modelsChangedListeners = this._modelsChangedListeners.filter(f => f !== fn); };
+  }
+
+  onSystemInfoChange(fn: (info: Record<string, unknown>) => void): () => void {
+    this._systemInfoListeners.add(fn);
+    return () => { this._systemInfoListeners.delete(fn); };
   }
 
   private _notifyModelsChanged(): void {
@@ -1580,6 +1586,7 @@ class LemonadeAPI {
       { cache: 'no-store' } as LemonadeRequestInit,
     ).then(data => {
       this._systemInfoData = data;
+      this._systemInfoListeners.forEach(fn => { try { fn(data); } catch {} });
       return data;
     }).finally(() => {
       if (this._systemInfoInFlight === request) this._systemInfoInFlight = null;
