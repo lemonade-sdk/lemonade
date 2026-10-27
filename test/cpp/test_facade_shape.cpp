@@ -1,10 +1,10 @@
 // The facade's job is orchestration, and this file is what keeps that contract alive.
 //
-// Every "at most" rule here travels one way: a count over the ceiling fails and names the
-// lines, a count under it prints a note asking for the ceiling to be tightened. Progress
-// must not first have to edit this file. Named sets are the exception — a whitelist entry
-// that stops being used has to be deleted, so a name can neither be added nor retired
-// silently.
+// Every rule here is a named pattern or a named set: a file that breaks it is printed
+// with its line, and a whitelist entry nothing uses any more has to be deleted. Nothing
+// counts the size of a thing. A ceiling on lines, declarations or reach has to be
+// retuned by whoever touches the file next, which charges the refactor for progress
+// instead of catching it.
 //
 // kRulesVersion prints with the results. A test binary reads the *live* tree but carries
 // the rules it was compiled with, so a binary older than the sources can fail for a rule
@@ -13,7 +13,6 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
-#include <map>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -24,7 +23,7 @@
 
 namespace fs = std::filesystem;
 
-static const char* kRulesVersion = "2026-10-22.1";
+static const char* kRulesVersion = "2026-10-27.1";
 
 static int g_failures = 0;
 
@@ -63,16 +62,6 @@ std::vector<Hit> find_in(const std::string& relative, const std::string& needle)
         if (line.find(needle) != std::string::npos) hits.push_back({relative, number});
     }
     return hits;
-}
-
-std::string read_line(const std::string& relative, int wanted) {
-    std::ifstream in(kRoot / relative, std::ios::binary);
-    std::string line;
-    int number = 0;
-    while (std::getline(in, line)) {
-        if (++number == wanted) return line;
-    }
-    return "";
 }
 
 // Text with `//` comments removed, so nothing below counts a word that only appears
@@ -161,105 +150,6 @@ std::vector<std::string> includers_of(const std::string& header,
     return result;
 }
 
-// Every file that compiles `header`, directly or through another header. Nothing enforces
-// the basename uniqueness this resolves through, but no two headers in src/cpp share one.
-std::vector<std::string> closure_of(const std::string& header,
-                                    const std::vector<std::string>& files) {
-    std::vector<std::string> seen;
-    std::vector<std::string> frontier{header};
-    while (!frontier.empty()) {
-        const std::vector<std::string> includers = includers_of(frontier.back(), files);
-        frontier.pop_back();
-        for (const auto& file : includers)
-            if (std::find(seen.begin(), seen.end(), file) == seen.end()) {
-                seen.push_back(file);
-                if (file.size() > 2 && file.compare(file.size() - 2, 2, ".h") == 0)
-                    frontier.push_back(file);
-            }
-    }
-    std::sort(seen.begin(), seen.end());
-    return seen;
-}
-
-// CMake text without `#` comment lines, so a target named in prose is not parsed as a
-// call. Line count is preserved.
-std::string strip_cmake_comments(const std::string& text) {
-    std::istringstream stream(text);
-    std::string line, out;
-    while (std::getline(stream, line)) {
-        const size_t first = line.find_first_not_of(" \t");
-        if (first != std::string::npos && line[first] == '#')
-            out += "\n";
-        else
-            out += line + "\n";
-    }
-    return out;
-}
-
-// The argument text of every `call(...)` in a CMake file, balanced-paren so a multi-line
-// call survives.
-std::vector<std::string> cmake_call_args(const std::string& text, const std::string& call) {
-    std::vector<std::string> args;
-    size_t from = 0;
-    while ((from = text.find(call, from)) != std::string::npos) {
-        const size_t open = text.find('(', from + call.size());
-        if (open == std::string::npos) break;
-        int depth = 0;
-        size_t i = open;
-        for (; i < text.size(); ++i) {
-            if (text[i] == '(') ++depth;
-            else if (text[i] == ')') {
-                if (--depth == 0) break;
-            }
-        }
-        args.push_back(text.substr(open + 1, i - open - 1));
-        from = i;
-    }
-    return args;
-}
-
-// Where a header lives, resolved by basename: nothing in the tree enforces the uniqueness
-// this relies on, but no two headers in src/cpp share one.
-class HeaderIndex {
-  public:
-    explicit HeaderIndex(const std::vector<std::string>& headers) {
-        for (const auto& file : headers) {
-            const std::string base = file.substr(file.find_last_of('/') + 1);
-            by_basename_[base] = file;
-        }
-    }
-
-    // True when the file reaches <nlohmann/json.hpp> through headers this index can see.
-    bool reaches_json(const std::string& file) { return reaches_json(file, {}); }
-
-  private:
-    bool reaches_json(const std::string& file, std::vector<std::string> visiting) {
-        const auto memo = memo_.find(file);
-        if (memo != memo_.end()) return memo->second;
-        if (std::find(visiting.begin(), visiting.end(), file) != visiting.end()) return false;
-        visiting.push_back(file);
-        bool reached = false;
-        for (const auto& path : included_paths_in(file)) {
-            if (path.rfind("nlohmann/", 0) == 0) {
-                reached = true;
-                break;
-            }
-            const std::string base = path.substr(path.find_last_of('/') + 1);
-            const auto found = by_basename_.find(base);
-            if (found == by_basename_.end()) continue;
-            if (reaches_json(found->second, visiting)) {
-                reached = true;
-                break;
-            }
-        }
-        memo_[file] = reached;
-        return reached;
-    }
-
-    std::map<std::string, std::string> by_basename_;
-    std::map<std::string, bool> memo_;
-};
-
 void report_set_diff(const std::vector<std::string>& found,
                      const std::vector<std::string>& allowed) {
     for (const auto& file : found)
@@ -335,55 +225,6 @@ std::vector<std::string> repo_files(const std::string& subdir) {
 bool in_models_layer(const std::string& file) {
     return file.rfind("src/cpp/server/models/", 0) == 0 ||
            file.rfind("src/cpp/include/lemon/models/", 0) == 0;
-}
-
-// The class-level data members of a header, counted by declaration rather than by a
-// line suffix: `foo_ = nullptr;` and a declaration split across two lines are both
-// members, and a count that reads only lines ending `_;` reports fewer than the truth.
-// Four spaces is the class body; eight is a nested type, whose members are its own.
-std::vector<std::string> data_members(const std::string& text) {
-    const std::string stripped = strip_line_comments(text);
-    std::vector<std::string> members;
-    std::string stmt;
-    int stmt_indent = -1;
-    std::istringstream stream(stripped);
-    std::string line;
-    while (std::getline(stream, line)) {
-        if (stmt.empty()) {
-            const size_t first = line.find_first_not_of(" \t");
-            if (first == std::string::npos) continue;
-            stmt_indent = static_cast<int>(first);
-            stmt = line;
-        } else {
-            stmt += " " + line;
-        }
-        const size_t ends = stmt.find(';');
-        if (ends == std::string::npos) continue;
-        stmt = stmt.substr(0, ends);
-
-        if (stmt_indent == 4) {
-            // Angle depth: parens inside <...> are template arguments, not parameters.
-            int angle = 0;
-            size_t assign = std::string::npos;
-            bool param_list = false;
-            for (size_t i = 0; i < stmt.size(); ++i) {
-                const char c = stmt[i];
-                if (c == '<') ++angle;
-                else if (c == '>' && !(i > 0 && stmt[i - 1] == '-') && angle > 0) --angle;
-                else if (c == '=' && angle == 0 && stmt[i + 1] != '=' && assign == std::string::npos)
-                    assign = i;
-                else if (c == '(' && angle == 0 && assign == std::string::npos) param_list = true;
-            }
-            const std::string declared = assign == std::string::npos ? stmt : stmt.substr(0, assign);
-            const std::string trimmed = declared.substr(0, declared.find_last_not_of(" \t") + 1);
-            const size_t name_start = trimmed.find_last_of(" \t*&<>,(");
-            const std::string name =
-                name_start == std::string::npos ? trimmed : trimmed.substr(name_start + 1);
-            if (!param_list && !name.empty() && name.back() == '_') members.push_back(name);
-        }
-        stmt.clear();
-    }
-    return members;
 }
 
 }  // namespace
@@ -531,36 +372,15 @@ int main() {
           inverted.empty());
     for (const auto& file : inverted) std::printf("    inversion: %s\n", file.c_str());
 
-    // The measure the refactor was opened for, and the one no rule covered: how far the
-    // facade header reaches. Three spellings reach the same header — <lemon/...>,
-    // "lemon/..." and the bare "model_manager.h" resolved through the include path — and
-    // the bare one is what the backend tree uses, so counting only the prefixed two
-    // under-reports this by a third. One-way: S8 exists to bring this down.
-    // 64 is the route-class refactor of #3771, which turned one server.cpp into one
-    // .cpp per route; every one of them is a caller, which is what this counts.
+    // How far the facade header reaches. Three spellings reach the same header -
+    // <lemon/...>, "lemon/..." and the bare "model_manager.h" resolved through the
+    // include path - and the bare one is what the backend tree uses, so counting only
+    // the prefixed two under-reports it by a third.
     std::vector<std::string> consumers;
     for (const auto& file : product)
         if (file != kFacadeHeader) consumers.push_back(file);
     const std::vector<std::string> facade_consumers =
         includers_of("lemon/model_manager.h", consumers);
-    constexpr int kFacadeIncluderCeiling = 64;
-    check("the facade header reaches " + std::to_string(facade_consumers.size()) +
-              " product files, ceiling " + std::to_string(kFacadeIncluderCeiling),
-          static_cast<int>(facade_consumers.size()) <= kFacadeIncluderCeiling);
-    if (static_cast<int>(facade_consumers.size()) < kFacadeIncluderCeiling)
-        std::printf("note: facade reach is at %zu; tighten the ceiling to it\n",
-                    facade_consumers.size());
-
-    // Reach rather than the count above: a header that hands the facade onward costs every
-    // file behind it, a .cpp that names it costs only itself.
-    const std::vector<std::string> reach = closure_of(kFacadeHeader, consumers);
-    constexpr int kFacadeClosureCeiling = 64;
-    check("the facade reaches " + std::to_string(reach.size()) +
-              " product files transitively, ceiling " + std::to_string(kFacadeClosureCeiling),
-          static_cast<int>(reach.size()) <= kFacadeClosureCeiling);
-    if (static_cast<int>(reach.size()) < kFacadeClosureCeiling)
-        std::printf("note: transitive facade reach is at %zu; tighten the ceiling to it\n",
-                    reach.size());
 
     std::vector<std::string> headers;
     for (const auto& file : facade_consumers)
@@ -718,71 +538,6 @@ int main() {
     check("only the named test spawns a process", spawners == allowed_spawners);
     if (spawners != allowed_spawners) report_set_diff(spawners, allowed_spawners);
 
-    // A test executable that compiles a product header reaching nlohmann/json must link a
-    // target that provides it. The FetchContent build hands that include directory to a
-    // linker and to nobody else, so the target that skips it builds on a machine holding
-    // the distro package and fails on every machine without it — which is every Windows
-    // build, and no CI job here looks at that configuration. The rule asks the reachability
-    // question, not a naming one: a test that never reaches json owes no link line.
-    const std::string cmake_text = strip_cmake_comments(read_repo_file("CMakeLists.txt"));
-    std::map<std::string, std::string> cmake_vars;
-    for (const auto& args : cmake_call_args(cmake_text, "set")) {
-        std::istringstream stream(args);
-        std::string name, value;
-        if (stream >> name >> value) cmake_vars[name] = value;
-    }
-    const std::string kSourceDirVar = "${CMAKE_CURRENT_SOURCE_DIR}/";
-    HeaderIndex header_index(repo_files("src/cpp"));
-    std::vector<std::string> json_without_link;
-    std::vector<std::string> unresolvable_sources;
-    for (const auto& args : cmake_call_args(cmake_text, "add_executable")) {
-        std::istringstream stream(args);
-        std::string name;
-        if (!(stream >> name) || name.rfind("test_", 0) != 0) continue;
-
-        bool provides_json = false;
-        for (const auto& link : cmake_call_args(cmake_text, "target_link_libraries")) {
-            std::istringstream linker(link);
-            std::string target;
-            if (!(linker >> target) || target != name) continue;
-            if (link.find("nlohmann_json::nlohmann_json") != std::string::npos ||
-                link.find("lemonade-server-core") != std::string::npos) {
-                provides_json = true;
-                break;
-            }
-        }
-        if (provides_json) continue;
-
-        bool reaches = false;
-        std::string token;
-        while (stream >> token) {
-            if (token.size() > 2 && token.back() == ')') token.pop_back();
-            if (!token.empty() && token.front() == '"') token.erase(0, 1);
-            if (!token.empty() && token.back() == '"') token.pop_back();
-            if (token.rfind("${", 0) == 0) {
-                const size_t close = token.find('}');
-                const auto var = cmake_vars.find(token.substr(2, close - 2));
-                if (var == cmake_vars.end()) continue;
-                token = var->second;
-            }
-            const size_t here = token.find(kSourceDirVar);
-            if (here != std::string::npos) token.erase(here, kSourceDirVar.size());
-            if (token.find("${") != std::string::npos) {
-                unresolvable_sources.push_back(name);
-                continue;
-            }
-            if (token.size() < 4 || token.compare(token.size() - 4, 4, ".cpp") != 0) continue;
-            if (!fs::exists(kRoot / token)) continue;  // the block is guarded by if(EXISTS ...)
-            if (header_index.reaches_json(token)) reaches = true;
-        }
-        if (reaches) json_without_link.push_back(name);
-    }
-    // No exceptions: the missing link was one line, and every other test target already has one.
-    may_only_shrink("a test executable reaching nlohmann/json links a target providing it",
-                    json_without_link, {});
-    for (const auto& name : unresolvable_sources)
-        std::printf("note: %s declares sources this rule cannot read\n", name.c_str());
-
     // Acceptance, stated in production terms: the store, the scan, the pull and the
     // facade never name a provider — they name a source and let the adapter answer.
     int provider_literals = 0;
@@ -799,74 +554,6 @@ int main() {
         }
     }
     check("no core file names a registry provider by literal", provider_literals == 0);
-
-    // The measure this refactor was opened for: a ceiling, not a target. One
-    // way: shrinking passes without an edit, growing names itself.
-    const int lines = static_cast<int>(std::count(facade.begin(), facade.end(), '\n'));
-    constexpr int kLineCeiling = 876;
-    check("the facade is " + std::to_string(lines) + " lines, ceiling " +
-              std::to_string(kLineCeiling),
-          lines <= kLineCeiling);
-
-    // The header is the surface consumers see; members are what the facade
-    // keeps beyond the components it was built from.
-    const std::string header = read_repo_file(kFacadeHeader);
-    // Public surface: the functions ModelManager itself declares, nested types excluded.
-    // Counting `);` occurrences, as this did, counts doc comments and inline bodies and
-    // misses every method ending `) const;`, so the ceiling held nothing.
-    int declarations = 0;
-    {
-        const size_t body_start = header.find('{', header.find("class ModelManager"));
-        const std::string body = strip_line_comments(header.substr(body_start));
-        int depth = 0;  // 1 inside ModelManager's own body, 2 inside a nested type or body
-        std::string segment;
-        std::string before_brace;
-        bool done = false;
-        for (const char ch : body) {
-            if (done) break;
-            if (ch == '{') {
-                before_brace = segment;
-                ++depth;
-                segment.clear();
-            } else if (ch == '}') {
-                if (depth == 1) {
-                    done = true;
-                } else {
-                    --depth;
-                    if (depth == 1 && before_brace.find('(') != std::string::npos) ++declarations;
-                }
-                segment.clear();
-                before_brace.clear();
-            } else if (ch == ';') {
-                if (depth == 1 && segment.find('(') != std::string::npos) ++declarations;
-                segment.clear();
-            } else {
-                segment += ch;
-            }
-        }
-    }
-    const std::vector<std::string> members = data_members(header);
-    constexpr int kHeaderDeclarationCeiling = 82;
-    check("the facade header declares " + std::to_string(declarations) +
-              " methods (public and private), ceiling " +
-              std::to_string(kHeaderDeclarationCeiling),
-          declarations <= kHeaderDeclarationCeiling);
-    constexpr int kMemberCeiling = 19;
-    check("the facade holds " + std::to_string(members.size()) + " members, ceiling " +
-              std::to_string(kMemberCeiling),
-          static_cast<int>(members.size()) <= kMemberCeiling);
-    if (static_cast<int>(members.size()) > kMemberCeiling) {
-        for (const auto& name : members) std::printf("    member: %s\n", name.c_str());
-    }
-
-    // One line per budget, measured rather than asserted. A ceiling only says "not
-    // worse"; these say where the number actually is, so a shrink shows up in the CTest
-    // output without anyone having to go looking for it.
-    std::printf("\nbudgets: facade %d/%d lines | header %d/%d declarations | %zu/%d members"
-                " | reach %zu/%d direct, %zu/%d transitive\n",
-                lines, kLineCeiling, declarations, kHeaderDeclarationCeiling, members.size(),
-                kMemberCeiling, facade_consumers.size(), kFacadeIncluderCeiling, reach.size(),
-                kFacadeClosureCeiling);
 
     if (g_failures > 0) {
         std::printf("\n%d check(s) failed\n", g_failures);

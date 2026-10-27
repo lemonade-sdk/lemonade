@@ -1,14 +1,12 @@
-// The flag the desktop badges a model with. No gate read `update_available` before
-// this file: a scan that settled every determination and then published nothing would
-// pass every suite. These drive a real ModelManager over fixture bytes and a stub
-// registry, then read the flag back off the row a reader asks for.
+// One binary, the suites below run in order in one process. Each keeps its scratch
+// directories and its own failure count; the only shared state is the process-wide
+// models directory, which every suite sets on entry.
 
 #include <lemon/model_manager.h>
 #include <lemon/models/registry_types.h>
 #include <lemon/models/fetchable_repository.h>
 #include <lemon/models/registry_id.h>
 #include <lemon/utils/path_utils.h>
-
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
@@ -20,8 +18,29 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
-
 #include "show_all_models.h"
+#include <lemon/models/artifact_resolver.h>
+#include <lemon/models/update_scan.h>
+#include <lemon/models/artifact_source.h>
+#include <lemon/models/artifact_store.h>
+#include <lemon/models/store_snapshot.h>
+#include <lemon/runtime_config.h>
+#include <ctime>
+#include <memory>
+
+// The flag the desktop badges a model with. No gate read `update_available` before
+// this file: a scan that settled every determination and then published nothing would
+// pass every suite. These drive a real ModelManager over fixture bytes and a stub
+// registry, then read the flag back off the row a reader asks for.
+namespace available {
+
+// The flag the desktop badges a model with. No gate read `update_available` before
+// this file: a scan that settled every determination and then published nothing would
+// pass every suite. These drive a real ModelManager over fixture bytes and a stub
+// registry, then read the flag back off the row a reader asks for.
+
+
+
 
 namespace fs = std::filesystem;
 using lemon::ModelInfo;
@@ -215,7 +234,7 @@ bool flagged(ModelManager& manager, const std::string& canonical_id) {
 
 }  // namespace
 
-int main() {
+int run() {
     // Nothing listens on this port, so a scan that reached the network instead of the
     // stub would fail rather than quietly describe the real Hugging Face.
     set_env_var("HF_ENDPOINT", "http://127.0.0.1:9");
@@ -321,4 +340,261 @@ int main() {
         std::printf("%d update available flag test(s) failed.\n", failures);
     }
     return failures == 0 ? 0 : 1;
+}
+
+}  // namespace available
+
+
+namespace scan {
+
+namespace fs = std::filesystem;
+using lemon::ModelInfo;
+using lemon::models::ArtifactSource;
+using lemon::models::ScanDetermination;
+using lemon::models::StoreSnapshot;
+using lemon::models::UpdateScanDeps;
+using lemon::models::UpdateScanResult;
+
+namespace {
+
+int failures = 0;
+
+void check(const char* name, bool ok) {
+    std::printf("[%s] %s\n", ok ? "PASS" : "FAIL", name);
+    if (!ok) ++failures;
+}
+
+void set_env_var(const std::string& name, const std::string& value) {
+#ifdef _WIN32
+    _putenv_s(name.c_str(), value.c_str());
+#else
+    setenv(name.c_str(), value.c_str(), 1);
+#endif
+}
+
+ModelInfo registry_model(const std::string& name, const std::string& recipe) {
+    ModelInfo info;
+    info.model_name = name;
+    info.recipe = recipe;
+    info.downloaded = true;
+    info.checkpoints["main"] = "lemonade-tests/no-such-repo";
+    return info;
+}
+
+// Every eligibility rule the scan applies, one model each.
+std::shared_ptr<StoreSnapshot> make_store(const std::string& public_name) {
+    auto snapshot = std::make_shared<StoreSnapshot>();
+    snapshot->valid = true;
+
+    snapshot->models["eligible"] = registry_model("eligible", "llamacpp");
+    snapshot->models["flm"] = registry_model("flm", "flm");
+    snapshot->models["cloud"] = registry_model("cloud", "cloud");
+
+    ModelInfo imported = registry_model("imported", "llamacpp");
+    imported.source = "local_path";
+    snapshot->models["imported"] = imported;
+
+    ModelInfo uncheckpointed = registry_model("uncheckpointed", "llamacpp");
+    uncheckpointed.checkpoints.clear();
+    snapshot->models["uncheckpointed"] = uncheckpointed;
+
+    ModelInfo absent = registry_model("absent", "llamacpp");
+    absent.downloaded = false;
+    snapshot->models["absent"] = absent;
+
+    snapshot->canonical_public_names["eligible"] = public_name;
+    snapshot->public_model_aliases[public_name] = "eligible";
+    return snapshot;
+}
+
+struct Probe {
+    std::shared_ptr<StoreSnapshot> snapshot;
+    int ensure_store_calls = 0;
+    bool published = false;
+    ScanDetermination settled;
+    std::vector<std::string> phases;
+};
+
+// An artifact store rooted at the test directory, empty as the day it was built.
+struct Cache {
+    explicit Cache(std::filesystem::path r) : root(std::move(r)) {}
+    std::filesystem::path root;
+    lemon::models::ModelArtifactStore artifacts{lemon::models::ModelArtifactStore::Hooks{
+        [this] { return root.string(); },
+        [](const ModelInfo&, const std::string&) -> std::unique_ptr<ArtifactSource> {
+            return nullptr;
+        },
+        [] { return std::string(); },
+    }};
+};
+
+// What the scan does with a host is what this test pins, so the host is a stub that answers
+// "I can go stale" and then fails on the tree: the same shape as a registry that refuses the
+// connection, which is what HF_ENDPOINT pointed at a dead port for.
+class UnreachableRepository : public lemon::models::FetchableRepository {
+  public:
+    explicit UnreachableRepository(const lemon::models::ArtifactRef& ref)
+        : FetchableRepository(ref, lemon::models::SourcePlacement{}) {}
+
+    lemon::models::ArtifactKind kind() const override { return lemon::models::ArtifactKind::Registry; }
+    std::string resolve() const override { return ""; }
+    lemon::models::Presence present() const override { return {}; }
+    lemon::models::Acquisition acquisition() const override { return {}; }
+    lemon::models::Deletion deletion() const override {
+        return lemon::models::Deletion{lemon::models::Deletion::Kind::CacheDir, ""};
+    }
+
+    lemon::models::RegistryId id() const override {
+        return ref_.registry.value_or(lemon::models::huggingface_descriptor().id);
+    }
+    lemon::models::Revision default_revision() const override { return {"main", false}; }
+    lemon::models::RepoListing list(const std::string&, const std::string&) const override {
+        throw std::runtime_error("the fixture registry is unreachable");
+    }
+    std::string file_url(const lemon::models::RepoRef&) const override { return {}; }
+    bool can_go_stale() const override { return true; }
+    lemon::models::Revision active_revision(const lemon::models::LocalRef&) const override { return {}; }
+    void set_active_revision(const lemon::models::LocalRef&, const lemon::models::Revision&) override {}
+    lemon::models::Staleness compare(const lemon::models::LocalRef&,
+                                     const lemon::models::RepoListing&) const override {
+        return {};
+    }
+    void commit(const lemon::models::LocalRef&, const lemon::models::Revision&) override {}
+    std::string cache_dir_name(const std::string& repo_id) const override {
+        std::string slug = "models--";
+        for (char c : repo_id) slug += (c == '/') ? "--" : std::string(1, c);
+        return slug;
+    }
+};
+
+UpdateScanDeps make_deps(Probe& probe, Cache& cache) {
+    UpdateScanDeps deps;
+    // This test is about the scan's bookkeeping, so the seam answers "no host here" and the
+    // scan's own error path runs — which is what an unregistered host does in production.
+    static const lemon::models::ArtifactSourceResolver stub_host{
+        lemon::models::ArtifactSourceResolver::Hooks{
+            {},
+            [](const lemon::models::RegistryId&, const lemon::models::ArtifactRef& ref,
+               const lemon::models::SourcePlacement&) {
+                return std::make_unique<UnreachableRepository>(ref);
+            },
+            {}}};
+    deps.resolver = &stub_host;
+    deps.artifacts = &cache.artifacts;
+    deps.ensure_store = [&probe] { ++probe.ensure_store_calls; };
+    deps.snapshot = [&probe] {
+        return std::const_pointer_cast<const StoreSnapshot>(probe.snapshot);
+    };
+    deps.cancel_requested = [] { return false; };
+    deps.publish = [&probe](const ScanDetermination& settled, UpdateScanResult&) {
+        probe.published = true;
+        probe.settled = settled;
+    };
+    deps.phase = [&probe](const std::string& phase) { probe.phases.push_back(phase); };
+    return deps;
+}
+
+bool contains(const std::vector<std::string>& values, const std::string& value) {
+    return std::find(values.begin(), values.end(), value) != values.end();
+}
+
+}  // namespace
+
+int run() {
+    // Nothing listens here, so every registry round trip fails at once. The scan
+    // still has to finish, report the failure and settle nothing.
+    set_env_var("HF_ENDPOINT", "http://127.0.0.1:9");
+
+    const auto tick = std::chrono::steady_clock::now().time_since_epoch().count();
+    const fs::path base = fs::temp_directory_path() / ("lemonade_update_scan_test_" +
+                                                        std::to_string(tick));
+    std::error_code ec;
+    fs::create_directories(base, ec);
+
+    {
+        lemon::RuntimeConfig offline(lemon::json{{"offline", true}});
+        lemon::RuntimeConfig::set_global(&offline);
+
+        Probe probe;
+        probe.snapshot = make_store("eligible");
+        Cache cache(base);
+        UpdateScanDeps deps = make_deps(probe, cache);
+        const UpdateScanResult result = lemon::models::run_update_scan(deps);
+
+        check("offline scan reports nothing", result.updated_models.empty() &&
+                                                  result.up_to_date_models.empty() &&
+                                                  result.failed_models.empty());
+        check("offline scan touches neither the store nor the publish",
+              probe.ensure_store_calls == 0 && !probe.published);
+        lemon::RuntimeConfig::set_global(nullptr);
+    }
+
+    {
+        Probe probe;
+        probe.snapshot = make_store("Shown-Name");
+        Cache cache(base);
+        UpdateScanDeps deps = make_deps(probe, cache);
+        const UpdateScanResult result = lemon::models::run_update_scan(deps);
+
+        check("only a downloaded registry checkpoint is examined",
+              probe.settled.examined.size() == 1 &&
+                  probe.settled.examined[0] == "eligible");
+        check("an unreachable registry settles no staleness", probe.settled.verified.empty() &&
+                                                                   probe.settled.updated.empty());
+        check("a failed check is reported under the listed name",
+              result.failed_models.count("Shown-Name") != 0);
+        check("the phase hook names the model being checked",
+              contains(probe.phases, "registry_check:eligible"));
+        check("the scan publishes once per pass", probe.published);
+    }
+
+    {
+        Probe probe;
+        probe.snapshot = make_store("eligible");
+        Cache cache(base);
+        UpdateScanDeps deps = make_deps(probe, cache);
+        const UpdateScanResult result = lemon::models::run_update_scan(deps, {"flm"});
+
+        check("a target outside the eligible set examines nothing",
+              probe.settled.examined.empty() && result.failed_models.empty());
+    }
+
+    {
+        Probe probe;
+        probe.snapshot = make_store("eligible");
+        Cache cache(base);
+        UpdateScanDeps deps = make_deps(probe, cache);
+        deps.scan_override = [](const std::vector<std::string>&) {
+            UpdateScanResult res;
+            res.updated_models.push_back("overridden-updated");
+            res.up_to_date_models.push_back("overridden-current");
+            res.failed_models["overridden-failed"] = "forced";
+            return res;
+        };
+        const UpdateScanResult result = lemon::models::run_update_scan(deps);
+
+        check("the override result is returned verbatim",
+              result.updated_models.size() == 1 && result.updated_models[0] == "overridden-updated" &&
+                  result.up_to_date_models.size() == 1 &&
+                  result.failed_models.count("overridden-failed") != 0);
+        check("an overridden pass reads and publishes nothing",
+              probe.ensure_store_calls == 0 && !probe.published);
+        check("every reported model gets its phase, once",
+              probe.phases.size() == 3);
+    }
+
+    fs::remove_all(base, ec);
+    std::printf("%s\n", failures == 0 ? "ALL PASSED" : "FAILURES PRESENT");
+    return failures == 0 ? 0 : 1;
+}
+
+}  // namespace scan
+
+int main() {
+    int failures = 0;
+    std::printf("\n=== available ===\n");
+    failures |= available::run();
+    std::printf("\n=== scan ===\n");
+    failures |= scan::run();
+    return failures;
 }

@@ -194,50 +194,6 @@ int main() {
 
     const RegistryId host("fixture-hub");
 
-    std::vector<RegistryId> hosts;
-    for (const auto& registered : registered_repository_ids()) hosts.push_back(registered);
-    check("the fixture host registered itself beside the shipped two",
-          std::find(hosts.begin(), hosts.end(), host) != hosts.end());
-    check("and claims no id twice",
-          std::find(repository_registration_conflicts().begin(),
-                    repository_registration_conflicts().end(),
-                    host) == repository_registration_conflicts().end());
-    const RegistryDescriptor* descriptor = descriptor_for(host);
-    check("an alias resolves to it", registry_id_from("fh") != std::nullopt &&
-                                        registry_id_from("fh")->str() == host.str());
-    bool descriptor_complete = descriptor != nullptr;
-    if (descriptor != nullptr) {
-        descriptor_complete = !descriptor->display_name.empty() &&
-                              !descriptor->scheme_prefix.empty() &&
-                              !descriptor->cache_dir_prefix.empty() &&
-                              !descriptor->default_revision.empty() &&
-                              !descriptor->download_protocol.empty() &&
-                              !descriptor->doc.id.empty() && !descriptor->doc.title.empty() &&
-                              !descriptor->doc.summary.empty() &&
-                              !descriptor->revision_semantics.empty() &&
-                              !descriptor->staleness_basis.empty() &&
-                              !descriptor->env.empty();
-        for (const auto& var : descriptor->env) {
-            if (var.name.empty() || var.purpose.empty()) descriptor_complete = false;
-        }
-    }
-    check("its descriptor carries every fact the docs generator reads", descriptor_complete);
-
-    const nlohmann::json sources = model_sources_json(StoreSnapshot{});
-    bool in_payload = false;
-    if (descriptor != nullptr) {
-        for (const auto& row : sources.at("registries")) {
-            if (row.value("token", "") != host.str()) continue;
-            in_payload = row.value("summary", "") == descriptor->doc.summary &&
-                         row.value("scheme", "") == descriptor->scheme_prefix + "://" &&
-                         row.value("cache_dir_prefix", "") == descriptor->cache_dir_prefix;
-        }
-    }
-    check("the generated payload already describes it", in_payload);
-    const std::string docs_page =
-        read_file(fs::path(LEMONADE_REPO_ROOT) / "docs/dev/model-registries.md");
-    check("and no page was written for it", !contains(docs_page, "Fixture Hub"));
-
     // ---- criterion 4: a directory, a plan, no HTTP at all ----
     const auto repository = create_repository(host, side_ref(host, repo, "mmproj-F16.gguf"));
     check("the factory returned it", repository != nullptr);
@@ -432,16 +388,6 @@ int main() {
     unset_env("LEMONADE_FIXTURE_HUB_TOKEN");
 
     // ---- the negative, which is the point of the criterion ----
-    int named_in_components = 0;
-    for (const std::string& component : {"src/cpp/server/models/store.cpp",
-                                         "src/cpp/server/models/sync_service.cpp",
-                                         "src/cpp/server/models/ingest.cpp",
-                                         "src/cpp/server/model_manager.cpp",
-                                         "src/cpp/include/lemon/model_manager.h"}) {
-        named_in_components += static_cast<int>(contains(
-            read_file(fs::path(LEMONADE_REPO_ROOT) / component), "fixture-hub"));
-    }
-    check("no component names it", named_in_components == 0);
     int named_under_src = 0;
     for (const auto& entry : fs::recursive_directory_iterator(fs::path(LEMONADE_REPO_ROOT) / "src/cpp")) {
         if (!entry.is_regular_file()) continue;

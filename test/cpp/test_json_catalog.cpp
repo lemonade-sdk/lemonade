@@ -80,7 +80,7 @@ static void test_the_name_prefix_is_minted_not_read() {
              row(json::object(), rules(rec, "user."))->model_name, "user.M");
 }
 
-static void test_checkpoint_grammar() {
+static void test_a_rows_checkpoint_keys() {
     Recorder rec;
     const RegistryRowRules r = rules(rec);
 
@@ -284,7 +284,7 @@ static void test_a_requested_name_finds_its_row() {
 
 int main() {
     test_the_name_prefix_is_minted_not_read();
-    test_checkpoint_grammar();
+    test_a_rows_checkpoint_keys();
     test_row_defaults_come_from_the_rules();
     test_components();
     test_a_bad_row_costs_one_model();

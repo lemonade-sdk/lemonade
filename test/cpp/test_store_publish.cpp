@@ -1,6 +1,6 @@
-// The write side of the store, asked of the store itself: publish, patch, invalidate, and
-// what readers see while each is happening. Three files used to cover this as separate
-// binaries; they are one process now, each keeping its own helpers in its own namespace.
+// One binary, the suites below run in order in one process. Each keeps its scratch
+// directories and its own failure count; the only shared state is the process-wide
+// models directory, which every suite sets on entry.
 
 #include <lemon/model_manager.h>
 #include <lemon/model_types.h>
@@ -12,9 +12,7 @@
 #include <lemon/models/store_builder.h>
 #include <lemon/models/store_snapshot.h>
 #include <lemon/utils/path_utils.h>
-
 #include "support/test_state_isolation.h"
-
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -29,6 +27,29 @@
 #include <thread>
 #include <utility>
 #include <vector>
+#include "lemon/model_manager.h"
+#include "lemon/models/alias_manager.h"
+#include "lemon/models/store.h"
+#include "lemon/models/store_snapshot.h"
+#include "lemon/utils/path_utils.h"
+#include "support/server_wired_manager.h"
+#include <fstream>
+#include <set>
+#include "show_all_models.h"
+#include <lemon/models/registry_descriptors.h>
+#include <stdexcept>
+
+// The write side of the store, asked of the store itself: publish, patch, invalidate, and
+// what readers see while each is happening. Three files used to cover this as separate
+// binaries; they are one process now, each keeping its own helpers in its own namespace.
+namespace write {
+
+// The write side of the store, asked of the store itself: publish, patch, invalidate, and
+// what readers see while each is happening. Three files used to cover this as separate
+// binaries; they are one process now, each keeping its own helpers in its own namespace.
+
+
+
 
 using lemon::ModelInfo;
 using lemon::ModelManager;
@@ -129,10 +150,16 @@ static void test_a_read_answers_while_a_writer_holds() {
                  {std::make_shared<StubCatalog>("stub")});
 
     std::atomic<bool> holds{false};
-    std::thread writer([&store, &holds] {
+    std::atomic<bool> timed{false};
+    std::thread writer([&store, &holds, &timed] {
         ModelStore::Write write(store);
         holds = true;
-        std::this_thread::sleep_for(std::chrono::milliseconds(400));
+        // Held until the read has been timed, so the two are guaranteed to overlap; the
+        // deadline is only what stops the test hanging if they never do.
+        const auto bail = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+        while (!timed.load() && std::chrono::steady_clock::now() < bail) {
+            std::this_thread::yield();
+        }
     });
     while (!holds.load()) {
         std::this_thread::yield();
@@ -143,6 +170,7 @@ static void test_a_read_answers_while_a_writer_holds() {
     const auto microseconds = std::chrono::duration_cast<std::chrono::microseconds>(
                                   std::chrono::steady_clock::now() - started)
                                   .count();
+    timed = true;
     writer.join();
 
     check("a read answers while a writer holds the store", microseconds < 150000);
@@ -248,10 +276,16 @@ static void test_a_build_holds_only_the_builder() {
     }
 
     std::atomic<bool> composing{false};
-    std::thread builder([&store, &composing] {
+    std::atomic<bool> raced{false};
+    std::thread builder([&store, &composing, &raced] {
         ModelStore::Build slow(store);
         composing = true;
-        std::this_thread::sleep_for(std::chrono::milliseconds(1200));
+        // The compose stays open until the read and the write below have run, so the
+        // race it exists to test always happens. The deadline bounds a hang.
+        const auto bail = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+        while (!raced.load() && std::chrono::steady_clock::now() < bail) {
+            std::this_thread::yield();
+        }
         slow.commit({{"user.Alpha", model("user.Alpha", true)}}, nullptr, no_catalogs());
     });
     while (!composing.load()) {
@@ -267,11 +301,12 @@ static void test_a_build_holds_only_the_builder() {
     const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                         std::chrono::steady_clock::now() - started)
                         .count();
+    raced = true;
     builder.join();
 
     check("a read answers while a compose runs", answered);
-    // A write that had to wait for the builder would wait out the compose: the margin
-    // is against the compose's own length, not against a machine's speed.
+    // The compose is still held open here, so a write that queued behind it would take
+    // as long as the hold's deadline rather than this margin.
     check("and a write is not made to wait for it", ms < 600);
     check("the compose that raced the write yields to it",
           store.read()->models.count("user.Added") == 1 &&
@@ -811,7 +846,7 @@ static void test_options_land_on_the_live_row() {
 }  // namespace store_patch
 
 
-int main() {
+int run() {
         // publish, patch, invalidate
     store_publish::test_an_undrawn_store();
     store_publish::test_a_read_answers_while_a_writer_holds();
@@ -842,4 +877,408 @@ int main() {
     }
     std::printf("\nAll store write checks passed\n");
     return 0;
+}
+
+}  // namespace write
+
+
+namespace publication {
+
+namespace fs = std::filesystem;
+using lemon::ModelInfo;
+using lemon::ModelManager;
+using lemon::json;
+using lemon::utils::path_from_utf8;
+using lemon::utils::path_to_utf8;
+
+static int g_failures = 0;
+
+static void check(const std::string& name, bool ok) {
+    std::printf("[%s] %s\n", ok ? "PASS" : "FAIL", name.c_str());
+    if (!ok) ++g_failures;
+}
+
+// Each case performs one supported mutation, then asks a lock-free reader: what
+// breaks if a mutating scope forgets to publish.
+static std::string listing_name_of(const std::map<std::string, ModelInfo>& models,
+                                   const std::string& repo) {
+    for (const auto& [name, info] : models) {
+        for (const auto& [type, checkpoint] : info.checkpoints) {
+            if (checkpoint.find(repo) != std::string::npos) {
+                return name;
+            }
+        }
+    }
+    return std::string();
+}
+
+static bool listing_is_self_consistent(const std::map<std::string, ModelInfo>& models) {
+    for (const auto& [name, info] : models) {
+        if (name != info.model_name) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static void write_file(const fs::path& path, const std::string& contents) {
+    fs::create_directories(path.parent_path());
+    std::ofstream out(path, std::ios::binary);
+    out << contents;
+}
+
+// llamacpp checks the GGUF magic before it calls a file downloaded.
+static fs::path make_hf_repo(const fs::path& models_dir, const std::string& repo,
+                             const std::string& snapshot, const std::string& file) {
+    std::string slug;
+    for (char c : repo) {
+        if (c == '/') slug += "--"; else slug += c;
+    }
+    fs::path repo_dir = models_dir / ("models--" + slug);
+    write_file(repo_dir / "refs" / "main", snapshot);
+    write_file(repo_dir / "snapshots" / snapshot / file, "GGUF0123456789");
+    return repo_dir;
+}
+
+static void register_model(ModelManager& manager,
+                           const std::string& name,
+                           const std::string& recipe,
+                           const std::string& checkpoint) {
+    manager.register_user_model(name, json{{"model_name", name},
+                                           {"recipe", recipe},
+                                           {"checkpoint", checkpoint}});
+}
+
+static void test_registration_publishes(ModelManager& manager) {
+    register_model(manager, "user.Published", "llamacpp", "zzorg/zzpublished:main.gguf");
+
+    check("registering publishes the model to the existence check",
+          manager.model_exists("user.Published"));
+    check("registering publishes the model to the info lookup",
+          manager.get_model_info("user.Published").recipe == "llamacpp");
+    const std::string listed = listing_name_of(manager.get_supported_models(), "zzorg/zzpublished");
+    check("registering publishes the model to the listing", !listed.empty());
+    check("registering publishes a name that resolves back to the model",
+          !listed.empty() && manager.get_model_info(listed).checkpoints.size() ==
+                                 manager.get_model_info("user.Published").checkpoints.size());
+    check("published listing keys match the names they carry",
+          listing_is_self_consistent(manager.get_supported_models()));
+}
+
+static void test_deletion_publishes(ModelManager& manager) {
+    manager.delete_model("user.Published");
+
+    check("deleting publishes its absence from the existence check",
+          !manager.model_exists("user.Published"));
+    check("deleting publishes its absence from the listing",
+          listing_name_of(manager.get_supported_models(), "zzorg/zzpublished").empty());
+    bool threw = false;
+    try {
+        manager.get_model_info("user.Published");
+    } catch (const std::exception&) {
+        threw = true;
+    }
+    check("deleting publishes its absence from the info lookup", threw);
+}
+
+// Writing again through the same paths catches a store that publishes only once.
+static void test_republish_after_replacement(ModelManager& manager) {
+    register_model(manager, "user.Replaced", "llamacpp", "zzorg/zzfirst:main.gguf");
+    check("the first definition is visible",
+          manager.get_model_info("user.Replaced").checkpoints.count("main") == 1);
+
+    manager.delete_model("user.Replaced");
+    register_model(manager, "user.Replaced", "sd-cpp", "zzorg/zzsecond:vae.safetensors");
+
+    const ModelInfo after = manager.get_model_info("user.Replaced");
+    check("the replacement definition is visible", after.recipe == "sd-cpp");
+    check("the previous definition is gone",
+          listing_name_of(manager.get_supported_models(), "zzorg/zzfirst").empty());
+    check("the listing stays self-consistent across replacement",
+          listing_is_self_consistent(manager.get_supported_models()));
+}
+
+// Options are written into the cached entry in place with the cache still valid,
+// so nothing rebuilds and publication is the only way the change can be seen.
+static void test_in_place_update_publishes(ModelManager& manager) {
+    register_model(manager, "user.Options", "llamacpp", "zzorg/zzoptions:main.gguf");
+
+    // Chosen at run time so the case does not break when the option set changes.
+    std::string key;
+    for (const auto& candidate : lemon::RecipeOptions::keys_for_recipe("llamacpp")) {
+        if (lemon::RecipeOptions("llamacpp", json{{candidate, json(4096)}}).get_option(candidate) ==
+            json(4096)) {
+            key = candidate;
+            break;
+        }
+    }
+    if (key.empty()) {
+        check("llamacpp offers an option this test can set", false);
+        return;
+    }
+
+    manager.replace_options("user.Options", json{{key, json(4096)}});
+
+    check("an in-place update publishes to readers",
+          manager.get_model_info("user.Options").recipe_options.get_option(key) == json(4096));
+}
+
+// Deciding a model is no longer complete rewrites the cached entry, and nothing
+// rebuilds on its own, so publication is the only way the repair reaches readers.
+static void test_repair_publishes(ModelManager& manager, const fs::path& models_dir) {
+    const fs::path repo = make_hf_repo(models_dir, "zzorg/zzvanishing", "snap-x", "main.gguf");
+    register_model(manager, "user.Vanishing", "llamacpp", "zzorg/zzvanishing:main.gguf");
+    check("fixture starts out downloaded", manager.is_model_downloaded("user.Vanishing"));
+
+    fs::remove(repo / "snapshots" / "snap-x" / "main.gguf");
+
+    check("the missing file is reported", !manager.is_model_downloaded("user.Vanishing"));
+    check("the repair publishes to readers",
+          !manager.get_model_info("user.Vanishing").downloaded);
+    check("the repaired model leaves the downloaded listing",
+          listing_name_of(manager.get_downloaded_models(), "zzorg/zzvanishing").empty());
+}
+
+// A question about one row has to outlive the set that row lives in. `resolved_paths_for`
+// used to borrow the row from a `read()` temporary, so a publish landing before the answer
+// was finished left the loop reading memory the store had already freed - invisible to an
+// assertion, fatal under a sanitizer.
+static void test_one_row_read_outlives_the_snapshot() {
+    lemon::models::AliasManager aliases{""};
+    lemon::models::ModelStore store{aliases};
+    const std::string id = "user.Raced";
+    {
+        lemon::models::ModelStore::Write write(store);
+        ModelInfo& row = write.draft()[id];
+        row.model_name = id;
+        row.resolved_paths["main"] = "first.gguf";
+    }
+
+    std::atomic<bool> stop{false};
+    std::atomic<bool> torn{false};
+    std::atomic<long> answers{0};
+
+    std::thread publisher([&] {
+        while (!stop.load()) {
+            lemon::models::ModelStore::Write write(store);
+            write.draft()[id].resolved_paths["main"] = "second.gguf";
+        }
+    });
+
+    std::vector<std::thread> readers;
+    for (int i = 0; i < 4; ++i) {
+        readers.emplace_back([&] {
+            while (!stop.load()) {
+                const auto paths = store.resolved_paths_for(id);
+                const auto found = paths.find("main");
+                if (paths.size() != 1 || found == paths.end() ||
+                    (found->second != "first.gguf" && found->second != "second.gguf")) {
+                    torn.store(true);
+                }
+                const std::shared_ptr<const ModelInfo> row = store.find(id);
+                if (!row || row->model_name != id || row->resolved_paths.size() != 1) {
+                    torn.store(true);
+                }
+                ++answers;
+            }
+        });
+    }
+
+    for (int attempt = 0; attempt < 3000 && answers.load() == 0; ++attempt) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    stop.store(true);
+    publisher.join();
+    for (auto& reader : readers) reader.join();
+
+    check("one-row reads were answered throughout republication", answers.load() > 0);
+    check("a one-row read never saw a torn answer", !torn.load());
+}
+
+// Readers run against the published snapshot while a writer keeps replacing it.
+// Nothing is asserted mid-race: which generation a reader sees is timing.
+static void test_republish_while_reading(ModelManager& manager) {
+    manager.get_supported_models();
+
+    std::atomic<bool> stop{false};
+    std::atomic<long> reads{0};
+    std::atomic<int> live{0};
+    std::vector<std::thread> readers;
+    for (int i = 0; i < 4; ++i) {
+        readers.emplace_back([&] {
+            live.fetch_add(1);
+            while (!stop.load()) {
+                const std::size_t clouds = manager.count_cloud_models("zz-no-provider");
+                const std::vector<std::string> hidden = manager.snapshot()->empty_recipes();
+                (void)clouds;
+                (void)hidden;
+                reads.fetch_add(1);
+            }
+        });
+    }
+
+    const auto await = [](auto settled) {
+        for (int attempt = 0; attempt < 5000 && !settled(); ++attempt) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+    };
+    await([&] { return live.load() == static_cast<int>(readers.size()); });
+
+    for (int i = 0; i < 500; ++i) {
+        manager.invalidate_models_cache();
+    }
+
+    await([&] { return reads.load() > 0; });
+    stop.store(true);
+    for (auto& reader : readers) {
+        reader.join();
+    }
+
+    check("readers were served throughout republication", reads.load() > 0);
+    check("listing stays self-consistent after concurrent republication",
+          listing_is_self_consistent(manager.get_supported_models()));
+}
+
+int run() {
+    ShowAllModels show_all_models;
+    fs::path temp = fs::temp_directory_path();
+    temp /= "store_publication_" +
+            std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
+    fs::create_directories(temp);
+    lemon::utils::set_cache_dir(path_to_utf8(temp));
+    lemon::utils::set_config_dir(path_to_utf8(temp));
+    fs::path models_dir = temp / "hf";
+    fs::create_directories(models_dir);
+    lemon::utils::set_models_dir(path_to_utf8(models_dir));
+
+    ModelManager manager(lemon::test::server_wired_config());
+    test_registration_publishes(manager);
+    test_deletion_publishes(manager);
+    test_republish_after_replacement(manager);
+    test_in_place_update_publishes(manager);
+    test_repair_publishes(manager, models_dir);
+    test_one_row_read_outlives_the_snapshot();
+    test_republish_while_reading(manager);
+
+    fs::remove_all(temp);
+
+    if (g_failures == 0) {
+        std::printf("All store publication tests passed.\n");
+    } else {
+        std::printf("%d store publication test(s) failed.\n", g_failures);
+    }
+    return g_failures == 0 ? 0 : 1;
+}
+
+}  // namespace publication
+
+
+namespace retry {
+
+namespace fs = std::filesystem;
+using lemon::ModelInfo;
+using lemon::ModelManager;
+using lemon::ModelManagerConfig;
+
+static int g_failures = 0;
+
+static void check(const std::string& name, bool ok) {
+    std::printf("[%s] %s\n", ok ? "PASS" : "FAIL", name.c_str());
+    if (!ok) ++g_failures;
+}
+
+namespace {
+
+ModelInfo row(const std::string& name) {
+    ModelInfo info;
+    info.model_name = name;
+    info.recipe = "llamacpp";
+    info.checkpoints["main"] = "org/" + name + ":a.gguf";
+    info.suggested = true;
+    info.labels = {"chat"};
+    return info;
+}
+
+bool answers(ModelManager& manager, const std::string& name) {
+    try {
+        return manager.get_model_info(name).recipe == "llamacpp";
+    } catch (const std::exception&) {
+        return false;
+    }
+}
+
+// Stands in for the second pass of a compose that yielded: the registries now report a
+// row that the first pass could not know about.
+struct Late {
+    ModelManager* manager = nullptr;
+    std::atomic<int> passes{0};
+};
+
+}  // namespace
+
+int run() {
+    const fs::path scratch = lemon::test::make_scratch_dir("compose_retry");
+    lemon::utils::set_models_dir((scratch / "models").string());
+
+    Late late;
+    auto racy = std::make_shared<lemon::models::EnumeratedCatalog>(
+        lemon::models::CatalogDescriptor{"racy"},
+        [&late](const lemon::models::CatalogAccumulator&) {
+            if (++late.passes == 2 && late.manager != nullptr) {
+                // Something persisted while this set was being put together. A writer
+                // persists and invalidates; it never patches the composed set.
+                late.manager->invalidate_models_cache();
+                return std::vector<ModelInfo>{row("Fixture-Model")};
+            }
+            if (late.passes == 1) return std::vector<ModelInfo>{row("Fixture-Model")};
+            return std::vector<ModelInfo>{row("Fixture-Model"), row("Late-Model")};
+        });
+
+    ModelManagerConfig config;
+    config.cache_dir = scratch.string();
+    config.extra_catalogs = {racy};
+    // The compose protocol is the question, not what this machine can run.
+    config.availability = [](const std::map<std::string, ModelInfo>&) {
+        lemon::models::BackendAvailability declared;
+        declared.system_ram_gb = 64.0;
+        declared.largest_mem_pool_gb = 48.0;
+        return declared;
+    };
+    ModelManager manager(std::move(config));
+    late.manager = &manager;
+
+    manager.get_supported_models();
+    {
+        manager.invalidate_models_cache();
+    }
+
+    const int composed_before = late.passes;
+    manager.get_supported_models();
+    const int composed_by_now = late.passes;
+    check("the refused compose is asked again", composed_by_now >= composed_before + 2);
+    // A read after the call composing again is the failure this guards: the caller of
+    // the composing call is told the change landed, so it must already be there.
+    check("and the change it yielded to is answered", answers(manager, "Late-Model"));
+    check("by that call, not by one it provoked", late.passes == composed_by_now);
+    check("the row it already had survives the retry", answers(manager, "Fixture-Model"));
+
+    if (g_failures > 0) {
+        std::printf("\n%d check(s) failed\n", g_failures);
+        return 1;
+    }
+    std::printf("\nAll compose-retry checks passed\n");
+    return 0;
+}
+
+}  // namespace retry
+
+int main() {
+    int failures = 0;
+    std::printf("\n=== write ===\n");
+    failures |= write::run();
+    std::printf("\n=== publication ===\n");
+    failures |= publication::run();
+    std::printf("\n=== retry ===\n");
+    failures |= retry::run();
+    return failures;
 }

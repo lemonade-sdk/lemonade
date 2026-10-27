@@ -32,7 +32,7 @@ static void check_eq(const std::string& name, const std::string& actual,
     }
 }
 
-static void test_checkpoint_grammar() {
+static void test_a_checkpoint_address_splits_at_the_colon() {
     check_eq("repo id is the text before the colon",
              lemon::models::repo_id_from_checkpoint("org/repo:weight.gguf"), "org/repo");
     check_eq("variant is the text after the colon",
@@ -258,7 +258,7 @@ static void test_a_provider_that_will_not_answer_costs_only_its_own_models() {
 }
 
 int main() {
-    test_checkpoint_grammar();
+    test_a_checkpoint_address_splits_at_the_colon();
     test_name_reserving();
     test_reserved_ids_are_prefixed();
     test_model_index_ownership();
