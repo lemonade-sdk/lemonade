@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <functional>
@@ -12,8 +13,9 @@
 #include <httplib.h>
 #include <nlohmann/json.hpp>
 
-#include "lemon/model_manager.h"
+#include "lemon/models/download_progress.h"
 #include "lemon/server/route_error.h"
+#include "lemon/utils/cancel_token.h"
 
 namespace lemon {
 
@@ -22,7 +24,7 @@ namespace lemon {
 // install also send their progress as an event stream built here.
 class DownloadManager {
 public:
-    using Operation = std::function<void(DownloadProgressCallback)>;
+    using Operation = std::function<void(DownloadProgressCallback, utils::CancelToken)>;
 
     ~DownloadManager();
 
@@ -64,6 +66,9 @@ private:
         uint64_t current_file_bytes_total = 0;
         int current_file_index = -1;
         bool cancel_requested = false;
+        // The worker hands this flag to the transfer as a CancelToken, so a cancel
+        // stops bytes on the next socket tick, not only at the next progress report.
+        std::atomic<bool> cancel_flag{false};
         // Set by the worker's progress callback once the downloader has actually
         // observed a pause/cancel request and stopped before completion. This
         // prevents a late UI request from overriding a successful operation that

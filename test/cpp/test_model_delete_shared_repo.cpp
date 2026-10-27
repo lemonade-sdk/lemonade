@@ -1,3 +1,4 @@
+#include "support/server_wired_manager.h"
 // Deleting a model must reclaim its repo when nothing else is living in it, and
 // must leave the repo alone when something is. The dividing line is what is on
 // disk, not what the catalog lists: several entries routinely map to one repo,
@@ -50,6 +51,29 @@ static fs::path make_repo(const fs::path& hf_root,
     }
     write_file(repo / "refs" / "main", "snap");
     return repo;
+}
+
+// The layout `hf download` writes: bytes in blobs/, snapshot entries linking to
+// them. Windows needs a privilege to link, so a refusal is reported.
+static bool make_blobs_repo(const fs::path& repo,
+                            const std::vector<std::string>& files,
+                            std::string& why) {
+    for (const auto& file : files) {
+        write_file(repo / "blobs" / ("blob-" + file));
+        fs::create_directories(repo / "snapshots" / "snap");
+        std::error_code ec;
+        fs::create_symlink("../../blobs/blob-" + file, repo / "snapshots" / "snap" / file, ec);
+        if (ec) {
+            why = ec.message();
+            return false;
+        }
+    }
+    write_file(repo / "refs" / "main", "snap");
+    return true;
+}
+
+static fs::path blob_of(const fs::path& repo, const std::string& file) {
+    return repo / "blobs" / ("blob-" + file);
 }
 
 int main() {
@@ -199,6 +223,37 @@ int main() {
     fs::path selfshard_repo = make_repo(hf_root, "models--org--selfshard",
         {"a-00001-of-00002.gguf", "a-00002-of-00002.gguf", "other.gguf"});
 
+    // dirfolder-a claims the snapshot folder itself, which is where the files of
+    // the two file-based models below live. A folder claim is read as a folder, so
+    // it covers everything inside it.
+    fs::path dirfolder_repo = make_repo(hf_root, "models--org--dirfolder",
+        {"model.safetensors", "q4.gguf", "main.gguf", "mmproj.gguf"});
+
+    // The same pairing in the blob layout, where the two read through one entry
+    // whose bytes are elsewhere.
+    fs::path symdir_repo = hf_root / "models--org--symdir";
+    fs::path symplumb_repo = hf_root / "models--org--symplumb";
+    std::string symlink_why;
+    const bool links_made =
+        make_blobs_repo(symdir_repo, {"model.safetensors", "q4.gguf"}, symlink_why) &&
+        make_blobs_repo(symplumb_repo, {"model.safetensors"}, symlink_why);
+    if (links_made) {
+        // A stranger's partial keeps this delete on the selective path.
+        write_file(symplumb_repo / "snapshots" / "snap" / "other.bin.partial", "partial");
+    }
+    fs::path symblob_repo = hf_root / "models--org--symblob";
+    if (links_made) {
+        make_blobs_repo(symblob_repo, {"model.gguf", "other.gguf"}, symlink_why);
+        // A second revision on the same bytes outlives the entry being deleted.
+        std::error_code ec;
+        fs::create_directories(symblob_repo / "snapshots" / "snap-old");
+        fs::create_symlink("../../blobs/blob-model.gguf",
+                           symblob_repo / "snapshots" / "snap-old" / "model.gguf", ec);
+    }
+    if (!links_made) {
+        std::printf("[SKIP] snapshot symlinks unavailable (%s)\n", symlink_why.c_str());
+    }
+
     // Some repos carry the quant token in the middle of the file name, which is
     // the shape resolve_gguf_path()'s quant-token fallback exists for. Matching
     // on a suffix alone calls this model's own download a stranger's.
@@ -231,6 +286,67 @@ int main() {
     write_file(orph_repo / "snapshots" / "snap" / "b.gguf.partial", "partial");
     write_file(orph_repo / "snapshots" / "snap" / ".download_manifest.json",
                R"({"model_name":"user.orph-b","files":[{"name":"b.gguf"}]})");
+
+    // A plain model and the MTP variant built on it: same main, same mmproj, and the
+    // MTP row also wants a draft. Only the plain model's bytes are here.
+    fs::path mtp_repo = make_repo(hf_root, "models--org--mtp", {"main.gguf", "mmproj.gguf"});
+
+    // The same pair with the draft present, so both rows are on disk.
+    fs::path mtpboth_repo = make_repo(hf_root, "models--org--mtpboth",
+                                      {"main.gguf", "mmproj.gguf", "draft.gguf"});
+
+    // Moonshine's variants share one repository, each in a folder of its own that
+    // holds the same file names as its siblings.
+    fs::path folder_repo =
+        make_repo(hf_root, "models--org--folder",
+                  {"onnx/tiny/encoder.ort", "onnx/tiny/tokenizer.bin",
+                   "onnx/small/encoder.ort", "onnx/small/tokenizer.bin"});
+
+    // The Hugging Face cache is shared, so a file of this repository can arrive
+    // from `hf download` with no Lemonade model anywhere near it.
+    fs::path guest_repo = hf_root / "models--org--guest";
+    write_file(guest_repo / "snapshots" / "snap" / "q4.gguf.partial", "partial");
+    write_file(guest_repo / "snapshots" / "snap" / ".download_manifest.json",
+               R"({"model_name":"user.guest-a","files":[{"name":"q4.gguf"}]})");
+    write_file(guest_repo / "snapshots" / "snap" / "q8.gguf", "another tool's copy");
+    write_file(guest_repo / "refs" / "main", "snap");
+
+    // The other side of that line: the manifest names this model, so the whole
+    // repository is its own unfinished work.
+    fs::path ownmulti_repo = hf_root / "models--org--ownmulti";
+    write_file(ownmulti_repo / "snapshots" / "snap" / "main.gguf");
+    write_file(ownmulti_repo / "snapshots" / "snap" / "mmproj.gguf.partial", "partial");
+    write_file(ownmulti_repo / "snapshots" / "snap" / ".download_manifest.json",
+               R"({"model_name":"user.ownmulti-a",)"
+               R"("files":[{"name":"main.gguf"},{"name":"mmproj.gguf"}]})");
+    write_file(ownmulti_repo / "refs" / "main", "snap");
+
+    fs::path lone_repo = hf_root / "models--org--lone";
+    write_file(lone_repo / "snapshots" / "snap" / "q4.gguf.partial", "partial");
+    write_file(lone_repo / "snapshots" / "snap" / "q8.gguf.partial", "other tool's draft");
+    write_file(lone_repo / "refs" / "main", "snap");
+
+    fs::path basenam_repo = hf_root / "models--org--basenam";
+    write_file(basenam_repo / "snapshots" / "snap" / "onnx" / "tiny" / "encoder.ort.partial",
+               "partial");
+    write_file(basenam_repo / "snapshots" / "snap" / "onnx" / "small" / "encoder.ort",
+               "another model's copy");
+    write_file(basenam_repo / "refs" / "main", "snap");
+
+    fs::path twoown_repo = hf_root / "models--org--twoown";
+    write_file(twoown_repo / "snapshots" / "rev-a" / "a.gguf.partial", "partial");
+    write_file(twoown_repo / "snapshots" / "rev-a" / ".download_manifest.json",
+               R"({"model_name":"user.twoown-a","files":[{"name":"a.gguf"}]})");
+    write_file(twoown_repo / "snapshots" / "rev-b" / "b.gguf.partial", "partial");
+    write_file(twoown_repo / "snapshots" / "rev-b" / ".download_manifest.json",
+               R"({"model_name":"user.twoown-b","files":[{"name":"b.gguf"}]})");
+    write_file(twoown_repo / "refs" / "main", "rev-a");
+
+    fs::path trunc_repo = hf_root / "models--org--trunc";
+    write_file(trunc_repo / "snapshots" / "snap" / "a.gguf.partial", "partial");
+    write_file(trunc_repo / "snapshots" / "snap" / ".download_manifest.json",
+               R"({"model_name":"user.trunc-a","files":[{"name":"a.gguf")");
+    write_file(trunc_repo / "refs" / "main", "snap");
 
     // Repos used by the late-arrival cases further down.
     fs::path late_repo = make_repo(hf_root, "models--org--late", {"a.gguf"});
@@ -288,6 +404,16 @@ int main() {
         {"shardsib-a", json{{"checkpoint", "org/shardsib"}, {"recipe", "thinksound"}}},
         {"shardsib-b", json{{"checkpoint", "org/shardsib:sib-00001-of-00002.gguf"},
                             {"recipe", "llamacpp"}}},
+        {"dirfolder-a", json{{"checkpoint", "org/dirfolder"}, {"recipe", "thinksound"}}},
+        {"dirfile-b", json{{"checkpoint", "org/dirfolder:q4.gguf"}, {"recipe", "llamacpp"}}},
+        {"diraux-c", json{{"checkpoints", json{{"main", "org/dirfolder:main.gguf"},
+                                               {"mmproj", "org/dirfolder:mmproj.gguf"}}},
+                          {"recipe", "llamacpp"}}},
+        {"symfolder-a", json{{"checkpoint", "org/symdir"}, {"recipe", "thinksound"}}},
+        {"symfile-b", json{{"checkpoint", "org/symdir:q4.gguf"}, {"recipe", "llamacpp"}}},
+        {"symplumb-a", json{{"checkpoint", "org/symplumb"}, {"recipe", "thinksound"}}},
+        {"symblob-a", json{{"checkpoint", "org/symblob:model.gguf"}, {"recipe", "llamacpp"}}},
+        {"symblob-b", json{{"checkpoint", "org/symblob:other.gguf"}, {"recipe", "llamacpp"}}},
         {"selfshard-a", json{{"checkpoint", "org/selfshard:a-00001-of-00002.gguf"},
                              {"recipe", "llamacpp"}}},
         {"selfshard-b", json{{"checkpoint", "org/selfshard:other.gguf"},
@@ -304,6 +430,31 @@ int main() {
         {"norefs-b", json{{"checkpoint", "org/norefs:b.gguf"}, {"recipe", "llamacpp"}}},
         {"coex-a", json{{"checkpoint", "org/coex:a.gguf"}, {"recipe", "llamacpp"}}},
         {"coex-b", json{{"checkpoint", "org/coex:b.gguf"}, {"recipe", "llamacpp"}}},
+        {"mtp-a", json{{"checkpoints", json{{"main", "org/mtp:main.gguf"},
+                                            {"mmproj", "org/mtp:mmproj.gguf"}}},
+                       {"recipe", "llamacpp"}}},
+        {"mtp-b", json{{"checkpoints", json{{"main", "org/mtp:main.gguf"},
+                                            {"draft", "org/mtp:draft.gguf"},
+                                            {"mmproj", "org/mtp:mmproj.gguf"}}},
+                       {"recipe", "llamacpp"}}},
+        {"mtpboth-a", json{{"checkpoints", json{{"main", "org/mtpboth:main.gguf"},
+                                                {"mmproj", "org/mtpboth:mmproj.gguf"}}},
+                           {"recipe", "llamacpp"}}},
+        {"mtpboth-b", json{{"checkpoints", json{{"main", "org/mtpboth:main.gguf"},
+                                                {"draft", "org/mtpboth:draft.gguf"},
+                                                {"mmproj", "org/mtpboth:mmproj.gguf"}}},
+                           {"recipe", "llamacpp"}}},
+        {"folder-a", json{{"checkpoint", "org/folder:onnx/tiny"}, {"recipe", "moonshine"}}},
+        {"folder-b", json{{"checkpoint", "org/folder:onnx/small"}, {"recipe", "moonshine"}}},
+        {"guest-a", json{{"checkpoint", "org/guest:q4.gguf"}, {"recipe", "llamacpp"}}},
+        {"ownmulti-a", json{{"checkpoint", "org/ownmulti:mmproj.gguf"},
+                            {"recipe", "llamacpp"}}},
+        {"lone-a", json{{"checkpoint", "org/lone:q4.gguf"}, {"recipe", "llamacpp"}}},
+        {"basenam-a", json{{"checkpoint", "org/basenam:onnx/tiny/encoder.ort"},
+                           {"recipe", "llamacpp"}}},
+        {"twoown-a", json{{"checkpoint", "org/twoown:a.gguf"}, {"recipe", "llamacpp"}}},
+        {"twoown-b", json{{"checkpoint", "org/twoown:b.gguf"}, {"recipe", "llamacpp"}}},
+        {"trunc-a", json{{"checkpoint", "org/trunc:a.gguf"}, {"recipe", "llamacpp"}}},
         {"late-a", json{{"checkpoint", "org/late:a.gguf"}, {"recipe", "llamacpp"}}},
         {"late-b", json{{"checkpoint", "org/late:b.gguf"}, {"recipe", "llamacpp"}}},
         {"arrive-a", json{{"checkpoint", "org/arrive:a.gguf"}, {"recipe", "llamacpp"}}},
@@ -312,7 +463,7 @@ int main() {
     write_file(temp / "user_models.json", user_models.dump(2));
 
     {
-        ModelManager manager;
+        ModelManager manager(lemon::test::server_wired_config());
 
         // solo-b is listed but was never downloaded, so nothing else is living
         // in the repo and the whole thing goes.
@@ -521,11 +672,128 @@ int main() {
         check("the occupying model's file survives a sharded delete",
               fs::exists(selfshard_repo / "snapshots" / "snap" / "other.gguf"));
 
+        // dirfolder-a resolves to the snapshot folder, so the file this delete
+        // names is inside what that model reads rather than equal to it.
+        manager.delete_model("user.dirfile-b");
+        check("a folder claim covers the main checkpoint inside it",
+              fs::exists(dirfolder_repo / "snapshots" / "snap" / "q4.gguf"));
+        check("a folder claim keeps its own file",
+              fs::exists(dirfolder_repo / "snapshots" / "snap" / "model.safetensors"));
+
+        manager.delete_model("user.diraux-c");
+        check("a folder claim covers an auxiliary checkpoint inside it",
+              fs::exists(dirfolder_repo / "snapshots" / "snap" / "mmproj.gguf"));
+        check("a folder claim covers the main file beside that auxiliary one",
+              fs::exists(dirfolder_repo / "snapshots" / "snap" / "main.gguf"));
+        check("the repo a folder claim holds survives both deletes",
+              fs::exists(dirfolder_repo));
+
+        // The same folder claim over the blob layout.
+        if (links_made) {
+            manager.delete_model("user.symfile-b");
+            check("a folder claim covers a snapshot entry that links into blobs",
+                  fs::exists(symdir_repo / "snapshots" / "snap" / "q4.gguf"));
+            check("a folder claim keeps the blob one snapshot entry points at",
+                  fs::exists(blob_of(symdir_repo, "q4.gguf")));
+            check("the folder claim's own snapshot entry is left alone",
+                  fs::exists(symdir_repo / "snapshots" / "snap" / "model.safetensors"));
+
+            // A link into blobs/ is not the repository's plumbing.
+            manager.delete_model("user.symplumb-a");
+            check("a selective cleanup keeps a stranger's partial",
+                  fs::exists(symplumb_repo / "snapshots" / "snap" / "other.bin.partial"));
+            check("a folder checkpoint gives up its symlinked file",
+                  !fs::exists(symplumb_repo / "snapshots" / "snap" / "model.safetensors"));
+            check("a blob nothing references any more goes with its entry",
+                  !fs::exists(blob_of(symplumb_repo, "model.safetensors")));
+
+            // symblob-b holds the repo and snap-old holds the blob, so only this
+            // model's own link goes.
+            manager.delete_model("user.symblob-a");
+            check("a model gives up its own snapshot link",
+                  !fs::exists(symblob_repo / "snapshots" / "snap" / "model.gguf"));
+            check("a blob another snapshot still reaches is not orphaned",
+                  fs::exists(blob_of(symblob_repo, "model.gguf")) &&
+                      fs::is_symlink(symblob_repo / "snapshots" / "snap-old" / "model.gguf"));
+            check("the occupying model's link and blob are untouched",
+                  fs::exists(symblob_repo / "snapshots" / "snap" / "other.gguf") &&
+                      fs::exists(blob_of(symblob_repo, "other.gguf")));
+        }
+
         // Nothing else names this repo, so the interrupted download can only be
         // this model's own, however the quant token sits in the file name.
         manager.delete_model("user.midquant-a");
         check("a quant token inside the file name still marks the model's own download",
               !fs::exists(midquant_repo));
+
+        manager.delete_model("user.folder-a");
+        check("a folder variant gives up the files of its folder",
+              !fs::exists(folder_repo / "snapshots" / "snap" / "onnx" / "tiny" /
+                          "encoder.ort") &&
+                  !fs::exists(folder_repo / "snapshots" / "snap" / "onnx" / "tiny" /
+                              "tokenizer.bin"));
+        check("a folder variant leaves the sibling folder alone",
+              fs::exists(folder_repo / "snapshots" / "snap" / "onnx" / "small" /
+                         "encoder.ort") &&
+                  fs::exists(folder_repo / "snapshots" / "snap" / "onnx" / "small" /
+                             "tokenizer.bin"));
+        check("a repository another folder variant occupies survives",
+              fs::exists(folder_repo));
+
+        manager.delete_model("user.folder-b");
+        check("the last folder variant to go reclaims the repository",
+              !fs::exists(folder_repo));
+
+        manager.delete_model("user.guest-a");
+        check("a file another application downloaded survives an interrupted delete",
+              fs::exists(guest_repo / "snapshots" / "snap" / "q8.gguf"));
+        check("the interrupted download's own partial still goes",
+              !fs::exists(guest_repo / "snapshots" / "snap" / "q4.gguf.partial"));
+        check("the manifest that only described that partial goes too",
+              !fs::exists(guest_repo / "snapshots" / "snap" / ".download_manifest.json"));
+
+        manager.delete_model("user.ownmulti-a");
+        check("a download this model started accounts for the files it finished",
+              !fs::exists(ownmulti_repo));
+
+        manager.delete_model("user.lone-a");
+        check("an unrelated partial survives the last model naming the repo",
+              fs::exists(lone_repo / "snapshots" / "snap" / "q8.gguf.partial"));
+        check("the only model's own partial is still reclaimed",
+              !fs::exists(lone_repo / "snapshots" / "snap" / "q4.gguf.partial"));
+
+        manager.delete_model("user.basenam-a");
+        check("the same file name in another folder is not this model's",
+              fs::exists(basenam_repo / "snapshots" / "snap" / "onnx" / "small" /
+                         "encoder.ort"));
+        check("the model's own marker under its own folder is reclaimed",
+              !fs::exists(basenam_repo / "snapshots" / "snap" / "onnx" / "tiny" /
+                          "encoder.ort.partial"));
+
+        manager.delete_model("user.twoown-a");
+        check("one model's interrupted download is reclaimed beside another's",
+              !fs::exists(twoown_repo / "snapshots" / "rev-a" / "a.gguf.partial") &&
+                  !fs::exists(twoown_repo / "snapshots" / "rev-a" /
+                              ".download_manifest.json"));
+        check("the other model's interrupted download keeps its resume marker",
+              fs::exists(twoown_repo / "snapshots" / "rev-b" / "b.gguf.partial") &&
+                  fs::exists(twoown_repo / "snapshots" / "rev-b" /
+                             ".download_manifest.json"));
+
+        bool survived_truncated_manifest = true;
+        try {
+            manager.delete_model("user.trunc-a");
+        } catch (const std::exception&) {
+            survived_truncated_manifest = false;
+        }
+        check("a truncated download manifest does not stop the delete",
+              survived_truncated_manifest);
+        check("a manifest whose owner cannot be read is kept",
+              survived_truncated_manifest &&
+                  fs::exists(trunc_repo / "snapshots" / "snap" / ".download_manifest.json"));
+        check("the partial that names this model's variant is reclaimed anyway",
+              survived_truncated_manifest &&
+                  !fs::exists(trunc_repo / "snapshots" / "snap" / "a.gguf.partial"));
     }
 
     // Files that arrive after the model cache was built. The Hugging Face cache
@@ -533,7 +801,31 @@ int main() {
     // tells Lemonade it happened. Each case needs its own manager: deleting a user
     // model invalidates the cache, which would rebuild it and hide the staleness.
     {
-        ModelManager manager;
+        ModelManager manager(lemon::test::server_wired_config());
+
+        // mtp-b only names these files; its draft never arrived.
+        manager.delete_model("user.mtp-a");
+        check("a checkpoint no other downloaded model reads is removed",
+              !fs::exists(mtp_repo / "snapshots" / "snap" / "main.gguf"));
+        check("the shared auxiliary checkpoint goes with it",
+              !fs::exists(mtp_repo / "snapshots" / "snap" / "mmproj.gguf"));
+        check("the repo an undownloaded twin only lists is reclaimed",
+              !fs::exists(mtp_repo));
+
+        manager.delete_model("user.mtpboth-a");
+        check("a downloaded twin keeps the main file it reads",
+              fs::exists(mtpboth_repo / "snapshots" / "snap" / "main.gguf"));
+        check("a downloaded twin keeps the auxiliary file it reads",
+              fs::exists(mtpboth_repo / "snapshots" / "snap" / "mmproj.gguf"));
+        check("a downloaded twin keeps its own draft",
+              fs::exists(mtpboth_repo / "snapshots" / "snap" / "draft.gguf"));
+        manager.delete_model("user.mtpboth-b");
+        check("the last model to go takes the shared files with it",
+              !fs::exists(mtpboth_repo));
+    }
+
+    {
+        ModelManager manager(lemon::test::server_wired_config());
         (void)manager.get_model_info("user.late-a");  // builds the cache
 
         write_file(late_repo / "snapshots" / "snap" / "b.gguf");
@@ -548,7 +840,7 @@ int main() {
     }
 
     {
-        ModelManager manager;
+        ModelManager manager(lemon::test::server_wired_config());
         (void)manager.get_model_info("user.arrive-a");  // builds the cache
 
         // The deleted model's own files arrive late too, so its cached resolved
@@ -574,7 +866,7 @@ int main() {
 
         // The constructor sets the directory without starting a watcher, so
         // nothing invalidates the cache when the files below appear.
-        ModelManager manager(path_to_utf8(extra_root));
+        ModelManager manager(lemon::test::server_wired_config(path_to_utf8(extra_root)));
         (void)manager.get_model_info("user.adopted-a");  // nothing on disk yet
 
         fs::path adopted_repo = extra_root / "models--org--adopted";
@@ -602,7 +894,7 @@ int main() {
         write_file(ext / "snapshots" / "snap" / "Model-Q4_K_M.gguf");
         write_file(ext / "refs" / "main", "snap");
 
-        ModelManager manager(path_to_utf8(extra_root));
+        ModelManager manager(lemon::test::server_wired_config(path_to_utf8(extra_root)));
         bool threw = false;
         try {
             manager.delete_model("user.adoptleft-a");
@@ -635,7 +927,7 @@ int main() {
         write_file(ext / "snapshots" / "snap" / gguf);
         write_file(ext / "refs" / "main", "snap");
 
-        ModelManager manager(path_to_utf8(extra_root));
+        ModelManager manager(lemon::test::server_wired_config(path_to_utf8(extra_root)));
         if (!manager.model_exists(registered)) {
             std::printf("[SKIP] %s is no longer in the catalog\n", registered.c_str());
         } else {
@@ -667,7 +959,7 @@ int main() {
         write_file(ext / "snapshots" / "snap" / "vae.bin", "VAE");
         write_file(ext / "refs" / "main", "snap");
 
-        ModelManager manager(path_to_utf8(extra_root));
+        ModelManager manager(lemon::test::server_wired_config(path_to_utf8(extra_root)));
         manager.delete_model("user.adopt2-a");
         check("a sibling served from extra_models_dir keeps its managed file",
               fs::exists(managed / "snapshots" / "snap" / "b.gguf"));
