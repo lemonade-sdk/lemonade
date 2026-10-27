@@ -63,9 +63,9 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `model` | No | The classification model. Optional when exactly one classification model is loaded; that model is used. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `input` or `text` | Yes | Text to classify. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `top_k` | No | Return only the highest-scoring `k` labels. Defaults to every label. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `labels` | No | The labels to score `input` against. Required by a zero-shot model, and refused by every other model. The entries are unique and not blank. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `labels` | No | The labels to score `input` against. Required by a zero-shot model, and refused by every other model. The entries are unique, not blank, and carry no control character. How many are accepted, and how long each may be, is the model's token window to decide. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-A malformed request, such as one with a blank `input`, a non-positive `top_k`, or an empty or repeated `labels` entry, is rejected before any model loads.
+A malformed request, such as one with a blank `input`, a non-positive `top_k`, or a `labels` entry that is blank, repeated or holds a control character, is rejected before any model loads. How many labels a zero-shot model accepts, and how long each may be, depends on its token window, so the model enforces those limits itself and names both numbers when it refuses.
 
 ### Supported Models
 
@@ -117,6 +117,7 @@ Some upstream models declare only generic `LABEL_<n>` label names; their model c
 - `model` - The model that classified the input, including one chosen because it was the only one loaded.
 - `labels` - Each label's score, keyed by label name.
   - The label's score, in `[0, 1]`.
+- `truncated` - Present only when the model had to cut the input text to fit its token window before scoring. Labels are never cut, so the scores still cover every label sent. Absent whenever the whole input was scored.
 
 ### Errors
 
@@ -1654,36 +1655,49 @@ This endpoint does not take any parameters.
 ```json
 {
   "status": "ok",
-  "version": "2026.43.0~1689.0292987c",
+  "version": "2026.45.0~1719.034d3f52",
   "model_loaded": "Qwen3-0.6B-GGUF",
   "update_check_done": true,
   "all_models_loaded": [
     {
-      "model_name": "Qwen3-0.6B-GGUF",
-      "checkpoint": "unsloth/Qwen3-0.6B-GGUF:Q4_0",
-      "last_use": 66265129,
-      "type": "llm",
+      "model_name": "nomic-embed-text-v1-GGUF",
+      "checkpoint": "nomic-ai/nomic-embed-text-v1-GGUF:Q4_K_S",
+      "last_use": 872883217,
+      "type": "embedding",
       "device": "gpu",
       "pinned": false,
       "is_busy": false,
       "is_streaming": false,
-      "backend_url": "http://127.0.0.1:8001/v1",
-      "pid": 193678,
-      "launch_command": ["~/.cache/lemonade/bin/llamacpp/vulkan/llama-server", "-m", "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "--ctx-size", "40960", "--port", "8001", "--jinja", ... 13 more],
+      "backend_url": "http://127.0.0.1:8002/v1",
+      "pid": 15836,
+      "launch_command": [
+        "~/.cache/lemonade\\bin\\llamacpp\\vulkan\\llama-server.exe",
+        "-m",
+        "~\\.cache\\huggingface\\hub/models--nomic-ai--nomic-embed-text-v1-GGUF\\snapshots\\90c80ac5c2a0d13de9a36cf1dec39f34acee54a8\\nomic-embed-text-v1.Q4_K_S.gguf",
+        "--ctx-size",
+        "8192",
+        "--port",
+        "8002",
+        "--jinja",
+        "--metrics",
+        "-lv",
+        "4",
+        "--embeddings",
+        "--parallel",
+        "1"
+      ],
       "recipe": "llamacpp",
-      "recipe_options": {
-        "ctx_size": 40960,
-        "llamacpp_args": "--temp 0.6 --top-p 0.85 --top-k 20 --min-p 0.0 --repeat-penalty 1.0 --parallel 1"
-      },
+      "recipe_options": {"ctx_size": 8192, "llamacpp_args": "--parallel 1"},
       "residency_class": "standard",
-      "slot_pool": "standard/llm",
+      "slot_pool": "standard/embedding",
       "status": "ready",
       "backend_alive": true,
       "backend_health": "ready",
       "loaded": true,
       "watchdog_reset": false,
-      "max_context_window": 40960
-    }
+      "max_context_window": 2048
+    },
+    ... 1 more
   ],
   "pinned_models": {"classification": 0, ... 6 more},
   "max_models": {
@@ -1695,7 +1709,7 @@ This endpoint does not take any parameters.
     "tts": 1,
     "classification": 1
   },
-  "websocket_port": 9001,
+  "websocket_port": 9000,
   "telemetry": {"enabled": false},
   "pinned_helper_models": {"classification": 0, ... 6 more}
 }
@@ -1782,17 +1796,17 @@ This endpoint does not take any parameters.
 
 ```json
 {
-  "time_to_first_token": 0.010258,
-  "tokens_per_second": 330.7515771574438,
-  "input_tokens": 15,
+  "time_to_first_token": 0.00445,
+  "tokens_per_second": 350.4584986185915,
+  "input_tokens": 1,
   "output_tokens": 327,
   "prompt_tokens": 15,
-  "cache_tokens": 0,
-  "request_count_total": 1,
-  "input_tokens_total": 15,
-  "output_tokens_total": 327,
-  "prompt_tokens_total": 15,
-  "cache_tokens_total": 0,
+  "cache_tokens": 14,
+  "request_count_total": 9,
+  "input_tokens_total": 165,
+  "output_tokens_total": 2104,
+  "prompt_tokens_total": 226,
+  "cache_tokens_total": 75,
   "routing_decisions_total": 0,
   "routing_switches_total": 0,
   "live": {"active_requests": 0, "estimated_tokens_per_second": 0.0}
@@ -1801,8 +1815,8 @@ This endpoint does not take any parameters.
 
 ### Response format
 
-- `time_to_first_token` - Time in seconds until the first token was generated
-- `tokens_per_second` - Generation speed in tokens per second
+- `time_to_first_token` - Time in seconds until the first token was generated, as reported by the backend for the latest request; a reliable TTFT requires backend timing, since the first streamed chunk is not necessarily the first token. `null` when no timing was available (e.g. non-streaming OpenAI-compatible cloud completions)
+- `tokens_per_second` - Generation speed in tokens per second, as reported by the backend or calculated from a streamed response for the latest request; `null` when no timing was available (e.g. non-streaming OpenAI-compatible cloud completions)
 - `input_tokens` - Number of tokens processed
 - `output_tokens` - Number of tokens generated
 - `prompt_tokens` - Total prompt tokens including cached tokens
@@ -1995,11 +2009,7 @@ This endpoint does not take any parameters.
 
 ### Backend Tiers and Formats
 
-| Tier | Meaning |
-|------|---------|
-| `core` | Supported by Lemonade's maintainers for production use. |
-| `experimental` | Provided by Lemonade's maintainers, not supported for production use. |
-| `guest` | Developed and published outside Lemonade's maintainers. Use at your own risk. The models of a recipe whose only backends on this system are guest backends stay hidden from [`GET /v1/models`](./openai.md#get-v1models) with `show_all=true` until one of those backends is installed. |
+A backend's tier is `core`, `experimental`, or `guest`, as defined by the [backend support tier policy](../dev/adding-a-backend.md#support-tier). The models of a recipe whose only backends on this system are guest backends stay hidden from [`GET /v1/models`](./openai.md#get-v1models) with `show_all=true` until one of those backends is installed.
 
 | Format | Meaning |
 |--------|---------|

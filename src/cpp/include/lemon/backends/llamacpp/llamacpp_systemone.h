@@ -17,8 +17,9 @@ nlohmann::ordered_json build_systemone_classify_request(const std::string& text,
                                                         const nlohmann::json& labels);
 
 // The /v1/systemone response to that body -> the /v1/classify shape
-// {"labels": {label: probability}}, keeping the `top_k` highest when top_k > 0.
-// Throws std::runtime_error unless the answer scores exactly the given labels.
+// {"labels": {label: probability}, "reports_truncation": true}, keeping the
+// `top_k` highest when top_k > 0. Throws std::runtime_error unless the answer
+// scores exactly the given labels.
 nlohmann::json systemone_classify_response(const nlohmann::json& response,
                                            const nlohmann::json& labels,
                                            int top_k);

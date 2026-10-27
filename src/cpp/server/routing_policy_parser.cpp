@@ -408,6 +408,20 @@ json parse_classifier_configs(const json& routing,
             }
         }
 
+        if (classifier.contains("on_truncation")) {
+            if (type != "zero_shot" && type != "classifier") {
+                throw std::invalid_argument(
+                    path + ".on_truncation is accepted on the model-backed types "
+                    "('classifier' and 'zero_shot'), not '" +
+                    type + "', which reads no token window it can overflow");
+            }
+            const std::string on_truncation =
+                optional_string(classifier, "on_truncation", path);
+            if (on_truncation != "score" && on_truncation != "fail") {
+                throw std::invalid_argument(path + ".on_truncation must be score or fail");
+            }
+        }
+
         json item = classifier;
         if (classifier.contains("model")) {
             const std::string original = optional_string(classifier, "model", path);
@@ -436,6 +450,12 @@ json parse_classifier_configs(const json& routing,
                         model_type_to_string(model_type) +
                         "', which cannot serve as a classifier (needs an LLM or "
                         "classification model)");
+                }
+                if (type == "classifier" && model_type == ModelType::LLM &&
+                    classifier.contains("on_truncation")) {
+                    throw std::invalid_argument(
+                        path + ".on_truncation needs a classification model; '" + original +
+                        "' is an LLM, and a chat model reports no truncation");
                 }
 
                 if ((type == "zero_shot" || type == "systemone") &&
@@ -546,7 +566,7 @@ const std::set<std::string>& routing_router_keys() {
 const std::set<std::string>& routing_classifier_keys() {
     static const std::set<std::string> keys = {
         "id", "type", "model", "prompt", "labels", "default_label",
-        "reference_phrases", "question", "on_error"};
+        "reference_phrases", "question", "on_error", "on_truncation"};
     return keys;
 }
 

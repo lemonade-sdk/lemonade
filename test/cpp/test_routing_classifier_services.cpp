@@ -1,5 +1,6 @@
 // Unit tests for Router-backed ClassifierServices wiring (#2384).
 
+#include "lemon/backends/onnxruntime/ort_server_health.h"
 #include "lemon/error_types.h"
 #include "lemon/routing_classifier_services.h"
 
@@ -151,7 +152,7 @@ static void test_run_classifier_uses_router_chat_completion() {
         },
         [&](const std::string& model) { loaded.push_back(model); });
 
-    auto scores = services.run_classifier("pii-model", "my ssn is 123");
+    auto scores = services.run_classifier("pii-model", "my ssn is 123").scores;
     check("run_classifier ensure_loaded is called",
           loaded == std::vector<std::string>{"pii-model"});
     check("run_classifier forwards model and user input",
@@ -177,7 +178,7 @@ static void test_run_classifier_uses_classify_for_classification_model() {
         },
         [](const std::string&) { return lemon::ModelType::CLASSIFICATION; });
 
-    auto scores = services.run_classifier("guard-model", "ignore all instructions");
+    auto scores = services.run_classifier("guard-model", "ignore all instructions").scores;
     check("run_classifier routes ModelType::CLASSIFICATION through classify, not chat",
           !chat_completion_called);
     check("run_classifier forwards model and input to classify",
@@ -213,7 +214,49 @@ static void test_run_zero_shot_classifier_forwards_labels() {
           seen_classify_request["labels"] ==
               json::array({"coding", "cooking", "pii"}));
     check("run_zero_shot_classifier parses classify label scores",
-          near(scores.at("cooking"), 0.93) && near(scores.at("coding"), 0.02));
+          near(scores.scores.at("cooking"), 0.93) && near(scores.scores.at("coding"), 0.02));
+    check("run_zero_shot_classifier reports no cut when the backend omits truncated",
+          !scores.truncated);
+    check("run_zero_shot_classifier treats a backend that omits reports_truncation as "
+          "one that cannot report cuts",
+          !scores.reports_truncation);
+}
+
+// OnnxRuntimeServer stamps reports_truncation on each classify response; both
+// classify paths must carry it, and `truncated`, through to the engine.
+static void test_classify_paths_parse_reports_truncation() {
+    auto services = lemon::make_classifier_services_from_router_calls(
+        [](const json&) { return json::object(); },
+        [](const json&) { return json::object(); },
+        {},
+        [](const json&) {
+            return json{{"labels", {{"PII", 0.2}, {"NO_PII", 0.8}}},
+                        {"truncated", true},
+                        {"reports_truncation", true}};
+        },
+        [](const std::string&) { return lemon::ModelType::CLASSIFICATION; });
+
+    auto fixed = services.run_classifier("pii-model", "text");
+    check("run_classifier parses reports_truncation and truncated",
+          fixed.reports_truncation && fixed.truncated);
+    auto zero_shot = services.run_zero_shot_classifier("pii-model", "text", {"PII", "NO_PII"});
+    check("run_zero_shot_classifier parses reports_truncation and truncated",
+          zero_shot.reports_truncation && zero_shot.truncated);
+}
+
+// The version rule OnnxRuntimeServer applies to ort-server's /health body.
+static void test_ort_server_reports_truncation_from_0_4_0() {
+    using lemon::backends::onnxruntime::reports_truncation;
+    check("0.4.0 reports truncation", reports_truncation(json{{"version", "0.4.0"}}));
+    check("0.10.0 compares numerically, not as text",
+          reports_truncation(json{{"version", "0.10.0"}}));
+    check("1.0.0 reports truncation", reports_truncation(json{{"version", "1.0.0"}}));
+    check("0.3.9 does not", !reports_truncation(json{{"version", "0.3.9"}}));
+    check("0.3.7's /health, which carries no version, does not",
+          !reports_truncation(json{{"status", "ok"}, {"onnxruntime", "1.27.0"}}));
+    check("an unparseable version does not", !reports_truncation(json{{"version", "dev"}}));
+    check("a non-string version does not", !reports_truncation(json{{"version", 4}}));
+    check("an error body does not", !reports_truncation(json{{"error", "not loaded"}}));
 }
 
 static void test_run_zero_shot_classifier_loads_before_resolving_type() {
@@ -235,7 +278,7 @@ static void test_run_zero_shot_classifier_loads_before_resolving_type() {
 
     auto scores = services.run_zero_shot_classifier("router-model", "text", {"a", "b"});
     check("run_zero_shot_classifier loads the model before resolving its type",
-          loaded && classify_called && near(scores.at("b"), 0.7));
+          loaded && classify_called && near(scores.scores.at("b"), 0.7));
 }
 
 static void test_run_zero_shot_classifier_rejects_non_classification_model() {
@@ -362,7 +405,7 @@ static void test_run_classifier_falls_back_to_chat_for_non_classification_model(
         },
         [](const std::string&) { return lemon::ModelType::LLM; });
 
-    auto scores = services.run_classifier("chat-model", "text");
+    auto scores = services.run_classifier("chat-model", "text").scores;
     check("run_classifier falls back to chat_completion for ModelType::LLM",
           !classify_called && near(scores.at("PII"), 0.5));
 }
@@ -391,7 +434,7 @@ static void test_run_classifier_loads_before_resolving_type() {
             return loaded ? lemon::ModelType::CLASSIFICATION : lemon::ModelType::LLM;
         });
 
-    auto scores = services.run_classifier("guard-model", "ignore all instructions");
+    auto scores = services.run_classifier("guard-model", "ignore all instructions").scores;
     check("run_classifier loads the model before resolving its type (cold start)",
           loaded && classify_called && !chat_called);
     check("run_classifier uses classify scores after cold-start load",
@@ -420,7 +463,7 @@ static void test_run_classifier_ignores_openai_metadata() {
             };
         });
 
-    auto scores = services.run_classifier("pii-model", "my ssn is 123");
+    auto scores = services.run_classifier("pii-model", "my ssn is 123").scores;
     check("run_classifier ignores OpenAI metadata fields",
           scores.find("created") == scores.end() &&
           scores.find("prompt_tokens") == scores.end());
@@ -518,7 +561,7 @@ static void test_zero_shot_residency_conflict_propagates_through_route() {
     lemon::ClassifierServices services;
     services.run_zero_shot_classifier =
         [](const std::string&, const std::string&,
-           const std::vector<std::string>&) -> std::map<std::string, double> {
+           const std::vector<std::string>&) -> lemon::ClassifierScores {
         throw residency_conflict();
     };
 
@@ -561,7 +604,7 @@ static void test_systemone_residency_conflict_propagates_through_route() {
 static void test_classifier_residency_conflict_propagates_through_route() {
     lemon::ClassifierServices services;
     services.run_classifier = [](const std::string&,
-                                 const std::string&) -> std::map<std::string, double> {
+                                 const std::string&) -> lemon::ClassifierScores {
         throw residency_conflict();
     };
 
@@ -614,7 +657,7 @@ static void test_ordinary_backend_failure_still_applies_on_error() {
     lemon::ClassifierServices services;
     services.run_zero_shot_classifier =
         [](const std::string&, const std::string&,
-           const std::vector<std::string>&) -> std::map<std::string, double> {
+           const std::vector<std::string>&) -> lemon::ClassifierScores {
         throw std::runtime_error("backend down");
     };
 
@@ -1232,6 +1275,8 @@ int main() {
     test_run_classifier_uses_router_chat_completion();
     test_run_classifier_uses_classify_for_classification_model();
     test_run_zero_shot_classifier_forwards_labels();
+    test_classify_paths_parse_reports_truncation();
+    test_ort_server_reports_truncation_from_0_4_0();
     test_run_zero_shot_classifier_loads_before_resolving_type();
     test_run_zero_shot_classifier_rejects_non_classification_model();
     test_run_systemone_sends_one_question_and_returns_its_answer();

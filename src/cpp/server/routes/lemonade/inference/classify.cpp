@@ -1,5 +1,7 @@
-#include <set>
+#include <string>
+#include <vector>
 
+#include "lemon/classification_labels.h"
 #include "lemon/model_manager.h"
 #include "lemon/model_types.h"
 #include "lemon/router.h"
@@ -27,10 +29,12 @@ const RouteArg kInput{"input", ArgIn::JsonBody, {{"type", "string"}, {"pattern",
                       "Text to classify.", {"text"}};
 const RouteArg kTopK{"top_k", ArgIn::JsonBody, {{"type", "integer"}, {"minimum", 1}, {"maximum", 1000000}}, false, Support::Available,
                      "Return only the highest-scoring `k` labels. Defaults to every label."};
-const RouteArg kLabels{"labels", ArgIn::JsonBody, {{"type", "array"}, {"items", {{"type", "string"}, {"pattern", "\\S"}}}},
+const RouteArg kLabels{"labels", ArgIn::JsonBody, {{"type", "array"}, {"items", {{"type", "string"}}}},
                        false, Support::Available,
                        "The labels to score `input` against. Required by a zero-shot model, and refused by "
-                       "every other model. The entries are unique and not blank."};
+                       "every other model. The entries are unique, not blank, and carry no control "
+                       "character. How many are accepted, and how long each may be, is the model's "
+                       "token window to decide."};
 
 class ClassifyRoute : public ModelRoute {
 public:
@@ -51,8 +55,11 @@ public:
             "zero-shot. It provides the classification that the router's `classifier` and "
             "`zero_shot` conditions use.";
         s.notes = {
-            "A malformed request, such as one with a blank `input`, a non-positive `top_k`, or an "
-            "empty or repeated `labels` entry, is rejected before any model loads.",
+            "A malformed request, such as one with a blank `input`, a non-positive `top_k`, or a "
+            "`labels` entry that is blank, repeated or holds a control character, is rejected "
+            "before any model loads. How many labels a zero-shot model accepts, and how long each "
+            "may be, depends on its token window, so the model enforces those limits itself and "
+            "names both numbers when it refuses.",
             "### Supported Models\n\n"
             "Single-sequence encoder families: BERT, DistilBERT, RoBERTa, XLM-RoBERTa, DeBERTa "
             "(v1/v2), ELECTRA, ALBERT and CamemBERT. A stock `optimum-cli export onnx` directory of "
@@ -82,6 +89,10 @@ public:
                     "type": "object",
                     "description": "Each label's score, keyed by label name.",
                     "additionalProperties": {"type": "number", "description": "The label's score, in `[0, 1]`."}
+                },
+                "truncated": {
+                    "const": true,
+                    "description": "Present only when the model had to cut the input text to fit its token window before scoring. Labels are never cut, so the scores still cover every label sent. Absent whenever the whole input was scored."
                 }
             }
         })");
@@ -120,13 +131,15 @@ protected:
                 write_openai_error(res, kArgInvalid, "'labels' must contain at least one label");
                 return false;
             }
-            std::set<std::string> seen;
-            for (const auto& label : labels) {
-                if (!seen.insert(label.get<std::string>()).second) {
-                    write_openai_error(res, kArgInvalid,
-                        "'labels' contains a duplicate entry: '" + label.get<std::string>() + "'");
-                    return false;
-                }
+            std::vector<std::string> values;
+            values.reserve(labels.size());
+            for (const auto& entry : labels) {
+                values.push_back(entry.get<std::string>());
+            }
+            const std::string reason = validate_label_list(values);
+            if (!reason.empty()) {
+                write_openai_error(res, kArgInvalid, "'labels': " + reason);
+                return false;
             }
         }
 
@@ -195,6 +208,10 @@ protected:
             {"model", req.model.empty() ? ctx_.router->get_loaded_model() : req.model},
             {"labels", response["labels"]},
         };
+        if (response.contains("truncated") && response["truncated"].is_boolean() &&
+            response["truncated"].get<bool>()) {
+            enveloped["truncated"] = true;
+        }
         res.set_content(enveloped.dump(), "application/json");
     }
 

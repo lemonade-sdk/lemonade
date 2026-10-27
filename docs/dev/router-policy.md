@@ -161,10 +161,16 @@ and every entry's `model` must be one of `components`:
 - `classifier` uses the model's `{label: score}` output; declare its `labels`
   (an onnxruntime encoder serves `/v1/classify`, else it runs as an
   LLM-as-classifier via chat).
-- `zero_shot` sends your `labels` to the model on every request, because the
-  model has no per-label head to read them off, the label list is an input to
+- `zero_shot` sends your `labels` to the model on every request: the model has
+  no per-label head to read them off, so the label list is an input to the graph.
 
-  The `model` must be a classification model, checked when the policy is
+  Every classifier's `labels` are checked at registration: unique, not blank,
+  and free of control characters because a label the backend would reject
+  turns every request into an `on_error` fallback. **How many** labels a
+  zero-shot model accepts, and how long each may be, is not checked here: both
+  derive from that model's token window and are tunable per model, so the model
+  enforces them and names the numbers in its error.
+- `systemone`: the `model` must be a classification model, checked when the policy is
   registered. A classification model without the `systemone` label (an ONNX
   classifier) fails each request and the rule applies `on_error`.
 - `llm` shows the request to an LLM and asks it to choose one of `labels` (the
@@ -189,6 +195,65 @@ and every entry's `model` must be one of `components`:
 > and replaces rules entirely (it's shorthand for a single `llm` classifier whose
 > labels are the candidate models); a `type: "llm"` classifier only produces a
 > label that rules combine with any other condition.
+
+### Truncated input (`on_truncation`)
+
+The two model-backed types, `classifier` and `zero_shot`, read a token window.
+When the input overflows it, the backend cuts the text (never the labels) and
+reports the cut, and each type loses a different part:
+
+| Type | The cut keeps | What disappears |
+|---|---|---|
+| `zero_shot` | the head and the tail, with `\n...\n` between | the middle |
+| `classifier` | the head, plus the final separator | **the end** |
+
+A score computed from cut text is still a *success*, so `on_error` never sees
+it. `on_truncation` decides what the cut means:
+
+| Value | Behaviour |
+|---|---|
+| `score` (default) | Use the scores anyway. Fine for topic routing. |
+| `fail` | Treat the cut as an evaluation failure, so `on_error` applies. |
+
+`fail` also needs a backend that reports its cuts. ort-server does from 0.4.0.
+An older ort-server cuts without saying so, and lemond warns when it loads one.
+Against it, every evaluation under `fail` counts as a failure, so `on_error`
+applies. `score` is unaffected. A llama.cpp decision model never cuts: it
+refuses an input that is too long, so `on_error` applies.
+
+The other types never read a token window and refuse the option. A `classifier`
+backed by a chat LLM refuses it too: a chat model reports no cut, so `fail`
+could never fire.
+
+For a privacy rule, where a missed entity is a leak rather than a wrong model,
+pair `fail` with `on_error: match_true`. That forces the condition true and
+**fires the rule**, which protects the request only when all three hold:
+
+1. The rule routes to a **local** model. A rule that fires into a cloud model
+   sends the whole uncut prompt there.
+2. The engine reaches the rule **before** any cloud rule. Rules are read in
+   order and the first match wins, so a cloud rule placed above this one takes
+   the request first and the guard never runs.
+3. The personal data is in the **routing input**. The classifier reads only the
+   last user message, so data in an earlier turn is never scored.
+
+```json
+"classifiers": [
+  { "id": "pii", "type": "zero_shot", "model": "Prompt-Router-ONNX",
+    "labels": ["contains personal data", "no personal data"],
+    "on_truncation": "fail", "on_error": "match_true" },
+  { "id": "topic", "type": "zero_shot", "model": "Prompt-Router-ONNX",
+    "labels": ["code", "general"] }
+],
+"rules": [
+  { "id": "pii-to-local",
+    "match": { "classifier": "pii", "label": "contains personal data", "min_score": 0.5 },
+    "route_to": "LocalLLM" },
+  { "id": "code-to-cloud",
+    "match": { "classifier": "topic", "label": "code" },
+    "route_to": "CloudLLM" }
+]
+```
 
 ## Registering and invoking
 
@@ -247,6 +312,17 @@ also carries an **`x_lemonade_route`** object:
 
 `route_to` is the candidate that actually answered. For streaming responses the
 same object is attached to the first SSE event as `x_lemonade_route`.
+
+A failing **`classifier`** or **`zero_shot`** condition adds an **`error`** string
+to its own trace entry, naming the reason the backend gave. Without it a failed
+condition and one that simply scored below its threshold both read as
+`"result": false`, and `on_error` hides which of the two happened.
+
+A **`classifier`** or **`zero_shot`** entry also carries **`"truncated": true`**
+when the backend had to cut the input text to fit its token window before
+scoring. A `zero_shot` model never cuts its labels, a label pooled from half
+its tokens would score something the model only partly read. The key is absent
+whenever the whole input was scored, so its absence is the signal, not `false`.
 
 ## Cloud candidates
 

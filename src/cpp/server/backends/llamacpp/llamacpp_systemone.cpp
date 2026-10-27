@@ -92,7 +92,9 @@ nlohmann::json systemone_classify_response(const nlohmann::json& response,
 
     nlohmann::json scores = nlohmann::json::object();
     for (const auto& [label, probability] : ranked) scores[label] = probability;
-    return nlohmann::json{{"labels", std::move(scores)}};
+    // llama-server refuses an input longer than its context instead of cutting
+    // it, so the absent `truncated` is a real "not cut" for on_truncation=fail.
+    return nlohmann::json{{"labels", std::move(scores)}, {"reports_truncation", true}};
 }
 
 int encoder_decision_ctx_size(int requested, int64_t trained_window) {

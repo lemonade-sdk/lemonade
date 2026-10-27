@@ -73,7 +73,7 @@ Also served at `/v1/reranking` and `/v1/reranker`. Requires `LEMONADE_API_KEY` w
 {
   "model": "bge-reranker-v2-m3-GGUF",
   "object": "list",
-  "results": [{"index": 0, "relevance_score": 8.634263038635254}, ... 2 more],
+  "results": [{"index": 0, "relevance_score": 8.621444702148438}, ... 2 more],
   "usage": {"prompt_tokens": 51, "total_tokens": 51}
 }
 ```
@@ -189,8 +189,8 @@ Answers depend on the model, on the wording of each question, and on the order o
     "route": {
       "type": "choice",
       "choice": "billing",
-      "probabilities": {"billing": 0.9913013343012844, ... 2 more},
-      "confidence": 0.9869520014519266
+      "probabilities": {"billing": 0.9914327368198715, ... 2 more},
+      "confidence": 0.9871491052298071
     },
     ... 2 more
   },
@@ -273,10 +273,10 @@ This endpoint does not take any parameters.
     "next_token": [
       {"has_next_token": false, "has_new_line": false, "n_remain": -1, "n_decoded": 0}
     ],
-    "id_task": 212,
-    "n_ctx": 40960,
+    "id_task": 276,
+    "n_ctx": 4096,
     "is_processing": false,
-    "n_prompt_tokens": 224,
+    "n_prompt_tokens": 341,
     "n_prompt_tokens_cache": 0,
     "n_prompt_tokens_processed": 0,
     "params": {
@@ -324,7 +324,7 @@ This endpoint does not take any parameters.
       "seed": 4294967295,
       "speculative.types": "none",
       "stream": false,
-      "temperature": 0.0,
+      "temperature": 0.6000000238418579,
       "timings_per_token": false,
       "top_k": 20,
       "top_n_sigma": -1.0,
@@ -413,8 +413,8 @@ Every action needs llama.cpp started with `--slot-save-path`. Set it for every l
   "id_slot": 0,
   "filename": "my_conversation_cache.bin",
   "n_saved": 46,
-  "n_written": 5277100,
-  "timings": {"save_ms": 3.777}
+  "n_written": 5277108,
+  "timings": {"save_ms": 8.225}
 }
 ```
 
@@ -445,8 +445,8 @@ Every action needs llama.cpp started with `--slot-save-path`. Set it for every l
   "id_slot": 0,
   "filename": "my_conversation_cache.bin",
   "n_restored": 46,
-  "n_read": 5277100,
-  "timings": {"restore_ms": 0.879}
+  "n_read": 5277108,
+  "timings": {"restore_ms": 1.161}
 }
 ```
 
@@ -469,7 +469,7 @@ Every action needs llama.cpp started with `--slot-save-path`. Set it for every l
 **Response:** `200 OK`
 
 ```json
-{"id_slot": 0, "n_erased": 224}
+{"id_slot": 0, "n_erased": 46}
 ```
 
 ### Response format

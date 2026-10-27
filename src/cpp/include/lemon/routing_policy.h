@@ -5,6 +5,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -115,6 +116,12 @@ struct Score {
     // — surfaced in the trace, never used for matching.
     std::string rationale;
 
+    // Why the classifier failed, when ok=false.
+    std::string error;
+
+    // The backend cut the input to fit its token window before scoring.
+    bool truncated = false;
+
     // Score for an explicit label, or 0.0 if absent. Extra labels returned by
     // a classifier are ignored unless a condition references them.
     double score_of(const std::string& label) const {
@@ -151,9 +158,29 @@ inline const char* on_error_to_string(OnError e) {
     return e == OnError::MatchTrue ? "match_true" : "match_false";
 }
 
+enum class OnTruncation {
+    Score,
+    Fail,
+};
+
+inline OnTruncation parse_on_truncation(const std::string& s) {
+    if (s == "fail") return OnTruncation::Fail;
+    if (s == "score") return OnTruncation::Score;
+    throw std::invalid_argument("on_truncation must be score or fail, got '" + s + "'");
+}
+
 // ---------------------------------------------------------------------------
 // Backend injection seam
 // ---------------------------------------------------------------------------
+
+// What a classification backend answers: the per-label scores, plus whether it
+// had to cut the input text to fit its token window.
+struct ClassifierScores {
+    std::map<std::string, double> scores;
+    bool truncated = false;
+    // False when the backend cannot report a cut, so `truncated` proves nothing.
+    bool reports_truncation = false;
+};
 
 // The ONLY way the pure engine touches live backends. Real implementations bind
 // these to the Router (embeddings / classifier-model invocation / chat); tests
@@ -165,16 +192,16 @@ struct ClassifierServices {
     std::function<std::vector<float>(const std::string& model,
                                      const std::string& text)> embed;
 
-    // Run a text-classification `model` over `text`; returns label -> score.
-    // Powers the generic `classifier` type.
-    std::function<std::map<std::string, double>(const std::string& model,
-                                                const std::string& text)> run_classifier;
+    // Run a text-classification `model` over `text`. Powers the generic
+    // `classifier` type.
+    std::function<ClassifierScores(const std::string& model,
+                                   const std::string& text)> run_classifier;
 
-    // Score `text` against a caller-supplied `labels` list; returns label ->
-    // score. Powers the `zero_shot` type.
-    std::function<std::map<std::string, double>(const std::string& model,
-                                                const std::string& text,
-                                                const std::vector<std::string>& labels)>
+    // Score `text` against a caller-supplied `labels` list. Powers the
+    // `zero_shot` type.
+    std::function<ClassifierScores(const std::string& model,
+                                   const std::string& text,
+                                   const std::vector<std::string>& labels)>
         run_zero_shot_classifier;
 
     // Powers the `systemone` type (see ISystemOneServer). Maps to
@@ -332,6 +359,11 @@ struct TraceEntry {
                                     // candidate this score belongs to)
     std::string rationale;          // optional; the `llm` router records the
                                     // model's short pick-reason here (empty otherwise)
+    std::string error;              // optional; why a model-backed classifier failed
+                                    // (empty unless the score failed with a reason)
+    bool truncated = false;         // optional; the backend cut the input text to
+                                    // fit its window before scoring (either
+                                    // model-backed type)
 };
 
 // The engine's output for one request. Pure selection — no verdict /

@@ -247,6 +247,11 @@ std::map<std::string, double> parse_classifier_scores(const json& response) {
     throw std::runtime_error("classifier response did not contain label scores");
 }
 
+bool parse_flag(const json& response, const char* key) {
+    return response.is_object() && response.contains(key) && response[key].is_boolean() &&
+           response[key].get<bool>();
+}
+
 ClassifierServices make_classifier_services_from_router_calls(
     RouterJsonCall embeddings,
     RouterJsonCall chat_completion,
@@ -278,7 +283,7 @@ ClassifierServices make_classifier_services_from_router_calls(
     services.run_classifier = [chat_completion_call, classify_call, get_model_type,
                                ensure_loaded](const std::string& model,
                                               const std::string& input)
-        -> std::map<std::string, double> {
+        -> ClassifierScores {
         // Load the model BEFORE resolving its runtime type. The production
         // resolver (Router::get_model_type) reports ModelType::LLM until the
         // backend is loaded and alive, so resolving first would make a cold-start
@@ -303,7 +308,12 @@ ClassifierServices make_classifier_services_from_router_calls(
                 {"model", model},
                 {"input", input},
             };
-            return parse_classifier_scores((*classify_call)(request));
+            const json response = (*classify_call)(request);
+            ClassifierScores answer;
+            answer.scores = parse_classifier_scores(response);
+            answer.truncated = parse_flag(response, "truncated");
+            answer.reports_truncation = parse_flag(response, "reports_truncation");
+            return answer;
         }
 
         if (!*chat_completion_call) {
@@ -325,13 +335,17 @@ ClassifierServices make_classifier_services_from_router_calls(
                 },
             })},
         };
-        return parse_classifier_scores((*chat_completion_call)(request));
+        // A chat backend reports no cut: `truncated` and `reports_truncation`
+        // both stay false.
+        ClassifierScores answer;
+        answer.scores = parse_classifier_scores((*chat_completion_call)(request));
+        return answer;
     };
 
     services.run_zero_shot_classifier =
         [classify_call, get_model_type, ensure_loaded](
             const std::string& model, const std::string& input,
-            const std::vector<std::string>& labels) -> std::map<std::string, double> {
+            const std::vector<std::string>& labels) -> ClassifierScores {
         if (!classify_call || !*classify_call) {
             throw std::runtime_error("Router classify call is not configured");
         }
@@ -350,7 +364,13 @@ ClassifierServices make_classifier_services_from_router_calls(
             {"input", input},
             {"labels", labels},
         };
-        return parse_classifier_scores((*classify_call)(request));
+        const json response = (*classify_call)(request);
+
+        ClassifierScores answer;
+        answer.scores = parse_classifier_scores(response);
+        answer.truncated = parse_flag(response, "truncated");
+        answer.reports_truncation = parse_flag(response, "reports_truncation");
+        return answer;
     };
 
     services.run_systemone =

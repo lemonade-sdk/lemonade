@@ -1,7 +1,10 @@
 #include "lemon/routing_policy.h"
+#include "lemon/classification_labels.h"
 #include "lemon/error_types.h"
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <mutex>
@@ -19,6 +22,91 @@ Score failed_score() {
     Score score;
     score.ok = false;
     return score;
+}
+
+constexpr size_t kMaxErrorChars = 256;
+
+Score failed_score(std::string reason) {
+    Score score = failed_score();
+    if (reason.size() > kMaxErrorChars) {
+        size_t cut = kMaxErrorChars - 3;
+        while (cut > 0 && (static_cast<unsigned char>(reason[cut]) & 0xC0) == 0x80) --cut;
+        reason.resize(cut);
+        reason += "...";
+    }
+    score.error = std::move(reason);
+    return score;
+}
+
+constexpr long long kLogIntervalSeconds = 60;
+
+bool rate_limited(std::atomic<unsigned long long>& counter,
+                  std::atomic<long long>& last_log_s, unsigned long long& n) {
+    n = ++counter;
+    const long long now = std::chrono::duration_cast<std::chrono::seconds>(
+                              std::chrono::steady_clock::now().time_since_epoch())
+                              .count();
+    const long long previous = last_log_s.load(std::memory_order_relaxed);
+    if (n != 1 && now - previous < kLogIntervalSeconds) return false;
+    last_log_s.store(now, std::memory_order_relaxed);
+    return true;
+}
+
+void log_classifier_failure(const std::string& type, const std::string& id,
+                            const std::string& model, const std::string& reason,
+                            std::atomic<unsigned long long>& counter,
+                            std::atomic<long long>& last_log_s) {
+    unsigned long long n = 0;
+    if (!rate_limited(counter, last_log_s, n)) return;
+    LOG(WARNING, "Routing") << "classifier '" << id << "' (" << type << ", model '" << model
+                            << "') failed: " << reason
+                            << (n == 1 ? std::string() : " [" + std::to_string(n) + " failures]")
+                            << std::endl;
+}
+
+void log_truncated_score_used(const std::string& type, const std::string& id,
+                              const std::string& model,
+                              std::atomic<unsigned long long>& counter,
+                              std::atomic<long long>& last_log_s) {
+    unsigned long long n = 0;
+    if (!rate_limited(counter, last_log_s, n)) return;
+    LOG(WARNING, "Routing") << "classifier '" << id << "' (" << type << ", model '" << model
+                            << "') scored an input the backend had cut to fit its token "
+                               "window; set on_truncation=fail to treat that as a failure"
+                            << (n == 1 ? std::string() : " [" + std::to_string(n) + " times]")
+                            << std::endl;
+}
+
+// Under `fail` the cut IS the evaluation failure, so the entry carries `error`
+// and no score, and the classifier's `on_error` then applies. So is a backend
+// that cannot report a cut: its silence would let a cut input through.
+void apply_on_truncation(Score& score, OnTruncation on_truncation, bool reports_truncation,
+                         const std::string& type, const std::string& id,
+                         const std::string& model,
+                         std::atomic<unsigned long long>& truncated_scores,
+                         std::atomic<long long>& last_truncation_log_s) {
+    if (!score.ok) return;
+    if (on_truncation == OnTruncation::Fail && !reports_truncation) {
+        static constexpr const char* kUnreported =
+            "the backend does not report whether it cut the input, so on_truncation=fail "
+            "cannot trust the scores (ort-server reports it from 0.4.0)";
+        log_classifier_failure(type, id, model, kUnreported, truncated_scores,
+                               last_truncation_log_s);
+        score = failed_score(kUnreported);
+        return;
+    }
+    if (!score.truncated) return;
+    static constexpr const char* kTruncated =
+        "the backend cut the input text to fit its token window, so the scores "
+        "cover only part of the request";
+    if (on_truncation == OnTruncation::Fail) {
+        log_classifier_failure(type, id, model, kTruncated, truncated_scores,
+                               last_truncation_log_s);
+        score = failed_score(kTruncated);
+        score.truncated = true;
+    } else {
+        log_truncated_score_used(type, id, model, truncated_scores, last_truncation_log_s);
+    }
 }
 
 // Trim leading/trailing ASCII whitespace. Used by the llm router to normalize a
@@ -172,6 +260,10 @@ public:
             if (score.ok && !score.rationale.empty() && rationale_applies) {
                 entry.rationale = score.rationale;
             }
+            if (!score.ok && !score.error.empty()) {
+                entry.error = score.error;
+            }
+            entry.truncated = score.truncated;
             ctx.trace.push_back(std::move(entry));
         }
         return result;
@@ -198,12 +290,12 @@ private:
                 LOG(WARNING, "Routing") << "Classifier '" << classifier_->id()
                                         << "' threw during evaluation: " << e.what()
                                         << std::endl;
-                it->second = failed_score();
+                it->second = failed_score(e.what());
             } catch (...) {
                 LOG(WARNING, "Routing") << "Classifier '" << classifier_->id()
                                         << "' threw an unknown exception during evaluation"
                                         << std::endl;
-                it->second = failed_score();
+                it->second = failed_score("unknown exception");
             }
         }
         return it->second;
@@ -237,9 +329,11 @@ class ModelClassifier final : public Classifier {
 public:
     ModelClassifier(std::string id, std::string type, std::string model, OnError on_error,
                     std::vector<std::string> labels,
-                    std::optional<std::string> default_label)
+                    std::optional<std::string> default_label,
+                    OnTruncation on_truncation)
         : Classifier(std::move(id), std::move(type), on_error, std::move(model),
-                     std::move(labels), std::move(default_label)) {
+                     std::move(labels), std::move(default_label)),
+          on_truncation_(on_truncation) {
         if (model_name_.empty()) {
             throw std::invalid_argument("classifier requires model");
         }
@@ -247,20 +341,39 @@ public:
 
     Score evaluate(const ClassifierContext& ctx) const override {
         Score score;
+        bool reports_truncation = false;
         if (!ctx.services.run_classifier) {
-            return failed_score();
+            return failed_score("no classification service is configured");
         }
 
         try {
-            score.labels = ctx.services.run_classifier(model_name_, ctx.request.input);
+            ClassifierScores answer = ctx.services.run_classifier(model_name_, ctx.request.input);
+            score.labels = std::move(answer.scores);
+            score.truncated = answer.truncated;
+            reports_truncation = answer.reports_truncation;
             score.ok = true;
         } catch (const RouterResidencyConflictException&) {
             throw;
+        } catch (const std::exception& e) {
+            log_classifier_failure(type(), id(), model_name_, e.what(), failures_,
+                                   last_failure_log_s_);
+            score = failed_score(e.what());
         } catch (...) {
-            score = failed_score();
+            log_classifier_failure(type(), id(), model_name_, "unknown exception", failures_,
+                                   last_failure_log_s_);
+            score = failed_score("unknown exception");
         }
+        apply_on_truncation(score, on_truncation_, reports_truncation, type(), id(),
+                            model_name_, truncated_scores_, last_truncation_log_s_);
         return score;
     }
+
+private:
+    const OnTruncation on_truncation_;
+    mutable std::atomic<unsigned long long> failures_{0};
+    mutable std::atomic<long long> last_failure_log_s_{0};
+    mutable std::atomic<unsigned long long> truncated_scores_{0};
+    mutable std::atomic<long long> last_truncation_log_s_{0};
 };
 
 // A backend that ignores the request's labels answers with its own head's label
@@ -279,9 +392,11 @@ class ZeroShotClassifier final : public Classifier {
 public:
     ZeroShotClassifier(std::string id, std::string type, std::string model, OnError on_error,
                        std::vector<std::string> labels,
-                       std::optional<std::string> default_label)
+                       std::optional<std::string> default_label,
+                       OnTruncation on_truncation)
         : Classifier(std::move(id), std::move(type), on_error, std::move(model),
-                     std::move(labels), std::move(default_label)) {
+                     std::move(labels), std::move(default_label)),
+          on_truncation_(on_truncation) {
         if (model_name_.empty()) {
             throw std::invalid_argument("zero_shot classifier requires model");
         }
@@ -294,28 +409,48 @@ public:
 
     Score evaluate(const ClassifierContext& ctx) const override {
         Score score;
+        bool reports_truncation = false;
         if (!ctx.services.run_zero_shot_classifier) {
-            return failed_score();
+            return failed_score("no zero-shot classification service is configured");
         }
 
         try {
-            score.labels =
+            ClassifierScores answer =
                 ctx.services.run_zero_shot_classifier(model_name_, ctx.request.input, labels());
+            score.labels = std::move(answer.scores);
+            score.truncated = answer.truncated;
+            reports_truncation = answer.reports_truncation;
             score.ok = true;
         } catch (const RouterResidencyConflictException&) {
             throw;
+        } catch (const std::exception& e) {
+            log_classifier_failure(type(), id(), model_name_, e.what(), failures_,
+                                   last_failure_log_s_);
+            score = failed_score(e.what());
         } catch (...) {
-            score = failed_score();
+            log_classifier_failure(type(), id(), model_name_, "unknown exception", failures_,
+                                   last_failure_log_s_);
+            score = failed_score("unknown exception");
         }
         if (score.ok && !scores_exactly_declared(score, labels())) {
-            LOG(WARNING, "Routing") << "zero_shot classifier '" << id()
-                                    << "' got scores for a different label set than it sent; "
-                                       "the backend did not score the request's labels"
-                                    << std::endl;
-            score = failed_score();
+            static constexpr const char* kMismatch =
+                "the backend scored a different label set than the request sent, so it "
+                "ignored the per-request labels";
+            log_classifier_failure(type(), id(), model_name_, kMismatch, failures_,
+                                   last_failure_log_s_);
+            score = failed_score(kMismatch);
         }
+        apply_on_truncation(score, on_truncation_, reports_truncation, type(), id(),
+                            model_name_, truncated_scores_, last_truncation_log_s_);
         return score;
     }
+
+private:
+    const OnTruncation on_truncation_;
+    mutable std::atomic<unsigned long long> failures_{0};
+    mutable std::atomic<long long> last_failure_log_s_{0};
+    mutable std::atomic<unsigned long long> truncated_scores_{0};
+    mutable std::atomic<long long> last_truncation_log_s_{0};
 };
 
 // One SystemOne question (choice / noul / score) asked of a llama.cpp decision
@@ -337,7 +472,7 @@ public:
 
     Score evaluate(const ClassifierContext& ctx) const override {
         if (!ctx.services.run_systemone) {
-            return failed_score();
+            return failed_score("no SystemOne service is configured");
         }
 
         Score score;
@@ -348,19 +483,29 @@ public:
             score.ok = true;
         } catch (const RouterResidencyConflictException&) {
             throw;
+        } catch (const std::exception& e) {
+            log_classifier_failure(type(), id(), model_name_, e.what(), failures_,
+                                   last_failure_log_s_);
+            return failed_score(e.what());
         } catch (...) {
-            return failed_score();
+            log_classifier_failure(type(), id(), model_name_, "unknown exception", failures_,
+                                   last_failure_log_s_);
+            return failed_score("unknown exception");
         }
         if (!scores_exactly_declared(score, labels())) {
-            LOG(WARNING, "Routing") << "systemone classifier '" << id()
-                                    << "' got an answer for a different option set than it asked"
-                                    << std::endl;
-            return failed_score();
+            static constexpr const char* kMismatch =
+                "the answer covers a different option set than the question asked";
+            log_classifier_failure(type(), id(), model_name_, kMismatch, failures_,
+                                   last_failure_log_s_);
+            return failed_score(kMismatch);
         }
         return score;
     }
 
 private:
+    mutable std::atomic<unsigned long long> failures_{0};
+    mutable std::atomic<long long> last_failure_log_s_{0};
+
     static double probability(const json& value) {
         if (!value.is_number()) {
             throw std::runtime_error("systemone answer holds a non-numeric probability");
@@ -717,6 +862,10 @@ std::vector<std::string> parse_labels(const json& config, const std::string& id)
                 throw std::invalid_argument("classifier '" + id + "' labels must be non-empty strings");
             }
             labels.push_back(item.get<std::string>());
+        }
+        const std::string reason = validate_label_list(labels);
+        if (!reason.empty()) {
+            throw std::invalid_argument("classifier '" + id + "' " + reason);
         }
     }
     return labels;
@@ -1390,12 +1539,21 @@ ClassifierPtr make_classifier(const json& config, bool expose_request_features) 
                                     "only the systemone type asks one");
     }
 
+    if (config.contains("on_truncation") && type != "zero_shot" && type != "classifier") {
+        throw std::invalid_argument(
+            "classifier '" + id + "' of type '" + type +
+            "' does not accept on_truncation; only the model-backed types "
+            "('classifier' and 'zero_shot') read a token window they can overflow");
+    }
+    const OnTruncation on_truncation =
+        parse_on_truncation(config.value("on_truncation", "score"));
+
     if (type == "classifier") {
         std::vector<std::string> labels = parse_labels(config, id);
         std::optional<std::string> default_label = parse_default_label(config, labels, id);
         return std::make_shared<ModelClassifier>(
             id, type, config.value("model", ""), on_error,
-            std::move(labels), std::move(default_label));
+            std::move(labels), std::move(default_label), on_truncation);
     }
 
     if (type == "zero_shot") {
@@ -1412,7 +1570,7 @@ ClassifierPtr make_classifier(const json& config, bool expose_request_features) 
         std::optional<std::string> default_label = parse_default_label(config, labels, id);
         return std::make_shared<ZeroShotClassifier>(
             id, type, config.value("model", ""), on_error,
-            std::move(labels), std::move(default_label));
+            std::move(labels), std::move(default_label), on_truncation);
     }
 
     if (type == "systemone") {

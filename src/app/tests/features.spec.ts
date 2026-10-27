@@ -123,39 +123,46 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.screenshot({ path: 'screenshots/01-app-loaded.png', fullPage: true });
   });
 
-  // The tray and CLI deep-link into the app with `?view=<workspace>/<section>`
+  // The tray and CLI use `?view=logs` (or `?logs=true` as a browser fallback).
   // (tray_ui.cpp on_show_logs, cli/main.cpp logs). Those routes must resolve.
-  test('01a0 — host deep links address Monitor sections directly', async ({ page }) => {
-    await page.goto('/?view=dashboard/logs');
-    await page.waitForSelector('[data-view="dashboard"]');
-    await expect(page).toHaveURL(/#\/dashboard\/logs$/);
+  test('01a0 — native and direct links address Monitor sections', async ({ page }) => {
+    await page.goto('/?view=logs');
+    await page.waitForSelector('[data-view="monitor"]');
+    await expect(page).toHaveURL(/#\/monitor\/logs$/);
+
+    await page.goto('/?logs=true');
+    await page.waitForSelector('[data-view="monitor"]');
+    await expect(page).toHaveURL(/#\/monitor\/logs$/);
+
+    await page.goto('/?view=monitor/logs');
+    await page.waitForSelector('[data-view="monitor"]');
+    await expect(page).toHaveURL(/#\/monitor\/logs$/);
     await expect(page.getByRole('navigation', { name: 'Monitor sections' })
       .getByRole('button', { name: 'Logs', exact: true })).toHaveAttribute('aria-current', 'page');
 
-    await page.goto('/?view=dashboard/telemetry');
-    await page.waitForSelector('[data-view="dashboard"]');
-    await expect(page).toHaveURL(/#\/dashboard\/telemetry$/);
+    await page.goto('/?view=monitor/telemetry');
+    await page.waitForSelector('[data-view="monitor"]');
+    await expect(page).toHaveURL(/#\/monitor\/telemetry$/);
   });
 
   test('01a — Monitor labels and URL sections stay aligned', async ({ page }) => {
-    await page.goto('/#/dashboard/telemetry');
-    await page.waitForSelector('[data-view="dashboard"]');
+    await page.goto('/#/monitor/telemetry');
+    await page.waitForSelector('[data-view="monitor"]');
 
-    await expect(page).toHaveURL(/#\/dashboard\/telemetry$/);
+    await expect(page).toHaveURL(/#\/monitor\/telemetry$/);
     await expect(page.locator('.titlebar__nav').getByText('Monitor')).toBeVisible();
     await expect(page.locator('.monitor-rail .workspace-rail__title')).toHaveText('Views');
-    const dashboardSections = page.getByRole('navigation', { name: 'Monitor sections' });
-    await expect(dashboardSections.getByRole('button', { name: 'Telemetry', exact: true })).toHaveAttribute('aria-current', 'page');
-    await dashboardSections.getByRole('button', { name: 'Performance', exact: true }).click();
-    await expect(page).toHaveURL(/#\/dashboard\/performance$/);
-    await dashboardSections.getByRole('button', { name: 'Logs', exact: true }).click();
-    await expect(page).toHaveURL(/#\/dashboard\/logs$/);
-    await expect(page.locator('.titlebar__nav').getByText('Dashboard')).toHaveCount(0);
+    const monitorSections = page.getByRole('navigation', { name: 'Monitor sections' });
+    await expect(monitorSections.getByRole('button', { name: 'Telemetry', exact: true })).toHaveAttribute('aria-current', 'page');
+    await monitorSections.getByRole('button', { name: 'Performance', exact: true }).click();
+    await expect(page).toHaveURL(/#\/monitor\/performance$/);
+    await monitorSections.getByRole('button', { name: 'Logs', exact: true }).click();
+    await expect(page).toHaveURL(/#\/monitor\/logs$/);
     await expect(page.locator('.titlebar__nav').getByText('Inspect')).toHaveCount(0);
     await expect(page.locator('.titlebar__nav').getByText('Logs')).toHaveCount(0);
 
     await page.goto('/#/monitor/requests');
-    await expect(page).toHaveURL(/#\/dashboard\/logs$/);
+    await expect(page).toHaveURL(/#\/monitor\/logs$/);
   });
 
   test('01b — Monitor and Settings share routed section navigation', async ({ page }) => {
@@ -182,15 +189,15 @@ test.describe('Lemonade UI — Feature Parity', () => {
     }
 
     await page.locator('.titlebar__nav').getByRole('button', { name: 'Monitor', exact: true }).click();
-    const dashboardSections = page.getByRole('navigation', { name: 'Monitor sections' });
-    await dashboardSections.getByRole('button', { name: 'Telemetry', exact: true }).click();
-    await expect(page).toHaveURL(/#\/dashboard\/telemetry$/);
+    const monitorSections = page.getByRole('navigation', { name: 'Monitor sections' });
+    await monitorSections.getByRole('button', { name: 'Telemetry', exact: true }).click();
+    await expect(page).toHaveURL(/#\/monitor\/telemetry$/);
 
     await page.locator('.titlebar__nav').getByRole('button', { name: 'Settings', exact: true }).click();
     await expect(page).toHaveURL(/#\/connect\/help-and-support$/);
     await page.goBack();
-    await expect(page).toHaveURL(/#\/dashboard\/telemetry$/);
-    await expect(dashboardSections.getByRole('button', { name: 'Telemetry', exact: true })).toHaveAttribute('aria-current', 'page');
+    await expect(page).toHaveURL(/#\/monitor\/telemetry$/);
+    await expect(monitorSections.getByRole('button', { name: 'Telemetry', exact: true })).toHaveAttribute('aria-current', 'page');
   });
 
   test('01b1 — Model storage save feedback is scoped and directory errors surface', async ({ page }) => {
@@ -1074,10 +1081,10 @@ test.describe('Lemonade UI — Feature Parity', () => {
 
     // Navigate to Monitor performance
     await page.locator('.titlebar__nav').getByText('Monitor').click();
-    await page.waitForSelector('[data-view="dashboard"]');
+    await page.waitForSelector('[data-view="monitor"]');
 
     // Performance header and navigation visible
-    await expect(page.locator('.dashboard-header').getByRole('heading', { name: 'Performance' })).toBeVisible();
+    await expect(page.locator('.monitor-header').getByRole('heading', { name: 'Performance' })).toBeVisible();
     await expect(page.getByRole('navigation', { name: 'Monitor sections' }).getByRole('button', { name: 'Performance', exact: true })).toHaveAttribute('aria-current', 'page');
 
     // Connection indicator dot
@@ -1108,8 +1115,8 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.locator('.dash2-bar__btn').click();
     await expect(page.locator('.dash2-bar__btn')).not.toHaveClass(/is-paused/);
 
-    // Loaded Models section present (scope to dashboard to avoid Models view zone match)
-    const dashView = page.locator('[data-view="dashboard"]');
+    // Loaded Models section present (scope to monitor to avoid Models view zone match)
+    const dashView = page.locator('[data-view="monitor"]');
     await expect(dashView.getByText('Loaded Models')).toBeVisible();
 
     const graphScroller = page.locator('.dash2-scroll');
@@ -1122,7 +1129,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.mouse.wheel(0, 200);
     await expect.poll(() => graphScroller.evaluate(element => element.scrollTop)).toBeGreaterThan(0);
 
-    await page.screenshot({ path: 'screenshots/15-dashboard.png', fullPage: true });
+    await page.screenshot({ path: 'screenshots/15-monitor.png', fullPage: true });
   });
 
   test('16 — Monitor logs shows filters and live output', async ({ page }) => {
@@ -1130,7 +1137,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.waitForSelector('.titlebar__nav');
 
     await page.locator('.titlebar__nav').getByText('Monitor').click();
-    await page.waitForSelector('[data-view="dashboard"]');
+    await page.waitForSelector('[data-view="monitor"]');
 
     await page.getByRole('navigation', { name: 'Monitor sections' }).getByRole('button', { name: 'Logs', exact: true }).click();
     await page.waitForSelector('[data-view="logs"]');
@@ -1199,7 +1206,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
 
     // Navigate to Monitor logs
     await page.locator('.titlebar__nav').getByText('Monitor').click();
-    await page.waitForSelector('[data-view="dashboard"]');
+    await page.waitForSelector('[data-view="monitor"]');
     await page.getByRole('navigation', { name: 'Monitor sections' }).getByRole('button', { name: 'Logs', exact: true }).click();
     await page.waitForSelector('.logs-output', { state: 'visible' });
 
