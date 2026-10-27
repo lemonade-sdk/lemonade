@@ -203,9 +203,8 @@ void Bundle::build_plan() {
 
     json zero_initialize = json::array();
     {
-        std::stringstream inputs(g.value("zero_initialize_inputs", json("")).is_string()
-                                     ? g.at("zero_initialize_inputs").get<std::string>()
-                                     : "");
+        const json list = name("zero_initialize_inputs");
+        std::stringstream inputs(list.is_string() ? list.get<std::string>() : "");
         std::string input;
         while (std::getline(inputs, input, ',')) {
             if (!trim(input).empty()) zero_initialize.push_back(trim(input));
