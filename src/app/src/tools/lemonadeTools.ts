@@ -456,7 +456,10 @@ function summarizeSystemInfo(info: Record<string, unknown>): Record<string, unkn
   return {
     os: cleanValue(info['OS Version']) || cleanValue(info.os_version) || undefined,
     lemonade_version: cleanValue(info.lemonade_version) || cleanValue(info.version) || undefined,
-    physical_memory: cleanValue(info['Physical Memory']) || undefined,
+    physical_memory:
+      cleanValue(info['Physical Memory']) === 'Physical memory information not found.'
+        ? undefined
+        : cleanValue(info['Physical Memory']) || undefined,
     devices: deviceSummary,
     recipes: recipeSummary,
     counts: {
