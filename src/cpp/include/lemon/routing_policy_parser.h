@@ -30,9 +30,14 @@ using RoutingComponentResolver =
 using RoutingModelTypeResolver =
     std::function<std::optional<ModelType>(const std::string& resolved_model)>;
 
+// Whether a resolved component answers /v1/systemone. A CLASSIFICATION type
+// alone does not tell: ONNX classifiers have it too. Unset skips the check.
+using RoutingSystemOneResolver = std::function<bool(const std::string& resolved_model)>;
+
 struct RoutingPolicyParseOptions {
     RoutingComponentResolver resolve_component;
     RoutingModelTypeResolver get_model_type;
+    RoutingSystemOneResolver serves_systemone;
     bool require_declared_components = true;
 };
 

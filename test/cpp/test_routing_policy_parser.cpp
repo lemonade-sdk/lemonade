@@ -316,6 +316,18 @@ static void test_classifier_capability_validation() {
         };
         check("systemone rejects a model typed LLM",
               throws_with_options(systemone_doc(), llm, "cannot serve systemone"));
+
+        RoutingPolicyParseOptions onnx = classification;
+        onnx.serves_systemone = [](const std::string&) { return false; };
+        check("systemone rejects a classification model that does not serve /v1/systemone",
+              throws_with_options(systemone_doc(), onnx, "is not a SystemOne decision model"));
+
+        RoutingPolicyParseOptions decision = classification;
+        decision.serves_systemone = [](const std::string& name) {
+            return name == "pii-detector-small";
+        };
+        check("systemone accepts a model that serves /v1/systemone",
+              parses_ok(systemone_doc(), decision));
     }
     {
         json doc = fixture("l2_semantic.json");

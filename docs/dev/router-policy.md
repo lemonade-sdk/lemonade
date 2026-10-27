@@ -170,9 +170,9 @@ and every entry's `model` must be one of `components`:
   zero-shot model accepts, and how long each may be, is not checked here: both
   derive from that model's token window and are tunable per model, so the model
   enforces them and names the numbers in its error.
-- `systemone`: the `model` must be a classification model, checked when the policy is
-  registered. A classification model without the `systemone` label (an ONNX
-  classifier) fails each request and the rule applies `on_error`.
+- `systemone`: the `model` must be a llama.cpp decision model (labels
+  `classification` and `systemone`), checked when the policy is registered. An
+  ONNX classifier is refused.
 - `llm` shows the request to an LLM and asks it to choose one of `labels` (the
   chosen label scores `1.0`). Because it produces a plain label, it's a
   **composable signal** — combine it with any other condition, as in

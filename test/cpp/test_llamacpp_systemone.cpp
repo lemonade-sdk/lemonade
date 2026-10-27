@@ -4,10 +4,14 @@
 #include <iostream>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 using lemon::backends::llamacpp::build_systemone_classify_request;
+using lemon::backends::llamacpp::decision_model_load_refusal;
 using lemon::backends::llamacpp::encoder_decision_ctx_size;
 using lemon::backends::llamacpp::map_encoder_overflow_error;
+using lemon::backends::llamacpp::plan_single_batch;
+using lemon::backends::llamacpp::SingleBatchPlan;
 using lemon::backends::llamacpp::systemone_classify_response;
 using nlohmann::json;
 
@@ -106,6 +110,41 @@ int main() {
     expect(encoder_decision_ctx_size(2048, 8192) == 2048, "a smaller context is kept");
     expect(encoder_decision_ctx_size(0, 8192) == 8192, "an unset context takes the trained window");
     expect(encoder_decision_ctx_size(4096, 0) == 4096, "an unknown trained window changes nothing");
+
+    const auto plan = [](const std::vector<std::string>& user_args) {
+        return plan_single_batch(8192, user_args);
+    };
+    const auto plan_is = [](const SingleBatchPlan& p, bool add_b, bool add_ub, int limit) {
+        return p.add_batch_size == add_b && p.add_ubatch_size == add_ub &&
+               p.max_input_tokens == limit;
+    };
+    expect(plan_is(plan({}), true, true, 8192),
+           "without batch flags, -b and -ub are added at the context size");
+    expect(plan_is(plan({"-b", "8192"}), false, true, 8192),
+           "-b alone still gets -ub at the context size");
+    expect(plan_is(plan({"-ub", "8192"}), true, false, 8192),
+           "-ub alone still gets -b at the context size");
+    expect(plan_is(plan({"-b", "2048"}), false, true, 2048), "a smaller -b limits the input");
+    expect(plan_is(plan({"-ub", "1024"}), true, false, 1024), "a smaller -ub limits the input");
+    expect(plan_is(plan({"-b", "2048", "-ub", "1024"}), false, false, 1024),
+           "with both flags set, nothing is added and the smaller one is the limit");
+    expect(plan_is(plan({"--flash-attn", "on", "--batch-size=4096"}), false, true, 4096),
+           "the long form with '=' counts as set");
+    expect(plan_is(plan({"--ubatch-size", "16384"}), true, false, 8192),
+           "a flag above the context does not raise the limit");
+    expect(plan_is(plan({"-b", "abc"}), false, true, 8192),
+           "an unreadable value still counts as set");
+
+    expect(decision_model_load_refusal("Laya", false, "laya", "choice").empty(),
+           "a decision GGUF loads");
+    expect(decision_model_load_refusal("LayaHF", true, "", "").find("hf_load") !=
+               std::string::npos,
+           "hf_load is refused, because lemond cannot read the GGUF header");
+    expect(decision_model_load_refusal("Chat", false, "qwen3", "").find("no decision head") !=
+               std::string::npos,
+           "a GGUF without a decision head is refused");
+    expect(decision_model_load_refusal("Unread", false, "", "").empty(),
+           "an unread header is not refused here");
 
     const json overflow = {{"error", {
         {"message", "input (9217 tokens) is too large to process. increase the physical batch "

@@ -3623,6 +3623,32 @@ static ModelAliasMaps compute_model_alias_maps(const std::map<std::string, Model
     return result;
 }
 
+struct RoutingModelFacts {
+    ModelType type = ModelType::LLM;
+    bool serves_systemone = false;
+};
+
+// `systemone` is a capability label, legal on any recipe, so the label alone
+// does not make an ONNX classifier answer /v1/systemone. The recipe must gate a
+// mode on it, as llamacpp gates `classification`.
+static RoutingModelFacts routing_model_facts(ModelType type,
+                                             const std::vector<std::string>& labels,
+                                             const std::string& recipe) {
+    RoutingModelFacts facts;
+    facts.type = type;
+    if (type != ModelType::CLASSIFICATION || !has_label(labels, "systemone")) return facts;
+    if (const BackendDescriptor* descriptor = backends::descriptor_for(recipe)) {
+        for (const auto& requirement : descriptor->mode_capability_requirements) {
+            if (requirement.second == "systemone") facts.serves_systemone = true;
+        }
+    }
+    return facts;
+}
+
+static RoutingModelFacts routing_model_facts(const ModelInfo& info) {
+    return routing_model_facts(info.type, info.labels, info.recipe);
+}
+
 // Both routing-policy parse sites resolve a component the same way: alias
 // first, falling back to the name as authored; then a primary type lookup
 // with one fallback tier behind it. #2748 was that shape drifting between
@@ -3630,8 +3656,8 @@ static ModelAliasMaps compute_model_alias_maps(const std::map<std::string, Model
 // tiers differ -- which model set each consults, and what the fallback is.
 struct RoutingResolutionTiers {
     std::function<std::optional<std::string>(const std::string&)> alias;
-    std::function<std::optional<ModelType>(const std::string&)> type;
-    std::function<std::optional<ModelType>(const std::string&)> type_fallback;
+    std::function<std::optional<RoutingModelFacts>(const std::string&)> facts;
+    std::function<std::optional<RoutingModelFacts>(const std::string&)> facts_fallback;
 };
 
 static RoutingPolicyParseOptions make_routing_parse_options(RoutingResolutionTiers tiers) {
@@ -3645,11 +3671,20 @@ static RoutingPolicyParseOptions make_routing_parse_options(RoutingResolutionTie
         // can still report it by the name the author actually wrote.
         return name;
     };
-    options.get_model_type = [tiers](const std::string& name) -> std::optional<ModelType> {
-        if (tiers.type) {
-            if (auto type = tiers.type(name)) return type;
+    auto lookup = [tiers](const std::string& name) -> std::optional<RoutingModelFacts> {
+        if (tiers.facts) {
+            if (auto facts = tiers.facts(name)) return facts;
         }
-        return tiers.type_fallback ? tiers.type_fallback(name) : std::nullopt;
+        return tiers.facts_fallback ? tiers.facts_fallback(name) : std::nullopt;
+    };
+    options.get_model_type = [lookup](const std::string& name) -> std::optional<ModelType> {
+        const std::optional<RoutingModelFacts> facts = lookup(name);
+        if (!facts) return std::nullopt;
+        return facts->type;
+    };
+    options.serves_systemone = [lookup](const std::string& name) {
+        const std::optional<RoutingModelFacts> facts = lookup(name);
+        return facts && facts->serves_systemone;
     };
     return options;
 }
@@ -3922,11 +3957,11 @@ void ModelManager::build_cache() {
             return is_router_collection_recipe(entry.second.recipe);
         });
 
-    std::map<std::string, ModelType> pre_filter_types;
+    std::map<std::string, RoutingModelFacts> pre_filter_facts;
     std::map<std::string, std::string> pre_filter_aliases;
     if (needs_routing_snapshots) {
         for (const auto& [name, info] : all_models) {
-            pre_filter_types[name] = info.type;
+            pre_filter_facts[name] = routing_model_facts(info);
         }
         pre_filter_aliases = compute_model_alias_maps(all_models).public_model_aliases;
     }
@@ -3998,15 +4033,15 @@ void ModelManager::build_cache() {
             if (it == pre_filter_aliases.end()) return std::nullopt;
             return it->second;
         },
-        [this](const std::string& name) -> std::optional<ModelType> {
+        [this](const std::string& name) -> std::optional<RoutingModelFacts> {
             auto it = models_cache_.find(name);
             if (it == models_cache_.end()) return std::nullopt;
-            return it->second.type;
+            return routing_model_facts(it->second);
         },
-        [&pre_filter_types, &unavailable_components](
-            const std::string& name) -> std::optional<ModelType> {
-            auto it = pre_filter_types.find(name);
-            if (it == pre_filter_types.end()) return std::nullopt;
+        [&pre_filter_facts, &unavailable_components](
+            const std::string& name) -> std::optional<RoutingModelFacts> {
+            auto it = pre_filter_facts.find(name);
+            if (it == pre_filter_facts.end()) return std::nullopt;
             unavailable_components.insert(name);
             return it->second;
         },
@@ -7205,14 +7240,14 @@ std::optional<std::string> ModelManager::validate_collection_request(
                     return std::nullopt;
                 }
             },
-            [this](const std::string& name) -> std::optional<ModelType> {
+            [this](const std::string& name) -> std::optional<RoutingModelFacts> {
                 try {
-                    return get_model_info(name).type;
+                    return routing_model_facts(get_model_info(name));
                 } catch (...) {
                     return std::nullopt;
                 }
             },
-            [this, &find_inline_def](const std::string& name) -> std::optional<ModelType> {
+            [this, &find_inline_def](const std::string& name) -> std::optional<RoutingModelFacts> {
                 // Not registered - the name may match an inline `models[]`
                 // definition in this same request. Derive the type exactly as
                 // register_user_model() would once that definition is
@@ -7225,8 +7260,9 @@ std::optional<std::string> ModelManager::validate_collection_request(
                     return std::nullopt;
                 }
                 std::set<std::string> label_set = normalized_definition_labels(*def);
-                return get_model_type_from_labels(
-                    std::vector<std::string>(label_set.begin(), label_set.end()));
+                const std::vector<std::string> labels(label_set.begin(), label_set.end());
+                return routing_model_facts(get_model_type_from_labels(labels), labels,
+                                           def->value("recipe", std::string()));
             },
         });
         try {

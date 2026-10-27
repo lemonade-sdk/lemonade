@@ -66,7 +66,7 @@ private:
     nlohmann::ordered_json forward_systemone(const nlohmann::ordered_json& body);
 
     bool decision_model_ = false;
-    int encoder_batch_ctx_ = 0;
+    int encoder_max_input_tokens_ = 0;
 };
 
 namespace llamacpp {

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <optional>
 #include <set>
 #include <stdexcept>
 #include <utility>
@@ -17,6 +18,38 @@ constexpr const char* QUESTION_ID = "label";
 
 // Decision models need a question; zero-shot labels come without one.
 constexpr const char* CLASSIFY_INSTRUCTIONS = "Which category does this text belong to?";
+
+struct BatchFlag {
+    bool present = false;
+    std::optional<int> value;
+};
+
+std::optional<int> positive_int(const std::string& text) {
+    if (text.empty() || text.size() > 9 ||
+        text.find_first_not_of("0123456789") != std::string::npos) {
+        return std::nullopt;
+    }
+    const int value = std::stoi(text);
+    if (value <= 0) return std::nullopt;
+    return value;
+}
+
+BatchFlag find_batch_flag(const std::vector<std::string>& args, const std::string& short_name,
+                          const std::string& long_name) {
+    BatchFlag flag;
+    for (size_t i = 0; i < args.size(); ++i) {
+        for (const std::string& name : {short_name, long_name}) {
+            if (args[i] == name) {
+                flag.present = true;
+                flag.value = i + 1 < args.size() ? positive_int(args[i + 1]) : std::nullopt;
+            } else if (args[i].rfind(name + "=", 0) == 0) {
+                flag.present = true;
+                flag.value = positive_int(args[i].substr(name.size() + 1));
+            }
+        }
+    }
+    return flag;
+}
 
 }  // namespace
 
@@ -107,7 +140,19 @@ int encoder_decision_ctx_size(int requested, int64_t trained_window) {
     return requested;
 }
 
-nlohmann::json map_encoder_overflow_error(nlohmann::json response, int context_size) {
+SingleBatchPlan plan_single_batch(int ctx_size, const std::vector<std::string>& user_args) {
+    const BatchFlag batch = find_batch_flag(user_args, "-b", "--batch-size");
+    const BatchFlag ubatch = find_batch_flag(user_args, "-ub", "--ubatch-size");
+    SingleBatchPlan plan;
+    plan.add_batch_size = !batch.present;
+    plan.add_ubatch_size = !ubatch.present;
+    // llama.cpp caps -ub at -b, and an encoder's embedding mode caps -b at -ub.
+    plan.max_input_tokens = std::min(
+        {ctx_size, batch.value.value_or(ctx_size), ubatch.value.value_or(ctx_size)});
+    return plan;
+}
+
+nlohmann::json map_encoder_overflow_error(nlohmann::json response, int max_input_tokens) {
     if (!response.is_object() || !response.contains("error") || !response["error"].is_object()) {
         return response;
     }
@@ -123,12 +168,32 @@ nlohmann::json map_encoder_overflow_error(nlohmann::json response, int context_s
         input = message.substr(0, end + 8);
     }
     return nlohmann::json{{"error", {
-        {"message", input + " is longer than the context window of this decision model (" +
-                        std::to_string(context_size) + " tokens)"},
+        {"message", input + " is longer than this decision model accepts (" +
+                        std::to_string(max_input_tokens) + " tokens)"},
         {"type", "invalid_request_error"},
         {"code", "context_length_exceeded"},
         {"status_code", 400},
     }}};
+}
+
+std::string decision_model_load_refusal(const std::string& model_name, bool hf_load,
+                                        const std::string& gguf_architecture,
+                                        const std::string& gguf_decision_type) {
+    // With -hf, llama-server fetches the GGUF itself, so lemond never reads the
+    // header that tells it to size an encoder's batch and context.
+    if (hf_load) {
+        return "model '" + model_name + "' is labelled 'systemone' and sets hf_load. lemond "
+               "must read a decision model's GGUF header to configure it, so remove hf_load.";
+    }
+    // An unread header cannot be checked here; a GGUF without a decision head
+    // then gets a 501 from llama-server on /v1/systemone.
+    if (gguf_architecture.empty() || !gguf_decision_type.empty()) {
+        return "";
+    }
+    return "model '" + model_name + "' is labelled 'systemone', but its GGUF has no "
+           "decision head ('" + gguf_architecture + ".decision.type'), so llama-server "
+           "cannot answer /v1/systemone for it. Register it without the 'classification' "
+           "and 'systemone' labels.";
 }
 
 }  // namespace llamacpp

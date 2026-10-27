@@ -102,16 +102,6 @@ static bool is_llamacpp_cuda_backend(const std::string& backend) {
     return backend == "cuda";
 }
 
-static bool custom_args_set_flag(const std::string& custom_args,
-                                 const std::vector<std::string>& flags) {
-    for (const std::string& token : parse_custom_args(custom_args)) {
-        for (const std::string& flag : flags) {
-            if (token == flag || token.rfind(flag + "=", 0) == 0) return true;
-        }
-    }
-    return false;
-}
-
 static json invalid_classify_request(const std::string& message) {
     return json{{"error", {
         {"message", message},
@@ -335,7 +325,12 @@ void LlamaCppServer::load(const std::string& model_name,
     bool supports_embeddings = (model_info.type == ModelType::EMBEDDING);
     bool supports_reranking = (model_info.type == ModelType::RERANKING);
     decision_model_ = has_label(model_info.labels, "systemone");
-    encoder_batch_ctx_ = 0;
+    if (decision_model_ && model_info.gguf.architecture.empty()) {
+        LOG(WARNING, "LlamaCpp") << "Could not read the GGUF header of decision model '"
+                                 << model_info.model_name << "', so if it is an encoder it "
+                                 << "keeps llama-server's default batch sizes" << std::endl;
+    }
+    encoder_max_input_tokens_ = 0;
     const bool encoder_decision_model = is_encoder_decision_model(model_info);
     if (encoder_decision_model) {
         const int capped = llamacpp::encoder_decision_ctx_size(ctx_size, model_info.max_context_window);
@@ -431,15 +426,26 @@ void LlamaCppServer::load(const std::string& model_name,
     // the default -ub 512 rejects any state longer than about 500 tokens.
     // llama-server switches these models to embedding mode on its own, so no
     // --embeddings flag is added.
-    if (encoder_decision_model &&
-        !custom_args_set_flag(llamacpp_args, {"-b", "--batch-size", "-ub", "--ubatch-size"})) {
-        LOG(INFO, "LlamaCpp") << "Encoder decision model, setting the batch sizes to the context size"
-                              << std::endl;
-        push_arg(args, reserved_flags, "-b", std::to_string(ctx_size),
-                 std::vector<std::string>{"--batch-size"});
-        push_arg(args, reserved_flags, "-ub", std::to_string(ctx_size),
-                 std::vector<std::string>{"--ubatch-size"});
-        encoder_batch_ctx_ = ctx_size;
+    if (encoder_decision_model) {
+        const llamacpp::SingleBatchPlan batch =
+            llamacpp::plan_single_batch(ctx_size, parse_custom_args(llamacpp_args));
+        if (batch.add_batch_size) {
+            push_arg(args, reserved_flags, "-b", std::to_string(ctx_size),
+                     std::vector<std::string>{"--batch-size"});
+        }
+        if (batch.add_ubatch_size) {
+            push_arg(args, reserved_flags, "-ub", std::to_string(ctx_size),
+                     std::vector<std::string>{"--ubatch-size"});
+        }
+        if (batch.max_input_tokens < ctx_size) {
+            LOG(WARNING, "LlamaCpp") << "llamacpp_args limit this encoder decision model to "
+                                     << batch.max_input_tokens << " tokens per input"
+                                     << std::endl;
+        } else {
+            LOG(INFO, "LlamaCpp") << "Encoder decision model, batch sizes cover the context ("
+                                  << ctx_size << " tokens)" << std::endl;
+        }
+        encoder_max_input_tokens_ = batch.max_input_tokens;
     }
 
     // Validate and append custom arguments
@@ -719,8 +725,8 @@ nlohmann::ordered_json LlamaCppServer::systemone(const nlohmann::ordered_json& r
 
 nlohmann::ordered_json LlamaCppServer::forward_systemone(const nlohmann::ordered_json& body) {
     nlohmann::ordered_json response = forward_ordered_request("/v1/systemone", body);
-    if (encoder_batch_ctx_ > 0 && response.contains("error")) {
-        response = llamacpp::map_encoder_overflow_error(json(response), encoder_batch_ctx_);
+    if (encoder_max_input_tokens_ > 0 && response.contains("error")) {
+        response = llamacpp::map_encoder_overflow_error(json(response), encoder_max_input_tokens_);
     }
     return response;
 }
@@ -930,16 +936,11 @@ public:
     }
 
     std::string validate_load(const ModelInfo& info) const override {
-        // An unread GGUF (not downloaded, or hf_load) has no architecture yet;
-        // llama-server then refuses /v1/systemone itself with a 501.
-        if (!has_label(info.labels, "systemone") || info.gguf.architecture.empty() ||
-            !info.gguf.decision_type.empty()) {
-            return "";
-        }
-        return "model '" + info.model_name + "' is labelled 'systemone', but its GGUF has no "
-               "decision head ('" + info.gguf.architecture + ".decision.type'), so llama-server "
-               "cannot answer /v1/systemone for it. Register it without the 'classification' "
-               "and 'systemone' labels.";
+        if (!has_label(info.labels, "systemone")) return "";
+        return llamacpp::decision_model_load_refusal(info.model_name,
+                                                     info.extra<bool>("hf_load", false),
+                                                     info.gguf.architecture,
+                                                     info.gguf.decision_type);
     }
 
     std::string validate_checkpoint_file(const std::string& resolved_path) const override {

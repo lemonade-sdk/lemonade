@@ -472,6 +472,13 @@ json parse_classifier_configs(const json& routing,
                         "', which cannot serve semantic_similarity (needs an embedding model)");
                 }
             }
+            if (type == "systemone" && options.serves_systemone &&
+                !options.serves_systemone(resolved_model)) {
+                throw std::invalid_argument(
+                    path + ".model '" + original + "' is not a SystemOne decision model "
+                    "(needs the 'systemone' label on a backend that answers /v1/systemone, "
+                    "such as llamacpp)");
+            }
 
             item["model"] = std::move(resolved_model);
         }

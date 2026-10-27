@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace lemon {
 namespace backends {
@@ -29,7 +30,23 @@ nlohmann::json systemone_classify_response(const nlohmann::json& response,
 // the slot at the trained window.
 int encoder_decision_ctx_size(int requested, int64_t trained_window);
 
-nlohmann::json map_encoder_overflow_error(nlohmann::json response, int context_size);
+// Which of -b and -ub lemond adds at ctx_size, given the flags in `user_args`,
+// and the longest input llama-server then accepts.
+struct SingleBatchPlan {
+    bool add_batch_size = false;
+    bool add_ubatch_size = false;
+    int max_input_tokens = 0;
+};
+
+SingleBatchPlan plan_single_batch(int ctx_size, const std::vector<std::string>& user_args);
+
+nlohmann::json map_encoder_overflow_error(nlohmann::json response, int max_input_tokens);
+
+// Why a model labelled `systemone` must not load, or "" when it may. An empty
+// `gguf_architecture` means lemond could not read the GGUF header.
+std::string decision_model_load_refusal(const std::string& model_name, bool hf_load,
+                                        const std::string& gguf_architecture,
+                                        const std::string& gguf_decision_type);
 
 }  // namespace llamacpp
 }  // namespace backends
