@@ -893,6 +893,7 @@ An event of the response, passed through from the backend.
 - `type` - Event type, passed through from the backend, such as `response.created`, `response.output_text.delta` or `response.completed`; see OpenAI's [streaming reference](https://platform.openai.com/docs/api-reference/responses-streaming).
 - `response` - Lifecycle events, such as `response.created`, `response.in_progress` and `response.completed`, only: the response so far.
 - `item` - Output item events, such as `response.output_item.added`, only: the output item.
+- `output_index` - Zero-based index of the output item in the response's `output` array, on output-item and delta events.
 - `item_id` - Delta events only: the `id` of the output item the text belongs to.
 - `delta` - Delta events, such as `response.output_text.delta` and `response.reasoning_text.delta`, only: the next text.
 - `timings` - `response.completed` only: prompt processing and generation timings, passed through from backends that report them, such as llama.cpp.
