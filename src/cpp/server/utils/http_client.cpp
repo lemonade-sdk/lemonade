@@ -515,11 +515,12 @@ static size_t header_callback(char* buffer, size_t size, size_t nitems, void* us
         iss >> http_version >> status_code;
         data->current_response_code = status_code;
         data->redirecting_body = status_code >= 300 && status_code < 400 && status_code != 304;
+        // Through an HTTP CONNECT proxy libcurl hands over `200 Connection established` before
+        // the origin speaks, and a verdict carried past this line rejects a good 206.
+        data->range_ignored = data->expect_partial_response && status_code >= 200 &&
+                              status_code < 300 && status_code != 206;
         data->range_offset_matches = false;
-        if (data->expect_partial_response && status_code >= 200 && status_code < 300 &&
-            status_code != 206) {
-            data->range_ignored = true;
-        }
+        data->range_mismatch = false;
         return total;
     }
 
