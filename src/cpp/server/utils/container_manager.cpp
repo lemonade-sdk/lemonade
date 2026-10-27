@@ -479,8 +479,10 @@ void ContainerManager::create_network(const std::string& name) const {
     std::vector<std::string> args = {"network", "create", "--internal", "--label", kLabel};
     // Rootless Podman starts the network's DNS server through the account's
     // systemd user manager, which lemond.service's account does not have, and
-    // lemond reaches its one container without DNS.
-    if (tool() == ContainerTool::Podman) args.push_back("--disable-dns");
+    // lemond reaches its one container through a published port. Rootful
+    // Podman keeps DNS: CNI gives an internal network without it no gateway,
+    // and lemond connects at the container's address.
+    if (rootless_podman()) args.push_back("--disable-dns");
     args.push_back(name);
     const CommandResult result = invoke(args, kCommandTimeoutSeconds);
     if (result.exit_code != 0) {
