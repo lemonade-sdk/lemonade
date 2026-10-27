@@ -93,9 +93,11 @@ inline double get_available_memory_gb(DeviceType device_type,
                                       GpuMemoryVendor gpu_vendor = GpuMemoryVendor::Any,
                                       const std::string& gpu_device = "",
                                       bool* unified_gpu_out = nullptr,
-                                      bool* memory_known_out = nullptr) {
+                                      bool* memory_known_out = nullptr,
+                                      double* physical_free_gb_out = nullptr) {
     if (unified_gpu_out) *unified_gpu_out = false;
     if (memory_known_out) *memory_known_out = false;
+    if (physical_free_gb_out) *physical_free_gb_out = -1.0;
     auto si = create_system_info();
 
     // GPU recipes: use VRAM
@@ -122,12 +124,13 @@ inline double get_available_memory_gb(DeviceType device_type,
                 if (metrics) gpu_used_gb = metrics->get_vram_usage_gb();
             }
             double physical_total_gb = pool.physical_total_gb;
-            if (pool.unified && physical_total_gb <= 0.0) {
-                auto metrics = create_metrics_platform();
-                if (metrics) physical_total_gb = metrics->get_memory_total_gb();
-            }
             const double ram_used_gb = pool.unified
                 ? get_used_memory_gb(DEVICE_CPU) : -1.0;
+            if (pool.unified && pool.vendor == GpuMemoryVendor::Amd) {
+                // GTT is a mapping limit, not the amount of physical RAM.
+                auto metrics = create_metrics_platform();
+                physical_total_gb = metrics ? metrics->get_memory_total_gb() : 0.0;
+            }
             const auto available_gpu_gb = auto_context_available_gpu_gib(
                 pool.total_gb, gpu_used_gb, pool.unified,
                 physical_total_gb, ram_used_gb);
@@ -137,6 +140,20 @@ inline double get_available_memory_gb(DeviceType device_type,
                 return 0.0;
             }
             if (memory_known_out) *memory_known_out = true;
+            if (physical_free_gb_out &&
+                (!pool.unified || pool.vendor == GpuMemoryVendor::Amd)) {
+                // The CPU can hold non-offloaded layers on either UMA or a dGPU.
+                double total_ram_gb = physical_total_gb;
+                if (total_ram_gb <= 0.0) {
+                    auto metrics = create_metrics_platform();
+                    if (metrics) total_ram_gb = metrics->get_memory_total_gb();
+                }
+                const double used_ram_gb = pool.unified
+                    ? ram_used_gb : get_used_memory_gb(DEVICE_CPU);
+                if (std::isfinite(total_ram_gb) && total_ram_gb > 0.0 &&
+                    std::isfinite(used_ram_gb) && used_ram_gb > 0.0)
+                    *physical_free_gb_out = (std::max)(0.0, total_ram_gb - used_ram_gb);
+            }
             const double available = *available_gpu_gb;
             LOG(DEBUG, "AutoTune") << "get_available_memory_gb: GPU (" << pool.label
                                    << ") total=" << std::fixed << std::setprecision(2)
@@ -200,8 +217,9 @@ inline double get_available_memory_gb(DeviceType device_type,
 inline int64_t compute_auto_context_size(const ModelInfo& model_info,
                                           double available_memory_gb,
                                           bool is_embedding = false,
-                                          bool unified_gpu = false) {
-    if (available_memory_gb <= 0) {
+                                          bool unified_gpu = false,
+                                          double physical_free_gb = -1.0) {
+    if (available_memory_gb <= 0 && physical_free_gb < 0.0) {
         LOG(DEBUG, "AutoTune") << "compute_auto_context_size: " << model_info.model_name
                                << " — not enough memory, returning " << AUTO_CTX_FALLBACK  << " ";
         return AUTO_CTX_FALLBACK;
@@ -296,12 +314,25 @@ inline int64_t compute_auto_context_size(const ModelInfo& model_info,
     const auto budget = estimate_auto_context_budget(
         available_memory_gb, model_weight_gb,
         kv_bytes_per_token, (model_info.device & DEVICE_GPU) != 0,
-        speculative, unified_gpu);
+        speculative, unified_gpu, physical_free_gb);
     const int64_t max_ctx_from_memory = budget.max_tokens;
     // A short budget still loads with the fallback: the estimate assumes full GPU
     // residency, while llama.cpp can spill layers to host RAM.
     const int64_t fallback = is_embedding ? EMBEDDING_CTX_SIZE : AUTO_CTX_FALLBACK;
     if (max_ctx_from_memory <= 0) {
+        const int64_t minimum_ctx = is_embedding ? EMBEDDING_CTX_SIZE : AUTO_CTX_FALLBACK;
+        const int64_t offload_ctx = auto_context_cpu_offload_fallback(
+            max_ctx_from_memory, available_memory_gb, physical_free_gb,
+            model_weight_gb, kv_bytes_per_token, speculative, unified_gpu,
+            model_info.recipe == "llamacpp" && (model_info.device & DEVICE_GPU),
+            minimum_ctx);
+        if (offload_ctx > 0) {
+            LOG(INFO, "AutoTune") << "Using " << offload_ctx
+                                   << " context tokens; llama.cpp may offload layers to CPU";
+            return auto_context_clamp_tokens(
+                offload_ctx, model_info.max_context_window, AUTO_CTX_UNKNOWN_MAX,
+                is_embedding ? EMBEDDING_CTX_SIZE : 0);
+        }
         LOG(DEBUG, "AutoTune") << "compute_auto_context_size: " << model_info.model_name
                                << " — model and runtime reserves exceed available memory ("
                                << std::fixed << std::setprecision(2) << available_memory_gb
@@ -360,19 +391,27 @@ inline int64_t resolve_auto_ctx_size(const RecipeOptions& effective_options,
     if (device_json.is_string()) device = device_json.get<std::string>();
     bool ctx_unified_gpu = false;
     bool memory_known = false;
+    double physical_free_gb = -1.0;
     double available_gb = get_available_memory_gb(
         model_info.device, gpu_memory_vendor_for_target(backend, device), device,
-        &ctx_unified_gpu, &memory_known);
+        &ctx_unified_gpu, &memory_known, &physical_free_gb);
 
     if (available_gb <= 0) {
-        int64_t fallback = is_embedding ? EMBEDDING_CTX_SIZE : AUTO_CTX_FALLBACK;
-        LOG(DEBUG, "AutoTune") << "resolve_auto_ctx_size: " << model_info.model_name
-                               << " — memory undetectable, returning " << fallback;
-        return fallback;
+        if (!memory_known) {
+            int64_t fallback = is_embedding ? EMBEDDING_CTX_SIZE : AUTO_CTX_FALLBACK;
+            LOG(DEBUG, "AutoTune") << "resolve_auto_ctx_size: " << model_info.model_name
+                                   << " — memory undetectable, returning " << fallback;
+            return fallback;
+        }
+        // A full GPU pool is not proof that llama.cpp cannot place layers on CPU.
+        if (model_info.recipe != "llamacpp" || !(model_info.device & DEVICE_GPU) ||
+            (ctx_unified_gpu && !(physical_free_gb > 0.0)))
+            return AUTO_CTX_NO_CAPACITY;
     }
 
     int64_t result = compute_auto_context_size(model_info, available_gb,
-                                               is_embedding, ctx_unified_gpu);
+                                               is_embedding, ctx_unified_gpu,
+                                               physical_free_gb);
     LOG(DEBUG, "AutoTune") << "resolve_auto_ctx_size: " << model_info.model_name
                            << " → ctx_size=" << result;
     return result;

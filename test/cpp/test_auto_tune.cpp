@@ -332,6 +332,80 @@ static void test_auto_context_budget() {
                                                  true, false, false);
     check("auto ctx: discrete and UMA budgets differ",
           discrete.reserve_gib < apu.reserve_gib);
+    auto cpu_budget = estimate_auto_context_budget(16.0, 5.0, 65536.0,
+                                                    false, false);
+    auto cpu_with_uma_hint = estimate_auto_context_budget(16.0, 5.0, 65536.0,
+                                                           false, false, true, 24.0);
+    check("auto ctx: CPU budget ignores any UMA GPU hint",
+          cpu_budget.max_tokens == cpu_with_uma_hint.max_tokens);
+    auto original_apple = estimate_auto_context_budget(3.2, 0.73, 128.0 * 1024.0,
+                                                      true, false, true);
+    auto apple_no_physical_reading = estimate_auto_context_budget(
+        3.2, 0.73, 128.0 * 1024.0, true, false, true, -1.0);
+    check("auto ctx: Apple retains existing budget without AMD split",
+          original_apple.max_tokens == apple_no_physical_reading.max_tokens);
+
+    // A 128 GiB Strix Halo has ~64 GiB GTT by default, but far more
+    // physically free RAM. OS headroom must not consume GTT capacity.
+    auto strix64 = estimate_auto_context_budget(64.0, 58.5, 65536.0,
+                                                true, false, true, 116.0);
+    check("auto ctx: Strix Halo 64 GiB GTT can load gpt-oss-120b",
+          strix64.max_tokens >= 8192 && strix64.kv_gib > 3.0);
+    auto strix120 = estimate_auto_context_budget(120.0, 58.5, 65536.0,
+                                                 true, false, true, 116.0);
+    check("auto ctx: 120 GiB GTT honors RAM headroom",
+          strix120.kv_gib < 47.0 && strix120.kv_gib > 45.0);
+    auto ram_pressure = estimate_auto_context_budget(64.0, 58.5, 65536.0,
+                                                     true, false, true, 62.0);
+    check("auto ctx: UMA rejects true physical RAM exhaustion",
+          ram_pressure.max_tokens == 0);
+    auto gtt_pressure = estimate_auto_context_budget(60.0, 58.5, 65536.0,
+                                                     true, false, true, 116.0);
+    check("auto ctx: UMA GPU-only budget retains workspace reserve",
+          gtt_pressure.max_tokens == 0);
+    using lemon::auto_context_cpu_offload_fallback;
+    // GPT-OSS MXFP4 exceeds the default GTT once the GPU workspace is included.
+    auto mxfp4_gpu = estimate_auto_context_budget(64.0, 63.4, 65536.0,
+                                                  true, false, true, 116.0);
+    check("auto ctx: default GTT cannot fully host 63.4 GiB weights",
+          mxfp4_gpu.max_tokens == 0);
+    check("auto ctx: UMA permits CPU spill with a small context",
+          auto_context_cpu_offload_fallback(
+              mxfp4_gpu.max_tokens, 64.0, 116.0, 63.4, 65536.0,
+              false, true, true) == 4096);
+    check("auto ctx: UMA can use CPU when GTT pool is fully occupied",
+          auto_context_cpu_offload_fallback(
+              0, 0.0, 116.0, 63.4, 65536.0,
+              false, true, true) == 4096);
+    check("auto ctx: GPU-first policy does not spill when GPU fits",
+          auto_context_cpu_offload_fallback(
+              strix64.max_tokens, 64.0, 116.0, 58.5, 65536.0,
+              false, true, true) == 0);
+    check("auto ctx: dGPU may spill when VRAM does not fit model",
+          auto_context_cpu_offload_fallback(
+              0, 22.0, 48.0, 60.0, 65536.0, false, false, true) == 4096);
+    check("auto ctx: dGPU may spill even with no VRAM left",
+          auto_context_cpu_offload_fallback(
+              0, 0.0, 68.0, 60.0, 65536.0, false, false, true) == 4096);
+    check("auto ctx: borderline dGPU split is decided by llama.cpp",
+          auto_context_cpu_offload_fallback(
+              0, 24.0, 36.5, 60.0, 65536.0, false, false, true) == 4096);
+    check("auto ctx: dGPU cannot use unavailable combined RAM/VRAM",
+          auto_context_cpu_offload_fallback(
+              0, 8.0, 12.0, 60.0, 65536.0, false, false, true) == 0);
+    check("auto ctx: unmeasured dGPU RAM lets llama.cpp try",
+          auto_context_cpu_offload_fallback(
+              0, 8.0, -1.0, 60.0, 65536.0, false, false, true) == 4096);
+    check("auto ctx: non-llama backends retain zero-capacity failure",
+          auto_context_cpu_offload_fallback(
+              0, 22.0, 48.0, 60.0, 65536.0, false, false, false) == 0);
+    check("auto ctx: UMA rejects CPU spill under physical RAM pressure",
+          auto_context_cpu_offload_fallback(
+              0, 64.0, 67.0, 63.4, 65536.0, false, true, true) == 0);
+    check("auto ctx: UMA embeds require sufficient physical RAM for 8192 tokens",
+          auto_context_cpu_offload_fallback(
+              0, 64.0, 116.0, 63.4, 65536.0,
+              false, true, true, 8192) == 8192);
 
     auto small_mac = estimate_auto_context_budget(3.2, 0.73, 128.0 * 1024.0,
                                                    true, false, true);
@@ -429,6 +503,8 @@ static void test_auto_context_budget() {
           approx_eq(auto_context_cap_shared_memory_gib(12.0, 32.0, 4.0), 12.0));
     check("auto ctx: unknown RAM usage does not fabricate a cap",
           approx_eq(auto_context_cap_shared_memory_gib(12.0, 32.0, -1.0), 12.0));
+    check("auto ctx: default GTT does not subtract physical RAM usage from GPU limit",
+          approx_eq(auto_context_cap_shared_memory_gib(64.0, 124.0, 12.0), 64.0));
 
     using lemon::auto_context_available_gpu_gib;
     auto cuda_free = auto_context_available_gpu_gib(32.0, 4.0, false, 0.0, -1.0);

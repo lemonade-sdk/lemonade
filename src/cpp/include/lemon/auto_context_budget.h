@@ -104,7 +104,8 @@ inline AutoContextBudget estimate_auto_context_budget(double free_gib,
                                                        double kv_bytes_per_token,
                                                        bool gpu,
                                                        bool speculative,
-                                                       bool unified_gpu = false) {
+                                                       bool unified_gpu = false,
+                                                       double physical_free_gib = -1.0) {
     AutoContextBudget result;
     if (!std::isfinite(free_gib) || !std::isfinite(weights_gib) ||
         !std::isfinite(kv_bytes_per_token) ||
@@ -115,14 +116,25 @@ inline AutoContextBudget estimate_auto_context_budget(double free_gib,
     result.model_gib = weights_gib;
     const AutoContextReservePolicy& reserve_policy = !gpu ? AUTO_CTX_HOST_RESERVE
         : unified_gpu ? AUTO_CTX_UNIFIED_GPU_RESERVE : AUTO_CTX_DISCRETE_GPU_RESERVE;
-    const double memory_headroom_gib = reserve_policy.memory_headroom.estimate(free_gib);
+    const bool separate_ram_budget = gpu && unified_gpu &&
+        std::isfinite(physical_free_gib) && physical_free_gib >= 0.0;
+    const double memory_headroom_gib = reserve_policy.memory_headroom.estimate(
+        separate_ram_budget ? physical_free_gib : free_gib);
     const double compute_workspace_gib =
         reserve_policy.compute_workspace.estimate(result.model_gib);
     const double speculative_workspace_gib =
         speculative ? AUTO_CTX_SPECULATIVE_WORKSPACE_GIB : 0.0;
     result.reserve_gib = memory_headroom_gib + compute_workspace_gib +
         speculative_workspace_gib;
-    result.kv_gib = (std::max)(0.0, free_gib - result.model_gib - result.reserve_gib);
+    if (separate_ram_budget) {
+        const double gpu_kv = free_gib - result.model_gib -
+                              compute_workspace_gib - speculative_workspace_gib;
+        const double ram_kv = physical_free_gib - result.model_gib -
+                              result.reserve_gib;
+        result.kv_gib = (std::max)(0.0, (std::min)(gpu_kv, ram_kv));
+    } else {
+        result.kv_gib = (std::max)(0.0, free_gib - result.model_gib - result.reserve_gib);
+    }
 
     constexpr double bytes_per_gib = 1024.0 * 1024.0 * 1024.0;
     const double tokens = std::floor(result.kv_gib * bytes_per_gib / kv_bytes_per_token);
@@ -132,6 +144,37 @@ inline AutoContextBudget estimate_auto_context_budget(double free_gib,
             ? limit : static_cast<int64_t>(tokens);
     }
     return result;
+}
+
+// A GPU-only budget of zero does not prove that llama.cpp cannot load:
+// its automatic layer placement can spill weights to system RAM.
+inline int64_t auto_context_cpu_offload_fallback(
+    int64_t gpu_tokens, double gpu_free_gib, double physical_free_gib,
+    double weights_gib, double kv_bytes_per_token, bool speculative,
+    bool unified_gpu, bool allow_cpu_offload, int64_t minimum_ctx = 4096) {
+    if (!allow_cpu_offload || gpu_tokens > 0 || minimum_ctx <= 0 ||
+        !std::isfinite(weights_gib) || weights_gib <= 0.0 ||
+        !std::isfinite(kv_bytes_per_token) || kv_bytes_per_token <= 0.0)
+        return 0;
+
+    if (unified_gpu) {
+        if (!std::isfinite(physical_free_gib) || physical_free_gib <= 0.0)
+            return 0;
+        // Unified GPU memory and CPU RAM are the same physical allocation pool.
+        const auto ram_budget = estimate_auto_context_budget(
+            physical_free_gib, weights_gib, kv_bytes_per_token, true, speculative, true);
+        return ram_budget.max_tokens >= minimum_ctx ? minimum_ctx : 0;
+    }
+
+    if (!std::isfinite(physical_free_gib) || physical_free_gib < 0.0)
+        return minimum_ctx;
+    const double combined_gib = (std::max)(0.0, gpu_free_gib) +
+        (std::max)(0.0, physical_free_gib);
+    const double required_gib = weights_gib +
+        static_cast<double>(minimum_ctx) * kv_bytes_per_token /
+            (1024.0 * 1024.0 * 1024.0) +
+        (speculative ? AUTO_CTX_SPECULATIVE_WORKSPACE_GIB : 0.0);
+    return combined_gib >= required_gib ? minimum_ctx : 0;
 }
 
 } // namespace lemon

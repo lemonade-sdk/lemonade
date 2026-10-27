@@ -53,6 +53,14 @@ public:
         return 0.0; // First call, no delta yet
     }
 
+    double get_memory_total_gb() override {
+        MEMORYSTATUSEX memInfo;
+        memInfo.dwLength = sizeof(MEMORYSTATUSEX);
+        return GlobalMemoryStatusEx(&memInfo)
+            ? static_cast<double>(memInfo.ullTotalPhys) / (1024.0 * 1024.0 * 1024.0)
+            : 0.0;
+    }
+
     double get_memory_usage_gb() override {
         MEMORYSTATUSEX memInfo;
         memInfo.dwLength = sizeof(MEMORYSTATUSEX);
