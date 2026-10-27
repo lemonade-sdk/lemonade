@@ -14,9 +14,13 @@ on:
         required: false
         default: ''
       model_filter:
-        description: 'Comma-separated model names (blank = default set)'
+        description: 'Comma-separated model names (blank = all hot models)'
         required: false
         default: ''
+      model_groups:
+        description: 'Parallel machines; each runs every backend on its share of the hot models'
+        required: false
+        default: '4'
 
 # Only contents:write is needed — the report job pushes results to the
 # benchmark-data branch. No issues/PRs are created (regressions are tracked in
@@ -38,10 +42,6 @@ env:
   # Branch that accumulates nightly results + leaderboard. This is what makes
   # day-over-day regression detection possible at all.
   HISTORY_BRANCH: benchmark-data
-  # Empty = benchmark the full "hot" llama.cpp model set from the registry
-  # (validate_backend_bench.py fetches it live from /api/v1/models). Override per
-  # run via the workflow_dispatch model_filter input.
-  DEFAULT_MODEL_FILTER: ""
 
 jobs:
   # =========================================================================
@@ -56,6 +56,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       forks: ${{ steps.matrix.outputs.forks }}
+      groups: ${{ steps.matrix.outputs.groups }}
     steps:
       - uses: actions/checkout@v5
 
@@ -63,6 +64,8 @@ jobs:
         id: matrix
         env:
           FORK_FILTER: ${{ inputs.fork_filter }}
+          MODEL_FILTER: ${{ inputs.model_filter }}
+          MODEL_GROUPS: ${{ inputs.model_groups || '4' }}
         run: |
           python3 - << 'PY'
           import json, os, sys
@@ -82,28 +85,41 @@ jobs:
             print("ERROR: no forks selected")
             sys.exit(1)
           print(f"Benching forks: {ids}")
+          registry = json.loads(Path("src/cpp/resources/server_models.json").read_text())
+          models = [m.strip() for m in os.environ.get("MODEL_FILTER", "").split(",") if m.strip()]
+          if not models:
+            models = [k for k, v in registry.items() if isinstance(v, dict)
+                      and v.get("recipe") == "llamacpp" and "hot" in v.get("labels", [])]
+          size = lambda m: (registry.get(m) or {}).get("size") or 1
+          n = max(1, min(int(os.environ.get("MODEL_GROUPS") or 4), len(models)))
+          bins, load = [[] for _ in range(n)], [0.0] * n
+          # Largest first onto the lightest machine, so per-machine work is even.
+          for m in sorted(models, key=size, reverse=True):
+            k = load.index(min(load))
+            bins[k].append(m)
+            load[k] += size(m)
+          groups = [{"name": f"group-{k + 1}", "models": ",".join(sorted(b))} for k, b in enumerate(bins) if b]
+          for g, l in zip(groups, load):
+            print(f"{g['name']} (~{l:.0f} GB): {g['models']}")
           with open(os.environ["GITHUB_OUTPUT"], "a") as f:
             f.write(f"forks={json.dumps(ids)}\n")
+            f.write(f"groups={json.dumps(groups)}\n")
           PY
 
   # =========================================================================
-  # Get lemonade — download embeddable release package, no build needed.
-  # Uses curl + GitHub API only (no gh CLI, no sudo, no cmake).
-  # =========================================================================
-  # Bench — one job per fork.
-  # max-parallel: 1 is load-bearing: benches must run one at a time on the
-  # shared box or the perf numbers are meaningless.
+  # Bench — one job per model group. Each job runs EVERY backend on the same
+  # machine, one after another, so backends are compared on identical hardware;
+  # groups run in parallel on separate devlab machines.
   # =========================================================================
   bench:
-    name: Bench ${{ matrix.fork_id }}
+    name: Bench ${{ matrix.group.name }}
     needs: [setup]
     runs-on: [self-hosted, Linux, strix-halo, devlab-dispatch]
-    timeout-minutes: 300
+    timeout-minutes: 360
     strategy:
       fail-fast: false
-      max-parallel: 1
       matrix:
-        fork_id: ${{ fromJSON(needs.setup.outputs.forks) }}
+        group: ${{ fromJSON(needs.setup.outputs.groups) }}
 
     steps:
       - uses: actions/checkout@v5
@@ -136,168 +152,71 @@ jobs:
           echo "Lemonade $VERSION ready"
           echo "LEMONADE_VERSION=$VERSION" >> "$GITHUB_ENV"
 
-      # validate_backend_bench.py is pure stdlib (no pip deps), so plain
-      # setup-python + system python3 is enough — no venv/requirements needed.
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      # -------------------------------------------------------------------
-      # Restore this fork's benchmark history from the benchmark-data branch
-      # so validate_backend_bench.py has previous runs to compare against.
-      # validate_backend_bench.py treats existing run-*.json files in --output/<fork>/
-      # <model>/ as prior runs (find_previous_result), so restore into that
-      # same layout.
-      # -------------------------------------------------------------------
+      # validate_backend_bench.py compares against prior run-*.json files in
+      # --output/<fork>/<model>/, so restore history into that layout.
       - name: Restore benchmark history
         env:
-          FORK_ID: ${{ matrix.fork_id }}
+          FORKS: ${{ needs.setup.outputs.forks }}
         run: |
           set -e
           mkdir -p ci/results
-          # Read this fork's prior run-*.json from the benchmark-data branch
-          # (git archive extracts the tree without checking it out / disturbing
-          # the workspace). validate_backend_bench.py compares against these.
           if git fetch origin "$HISTORY_BRANCH" 2>/dev/null; then
             mkdir -p .bench-history
             git archive FETCH_HEAD | tar -x -C .bench-history
-            if [ -d ".bench-history/results/$FORK_ID" ]; then
-              cp -r ".bench-history/results/$FORK_ID" ci/results/
-              echo "Restored $(find "ci/results/$FORK_ID" -name 'run-*.json' | wc -l) prior run(s) for $FORK_ID"
-            else
-              echo "No history for $FORK_ID yet (first run for this fork)"
-            fi
+            for FORK_ID in $(echo "$FORKS" | python3 -c 'import json,sys; print(" ".join(json.load(sys.stdin)))'); do
+              if [ -d ".bench-history/results/$FORK_ID" ]; then
+                cp -r ".bench-history/results/$FORK_ID" ci/results/
+                echo "Restored $(find "ci/results/$FORK_ID" -name 'run-*.json' | wc -l) prior run(s) for $FORK_ID"
+              fi
+            done
           else
             echo "No $HISTORY_BRANCH branch yet (first run overall)"
           fi
 
-      - name: Download fork binary
+      - name: Download fork binaries
         env:
-          FORK_ID: ${{ matrix.fork_id }}
+          FORKS: ${{ needs.setup.outputs.forks }}
         run: |
           set -e
-          # Download (or reuse cached) the fork's prebuilt binary into
-          # ../bench-binaries/<fork_id>/. No lemond needed for this step.
           python3 .github/scripts/validate_backend_bench.py \
             --forks        src/cpp/resources/benchmark_forks.json \
             --output       ci/results \
             --binaries-dir "${{ github.workspace }}/../bench-binaries" \
-            --fork-filter  "$FORK_ID" \
+            --fork-filter  "$(echo "$FORKS" | python3 -c 'import json,sys; print(",".join(json.load(sys.stdin)))')" \
             --download-only
 
-          # Resolve the config target: the real llamacpp backend key + the
-          # FULL PATH to the llama-server executable. This lemond build execs
-          # the llamacpp.<key>_bin value VERBATIM — a directory value produces
-          # EISDIR ("Failed to execute") and /load 500. It must be the file.
-          # (lemond derives LD_LIBRARY_PATH from dirname(bin), so the file path
-          # also puts the fork's bundled .so dir on the library path for free.)
-          # "rocm-nightly"/"rocm-gfx11" are NOT backend keys — forks map to a
-          # real key ("rocm","vulkan",...) via install_as, plus rocm_channel.
-          python3 - << 'PY'
-          import json, os, sys
-          from pathlib import Path
-          forks = json.loads(Path("src/cpp/resources/benchmark_forks.json").read_text())["forks"]
-          fork_id = os.environ["FORK_ID"]
-          fork = next((f for f in forks if f["fork_id"] == fork_id), None)
-          if not fork:
-            print(f"ERROR: fork {fork_id} not found"); sys.exit(1)
-          cfg_backend    = fork.get("install_as", fork["backend"]).lower()
-          cfg_recipe     = fork.get("recipe", "llamacpp")
-          cfg_section    = fork.get("config_section", cfg_recipe)
-          rocm_channel   = fork.get("rocm_channel", "")
-          exe            = fork.get("binary_exe_linux", "llama-server")
-          bindir         = Path(os.environ["GITHUB_WORKSPACE"]) / ".." / "bench-binaries" / fork_id
-          binary         = next(bindir.rglob(exe), None)
-          if not binary:
-            print(f"ERROR: {exe} not found under {bindir}"); sys.exit(1)
-          binary = binary.resolve()
-          print(f"Config target: {cfg_section}.{cfg_backend}_bin = {binary}")
-          with open(os.environ["GITHUB_ENV"], "a") as f:
-            f.write(f"BENCH_BACKEND_KEY={cfg_backend}\n")
-            f.write(f"BENCH_CONFIG_SECTION={cfg_section}\n")
-            f.write(f"BENCH_RECIPE={cfg_recipe}\n")
-            f.write(f"BENCH_BIN_FILE={binary}\n")
-            f.write(f"BENCH_BIN_DIR={binary.parent}\n")
-            f.write(f"BENCH_ROCM_CHANNEL={rocm_channel}\n")
-          PY
-          echo "Fork binary ready"
-
-      - name: Run validation with lemond
+      - name: Run every backend on this machine
         env:
           HOME: ${{ github.workspace }}/.home
-          MODEL_FILTER_INPUT: ${{ inputs.model_filter }}
+          FORKS: ${{ needs.setup.outputs.forks }}
+          GROUP_MODELS: ${{ matrix.group.models }}
         run: |
-          set -e
+          set -u
           mkdir -p "$HOME"
           echo "HOME=$HOME" >> "$GITHUB_ENV"
-          FORK_ID="${{ matrix.fork_id }}"
-
-          # workflow_dispatch model_filter input wins; otherwise DEFAULT_MODEL_FILTER
-          # (empty = full hot-model set fetched live from the registry)
-          MODEL_FILTER="${MODEL_FILTER_INPUT:-$DEFAULT_MODEL_FILTER}"
+          echo "Models on this machine: $GROUP_MODELS"
 
           # Persistent caches OUTSIDE the workspace (checkout clean:true wipes
-          # the workspace, RUNNER_TEMP is wiped between jobs). Without this the
-          # 35B model re-downloads every night. Shared across forks — model
-          # files are identical and max-parallel:1 prevents races.
+          # the workspace). Model files are shared by every backend in this job;
+          # each backend gets its own config dir so routing never leaks between them.
           BENCH_ROOT="$(cd "${{ github.workspace }}/.." && pwd)"
           CACHE_DIR="$BENCH_ROOT/lemond-bench-cache"
           export HF_HOME="$BENCH_ROOT/hf-cache"
           mkdir -p "$CACHE_DIR" "$HF_HOME"
-
-          LOGS_DIR="$(pwd)/server-logs-$FORK_ID"
-          mkdir -p "$LOGS_DIR"
           mkdir -p "$RUNNER_TEMP/xdg-runtime"
           chmod 700 "$RUNNER_TEMP/xdg-runtime"
           export XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg-runtime"
-
-          pick_free_port() {
-            if command -v python3 >/dev/null 2>&1; then
-              python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1]); s.close()' && return 0
-            fi
-            for _ in $(seq 1 50); do
-              local p=$(( (RANDOM % 20000) + 20000 ))
-              if ! ss -ltn 2>/dev/null | grep -q ":$p "; then echo "$p"; return 0; fi
-            done
-            return 1
-          }
-
-          LEMOND_PID=""
-          started=0
-          for start_attempt in $(seq 1 5); do
-            PORT=$(pick_free_port) || { echo "ERROR: could not find a free port"; exit 1; }
-            echo "Attempt $start_attempt: starting lemond on 127.0.0.1:$PORT..."
-            build/lemond "$CACHE_DIR" --port "$PORT" --host 127.0.0.1 \
-              > "$LOGS_DIR/lemond.stdout.log" 2> "$LOGS_DIR/lemond.stderr.log" &
-            LEMOND_PID=$!
-            for i in $(seq 1 30); do
-              if curl -sf "http://127.0.0.1:$PORT/api/v1/health" > /dev/null 2>&1; then
-                echo "lemond is healthy on port $PORT (PID $LEMOND_PID)"
-                started=1
-                break
-              fi
-              if ! kill -0 "$LEMOND_PID" 2>/dev/null; then
-                echo "lemond (PID $LEMOND_PID) exited prematurely on port $PORT"
-                cat "$LOGS_DIR/lemond.stderr.log" 2>/dev/null || true
-                break
-              fi
-              sleep 2
-            done
-            [ "$started" = "1" ] && break
-            echo "Start attempt $start_attempt failed; retrying on a new port..."
-            kill -9 "$LEMOND_PID" 2>/dev/null || true
-            sleep 1
-          done
-          if [ "$started" != "1" ]; then
-            echo "ERROR: lemond failed to start after multiple attempts"
-            cat "$LOGS_DIR/lemond.stderr.log" 2>/dev/null || true
-            exit 1
-          fi
-
           LEMONADE="$(pwd)/build/lemonade"
 
-          # Wait until lemond is responsive to a config read (small helper).
+          pick_free_port() {
+            python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1]); s.close()'
+          }
+
           wait_lemond() {
             for _ in $(seq 1 30); do
               if curl -sf "http://127.0.0.1:$PORT/api/v1/health" >/dev/null 2>&1; then return 0; fi
@@ -306,191 +225,154 @@ jobs:
             return 1
           }
 
-          # ---------------------------------------------------------------
-          # Route the backend to the fork binary. CRITICAL: this lemond build
-          # execs the llamacpp.<key>_bin value VERBATIM, so it must be the FULL
-          # PATH TO THE llama-server FILE — a directory value produces EISDIR
-          # ("Failed to execute" -> exit 1 -> /load 500). Do NOT set a dir.
-          # (Detection alone can't catch this: system-info reports "installed"
-          # for both a dir and a file, since it only checks the path exists.)
-          #
-          # Set rocm_channel AND the *_bin path in ONE `config set` call. Setting
-          # *_bin applies live (lemond reloads the backend); doing channel then
-          # bin as two back-to-back calls left lemond mid-reload and the second
-          # call hit a dropped connection — the intermittent rocm-stable failure.
-          # One atomic call = one reload; then wait for health + retry once.
-          # `config set` takes multiple key=value pairs.
-          # ---------------------------------------------------------------
-          KEY="${BENCH_CONFIG_SECTION}.${BENCH_BACKEND_KEY}_bin"
-          SET_ARGS=("$KEY=$BENCH_BIN_FILE")
-          if [ -n "$BENCH_ROCM_CHANNEL" ]; then
-            # rocm_channel is a TOP-LEVEL config key (not nested under llamacpp)
-            SET_ARGS+=("rocm_channel=$BENCH_ROCM_CHANNEL")
-          fi
-          echo "Routing (atomic): config set ${SET_ARGS[*]}"
-          if ! "$LEMONADE" --port "$PORT" config set "${SET_ARGS[@]}"; then
-            echo "config set dropped the connection (live reload); waiting for lemond to settle and retrying..."
-            wait_lemond || { echo "ERROR: lemond did not become healthy after config reload"; exit 1; }
-            "$LEMONADE" --port "$PORT" config set "${SET_ARGS[@]}" \
-              || { echo "ERROR: config set retry failed"; exit 1; }
-          fi
-          wait_lemond || { echo "ERROR: lemond not healthy after routing config"; exit 1; }
-
-          # Confirm detection against /api/v1/system-info — the exact source
-          # `lemonade bench` reads (discover_backends filters on state=
-          # installed/update_*). Catches "No suitable backends found" up front.
-          if curl -sf "http://127.0.0.1:$PORT/api/v1/system-info" 2>/dev/null \
-              | BACKEND="$BENCH_BACKEND_KEY" RECIPE="$BENCH_RECIPE" python3 -c '
-          import json, os, sys
-          key = os.environ["BACKEND"]
-          recipe = os.environ["RECIPE"]
-          info = json.load(sys.stdin)
-          b = info.get("recipes", {}).get(recipe, {}).get("backends", {}).get(key, {})
-          state = b.get("state", "missing")
-          print(f"  {recipe}.{key} state = {state}")
-          sys.exit(0 if state in ("installed", "update_required", "update_available") else 1)
-          '; then
-            echo "Detection confirmed: bench will see --backend $BENCH_BACKEND_KEY (routed to $BENCH_BIN_FILE)"
-          else
-            echo "ERROR: after setting $KEY, system-info never reported '$BENCH_BACKEND_KEY' installed."
-            echo "lemonade bench would fail with 'No suitable backends found'. Aborting before wasting a bench run."
-            echo "--- system-info $BENCH_RECIPE backends ---"
-            curl -sf "http://127.0.0.1:$PORT/api/v1/system-info" 2>/dev/null \
-              | RECIPE="$BENCH_RECIPE" python3 -c 'import json,sys,os; print(json.dumps(json.load(sys.stdin).get("recipes",{}).get(os.environ["RECIPE"],{}).get("backends",{}), indent=2))' || true
-            exit 1
-          fi
-
-          # ---------------------------------------------------------------
-          # SMOKE TEST the fork binary directly, BEFORE the bench, so a broken
-          # binary (missing shared libs, bad HIP init, wrong arch) surfaces its
-          # REAL error here instead of as an opaque "/load 500" later. lemond
-          # launches this same binary from its own dir with that dir on
-          # LD_LIBRARY_PATH (llamacpp_server.cpp), so replicate that here.
-          # ---------------------------------------------------------------
-          FORK_EXE="$BENCH_BIN_FILE"
-          echo "=== fork binary smoke test: $FORK_EXE ==="
-          ls -l "$FORK_EXE" || true
-          echo "--- ldd (missing shared libs show as 'not found') ---"
-          LD_LIBRARY_PATH="$BENCH_BIN_DIR:$LD_LIBRARY_PATH" ldd "$FORK_EXE" 2>&1 | grep -iE "not found|=>" | head -n 40 || true
-          echo "--- llama-server --version ---"
-          SMOKE_RC=0
-          LD_LIBRARY_PATH="$BENCH_BIN_DIR:$LD_LIBRARY_PATH" "$FORK_EXE" --version \
-            > "$LOGS_DIR/fork-binary-version.txt" 2>&1 || SMOKE_RC=$?
-          cat "$LOGS_DIR/fork-binary-version.txt" || true
-          if [ "$SMOKE_RC" != "0" ]; then
-            echo "ERROR: fork binary failed to run (exit $SMOKE_RC). This is the true cause of the /load 500."
-            echo "See ldd output above for missing libs; the fork archive likely does not bundle its ROCm runtime."
-            kill "$LEMOND_PID" 2>/dev/null || true
-            exit 1
-          fi
-          echo "Smoke test passed — binary is runnable"
-
-          # ---------------------------------------------------------------
-          # Pull models FIRST, before the bench run, so the download is a
-          # distinct, visible stage (not buried inside --auto-pull mid-bench)
-          # and shared across every fork via the persistent cache. Idempotent:
-          # a no-op once the weights are on disk.
-          # ---------------------------------------------------------------
-          if [ -n "$MODEL_FILTER" ]; then
-            IFS=',' read -ra MODELS <<< "$MODEL_FILTER"
-            for m in "${MODELS[@]}"; do
-              m="$(echo "$m" | xargs)"   # trim
-              [ -z "$m" ] && continue
-              echo "Pulling model $m ..."
-              "$LEMONADE" --port "$PORT" pull "$m" && echo "$m ready" \
-                || echo "WARN: pull $m returned non-zero (bench --auto-pull will retry)"
+          start_lemond() {
+            for start_attempt in $(seq 1 5); do
+              PORT=$(pick_free_port) || return 1
+              echo "Attempt $start_attempt: starting lemond on 127.0.0.1:$PORT..."
+              build/lemond "$CACHE_DIR" "$CFG_DIR" --port "$PORT" --host 127.0.0.1 \
+                > "$LOGS_DIR/lemond.stdout.log" 2> "$LOGS_DIR/lemond.stderr.log" &
+              LEMOND_PID=$!
+              if wait_lemond; then echo "lemond healthy on port $PORT (PID $LEMOND_PID)"; return 0; fi
+              echo "Start attempt $start_attempt failed; retrying on a new port..."
+              kill -9 "$LEMOND_PID" 2>/dev/null || true
+              sleep 1
             done
-          fi
+            return 1
+          }
 
-          # snapshot pre-existing (restored-history) result files so that, if
-          # binary verification fails below, the unverified FRESH results can
-          # be purged and never reach the results artifact / history branch
-          find ci/results -name 'run-*.json' 2>/dev/null | sort > /tmp/pre-bench-files || true
+          stop_lemond() {
+            curl -sf -X POST "http://127.0.0.1:$PORT/internal/shutdown" >/dev/null 2>&1 || true
+            sleep 2
+            kill -9 "$LEMOND_PID" 2>/dev/null || true
+            pkill -9 -f "bench-binaries/$FORK_ID" 2>/dev/null || true
+          }
 
-          EXIT_CODE=0
-          BENCH_ARGS=(
-            .github/scripts/validate_backend_bench.py
-            --forks        src/cpp/resources/benchmark_forks.json
-            --output       ci/results
-            --binaries-dir "${{ github.workspace }}/../bench-binaries"
-            --fork-filter  "$FORK_ID"
-            --port         "$PORT"
-          )
-          if [ -n "$MODEL_FILTER" ]; then
-            BENCH_ARGS+=(--model-filter "$MODEL_FILTER")
-          fi
-          LEMONADE_EXE="$LEMONADE" python3 "${BENCH_ARGS[@]}" || EXIT_CODE=$?
-
-          # On failure, dump lemond's stderr INLINE so the real llama-server
-          # startup error (the cause behind an opaque "/load 500") is visible in
-          # the job log without downloading the artifact. CI runs at debug level
-          # (LEMONADE_CI_MODE), so llama-server's own output is inherited here.
-          if [ "$EXIT_CODE" != "0" ]; then
-            echo "=================== lemond.stderr.log (tail) ==================="
-            tail -n 120 "$LOGS_DIR/lemond.stderr.log" 2>/dev/null || echo "(no stderr log)"
-            echo "=================== lemond.stdout.log (tail) ==================="
-            tail -n 60 "$LOGS_DIR/lemond.stdout.log" 2>/dev/null || echo "(no stdout log)"
-            echo "==============================================================="
-          fi
-
-          curl -sf -X POST "http://127.0.0.1:$PORT/internal/shutdown" || true
-
-          # ---------------------------------------------------------------
-          # VERIFY the fork binary actually SERVED the bench — but per-model,
-          # so one crashing model does NOT discard the other models' good data.
-          #
-          # Guard against the fatal case only: the fork binary was NEVER the
-          # one that ran (silent fallback to the builtin => WRONG-build numbers).
-          # A single model crashing at load (exit 139/EISDIR/missing op) is
-          # expected for some checkpoints; those runs simply have no valid
-          # scenarios and are skipped by the aggregator. We keep the good ones.
-          # ---------------------------------------------------------------
           purge_fresh_results() {
-            find ci/results -name 'run-*.json' 2>/dev/null | sort > /tmp/post-bench-files || true
+            find "ci/results/$FORK_ID" -name 'run-*.json' 2>/dev/null | sort > /tmp/post-bench-files || true
             comm -13 /tmp/pre-bench-files /tmp/post-bench-files | xargs -r rm --
           }
 
-          # (A) Did the fork binary launch at all? If its FILE path never appears
-          # in the logs, lemond fell back to the builtin — that IS fatal.
-          if ! grep -rqs "$BENCH_BIN_FILE" "$LOGS_DIR"; then
-            echo "ERROR: no evidence in lemond logs that $BENCH_BIN_FILE was launched."
-            echo "Bench likely ran on the builtin binary — refusing to publish these numbers."
-            grep -ri "llama-server" "$LOGS_DIR" | head -n 20 || true
-            purge_fresh_results
+          bench_one_fork() {
+            # Resolve the config target: the real backend key + the FULL PATH to
+            # the llama-server file. lemond execs <section>.<key>_bin verbatim, so
+            # a directory value fails with EISDIR and /load 500.
+            eval "$(FORK_ID="$FORK_ID" python3 - << 'PY'
+          import json, os, shlex
+          from pathlib import Path
+          forks = json.loads(Path("src/cpp/resources/benchmark_forks.json").read_text())["forks"]
+          fork = next(f for f in forks if f["fork_id"] == os.environ["FORK_ID"])
+          models = [m for m in os.environ["GROUP_MODELS"].split(",") if m]
+          aliases = fork.get("model_aliases")
+          runnable = any(m in aliases.values() for m in models) if aliases else True
+          exe = fork.get("binary_exe_linux", "llama-server")
+          bindir = Path(os.environ["GITHUB_WORKSPACE"]) / ".." / "bench-binaries" / fork["fork_id"]
+          binary = next(bindir.rglob(exe), None)
+          recipe = fork.get("recipe", "llamacpp")
+          for k, v in {
+            "RUNNABLE": "1" if runnable else "0",
+            "BENCH_BACKEND_KEY": fork.get("install_as", fork["backend"]).lower(),
+            "BENCH_RECIPE": recipe,
+            "BENCH_CONFIG_SECTION": fork.get("config_section", recipe),
+            "BENCH_ROCM_CHANNEL": fork.get("rocm_channel", ""),
+            "BENCH_BIN_FILE": str(binary.resolve()) if binary else "",
+          }.items():
+            print(f"{k}={shlex.quote(v)}")
+          PY
+            )"
+            if [ "$RUNNABLE" != "1" ]; then
+              echo "No models for $FORK_ID on this machine; skipping."
+              return 0
+            fi
+            if [ -z "$BENCH_BIN_FILE" ]; then
+              echo "ERROR: fork binary for $FORK_ID not found"; return 1
+            fi
+            BENCH_BIN_DIR="$(dirname "$BENCH_BIN_FILE")"
+            LOGS_DIR="$(pwd)/server-logs/$FORK_ID"
+            CFG_DIR="$BENCH_ROOT/lemond-config/$FORK_ID"
+            rm -rf "$CFG_DIR"
+            mkdir -p "$LOGS_DIR" "$CFG_DIR"
+
+            start_lemond || { echo "ERROR: lemond failed to start for $FORK_ID"; return 1; }
+
+            # Set rocm_channel and *_bin in ONE `config set`: two back-to-back
+            # calls left lemond mid-reload and the second call was dropped.
+            KEY="${BENCH_CONFIG_SECTION}.${BENCH_BACKEND_KEY}_bin"
+            SET_ARGS=("$KEY=$BENCH_BIN_FILE")
+            [ -n "$BENCH_ROCM_CHANNEL" ] && SET_ARGS+=("rocm_channel=$BENCH_ROCM_CHANNEL")
+            echo "Routing (atomic): config set ${SET_ARGS[*]}"
+            if ! "$LEMONADE" --port "$PORT" config set "${SET_ARGS[@]}"; then
+              wait_lemond && "$LEMONADE" --port "$PORT" config set "${SET_ARGS[@]}" \
+                || { echo "ERROR: config set failed for $FORK_ID"; stop_lemond; return 1; }
+            fi
+            wait_lemond || { echo "ERROR: lemond not healthy after routing $FORK_ID"; stop_lemond; return 1; }
+
+            if ! curl -sf "http://127.0.0.1:$PORT/api/v1/system-info" 2>/dev/null \
+                | BACKEND="$BENCH_BACKEND_KEY" RECIPE="$BENCH_RECIPE" python3 -c '
+          import json, os, sys
+          recipe, key = os.environ["RECIPE"], os.environ["BACKEND"]
+          state = json.load(sys.stdin).get("recipes", {}).get(recipe, {}).get("backends", {}).get(key, {}).get("state", "missing")
+          print(f"  {recipe}.{key} state = {state}")
+          sys.exit(0 if state in ("installed", "update_required", "update_available") else 1)
+          '; then
+              echo "ERROR: system-info never reported '$BENCH_BACKEND_KEY' installed for $FORK_ID"
+              stop_lemond; return 1
+            fi
+
+            # Smoke-test the binary directly so missing libs / bad HIP init show
+            # their real error instead of an opaque /load 500 later.
+            if ! LD_LIBRARY_PATH="$BENCH_BIN_DIR:${LD_LIBRARY_PATH:-}" "$BENCH_BIN_FILE" --version \
+                > "$LOGS_DIR/fork-binary-version.txt" 2>&1; then
+              cat "$LOGS_DIR/fork-binary-version.txt" || true
+              LD_LIBRARY_PATH="$BENCH_BIN_DIR:${LD_LIBRARY_PATH:-}" ldd "$BENCH_BIN_FILE" 2>&1 | grep -i "not found" || true
+              echo "ERROR: fork binary for $FORK_ID failed to run"
+              stop_lemond; return 1
+            fi
+
+            find "ci/results/$FORK_ID" -name 'run-*.json' 2>/dev/null | sort > /tmp/pre-bench-files || true
+            LEMONADE_EXE="$LEMONADE" python3 .github/scripts/validate_backend_bench.py \
+              --forks        src/cpp/resources/benchmark_forks.json \
+              --output       ci/results \
+              --binaries-dir "${{ github.workspace }}/../bench-binaries" \
+              --fork-filter  "$FORK_ID" \
+              --model-filter "$GROUP_MODELS" \
+              --port         "$PORT" \
+              || { tail -n 80 "$LOGS_DIR/lemond.stderr.log" 2>/dev/null || true; }
+            if [ -f ci/results/regression_report.json ]; then
+              mkdir -p "ci/results/$FORK_ID"
+              mv ci/results/regression_report.json "ci/results/$FORK_ID/regression_report.json"
+            fi
+            stop_lemond
+
+            # Refuse to publish numbers unless the fork binary actually served them.
+            if ! grep -rqs "$BENCH_BIN_FILE" "$LOGS_DIR"; then
+              echo "ERROR: no evidence lemond launched $BENCH_BIN_FILE — dropping $FORK_ID results"
+              purge_fresh_results; return 1
+            fi
+            fresh=$(comm -13 /tmp/pre-bench-files <(find "ci/results/$FORK_ID" -name 'run-*.json' 2>/dev/null | sort) | xargs -r grep -l '"tps"' 2>/dev/null | wc -l)
+            if [ "$fresh" = "0" ]; then
+              echo "ERROR: no model produced a valid result for $FORK_ID"
+              grep -rniE "terminated with exit code|Failed to execute|llama-server failed to start" "$LOGS_DIR" | head -n 20 || true
+              return 1
+            fi
+            echo "$FORK_ID: $fresh model(s) produced results"
+          }
+
+          FAILED=()
+          for FORK_ID in $(echo "$FORKS" | python3 -c 'import json,sys; print(" ".join(json.load(sys.stdin)))'); do
+            echo "::group::$FORK_ID"
+            bench_one_fork || FAILED+=("$FORK_ID")
+            echo "::endgroup::"
+          done
+          if [ ${#FAILED[@]} -gt 0 ]; then
+            echo "Backends that failed on this machine: ${FAILED[*]}"
             exit 1
           fi
-          echo "Verified: lemond launched the fork binary at $BENCH_BIN_FILE"
-
-          # (B) Did at least one model produce a valid TPS number? If EVERY model
-          # crashed, there is nothing worth publishing — fail so it's visible.
-          VALID=$(find ci/results -name 'run-*.json' 2>/dev/null -newer /tmp/pre-bench-files -print 2>/dev/null | xargs -r grep -l '"tps"' 2>/dev/null | wc -l || echo 0)
-          # (fallback count: any fresh file containing a tps block)
-          if [ "${VALID:-0}" = "0" ]; then
-            FRESH=$(comm -13 /tmp/pre-bench-files <(find ci/results -name 'run-*.json' 2>/dev/null | sort) 2>/dev/null || true)
-            VALID=$(printf '%s\n' "$FRESH" | xargs -r grep -l '"tps"' 2>/dev/null | wc -l || echo 0)
-          fi
-          if [ "${VALID:-0}" = "0" ]; then
-            echo "ERROR: no model produced a valid result (all loads failed)."
-            grep -rniE "terminated with exit code|Failed to execute|llama-server failed to start" "$LOGS_DIR" | head -n 20 || true
-            purge_fresh_results
-            exit 1
-          fi
-
-          # Surface any per-model crashes as a NON-fatal note (data still kept).
-          if grep -rqsE "terminated with exit code|llama-server failed to start" "$LOGS_DIR"; then
-            echo "NOTE: some model(s) crashed at load and were skipped; other models' results are kept."
-            grep -rniE "terminated with exit code" "$LOGS_DIR" | head -n 10 || true
-          fi
-
-          # Exit 0 as long as at least one model produced data. Per-model bench
-          # failures already surfaced above and are excluded by the aggregator.
-          exit 0
 
       - name: Upload results
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: bench-results-${{ matrix.fork_id }}-${{ github.run_id }}
+          name: bench-results-${{ matrix.group.name }}-${{ github.run_id }}
           path: ci/results/
           retention-days: 90
           if-no-files-found: warn
@@ -499,8 +381,8 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: lemond-logs-${{ matrix.fork_id }}-${{ github.run_id }}
-          path: server-logs-${{ matrix.fork_id }}/
+          name: lemond-logs-${{ matrix.group.name }}-${{ github.run_id }}
+          path: server-logs/
           retention-days: 14
           if-no-files-found: ignore
 
@@ -511,7 +393,7 @@ jobs:
       - name: Cleanup fork binaries processes
         if: always()
         run: |
-          pkill -9 -f "bench-binaries/${{ matrix.fork_id }}" 2>/dev/null || true
+          pkill -9 -f "bench-binaries/" 2>/dev/null || true
 
   # =========================================================================
   # Report — merges results into the benchmark-data branch, regenerates the
