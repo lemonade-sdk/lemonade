@@ -1,0 +1,154 @@
+#pragma once
+
+#include <nlohmann/json.hpp>
+
+#include "artifact_source.h"
+#include "registry_types.h"
+#include "artifact_layout.h"
+#include "registry_id.h"
+
+#include <cstdint>
+#include <functional>
+#include <map>
+#include <memory>
+#include <string>
+#include <vector>
+
+namespace lemon {
+namespace models {
+
+using lemon::RegistryFile;
+
+struct Revision {
+    std::string id;
+    bool pinned = false;    // an immutable commit SHA, not a mutable branch
+};
+
+struct RepoListing {
+    std::string repo_id;
+    Revision revision;
+    std::string download_revision;  // spelling the host's file endpoint wants
+    std::vector<RegistryFile> files;
+    // The host's own description of the repository, kept verbatim: variant
+    // readers read fields no Lemonade struct predicts.
+    nlohmann::json raw_metadata;
+};
+
+// Argument to file_url().
+struct RepoRef {
+    std::string repo_id;
+    Revision revision;
+    std::string path;
+};
+
+// The repo's cache directory.
+struct LocalRef {
+    std::string repo_id;
+};
+
+struct Staleness {
+    bool update_available = false;
+    std::string local_snapshot_id;
+    std::string remote_snapshot_id;
+    std::vector<std::string> changed_files;
+};
+
+// Where the resolver bound this checkpoint: the layout is the resolver's choice
+// (null means the snapshot layout), the sibling the file a side checkpoint sits
+// beside.
+struct SourcePlacement {
+    const ArtifactLayout* layout = nullptr;
+    std::string sibling;
+    std::string resolved;
+    // Which backend decides what a repository offers: the same repo answers with the
+    // GGUFs one recipe wants and nothing but the weights another does.
+    std::string recipe;
+};
+
+// The pullable role, layered on an artifact source.
+class FetchableRepository : public ArtifactSource {
+  public:
+    // The snapshot layout unless the resolver bound another.
+    const ArtifactLayout& layout() const {
+        return placement_.layout != nullptr ? *placement_.layout : hf_hub_layout();
+    }
+    const std::string& sibling() const { return placement_.sibling; }
+    const std::string& recipe() const { return placement_.recipe; }
+    const std::string& resolved() const { return placement_.resolved; }
+
+    virtual RegistryId id() const = 0;
+    virtual Revision default_revision() const = 0;
+
+    virtual RepoListing list(const std::string& repo_id,
+                             const std::string& revision = "") const = 0;
+    virtual std::string file_url(const RepoRef& ref) const = 0;
+    virtual std::map<std::string, std::string> auth_headers() const { return {}; }
+
+    virtual bool can_go_stale() const = 0;
+    virtual Revision active_revision(const LocalRef& local) const = 0;
+    virtual void set_active_revision(const LocalRef& local, const Revision& revision) = 0;
+    virtual Staleness compare(const LocalRef& local, const RepoListing& listing) const = 0;
+    virtual void commit(const LocalRef& local, const Revision& revision) = 0;
+
+    virtual std::string cache_dir_name(const std::string& repo_id) const = 0;
+
+    virtual bool supports_search() const { return false; }
+
+    // The marketplace question, answered by the host that can. Callers ask
+    // supports_search() first; the default throws for sources that cannot.
+    virtual RegistrySearchResponse search(const std::string& query,
+                                          std::size_t limit,
+                                          bool gguf_only) const;
+
+  protected:
+    FetchableRepository(ArtifactRef ref, SourcePlacement placement)
+        : ArtifactSource(std::move(ref)), placement_(placement) {}
+
+  private:
+    SourcePlacement placement_;
+};
+
+// The files the ref needs, placed by the layout.
+DownloadPlan registry_download_plan(const FetchableRepository& repository, const ArtifactRef& ref,
+                                    const ArtifactLayout& layout, const Placement& placement,
+                                    const RepoListing& listing);
+
+// A factory takes the ref its source will carry and the placement bound to it.
+using RepositoryFactory = std::function<std::unique_ptr<FetchableRepository>(
+    const ArtifactRef& ref, const SourcePlacement& placement)>;
+
+// Null when no registration for the id.
+std::unique_ptr<FetchableRepository> create_repository(const RegistryId& id, const ArtifactRef& ref,
+                                                       const SourcePlacement& placement = {});
+std::vector<RegistryId> registered_repository_ids();
+
+// Ids claimed twice; the first keeps serving.
+std::vector<RegistryId> repository_registration_conflicts();
+
+namespace detail {
+void add_repository_factory(const RegistryId& id, RepositoryFactory factory);
+}  // namespace detail
+
+}  // namespace models
+}  // namespace lemon
+
+// Static initializer; must not throw, or an unknown host aborts startup.
+#define LEMONADE_REGISTER_ARTIFACT_REPOSITORY_AT(line, ClassName, descriptor_expr)    \
+    static const bool lemonade_repository_registered_##line##_##ClassName = [] {      \
+        const ::lemon::models::RegistryDescriptor descriptor = descriptor_expr;   \
+        ::lemon::models::detail::add_descriptor(descriptor);                      \
+        ::lemon::models::detail::add_repository_factory(                          \
+            descriptor.id,                                                        \
+            [](const ::lemon::models::ArtifactRef& ref,                           \
+               const ::lemon::models::SourcePlacement& placement) {               \
+                return std::unique_ptr<::lemon::models::FetchableRepository>(     \
+                    new ClassName(ref, placement));                               \
+            });                                                                   \
+        return true;                                                              \
+    }()
+
+// __LINE__ keeps two registrations of one class distinct.
+#define LEMONADE_REGISTER_ARTIFACT_REPOSITORY_IMPL(line, ClassName, descriptor_expr) \
+    LEMONADE_REGISTER_ARTIFACT_REPOSITORY_AT(line, ClassName, descriptor_expr)
+#define LEMONADE_REGISTER_ARTIFACT_REPOSITORY(ClassName, descriptor_expr)              \
+    LEMONADE_REGISTER_ARTIFACT_REPOSITORY_IMPL(__LINE__, ClassName, descriptor_expr)

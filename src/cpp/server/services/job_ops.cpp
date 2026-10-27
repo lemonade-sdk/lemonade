@@ -52,10 +52,10 @@ lemon::jobs::OpProviders JobOps::build(ServerContext& ctx) {
         return lemon::jobs::json::parse(response.dump());
     };
     providers.model_get = [model_manager, model_json](const std::string& id) -> lemon::jobs::json {
-        auto models = model_manager->get_supported_models();
-        auto it = models.find(id);
-        if (it == models.end()) return lemon::jobs::json(nullptr);
-        return lemon::jobs::json::parse(model_json->to_json(id, it->second).dump());
+        auto resolved = model_manager->resolve(id);
+        if (!resolved) return lemon::jobs::json(nullptr);
+        return lemon::jobs::json::parse(
+            model_json->to_json(resolved->wire_id, *resolved->info).dump());
     };
     providers.load_op = [router, model_manager, job_states, current_job, state_mutex](
                             const lemon::jobs::json& params,

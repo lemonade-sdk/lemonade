@@ -660,19 +660,45 @@ test.describe('Accessibility — prefers-reduced-motion', () => {
     expect(secs, `Nav button transition-duration should be near-zero under reduce, got "${raw}"`).toBeLessThan(0.01);
   });
 
-  test('A34 — bottom-sheet has transform:none under reducedMotion=reduce (snaps, no slide animation)', async ({ page }) => {
+  test('A34 — reduced-motion mobile sheet stays closed and its dismiss controls work', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.goto('/');
-    await page.waitForSelector('.bottom-sheet');
 
-    // CSS: @media (prefers-reduced-motion: reduce) { .bottom-sheet { transform: none !important; } }
-    const transform = await page.evaluate(() => {
-      const sheet = document.querySelector('.bottom-sheet') as HTMLElement | null;
-      return sheet ? window.getComputedStyle(sheet).transform : '';
-    });
-    // 'none' means no translate is applied — sheet snaps rather than slides
-    expect(transform).toBe('none');
+    const sheet = page.locator('.bottom-sheet');
+    const composer = page.locator('.composer__input');
+    const trigger = page.locator('.chat__main .workspace-mobile-menu-button');
+    await expect(sheet).toHaveAttribute('aria-hidden', 'true');
+    // A closed sheet must be below the viewport, not covering the composer.
+    const closedBox = await sheet.boundingBox();
+    expect(closedBox).not.toBeNull();
+    expect(closedBox!.y).toBeGreaterThanOrEqual(await page.evaluate(() => window.innerHeight) - 1);
+    await composer.click();
+    await expect(composer).toBeFocused();
+
+    await trigger.click();
+    await expect(sheet).toHaveClass(/bottom-sheet--open/);
+    // The handle must still move the sheet; removing transitions is enough to
+    // respect reduced motion, but removing transforms breaks drag and close.
+    const openBox = await sheet.boundingBox();
+    const grip = await sheet.locator('.bottom-sheet__handle').boundingBox();
+    expect(openBox).not.toBeNull();
+    expect(grip).not.toBeNull();
+    const x = grip!.x + grip!.width / 2;
+    const y = grip!.y + grip!.height / 2;
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.mouse.move(x, y + 140, { steps: 4 });
+    const draggedBox = await sheet.boundingBox();
+    expect(draggedBox!.y).toBeGreaterThan(openBox!.y + 80);
+    await page.mouse.up();
+    await expect(sheet).toHaveAttribute('aria-hidden', 'true');
+
+    await trigger.click();
+    await sheet.getByRole('button', { name: 'Close conversation history' }).click();
+    await expect(sheet).toHaveAttribute('aria-hidden', 'true');
+    await composer.click();
+    await expect(composer).toBeFocused();
   });
 });
 

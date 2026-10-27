@@ -2613,8 +2613,6 @@ option:checked {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
-  }.bottom-sheet {
-    transform: none !important;
   }}.app-icon {
   display: block;
   flex: 0 0 auto;

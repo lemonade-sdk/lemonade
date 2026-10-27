@@ -1,14 +1,14 @@
 #pragma once
 
+#include <cstdint>
 #include <filesystem>
+#include <map>
 #include <optional>
 #include <shared_mutex>
 #include <string>
-#include <unordered_map>
-#include <unordered_set>
-#include <vector>
 
 namespace lemon {
+namespace models {
 
 class AliasManager {
 public:
@@ -44,7 +44,7 @@ public:
     /**
      * Get a copy of all current alias bindings (alias -> target).
      */
-    std::unordered_map<std::string, std::string> get_all_aliases() const;
+    std::map<std::string, std::string> get_all_aliases() const;
 
     /**
      * Load aliases from cache_dir / "aliases.json".
@@ -53,13 +53,18 @@ public:
 
     /**
      * Save current aliases to cache_dir / "aliases.json".
+     *
+     * Takes the exclusive lock and keeps it through the rename. Callers hold no lock.
      */
     void save();
 
 private:
     std::string cache_dir_;
+    // Also orders saves of aliases.json: a save holds it through the rename.
     mutable std::shared_mutex mutex_;
-    std::unordered_map<std::string, std::string> aliases_;
+    std::map<std::string, std::string> aliases_;
+    uint64_t save_sequence_ = 0;
 };
 
-} // namespace lemon
+}  // namespace models
+}  // namespace lemon
