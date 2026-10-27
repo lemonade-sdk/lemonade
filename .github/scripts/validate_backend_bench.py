@@ -200,7 +200,6 @@ def find_lemonade_bin() -> str:
 def get_models_from_registry(
     base_url: str, recipe: str = "llamacpp", require_hot: bool = True
 ) -> list[str]:
-    """Live-registry models for `recipe`, hot-labeled only unless require_hot=False."""
     try:
         req = urllib.request.Request(f"{base_url}/api/v1/models?show_all=true")
         with urllib.request.urlopen(req, timeout=30) as r:
@@ -516,7 +515,6 @@ def backend_results(data: dict, model: str | None = None) -> list[dict]:
 
 
 def annotate_pp(data: dict) -> None:
-    """Promote bench pp_tps dict to scalar mean, mirroring tps_mean for TG."""
     for br in backend_results(data):
         for sc in br.get("scenarios", []):
             native = sc.get("pp_tps")
@@ -796,7 +794,6 @@ def main() -> int:
             fork_recipe = fork.get("recipe", "llamacpp")
             aliases = fork.get("model_aliases", {})
             if aliases:
-                # Fork ships its own model names: run the alias of each hot GGUF.
                 hot = set(get_models_from_registry(base_url, recipe="llamacpp"))
                 available = set(
                     get_models_from_registry(

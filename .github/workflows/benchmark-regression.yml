@@ -91,7 +91,6 @@ jobs:
   # Uses curl + GitHub API only (no gh CLI, no sudo, no cmake).
   # =========================================================================
   # Bench — one job per fork.
-  # Runner: [self-hosted, stx-halo, Linux, X64, lemon-prod]
   # max-parallel: 1 is load-bearing: benches must run one at a time on the
   # shared box or the perf numbers are meaningless.
   # =========================================================================
