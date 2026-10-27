@@ -1,5 +1,6 @@
 // Unit tests for Router-backed ClassifierServices wiring (#2384).
 
+#include "lemon/backends/onnxruntime/ort_server_health.h"
 #include "lemon/error_types.h"
 #include "lemon/routing_classifier_services.h"
 
@@ -215,6 +216,46 @@ static void test_run_zero_shot_classifier_forwards_labels() {
           near(scores.scores.at("cooking"), 0.93) && near(scores.scores.at("coding"), 0.02));
     check("run_zero_shot_classifier reports no cut when the backend omits truncated",
           !scores.truncated);
+    check("run_zero_shot_classifier treats a backend that omits reports_truncation as "
+          "one that cannot report cuts",
+          !scores.reports_truncation);
+}
+
+// OnnxRuntimeServer stamps reports_truncation on each classify response; both
+// classify paths must carry it, and `truncated`, through to the engine.
+static void test_classify_paths_parse_reports_truncation() {
+    auto services = lemon::make_classifier_services_from_router_calls(
+        [](const json&) { return json::object(); },
+        [](const json&) { return json::object(); },
+        {},
+        [](const json&) {
+            return json{{"labels", {{"PII", 0.2}, {"NO_PII", 0.8}}},
+                        {"truncated", true},
+                        {"reports_truncation", true}};
+        },
+        [](const std::string&) { return lemon::ModelType::CLASSIFICATION; });
+
+    auto fixed = services.run_classifier("pii-model", "text");
+    check("run_classifier parses reports_truncation and truncated",
+          fixed.reports_truncation && fixed.truncated);
+    auto zero_shot = services.run_zero_shot_classifier("pii-model", "text", {"PII", "NO_PII"});
+    check("run_zero_shot_classifier parses reports_truncation and truncated",
+          zero_shot.reports_truncation && zero_shot.truncated);
+}
+
+// The version rule OnnxRuntimeServer applies to ort-server's /health body.
+static void test_ort_server_reports_truncation_from_0_4_0() {
+    using lemon::backends::onnxruntime::reports_truncation;
+    check("0.4.0 reports truncation", reports_truncation(json{{"version", "0.4.0"}}));
+    check("0.10.0 compares numerically, not as text",
+          reports_truncation(json{{"version", "0.10.0"}}));
+    check("1.0.0 reports truncation", reports_truncation(json{{"version", "1.0.0"}}));
+    check("0.3.9 does not", !reports_truncation(json{{"version", "0.3.9"}}));
+    check("0.3.7's /health, which carries no version, does not",
+          !reports_truncation(json{{"status", "ok"}, {"onnxruntime", "1.27.0"}}));
+    check("an unparseable version does not", !reports_truncation(json{{"version", "dev"}}));
+    check("a non-string version does not", !reports_truncation(json{{"version", 4}}));
+    check("an error body does not", !reports_truncation(json{{"error", "not loaded"}}));
 }
 
 static void test_run_zero_shot_classifier_loads_before_resolving_type() {
@@ -1130,6 +1171,8 @@ int main() {
     test_run_classifier_uses_router_chat_completion();
     test_run_classifier_uses_classify_for_classification_model();
     test_run_zero_shot_classifier_forwards_labels();
+    test_classify_paths_parse_reports_truncation();
+    test_ort_server_reports_truncation_from_0_4_0();
     test_run_zero_shot_classifier_loads_before_resolving_type();
     test_run_zero_shot_classifier_rejects_non_classification_model();
     test_run_classifier_falls_back_to_chat_for_non_classification_model();

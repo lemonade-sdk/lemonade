@@ -101,6 +101,12 @@ public:
         declare("run_classifier", model);
     }
 
+    // Serve `model` from a backend that cannot report cuts (ort-server before
+    // 0.4.0). Every other model answers like 0.4.0 and later.
+    void set_backend_reports_no_truncation(const std::string& model) {
+        unreporting_backends_.insert(model);
+    }
+
     void set_chat_failure(const std::string& model) {
         failing_chats_.insert(model);
         declare("chat", model);
@@ -189,7 +195,8 @@ public:
             auto it = self->classifier_scores_.find(model);
             if (it != self->classifier_scores_.end()) {
                 self->mark_used("run_classifier", model);
-                return ClassifierScores{it->second, truncated};
+                return ClassifierScores{it->second, truncated,
+                                        self->unreporting_backends_.count(model) == 0};
             }
             self->record_unexpected("run_classifier", model);
             return ClassifierScores{};
@@ -207,7 +214,9 @@ public:
             auto it = self->zero_shot_scores_.find(model);
             if (it != self->zero_shot_scores_.end()) {
                 self->mark_used("run_zero_shot_classifier", model);
-                return it->second;
+                ClassifierScores answer = it->second;
+                answer.reports_truncation = self->unreporting_backends_.count(model) == 0;
+                return answer;
             }
             self->record_unexpected("run_zero_shot_classifier", model);
             return ClassifierScores{};
@@ -260,6 +269,7 @@ private:
     int total_embed_calls_ = 0;
     std::map<std::string, std::map<std::string, double>> classifier_scores_;
     std::map<std::string, ClassifierScores> zero_shot_scores_;
+    std::set<std::string> unreporting_backends_;
     std::vector<std::string> last_zero_shot_labels_;
     std::map<std::string, std::string> chat_replies_;
     std::set<std::pair<std::string, std::string>> failing_embeds_;

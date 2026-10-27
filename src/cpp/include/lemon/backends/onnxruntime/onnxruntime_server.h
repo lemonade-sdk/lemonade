@@ -33,6 +33,9 @@ public:
 private:
     // Forward a classify request to the subprocess and normalize its response.
     json forward_classify(const std::string& text, const json& params);
+
+    // Read from /health at load; see onnxruntime::reports_truncation.
+    bool reports_truncation_ = false;
 };
 
 namespace onnxruntime {

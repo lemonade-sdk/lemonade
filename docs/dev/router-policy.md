@@ -211,6 +211,11 @@ it. `on_truncation` decides what the cut means:
 | `score` (default) | Use the scores anyway. Fine for topic routing. |
 | `fail` | Treat the cut as an evaluation failure, so `on_error` applies. |
 
+`fail` also needs a backend that reports its cuts. ort-server does from 0.4.0.
+An older ort-server cuts without saying so, and lemond warns when it loads one.
+Against it, every evaluation under `fail` counts as a failure, so `on_error`
+applies. `score` is unaffected.
+
 The other types never read a token window and refuse the option. A `classifier`
 backed by a chat LLM refuses it too: a chat model reports no cut, so `fail`
 could never fire.

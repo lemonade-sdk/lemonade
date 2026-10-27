@@ -170,6 +170,58 @@ static void test_classifier_truncation_can_fail() {
     check("the failing path still names the rule", d.matched_rule == "keep-private");
 }
 
+// ort-server before 0.4.0 cuts input without reporting it, so an absent
+// `truncated` proves nothing there. Each test routes the same clean-looking
+// scores twice, once per backend, so the backend is the only variable.
+static Decision route_pii(const json& classifier, bool backend_reports) {
+    lemon::testing::FakeClassifierServices fake;
+    fake.set_classifier_scores("pii-model", {{"PII", 0.1}, {"NO_PII", 0.9}});
+    fake.set_zero_shot_scores("pii-model", {{"PII", 0.1}, {"NO_PII", 0.9}});
+    if (!backend_reports) fake.set_backend_reports_no_truncation("pii-model");
+
+    RoutePolicy policy = make_pii_policy();
+    policy.classifiers = lemon::make_classifiers(json::array({classifier}));
+    RoutingPolicyEngine engine(std::move(policy), fake.make());
+
+    RouteContext ctx;
+    ctx.input = "my ssn is 123-45-6789";
+    return engine.route(ctx, /*want_trace=*/false);
+}
+
+static json pii_classifier(const std::string& type, const std::string& on_truncation) {
+    json c{{"id", "pii"},
+           {"type", type},
+           {"model", "pii-model"},
+           {"labels", {"PII", "NO_PII"}},
+           {"default_label", "PII"},
+           {"on_error", "match_true"}};
+    if (!on_truncation.empty()) c["on_truncation"] = on_truncation;
+    return c;
+}
+
+static void test_fail_refuses_a_backend_that_cannot_report_cuts() {
+    const json c = pii_classifier("classifier", "fail");
+    check("on_truncation=fail trusts an uncut answer from a backend that reports cuts",
+          route_pii(c, /*backend_reports=*/true).route_to == "cloud-llm");
+    check("on_truncation=fail fails closed on a backend that cannot report cuts, "
+          "and on_error=match_true then keeps the request local",
+          route_pii(c, /*backend_reports=*/false).route_to == "local-llm");
+}
+
+static void test_zero_shot_fail_refuses_a_backend_that_cannot_report_cuts() {
+    const json c = pii_classifier("zero_shot", "fail");
+    check("zero_shot on_truncation=fail trusts a backend that reports cuts",
+          route_pii(c, /*backend_reports=*/true).route_to == "cloud-llm");
+    check("zero_shot on_truncation=fail fails closed on a backend that cannot report cuts",
+          route_pii(c, /*backend_reports=*/false).route_to == "local-llm");
+}
+
+static void test_score_still_uses_a_backend_that_cannot_report_cuts() {
+    const json c = pii_classifier("classifier", "");
+    check("the default on_truncation=score keeps using an older backend's scores",
+          route_pii(c, /*backend_reports=*/false).route_to == "cloud-llm");
+}
+
 static void test_default_path() {
     lemon::testing::FakeClassifierServices fake;
     fake.set_classifier_scores("pii-model", {{"PII", 0.1}, {"NO_PII", 0.9}});
@@ -414,6 +466,9 @@ int main() {
     test_rule_match_path();
     test_classifier_truncation_scores_by_default();
     test_classifier_truncation_can_fail();
+    test_fail_refuses_a_backend_that_cannot_report_cuts();
+    test_zero_shot_fail_refuses_a_backend_that_cannot_report_cuts();
+    test_score_still_uses_a_backend_that_cannot_report_cuts();
     test_default_path();
     test_first_match_wins();
     test_trace_on_and_off();

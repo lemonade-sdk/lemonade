@@ -178,6 +178,8 @@ inline OnTruncation parse_on_truncation(const std::string& s) {
 struct ClassifierScores {
     std::map<std::string, double> scores;
     bool truncated = false;
+    // False when the backend cannot report a cut, so `truncated` proves nothing.
+    bool reports_truncation = false;
 };
 
 // The ONLY way the pure engine touches live backends. Real implementations bind
