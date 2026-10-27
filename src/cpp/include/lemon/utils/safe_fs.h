@@ -28,6 +28,12 @@ inline constexpr auto safe_dir_options = std::filesystem::directory_options::non
 // does not read as inside it.
 bool path_inside(const std::filesystem::path& path, const std::filesystem::path& root);
 
+// Whether a path sits under a root as written, nothing resolved: a Hugging Face
+// snapshot entry is a symlink into blobs/, and resolved it has left its own
+// snapshot. Trusting a path wants path_inside, which resolves.
+bool path_inside_lexically(const std::filesystem::path& path,
+                           const std::filesystem::path& root);
+
 // Whether a string can be exactly one path component: no separator, drive specifier,
 // `.` or `..`, or control character. Snapshot ids, directory names and file names reach
 // a path from a fetched document or a cache written earlier, and a registry may be

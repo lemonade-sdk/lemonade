@@ -25,6 +25,7 @@
 
 namespace fs = std::filesystem;
 using lemon::utils::path_inside;
+using lemon::utils::path_inside_lexically;
 using lemon::utils::safe_dir_options;
 using lemon::utils::safe_exists;
 using lemon::utils::safe_is_directory;
@@ -95,10 +96,6 @@ void cleanup_empty_parents(const fs::path& path, const fs::path& stop_dir) {
 
 // A snapshot entry that is a symlink into blobs/ shares that blob with every other
 // entry pointing at it, so the blob may only go when nothing references it.
-//
-// TODO: no Lemonade unit test covers this. Lemonade's own downloader writes real
-// files without blobs, so a test would have to build the blob+symlink layout with
-// huggingface_hub tooling (e.g. hf_hub_download()).
 void cleanup_orphaned_blob(const fs::path& file_path, const fs::path& repo_dir) {
     std::error_code ec;
     if (!fs::is_symlink(file_path, ec) || ec) {
@@ -502,11 +499,10 @@ PendingOwnership classify_pending(const fs::path& repo_dir, const std::string& v
 namespace {
 
 // Revisions, blobs and the cache's own dotfiles are not one model's bytes.
+// Lexical: a snapshot entry linking into blobs/ is still the model's own file.
 bool is_repo_plumbing(const fs::path& path, const fs::path& repo_dir) {
-    std::error_code ec;
-    const fs::path rel = fs::relative(path, repo_dir, ec);
-    if (ec || rel.empty()) return true;
-    const std::string first = rel.begin()->string();
+    if (!path_inside_lexically(path, repo_dir)) return true;
+    const std::string first = path.lexically_relative(repo_dir).begin()->string();
     if (first == "refs" || first == "blobs") return true;
     return path.filename().string().find('.') == 0;
 }
@@ -625,9 +621,10 @@ RepositoryClaims claims_in_repo(const ModelInfo& victim, const std::string& repo
 }
 
 bool claims_cover(const std::set<fs::path>& occupied, const fs::path& path) {
-    return std::any_of(occupied.begin(), occupied.end(), [&path](const fs::path& claim) {
-        return path == claim || path_inside(path, claim);
-    });
+    return std::any_of(occupied.begin(), occupied.end(),
+                       [&path](const fs::path& claim) {
+                           return path_inside_lexically(path, claim);
+                       });
 }
 
 std::set<fs::path> paths_named_in(const ModelInfo& resolved, const std::string& repo,

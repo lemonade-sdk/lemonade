@@ -53,6 +53,29 @@ static fs::path make_repo(const fs::path& hf_root,
     return repo;
 }
 
+// The layout `hf download` writes: bytes in blobs/, snapshot entries linking to
+// them. Windows needs a privilege to link, so a refusal is reported.
+static bool make_blobs_repo(const fs::path& repo,
+                            const std::vector<std::string>& files,
+                            std::string& why) {
+    for (const auto& file : files) {
+        write_file(repo / "blobs" / ("blob-" + file));
+        fs::create_directories(repo / "snapshots" / "snap");
+        std::error_code ec;
+        fs::create_symlink("../../blobs/blob-" + file, repo / "snapshots" / "snap" / file, ec);
+        if (ec) {
+            why = ec.message();
+            return false;
+        }
+    }
+    write_file(repo / "refs" / "main", "snap");
+    return true;
+}
+
+static fs::path blob_of(const fs::path& repo, const std::string& file) {
+    return repo / "blobs" / ("blob-" + file);
+}
+
 int main() {
     fs::path temp = make_temp_dir();
     fs::path hf_root = temp / "hf";
@@ -206,6 +229,31 @@ int main() {
     fs::path dirfolder_repo = make_repo(hf_root, "models--org--dirfolder",
         {"model.safetensors", "q4.gguf", "main.gguf", "mmproj.gguf"});
 
+    // The same pairing in the blob layout, where the two read through one entry
+    // whose bytes are elsewhere.
+    fs::path symdir_repo = hf_root / "models--org--symdir";
+    fs::path symplumb_repo = hf_root / "models--org--symplumb";
+    std::string symlink_why;
+    const bool links_made =
+        make_blobs_repo(symdir_repo, {"model.safetensors", "q4.gguf"}, symlink_why) &&
+        make_blobs_repo(symplumb_repo, {"model.safetensors"}, symlink_why);
+    if (links_made) {
+        // A stranger's partial keeps this delete on the selective path.
+        write_file(symplumb_repo / "snapshots" / "snap" / "other.bin.partial", "partial");
+    }
+    fs::path symblob_repo = hf_root / "models--org--symblob";
+    if (links_made) {
+        make_blobs_repo(symblob_repo, {"model.gguf", "other.gguf"}, symlink_why);
+        // A second revision on the same bytes outlives the entry being deleted.
+        std::error_code ec;
+        fs::create_directories(symblob_repo / "snapshots" / "snap-old");
+        fs::create_symlink("../../blobs/blob-model.gguf",
+                           symblob_repo / "snapshots" / "snap-old" / "model.gguf", ec);
+    }
+    if (!links_made) {
+        std::printf("[SKIP] snapshot symlinks unavailable (%s)\n", symlink_why.c_str());
+    }
+
     // Some repos carry the quant token in the middle of the file name, which is
     // the shape resolve_gguf_path()'s quant-token fallback exists for. Matching
     // on a suffix alone calls this model's own download a stranger's.
@@ -308,6 +356,11 @@ int main() {
         {"diraux-c", json{{"checkpoints", json{{"main", "org/dirfolder:main.gguf"},
                                                {"mmproj", "org/dirfolder:mmproj.gguf"}}},
                           {"recipe", "llamacpp"}}},
+        {"symfolder-a", json{{"checkpoint", "org/symdir"}, {"recipe", "thinksound"}}},
+        {"symfile-b", json{{"checkpoint", "org/symdir:q4.gguf"}, {"recipe", "llamacpp"}}},
+        {"symplumb-a", json{{"checkpoint", "org/symplumb"}, {"recipe", "thinksound"}}},
+        {"symblob-a", json{{"checkpoint", "org/symblob:model.gguf"}, {"recipe", "llamacpp"}}},
+        {"symblob-b", json{{"checkpoint", "org/symblob:other.gguf"}, {"recipe", "llamacpp"}}},
         {"selfshard-a", json{{"checkpoint", "org/selfshard:a-00001-of-00002.gguf"},
                              {"recipe", "llamacpp"}}},
         {"selfshard-b", json{{"checkpoint", "org/selfshard:other.gguf"},
@@ -570,6 +623,38 @@ int main() {
               fs::exists(dirfolder_repo / "snapshots" / "snap" / "main.gguf"));
         check("the repo a folder claim holds survives both deletes",
               fs::exists(dirfolder_repo));
+
+        // The same folder claim over the blob layout.
+        if (links_made) {
+            manager.delete_model("user.symfile-b");
+            check("a folder claim covers a snapshot entry that links into blobs",
+                  fs::exists(symdir_repo / "snapshots" / "snap" / "q4.gguf"));
+            check("a folder claim keeps the blob one snapshot entry points at",
+                  fs::exists(blob_of(symdir_repo, "q4.gguf")));
+            check("the folder claim's own snapshot entry is left alone",
+                  fs::exists(symdir_repo / "snapshots" / "snap" / "model.safetensors"));
+
+            // A link into blobs/ is not the repository's plumbing.
+            manager.delete_model("user.symplumb-a");
+            check("a selective cleanup keeps a stranger's partial",
+                  fs::exists(symplumb_repo / "snapshots" / "snap" / "other.bin.partial"));
+            check("a folder checkpoint gives up its symlinked file",
+                  !fs::exists(symplumb_repo / "snapshots" / "snap" / "model.safetensors"));
+            check("a blob nothing references any more goes with its entry",
+                  !fs::exists(blob_of(symplumb_repo, "model.safetensors")));
+
+            // symblob-b holds the repo and snap-old holds the blob, so only this
+            // model's own link goes.
+            manager.delete_model("user.symblob-a");
+            check("a model gives up its own snapshot link",
+                  !fs::exists(symblob_repo / "snapshots" / "snap" / "model.gguf"));
+            check("a blob another snapshot still reaches is not orphaned",
+                  fs::exists(blob_of(symblob_repo, "model.gguf")) &&
+                      fs::is_symlink(symblob_repo / "snapshots" / "snap-old" / "model.gguf"));
+            check("the occupying model's link and blob are untouched",
+                  fs::exists(symblob_repo / "snapshots" / "snap" / "other.gguf") &&
+                      fs::exists(blob_of(symblob_repo, "other.gguf")));
+        }
 
         // Nothing else names this repo, so the interrupted download can only be
         // this model's own, however the quant token sits in the file name.
