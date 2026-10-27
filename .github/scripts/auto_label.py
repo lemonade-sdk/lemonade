@@ -64,6 +64,15 @@ Runtime — apply AT MOST ONE total. Same hard rule. Skip if the item is not spe
 - runtime::metal  — Apple Metal path (macOS)
 - runtime::cpu    — CPU-only execution path (only when the issue is specifically about CPU fallback / CPU-only behavior, not when CPU is just one of many devices mentioned)
 
+Workgroup — apply AT MOST ONE. Only apply when clearly scoped to one active WG charter. Skip if cross-cutting or unclear:
+- wg::platform-core     — server infrastructure: router, model manager, wrapped_server, API handlers, build system, packaging. CLI fixes go here (NOT GUI App). Desktop tray goes here. Example: "fix(cli): distinguish a closed connection" → wg::platform-core
+- wg::enterprise-grade  — systematic testing, CI quality, build automation, observability. CI/test infrastructure goes here (NOT GUI App). Example: "fix(ci): make llama.cpp auto-update" → wg::enterprise-grade
+- wg::cloud-hybrid      — routing between local and cloud models
+- wg::remote-use        — serving inference to remote devices/locations
+- wg::cross-vendor-support — hardware vendor support (NVIDIA, ARM, Intel)
+- wg::auto-tune         — self-optimizing models/backends (auto-select backend, benchmark, tune)
+- wg::gui-app           — Frontend UI only: Tauri desktop app (src/app/), web app UI (src/web-app/). NOT backend, routing, CLI, or infrastructure work
+
 Existing component labels — apply only if clearly relevant. Don't double up with area:: (e.g., don't add `cpp` if area::api fits):
 - cpp     — C++ server-side code that doesn't fit area::api or area::cli
 - app     — Tauri desktop app (src/app/)
@@ -189,6 +198,13 @@ KNOWN_LABELS = {
     "runtime::cuda",
     "runtime::metal",
     "runtime::cpu",
+    "wg::platform-core",
+    "wg::enterprise-grade",
+    "wg::cloud-hybrid",
+    "wg::remote-use",
+    "wg::cross-vendor-support",
+    "wg::auto-tune",
+    "wg::gui-app",
     "cpp",
     "app",
     "web ui",
@@ -200,7 +216,7 @@ KNOWN_LABELS = {
 }
 
 # Label families where at most one label may be applied per item.
-AT_MOST_ONE_PREFIXES = ("engine::", "area::", "runtime::")
+AT_MOST_ONE_PREFIXES = ("engine::", "area::", "runtime::", "wg::")
 
 # Deterministic community-priority labels. Computed from engagement counts
 # (author + commenters + supporting reactions), excluding bots and anyone with
