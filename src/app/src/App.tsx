@@ -335,6 +335,15 @@ function canonicalizeLegacyHash(route: AppRoute | null): void {
   }
 }
 
+function consumeNavigationQuery(hash: string): void {
+  const url = new URL(window.location.href);
+  if (!url.searchParams.has('view') && !url.searchParams.has('logs')) return;
+  url.searchParams.delete('view');
+  url.searchParams.delete('logs');
+  url.hash = hash;
+  window.history.replaceState(null, '', url);
+}
+
 function loadSavedRoute(): AppRoute {
   const fromLocation = routeFromCurrentLocation();
   if (fromLocation) {
@@ -749,13 +758,7 @@ const App: React.FC = () => {
     setRouteState(nextRoute);
     const newHash = hashForRoute(nextRoute);
     try { localStorage.setItem('lemonade_current_view', newHash.slice(2)); } catch { /* ignore */ }
-    const url = new URL(window.location.href);
-    if (url.searchParams.has('view') || url.searchParams.has('logs')) {
-      url.searchParams.delete('view');
-      url.searchParams.delete('logs');
-      url.hash = newHash;
-      window.history.replaceState(null, '', url);
-    } else if (window.location.hash !== newHash) {
+    if (window.location.hash !== newHash) {
       window.history.pushState(null, '', newHash);
     }
   }, []);
@@ -936,6 +939,7 @@ const App: React.FC = () => {
     };
 
     const initialRoute = routeFromCurrentLocation();
+    consumeNavigationQuery(hashForRoute(initialRoute ?? routeRef.current));
     if (initialRoute) navigateToRoute(initialRoute);
     attach();
 
