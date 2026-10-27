@@ -1580,10 +1580,13 @@ class LemonadeAPI {
     return result;
   }
 
-  async systemInfo(): Promise<Record<string, unknown>> {
+  async systemInfo(options: { afterPending?: boolean } = {}): Promise<Record<string, unknown>> {
     // Several views use the same expensive system-info endpoint. A workspace
     // preload and the view's first effect can overlap, so share the in-flight
     // request instead of making the server do the same discovery twice.
+    if (options.afterPending && this._systemInfoInFlight) {
+      await this._systemInfoInFlight.catch(() => undefined);
+    }
     if (this._systemInfoInFlight) return this._systemInfoInFlight;
     const generation = this._systemInfoGeneration;
 

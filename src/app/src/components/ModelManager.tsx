@@ -1148,8 +1148,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
 
   useEffect(() => {
     const seenBackendDownloads = new Set<string>();
-    const refreshBackendInfo = () => {
-      if (api.isConnected) void api.systemInfo().catch(() => undefined);
+    const refreshBackendInfo = (afterPending = false) => {
+      if (api.isConnected) void api.systemInfo({ afterPending }).catch(() => undefined);
     };
     const unsubscribe = downloadStore.subscribe(items => {
       setDownloadItems(items);
@@ -1161,7 +1161,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
         seenBackendDownloads.add(key);
         changed = true;
       }
-      if (changed) refreshBackendInfo();
+      if (changed) refreshBackendInfo(true);
     });
     const onFocus = () => {
       const recipes = systemRecipeEntries(api.systemInfoData) || [];
@@ -1238,10 +1238,12 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       return;
     }
 
+    const infoAtStart = api.systemInfoData;
     try {
       // The system-info subscriber applies the fresh snapshot to the model list.
       await api.systemInfo();
     } catch {
+      if (!api.isConnected || api.systemInfoData !== infoAtStart) return;
       setSystemInfo(null);
       setDynamicRecipeOptions({});
       setCustomRecipeAvailabilityLoaded(false);

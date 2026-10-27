@@ -98,6 +98,7 @@ let modelRows = [
   { id: 'test-model', model_name: 'test-model', downloaded: true },
 ];
 let nextModelReadGate = null;
+let nextSystemInfoGate = null;
 
 function holdNextModelsRead() {
   assert.equal(nextModelReadGate, null, 'Only one delayed model read is supported.');
@@ -180,8 +181,15 @@ global.fetch = async (url, init = {}) => {
   }
 
   if (target.endsWith('/api/v1/system-info') && method === 'GET') {
+    const stateAtStart = backendState;
+    const gate = nextSystemInfoGate;
+    if (gate) {
+      nextSystemInfoGate = null;
+      gate.markStarted();
+      await gate.released;
+    }
     return new Response(JSON.stringify({
-      recipes: { thenoise: { default_backend: 'cuda', backends: { cuda: { state: backendState } } } },
+      recipes: { thenoise: { default_backend: 'cuda', backends: { cuda: { state: stateAtStart } } } },
     }), { status: 200, headers: { 'content-type': 'application/json' } });
   }
 
@@ -226,9 +234,28 @@ async function waitFor(predicate, timeoutMs = 1500) {
     backendState = 'installed';
     await api.systemInfo();
     assert.deepEqual(backendStates, ['update_required', 'installed']);
+
+    // A terminal backend download must not reuse a pre-completion snapshot.
+    let markStarted;
+    let release;
+    const infoGate = {
+      started: new Promise(resolve => { markStarted = resolve; }),
+      released: new Promise(resolve => { release = resolve; }),
+      markStarted: () => markStarted(),
+    };
+    nextSystemInfoGate = infoGate;
+    backendState = 'update_required';
+    const pending = api.systemInfo();
+    await infoGate.started;
+    backendState = 'installed';
+    const fresh = api.systemInfo({ afterPending: true });
+    release();
+    await Promise.all([pending, fresh]);
+    assert.deepEqual(backendStates.slice(-2), ['update_required', 'installed']);
+
     unsubscribeSystemInfo();
     await api.systemInfo();
-    assert.equal(backendStates.length, 2, 'system-info observers must unsubscribe cleanly');
+    assert.equal(backendStates.length, 4, 'system-info observers must unsubscribe cleanly');
     assert.equal(modelRequests, 1, 'backend updates must not force a models registry refresh');
 
     const stableNotificationCount = notifications;
