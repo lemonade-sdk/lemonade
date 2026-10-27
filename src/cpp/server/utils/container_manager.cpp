@@ -476,8 +476,13 @@ void ContainerManager::remove_image(const std::string& image) const {
 
 void ContainerManager::create_network(const std::string& name) const {
     remove_network(name);
-    const CommandResult result =
-        invoke({"network", "create", "--internal", "--label", kLabel, name}, kCommandTimeoutSeconds);
+    std::vector<std::string> args = {"network", "create", "--internal", "--label", kLabel};
+    // Rootless Podman starts the network's DNS server through the account's
+    // systemd user manager, which lemond.service's account does not have, and
+    // lemond reaches its one container without DNS.
+    if (tool() == ContainerTool::Podman) args.push_back("--disable-dns");
+    args.push_back(name);
+    const CommandResult result = invoke(args, kCommandTimeoutSeconds);
     if (result.exit_code != 0) {
         throw std::runtime_error("Could not create the network " + name + ": " +
                                  trim(result.output));

@@ -54,6 +54,7 @@ struct FakeHost {
     bool root = false;
     // How many commands the manager has run on the host.
     mutable int commands = 0;
+    mutable std::vector<std::vector<std::string>> runs;
 
     ContainerHost host() const {
         ContainerHost h;
@@ -75,10 +76,13 @@ struct FakeHost {
         };
         h.run = [this](const std::vector<std::string>& argv, int, bool capture_stderr) {
             ++commands;
+            runs.push_back(argv);
             lemon::utils::CommandResult result;
             if (argv.size() > 1 && argv[0] == "podman" && argv[1] == "info") {
                 result.exit_code = podman_info_exit;
                 result.output = podman_rootless + "\n";
+            } else if (argv.size() > 1 && argv[1] == "network") {
+                result.exit_code = 0;
             } else if (argv.front() == "getsubids") {
                 const auto it = subids.find(join({argv.begin() + 1, argv.end()}));
                 result.exit_code = it == subids.end() ? 1 : 0;
@@ -302,6 +306,28 @@ void test_system_service_setup() {
                               "2. sudo systemctl restart lemond");
 }
 
+// The network create command, as run for each tool.
+std::string network_create(const FakeHost& fake) {
+    const ContainerManager manager(fake.host());
+    manager.create_network("lemonade-n");
+    for (const auto& argv : fake.runs) {
+        if (argv.size() > 2 && argv[1] == "network" && argv[2] == "create") return join(argv);
+    }
+    return "";
+}
+
+void test_create_network() {
+    FakeHost podman;
+    podman.tools = {"podman"};
+    check("Podman's per-model network is internal and has no DNS server",
+          network_create(podman) ==
+              "podman network create --internal --label ai.lemonade --disable-dns lemonade-n");
+    FakeHost docker;
+    docker.tools = {"docker"};
+    check("Docker's per-model network is internal",
+          network_create(docker) == "docker network create --internal --label ai.lemonade lemonade-n");
+}
+
 void test_install_commands() {
     const auto command = ContainerManager::podman_install_command;
     check("Rocky Linux matches fedora through ID_LIKE",
@@ -391,6 +417,7 @@ int main() {
     test_run_command();
     test_tool_choice_and_setup();
     test_system_service_setup();
+    test_create_network();
     test_install_commands();
     test_helpers();
 #ifndef _WIN32
