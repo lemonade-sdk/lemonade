@@ -1146,7 +1146,36 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
 
   const [serverDefaultCtxSize, setServerDefaultCtxSize] = useState<number>(DEFAULT_CONTEXT_SIZE);
 
-  useEffect(() => downloadStore.subscribe(setDownloadItems), []);
+  useEffect(() => {
+    const seenBackendDownloads = new Set<string>();
+    const refreshBackendInfo = () => {
+      if (api.isConnected) void api.systemInfo().catch(() => undefined);
+    };
+    const unsubscribe = downloadStore.subscribe(items => {
+      setDownloadItems(items);
+      let changed = false;
+      for (const item of items) {
+        if (item.downloadType !== 'backend' || item.status !== 'completed' || isDownloadActive(item)) continue;
+        const key = `${item.id}:${item.createdAt}`;
+        if (seenBackendDownloads.has(key)) continue;
+        seenBackendDownloads.add(key);
+        changed = true;
+      }
+      if (changed) refreshBackendInfo();
+    });
+    const onFocus = () => {
+      const recipes = systemRecipeEntries(api.systemInfoData) || [];
+      if (recipes.some(([, recipe]) => Object.values(rawBackendMap(recipe))
+        .some(info => ['update_required', 'update_available'].includes(backendState(info))))) {
+        refreshBackendInfo();
+      }
+    };
+    window.addEventListener('focus', onFocus);
+    return () => {
+      unsubscribe();
+      window.removeEventListener('focus', onFocus);
+    };
+  }, []);
 
   useEffect(() => () => {
     if (externalModelDeleteNoticeTimerRef.current != null) {
