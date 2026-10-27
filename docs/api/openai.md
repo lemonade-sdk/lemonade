@@ -1245,6 +1245,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 - `created` - Unix timestamp of when the image was generated.
 - `data` - The generated images, one entry per image.
   - `b64_json` - Base64-encoded PNG.
+  - `generation_info` - Optional generation parameters and model metadata reported by the image backend.
 - `output_format` - File format of the images, such as `png`, when the backend reports it.
 
 ### Errors
@@ -1386,6 +1387,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 - `created` - Unix timestamp of when the image was generated.
 - `data` - The generated images, one entry per image.
   - `b64_json` - Base64-encoded PNG.
+  - `generation_info` - Optional generation parameters and model metadata reported by the image backend.
 - `output_format` - File format of the images, such as `png`, when the backend reports it.
 
 ### Errors
@@ -1518,6 +1520,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 - `created` - Unix timestamp of when the image was generated.
 - `data` - The generated images, one entry per image.
   - `b64_json` - Base64-encoded PNG.
+  - `generation_info` - Optional generation parameters and model metadata reported by the image backend.
 - `output_format` - File format of the images, such as `png`, when the backend reports it.
 
 ### Errors
