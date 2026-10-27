@@ -678,6 +678,7 @@ test.describe('Accessibility — prefers-reduced-motion', () => {
 
     await trigger.click();
     await expect(sheet).toHaveClass(/bottom-sheet--open/);
+    await sheet.locator('.bottom-sheet__handle').hover();
     // The handle must still move the sheet; removing transitions is enough to
     // respect reduced motion, but removing transforms breaks drag and close.
     const openBox = await sheet.boundingBox();
