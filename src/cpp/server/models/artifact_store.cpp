@@ -159,6 +159,32 @@ bool ends_with(const std::string& text, const std::string& suffix) {
            text.compare(text.size() - suffix.size(), suffix.size(), suffix) == 0;
 }
 
+std::string file_name(const std::string& path) {
+    return path.substr(path.find_last_of('/') + 1);
+}
+
+std::string repo_relative(const fs::path& path, const fs::path& repo_dir) {
+    std::error_code ec;
+    const fs::path rel = path.lexically_relative(repo_dir);
+    const fs::path named =
+        (ec || rel.empty() || rel.begin()->string().rfind("..", 0) == 0) ? path.filename()
+                                                                        : rel;
+    std::string text = utils::path_to_utf8(named);
+    std::replace(text.begin(), text.end(), '\\', '/');
+    return text;
+}
+
+bool inside_variant_folder(const std::string& name, const std::string& variant) {
+    const size_t slash = name.find_last_of('/');
+    if (slash == std::string::npos) return false;
+    const std::string dir = name.substr(0, slash);
+    return dir == variant || ends_with(dir, "/" + variant);
+}
+
+bool claims_whole_repo(const std::string& variant) {
+    return variant.empty() || variant == "*";
+}
+
 // A download marker reduced to what identifies the checkpoint it belongs to: bare
 // file name, no .partial, no shard index, no extension.
 std::string marker_key(std::string name) {
@@ -184,8 +210,9 @@ bool pending_matches_variant(const std::string& name, const std::string& variant
     const std::string v = lower(variant);
     if (n == v) return true;
     if (ends_with(n, "/" + v)) return true;
+    if (inside_variant_folder(n, v)) return true;
     if (marker_key(n) == marker_key(v)) return true;
-    const std::string token = lower(gguf_quant_token(name));
+    const std::string token = lower(gguf_quant_token(file_name(n)));
     return !token.empty() && marker_key(v).find('/') == std::string::npos && token == marker_key(v);
 }
 
@@ -234,6 +261,21 @@ bool manifest_lists(const json& doc, std::vector<std::string>& files) {
 bool manifest_owner(const json& doc, std::string& owner) {
     owner = doc.is_object() ? doc.value("model_name", std::string()) : std::string();
     return !owner.empty();
+}
+
+std::vector<std::string> own_download_files(const fs::path& repo_dir,
+                                            const std::string& model_name) {
+    std::vector<std::string> files;
+    std::error_code ec;
+    for (const auto& entry : fs::recursive_directory_iterator(repo_dir, safe_dir_options, ec)) {
+        if (ec) break;
+        if (entry.path().filename() != ".download_manifest.json") continue;
+        const json doc = read_json_file(entry.path());
+        std::string owner;
+        if (!manifest_owner(doc, owner) || owner != model_name) continue;
+        manifest_lists(doc, files);
+    }
+    return files;
 }
 
 // Another model in the same registry source still reads this repository.
@@ -463,7 +505,7 @@ PendingOwnership classify_pending(const fs::path& repo_dir, const std::string& v
 
     PendingOwnership out;
     for (const fs::path& partial : markers.partials) {
-        std::string target = partial.filename().string();
+        std::string target = repo_relative(partial, repo_dir);
         target.erase(target.size() - strlen(".partial"));
         const bool ours_partial =
             unattributed_is_mine ||
@@ -505,6 +547,36 @@ bool is_repo_plumbing(const fs::path& path, const fs::path& repo_dir) {
     const std::string first = path.lexically_relative(repo_dir).begin()->string();
     if (first == "refs" || first == "blobs") return true;
     return path.filename().string().find('.') == 0;
+}
+
+bool snapshot_holds_unclaimed_file(const fs::path& repo_dir, const std::string& variant,
+                                   const std::vector<std::string>& own_files) {
+    if (claims_whole_repo(variant)) return false;
+
+    const fs::path snapshots = repo_dir / "snapshots";
+    if (!safe_exists(snapshots)) return false;
+
+    std::error_code ec;
+    for (const auto& entry : fs::recursive_directory_iterator(snapshots, safe_dir_options, ec)) {
+        if (ec) return true;
+        std::error_code file_ec;
+        if (!entry.is_regular_file(file_ec) || file_ec) continue;
+        const fs::path& path = entry.path();
+        if (path.filename() == ".download_manifest.json" || path.extension() == ".partial") {
+            continue;
+        }
+        if (is_repo_plumbing(path, repo_dir)) continue;
+
+        const std::string rel = repo_relative(path, snapshots);
+        if (pending_matches_variant(rel, variant)) continue;
+        const bool explained =
+            std::any_of(own_files.begin(), own_files.end(), [&rel](const std::string& own) {
+                return pending_matches_variant(rel, own);
+            });
+        if (explained) continue;
+        return true;
+    }
+    return false;
 }
 
 }  // namespace
@@ -559,7 +631,7 @@ RepositoryClaims claims_in_repo(const ModelInfo& victim, const std::string& repo
         if (manifest_lists(doc, listed)) resumed.insert(resumed.end(), listed.begin(), listed.end());
     }
     for (const fs::path& partial : markers.partials) {
-        std::string target = partial.filename().string();
+        std::string target = repo_relative(partial, repo_dir);
         target.erase(target.size() - strlen(".partial"));
         resumed.push_back(target);
     }
@@ -767,11 +839,7 @@ DeleteReport ModelArtifactStore::delete_artifacts(const ModelInfo& info,
                 if (!entry.is_regular_file(ec) || ec) continue;
                 const fs::path& path = entry.path();
                 if (is_repo_plumbing(path, repo_dir) || path.extension() == ".partial") continue;
-                if (claims.variants.empty()) {
-                    ours.insert(path);
-                } else if (pending_matches_variant(path.filename().string(), variant)) {
-                    collect_registered_shards(path, repo_dir, ours);
-                }
+                ours.insert(path);
             }
         } else {
             collect_registered_shards(resolved, repo_dir, ours);
@@ -830,24 +898,9 @@ bool ModelArtifactStore::cleanup_incomplete_download(const ModelInfo& info,
     PendingOwnership pending = classify_pending(repo_dir, variant, info.model_name, claims.variants,
                                                 /*unattributed_is_mine=*/alone_here);
 
-    // While somebody else names this repository, a complete file in it is theirs
-    // unless this model can name it too.
-    if (!claims.occupied.empty() ||
-        repo_shared(main_repo, registry_source, info.model_name, all_models)) {
-        std::error_code ec;
-        for (const auto& entry : fs::recursive_directory_iterator(repo_dir, safe_dir_options, ec)) {
-            if (ec) break;
-            if (!entry.is_regular_file(ec) || ec) continue;
-            const std::string filename = entry.path().filename().string();
-            if (entry.path().extension() == ".partial" || filename == ".download_manifest.json") {
-                continue;
-            }
-            if (!ModelArtifactStore::path_complete(utils::path_to_utf8(entry.path()))) continue;
-            if (!pending_matches_variant(filename, variant)) {
-                pending.foreign = true;
-                break;
-            }
-        }
+    if (snapshot_holds_unclaimed_file(repo_dir, variant,
+                                      own_download_files(repo_dir, info.model_name))) {
+        pending.foreign = true;
     }
 
     if (!pending.foreign) {

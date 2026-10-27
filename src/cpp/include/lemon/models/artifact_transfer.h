@@ -45,9 +45,9 @@ public:
     bool cancelled;
 };
 
-// Reports bytes, nothing else. Cancellation is the token's job; a progress
-// callback has never had the power to stop a transfer.
-using ByteProgress = std::function<void(std::size_t downloaded, std::size_t total)>;
+// Reports bytes. Returning false — the listener's client is gone — aborts the
+// transfer, as the token does.
+using ByteProgress = std::function<bool(std::size_t downloaded, std::size_t total)>;
 
 // One scheme per implementation; space, progress and cancel live in ArtifactTransfer.
 class FileTransfer {
@@ -113,9 +113,8 @@ public:
     static ArtifactTransfer with_default_transfers();
 
     // Per call, never on the plan, so credentials cannot be logged with it.
-    // A cancellation — checked before each file and inside every transfer —
-    // throws TransferError with cancelled set. A progress callback that
-    // returns false only closes the update channel.
+    // The token and a progress callback returning false both cancel, before each
+    // file and inside every transfer.
     void execute(const DownloadPlan& plan,
                  const std::map<std::string, std::string>& headers,
                  DownloadProgressCallback progress,

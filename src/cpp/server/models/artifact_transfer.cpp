@@ -252,16 +252,25 @@ void ArtifactTransfer::execute(const DownloadPlan& plan,
         total_download_size += file.size;
     }
 
-    // A progress callback that returns false closes the update channel; only
-    // the token stops a plan.
+    // A progress callback that returns false has lost its client: the update
+    // channel closes and the plan stops with it, mid-file if need be.
     bool updates_open = (progress != nullptr);
+    bool client_gone = false;
     auto emit = [&](DownloadProgress& update) {
         if (!updates_open) {
             return;
         }
         if (!progress(update)) {
             updates_open = false;
+            client_gone = true;
         }
+    };
+    auto require_client = [&client_gone] {
+        if (!client_gone) {
+            return;
+        }
+        LOG(INFO, "ModelManager") << "Download cancelled by client" << std::endl;
+        throw std::runtime_error("Download cancelled");
     };
 
     int file_index = 0;
@@ -290,6 +299,7 @@ void ArtifactTransfer::execute(const DownloadPlan& plan,
         update.total_download_size = static_cast<size_t>(total_download_size);
         update.percent = 0;
         emit(update);
+        require_client();
 
         // GGUF models are consumed directly by llama-server. If a previous
         // download saved an HTML or error page under a .gguf name, reject that
@@ -317,7 +327,10 @@ void ArtifactTransfer::execute(const DownloadPlan& plan,
         ByteProgress byte_progress;
         if (updates_open) {
             byte_progress = [&, file_index, bytes_on_disk](std::size_t downloaded,
-                                                           std::size_t total) {
+                                                           std::size_t total) -> bool {
+                if (client_gone) {
+                    return false;
+                }
                 DownloadProgress update;
                 update.file = file.name;
                 update.file_index = file_index;
@@ -328,6 +341,7 @@ void ArtifactTransfer::execute(const DownloadPlan& plan,
                 update.bytes_previously_downloaded = static_cast<size_t>(bytes_on_disk);
                 update.percent = (total > 0) ? static_cast<int>((downloaded * 100) / total) : 0;
                 emit(update);
+                return !client_gone;
             };
         }
 
@@ -358,6 +372,7 @@ void ArtifactTransfer::execute(const DownloadPlan& plan,
             throw std::runtime_error(error_msg.str());
         }
 
+        require_client();
         LOG(INFO, "ModelManager") << "Downloaded: " << file.name << std::endl;
 
         if (bytes_moved == 0) {
@@ -462,15 +477,14 @@ std::uint64_t HttpFileTransfer::transfer(const DownloadFile& file,
 
     // The tick always exists — it is where the transport learns to abort on
     // the token, inside the HTTP client — even when nobody is watching bytes.
+    // Whoever is watching answers for the token too: their false is curl's abort.
     const utils::ProgressCallback throttle = utils::create_throttled_progress_callback();
     const utils::ProgressCallback http_progress =
         [&](std::size_t downloaded, std::size_t total) -> bool {
             if (progress) {
-                progress(downloaded, total);
-            } else {
-                throttle(downloaded, total);
+                return progress(downloaded, total);
             }
-            return true;
+            return throttle(downloaded, total);
         };
 
     const auto result = HttpClient::download_file(file.url, target_dir + "/" + file.name,
@@ -541,8 +555,10 @@ std::uint64_t LocalCopyFileTransfer::transfer(const DownloadFile& file,
             throw TransferError("Could not write staged file: " + partial_path);
         }
         copied += static_cast<std::uint64_t>(read);
-        if (progress) {
-            progress(static_cast<std::size_t>(copied), static_cast<std::size_t>(source_size));
+        if (progress &&
+            !progress(static_cast<std::size_t>(copied), static_cast<std::size_t>(source_size))) {
+            staged.close();
+            throw TransferError("Download cancelled", true);
         }
         if (cancel.cancelled()) {
             staged.close();

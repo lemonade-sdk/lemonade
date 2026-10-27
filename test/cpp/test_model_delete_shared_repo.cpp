@@ -295,6 +295,32 @@ int main() {
     fs::path mtpboth_repo = make_repo(hf_root, "models--org--mtpboth",
                                       {"main.gguf", "mmproj.gguf", "draft.gguf"});
 
+    // Moonshine's variants share one repository, each in a folder of its own that
+    // holds the same file names as its siblings.
+    fs::path folder_repo =
+        make_repo(hf_root, "models--org--folder",
+                  {"onnx/tiny/encoder.ort", "onnx/tiny/tokenizer.bin",
+                   "onnx/small/encoder.ort", "onnx/small/tokenizer.bin"});
+
+    // The Hugging Face cache is shared, so a file of this repository can arrive
+    // from `hf download` with no Lemonade model anywhere near it.
+    fs::path guest_repo = hf_root / "models--org--guest";
+    write_file(guest_repo / "snapshots" / "snap" / "q4.gguf.partial", "partial");
+    write_file(guest_repo / "snapshots" / "snap" / ".download_manifest.json",
+               R"({"model_name":"user.guest-a","files":[{"name":"q4.gguf"}]})");
+    write_file(guest_repo / "snapshots" / "snap" / "q8.gguf", "another tool's copy");
+    write_file(guest_repo / "refs" / "main", "snap");
+
+    // The other side of that line: the manifest names this model, so the whole
+    // repository is its own unfinished work.
+    fs::path ownmulti_repo = hf_root / "models--org--ownmulti";
+    write_file(ownmulti_repo / "snapshots" / "snap" / "main.gguf");
+    write_file(ownmulti_repo / "snapshots" / "snap" / "mmproj.gguf.partial", "partial");
+    write_file(ownmulti_repo / "snapshots" / "snap" / ".download_manifest.json",
+               R"({"model_name":"user.ownmulti-a",)"
+               R"("files":[{"name":"main.gguf"},{"name":"mmproj.gguf"}]})");
+    write_file(ownmulti_repo / "refs" / "main", "snap");
+
     // Repos used by the late-arrival cases further down.
     fs::path late_repo = make_repo(hf_root, "models--org--late", {"a.gguf"});
     fs::path arrive_repo = hf_root / "models--org--arrive";
@@ -391,6 +417,11 @@ int main() {
                                                 {"draft", "org/mtpboth:draft.gguf"},
                                                 {"mmproj", "org/mtpboth:mmproj.gguf"}}},
                            {"recipe", "llamacpp"}}},
+        {"folder-a", json{{"checkpoint", "org/folder:onnx/tiny"}, {"recipe", "moonshine"}}},
+        {"folder-b", json{{"checkpoint", "org/folder:onnx/small"}, {"recipe", "moonshine"}}},
+        {"guest-a", json{{"checkpoint", "org/guest:q4.gguf"}, {"recipe", "llamacpp"}}},
+        {"ownmulti-a", json{{"checkpoint", "org/ownmulti:mmproj.gguf"},
+                            {"recipe", "llamacpp"}}},
         {"late-a", json{{"checkpoint", "org/late:a.gguf"}, {"recipe", "llamacpp"}}},
         {"late-b", json{{"checkpoint", "org/late:b.gguf"}, {"recipe", "llamacpp"}}},
         {"arrive-a", json{{"checkpoint", "org/arrive:a.gguf"}, {"recipe", "llamacpp"}}},
@@ -661,6 +692,36 @@ int main() {
         manager.delete_model("user.midquant-a");
         check("a quant token inside the file name still marks the model's own download",
               !fs::exists(midquant_repo));
+
+        manager.delete_model("user.folder-a");
+        check("a folder variant gives up the files of its folder",
+              !fs::exists(folder_repo / "snapshots" / "snap" / "onnx" / "tiny" /
+                          "encoder.ort") &&
+                  !fs::exists(folder_repo / "snapshots" / "snap" / "onnx" / "tiny" /
+                              "tokenizer.bin"));
+        check("a folder variant leaves the sibling folder alone",
+              fs::exists(folder_repo / "snapshots" / "snap" / "onnx" / "small" /
+                         "encoder.ort") &&
+                  fs::exists(folder_repo / "snapshots" / "snap" / "onnx" / "small" /
+                             "tokenizer.bin"));
+        check("a repository another folder variant occupies survives",
+              fs::exists(folder_repo));
+
+        manager.delete_model("user.folder-b");
+        check("the last folder variant to go reclaims the repository",
+              !fs::exists(folder_repo));
+
+        manager.delete_model("user.guest-a");
+        check("a file another application downloaded survives an interrupted delete",
+              fs::exists(guest_repo / "snapshots" / "snap" / "q8.gguf"));
+        check("the interrupted download's own partial still goes",
+              !fs::exists(guest_repo / "snapshots" / "snap" / "q4.gguf.partial"));
+        check("the manifest that only described that partial goes too",
+              !fs::exists(guest_repo / "snapshots" / "snap" / ".download_manifest.json"));
+
+        manager.delete_model("user.ownmulti-a");
+        check("a download this model started accounts for the files it finished",
+              !fs::exists(ownmulti_repo));
     }
 
     // Files that arrive after the model cache was built. The Hugging Face cache

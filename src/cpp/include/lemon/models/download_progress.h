@@ -20,9 +20,9 @@ struct DownloadProgress {
 };
 
 // Callback for download progress updates.
-// Returning false closes the update channel — no further updates are sent for
-// this plan. It does not stop the transfer; the CancelToken is the only thing
-// that stops a plan.
+// Returning false is the listener's own write failing: no further updates are
+// sent and the download is cancelled. A CancelToken cancels the same way and is
+// the only option when there is no listener.
 using DownloadProgressCallback = std::function<bool(const DownloadProgress&)>;
 
 }  // namespace lemon

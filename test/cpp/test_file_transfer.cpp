@@ -765,6 +765,42 @@ int main() {
         fs::remove_all(dir);
     }
 
+    // --- a closed update channel stops bytes in flight ----------------------
+    // How an Ollama client leaving POST /api/pull says so: no token, only a
+    // progress callback whose write failed.
+    {
+        const fs::path dir = make_temp_dir("client_left");
+        DownloadPlan plan;
+        plan.download_path = lemon::utils::path_to_utf8(dir);
+        plan.files.push_back(DownloadFile{"slow.bin", base_a + "/slow", 0, {}, {}, {}});
+
+        bool refused = false;
+        int after_refusal = 0;
+        bool threw = false;
+        std::string message;
+        try {
+            loopback_transfer().execute(
+                plan, {},
+                [&](const lemon::DownloadProgress& update) {
+                    if (refused) ++after_refusal;
+                    refused = refused || update.bytes_downloaded > 0;
+                    return !refused;
+                },
+                {});
+        } catch (const std::exception& e) {
+            threw = true;
+            message = e.what();
+        }
+        check("a client that stops reading cancels the download", threw);
+        check("the cancellation message is stable",
+              message == std::string("Download cancelled"));
+        check("the drip stops at the closed report rather than the end of the file",
+              after_refusal == 0);
+        check("no final file is put in place", !fs::exists(dir / "slow.bin"));
+        check("the partial file survives for a resume", fs::exists(dir / "slow.bin.partial"));
+        fs::remove_all(dir);
+    }
+
     a.stop();
     b.stop();
     server_a.join();

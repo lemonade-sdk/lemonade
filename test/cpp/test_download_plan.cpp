@@ -323,10 +323,9 @@ static void test_cancellation_mid_copy() {
     fs::remove_all(dir);
 }
 
-static void test_progress_false_is_not_cancellation() {
-    // A closed update channel closes the channel; it does not stop the bytes.
+static void test_progress_false_cancels_the_plan() {
     const fs::path dir = make_temp_dir("mute");
-    const std::string content = "a deaf listener still gets a copy";
+    const std::string content = "a listener that cannot write has lost its client";
     write_file(dir / "source.bin", content);
 
     DownloadPlan plan;
@@ -334,12 +333,50 @@ static void test_progress_false_is_not_cancellation() {
     plan.files.push_back(DownloadFile{"model.bin", file_url(dir / "source.bin"), content.size(),
                                       {}, {}, {}});
 
-    local_only_transfer().execute(plan, {}, [](const lemon::DownloadProgress&) { return false; },
-                                  {});
+    bool threw = false;
+    std::string message;
+    try {
+        local_only_transfer().execute(
+            plan, {}, [](const lemon::DownloadProgress&) { return false; }, {});
+    } catch (const std::exception& e) {
+        threw = true;
+        message = e.what();
+    }
+    check("a listener that returns false cancels the plan", threw);
+    check_eq("the closed channel message is stable", message, std::string("Download cancelled"));
+    check("no target file was created", !fs::exists(dir / "cache" / "model.bin"));
+    check_eq("the source survived the cancelled copy", read_file(source_of(dir)), content);
+    fs::remove_all(dir);
+}
 
-    check_eq("the copy completed despite the silent listener",
-             read_file(dir / "cache" / "model.bin"), content);
+static void test_progress_false_mid_copy_stops_the_bytes() {
+    const fs::path dir = make_temp_dir("mute_mid");
+    std::string big(3u * 1024u * 1024u, 'x');
+    write_file(dir / "source.bin", big);
 
+    DownloadPlan plan;
+    plan.download_path = lemon::utils::path_to_utf8(dir / "cache");
+    plan.files.push_back(
+        DownloadFile{"model.bin", file_url(dir / "source.bin"), big.size(), {}, {}, {}});
+
+    int reports = 0;
+    bool threw = false;
+    std::string message;
+    try {
+        local_only_transfer().execute(
+            plan, {},
+            [&](const lemon::DownloadProgress&) { return ++reports < 2; }, {});
+    } catch (const std::exception& e) {
+        threw = true;
+        message = e.what();
+    }
+    check("a channel closed mid-copy stops the copy", threw);
+    check_eq("the mid-copy message is stable", message, std::string("Download cancelled"));
+    check("the copy stopped at the closed report rather than the end of the file", reports < 4);
+    check("no final file is put in place mid-copy", !fs::exists(dir / "cache" / "model.bin"));
+    check("the staged file survives to be resumed",
+          fs::exists(dir / "cache" / "model.bin.partial"));
+    check_eq("the source survived the interrupted copy", read_file(source_of(dir)), big);
     fs::remove_all(dir);
 }
 
@@ -478,7 +515,8 @@ int main() {
     test_unknown_scheme_fails_before_bytes();
     test_cancellation();
     test_cancellation_mid_copy();
-    test_progress_false_is_not_cancellation();
+    test_progress_false_cancels_the_plan();
+    test_progress_false_mid_copy_stops_the_bytes();
     test_skips_completed_file();
     test_hash_verification();
     test_gguf_magic_rejected();
