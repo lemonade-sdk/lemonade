@@ -16,6 +16,7 @@ std::unique_ptr<ApiRoute> make_aliases_list_route(ServerContext& ctx);
 std::unique_ptr<ApiRoute> make_aliases_create_route(ServerContext& ctx);
 std::unique_ptr<ApiRoute> make_aliases_delete_route(ServerContext& ctx);
 std::unique_ptr<ApiRoute> make_route_list_route(ServerContext& ctx);
+std::unique_ptr<ApiRoute> make_model_sources_route(ServerContext& ctx);
 
 void register_internal_routes(RouteRegistry& registry, ServerContext& ctx) {
     registry.add(make_shutdown_route(ctx));
@@ -32,6 +33,7 @@ void register_internal_routes(RouteRegistry& registry, ServerContext& ctx) {
     registry.add(make_aliases_create_route(ctx));
     registry.add(make_aliases_delete_route(ctx));
     registry.add(make_route_list_route(ctx));
+    registry.add(make_model_sources_route(ctx));
 }
 
 } // namespace lemon

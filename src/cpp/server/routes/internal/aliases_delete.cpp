@@ -1,5 +1,5 @@
 #include "alias_errors.h"
-#include "lemon/alias_manager.h"
+#include "lemon/model_manager.h"
 #include "lemon/server/api_route.h"
 #include "lemon/utils/model_name_utils.h"
 
@@ -52,7 +52,7 @@ public:
     void handle(RouteRequest& req, httplib::Response& res) override {
         std::string alias = utils::normalize_model_name(req.value(kAlias, std::string()));
         try {
-            if (!ctx_.alias_manager || !ctx_.alias_manager->remove_alias(alias)) {
+            if (!ctx_.model_manager->remove_alias(alias)) {
                 write_alias_error(res, kAliasNotFound, "Alias not found: " + alias);
                 return;
             }

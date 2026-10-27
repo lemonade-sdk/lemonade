@@ -484,6 +484,14 @@ DISTINCT_ARGUMENTS = {
             ],
         ),
         (
+            "Files lists a path per file on disk; the model routes list one per checkpoint in "
+            "`checkpoint_status`",
+            [
+                "routes/openai/models/models_id_files.cpp:kIncludePaths",
+                "routes/shared_args.cpp:openai::models::kIncludePaths",
+            ],
+        ),
+        (
             "Audio's prompt is the style caption, with lyrics separate; images' is the image",
             [
                 "routes/lemonade/inference/audio_generations.cpp:kPrompt",
