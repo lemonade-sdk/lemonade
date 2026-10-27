@@ -134,9 +134,8 @@ assert.match(apiSource, /async startModelSync\(models\?: string\[\]\)[\s\S]*?'\/
 assert.match(apiSource, /async getModelSyncStatus\(\)[\s\S]*?'\/internal\/models\/sync\/status'/);
 assert.match(managerSource, /const handleUpdateAllModels = useCallback\(\(\) => \{ void handleModelSync\(\); \}/);
 assert.match(managerSource, /handleModelSync\(\[modelName\(model\)\]\)/);
-assert.match(managerSource, /sawRunning \|\| modelSyncPollEpoch > 0 \|\| isNewTerminalSync/);
-assert.match(managerSource, /handledModelSyncIds\.get\(api\.baseUrl\) !== status\.sync_id/);
-assert.match(managerSource, /handledModelSyncIds\.set\(api\.baseUrl, status\.sync_id\)/);
+assert.match(managerSource, /sawRunning \|\| modelSyncPollEpoch > 0 \|\| isTerminalSync/);
+assert.doesNotMatch(managerSource, /handledModelSyncIds/);
 assert.doesNotMatch(managerSource, /const candidates = allModels\.filter\(model =>/);
 assert.doesNotMatch(managerSource, /showGlobalSettings|<GlobalModelSettingsPanel|loadWithGlobalModelPolicy|automaticUpdateIsDue|lastAutomaticUpdateAt/);
 assert.match(managerSource, /await loadModelRuntime\(model, new Set<string>\(\), overrideOptions\)/);

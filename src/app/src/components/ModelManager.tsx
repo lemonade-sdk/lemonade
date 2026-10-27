@@ -1056,9 +1056,6 @@ const OmniComponentPicker: React.FC<OmniComponentPickerProps> = ({ role, value, 
 
 /* ── Component ─────────────────────────────────────────────── */
 
-// Do not replay the same completed sync when Models is reopened.
-const handledModelSyncIds = new Map<string, number>();
-
 interface ModelManagerProps {
   onModelSelect: (model: string) => void;
   openModelRequest?: { modelName: string; nonce: number } | null;
@@ -1251,16 +1248,13 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
         if (cancelled) return;
         setModelSyncStatus(status);
         const isTerminalSync = status.status === 'success' || status.status === 'failed';
-        const isNewTerminalSync = isTerminalSync && status.sync_id > 0
-          && handledModelSyncIds.get(api.baseUrl) !== status.sync_id;
         if (status.status === 'in_progress') {
           sawRunning = true;
           setModelSyncError(null);
           timer = setTimeout(() => { void poll(); }, 1500);
-        } else if (sawRunning || modelSyncPollEpoch > 0 || isNewTerminalSync) {
-          if (isTerminalSync && status.sync_id > 0) {
-            handledModelSyncIds.set(api.baseUrl, status.sync_id);
-          }
+        } else if (sawRunning || modelSyncPollEpoch > 0 || isTerminalSync) {
+          // Always trust the server's terminal status, even when a restarted
+          // server reuses an ID. One refresh per Models mount is intentional.
           const failures = Object.entries(status.failed_models || {}).map(([name, reason]) => `${name}: ${reason}`);
           setModelSyncError(status.status === 'failed' || status.terminal_error || failures.length
             ? [status.terminal_error, ...failures].filter(Boolean).join('; ') || 'Model update failed.'
