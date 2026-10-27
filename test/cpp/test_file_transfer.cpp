@@ -3,7 +3,8 @@
 // needs no network, and auth_headers() that belong to the origin that minted
 // them — kept across a same-origin redirect, stripped at a cross-origin one,
 // and never restored on a later hop. A loopback httplib server stands in for
-// the registry; two ports are two origins.
+// the registry; two ports are two origins. A resume accepts a body only from the
+// offset it asked for.
 
 #include <httplib.h>
 
@@ -18,6 +19,7 @@
 #include <memory>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include <lemon/models/artifact_transfer.h>
@@ -69,6 +71,86 @@ static bool make_symlink(const fs::path& target, const fs::path& link, std::stri
     why = ec.message();
     return false;
 }
+
+// A host that answers a range request with bytes from elsewhere. httplib derives
+// Content-Range from the request and turns a 206 it cannot slice into a 200, so a
+// lying answer is written out here. An empty content_range omits the header.
+class LyingCdn {
+public:
+    LyingCdn(std::string body, std::string content_range)
+        : body_(std::move(body)), content_range_(std::move(content_range)) {
+        listen_ = ::socket(AF_INET, SOCK_STREAM, 0);
+        const char reuse = 1;
+        ::setsockopt(listen_, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+        sockaddr_in addr{};
+        addr.sin_family = AF_INET;
+        addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        ::bind(listen_, reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
+        ::listen(listen_, 8);
+        socklen_t length = sizeof(addr);
+        ::getsockname(listen_, reinterpret_cast<sockaddr*>(&addr), &length);
+        port_ = ntohs(addr.sin_port);
+        thread_ = std::thread([this] { answer_every_request(); });
+    }
+
+    ~LyingCdn() {
+        stop_.store(true);
+        stop_socket(listen_);
+        if (thread_.joinable()) thread_.join();
+    }
+
+    std::string url() const { return "http://127.0.0.1:" + std::to_string(port_) + "/blob"; }
+    int hits() const { return hits_.load(); }
+
+private:
+    static void stop_socket(::socket_t sock) {
+#ifdef _WIN32
+        ::shutdown(sock, SD_BOTH);
+        ::closesocket(sock);
+#else
+        ::shutdown(sock, SHUT_RDWR);
+        ::close(sock);
+#endif
+    }
+
+    void answer_every_request() {
+        while (!stop_.load()) {
+            const ::socket_t fd = ::accept(listen_, nullptr, nullptr);
+            if (fd == INVALID_SOCKET) return;
+            char buffer[512];
+            std::string request;
+            while (request.find("\r\n\r\n") == std::string::npos) {
+                const int got = ::recv(fd, buffer, sizeof(buffer), 0);
+                if (got <= 0) break;
+                request.append(buffer, static_cast<size_t>(got));
+            }
+            ++hits_;
+            std::string response = "HTTP/1.1 206 Partial Content\r\n";
+            if (!content_range_.empty()) {
+                response += "Content-Range: " + content_range_ + "\r\n";
+            }
+            response += "Content-Length: " + std::to_string(body_.size()) +
+                        "\r\nConnection: close\r\n\r\n";
+            response += body_;
+            std::size_t sent = 0;
+            while (sent < response.size()) {
+                const int written = ::send(fd, response.data() + sent,
+                                           static_cast<int>(response.size() - sent), 0);
+                if (written <= 0) break;
+                sent += static_cast<std::size_t>(written);
+            }
+            stop_socket(fd);
+        }
+    }
+
+    std::string body_;
+    std::string content_range_;
+    ::socket_t listen_ = INVALID_SOCKET;
+    int port_ = 0;
+    std::atomic<int> hits_{0};
+    std::atomic<bool> stop_{false};
+    std::thread thread_;
+};
 
 static fs::path make_temp_dir(const char* tag) {
     fs::path dir = fs::temp_directory_path();
@@ -597,6 +679,49 @@ int main() {
               read_file(dir / "model.bin") == kWholeBody);
         check("refusing that answer starts the download over", g_cdn_whole.hits > 1);
         fs::remove_all(dir);
+    }
+    // --- a resume answered with the wrong bytes -----------------------------
+    // No size and no hash in these plans: nothing downstream would notice bytes
+    // from another offset inside the finished file.
+    const auto resume_from_partial = [](const std::string& url, const char* tag) {
+        const fs::path dir = make_temp_dir(tag);
+        write_file(dir / "model.bin.partial", kWholeBody.substr(0, kPartialBytes));
+        DownloadPlan plan;
+        plan.download_path = lemon::utils::path_to_utf8(dir);
+        plan.files.push_back(DownloadFile{"model.bin", url, 0, {}, {}, {}});
+        std::string message;
+        try {
+            loopback_transfer().execute(plan, {}, nullptr, {});
+        } catch (const std::exception& e) {
+            message = e.what();
+        }
+        const std::string landed =
+            fs::exists(dir / "model.bin") ? read_file(dir / "model.bin") : std::string();
+        fs::remove_all(dir);
+        return std::make_pair(landed.empty() || landed == kWholeBody, message);
+    };
+
+    LyingCdn offset_elsewhere(
+        kWholeBody, "bytes 0-" + std::to_string(kWholeBody.size() - 1) + "/" +
+                        std::to_string(kWholeBody.size()));
+    LyingCdn no_content_range(kWholeBody, "");
+    {
+        const auto outcome = resume_from_partial(offset_elsewhere.url(), "resume_shifted");
+        check("a 206 naming another offset is not appended to the partial file", outcome.first);
+        check("a 206 naming another offset is not taken as the resume",
+              offset_elsewhere.hits() > 1);
+        if (!outcome.second.empty()) {
+            std::printf("       %s\n", display(outcome.second).c_str());
+        }
+    }
+    {
+        const auto outcome = resume_from_partial(no_content_range.url(), "resume_unlabelled");
+        check("a 206 without a Content-Range is not appended to the partial file", outcome.first);
+        check("a 206 without a Content-Range is not taken as the resume",
+              no_content_range.hits() > 1);
+        if (!outcome.second.empty()) {
+            std::printf("       %s\n", display(outcome.second).c_str());
+        }
     }
 
     // --- the token stops bytes in flight -----------------------------------

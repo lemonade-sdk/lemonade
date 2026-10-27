@@ -6,6 +6,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <iostream>
+#include <limits>
 #include <thread>
 #include <chrono>
 #include <filesystem>
@@ -404,6 +405,47 @@ static int stream_cancel_xferinfo_callback(void* clientp, curl_off_t, curl_off_t
     }
 }
 
+namespace {
+
+bool same_ignore_case(std::string_view text, std::string_view expected) {
+    return text.size() == expected.size() &&
+           std::equal(text.begin(), text.end(), expected.begin(),
+                      [](unsigned char a, unsigned char b) {
+                          return std::tolower(a) == std::tolower(b);
+                      });
+}
+
+// The offset `bytes 400-999/1000` starts its body at. `bytes */1000` serves no
+// range and has no offset.
+bool content_range_offset(const std::string& value, curl_off_t& offset) {
+    size_t pos = value.find_first_not_of(" \t");
+    if (pos == std::string::npos) return false;
+    size_t unit_end = pos;
+    while (unit_end < value.size() && std::isalpha(static_cast<unsigned char>(value[unit_end]))) {
+        ++unit_end;
+    }
+    if (!same_ignore_case(std::string_view(value).substr(pos, unit_end - pos), "bytes")) {
+        return false;
+    }
+    pos = value.find_first_not_of(" \t", unit_end);
+    if (pos == std::string::npos || value[pos] == '*') return false;
+
+    curl_off_t first = 0;
+    const size_t digits_begin = pos;
+    size_t digits = pos;
+    for (; digits < value.size() && std::isdigit(static_cast<unsigned char>(value[digits]));
+         ++digits) {
+        const curl_off_t numeral = value[digits] - '0';
+        if (first > (std::numeric_limits<curl_off_t>::max() - numeral) / 10) return false;
+        first = first * 10 + numeral;
+    }
+    if (digits == digits_begin || digits >= value.size() || value[digits] != '-') return false;
+    offset = first;
+    return true;
+}
+
+}  // namespace
+
 struct ProgressData {
     ProgressCallback callback;
     const CancelToken* cancel = nullptr;
@@ -414,6 +456,10 @@ struct ProgressData {
     bool waiting_for_first_byte = false;
     bool expect_partial_response = false;
     bool range_ignored = false;
+    // A resumed transfer accepts a body from the one offset it asked for.
+    curl_off_t requested_offset = 0;
+    bool range_offset_matches = false;
+    bool range_mismatch = false;
     long current_response_code = 0;
     int no_progress_timeout = 0;
     curl_off_t last_downloaded = 0;
@@ -423,7 +469,7 @@ struct ProgressData {
 // Callback for writing to file
 static size_t write_file_callback(void* ptr, size_t size, size_t nmemb, void* stream) {
     auto* sink = static_cast<DownloadSink*>(stream);
-    if (sink->prog != nullptr && sink->prog->range_ignored) {
+    if (sink->prog != nullptr && (sink->prog->range_ignored || sink->prog->range_mismatch)) {
         return 0;
     }
     if (sink->prog != nullptr && sink->prog->redirecting_body) {
@@ -469,6 +515,7 @@ static size_t header_callback(char* buffer, size_t size, size_t nitems, void* us
         iss >> http_version >> status_code;
         data->current_response_code = status_code;
         data->redirecting_body = status_code >= 300 && status_code < 400 && status_code != 304;
+        data->range_offset_matches = false;
         if (data->expect_partial_response && status_code >= 200 && status_code < 300 &&
             status_code != 206) {
             data->range_ignored = true;
@@ -476,7 +523,21 @@ static size_t header_callback(char* buffer, size_t size, size_t nitems, void* us
         return total;
     }
 
+    if (data->expect_partial_response) {
+        const size_t colon = line.find(':');
+        if (colon != std::string::npos &&
+            same_ignore_case(std::string_view(line.data(), colon), "content-range")) {
+            curl_off_t offset = 0;
+            data->range_offset_matches = content_range_offset(line.substr(colon + 1), offset) &&
+                                         offset == data->requested_offset;
+        }
+    }
+
     if (line == "\r\n" || line == "\n") {
+        // Settled from the headers, before a body byte can land.
+        data->range_mismatch = data->expect_partial_response &&
+                               data->current_response_code == 206 && !data->range_offset_matches;
+
         const bool response_can_have_body =
             data->current_response_code >= 200 &&
             data->current_response_code < 300 &&
@@ -1089,6 +1150,7 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
     struct curl_slist* range_list = nullptr;
     if (resume_from > 0) {
         prog_data->expect_partial_response = true;
+        prog_data->requested_offset = static_cast<curl_off_t>(resume_from);
         const std::string range = "Range: bytes=" + std::to_string(resume_from) + "-";
         range_list = curl_slist_append(range_list, range.c_str());
     }
@@ -1212,6 +1274,12 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
     if (prog_data->range_ignored) {
         result.can_resume = false;
         result.error_message = "Server ignored the range request and returned the whole file";
+        return result;
+    }
+
+    if (prog_data->range_mismatch) {
+        result.can_resume = false;
+        result.error_message = "Server answered the range request with bytes from another offset";
         return result;
     }
 
