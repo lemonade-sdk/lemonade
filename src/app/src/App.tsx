@@ -7,6 +7,7 @@ import { attachServerModelState, useServerModelState } from './features/models/m
 import { preloadInteractionSurfaces } from './interactionPreload';
 import { I18nContext, translate, useI18n, type I18nContextValue } from './i18n';
 import { routerDependencies } from './features/router/routerRuntime';
+import { captureBrowserPromptFromUrl } from './features/browserPrompt';
 const MARKETPLACE_URL = 'https://raw.githubusercontent.com/lemonade-sdk/marketplace/main/apps.json';
 type MarketplaceApp = {
   id: string;
@@ -377,6 +378,9 @@ function loadTheme(): Theme {
   } catch { /* ignore */ }
   return 'dark';
 }
+
+// Capture before React mounts ChatView so its first send cannot race URL cleanup.
+captureBrowserPromptFromUrl();
 
 const App: React.FC = () => {
   const { t } = useI18n();
@@ -932,19 +936,8 @@ const App: React.FC = () => {
       if (attempts < 50) window.setTimeout(attach, 100);
     };
 
-    const startupUrl = new URL(window.location.href);
-    if (startupUrl.searchParams.has('q')) {
-      // Scrub the incoming prompt before navigation can copy it into history.
-      startupUrl.searchParams.delete('q');
-      startupUrl.searchParams.delete('view');
-      startupUrl.searchParams.delete('logs');
-      startupUrl.hash = '#/chat';
-      window.history.replaceState(window.history.state, '', startupUrl.toString());
-      navigateToRoute({ view: 'chat' });
-    } else {
-      const initialRoute = routeFromCurrentLocation();
-      if (initialRoute) navigateToRoute(initialRoute);
-    }
+    const initialRoute = routeFromCurrentLocation();
+    if (initialRoute) navigateToRoute(initialRoute);
     attach();
 
     return () => {

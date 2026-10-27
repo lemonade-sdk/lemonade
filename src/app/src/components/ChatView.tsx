@@ -45,6 +45,7 @@ import {
   modelStructure,
 } from '../modelCapabilities';
 import { storageKey } from '../storage';
+import { captureBrowserDraftSend, hasBrowserPromptContext, readBrowserPromptDraft, saveBrowserPromptDraft } from '../features/browserPrompt';
 import { CHAT_HISTORY_PREFERENCE_EVENT, loadChatHistoryPreference, saveChatHistoryPreference } from '../features/chatHistory/historySettings';
 import { prepareToolCallsForStorage } from '../features/chatHistory/toolCallPersistence';
 import type { DownloadListItem } from '../features/downloadManager/downloadStore';
@@ -921,13 +922,7 @@ const ChatView: React.FC<ChatViewProps> = ({
   const [historyHydrated, setHistoryHydrated] = useState(() => !loadPersistencePreference());
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [incomingPrompt] = useState(() => {
-    try {
-      return new URLSearchParams(window.location.search).get('q')?.trim() || '';
-    } catch {
-      return '';
-    }
-  });
+  const [incomingPrompt] = useState(readBrowserPromptDraft);
   const [inputValue, setInputValue] = useState(incomingPrompt);
   const [imageMode, setImageMode] = useState<ImageMode>('generate');
   const [imageSettings, setImageSettings] = useState<ImageGenerationSettings>(DEFAULT_IMAGE_SETTINGS);
@@ -1048,7 +1043,7 @@ const ChatView: React.FC<ChatViewProps> = ({
         const existing = new Set(current.map(conversation => conversation.id));
         return [...current, ...storedConversations.filter(conversation => !existing.has(conversation.id))];
       });
-      setActiveId(current => current || storedActiveId);
+      setActiveId(current => current || (incomingPrompt && !incomingPromptHandledRef.current ? null : storedActiveId));
       setHistoryHydrated(true);
     }, 500);
     return cancelSchedule;
@@ -2113,6 +2108,11 @@ const ChatView: React.FC<ChatViewProps> = ({
 
   const activeConvo = conversations.find(c => c.id === activeId) || null;
   const messages = activeConvo?.messages || [];
+  const toolsUnavailable = hasBrowserPromptContext(messages)
+    || (!activeId && !!incomingPrompt && !incomingPromptHandledRef.current);
+  useEffect(() => {
+    if (toolsUnavailable) setMcpPickerOpen(false);
+  }, [toolsUnavailable]);
 
   useFocusTrap(bottomSheetRef, mobileSheetOpen);
 
@@ -2191,9 +2191,9 @@ const ChatView: React.FC<ChatViewProps> = ({
   // Persist active conversation id only after the initial stored value has been
   // hydrated, otherwise an empty cold-start state could overwrite it.
   useEffect(() => {
-    if (!historyHydrated) return;
+    if (!historyHydrated || (incomingPrompt && !incomingPromptHandledRef.current && !activeId)) return;
     saveActiveId(activeId, persistHistory);
-  }, [activeId, historyHydrated, persistHistory]);
+  }, [activeId, historyHydrated, persistHistory, incomingPrompt]);
 
   // Active ID can point at stale/missing data after manual localStorage edits or migrations.
   useEffect(() => {
@@ -2276,10 +2276,10 @@ const ChatView: React.FC<ChatViewProps> = ({
   // than going through handleSelectConversation, so the model needs restoring too.
   const startupModelRestoredRef = useRef(false);
   useEffect(() => {
-    if (startupModelRestoredRef.current || !historyHydrated || !activeId || incomingPrompt) return;
+    if (startupModelRestoredRef.current || !historyHydrated || !activeId) return;
     startupModelRestoredRef.current = true;
     applyConversationModel(conversations.find(c => c.id === activeId)?.model?.name);
-  }, [activeId, applyConversationModel, conversations, historyHydrated, incomingPrompt]);
+  }, [activeId, applyConversationModel, conversations, historyHydrated]);
 
   const handleSelectConversation = useCallback((id: string) => {
     setActiveId(id);
@@ -2838,9 +2838,7 @@ ${finalText}`
     const text = userMessage.content.trim();
     const images = userMessage.images?.length ? [...userMessage.images] : undefined;
     const hasImages = !!images?.length;
-    // An imported page remains untrusted throughout the chat, including retries.
-    const allowTools = !userMessage.fromBrowserPrompt
-      && !priorMessages.some(message => message.fromBrowserPrompt);
+    const allowTools = !hasBrowserPromptContext([...priorMessages, userMessage]);
     const collectionInfo = currentKnownModelInfo && isCollectionModel(currentKnownModelInfo) ? currentKnownModelInfo : null;
 
     if (appendUserToConversation) {
@@ -3052,9 +3050,9 @@ ${finalText}`
 
   const handleSend = async (overrideText?: string, fromBrowserPrompt = false) => {
     const text = (overrideText ?? inputValue).trim();
-    const isExternalPrompt = fromBrowserPrompt || (!!incomingPrompt && !incomingPromptHandledRef.current);
-    const audioFiles = fromBrowserPrompt ? [] : [...pendingAudioFiles];
-    const hasImages = !fromBrowserPrompt && pendingImages.length > 0;
+    const isExternalPrompt = captureBrowserDraftSend(overrideText, fromBrowserPrompt, incomingPrompt, incomingPromptHandledRef.current);
+    const audioFiles = isExternalPrompt ? [] : [...pendingAudioFiles];
+    const hasImages = !isExternalPrompt && pendingImages.length > 0;
     const canSubmitContent = currentCapability === 'audio' && !modeSupportsChatCompletions
       ? audioFiles.length > 0
       : currentCapability === 'image'
@@ -3067,7 +3065,10 @@ ${finalText}`
               ? (!!text && !openMossDescribeUnavailable && !openMossCloneUnavailable)
               : (!!text || hasImages || (canUseAudioInput && audioFiles.length > 0));
     if (!canSubmitContent || isBusy || !currentModelSnapshot) return;
-    if (isExternalPrompt) incomingPromptHandledRef.current = true;
+    if (isExternalPrompt) {
+      incomingPromptHandledRef.current = true;
+      saveBrowserPromptDraft('');
+    }
 
     // Sending a new message explicitly resumes following the latest reply.
     threadFollowBottomRef.current = true;
@@ -3105,12 +3106,12 @@ ${finalText}`
       }));
     }
 
-    setInputValue('');
-    if (!fromBrowserPrompt) {
+    if (overrideText === undefined) setInputValue('');
+    if (!isExternalPrompt) {
       setPendingImages([]);
       setPendingAudioFiles([]);
+      void speakWithPinnedTts(text, 'user');
     }
-    void speakWithPinnedTts(text, 'user');
 
     if (connectionStatus !== 'connected') {
       appendAssistantMessage(convoId, {
@@ -3239,14 +3240,13 @@ ${finalText}`
   handleSendRef.current = handleSend;
 
   useEffect(() => {
-    if (!isVisible || !incomingPrompt || incomingPromptHandledRef.current || !historyHydrated
+    if (!isVisible || activeId || !incomingPrompt || incomingPromptHandledRef.current || !historyHydrated
         || connectionStatus !== 'connected' || !currentModelSnapshot
         || !modeSupportsChatCompletions || !currentLoadedModel || isBusy) return;
 
-    incomingPromptHandledRef.current = true;
     setShowLoadedOverview(false);
     void handleSendRef.current(undefined, true);
-  }, [isVisible, incomingPrompt, historyHydrated, connectionStatus, currentModelSnapshot, modeSupportsChatCompletions, currentLoadedModel, isBusy]);
+  }, [isVisible, activeId, incomingPrompt, historyHydrated, connectionStatus, currentModelSnapshot, modeSupportsChatCompletions, currentLoadedModel, isBusy]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -4462,21 +4462,23 @@ ${finalText}`
                   role="menuitem"
                   data-mcp-entry="tools"
                   onClick={openMcpPicker}
-                  disabled={!modeSupportsMcp}
+                  disabled={!modeSupportsMcp || toolsUnavailable}
                   aria-label={t('Tools')}
                   aria-haspopup="dialog"
                 >
                   <span className="composer__add-icon"><Icon name="tools" size={16} /></span>
                   <span className="composer__add-text">
                     <strong>{t('Tools')}</strong>
-                    <small>{useMcp
-                      ? `${selectedMcpToolCount} selected · Lemonade and external MCP`
-                      : 'Lemonade tools and external MCP servers'}</small>
+                    <small>{toolsUnavailable
+                      ? 'Unavailable for imported webpage context'
+                      : useMcp
+                        ? `${selectedMcpToolCount} selected · Lemonade and external MCP`
+                        : 'Lemonade tools and external MCP servers'}</small>
                   </span>
                 </button>
               </div>
             )}
-            {addMenuOpen && mcpPickerOpen && (
+            {addMenuOpen && mcpPickerOpen && !toolsUnavailable && (
               <div
                 className="composer__mcp-modal"
                 onMouseDown={event => {
@@ -4611,7 +4613,14 @@ ${finalText}`
             className="composer__input"
             placeholder={composerPlaceholder}
             value={inputValue}
-            onChange={e => setInputValue(e.target.value)}
+            onChange={e => {
+              const draft = e.target.value;
+              setInputValue(draft);
+              if (incomingPrompt && !incomingPromptHandledRef.current) {
+                saveBrowserPromptDraft(draft);
+                if (!draft.trim()) incomingPromptHandledRef.current = true;
+              }
+            }}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
             disabled={isBusy}
@@ -4709,6 +4718,11 @@ ${finalText}`
         </div>
         </div>
         <div className="composer__hint">{composerHint}</div>
+        {toolsUnavailable && (
+          <div className="composer__hint" role="status">
+            Imported webpage content: tools are unavailable in this conversation. Start a new chat to use tools.
+          </div>
+        )}
       </div>
       </div>
       <div aria-live="assertive" aria-atomic="true" className="sr-only">
