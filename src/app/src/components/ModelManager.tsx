@@ -1194,6 +1194,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   }, [visibleServerModels.length]);
 
   const applySystemInfo = useCallback((info: Record<string, unknown>) => {
+    if (!api.isConnected) return;
     const hasRecipeData = Boolean(systemRecipeEntries(info));
     setSystemInfo(info);
     setDynamicRecipeOptions(hasRecipeData ? recipeOptionsFromSystemInfo(info) : {});
