@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import api, { HealthData, StatsData, SystemStatsData, SlotData, LoadedModel, LogStreamHandle, getCacheTokenCount, friendlyErrorMessage } from '../api';
-import { decodedTokensInSlot, isSlotProcessing, sampledSlotTps, selectGenerationTps } from '../features/dashboard/throughput';
+import { decodedTokensInSlot, isSlotProcessing, sampledSlotTps, selectGenerationTps } from '../features/monitor/throughput';
 
 /* ── History ring buffer ───────────────────────────────────── */
 
@@ -100,7 +100,7 @@ export interface SlotTarget {
   isActive: boolean;
 }
 
-export interface DashboardData {
+export interface MonitorData {
   health: HealthData | null;
   stats: StatsData | null;
   sysStats: SystemStatsData | null;
@@ -134,7 +134,7 @@ export interface DashboardData {
 
 const POLL_INTERVAL = 2000;
 
-export function useDashboardData(isActive = true): DashboardData {
+export function useMonitorData(isActive = true): MonitorData {
   const [health, setHealth] = useState<HealthData | null>(null);
   const [stats, setStats] = useState<StatsData | null>(null);
   const [sysStats, setSysStats] = useState<SystemStatsData | null>(null);
@@ -148,9 +148,9 @@ export function useDashboardData(isActive = true): DashboardData {
   const [slotStatus, setSlotStatus] = useState('Slot telemetry is waiting for a compatible backend.');
   const [paused, setPaused] = useState(false);
 
-  // Hardware topology is effectively static during a dashboard session. Fetch
+  // Hardware topology is effectively static during a monitor session. Fetch
   // it once when the view becomes active instead of mixing it into the 2-second
-  // telemetry poll. The dashboard uses this to distinguish a discrete VRAM
+  // telemetry poll. The monitor uses this to distinguish a discrete VRAM
   // budget from an APU's shared RAM/VRAM pool.
   useEffect(() => {
     if (!isActive) return;

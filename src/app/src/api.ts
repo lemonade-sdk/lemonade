@@ -1820,7 +1820,7 @@ class LemonadeAPI {
     return text;
   }
 
-  // ── Dashboard data ──────────────────────────────────────────────
+  // ── Monitor data ──────────────────────────────────────────────
 
   async stats(): Promise<StatsData> {
     return this._json<StatsData>('/api/v1/stats');
