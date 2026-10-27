@@ -6154,11 +6154,6 @@ optgroup {
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
-
-  /* Bottom sheet: skip slide, snap to open/closed */
-  .bottom-sheet {
-    transform: none !important;
-  }
 }
 
 /* All UI glyphs come from lucide-react or Simple Icons. Keep their native
