@@ -1584,11 +1584,14 @@ class LemonadeAPI {
     // Several views use the same expensive system-info endpoint. A workspace
     // preload and the view's first effect can overlap, so share the in-flight
     // request instead of making the server do the same discovery twice.
+    const generation = this._systemInfoGeneration;
     if (options.afterPending && this._systemInfoInFlight) {
       await this._systemInfoInFlight.catch(() => undefined);
+      if (generation !== this._systemInfoGeneration) {
+        throw new Error('Connection changed while waiting for system info');
+      }
     }
     if (this._systemInfoInFlight) return this._systemInfoInFlight;
-    const generation = this._systemInfoGeneration;
 
     const request = this._json<Record<string, unknown>>(
       '/api/v1/system-info',
