@@ -92,6 +92,7 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
   "log_max_file_size_mb": 10,
   "log_max_files": 5,
   "max_loaded_models": 1,
+  "model_catalogs": [],
   "models_dir": "auto",
   "moonshine": {
     "args": "",
@@ -227,7 +228,7 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
 
 FLM manages its own model storage, so it does not persist a registry source with each model. An FLM pull follows the current `default_model_source` unless that request supplies an explicit `--source`; changing the default therefore changes the registry used by later FLM pulls and upgrades.
 
-Both `models_dir` and `extra_models_dir` can be changed at runtime through `POST /internal/set`. Existing `extra_models_dir` paths are preflighted as directories and must be enumerable by the `lemond` process. Nonexistent paths are accepted so the directory watcher can observe them if they are created later.
+Both `models_dir` and `extra_models_dir` can be changed at runtime through [`POST /internal/set`](../../api/internal.md#post-internalset). Existing `extra_models_dir` paths are preflighted as directories and must be enumerable by the `lemond` process. Nonexistent paths are accepted so the directory watcher can observe them if they are created later.
 
 ### Backend Configuration
 
@@ -292,6 +293,20 @@ Backend-specific settings are nested under their backend name:
 
 API keys for these providers are **not** stored in `config.json` — they live in `LEMONADE_<PROVIDER>_API_KEY` env vars (persistent) or `lemond` process memory via `POST /v1/cloud/auth` (ephemeral). Manage providers with `lemonade cloud install/uninstall/auth/list` rather than editing this section by hand.
 
+**model_catalogs** — Extra model registries. Array, one object per catalog. A file is read on every rebuild; a fetched document answers from its cached body for a minute after a fetch, so a rebuild caused by a local event (a pull, a delete, a file in the scan directory) costs no round trip. Changing `model_catalogs` asks every origin again:
+
+| Key | Description |
+|-----|-------------|
+| `id` | Stable name: letters, digits, `.`, `_`, `-`. Keys the catalog set, and a fetched body is kept under it. Two entries under one id are refused, the first one kept. |
+| `path` | A JSON file with the same shape as `user_models.json`. Name exactly one of `path` or `url`. |
+| `url` | An HTTP(S) URL serving such a document. One that carries credentials (`@`) is refused. A body that answers once is kept, and an outage lists what the catalog listed last instead of nothing. An edit at the origin appears once the window above passes, or on the next `model_catalogs` change. A document over 8 MB is refused and the last good body is kept; dropping the catalog drops its cached body too. |
+| `required` | True: a catalog that cannot be read fails the build. Default false: it contributes nothing. |
+| `allow_insecure_http` | Needed for an `http://` URL; an `https://` URL never asks for it. |
+
+A configured document yields any name the built-in registry or a registration already holds, so it can add models without taking one over. Any other key is refused with the catalog's name in the complaint, and a refused entry costs only its own catalog.
+
+Set the value with `POST /internal/set` — the model set rebuilds and every connected client sees the change — and see what built the current set with `GET /internal/model-sources`.
+
 **telemetry** — Unified telemetry and tracing configurations:
 
 | Key | Type | Default | Description |
@@ -336,7 +351,7 @@ Lemonade uses a unified telemetry subsystem to trace requests and capture critic
 - **vLLM Engine Telemetry**: For the vLLM backend, the server queries the local `/metrics` endpoint on completion to attach scheduler queue metrics (`llm.vllm.num_requests_waiting`, `llm.vllm.num_requests_running`, `llm.vllm.num_requests_swapped`) and KV cache utilization (`llm.vllm.gpu_cache_usage_factor`, `llm.vllm.cpu_cache_usage_factor`) directly to the trace spans.
 - **Reasoning Model Support**: For reasoning models (e.g., DeepSeek models), the server extracts and records `reasoning_content` from the assistant's generation. Any variant thought-termination tags (e.g., `</think|>`) are automatically standardized to the canonical `</think>` tag.
 - **Exporter Retry Backoff**: When retries are enabled (i.e., `max_retries > 0`), the exporter uses an exponential backoff strategy combined with randomized jitter for failed posts. The base retry interval starts at `retry_backoff_base_s` seconds (defaulting to 5), doubling on each subsequent failure (e.g., 5s, 10s, 20s, 40s), up to a maximum cap of 60 seconds. A randomized jitter factor between `0.5` and `1.5` is applied to each calculated delay to prevent a "thundering herd" when the collector recovers. Permanent client errors (`4xx` HTTP status codes, excluding `429 Too Many Requests`) are classified as non-retryable and cause the batch to be dropped immediately to save resources.
-- **OTLP Trace Batching**: Spans are aggregated in an in-memory queue buffer and exported in batches to minimize network overhead and maximize compression efficiency. Batching operates on a dual-trigger system: a batch is immediately serialized and dispatched if it reaches `send_batch_size` (default: `100`), or if `batch_timeout_s` (default: `1.0` second) has elapsed since the oldest span in the batch arrived. All remaining traces are flushed cleanly to the OTel collector upon server shutdown. Users can also trigger a manual flush at any time via the `POST /internal/telemetry/flush` endpoint.
+- **OTLP Trace Batching**: Spans are aggregated in an in-memory queue buffer and exported in batches to minimize network overhead and maximize compression efficiency. Batching operates on a dual-trigger system: a batch is immediately serialized and dispatched if it reaches `send_batch_size` (default: `100`), or if `batch_timeout_s` (default: `1.0` second) has elapsed since the oldest span in the batch arrived. All remaining traces are flushed cleanly to the OTel collector upon server shutdown. Users can also trigger a manual flush at any time via the [`POST /internal/telemetry/flush`](../../api/internal.md#post-internaltelemetryflush) endpoint.
 - **Request Failure Tracing**: Captures request failures directly on the telemetry spans. If a model fails to load, a request is rejected by the router, or a streaming connection encounters an exception or a non-200 HTTP status code from the backend, the span is ended with `Error` status and the specific error message is attached.
 - **Queue Blocking & Thundering Herd Prevention**: To prevent client requests from hanging and to avoid exhausting resources when the telemetry receiver endpoint is down, Lemonade employs a fail-fast mechanism. The exporter memory buffer is strictly bounded to a capacity of `max_queue_capacity` spans (default: `1000`). When full, a head-drop (FIFO) eviction policy is applied to drop the oldest telemetry spans to make room for newer ones, prioritizing current application state. If a telemetry transmission task fails all of its retries and is dropped, the endpoint is marked as **unreachable**. While in this unreachable state, subsequent spans in the transmission queue are attempted only once and immediately dropped without backoff delay if they fail, preventing the telemetry queue from blocking server operations. A single successful span delivery to the endpoint automatically resets the unreachable state and restores normal retry behavior.
 

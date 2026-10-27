@@ -1475,7 +1475,9 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
-            "chat"
+            "chat",
+            "reasoning",
+            "tool-calling"
         ],
         "size": 14.9
     },
@@ -1999,7 +2001,7 @@
         "size": 63.4
     },
     "gpt-oss-20b-mxfp4-GGUF": {
-        "checkpoint": "ggml-org/gpt-oss-20b-GGUF",
+        "checkpoint": "ggml-org/gpt-oss-20b-GGUF:gpt-oss-20b-MXFP4.gguf",
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
