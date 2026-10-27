@@ -41,9 +41,6 @@ static bool check_component_downloaded(const ModelInfo& info,
     return true;
 }
 
-static std::map<std::string, ModelInfo> host_visible_probe(const std::map<std::string, ModelInfo>& m) { return m; }
-static nlohmann::json empty_policy_doc() { return nlohmann::json{{"recipe", "router"}, {"components", nlohmann::json::array()}}; }
-
 CompositionResult ModelComposition::run() {
     std::map<std::string, ModelInfo> composed;
     std::shared_ptr<const FilterReasons> composed_reasons;

@@ -307,11 +307,6 @@ public:
 
 
 
-    // Source-compatible alias for integrations built against the original API.
-    // The model's registry_source still controls which provider is contacted.
-    void download_from_huggingface_engine(const ModelInfo& info,
-                                          DownloadProgressCallback progress_callback = nullptr);
-
     // Get shared model-hub cache directory (respects HF_HUB_CACHE, HF_HOME, and platform defaults)
     std::string get_hf_cache_dir() const;
 

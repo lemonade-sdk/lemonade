@@ -45,6 +45,7 @@ static void write_file(const fs::path& path, const std::string& contents = "data
 
 struct RegistryFixtures {
     fs::path hf_variant_snapshot;
+    fs::path hf_alias_snapshot;
     fs::path hf_uncommitted_repo;
     fs::path hf_uncommitted_snapshot;
     fs::path collection_main;
@@ -59,6 +60,11 @@ static RegistryFixtures create_registry_fixtures(const fs::path& root,
     fixtures.hf_variant_snapshot = hf_variant_repo / "snapshots" / "snapshot-one";
     write_file(fixtures.hf_variant_snapshot / "model.gguf", "GGUF");
     write_file(hf_variant_repo / "refs" / "main", "snapshot-one");
+
+    fs::path hf_alias_repo = hf_root / "models--org--alias";
+    fixtures.hf_alias_snapshot = hf_alias_repo / "snapshots" / "snapshot-one";
+    write_file(fixtures.hf_alias_snapshot / "model-Q4_0.gguf", "GGUF");
+    write_file(hf_alias_repo / "refs" / "main", "snapshot-one");
 
     fixtures.hf_uncommitted_repo = hf_root / "models--org--uncommitted";
     fixtures.hf_uncommitted_snapshot =
@@ -78,6 +84,9 @@ static RegistryFixtures create_registry_fixtures(const fs::path& root,
         // repository for a bare "org/repo", and checkpoint_status reports nothing.
         {"hf-variant",
          json{{"checkpoint", "org/variant:model.gguf"}, {"recipe", "llamacpp"},
+              {"source", "huggingface"}}},
+        {"hf-alias",
+         json{{"checkpoint", "org/alias:Q4_0"}, {"recipe", "llamacpp"},
               {"source", "huggingface"}}},
         {"hf-uncommitted",
          json{{"checkpoint", "org/uncommitted"}, {"recipe", "sd-cpp"},
@@ -151,6 +160,11 @@ static void test_one_presence_answer(ModelManager& manager, const RegistryFixtur
     // The component test below starts from a component missing its second file.
     fs::remove(fixtures.collection_vae);
     manager.invalidate_models_cache();
+}
+
+static void test_a_quantization_alias(ModelManager& manager) {
+    manager.invalidate_models_cache();
+    check_one_answer(manager, "user.hf-alias", true, "a quantization alias");
 }
 
 static void test_required_checkpoint_completeness(ModelManager& manager,
@@ -333,6 +347,7 @@ int main() {
     {
         ModelManager manager;
         test_one_presence_answer(manager, fixtures);
+        test_a_quantization_alias(manager);
         test_required_checkpoint_completeness(manager, temp);
         test_a_side_cache_is_not_required(manager, temp);
         test_single_checkpoint_partial_guard(manager, temp);

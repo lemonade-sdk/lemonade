@@ -30,7 +30,6 @@ public:
     std::string canonical_for(const std::string& bare_name) const;
     bool owns(const std::string& canonical_id) const;
     size_t size() const { return by_bare_name_.size(); }
-    std::vector<std::string> bare_names() const;
 
 // Case-insensitive lookup exists only for the one-time legacy ref migration.
     std::vector<std::string> names_ignoring_case(const std::string& bare_name) const;

@@ -71,16 +71,6 @@ namespace lemon {
 
 // Properties which are defined by the user for model registration.
 
-// Candidate roots that FLM may use to store models. FLM resolves its model
-// directory from the FLM_MODEL_PATH env var (set by the installer) and falls
-// back to a built-in default that has changed across releases. lemond is often
-// launched from a parent process that predates the FLM install and therefore
-// doesn't see FLM_MODEL_PATH, so we also probe every documented default.
-// Order is most-specific to most-historical.
-
-static bool is_extra_model_name(const std::string& model_name) {
-    return model_name.rfind(models::extra_model_prefix, 0) == 0;
-}
 
 // The registry row a cache key was minted from, null when there is none; the pin
 // must outlive the pointer. Deliberately not parse_canonical_id(): a key like
@@ -509,11 +499,6 @@ void ModelManager::wait_until_sync_idle() {
 
 ModelManager::SyncEnqueueResult ModelManager::enqueue_sync(const std::vector<std::string>& target_models, bool attach_if_running) {
     return sync_.enqueue(target_models, attach_if_running);
-}
-
-void ModelManager::download_from_huggingface_engine(
-        const ModelInfo& info, DownloadProgressCallback progress_callback) {
-    ingest_->fetch_registry_artifacts(info, progress_callback, {});
 }
 
 std::vector<ModelInfo> ModelManager::scan_extra_models(

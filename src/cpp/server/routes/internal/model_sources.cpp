@@ -23,13 +23,13 @@ public:
             "token, aliases, documentation text, credential environment variables, cache layout "
             "and endpoint defaults.";
         s.notes = {
-            "`docs/tools/gen_model_source_boilerplate.py` reads this endpoint to generate the "
-            "model-source pages, so a committed page cannot name a token, an endpoint or an "
-            "environment variable the running server does not have.",
-            "A catalog answers `host_specific: true` when its rows depend on this machine, such "
-            "as an extra-models directory or a configured path. The generator never writes such a "
-            "row to a committed page, so the page stays the same on every machine even though this "
-            "response is not.",
+            "`docs/tools/gen_model_source_boilerplate.py` copies the model-source tables from "
+            "this response, so every token, endpoint and environment variable a committed page "
+            "names is one the server answering this request actually has.",
+            "A catalog answers `host_specific: true` when its rows depend on this machine: a "
+            "configured `model_catalogs` entry, the models an installed backend reports, and a "
+            "cloud provider's listing. The generator writes no such row to a committed page, so "
+            "the page stays the same on every machine even though this response is not.",
         };
 
         RouteResponse response;
@@ -47,17 +47,17 @@ public:
                                  "download_protocol", "search", "env"],
                     "properties": {
                         "token": {"type": "string", "description": "The registry's canonical name, as `source` and a checkpoint URL spell it."},
-                        "aliases": {"type": "array", "items": {"type": "string"}, "description": "Other names a request may send for this registry."},
+                        "aliases": {"type": "array", "items": {"type": "string"}, "description": "Every name a request may send for this registry, its canonical token among them. Hugging Face answers the empty string too, which is what a checkpoint naming no registry spells."},
                         "display_name": {"type": "string", "description": "The registry's name in prose and error messages."},
                         "title": {"type": "string", "description": "Heading the generated docs give this registry."},
                         "summary": {"type": "string", "description": "The registry's one-line description."},
                         "notes": {"type": "array", "items": {"type": "string"}, "description": "Anything the generated page says about this registry beyond the table row."},
                         "example": {"type": "string", "description": "A checkpoint the docs show for this registry."},
-                        "endpoint_default": {"type": "string", "description": "API endpoint used when no environment variable overrides it."},
-                        "scheme": {"type": "string", "description": "URL scheme a checkpoint URL for this registry carries, such as `huggingface://`; empty when a plain URL names it."},
+                        "endpoint_default": {"type": "string", "description": "Plain download host used when no environment variable overrides it; empty where the host serves files only through its own API, which the generated page prints instead."},
+                        "scheme": {"type": "string", "description": "URL scheme a checkpoint URL for this registry carries, such as `hf://`; empty when a plain URL names it."},
                         "cache_dir_prefix": {"type": "string", "description": "Prefix of this registry's directory under the models cache."},
                         "default_revision": {"type": "string", "description": "Revision assumed when a request names none."},
-                        "revision_semantics": {"type": "string", "description": "What a revision means here: an immutable commit, a moving branch, or the registry's own token."},
+                        "revision_semantics": {"type": "string", "description": "What a revision names here, such as `branch, tag or commit SHA`."},
                         "staleness_basis": {"type": "string", "description": "How the server decides a download is out of date."},
                         "download_protocol": {"type": "string", "description": "How a file is fetched from this registry."},
                         "search": {"type": "boolean", "description": "Whether [`/v1/registry/search`](./lemonade.md#get-v1registrysearch) answers for this registry."},
@@ -77,13 +77,13 @@ public:
                     "required": ["id", "title", "summary", "notes", "example", "required",
                                  "config_key", "host_specific"],
                     "properties": {
-                        "id": {"type": "string", "description": "The catalog's id, as `model_catalogs` in config.json names it."},
+                        "id": {"type": "string", "description": "The catalog's id: the name a `model_catalogs` entry gives it, or a fixed one such as `server_models.json`, `user_models.json`, `extra_models_dir`, `discovered:<recipe>` or `listed:<provider>`."},
                         "title": {"type": "string", "description": "Heading the generated docs give this catalog."},
                         "summary": {"type": "string", "description": "The catalog's one-line description."},
                         "notes": {"type": "array", "items": {"type": "string"}, "description": "Anything the generated page says about this catalog beyond the table row."},
                         "example": {"type": "string", "description": "A configuration example the docs show."},
                         "required": {"type": "boolean", "description": "Whether a model set missing this catalog invalidates the set."},
-                        "config_key": {"type": "string", "description": "The `model_catalogs` key that configures it; empty when nothing configures it."},
+                        "config_key": {"type": "string", "description": "The config.json key that configures it: `model_catalogs` for a configured catalog, the top-level `extra_models_dir` for the scanned directory; empty when nothing configures it."},
                         "host_specific": {"type": "boolean", "description": "`true` when its rows depend on this machine, which keeps its rows out of committed pages."}
                     }
                 }},

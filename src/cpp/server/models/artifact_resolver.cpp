@@ -127,6 +127,7 @@ SourcePlacement ArtifactSourceResolver::placement_for(const ModelInfo& info,
     SourcePlacement placement;
     placement.layout = &layout_for(info, checkpoint_type);
     placement.recipe = info.recipe;
+    placement.resolved = info.resolved_path(checkpoint_type);
     if (placement.layout != &hf_hub_layout()) {
         placement.sibling = info.resolved_path("main");
     }
@@ -193,6 +194,7 @@ std::unique_ptr<ArtifactSource> ArtifactSourceResolver::source_for(
         // still decides which files of the repository the model wants.
         SourcePlacement placement;
         placement.recipe = info.recipe;
+        placement.resolved = info.resolved_path(checkpoint_type);
         return open_repository(scheme_host, ref, placement);
     }
 

@@ -69,15 +69,6 @@ bool ModelIndex::owns(const std::string& canonical_id) const {
     return canonical_ids_.count(canonical_id) > 0;
 }
 
-std::vector<std::string> ModelIndex::bare_names() const {
-    std::vector<std::string> names;
-    names.reserve(by_bare_name_.size());
-    for (const auto& [bare, canonical] : by_bare_name_) {
-        names.push_back(bare);
-    }
-    return names;
-}
-
 std::vector<std::string> ModelIndex::names_ignoring_case(const std::string& bare_name) const {
     const std::string needle = lower_ascii(bare_name);
     std::vector<std::string> matches;

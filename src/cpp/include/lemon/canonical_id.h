@@ -96,15 +96,6 @@ inline std::string cache_key_to_canonical_id(const std::string& cache_key) {
     return canonical_id(ModelSource::Builtin, cache_key);
 }
 
-inline int precedence_rank(ModelSource source) {
-    switch (source) {
-        case ModelSource::Registered: return 0;
-        case ModelSource::Imported:   return 1;
-        case ModelSource::Builtin:    return 2;
-    }
-    return 99;
-}
-
 // Only Registered (user.*) is creatable via the pull/import flows. Imported
 // (extra.*) is discovered from disk and Builtin (builtin.*) ships in the
 // binary, so both prefixes are reserved when accepting new-model registrations.

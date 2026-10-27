@@ -208,8 +208,10 @@ class RegistryBackedRepository : public FetchableRepository {
         return placement;
     }
 
-// Falls back to the snapshot directory when no file is named.
     std::string local_target() const {
+        if (!resolved().empty()) {
+            return resolved();
+        }
         Placement where = placement();
         where.revision = active_revision(LocalRef{ref_.repo_id}).id;
         const std::string target = layout().target(where, ref_.variant);

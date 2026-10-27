@@ -7,9 +7,11 @@
 
 #include <httplib.h>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <map>
@@ -116,6 +118,37 @@ static void record(Recorded& slot, const httplib::Request& req) {
     slot.authorization = header != req.headers.end() ? header->second : std::string();
 }
 
+static const std::string kWholeBody = [] {
+    std::string body;
+    for (int i = 0; i < 1000; ++i) body += static_cast<char>('a' + (i % 26));
+    return body;
+}();
+constexpr const char kWholeSha256[] =
+    "915e53a44c18b19bb06ba5b3f5fcaf1dc4651e8404c63425cfc6174e74659d87";
+constexpr std::size_t kPartialBytes = 400;
+
+// What a host saw and sent for the first request it got.
+struct RangeSeen {
+    int hits = 0;
+    std::string requested = "<none-seen>";
+    std::size_t delivered = 0;
+};
+
+static RangeSeen g_cdn;
+static RangeSeen g_cdn_whole;
+
+static std::size_t record_range(const httplib::Request& req, RangeSeen& slot) {
+    const auto range = req.headers.find("Range");
+    const std::string asked = range == req.headers.end() ? std::string() : range->second;
+    if (slot.hits == 0) slot.requested = asked;
+    ++slot.hits;
+    if (asked.rfind("bytes=", 0) != 0) return 0;
+    const std::size_t dash = slot.requested.find('-', 6);
+    if (dash == std::string::npos) return 0;
+    return static_cast<std::size_t>(
+        strtoull(slot.requested.substr(6, dash).c_str(), nullptr, 10));
+}
+
 int main() {
     std::printf("=== FileTransfer unit tests ===\n\n");
 
@@ -154,6 +187,16 @@ int main() {
         res.status = 302;
         res.set_header("Location", "file:///etc/passwd");
     });
+    // A registry that names a file host in its redirect, which is the shape a
+    // repository resolve URL and its CDN make together.
+    a.Get("/resolve-range", [base_b](const httplib::Request&, httplib::Response& res) {
+        res.status = 302;
+        res.set_header("Location", base_b + "/cdn-range");
+    });
+    a.Get("/resolve-range-ignored", [base_b](const httplib::Request&, httplib::Response& res) {
+        res.status = 302;
+        res.set_header("Location", base_b + "/cdn-range-ignored");
+    });
     // Drips bytes so a token set during the first chunk can catch the middle.
     a.Get("/slow", [](const httplib::Request&, httplib::Response& res) {
         res.set_chunked_content_provider(
@@ -182,6 +225,20 @@ int main() {
     b.Get("/chain-end-b", [](const httplib::Request& req, httplib::Response& res) {
         record(g_chain_end_b, req);
         res.set_content("chain end on b", "application/octet-stream");
+    });
+    b.Get("/cdn-range", [](const httplib::Request& req, httplib::Response& res) {
+        const std::size_t from = std::min(record_range(req, g_cdn), kWholeBody.size());
+        if (g_cdn.hits == 1) g_cdn.delivered = kWholeBody.size() - from;
+        // The server trims this body to the range it was asked for.
+        res.status = 206;
+        res.set_content(kWholeBody, "application/octet-stream");
+    });
+    b.Get("/cdn-range-ignored", [](const httplib::Request& req, httplib::Response& res) {
+        record_range(req, g_cdn_whole);
+        if (g_cdn_whole.hits == 1) g_cdn_whole.delivered = kWholeBody.size();
+        // A whole file at 200 is how a host that reads no ranges answers.
+        res.status = 200;
+        res.set_content(kWholeBody, "application/octet-stream");
     });
 
     std::thread server_a([&a] { a.listen_after_bind(); });
@@ -503,6 +560,42 @@ int main() {
             check("the snapshot entry is still a link", fs::is_symlink(entry));
             check("nothing was staged beside it", !fs::exists(snapshot / "model.bin.partial"));
         }
+        fs::remove_all(dir);
+    }
+
+    // --- a resume asks the host that holds the bytes ------------------------
+    {
+        const fs::path dir = make_temp_dir("resume_hop");
+        write_file(dir / "model.bin.partial", kWholeBody.substr(0, kPartialBytes));
+        DownloadPlan plan;
+        plan.download_path = lemon::utils::path_to_utf8(dir);
+        plan.files.push_back(
+            DownloadFile{"model.bin", base_a + "/resolve-range", kWholeBody.size(),
+                         "sha256", kWholeSha256, {}});
+        loopback_transfer().execute(plan, {}, nullptr, {});
+        check("the range request survives the redirect",
+              g_cdn.requested == "bytes=" + std::to_string(kPartialBytes) + "-");
+        check("only the missing bytes are fetched",
+              g_cdn.delivered == kWholeBody.size() - kPartialBytes);
+        check("the resumed download needs no retry", g_cdn.hits == 1);
+        check("the resumed file is whole and hashes as expected",
+              read_file(dir / "model.bin") == kWholeBody);
+        fs::remove_all(dir);
+    }
+    {
+        const fs::path dir = make_temp_dir("resume_refused");
+        write_file(dir / "model.bin.partial", kWholeBody.substr(0, kPartialBytes));
+        DownloadPlan plan;
+        plan.download_path = lemon::utils::path_to_utf8(dir);
+        plan.files.push_back(
+            DownloadFile{"model.bin", base_a + "/resolve-range-ignored", kWholeBody.size(),
+                         "sha256", kWholeSha256, {}});
+        loopback_transfer().execute(plan, {}, nullptr, {});
+        check("a host that ignores the range is asked with it",
+              g_cdn_whole.requested == "bytes=" + std::to_string(kPartialBytes) + "-");
+        check("the whole file is not appended to the partial one",
+              read_file(dir / "model.bin") == kWholeBody);
+        check("refusing that answer starts the download over", g_cdn_whole.hits > 1);
         fs::remove_all(dir);
     }
 

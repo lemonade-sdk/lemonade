@@ -1699,6 +1699,9 @@ With cloud providers configured, their models are listed too, with `recipe: "clo
       "labels": ["classification"],
       "components": [],
       "checkpoints": {"main": "lemonade-sdk/phishing-email-detection-distilbert-ONNX"},
+      "checkpoint_status": [
+        {"type": "main", "present": true, "required": true, "registry": "huggingface"}
+      ],
       "source": "huggingface",
       "registry_source": "huggingface",
       "recipe_options": {}
@@ -1845,7 +1848,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
-| `id` (path) | Yes | Model id, as listed by [`GET /v1/models`](#get-v1models), or an alias. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `id` (path) | Yes | Model id, as listed by [`GET /v1/models`](#get-v1models), or an alias. A trailing `:latest`, the tag Ollama clients append, names the bare id when nothing is registered under the tagged name. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `include_paths` (query) | No | `true` adds each present checkpoint's absolute `path` to its `checkpoint_status` entry, which can reveal local usernames and the cache layout. Defaults to `false`. The files a model is made of have their own list, at [`GET /v1/models/{id}/files`](./openai.md#get-v1modelsidfiles). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 ### Example
@@ -1881,6 +1884,9 @@ Requires `LEMONADE_API_KEY` when it is set.
   "labels": ["chat", "reasoning", "tool-calling"],
   "components": [],
   "checkpoints": {"main": "unsloth/Qwen3-0.6B-GGUF:Q4_0"},
+  "checkpoint_status": [
+    {"type": "main", "present": true, "required": true, "registry": "huggingface"}
+  ],
   "source": "huggingface",
   "registry_source": "huggingface",
   "recipe_options": {}
@@ -2012,7 +2018,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
-| `id` (path) | Yes | Model id, as listed by [`GET /v1/models`](#get-v1models), or an alias. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `id` (path) | Yes | Model id, as listed by [`GET /v1/models`](#get-v1models), or an alias. A trailing `:latest`, the tag Ollama clients append, names the bare id when nothing is registered under the tagged name. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 Per-architecture defaults are chosen by the architecture in the model's GGUF metadata, so a model that has not been downloaded yet shows every key with the value it has before those defaults apply.
 
@@ -2097,7 +2103,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
-| `id` (path) | Yes | Model id, as listed by [`GET /v1/models`](#get-v1models), or an alias. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `id` (path) | Yes | Model id, as listed by [`GET /v1/models`](#get-v1models), or an alias. A trailing `:latest`, the tag Ollama clients append, names the bare id when nothing is registered under the tagged name. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `ctx_size` | No | Context size: a positive whole number, or `-1` to size it automatically even when the server-wide `ctx_size` is a specific number. Only recipes that take a context size use it, such as `llamacpp`, `flm`, `ryzenai-llm` and `vllm`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `dry_run` | No | `true` reports what the request would do without doing it. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `model_name` | No | Ignored; the URL names the model. Accepted so `effective` can be posted back as is. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
@@ -2205,7 +2211,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
-| `id` (path) | Yes | Model id, as listed by [`GET /v1/models`](#get-v1models), or an alias. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `id` (path) | Yes | Model id, as listed by [`GET /v1/models`](#get-v1models), or an alias. A trailing `:latest`, the tag Ollama clients append, names the bare id when nothing is registered under the tagged name. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 ### Example
 

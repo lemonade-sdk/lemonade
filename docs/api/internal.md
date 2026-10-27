@@ -967,9 +967,9 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 
 This endpoint does not take any parameters.
 
-`docs/tools/gen_model_source_boilerplate.py` reads this endpoint to generate the model-source pages, so a committed page cannot name a token, an endpoint or an environment variable the running server does not have.
+`docs/tools/gen_model_source_boilerplate.py` copies the model-source tables from this response, so every token, endpoint and environment variable a committed page names is one the server answering this request actually has.
 
-A catalog answers `host_specific: true` when its rows depend on this machine, such as an extra-models directory or a configured path. The generator never writes such a row to a committed page, so the page stays the same on every machine even though this response is not.
+A catalog answers `host_specific: true` when its rows depend on this machine: a configured `model_catalogs` entry, the models an installed backend reports, and a cloud provider's listing. The generator writes no such row to a committed page, so the page stays the same on every machine even though this response is not.
 
 ### Example
 
@@ -1045,17 +1045,17 @@ A catalog answers `host_specific: true` when its rows depend on this machine, su
 
 - `registries` - One entry per remote registry the server can download from.
   - `token` - The registry's canonical name, as `source` and a checkpoint URL spell it.
-  - `aliases` - Other names a request may send for this registry.
+  - `aliases` - Every name a request may send for this registry, its canonical token among them. Hugging Face answers the empty string too, which is what a checkpoint naming no registry spells.
   - `display_name` - The registry's name in prose and error messages.
   - `title` - Heading the generated docs give this registry.
   - `summary` - The registry's one-line description.
   - `notes` - Anything the generated page says about this registry beyond the table row.
   - `example` - A checkpoint the docs show for this registry.
-  - `endpoint_default` - API endpoint used when no environment variable overrides it.
-  - `scheme` - URL scheme a checkpoint URL for this registry carries, such as `huggingface://`; empty when a plain URL names it.
+  - `endpoint_default` - Plain download host used when no environment variable overrides it; empty where the host serves files only through its own API, which the generated page prints instead.
+  - `scheme` - URL scheme a checkpoint URL for this registry carries, such as `hf://`; empty when a plain URL names it.
   - `cache_dir_prefix` - Prefix of this registry's directory under the models cache.
   - `default_revision` - Revision assumed when a request names none.
-  - `revision_semantics` - What a revision means here: an immutable commit, a moving branch, or the registry's own token.
+  - `revision_semantics` - What a revision names here, such as `branch, tag or commit SHA`.
   - `staleness_basis` - How the server decides a download is out of date.
   - `download_protocol` - How a file is fetched from this registry.
   - `search` - Whether [`/v1/registry/search`](./lemonade.md#get-v1registrysearch) answers for this registry.
@@ -1064,13 +1064,13 @@ A catalog answers `host_specific: true` when its rows depend on this machine, su
     - `purpose` - What it sets.
     - `required` - Whether the registry is unusable without it.
 - `catalogs` - One entry per model catalog the server reads.
-  - `id` - The catalog's id, as `model_catalogs` in config.json names it.
+  - `id` - The catalog's id: the name a `model_catalogs` entry gives it, or a fixed one such as `server_models.json`, `user_models.json`, `extra_models_dir`, `discovered:<recipe>` or `listed:<provider>`.
   - `title` - Heading the generated docs give this catalog.
   - `summary` - The catalog's one-line description.
   - `notes` - Anything the generated page says about this catalog beyond the table row.
   - `example` - A configuration example the docs show.
   - `required` - Whether a model set missing this catalog invalidates the set.
-  - `config_key` - The `model_catalogs` key that configures it; empty when nothing configures it.
+  - `config_key` - The config.json key that configures it: `model_catalogs` for a configured catalog, the top-level `extra_models_dir` for the scanned directory; empty when nothing configures it.
   - `host_specific` - `true` when its rows depend on this machine, which keeps its rows out of committed pages.
 - `source_tokens` - Every registry token, in the order the registries are listed.
 - `local_origin_tokens` - Tokens naming where a model came from without a registry, such as `local_upload`.

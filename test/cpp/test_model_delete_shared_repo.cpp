@@ -200,6 +200,12 @@ int main() {
     fs::path selfshard_repo = make_repo(hf_root, "models--org--selfshard",
         {"a-00001-of-00002.gguf", "a-00002-of-00002.gguf", "other.gguf"});
 
+    // dirfolder-a claims the snapshot folder itself, which is where the files of
+    // the two file-based models below live. A folder claim is read as a folder, so
+    // it covers everything inside it.
+    fs::path dirfolder_repo = make_repo(hf_root, "models--org--dirfolder",
+        {"model.safetensors", "q4.gguf", "main.gguf", "mmproj.gguf"});
+
     // Some repos carry the quant token in the middle of the file name, which is
     // the shape resolve_gguf_path()'s quant-token fallback exists for. Matching
     // on a suffix alone calls this model's own download a stranger's.
@@ -297,6 +303,11 @@ int main() {
         {"shardsib-a", json{{"checkpoint", "org/shardsib"}, {"recipe", "thinksound"}}},
         {"shardsib-b", json{{"checkpoint", "org/shardsib:sib-00001-of-00002.gguf"},
                             {"recipe", "llamacpp"}}},
+        {"dirfolder-a", json{{"checkpoint", "org/dirfolder"}, {"recipe", "thinksound"}}},
+        {"dirfile-b", json{{"checkpoint", "org/dirfolder:q4.gguf"}, {"recipe", "llamacpp"}}},
+        {"diraux-c", json{{"checkpoints", json{{"main", "org/dirfolder:main.gguf"},
+                                               {"mmproj", "org/dirfolder:mmproj.gguf"}}},
+                          {"recipe", "llamacpp"}}},
         {"selfshard-a", json{{"checkpoint", "org/selfshard:a-00001-of-00002.gguf"},
                              {"recipe", "llamacpp"}}},
         {"selfshard-b", json{{"checkpoint", "org/selfshard:other.gguf"},
@@ -543,6 +554,22 @@ int main() {
               !fs::exists(selfshard_repo / "snapshots" / "snap" / "a-00002-of-00002.gguf"));
         check("the occupying model's file survives a sharded delete",
               fs::exists(selfshard_repo / "snapshots" / "snap" / "other.gguf"));
+
+        // dirfolder-a resolves to the snapshot folder, so the file this delete
+        // names is inside what that model reads rather than equal to it.
+        manager.delete_model("user.dirfile-b");
+        check("a folder claim covers the main checkpoint inside it",
+              fs::exists(dirfolder_repo / "snapshots" / "snap" / "q4.gguf"));
+        check("a folder claim keeps its own file",
+              fs::exists(dirfolder_repo / "snapshots" / "snap" / "model.safetensors"));
+
+        manager.delete_model("user.diraux-c");
+        check("a folder claim covers an auxiliary checkpoint inside it",
+              fs::exists(dirfolder_repo / "snapshots" / "snap" / "mmproj.gguf"));
+        check("a folder claim covers the main file beside that auxiliary one",
+              fs::exists(dirfolder_repo / "snapshots" / "snap" / "main.gguf"));
+        check("the repo a folder claim holds survives both deletes",
+              fs::exists(dirfolder_repo));
 
         // Nothing else names this repo, so the interrupted download can only be
         // this model's own, however the quant token sits in the file name.

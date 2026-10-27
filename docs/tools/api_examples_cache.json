@@ -1898,6 +1898,14 @@
         "canonical_model_name": "user.Phi-4-Mini-GGUF",
         "model": {
           "checkpoint": "unsloth/Phi-4-mini-instruct-GGUF:Q3_K_M",
+          "checkpoint_status": [
+            {
+              "present": false,
+              "registry": "huggingface",
+              "required": true,
+              "type": "main"
+            }
+          ],
           "checkpoints": {
             "main": "unsloth/Phi-4-mini-instruct-GGUF:Q3_K_M"
           },
@@ -9182,6 +9190,14 @@
         "data": [
           {
             "checkpoint": "lemonade-sdk/phishing-email-detection-distilbert-ONNX",
+            "checkpoint_status": [
+              {
+                "present": true,
+                "registry": "huggingface",
+                "required": true,
+                "type": "main"
+              }
+            ],
             "checkpoints": {
               "main": "lemonade-sdk/phishing-email-detection-distilbert-ONNX"
             },
@@ -9204,6 +9220,14 @@
           },
           {
             "checkpoint": "unsloth/Qwen3-0.6B-GGUF:Q4_0",
+            "checkpoint_status": [
+              {
+                "present": true,
+                "registry": "huggingface",
+                "required": true,
+                "type": "main"
+              }
+            ],
             "checkpoints": {
               "main": "unsloth/Qwen3-0.6B-GGUF:Q4_0"
             },
@@ -9230,6 +9254,14 @@
           },
           {
             "checkpoint": "unsloth/Qwen3-0.6B-GGUF:Qwen3-0.6B-Q4_0.gguf",
+            "checkpoint_status": [
+              {
+                "present": true,
+                "registry": "huggingface",
+                "required": true,
+                "type": "main"
+              }
+            ],
             "checkpoints": {
               "main": "unsloth/Qwen3-0.6B-GGUF:Qwen3-0.6B-Q4_0.gguf"
             },
@@ -9256,6 +9288,14 @@
           },
           {
             "checkpoint": "amd/realesrgan-x4plus:RealESRGAN_x4plus.pth",
+            "checkpoint_status": [
+              {
+                "present": true,
+                "registry": "huggingface",
+                "required": true,
+                "type": "main"
+              }
+            ],
             "checkpoints": {
               "main": "amd/realesrgan-x4plus:RealESRGAN_x4plus.pth"
             },
@@ -9279,6 +9319,14 @@
           },
           {
             "checkpoint": "stabilityai/sd-turbo:sd_turbo.safetensors",
+            "checkpoint_status": [
+              {
+                "present": true,
+                "registry": "huggingface",
+                "required": true,
+                "type": "main"
+              }
+            ],
             "checkpoints": {
               "main": "stabilityai/sd-turbo:sd_turbo.safetensors"
             },
@@ -9313,6 +9361,14 @@
           },
           {
             "checkpoint": "ilintar/trellis2-gguf",
+            "checkpoint_status": [
+              {
+                "present": true,
+                "registry": "huggingface",
+                "required": true,
+                "type": "main"
+              }
+            ],
             "checkpoints": {
               "main": "ilintar/trellis2-gguf"
             },
@@ -9335,6 +9391,14 @@
           },
           {
             "checkpoint": "ilintar/thinksound-gguf",
+            "checkpoint_status": [
+              {
+                "present": true,
+                "registry": "huggingface",
+                "required": true,
+                "type": "main"
+              }
+            ],
             "checkpoints": {
               "main": "ilintar/thinksound-gguf"
             },
@@ -9357,6 +9421,20 @@
           },
           {
             "checkpoint": "ggerganov/whisper.cpp:ggml-tiny.bin",
+            "checkpoint_status": [
+              {
+                "present": true,
+                "registry": "huggingface",
+                "required": true,
+                "type": "main"
+              },
+              {
+                "present": false,
+                "registry": "huggingface",
+                "required": false,
+                "type": "npu_cache"
+              }
+            ],
             "checkpoints": {
               "main": "ggerganov/whisper.cpp:ggml-tiny.bin",
               "npu_cache": "amd/whisper-tiny-onnx-npu:ggml-tiny-encoder-vitisai.rai"
@@ -9382,6 +9460,14 @@
           },
           {
             "checkpoint": "mradermacher/jina-reranker-v1-tiny-en-GGUF:Q8_0",
+            "checkpoint_status": [
+              {
+                "present": true,
+                "registry": "huggingface",
+                "required": true,
+                "type": "main"
+              }
+            ],
             "checkpoints": {
               "main": "mradermacher/jina-reranker-v1-tiny-en-GGUF:Q8_0"
             },
@@ -9406,6 +9492,14 @@
           },
           {
             "checkpoint": "mikkoph/kokoro-onnx",
+            "checkpoint_status": [
+              {
+                "present": true,
+                "registry": "huggingface",
+                "required": true,
+                "type": "main"
+              }
+            ],
             "checkpoints": {
               "main": "mikkoph/kokoro-onnx"
             },
@@ -9428,6 +9522,14 @@
           },
           {
             "checkpoint": "nomic-ai/nomic-embed-text-v1-GGUF:Q4_K_S",
+            "checkpoint_status": [
+              {
+                "present": true,
+                "registry": "huggingface",
+                "required": true,
+                "type": "main"
+              }
+            ],
             "checkpoints": {
               "main": "nomic-ai/nomic-embed-text-v1-GGUF:Q4_K_S"
             },
@@ -9471,6 +9573,14 @@
       "content_type": "application/json",
       "body": {
         "checkpoint": "unsloth/Qwen3-0.6B-GGUF:Q4_0",
+        "checkpoint_status": [
+          {
+            "present": true,
+            "registry": "huggingface",
+            "required": true,
+            "type": "main"
+          }
+        ],
         "checkpoints": {
           "main": "unsloth/Qwen3-0.6B-GGUF:Q4_0"
         },

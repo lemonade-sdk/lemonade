@@ -23,6 +23,8 @@ using lemon::utils::HttpClient;
 using lemon::utils::JsonUtils;
 using json = nlohmann::json;
 
+constexpr const char kModelScopeEndpoint[] = "https://modelscope.cn";
+
 std::string lower_copy(std::string value) {
     std::transform(value.begin(), value.end(), value.begin(),
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
@@ -378,7 +380,7 @@ public:
                                         const std::string& requested_revision) const override {
         const std::string revision = requested_revision.empty() ? default_revision() : requested_revision;
         std::string endpoint = trim_trailing_slash(env_string("HF_ENDPOINT"));
-        if (endpoint.empty()) endpoint = "https://huggingface.co";
+        if (endpoint.empty()) endpoint = models::huggingface_descriptor().endpoint_default;
 
         std::string url = huggingface_repository_api_url(
             endpoint,
@@ -443,7 +445,7 @@ public:
                                  const std::string& revision,
                                  const std::string& file_path) const override {
         std::string endpoint = trim_trailing_slash(env_string("HF_ENDPOINT"));
-        if (endpoint.empty()) endpoint = "https://huggingface.co";
+        if (endpoint.empty()) endpoint = models::huggingface_descriptor().endpoint_default;
         return endpoint + "/" + percent_encode(repo_id, true) + "/resolve/" +
                percent_encode(revision.empty() ? default_revision() : revision, true) + "/" +
                percent_encode(file_path, true);
@@ -540,7 +542,7 @@ public:
 private:
     static std::string base_endpoint() {
         std::string endpoint = trim_trailing_slash(env_string("MODELSCOPE_ENDPOINT"));
-        if (endpoint.empty()) endpoint = "https://modelscope.cn";
+        if (endpoint.empty()) endpoint = kModelScopeEndpoint;
         return endpoint;
     }
 };
@@ -647,7 +649,7 @@ bool registry_task_is_excluded(const std::string& task) {
 }
 
 bool is_official_huggingface_endpoint(const std::string& endpoint) {
-    return trim_trailing_slash(endpoint) == "https://huggingface.co";
+    return trim_trailing_slash(endpoint) == models::huggingface_descriptor().endpoint_default;
 }
 
 std::string huggingface_repository_api_url(
@@ -697,7 +699,7 @@ std::optional<json> fetch_huggingface_compatibility_metadata(
     const std::string& repo_id,
     const std::string& revision) {
     std::string endpoint = trim_trailing_slash(env_string("HF_ENDPOINT"));
-    if (endpoint.empty()) endpoint = "https://huggingface.co";
+    if (endpoint.empty()) endpoint = models::huggingface_descriptor().endpoint_default;
     const std::string url = huggingface_repository_api_url(
         endpoint, repo_id, revision) +
         "?expand%5B%5D=gguf&expand%5B%5D=pipeline_tag";
@@ -726,14 +728,14 @@ RegistrySearchResponse search_registry_models(RegistryId source,
     std::vector<SearchRequest> requests;
     if (source == models::huggingface_descriptor().id) {
         endpoint = trim_trailing_slash(env_string("HF_ENDPOINT"));
-        if (endpoint.empty()) endpoint = "https://huggingface.co";
+        if (endpoint.empty()) endpoint = models::huggingface_descriptor().endpoint_default;
         std::string url = endpoint + "/api/models?search=" + percent_encode(query) +
                           "&sort=downloads&direction=-1&limit=" + std::to_string(limit);
         if (gguf_only) url += "&filter=gguf";
         requests.push_back({std::move(url), gguf_only, false});
     } else {
         endpoint = trim_trailing_slash(env_string("MODELSCOPE_ENDPOINT"));
-        if (endpoint.empty()) endpoint = "https://modelscope.cn";
+        if (endpoint.empty()) endpoint = kModelScopeEndpoint;
 
         // ModelScope tokenizes version-like names broadly (Qwen3.6 may match
         // Qwen3-0.6B). Ask for a moderately larger candidate page and rank it

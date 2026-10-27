@@ -64,7 +64,9 @@ const RouteArg kUser{"user", ArgIn::Form, {{"type", "string"}}, false, Support::
 
 namespace openai::models {
 const RouteArg kId{"id", ArgIn::Path, {{"type", "string"}, {"pattern", ".+"}}, true, Support::Available,
-                   "Model id, as listed by [`GET /v1/models`](#get-v1models), or an alias."};
+                   "Model id, as listed by [`GET /v1/models`](#get-v1models), or an alias. A "
+                   "trailing `:latest`, the tag Ollama clients append, names the bare id when "
+                   "nothing is registered under the tagged name."};
 const RouteArg kIncludePaths{
     "include_paths", ArgIn::Query, {{"type", "boolean"}}, false, Support::Available,
     "`true` adds each present checkpoint's absolute `path` to its `checkpoint_status` entry, "

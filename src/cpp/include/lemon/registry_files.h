@@ -64,7 +64,6 @@ struct HfFileMetadata {
     std::string hash_value;
 
     bool has_content_id() const { return !content_id.empty(); }
-    bool has_hash() const { return !hash_algorithm.empty() && !hash_value.empty(); }
 };
 
 std::string hf_file_metadata_key(const std::string& repo_id, const std::string& filename);

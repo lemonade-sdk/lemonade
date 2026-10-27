@@ -412,6 +412,8 @@ struct ProgressData {
     bool stalled = false;
     long stalled_after = 0;
     bool waiting_for_first_byte = false;
+    bool expect_partial_response = false;
+    bool range_ignored = false;
     long current_response_code = 0;
     int no_progress_timeout = 0;
     curl_off_t last_downloaded = 0;
@@ -421,6 +423,9 @@ struct ProgressData {
 // Callback for writing to file
 static size_t write_file_callback(void* ptr, size_t size, size_t nmemb, void* stream) {
     auto* sink = static_cast<DownloadSink*>(stream);
+    if (sink->prog != nullptr && sink->prog->range_ignored) {
+        return 0;
+    }
     if (sink->prog != nullptr && sink->prog->redirecting_body) {
         return size * nmemb;
     }
@@ -464,6 +469,10 @@ static size_t header_callback(char* buffer, size_t size, size_t nitems, void* us
         iss >> http_version >> status_code;
         data->current_response_code = status_code;
         data->redirecting_body = status_code >= 300 && status_code < 400 && status_code != 304;
+        if (data->expect_partial_response && status_code >= 200 && status_code < 300 &&
+            status_code != 206) {
+            data->range_ignored = true;
+        }
         return total;
     }
 
@@ -1057,9 +1066,7 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
         curl_easy_setopt(curl, CURLOPT_MAX_RECV_SPEED_LARGE, static_cast<curl_off_t>(rate_limit));
     }
 
-    if (resume_from > 0) {
-        curl_easy_setopt(curl, CURLOPT_RESUME_FROM_LARGE, static_cast<curl_off_t>(resume_from));
-    } else if (initial_range_request) {
+    if (initial_range_request && resume_from == 0) {
         curl_easy_setopt(curl, CURLOPT_RANGE, "0-");
     }
 
@@ -1079,18 +1086,30 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
     curl_easy_setopt(curl, CURLOPT_XFERINFODATA, prog_data.get());
     curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
 
-    // Add custom headers including authentication
-    struct curl_slist* header_list = nullptr;
-    for (const auto& header : headers) {
-        std::string header_str = header.first + ": " + header.second;
-        header_list = curl_slist_append(header_list, header_str.c_str());
+    struct curl_slist* range_list = nullptr;
+    if (resume_from > 0) {
+        prog_data->expect_partial_response = true;
+        const std::string range = "Range: bytes=" + std::to_string(resume_from) + "-";
+        range_list = curl_slist_append(range_list, range.c_str());
     }
-    if (header_list) {
-        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, header_list);
-    }
+    const auto request_list = [&](bool with_credentials) {
+        struct curl_slist* list = nullptr;
+        if (with_credentials) {
+            for (const auto& header : headers) {
+                std::string header_str = header.first + ": " + header.second;
+                list = curl_slist_append(list, header_str.c_str());
+            }
+        }
+        for (struct curl_slist* node = range_list; node != nullptr; node = node->next) {
+            list = curl_slist_append(list, node->data);
+        }
+        return list;
+    };
 
     const std::string auth_origin = url_origin(url);
-    bool credentials_live = (header_list != nullptr);
+    bool credentials_live = !headers.empty();
+    struct curl_slist* header_list = request_list(credentials_live);
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, header_list);
     const int kMaxRedirectHops = 5;
     int hops = 0;
     std::string current_url = url;
@@ -1125,12 +1144,12 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
             break;
         }
         if (credentials_live && url_origin(target) != auth_origin) {
-            curl_slist_free_all(header_list);
-            header_list = nullptr;
-            curl_easy_setopt(curl, CURLOPT_HTTPHEADER, static_cast<struct curl_slist*>(nullptr));
             credentials_live = false;
         }
         current_url = std::move(target);
+        curl_slist_free_all(header_list);
+        header_list = request_list(credentials_live);
+        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, header_list);
     }
 
     bool was_cancelled = prog_data->cancelled;
@@ -1146,6 +1165,7 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
 
     fclose(fp);
     curl_slist_free_all(header_list);
+    curl_slist_free_all(range_list);
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &result.http_code);
 
     result.curl_code = static_cast<int>(res);
@@ -1186,6 +1206,12 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
         std::ostringstream oss;
         oss << "Download failed: " << redirect_error << " (URL: " << current_url << ")";
         result.error_message = oss.str();
+        return result;
+    }
+
+    if (prog_data->range_ignored) {
+        result.can_resume = false;
+        result.error_message = "Server ignored the range request and returned the whole file";
         return result;
     }
 

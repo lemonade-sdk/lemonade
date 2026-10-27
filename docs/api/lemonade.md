@@ -256,6 +256,9 @@ Requires `LEMONADE_API_KEY` when it is set.
     "labels": ["chat", "custom"],
     "components": [],
     "checkpoints": {"main": "unsloth/Phi-4-mini-instruct-GGUF:Q3_K_M"},
+    "checkpoint_status": [
+      {"type": "main", "present": false, "required": true, "registry": "huggingface"}
+    ],
     "source": "huggingface",
     "registry_source": "huggingface",
     "recipe_options": {}

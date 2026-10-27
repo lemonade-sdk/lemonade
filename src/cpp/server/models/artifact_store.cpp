@@ -47,12 +47,6 @@ bool lands_beside_main(const ModelInfo& info, const std::string& type) {
     return backends::ops_for(info.recipe)->checkpoint_layout({info.model_name, type}) != nullptr;
 }
 
-std::string normalized_relative_path(const fs::path& path, const fs::path& root) {
-    std::string rel = utils::path_to_utf8(path.lexically_relative(root));
-    std::replace(rel.begin(), rel.end(), '\\', '/');
-    return rel;
-}
-
 void remove_file_or_throw(const fs::path& path, const std::string& description) {
     if (!safe_exists(path)) {
         return;
@@ -156,20 +150,6 @@ void cleanup_orphaned_blobs_under(const fs::path& path, const fs::path& repo_dir
         cleanup_orphaned_blob(entry.path(), repo_dir);
     }
 }
-
-void remove_stale_manifest_for_partial(const fs::path& partial_path, const fs::path& stop_dir) {
-    fs::path parent = partial_path.parent_path();
-    for (int i = 0; i < 8 && !parent.empty() && parent != stop_dir; ++i) {
-        fs::path manifest_path = parent / ".download_manifest.json";
-        if (safe_exists(manifest_path)) {
-            remove_file_or_throw(manifest_path, "stale download manifest");
-            cleanup_empty_parents(manifest_path, stop_dir);
-            return;
-        }
-        parent = parent.parent_path();
-    }
-}
-
 
 std::string lower(std::string value) {
     std::transform(value.begin(), value.end(), value.begin(),
@@ -644,6 +624,12 @@ RepositoryClaims claims_in_repo(const ModelInfo& victim, const std::string& repo
     return claims;
 }
 
+bool claims_cover(const std::set<fs::path>& occupied, const fs::path& path) {
+    return std::any_of(occupied.begin(), occupied.end(), [&path](const fs::path& claim) {
+        return path == claim || path_inside(path, claim);
+    });
+}
+
 std::set<fs::path> paths_named_in(const ModelInfo& resolved, const std::string& repo,
                                   const fs::path& repo_dir) {
     std::set<fs::path> named;
@@ -744,7 +730,7 @@ DeleteReport ModelArtifactStore::delete_artifacts(const ModelInfo& info,
         // An auxiliary checkpoint is a dependency: while another model reads the
         // same file it stays. A main checkpoint is this model's own identity, so a
         // repository shared with other models still loses just its variant.
-        if (type != "main" && claims.occupied.count(resolved.lexically_normal())) {
+        if (type != "main" && claims_cover(claims.occupied, resolved.lexically_normal())) {
             LOG(INFO, kLog) << "Keeping " << checkpoint
                             << ", another downloaded model reads the same checkpoint"
                             << std::endl;
@@ -795,7 +781,9 @@ DeleteReport ModelArtifactStore::delete_artifacts(const ModelInfo& info,
         }
 
         for (const fs::path& path : ours) {
-            if (claims.occupied.count(path.lexically_normal()) || !safe_exists(path)) continue;
+            if (claims_cover(claims.occupied, path.lexically_normal()) || !safe_exists(path)) {
+                continue;
+            }
             cleanup_orphaned_blobs_under(path, repo_dir);
             remove_path_or_throw(path, "variant path");
             cleanup_empty_parents(path, repo_dir);

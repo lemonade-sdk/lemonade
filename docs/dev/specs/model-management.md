@@ -267,11 +267,6 @@ public:
     void on_models_changed(std::function<void(std::uint64_t)> subscriber);
     void on_model_updated(std::function<void(const std::string&)> subscriber);
 
-    // Kept for source compatibility with integrations built against the original API;
-    // registry_source still decides which provider is contacted. No caller in the tree.
-    void download_from_huggingface_engine(const ModelInfo& info,
-                                          DownloadProgressCallback progress_callback = nullptr);
-
     // Cache maintenance
     json cleanup_orphaned_cache(bool dry_run);
     void set_extra_models_dir(const std::string& dir);
