@@ -43,6 +43,33 @@ try {
   assert.equal(ok.ok, true, ok.errors.join(' '));
   assert.deepEqual(ok.dependencies.find(d => d.name === 'route-classifier').roles.sort(), ['classifier', 'component']);
 
+  // Dictation pin release uses this same dependency list. A removed helper or
+  // classifier must count just as much as a removed candidate.
+  const ruleDependencies = runtime.routerDependencies(router);
+  assert.deepEqual(
+    ruleDependencies.map(dep => dep.name).sort(),
+    ['fast-chat', 'smart-chat', 'route-classifier'].sort(),
+  );
+  assert.deepEqual(
+    ruleDependencies.find(dep => dep.name === 'route-classifier').roles.sort(),
+    ['classifier', 'component'],
+  );
+  const llmRouter = {
+    ...router,
+    components: ['fast-chat', 'smart-chat', 'router-helper'],
+    routing: {
+      candidates: ['fast-chat', 'smart-chat'],
+      default_model: 'smart-chat',
+      router: { type: 'llm', model: 'router-helper' },
+    },
+  };
+  const llmDependencies = runtime.routerDependencies(llmRouter);
+  assert.deepEqual(
+    llmDependencies.find(dep => dep.name === 'router-helper').roles.sort(),
+    ['component', 'llm-router'],
+  );
+  assert.ok(llmDependencies.some(dep => dep.name === 'fast-chat' && dep.roles.includes('candidate')));
+
   const missingClassifier = runtime.preflightRouter(router, models.filter(m => m.model_name !== 'route-classifier'), []);
   assert.equal(missingClassifier.ok, false);
   assert.match(runtime.routerPreflightError(missingClassifier), /route-classifier/);
