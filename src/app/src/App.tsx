@@ -932,8 +932,19 @@ const App: React.FC = () => {
       if (attempts < 50) window.setTimeout(attach, 100);
     };
 
-    const initialRoute = routeFromCurrentLocation();
-    if (initialRoute) navigateToRoute(initialRoute);
+    const startupUrl = new URL(window.location.href);
+    if (startupUrl.searchParams.has('q')) {
+      // Scrub the incoming prompt before navigation can copy it into history.
+      startupUrl.searchParams.delete('q');
+      startupUrl.searchParams.delete('view');
+      startupUrl.searchParams.delete('logs');
+      startupUrl.hash = '#/chat';
+      window.history.replaceState(window.history.state, '', startupUrl.toString());
+      navigateToRoute({ view: 'chat' });
+    } else {
+      const initialRoute = routeFromCurrentLocation();
+      if (initialRoute) navigateToRoute(initialRoute);
+    }
     attach();
 
     return () => {
@@ -1244,6 +1255,7 @@ const App: React.FC = () => {
             <ViewErrorBoundary view={t('Chat')}>
               <ChatView
                 key={clientDataResetNonce}
+                isVisible={view === 'chat'}
                 currentModel={currentModel}
                 modelSelectionEpoch={modelSelectionEpoch}
                 composerFocusEpoch={composerFocusEpoch}

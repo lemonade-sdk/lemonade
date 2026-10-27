@@ -513,6 +513,7 @@ function timeAgo(ts: number): string {
 }
 
 interface ChatViewProps {
+  isVisible: boolean;
   currentModel: string | null;
   dictationTarget: string | null;
   modelSelectionEpoch: number;
@@ -885,6 +886,7 @@ function friendlyRouterChatError(message: string): string {
 }
 
 const ChatView: React.FC<ChatViewProps> = ({
+  isVisible,
   currentModel: selectedModel,
   dictationTarget,
   modelSelectionEpoch,
@@ -2274,10 +2276,10 @@ const ChatView: React.FC<ChatViewProps> = ({
   // than going through handleSelectConversation, so the model needs restoring too.
   const startupModelRestoredRef = useRef(false);
   useEffect(() => {
-    if (startupModelRestoredRef.current || !historyHydrated || !activeId) return;
+    if (startupModelRestoredRef.current || !historyHydrated || !activeId || incomingPrompt) return;
     startupModelRestoredRef.current = true;
     applyConversationModel(conversations.find(c => c.id === activeId)?.model?.name);
-  }, [activeId, applyConversationModel, conversations, historyHydrated]);
+  }, [activeId, applyConversationModel, conversations, historyHydrated, incomingPrompt]);
 
   const handleSelectConversation = useCallback((id: string) => {
     setActiveId(id);
@@ -2831,12 +2833,14 @@ ${finalText}`
     priorMessages: Message[],
     audioFiles: File[],
     appendUserToConversation: boolean,
-    allowTools = true,
   ) => {
     const api = await getApiClient();
     const text = userMessage.content.trim();
     const images = userMessage.images?.length ? [...userMessage.images] : undefined;
     const hasImages = !!images?.length;
+    // An imported page remains untrusted throughout the chat, including retries.
+    const allowTools = !userMessage.fromBrowserPrompt
+      && !priorMessages.some(message => message.fromBrowserPrompt);
     const collectionInfo = currentKnownModelInfo && isCollectionModel(currentKnownModelInfo) ? currentKnownModelInfo : null;
 
     if (appendUserToConversation) {
@@ -3048,6 +3052,7 @@ ${finalText}`
 
   const handleSend = async (overrideText?: string, fromBrowserPrompt = false) => {
     const text = (overrideText ?? inputValue).trim();
+    const isExternalPrompt = fromBrowserPrompt || (!!incomingPrompt && !incomingPromptHandledRef.current);
     const audioFiles = fromBrowserPrompt ? [] : [...pendingAudioFiles];
     const hasImages = !fromBrowserPrompt && pendingImages.length > 0;
     const canSubmitContent = currentCapability === 'audio' && !modeSupportsChatCompletions
@@ -3062,18 +3067,11 @@ ${finalText}`
               ? (!!text && !openMossDescribeUnavailable && !openMossCloneUnavailable)
               : (!!text || hasImages || (canUseAudioInput && audioFiles.length > 0));
     if (!canSubmitContent || isBusy || !currentModelSnapshot) return;
-    if (!fromBrowserPrompt && incomingPrompt && !incomingPromptHandledRef.current) {
-      incomingPromptHandledRef.current = true;
-      const url = new URL(window.location.href);
-      url.searchParams.delete('q');
-      url.searchParams.delete('view');
-      url.hash = '#/chat';
-      window.history.replaceState(window.history.state, '', url.toString());
-    }
+    if (isExternalPrompt) incomingPromptHandledRef.current = true;
 
     // Sending a new message explicitly resumes following the latest reply.
     threadFollowBottomRef.current = true;
-    let convoId = fromBrowserPrompt ? null : activeId;
+    let convoId = isExternalPrompt ? null : activeId;
     const initialSnapshot = currentModelSnapshot;
     const currentMessages = (conversations.find(c => c.id === convoId)?.messages || []);
     const userMessage: Message = {
@@ -3082,7 +3080,7 @@ ${finalText}`
       images: hasImages ? [...pendingImages] : undefined,
       audioName: audioFiles[0]?.name,
       model: initialSnapshot,
-      fromBrowserPrompt: fromBrowserPrompt || undefined,
+      fromBrowserPrompt: isExternalPrompt || undefined,
     };
 
     if (!convoId) {
@@ -3144,7 +3142,6 @@ ${finalText}`
         currentMessages,
         audioFiles,
         false,
-        !fromBrowserPrompt,
       );
     } catch (error) {
       const errorMessage = friendlyErrorMessage(error);
@@ -3194,7 +3191,6 @@ ${finalText}`
       trimmedMessages.slice(0, -1),
       [],
       false,
-      !originalUserMessage.fromBrowserPrompt,
     );
   }, [activeId, appendAssistantMessage, connectionStatus, conversations, currentModel, currentModelSnapshot, isBusy, startAssistantResponse]);
 
@@ -3235,7 +3231,6 @@ ${finalText}`
       priorMessages,
       [],
       false,
-      !editedUserMessage.fromBrowserPrompt,
     );
   }, [activeId, connectionStatus, conversations, currentModel, currentModelSnapshot, isBusy, startAssistantResponse]);
 
@@ -3244,19 +3239,14 @@ ${finalText}`
   handleSendRef.current = handleSend;
 
   useEffect(() => {
-    if (!incomingPrompt || incomingPromptHandledRef.current || !historyHydrated
+    if (!isVisible || !incomingPrompt || incomingPromptHandledRef.current || !historyHydrated
         || connectionStatus !== 'connected' || !currentModelSnapshot
         || !modeSupportsChatCompletions || !currentLoadedModel || isBusy) return;
 
     incomingPromptHandledRef.current = true;
-    const url = new URL(window.location.href);
-    url.searchParams.delete('q');
-    url.searchParams.delete('view');
-    url.hash = '#/chat';
-    window.history.replaceState(window.history.state, '', url.toString());
     setShowLoadedOverview(false);
     void handleSendRef.current(undefined, true);
-  }, [incomingPrompt, historyHydrated, connectionStatus, currentModelSnapshot, modeSupportsChatCompletions, currentLoadedModel, isBusy]);
+  }, [isVisible, incomingPrompt, historyHydrated, connectionStatus, currentModelSnapshot, modeSupportsChatCompletions, currentLoadedModel, isBusy]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
