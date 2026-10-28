@@ -531,9 +531,8 @@ void VLLMServer::load(const std::string& model_name,
 
     bool inherit_output = (log_level_ == "info") || is_debug();
     try {
-        // vLLM can take longer to start (loading model, compiling kernels)
-        start_server(std::make_unique<NativeProcess>(ProcessOutput{inherit_output, true}), command,
-                     HttpClient::get_default_timeout());
+        // Cold vLLM model loads and ROCm JIT compilation can exceed 10 minutes.
+        start_server(std::make_unique<NativeProcess>(ProcessOutput{inherit_output, true}), command, 1800);
     } catch (const std::runtime_error& e) {
         cleanup_vllm_rocm_shim_dir(rocm_shim_dir_);
         max_model_len_ = 0;
