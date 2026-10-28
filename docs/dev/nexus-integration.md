@@ -156,12 +156,17 @@ authentication.
 `<server>/api/v1/nexus/peers/{node_id}` as its base URL, so health, models,
 chat completions and other HTTP routes reach the peer unchanged. The relay uses
 lemond's backend HTTP client (`utils::HttpClient`) for `GET` and `POST`. A
-`POST` whose JSON body sets `"stream": true` goes through
-`StreamingProxy::forward_byte_stream`, the path streamed backend responses use:
-chunks are written to the client as they arrive, a slow client slows the
-transfer instead of buffering it, and a peer error becomes a JSON error in the
-stream. Other requests return the peer's status and body. Multipart uploads are
-rebuilt for the peer. Other methods and WebSocket routes are not relayed.
+`POST` whose JSON body sets `"stream": true` is streamed with
+`utils::HttpClient::post_stream`, as streamed backend responses are: chunks are
+written to the client as they arrive, and a slow client slows the transfer
+instead of buffering it. The peer's status is read before the response is
+committed. A peer that answers with a non-2xx status before its first body byte
+gets that status and body relayed as-is, not a 200 stream. A stream that breaks
+after the first byte ends with one SSE event,
+`event: error` with `data: {"error": {"message", "type", "status_code": 502}}`,
+and no `[DONE]`. Other requests return the peer's status and body. Multipart
+uploads are rebuilt for the peer. Other methods and WebSocket routes are not
+relayed.
 
 - `Authorization` authenticates the caller to this `lemond` and is never
   forwarded.
@@ -175,7 +180,7 @@ rebuilt for the peer. Other methods and WebSocket routes are not relayed.
 - The target must be another group member that is a Tier 3 inference node,
   online and with a mesh address. Otherwise the relay returns 400 (this
   device), 404 (not in the group) or 409 (offline or not an inference node).
-  An unreachable peer returns 502, or a JSON error inside a streamed response.
+  An unreachable peer returns 502.
 
 ### Selection port
 

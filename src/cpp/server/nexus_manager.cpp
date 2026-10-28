@@ -1,6 +1,5 @@
 #include "lemon/nexus_manager.h"
 #include "lemon/error_types.h"
-#include "lemon/streaming_proxy.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
@@ -101,6 +100,134 @@ std::string multipart_body(const httplib::MultipartFormData& form, const std::st
     }
     return body + "--" + boundary + "--\r\n";
 }
+
+// Bridges a streamed peer reply to the client. The peer request runs on its own thread
+// so the route handler learns the peer's status before httplib commits the response:
+// a refusal before the first body byte keeps its status and JSON body, and a failure
+// after that becomes one SSE error event. One chunk is in flight at a time, so a slow
+// client slows the transfer instead of buffering it.
+class RelayStream {
+public:
+    ~RelayStream() { abandon(); }
+    void start(const std::string& url, const std::string& body, const std::map<std::string, std::string>& headers) {
+        worker_ = std::thread([this, url, body, headers] { run(url, body, headers); });
+    }
+    // Blocks until the peer answered or the request failed. Returns the peer's status,
+    // or 0 when no answer arrived; `reply` then holds the body of a non-2xx answer.
+    int wait_for_status(std::string& reply, std::string& content_type) {
+        std::unique_lock<std::mutex> lock(mutex_);
+        ready_.wait(lock, [&] { return status_ != 0 || finished_; });
+        if (success_locked() && !(finished_ && !forwarded_ && !failure_.empty())) {
+            content_type = content_type_;
+            return status_;
+        }
+        ready_.wait(lock, [&] { return finished_; });
+        reply = error_body_;
+        content_type = content_type_;
+        // A 2xx whose transport broke before the first byte delivered nothing either.
+        return success_locked() ? 0 : status_;
+    }
+    // Writes the next chunk to the client; after the peer finished, the error event when
+    // the stream broke, then the end of the stream. Returns false once the client is gone.
+    bool pull(httplib::DataSink& sink) {
+        std::string next;
+        std::string failure;
+        bool finished = false;
+        {
+            std::unique_lock<std::mutex> lock(mutex_);
+            ready_.wait(lock, [&] { return !chunk_.empty() || finished_; });
+            next.swap(chunk_);
+            finished = finished_;
+            failure = failure_;
+        }
+        ready_.notify_all();
+        if (!next.empty() && !sink.write(next.data(), next.size())) { disconnect(); return false; }
+        if (!finished) return true;
+        if (!failure.empty()) {
+            auto payload = ErrorResponse::create(failure, ErrorType::BACKEND_ERROR);
+            payload["error"]["status_code"] = 502;
+            const auto event = "event: error\ndata: " + payload.dump() + "\n\n";
+            sink.write(event.data(), event.size());
+        }
+        sink.done();
+        return true;
+    }
+    void abandon() {
+        disconnect();
+        if (worker_.joinable()) worker_.join();
+    }
+
+private:
+    static constexpr size_t kMaxErrorBody = 64 * 1024;
+    bool success_locked() const { return status_ >= 200 && status_ < 300; }
+    void disconnect() {
+        { std::lock_guard<std::mutex> lock(mutex_); client_gone_ = true; }
+        ready_.notify_all();
+    }
+    bool client_gone() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return client_gone_;
+    }
+    void announce(int status, const std::map<std::string, std::string>& headers) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        status_ = status;
+        const auto type = headers.find("content-type");
+        if (type != headers.end()) content_type_ = type->second;
+    }
+    bool push(const char* data, size_t length) {
+        std::unique_lock<std::mutex> lock(mutex_);
+        if (!success_locked()) {
+            if (error_body_.size() < kMaxErrorBody) error_body_.append(data, std::min(length, kMaxErrorBody - error_body_.size()));
+            return true;
+        }
+        ready_.wait(lock, [&] { return chunk_.empty() || client_gone_; });
+        if (client_gone_) return false;
+        chunk_.assign(data, length);
+        forwarded_ = true;
+        ready_.notify_all();
+        return true;
+    }
+    void run(const std::string& url, const std::string& body, const std::map<std::string, std::string>& headers) {
+        std::map<std::string, std::string> response_headers;
+        std::string failure;
+        int status = 0;
+        try {
+            const auto result = utils::HttpClient::post_stream(url, body,
+                [this](const char* data, size_t length) { return push(data, length); }, headers, 300,
+                [this, &response_headers](int code) { announce(code, response_headers); },
+                utils::HttpSecurityPolicy::TrustedLoopback, [this] { return client_gone(); }, &response_headers);
+            status = result.status_code;
+            if (result.curl_code != 0) failure = "The device's server closed the stream: " + result.curl_error;
+        } catch (const std::exception& e) {
+            failure = e.what();
+        }
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            // post_stream reports the status with the first body byte; a reply without a
+            // body announces it only here.
+            if (status_ == 0 && status != 0) {
+                status_ = status;
+                const auto type = response_headers.find("content-type");
+                if (type != response_headers.end()) content_type_ = type->second;
+            }
+            if (!client_gone_) failure_ = failure;
+            finished_ = true;
+        }
+        ready_.notify_all();
+    }
+
+    std::mutex mutex_;
+    std::condition_variable ready_;
+    std::thread worker_;
+    int status_{0};
+    std::string content_type_;
+    std::string chunk_;
+    std::string error_body_;
+    std::string failure_;
+    bool forwarded_{false};
+    bool finished_{false};
+    bool client_gone_{false};
+};
 }
 
 namespace nexus_access {
@@ -414,19 +541,21 @@ void relay_http(uint16_t port, const std::string& path, const httplib::Request& 
         }
         const auto request = json::parse(body, nullptr, false);
         if (request.is_object() && request.value("stream", false)) {
-            // Same path as streamed backend responses: writes block on the client socket.
-            res.set_chunked_content_provider("text/event-stream",
-                [url, body, headers](size_t offset, httplib::DataSink& sink) {
-                    if (offset > 0) return false;
-                    try {
-                        StreamingProxy::forward_byte_stream(url, body, sink, 300, nullptr, headers);
-                    } catch (const std::exception& e) {
-                        const auto error = "data: " + ErrorResponse::create(e.what(), "streaming_error").dump() + "\n\n";
-                        sink.write(error.data(), error.size());
-                        sink.done();
-                    }
-                    return false;
-                });
+            auto stream = std::make_shared<RelayStream>();
+            stream->start(url, body, headers);
+            std::string reply;
+            std::string type;
+            const auto status = stream->wait_for_status(reply, type);
+            if (status == 0) { reply_error(res, 502, "Cannot reach that device's server through the mesh"); return; }
+            if (status < 200 || status >= 300) {
+                res.status = status;
+                res.set_content(reply, type.empty() ? "application/json" : type);
+                return;
+            }
+            // Like streamed backend responses, writes block on the client socket.
+            res.set_chunked_content_provider(type.empty() ? "text/event-stream" : type,
+                [stream](size_t, httplib::DataSink& sink) { return stream->pull(sink); },
+                [stream](bool) { stream->abandon(); });
             return;
         }
         const auto reply = utils::HttpClient::post(url, body, headers, 300, utils::HttpSecurityPolicy::TrustedLoopback);

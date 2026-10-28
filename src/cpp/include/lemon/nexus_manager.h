@@ -77,8 +77,10 @@ std::pair<int, std::string> relay_target(const nlohmann::json& members, const st
 /// Sends a GET or POST `req` to http://127.0.0.1:`port``path` with lemond's HTTP client.
 /// `peer_authorization` ("Bearer <key>" or empty) becomes the upstream Authorization;
 /// `body` replaces the request body unless the request is multipart. A POST whose JSON
-/// body sets "stream": true is streamed like a backend response; other replies keep the
-/// peer's status and body.
+/// body sets "stream": true is streamed like a backend response: a peer that refuses it
+/// before the first body byte keeps its status and body, and a stream that breaks after
+/// that ends with one `event: error` SSE event. Other replies keep the peer's status and
+/// body. An unreachable peer answers 502.
 void relay_http(uint16_t port, const std::string& path, const httplib::Request& req, httplib::Response& res,
     const std::string& peer_authorization, const std::string& body);
 }

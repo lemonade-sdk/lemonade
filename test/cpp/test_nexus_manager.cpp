@@ -142,8 +142,21 @@ void check_relay_stream(const std::function<void(bool, const char*)>& check) {
             res.set_content(R"({"error":"API key required"})", "application/json");
             return;
         }
-        res.set_chunked_content_provider("text/event-stream", [](size_t offset, httplib::DataSink& sink) {
+        const auto request = json::parse(req.body, nullptr, false);
+        const auto failure = request.is_object() ? request.value("fail", std::string()) : std::string();
+        if (failure == "before") {
+            res.status = 503;
+            res.set_content(R"({"error":{"message":"Model is loading","type":"backend_error"}})", "application/json");
+            return;
+        }
+        res.set_chunked_content_provider("text/event-stream", [failure](size_t offset, httplib::DataSink& sink) {
             if (offset > 0) { sink.done(); return true; }
+            if (failure == "during") {
+                // One event, then the connection closes without the terminating chunk.
+                const char* event = "data: {\"n\":1}\n\n";
+                sink.write(event, std::char_traits<char>::length(event));
+                return false;
+            }
             for (const char* event : {"data: {\"n\":1}\n\n", "data: {\"n\":2}\n\n", "data: [DONE]\n\n"}) {
                 sink.write(event, std::char_traits<char>::length(event));
                 std::this_thread::sleep_for(std::chrono::milliseconds(20));
@@ -176,6 +189,22 @@ void check_relay_stream(const std::function<void(bool, const char*)>& check) {
     check(streamed && streamed->get_header_value("Content-Type") == "text/event-stream", "Relay keeps the stream type");
     check(streamed && streamed->body == "data: {\"n\":1}\n\ndata: {\"n\":2}\n\ndata: [DONE]\n\n", "Relay delivers the stream intact");
     check(seen_authorization == "Bearer peer-key" && seen_body == R"({"stream":true})", "Relay sends only the peer key and the body");
+    auto refused = client.Post("/relay/api/v1/chat/completions", keys, R"({"stream":true,"fail":"before"})", "application/json");
+    check(refused && refused->status == 503, "A peer refusal before the stream keeps its status");
+    check(refused && refused->get_header_value("Content-Type") == "application/json" &&
+        refused->body == R"({"error":{"message":"Model is loading","type":"backend_error"}})", "A peer refusal before the stream keeps its JSON body");
+    auto broken = client.Post("/relay/api/v1/chat/completions", keys, R"({"stream":true,"fail":"during"})", "application/json");
+    check(broken && broken->status == 200 && broken->get_header_value("Content-Type") == "text/event-stream", "A stream that breaks stays a stream");
+    const std::string first_event = "data: {\"n\":1}\n\n";
+    const std::string error_prefix = "event: error\ndata: ";
+    check(broken && broken->body.rfind(first_event, 0) == 0 && broken->body.compare(first_event.size(), error_prefix.size(), error_prefix) == 0 &&
+        broken->body.size() > first_event.size() + error_prefix.size() + 2 && broken->body.substr(broken->body.size() - 2) == "\n\n",
+        "A stream that breaks ends with one error event");
+    if (broken && broken->body.size() > first_event.size() + error_prefix.size() + 2) {
+        const auto payload = json::parse(broken->body.substr(first_event.size() + error_prefix.size(), broken->body.size() - first_event.size() - error_prefix.size() - 2), nullptr, false);
+        check(payload.is_object() && payload.contains("error") && payload["error"].value("status_code", 0) == 502 &&
+            !payload["error"].value("message", std::string()).empty(), "The error event carries the failure as JSON");
+    }
     auto unauthorized = client.Post("/relay/api/v1/chat/completions", httplib::Headers{{"Authorization", "Bearer local-key"}}, "{}", "application/json");
     check(unauthorized && unauthorized->status == 401 && seen_authorization.empty(), "Relay never forwards the caller's own key");
     auto health = client.Get("/relay/api/v1/health", keys);
