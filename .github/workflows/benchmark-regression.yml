@@ -28,8 +28,7 @@ on:
 permissions:
   contents: write
 
-# Never let two runs overlap: parallel benches on the same box would share the
-# GPU and corrupt perf numbers, and both would race to push benchmark history.
+# One run at a time so two runs never race to push benchmark history.
 concurrency:
   group: benchmark-regression
   cancel-in-progress: false
@@ -93,7 +92,6 @@ jobs:
           size = lambda m: (registry.get(m) or {}).get("size") or 1
           n = max(1, min(int(os.environ.get("MODEL_GROUPS") or 4), len(models)))
           bins, load = [[] for _ in range(n)], [0.0] * n
-          # Largest first onto the lightest machine, so per-machine work is even.
           for m in sorted(models, key=size, reverse=True):
             k = load.index(min(load))
             bins[k].append(m)
@@ -107,9 +105,8 @@ jobs:
           PY
 
   # =========================================================================
-  # Bench — one job per model group. Each job runs EVERY backend on the same
-  # machine, one after another, so backends are compared on identical hardware;
-  # groups run in parallel on separate devlab machines.
+  # One job per model group; every backend runs on the same machine so they are
+  # compared on identical hardware.
   # =========================================================================
   bench:
     name: Bench ${{ matrix.group.name }}
@@ -157,8 +154,6 @@ jobs:
         with:
           python-version: '3.11'
 
-      # validate_backend_bench.py compares against prior run-*.json files in
-      # --output/<fork>/<model>/, so restore history into that layout.
       - name: Restore benchmark history
         env:
           FORKS: ${{ needs.setup.outputs.forks }}
@@ -201,9 +196,7 @@ jobs:
           echo "HOME=$HOME" >> "$GITHUB_ENV"
           echo "Models on this machine: $GROUP_MODELS"
 
-          # Persistent caches OUTSIDE the workspace (checkout clean:true wipes
-          # the workspace). Model files are shared by every backend in this job;
-          # each backend gets its own config dir so routing never leaks between them.
+          # Outside the workspace because checkout clean:true wipes it.
           BENCH_ROOT="$(cd "${{ github.workspace }}/.." && pwd)"
           CACHE_DIR="$BENCH_ROOT/lemond-bench-cache"
           export HF_HOME="$BENCH_ROOT/hf-cache"
@@ -253,9 +246,8 @@ jobs:
           }
 
           bench_one_fork() {
-            # Resolve the config target: the real backend key + the FULL PATH to
-            # the llama-server file. lemond execs <section>.<key>_bin verbatim, so
-            # a directory value fails with EISDIR and /load 500.
+            # lemond execs <section>.<key>_bin verbatim: it must be the file, not
+            # its directory (EISDIR -> /load 500).
             eval "$(FORK_ID="$FORK_ID" python3 - << 'PY'
           import json, os, shlex
           from pathlib import Path
@@ -318,8 +310,6 @@ jobs:
               stop_lemond; return 1
             fi
 
-            # Smoke-test the binary directly so missing libs / bad HIP init show
-            # their real error instead of an opaque /load 500 later.
             if ! LD_LIBRARY_PATH="$BENCH_BIN_DIR:${LD_LIBRARY_PATH:-}" "$BENCH_BIN_FILE" --version \
                 > "$LOGS_DIR/fork-binary-version.txt" 2>&1; then
               cat "$LOGS_DIR/fork-binary-version.txt" || true
@@ -343,7 +333,6 @@ jobs:
             fi
             stop_lemond
 
-            # Refuse to publish numbers unless the fork binary actually served them.
             if ! grep -rqs "$BENCH_BIN_FILE" "$LOGS_DIR"; then
               echo "ERROR: no evidence lemond launched $BENCH_BIN_FILE — dropping $FORK_ID results"
               purge_fresh_results; return 1
@@ -395,11 +384,6 @@ jobs:
         run: |
           pkill -9 -f "bench-binaries/" 2>/dev/null || true
 
-  # =========================================================================
-  # Report — merges results into the benchmark-data branch, regenerates the
-  # leaderboard from full history, files/updates an issue on critical
-  # regression.
-  # =========================================================================
   report:
     name: Aggregate and report
     needs: bench
