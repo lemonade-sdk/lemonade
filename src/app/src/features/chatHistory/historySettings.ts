@@ -10,7 +10,8 @@ function preferenceKey(): string {
 
 export function loadChatHistoryPreference(): boolean {
   try {
-    return localStorage.getItem(preferenceKey()) === 'true';
+    const stored = localStorage.getItem(preferenceKey());
+    return stored === null || stored === 'true';
   } catch {
     return false;
   }

@@ -71,6 +71,7 @@ assert.doesNotMatch(managerSource, /useState<ModelInfo\[]>\(\[\]\)/);
 assert.doesNotMatch(managerSource, /useState<LoadedModel\[]>\(\[\]\)/);
 assert.doesNotMatch(managerSource, /api\.onStatusChange\(/);
 assert.doesNotMatch(managerSource, /api\.onModelsChanged\(/);
+assert.match(managerSource, /api\.onSystemInfoChange\(applySystemInfo\)/);
 
 const originalTsLoader = require.extensions['.ts'];
 require.extensions['.ts'] = function transpileTs(module, filename) {
@@ -92,10 +93,14 @@ let healthAvailable = true;
 let modelRequests = 0;
 let deleteRequests = 0;
 let registerRequests = 0;
+let backendState = 'update_required';
+let systemInfoRequests = 0;
+let loadFails = false;
 let modelRows = [
   { id: 'test-model', model_name: 'test-model', downloaded: true },
 ];
 let nextModelReadGate = null;
+let nextSystemInfoGate = null;
 
 function holdNextModelsRead() {
   assert.equal(nextModelReadGate, null, 'Only one delayed model read is supported.');
@@ -177,6 +182,38 @@ global.fetch = async (url, init = {}) => {
     });
   }
 
+  if (target.endsWith('/api/v1/downloads') && method === 'GET') {
+    return new Response('[]', { status: 200, headers: { 'content-type': 'application/json' } });
+  }
+
+  if (target.endsWith('/api/v1/load') && method === 'POST') {
+    await new Promise(resolve => setTimeout(resolve, 15));
+    if (loadFails) {
+      return new Response(JSON.stringify({ error: { message: 'load failed' } }), {
+        status: 500,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    return new Response(JSON.stringify({ status: 'success' }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  }
+
+  if (target.endsWith('/api/v1/system-info') && method === 'GET') {
+    systemInfoRequests += 1;
+    const stateAtStart = backendState;
+    const gate = nextSystemInfoGate;
+    if (gate) {
+      nextSystemInfoGate = null;
+      gate.markStarted();
+      await gate.released;
+    }
+    return new Response(JSON.stringify({
+      recipes: { thenoise: { default_backend: 'cuda', backends: { cuda: { state: stateAtStart }, cpu: { state: 'installable' } } } },
+    }), { status: 200, headers: { 'content-type': 'application/json' } });
+  }
+
   throw new Error(`Unexpected request: ${method} ${target}`);
 };
 
@@ -208,6 +245,46 @@ async function waitFor(predicate, timeoutMs = 1500) {
     assert.equal(api.modelStateSnapshot.status, 'connected');
     assert.equal(api.modelStateSnapshot.refreshing, false);
     assert.equal(api.modelStateSnapshot.models.data.length, 1);
+
+    // An updated backend snapshot must reach an already-mounted Models view.
+    const backendStates = [];
+    const unsubscribeSystemInfo = api.onSystemInfoChange(info => {
+      backendStates.push(info.recipes.thenoise.backends.cuda.state);
+    });
+    await api.systemInfo();
+    backendState = 'installed';
+    await api.systemInfo();
+    assert.deepEqual(backendStates, ['update_required', 'installed']);
+
+    // A terminal backend download must not reuse a pre-completion snapshot.
+    let markStarted;
+    let release;
+    const infoGate = {
+      started: new Promise(resolve => { markStarted = resolve; }),
+      released: new Promise(resolve => { release = resolve; }),
+      markStarted: () => markStarted(),
+    };
+    nextSystemInfoGate = infoGate;
+    backendState = 'update_required';
+    const pending = api.systemInfo();
+    await infoGate.started;
+    backendState = 'installed';
+    const fresh = api.systemInfo({ afterPending: true });
+    release();
+    await Promise.all([pending, fresh]);
+    assert.deepEqual(backendStates.slice(-2), ['update_required', 'installed']);
+
+    unsubscribeSystemInfo();
+    await api.systemInfo();
+    assert.equal(backendStates.length, 4, 'system-info observers must unsubscribe cleanly');
+    assert.equal(modelRequests, 1, 'backend updates must not force a models registry refresh');
+
+    // Window-focus refreshes are bounded by the age of the cached snapshot.
+    const requestsBeforeFreshRead = systemInfoRequests;
+    await api.systemInfo({ maxAgeMs: 60_000 });
+    assert.equal(systemInfoRequests, requestsBeforeFreshRead, 'a fresh snapshot must satisfy a maxAgeMs read');
+    await api.systemInfo({ maxAgeMs: 0 });
+    assert.equal(systemInfoRequests, requestsBeforeFreshRead + 1, 'an older snapshot must be fetched again');
 
     const stableNotificationCount = notifications;
     await api.health();
@@ -281,6 +358,42 @@ async function waitFor(predicate, timeoutMs = 1500) {
       healthAvailable = true;
       unsubscribeStatus();
     }
+
+    const requestsAfterReconnect = systemInfoRequests;
+    await api.systemInfo({ maxAgeMs: 60_000 });
+    assert.equal(systemInfoRequests, requestsAfterReconnect + 1,
+      'a snapshot from before a disconnect must not count as fresh');
+
+    // lemond can install or upgrade a backend inside /load without a /downloads job.
+    const noiseModel = { id: 'noise-model', model_name: 'noise-model', recipe: 'thenoise', downloaded: true };
+    const loadStates = [];
+    const unsubscribeLoad = api.onSystemInfoChange(info => {
+      loadStates.push(info.recipes.thenoise.backends.cuda.state);
+    });
+    backendState = 'update_required';
+    await api.systemInfo();
+    backendState = 'installed';
+    await api.loadModel('noise-model', undefined, noiseModel);
+    await waitFor(() => loadStates.at(-1) === 'installed');
+
+    const requestsBeforeReadyLoad = systemInfoRequests;
+    await api.loadModel('noise-model', undefined, noiseModel);
+    await new Promise(resolve => setTimeout(resolve, 50));
+    assert.equal(systemInfoRequests, requestsBeforeReadyLoad,
+      'an unused installable backend must not trigger a refresh when the selected backend is installed');
+
+    const requestsBeforeExplicitLoad = systemInfoRequests;
+    await api.loadModel('noise-model', { backend: 'cpu' }, noiseModel);
+    await waitFor(() => systemInfoRequests === requestsBeforeExplicitLoad + 1);
+
+    backendState = 'update_required';
+    await api.systemInfo();
+    backendState = 'installed';
+    loadFails = true;
+    await assert.rejects(api.loadModel('noise-model', undefined, noiseModel));
+    loadFails = false;
+    await waitFor(() => loadStates.at(-1) === 'installed');
+    unsubscribeLoad();
 
     unsubscribe();
     console.log('Model state deduplication checks passed.');
