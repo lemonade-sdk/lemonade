@@ -476,6 +476,7 @@ const REMOTE_SEARCH_CACHE = new Map<string, HFModelResult[]>();
 const REMOTE_VARIANT_CACHE = new Map<string, PullVariantsResult | null>();
 const MODELSCOPE_RESULT_LIMIT = 10;
 const REMOTE_VARIANT_CONCURRENCY = 4;
+const FOCUS_SYSTEM_INFO_MAX_AGE_MS = 10_000;
 
 const providerKey = (provider: ModelRegistryProvider, modelId: string): string => `${provider}:${modelId}`;
 const providerSearchCacheKey = (provider: ModelRegistryProvider, query: string): string => `${provider}:${query.trim().toLowerCase()}`;
@@ -1151,7 +1152,37 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
 
   const [serverDefaultCtxSize, setServerDefaultCtxSize] = useState<number>(DEFAULT_CONTEXT_SIZE);
 
-  useEffect(() => downloadStore.subscribe(setDownloadItems), []);
+  useEffect(() => {
+    const seenBackendDownloads = new Set<string>();
+    const refreshBackendInfo = (options: { afterPending?: boolean; maxAgeMs?: number }) => {
+      if (api.isConnected) void api.systemInfo(options).catch(() => undefined);
+    };
+    const unsubscribe = downloadStore.subscribe(items => {
+      setDownloadItems(items);
+      let changed = false;
+      for (const item of items) {
+        if (item.downloadType !== 'backend' || item.status !== 'completed' || isDownloadActive(item)) continue;
+        const key = `${item.id}:${item.createdAt}`;
+        if (seenBackendDownloads.has(key)) continue;
+        seenBackendDownloads.add(key);
+        changed = true;
+      }
+      if (changed) refreshBackendInfo({ afterPending: true });
+    });
+
+    const onFocus = () => {
+      if (document.hidden) return;
+      const recipes = systemRecipeEntries(api.systemInfoData) || [];
+      const updatePending = recipes.some(([, recipe]) => Object.values(rawBackendMap(recipe))
+        .some(info => ['update_required', 'update_available'].includes(backendState(info))));
+      refreshBackendInfo(updatePending ? {} : { maxAgeMs: FOCUS_SYSTEM_INFO_MAX_AGE_MS });
+    };
+    window.addEventListener('focus', onFocus);
+    return () => {
+      unsubscribe();
+      window.removeEventListener('focus', onFocus);
+    };
+  }, []);
 
   useEffect(() => () => {
     if (externalModelDeleteNoticeTimerRef.current != null) {
@@ -1198,6 +1229,14 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     return () => { cancelled = true; };
   }, [visibleServerModels.length]);
 
+  const applySystemInfo = useCallback((info: Record<string, unknown>) => {
+    if (!api.isConnected) return;
+    const hasRecipeData = Boolean(systemRecipeEntries(info));
+    setSystemInfo(info);
+    setDynamicRecipeOptions(hasRecipeData ? recipeOptionsFromSystemInfo(info) : {});
+    setCustomRecipeAvailabilityLoaded(hasRecipeData);
+  }, []);
+
   const refreshCustomRecipeAvailability = useCallback(async () => {
     if (!api.isConnected) {
       setDynamicRecipeOptions({});
@@ -1206,18 +1245,19 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       return;
     }
 
+    const infoAtStart = api.systemInfoData;
     try {
-      const info = await api.systemInfo();
-      const hasRecipeData = Boolean(systemRecipeEntries(info));
-      setSystemInfo(info);
-      setDynamicRecipeOptions(hasRecipeData ? recipeOptionsFromSystemInfo(info) : {});
-      setCustomRecipeAvailabilityLoaded(hasRecipeData);
+      // The system-info subscriber applies the fresh snapshot to the model list.
+      await api.systemInfo();
     } catch {
+      if (!api.isConnected || api.systemInfoData !== infoAtStart) return;
       setSystemInfo(null);
       setDynamicRecipeOptions({});
       setCustomRecipeAvailabilityLoaded(false);
     }
   }, []);
+
+  useEffect(() => api.onSystemInfoChange(applySystemInfo), [applySystemInfo]);
 
   useEffect(() => {
     void refreshCustomRecipeAvailability();

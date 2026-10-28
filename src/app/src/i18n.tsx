@@ -352,7 +352,7 @@ const ZH_CN: Record<string, string> = {
   'Live microphone needs HTTPS/localhost and a realtime-capable audio model': '实时麦克风需要 HTTPS/localhost 和支持实时功能的音频模型',
   'Download audio': '下载音频',
   'Cloud providers unavailable': '云服务提供商不可用',
-  'Connected to {url}. API key saved in Lemonade app settings.': '已连接到 {url}。API 密钥已保存到 Lemonade 应用设置。',
+  'Connected to {url}. API key saved on this device.': '已连接到 {url}。API 密钥已保存到此设备。',
   'Connected to {url}.': '已连接到 {url}。',
   'Clear Lemonade browser data and connection settings on this device?': '清除此设备上的 Lemonade 浏览器数据和连接设置？',
   'Local browser data was cleared, but Lemonade app settings could not be cleared': '浏览器本地数据已清除，但无法清除 Lemonade 应用设置',
