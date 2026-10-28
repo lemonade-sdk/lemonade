@@ -23,6 +23,8 @@ When `lemond` runs under your own account, from a shell, a `systemctl --user` un
 1. Add your account to the `docker` group: `sudo usermod -aG docker $USER`.
 2. Log out and back in.
 
+Docker Desktop and rootless Docker can't run container backends. With either one, install Podman instead.
+
 Until setup is complete, the backend's state is `action_required`. `lemonade backends` lists every missing step and the commands that complete them, and the Backend Manager shows the same. The state updates as soon as a step takes effect.
 
 ## Install and Run

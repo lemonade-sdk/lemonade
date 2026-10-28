@@ -78,8 +78,6 @@ struct ContainerHost {
     std::function<bool()> gpu_devices_accessible;
     // The group's numeric ID, or "" when the host defines no such group.
     std::function<std::string(const std::string& group)> group_id;
-    // True when /var/run/docker.sock accepts a connection from this process.
-    std::function<bool()> docker_socket_accepts;
     // The environment variable's value, or "" when it is unset.
     std::function<std::string(const std::string& name)> env;
     std::function<bool()> is_root;

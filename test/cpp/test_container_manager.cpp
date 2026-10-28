@@ -40,7 +40,9 @@ std::string join(const std::vector<std::string>& argv) {
 struct FakeHost {
     std::set<std::string> tools;
     bool gpu_access = false;
-    bool docker_socket = true;
+    // `docker info`'s exit code and its OperatingSystem|SecurityOptions answer.
+    int docker_info_exit = 0;
+    std::string docker_info = "Ubuntu 24.04 LTS|[\"name=apparmor,profile=default\"]";
     // `podman info`'s exit code and its Host.Security.Rootless answer.
     int podman_info_exit = 0;
     std::string podman_rootless = "true";
@@ -60,7 +62,6 @@ struct FakeHost {
         h.group_id = [](const std::string& group) {
             return group == "video" ? std::string("44") : std::string("990");
         };
-        h.docker_socket_accepts = [this]() { return docker_socket; };
         h.env = [this](const std::string& name) {
             const auto it = env.find(name);
             return it == env.end() ? std::string() : it->second;
@@ -75,6 +76,9 @@ struct FakeHost {
             lemon::utils::CommandResult result;
             if (argv.size() > 1 && argv[0] == "podman" && argv[1] == "info") {
                 result = {podman_info_exit, podman_rootless + "\n"};
+            }
+            if (argv.size() > 1 && argv[0] == "docker" && argv[1] == "info") {
+                result = {docker_info_exit, docker_info + "\n"};
             }
             if (capture_stderr) result.output += stderr_noise;
             return result;
@@ -230,15 +234,25 @@ void test_tool_choice_and_setup() {
 
     FakeHost docker;
     docker.tools = {"docker"};
-    docker.docker_socket = false;
+    docker.docker_info_exit = 1;
     const lemon::utils::SetupReport refused{ContainerManager(docker.host()).check_host()};
     check("Docker needs the daemon to accept the account",
           refused.ids() == std::vector<std::string>({"docker_access"}) &&
               refused.message() == "The Docker daemon refuses the account" &&
               refused.action() == "1. sudo usermod -aG docker $USER\n2. Log out and back in");
-    docker.docker_socket = true;
+    docker.docker_info_exit = 0;
     check("Docker passes once the daemon accepts the account",
           ContainerManager(docker.host()).check_host().empty());
+    docker.docker_info = "Docker Desktop|[\"name=seccomp,profile=unconfined\"]";
+    const lemon::utils::SetupReport desktop{ContainerManager(docker.host()).check_host()};
+    check("Docker Desktop is refused, with Podman as the fix",
+          desktop.ids() == std::vector<std::string>({"docker_desktop"}) &&
+              desktop.action() == "sudo apt install podman");
+    docker.docker_info = "Ubuntu 24.04 LTS|[\"name=seccomp,profile=builtin\",\"name=rootless\"]";
+    const lemon::utils::SetupReport rootless{ContainerManager(docker.host()).check_host()};
+    check("rootless Docker is refused, with Podman as the fix",
+          rootless.ids() == std::vector<std::string>({"docker_rootless"}) &&
+              rootless.action() == "sudo apt install podman");
 
     lemon::utils::SetupReport both_relogins{groups.failures};
     both_relogins.failures.push_back(refused.failures.front());

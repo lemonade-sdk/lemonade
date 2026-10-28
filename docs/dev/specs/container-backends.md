@@ -18,7 +18,7 @@ This spec describes how we will add new container backends to Lemonade.
 A **container backend** is a Lemonade backend whose executable is a digest-pinned OCI image instead of a downloaded binary.
 
 - Install, load, unload, `/system-info`, benchmarking and the backend manager work unchanged.
-- The one new host requirement is a container tool on Linux: Podman first, then Docker, each verified by a socket probe. Users will be guided to install Podman if needed.
+- The one new host requirement is a container tool on Linux: Podman first, then Docker, verified by `podman info` and `docker info`. Users will be guided to install Podman if needed.
 
 ## Design Philosophy
 
@@ -306,21 +306,23 @@ Containers are started by:
 | Container tool | Containers started by |
 | --- | --- |
 | Podman | Podman, as the account that runs `lemond`: rootless by default, or rootful when `CONTAINER_HOST` points at root's Podman socket |
-| Docker | The Docker daemon, through `/var/run/docker.sock` |
+| Docker | The Docker daemon that `docker` connects to (`DOCKER_HOST` or the active Docker context) |
 
 When the container tool is Podman, the checks are:
 
 | Check | Fails when | `action` |
 | --- | --- | --- |
 | Podman installed | `podman` is not on `PATH` | The install command for the host's `ID` |
-| Device nodes accessible | Podman is rootless and the user's account is not in both `video` and `render` | 1. `sudo usermod -aG video,render $USER`<br>2. Log out and back in |
+| Device nodes accessible | Podman is rootless and the user's account cannot read and write `/dev/kfd` and every `/dev/dri/renderD*` node | 1. `sudo usermod -aG video,render $USER`<br>2. Log out and back in |
 | Podman answers | `podman info` fails | Run `podman info` and fix the error it prints |
 
 When the container tool is Docker, the checks are:
 
 | Check | Fails when | `action` |
 | --- | --- | --- |
-| Docker reachable | The Docker daemon refuses the user's account | 1. `sudo usermod -aG docker $USER`<br>2. Log out and back in |
+| Docker reachable | `docker info` fails | 1. `sudo usermod -aG docker $USER`<br>2. Log out and back in |
+| Not Docker Desktop | `docker info` reports `Docker Desktop`, whose containers run in a VM without the host GPU | The Podman install command for the host's `ID` |
+| Not rootless Docker | `docker info` lists `name=rootless`, which can neither publish a port from an `--internal` network nor expose the container's address to `lemond` | The Podman install command for the host's `ID` |
 
 ### `lemond` as a System Service
 
@@ -346,7 +348,7 @@ Containers are started by:
 | Container tool | Containers started by |
 | --- | --- |
 | Podman | `lemond.service` itself, rootless, as the `lemonade` account |
-| Docker | The Docker daemon, through `/var/run/docker.sock` |
+| Docker | The Docker daemon that `docker` connects to (`DOCKER_HOST` or the active Docker context) |
 
 When the container tool is Podman, the checks are:
 
@@ -354,14 +356,16 @@ When the container tool is Podman, the checks are:
 | --- | --- | --- |
 | Podman installed | `podman` is not on `PATH` | The install command for the host's `ID` |
 | Podman answers | `podman info` fails | Run `podman info` and fix the error it prints |
-| Device nodes accessible | `lemonade` is not in both `video` and `render` | 1. `sudo usermod -aG video,render lemonade`<br>2. `sudo systemctl restart lemond` |
+| Device nodes accessible | `lemonade` cannot read and write `/dev/kfd` and every `/dev/dri/renderD*` node | 1. `sudo usermod -aG video,render lemonade`<br>2. `sudo systemctl restart lemond` |
 | Subordinate IDs allocated | `getsubids lemonade` or `getsubids -g lemonade` prints no range | Ask the host's administrator to allocate 65,536 subordinate UIDs and GIDs to `lemonade`, then `sudo systemctl restart lemond` |
 
 When the container tool is Docker, the checks are:
 
 | Check | Fails when | `action` |
 | --- | --- | --- |
-| Docker reachable | The Docker daemon refuses `lemonade` | 1. `sudo usermod -aG docker lemonade`<br>2. `sudo systemctl restart lemond` |
+| Docker reachable | `docker info` fails | 1. `sudo usermod -aG docker lemonade`<br>2. `sudo systemctl restart lemond` |
+| Not Docker Desktop | `docker info` reports `Docker Desktop` | The Podman install command for the host's `ID` |
+| Not rootless Docker | `docker info` lists `name=rootless` | The Podman install command for the host's `ID` |
 
 #### `lemond.service` and rootless Podman
 
