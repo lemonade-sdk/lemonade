@@ -3427,7 +3427,8 @@ optgroup {
   animation: toast-in var(--duration-base) var(--ease-out);
 }
 
-.manager__toast--external-model {
+.manager__toast--external-model,
+.manager__toast--sync {
   width: min(560px, calc(100vw - var(--space-8)));
   padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
   border-radius: var(--radius-lg);
@@ -3442,7 +3443,8 @@ optgroup {
   min-width: 0;
 }
 
-.manager__toast-dismiss {
+.manager__toast-dismiss,
+.manager__toast-action {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -3453,8 +3455,17 @@ optgroup {
   font: inherit;
 }
 
-.manager__toast-dismiss:hover {
+.manager__toast-dismiss:hover,
+.manager__toast-action:hover {
   background: var(--surface-3);
+}
+
+.manager__toast-action {
+  flex: 0 0 auto;
+  height: 30px;
+  padding: 0 var(--space-3);
+  background: transparent;
+  white-space: nowrap;
 }
 
 .manager__toast-dismiss {

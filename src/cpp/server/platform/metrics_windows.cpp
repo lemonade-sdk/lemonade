@@ -63,6 +63,15 @@ public:
         return 0.0;
     }
 
+    double get_memory_total_gb() override {
+        MEMORYSTATUSEX memInfo;
+        memInfo.dwLength = sizeof(MEMORYSTATUSEX);
+        if (GlobalMemoryStatusEx(&memInfo)) {
+            return memInfo.ullTotalPhys / (1024.0 * 1024.0 * 1024.0);
+        }
+        return 0.0;
+    }
+
     double get_gpu_usage() override {
         return get_system_gpu_metrics().gpu_percent;
     }
