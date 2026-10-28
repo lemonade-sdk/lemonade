@@ -33,6 +33,7 @@ from pathlib import Path
 
 IS_WINDOWS = platform.system() == "Windows"
 BACKEND_VERSIONS_PATH = Path("src/cpp/resources/backend_versions.json")
+LEMOND_BACKEND_VERSIONS_PATH = Path("build/resources/backend_versions.json")
 SCENARIO_FILE = Path("src/cpp/resources/bench_scenarios.json")
 # ctx window -> scenarios run at it. Forks override via "scenario_ctx".
 SCENARIO_CTX = {
@@ -319,6 +320,9 @@ ROCM_VERSION_FILES = (
 def resolve_rocm_version(
     fork: dict, version: str, binary_path: Path, binaries_dir: Path, token: str | None
 ) -> str | None:
+    if fork.get("install_as", fork["backend"]) == "vulkan":
+        return None
+
     try:
         body = gh_api(f"repos/{fork['repo']}/releases/tags/{version}", token).get(
             "body"
@@ -331,11 +335,14 @@ def resolve_rocm_version(
             f"  [WARN] Could not read release notes for {fork['repo']}@{version}: {e}"
         )
 
-    # These builds carry no bundled runtime; lemond supplies the pinned TheRock one.
+    # These builds carry no bundled runtime; lemond supplies its pinned TheRock one.
+    # Prefer the pin shipped with the running lemond release over the checkout's.
     url_key = "binary_url_windows" if IS_WINDOWS else "binary_url_linux"
-    if "{therock_ver}" in fork.get(url_key, "") and BACKEND_VERSIONS_PATH.exists():
-        data = json.loads(BACKEND_VERSIONS_PATH.read_text())
-        return data["therock"]["version"].lstrip("v")
+    if "{therock_ver}" in fork.get(url_key, ""):
+        for pin_file in (LEMOND_BACKEND_VERSIONS_PATH, BACKEND_VERSIONS_PATH):
+            if pin_file.exists():
+                data = json.loads(pin_file.read_text())
+                return data["therock"]["version"].lstrip("v")
 
     install_dir = (binaries_dir / fork["fork_id"]).resolve()
     d = binary_path.resolve().parent
