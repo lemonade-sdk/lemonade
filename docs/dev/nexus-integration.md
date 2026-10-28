@@ -299,6 +299,15 @@ ingress requests. It requires an unlocked, joined session and known current
 membership permissions. It contains no private key material or client display
 label; those labels belong to the GUI3 client.
 
+A federation that cannot be reached is an outage, not a refusal. When a
+connection fails or times out, the federation answers 5xx, or no verified Tier 1
+server is reachable, every route answers 503 with `"retryable": true` in the
+JSON body. The device stays unlocked and joined, and `status` reports
+`"status": "degraded"` with the error text and `"error_retryable": true` until
+the next successful refresh. A refused session answers 403; the SDK's C ABI
+reports a federation 401 and 403 alike. A client should end its signed-in
+session on 401 or 403 only, never on 503.
+
 The desktop discovers the management listener through `status` and sends the
 local API key directly. It rediscovers the listener once when a request cannot
 reach it, because `lemond` picks a new port each time it starts. The management

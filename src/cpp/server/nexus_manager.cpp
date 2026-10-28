@@ -33,8 +33,10 @@ std::string api_key() { return utils::get_environment_variable_utf8("LEMONADE_AP
 std::string admin_api_key() { return utils::get_environment_variable_utf8("LEMONADE_ADMIN_API_KEY"); }
 class NexusError : public std::runtime_error {
 public:
-    NexusError(int status, const std::string& message) : std::runtime_error(message), status(status) {}
+    NexusError(int status, const std::string& message, bool retryable = false)
+        : std::runtime_error(message), status(status), retryable(retryable) {}
     int status;
+    bool retryable;  // the federation was not reached; the same request may succeed later
 };
 std::string text(const json& object, const char* key) {
     const auto it = object.find(key);
@@ -570,6 +572,28 @@ void relay_http(uint16_t port, const std::string& path, const httplib::Request& 
 }
 
 #ifdef LEMONADE_WITH_NEXUS
+namespace nexus_access {
+namespace {
+// The C ABI reports every ln_auth_ed25519 failure as LN_ERR_AUTH, so the texts the SDK
+// gives an unreachable federation on that path are recognized as well: its Tier 1
+// directory found no server to verify, or the challenge never got an answer.
+bool federation_unreachable(const std::string& message) {
+    for (const char* reason : {"no verified Tier 1 server", "no server returned a verifiable authority chain", "challenge request failed"}) {
+        if (message.find(reason) != std::string::npos) return true;
+    }
+    return false;
+}
+}
+SdkFailure sdk_failure(int code, const json& reply, int rejected_status) {
+    const auto fallback = "Network request failed (SDK error " + std::to_string(code) + ")";
+    const auto message = reply.is_object() ? reply.value("error", fallback) : fallback;
+    // The SDK answers LN_ERR_CONNECT for no transport, a timeout and a 5xx. Neither that
+    // nor an unreachable federation refuses this device.
+    if (code == LN_ERR_CONNECT || federation_unreachable(message)) return {503, message, true};
+    const int status = code == LN_ERR_AUTH ? 403 : code == LN_ERR_NOT_FOUND ? 404 : code == LN_ERR_REJECTED ? rejected_status : 502;
+    return {status, message, false};
+}
+}
 namespace {
 // `rejected_status` is the HTTP status for LN_ERR_REJECTED (the federation refused the
 // request as invalid for the current state).
@@ -580,9 +604,8 @@ json sdk_call(const std::function<ln_error_t(char**)>& operation, int rejected_s
     auto value = output ? json::parse(output, nullptr, false) : json::object();
     if (value.is_discarded()) throw NexusError(502, "The network returned invalid data");
     if (code != LN_OK) {
-        const auto fallback = "Network request failed (SDK error " + std::to_string(code) + ")";
-        throw NexusError(code == LN_ERR_AUTH ? 403 : code == LN_ERR_NOT_FOUND ? 404 : code == LN_ERR_REJECTED ? rejected_status : 502,
-            value.is_object() ? value.value("error", fallback) : fallback);
+        const auto failure = nexus_access::sdk_failure(code, value, rejected_status);
+        throw NexusError(failure.status, failure.message, failure.retryable);
     }
     return value;
 }
@@ -618,6 +641,7 @@ struct NexusManager::Session {
     std::string pubkey;
     std::string detail{"locked"};
     std::string error;
+    bool error_retryable{false};  // `error` is a failure to reach the federation, not a refusal
     json devices = json::array();
     std::chrono::system_clock::time_point last_poll{std::chrono::system_clock::now()};
 
@@ -727,7 +751,21 @@ struct NexusManager::Session {
         ln_set_link_token(client.get(), "");
         devices = json::array();
         detail = "locked";
+        clear_error();
+    }
+    void clear_error() {
         error.clear();
+        error_retryable = false;
+    }
+    void set_error(const std::exception& e) {
+        error = e.what();
+        const auto* failure = dynamic_cast<const NexusError*>(&e);
+        error_retryable = failure != nullptr && failure->retryable;
+    }
+    // A failure leaves the session as it is; status reports it until the next success.
+    void note_failure(const std::exception& e) {
+        set_error(e);
+        detail = "degraded";
     }
     // First connect without a configured key: the SDK takes the key only when
     // several network hosts agree on it over verified HTTPS, then it stays pinned.
@@ -916,7 +954,7 @@ struct NexusManager::Session {
             {"registered", account.contains("credential_id") || key_unlock()},
             {"unlock", key_unlock() ? "device_key" : "passkey"}, {"members", devices},
             {"exposed", json::array({{{"vport", 13305}, {"local_port", ingress_port}}})}, {"error", error},
-            {"genesis_key_set", genesis_key_set}, {"mesh_port", mesh_port_status()}};
+            {"error_retryable", error_retryable}, {"genesis_key_set", genesis_key_set}, {"mesh_port", mesh_port_status()}};
     }
     json mesh_port_status() {
         json port = sdk_call([&](auto out) { return ln_mesh_port_status(client.get(), out); });
@@ -969,8 +1007,7 @@ struct NexusManager::Session {
         try { joined_result = sdk_call([&](auto out) { return ln_join_network(client.get(), device_name().c_str(), "", out); }); }
         catch (const std::exception& e) {
             ln_set_link_token(client.get(), "");
-            detail = "degraded";
-            error = e.what();
+            note_failure(e);
             throw;
         }
         ln_set_link_token(client.get(), "");
@@ -985,14 +1022,14 @@ struct NexusManager::Session {
         reconnect = true;
         retry_delay = std::chrono::seconds(5);
         detail = "running";
-        error.clear();
+        clear_error();
         start_mesh_port();
         remember_tier1_epoch();
         try {
             const auto updates = json{{"hostname", device_name()}}.dump();
             sdk_call([&](auto out) { return ln_update_node(client.get(), node_id.c_str(), updates.c_str(), out); });
             refresh_devices();
-        } catch (const std::exception& e) { error = e.what(); }
+        } catch (const std::exception& e) { set_error(e); }
     }
     // Keeps the verified Tier 1 epoch so a restart refuses an older membership list.
     void remember_tier1_epoch() {
@@ -1014,7 +1051,7 @@ struct NexusManager::Session {
             if (!key_unlock() || hold_locked || std::chrono::steady_clock::now() < retry_at) return;
             try { unlock_with_key(false); }
             catch (const std::exception& e) {
-                error = e.what(); detail = "degraded";
+                note_failure(e);
                 retry_at = std::chrono::steady_clock::now() + retry_delay;
                 retry_delay = std::min(retry_delay * 2, std::chrono::seconds(60));
             }
@@ -1028,9 +1065,13 @@ struct NexusManager::Session {
                 joined = false;
                 join("");
             }
-            else { refresh_devices(); error.clear(); }
+            else {
+                refresh_devices();
+                clear_error();
+                detail = "running";
+            }
         } catch (const std::exception& e) {
-            error = e.what(); detail = "degraded";
+            note_failure(e);
             // The SDK binds a session to the Tier 1 server that issued it. When that
             // server leaves Tier 1 at an epoch boundary, every private call is refused
             // until the device joins again; drop the stale session so the next poll
@@ -1048,6 +1089,15 @@ struct NexusManager::Session {
         }
     }
     json request(const std::string& method, const std::string& path, const json& body) {
+        try { return dispatch(method, path, body); }
+        catch (const NexusError& e) {
+            // A federation that cannot be reached is not a refusal: the device stays
+            // unlocked and joined, and status reports the outage until the next success.
+            if (e.retryable && !locked) note_failure(e);
+            throw;
+        }
+    }
+    json dispatch(const std::string& method, const std::string& path, const json& body) {
         if (path == "/status") return status();
         if (path == "/selection") return selection(method, body);
         if (path == "/device") {
@@ -1445,7 +1495,10 @@ std::pair<int, NexusManager::json> NexusManager::control(const std::string& meth
     }
     std::pair<int, json> result;
     try { result = {200, session_->request(method, path, body)}; }
-    catch (const NexusError& e) { result = {e.status, {{"error", e.what()}}}; }
+    catch (const NexusError& e) {
+        result = {e.status, {{"error", e.what()}}};
+        if (e.retryable) result.second["retryable"] = true;
+    }
     catch (const json::exception&) { result = {400, {{"error", "Invalid request fields"}}}; }
     catch (const std::exception& e) { result = {502, {{"error", e.what()}}}; }
     json snapshot;

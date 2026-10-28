@@ -10,6 +10,9 @@
 #include <iostream>
 #include <string>
 #include <thread>
+#ifdef LEMONADE_WITH_NEXUS
+#include <LemonadeNexusSDK/lemonade_nexus.h>
+#endif
 
 namespace {
 using nlohmann::json;
@@ -416,6 +419,25 @@ void check_access_rules(const std::function<void(bool, const char*)>& check) {
     check(error("node not found").first == 404, "Missing node maps to 404");
     check(error("server unreachable").first == 502 && error("").first == 502, "Transport failures map to 502");
 }
+
+#ifdef LEMONADE_WITH_NEXUS
+// The SDK's C ABI reports a federation 401 and 403 alike as LN_ERR_AUTH, and no
+// transport, a timeout and a 5xx alike as LN_ERR_CONNECT.
+void check_sdk_failures(const std::function<void(bool, const char*)>& check) {
+    const auto refused = access::sdk_failure(LN_ERR_AUTH, json{{"error", "session expired"}}, 409);
+    check(refused.status == 403 && !refused.retryable && refused.message == "session expired", "A refused session keeps its auth status");
+    const auto outage = access::sdk_failure(LN_ERR_CONNECT, json{{"error", "connection error"}}, 409);
+    check(outage.status == 503 && outage.retryable && outage.message == "connection error", "A connection failure, timeout or 5xx is a retryable 503");
+    const auto directory = access::sdk_failure(LN_ERR_REJECTED, json{{"error", "no verified Tier 1 server is reachable"}}, 409);
+    check(directory.status == 503 && directory.retryable, "An unreachable Tier 1 directory is a retryable 503");
+    const auto unverified = access::sdk_failure(LN_ERR_AUTH, json{{"error", "no server returned a verifiable authority chain"}}, 409);
+    check(unverified.status == 503 && unverified.retryable, "An auth attempt that reached no server is a retryable 503");
+    check(access::sdk_failure(LN_ERR_REJECTED, json{{"error", "invalid move"}}, 409).status == 409, "A refused request keeps the caller's status");
+    check(access::sdk_failure(LN_ERR_NOT_FOUND, json(), 409).status == 404, "A missing node is 404");
+    const auto internal = access::sdk_failure(LN_ERR_INTERNAL, json(), 409);
+    check(internal.status == 502 && !internal.retryable && internal.message.find("SDK error") != std::string::npos, "Other failures are 502 and name the code");
+}
+#endif
 }
 
 int main() {
@@ -487,6 +509,9 @@ int main() {
         invalid_profile = profile; invalid_profile["revision"] = -1;
         check(throws([&] { access::account_avatar(invalid_profile, "cluster"); }), "Negative image revisions are rejected");
         check_access_rules(check);
+#ifdef LEMONADE_WITH_NEXUS
+        check_sdk_failures(check);
+#endif
         check_route_access(check);
         check_relay_stream(check);
         check_mesh_ingress_routes(check);
@@ -634,6 +659,18 @@ int main() {
             check(remembered.at("server") == "sn01.us-west.seip.nexus.invalid", "A remembered server skips discovery");
             set_environment("LEMONADE_NEXUS_DOMAIN", "");
             set_environment("LEMONADE_NEXUS_SERVER", "127.0.0.1");
+            // With a pinned Genesis key, the closed port is a federation that cannot be
+            // reached: an outage, not a refusal. The route answers 503 with retryable and
+            // the device state stays as it was.
+            request("disable", "{}", 200);
+            set_environment("LEMONADE_NEXUS_GENESIS_PUBKEY", std::string(43, 'A') + "=");
+            request("enable", "{}", 200);
+            auto outage = request("key/unlock", "{}", 503);
+            check(outage.value("retryable", false) && !outage.value("error", std::string{}).empty(), "An unreachable federation is a retryable 503");
+            auto after_outage = management.Get("/api/v1/nexus/status");
+            check(after_outage && after_outage->status == 200 && nlohmann::json::parse(after_outage->body).at("locked") == true,
+                  "An outage leaves the lock state as it was");
+            set_environment("LEMONADE_NEXUS_GENESIS_PUBKEY", "");
 #else
             request("enable", "{}", 503);
             request("selection", R"({"target":"local"})", 503);
