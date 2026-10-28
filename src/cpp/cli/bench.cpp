@@ -1435,8 +1435,6 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
             for (const auto& mr : by_model)
                 output["models"].push_back(to_json(mr.results, mr.model, mr.timestamp, config, mr.model_info));
 
-            maybe_submit_results(config, output);
-
             std::string json_str = output.dump(2);
             if (!config.output_file.empty()) {
                 std::ofstream out(config.output_file);
@@ -1449,6 +1447,8 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
             } else {
                 std::cout << json_str << std::endl;
             }
+            std::cout.flush();
+            maybe_submit_results(config, output);
         } else {
             for (const auto& mr : by_model)
                 print_table(mr.results, mr.model, config.measurement_runs >= 10);
@@ -1525,8 +1525,6 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
                 output["models"].push_back(build_comparison_json(*c.results, c.model, c.timestamp,
                                                                   config, c.model_info, c.previous_for_model, c.deltas));
 
-            maybe_submit_results(config, output);
-
             std::string json_str = output.dump(2);
             if (!config.output_file.empty()) {
                 std::ofstream out(config.output_file);
@@ -1539,6 +1537,8 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
             } else {
                 std::cout << json_str << std::endl;
             }
+            std::cout.flush();
+            maybe_submit_results(config, output);
         } else {
             std::cout << "\nModel set comparison" << std::endl;
             std::cout << std::string(100, '=') << std::endl;
