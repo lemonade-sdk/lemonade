@@ -93,7 +93,7 @@ class ModelSyncStore {
       // First look on this connection, or the server restarted and its ids began again.
       this.baseline = sync.completed_sync_id;
     }
-    if (sync.status === 'in_progress' || sync.completed_sync_id > this.baseline) void this.poll();
+    if (sync.status === 'in_progress' || sync.completed_sync_id > (this.baseline ?? sync.completed_sync_id)) void this.poll();
   }
 
   private poll(): Promise<void> {
@@ -119,7 +119,7 @@ class ModelSyncStore {
         });
         void api.refresh();
       } catch (error) {
-        if (this.state.active) {
+        if (api.isConnected) {
           this.set({ error: friendlyErrorMessage(error) });
           next = RETRY_MS;
         }
@@ -135,8 +135,8 @@ class ModelSyncStore {
     this.clearTimer();
     this.baseline = null;
     this.lastHealthSync = undefined;
-    if (this.state.active || this.state.submitting) {
-      this.set({ active: null, submitting: false });
+    if (this.state.active || this.state.submitting || this.state.result || this.state.error) {
+      this.set({ active: null, result: null, submitting: false, error: null });
     }
   }
 

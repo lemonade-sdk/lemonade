@@ -26,6 +26,8 @@ const json = body => new Response(JSON.stringify(body), { status: 200, headers: 
 let healthSync = { status: 'failed', sync_id: 3, completed_sync_id: 3 };
 let modelsGeneration = 1;
 let syncStatus = { status: 'failed', sync_id: 3, completed_sync_id: 3, failed_models: { 'old-model': 'old failure' } };
+let failNextStatusPoll = false;
+let failHealth = false;
 const counts = { status: 0, models: 0, start: 0 };
 
 const originalFetch = global.fetch;
@@ -33,6 +35,7 @@ global.fetch = async (url, init = {}) => {
   const target = String(url);
   const method = String(init.method || 'GET').toUpperCase();
   if (target.includes('/api/v1/health')) {
+    if (failHealth) throw new Error('Server disconnected');
     return json({ status: 'ok', version: 'test', all_models_loaded: [], max_models: {}, model_sync: healthSync, models_generation: modelsGeneration });
   }
   if (target.includes('/api/v1/models') && method === 'GET') {
@@ -41,6 +44,10 @@ global.fetch = async (url, init = {}) => {
   }
   if (target.endsWith('/internal/models/sync/status')) {
     counts.status += 1;
+    if (failNextStatusPoll) {
+      failNextStatusPoll = false;
+      throw new Error('Temporary status request failure');
+    }
     return json(syncStatus);
   }
   if (target.endsWith('/internal/models/sync') && method === 'POST') {
@@ -105,6 +112,35 @@ async function waitFor(predicate, message, timeoutMs = 5000) {
     await waitFor(() => modelSyncStore.snapshot().result?.status === 'success', 'own sync ends as success');
     assert.equal(modelSyncFailureText(modelSyncStore.snapshot().result), null, 'a success is not a failure');
     assert.equal(isModelSyncRunning(modelSyncStore.snapshot()), false);
+
+    // A sync may finish between two health checks; retry its failed first status poll.
+    // No in_progress response was observed, so snapshot.active is null.
+    modelSyncStore.dismissResult();
+    const previousStatusReads = counts.status;
+    syncStatus = { status: 'failed', sync_id: 6, completed_sync_id: 6, failed_models: { 'gamma-model': 'network timeout' } };
+    healthSync = { status: 'failed', sync_id: 6, completed_sync_id: 6 };
+    failNextStatusPoll = true;
+    await api.health();
+    await waitFor(() => Boolean(modelSyncStore.snapshot().error), 'first status poll fails');
+    assert.equal(modelSyncStore.snapshot().active, null);
+    assert.equal(modelSyncStore.snapshot().result, null);
+    await waitFor(() => modelSyncStore.snapshot().result?.sync_id === 6, 'terminal status poll retried');
+    assert.equal(counts.status, previousStatusReads + 2, 'one failed request and one retry');
+    assert.match(modelSyncFailureText(modelSyncStore.snapshot().result), /gamma-model: network timeout/);
+    assert.equal(modelSyncStore.snapshot().error, null);
+
+    // Do not carry errors or completed jobs over to the next server connection.
+    syncStatus = { status: 'failed', sync_id: 7, completed_sync_id: 7, failed_models: { 'delta-model': 'not found' } };
+    healthSync = { status: 'failed', sync_id: 7, completed_sync_id: 7 };
+    failNextStatusPoll = true;
+    await api.health();
+    await waitFor(() => Boolean(modelSyncStore.snapshot().error), 'another first status poll fails');
+    assert.equal(modelSyncStore.snapshot().result?.sync_id, 6);
+    failHealth = true;
+    await api.refresh();
+    assert.equal(api.status, 'disconnected');
+    assert.equal(modelSyncStore.snapshot().result, null);
+    assert.equal(modelSyncStore.snapshot().error, null);
 
     unsubscribe();
     console.log('Model sync store checks passed.');
