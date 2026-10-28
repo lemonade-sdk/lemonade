@@ -88,7 +88,8 @@ public:
     /// Starts the management and mesh ingress listeners on loopback ports.
     /// `install_policy` installs lemond's request middleware (origin, CORS, API keys) on the
     /// management listener. `install_api` installs the middleware and lemond's API routes on
-    /// the mesh ingress listener; NexusManager registers its refusing Nexus routes first.
+    /// the mesh ingress listener, without the `/internal/*` control routes; NexusManager
+    /// registers its refusing Nexus routes first.
     /// Both run once, before the listener starts. If the mesh listener cannot bind, joining
     /// fails. Once the mesh is up, the SDK serves `mesh_port` (0 selects 13306) on
     /// 127.0.0.1 with the mesh ingress listener as this device's local service.

@@ -24,6 +24,11 @@ public:
     // a route folder adds a specific path before a pattern that also matches it.
     void apply(httplib::Server& server) const;
 
+    // Registers every route except the /internal/ control routes. For a listener that
+    // other machines reach, such as the Nexus mesh ingress: a peer gets the API but can
+    // never stop lemond, change its config or remove its model files.
+    void apply_without_internal(httplib::Server& server) const;
+
     // Every RouteSpec, in registration order.
     nlohmann::ordered_json list() const;
 
@@ -34,6 +39,8 @@ public:
     bool dispatch(const httplib::Request& req, httplib::Response& res) const;
 
 private:
+    void apply(httplib::Server& server, bool include_internal) const;
+
     struct Entry {
         std::unique_ptr<ApiRoute> route;
         RouteSpec spec;

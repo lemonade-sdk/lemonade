@@ -130,6 +130,14 @@ void RouteRegistry::add(std::unique_ptr<ApiRoute> route) {
 }
 
 void RouteRegistry::apply(httplib::Server& server) const {
+    apply(server, /*include_internal=*/true);
+}
+
+void RouteRegistry::apply_without_internal(httplib::Server& server) const {
+    apply(server, /*include_internal=*/false);
+}
+
+void RouteRegistry::apply(httplib::Server& server, bool include_internal) const {
     // A Quad path whose only method is POST also answers GET with 405, so a client that
     // forgot the method learns why instead of getting a 404.
     std::map<std::string, std::set<std::string>> methods_by_pattern;
@@ -143,6 +151,7 @@ void RouteRegistry::apply(httplib::Server& server) const {
     }
 
     for (const auto& entry : entries_) {
+        if (!include_internal && entry->spec.prefixes == Prefixes::Internal) continue;
         std::shared_ptr<Entry> shared = entry;
         auto handler = [shared](const httplib::Request& req, httplib::Response& res) {
             shared->route->serve(shared->spec, req, res);

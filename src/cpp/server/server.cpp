@@ -159,7 +159,9 @@ Server::Server(std::shared_ptr<RuntimeConfig> config,
         [this](httplib::Server& server) { middleware_->install(server); },
         [this](httplib::Server& server) {
             middleware_->install(server);
-            registry_->apply(server);
+            // Mesh peers arrive on loopback, so the /internal/* control routes must not
+            // exist on this listener rather than rely on an admin key that is usually unset.
+            registry_->apply_without_internal(server);
             web_ui_->register_routes(server);
         },
         13306);

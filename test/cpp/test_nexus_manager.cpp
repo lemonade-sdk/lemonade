@@ -1,4 +1,5 @@
 #include "lemon/nexus_manager.h"
+#include "lemon/server/route_registry.h"
 #include "lemon/utils/origin_utils.h"
 #include "lemon/utils/path_utils.h"
 #include <chrono>
@@ -184,6 +185,57 @@ void check_relay_stream(const std::function<void(bool, const char*)>& check) {
     check(unreachable && unreachable->status == 502, "Relay reports an unreachable peer");
     front.stop(); front_worker.join();
     peer.stop(); peer_worker.join();
+}
+
+// A route that answers 200 so a test can tell a registered path from a missing one.
+class StubRoute : public lemon::ApiRoute {
+public:
+    StubRoute(lemon::ServerContext& ctx, std::string id, std::string path, lemon::Prefixes prefixes)
+        : lemon::ApiRoute(ctx), id_(std::move(id)), path_(std::move(path)), prefixes_(prefixes) {}
+    lemon::RouteSpec spec() const override {
+        lemon::RouteSpec s;
+        s.id = id_;
+        s.methods = {"GET"};
+        s.paths = {path_};
+        s.prefixes = prefixes_;
+        return s;
+    }
+    void handle(lemon::RouteRequest&, httplib::Response& res) override { res.set_content("{}", "application/json"); }
+
+private:
+    std::string id_, path_;
+    lemon::Prefixes prefixes_;
+};
+
+// server.cpp installs the route registry on the mesh ingress listener without the
+// /internal/* control routes: a peer arrives on loopback, where the admin key is usually unset.
+void check_mesh_ingress_routes(const std::function<void(bool, const char*)>& check) {
+    lemon::ServerContext ctx;
+    lemon::RouteRegistry registry;
+    registry.add(std::make_unique<StubRoute>(ctx, "test.health", "health", lemon::Prefixes::Quad));
+    registry.add(std::make_unique<StubRoute>(ctx, "test.shutdown", "shutdown", lemon::Prefixes::Internal));
+
+    httplib::Server mesh;
+    registry.apply_without_internal(mesh);
+    const int mesh_port = mesh.bind_to_any_port("127.0.0.1");
+    std::thread mesh_worker([&] { mesh.listen_after_bind(); });
+    mesh.wait_until_ready();
+    httplib::Client peer("127.0.0.1", mesh_port);
+    auto health = peer.Get("/api/v1/health");
+    check(health && health->status == 200, "Mesh ingress serves the API routes");
+    auto shutdown = peer.Get("/internal/shutdown");
+    check(shutdown && shutdown->status == 404, "Mesh ingress has no /internal/* routes");
+    mesh.stop(); mesh_worker.join();
+
+    httplib::Server front;
+    registry.apply(front);
+    const int front_port = front.bind_to_any_port("127.0.0.1");
+    std::thread front_worker([&] { front.listen_after_bind(); });
+    front.wait_until_ready();
+    httplib::Client local("127.0.0.1", front_port);
+    auto local_shutdown = local.Get("/internal/shutdown");
+    check(local_shutdown && local_shutdown->status == 200, "The public listener keeps its /internal/* routes");
+    front.stop(); front_worker.join();
 }
 
 void check_listener_isolation(const std::filesystem::path& root, const std::function<void(bool, const char*)>& check) {
@@ -408,6 +460,7 @@ int main() {
         check_access_rules(check);
         check_route_access(check);
         check_relay_stream(check);
+        check_mesh_ingress_routes(check);
         check_listener_isolation(root, check);
         {
             lemon::NexusManager manager(root.string(), listener_policy, listener_policy, 0);

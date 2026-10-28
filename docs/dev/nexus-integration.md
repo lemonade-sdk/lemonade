@@ -138,6 +138,9 @@ Virtual TCP port `13305` forwards to a separate loopback listener that
 `NexusManager` starts once; a main-port rebind does not touch it. That listener
 gets `lemond`'s request middleware, API routes and web UI, so it serves the
 normal API with normal API-key authentication, but it refuses every Nexus route.
+The `/internal/*` control routes (shutdown, config, cache cleanup, model sync,
+aliases) are not registered on it, so a peer gets 404 whether or not an admin
+API key is set.
 It does not accept WebSocket upgrades. Relayed peers get an SDK egress listener on
 `127.0.0.1`. Member removal and address changes close that listener and
 existing forwarded connections. Remote HTTP requests retain normal API-key
@@ -275,7 +278,7 @@ Each listener applies its own rules:
 | Public | Loopback | `status` and the relay directly; every other route redirects with HTTP 307 to the management listener |
 | Public | Other machines | `status`, `join/status`, `devices`, `members`, `members/{id}/role`, `members/{id}/permissions`, `devices/{id}/access`, `devices/{id}/remove`, `invites`, `invites/cancel`, `join`, the tree routes, `invites/accept`, `memberships`, `memberships/{id}/leave` and the relay, only with `LEMONADE_API_KEY` set and `Authorization: Bearer <key>` |
 | Management (`127.0.0.1`, ephemeral port) | Local desktop | All routes |
-| Mesh ingress (`127.0.0.1`, ephemeral port) | Mesh peers | None (HTTP 403) |
+| Mesh ingress (`127.0.0.1`, ephemeral port) | Mesh peers | None (HTTP 403); `/internal/*` is not registered (HTTP 404) |
 
 On the public listener, a remote request gets HTTP 403 when no
 `LEMONADE_API_KEY` is set, HTTP 401 for a missing or wrong key, and HTTP 403 for
