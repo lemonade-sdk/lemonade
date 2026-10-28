@@ -75,7 +75,7 @@ public:
                                    const std::string& request_body,
                                    httplib::DataSink& sink,
                                    bool sse = true,
-                                   long timeout_seconds = 0,
+                                   long timeout_seconds = utils::HttpClient::kNoTimeout,
                                    TelemetryCallback telemetry_callback = nullptr) override;
 
     /// Fetch the list of models accessible to this API key from the
@@ -147,7 +147,8 @@ private:
     ResolvedCreds resolve_creds() const;
 
     json post_with_auth(const std::string& path, const json& request,
-                        const ResolvedCreds& creds, long timeout_seconds = 0);
+                        const ResolvedCreds& creds,
+                        long timeout_seconds = utils::HttpClient::kNoTimeout);
     json rewrite_model_field(const json& request) const;
     // When true, the endpoints implemented here are unreachable for this
     // provider — it is served from /v1/messages instead.

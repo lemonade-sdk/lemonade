@@ -83,6 +83,8 @@ struct Telemetry {
 
 class WrappedServer : public ICompletionServer {
 public:
+    // Startup has a deadline; inference does not inherit it.
+    static constexpr long kDefaultStartupTimeoutSeconds = 600;
     WrappedServer(const std::string& server_name, const std::string& log_level,
                   ModelManager* model_manager = nullptr, BackendManager* backend_manager = nullptr)
         : server_name_(server_name), port_(0), log_level_(log_level),
@@ -519,7 +521,7 @@ public:
                                            const std::string& request_body,
                                            httplib::DataSink& sink,
                                            bool sse = true,
-                                           long timeout_seconds = 0,
+                                           long timeout_seconds = utils::HttpClient::kNoTimeout,
                                            TelemetryCallback telemetry_callback = nullptr);
 
     // Get the server address
@@ -596,7 +598,7 @@ protected:
     // then starts the watchdog. Throws, with the server stopped, when it exits,
     // the load is cancelled or `timeout_seconds` passes first.
     void start_server(std::unique_ptr<ServerProcess> process, const ServerCommand& command,
-                      long timeout_seconds = 600);
+                      long timeout_seconds = kDefaultStartupTimeoutSeconds);
     // Stops the watchdog and the server. Safe to call when nothing is running.
     void stop_server();
 
@@ -617,14 +619,14 @@ protected:
     // Common method to forward requests to the wrapped server (non-streaming)
     json forward_request(const std::string& endpoint,
                          const json& request,
-                         long timeout_seconds = 0);
+                         long timeout_seconds = utils::HttpClient::kNoTimeout);
 
     json forward_get_request(const std::string& endpoint, long timeout_seconds = 0);
 
     // Forward multipart form data to the wrapped server
     json forward_multipart_request(const std::string& endpoint,
                                    const std::vector<utils::MultipartField>& fields,
-                                   long timeout_seconds = 0);
+                                   long timeout_seconds = utils::HttpClient::kNoTimeout);
 
     std::string get_base_url() const;
 

@@ -434,7 +434,8 @@ void StreamingProxy::forward_byte_stream(
         {},
         timeout_seconds,
         [&backend_status](int status) { backend_status = status; },
-        utils::HttpSecurityPolicy::TrustedLoopback
+        utils::HttpSecurityPolicy::TrustedLoopback,
+        [&sink]() { return sink.is_writable && !sink.is_writable(); }
     );
 
     const bool transport_interrupted =

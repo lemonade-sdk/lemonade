@@ -3889,6 +3889,13 @@ if(BUILD_TESTING AND EXISTS "${_HTTP_CLIENT_TIMEOUT_TEST_SRC}")
     add_cpp_ci_test(HttpClientTimeoutTest CI ON TIMEOUT 300 COMMAND test_http_client_timeout)
 endif()
 
+set(_GLOBAL_TIMEOUT_REMOVAL_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_config_global_timeout_removal.cpp")
+if(BUILD_TESTING AND EXISTS "${_GLOBAL_TIMEOUT_REMOVAL_TEST_SRC}")
+    add_executable(test_config_global_timeout_removal test/cpp/test_config_global_timeout_removal.cpp)
+    target_link_libraries(test_config_global_timeout_removal PRIVATE lemonade-server-core)
+    add_cpp_ci_test(ConfigGlobalTimeoutRemovalTest CI ON COMMAND test_config_global_timeout_removal)
+endif()
+
 set(_REQUEST_CANCELLATION_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_request_cancellation.cpp")
 if(BUILD_TESTING AND EXISTS "${_REQUEST_CANCELLATION_TEST_SRC}")
     add_executable(test_request_cancellation test/cpp/test_request_cancellation.cpp)

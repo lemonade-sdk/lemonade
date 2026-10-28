@@ -27,7 +27,6 @@
     "args": "",
     "prefer_system": false
   },
-  "global_timeout": 600,
   "host": "localhost",
   "hrx": {
     "args": "",

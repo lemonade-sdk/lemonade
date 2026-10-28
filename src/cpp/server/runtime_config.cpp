@@ -288,6 +288,12 @@ RuntimeConfig::RuntimeConfig(const json& config)
     if (config_.contains("broadcast") && !config_["broadcast"].is_boolean()) {
         throw std::invalid_argument("'broadcast' must be a boolean");
     }
+    // Discard obsolete persisted settings without breaking existing installs.
+    // New /internal/config writes of this key are rejected by validate().
+    if (config_.is_object()) {
+        config_.erase("global_timeout");
+    }
+
     // Migrate legacy no_broadcast if present
     if (config_.contains("no_broadcast")) {
         if (!config_["no_broadcast"].is_boolean()) {
@@ -440,11 +446,6 @@ bool RuntimeConfig::broadcast() const {
 void RuntimeConfig::set_broadcast_override(std::optional<bool> override_val) {
     std::unique_lock lock(mutex_);
     broadcast_override_ = override_val;
-}
-
-long RuntimeConfig::global_timeout() const {
-    std::shared_lock lock(mutex_);
-    return config_["global_timeout"].get<long>();
 }
 
 int RuntimeConfig::max_loaded_models() const {
@@ -921,13 +922,6 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
                key == "disable_model_filtering" || key == "enable_dgpu_gtt") {
         if (!value.is_boolean()) {
             throw std::invalid_argument("'" + key + "' must be a boolean");
-        }
-    } else if (key == "global_timeout") {
-        if (!value.is_number_integer()) {
-            throw std::invalid_argument("'global_timeout' must be an integer");
-        }
-        if (value.get<long>() <= 0) {
-            throw std::invalid_argument("'global_timeout' must be positive");
         }
     } else if (key == "max_loaded_models") {
         if (!value.is_number_integer()) {

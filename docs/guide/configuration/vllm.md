@@ -78,6 +78,10 @@ lemonade pull user.MyModel \
 
 Standard OpenAI-compatible endpoints (`/v1/chat/completions`, `/v1/completions`) work as usual. Lemonade forwards requests to the vLLM child process, which exposes the engine's own private endpoints (e.g. `/metrics`, `/version`) on a backend-only port surfaced via `GET /v1/health` (`backend_url` field) — useful for observability but not proxied through Lemonade.
 
+### Backend startup deadline
+
+Lemonade allows up to 30 minutes for a cold vLLM model load, including ROCm JIT compilation (the generic backend default is 10 minutes). Set `LEMONADE_BACKEND_STARTUP_TIMEOUT_SECONDS` in the `lemond` environment to override the startup deadline for all backends (1 to 86400 seconds). This setting affects backend readiness only, not the duration of inference requests.
+
 ## Model-Family Argument Config
 
 Some vLLM model families need extra `vllm-server` arguments for correct behavior. For example, tool-calling models may need `--enable-auto-tool-choice` plus a matching `--tool-call-parser`. Lemonade keeps these built-in family defaults in [`vllm_model_config.json`](https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/resources/vllm_model_config.json), separate from [`server_models.json`](https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/resources/server_models.json).

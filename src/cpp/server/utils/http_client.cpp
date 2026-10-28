@@ -27,8 +27,6 @@ namespace utils {
 
 std::atomic<bool> g_download_cancelled{false};
 
-std::atomic<long> HttpClient::default_timeout_seconds_{300};
-
 std::atomic<int64_t> HttpClient::download_rate_limit_bytes_per_second_{0};
 
 // Serializes transfers so concurrent downloads cannot exceed the cap in aggregate.
@@ -40,15 +38,14 @@ namespace {
 // full request timeout.
 constexpr long kConnectTimeoutSeconds = 30;
 
-// Resolves the 0-means-default convention shared by every request method.
-// Without this, curl reads 0 as "no timeout" and a silent upstream parks the
-// calling httplib worker permanently.
+// Control-plane requests retain a fixed bounded default. Long-running
+// inference explicitly opts out instead of inheriting a global deadline.
 long effective_timeout(long timeout_seconds) {
     if (timeout_seconds == HttpClient::kNoTimeout) {
         return 0;
     }
     return timeout_seconds > 0 ? timeout_seconds
-                               : HttpClient::get_default_timeout();
+                               : HttpClient::kDefaultRequestTimeoutSeconds;
 }
 
 static std::string trim_copy(const std::string& value) {
@@ -376,33 +373,49 @@ static bool redirect_target_allowed(HttpSecurityPolicy policy, const std::string
     return policy == HttpSecurityPolicy::AllowInsecureHttp && origin.rfind("http://", 0) == 0;
 }
 
-static int post_cancel_xferinfo_callback(void* clientp, curl_off_t, curl_off_t, curl_off_t,
-                                         curl_off_t) {
-    if (!clientp) return 0;
-    auto* token = static_cast<const RequestCancelToken*>(clientp);
+struct ResponseProgress {
+    const RequestCancelToken* cancel = nullptr;
+    const std::function<bool()>* should_cancel = nullptr;
+    long inactivity_seconds = 0;
+    curl_off_t received_bytes = 0;
+    curl_off_t uploaded_bytes = 0;
+    std::chrono::steady_clock::time_point last_received = std::chrono::steady_clock::now();
+    bool timed_out = false;
+};
+
+static int response_progress_callback(void* clientp, curl_off_t, curl_off_t dlnow,
+                                      curl_off_t, curl_off_t ulnow) {
+    auto* data = static_cast<ResponseProgress*>(clientp);
+    if (!data) return 0;
+
     try {
-        return token->cancelled();
+        if ((data->cancel && data->cancel->cancelled()) ||
+            (data->should_cancel && *data->should_cancel && (*data->should_cancel)())) {
+            return 1;
+        }
     } catch (...) {
-        // Never allow a C++ exception to cross libcurl's C callback boundary.
-        // Failing closed is safer than leaving an orphaned upstream request.
+        // A cancellation callback must never throw through libcurl.
         return 1;
     }
+
+    const auto now = std::chrono::steady_clock::now();
+    if (dlnow > data->received_bytes || ulnow > data->uploaded_bytes) {
+        data->received_bytes = dlnow;
+        data->uploaded_bytes = ulnow;
+        data->last_received = now;
+    }
+    if (data->inactivity_seconds > 0 &&
+        now - data->last_received >= std::chrono::seconds(data->inactivity_seconds)) {
+        data->timed_out = true;
+        return 1;
+    }
+    return 0;
 }
 
-static int stream_cancel_xferinfo_callback(void* clientp, curl_off_t, curl_off_t,
-                                           curl_off_t, curl_off_t) {
-    auto* should_cancel = static_cast<std::function<bool()>*>(clientp);
-    if (!should_cancel || !*should_cancel) {
-        return 0;
-    }
-
-    try {
-        return (*should_cancel)() ? 1 : 0;
-    } catch (...) {
-        // Never allow a C++ exception to cross libcurl's C callback boundary.
-        // Failing closed is safer than leaving an orphaned upstream request.
-        return 1;
-    }
+static void enable_response_progress(CURL* curl, ResponseProgress& progress) {
+    curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, response_progress_callback);
+    curl_easy_setopt(curl, CURLOPT_XFERINFODATA, &progress);
+    curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
 }
 
 namespace {
@@ -453,7 +466,6 @@ struct ProgressData {
     bool cancelled = false;
     bool stalled = false;
     long stalled_after = 0;
-    bool waiting_for_first_byte = false;
     bool expect_partial_response = false;
     bool range_ignored = false;
     // A resumed transfer accepts a body from the one offset it asked for.
@@ -505,7 +517,6 @@ static size_t header_callback(char* buffer, size_t size, size_t nitems, void* us
     std::string line(buffer, total);
 
     if (line.rfind("HTTP/", 0) == 0) {
-        data->waiting_for_first_byte = false;
         data->current_response_code = 0;
         data->last_progress_time = std::chrono::steady_clock::now();
 
@@ -546,7 +557,6 @@ static size_t header_callback(char* buffer, size_t size, size_t nitems, void* us
             data->current_response_code != 304;
 
         if (response_can_have_body) {
-            data->waiting_for_first_byte = true;
             data->last_progress_time = std::chrono::steady_clock::now();
         }
     }
@@ -583,17 +593,13 @@ static int progress_callback(void* clientp, curl_off_t dltotal, curl_off_t dlnow
 
     const auto now = std::chrono::steady_clock::now();
     if (dlnow > data->last_downloaded) {
-        data->waiting_for_first_byte = false;
         data->last_downloaded = dlnow;
         data->last_progress_time = now;
     } else if (data->no_progress_timeout > 0) {
         const auto idle_seconds = std::chrono::duration_cast<std::chrono::seconds>(
             now - data->last_progress_time).count();
 
-        const long stall_timeout =
-            data->waiting_for_first_byte
-                ? static_cast<long>(data->no_progress_timeout) * 5L
-                : static_cast<long>(data->no_progress_timeout);
+        const long stall_timeout = static_cast<long>(data->no_progress_timeout);
 
         if (idle_seconds >= stall_timeout) {
             data->stalled = true;
@@ -802,11 +808,12 @@ HttpResponse HttpClient::post(const std::string& url,
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, effective_timeout(timeout_seconds));
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, kConnectTimeoutSeconds);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
-
-    if (cancel.flag != nullptr || cancel.should_cancel != nullptr) {
-        curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, post_cancel_xferinfo_callback);
-        curl_easy_setopt(curl, CURLOPT_XFERINFODATA, &cancel);
-        curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+    ResponseProgress progress;
+    progress.cancel = &cancel;
+    progress.inactivity_seconds = timeout_seconds == kNoTimeout
+        ? kDefaultInferenceInactivityTimeoutSeconds : 0;
+    if (progress.inactivity_seconds > 0 || cancel.flag || cancel.should_cancel) {
+        enable_response_progress(curl, progress);
     }
 
     // Add custom headers
@@ -831,6 +838,9 @@ HttpResponse HttpClient::post(const std::string& url,
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, header_list);
 
     CURLcode res = curl_easy_perform(curl);
+    if (progress.timed_out) {
+        res = CURLE_OPERATION_TIMEDOUT;
+    }
 
     if (res != CURLE_OK) {
         std::string error = "CURL error: " + std::string(curl_easy_strerror(res));
@@ -886,11 +896,6 @@ HttpResponse HttpClient::post_multipart(const std::string& url,
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_body);
     curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, response_header_callback);
     curl_easy_setopt(curl, CURLOPT_HEADERDATA, &response.headers);
-    if (cancel.flag != nullptr || cancel.should_cancel != nullptr) {
-        curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, post_cancel_xferinfo_callback);
-        curl_easy_setopt(curl, CURLOPT_XFERINFODATA, &cancel);
-        curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
-    }
     if (!apply_http_security_policy(curl, policy, false)) {
         curl_mime_free(mime);
         curl_easy_cleanup(curl);
@@ -899,8 +904,18 @@ HttpResponse HttpClient::post_multipart(const std::string& url,
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, effective_timeout(timeout_seconds));
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, kConnectTimeoutSeconds);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
+    ResponseProgress progress;
+    progress.cancel = &cancel;
+    progress.inactivity_seconds = timeout_seconds == kNoTimeout
+        ? kDefaultInferenceInactivityTimeoutSeconds : 0;
+    if (progress.inactivity_seconds > 0 || cancel.flag || cancel.should_cancel) {
+        enable_response_progress(curl, progress);
+    }
 
     CURLcode res = curl_easy_perform(curl);
+    if (progress.timed_out) {
+        res = CURLE_OPERATION_TIMEDOUT;
+    }
 
     if (res != CURLE_OK) {
         std::string error = "CURL error: " + std::string(curl_easy_strerror(res));
@@ -1000,18 +1015,15 @@ HttpResponse HttpClient::post_stream(const std::string& url,
         curl_easy_cleanup(curl);
         throw std::runtime_error("Failed to apply HTTP security policy");
     }
-    // A total timeout would kill a long but healthy generation, so the timeout
-    // bounds upstream silence instead of duration.
-    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1L);
-    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, effective_timeout(timeout_seconds));
+    // An idle deadline is not a total generation deadline. Count received
+    // upstream bytes, not average throughput or downstream SSE heartbeats.
+    ResponseProgress progress;
+    progress.should_cancel = &should_cancel;
+    progress.inactivity_seconds = timeout_seconds == kNoTimeout
+        ? kDefaultInferenceInactivityTimeoutSeconds : effective_timeout(timeout_seconds);
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, kConnectTimeoutSeconds);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
-
-    if (should_cancel) {
-        curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, stream_cancel_xferinfo_callback);
-        curl_easy_setopt(curl, CURLOPT_XFERINFODATA, &should_cancel);
-        curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
-    }
+    enable_response_progress(curl, progress);
 
     // Add custom headers
     bool has_content_type = false;
@@ -1035,6 +1047,9 @@ HttpResponse HttpClient::post_stream(const std::string& url,
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, header_list);
 
     CURLcode res = curl_easy_perform(curl);
+    if (progress.timed_out) {
+        res = CURLE_OPERATION_TIMEDOUT;
+    }
 
     // Get response code before checking for errors
     long response_code;
@@ -1132,7 +1147,13 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
         curl_easy_setopt(curl, CURLOPT_RANGE, "0-");
     }
 
-    const int no_progress_timeout = static_cast<int>(effective_timeout(options.no_progress_timeout));
+    // Downloads use an independent progress deadline, never an inference cap.
+    // -1 opts out; 0 selects the download-specific threshold.
+    const int no_progress_timeout = options.no_progress_timeout < 0
+                                        ? 0
+                                        : (options.no_progress_timeout > 0
+                                               ? options.no_progress_timeout
+                                               : DownloadOptions::kDefaultNoProgressTimeoutSeconds);
     auto prog_data = std::make_unique<ProgressData>();
     prog_data->callback = callback;
     prog_data->cancel = &cancel;

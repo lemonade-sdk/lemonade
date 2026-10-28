@@ -52,7 +52,6 @@ Server::Server(std::shared_ptr<RuntimeConfig> config,
 
     config_effects_ = std::make_unique<ConfigEffects>(ctx_);
     ctx_.config_effects = config_effects_.get();
-    utils::HttpClient::set_default_timeout(config_->global_timeout());
     utils::HttpClient::set_download_rate_limit(config_->download_rate_limit_bytes_per_second());
 
     cloud_registry_ = std::make_unique<CloudProviderRegistry>();

@@ -149,8 +149,7 @@ void Ds4Server::load(const std::string& model_name, const ModelInfo& model_info,
     command.ready_endpoint = "/v1/models";
 
     const bool inherit_output = (log_level_ == "info") || (log_level_ == "debug");
-    start_server(std::make_unique<NativeProcess>(ProcessOutput{inherit_output, true}), command,
-                 HttpClient::get_default_timeout());
+    start_server(std::make_unique<NativeProcess>(ProcessOutput{inherit_output, true}), command);
 }
 
 json Ds4Server::chat_completion(const json& request) {

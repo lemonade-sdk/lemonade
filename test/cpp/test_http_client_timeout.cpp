@@ -22,6 +22,7 @@
 
 #include <lemon/utils/http_client.h>
 
+using lemon::utils::DownloadOptions;
 using lemon::utils::HttpClient;
 using lemon::utils::HttpSecurityPolicy;
 using lemon::utils::MultipartField;
@@ -87,6 +88,16 @@ int main() {
     // Accepts the request and then holds it, sending nothing. The wait is
     // polled rather than one long sleep so shutdown does not block on it.
     std::atomic<bool> shutting_down{false};
+    // Download endpoint that sends response headers but stalls before body data.
+    svr.Get("/download-silent", [&shutting_down](const httplib::Request&, httplib::Response& res) {
+        res.set_chunked_content_provider(
+            "application/octet-stream", [&shutting_down](size_t, httplib::DataSink&) {
+                for (int i = 0; i < kGiveUpCeilingSeconds * 20 && !shutting_down; ++i) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                }
+                return false;
+            });
+    });
     svr.Post("/silent", [&shutting_down](const httplib::Request&, httplib::Response& res) {
         res.set_chunked_content_provider(
             "text/event-stream", [&shutting_down](size_t, httplib::DataSink&) {
@@ -95,6 +106,23 @@ int main() {
                 }
                 return false;
             });
+    });
+
+    // This response takes longer than the short explicit timeout tests below.
+    // NoTimeout callers must still receive the completed payload.
+    svr.Post("/delayed", [](const httplib::Request&, httplib::Response& res) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(2300));
+        res.set_content("ok", "text/plain");
+    });
+    svr.Post("/trickle", [](const httplib::Request&, httplib::Response& res) {
+        res.set_chunked_content_provider("text/plain", [](size_t offset, httplib::DataSink& sink) {
+            if (offset >= 5) {
+                sink.done();
+                return true;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(1200));
+            return sink.write("x", 1);
+        });
     });
 
     std::thread server_thread([&svr]() { svr.listen_after_bind(); });
@@ -111,33 +139,37 @@ int main() {
                 "post: explicit timeout abandons a silent upstream");
     }
 
-    // 0 means "use the configured default", matching get(). Before the fix this
-    // call never returned.
-    {
-        const long saved = HttpClient::get_default_timeout();
-        HttpClient::set_default_timeout(2);
-        const bool returned = returns_within_ceiling([&] {
-            HttpClient::post(base + "/silent", "{}", {}, 0, policy);
-        });
-        HttpClient::set_default_timeout(saved);
-        r.check(returned,
-                "post: timeout 0 falls back to the default rather than blocking forever");
+    // Control-plane calls still have a bounded default, but inference opts out.
+    r.check(HttpClient::kDefaultRequestTimeoutSeconds > 0,
+            "control-plane request default remains bounded");
+    r.check(HttpClient::kDefaultInferenceInactivityTimeoutSeconds >
+                HttpClient::kDefaultRequestTimeoutSeconds,
+            "uncapped inference retains a separate, longer inactivity guard");
+
+    r.check(returns_within_ceiling([&] {
+                HttpClient::post_multipart(base + "/silent",
+                    {MultipartField{"f", "v", "", ""}}, 2, policy);
+            }), "post_multipart: explicit deadline bounds a silent upstream");
+
+    try {
+        auto response = HttpClient::post(base + "/delayed", "{}", {},
+                                          HttpClient::kNoTimeout, policy);
+        r.check(response.status_code == 200 && response.body == "ok",
+                "post: uncapped inference completes after delayed response");
+    } catch (const std::exception& e) {
+        printf("[FAIL] uncapped post threw: %s\n", e.what());
+        ++r.failed;
     }
 
-    {
-        const long saved = HttpClient::get_default_timeout();
-        HttpClient::set_default_timeout(2);
-        std::vector<MultipartField> fields;
-        MultipartField field;
-        field.name = "f";
-        field.data = "v";
-        fields.push_back(field);
-        const bool returned = returns_within_ceiling([&] {
-            HttpClient::post_multipart(base + "/silent", fields, 0, policy);
-        });
-        HttpClient::set_default_timeout(saved);
-        r.check(returned,
-                "post_multipart: timeout 0 falls back to the default");
+    try {
+        auto response = HttpClient::post_multipart(
+            base + "/delayed", {MultipartField{"f", "v", "", ""}},
+            HttpClient::kNoTimeout, policy);
+        r.check(response.status_code == 200 && response.body == "ok",
+                "post_multipart: uncapped inference completes after delay");
+    } catch (const std::exception& e) {
+        printf("[FAIL] uncapped multipart threw: %s\n", e.what());
+        ++r.failed;
     }
 
     // post_stream bounds silence rather than total duration, so a default-timeout
@@ -153,25 +185,56 @@ int main() {
                 "post_stream: explicit timeout abandons a silent upstream");
     }
 
-    // timeout_seconds=0 bounds silence with the configured default timeout.
-    {
-        const long saved = HttpClient::get_default_timeout();
-        HttpClient::set_default_timeout(2);
-        const bool returned = returns_within_ceiling([&] {
-            HttpClient::post_stream(
-                base + "/silent", "{}",
-                [](const char*, size_t) { return true; },
-                {}, 0, nullptr, policy);
-        });
-        HttpClient::set_default_timeout(saved);
-        r.check(returned,
-                "post_stream: timeout 0 bounds silence with the default timeout");
+    try {
+        std::string body;
+        auto response = HttpClient::post_stream(
+            base + "/delayed", "{}",
+            [&body](const char* data, size_t len) {
+                body.append(data, len);
+                return true;
+            }, {}, HttpClient::kNoTimeout, nullptr, policy);
+        r.check(response.status_code == 200 && response.curl_code == 0 && body == "ok",
+                "post_stream: uncapped first-token wait completes after delay");
+    } catch (const std::exception& e) {
+        printf("[FAIL] uncapped stream threw: %s\n", e.what());
+        ++r.failed;
+    }
+
+    try {
+        std::string body;
+        auto response = HttpClient::post_stream(
+            base + "/trickle", "{}",
+            [&body](const char* data, size_t len) {
+                body.append(data, len);
+                return true;
+            }, {}, 2, nullptr, policy);
+        r.check(response.status_code == 200 && response.curl_code == 0 && body == "xxxxx",
+                "post_stream: sparse received bytes reset the inactivity deadline");
+    } catch (const std::exception& e) {
+        printf("[FAIL] sparse stream threw: %s\n", e.what());
+        ++r.failed;
     }
 
     // The sentinel is the only way to ask for an unbounded transfer, so it must
     // not be confused with 0.
     r.check(HttpClient::kNoTimeout != 0,
             "kNoTimeout is distinct from the 0-means-default sentinel");
+
+    {
+        DownloadOptions options;
+        options.max_retries = 0;
+        options.no_progress_timeout = 2;
+        const std::string path = "timeout-download-" + std::to_string(port) + ".bin";
+        std::remove(path.c_str());
+        std::remove((path + ".partial").c_str());
+        const auto result = HttpClient::download_file(
+            base + "/download-silent", path, nullptr, {}, options, policy);
+        r.check(!result.success &&
+                result.error_message.find("no bytes received for 2 seconds") != std::string::npos,
+                "download: no-progress threshold also applies before the first body byte");
+        std::remove(path.c_str());
+        std::remove((path + ".partial").c_str());
+    }
 
     shutting_down = true;
     svr.stop();

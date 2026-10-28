@@ -42,7 +42,7 @@ public:
                                    const std::string& request_body,
                                    httplib::DataSink& sink,
                                    bool sse = true,
-                                   long timeout_seconds = 0,
+                                   long timeout_seconds = utils::HttpClient::kNoTimeout,
                                    TelemetryCallback telemetry_callback = nullptr) override;
 
 private:
