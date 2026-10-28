@@ -1517,17 +1517,23 @@ class LemonadeAPI {
       this._notifyModelsChanged();
       return result;
     } finally {
-      this._refreshBackendStatusAfterLoad(cachedRecipe);
+      this._refreshBackendStatusAfterLoad(String(body.recipe || cachedRecipe).trim().toLowerCase(), body);
     }
   }
 
-  private _refreshBackendStatusAfterLoad(recipe: string): void {
+  private _refreshBackendStatusAfterLoad(recipe: string, options: Record<string, unknown>): void {
     const recipes = (this._systemInfoData as any)?.recipes;
     if (!isObject(recipes)) return;
-    const entries = recipe && isObject(recipes[recipe]) ? [recipes[recipe]] : Object.values(recipes);
-    const backendMayHaveChanged = entries.some((entry: any) => Object.values(isObject(entry?.backends) ? entry.backends : {})
-      .some((backend: any) => !['installed', 'unsupported'].includes(String(backend?.state || ''))));
-    if (backendMayHaveChanged) void this.systemInfo({ afterPending: true }).catch(() => undefined);
+    const recipeInfo = recipes[recipe];
+    if (!isObject(recipeInfo) || !isObject(recipeInfo.backends)) return;
+    const requested = String(options[`${recipe}_backend`] || options.backend || '').trim().toLowerCase();
+    const selected = requested && requested !== 'auto'
+      ? requested : String(recipeInfo.default_backend || '').trim().toLowerCase();
+    const backendInfo = recipeInfo.backends[selected];
+    const state = isObject(backendInfo) ? String(backendInfo.state || '').trim().toLowerCase() : '';
+    if (state !== 'installed' && state !== 'unsupported') {
+      void this.systemInfo({ afterPending: true }).catch(() => undefined);
+    }
   }
 
   async unloadModel(modelName?: string): Promise<unknown> {

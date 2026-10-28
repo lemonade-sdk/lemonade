@@ -210,7 +210,7 @@ global.fetch = async (url, init = {}) => {
       await gate.released;
     }
     return new Response(JSON.stringify({
-      recipes: { thenoise: { default_backend: 'cuda', backends: { cuda: { state: stateAtStart } } } },
+      recipes: { thenoise: { default_backend: 'cuda', backends: { cuda: { state: stateAtStart }, cpu: { state: 'installable' } } } },
     }), { status: 200, headers: { 'content-type': 'application/json' } });
   }
 
@@ -380,7 +380,11 @@ async function waitFor(predicate, timeoutMs = 1500) {
     await api.loadModel('noise-model', undefined, noiseModel);
     await new Promise(resolve => setTimeout(resolve, 50));
     assert.equal(systemInfoRequests, requestsBeforeReadyLoad,
-      'a load with every backend ready must not request system-info');
+      'an unused installable backend must not trigger a refresh when the selected backend is installed');
+
+    const requestsBeforeExplicitLoad = systemInfoRequests;
+    await api.loadModel('noise-model', { backend: 'cpu' }, noiseModel);
+    await waitFor(() => systemInfoRequests === requestsBeforeExplicitLoad + 1);
 
     backendState = 'update_required';
     await api.systemInfo();

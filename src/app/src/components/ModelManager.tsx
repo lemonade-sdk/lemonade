@@ -1166,7 +1166,11 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     });
 
     const onFocus = () => {
-      if (!document.hidden) refreshBackendInfo({ maxAgeMs: FOCUS_SYSTEM_INFO_MAX_AGE_MS });
+      if (document.hidden) return;
+      const recipes = systemRecipeEntries(api.systemInfoData) || [];
+      const updatePending = recipes.some(([, recipe]) => Object.values(rawBackendMap(recipe))
+        .some(info => ['update_required', 'update_available'].includes(backendState(info))));
+      refreshBackendInfo(updatePending ? {} : { maxAgeMs: FOCUS_SYSTEM_INFO_MAX_AGE_MS });
     };
     window.addEventListener('focus', onFocus);
     return () => {
