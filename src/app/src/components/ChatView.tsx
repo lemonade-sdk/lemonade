@@ -4366,7 +4366,7 @@ ${finalText}`
             </div>
             {!micPreparation && (
               <div className="composer__live-text">
-                {liveError || micError || liveTranscript || 'Listening… start speaking to see transcription.'}
+                {liveError || micError || liveTranscript || t('Listening… start speaking to see transcription.')}
               </div>
             )}
           </div>
