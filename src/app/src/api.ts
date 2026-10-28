@@ -1512,11 +1512,16 @@ class LemonadeAPI {
       ...recipeOptions,
       save_options: false,
     };
+    const { downloadStore } = await import(
+      /* webpackChunkName: "download-store" */ './features/downloadManager/downloadStore'
+    );
+    const stopDownloadWatch = downloadStore.watchForModelLoad();
     try {
       const result = await this._json('/api/v1/load', { method: 'POST', body });
       this._notifyModelsChanged();
       return result;
     } finally {
+      stopDownloadWatch();
       this._refreshBackendStatusAfterLoad(String(body.recipe || cachedRecipe).trim().toLowerCase(), body);
     }
   }

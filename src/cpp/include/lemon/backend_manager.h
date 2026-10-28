@@ -11,9 +11,14 @@ namespace lemon {
 
 using json = nlohmann::json;
 
+class DownloadManager;
+
 class BackendManager {
 public:
     BackendManager();
+
+    // Server-owned auto-installs publish to the same download list as /install.
+    void set_download_manager(DownloadManager* downloads) { download_manager_ = downloads; }
 
     // Core operations
     void install_backend(const std::string& recipe, const std::string& backend,
@@ -69,6 +74,8 @@ public:
     static BackendManager* global();
 
 private:
+    DownloadManager* download_manager_ = nullptr; // Set by Server; absent in standalone contexts.
+
     // Cached backend_versions.json (loaded once at construction)
     json backend_versions_;
 

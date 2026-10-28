@@ -5629,6 +5629,38 @@ optgroup {
   white-space: pre-wrap;
 }
 
+/* Keep the compact indicator on the left edge of the centered composer bar. */
+.composer__readiness-anchor {
+  max-width: var(--max-content-width);
+  margin: 0 auto var(--space-2);
+}
+
+.composer__readiness {
+  width: fit-content;
+  max-width: 100%;
+  margin: 0;
+}
+
+.composer__readiness-label {
+  white-space: nowrap;
+}
+
+.composer__readiness .composer__live-meter { flex-shrink: 0; }
+
+.composer__readiness .composer__live-meter .is-indeterminate {
+  width: 35%;
+  animation: chat-readiness-pulse 1.2s ease-in-out infinite alternate;
+}
+
+@keyframes chat-readiness-pulse {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(285%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .composer__readiness .composer__live-meter .is-indeterminate { animation: none; }
+}
+
 .cap-chip__icon {
   width: 1.15em;
   min-width: 1.15em;

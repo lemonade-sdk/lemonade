@@ -3,6 +3,7 @@
 #include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/runtime_config.h"
+#include "lemon/server/download_manager.h"
 #include "lemon/system_info.h"
 #include "lemon/utils/github_api.h"
 #include "lemon/utils/http_client.h"
@@ -572,6 +573,16 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
                                      DownloadProgressCallback progress_cb) {
     std::string resolved_backend = normalize_backend_name(recipe, backend);
     LOG(DEBUG, "BackendManager") << "Installing " << recipe << ":" << resolved_backend << std::endl;
+
+    if (!progress_cb && download_manager_ && resolved_backend != "system") {
+        const std::string name = recipe + ":" + resolved_backend;
+        download_manager_->run_tracked("backend:" + name, "backend", name,
+            [this, recipe, resolved_backend, force](DownloadProgressCallback report,
+                                                    utils::CancelToken) {
+                install_backend(recipe, resolved_backend, force, report);
+            });
+        return;
+    }
 
     // System backend uses a pre-installed binary from PATH - nothing to install
     if (resolved_backend == "system") {
