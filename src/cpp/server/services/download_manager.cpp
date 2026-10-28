@@ -5,6 +5,8 @@
 
 #include <lemon/utils/aixlog.hpp>
 
+#include "lemon/models/model_errors.h"
+#include "lemon/models/registry_types.h"
 #include "lemon/server/api_route.h"
 
 namespace lemon {
@@ -181,7 +183,8 @@ json DownloadManager::start(const std::string& download_id, const std::string& d
                 return true;
             };
 
-            operation(progress_cb);
+            const utils::CancelToken cancel_token{&job->cancel_flag, nullptr};
+            operation(progress_cb, cancel_token);
 
             std::lock_guard<std::mutex> lock(mutex_);
             if (job->cancel_requested && job->stop_acknowledged) {
@@ -307,6 +310,7 @@ json DownloadManager::control(const std::string& id, const std::string& action, 
 
             if (!terminal) {
                 job->cancel_requested = true;
+                job->cancel_flag.store(true);
                 job->cancel_action = action;
                 job->status = action == "cancel" ? "cancelled" : "paused";
                 // Paused jobs remain visible until resumed/removed. A cancel
@@ -325,6 +329,7 @@ json DownloadManager::control(const std::string& id, const std::string& action, 
                 // worker may still hold file handles. Convert it to a cancel
                 // request and keep the job visible until running=false.
                 job->cancel_requested = true;
+                job->cancel_flag.store(true);
                 job->cancel_action = "cancel";
                 if (job->status != "completed" && job->status != "error") {
                     job->status = "cancelled";
@@ -352,6 +357,7 @@ void DownloadManager::cancel_all() {
         std::lock_guard<std::mutex> lock(mutex_);
         for (auto& [id, job] : jobs_) {
             job->cancel_requested = true;
+            job->cancel_flag.store(true);
             job->cancel_action = "cancel";
             jobs.push_back(job);
         }
@@ -365,7 +371,9 @@ void DownloadManager::cancel_all() {
 void DownloadManager::stream(const Operation& operation, httplib::DataSink& sink) {
     try {
         bool complete_sent = false;
-        DownloadProgressCallback progress_cb = [&sink, &complete_sent](const DownloadProgress& p) -> bool {
+        auto disconnected = std::make_shared<std::atomic<bool>>(false);
+        DownloadProgressCallback progress_cb =
+            [&sink, &complete_sent, disconnected](const DownloadProgress& p) -> bool {
             // The event names carry completion and errors, so the data leaves them out.
             json event_data = progress_to_json(p);
             event_data.erase("complete");
@@ -373,12 +381,17 @@ void DownloadManager::stream(const Operation& operation, httplib::DataSink& sink
             complete_sent = complete_sent || p.complete;
             if (!write_sse_event(sink, p.complete ? "complete" : "progress", event_data)) {
                 LOG(INFO, "Server") << "Client disconnected, cancelling download" << std::endl;
+                disconnected->store(true);
                 return false;
             }
             return true;
         };
 
-        operation(progress_cb);
+        // A failed socket write kills the update channel and the transfer: the
+        // token answers on curl's next tick.
+        const utils::CancelToken cancel_token{nullptr,
+                                              [disconnected] { return disconnected->load(); }};
+        operation(progress_cb, cancel_token);
 
         // An operation that had nothing to download (e.g. a backend already
         // installed) never reports completion, so report it here.

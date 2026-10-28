@@ -771,7 +771,10 @@ class LemonadeAPI {
   private _modelsDataSignature = '';
   private _modelsFetchRevision = 0;
   private _systemInfoData: Record<string, unknown> | null = null;
+  private _systemInfoFetchedAt = 0;
+  private _systemInfoListeners = new Set<(info: Record<string, unknown>) => void>();
   private _systemInfoInFlight: Promise<Record<string, unknown>> | null = null;
+  private _systemInfoGeneration = 0;
   private _modelStateSnapshot: ModelStateSnapshot = {
     status: 'disconnected',
     health: null,
@@ -1050,6 +1053,11 @@ class LemonadeAPI {
     return () => { this._modelsChangedListeners = this._modelsChangedListeners.filter(f => f !== fn); };
   }
 
+  onSystemInfoChange(fn: (info: Record<string, unknown>) => void): () => void {
+    this._systemInfoListeners.add(fn);
+    return () => { this._systemInfoListeners.delete(fn); };
+  }
+
   private _notifyModelsChanged(): void {
     this._modelsMutationRevision += 1;
     this._modelStateGeneration += 1;
@@ -1060,6 +1068,11 @@ class LemonadeAPI {
   private _setStatus(s: ConnectionStatus): void {
     const changed = this._status !== s;
     this._status = s;
+    if (changed && s === 'disconnected') {
+      this._systemInfoGeneration++;
+      this._systemInfoInFlight = null;
+      this._systemInfoFetchedAt = 0;
+    }
     if (changed) this._listeners.forEach(fn => { try { fn(s); } catch {} });
     this._publishModelState();
   }
@@ -1499,9 +1512,28 @@ class LemonadeAPI {
       ...recipeOptions,
       save_options: false,
     };
-    const result = await this._json('/api/v1/load', { method: 'POST', body });
-    this._notifyModelsChanged();
-    return result;
+    try {
+      const result = await this._json('/api/v1/load', { method: 'POST', body });
+      this._notifyModelsChanged();
+      return result;
+    } finally {
+      this._refreshBackendStatusAfterLoad(String(body.recipe || cachedRecipe).trim().toLowerCase(), body);
+    }
+  }
+
+  private _refreshBackendStatusAfterLoad(recipe: string, options: Record<string, unknown>): void {
+    const recipes = (this._systemInfoData as any)?.recipes;
+    if (!isObject(recipes)) return;
+    const recipeInfo = recipes[recipe];
+    if (!isObject(recipeInfo) || !isObject(recipeInfo.backends)) return;
+    const requested = String(options[`${recipe}_backend`] || options.backend || '').trim().toLowerCase();
+    const selected = requested && requested !== 'auto'
+      ? requested : String(recipeInfo.default_backend || '').trim().toLowerCase();
+    const backendInfo = recipeInfo.backends[selected];
+    const state = isObject(backendInfo) ? String(backendInfo.state || '').trim().toLowerCase() : '';
+    if (state !== 'installed' && state !== 'unsupported') {
+      void this.systemInfo({ afterPending: true }).catch(() => undefined);
+    }
   }
 
   async unloadModel(modelName?: string): Promise<unknown> {
@@ -1569,17 +1601,31 @@ class LemonadeAPI {
     return result;
   }
 
-  async systemInfo(): Promise<Record<string, unknown>> {
+  async systemInfo(options: { afterPending?: boolean; maxAgeMs?: number } = {}): Promise<Record<string, unknown>> {
     // Several views use the same expensive system-info endpoint. A workspace
     // preload and the view's first effect can overlap, so share the in-flight
     // request instead of making the server do the same discovery twice.
+    if (options.maxAgeMs !== undefined && this._systemInfoData
+      && Date.now() - this._systemInfoFetchedAt < options.maxAgeMs) {
+      return this._systemInfoData;
+    }
+    const generation = this._systemInfoGeneration;
+    if (options.afterPending && this._systemInfoInFlight) {
+      await this._systemInfoInFlight.catch(() => undefined);
+      if (generation !== this._systemInfoGeneration) {
+        throw new Error('Connection changed while waiting for system info');
+      }
+    }
     if (this._systemInfoInFlight) return this._systemInfoInFlight;
 
     const request = this._json<Record<string, unknown>>(
       '/api/v1/system-info',
       { cache: 'no-store' } as LemonadeRequestInit,
     ).then(data => {
+      if (generation !== this._systemInfoGeneration) return data;
       this._systemInfoData = data;
+      this._systemInfoFetchedAt = Date.now();
+      this._systemInfoListeners.forEach(fn => { try { fn(data); } catch {} });
       return data;
     }).finally(() => {
       if (this._systemInfoInFlight === request) this._systemInfoInFlight = null;

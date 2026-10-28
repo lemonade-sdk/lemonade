@@ -268,7 +268,7 @@ public:
             if (stream) {
                 DownloadManager::Operation operation =
                     [backend_manager, model_manager, recipe, backend, force](
-                        DownloadProgressCallback progress_cb) {
+                        DownloadProgressCallback progress_cb, utils::CancelToken) {
                         backend_manager->install_backend(recipe, backend, force, progress_cb);
                         SystemInfoCache::invalidate_recipes();
                         model_manager->invalidate_models_cache();

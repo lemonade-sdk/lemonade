@@ -4,7 +4,7 @@
 
 #include "lemon/wrapped_server.h"
 #include "lemon/server_capabilities.h"
-#include "lemon/model_manager.h"
+#include "lemon/model_manager_types.h"
 #include "lemon/recipe_options.h"
 #include "lemon/utils/process_manager.h"
 #include "lemon/backends/backend_utils.h"

@@ -59,9 +59,6 @@ public:
     // Answers 404 when no route matches.
     void handle_request(const httplib::Request& req, httplib::Response& res);
 
-    // Runs the queued model sync on a thread that stop() joins.
-    void start_background_sync();
-
     // CPU usage percentage (0-100) since the previous call, -1 if not available.
     double get_cpu_usage();
 
@@ -72,7 +69,6 @@ private:
     std::shared_ptr<RuntimeConfig> config_;
     std::string config_dir_;
     std::unique_ptr<Router> router_;
-    std::unique_ptr<AliasManager> alias_manager_;
     std::unique_ptr<ModelManager> model_manager_;
     std::unique_ptr<BackendManager> backend_manager_;
     std::unique_ptr<CloudProviderRegistry> cloud_registry_;
@@ -89,12 +85,6 @@ private:
     std::unique_ptr<HttpListener> listener_;
 
     std::thread model_cache_warmup_thread_;
-    struct SyncTaskThread {
-        std::thread thread;
-        std::shared_ptr<std::atomic<bool>> finished;
-    };
-    std::vector<SyncTaskThread> background_sync_threads_;
-    std::mutex background_sync_mutex_;
 
 #if defined(__linux__) || defined(_WIN32)
     struct CpuStats {
