@@ -39,7 +39,7 @@ std::string join(const std::vector<std::string>& argv) {
 
 struct FakeHost {
     std::set<std::string> tools;
-    std::set<std::string> groups;
+    bool gpu_access = false;
     bool docker_socket = true;
     // `podman info`'s exit code and its Host.Security.Rootless answer.
     int podman_info_exit = 0;
@@ -56,7 +56,7 @@ struct FakeHost {
     ContainerHost host() const {
         ContainerHost h;
         h.on_path = [this](const std::string& name) { return tools.count(name) > 0; };
-        h.in_group = [this](const std::string& group) { return groups.count(group) > 0; };
+        h.gpu_devices_accessible = [this]() { return gpu_access; };
         h.group_id = [](const std::string& group) {
             return group == "video" ? std::string("44") : std::string("990");
         };
@@ -179,21 +179,20 @@ void test_tool_choice_and_setup() {
               "3. Log out and back in");
     check("error text lists the problems, then the steps",
           fresh.text() ==
-              "\n  - podman is not on PATH\n  - Account is not in both video and render\n"
+              "\n  - podman is not on PATH\n  - Account cannot open the GPU devices\n"
               "To fix it:\n  1. sudo apt install podman\n"
               "  2. sudo usermod -aG video,render $USER\n  3. Log out and back in");
 
     FakeHost both;
     both.tools = {"podman", "docker"};
-    both.groups = {"video"};
     const lemon::utils::SetupReport groups{ContainerManager(both.host()).check_host()};
-    check("Podman needs the account in both video and render",
+    check("Podman needs the account to open the GPU devices",
           groups.ids() == std::vector<std::string>({"device_groups"}) &&
-              groups.message() == "Account is not in both video and render" &&
+              groups.message() == "Account cannot open the GPU devices" &&
               groups.action() == "1. sudo usermod -aG video,render $USER\n"
                                  "2. Log out and back in");
-    both.groups = {"video", "render"};
-    check("Podman passes with both groups", ContainerManager(both.host()).check_host().empty());
+    both.gpu_access = true;
+    check("Podman passes once the account can open the GPU devices", ContainerManager(both.host()).check_host().empty());
 
     FakeHost remote;
     remote.tools = {"podman"};
@@ -221,7 +220,7 @@ void test_tool_choice_and_setup() {
 
     FakeHost broken;
     broken.tools = {"podman"};
-    broken.groups = {"video", "render"};
+    broken.gpu_access = true;
     broken.podman_info_exit = 125;
     const auto silent = ContainerManager(broken.host()).check_podman();
     check("Podman must answer podman info",

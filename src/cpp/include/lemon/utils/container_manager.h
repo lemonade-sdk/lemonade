@@ -73,7 +73,9 @@ struct CommandResult {
 // Each host read, defaulting to the real host so tests can fake every branch.
 struct ContainerHost {
     std::function<bool(const std::string& name)> on_path;
-    std::function<bool(const std::string& group)> in_group;
+    // True when this account can read and write /dev/kfd and every /dev/dri
+    // render node present on the host.
+    std::function<bool()> gpu_devices_accessible;
     // The group's numeric ID, or "" when the host defines no such group.
     std::function<std::string(const std::string& group)> group_id;
     // True when /var/run/docker.sock accepts a connection from this process.

@@ -73,16 +73,20 @@ std::optional<gid_t> lookup_group(const std::string& group) {
     return found->gr_gid;
 }
 
-bool process_in_group(const std::string& group) {
-    const std::optional<gid_t> found = lookup_group(group);
-    if (!found) return true;
-    const gid_t gid = *found;
-    if (::getgid() == gid || ::getegid() == gid) return true;
-    const int count = ::getgroups(0, nullptr);
-    if (count <= 0) return false;
-    std::vector<gid_t> groups(static_cast<size_t>(count));
-    if (::getgroups(count, groups.data()) < 0) return false;
-    return std::find(groups.begin(), groups.end(), gid) != groups.end();
+// Desktop distros often grant the logged-in account device access through
+// ACLs rather than video/render membership, so this tests access itself.
+bool account_opens_gpu_devices() {
+    std::vector<fs::path> nodes = {"/dev/kfd"};
+    std::error_code ec;
+    for (const auto& entry : fs::directory_iterator("/dev/dri", ec)) {
+        if (entry.path().filename().string().rfind("renderD", 0) == 0) {
+            nodes.push_back(entry.path());
+        }
+    }
+    for (const auto& node : nodes) {
+        if (fs::exists(node, ec) && ::access(node.c_str(), R_OK | W_OK) != 0) return false;
+    }
+    return true;
 }
 
 std::string host_group_id(const std::string& group) {
@@ -142,11 +146,11 @@ ContainerHost ContainerHost::real() {
     ContainerHost host;
     host.on_path = [](const std::string& name) { return !find_executable_in_path(name).empty(); };
 #ifdef _WIN32
-    host.in_group = [](const std::string&) { return false; };
+    host.gpu_devices_accessible = []() { return false; };
     host.group_id = [](const std::string&) { return std::string(); };
     host.docker_socket_accepts = []() { return false; };
 #else
-    host.in_group = process_in_group;
+    host.gpu_devices_accessible = account_opens_gpu_devices;
     host.group_id = host_group_id;
     host.docker_socket_accepts = docker_socket_accepts_connection;
 #endif
@@ -220,8 +224,8 @@ std::vector<SetupFailure> ContainerManager::check_host() const {
         failures.push_back({"container_tool", "podman is not on PATH",
                             {podman_install_command(host_.read_file("/etc/os-release"))}, ""});
     }
-    if (expect_rootless() && (!host_.in_group("video") || !host_.in_group("render"))) {
-        failures.push_back({"device_groups", "Account is not in both video and render",
+    if (expect_rootless() && !host_.gpu_devices_accessible()) {
+        failures.push_back({"device_groups", "Account cannot open the GPU devices",
                             {"sudo usermod -aG video,render $USER"}, kRelogin});
     }
     return failures;
