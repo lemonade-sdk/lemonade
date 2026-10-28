@@ -123,6 +123,7 @@ nav:
     - Mindcraft: integrations/mindcraft.md
     - Open Hands: integrations/open-hands.md
     - Open WebUI: integrations/open-webui.md
+    - Pi: integrations/pi.md
     - Wut: integrations/wut.md
   - API Spec:
       - Overview: api/README.md

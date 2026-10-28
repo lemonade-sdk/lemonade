@@ -23,6 +23,7 @@ Apps that talk to a system-wide Lemonade Server install must not use these endpo
 | `POST` | [`/internal/aliases`](#post-internalaliases) | Create or update a model alias |
 | `DELETE` | [`/internal/aliases/{alias}`](#delete-internalaliasesalias) | Remove a model alias |
 | `GET` | [`/internal/routes`](#get-internalroutes) | List every route's specification |
+| `GET` | [`/internal/model-sources`](#get-internalmodel-sources) | List every model source's descriptor |
 <!-- END GENERATED: internal.summary -->
 
 <!-- BEGIN GENERATED: internal.shutdown -->
@@ -205,6 +206,7 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 | `log_max_file_size_mb` | No | Defaults to `10`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `log_max_files` | No | Defaults to `5`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `max_loaded_models` | No | Defaults to `1`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `model_catalogs` | No | Defaults to `[]`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `models_dir` | No | Defaults to `"auto"`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `moonshine` | No | `moonshine` settings; send only the keys to change. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `no_fetch_executables` | No | Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
@@ -952,3 +954,125 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 - `request_format` - How `lemond` parses the request body: `Raw` not at all, `Json` as JSON, `OptionalJson` as JSON with an empty or `null` body read as `{}`, `Form` as a multipart form.
 - `quiet_log` - Whether the route is left out of the access log.
 <!-- END GENERATED: internal.routes -->
+
+<!-- BEGIN GENERATED: internal.model_sources -->
+## `GET /internal/model-sources`
+<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Returns each remote registry's and each model catalog's compiled descriptor: its token, aliases, documentation text, credential environment variables, cache layout and endpoint defaults.
+
+Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` when that is set.
+
+### Parameters
+
+This endpoint does not take any parameters.
+
+`docs/tools/gen_model_source_boilerplate.py` copies the model-source tables from this response, so every token, endpoint and environment variable a committed page names is one the server answering this request actually has.
+
+A catalog answers `host_specific: true` when its rows depend on this machine: a configured `model_catalogs` entry, the models an installed backend reports, and a cloud provider's listing. The generator writes no such row to a committed page, so the page stays the same on every machine even though this response is not.
+
+### Example
+
+=== "PowerShell"
+
+    ```powershell
+    Invoke-WebRequest -Uri "http://localhost:13305/internal/model-sources"
+    ```
+
+=== "Bash"
+
+    ```bash
+    curl http://localhost:13305/internal/model-sources
+    ```
+
+**Response:** `200 OK`
+
+```json
+{
+  "registries": [
+    {
+      "token": "huggingface",
+      "aliases": ["huggingface", "hf", ""],
+      "display_name": "Hugging Face",
+      "title": "Hugging Face",
+      "summary": "The default remote registry: GGUF repositories over HTTPS.",
+      "notes": [
+        "A token-gated repository needs `HF_TOKEN`.",
+        "`HF_ENDPOINT` moves the API to a mirror or gateway; the cache layout does not change."
+      ],
+      "example": "https://huggingface.co/{repo}",
+      "endpoint_default": "https://huggingface.co",
+      "scheme": "hf://",
+      "cache_dir_prefix": "models--",
+      "default_revision": "main",
+      "revision_semantics": "branch, tag or commit SHA",
+      "staleness_basis": "the commit SHA the API reports for the revision",
+      "download_protocol": "hf-hub",
+      "search": true,
+      "env": [
+        {"name": "HF_TOKEN", "purpose": "read access to gated repositories", "required": false},
+        ... 1 more
+      ]
+    },
+    ... 1 more
+  ],
+  "catalogs": [
+    {
+      "id": "server_models.json",
+      "title": "Built-in registry",
+      "summary": "The model list shipped with the server.",
+      "notes": ["Nothing writes this file back: a new row ships in a release."],
+      "example": "",
+      "required": false,
+      "config_key": "",
+      "host_specific": false
+    },
+    ... 3 more
+  ],
+  "source_tokens": ["huggingface", "modelscope"],
+  "local_origin_tokens": ["local_upload", "local_path", "extra_models_dir"],
+  "pull_source_values": [
+    "huggingface",
+    "modelscope",
+    "local_upload",
+    "local_path",
+    "extra_models_dir"
+  ]
+}
+```
+
+### Response format
+
+- `registries` - One entry per remote registry the server can download from.
+  - `token` - The registry's canonical name, as `source` and a checkpoint URL spell it.
+  - `aliases` - Every name a request may send for this registry, its canonical token among them. Hugging Face answers the empty string too, which is what a checkpoint naming no registry spells.
+  - `display_name` - The registry's name in prose and error messages.
+  - `title` - Heading the generated docs give this registry.
+  - `summary` - The registry's one-line description.
+  - `notes` - Anything the generated page says about this registry beyond the table row.
+  - `example` - A checkpoint the docs show for this registry.
+  - `endpoint_default` - Plain download host used when no environment variable overrides it; empty where the host serves files only through its own API, which the generated page prints instead.
+  - `scheme` - URL scheme a checkpoint URL for this registry carries, such as `hf://`; empty when a plain URL names it.
+  - `cache_dir_prefix` - Prefix of this registry's directory under the models cache.
+  - `default_revision` - Revision assumed when a request names none.
+  - `revision_semantics` - What a revision names here, such as `branch, tag or commit SHA`.
+  - `staleness_basis` - How the server decides a download is out of date.
+  - `download_protocol` - How a file is fetched from this registry.
+  - `search` - Whether [`/v1/registry/search`](./lemonade.md#get-v1registrysearch) answers for this registry.
+  - `env` - Environment variables that configure this registry.
+    - `name` - Variable name.
+    - `purpose` - What it sets.
+    - `required` - Whether the registry is unusable without it.
+- `catalogs` - One entry per model catalog the server reads.
+  - `id` - The catalog's id: the name a `model_catalogs` entry gives it, or a fixed one such as `server_models.json`, `user_models.json`, `extra_models_dir`, `discovered:<recipe>` or `listed:<provider>`.
+  - `title` - Heading the generated docs give this catalog.
+  - `summary` - The catalog's one-line description.
+  - `notes` - Anything the generated page says about this catalog beyond the table row.
+  - `example` - A configuration example the docs show.
+  - `required` - Whether a model set missing this catalog invalidates the set.
+  - `config_key` - The config.json key that configures it: `model_catalogs` for a configured catalog, the top-level `extra_models_dir` for the scanned directory; empty when nothing configures it.
+  - `host_specific` - `true` when its rows depend on this machine, which keeps its rows out of committed pages.
+- `source_tokens` - Every registry token, in the order the registries are listed.
+- `local_origin_tokens` - Tokens naming where a model came from without a registry, such as `local_upload`.
+- `pull_source_values` - Every value [`/v1/pull`](./lemonade.md#post-v1pull) accepts for `source`: each registry token and each local origin.
+<!-- END GENERATED: internal.model_sources -->

@@ -336,6 +336,15 @@ function canonicalizeLegacyHash(route: AppRoute | null): void {
   }
 }
 
+function consumeNavigationQuery(hash: string): void {
+  const url = new URL(window.location.href);
+  if (!url.searchParams.has('view') && !url.searchParams.has('logs')) return;
+  url.searchParams.delete('view');
+  url.searchParams.delete('logs');
+  url.hash = hash;
+  window.history.replaceState(null, '', url);
+}
+
 function loadSavedRoute(): AppRoute {
   try {
     if (new URLSearchParams(window.location.search).has('q')) return { view: 'chat' };
@@ -937,6 +946,7 @@ const App: React.FC = () => {
     };
 
     const initialRoute = routeFromCurrentLocation();
+    consumeNavigationQuery(hashForRoute(initialRoute ?? routeRef.current));
     if (initialRoute) navigateToRoute(initialRoute);
     attach();
 
