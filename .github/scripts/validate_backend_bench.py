@@ -655,6 +655,11 @@ def main() -> int:
     )
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument(
+        "--use-installed",
+        action="store_true",
+        help="bench the binary already installed by --download-only; never re-resolve",
+    )
+    parser.add_argument(
         "--download-only",
         action="store_true",
         help="Only download fork binaries, do not run bench (use before lemond starts)",
@@ -743,16 +748,24 @@ def main() -> int:
         print(f"Repo: {fork['repo']}")
 
         try:
-            tag_prefix = fork.get("version_tag_prefix", "")
-            pinned = (
-                fork.get("version", "")
-                if fork.get("version_source") == "pinned"
-                else ""
-            )
-            fallback = fork.get("version_fallback", "")
-            version = resolve_latest_version(
-                fork["repo"], args.token, tag_prefix, pinned, fallback
-            )
+            if args.use_installed:
+                version_file = binaries_dir / fork_id / "version.txt"
+                if not version_file.exists():
+                    raise RuntimeError(
+                        f"no installed binary under {version_file.parent}"
+                    )
+                version = version_file.read_text().strip()
+            else:
+                tag_prefix = fork.get("version_tag_prefix", "")
+                pinned = (
+                    fork.get("version", "")
+                    if fork.get("version_source") == "pinned"
+                    else ""
+                )
+                fallback = fork.get("version_fallback", "")
+                version = resolve_latest_version(
+                    fork["repo"], args.token, tag_prefix, pinned, fallback
+                )
             print(f"Version: {version}")
         except Exception as e:
             print(f"  [ERROR] Could not resolve version: {e}")

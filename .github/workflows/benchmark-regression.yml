@@ -327,6 +327,7 @@ jobs:
               --fork-filter  "$FORK_ID" \
               --model-filter "$GROUP_MODELS" \
               --port         "$PORT" \
+              --use-installed \
               || { tail -n 80 "$LOGS_DIR/lemond.stderr.log" 2>/dev/null || true; }
             if [ -f ci/results/regression_report.json ]; then
               mkdir -p "ci/results/$FORK_ID"
