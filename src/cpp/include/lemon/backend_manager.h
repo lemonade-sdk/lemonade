@@ -25,6 +25,7 @@ public:
                          bool force = false,
                          DownloadProgressCallback progress_cb = nullptr);
     void uninstall_backend(const std::string& recipe, const std::string& backend);
+    static std::string canonical_backend_name(const std::string& recipe, const std::string& backend);
 
     // Query operations
     std::string get_latest_version(const std::string& recipe, const std::string& backend);

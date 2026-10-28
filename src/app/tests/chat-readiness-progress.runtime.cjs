@@ -73,6 +73,8 @@ assert.doesNotMatch(componentSource, /composer__readiness-percent/, 'no visible 
 assert.doesNotMatch(componentSource, /aria-valuenow=\{percent/, 'estimated loading progress should not announce numeric values');
 assert.match(componentSource, /aria-valuenow=\{download \? percent \?\? undefined : undefined\}/,
   'only real download progress should expose a numeric accessibility value');
+assert.match(componentSource, /aria-valuetext=\{download \? undefined : label\}/,
+  'screen readers use the real download value; estimated model loading stays non-numeric');
 assert.doesNotMatch(componentSource, /\$\{percent\}%`\}/, 'estimated percentages should not be announced');
 assert.match(css, /\.composer__readiness-anchor \{ width: 100%; \}/);
 assert.match(css, /\.composer__model-stack \{[\s\S]*?width: max-content;[\s\S]*?min-width: 220px;/);
@@ -87,3 +89,28 @@ console.log('Chat readiness progress regression tests passed');
 
 assert.doesNotMatch(componentSource, /prepareChatBackend/, 'indicator must only observe downloads');
 console.log('No backend pre-install orchestration regression check passed');
+
+const backendManagerFile = path.join(root, 'src/components/BackendManager.tsx');
+const backendManagerSource = fs.readFileSync(backendManagerFile, 'utf8');
+const backendAst = ts.createSourceFile(backendManagerFile, backendManagerSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+const matcherSource = ['backendKey', 'backendDownloadId', 'backendDownloadName', 'backendDownloadMatches']
+  .map(name => {
+    const node = backendAst.statements.find(statement => ts.isFunctionDeclaration(statement) && statement.name?.text === name);
+    assert.ok(node, `Missing ${name}`);
+    return node.getText(backendAst);
+  }).join('\n');
+const matcherModule = { exports: {} };
+const matcherCode = ts.transpileModule(`${matcherSource}\nmodule.exports = { backendDownloadMatches };`, {
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+}).outputText;
+vm.runInNewContext(matcherCode, { module: matcherModule });
+const matches = matcherModule.exports.backendDownloadMatches;
+const backendJob = (recipe, variant) => ({
+  id: `backend:${recipe}:${variant}`, modelName: `${recipe}:${variant}`, downloadType: 'backend',
+});
+assert.equal(matches(backendJob('llamacpp', 'rocm-stable'), 'llamacpp', 'rocm'), true);
+assert.equal(matches(backendJob('llamacpp', 'rocm-nightly'), 'llamacpp', 'rocm'), true);
+assert.equal(matches(backendJob('llamacpp', 'cpu'), 'llamacpp', 'cpu'), true);
+assert.equal(matches(backendJob('llamacpp', 'cuda'), 'llamacpp', 'rocm'), false);
+assert.equal(matches(backendJob('other', 'rocm-stable'), 'llamacpp', 'rocm'), false);
+console.log('Canonical ROCm backend download alias matching passed');

@@ -118,7 +118,7 @@ const ChatReadinessProgress: React.FC<ChatReadinessProgressProps> = React.memo((
             aria-valuemin={0}
             aria-valuemax={100}
             aria-valuenow={download ? percent ?? undefined : undefined}
-            aria-valuetext={label}
+            aria-valuetext={download ? undefined : label}
           >
             <span className={percent === null ? 'is-indeterminate' : undefined} style={percent !== null ? { width: `${percent}%` } : undefined} />
           </span>

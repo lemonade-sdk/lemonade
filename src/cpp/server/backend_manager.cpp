@@ -340,6 +340,11 @@ void install_therock_if_needed(const std::string& os, const json& backend_versio
 
 } // namespace
 
+std::string BackendManager::canonical_backend_name(const std::string& recipe,
+                                                   const std::string& backend) {
+    return normalize_backend_name(recipe, backend);
+}
+
 BackendManager::BackendManager() {
     try {
         std::string config_path = utils::get_resource_path("resources/backend_versions.json");
