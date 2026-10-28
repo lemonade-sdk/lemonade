@@ -132,7 +132,11 @@ ln_error_t ln_set_identity(ln_client_t* client, const ln_identity_t* identity);
 /* Health                                                              */
 /* ------------------------------------------------------------------ */
 
-/** GET /api/health. Returns JSON via out_json. Caller must ln_free(*out_json). */
+/** GET /api/health. Returns JSON via out_json:
+ *  {"status","service","dns_base_domain","rp_id","ok"} and "error" when not ok.
+ *  "rp_id" is the WebAuthn relying-party id the network's passkeys are bound to
+ *  (empty when the server did not report one); a passkey client must use it,
+ *  not a constant. Caller must ln_free(*out_json). */
 ln_error_t ln_health(ln_client_t* client, char** out_json);
 
 /* ------------------------------------------------------------------ */
@@ -665,6 +669,30 @@ ln_error_t ln_move_node(ln_client_t* client,
                         const char* new_parent_id,
                         char** out_json);
 
+/** Check a device name before a join or a rename. Device names fold to one
+ *  mesh-port label ("Work PC" and "work-pc" are both "work-pc"); the tree
+ *  refuses a join or a hostname update whose label another device of the
+ *  same group already holds (HTTP 409, an "error" that names that device),
+ *  and a name with no letter or digit. This call asks a Tier 1 server first.
+ *  Give group_node_id (this identity needs read on the group) or link_token
+ *  (an invite: its target group is checked and the token is NOT spent); the
+ *  other may be NULL or "", but not both. Advisory only: a name reported
+ *  available can still be taken before it is used.
+ *  *out_json is {label, available, conflicts: [{node_id, device_name}],
+ *  suggestion} (suggestion is a free label such as "work-pc-2"), or carries
+ *  "error" when the server refused or was not reached. The caller owns
+ *  *out_json and must release it with ln_free(). Needs a session (ln_auth_*
+ *  or ln_set_session_token) and a verified Tier 1 server; no mesh session.
+ *  LN_ERR_NULL_ARG when client, name, or out_json is NULL or neither scope is
+ *  given, LN_ERR_AUTH without read on the group or for an invalid invite,
+ *  LN_ERR_NOT_FOUND for an unknown group, LN_ERR_CONNECT when no Tier 1
+ *  server answered. */
+ln_error_t ln_check_device_name(ln_client_t* client,
+                                const char* name,
+                                const char* group_node_id,
+                                const char* link_token,
+                                char** out_json);
+
 /* ------------------------------------------------------------------ */
 /* Account deletion                                                    */
 /* ------------------------------------------------------------------ */
@@ -920,12 +948,15 @@ ln_error_t ln_mesh_port_set_selection(ln_client_t* client, const char* target,
 /** Get the mesh port state as JSON:
  *  {running, port, scheme ("http" | "https"), local_domain, local_service,
  *   error, selection: {target (null | "local" | "auto" | node ID), peer_key_set},
- *   tls: {state ("off" | "waiting" | "active" | "unsupported_certificate" |
- *   "error"), domain, expires_at, error},
+ *   tls: {state ("off" | "waiting" | "activating" | "active" |
+ *   "unsupported_certificate" | "error"), domain, expires_at, error},
  *   urls: [{node_id, device_name, url, self}],
  *   devices: [{node_id, device_name, is_online}]}.
- *  `urls` lists this device and each online Tier 3 device that this device may
- *  connect to. Before TLS is active, only "http://127.0.0.1:<port>" is listed.
+ *  "activating" means the first certificate is installed and the port switches
+ *  to TLS as soon as the open plain HTTP requests finish; a running stream is
+ *  never cut. `urls` lists this device and each online Tier 3 device that this
+ *  device may connect to. Before TLS is active, only "http://127.0.0.1:<port>"
+ *  is listed.
  *  `devices` lists the Tier 3 devices that can be selected. The peer key is
  *  never included. Caller must ln_free(*out_json). Returns LN_ERR_NULL_ARG for a
  *  NULL argument. Thread-safe. */

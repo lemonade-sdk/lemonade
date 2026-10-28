@@ -1,6 +1,6 @@
 {
   "repository": "https://github.com/lemonade-sdk/lemonade-nexus.git",
-  "commit": "e77b521bcf16bb49e08f53350d8330b01a6791ce",
+  "commit": "e8b8ece1175b73014e138887dfc17f26e7e351bc",
   "version": "0.9.8",
   "paths": [
     "LICENSE",
@@ -45,6 +45,7 @@
     "projects/LemonadeNexus/include/LemonadeNexus/Security/Policy/SecurityTypes.hpp",
     "projects/LemonadeNexus/include/LemonadeNexus/Security/Transport/AuthorityChainCodec.hpp",
     "projects/LemonadeNexus/include/LemonadeNexus/Security/Transport/CodecError.hpp",
+    "projects/LemonadeNexus/include/LemonadeNexus/Tree/DeviceLabel.hpp",
     "projects/LemonadeNexus/src/Api/TreeRouteGate.cpp",
     "projects/LemonadeNexus/src/Boringtun/UserspaceDataplane.cpp",
     "projects/LemonadeNexus/src/Crypto/CryptoTypes.cpp",
@@ -64,6 +65,7 @@
     "projects/LemonadeNexus/src/Security/Transport/AuthorityChainCodec.cpp",
     "projects/LemonadeNexus/src/Security/Transport/AuthorityChainCodecDetail.hpp",
     "projects/LemonadeNexus/src/Security/Transport/CodecPrimitives.hpp",
+    "projects/LemonadeNexus/src/Tree/DeviceLabel.cpp",
     "projects/LemonadeNexusSDK/include",
     "projects/LemonadeNexusSDK/src"
   ],

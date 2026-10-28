@@ -480,6 +480,20 @@ public:
     [[nodiscard]] Result<nlohmann::json> move_node(const std::string& node_id,
                                                    const std::string& new_parent_id);
 
+    /// Ask a Tier 1 server whether a device could take `name` in a group now
+    /// (POST /api/tree/device-name/check). Device names fold to one mesh-port
+    /// label ("Work PC" and "work-pc" are both "work-pc"), and the tree
+    /// refuses a join or a rename whose label another device of the same
+    /// group holds, with HTTP 409. Give `group_node_id` (needs read on the
+    /// group) or `link_token` (an invite: its target group is checked and the
+    /// token is not spent); one of the two, not both empty. Advisory: a name
+    /// reported available can still be taken before it is used. Needs a
+    /// session; works before a join, so a new device can check the name it
+    /// will use with an invite.
+    [[nodiscard]] Result<DeviceNameCheck> check_device_name(const std::string& name,
+                                                            const std::string& group_node_id,
+                                                            const std::string& link_token);
+
     /// Permanently delete this identity's account. Irreversible. Requests a
     /// challenge from the session's server (POST /api/account/delete/challenge),
     /// signs the account deletion proof with this identity's key, and sends

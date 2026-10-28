@@ -2,6 +2,8 @@
 #include <LemonadeNexusSDK/CertRenewal.hpp>
 #include <LemonadeNexusSDK/LemonadeNexusClient.hpp>
 
+#include <LemonadeNexus/Tree/DeviceLabel.hpp>
+
 #include <httplib.h>
 #include <openssl/err.h>
 #include <openssl/pem.h>
@@ -11,10 +13,12 @@
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <deque>
 #include <filesystem>
 #include <fstream>
+#include <map>
 #include <random>
 
 #ifndef _WIN32
@@ -178,6 +182,92 @@ bool port_in_use(uint16_t port) {
     return in_use;
 }
 
+struct Pipe;
+
+}  // namespace
+
+/// The open requests of the listener: the handlers that are running and the pipes
+/// that still stream a response after their handler returned. stop() aborts the
+/// pipes; the switch from plain HTTP to TLS waits until nothing is open, because
+/// stopping an httplib server cuts every chunked response it is still writing.
+struct MeshPortProxies {
+    std::mutex mutex;
+    std::vector<std::weak_ptr<Pipe>> pipes;
+    size_t handlers{0};
+    bool switching{false};       // refuse new requests while the listener is replaced
+    bool wake_when_idle{false};  // a switch is waiting for the open requests to finish
+    std::function<void()> on_idle;
+
+    /// Registers a handler. False while the listener is being replaced.
+    bool enter() {
+        std::lock_guard lock(mutex);
+        if (switching) return false;
+        ++handlers;
+        return true;
+    }
+    void leave() {
+        std::function<void()> wake;
+        {
+            std::lock_guard lock(mutex);
+            --handlers;
+            wake = idle_wake_locked();
+        }
+        if (wake) wake();
+    }
+    void add(const std::shared_ptr<Pipe>& pipe) {
+        std::lock_guard lock(mutex);
+        prune_locked();
+        pipes.push_back(pipe);
+    }
+    /// Called by a pipe's destructor, once its response is written or aborted.
+    void released() {
+        std::function<void()> wake;
+        {
+            std::lock_guard lock(mutex);
+            wake = idle_wake_locked();
+        }
+        if (wake) wake();
+    }
+    /// Starts refusing new requests when nothing is open. Otherwise arranges for
+    /// on_idle to run when the last open request finishes and returns false.
+    bool begin_switch() {
+        std::lock_guard lock(mutex);
+        if (!idle_locked()) {
+            wake_when_idle = true;
+            return false;
+        }
+        wake_when_idle = false;
+        switching = true;
+        return true;
+    }
+    void end_switch() {
+        std::lock_guard lock(mutex);
+        switching = false;
+    }
+    void forget_switch() {
+        std::lock_guard lock(mutex);
+        switching = false;
+        wake_when_idle = false;
+    }
+    void cancel_all();
+
+private:
+    void prune_locked() {
+        pipes.erase(std::remove_if(pipes.begin(), pipes.end(), [](const auto& p) { return p.expired(); }), pipes.end());
+    }
+    bool idle_locked() {
+        prune_locked();
+        return handlers == 0 && pipes.empty();
+    }
+    std::function<void()> idle_wake_locked() {
+        if (!wake_when_idle || !idle_locked()) return {};
+        wake_when_idle = false;
+        return on_idle;
+    }
+};
+
+namespace {
+
 /// One forwarded request. A worker thread reads the upstream response into a bounded
 /// queue; the listener streams the queue to the caller with the upstream status and
 /// Content-Type.
@@ -193,6 +283,7 @@ struct Pipe {
     size_t buffered{0};
     std::unique_ptr<httplib::Client> client;
     std::thread worker;
+    std::shared_ptr<MeshPortProxies> owner;
 
     void cancel() {
         {
@@ -210,46 +301,37 @@ struct Pipe {
             cancel();
             worker.join();
         }
+        if (owner) owner->released();
     }
 };
 
 }  // namespace
 
-/// The open pipes, so stop() can abort streams that would otherwise hold the
-/// listener open.
-struct MeshPortProxies {
-    std::mutex mutex;
-    std::vector<std::weak_ptr<Pipe>> pipes;
-
-    void add(const std::shared_ptr<Pipe>& pipe) {
+void MeshPortProxies::cancel_all() {
+    std::vector<std::shared_ptr<Pipe>> open;
+    {
         std::lock_guard lock(mutex);
-        pipes.erase(std::remove_if(pipes.begin(), pipes.end(), [](const auto& p) { return p.expired(); }), pipes.end());
-        pipes.push_back(pipe);
-    }
-    void cancel_all() {
-        std::vector<std::shared_ptr<Pipe>> open;
-        {
-            std::lock_guard lock(mutex);
-            for (const auto& weak : pipes) {
-                if (auto pipe = weak.lock()) open.push_back(std::move(pipe));
-            }
-            pipes.clear();
+        for (const auto& weak : pipes) {
+            if (auto pipe = weak.lock()) open.push_back(std::move(pipe));
         }
-        for (const auto& pipe : open) pipe->cancel();
+        pipes.clear();
     }
-};
+    for (const auto& pipe : open) pipe->cancel();
+}
 
 namespace {
 
-void proxy(MeshPortProxies& proxies, const std::string& host, uint16_t port, const httplib::Request& req,
-           const std::string& target, httplib::Headers headers, const std::string& body, httplib::Response& res) {
+void proxy(const std::shared_ptr<MeshPortProxies>& proxies, const std::string& host, uint16_t port,
+           const httplib::Request& req, const std::string& target, httplib::Headers headers,
+           const std::string& body, httplib::Response& res) {
     auto pipe = std::make_shared<Pipe>();
+    pipe->owner = proxies;
     pipe->client = std::make_unique<httplib::Client>(host, port);
     pipe->client->set_connection_timeout(10, 0);
     pipe->client->set_read_timeout(300, 0);
     pipe->client->set_write_timeout(300, 0);
     pipe->client->set_keep_alive(false);
-    proxies.add(pipe);
+    proxies->add(pipe);
 
     httplib::Request upstream;
     upstream.method = req.method;
@@ -344,18 +426,36 @@ httplib::Headers forwarded_headers(const httplib::Request& req, const std::strin
     return headers;
 }
 
-std::optional<json> get_json(const std::string& host, uint16_t port, const std::string& path,
-                             const std::string& authorization) {
-    httplib::Client client(host, port);
-    client.set_connection_timeout(5, 0);
-    client.set_read_timeout(5, 0);
+/// One GET of a JSON document. `status` is 0 when the service did not answer;
+/// `body` is set only for a 200 with a JSON body.
+struct JsonReply {
+    int status{0};
+    std::optional<json> body;
+};
+
+JsonReply get_json(httplib::Client& client, const std::string& path, const std::string& authorization) {
     httplib::Headers headers;
     if (!authorization.empty()) headers.emplace("Authorization", authorization);
     auto reply = client.Get(path, headers);
-    if (!reply || reply->status != 200) return std::nullopt;
+    if (!reply) return {};
+    JsonReply result{reply->status, std::nullopt};
+    if (reply->status != 200) return result;
     auto parsed = json::parse(reply->body, nullptr, false);
-    if (parsed.is_discarded()) return std::nullopt;
-    return parsed;
+    if (!parsed.is_discarded()) result.body = std::move(parsed);
+    return result;
+}
+
+void set_timeouts(httplib::Client& client, std::chrono::milliseconds connect, std::chrono::milliseconds read) {
+    const auto split = [](std::chrono::milliseconds value) {
+        const auto seconds = std::chrono::duration_cast<std::chrono::seconds>(value);
+        return std::make_pair(static_cast<time_t>(seconds.count()),
+                              static_cast<time_t>(std::chrono::duration_cast<std::chrono::microseconds>(value - seconds).count()));
+    };
+    const auto [connect_sec, connect_usec] = split(connect);
+    const auto [read_sec, read_usec] = split(read);
+    client.set_connection_timeout(connect_sec, connect_usec);
+    client.set_read_timeout(read_sec, read_usec);
+    client.set_write_timeout(read_sec, read_usec);
 }
 
 std::vector<std::string> model_ids(const json& listing) {
@@ -380,15 +480,10 @@ int64_t epoch_seconds() {
 namespace mesh_port {
 
 std::string device_label(std::string_view device_name) {
-    std::string label;
-    for (const unsigned char c : device_name) {
-        if (std::isalnum(c)) label += static_cast<char>(std::tolower(c));
-        else if (!label.empty() && label.back() != '-') label += '-';
-    }
-    while (!label.empty() && label.back() == '-') label.pop_back();
-    if (label.size() > 63) label.resize(63);
-    while (!label.empty() && label.back() == '-') label.pop_back();
-    return label;
+    // The server validates device names with the same function, so a name the
+    // tree accepted routes here and two names that route the same are refused
+    // there.
+    return nexus::tree::device_label(device_name);
 }
 
 std::string local_domain_from_certificate(std::string_view domain) {
@@ -424,11 +519,30 @@ std::pair<int, std::string> host_target(std::string_view host, std::string_view 
     }
     const auto label = name.substr(0, name.size() - domain.size());
     if (label.find('.') != std::string::npos) return {404, "No device in your group is named " + name};
+    const auto target = [&](const MeshPortMember& member) {
+        return member.node_id == self_node_id ? std::string("local") : member.node_id;
+    };
+    // A node id is unique, so it always names exactly one device.
     for (const auto& member : members) {
-        if (label != lower(member.node_id) && label != device_label(member.device_name)) continue;
-        return {0, member.node_id == self_node_id ? std::string("local") : member.node_id};
+        if (label == lower(member.node_id)) return {0, target(member)};
     }
-    return {404, "No device in your group is named " + name};
+    // Device names fold to DNS labels ("Work PC" and "work-pc" collide), so a
+    // label that fits several devices routes to none of them: the caller must
+    // use a node id. Picking the first match would send traffic to a device the
+    // caller did not name.
+    const MeshPortMember* found = nullptr;
+    std::string others;
+    for (const auto& member : members) {
+        if (label != device_label(member.device_name)) continue;
+        if (!found) { found = &member; continue; }
+        others += (others.empty() ? "" : ", ") + member.device_name + " (" + member.node_id + ")";
+    }
+    if (!found) return {404, "No device in your group is named " + name};
+    if (!others.empty()) {
+        return {409, "The name " + name + " fits several devices: " + found->device_name + " (" + found->node_id +
+                         "), " + others + ". Use the device id as the host name."};
+    }
+    return {0, target(*found)};
 }
 
 std::pair<int, std::string> forward_target(const std::vector<MeshPortMember>& members, std::string_view self_node_id,
@@ -448,6 +562,9 @@ MeshPortAutoRoute auto_route(const std::string& model, const std::vector<MeshPor
                              std::string_view self_node_id, const std::vector<std::string>& local_models,
                              const std::vector<MeshPortPeerModels>& peers) {
     if (model.empty()) return {"local", model};
+    // An exact local ID wins before "<device>/<model>" is read, so a local model whose
+    // ID contains '/' is not sent to a device of that name.
+    if (std::find(local_models.begin(), local_models.end(), model) != local_models.end()) return {"local", model};
     std::vector<const MeshPortMember*> candidates;
     const MeshPortMember* self = nullptr;
     for (const auto& member : members) {
@@ -467,13 +584,19 @@ MeshPortAutoRoute auto_route(const std::string& model, const std::vector<MeshPor
             }
         }
     }
-    if (std::find(local_models.begin(), local_models.end(), model) != local_models.end()) return {"local", model};
     const MeshPortPeerModels* best = nullptr;
     int best_rank = 3;  // 0 loaded and idle, 1 loaded and busy, 2 listed only
+    std::vector<std::string> refused;
     for (const auto& peer : peers) {
         const bool reachable = std::any_of(candidates.begin(), candidates.end(),
             [&](const MeshPortMember* member) { return member->node_id == peer.node_id; });
         if (!reachable) continue;
+        if (peer.models_status == 401 || peer.models_status == 403) {
+            // The stored peer key does not authenticate against this device, so
+            // nothing it serves can be reached with it.
+            refused.push_back(peer.device_name.empty() ? peer.node_id : peer.device_name);
+            continue;
+        }
         int rank = 3;
         if (peer.loaded.is_array()) {
             for (const auto& entry : peer.loaded) {
@@ -486,8 +609,20 @@ MeshPortAutoRoute auto_route(const std::string& model, const std::vector<MeshPor
             best_rank = rank;
         }
     }
-    if (best) return {best->node_id, model};
-    return {"", model, 404, "No reachable device serves the model " + model};
+    MeshPortAutoRoute route;
+    route.model = model;
+    route.refused = std::move(refused);
+    if (best) {
+        route.target = best->node_id;
+        return route;
+    }
+    route.status = 404;
+    route.error = "No reachable device serves the model " + model;
+    if (!route.refused.empty()) {
+        route.error += ". The peer key was refused by";
+        for (size_t i = 0; i < route.refused.size(); ++i) route.error += (i == 0 ? " " : ", ") + route.refused[i];
+    }
+    return route;
 }
 
 json merge_models(const json& local, const std::vector<MeshPortPeerModels>& peers) {
@@ -514,11 +649,16 @@ json device_urls(const std::vector<MeshPortMember>& members, std::string_view se
     }
     const auto suffix = std::string(local_domain) + ":" + std::to_string(port);
     const std::string scheme = tls ? "https://" : "http://";
+    // Count every member's label, not only the listed ones: host_target() matches
+    // against the whole group, so a name that collides anywhere is ambiguous.
+    std::map<std::string, int> label_count;
+    for (const auto& member : members) ++label_count[device_label(member.device_name)];
     for (const auto& member : members) {
         const bool self = member.node_id == self_node_id;
         if (!self && !reachable_peer(member, self_node_id)) continue;
-        const auto label = member.device_name.empty() ? lower(member.node_id) : device_label(member.device_name);
-        if (label.empty()) continue;
+        auto label = device_label(member.device_name);
+        // An ambiguous or empty label gets the node id, which always routes.
+        if (label.empty() || label_count[label] > 1) label = lower(member.node_id);
         urls.push_back({{"node_id", member.node_id}, {"device_name", member.device_name},
             {"url", scheme + label + suffix}, {"self", self}});
     }
@@ -742,7 +882,17 @@ MeshPort::MeshPort(MeshPortBackend backend) : MeshPort(std::move(backend), Optio
 
 MeshPort::MeshPort(MeshPortBackend backend, Options options)
     : backend_(std::move(backend)), options_(options), tls_(std::make_unique<Tls>()),
-      proxies_(std::make_shared<MeshPortProxies>()) {}
+      proxies_(std::make_shared<MeshPortProxies>()) {
+    // The last open plain request hands the pending switch to TLS to the refresh
+    // thread; a request handler must not replace the listener that runs it.
+    proxies_->on_idle = [this] {
+        {
+            std::lock_guard lock(wake_mutex_);
+            refresh_requested_ = true;
+        }
+        wake_.notify_all();
+    };
+}
 
 MeshPort::~MeshPort() { stop(); }
 
@@ -836,6 +986,7 @@ MeshPortStartResult MeshPort::start(uint16_t port, const std::string& local_serv
         tls_error_.clear();
         certificate_expires_at_ = 0;
         certificate_pending_ = !cert_dir_.empty();
+        tls_pending_ = false;
         error_.clear();
         selection_target_.clear();
         selection_key_.clear();
@@ -861,10 +1012,12 @@ void MeshPort::stop() {
         wake_.notify_all();
         refresher = std::move(refresh_thread_);
         stop_listener();
+        proxies_->forget_switch();
         tls_->set(nullptr);
         std::lock_guard lock(state_mutex_);
         running_ = false;
         port_ = 0;
+        tls_pending_ = false;
         selection_target_.clear();
         selection_key_.clear();
         members_.clear();
@@ -900,6 +1053,7 @@ void MeshPort::refresh_loop() {
 void MeshPort::refresh_now() {
     std::lock_guard refresh(refresh_mutex_);
     try {
+        activate_pending_tls();
         refresh_members();
         check_certificate();
     } catch (const std::exception& e) {
@@ -1011,44 +1165,76 @@ bool MeshPort::install_certificate(const MeshPortCertificate& certificate) {
         if (!running_) return false;
         if (!material) {
             tls_error_ = error;
-            if (tls_state_ != "active") tls_state_ = "unsupported_certificate";
+            if (tls_state_ != "active" && tls_state_ != "activating") tls_state_ = "unsupported_certificate";
             return false;
         }
     }
+    // New handshakes read the material through the certificate callback, so a TLS
+    // listener needs no restart and keeps its connections.
     tls_->set(material);
-    if (!listener_ || !listener_->tls) {
-        uint16_t port = 0;
+    const bool tls_listener = listener_ && listener_->tls;
+    {
+        std::lock_guard lock(state_mutex_);
+        tls_state_ = tls_listener ? "active" : "activating";
+        tls_pending_ = !tls_listener;
+        tls_domain_ = lower(certificate.domain);
+        tls_error_.clear();
+        // Report the certificate's own expiry; a declared expiry can only shorten it.
+        auto expires = static_cast<uint64_t>(std::max<int64_t>(material->not_after, 1));
+        if (certificate.expires_at != 0) expires = std::min(expires, certificate.expires_at);
+        certificate_expires_at_ = expires;
+        if (tls_listener) {
+            local_domain_ = domain;
+            return true;
+        }
+    }
+    return activate_tls_locked();
+}
+
+void MeshPort::activate_pending_tls() {
+    std::lock_guard lifecycle(lifecycle_mutex_);
+    activate_tls_locked();
+}
+
+// Replaces the plain listener with a TLS listener on the same port. Runs with
+// lifecycle_mutex_ held. Stopping the plain server would cut every response it is
+// still streaming, so the switch starts only when no request is open; otherwise it
+// is retried from refresh_now() once the last open request finishes. Returns false
+// only when the TLS listener cannot be bound.
+bool MeshPort::activate_tls_locked() {
+    uint16_t port = 0;
+    std::string domain;
+    {
+        std::lock_guard lock(state_mutex_);
+        if (!running_ || !tls_pending_) return true;
+        port = port_;
+        domain = mesh_port::local_domain_from_certificate(tls_domain_);
+    }
+    if (!listener_ || listener_->tls) return true;
+    if (!proxies_->begin_switch()) return true;
+    stop_listener();
+    const auto bound = bind_listener(port, true);
+    proxies_->end_switch();
+    if (bound != MeshPortStartResult::Ok) {
+        tls_->set(nullptr);
+        std::lock_guard lock(state_mutex_);
+        running_ = false;
+        tls_pending_ = false;
+        tls_state_ = "error";
+        tls_error_ = "Cannot bind the TLS listener";
+        error_ = bound == MeshPortStartResult::PortInUse
+            ? "Another process took the port during the switch to TLS" : "Cannot bind the TLS listener";
         {
-            std::lock_guard lock(state_mutex_);
-            port = port_;
+            std::lock_guard wake(wake_mutex_);
+            stopping_ = true;
         }
-        stop_listener();
-        const auto bound = bind_listener(port, true);
-        if (bound != MeshPortStartResult::Ok) {
-            tls_->set(nullptr);
-            std::lock_guard lock(state_mutex_);
-            running_ = false;
-            tls_state_ = "error";
-            tls_error_ = "Cannot bind the TLS listener";
-            error_ = bound == MeshPortStartResult::PortInUse
-                ? "Another process took the port during the switch to TLS" : "Cannot bind the TLS listener";
-            {
-                std::lock_guard wake(wake_mutex_);
-                stopping_ = true;
-            }
-            wake_.notify_all();
-            return false;
-        }
+        wake_.notify_all();
+        return false;
     }
     std::lock_guard lock(state_mutex_);
-    local_domain_ = domain;
+    tls_pending_ = false;
     tls_state_ = "active";
-    tls_domain_ = lower(certificate.domain);
-    tls_error_.clear();
-    // Report the certificate's own expiry; a declared expiry can only shorten it.
-    auto expires = static_cast<uint64_t>(std::max<int64_t>(material->not_after, 1));
-    if (certificate.expires_at != 0) expires = std::min(expires, certificate.expires_at);
-    certificate_expires_at_ = expires;
+    local_domain_ = domain;
     return true;
 }
 
@@ -1106,6 +1292,15 @@ nlohmann::json MeshPort::status() const {
 }
 
 void MeshPort::handle(const httplib::Request& req, httplib::Response& res, bool tls) {
+    if (!proxies_->enter()) {
+        reply_error(res, 503, "The mesh port is switching to TLS. Retry the request.");
+        res.set_header("Retry-After", "1");
+        return;
+    }
+    struct Leave {
+        MeshPortProxies& proxies;
+        ~Leave() { proxies.leave(); }
+    } leave{*proxies_};
     try {
         if (req.target.empty() || req.target.front() != '/') {
             reply_error(res, 400, "Send an origin-form request target");
@@ -1209,6 +1404,11 @@ void MeshPort::serve_auto(const httplib::Request& req, httplib::Response& res, c
     if (route.target.empty() && route.status == 404) {
         route = mesh_port::auto_route(model, members, self, local_ids, peer_models(members, self, peer_authorization));
     }
+    if (!route.refused.empty()) {
+        std::string names;
+        for (const auto& name : route.refused) names += (names.empty() ? "" : ", ") + name;
+        spdlog::info("[MeshPort] auto route for {} skipped devices that refused the peer key: {}", model, names);
+    }
     if (route.target.empty()) {
         reply_error(res, route.status, route.error);
         return;
@@ -1249,11 +1449,11 @@ void MeshPort::forward_to_node(const std::string& node_id, const std::string& pa
     }
     if (req.is_multipart_form_data()) {
         const auto [type, encoded] = multipart_body(req);
-        proxy(*proxies_, "127.0.0.1", port, req, path, forwarded_headers(req, peer_authorization, type), encoded, res);
+        proxy(proxies_, "127.0.0.1", port, req, path, forwarded_headers(req, peer_authorization, type), encoded, res);
         return;
     }
     const auto type = req.has_header("Content-Type") ? req.get_header_value("Content-Type") : std::string();
-    proxy(*proxies_, "127.0.0.1", port, req, path, forwarded_headers(req, peer_authorization, type), body, res);
+    proxy(proxies_, "127.0.0.1", port, req, path, forwarded_headers(req, peer_authorization, type), body, res);
 }
 
 void MeshPort::forward_local(const std::string& path, const httplib::Request& req, httplib::Response& res,
@@ -1273,11 +1473,11 @@ void MeshPort::forward_local(const std::string& path, const httplib::Request& re
     const auto authorization = req.get_header_value("Authorization");
     if (req.is_multipart_form_data()) {
         const auto [type, encoded] = multipart_body(req);
-        proxy(*proxies_, host, port, req, path, forwarded_headers(req, authorization, type), encoded, res);
+        proxy(proxies_, host, port, req, path, forwarded_headers(req, authorization, type), encoded, res);
         return;
     }
     const auto type = req.has_header("Content-Type") ? req.get_header_value("Content-Type") : std::string();
-    proxy(*proxies_, host, port, req, path, forwarded_headers(req, authorization, type), body, res);
+    proxy(proxies_, host, port, req, path, forwarded_headers(req, authorization, type), body, res);
 }
 
 nlohmann::json MeshPort::local_models(const std::string& authorization) {
@@ -1289,8 +1489,10 @@ nlohmann::json MeshPort::local_models(const std::string& authorization) {
         port = local_port_;
     }
     if (!host.empty()) {
-        if (auto listing = get_json(host, port, "/api/v1/models", authorization); listing && listing->is_object()) {
-            return *listing;
+        httplib::Client client(host, port);
+        set_timeouts(client, std::chrono::seconds(5), std::chrono::seconds(5));
+        if (auto listing = get_json(client, "/api/v1/models", authorization); listing.body && listing.body->is_object()) {
+            return std::move(*listing.body);
         }
     }
     return json{{"object", "list"}, {"data", json::array()}};
@@ -1315,41 +1517,126 @@ std::vector<std::string> MeshPort::local_model_ids(const std::string& authorizat
 std::vector<MeshPortPeerModels> MeshPort::peer_models(const std::vector<MeshPortMember>& members,
                                                       const std::string& self,
                                                       const std::string& peer_authorization) {
-    std::vector<MeshPortPeerModels> result;
+    // One peer's probe: egress, health and models, run on a probe thread. The
+    // coordinator cancels it at the deadline through `cancelled` and the client.
+    struct Probe {
+        const MeshPortMember* member{nullptr};
+        std::optional<MeshPortPeerModels> models;  // set for a cached or finished probe
+        std::mutex mutex;
+        std::shared_ptr<httplib::Client> client;
+        bool cancelled{false};
+    };
+    std::vector<std::unique_ptr<Probe>> probes;
+    std::vector<Probe*> pending;
+    const auto now = std::chrono::steady_clock::now();
     for (const auto& member : members) {
         if (!reachable_peer(member, self)) continue;
-        const auto cache_key = std::make_pair(member.node_id, peer_authorization);
+        auto probe = std::make_unique<Probe>();
+        probe->member = &member;
         {
             std::lock_guard lock(cache_mutex_);
-            const auto cached = peer_cache_.find(cache_key);
-            if (cached != peer_cache_.end() &&
-                std::chrono::steady_clock::now() - cached->second.fetched < options_.models_ttl) {
-                result.push_back(cached->second.models);
-                continue;
+            const auto cached = peer_cache_.find(std::make_pair(member.node_id, peer_authorization));
+            if (cached != peer_cache_.end() && now - cached->second.fetched < options_.models_ttl) {
+                probe->models = cached->second.models;
             }
         }
-        const auto address = strip_prefix_length(member.tunnel_ip);
-        const uint16_t port = backend_.open_egress && !address.empty()
-            ? backend_.open_egress(address, kMeshPortPeerServicePort) : 0;
-        if (port == 0) continue;
-        {
-            std::lock_guard lock(state_mutex_);
-            egress_ips_[member.node_id] = address;
-        }
+        if (!probe->models) pending.push_back(probe.get());
+        probes.push_back(std::move(probe));
+    }
+
+    std::mutex done_mutex;
+    std::condition_variable done;
+    size_t finished = 0;
+    const auto run = [&](Probe& probe) {
+        const auto& member = *probe.member;
         MeshPortPeerModels models;
         models.node_id = member.node_id;
         models.device_name = member.device_name;
         models.latency_ms = member.latency_ms;
-        const auto health = get_json("127.0.0.1", port, "/api/v1/health", peer_authorization);
-        if (health && health->is_object() && health->contains("all_models_loaded")) {
-            models.loaded = (*health)["all_models_loaded"];
+        const auto address = strip_prefix_length(member.tunnel_ip);
+        const uint16_t port = backend_.open_egress && !address.empty()
+            ? backend_.open_egress(address, kMeshPortPeerServicePort) : 0;
+        if (port != 0) {
+            {
+                std::lock_guard lock(state_mutex_);
+                egress_ips_[member.node_id] = address;
+            }
+            std::shared_ptr<httplib::Client> client;
+            {
+                std::lock_guard lock(probe.mutex);
+                if (!probe.cancelled) {
+                    client = std::make_shared<httplib::Client>("127.0.0.1", port);
+                    set_timeouts(*client, options_.peer_probe_connect_timeout, options_.peer_probe_deadline);
+                    probe.client = client;
+                }
+            }
+            if (client) {
+                const auto health = get_json(*client, "/api/v1/health", peer_authorization);
+                if (health.body && health.body->is_object() && health.body->contains("all_models_loaded")) {
+                    models.loaded = (*health.body)["all_models_loaded"];
+                }
+                bool cancelled = false;
+                {
+                    std::lock_guard lock(probe.mutex);
+                    cancelled = probe.cancelled;
+                }
+                if (!cancelled) {
+                    const auto listing = get_json(*client, "/api/v1/models", peer_authorization);
+                    models.models_status = listing.status;
+                    if (listing.body) models.available = model_ids(*listing.body);
+                }
+            }
         }
-        if (const auto listing = get_json("127.0.0.1", port, "/api/v1/models", peer_authorization)) {
-            models.available = model_ids(*listing);
+        {
+            std::lock_guard lock(probe.mutex);
+            probe.models = std::move(models);
+            probe.client.reset();
         }
-        std::lock_guard lock(cache_mutex_);
-        peer_cache_[cache_key] = {std::chrono::steady_clock::now(), models};
-        result.push_back(std::move(models));
+        std::lock_guard lock(done_mutex);
+        ++finished;
+        done.notify_all();
+    };
+
+    if (!pending.empty()) {
+        // A bounded set of threads probes the peers at the same time, so the listing
+        // waits for the slowest peer or the deadline, not for the sum.
+        constexpr size_t kProbeThreads = 8;
+        std::atomic<size_t> next{0};
+        std::vector<std::thread> workers;
+        for (size_t i = 0; i < std::min(kProbeThreads, pending.size()); ++i) {
+            workers.emplace_back([&] {
+                for (size_t index = next++; index < pending.size(); index = next++) run(*pending[index]);
+            });
+        }
+        {
+            std::unique_lock lock(done_mutex);
+            done.wait_until(lock, now + options_.peer_probe_deadline, [&] { return finished == pending.size(); });
+        }
+        for (auto* probe : pending) {
+            std::shared_ptr<httplib::Client> client;
+            {
+                std::lock_guard lock(probe->mutex);
+                if (probe->models) continue;
+                probe->cancelled = true;
+                client = probe->client;
+            }
+            // Shuts the socket down under the probe thread, so its read fails now.
+            if (client) client->stop();
+        }
+        for (auto& worker : workers) worker.join();
+    }
+
+    std::vector<MeshPortPeerModels> result;
+    const auto fetched = std::chrono::steady_clock::now();
+    std::lock_guard lock(cache_mutex_);
+    for (auto& probe : probes) {
+        if (!probe->models) continue;
+        // A peer that did not answer by the deadline is cached as offering nothing,
+        // so it is not probed again before the next interval.
+        if (std::find(pending.begin(), pending.end(), probe.get()) != pending.end()) {
+            peer_cache_[std::make_pair(probe->member->node_id, peer_authorization)] = {fetched, *probe->models};
+        }
+        result.push_back(std::move(*probe->models));
     }
     return result;
 }

@@ -51,16 +51,22 @@ struct MeshPortPeerModels {
     double                   latency_ms{0.0};
     nlohmann::json           loaded = nlohmann::json::array();  ///< health all_models_loaded entries
     std::vector<std::string> available;                         ///< /models ids
+    /// HTTP status of the /models probe; 0 when the device did not answer in time.
+    /// 401 or 403 means the device refused the peer key, so it offers no models to
+    /// this device until the key changes.
+    int                      models_status{0};
 };
 
 /// Where the auto router sends one request. `target` is "local" or a node ID and
 /// `model` is the model name to send. An empty target carries an HTTP error status
-/// and message.
+/// and message. `refused` names the devices that were skipped because they refused
+/// the peer key (models_status 401 or 403).
 struct MeshPortAutoRoute {
-    std::string target;
-    std::string model;
-    int         status{0};
-    std::string error;
+    std::string              target;
+    std::string              model;
+    int                      status{0};
+    std::string              error;
+    std::vector<std::string> refused;
 };
 
 /// A decrypted device certificate.
@@ -75,7 +81,9 @@ struct MeshPortCertificate {
 namespace mesh_port {
 
 /// A device name as a DNS label: lowercase letters, digits and single hyphens, at
-/// most 63 characters.
+/// most 63 characters. The server's rule (LemonadeNexus/Tree/DeviceLabel.hpp):
+/// the tree refuses a device whose name folds to a sibling's label, so a name
+/// the tree accepted routes to one device here.
 [[nodiscard]] std::string device_label(std::string_view device_name);
 
 /// The local domain of a group wildcard certificate name. "*.<group>.lo.<base>"
@@ -88,7 +96,10 @@ namespace mesh_port {
 /// otherwise the result is 421. Loopback names and this device's
 /// "<label><local_domain>" return {0, "local"}; another member's
 /// "<label><local_domain>" returns {0, its node ID}; an unknown label returns 404
-/// and a name outside `local_domain` returns 421. `local_domain` starts with a dot.
+/// and a name outside `local_domain` returns 421. A label that is a member's node id
+/// always names that member. A label that several device names fold to ("Work PC" and
+/// "work-pc") returns 409 and names the devices: the caller must use a node id.
+/// `local_domain` starts with a dot.
 [[nodiscard]] std::pair<int, std::string> host_target(
     std::string_view host, std::string_view sni, std::string_view local_domain,
     const std::vector<MeshPortMember>& members, std::string_view self_node_id);
@@ -101,11 +112,14 @@ namespace mesh_port {
     const std::vector<MeshPortMember>& members, std::string_view self_node_id,
     std::string_view node_id);
 
-/// Picks the device for `model`. A "<device-name-or-node>/<model>" name goes to that
-/// device with the prefix removed; a name in `local_models` stays local; otherwise an
-/// online Tier 3 peer that this device may connect to and that has the model loaded
-/// wins (idle before busy, then lowest latency), then such a peer that lists it.
-/// An empty model stays local.
+/// Picks the device for `model`. A name that matches an entry of `local_models`
+/// exactly stays local, so a local model ID that contains '/' is never read as a
+/// device name. Otherwise a "<device-name-or-node>/<model>" name goes to that device
+/// with the prefix removed; otherwise an online Tier 3 peer that this device may
+/// connect to and that has the model loaded wins (idle before busy, then lowest
+/// latency), then such a peer that lists it. A peer whose models_status is 401 or
+/// 403 refused the peer key: it is never chosen and is named in `refused`. An empty
+/// model stays local.
 [[nodiscard]] MeshPortAutoRoute auto_route(
     const std::string& model, const std::vector<MeshPortMember>& members,
     std::string_view self_node_id, const std::vector<std::string>& local_models,
@@ -117,7 +131,9 @@ namespace mesh_port {
 
 /// [{node_id, device_name, url, self}] for this device and each online Tier 3 member
 /// that this device may connect to. Without a local domain, only this device's
-/// "http://127.0.0.1:<port>" is listed.
+/// "http://127.0.0.1:<port>" is listed. A device whose name folds to the same label
+/// as another member's, or to no label at all, is listed under its node id, so every
+/// URL routes to exactly one device.
 [[nodiscard]] nlohmann::json device_urls(const std::vector<MeshPortMember>& members,
                                          std::string_view self_node_id,
                                          std::string_view local_domain, int port, bool tls);
@@ -174,9 +190,14 @@ enum class MeshPortStartResult {
 /// Loopback listener that serves group devices by name.
 ///
 /// The listener binds 127.0.0.1 only. It serves plain HTTP until the group loopback
-/// certificate ("*.<group-label>.lo.<base>") is available, then TLS. The SDK
-/// certificate renewer keeps that certificate current; certificate_renewed()
-/// reloads it in place for new connections. A request to another device's
+/// certificate ("*.<group-label>.lo.<base>") is available, then TLS. The first
+/// certificate replaces the plain listener with a TLS listener on the same port.
+/// That switch waits until no request is open on the plain listener, so a running
+/// stream is never cut; the status reports tls.state "activating" meanwhile and the
+/// plain listener keeps serving. The SDK certificate renewer keeps the certificate
+/// current; certificate_renewed() reloads it in place: the TLS listener and its
+/// connections stay up and each new handshake uses the new certificate. A request
+/// to another device's
 /// "<device>.<group>.lo.<base>" name is forwarded over mesh egress to that device's
 /// lemond on mesh port 13305. A request to this device's name or a loopback name is
 /// forwarded to the current selection: the local service, the auto router or one
@@ -192,8 +213,15 @@ public:
     struct Options {
         /// Interval between member list refreshes.
         std::chrono::milliseconds refresh_interval{std::chrono::seconds(10)};
-        /// How long cached model lists stay fresh for the auto router.
+        /// How long cached model lists stay fresh for the auto router and the merged
+        /// model listing. A peer is probed at most once per interval and per peer key.
         std::chrono::milliseconds models_ttl{std::chrono::seconds(5)};
+        /// Connect timeout of one request to a peer's /api/v1/health or /api/v1/models.
+        std::chrono::milliseconds peer_probe_connect_timeout{std::chrono::seconds(1)};
+        /// Deadline of one round of peer probes. The peers are probed concurrently;
+        /// a peer that has not answered by the deadline counts as offering no models
+        /// until the next round.
+        std::chrono::milliseconds peer_probe_deadline{std::chrono::seconds(3)};
     };
 
     explicit MeshPort(MeshPortBackend backend);
@@ -224,15 +252,23 @@ public:
     /// Status JSON: {running, port, scheme, local_domain, local_service, error,
     /// selection: {target, peer_key_set}, tls: {state, domain, expires_at, error},
     /// urls: [{node_id, device_name, url, self}],
-    /// devices: [{node_id, device_name, is_online}]}. `devices` lists the Tier 3 devices
-    /// that this device may connect to. The peer key is never included.
+    /// devices: [{node_id, device_name, is_online}]}. tls.state is "off", "waiting",
+    /// "activating" (the first certificate is installed; TLS starts when the open
+    /// plain requests finish), "active", "unsupported_certificate" or "error".
+    /// `devices` lists the Tier 3 devices that this device may connect to. The peer
+    /// key is never included.
     [[nodiscard]] nlohmann::json status() const;
 
     /// Installs a device certificate. `domain` must be a group wildcard
     /// ("*.<group>.lo.<base>") that the certificate covers, and the key must match the
-    /// certificate. The first certificate switches the listener to TLS; later ones
-    /// replace the certificate for new connections. Returns false and keeps the current
-    /// state for every other input. Requires a running port.
+    /// certificate. The first certificate switches the listener to TLS: at once when
+    /// no request is open, otherwise as soon as the last open plain request finishes
+    /// (tls.state "activating" until then). A request that arrives during the few
+    /// milliseconds of the switch itself gets 503 with Retry-After. Later
+    /// certificates replace the one in use without touching the listener: open
+    /// connections continue and new handshakes present the new certificate. Returns
+    /// false and keeps the current state for every other input. Requires a running
+    /// port.
     bool install_certificate(const MeshPortCertificate& certificate);
 
     /// Sets the directory of the group loopback certificate ("" for none). The
@@ -247,8 +283,8 @@ public:
     void certificate_renewed(const std::string& target, const std::string& domain,
                              const std::string& fullchain_path, const std::string& privkey_path);
 
-    /// Runs one member refresh, and the certificate provisioning when it is pending,
-    /// now on the calling thread.
+    /// Runs one member refresh, and the certificate provisioning or the pending switch
+    /// to TLS when one is due, now on the calling thread.
     void refresh_now();
 
 private:
@@ -258,6 +294,8 @@ private:
     void refresh_loop();
     void refresh_members();
     void check_certificate();
+    void activate_pending_tls();
+    bool activate_tls_locked();
     void handle(const httplib::Request& req, httplib::Response& res, bool tls);
     void serve_selection(const httplib::Request& req, httplib::Response& res,
                          const std::string& path);
@@ -300,6 +338,7 @@ private:
     uint64_t certificate_expires_at_{0};  // Not After of the installed certificate
     std::string cert_dir_;
     bool certificate_pending_{false};     // provision cert_dir_ on the next refresh
+    bool tls_pending_{false};             // switch the plain listener to TLS once idle
     std::string error_;
     // The selection target ("", "local", "auto" or a node ID) and its peer key. The
     // key lives only in memory and is cleared whenever the target is set.

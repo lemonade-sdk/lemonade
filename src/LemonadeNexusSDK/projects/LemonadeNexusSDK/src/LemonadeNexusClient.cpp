@@ -1081,6 +1081,45 @@ Result<nlohmann::json> LemonadeNexusClient::move_node(const std::string& node_id
     return json_result(resp, status, "move");
 }
 
+Result<DeviceNameCheck> LemonadeNexusClient::check_device_name(const std::string& name,
+                                                               const std::string& group_node_id,
+                                                               const std::string& link_token) {
+    Result<DeviceNameCheck> result;
+    if (group_node_id.empty() && link_token.empty()) {
+        result.error = "group_node_id or link_token required";
+        return result;
+    }
+    json body{{"name", name}};
+    if (!group_node_id.empty()) body["group_node_id"] = group_node_id;
+    else body["link_token"] = link_token;
+
+    // A tree route on the public API: sent to a verified Tier 1 server, with
+    // the session when that server issued it. No mesh session is needed.
+    int status = 0;
+    auto resp = impl_->http_post("/api/tree/device-name/check", body, status);
+    result.http_status = status;
+    if (!resp) {
+        result.error = "device name check failed (server unreachable)";
+        return result;
+    }
+    if (status != 200) {
+        result.error = resp->value("error", std::string{"device name check failed"});
+        return result;
+    }
+    result.value.label      = resp->value("label", std::string{});
+    result.value.available  = resp->value("available", false);
+    result.value.suggestion = resp->value("suggestion", std::string{});
+    if (const auto it = resp->find("conflicts"); it != resp->end() && it->is_array()) {
+        for (const auto& c : *it) {
+            if (!c.is_object()) continue;
+            result.value.conflicts.push_back({c.value("node_id", std::string{}),
+                                              c.value("device_name", std::string{})});
+        }
+    }
+    result.ok = true;
+    return result;
+}
+
 Result<nlohmann::json> LemonadeNexusClient::delete_account() {
     Identity local_identity;
     {
@@ -1211,6 +1250,7 @@ Result<HealthStatus> LemonadeNexusClient::check_health() {
     result.value.status          = resp->value("status", "");
     result.value.service         = resp->value("service", "");
     result.value.dns_base_domain = resp->value("dns_base_domain", "");
+    result.value.rp_id           = resp->value("rp_id", "");
 
     // Auto-discover additional servers after first successful health check
     if (result.ok && impl_->config.auto_discover && !impl_->discovered()) {

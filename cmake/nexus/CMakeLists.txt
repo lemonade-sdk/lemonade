@@ -37,6 +37,7 @@ set(_nexus_server_sources
     "${NEXUS_SDK_ROOT}/projects/LemonadeNexus/src/Security/Epoch/Tier1Set.cpp"
     "${NEXUS_SDK_ROOT}/projects/LemonadeNexus/src/Security/Genesis/BootstrapCertificate.cpp"
     "${NEXUS_SDK_ROOT}/projects/LemonadeNexus/src/Security/Transport/AuthorityChainCodec.cpp"
+    "${NEXUS_SDK_ROOT}/projects/LemonadeNexus/src/Tree/DeviceLabel.cpp"
     "${NEXUS_SDK_ROOT}/projects/LemonadeNexus/src/Relay/RelayWire.cpp"
     "${NEXUS_SDK_ROOT}/projects/LemonadeNexus/src/Network/StunWire.cpp"
 )
