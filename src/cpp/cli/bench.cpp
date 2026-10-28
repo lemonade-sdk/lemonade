@@ -1584,9 +1584,11 @@ CLI::App* register_bench_command(CLI::App& parent,
     cmd->add_option("--scenario-dir", opts.scenario_dir, "Load all .json scenario files from a directory")->type_name("DIR");
     cmd->add_flag("--json", opts.json_output, "Output results as JSON");
     cmd->add_option("--output", output_file, "Write results to file (in addition to stdout)")->type_name("FILE");
-    cmd->add_flag("--submit", opts.submit, "Submit results to the Lemonade benchmark service (implies --json)");
-    cmd->add_option("--submit-file", opts.submit_file, "Submit an already-saved benchmark JSON file")->type_name("FILE");
-    cmd->add_option("--compare", opts.compare_file, "Compare results against a previously saved JSON file")->type_name("FILE");
+    CLI::Option* submit = cmd->add_flag("--submit", opts.submit, "Submit results to the Lemonade benchmark service (implies --json)");
+    CLI::Option* submit_file = cmd->add_option("--submit-file", opts.submit_file, "Submit an already-saved benchmark JSON file")->type_name("FILE");
+    CLI::Option* compare = cmd->add_option("--compare", opts.compare_file, "Compare results against a previously saved JSON file")->type_name("FILE");
+    submit->excludes(compare);
+    submit_file->excludes(compare);
     cmd->add_flag("--auto-pull", opts.auto_pull, "Automatically pull the model if not downloaded");
     cmd->add_flag("--no-memory", opts.no_memory, "Disable VRAM/RAM tracking");
     cmd->add_flag("--no-reload", opts.no_reload, "Skip model reload between scenarios (faster but prompt cache may skew results)");

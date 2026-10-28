@@ -922,8 +922,8 @@ lemonade bench [options] MODEL_NAME [MODEL_NAME ...]
 | `--scenario-dir DIR` | Load all `.json` scenario files from a directory | — |
 | `--json` | Output results as JSON instead of a table | Table output |
 | `--output FILE` | Write results to file (in addition to stdout) | — |
-| `--submit` | Submit results to the Lemonade benchmark service (implies `--json`) | False |
-| `--submit-file FILE` | Submit an already-saved benchmark JSON file | — |
+| `--submit` | Submit results to the Lemonade benchmark service (implies `--json`). Cannot be combined with `--compare` | False |
+| `--submit-file FILE` | Submit an already-saved benchmark JSON file. Cannot be combined with `--compare` | — |
 | `--compare FILE` | Compare results against a previously saved JSON file | — |
 | `--auto-pull` | Automatically pull the model if not downloaded | False |
 | `--no-memory` | Disable VRAM/RAM tracking | Tracking enabled |
