@@ -1809,6 +1809,12 @@ an error naming it; the file is left for you to correct.
 | `vision` | Accepts image attachments in chat messages. |
 | `chat-transcription` | Accepts audio attachments in chat messages and transcribes them as part of its answer (e.g. Qwen2.5-Omni). Like `vision`, this is something a chat model can do, not a deployment mode of its own; a model carrying it also carries `chat`. It is distinct from `transcription`, which deploys a dedicated ASR model on `/audio/transcriptions`. |
 
+**Classification capability labels:** carried alongside `classification`:
+
+| Label | Description |
+|-------|-------------|
+| `zero-shot` | Takes its labels from each `/classify` request instead of a fixed label set (e.g. `LFM2.5-Encoder-350M-Prompt-Router-ONNX`). A router policy must use such a model in a `zero_shot` classifier, and a fixed-label model in a `classifier`; registration refuses either mismatch. |
+
 **Streaming labels:** capability flags for real-time features:
 
 | Label | Description |

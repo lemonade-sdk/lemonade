@@ -150,8 +150,10 @@ and fills it from the case's `services` object:
   map `{}` is a *successful* answer where every label scores 0.
 - `run_zero_shot_classifier` (used by `zero_shot`) returns the same map, but it
   must name **exactly** the labels the classifier declared. Its wrapper
-  form adds `truncated`, the backend's report that it cut the input text to fit
-  its window; a case that uses the wrapper states `truncated` either way.
+  form adds `truncated`, the backend's report on whether it cut the input text
+  to fit its window; a case that uses the wrapper states `truncated` either way.
+  The bare map, and every `run_classifier` answer, report nothing, like
+  ort-server before 0.4.0.
 - `chat` (used by the `llm` router) returns the model's raw reply text.
 - `null` makes that call fail. The classifier then reports failure and its rule
   resolves through `on_error` (`match_false` by default, `match_true` if set).

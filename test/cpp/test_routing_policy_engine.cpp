@@ -136,7 +136,7 @@ static void test_classifier_truncation_scores_by_default() {
           d.matched_rule == "keep-private");
     bool reported = false;
     for (const auto& entry : d.trace) {
-        if (entry.condition == "classifier:pii" && entry.truncated) reported = true;
+        if (entry.condition == "classifier:pii" && entry.truncated == true) reported = true;
     }
     check("the trace reports the cut on a fixed-label classifier", reported);
 }
@@ -172,12 +172,14 @@ static void test_classifier_truncation_can_fail() {
 
 // ort-server before 0.4.0 cuts input without reporting it, so an absent
 // `truncated` proves nothing there. Each test routes the same clean-looking
-// scores twice, once per backend, so the backend is the only variable.
+// scores twice: once with `truncated: false`, once with no report at all.
 static Decision route_pii(const json& classifier, bool backend_reports) {
     lemon::testing::FakeClassifierServices fake;
+    const std::optional<bool> report =
+        backend_reports ? std::optional<bool>(false) : std::nullopt;
     fake.set_classifier_scores("pii-model", {{"PII", 0.1}, {"NO_PII", 0.9}});
-    fake.set_zero_shot_scores("pii-model", {{"PII", 0.1}, {"NO_PII", 0.9}});
-    if (!backend_reports) fake.set_backend_reports_no_truncation("pii-model");
+    if (report) fake.set_classifier_truncated("pii-model", *report);
+    fake.set_zero_shot_scores("pii-model", {{"PII", 0.1}, {"NO_PII", 0.9}}, report);
 
     RoutePolicy policy = make_pii_policy();
     policy.classifiers = lemon::make_classifiers(json::array({classifier}));

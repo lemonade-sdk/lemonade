@@ -2881,7 +2881,8 @@
         "checkpoint": "lemonade-sdk/LFM2.5-Encoder-350M-Prompt-Router-ONNX",
         "recipe": "onnxruntime",
         "labels": [
-            "classification"
+            "classification",
+            "zero-shot"
         ],
         "size": 1.43
     },

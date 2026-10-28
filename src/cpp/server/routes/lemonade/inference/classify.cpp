@@ -91,8 +91,8 @@ public:
                     "additionalProperties": {"type": "number", "description": "The label's score, in `[0, 1]`."}
                 },
                 "truncated": {
-                    "const": true,
-                    "description": "Present only when the model had to cut the input text to fit its token window before scoring. Labels are never cut, so the scores still cover every label sent. Absent whenever the whole input was scored."
+                    "type": "boolean",
+                    "description": "`true` when the model cut the input text to fit its token window before scoring, `false` when it scored the whole input. Labels are never cut, so the scores still cover every label sent. Absent when the backend does not report cuts (ort-server before 0.4.0), so absence means unknown."
                 }
             }
         })");
@@ -198,9 +198,8 @@ protected:
             {"model", req.model.empty() ? ctx_.router->get_loaded_model() : req.model},
             {"labels", response["labels"]},
         };
-        if (response.contains("truncated") && response["truncated"].is_boolean() &&
-            response["truncated"].get<bool>()) {
-            enveloped["truncated"] = true;
+        if (response.contains("truncated") && response["truncated"].is_boolean()) {
+            enveloped["truncated"] = response["truncated"];
         }
         res.set_content(enveloped.dump(), "application/json");
     }

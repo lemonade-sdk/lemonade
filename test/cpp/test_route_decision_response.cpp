@@ -155,16 +155,21 @@ static void test_trace_serializes_error_and_truncated() {
 
     decision.trace.push_back(lemon::TraceEntry{"keywords_any", std::nullopt, false});
 
+    lemon::TraceEntry whole{"classifier:topic", 0.12, false};
+    whole.truncated = false;
+    decision.trace.push_back(whole);
+
     json out = lemon::route_decision_to_json(decision);
     check("trace entry serializes error",
           out["trace"][0].value("error", "") == "classify failed: backend unreachable");
     check("a failed entry carries no truncated key", !out["trace"][0].contains("truncated"));
     check("trace entry serializes truncated as true",
           out["trace"][1].value("truncated", false) == true);
-    // Absence is the contract: `false` would read as "the backend told us it did
-    // not cut", which a backend that never reports truncation never said.
+    // Absence means "the backend did not say"; `false` means it said it did not cut.
     check("empty error/truncated keys are omitted",
           !out["trace"][2].contains("error") && !out["trace"][2].contains("truncated"));
+    check("trace entry serializes truncated as false",
+          out["trace"][3].contains("truncated") && out["trace"][3]["truncated"] == false);
 }
 
 int main() {

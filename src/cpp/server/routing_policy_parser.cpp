@@ -471,6 +471,22 @@ json parse_classifier_configs(const json& routing,
                         "', which cannot serve semantic_similarity (needs an embedding model)");
                 }
             }
+            if (options.serves_zero_shot) {
+                const bool zero_shot_model = options.serves_zero_shot(resolved_model);
+                if (type == "zero_shot" && !zero_shot_model) {
+                    throw std::invalid_argument(
+                        path + ".model '" + original +
+                        "' is not a zero-shot model (needs the 'zero-shot' label); a "
+                        "fixed-label classifier refuses per-request labels, so use type "
+                        "'classifier'");
+                }
+                if (type == "classifier" && zero_shot_model) {
+                    throw std::invalid_argument(
+                        path + ".model '" + original +
+                        "' is a zero-shot model, which needs its labels with every request; "
+                        "use type 'zero_shot'");
+                }
+            }
 
             item["model"] = std::move(resolved_model);
         }

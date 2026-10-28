@@ -247,9 +247,12 @@ std::map<std::string, double> parse_classifier_scores(const json& response) {
     throw std::runtime_error("classifier response did not contain label scores");
 }
 
-bool parse_flag(const json& response, const char* key) {
-    return response.is_object() && response.contains(key) && response[key].is_boolean() &&
-           response[key].get<bool>();
+std::optional<bool> parse_truncated(const json& response) {
+    if (response.is_object() && response.contains("truncated") &&
+        response["truncated"].is_boolean()) {
+        return response["truncated"].get<bool>();
+    }
+    return std::nullopt;
 }
 
 ClassifierServices make_classifier_services_from_router_calls(
@@ -309,8 +312,7 @@ ClassifierServices make_classifier_services_from_router_calls(
             const json response = (*classify_call)(request);
             ClassifierScores answer;
             answer.scores = parse_classifier_scores(response);
-            answer.truncated = parse_flag(response, "truncated");
-            answer.reports_truncation = parse_flag(response, "reports_truncation");
+            answer.truncated = parse_truncated(response);
             return answer;
         }
 
@@ -333,8 +335,7 @@ ClassifierServices make_classifier_services_from_router_calls(
                 },
             })},
         };
-        // A chat backend reports no cut: `truncated` and `reports_truncation`
-        // both stay false.
+        // A chat backend does not say whether it cut the input.
         ClassifierScores answer;
         answer.scores = parse_classifier_scores((*chat_completion_call)(request));
         return answer;
@@ -366,8 +367,7 @@ ClassifierServices make_classifier_services_from_router_calls(
 
         ClassifierScores answer;
         answer.scores = parse_classifier_scores(response);
-        answer.truncated = parse_flag(response, "truncated");
-        answer.reports_truncation = parse_flag(response, "reports_truncation");
+        answer.truncated = parse_truncated(response);
         return answer;
     };
 
