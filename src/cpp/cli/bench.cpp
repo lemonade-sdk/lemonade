@@ -1174,7 +1174,6 @@ static ModelSetSummary compute_model_set_summary(
 }
 
 int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& config) {
-    // Submitting an already-saved benchmark file is a standalone operation.
     if (!config.submit_file.empty()) {
         std::ifstream file(config.submit_file);
         if (!file.is_open()) {
