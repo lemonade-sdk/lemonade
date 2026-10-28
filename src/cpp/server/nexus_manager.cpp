@@ -476,6 +476,11 @@ uint64_t newer_tier1_epoch(const json& membership, uint64_t saved) {
     return value > saved ? value : 0;
 }
 
+bool session_dropped(const json& mesh_status, const std::string& error) {
+    if (mesh_status.is_object() && mesh_status.value("needs_rejoin", false)) return true;
+    return error.find("verified Tier 1 server") != std::string::npos;
+}
+
 bool constant_time_equals(const std::string& candidate, const std::string& expected) {
     unsigned char difference = candidate.size() == expected.size() ? 0 : 1;
     for (size_t i = 0; i < expected.size(); ++i) {
@@ -955,8 +960,12 @@ struct NexusManager::Session {
         egress_ips[id] = target.second;
         return port;
     }
+    json mesh_status() {
+        try { return sdk_call([&](auto out) { return ln_mesh_status(client.get(), out); }); }
+        catch (const std::exception&) { return json::object(); }
+    }
     json status() {
-        auto mesh = sdk_call([&](auto out) { return ln_mesh_status(client.get(), out); });
+        auto mesh = mesh_status();
         return {{"status", detail}, {"locked", locked}, {"mesh_up", !locked && ln_mesh_is_active(client.get()) != 0},
             {"node_id", node_id}, {"group_node_id", group_id}, {"tunnel_ip", tunnel_ip},
             {"peer_count", mesh.value("peer_count", 0)}, {"device_name", device_name()}, {"server", host},
@@ -1070,8 +1079,12 @@ struct NexusManager::Session {
         }
         if (!reconnect || std::chrono::steady_clock::now() < retry_at) return;
         try {
-            if (!joined || !ln_mesh_is_active(client.get())) {
+            // The SDK binds a session to the Tier 1 server that issued it and drops the
+            // session when that server leaves Tier 1; the mesh can stay up while every
+            // private call is refused, so the flag decides, not the mesh state.
+            if (!joined || !ln_mesh_is_active(client.get()) || nexus_access::session_dropped(mesh_status(), "")) {
                 ln_mesh_disable(client.get());
+                ln_set_session_token(client.get(), "");
                 egress_ips.clear();
                 joined = false;
                 join("");
@@ -1084,11 +1097,9 @@ struct NexusManager::Session {
             }
         } catch (const std::exception& e) {
             note_failure(e);
-            // The SDK binds a session to the Tier 1 server that issued it. When that
-            // server leaves Tier 1 at an epoch boundary, every private call is refused
-            // until the device joins again; drop the stale session so the next poll
-            // authenticates with the device identity through a current server.
-            if (error.find("no longer a verified Tier 1 server") != std::string::npos) {
+            // Drop a stale session so the next poll authenticates with the device
+            // identity through a current server.
+            if (nexus_access::session_dropped(json(), error)) {
                 ln_mesh_disable(client.get());
                 ln_set_session_token(client.get(), "");
                 egress_ips.clear();

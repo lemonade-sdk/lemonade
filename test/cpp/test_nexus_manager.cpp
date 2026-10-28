@@ -514,6 +514,14 @@ int main() {
         check(access::newer_tier1_epoch(json{{"epoch", 3}}, 3) == 0 && access::newer_tier1_epoch(json{{"epoch", 2}}, 3) == 0, "An equal or older membership is not saved");
         check(access::newer_tier1_epoch(json{{"epoch", -1}}, 0) == 0 && access::newer_tier1_epoch(json{{"epoch", "7"}}, 0) == 0 &&
               access::newer_tier1_epoch(json::array(), 0) == 0, "A malformed membership saves nothing");
+        // The SDK drops a session whose Tier 1 server left; the first refusal names the
+        // departed server and later ones the missing session, and the mesh can stay up.
+        check(access::session_dropped(json{{"needs_rejoin", true}, {"peer_count", 0}}, ""), "The SDK's rejoin flag starts a join");
+        check(access::session_dropped(json(), "the session's server is no longer a verified Tier 1 server: join again") &&
+              access::session_dropped(json::object(), "no session bound to a verified Tier 1 server: authenticate or join first"),
+              "Both session refusals start a join");
+        check(!access::session_dropped(json{{"needs_rejoin", false}}, "connection error") && !access::session_dropped(json::array(), ""),
+              "An outage or a malformed status does not drop the session");
         check_access_rules(check);
 #ifdef LEMONADE_WITH_NEXUS
         check_sdk_failures(check);

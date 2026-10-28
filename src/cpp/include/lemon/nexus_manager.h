@@ -59,6 +59,11 @@ std::pair<int, std::string> assignment_error(const std::string& reason);
 /// reply carries no epoch above `saved`. The saved epoch only grows: it is the lowest
 /// epoch the SDK accepts after a restart.
 uint64_t newer_tier1_epoch(const nlohmann::json& membership, uint64_t saved);
+/// True when the device must join again: the SDK dropped its session because the Tier 1
+/// server that issued it left at an epoch boundary. `mesh_status` is an ln_mesh_status
+/// reply (its `needs_rejoin` flag) and `error` the text of the last failed SDK call,
+/// which names the departed server once and then the missing session.
+bool session_dropped(const nlohmann::json& mesh_status, const std::string& error);
 #ifdef LEMONADE_WITH_NEXUS
 /// The HTTP answer for a failed SDK call. `retryable` is true when the federation was
 /// not reached rather than refusing the device, so the same request may succeed later
