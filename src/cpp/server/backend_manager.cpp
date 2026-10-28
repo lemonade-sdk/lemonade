@@ -589,6 +589,13 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
         return;
     }
 
+    std::mutex* install_lock;
+    {
+        std::lock_guard<std::mutex> guard(install_locks_mutex_);
+        install_lock = &install_locks_[recipe + ":" + resolved_backend];
+    }
+    std::lock_guard<std::mutex> serialized_install(*install_lock);
+
     auto* spec = backends::try_get_spec_for_recipe(recipe);
     if (!spec) {
         throw std::runtime_error("[BackendManager] Unknown recipe: " + recipe);

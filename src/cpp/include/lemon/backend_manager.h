@@ -76,6 +76,9 @@ public:
 private:
     DownloadManager* download_manager_ = nullptr; // Set by Server; absent in standalone contexts.
 
+    std::mutex install_locks_mutex_;
+    std::unordered_map<std::string, std::mutex> install_locks_;
+
     // Cached backend_versions.json (loaded once at construction)
     json backend_versions_;
 
