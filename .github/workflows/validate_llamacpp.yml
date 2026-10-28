@@ -1256,6 +1256,11 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v5
+
+      - name: Test llama.cpp architecture source selection
+        run: python3 .github/scripts/test_update_llamacpp_architectures.py -v
+
       - name: Check gated jobs
         env:
           NEEDS: ${{ toJSON(needs) }}

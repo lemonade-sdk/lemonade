@@ -4,7 +4,6 @@
 
 #include <lemon/utils/aixlog.hpp>
 
-#include "lemon/alias_manager.h"
 #include "lemon/auto_tune.h"
 #include "lemon/model_manager.h"
 #include "lemon/router.h"
@@ -59,20 +58,11 @@ void respond_with_model_options(ServerContext& ctx, const std::string& id,
     const std::string model_id = utils::normalize_model_name(id);
     std::string model_key = model_id;
 
-    if (!model_manager.model_exists(model_key)) {
-        std::optional<std::string> target;
-        if (ctx.alias_manager->has_alias(model_id)) {
-            target = ctx.alias_manager->resolve_alias(model_id);
-        }
-        std::string canonical_target = target ? model_manager.resolve_model_name(*target) : "";
-        if (target && model_manager.model_exists(canonical_target)) {
-            model_key = canonical_target;
-        } else if (target && model_manager.model_exists(*target)) {
-            model_key = *target;
-        } else {
-            ctx.model_loader->write_load_error(res, model_id, "Model not found");
-            return;
-        }
+    if (auto resolved = model_manager.resolve(model_id)) {
+        model_key = resolved->canonical_id;
+    } else {
+        ctx.model_loader->write_load_error(res, model_id, "Model not found");
+        return;
     }
 
     // Work in canonical names from here on: a user model's requested id is its
@@ -86,8 +76,9 @@ void respond_with_model_options(ServerContext& ctx, const std::string& id,
         const RecipeOptions no_request_options(info.recipe, json::object());
         RecipeOptions effective = ctx.router->resolve_effective_options(info, no_request_options);
 
+        const json opts = model_manager.options(model_key);
         ModelInfo without_saved = info;
-        without_saved.recipe_options = model_manager.get_model_default_options(info);
+        without_saved.recipe_options = RecipeOptions(info.recipe, opts["defaults"]);
         RecipeOptions defaults = ctx.router->resolve_effective_options(without_saved, no_request_options);
 
         // `effective` and `defaults` double as replayable /v1/load bodies.
@@ -107,7 +98,7 @@ void respond_with_model_options(ServerContext& ctx, const std::string& id,
         json response = {
             {"model_name", model_id},
             {"recipe", info.recipe},
-            {"saved", model_manager.get_saved_model_options(model_key)},
+            {"saved", opts["saved"]},
             {"effective", effective_json},
             {"defaults", defaults_json},
             {"resolved_ctx_size", resolved_ctx}

@@ -273,7 +273,7 @@ public:
             if (stream) {
                 DownloadManager::Operation operation =
                     [backend_manager, model_manager, recipe, backend, force, llamacpp_device](
-                        DownloadProgressCallback progress_cb) {
+                        DownloadProgressCallback progress_cb, utils::CancelToken) {
                         backend_manager->install_backend(recipe, backend, force, progress_cb,
                                                          llamacpp_device);
                         SystemInfoCache::invalidate_recipes();

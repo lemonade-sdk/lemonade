@@ -4,7 +4,7 @@
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
 #include "lemon/backends/backend_registry.h"  // spec_for() — descriptor->install spec, no server includes
-#include "lemon/model_manager.h"  // For DownloadProgress, DownloadProgressCallback
+#include "lemon/models/download_progress.h"
 
 #include "lemon/utils/archive_platform.h"
 #include "lemon/utils/github_api.h"

@@ -6,6 +6,7 @@ import { scheduleIdleWork } from './startupScheduler';
 import { attachServerModelState, useServerModelState } from './features/models/modelState';
 import { preloadInteractionSurfaces } from './interactionPreload';
 import { I18nContext, translate, useI18n, type I18nContextValue } from './i18n';
+import { routerDependencies } from './features/router/routerRuntime';
 const MARKETPLACE_URL = 'https://raw.githubusercontent.com/lemonade-sdk/marketplace/main/apps.json';
 type MarketplaceApp = {
   id: string;
@@ -21,7 +22,7 @@ type MarketplaceCategory = { id: string; label: string };
 import {
   WORKSPACE_NAVIGATION,
   type ConnectSection,
-  type DashboardSection,
+  type MonitorSection,
   type WorkspaceRoute,
   workspaceHash,
   workspaceRouteFromPath,
@@ -109,8 +110,8 @@ const MonitorView = monitorWorkspaceView.View;
 const ConnectView = connectWorkspaceView.View;
 const DownloadManager = downloadManagerView.View;
 
-type View = 'chat' | 'models' | 'backends' | 'apps' | 'dashboard' | 'connect';
-type SimpleView = Exclude<View, 'dashboard' | 'connect'>;
+type View = 'chat' | 'models' | 'backends' | 'apps' | 'monitor' | 'connect';
+type SimpleView = Exclude<View, 'monitor' | 'connect'>;
 type LazyWorkspace = Exclude<View, 'chat'>;
 
 const WORKSPACE_PRELOADERS: Record<LazyWorkspace, () => Promise<void>> = {
@@ -121,7 +122,7 @@ const WORKSPACE_PRELOADERS: Record<LazyWorkspace, () => Promise<void>> = {
   },
   backends: backendManagerView.preload,
   apps: appsWorkspaceView.preload,
-  dashboard: async () => {
+  monitor: async () => {
     await monitorWorkspaceView.preload();
     const module = await loadMonitorView();
     await module.preloadMonitorSections();
@@ -130,7 +131,7 @@ const WORKSPACE_PRELOADERS: Record<LazyWorkspace, () => Promise<void>> = {
 };
 type AppRoute =
   | { view: SimpleView }
-  | { view: 'dashboard'; section: DashboardSection }
+  | { view: 'monitor'; section: MonitorSection }
   | { view: 'connect'; section: ConnectSection };
 
 const NAVIGATION_DESTINATIONS: Array<{
@@ -143,7 +144,7 @@ const NAVIGATION_DESTINATIONS: Array<{
   { id: 'models', label: 'Models', keywords: 'model manager download load', icon: 'hard-drive' },
   { id: 'backends', label: 'Backends', keywords: 'runtime inference engine', icon: 'box' },
   { id: 'apps', label: 'Apps', keywords: 'clients integrations', icon: 'layers' },
-  { id: 'dashboard', label: 'Monitor', keywords: 'dashboard monitor system hardware statistics', icon: 'gauge' },
+  { id: 'monitor', label: 'Monitor', keywords: 'monitor system hardware statistics', icon: 'gauge' },
   { id: 'connect', label: 'Settings', keywords: 'connect configuration preferences server', icon: 'settings' },
 ];
 
@@ -259,13 +260,13 @@ declare global {
 function routeFromValue(raw: unknown): AppRoute | null {
   const value = String(raw || '').trim().replace(/^\//, '').toLowerCase();
   if (value === 'connect/app-directory') return { view: 'apps' };
-  const workspaceRoute = workspaceRouteFromPath(value);
+  const workspaceRoute = workspaceRouteFromPath(value === 'logs' ? 'monitor/logs' : value);
   if (workspaceRoute) return { view: workspaceRoute.workspace, section: workspaceRoute.section } as AppRoute;
   return SIMPLE_VIEWS.includes(value as SimpleView) ? { view: value as SimpleView } : null;
 }
 
 function hashForRoute(route: AppRoute): string {
-  if (route.view === 'dashboard' || route.view === 'connect') {
+  if (route.view === 'monitor' || route.view === 'connect') {
     return workspaceHash({ workspace: route.view, section: route.section } as WorkspaceRoute);
   }
   return `#/${route.view}`;
@@ -314,7 +315,7 @@ function parseHostNavigation(payload: HostNavigationPayload): { route: AppRoute 
 function routeFromCurrentLocation(): AppRoute | null {
   try {
     const params = new URLSearchParams(window.location.search);
-    return routeFromValue(params.get('view')) || routeFromHashValue(window.location.hash || '');
+    return routeFromValue(params.get('view') || (params.get('logs') === 'true' ? 'logs' : '')) || routeFromHashValue(window.location.hash || '');
   } catch { return routeFromHashValue(window.location.hash || ''); }
 }
 
@@ -332,6 +333,15 @@ function canonicalizeLegacyHash(route: AppRoute | null): void {
   if (window.location.hash !== canonicalHash) {
     window.history.replaceState(null, '', canonicalHash);
   }
+}
+
+function consumeNavigationQuery(hash: string): void {
+  const url = new URL(window.location.href);
+  if (!url.searchParams.has('view') && !url.searchParams.has('logs')) return;
+  url.searchParams.delete('view');
+  url.searchParams.delete('logs');
+  url.hash = hash;
+  window.history.replaceState(null, '', url);
 }
 
 function loadSavedRoute(): AppRoute {
@@ -392,6 +402,8 @@ const App: React.FC = () => {
   const customModelInfos = useMemo(() => serverModels.filter(model => (model as any).custom === true), [serverModels]);
   const rawLoadedModels = serverModelState.health?.all_models_loaded ?? EMPTY_LOADED_MODELS;
   const [currentModel, setCurrentModel] = useState<string | null>(null);
+  const [dictationTarget, setDictationTarget] = useState<string | null>(null);
+  const [dictationActive, setDictationActive] = useState(false);
   const [modelSelectionEpoch, setModelSelectionEpoch] = useState(0);
   const [composerFocusEpoch, setComposerFocusEpoch] = useState(0);
   const [theme, setTheme] = useState<Theme>(loadTheme);
@@ -572,7 +584,7 @@ const App: React.FC = () => {
   const [activeDownloadCount, setActiveDownloadCount] = useState(0);
   const activeDownloadCountRef = useRef(0);
   const lastWorkspaceSectionsRef = useRef({
-    dashboard: route.view === 'dashboard' ? route.section : WORKSPACE_NAVIGATION.dashboard.defaultSection,
+    monitor: route.view === 'monitor' ? route.section : WORKSPACE_NAVIGATION.monitor.defaultSection,
     connect: route.view === 'connect' ? route.section : WORKSPACE_NAVIGATION.connect.defaultSection,
   });
   useEffect(() => {
@@ -682,6 +694,7 @@ const App: React.FC = () => {
   }, [customModelInfos, modelHelpers, rawLoadedModels, serverModels]);
 
   const loadedModels = loadedModelViewState.models;
+  const previousLoadedModelNamesRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (!modelHelpers) return;
@@ -693,7 +706,14 @@ const App: React.FC = () => {
       );
     };
     setCurrentModel(current => {
+      if (dictationTarget && (!current || current === dictationTarget)) return dictationTarget;
       if (current && loadedModels.some(m => m.model_name === current && (modelHelpers.canSelectInComposer(m) || infoSelectable(m.model_name)))) return current;
+      // A microphone-only ASR load must not replace an existing prompt mode,
+      // including when the browser denies capture after ASR starts.
+      if (current && loadedModels.length > 0 && loadedModels.every(m => String(m.type).toLowerCase() === 'transcription')) {
+        const info = modelHelpers.findModelInfoByName(knownInfos, current);
+        if (!info || modelHelpers.capabilityFromModelInfo(info) !== 'audio') return current;
+      }
       if (current) {
         const info = modelHelpers.findModelInfoByName(knownInfos, current);
         if (info && modelHelpers.isCollectionModel(info) && modelHelpers.isCollectionFullyLoaded(info, rawLoadedModels)) return current;
@@ -707,10 +727,33 @@ const App: React.FC = () => {
         || loadedModels.find(m => infoSelectable(m.model_name))?.model_name
         || null;
     });
-  }, [loadedModelViewState, loadedModels, modelHelpers, rawLoadedModels]);
+  }, [dictationTarget, loadedModelViewState, loadedModels, modelHelpers, rawLoadedModels]);
+
+  // An unloaded prompt model must survive ASR-only health updates.
+  // After dictation, release the pin once that model is actually loaded.
+  useEffect(() => {
+    if (!dictationActive && dictationTarget && loadedModels.some(m => m.model_name === dictationTarget)) {
+      setDictationTarget(null);
+    }
+  }, [dictationActive, dictationTarget, loadedModels]);
+
+  // A router is virtual and never appears as a loaded model. If a router
+  // candidate is unloaded after dictation, release its stale selection pin.
+  useEffect(() => {
+    const now = new Set(rawLoadedModels.map(m => m.model_name.toLowerCase()));
+    const removed = [...previousLoadedModelNamesRef.current].filter(name => !now.has(name));
+    if (dictationTarget && dictationActive) return;
+    previousLoadedModelNamesRef.current = now;
+    if (!dictationTarget || removed.length === 0 || !modelHelpers) return;
+    const info = modelHelpers.findModelInfoByName(serverModels, dictationTarget);
+    // Includes candidates, default, LLM router helper, classifiers and components.
+    if (routerDependencies(info).some(({ name }) => removed.includes(name.toLowerCase()))) {
+      setDictationTarget(null);
+    }
+  }, [dictationActive, dictationTarget, modelHelpers, rawLoadedModels, serverModels]);
 
   const navigateToRoute = useCallback((nextRoute: AppRoute) => {
-    if (nextRoute.view === 'dashboard') lastWorkspaceSectionsRef.current.dashboard = nextRoute.section;
+    if (nextRoute.view === 'monitor') lastWorkspaceSectionsRef.current.monitor = nextRoute.section;
     if (nextRoute.view === 'connect') lastWorkspaceSectionsRef.current.connect = nextRoute.section;
     setRouteState(nextRoute);
     const newHash = hashForRoute(nextRoute);
@@ -721,8 +764,8 @@ const App: React.FC = () => {
   }, []);
 
   const setView = useCallback((nextView: View) => {
-    if (nextView === 'dashboard') {
-      navigateToRoute({ view: nextView, section: lastWorkspaceSectionsRef.current.dashboard });
+    if (nextView === 'monitor') {
+      navigateToRoute({ view: nextView, section: lastWorkspaceSectionsRef.current.monitor });
       return;
     }
     if (nextView === 'connect') {
@@ -761,15 +804,15 @@ const App: React.FC = () => {
         view: destination.id,
       }));
 
-    const monitorDefinition = WORKSPACE_NAVIGATION.dashboard;
+    const monitorDefinition = WORKSPACE_NAVIGATION.monitor;
     const monitor = monitorDefinition.sections
       .filter(section => matches(`${t(section.label)} ${t(section.description)}`))
       .map(section => ({
-        id: `workspace:dashboard:${section.id}`,
+        id: `workspace:monitor:${section.id}`,
         label: t(section.label),
         description: `${t(monitorDefinition.label)} - ${t(section.description)}`,
         icon: section.icon,
-        route: { view: 'dashboard', section: section.id } as AppRoute,
+        route: { view: 'monitor', section: section.id } as AppRoute,
       }));
     const settingsDefinition = WORKSPACE_NAVIGATION.connect;
     const settings = settingsDefinition.sections
@@ -896,6 +939,7 @@ const App: React.FC = () => {
     };
 
     const initialRoute = routeFromCurrentLocation();
+    consumeNavigationQuery(hashForRoute(initialRoute ?? routeRef.current));
     if (initialRoute) navigateToRoute(initialRoute);
     attach();
 
@@ -911,7 +955,7 @@ const App: React.FC = () => {
       const nextRoute = routeFromHash();
       if (nextRoute) {
         canonicalizeLegacyHash(nextRoute);
-        if (nextRoute.view === 'dashboard') lastWorkspaceSectionsRef.current.dashboard = nextRoute.section;
+        if (nextRoute.view === 'monitor') lastWorkspaceSectionsRef.current.monitor = nextRoute.section;
         if (nextRoute.view === 'connect') lastWorkspaceSectionsRef.current.connect = nextRoute.section;
         setRouteState(nextRoute);
         try { localStorage.setItem('lemonade_current_view', hashForRoute(nextRoute).slice(2)); } catch { /* ignore */ }
@@ -944,7 +988,19 @@ const App: React.FC = () => {
     await api.refresh();
   }, []);
 
+  const handleDictationStart = useCallback((model: string) => {
+    setDictationActive(true);
+    setDictationTarget(model);
+    setCurrentModel(model);
+  }, []);
+
+  const handleDictationEnd = useCallback((failed = false) => {
+    setDictationActive(false);
+    if (failed) setDictationTarget(null);
+  }, []);
+
   const handleModelSelect = useCallback((modelName: string) => {
+    setDictationTarget(null);
     setCurrentModel(modelName);
     setModelSelectionEpoch(epoch => epoch + 1);
     setView('chat');
@@ -1202,6 +1258,9 @@ const App: React.FC = () => {
                 serverModels={serverModels}
                 connectionStatus={status}
                 onModelSelect={handleModelSelect}
+                dictationTarget={dictationTarget}
+                onDictationStart={handleDictationStart}
+                onDictationEnd={handleDictationEnd}
                 onOpenModelDetails={openModelDetails}
                 onRefresh={handleRefreshModels}
               />
@@ -1244,14 +1303,14 @@ const App: React.FC = () => {
             </ViewErrorBoundary>
           </div>
         )}
-        {mountedViewsRef.current.has('dashboard') && (
-          <div className="view-slot" hidden={view !== 'dashboard'}>
+        {mountedViewsRef.current.has('monitor') && (
+          <div className="view-slot" hidden={view !== 'monitor'}>
             <ViewErrorBoundary view={t('Monitor')}>
               <Suspense fallback={<ViewLoadingFallback label={t('Loading monitor')} />}>
                 <MonitorView
-                  activeSection={route.view === 'dashboard' ? route.section : lastWorkspaceSectionsRef.current.dashboard}
-                  isActive={view === 'dashboard'}
-                  onSectionChange={section => navigateToRoute({ view: 'dashboard', section })}
+                  activeSection={route.view === 'monitor' ? route.section : lastWorkspaceSectionsRef.current.monitor}
+                  isActive={view === 'monitor'}
+                  onSectionChange={section => navigateToRoute({ view: 'monitor', section })}
                 />
               </Suspense>
             </ViewErrorBoundary>

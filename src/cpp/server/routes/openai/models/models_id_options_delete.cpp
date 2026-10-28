@@ -45,8 +45,8 @@ public:
         ModelManager* model_manager = ctx_.model_manager;
         respond_with_model_options(ctx_, req.value(openai::models::kId, std::string()), res,
             [model_manager](const std::string& model_key, ModelInfo& info, httplib::Response&) {
-                if (!model_manager->get_saved_model_options(model_key).empty()) {
-                    model_manager->set_saved_model_options(model_key, json::object());
+                if (!model_manager->options(model_key)["saved"].empty()) {
+                    model_manager->replace_options(model_key, json::object());
                 }
                 info = model_manager->get_model_info(model_key);
                 return true;
