@@ -133,8 +133,9 @@ pause locks the mesh; a key-unlocked device unlocks again by itself in both
 cases. Transient failures reconnect with bounded backoff after a successful
 join, without replaying consumed invite tokens. A session is bound to the
 Tier 1 server that issued it; when that server leaves Tier 1 at an epoch
-boundary, `lemond` drops the session and joins again through a current server
-with the device identity, with no passkey prompt.
+boundary, the SDK reports `needs_rejoin` once it has dropped the session, and
+`lemond` joins again through a current server with the device identity, with
+no passkey prompt. The refusal texts alone do not start a join.
 
 Virtual TCP port `13305` forwards to a separate loopback listener that
 `NexusManager` starts once; a main-port rebind does not touch it. That listener

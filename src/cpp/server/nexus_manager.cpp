@@ -476,9 +476,8 @@ uint64_t newer_tier1_epoch(const json& membership, uint64_t saved) {
     return value > saved ? value : 0;
 }
 
-bool session_dropped(const json& mesh_status, const std::string& error) {
-    if (mesh_status.is_object() && mesh_status.value("needs_rejoin", false)) return true;
-    return error.find("verified Tier 1 server") != std::string::npos;
+bool session_dropped(const json& mesh_status) {
+    return mesh_status.is_object() && mesh_status.value("needs_rejoin", false);
 }
 
 bool constant_time_equals(const std::string& candidate, const std::string& expected) {
@@ -1082,7 +1081,7 @@ struct NexusManager::Session {
             // The SDK binds a session to the Tier 1 server that issued it and drops the
             // session when that server leaves Tier 1; the mesh can stay up while every
             // private call is refused, so the flag decides, not the mesh state.
-            if (!joined || !ln_mesh_is_active(client.get()) || nexus_access::session_dropped(mesh_status(), "")) {
+            if (!joined || !ln_mesh_is_active(client.get()) || nexus_access::session_dropped(mesh_status())) {
                 ln_mesh_disable(client.get());
                 ln_set_session_token(client.get(), "");
                 egress_ips.clear();
@@ -1098,8 +1097,9 @@ struct NexusManager::Session {
         } catch (const std::exception& e) {
             note_failure(e);
             // Drop a stale session so the next poll authenticates with the device
-            // identity through a current server.
-            if (nexus_access::session_dropped(json(), error)) {
+            // identity through a current server. A refusal while the SDK moves the
+            // session by itself is an ordinary failure: the next poll finds it moved.
+            if (nexus_access::session_dropped(mesh_status())) {
                 ln_mesh_disable(client.get());
                 ln_set_session_token(client.get(), "");
                 egress_ips.clear();
