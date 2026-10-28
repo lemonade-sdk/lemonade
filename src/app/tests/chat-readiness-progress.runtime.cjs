@@ -52,7 +52,10 @@ assert.equal(select([{ ...model, status: 'completed', running: true }], 'My-Mode
 const chatSource = fs.readFileSync(path.join(root, 'src/components/ChatView.tsx'), 'utf8');
 assert.match(chatSource, /<ChatReadinessProgress[\s\S]*modelSizeGiB=/);
 const indicatorAt = chatSource.indexOf('<ChatReadinessProgress');
+const modelStackAt = chatSource.indexOf('<div className="composer__model-stack">');
 const entryAt = chatSource.indexOf('<div className={`composer__entry${hasComposerSettings');
+assert.ok(modelStackAt > 0 && modelStackAt < indicatorAt && indicatorAt < entryAt,
+  'readiness must sit directly under the model pill, outside the image/3D settings');
 assert.ok(indicatorAt >= 0 && entryAt > indicatorAt,
   'readiness must sit above the entire chat/image/3D composer entry');
 assert.equal(chatSource.indexOf('<ChatReadinessProgress', indicatorAt + 1), -1,
@@ -62,14 +65,23 @@ assert.doesNotMatch(chatSource, /prepareChatBackend|installBackend\(/, 'chat mus
 assert.match(chatSource, /await loadModelForChat\(modelName, info \|\| initialInfo\)/, 'normal loading path remains intact');
 assert.match(chatSource, /phase=\{modelPreparation\?\.phase \|\| \(modelPickerLoading \? 'loading' : null\)\}/, 'direct model selection gets the loading indicator');
 const css = fs.readFileSync(path.join(root, 'src/styles/styles.css'), 'utf8');
-assert.match(componentSource, /className="composer__readiness-anchor"/, 'indicator should use the composer-aligned wrapper');
+assert.match(componentSource, /className="composer__readiness-anchor"/, 'indicator should use the model pill-aligned wrapper');
+assert.doesNotMatch(componentSource, /className="composer__live-dot"/, 'readiness must not show a leading dot');
+assert.match(componentSource, /import \{ Icon \} from '\.\/Icon';/, 'readiness reuses the existing GUI icon');
+assert.match(componentSource, /<Icon name="clock" size=\{14\} className="composer__readiness-icon" \/>/, 'clock matches the 14px model pill icon');
 assert.doesNotMatch(componentSource, /composer__readiness-percent/, 'no visible percentage on the readiness indicator');
 assert.doesNotMatch(componentSource, /aria-valuenow=\{percent/, 'estimated loading progress should not announce numeric values');
 assert.match(componentSource, /aria-valuenow=\{download \? percent \?\? undefined : undefined\}/,
   'only real download progress should expose a numeric accessibility value');
 assert.doesNotMatch(componentSource, /\$\{percent\}%`\}/, 'estimated percentages should not be announced');
-assert.match(css, /\.composer__readiness-anchor \{[\s\S]*?max-width: var\(--max-content-width\);[\s\S]*?margin: 0 auto var\(--space-2\);/);
+assert.match(css, /\.composer__readiness-anchor \{ width: 100%; \}/);
+assert.match(css, /\.composer__model-stack \{[\s\S]*?width: max-content;[\s\S]*?min-width: 220px;/);
+assert.match(css, /\.composer__readiness \{[\s\S]*?width: 100%;[\s\S]*?border-radius: var\(--radius-pill\);/);
+assert.match(css, /\.composer__readiness \.composer__live-meter span \{ border-radius: var\(--radius-pill\); \}/);
 assert.match(css, /\.composer__readiness \{[\s\S]*?margin: 0;/);
+assert.match(css, /\.composer__readiness \{[\s\S]*?padding: 5px var\(--space-3\);/, 'match model pill horizontal padding and intrinsic height');
+assert.match(css, /\.composer__readiness \.composer__live-head \{[\s\S]*?font-size: var\(--text-sm\);[\s\S]*?font-weight: var\(--weight-medium\);/, 'match model pill font sizing and height');
+assert.match(css, /\.composer__readiness-icon \{ flex-shrink: 0; color: var\(--text-tertiary\); \}/);
 assert.doesNotMatch(css, /\.composer__readiness-percent/);
 console.log('Chat readiness progress regression tests passed');
 

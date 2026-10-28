@@ -1405,7 +1405,7 @@ input[type="checkbox"]:disabled {
 
 .composer__model-picker {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--space-2);
 }
 
@@ -1413,10 +1413,12 @@ input[type="checkbox"]:disabled {
   max-width: var(--max-content-width);
   margin: 0 auto var(--space-2);
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--space-3);
   flex-wrap: wrap;
 }
+
+.composer__toolbar > .composer__tools-toggle { margin-top: 3px; }
 
 .composer__tools-toggle {
   display: inline-flex;
@@ -1728,6 +1730,7 @@ input[type="checkbox"]:disabled {
   text-transform: uppercase;
   letter-spacing: 0.05em;
   font-weight: var(--weight-medium);
+  margin-top: 7px;
 }
 
 .composer__bar {
@@ -5629,23 +5632,32 @@ optgroup {
   white-space: pre-wrap;
 }
 
-/* Keep the compact indicator on the left edge of the centered composer bar. */
-.composer__readiness-anchor {
-  max-width: var(--max-content-width);
-  margin: 0 auto var(--space-2);
-}
+.composer__readiness-anchor { width: 100%; }
 
 .composer__readiness {
-  width: fit-content;
-  max-width: 100%;
+  width: 100%;
   margin: 0;
+  padding: 5px var(--space-3);
+  border-radius: var(--radius-pill);
 }
 
+.composer__readiness .composer__live-head {
+  min-width: 0;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+}
+
+.composer__readiness-icon { flex-shrink: 0; color: var(--text-tertiary); }
+
 .composer__readiness-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.composer__readiness .composer__live-meter { flex-shrink: 0; }
+.composer__readiness .composer__live-meter { flex-shrink: 0; margin-left: auto; }
+.composer__readiness .composer__live-meter span { border-radius: var(--radius-pill); }
 
 .composer__readiness .composer__live-meter .is-indeterminate {
   width: 35%;
@@ -5820,6 +5832,20 @@ optgroup {
 .composer__model-picker {
 
   position: relative;
+}
+
+.composer__model-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  width: max-content;
+  min-width: 220px;
+  max-width: min(420px, 46vw);
+}
+
+.composer__model-stack > .composer__model-button {
+  width: 100%;
+  max-width: 100%;
 }
 
 .composer__model-button {

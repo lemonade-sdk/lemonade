@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { Icon } from './Icon';
 import type { DownloadListItem } from '../features/downloadManager/downloadStore';
 import { useI18n } from '../i18n';
 
@@ -106,7 +107,7 @@ const ChatReadinessProgress: React.FC<ChatReadinessProgressProps> = React.memo((
     <div className="composer__readiness-anchor">
       <div className="composer__live composer__readiness" title={modelName}>
         <div className="composer__live-head">
-          <span className="composer__live-dot" aria-hidden="true" />
+          <Icon name="clock" size={14} className="composer__readiness-icon" />
           <span className="composer__readiness-label" role="status" aria-live="polite">
             {download?.paused ? t('Paused') : label}
           </span>

@@ -3815,27 +3815,36 @@ ${finalText}`
           {(modelPickerOptions.length > 0 || modelPickerOpen) && (
             <div className="composer__model-picker" ref={modelPickerRef}>
               <span className="composer__model-label">{t('Model')}</span>
-              <button
-                type="button"
-                className="composer__model-button"
-                onClick={() => { setModelPickerOpen(v => !v); setModelPickerError(null); }}
-                aria-haspopup="listbox"
-                aria-expanded={modelPickerOpen}
-              >
-                {currentLoadedModel ? (
-                  <span className={`composer__model-mode composer__model-mode--${modelModeBadge(currentCapability, currentRecipe)}`}>
+              <div className="composer__model-stack">
+                <button
+                  type="button"
+                  className="composer__model-button"
+                  onClick={() => { setModelPickerOpen(v => !v); setModelPickerError(null); }}
+                  aria-haspopup="listbox"
+                  aria-expanded={modelPickerOpen}
+                >
+                  {currentLoadedModel ? (
+                    <span className={`composer__model-mode composer__model-mode--${modelModeBadge(currentCapability, currentRecipe)}`}>
+                      <ModelModeIcons capability={currentCapability} recipe={currentRecipe} audioInput={supportsChatAudioInput} size={14} />
+                      <span>{modelModeDisplayLabel(currentCapability, supportsChatAudioInput, currentRecipe)}</span>
+                    </span>
+                  ) : (
                     <ModelModeIcons capability={currentCapability} recipe={currentRecipe} audioInput={supportsChatAudioInput} size={14} />
-                    <span>{modelModeDisplayLabel(currentCapability, supportsChatAudioInput, currentRecipe)}</span>
-                  </span>
-                ) : (
-                  <ModelModeIcons capability={currentCapability} recipe={currentRecipe} audioInput={supportsChatAudioInput} size={14} />
-                )}
-                <span className="composer__model-button-name">{currentModel}</span>
-                {selectableModels.length > 0 && (
-                  <span className="composer__model-button-badge">({selectableModels.length})</span>
-                )}
-                <span className="composer__model-button-caret">▾</span>
-              </button>
+                  )}
+                  <span className="composer__model-button-name">{currentModel}</span>
+                  {selectableModels.length > 0 && (
+                    <span className="composer__model-button-badge">({selectableModels.length})</span>
+                  )}
+                  <span className="composer__model-button-caret">▾</span>
+                </button>
+                <ChatReadinessProgress
+                  modelName={progressModelName}
+                  recipe={progressRecipe}
+                  modelSizeGiB={progressModelInfo?.size}
+                  phase={modelPreparation?.phase || (modelPickerLoading ? 'loading' : null)}
+                  isLoaded={loadedModels.some(model => model.model_name.toLowerCase() === progressModelName.toLowerCase())}
+                />
+              </div>
               {modelPickerOpen && (
                 <div className="composer__model-menu" role="dialog" aria-label={t('Search models')}>
                   <label className="composer__model-search">
@@ -3995,13 +4004,6 @@ ${finalText}`
             </button>
           </div>
         )}
-        <ChatReadinessProgress
-          modelName={progressModelName}
-          recipe={progressRecipe}
-          modelSizeGiB={progressModelInfo?.size}
-          phase={modelPreparation?.phase || (modelPickerLoading ? 'loading' : null)}
-          isLoaded={loadedModels.some(model => model.model_name.toLowerCase() === progressModelName.toLowerCase())}
-        />
         <div className={`composer__entry${hasComposerSettings ? ' composer__entry--with-settings' : ''}`}>
         {currentCapability === 'image' && (
           <div className="composer__image-settings" aria-label={t('Image generation settings')}>
