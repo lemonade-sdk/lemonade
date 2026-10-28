@@ -112,6 +112,22 @@ CAPABILITIES = {
                 "llm_npu": "Qwen2.5-3B-Instruct-NPU",
             },
         },
+        "strata": {
+            "backends": ["cuda", "cuda13", "rocm", "metal"],
+            "supports": {
+                "chat_completions": True,
+                "chat_completions_streaming": True,
+                "responses_api": True,
+                "responses_api_streaming": True,
+                "tool_calls": True,
+                "tool_calls_streaming": True,
+                "static_max_context_window": True,
+            },
+            "test_models": {
+                "llm": "Qwen3.8-Flash-Next-Q2_0-Strata",
+                "tool_calling": "Qwen3.8-Flash-Next-Q2_0-Strata",
+            },
+        },
         "flm": {
             "backends": ["npu"],
             "supports": {

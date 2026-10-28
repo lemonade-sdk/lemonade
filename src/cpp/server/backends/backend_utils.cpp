@@ -1,4 +1,5 @@
 #include "lemon/backends/backend_utils.h"
+#include "lemon/backends/backend_ops.h"
 #include "lemon/backends/install_staging.h"
 #include "lemon/error_types.h"
 #include "lemon/runtime_config.h"
@@ -150,7 +151,7 @@ namespace lemon::backends {
     }
 
     // Greedy glob match where '*' matches any (possibly empty) run of
-    // characters. No '?' support — release asset names only need '*'.
+    // characters. No '?' support -- release asset names only need '*'.
     static bool wildcard_match(const std::string& pattern, const std::string& text) {
         size_t p = 0, t = 0, star = std::string::npos, mark = 0;
         while (t < text.size()) {
@@ -173,19 +174,53 @@ namespace lemon::backends {
         return p == pattern.size();
     }
 
+    ReleaseAsset BackendUtils::select_release_asset(const nlohmann::json& release, const std::string& pattern,
+                                                    bool require_digest) {
+        if (!release.contains("assets") || !release.at("assets").is_array()) {
+            throw std::runtime_error("GitHub release has no assets array");
+        }
+        ReleaseAsset selected;
+        for (const auto& asset : release.at("assets")) {
+            if (!asset.contains("name") || !asset.at("name").is_string()) continue;
+            const auto name = asset.at("name").get<std::string>();
+            if (!wildcard_match(pattern, name)) continue;
+            if (require_digest && !selected.name.empty()) {
+                throw std::runtime_error("Ambiguous GitHub release asset pattern: " + pattern);
+            }
+            selected.name = name;
+            if (!require_digest) return selected;
+            if (name.empty() || name == "." || name == ".." ||
+                name.find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.") != std::string::npos) {
+                throw std::runtime_error("Invalid GitHub release asset filename: " + name);
+            }
+            if (!asset.contains("digest") || !asset.at("digest").is_string()) {
+                throw std::runtime_error("GitHub release asset has no SHA-256 digest: " + name);
+            }
+            selected.digest = asset.at("digest").get<std::string>();
+            if (selected.digest.size() != 71 || selected.digest.compare(0, 7, "sha256:") != 0 ||
+                selected.digest.find_first_not_of("0123456789abcdefABCDEF", 7) != std::string::npos) {
+                throw std::runtime_error("Invalid GitHub release asset SHA-256 digest: " + name);
+            }
+        }
+        if (selected.name.empty()) {
+            throw std::runtime_error("No GitHub release asset matching: " + pattern);
+        }
+        return selected;
+    }
+
     // Resolve a '*' wildcard in a release asset filename to the concrete asset
     // name published for `tag`. Some upstreams embed a component that changes
     // on every build (e.g. the macOS runner version in sd-cpp's Darwin asset:
     // sd-...-bin-Darwin-macOS-15.7.7-arm64.zip). Rather than hardcode and chase
     // that value on every bump, the backend spec carries a '*' placeholder and
     // we look up the real asset name here via the GitHub Releases API. Returns
-    // the pattern unchanged when it contains no wildcard.
-    static std::string resolve_asset_wildcard(const std::string& repo,
+    // the pattern unchanged when discovery and a published digest are not needed.
+    static ReleaseAsset resolve_asset_wildcard(const std::string& repo,
                                               const std::string& tag,
                                               const std::string& pattern,
                                               const BackendSpec& spec) {
-        if (pattern.find('*') == std::string::npos) {
-            return pattern;
+        if (pattern.find('*') == std::string::npos && !spec.require_asset_digest) {
+            return {pattern, ""};
         }
 
         const std::string url = "https://api.github.com/repos/" + repo +
@@ -217,23 +252,10 @@ namespace lemon::backends {
                 tag + ": " + e.what());
         }
 
-        if (body.contains("assets") && body["assets"].is_array()) {
-            for (const auto& asset : body["assets"]) {
-                if (!asset.contains("name") || !asset["name"].is_string()) {
-                    continue;
-                }
-                const std::string name = asset["name"].get<std::string>();
-                if (wildcard_match(pattern, name)) {
-                    LOG(INFO, spec.log_name()) << "Resolved asset wildcard '"
-                        << pattern << "' to '" << name << "'" << std::endl;
-                    return name;
-                }
-            }
-        }
-
-        throw std::runtime_error(
-            "No release asset matching '" + pattern + "' found for " + repo +
-            "@" + tag);
+        const auto asset = BackendUtils::select_release_asset(body, pattern, spec.require_asset_digest);
+        LOG(INFO, spec.log_name()) << "Resolved asset wildcard '" << pattern << "' to '"
+                                  << asset.name << "' for " << repo << "@" << tag << std::endl;
+        return asset;
     }
 
     bool BackendUtils::extract_seven_zip(const std::string& archive_path, const std::string& dest_dir, const std::string& backend_name) {
@@ -537,8 +559,9 @@ namespace lemon::backends {
             // Resolve any '*' wildcard in the asset name (e.g. the macOS runner
             // version in sd-cpp's Darwin asset) to the concrete published name
             // before building any download URL. No-op when there is no wildcard.
-            const std::string filename =
+            const auto asset =
                 resolve_asset_wildcard(repo, expected_version, asset_pattern, spec);
+            const std::string& filename = asset.name;
 
             // Stage the new install in a sibling directory so the currently
             // installed (working) binary is left untouched until the download is
@@ -683,6 +706,9 @@ namespace lemon::backends {
                 utils::DownloadOptions archive_download_opts;
                 archive_download_opts.expected_hash = lookup_expected_asset_hash(
                     spec.recipe, backend, expected_version, repo, filename);
+                if (archive_download_opts.expected_hash.empty()) {
+                    archive_download_opts.expected_hash = asset.digest;
+                }
                 archive_download_opts.resume_partial = false;
 
                 auto download_result = utils::HttpClient::download_file(
@@ -821,6 +847,11 @@ namespace lemon::backends {
             // install_dir untouched on verification failure (returns ""), and on
             // a swap (rename) failure it rolls the backup back and throws — so a
             // botched download/extraction/swap never destroys the working binary.
+            try {
+                ops_for(spec.recipe)->prepare_install(staging_dir, backend, progress_cb);
+            } catch (const std::exception& error) {
+                throw InstallPreparationError("Backend installation preparation failed: " + std::string(error.what()));
+            }
             exe_path = commit_staged_install(staging_dir, install_dir, spec.binary);
             if (exe_path.empty()) {
                 LOG(ERROR, spec.log_name()) << "Extraction completed but executable not found" << std::endl;

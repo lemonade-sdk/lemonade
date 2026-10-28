@@ -1079,6 +1079,7 @@ jobs:
             runner: [Windows, X64, stx-halo, lemon-prod]
             suites: >-
               [{"name":"whisper","script":"server_whisper.py","extra_args":"--wrapped-server whispercpp","backends":"cpu npu rocm"},
+               {"name":"strata-rocm","script":"server_llm.py","extra_args":"--wrapped-server strata","backends":"rocm"},
                {"name":"thenoise","script":"server_thenoise.py","extra_args":"--wrapped-server thenoise","backends":"rocm"}]
           - name: vulkan-stx-halo
             runner: [Windows, X64, vulkan, stx-halo, lemon-prod]
@@ -1329,6 +1330,7 @@ jobs:
             runner: [Linux, X64, rocm, stx-halo, lemon-prod]
             suites: >-
               [{"name":"llamacpp-hrx","script":"server_llm.py","extra_args":"--wrapped-server llamacpp-hrx","backends":"hrx"},
+               {"name":"strata-rocm","script":"server_llm.py","extra_args":"--wrapped-server strata","backends":"rocm"},
                {"name":"thenoise","script":"server_thenoise.py","extra_args":"--wrapped-server thenoise","backends":"rocm"}]
           - name: vulkan-stx-halo
             runner: [Linux, X64, vulkan, stx-halo, lemon-prod]
@@ -1737,6 +1739,7 @@ jobs:
               "$archiveDir\LICENSE",
               "$archiveDir\resources\server_models.json",
               "$archiveDir\resources\backend_versions.json",
+              "$archiveDir\resources\strata.json",
               "$archiveDir\resources\defaults.json",
               "$archiveDir\resources\toolDefinitions.json"
           )

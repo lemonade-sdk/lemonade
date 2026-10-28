@@ -133,6 +133,10 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
     "vulkan_bin": "builtin",
     "width": 512
   },
+  "strata": {
+    "args": "",
+    "backend": "auto"
+  },
   "telemetry": {
     "enabled": false,
     "hide_inputs": false,

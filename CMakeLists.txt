@@ -229,6 +229,7 @@ set(LEMON_BACKENDS
     "kokoro|kokoro"
     "sd-cpp|sdcpp"
     "flm|fastflowlm"
+    "strata|strata"
     "ryzenai-llm|ryzenai"
     "vllm|vllm"
     "thenoise|thenoise"
@@ -1276,6 +1277,7 @@ target_link_libraries(lemonade-server-core PUBLIC
     nlohmann_json::nlohmann_json
     lemonade-httplib
 )
+include(cmake/StrataNative.cmake)
 
 if(USE_SYSTEM_CLI11)
     target_include_directories(lemonade-server-core PUBLIC ${CLI11_INCLUDE_DIRS})
@@ -1442,6 +1444,7 @@ target_link_libraries(${EXECUTABLE_NAME} PRIVATE lemonade-server-core)
 #   - static/index.html, static/favicon.ico (web UI)
 #   - server_models.json (model registry)
 #   - backend_versions.json (backend version configuration)
+#   - strata.json (Strata model and adapter metadata)
 #   - defaults.json (default config values)
 #   - bench_scenarios.json (benchmark scenarios)
 #   - docs/api/ (bundled API reference, served at <prefix>/docs)
@@ -2358,6 +2361,9 @@ add_custom_target(embeddable
         "$<TARGET_FILE_DIR:lemond>/resources/backend_versions.json"
         "${EMBEDDABLE_STAGING_DIR}/resources/"
     COMMAND ${CMAKE_COMMAND} -E copy
+        "$<TARGET_FILE_DIR:lemond>/resources/strata.json"
+        "${EMBEDDABLE_STAGING_DIR}/resources/"
+    COMMAND ${CMAKE_COMMAND} -E copy
         "$<TARGET_FILE_DIR:lemond>/resources/vllm_model_config.json"
         "${EMBEDDABLE_STAGING_DIR}/resources/"
     COMMAND ${CMAKE_COMMAND} -E copy
@@ -2368,6 +2374,9 @@ add_custom_target(embeddable
         "${EMBEDDABLE_STAGING_DIR}/resources/"
     COMMAND ${CMAKE_COMMAND} -E copy
         "$<TARGET_FILE_DIR:lemond>/resources/toolDefinitions.json"
+        "${EMBEDDABLE_STAGING_DIR}/resources/"
+    COMMAND ${CMAKE_COMMAND} -E copy
+        "${CMAKE_BINARY_DIR}/resources/strata-native-licenses.txt"
         "${EMBEDDABLE_STAGING_DIR}/resources/"
 
     # Create archive
@@ -2384,6 +2393,8 @@ message(STATUS "  Archive: ${EMBEDDABLE_ARCHIVE_NAME}")
 # ============================================================
 # C++ Unit Tests
 # ============================================================
+
+add_strata_tests()
 
 set(_ARCHIVE_PLATFORM_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_archive_platform.cpp"

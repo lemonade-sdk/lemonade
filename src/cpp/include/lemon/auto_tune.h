@@ -8,6 +8,8 @@
 #include <optional>
 #include <system_error>
 #include <lemon/auto_context_budget.h>
+#include <lemon/backends/backend_ops.h>
+#include <lemon/backends/backend_registry.h>
 #include <lemon/gguf_reader.h>
 #include <lemon/gpu_memory_selection.h>
 #include <lemon/models/model_info.h>
@@ -354,6 +356,11 @@ inline int64_t resolve_auto_ctx_size(const RecipeOptions& effective_options,
     std::string backend;
     std::string device;
     const std::string recipe = effective_options.get_recipe();
+    if (const auto* ops = backends::ops_for(recipe)) {
+        if (const auto context = ops->auto_context_size(model_info, effective_options)) {
+            return *context;
+        }
+    }
     const json backend_json = effective_options.get_option(recipe + "_backend");
     const json device_json = effective_options.get_option(recipe + "_device");
     if (backend_json.is_string()) backend = backend_json.get<std::string>();

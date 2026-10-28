@@ -1,8 +1,24 @@
 {
-  "comment": "This configuration file controls which llama.cpp, whisper.cpp, sd.cpp, ryzenai-llm, and FLM versions are downloaded for each backend. You can modify these values to pin specific versions without rebuilding the application.",
+  "comment": "Backend version pins and optional release asset checksums. Compatible Strata engine upgrades update the strata pins and verified asset checksums; unpinned releases use GitHub asset digests. Stable Strata model/adapter/build metadata lives in strata.json.",
   "checksums": {
     "comment": "Expected SHA-256 of downloaded GitHub release assets, verified after download (see BackendUtils::lookup_expected_asset_hash). Keyed by checksums.github.<owner/repo>.<tag>.<asset>. Values are the sha256:<hex> digests GitHub publishes for each asset. Update alongside the matching version pin below.",
     "github": {
+      "Niko1221/Strata": {
+        "v0.2.7": {
+          "strata-engine-0.1.52-linux-x86_64-cuda-cuda12.tar.gz": "sha256:f08895a927c05664a70b1397ba9f7888ca1cf328140fa056c9e2ce9d0f15de30",
+          "strata-engine-0.1.52-linux-x86_64-cuda-cuda13.tar.gz": "sha256:4177c1a8ffc59bf66074093b22ac55ed477bcbe84f8bd12e378b0f1236da55c7",
+          "strata-engine-0.1.52-linux-x86_64-hip-halo.tar.gz": "sha256:8e95a086515face5ce3a4d34d9ac3c485e45be5ff84a614e5b4ed66fc5efe18a",
+          "strata-engine-0.1.52-linux-x86_64-hip-rx6000.tar.gz": "sha256:d653dbd11e7db30dc60fb67e7dccb77671c0b3d93fed87917118a46d78ae7058",
+          "strata-engine-0.1.52-linux-x86_64-hip-rx7900.tar.gz": "sha256:2ade169febb6933648115f81cc29fba3bbd5524ca8b82aa889ba363c2c37ce7d",
+          "strata-engine-0.1.52-linux-x86_64-hip-rx9070.tar.gz": "sha256:49230e1938e404aee514601553755dfbbee5116c3e896d1727ecb4a39f60ab49",
+          "strata-engine-0.1.52-macos-arm64-metal.tar.gz": "sha256:5e2d38c1dc7867bde57077a15524ee9ff2dfde94d96cacdcd11952d445633a9e",
+          "strata-engine-0.1.52-windows-x86_64-cuda-cuda12.tar.gz": "sha256:bebe32feee424ecf067d82cdde0d7afd68794784abf45d467b3f60f64ad6e89f",
+          "strata-engine-0.1.52-windows-x86_64-cuda-cuda13.tar.gz": "sha256:bfa68c6b2e92f9c273caaf937d9ae164918e6de4cca2dc1f1d79d32470f0915a",
+          "strata-engine-0.1.52-windows-x86_64-hip-rdna2.tar.gz": "sha256:7b1ce2e5111865990deef04d7b6be65766a35cebfa4760e2bc077fc075f4965a",
+          "strata-engine-0.1.52-windows-x86_64-hip-rdna3.tar.gz": "sha256:6201c5c879791108ee05514c3c322c062a6c40f4da72f664db3a57b8fc024b78",
+          "strata-engine-0.1.52-windows-x86_64-hip-rx9070.tar.gz": "sha256:9ae13a5146c73a2328a3db3b55b190c93b9a138cd56b1df337d942836137f19b"
+        }
+      },
       "pwilkin/openmoss": {
         "v0.3.0": {
           "moss-tts-vulkan-linux-x64.tar.gz": "sha256:1288a22295451d0e5d8bd707ef79ea324e1c7b5f1cd9bfbdab2167a388fe3af7",
@@ -145,6 +161,12 @@
   },
   "flm": {
     "npu": "v1.0.7"
+  },
+  "strata": {
+    "cuda": "v0.2.7",
+    "cuda13": "v0.2.7",
+    "rocm": "v0.2.7",
+    "metal": "v0.2.7"
   },
   "kokoro": {
     "cpu": "b21",

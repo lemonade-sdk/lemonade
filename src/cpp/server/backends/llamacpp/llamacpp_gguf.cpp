@@ -62,8 +62,14 @@ std::string resolve_gguf_path(const std::string& model_cache_path, const std::st
         }
 
         std::error_code ec;
-        for (const auto& entry : fs::recursive_directory_iterator(search_root, hf_cache::dir_options(), ec)) {
+        for (auto it = fs::recursive_directory_iterator(search_root, hf_cache::dir_options(), ec);
+             it != fs::recursive_directory_iterator(); ++it) {
             if (ec) break;
+            const auto& entry = *it;
+            if (hf_cache::is_backend_private_path(model_cache_path_fs, entry.path())) {
+                it.disable_recursion_pending();
+                continue;
+            }
             if (!entry.is_regular_file(ec)) {
                 ec.clear();
                 continue;
@@ -224,7 +230,8 @@ std::string resolve_gguf_path(const std::string& model_cache_path, const std::st
     if (active_gguf_files.empty() && whole_cache_gguf_files().empty()) {
         // Preserve the historical flat-cache fallback, but never expose a
         // modern snapshots cache as a valid directory checkpoint without GGUFs.
-        return hf_cache::exists(snapshots_path) ? "" : model_cache_path;
+        return hf_cache::exists(snapshots_path) || hf_cache::exists(model_cache_path_fs / "strata")
+            ? "" : model_cache_path;
     }
 
     std::string resolved_path = resolve_gguf_variant(active_gguf_files);

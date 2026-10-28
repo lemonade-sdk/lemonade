@@ -1,6 +1,7 @@
 #include "lemon/backend_manager.h"
 #include "lemon/backend_version_policy.h"
 #include "lemon/backends/backend_descriptor_registry.h"
+#include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
@@ -829,6 +830,8 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
             complete_progress.complete = true;
             progress_cb(complete_progress);
         }
+    } catch (const backends::InstallPreparationError&) {
+        throw;
     } catch (const std::exception& e) {
         if (handle_install_failure(e.what())) return;
         throw;

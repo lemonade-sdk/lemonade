@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <functional>
+#include <nlohmann/json_fwd.hpp>
 #include <optional>
 #include <string>
 #include <system_error>
@@ -24,6 +25,11 @@ namespace lemon::backends {
         std::string version_override;  // If set, use this as the release tag instead of backend_versions.json value
     };
 
+    struct ReleaseAsset {
+        std::string name;
+        std::string digest;
+    };
+
     struct BackendSpec {
         const std::string recipe;
         const std::string binary;
@@ -33,14 +39,15 @@ namespace lemon::backends {
         // when this is set, so non-split backends incur no extra HTTP
         // requests and no spurious 404 lines in install logs.
         const bool supports_split_archive;
+        const bool require_asset_digest;
 
         using InstallParamsFn = InstallParams(*)(const std::string& backend, const std::string& version);
         InstallParamsFn install_params_fn;  // nullptr for backends with no auto-install
 
         BackendSpec(std::string r, std::string b, InstallParamsFn fn = nullptr,
-                    bool split = false)
+                    bool split = false, bool require_digest = false)
             : recipe(std::move(r)), binary(std::move(b)),
-              supports_split_archive(split), install_params_fn(fn) {}
+              supports_split_archive(split), require_asset_digest(require_digest), install_params_fn(fn) {}
 
         std::string log_name() const { return recipe + " Server"; };
     };
@@ -63,6 +70,10 @@ namespace lemon::backends {
     */
     class BackendUtils {
     public:
+        static ReleaseAsset select_release_asset(const nlohmann::json& release,
+                                                  const std::string& pattern,
+                                                  bool require_digest = false);
+
         /**
         * Extract ZIP files (Windows/Linux built-in tools)
         * @param zip_path Path to the ZIP file

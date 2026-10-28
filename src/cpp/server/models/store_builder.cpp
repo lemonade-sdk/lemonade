@@ -77,6 +77,7 @@ FilterResult filter_hardware(const std::map<std::string, ModelInfo>& models,
     for (const auto& [name, info] : models) {
         const std::string& recipe = info.recipe;
         const RecipeAvailability& recipe_availability = availability.recipe(recipe);
+        const auto model_availability = availability.models.find(name);
         bool filter_out = false;
         std::string filter_reason;
         RejectCause cause = RejectCause::BackendMissing;
@@ -103,6 +104,12 @@ FilterResult filter_hardware(const std::map<std::string, ModelInfo>& models,
                             "Detected operating system: " + availability.os_version + ".";
         }
 
+        if (!filter_out && model_availability != availability.models.end() &&
+            !model_availability->second.unsupported_reason.empty()) {
+            filter_out = true;
+            filter_reason = model_availability->second.unsupported_reason;
+        }
+
         if (!filter_out && !recipe_availability.guest_backend_missing_reason.empty()) {
             filter_out = true;
             filter_reason = recipe_availability.guest_backend_missing_reason;
@@ -111,20 +118,19 @@ FilterResult filter_hardware(const std::map<std::string, ModelInfo>& models,
         // Filter out models too large to run on this machine.
         if (!filter_out && !user_controlled_model && info.size > 0.0) {
             if (recipe_availability.streams_model_from_storage) {
-                // A streaming backend reads from disk on demand: only the
-                // resident working set must fit, in the device's own pool. ROCm
-                // cannot address system RAM and the iGPU carveout as one pool,
-                // so its ceiling is the larger pool.
                 const double working_set = streaming_working_set_gb(info.min_resident_gb, info.size);
-                if (streaming_model_exceeds_pool(working_set, availability.largest_mem_pool_gb)) {
+                const double memory_pool = model_availability != availability.models.end()
+                    ? model_availability->second.streaming_memory_pool_gb
+                    : availability.largest_mem_pool_gb;
+                if (streaming_model_exceeds_pool(working_set, memory_pool)) {
                     filter_out = true;
                     cause = RejectCause::MemoryFit;
                     size_filtered_recipes.insert(recipe);
                     std::ostringstream oss;
                     oss << std::fixed << std::setprecision(1);
                     oss << "This model streams from disk but needs about " << working_set
-                        << " GB resident in GPU memory, and this device's largest memory "
-                        << "pool is only " << availability.largest_mem_pool_gb << " GB.";
+                        << " GB resident in memory, and this backend's usable memory "
+                        << "pool is only " << memory_pool << " GB.";
                     filter_reason = oss.str();
                 }
             } else if (availability.system_ram_gb > 0.0 && info.size > max_model_size_gb) {
