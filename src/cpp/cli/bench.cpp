@@ -41,7 +41,7 @@ std::string get_timestamp_iso() {
 }
 
 static const char* const kBenchSubmitUrl = "https://bench.lemonade-server.ai/api/benchmarks";
-static const char* const kBenchClaimUrl = "https://bench.lemonade-server.ai/beta/benchmarks/claims/";
+static const char* const kBenchClaimUrl = "https://bench.lemonade-server.ai/beta/benchmarks/claim/";
 
 static bool validate_benchmark_schema(const json& benchmark, std::string& error) {
     if (!benchmark.is_object()) {
