@@ -1,0 +1,188 @@
+{
+  "hardware": {
+    "backends": {
+      "llamacpp/rocm": "b1338"
+    },
+    "cpu": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S",
+    "gpu": [
+      {
+        "integrated": true,
+        "name": "AMD Radeon Graphics (gfx1151)",
+        "type": "amd",
+        "vram_gb": 0.5
+      }
+    ],
+    "lemonade_version": "2026.43.3",
+    "os": "linux",
+    "ram_gb": 124.95
+  },
+  "models": [
+    {
+      "checkpoints": {
+        "main": "ggml-org/gpt-oss-120b-GGUF:gpt-oss-120b-MXFP4.gguf"
+      },
+      "config": {
+        "measurement_runs": 3,
+        "memory_tracking": true,
+        "warmup_runs": 1
+      },
+      "model": "gpt-oss-120b-mxfp-GGUF",
+      "results": [
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 4096,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 3778.172354,
+                "mean": 3675.070408333333,
+                "min": 3613.253662,
+                "p50": 3633.785209,
+                "p95": 3763.7336394999998
+              },
+              "failed_runs": 0,
+              "input_tokens": 3120,
+              "memory_peak_gb": 65.2,
+              "name": "context-4k",
+              "output_tokens": 20,
+              "pp_tps": 958.0082196416143,
+              "tps": {
+                "max": 47.85604900459418,
+                "mean": 47.613323159118885,
+                "min": 47.42542352151242,
+                "p50": 47.55849695125004,
+                "p95": 47.826293799259766
+              },
+              "ttft_ms": {
+                "max": 3363.719,
+                "mean": 3258.4516666666664,
+                "min": 3195.858,
+                "p50": 3215.778,
+                "p95": 3348.9249
+              },
+              "vram_peak_gb": 59.13931655883789
+            }
+          ]
+        },
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 32768,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 31132.922062,
+                "mean": 30873.152319333338,
+                "min": 30725.376616,
+                "p50": 30761.15828,
+                "p95": 31095.7456838
+              },
+              "failed_runs": 0,
+              "input_tokens": 23704,
+              "memory_peak_gb": 66.3,
+              "name": "context-32k",
+              "output_tokens": 20,
+              "pp_tps": 781.7999494962972,
+              "tps": {
+                "max": 39.946765678579915,
+                "mean": 39.50073239037489,
+                "min": 39.072943015197325,
+                "p50": 39.48248847734744,
+                "p95": 39.90033795845667
+              },
+              "ttft_ms": {
+                "max": 30584.468,
+                "mean": 30320.924333333332,
+                "min": 30171.278,
+                "p50": 30207.027,
+                "p95": 30546.7239
+              },
+              "vram_peak_gb": 60.15302658081055
+            }
+          ]
+        }
+      ],
+      "timestamp": "2026-10-28T02:08:57Z",
+      "accuracy": {
+        "passed": 35,
+        "total": 45,
+        "score": 0.7778,
+        "questions_version": "2dbb1ea20981",
+        "failures": [
+          {
+            "id": "reason-sisters",
+            "response": "Answer: 1",
+            "cut_off": false
+          },
+          {
+            "id": "py-palindrome",
+            "response": "```python\ndef is_palindrome(s: str) -> bool:\n    \"\"\"\n    Return True if `s` is a palindrome when case is ignored and all\n    non\u2011alphanumeric characters are excluded; otherwise return False.\n    \"\"\"\n    filtered = [c.lower() for c in s if c.isalnum()]\n    return filtered == filtered[::-1]\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-fizzbuzz",
+            "response": " \"\"\"\n    result = []\n    for i in range(1, n + 1):\n        if i % 15 == 0:\n            result.append(\"FizzBuzz\")\n        elif i % 3 == 0:\n            result.append(\"Fizz\")\n        elif i % 5 == 0:\n            result.append(\"Buzz\")\n        else:\n            result.append(str(i))\n    return result\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-flatten",
+            "response": "(lst):\n    \"\"\"Flatten an arbitrarily nested list, preserving element order.\"\"\"\n    result = []\n\n    def _flatten(item):\n        if isinstance(item, list):\n            for sub in item:\n                _flatten(sub)\n        else:\n            result.append(item)\n\n    _flatten(lst)\n    return result\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-anagram",
+            "response": "and spaces; otherwise return False.\n    \"\"\"\n    # Remove spaces and normalize case\n    a_clean = ''.join(ch.lower() for ch in a if not ch.isspace())\n    b_clean = ''.join(ch.lower() for ch in b if not ch.isspace())\n    \n    # Compare character counts\n    return sorted(a_clean) == sorted(b_clean)\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-prime",
+            "response": "= 3:\n        return True  # 2 and 3 are prime\n    if n % 2 == 0 or n % 3 == 0:\n        return False\n\n    i = 5\n    # Check divisibility up to sqrt(n) using 6k \u00b1 1 optimization\n    while i * i <= n:\n        if n % i == 0 or n % (i + 2) == 0:\n            return False\n        i += 6\n    return True\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-intervals",
+            "response": " cur_end = max(cur_end, end)\n        else:\n            # No overlap, push the current interval and start a new one\n            merged.append([cur_start, cur_end])\n            cur_start, cur_end = start, end\n\n    # Append the last interval\n    merged.append([cur_start, cur_end])\n    return merged\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-roman",
+            "response": "(s.upper()):\n        value = roman_map.get(char)\n        if value is None:\n            raise ValueError(f\"Invalid Roman numeral character: {char}\")\n\n        if value < prev_value:\n            total -= value\n        else:\n            total += value\n            prev_value = value\n\n    return total\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-second-largest",
+            "response": "nt, or all elements are equal,\n    return None.\n    \"\"\"\n    if not nums:\n        return None\n\n    # Use a set to consider distinct values only\n    distinct = set(nums)\n    if len(distinct) < 2:\n        return None\n\n    max_val = max(distinct)\n    distinct.remove(max_val)\n    return max(distinct)\n```",
+            "cut_off": false
+          },
+          {
+            "id": "tool-search",
+            "response": "We need to find wireless headphones under $100 that are in stock. Use search_products function.",
+            "cut_off": false
+          }
+        ],
+        "errors": [],
+        "health": {
+          "nondeterministic": [],
+          "empty_replies": 0,
+          "cut_off": 0
+        }
+      }
+    }
+  ],
+  "timestamp": "2026-10-28T01:57:54Z",
+  "fork_id": "llamacpp-amd-ecosystem-gfx11",
+  "fork_label": "llama.cpp gfx11 (AMD-Ecosystem)",
+  "fork_repo": "AMD-Ecosystem/llama.cpp",
+  "fork_version": "gfx11-rocm-nightly-20261027",
+  "fork_backend": "rocm-gfx11",
+  "experimental": false,
+  "run_id": "40537509555",
+  "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/40537509555",
+  "commit": "4830d4819ef56549a723a1d23208d2a0927b7999",
+  "lemonade_version": "v2026.43.3"
+}

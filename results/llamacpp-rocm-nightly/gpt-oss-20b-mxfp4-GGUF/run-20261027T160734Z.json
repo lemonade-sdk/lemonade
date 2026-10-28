@@ -1,0 +1,272 @@
+{
+  "hardware": {
+    "backends": {
+      "llamacpp/rocm": "b1338"
+    },
+    "cpu": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S",
+    "gpu": [
+      {
+        "integrated": true,
+        "name": "AMD Radeon Graphics (gfx1151)",
+        "type": "amd",
+        "vram_gb": 0.5
+      }
+    ],
+    "lemonade_version": "2026.43.3",
+    "os": "linux",
+    "ram_gb": 124.95
+  },
+  "models": [
+    {
+      "checkpoints": {
+        "main": "ggml-org/gpt-oss-20b-GGUF"
+      },
+      "config": {
+        "measurement_runs": 3,
+        "memory_tracking": true,
+        "warmup_runs": 1
+      },
+      "model": "gpt-oss-20b-mxfp4-GGUF",
+      "results": [
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 4096,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "all_runs_failed": true,
+              "category": "long-context",
+              "failed_runs": 4,
+              "input_tokens": 0,
+              "name": "context-4k",
+              "output_tokens": 0
+            }
+          ]
+        },
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 32768,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "all_runs_failed": true,
+              "category": "long-context",
+              "failed_runs": 4,
+              "input_tokens": 0,
+              "name": "context-32k",
+              "output_tokens": 0
+            }
+          ]
+        }
+      ],
+      "timestamp": "2026-10-27T19:07:54Z",
+      "accuracy": {
+        "passed": 0,
+        "total": 0,
+        "score": null,
+        "questions_version": "2dbb1ea20981",
+        "failures": [],
+        "errors": [
+          {
+            "id": "arith-mul",
+            "error": "load failed: HTTP Error 500: Internal Server Error"
+          },
+          {
+            "id": "arith-pct",
+            "error": "load failed: HTTP Error 500: Internal Server Error"
+          },
+          {
+            "id": "arith-fact",
+            "error": "load failed: HTTP Error 500: Internal Server Error"
+          },
+          {
+            "id": "arith-paren",
+            "error": "load failed: HTTP Error 500: Internal Server Error"
+          },
+          {
+            "id": "reason-train",
+            "error": "load failed: HTTP Error 500: Internal Server Error"
+          },
+          {
+            "id": "reason-widgets",
+            "error": "load failed: HTTP Error 500: Internal Server Error"
+          },
+          {
+            "id": "reason-batball",
+            "error": "load failed: HTTP Error 500: Internal Server Error"
+          },
+          {
+            "id": "reason-sisters",
+            "error": "load failed: HTTP Error 500: Internal Server Error"
+          },
+          {
+            "id": "reason-day-fwd",
+            "error": "load failed: HTTP Error 500: Internal Server Error"
+          },
+          {
+            "id": "reason-day-back",
+            "error": "load failed: HTTP Error 500: Internal Server Error"
+          },
+          {
+            "id": "fact-tokyo",
+            "error": "load failed: HTTP Error 500: Internal Server Error"
+          },
+          {
+            "id": "fact-light",
+            "error": "load failed: HTTP Error 500: Internal Server Error"
+          },
+          {
+            "id": "code-powassoc",
+            "error": "load failed: HTTP Error 500: Internal Server Error"
+          },
+          {
+            "id": "code-typeof",
+            "error": "load failed: HTTP Error 500: Internal Server Error"
+          },
+          {
+            "id": "code-bool",
+            "error": "load failed: HTTP Error 500: Internal Server Error"
+          },
+          {
+            "id": "unit-miles",
+            "error": "load failed: HTTP Error 500: Internal Server Error"
+          },
+          {
+            "id": "unit-fahrenheit",
+            "error": "load failed: HTTP Error 500: Internal Server Error"
+          },
+          {
+            "id": "fmt-backwards",
+            "error": "load failed: HTTP Error 500: Internal Server Error"
+          },
+          {
+            "id": "fmt-count-r",
+            "error": "load failed: HTTP Error 500: Internal Server Error"
+          },
+          {
+            "id": "fmt-abc",
+            "error": "load failed: HTTP Error 500: Internal Server Error"
+          },
+          {
+            "id": "json-sum",
+            "error": "load failed: HTTP Error 500: Internal Server Error"
+          },
+          {
+            "id": "json-primes",
+            "error": "load failed: HTTP Error 500: Internal Server Error"
+          },
+          {
+            "id": "json-extract",
+            "error": "load failed: HTTP Error 500: Internal Server Error"
+          },
+          {
+            "id": "py-palindrome",
+            "error": "load failed: HTTP Error 500: Internal Server Error"
+          },
+          {
+            "id": "py-fizzbuzz",
+            "error": "load failed: HTTP Error 500: Internal Server Error"
+          },
+          {
+            "id": "py-flatten",
+            "error": "load failed: HTTP Error 500: Internal Server Error"
+          },
+          {
+            "id": "py-anagram",
+            "error": "load failed: HTTP Error 500: Internal Server Error"
+          },
+          {
+            "id": "py-prime",
+            "error": "load failed: HTTP Error 500: Internal Server Error"
+          },
+          {
+            "id": "py-intervals",
+            "error": "load failed: HTTP Error 500: Internal Server Error"
+          },
+          {
+            "id": "py-roman",
+            "error": "load failed: HTTP Error 500: Internal Server Error"
+          },
+          {
+            "id": "py-second-largest",
+            "error": "load failed: HTTP Error 500: Internal Server Error"
+          },
+          {
+            "id": "needle-4k-early",
+            "error": "load failed: HTTP Error 500: Internal Server Error"
+          },
+          {
+            "id": "needle-4k-middle",
+            "error": "load failed: HTTP Error 500: Internal Server Error"
+          },
+          {
+            "id": "turn-dog",
+            "error": "load failed: HTTP Error 500: Internal Server Error"
+          },
+          {
+            "id": "turn-remember",
+            "error": "load failed: HTTP Error 500: Internal Server Error"
+          },
+          {
+            "id": "turn-list",
+            "error": "load failed: HTTP Error 500: Internal Server Error"
+          },
+          {
+            "id": "turn-uppercase",
+            "error": "load failed: HTTP Error 500: Internal Server Error"
+          },
+          {
+            "id": "turn-correction",
+            "error": "load failed: HTTP Error 500: Internal Server Error"
+          },
+          {
+            "id": "tool-weather",
+            "error": "load failed: HTTP Error 500: Internal Server Error"
+          },
+          {
+            "id": "tool-currency",
+            "error": "load failed: HTTP Error 500: Internal Server Error"
+          },
+          {
+            "id": "tool-none",
+            "error": "load failed: HTTP Error 500: Internal Server Error"
+          },
+          {
+            "id": "tool-event",
+            "error": "load failed: HTTP Error 500: Internal Server Error"
+          },
+          {
+            "id": "tool-search",
+            "error": "load failed: HTTP Error 500: Internal Server Error"
+          },
+          {
+            "id": "needle-32k-early",
+            "error": "load failed: HTTP Error 500: Internal Server Error"
+          },
+          {
+            "id": "needle-32k-late",
+            "error": "load failed: HTTP Error 500: Internal Server Error"
+          }
+        ],
+        "health": {
+          "nondeterministic": [],
+          "empty_replies": 0,
+          "cut_off": 0
+        }
+      }
+    }
+  ],
+  "timestamp": "2026-10-27T19:05:21Z",
+  "fork_id": "llamacpp-rocm-nightly",
+  "fork_label": "llama.cpp ROCm Nightly (lemonade-sdk)",
+  "fork_repo": "lemonade-sdk/llamacpp-rocm",
+  "fork_version": "b1356",
+  "fork_backend": "rocm-nightly",
+  "experimental": false,
+  "run_id": "40537509555",
+  "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/40537509555",
+  "commit": "4830d4819ef56549a723a1d23208d2a0927b7999",
+  "lemonade_version": "v2026.43.3"
+}
