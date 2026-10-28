@@ -42,7 +42,7 @@ public:
     json model_catalogs() const;
     bool broadcast() const;
     void set_broadcast_override(std::optional<bool> override_val);
-    long global_timeout() const;
+    long backend_startup_timeout_seconds() const; // 0 = backend-specific default
     int max_loaded_models() const;
     int64_t download_rate_limit_bytes_per_second() const;
     std::string allowed_origins() const;

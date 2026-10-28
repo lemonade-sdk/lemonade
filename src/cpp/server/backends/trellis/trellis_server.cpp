@@ -188,12 +188,18 @@ void TrellisServer::model_3d_generations(const json& request, httplib::DataSink&
         sink.write(payload.data(), payload.size());
     };
     try {
+        // Preserve both the server request cancellation and the
+        // client disconnect cancellation introduced by this PR.
         auto resp = utils::HttpClient::post_multipart(
             get_base_url() + "/generate",
             fields,
-            1800,
+            utils::HttpClient::kNoTimeout,
             utils::HttpSecurityPolicy::TrustedLoopback,
-            current_request_cancel_context());
+            utils::RequestCancelToken{nullptr,
+                [parent = current_request_cancel_context(), &sink]() {
+                    return parent.cancelled() ||
+                           (sink.is_writable && !sink.is_writable());
+                }});
         if (resp.curl_code != 0) {
             LOG(ERROR, "trellis-server") << "generation transport error: " << resp.curl_error << std::endl;
             fail("generation transport error: " + resp.curl_error);

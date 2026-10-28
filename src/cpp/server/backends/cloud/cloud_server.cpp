@@ -837,7 +837,8 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
                 headers,
                 timeout_seconds,
                 nullptr,
-                creds.policy
+                creds.policy,
+                [&sink]() { return sink.is_writable && !sink.is_writable(); }
             );
 
             if (result.curl_code != CURLE_OK) {
@@ -918,7 +919,8 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
                 headers,
                 timeout_seconds,
                 nullptr,
-                creds.policy
+                creds.policy,
+                [&sink]() { return sink.is_writable && !sink.is_writable(); }
             );
             if (result.curl_code != CURLE_OK) {
                 if (result.curl_code == CURLE_WRITE_ERROR) {
