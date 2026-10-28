@@ -35,6 +35,10 @@ if getent group systemd-journal > /dev/null 2>&1; then
     usermod -a -G systemd-journal lemonade > /dev/null 2>&1 || true
 fi
 
+if command -v systemd-tmpfiles > /dev/null 2>&1; then
+    systemd-tmpfiles --create /usr/lib/tmpfiles.d/lemonade.conf > /dev/null 2>&1 || true
+fi
+
 if command -v systemctl > /dev/null 2>&1 && [ -d /run/systemd/system ]; then
     systemctl daemon-reload > /dev/null 2>&1 || true
 
