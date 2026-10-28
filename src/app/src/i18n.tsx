@@ -505,6 +505,7 @@ const ZH_CN: Record<string, string> = {
   '{action} backend arguments for {engine} ({backend})': '{engine}（{backend}）的{action}后端参数',
   'Installing…': '正在安装…',
   'Updating…': '正在更新…',
+  'View logs': '查看日志',
   'Could not load backend system info: {error}': '无法加载后端系统信息：{error}',
   'Connecting': '连接中',
   'Connecting...': '连接中…',
