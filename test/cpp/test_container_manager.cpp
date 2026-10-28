@@ -333,6 +333,19 @@ void test_create_network() {
           network_create(docker) == "docker network create --internal --label ai.lemonade lemonade-n");
 }
 
+// Rootful Podman through CONTAINER_HOST never uses lemonade's local subordinate
+// IDs, so their absence must not block it.
+void test_rootful_service() {
+    FakeHost rootful_service;
+    rootful_service.account = "lemonade";
+    rootful_service.tools = {"podman", "getsubids"};
+    rootful_service.env = {{"CONTAINER_HOST", "unix:///run/podman-lemonade.sock"}};
+    rootful_service.podman_rootless = "false";
+    const auto failure = ContainerManager(rootful_service.host()).check_podman();
+    check("rootful Podman via CONTAINER_HOST needs no local subordinate IDs",
+          !failure || failure->id != "subordinate_ids");
+}
+
 void test_install_commands() {
     const auto command = ContainerManager::podman_install_command;
     check("Rocky Linux matches fedora through ID_LIKE",
@@ -423,6 +436,7 @@ int main() {
     test_tool_choice_and_setup();
     test_system_service_setup();
     test_create_network();
+    test_rootful_service();
     test_install_commands();
     test_helpers();
 #ifndef _WIN32

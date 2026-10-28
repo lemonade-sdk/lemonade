@@ -246,7 +246,9 @@ std::vector<SetupFailure> ContainerManager::check_host() const {
 
 std::optional<SetupFailure> ContainerManager::check_podman() const {
     if (tool() != ContainerTool::Podman) return std::nullopt;
-    if (host_.account() == kServiceAccount && host_.on_path("getsubids")) {
+    // Only local rootless Podman maps container IDs onto lemonade's own ranges;
+    // a root or remote Podman behind CONTAINER_HOST uses its own.
+    if (host_.account() == kServiceAccount && expect_rootless() && host_.on_path("getsubids")) {
         const auto has_range = [this](const std::vector<std::string>& argv) {
             const CommandResult result =
                 host_.run(argv, kCommandTimeoutSeconds, /*capture_stderr=*/false);
