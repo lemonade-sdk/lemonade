@@ -342,6 +342,19 @@ def merge_bench_outputs(base: dict | None, incoming: dict) -> dict:
     return base
 
 
+def runnable_models(fork: dict, models: list[str], all_forks: list[dict]) -> list[str]:
+    aliases = fork.get("model_aliases")
+    if aliases:
+        to_alias = {gguf: m for m, gguf in aliases.items()}
+        return [
+            m if m in aliases else to_alias[m]
+            for m in models
+            if m in aliases or m in to_alias
+        ]
+    alias_only = {m for f in all_forks for m in f.get("model_aliases", {})}
+    return [m for m in models if m not in alias_only]
+
+
 def run_bench(
     fork: dict,
     version: str,
@@ -782,11 +795,10 @@ def main() -> int:
         # Precedence: --model-filter, then the fork's model_filter, then registry
         # discovery by the fork's recipe.
         run_models = models
-        if run_models and fork.get("model_aliases"):
-            to_alias = {gguf: m for m, gguf in fork["model_aliases"].items()}
-            run_models = [to_alias[m] for m in run_models if m in to_alias]
+        if run_models:
+            run_models = runnable_models(fork, run_models, forks_config["forks"])
             if not run_models:
-                print(f"  [skip] no {fork_id} alias for --model-filter {models}")
+                print(f"  [skip] no {fork_id} model in --model-filter {models}")
                 continue
         if not run_models:
             run_models = fork.get("model_filter", [])

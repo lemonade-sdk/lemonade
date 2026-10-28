@@ -249,13 +249,14 @@ jobs:
             # lemond execs <section>.<key>_bin verbatim: it must be the file, not
             # its directory (EISDIR -> /load 500).
             eval "$(FORK_ID="$FORK_ID" python3 - << 'PY'
-          import json, os, shlex
+          import json, os, shlex, sys
           from pathlib import Path
+          sys.path.insert(0, ".github/scripts")
+          from validate_backend_bench import runnable_models
           forks = json.loads(Path("src/cpp/resources/benchmark_forks.json").read_text())["forks"]
           fork = next(f for f in forks if f["fork_id"] == os.environ["FORK_ID"])
           models = [m for m in os.environ["GROUP_MODELS"].split(",") if m]
-          aliases = fork.get("model_aliases")
-          runnable = any(m in aliases.values() for m in models) if aliases else True
+          runnable = bool(runnable_models(fork, models, forks))
           exe = fork.get("binary_exe_linux", "llama-server")
           bindir = Path(os.environ["GITHUB_WORKSPACE"]) / ".." / "bench-binaries" / fork["fork_id"]
           binary = next(bindir.rglob(exe), None)
