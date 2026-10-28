@@ -522,29 +522,51 @@ function deviceOptionsForKey(key: keyof RecipeOptions, current: string | undefin
       .map(name => gpuChoiceFor(name, info)?.value ?? name)
     : null;
   const devices = availableDeviceCounts(info);
-  const cudaChoices = gpuChoices(info, 'cuda').map(choice => choice.value);
-  const cudaOptions = cudaChoices.length ? cudaChoices : indexed('cuda', devices.nvidia, 1);
+  // Only llama.cpp accepts comma-separated device names. Other recipes keep
+  // their single-GPU choices (including stable IDs) unchanged.
+  const withCombined = (options: string[], names = options): string[] => {
+    const unique = Array.from(new Set(names));
+    return recipe === 'llamacpp' && unique.length > 1
+      ? [...options, unique.join(',')] : options;
+  };
+  const cudaGpus = gpuChoices(info, 'cuda');
+  const cudaChoices = cudaGpus.map(choice => choice.value);
+  const cudaSingles = cudaChoices.length ? cudaChoices : indexed('cuda', devices.nvidia, 1);
+  const detected = (info as any)?.devices?.nvidia_gpu;
+  const available = Array.isArray(detected) ? detected.filter((gpu: any) => gpu?.available !== false) : [];
+  const family = available[0]?.family;
+  const multiCuda = available.length > 1
+    && typeof family === 'string' && /^sm_\d+$/.test(family)
+    && available.every((gpu: any) => gpu?.family === family);
+  // llama-server --device expects runtime device names, not a joined list of
+  // persistent GPU IDs. Use the actual indices, including non-contiguous ones.
+  const cudaOptions = multiCuda ? withCombined(cudaSingles, cudaGpus.map(choice => choice.indexName)) : cudaSingles;
   let base: string[] = [];
 
   if (!backend || backend === 'auto') {
     base = ['cpu'];
     if (devices.nvidia > 0) base.push(...cudaOptions);
-    if (devices.amd > 0) base.push(...indexed('vulkan', devices.amd, 0));
+    if (devices.amd > 0) base.push(...withCombined(indexed('vulkan', devices.amd, 0)));
     if (devices.metal) base.push('metal');
     if (devices.npu && recipe !== 'llamacpp') base.push('npu0');
   } else if (backend.includes('cpu')) base = ['cpu'];
   else if (backend.includes('cuda')) base = cudaOptions;
-  else if (backend.includes('vulkan')) base = runtimeOptions('vulkan') ?? indexed('vulkan', devices.amd + devices.nvidia, 1);
-  else if (backend.includes('opencl')) base = indexed('opencl', devices.amd + devices.nvidia, 1);
+  else if (backend.includes('vulkan')) base = withCombined(runtimeOptions('vulkan') ?? indexed('vulkan', devices.amd + devices.nvidia, 1));
+  else if (backend.includes('opencl')) base = withCombined(indexed('opencl', devices.amd + devices.nvidia, 1));
   else if (backend.includes('rocm')) {
     const amdGpus = (info as any)?.devices?.amd_gpu;
     const count = Array.isArray(amdGpus) ? amdGpus.filter((gpu: any) => gpu?.available !== false).length : devices.amd;
-    const hipOptions = gpuChoices(info, 'rocm').map(choice => choice.value);
+    const hipGpus = gpuChoices(info, 'rocm');
+    const hipOptions = hipGpus.map(choice => choice.value);
     // Without HIP indices, SystemInfo's iGPU-first order may not be HIP's, so
     // several AMD GPUs cannot be told apart by position.
     base = runtimeOptions('rocm')
       ?? (hipOptions.length ? hipOptions
         : (recipe === 'sd-cpp' || count <= 1 ? indexed('rocm', count, 1) : []));
+    const hipNames = runtimeDevices
+      ? runtimeDevices.map(device => device.name.toLowerCase()).filter(name => /^rocm\d+$/.test(name))
+      : hipGpus.map(choice => choice.indexName);
+    base = withCombined(base, hipNames);
   }
   else if (backend.includes('metal') && devices.metal) base = ['metal'];
   else if (backend.includes('npu') && devices.npu && recipe !== 'llamacpp') base = ['npu0'];
