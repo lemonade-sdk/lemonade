@@ -524,6 +524,27 @@ int main() {
             std::this_thread::sleep_for(std::chrono::seconds(6));
             auto held = management.Get("/api/v1/nexus/status");
             check(held && held->status == 200 && nlohmann::json::parse(held->body).at("locked") == true, "An explicit lock holds against key unlock");
+            // Without a configured server, enable discovers one by DNS. A domain that cannot
+            // resolve fails with the region named, and a remembered server needs no network.
+            request("disable", "{}", 200);
+            set_environment("LEMONADE_NEXUS_SERVER", "");
+            set_environment("LEMONADE_NEXUS_DOMAIN", "nexus.invalid");
+            auto undiscovered = request("enable", "{}", 503);
+            check(undiscovered.value("error", std::string{}).find("us-west.seip.nexus.invalid") != std::string::npos,
+                  "A discovery failure names the region");
+            {
+                std::ifstream saved_input(root / "nexus/account.json");
+                auto saved = nlohmann::json::parse(saved_input, nullptr, false);
+                saved_input.close();
+                if (!saved.is_object()) saved = nlohmann::json::object();
+                saved["server"] = "sn01.us-west.seip.nexus.invalid";
+                std::ofstream saved_output(root / "nexus/account.json");
+                saved_output << saved.dump();
+            }
+            auto remembered = request("enable", "{}", 200);
+            check(remembered.at("server") == "sn01.us-west.seip.nexus.invalid", "A remembered server skips discovery");
+            set_environment("LEMONADE_NEXUS_DOMAIN", "");
+            set_environment("LEMONADE_NEXUS_SERVER", "127.0.0.1");
 #else
             request("enable", "{}", 503);
             request("selection", R"({"target":"local"})", 503);

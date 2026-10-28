@@ -476,8 +476,10 @@ struct NexusManager::Session {
     std::string node_id;
     std::string group_id;
     std::string tunnel_ip;
-    std::string host{"lemonade-nexus.io"};
-    std::string rp_id{"lemonade-nexus.io"};
+    std::string domain{"lemonade-nexus.io"};  // network DNS domain
+    std::string region{"us-west"};            // SEIP region label
+    std::string host;                         // bootstrap server: configured, remembered, or discovered
+    std::string rp_id;                        // configured, else the network's own value from /api/health
     std::string pubkey;
     std::string detail{"locked"};
     std::string error;
@@ -496,12 +498,33 @@ struct NexusManager::Session {
             if (!saved.is_object()) throw NexusError(500, "Device account is invalid; restore account.json");
             account = saved;
         }
+        if (const auto value = utils::get_environment_variable_utf8("LEMONADE_NEXUS_DOMAIN"); !value.empty()) domain = value;
+        if (const auto value = utils::get_environment_variable_utf8("LEMONADE_NEXUS_REGION"); !value.empty()) region = value;
         if (const auto value = utils::get_environment_variable_utf8("LEMONADE_NEXUS_SERVER"); !value.empty()) host = value;
         if (const auto value = utils::get_environment_variable_utf8("LEMONADE_NEXUS_RP_ID"); !value.empty()) rp_id = value;
         int public_port = 9100;
         const auto configured_port = utils::get_environment_variable_utf8("LEMONADE_NEXUS_PORT");
         if (!configured_port.empty()) public_port = std::stoi(configured_port);
         if (public_port < 1 || public_port > 65535) throw NexusError(400, "Invalid Nexus server port");
+        // The servers' certificates name their own FQDNs, not the network apex, so
+        // without a configured host the bootstrap server comes from DNS discovery.
+        // The first discovered name is remembered, so later starts need no network
+        // before the SDK's own verified directory takes over.
+        if (host.empty()) host = account.value("server", std::string{});
+        if (host.empty()) {
+            char* out = nullptr;
+            const auto code = ln_discover_servers(domain.c_str(), region.c_str(), static_cast<uint16_t>(public_port), &out);
+            std::unique_ptr<char, decltype(&ln_free)> owned(out, ln_free);
+            const auto found = out ? json::parse(out, nullptr, false) : json();
+            const auto servers = found.is_object() ? found.value("servers", json::array()) : json::array();
+            if (code != LN_OK || servers.empty() || !servers.front().is_object()) {
+                throw NexusError(503, "No network server found for " + region + ".seip." + domain +
+                                          (found.is_object() ? ": " + found.value("error", std::string{}) : std::string{}));
+            }
+            host = servers.front().value("host", std::string{});
+            account["server"] = host;
+            persist();
+        }
         client.reset(ln_create_tls(host.c_str(), static_cast<uint16_t>(public_port)));
         if (!client) throw NexusError(500, "Cannot create Nexus client");
         const auto path = utils::path_to_utf8(root / "identity.json");
@@ -855,6 +878,18 @@ struct NexusManager::Session {
             else { refresh_devices(); error.clear(); }
         } catch (const std::exception& e) {
             error = e.what(); detail = "degraded";
+            // The SDK binds a session to the Tier 1 server that issued it. When that
+            // server leaves Tier 1 at an epoch boundary, every private call is refused
+            // until the device joins again; drop the stale session so the next poll
+            // authenticates with the device identity through a current server.
+            if (error.find("no longer a verified Tier 1 server") != std::string::npos) {
+                ln_mesh_disable(client.get());
+                ln_set_session_token(client.get(), "");
+                egress_ips.clear();
+                joined = false;
+                retry_at = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+                return;
+            }
             retry_at = std::chrono::steady_clock::now() + retry_delay;
             retry_delay = std::min(retry_delay * 2, std::chrono::seconds(60));
         }
@@ -877,6 +912,12 @@ struct NexusManager::Session {
             const auto authenticated = authenticate_identity();
             const auto user_id = authenticated.at("user_id").get<std::string>();
             const auto challenge = sdk_call([&](auto out) { return ln_auth_passkey_challenge(client.get(), user_id.c_str(), out); });
+            if (rp_id.empty()) {
+                // The RP ID is the network's, not this host's: WebAuthn binds the credential to it.
+                const auto health = sdk_call([&](auto out) { return ln_health(client.get(), out); });
+                rp_id = health.value("rp_id", std::string{});
+                if (rp_id.empty()) throw NexusError(502, "The network did not report its passkey RP ID");
+            }
             return {{"challenge", challenge.at("challenge")}, {"user_id", user_id}, {"rp_id", rp_id},
                 {"credential_id", account.value("credential_id", "")}, {"registration", path.find("register=1") != std::string::npos}};
         }

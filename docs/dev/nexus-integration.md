@@ -103,26 +103,36 @@ single-use until its server expiry.
 
 ## Configuration and lifecycle
 
-The bootstrap hostname found in Nexus configuration is `lemonade-nexus.io`.
+Without a configured bootstrap host, `lemond` discovers one: it resolves
+`<region>.seip.<domain>`, reads each server's certificate name, and remembers
+the first name below the domain in `account.json` (`server`). Later starts use
+the remembered name and need no network before the SDK's own verified server
+directory takes over. The servers' certificates name their own FQDNs, not the
+network apex, so the apex is never a valid bootstrap host.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `LEMONADE_NEXUS_SERVER` | `lemonade-nexus.io` | Bootstrap HTTPS host |
+| `LEMONADE_NEXUS_DOMAIN` | `lemonade-nexus.io` | Network DNS domain for discovery |
+| `LEMONADE_NEXUS_REGION` | `us-west` | SEIP region label for discovery |
+| `LEMONADE_NEXUS_SERVER` | discovered | Bootstrap HTTPS host; skips discovery |
 | `LEMONADE_NEXUS_PORT` | `9100` | Bootstrap HTTPS port |
-| `LEMONADE_NEXUS_RP_ID` | `lemonade-nexus.io` | RP ID; must match the federation |
+| `LEMONADE_NEXUS_RP_ID` | from `/api/health` | WebAuthn RP ID; the network's own value unless overridden |
 | `LEMONADE_NEXUS_GENESIS_PUBKEY` | discovered | Federation Genesis public key (base64); overrides first-connect discovery |
 
-The bootstrap hostname must match its HTTPS certificate. Use an advertised
-server FQDN when the bootstrap alias is not covered by that certificate. The
-RP ID must match the federation's `/api/health` response; it is independent of
-the hostname used to reach that server.
+A configured bootstrap hostname must match its HTTPS certificate: use an
+advertised server FQDN. The RP ID is the network's, independent of the
+hostname used to reach a server; `lemond` reads it from `/api/health` for the
+passkey challenge when it is not configured.
 
 Identity, account metadata and enabled preference live in `nexus/` under the
 server configuration directory. Unix permissions restrict the directory to its
 owner. Restart leaves an enabled passkey device locked, and a long supervisor
 pause locks the mesh; a key-unlocked device unlocks again by itself in both
 cases. Transient failures reconnect with bounded backoff after a successful
-join, without replaying consumed invite tokens.
+join, without replaying consumed invite tokens. A session is bound to the
+Tier 1 server that issued it; when that server leaves Tier 1 at an epoch
+boundary, `lemond` drops the session and joins again through a current server
+with the device identity, with no passkey prompt.
 
 Virtual TCP port `13305` forwards to a separate loopback listener that
 `NexusManager` starts once; a main-port rebind does not touch it. That listener
