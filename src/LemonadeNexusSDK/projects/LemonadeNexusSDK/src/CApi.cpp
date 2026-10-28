@@ -1,6 +1,7 @@
 #include <LemonadeNexusSDK/lemonade_nexus.h>
 #include <LemonadeNexusSDK/AccountAvatarClient.hpp>
 #include <LemonadeNexusSDK/LemonadeNexusClient.hpp>
+#include <LemonadeNexusSDK/ServerDiscovery.hpp>
 #include <LemonadeNexusSDK/GroupKey.hpp>
 #include <LemonadeNexusSDK/MeshPort.hpp>
 
@@ -1544,6 +1545,29 @@ ln_error_t ln_tier1_membership(ln_client_t* client, char** out_json) {
     if (!client || !out_json) return LN_ERR_NULL_ARG;
     try {
         *out_json = strdup_json(tier1_membership_json(client->client.tier1_membership()));
+        return LN_OK;
+    } catch (...) {
+        return LN_ERR_INTERNAL;
+    }
+}
+
+ln_error_t ln_discover_servers(const char* domain, const char* region, uint16_t port,
+                               char** out_json) {
+    if (!domain || !region || !out_json) return LN_ERR_NULL_ARG;
+    try {
+        const auto result = lnsdk::discover_servers(domain, region, port);
+        if (!result.ok) {
+            *out_json = strdup_json(json{{"error", result.error}});
+            // A malformed domain or region never reaches the network.
+            return result.error.find("must be hostname labels") != std::string::npos
+                       ? LN_ERR_REJECTED
+                       : LN_ERR_CONNECT;
+        }
+        json servers = json::array();
+        for (const auto& s : result.value) {
+            servers.push_back({{"host", s.host}, {"port", s.port}, {"address", s.address}});
+        }
+        *out_json = strdup_json(json{{"servers", servers}});
         return LN_OK;
     } catch (...) {
         return LN_ERR_INTERNAL;

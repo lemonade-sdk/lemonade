@@ -789,6 +789,30 @@ ln_error_t ln_tier1_membership(ln_client_t* client, char** out_json);
 ln_error_t ln_discover_genesis_key(ln_client_t* client, const char* hosts_json,
                                    char** out_json);
 
+/** First-connect server discovery, the same steps as the client app's DNS
+ *  discovery: resolve `<region>.seip.<domain>`, read each address's leaf
+ *  certificate common name over TLS, and keep the names below `domain` (never
+ *  the apex, never a wildcard). The handshake does not verify the certificate,
+ *  so the names are candidates: create the client with ln_create_tls() on one
+ *  of them, and let ln_discover_genesis_key() require agreement of several,
+ *  before trusting anything they say.
+ *  @param domain    Network DNS domain, e.g. "lemonade-nexus.io".
+ *  @param region    SEIP region label, e.g. "us-west".
+ *  @param port      HTTPS port to probe (9100 for the public API).
+ *  @param out_json  Receives, on LN_OK,
+ *                   {"servers":[{"host":"<fqdn>","port":9100,"address":"<ipv4>"},...]}
+ *                   in resolution order with duplicate names removed, and on
+ *                   failure {"error":"..."}. The caller must ln_free()
+ *                   *out_json in both cases. It stays NULL only for
+ *                   LN_ERR_NULL_ARG and LN_ERR_INTERNAL.
+ *  @return LN_OK with at least one server; LN_ERR_REJECTED when domain or
+ *          region is not a hostname label set; LN_ERR_CONNECT when the region
+ *          name does not resolve or no address presented a usable name.
+ *  Blocks on DNS and on one TLS handshake per address (at most 16, 5 s each).
+ *  Thread-safe. */
+ln_error_t ln_discover_servers(const char* domain, const char* region, uint16_t port,
+                               char** out_json);
+
 /* ------------------------------------------------------------------ */
 /* Mesh port                                                           */
 /* ------------------------------------------------------------------ */
