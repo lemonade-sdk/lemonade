@@ -23,7 +23,7 @@ The **Thinking** menu switches supported chat requests between reasoning and a d
 
 Attachment types and limits depend on the model. Chat can also present model-specific composers for image generation and editing, transcription, music and sound effects, TTS and voice cloning, and 3D generation. Embedding, reranking, and classification models are managed in Models but are not selectable in the Chat composer.
 
-Chat history is client-side. It survives app reload only when **Settings > Chat > Save chat history in this browser** is enabled; attached media is never persisted.
+Chat history is client-side and is saved in this browser by default. You can disable it under **Settings > Chat > Save chat history in this browser**; attached media is never persisted.
 
 ## Inspect Effective settings
 
