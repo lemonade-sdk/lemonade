@@ -1,5 +1,5 @@
 import React, { Suspense, useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import api, { ModelInfo, LoadedModel, PullCallbacks, PullVariantsResult, HFModelResult, ModelRegistryProvider, ModelSyncStatus, searchHuggingFace, searchModelScope, friendlyErrorMessage } from '../api';
+import api, { ModelInfo, LoadedModel, PullCallbacks, PullVariantsResult, HFModelResult, ModelRegistryProvider, searchHuggingFace, searchModelScope, friendlyErrorMessage } from '../api';
 import { copyTextToClipboard } from '../clipboard';
 import { capabilityFromModelInfo, modelCapabilityTags, modelSupportsChatImageInput } from '../modelCapabilities';
 import { Icon } from './Icon';
@@ -13,6 +13,7 @@ import {
 } from '../features/models/huggingFaceSearch';
 import { DEFAULT_CONTEXT_SIZE } from '../modelConfiguration';
 import { DownloadListItem, activeDownloadForModel, downloadStore, isDownloadActive } from '../features/downloadManager/downloadStore';
+import { isModelSyncRunning, modelSyncFailureText, modelSyncStore, openServerLogs, type ModelSyncSnapshot } from '../features/models/modelSyncStore';
 import { ModelListPanel, capabilityTagIconTarget, modelIsCustom, modelMatchesBackends, modelMatchesTags, modelMatchesTasks } from './ModelListPanel';
 import type { FilterTab, PrimaryFilter } from './ModelListPanel';
 import { ModelNavRail } from './ModelNavRail';
@@ -1080,11 +1081,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   const [loadingModel, setLoadingModel] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<{ modelName: string; message: string } | null>(null);
   const [pulling, setPulling] = useState<Record<string, number>>({});  // model -> percent
-  const [modelSyncStatus, setModelSyncStatus] = useState<ModelSyncStatus | null>(null);
-  const [modelSyncSubmitting, setModelSyncSubmitting] = useState(false);
-  const [modelSyncError, setModelSyncError] = useState<string | null>(null);
-  const [modelSyncPollEpoch, setModelSyncPollEpoch] = useState(0);
-  const modelSyncDispatchingRef = useRef(false);
+  const [modelSync, setModelSync] = useState<ModelSyncSnapshot>(() => modelSyncStore.snapshot());
   const [downloadItems, setDownloadItems] = useState<DownloadListItem[]>(() => downloadStore.snapshot());
   const unknownActiveModelDownloadsRef = useRef<Set<string>>(new Set());
   const pullAbortRef = useRef<Record<string, AbortController>>({});
@@ -1272,48 +1269,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     }
   }, []);
 
-  // Reattach to server-side syncs after returning to Models; polling stops when
-  // idle or unmounted. Download progress belongs to /models/sync/status, not /pull.
-  useEffect(() => {
-    if (connectionStatus !== 'connected') {
-      setModelSyncStatus(null);
-      return;
-    }
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    let sawRunning = false;
-    const poll = async () => {
-      try {
-        const status = await api.getModelSyncStatus();
-        if (cancelled) return;
-        setModelSyncStatus(status);
-        const isTerminalSync = status.status === 'success' || status.status === 'failed';
-        if (status.status === 'in_progress') {
-          sawRunning = true;
-          setModelSyncError(null);
-          timer = setTimeout(() => { void poll(); }, 1500);
-        } else if (sawRunning || modelSyncPollEpoch > 0 || isTerminalSync) {
-          // Always trust the server's terminal status, even when a restarted
-          // server reuses an ID. One refresh per Models mount is intentional.
-          const failures = Object.entries(status.failed_models || {}).map(([name, reason]) => `${name}: ${reason}`);
-          setModelSyncError(status.status === 'failed' || status.terminal_error || failures.length
-            ? [status.terminal_error, ...failures].filter(Boolean).join('; ') || 'Model update failed.'
-            : null);
-          void refresh();
-        }
-      } catch (error) {
-        if (!cancelled && (sawRunning || modelSyncPollEpoch > 0)) {
-          setModelSyncError(friendlyErrorMessage(error));
-          timer = setTimeout(() => { void poll(); }, 3000);
-        }
-      }
-    };
-    void poll();
-    return () => {
-      cancelled = true;
-      if (timer !== undefined) clearTimeout(timer);
-    };
-  }, [connectionStatus, modelSyncPollEpoch, refresh]);
+  useEffect(() => modelSyncStore.subscribe(setModelSync), []);
 
   // App owns startup connection. This fallback supports isolated mounts without
   // creating a second request when the global refresh is already in flight.
@@ -2535,26 +2491,13 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   const pinnedNameSet = useMemo(() => new Set(pinnedModels.map(name => name.toLowerCase())), [pinnedModels]);
   const favoriteNameSet = useMemo(() => new Set(favoriteModels.map(name => name.toLowerCase())), [favoriteModels]);
 
-  const modelSyncBusy = modelSyncSubmitting || modelSyncStatus?.status === 'in_progress';
-  const handleModelSync = useCallback(async (models?: string[]) => {
-    if (modelSyncDispatchingRef.current || modelSyncStatus?.status === 'in_progress') return;
-    modelSyncDispatchingRef.current = true;
-    setModelSyncSubmitting(true);
-    setModelSyncError(null);
-    try {
-      setModelSyncStatus(await api.startModelSync(models));
-      setModelSyncPollEpoch(value => value + 1);
-    } catch (error) {
-      setModelSyncError(friendlyErrorMessage(error));
-    } finally {
-      modelSyncDispatchingRef.current = false;
-      setModelSyncSubmitting(false);
-    }
-  }, [modelSyncStatus?.status]);
-  const handleUpdateAllModels = useCallback(() => { void handleModelSync(); }, [handleModelSync]);
+  const modelSyncBusy = isModelSyncRunning(modelSync);
+  const modelSyncProgress = modelSync.active?.progress;
+  const modelSyncError = modelSync.error || modelSyncFailureText(modelSync.result);
+  const handleUpdateAllModels = useCallback(() => { void modelSyncStore.startSync(); }, []);
   const handleUpdateModel = useCallback((model: ModelInfo) => {
-    void handleModelSync([modelName(model)]);
-  }, [handleModelSync]);
+    void modelSyncStore.startSync([modelName(model)]);
+  }, []);
 
   const localRegistryRefs = useMemo(() => {
     const refs = new Set<string>();
@@ -2849,19 +2792,24 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       {mobileRail.isOpen && <div className="workspace-mobile-rail-backdrop" onClick={mobileRail.close} aria-hidden="true" />}
       {customJsonNotice && <div className="manager__toast" role="status" aria-live="polite">{customJsonNotice}</div>}
       {(modelSyncBusy || modelSyncError) && (
-        <div className="manager__toast" role={modelSyncError ? 'alert' : 'status'}>
-          {modelSyncError || (
+        <div className="manager__toast manager__toast--sync" role={modelSyncError && !modelSyncBusy ? 'alert' : 'status'}>
+          <span className="manager__toast-message">
+            {modelSyncBusy ? (
+              <>
+                {t('Updating…')}
+                {modelSyncProgress?.current_model && ` ${modelSyncProgress.current_model}`}
+                {modelSyncProgress?.current_model && typeof modelSyncProgress.percent === 'number'
+                  && ` (${modelSyncProgress.percent.toFixed(0)}%)`}
+              </>
+            ) : modelSyncError}
+          </span>
+          {!modelSyncBusy && (
             <>
-              {t('Updating…')}
-              {modelSyncStatus?.progress?.current_model && ` ${modelSyncStatus.progress.current_model}`}
-              {modelSyncStatus?.progress?.current_model && typeof modelSyncStatus.progress.percent === 'number'
-                && ` (${modelSyncStatus.progress.percent.toFixed(0)}%)`}
+              <button type="button" className="manager__toast-action" onClick={openServerLogs}>{t('View logs')}</button>
+              <button type="button" className="manager__toast-dismiss" onClick={() => modelSyncStore.dismissResult()} aria-label={t('Dismiss notification')}>
+                <Icon name="x" size={14} aria-hidden="true" />
+              </button>
             </>
-          )}
-          {modelSyncError && (
-            <button type="button" className="manager__toast-dismiss" onClick={() => setModelSyncError(null)} aria-label={t('Dismiss notification')}>
-              <Icon name="x" size={14} aria-hidden="true" />
-            </button>
           )}
         </div>
       )}
