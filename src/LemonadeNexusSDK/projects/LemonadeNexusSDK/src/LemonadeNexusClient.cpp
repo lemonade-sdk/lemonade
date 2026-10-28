@@ -167,9 +167,42 @@ struct LemonadeNexusClient::Impl {
     std::string    session_node;
     std::string    challenge_node;
     // Set when the session was dropped because its server left the verified
-    // membership; cleared by the next successful join. Reported by
-    // mesh_status() so the application knows to join again.
+    // membership and the SDK could not move it; cleared by the next
+    // successful join. Reported by mesh_status() so the application knows to
+    // join again.
     std::atomic<bool> rejoin_needed{false};
+
+    // The owning client: a session move calls its join and mesh methods.
+    LemonadeNexusClient* owner{nullptr};
+
+    // Whether enable_mesh() is in effect, and the config it was given, so a
+    // session move brings the orchestrator back as it was. Guarded by mutex.
+    bool       mesh_enabled{false};
+    MeshConfig mesh_config;
+
+    // One session move at a time, on its own thread: it verifies the
+    // membership, authenticates, and joins again, which neither a private-API
+    // caller nor the orchestrator's thread may block on. move_mtx guards the
+    // thread handle and the flags below.
+    std::mutex  move_mtx;
+    std::thread move_thread;
+    bool        move_running{false};
+    // Set by the destructor: no move starts, and a running one restarts no
+    // orchestrator.
+    std::atomic<bool> closing{false};
+    // The highest next epoch a departure notice named that started a move,
+    // so one notice starts one move.
+    uint64_t    move_hint_epoch{0};
+    // While a move runs: the member whose server a challenge must not go
+    // to, the departing session server, when it is still verified. Guarded
+    // by transport_mtx.
+    std::string avoid_node;
+
+    // The application's session-move callback. notify_session_moved() calls
+    // it under this lock, so set_session_moved_callback() returns only when
+    // the previous callback is not running.
+    std::mutex                               session_moved_mtx;
+    LemonadeNexusClient::SessionMovedCallback session_moved_callback;
 
     // The client's single userspace mesh dataplane (boringtun Noise + smoltcp
     // netstack, no TUN). Brought up at join; carries both mesh P2P traffic and
@@ -304,6 +337,7 @@ struct LemonadeNexusClient::Impl {
         const bool answers_challenge =
             path == "/api/auth" || path.starts_with("/api/auth/") || path == "/api/join";
         std::string pin;
+        std::string avoid;
         {
             std::lock_guard lock(transport_mtx);
             if (is_challenge) {
@@ -314,6 +348,7 @@ struct LemonadeNexusClient::Impl {
             } else {
                 pin = session_node;
             }
+            avoid = avoid_node;
         }
         const auto attempt = [&](const ServerEndpoint& ep) -> std::optional<HttpReply> {
             const auto url = base_url(ep);
@@ -345,11 +380,11 @@ struct LemonadeNexusClient::Impl {
         };
         Tier1Server answered;
         std::string error;
-        auto reply = tier1.send(attempt, pin, &answered, error);
+        auto reply = tier1.send(attempt, pin, &answered, error, avoid);
         if (!reply && pin.empty() && tier1.needs_refresh(kTier1MaxAgeMs)) {
             // Every verified server refused: the membership may have moved.
             if (tier1.refresh(tier1_sources()).ok) {
-                reply = tier1.send(attempt, pin, &answered, error);
+                reply = tier1.send(attempt, pin, &answered, error, avoid);
             }
         }
         if (!reply) {
@@ -397,25 +432,123 @@ struct LemonadeNexusClient::Impl {
             // Tier 1 rotates members out at epoch boundaries. The session is a
             // bearer token for a server that no longer holds the tree, and
             // join_network() reuses a held token, so a join that kept it
-            // would still target that server. Drop the session: the next
-            // join authenticates through a current member.
-            bool dropped = false;
-            {
-                std::lock_guard lock(transport_mtx);
-                if (session_node == node) {
-                    session_token.clear();
-                    session_node.clear();
-                    dropped = true;
-                }
+            // would still target that server. With an identity the SDK moves
+            // the session itself (run_session_move); without one it drops
+            // the session, and the next join authenticates through a current
+            // member.
+            if (has_identity()) {
+                start_session_move("the session's server left Tier 1", 0);
+                return "the session's server is no longer a verified Tier 1 server: "
+                       "the session is moving";
             }
-            if (dropped) {
-                rejoin_needed.store(true, std::memory_order_relaxed);
-                spdlog::info("[LemonadeNexusClient] the session's server left Tier 1: "
-                             "session dropped, join again");
-            }
+            drop_departed_session(node, "no identity for a silent re-authentication");
             return "the session's server is no longer a verified Tier 1 server: join again";
         }
         return {};
+    }
+
+    bool has_identity() {
+        std::lock_guard lock(mutex);
+        return identity.is_valid();
+    }
+
+    // The certificate FQDN of a verified member, or empty.
+    std::string host_of(const std::string& node) const {
+        for (const auto& s : tier1.membership().servers) {
+            if (s.node_id == node) return s.host;
+        }
+        return {};
+    }
+
+    void notify_session_moved(const SessionMoveEvent& event) {
+        std::lock_guard lock(session_moved_mtx);
+        if (!session_moved_callback) return;
+        try {
+            session_moved_callback(event);
+        } catch (const std::exception& e) {
+            spdlog::warn("[LemonadeNexusClient] session moved callback threw: {}", e.what());
+        } catch (...) {
+            spdlog::warn("[LemonadeNexusClient] session moved callback threw");
+        }
+    }
+
+    // The session of `node`, whose server left Tier 1, cannot move by itself:
+    // drop it, so the application joins again through a current member.
+    void drop_departed_session(const std::string& node, std::string error) {
+        SessionMoveEvent event;
+        event.from_node_id = node;
+        event.from_host    = host_of(node);
+        event.epoch        = tier1.membership().epoch;
+        event.error        = std::move(error);
+        {
+            std::lock_guard lock(transport_mtx);
+            if (session_node != node) return;
+            session_token.clear();
+            session_node.clear();
+        }
+        rejoin_needed.store(true, std::memory_order_relaxed);
+        spdlog::info("[LemonadeNexusClient] the session's server left Tier 1: session dropped, "
+                     "join again ({})", event.error);
+        notify_session_moved(event);
+    }
+
+    // Start a session move on its own thread, unless one runs. `hint_epoch`
+    // is the next epoch a departure notice named (0 when the trigger carried
+    // none); a notice starts at most one move per epoch.
+    void start_session_move(std::string reason, uint64_t hint_epoch) {
+        std::thread finished;
+        {
+            std::lock_guard lock(move_mtx);
+            if (move_running || closing.load(std::memory_order_relaxed)) return;
+            if (hint_epoch != 0) {
+                if (hint_epoch <= move_hint_epoch) return;
+                move_hint_epoch = hint_epoch;
+            }
+            finished = std::move(move_thread);  // the previous move ended
+            move_running = true;
+            move_thread = std::thread([this, reason = std::move(reason), hint_epoch] {
+                try {
+                    owner->run_session_move(reason, hint_epoch);
+                } catch (const std::exception& e) {
+                    spdlog::warn("[LemonadeNexusClient] session move failed: {}", e.what());
+                } catch (...) {
+                    spdlog::warn("[LemonadeNexusClient] session move failed");
+                }
+                std::lock_guard done(move_mtx);
+                move_running = false;
+            });
+        }
+        if (finished.joinable()) finished.join();
+    }
+
+    // Wait for a running session move to end. Never called from the move
+    // thread.
+    void join_session_move() {
+        std::thread running;
+        {
+            std::lock_guard lock(move_mtx);
+            running = std::move(move_thread);
+        }
+        if (running.joinable()) running.join();
+    }
+
+    // Before destruction: a session move in progress uses the client, so it
+    // ends (bounded by the HTTP timeouts) before anything is destroyed, no
+    // new one starts, and the orchestrator it may have restarted stops with
+    // the rest.
+    void close() {
+        closing.store(true, std::memory_order_relaxed);
+        join_session_move();
+    }
+
+    // The session's server announced in its heartbeat answer that it leaves
+    // Tier 1 at `next_epoch`. A hint: the move verifies the membership
+    // itself. An epoch at or below the verified one says nothing new.
+    void note_departure_notice(uint64_t next_epoch) {
+        if (next_epoch == 0 || next_epoch <= tier1.membership().epoch) return;
+        start_session_move("the session's server leaves Tier 1 at epoch " +
+                               std::to_string(next_epoch),
+                           next_epoch);
     }
 
     // Build the base URL for a specific server. Always HTTPS — the mesh has no
@@ -733,6 +866,13 @@ struct LemonadeNexusClient::Impl {
                     mesh_breaker_until_ms.store(0, std::memory_order_relaxed);  // healthy
                     spdlog::debug("[LemonadeNexusClient] private(mesh) {} {} -> HTTP {}",
                                   method, path, res->status);
+                    if (res->status == nexus::api::kTreeRouteRefusedStatus) {
+                        // The session's server no longer serves the tree: it
+                        // left Tier 1 at an epoch boundary. Verify the
+                        // membership again and move the session.
+                        tier1.mark_stale();
+                        start_session_move("the session's server no longer serves the tree", 0);
+                    }
                     try { return json::parse(res->body); }
                     catch (...) {
                         if (res->status >= 200 && res->status < 300) return std::nullopt;
@@ -888,12 +1028,28 @@ struct LemonadeNexusClient::Impl {
 LemonadeNexusClient::LemonadeNexusClient(const ServerConfig& config)
     : impl_{std::make_unique<Impl>(config)}
 {
+    impl_->owner = this;
 }
 
-LemonadeNexusClient::~LemonadeNexusClient() = default;
+LemonadeNexusClient::~LemonadeNexusClient() {
+    if (!impl_) return;
+    impl_->close();
+    disable_mesh();
+}
 
-LemonadeNexusClient::LemonadeNexusClient(LemonadeNexusClient&&) noexcept = default;
-LemonadeNexusClient& LemonadeNexusClient::operator=(LemonadeNexusClient&&) noexcept = default;
+LemonadeNexusClient::LemonadeNexusClient(LemonadeNexusClient&& other) noexcept
+    : impl_{std::move(other.impl_)} {
+    if (impl_) impl_->owner = this;
+}
+
+LemonadeNexusClient& LemonadeNexusClient::operator=(LemonadeNexusClient&& other) noexcept {
+    if (this != &other) {
+        if (impl_) impl_->close();
+        impl_ = std::move(other.impl_);
+        if (impl_) impl_->owner = this;
+    }
+    return *this;
+}
 
 // ---------------------------------------------------------------------------
 // Identity
@@ -2690,6 +2846,8 @@ void LemonadeNexusClient::enable_mesh(const MeshConfig& config) {
         if (impl_->mesh_callback) {
             impl_->mesh_orchestrator->set_callback(impl_->mesh_callback);
         }
+        impl_->mesh_enabled = true;
+        impl_->mesh_config  = config;
     }
 
     impl_->mesh_orchestrator->start(config);
@@ -2703,6 +2861,7 @@ void LemonadeNexusClient::disable_mesh() {
     {
         std::lock_guard lock(impl_->mutex);
         orchestrator = std::move(impl_->mesh_orchestrator);
+        impl_->mesh_enabled = false;
     }
     if (orchestrator) orchestrator->stop();
 }
@@ -2740,6 +2899,100 @@ void LemonadeNexusClient::set_mesh_callback(MeshStateCallback cb) {
     if (impl_->mesh_orchestrator) {
         impl_->mesh_orchestrator->set_callback(impl_->mesh_callback);
     }
+}
+
+void LemonadeNexusClient::set_session_moved_callback(SessionMovedCallback cb) {
+    std::lock_guard lock(impl_->session_moved_mtx);
+    impl_->session_moved_callback = std::move(cb);
+}
+
+void LemonadeNexusClient::run_session_move(const std::string& reason, uint64_t hint_epoch) {
+    SessionMoveEvent event;
+    {
+        std::lock_guard lock(impl_->transport_mtx);
+        event.from_node_id = impl_->session_node;
+    }
+    if (event.from_node_id.empty()) return;  // no session to move
+    event.from_host = impl_->host_of(event.from_node_id);
+
+    // The notice is a hint. Only the membership verified from the pinned
+    // Genesis key says who serves now, and only it chooses the next server.
+    impl_->tier1.mark_stale();
+    const auto refreshed = impl_->tier1.refresh(impl_->tier1_sources());
+    if (!refreshed.ok) {
+        spdlog::warn("[LemonadeNexusClient] session not moved ({}): the Tier 1 membership "
+                     "could not be verified: {}", reason, refreshed.error);
+        return;
+    }
+    const auto& membership = refreshed.value;
+    event.epoch = membership.epoch;
+    const auto member = [&](const std::string& node) {
+        return std::any_of(membership.servers.begin(), membership.servers.end(),
+                           [&node](const Tier1Server& s) { return s.node_id == node; });
+    };
+    if (member(event.from_node_id)) {
+        // The session's server still serves the verified epoch. A notice for
+        // a later epoch moves the session early, onto another verified
+        // server, when there is one; otherwise the move waits for the
+        // handoff, which the server's tree refusal then reports.
+        const bool another = std::any_of(
+            membership.servers.begin(), membership.servers.end(),
+            [&event](const Tier1Server& s) { return s.node_id != event.from_node_id; });
+        if (hint_epoch <= membership.epoch || !another) {
+            spdlog::info("[LemonadeNexusClient] session stays ({}): its server is a verified "
+                         "member of epoch {}", reason, membership.epoch);
+            return;
+        }
+    }
+
+    Identity   local_identity;
+    bool       mesh_enabled = false;
+    MeshConfig mesh_config;
+    {
+        std::lock_guard lock(impl_->mutex);
+        local_identity = impl_->identity;
+        mesh_enabled   = impl_->mesh_enabled;
+        mesh_config    = impl_->mesh_config;
+    }
+    if (!local_identity.is_valid()) {
+        impl_->drop_departed_session(event.from_node_id,
+                                     "no identity for a silent re-authentication");
+        return;
+    }
+
+    spdlog::info("[LemonadeNexusClient] moving the session: {} (verified epoch {})", reason,
+                 membership.epoch);
+    // The orchestrator stops first: the join brings the dataplane up for the
+    // new server. The old session goes, so the join authenticates afresh,
+    // and its server takes no challenge while it is still verified.
+    disable_mesh();
+    {
+        std::lock_guard lock(impl_->transport_mtx);
+        if (impl_->session_node == event.from_node_id) {
+            impl_->session_token.clear();
+            impl_->session_node.clear();
+        }
+        impl_->avoid_node = event.from_node_id;
+    }
+    const auto joined = join_network({}, {});
+    {
+        std::lock_guard lock(impl_->transport_mtx);
+        impl_->avoid_node.clear();
+        event.to_node_id = impl_->session_node;
+    }
+    event.to_host = impl_->host_of(event.to_node_id);
+    if (!joined.ok) {
+        event.error = joined.error;
+        impl_->rejoin_needed.store(true, std::memory_order_relaxed);
+        spdlog::warn("[LemonadeNexusClient] session move failed, join again: {}", joined.error);
+        impl_->notify_session_moved(event);
+        return;
+    }
+    if (mesh_enabled && !impl_->closing.load(std::memory_order_relaxed)) enable_mesh(mesh_config);
+    event.silent = true;
+    spdlog::info("[LemonadeNexusClient] session moved to {} (epoch {})", event.to_host,
+                 event.epoch);
+    impl_->notify_session_moved(event);
 }
 
 Result<std::vector<MeshPeer>> LemonadeNexusClient::fetch_mesh_peers(const std::string& nid) {
@@ -2815,6 +3068,12 @@ StatusResult LemonadeNexusClient::mesh_heartbeat(const std::string& nid,
     }
     if (status != 200) {
         return {false, {}, status, resp->value("error", "heartbeat failed")};
+    }
+    // The session's server says it leaves Tier 1 at the next epoch: move
+    // the session early. Verified by the move, never taken on its word.
+    if (const auto notice = resp->find("tier1_departure");
+        notice != resp->end() && notice->is_object()) {
+        impl_->note_departure_notice(notice->value("next_epoch", uint64_t{0}));
     }
     return {true, {}, status, ""};
 }

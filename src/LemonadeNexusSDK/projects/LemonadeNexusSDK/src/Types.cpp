@@ -246,6 +246,19 @@ void from_json(const json& j, MeshTunnelStatus& s) {
     }
 }
 
+// --- SessionMoveEvent ---
+void to_json(json& j, const SessionMoveEvent& e) {
+    j = json{
+        {"from_node_id", e.from_node_id},
+        {"from_host",    e.from_host},
+        {"to_node_id",   e.to_node_id},
+        {"to_host",      e.to_host},
+        {"epoch",        e.epoch},
+        {"silent",       e.silent},
+        {"error",        e.error},
+    };
+}
+
 // --- MeshConfig ---
 void to_json(json& j, const MeshConfig& c) {
     j = json{

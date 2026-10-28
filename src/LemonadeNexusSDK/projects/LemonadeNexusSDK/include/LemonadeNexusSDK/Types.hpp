@@ -387,12 +387,34 @@ struct MeshTunnelStatus {
     uint64_t    total_rx_bytes{0};
     uint64_t    total_tx_bytes{0};
     std::vector<MeshPeer> peers;
-    /// True when the SDK dropped the session because the Tier 1 server that
-    /// issued it left the verified membership. The dataplane may still be up,
-    /// but every private-API call is refused until join_network() binds a new
-    /// session; a successful join clears it. Reported by
-    /// LemonadeNexusClient::mesh_status(), not by the mesh state callback.
+    /// True when the Tier 1 server that issued the session left the verified
+    /// membership and the SDK could not move the session by itself: the
+    /// device holds no identity to authenticate with, or the silent join
+    /// failed. The session is dropped and every private-API call is refused
+    /// until join_network() binds a new session; a successful join clears
+    /// it. Reported by LemonadeNexusClient::mesh_status(), not by the mesh
+    /// state callback. A session the SDK moved by itself never sets it.
     bool        needs_rejoin{false};
+};
+
+/// One session move: the Tier 1 server that issued the session left the
+/// verified membership, or announced that it leaves at the next epoch, and
+/// the SDK bound the session to another verified Tier 1 server
+/// (LemonadeNexusClient::set_session_moved_callback).
+struct SessionMoveEvent {
+    std::string from_node_id;  ///< base64 node id of the server that issued the old session
+    std::string from_host;     ///< its certificate FQDN, when it was still verified
+    std::string to_node_id;    ///< the server that issued the new session; empty when none did
+    std::string to_host;       ///< its certificate FQDN
+    /// The Tier 1 epoch the SDK verified when it moved the session.
+    uint64_t    epoch{0};
+    /// True when the SDK authenticated with the device identity and joined
+    /// again by itself; the application's view is intact. False when the
+    /// application must call join_network(): the session was dropped and
+    /// MeshTunnelStatus::needs_rejoin is set.
+    bool        silent{false};
+    /// Why no silent move happened; empty when `silent` is true.
+    std::string error;
 };
 
 /// Configuration for the mesh orchestrator.
@@ -480,6 +502,7 @@ void from_json(const nlohmann::json& j, TreeDelta& d);
 /// Excludes the "signature" field itself.
 [[nodiscard]] std::string canonical_delta_json(const TreeDelta& delta);
 
+void to_json(nlohmann::json& j, const SessionMoveEvent& e);
 void from_json(const nlohmann::json& j, StatsResponse& s);
 void from_json(const nlohmann::json& j, ServerEntry& s);
 void from_json(const nlohmann::json& j, DdnsStatus& s);

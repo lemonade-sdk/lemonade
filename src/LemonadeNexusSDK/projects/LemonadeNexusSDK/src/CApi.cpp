@@ -49,18 +49,25 @@ struct ln_client_s {
     std::mutex cert_callback_mutex;
     ln_cert_renewed_fn cert_callback{nullptr};
     void* cert_callback_user{nullptr};
+    // The application's session-move callback, same rules as the renewal one.
+    std::mutex session_callback_mutex;
+    ln_session_moved_fn session_callback{nullptr};
+    void* session_callback_user{nullptr};
 
     explicit ln_client_s(const lnsdk::ServerConfig& cfg) : client{cfg} {
         client.set_cert_renewed_callback([this](const lnsdk::CertRenewedEvent& event) { on_cert_renewed(event); });
+        client.set_session_moved_callback([this](const lnsdk::SessionMoveEvent& event) { on_session_moved(event); });
     }
     ~ln_client_s() {
         // Waits for a running callback, so none runs during member destruction.
         client.set_cert_renewed_callback({});
+        client.set_session_moved_callback({});
     }
     ln_client_s(const ln_client_s&) = delete;
     ln_client_s& operator=(const ln_client_s&) = delete;
 
     void on_cert_renewed(const lnsdk::CertRenewedEvent& event);
+    void on_session_moved(const lnsdk::SessionMoveEvent& event);
 };
 
 struct ln_identity_s {
@@ -678,6 +685,35 @@ void ln_client_s::on_cert_renewed(const lnsdk::CertRenewedEvent& event) {
         cert_callback(text.c_str(), cert_callback_user);
     } catch (...) {
         spdlog::warn("[CApi] certificate renewed event not delivered");
+    }
+}
+
+ln_error_t ln_set_session_moved_callback(ln_client_t* client,
+                                         ln_session_moved_fn fn,
+                                         void* user) {
+    if (!client) return LN_ERR_NULL_ARG;
+    try {
+        // on_session_moved() calls the callback under this lock, so the old
+        // callback is not running when the lock is held here.
+        std::lock_guard lock(client->session_callback_mutex);
+        client->session_callback = fn;
+        client->session_callback_user = fn ? user : nullptr;
+        return LN_OK;
+    } catch (...) {
+        return LN_ERR_INTERNAL;
+    }
+}
+
+void ln_client_s::on_session_moved(const lnsdk::SessionMoveEvent& event) {
+    std::lock_guard lock(session_callback_mutex);
+    if (!session_callback) return;
+    try {
+        // The callback owns the text (see ln_session_moved_fn).
+        char* text = strdup_json(json(event));
+        if (!text) return;
+        session_callback(text, session_callback_user);
+    } catch (...) {
+        spdlog::warn("[CApi] session moved event not delivered");
     }
 }
 

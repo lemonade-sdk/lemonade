@@ -426,11 +426,41 @@ ln_error_t ln_mesh_disable(ln_client_t* client);
 /** Get mesh tunnel status as JSON.
  *  Returns: {is_up, tunnel_ip, peer_count, online_count,
  *  total_rx_bytes, total_tx_bytes, peers: [...], needs_rejoin}.
- *  needs_rejoin is true when the SDK dropped the session because the Tier 1
- *  server that issued it left the verified membership: private-API calls are
- *  refused until ln_join_network succeeds again, which clears it.
+ *  needs_rejoin is true when the Tier 1 server that issued the session left
+ *  the verified membership and the SDK could not move the session by itself
+ *  (no identity set, or the silent join failed; see
+ *  ln_set_session_moved_callback): the session is dropped and private-API
+ *  calls are refused until ln_join_network succeeds again, which clears it.
  *  Caller must ln_free(*out_json). */
 ln_error_t ln_mesh_status(ln_client_t* client, char** out_json);
+
+/** Called once after each session move. The Tier 1 server that issued the
+ *  session leaves the membership at an epoch boundary: the SDK verifies the
+ *  membership again from the pinned Genesis key and, with an identity set
+ *  (ln_set_identity), authenticates through another verified Tier 1 server,
+ *  joins again, and restarts the mesh as it was. The server's notice never
+ *  chooses the next server. Without an identity, or when that join fails,
+ *  the session is dropped and ln_mesh_status reports needs_rejoin.
+ *  event_json: {from_node_id, from_host, to_node_id, to_host, epoch, silent,
+ *  error}. silent is true when the SDK moved the session by itself (the
+ *  application's state is intact); false when the application must call
+ *  ln_join_network, and error says why. to_node_id and to_host are empty
+ *  when no new session was issued.
+ *  event_json is allocated for this call: the callback owns it and releases
+ *  it with ln_free(), during the call or later from any thread, so a binding
+ *  may hand the event to another thread. Runs on an SDK background thread,
+ *  or on the thread whose call found the server gone. The function must
+ *  return normally (no longjmp, no C++ exception) and must not call
+ *  ln_set_session_moved_callback or ln_destroy for this client. */
+typedef void (*ln_session_moved_fn)(char* event_json, void* user);
+
+/** Set the session-move callback and its user pointer (fn NULL clears it).
+ *  When this returns, the previous callback is not running and is not called
+ *  again, so its user data may be released. No callback runs after
+ *  ln_destroy returns. Returns LN_ERR_NULL_ARG when client is NULL. */
+ln_error_t ln_set_session_moved_callback(ln_client_t* client,
+                                         ln_session_moved_fn fn,
+                                         void* user);
 
 /** Get current mesh peers as JSON array.
  *  Each peer: {node_id, hostname, mesh_pubkey, tunnel_ip, private_subnet,

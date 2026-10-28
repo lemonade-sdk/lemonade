@@ -88,9 +88,10 @@ public:
     // -----------------------------------------------------------------
 
     /// GET /api/health. With a session, it also fails once when the session's
-    /// server is no longer a verified Tier 1 server; the SDK drops that
-    /// session (see MeshTunnelStatus::needs_rejoin), so the caller joins
-    /// again through another one.
+    /// server is no longer a verified Tier 1 server. The SDK then moves the
+    /// session by itself when it holds an identity (see
+    /// set_session_moved_callback); otherwise it drops the session (see
+    /// MeshTunnelStatus::needs_rejoin) so the caller joins again.
     [[nodiscard]] Result<HealthStatus> check_health();
 
     // -----------------------------------------------------------------
@@ -385,8 +386,9 @@ public:
 
     /// Get mesh tunnel status including all peers with live stats. Its
     /// `needs_rejoin` is true after the SDK dropped a session whose Tier 1
-    /// server left the verified membership: call join_network() again, which
-    /// authenticates through a current member and clears it.
+    /// server left the verified membership and could not move it by itself
+    /// (no identity, or the silent join failed): call join_network() again,
+    /// which authenticates through a current member and clears it.
     [[nodiscard]] MeshTunnelStatus mesh_status() const;
 
     /// Get the current list of known mesh peers.
@@ -400,6 +402,28 @@ public:
 
     /// Set a callback to be notified on mesh state changes.
     void set_mesh_callback(MeshStateCallback cb);
+
+    /// Callback type for session moves.
+    using SessionMovedCallback = std::function<void(const SessionMoveEvent&)>;
+
+    /// Set the callback that runs once after each session move (empty
+    /// clears it). The session's Tier 1 server leaves the membership at an
+    /// epoch boundary: it says so in its heartbeat answers before the
+    /// handoff, and it refuses tree routes after it. On either sign, and
+    /// when a membership refresh finds the server gone, the SDK verifies the
+    /// Tier 1 membership again from the pinned Genesis key and, when the
+    /// server is no longer a verified member (or leaves at a later epoch and
+    /// another verified server exists), authenticates with the device
+    /// identity through another verified Tier 1 server, joins again, and
+    /// restarts the mesh orchestrator as it was. The notice never chooses the
+    /// server: the SDK picks it from the membership it verified. Without an
+    /// identity, or when that join fails, the session is dropped and
+    /// `needs_rejoin` is set (`silent` false). Runs on an SDK background
+    /// thread, or on the thread whose call found the server gone, outside
+    /// the client's locks. When this returns, the previous callback is not
+    /// running and is not called again. Do not call this method, or destroy
+    /// the client, from the callback.
+    void set_session_moved_callback(SessionMovedCallback cb);
 
     /// Fetch mesh peers from the server for a given node_id.
     /// Used internally by MeshOrchestrator; also available for direct use.
@@ -532,6 +556,12 @@ private:
 
     /// Request and decrypt one certificate for a renewal target.
     [[nodiscard]] Result<DecryptedCert> fetch_certificate(const std::string& target);
+
+    /// One session move, on the SDK's move thread: verify the membership
+    /// again, then authenticate and join through another verified Tier 1
+    /// server, or drop the session when that is impossible. `hint_epoch` is
+    /// the next epoch a departure notice named (0 when none did).
+    void run_session_move(const std::string& reason, uint64_t hint_epoch);
 
     struct Impl;
     std::unique_ptr<Impl> impl_;
