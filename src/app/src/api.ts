@@ -771,6 +771,7 @@ class LemonadeAPI {
   private _modelsDataSignature = '';
   private _modelsFetchRevision = 0;
   private _systemInfoData: Record<string, unknown> | null = null;
+  private _systemInfoFetchedAt = 0;
   private _systemInfoListeners = new Set<(info: Record<string, unknown>) => void>();
   private _systemInfoInFlight: Promise<Record<string, unknown>> | null = null;
   private _systemInfoGeneration = 0;
@@ -1070,6 +1071,7 @@ class LemonadeAPI {
     if (changed && s === 'disconnected') {
       this._systemInfoGeneration++;
       this._systemInfoInFlight = null;
+      this._systemInfoFetchedAt = 0;
     }
     if (changed) this._listeners.forEach(fn => { try { fn(s); } catch {} });
     this._publishModelState();
@@ -1510,9 +1512,22 @@ class LemonadeAPI {
       ...recipeOptions,
       save_options: false,
     };
-    const result = await this._json('/api/v1/load', { method: 'POST', body });
-    this._notifyModelsChanged();
-    return result;
+    try {
+      const result = await this._json('/api/v1/load', { method: 'POST', body });
+      this._notifyModelsChanged();
+      return result;
+    } finally {
+      this._refreshBackendStatusAfterLoad(cachedRecipe);
+    }
+  }
+
+  private _refreshBackendStatusAfterLoad(recipe: string): void {
+    const recipes = (this._systemInfoData as any)?.recipes;
+    if (!isObject(recipes)) return;
+    const entries = recipe && isObject(recipes[recipe]) ? [recipes[recipe]] : Object.values(recipes);
+    const backendMayHaveChanged = entries.some((entry: any) => Object.values(isObject(entry?.backends) ? entry.backends : {})
+      .some((backend: any) => !['installed', 'unsupported'].includes(String(backend?.state || ''))));
+    if (backendMayHaveChanged) void this.systemInfo({ afterPending: true }).catch(() => undefined);
   }
 
   async unloadModel(modelName?: string): Promise<unknown> {
@@ -1580,10 +1595,14 @@ class LemonadeAPI {
     return result;
   }
 
-  async systemInfo(options: { afterPending?: boolean } = {}): Promise<Record<string, unknown>> {
+  async systemInfo(options: { afterPending?: boolean; maxAgeMs?: number } = {}): Promise<Record<string, unknown>> {
     // Several views use the same expensive system-info endpoint. A workspace
     // preload and the view's first effect can overlap, so share the in-flight
     // request instead of making the server do the same discovery twice.
+    if (options.maxAgeMs !== undefined && this._systemInfoData
+      && Date.now() - this._systemInfoFetchedAt < options.maxAgeMs) {
+      return this._systemInfoData;
+    }
     const generation = this._systemInfoGeneration;
     if (options.afterPending && this._systemInfoInFlight) {
       await this._systemInfoInFlight.catch(() => undefined);
@@ -1599,6 +1618,7 @@ class LemonadeAPI {
     ).then(data => {
       if (generation !== this._systemInfoGeneration) return data;
       this._systemInfoData = data;
+      this._systemInfoFetchedAt = Date.now();
       this._systemInfoListeners.forEach(fn => { try { fn(data); } catch {} });
       return data;
     }).finally(() => {

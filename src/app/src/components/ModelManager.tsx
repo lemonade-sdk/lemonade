@@ -476,6 +476,7 @@ const REMOTE_SEARCH_CACHE = new Map<string, HFModelResult[]>();
 const REMOTE_VARIANT_CACHE = new Map<string, PullVariantsResult | null>();
 const MODELSCOPE_RESULT_LIMIT = 10;
 const REMOTE_VARIANT_CONCURRENCY = 4;
+const FOCUS_SYSTEM_INFO_MAX_AGE_MS = 10_000;
 
 const providerKey = (provider: ModelRegistryProvider, modelId: string): string => `${provider}:${modelId}`;
 const providerSearchCacheKey = (provider: ModelRegistryProvider, query: string): string => `${provider}:${query.trim().toLowerCase()}`;
@@ -1148,8 +1149,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
 
   useEffect(() => {
     const seenBackendDownloads = new Set<string>();
-    const refreshBackendInfo = (afterPending = false) => {
-      if (api.isConnected) void api.systemInfo({ afterPending }).catch(() => undefined);
+    const refreshBackendInfo = (options: { afterPending?: boolean; maxAgeMs?: number }) => {
+      if (api.isConnected) void api.systemInfo(options).catch(() => undefined);
     };
     const unsubscribe = downloadStore.subscribe(items => {
       setDownloadItems(items);
@@ -1161,14 +1162,11 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
         seenBackendDownloads.add(key);
         changed = true;
       }
-      if (changed) refreshBackendInfo(true);
+      if (changed) refreshBackendInfo({ afterPending: true });
     });
+
     const onFocus = () => {
-      const recipes = systemRecipeEntries(api.systemInfoData) || [];
-      if (recipes.some(([, recipe]) => Object.values(rawBackendMap(recipe))
-        .some(info => ['update_required', 'update_available'].includes(backendState(info))))) {
-        refreshBackendInfo();
-      }
+      if (!document.hidden) refreshBackendInfo({ maxAgeMs: FOCUS_SYSTEM_INFO_MAX_AGE_MS });
     };
     window.addEventListener('focus', onFocus);
     return () => {
