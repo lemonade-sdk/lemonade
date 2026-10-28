@@ -272,9 +272,14 @@ void test_install_commands() {
 }
 
 void test_helpers() {
-    check("characters a container name rejects become dashes",
+    check("characters a container name rejects are escaped as _ plus hex",
           ContainerManager::container_name("llamacpp", "nathanw", "user.My Model:Q4/x") ==
-              "lemonade-llamacpp-nathanw-user.My-Model-Q4-x");
+              "lemonade-llamacpp-nathanw-user.My_20Model_3aQ4_2fx");
+    check("names that differ only in rejected characters keep distinct containers",
+          ContainerManager::container_name("llamacpp", "nathanw", "user.foo/bar") !=
+                  ContainerManager::container_name("llamacpp", "nathanw", "user.foo-bar") &&
+              ContainerManager::container_name("llamacpp", "nathanw", "user.foo_2fbar") ==
+                  "lemonade-llamacpp-nathanw-user.foo__2fbar");
 
     check("other publishers are refused",
           !ContainerManager::allowed_image("docker.io/library/ubuntu") &&

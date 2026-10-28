@@ -115,13 +115,24 @@ CommandResult run_on_host(const std::vector<std::string>& argv, int timeout_seco
     return result;
 }
 
-// A container name accepts [A-Za-z0-9][A-Za-z0-9_.-]*.
+// A container name accepts [A-Za-z0-9][A-Za-z0-9_.-]*. `_` is the escape
+// character, so it is doubled and every other rejected byte becomes `_` plus
+// two hex digits, which keeps distinct tokens distinct.
 std::string name_token(const std::string& token) {
+    static constexpr char kHex[] = "0123456789abcdef";
     std::string out;
     out.reserve(token.size());
     for (const char c : token) {
         const unsigned char uc = static_cast<unsigned char>(c);
-        out.push_back((std::isalnum(uc) || c == '-' || c == '_' || c == '.') ? c : '-');
+        if (std::isalnum(uc) || c == '-' || c == '.') {
+            out.push_back(c);
+        } else if (c == '_') {
+            out += "__";
+        } else {
+            out.push_back('_');
+            out.push_back(kHex[uc >> 4]);
+            out.push_back(kHex[uc & 0xf]);
+        }
     }
     return out;
 }

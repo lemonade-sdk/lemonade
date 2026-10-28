@@ -178,7 +178,7 @@ These options are the same for Podman and Docker:
 | `--rm`, `--init`, `--cap-drop=all`, `--security-opt=no-new-privileges` | Same for every container † | Fixed |
 | `--pull=never` | Same for every container | Fixed |
 | seccomp | The tool's default profile: the command passes no `seccomp` option † | Fixed |
-| `--name` | `lemonade-<recipe>-<backend>-<model>` | The loaded model |
+| `--name` | `lemonade-<recipe>-<backend>-<model>`, where each part keeps letters, digits, `.` and `-`, doubles `_`, and writes any other character as `_` plus its two hex digits (`user.foo/bar` becomes `user.foo_2fbar`) | The loaded model |
 | `--label` | `ai.lemonade`, `ai.lemonade.recipe`, `.backend`, `.model`, `.port` † | The loaded model |
 | `--network` | A private `--internal` network named after the container | Fixed |
 | `-v` | `<host path>:/mnt/models/<name>:ro,z`, one per model file the command names †. A directory the command names, such as Halogen's tokenizer directory, gets one mount per file inside it at the same relative path, such as `/mnt/models/tokenizer/vocab.json` ‡. Each host path is resolved through symlinks first, so files in a Hugging Face cache, which link into the cache's `blobs/` folder, mount as the files themselves. `z` gives the files a shared SELinux label that every container can read, so the same model can be mounted by several containers, whether Lemonade started them or not. It does nothing on hosts without SELinux | The model's files |
