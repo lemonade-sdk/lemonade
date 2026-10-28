@@ -922,6 +922,8 @@ lemonade bench [options] MODEL_NAME [MODEL_NAME ...]
 | `--scenario-dir DIR` | Load all `.json` scenario files from a directory | — |
 | `--json` | Output results as JSON instead of a table | Table output |
 | `--output FILE` | Write results to file (in addition to stdout) | — |
+| `--submit` | Submit results to the Lemonade benchmark service (implies `--json`) | False |
+| `--submit-file FILE` | Submit an already-saved benchmark JSON file | — |
 | `--compare FILE` | Compare results against a previously saved JSON file | — |
 | `--auto-pull` | Automatically pull the model if not downloaded | False |
 | `--no-memory` | Disable VRAM/RAM tracking | Tracking enabled |
@@ -938,6 +940,10 @@ lemonade bench [options] MODEL_NAME [MODEL_NAME ...]
 **Timestamp behavior:**
 - Top-level `timestamp` is the command invocation time.
 - Each per-model result includes its own `timestamp` for when that model run started.
+
+**Submitting results:**
+
+`--submit` uploads the run to the Lemonade benchmark service and `--submit-file` uploads a benchmark JSON saved earlier with `--output`. The service answers with an id; `bench` prints a link to it so you can claim the results to your [bench.lemonade-server.ai](https://bench.lemonade-server.ai) account. Submission progress goes to stderr, so `--submit --json > results.json` still captures clean JSON.
 
 ### Scenario Files
 

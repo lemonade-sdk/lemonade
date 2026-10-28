@@ -41,6 +41,7 @@ std::string get_timestamp_iso() {
 }
 
 static const char* const kBenchSubmitUrl = "https://bench.lemonade-server.ai/api/benchmarks";
+static const char* const kBenchClaimUrl = "https://bench.lemonade-server.ai/beta/benchmarks/claims/";
 
 static bool validate_benchmark_schema(const json& benchmark, std::string& error) {
     if (!benchmark.is_object()) {
@@ -88,7 +89,7 @@ static bool validate_benchmark_schema(const json& benchmark, std::string& error)
     return true;
 }
 
-static bool submit_benchmark(const json& benchmark, std::string& error) {
+static bool submit_benchmark(const json& benchmark, std::string& token, std::string& error) {
     try {
         json bench_wrap;
         bench_wrap["benchmark"] = benchmark;
@@ -97,26 +98,37 @@ static bool submit_benchmark(const json& benchmark, std::string& error) {
             bench_wrap.dump(),
             {{"Content-Type", "application/json"}},
             60);
-        if (resp.status_code >= 200 && resp.status_code < 300) {
-            return true;
+        if (!(resp.status_code >= 200 && resp.status_code < 300)) {
+            error = "benchmark service returned HTTP " + std::to_string(resp.status_code) + ": " + resp.body;
+            return false;
         }
-        error = "benchmark service returned HTTP " + std::to_string(resp.status_code) + ": " + resp.body;
-        return false;
+        try {
+            token = json::parse(resp.body).value("id", "");
+        } catch (const json::exception&) {
+        }
+        return true;
     } catch (const std::exception& e) {
         error = e.what();
         return false;
     }
 }
 
-static void maybe_submit_results(const BenchConfig& config, const json& output) {
-    if (!config.submit) return;
-    std::cout << "Submitting benchmark results to " << kBenchSubmitUrl << "..." << std::endl;
-    std::string error;
-    if (submit_benchmark(output, error)) {
-        std::cout << "Benchmark results submitted successfully." << std::endl;
-    } else {
+static int submit_and_report(const json& benchmark) {
+    std::cerr << "Submitting benchmark results to " << kBenchSubmitUrl << "..." << std::endl;
+    std::string token, error;
+    if (!submit_benchmark(benchmark, token, error)) {
         std::cerr << "Failed to submit benchmark results: " << error << std::endl;
+        return 1;
     }
+    std::cerr << "Benchmark results submitted successfully." << std::endl;
+    if (!token.empty()) {
+        std::cerr << "You can claim these results at " << kBenchClaimUrl << token << std::endl;
+    }
+    return 0;
+}
+
+static void maybe_submit_results(const BenchConfig& config, const json& output) {
+    if (config.submit) submit_and_report(output);
 }
 
 template<typename T>
@@ -1182,13 +1194,7 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
             std::cerr << "Error: Invalid benchmark file " << config.submit_file << ": " << error << std::endl;
             return 1;
         }
-        std::cout << "Submitting benchmark results to " << kBenchSubmitUrl << "..." << std::endl;
-        if (submit_benchmark(benchmark, error)) {
-            std::cout << "Benchmark results submitted successfully." << std::endl;
-            return 0;
-        }
-        std::cerr << "Failed to submit benchmark results: " << error << std::endl;
-        return 1;
+        return submit_and_report(benchmark);
     }
 
     if (config.models.empty()) {
