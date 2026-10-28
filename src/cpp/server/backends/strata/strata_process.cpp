@@ -694,6 +694,7 @@ struct StrataProcess::Impl : NativePipe {
         const auto stop = [&] {
             if (!sent_stop) {
                 send("STOP\n");
+                heard = Clock::now();
                 sent_stop = true;
             }
         };

@@ -377,8 +377,9 @@ The CLI benchmark uses engine decode throughput rather than total request time,
 which includes prefill.
 
 The engine silence timeout during prefill is five minutes plus 100 ms per prompt
-token, capped at fifteen minutes. After the first output token or a cancellation
-request, the standard five-minute silence timeout applies.
+token, capped at fifteen minutes. After the first output token, the standard
+five-minute silence timeout applies. Sending `STOP` starts a fresh five-minute
+silence timeout for cancellation acknowledgement.
 
 Chat completions, tool calling, image inputs, and the stateless Responses API are
 sent directly to Strata, including streaming. Legacy text completions and embeddings
