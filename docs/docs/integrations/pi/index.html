@@ -2658,6 +2658,39 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#lemonade-tools-in-pi-mcp" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Lemonade tools in Pi (MCP)
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#codemode" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Codemode
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#images-and-tool-calling" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Images and tool calling
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#how-it-works" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -2717,6 +2750,7 @@
 <p>Install Pi:</p>
 <div class="highlight"><pre><span></span><code>npm<span class="w"> </span>install<span class="w"> </span>-g<span class="w"> </span>@earendil-works/pi-coding-agent
 </code></pre></div>
+<p><code>--mcp</code> needs Pi 1.0 or newer, and <code>--codemode</code> needs Pi 1.1 or newer. Launch checks this when you pass either flag: it stops with an older Pi for <code>--codemode</code> and warns for <code>--mcp</code>. Check with <code>pi --version</code>, and update with the same install command.</p>
 </li>
 <li>
 <p>Make sure Lemonade Server is running (<code>lemond</code>).</p>
@@ -2726,9 +2760,11 @@
 <p>Use:</p>
 <div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>launch<span class="w"> </span>pi<span class="w"> </span><span class="o">[</span>options<span class="o">]</span>
 </code></pre></div>
-<p>Lemonade automatically configures Pi to use your local server by writing:
-- <code>~/.pi/agent/models.json</code> — Registers the Lemonade provider with your local server's base URL and selected model
-- <code>~/.pi/agent/settings.json</code> — Sets the default provider to Lemonade so Pi launches straight into your local model</p>
+<p>Lemonade automatically configures Pi to use your local server by writing these files in <code>~/.pi/agent/</code> (or <code>$PI_CODING_AGENT_DIR</code>):
+- <code>models.json</code> — Registers the Lemonade provider with your local server's base URL, every downloaded chat model, and the launched model
+- <code>settings.json</code> — Sets the default provider to Lemonade, if Pi has none yet, so Pi launches straight into your local model
+- <code>mcp.json</code> — With <code>--mcp</code>, adds Lemonade's MCP server (see <a href="#lemonade-tools-in-pi-mcp">Lemonade tools in Pi</a>)</p>
+<p>See <a href="#how-it-works">How it works</a> for what each file contains.</p>
 <h2 id="use-case-1-first-time-user-discover-import-launch">Use Case 1: First-time user (discover + import + launch)</h2>
 <p>If you are not sure which model to use yet, start with:</p>
 <div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>launch<span class="w"> </span>pi
@@ -2748,35 +2784,84 @@
 <p>Equivalent long form:</p>
 <div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>launch<span class="w"> </span>pi<span class="w"> </span>--model<span class="w"> </span>Qwen3.5-35B-A3B-GGUF
 </code></pre></div>
-<p>When <code>--model</code> is provided, launch goes straight to starting the agent and loading that model.</p>
+<p>When <code>--model</code> is provided, launch skips the model prompt. If the model's context size is automatic, it waits for the model to load before starting the agent; otherwise it starts the agent while the model loads.</p>
 <h2 id="passing-pi-arguments-with-agent-args">Passing Pi arguments with <code>--agent-args</code></h2>
 <p>You can pass any extra Pi CLI flags through Lemonade:</p>
 <div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>launch<span class="w"> </span>pi<span class="w"> </span>--model<span class="w"> </span>Qwen3.5-35B-A3B-GGUF<span class="w"> </span>--agent-args<span class="w"> </span><span class="s2">"-e npm:@foo/my-extension"</span>
 </code></pre></div>
 <p>If Pi supports a flag, you can pass it through <code>--agent-args</code>.</p>
+<h2 id="lemonade-tools-in-pi-mcp">Lemonade tools in Pi (MCP)</h2>
+<p>Add <code>--mcp</code> to give Pi Lemonade's <a href="../../api/mcp/">MCP tools</a>: list models, chat with another local model, generate images, transcribe audio, and search the Lemonade docs. This needs Pi 1.0 or newer; older versions ignore <code>mcp.json</code>.</p>
+<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>launch<span class="w"> </span>pi<span class="w"> </span>--model<span class="w"> </span>Qwen3.5-35B-A3B-GGUF<span class="w"> </span>--mcp
+</code></pre></div>
+<p>This adds a <code>lemonade</code> server to <code>~/.pi/agent/mcp.json</code>. It stays there for later launches, and each launch updates its URL and API key reference. Run <code>pi mcp list</code> to check the connection. To remove it again:</p>
+<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>launch<span class="w"> </span>pi<span class="w"> </span>--model<span class="w"> </span>Qwen3.5-35B-A3B-GGUF<span class="w"> </span>--no-mcp
+</code></pre></div>
+<p><code>--no-mcp</code> removes only the <code>lemonade</code> server; your other MCP servers are left alone. If the server can't be removed, for example because <code>mcp.json</code> is read-only, launch stops instead of starting Pi.</p>
+<p>Pi shows generated images inline only in terminals that support the kitty or iTerm2 image protocol, such as Ghostty, kitty, WezTerm and iTerm2, because it draws images with those protocols' escape sequences. Other terminals, and terminal multiplexers like tmux that don't pass those sequences through, show a placeholder such as <code>[Image: [image/png] 512x512]</code> instead. The model still receives the image if it accepts image input. To keep a copy on disk, ask Pi to save it, for example "generate an image of a red dog and save it to disk". The tool then writes the PNG to Lemonade's MCP image folder (<code>mcp-images</code> in the Lemonade cache directory, or <code>LEMONADE_MCP_IMAGE_DIR</code> if set) and returns its path instead of the inline image.</p>
+<h2 id="codemode">Codemode</h2>
+<p>Add <code>--codemode</code> to turn on Pi's <a href="https://pi.dev/docs/latest/codemode">codemode</a> tool for that launch. This needs Pi 1.1 or newer. The model can then write scripts that call Pi's tools. With <code>--mcp</code> as well, scripts can call Lemonade's tools, for example to generate an image and show it:</p>
+<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>launch<span class="w"> </span>pi<span class="w"> </span>--model<span class="w"> </span>Qwen3.5-35B-A3B-GGUF<span class="w"> </span>--mcp<span class="w"> </span>--codemode
+</code></pre></div>
+<div class="highlight"><pre><span></span><code><span class="kd">const</span><span class="w"> </span><span class="nx">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">tools</span><span class="p">.</span><span class="nx">mcp__lemonade__lemonade_generate_image</span><span class="p">({</span><span class="w"> </span><span class="nx">prompt</span><span class="o">:</span><span class="w"> </span><span class="s2">"a red apple"</span><span class="p">,</span><span class="w"> </span><span class="nx">model</span><span class="o">:</span><span class="w"> </span><span class="s2">"SD-Turbo-GGUF"</span><span class="w"> </span><span class="p">});</span>
+<span class="nx">image</span><span class="p">(</span><span class="nx">result</span><span class="p">.</span><span class="nx">content</span><span class="p">.</span><span class="nx">find</span><span class="p">((</span><span class="nx">block</span><span class="p">)</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="nx">block</span><span class="p">.</span><span class="nx">type</span><span class="w"> </span><span class="o">===</span><span class="w"> </span><span class="s2">"image"</span><span class="p">));</span>
+</code></pre></div>
+<p>Download an image model first, for example <code>lemonade pull SD-Turbo-GGUF</code>. <code>--codemode</code> does not change Pi's settings.</p>
+<h2 id="images-and-tool-calling">Images and tool calling</h2>
+<ul>
+<li>Models labeled <code>vision</code> accept images: paste one, or reference it with <code>@image.png</code>. Other models get a note that the image was left out.</li>
+<li>Launch warns when the model is not labeled <code>tool-calling</code>. Pi needs tool calls to read and edit files.</li>
+<li>Launch also warns when the model name is not on the Lemonade server, for example a typo.</li>
+</ul>
 <h2 id="how-it-works">How it works</h2>
-<p><code>lemonade launch pi</code> writes two configuration files:</p>
-<p><strong><code>~/.pi/agent/models.json</code></strong> (provider registration):
+<p><code>lemonade launch pi</code> writes these files in Pi's agent directory, <code>~/.pi/agent/</code> (or <code>$PI_CODING_AGENT_DIR</code>):</p>
+<p><strong><code>models.json</code></strong> registers the Lemonade provider with every downloaded chat model, plus the launched model if it is not downloaded yet:</p>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
 <span class="w">  </span><span class="nt">"providers"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="nt">"Lemonade"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
 <span class="w">      </span><span class="nt">"baseUrl"</span><span class="p">:</span><span class="w"> </span><span class="s2">"http://localhost:13305/v1"</span><span class="p">,</span>
 <span class="w">      </span><span class="nt">"api"</span><span class="p">:</span><span class="w"> </span><span class="s2">"openai-completions"</span><span class="p">,</span>
 <span class="w">      </span><span class="nt">"apiKey"</span><span class="p">:</span><span class="w"> </span><span class="s2">"lemonade"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"compat"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">"supportsStore"</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"maxTokensField"</span><span class="p">:</span><span class="w"> </span><span class="s2">"max_tokens"</span>
+<span class="w">      </span><span class="p">},</span>
 <span class="w">      </span><span class="nt">"models"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
-<span class="w">        </span><span class="p">{</span><span class="w"> </span><span class="nt">"id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Qwen3.5-35B-A3B-GGUF"</span><span class="w"> </span><span class="p">}</span>
+<span class="w">        </span><span class="p">{</span>
+<span class="w">          </span><span class="nt">"id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Qwen3.5-35B-A3B-GGUF"</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">"contextWindow"</span><span class="p">:</span><span class="w"> </span><span class="mi">32768</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">"maxTokens"</span><span class="p">:</span><span class="w"> </span><span class="mi">32768</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">"input"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"text"</span><span class="p">,</span><span class="w"> </span><span class="s2">"image"</span><span class="p">]</span>
+<span class="w">        </span><span class="p">}</span>
 <span class="w">      </span><span class="p">]</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="w">  </span><span class="p">}</span>
 <span class="p">}</span>
-</code></pre></div></p>
-<p><strong><code>~/.pi/agent/settings.json</code></strong> (default provider/model):
+</code></pre></div>
+<ul>
+<li><code>contextWindow</code> and <code>maxTokens</code> come from the model's saved <code>ctx_size</code>, or 40960 when none is saved or it is set to automatic (<code>-1</code>). For the launched model, <code>--ctx-size</code> on <code>lemonade launch</code> takes precedence, and when its size is automatic, launch waits for the model to load and uses the size Lemonade picked. If that load fails, launch shows the error and doesn't start Pi. If a model runs with a different context size, save it with <code>lemonade load &lt;model&gt; --ctx-size N --save-options</code> so Pi compacts the conversation before it overflows.</li>
+<li><code>apiKey</code> is the placeholder <code>lemonade</code> when Lemonade has no API key. When it has one (<code>--api-key</code>, <code>LEMONADE_API_KEY</code> or <code>LEMONADE_ADMIN_API_KEY</code>), the value is <code>${LEMONADE_API_KEY}</code>: launch passes the key to Pi in that environment variable, and it is never written to disk. Running <code>pi</code> directly then needs <code>LEMONADE_API_KEY</code> set. If launch can't read or update Pi's config while a key is set, it stops instead of starting Pi, so the key is never sent to the server in Pi's old config.</li>
+</ul>
+<p><strong><code>settings.json</code></strong> makes Lemonade Pi's default provider, only if Pi has no default yet:</p>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
 <span class="w">  </span><span class="nt">"defaultProvider"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Lemonade"</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">"defaultModel"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Qwen3.5-35B-A3B-GGUF"</span>
 <span class="p">}</span>
-</code></pre></div></p>
-<p>If these files already exist, Lemonade merges the <code>Lemonade</code> provider into your existing configuration while preserving other providers and settings.</p>
+</code></pre></div>
+<p><strong><code>mcp.json</code></strong> (with <code>--mcp</code>) adds the <code>lemonade</code> server:</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"mcpServers"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"lemonade"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">"url"</span><span class="p">:</span><span class="w"> </span><span class="s2">"http://localhost:13305/mcp"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"headers"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">"Authorization"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Bearer ${LEMONADE_API_KEY}"</span><span class="w"> </span><span class="p">},</span>
+<span class="w">      </span><span class="nt">"exposure"</span><span class="p">:</span><span class="w"> </span><span class="s2">"direct"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"description"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Lemonade local AI server: ..."</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>The <code>headers</code> entry is only written when Lemonade has an API key.</p>
+<p>If these files already exist, Lemonade updates only its own entries and keeps your other providers, servers and settings.</p>
 <h2 id="switching-models">Switching models</h2>
 <p>You can switch models inside Pi with <code>/model</code> or <code>Ctrl+P</code>, or launch with a different model:</p>
 <div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>launch<span class="w"> </span>pi<span class="w"> </span>--model<span class="w"> </span>Gemma-4-E2B-it-GGUF

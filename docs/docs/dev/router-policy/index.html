@@ -2941,7 +2941,10 @@ on top via each rule's <code>outputs</code> pass-through bag and the request <co
 (the engine never interprets it).</p>
 <h2 id="conditions">Conditions</h2>
 <p>A <code>match</code> is a match-expression. Combine with the logical operators <code>any</code> (OR),
-<code>all</code> (AND), and <code>not</code>; a leaf object with several keys is an implicit <code>all</code>.</p>
+<code>all</code> (AND), and <code>not</code>; a leaf object with several keys is an implicit <code>all</code>.
+The order in which the keys of such a leaf are evaluated is not specified, so
+its entries in the decision trace may change between versions. The children of
+an explicit <code>all</code> or <code>any</code> run in list order.</p>
 <p><strong>Deterministic (no model needed):</strong></p>
 <table>
 <thead>

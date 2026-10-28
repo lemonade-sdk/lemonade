@@ -5224,8 +5224,30 @@ lemonade<span class="w"> </span>backends<span class="w"> </span>install<span cla
 </tr>
 </tbody>
 </table>
+<p>Pi-only options:</p>
+<table>
+<thead>
+<tr>
+<th>Option/Argument</th>
+<th>Description</th>
+<th>Required</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--mcp</code>, <code>--no-mcp</code></td>
+<td>Add or remove the <code>lemonade</code> server in pi's <code>mcp.json</code>, giving pi Lemonade's MCP tools. The choice is kept for later launches. Needs pi 1.0 or newer.</td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>--codemode</code></td>
+<td>Enable pi's <code>codemode</code> tool for this launch. Combine with <code>--mcp</code> so its scripts can call Lemonade's tools. Needs pi 1.1 or newer.</td>
+<td>No</td>
+</tr>
+</tbody>
+</table>
 <p><strong>Notes:</strong>
-- The model load request is asynchronous: launch starts the agent immediately while loading continues in the background.
+- The model load request is asynchronous: launch starts the agent immediately while loading continues in the background. The exception is <code>pi</code> with an automatic context size: launch waits for the load so it can give pi the size Lemonade picked.
 - If a model is already provided, launch skips recipe import prompts.
 - <code>--directory</code> and <code>--recipe-file</code> are only used for remote recipe import at prompt time.
 - For local recipe files, run <code>lemonade import &lt;LOCAL_RECIPE_JSON&gt;</code> first, then launch with the imported model id.
@@ -5236,9 +5258,9 @@ lemonade<span class="w"> </span>backends<span class="w"> </span>install<span cla
 - <code>--agent-args</code> is parsed and appended to the launched agent command.
 - Supported agents: <code>claude</code>, <code>codex</code>, <code>opencode</code>, <code>pi</code>, <code>junie</code>
 - <code>opencode</code> uses an auto-managed config file at <code>~/.config/opencode/opencode.json</code>.
-- <code>pi</code> uses auto-managed config files at <code>~/.pi/agent/models.json</code> and <code>~/.pi/agent/settings.json</code>.
+- <code>pi</code> uses auto-managed config files at <code>~/.pi/agent/models.json</code> and <code>~/.pi/agent/settings.json</code> (honors <code>PI_CODING_AGENT_DIR</code>), plus <code>mcp.json</code> with <code>--mcp</code>. See <a href="../../integrations/pi/">Pi</a>.
 - <code>junie</code> uses an auto-managed custom model profile at <code>~/.junie/models/lemonade.json</code> (honors <code>JUNIE_HOME</code>) and is launched with <code>--model custom:lemonade</code>.
-- When no <code>--api-key</code> is provided, the generated <code>opencode</code>, <code>pi</code>, and <code>junie</code> providers use a default <code>apiKey</code> value of <code>lemonade</code>.</p>
+- When no <code>--api-key</code> is provided, the generated <code>opencode</code>, <code>pi</code>, and <code>junie</code> providers use a default <code>apiKey</code> value of <code>lemonade</code>. With an API key, <code>pi</code>'s config references <code>${LEMONADE_API_KEY}</code>, which launch exports to pi, instead of storing the key.</p>
 <p><strong>Examples:</strong></p>
 <div class="highlight"><pre><span></span><code><span class="c1"># Launch an agent with default model settings</span>
 lemonade<span class="w"> </span>launch<span class="w"> </span>claude<span class="w"> </span>--model<span class="w"> </span>Qwen3.5-0.8B-GGUF
@@ -5248,6 +5270,9 @@ lemonade<span class="w"> </span>launch<span class="w"> </span>codex<span class="
 
 <span class="c1"># Launch codex using a custom provider name from your Codex config.toml</span>
 lemonade<span class="w"> </span>launch<span class="w"> </span>codex<span class="w"> </span>--model<span class="w"> </span>Qwen3.5-0.8B-GGUF<span class="w"> </span>--provider<span class="w"> </span>my-provider
+
+<span class="c1"># Launch pi with Lemonade's MCP tools and codemode</span>
+lemonade<span class="w"> </span>launch<span class="w"> </span>pi<span class="w"> </span>--model<span class="w"> </span>Qwen3.5-35B-A3B-GGUF<span class="w"> </span>--mcp<span class="w"> </span>--codemode
 
 <span class="c1"># Launch junie against a local model (writes the custom:lemonade profile)</span>
 lemonade<span class="w"> </span>launch<span class="w"> </span>junie<span class="w"> </span>--model<span class="w"> </span>Qwen3.5-0.8B-GGUF

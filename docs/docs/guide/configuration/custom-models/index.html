@@ -4142,6 +4142,16 @@ from the embedded definitions.</p>
 </tr>
 </tbody>
 </table>
+<blockquote>
+<p>Note: With the Linux <code>.deb</code>/<code>.rpm</code> packages, <code>lemond</code> runs as the <code>lemonade</code> system user under a systemd unit with <code>ProtectHome=yes</code>, which hides <code>/home</code> from the service. A folder under <code>/home</code> is then rejected as "not accessible by the Lemonade server (Permission denied)" even when its permissions allow the <code>lemonade</code> user. Either keep the models outside <code>/home</code> (for example <code>/srv/models</code>), or expose just that folder to the service with a drop-in, and make sure the <code>lemonade</code> user can read the folder:</p>
+<div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>mkdir<span class="w"> </span>-p<span class="w"> </span>/etc/systemd/system/lemond.service.d
+<span class="nb">printf</span><span class="w"> </span><span class="s1">'[Service]\nProtectHome=tmpfs\nBindReadOnlyPaths=/home/you/.lmstudio/models\n'</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>sudo<span class="w"> </span>tee<span class="w"> </span>/etc/systemd/system/lemond.service.d/models.conf
+sudo<span class="w"> </span>systemctl<span class="w"> </span>daemon-reload<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>sudo<span class="w"> </span>systemctl<span class="w"> </span>restart<span class="w"> </span>lemond
+lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span><span class="nv">extra_models_dir</span><span class="o">=</span><span class="s2">"/home/you/.lmstudio/models"</span>
+</code></pre></div>
+<p>The rejected value was not saved, so run <code>config set</code> again after the restart. <code>ProtectHome=tmpfs</code> keeps the rest of <code>/home</code> hidden.</p>
+<p>The drop-in exposes only that one folder. If you later point <code>extra_models_dir</code> at a path outside it, change <code>BindReadOnlyPaths</code> to match, then run <code>daemon-reload</code> and restart <code>lemond</code> again. <code>config set</code> alone is not enough, because systemd sets up the mount when the service starts.</p>
+</blockquote>
 <h3 id="model-naming-scheme">Model Naming Scheme</h3>
 <p>A model's name comes from the directory layout around its files. A path uses the Hugging Face / ModelScope cache rules only when its GGUFs are inside a recognized cache layout such as <code>models--&lt;org&gt;--&lt;repo&gt;/snapshots/&lt;commit&gt;/...</code> or <code>modelscope--models--&lt;org&gt;--&lt;repo&gt;/snapshots/&lt;commit&gt;/...</code>. A folder merely named like a cache repo is not sufficient. All other paths use the non-HF/MS rules below.</p>
 <p>These notes apply to both:</p>

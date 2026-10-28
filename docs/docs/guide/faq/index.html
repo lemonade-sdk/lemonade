@@ -3692,6 +3692,7 @@
 <p>Set <code>extra_models_dir</code> (see <a href=".././configuration/">Server Configuration</a>):</p>
 <div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span><span class="nv">extra_models_dir</span><span class="o">=</span><span class="s2">"/home/you/.lmstudio/models"</span>
 </code></pre></div>
+<p>With the Linux <code>.deb</code>/<code>.rpm</code> packages, a folder under <code>/home</code> is hidden from the server by default; see <a href=".././configuration/custom-models/#imported-models-extra_models_dir">the note under Imported models</a> for the drop-in that exposes it.</p>
 <p>Any <code>.gguf</code> files in this directory, including its subdirectories, appear in Lemonade's model list in the <code>custom</code> category. For how they are named and how the folder layout selects the way they run, see <a href=".././configuration/custom-models/#imported-models-extra_models_dir">Imported models</a>.</p>
 <p><strong>FastFlowLM</strong></p>
 <p>FastFlowLM (FLM) has its own model management system. When you first install FLM the install wizard asks for a model directory, which is then saved to the <code>FLM_MODEL_PATH</code> environment variable on your system PATH. Models are stored in that directory. If you change the variable's value, newly downloaded models will be stored on the new path, but your prior models will still be at the prior path.</p>
