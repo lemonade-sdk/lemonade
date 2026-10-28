@@ -48,6 +48,7 @@ struct GgufMetadata {
     int64_t embedding_length = 0;
     int64_t head_count_kv = 0;       // total across all blocks (derived)
     int64_t key_length = 0;
+    int64_t sliding_window = 0;
     int64_t key_length_swa = 0;      // SWA-reduced key length (Gemma4, etc.)
     int64_t swa_layer_count = 0;     // layers with sliding-window attention (derived)
     int64_t full_attention_interval = 0; // every Nth layer does full attention (Qwen SSM)

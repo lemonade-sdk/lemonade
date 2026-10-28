@@ -129,6 +129,18 @@ int main() {
     check(!alone.caps.vision, "vocabulary entries do not name the vision capability");
     check(!alone.caps.tool_calling, "vocabulary entries do not name the tool-calling capability");
 
+
+    GgufWriter gemma;
+    gemma.header(4);
+    gemma.string("general.architecture", "gemma4");
+    gemma.int32("gemma4.block_count", 48);
+    gemma.int32("gemma4.attention.sliding_window", 1024);
+    gemma.int32("gemma4.attention.key_length_swa", 256);
+    gemma.write(path);
+    lemon::GgufMetadata gemma_meta;
+    check(lemon::read_gguf_metadata(gemma_meta, path.string()), "reads Gemma4 metadata");
+    check(gemma_meta.sliding_window == 1024, "reads bounded SWA window");
+
     std::filesystem::remove_all(dir);
     std::cout << (failures == 0 ? "PASSED: all checks passed\n" : "FAILED: some checks failed\n");
     return failures == 0 ? 0 : 1;

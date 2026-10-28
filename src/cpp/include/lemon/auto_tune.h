@@ -218,7 +218,8 @@ inline int64_t compute_auto_context_size(const ModelInfo& model_info,
                                           double available_memory_gb,
                                           bool is_embedding = false,
                                           bool unified_gpu = false,
-                                          double physical_free_gb = -1.0) {
+                                          double physical_free_gb = -1.0,
+                                          bool bounded_swa = true) {
     if (available_memory_gb <= 0 && physical_free_gb < 0.0) {
         LOG(DEBUG, "AutoTune") << "compute_auto_context_size: " << model_info.model_name
                                << " — not enough memory, returning " << AUTO_CTX_FALLBACK  << " ";
@@ -311,8 +312,22 @@ inline int64_t compute_auto_context_size(const ModelInfo& model_info,
         }
     }
 
+    double fixed_swa_gib = 0.0;
+    if (bounded_swa && model_info.recipe == "llamacpp") {
+        const double swa_slope =
+            compute_gemma4_bounded_swa_bytes_per_token(model_info.gguf) *
+            (uses_mtp ? AUTO_CTX_MTP_KV_MULTIPLIER : 1.0);
+        if (swa_slope > 0.0 && swa_slope < kv_bytes_per_token) {
+            kv_bytes_per_token -= swa_slope;
+            // Keep the bounded SWA window plus a conservative batching margin.
+            fixed_swa_gib = swa_slope *
+                (static_cast<double>(model_info.gguf.sliding_window) + 4096.0) /
+                BYTES_PER_GIB;
+        }
+    }
+    const double effective_weights_gib = model_weight_gb + fixed_swa_gib;
     const auto budget = estimate_auto_context_budget(
-        available_memory_gb, model_weight_gb,
+        available_memory_gb, effective_weights_gib,
         kv_bytes_per_token, (model_info.device & DEVICE_GPU) != 0,
         speculative, unified_gpu, physical_free_gb);
     const int64_t max_ctx_from_memory = budget.max_tokens;
@@ -323,7 +338,7 @@ inline int64_t compute_auto_context_size(const ModelInfo& model_info,
         const int64_t minimum_ctx = is_embedding ? EMBEDDING_CTX_SIZE : AUTO_CTX_FALLBACK;
         const int64_t offload_ctx = auto_context_cpu_offload_fallback(
             max_ctx_from_memory, available_memory_gb, physical_free_gb,
-            model_weight_gb, kv_bytes_per_token, speculative, unified_gpu,
+            effective_weights_gib, kv_bytes_per_token, speculative, unified_gpu,
             model_info.recipe == "llamacpp" && (model_info.device & DEVICE_GPU),
             minimum_ctx);
         if (offload_ctx > 0) {
@@ -361,7 +376,8 @@ inline int64_t compute_auto_context_size(const ModelInfo& model_info,
                            << (kv_bytes_per_token / (1024.0 * 1024.0)) << " MB/token"
                            << (estimated ? " (est)" : "")
                            << " | memory: " << available_memory_gb << " GiB free, "
-                           << budget.model_gib << " GiB model, "
+                           << model_weight_gb << " GiB model, "
+                           << fixed_swa_gib << " GiB fixed SWA KV, "
                            << budget.reserve_gib << " GiB runtime reserve, "
                            << budget.kv_gib << " GiB for KV"
                            << " | ctx=" << max_ctx_from_memory << " → " << ctx_size << " ";
@@ -409,9 +425,36 @@ inline int64_t resolve_auto_ctx_size(const RecipeOptions& effective_options,
             return AUTO_CTX_NO_CAPACITY;
     }
 
+    // Non-default cache layouts may allocate more than a bounded SWA window.
+    bool bounded_swa = std::getenv("LLAMA_ARG_SWA_FULL") == nullptr &&
+                       std::getenv("LLAMA_ARG_UBATCH") == nullptr &&
+                       std::getenv("LLAMA_ARG_N_PARALLEL") == nullptr &&
+                       std::getenv("LLAMA_ARG_CACHE_TYPE_K") == nullptr &&
+                       std::getenv("LLAMA_ARG_CACHE_TYPE_V") == nullptr;
+    const json custom_args = effective_options.get_option("llamacpp_args");
+    if (custom_args.is_string()) {
+        const std::string args = " " + custom_args.get<std::string>() + " ";
+        if (args.find("--swa-full") != std::string::npos ||
+            args.find("--ubatch-size") != std::string::npos ||
+            args.find(" -ub ") != std::string::npos ||
+            args.find(" -ub=") != std::string::npos ||
+            args.find("--cache-type-") != std::string::npos ||
+            args.find(" -ctk ") != std::string::npos ||
+            args.find(" -ctv ") != std::string::npos ||
+            args.find(" -ctk=") != std::string::npos ||
+            args.find(" -ctv=") != std::string::npos ||
+            (args.find("--parallel") != std::string::npos &&
+             args.find(" --parallel 1 ") == std::string::npos &&
+             args.find(" --parallel=1 ") == std::string::npos) ||
+            (args.find(" -np ") != std::string::npos &&
+             args.find(" -np 1 ") == std::string::npos) ||
+            (args.find(" -np=") != std::string::npos &&
+             args.find(" -np=1 ") == std::string::npos))
+            bounded_swa = false;
+    }
     int64_t result = compute_auto_context_size(model_info, available_gb,
                                                is_embedding, ctx_unified_gpu,
-                                               physical_free_gb);
+                                               physical_free_gb, bounded_swa);
     LOG(DEBUG, "AutoTune") << "resolve_auto_ctx_size: " << model_info.model_name
                            << " → ctx_size=" << result;
     return result;

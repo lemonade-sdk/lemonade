@@ -297,6 +297,57 @@ static void test_varying_heads_swa() {
 }
 
 
+
+static void test_gemma4_bounded_swa() {
+    GgufMetadata m;
+    m.architecture = "gemma4";
+    m.block_count = 48;
+    m.key_length = 512;
+    m.key_length_swa = 256;
+    m.sliding_window = 1024;
+    for (int i = 0; i < 48; ++i) {
+        const bool sliding = i % 6 != 5;
+        m.sliding_window_pattern.push_back(sliding);
+        m.head_count_kv_per_layer.push_back(sliding ? 8 : 1);
+    }
+    derive_scalars(m);
+
+    const double total = lemon::compute_weighted_kv_cache_bytes_per_token(m);
+    const double swa = lemon::compute_gemma4_bounded_swa_bytes_per_token(m);
+    check("Gemma4 12B: original estimate includes all 40 SWA layers",
+          approx_eq(total, 344064.0));
+    check("Gemma4 12B: bounded cache removes only the SWA slope",
+          approx_eq(swa, 327680.0) && approx_eq(total - swa, 16384.0));
+
+    constexpr double draft_bytes_per_token = 26624.0;
+    const double old_slope = total * lemon::AUTO_CTX_MTP_KV_MULTIPLIER +
+                             draft_bytes_per_token;
+    const double bounded_slope = (total - swa) * lemon::AUTO_CTX_MTP_KV_MULTIPLIER +
+                                 draft_bytes_per_token;
+    const double fixed_swa = swa * lemon::AUTO_CTX_MTP_KV_MULTIPLIER *
+                             (m.sliding_window + 4096.0) / (1024.0 * 1024.0 * 1024.0);
+    const auto before = lemon::estimate_auto_context_budget(
+        31.8, 7.75, old_slope, true, true);
+    const auto after = lemon::estimate_auto_context_budget(
+        31.8, 7.75 + fixed_swa, bounded_slope, true, true);
+    check("Gemma4 12B MTP: reproduces observed 60k limit",
+          before.max_tokens >= 58000 && before.max_tokens < 62000);
+    check("Gemma4 12B MTP: 5090 can budget full 256k context",
+          after.max_tokens >= 262144);
+
+    m.architecture = "qwen35";
+    check("Qwen3.8: bounded Gemma cache adjustment is not applied",
+          lemon::compute_gemma4_bounded_swa_bytes_per_token(m) == 0.0);
+    m.architecture = "gemma4";
+    m.sliding_window = 0;
+    check("Missing window metadata keeps conservative estimate",
+          lemon::compute_gemma4_bounded_swa_bytes_per_token(m) == 0.0);
+    m.sliding_window = 1024;
+    m.sliding_window_pattern.pop_back();
+    check("Incomplete per-layer metadata keeps conservative estimate",
+          lemon::compute_gemma4_bounded_swa_bytes_per_token(m) == 0.0);
+}
+
 static void test_auto_context_budget() {
     using lemon::estimate_auto_context_budget;
     // 5090 (32 GiB), Qwen3.8-27B Q4 (16.5 GiB), vision projector and MTP.
@@ -551,6 +602,7 @@ int main() {
     test_fai_improvement();
     test_missing_metadata();
     test_varying_heads_swa();
+    test_gemma4_bounded_swa();
 
     if (g_failures == 0) {
         std::printf("\nAll auto_tune tests passed\n");

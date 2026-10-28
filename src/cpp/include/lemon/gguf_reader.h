@@ -273,6 +273,12 @@ inline bool read_gguf_metadata(GgufMetadata& out, const std::string& path) {
                 }
                 continue;
             }
+            if (key == out.architecture + ".attention.sliding_window") {
+                int64_t value = 0;
+                if (read_gguf_integer_value(in, type, value) && value > 0)
+                    out.sliding_window = value;
+                continue;
+            }
             if (key == out.architecture + ".attention.key_length") {
                 int64_t value = 0;
                 if (read_gguf_integer_value(in, type, value) && value > 0)
@@ -483,6 +489,27 @@ inline double compute_weighted_kv_cache_bytes_per_token(const GgufMetadata& gguf
          * 2.0  // F16
          * 2.0  // K+V
          * factor;
+}
+
+
+// Gemma 4's SWA layers keep a bounded KV window when --swa-full is disabled.
+// Return the bytes/token belonging to these layers, not their fixed allocation.
+inline double compute_gemma4_bounded_swa_bytes_per_token(const GgufMetadata& gguf) {
+    if (gguf.architecture != "gemma4" || gguf.sliding_window <= 0 ||
+        gguf.key_length_swa <= 0 || gguf.key_length_swa >= gguf.key_length ||
+        gguf.block_count <= 0 ||
+        gguf.head_count_kv_per_layer.size() != static_cast<size_t>(gguf.block_count) ||
+        gguf.sliding_window_pattern.size() != static_cast<size_t>(gguf.block_count))
+        return 0.0;
+
+    double bytes = 0.0;
+    for (size_t i = 0; i < gguf.sliding_window_pattern.size(); ++i) {
+        if (!gguf.sliding_window_pattern[i]) continue;
+        const int64_t heads = gguf.head_count_kv_per_layer[i];
+        if (heads <= 0) return 0.0;
+        bytes += static_cast<double>(heads) * gguf.key_length_swa * 4.0;
+    }
+    return bytes;
 }
 
 } // namespace lemon
