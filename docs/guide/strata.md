@@ -376,6 +376,10 @@ An explicit `stream_options.include_usage: false` suppresses usage but not timin
 The CLI benchmark uses engine decode throughput rather than total request time,
 which includes prefill.
 
+The engine silence timeout during prefill is five minutes plus 100 ms per prompt
+token, capped at fifteen minutes. After the first output token or a cancellation
+request, the standard five-minute silence timeout applies.
+
 Chat completions, tool calling, image inputs, and the stateless Responses API are
 sent directly to Strata, including streaming. Legacy text completions and embeddings
 are not enabled. Lemonade controls the context, model, engine path and process

@@ -682,8 +682,6 @@ struct StrataProcess::Impl : NativePipe {
                   const std::function<bool(const json&)>& delta = {}) {
         if (!alive()) throw std::runtime_error("Strata engine is unavailable");
         bool sent_stop = false, matched_stop = false, done_received = false, prefilling = true;
-        const auto prefill_timeout = std::chrono::minutes(5) +
-            std::chrono::milliseconds(100) * static_cast<int64_t>(request.tokens.size());
         std::string output;
         common_chat_msg previous;
         std::vector<std::string> tool_ids;
@@ -740,7 +738,7 @@ struct StrataProcess::Impl : NativePipe {
                 if (cancelled()) stop();
                 std::string line;
                 if (!next(line)) {
-                    const auto timeout = prefilling && !sent_stop ? prefill_timeout : std::chrono::minutes(5);
+                    const auto timeout = generation_stall_timeout(request.tokens.size(), prefilling, sent_stop);
                     if (Clock::now() - heard > timeout) throw std::runtime_error("Strata engine protocol timed out");
                     if (delta && !sent_stop && Clock::now() - heartbeat > std::chrono::seconds(5)) {
                         if (!delta(json::object())) stop();

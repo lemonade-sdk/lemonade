@@ -1698,6 +1698,20 @@ void test_metadata(const fs::path& root) {
 }
 
 void test_native_transport(const fs::path& pack, const fs::path& executable) {
+    check("Prefill stall allowance starts at five minutes",
+        strata::generation_stall_timeout(0, true, false) == std::chrono::minutes(5));
+    check("Short prompt prefill allowance still scales with token count",
+        strata::generation_stall_timeout(123, true, false) ==
+            std::chrono::minutes(5) + std::chrono::milliseconds(12300));
+    for (const auto tokens : {std::size_t{6000}, std::size_t{6001}, std::size_t{65536},
+                             std::numeric_limits<std::size_t>::max()}) {
+        check("Long prompt prefill stalls are capped at fifteen minutes",
+            strata::generation_stall_timeout(tokens, true, false) == std::chrono::minutes(15));
+        check("STOP retains the five-minute stall timeout for long prefills",
+            strata::generation_stall_timeout(tokens, true, true) == std::chrono::minutes(5));
+        check("Decode retains the five-minute stall timeout for long prompts",
+            strata::generation_stall_timeout(tokens, false, false) == std::chrono::minutes(5));
+    }
     ServerCommand command;
     command.program = utils::path_to_utf8(executable);
     command.args = {"--engine-fixture", ""};

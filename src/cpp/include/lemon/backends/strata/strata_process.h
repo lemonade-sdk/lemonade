@@ -2,6 +2,9 @@
 
 #include "lemon/server_process.h"
 
+#include <algorithm>
+#include <chrono>
+#include <cstddef>
 #include <filesystem>
 #include <functional>
 #include <httplib.h>
@@ -10,6 +13,12 @@
 #include <optional>
 
 namespace lemon::backends::strata {
+
+inline std::chrono::milliseconds generation_stall_timeout(std::size_t prompt_tokens, bool prefilling, bool sent_stop) {
+    const auto standard = std::chrono::minutes(5);
+    if (!prefilling || sent_stop) return standard;
+    return standard + std::chrono::milliseconds(100 * static_cast<int>(std::min<std::size_t>(prompt_tokens, 6000)));
+}
 
 struct VisionCommand {
     ServerCommand command;
