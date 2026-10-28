@@ -19,6 +19,7 @@ import hashlib
 import json
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -307,6 +308,50 @@ def install_fork_binary(
     return binary_path
 
 
+ROCM_VERSION_RE = re.compile(r"\*\*ROCm Version\*\*:\s*(\S+)")
+ROCM_VERSION_FILES = (
+    Path(".info/version"),
+    Path("share/rocm/version"),
+    Path("version"),
+)
+
+
+def resolve_rocm_version(
+    fork: dict, version: str, binary_path: Path, binaries_dir: Path, token: str | None
+) -> str | None:
+    try:
+        body = gh_api(f"repos/{fork['repo']}/releases/tags/{version}", token).get(
+            "body"
+        )
+        m = ROCM_VERSION_RE.search(body or "")
+        if m:
+            return m.group(1)
+    except Exception as e:
+        print(
+            f"  [WARN] Could not read release notes for {fork['repo']}@{version}: {e}"
+        )
+
+    # These builds carry no bundled runtime; lemond supplies the pinned TheRock one.
+    url_key = "binary_url_windows" if IS_WINDOWS else "binary_url_linux"
+    if "{therock_ver}" in fork.get(url_key, "") and BACKEND_VERSIONS_PATH.exists():
+        data = json.loads(BACKEND_VERSIONS_PATH.read_text())
+        return data["therock"]["version"].lstrip("v")
+
+    install_dir = (binaries_dir / fork["fork_id"]).resolve()
+    d = binary_path.resolve().parent
+    while d == install_dir or install_dir in d.parents:
+        for rel in ROCM_VERSION_FILES:
+            f = d / rel
+            if f.is_file():
+                line = f.read_text(errors="replace").strip().splitlines()
+                if line and line[0].strip():
+                    return line[0].strip()
+        if d == install_dir:
+            break
+        d = d.parent
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Bench runner
 # ---------------------------------------------------------------------------
@@ -354,6 +399,7 @@ def run_bench(
     compare_file: Path | None,
     dry_run: bool,
     lemonade_bin: str,
+    rocm_version: str | None = None,
 ) -> dict | None:
     backend = fork["backend"]
     # bench_as: the real llamacpp backend key lemond recognises for --backend.
@@ -461,6 +507,7 @@ def run_bench(
             "fork_label": fork["label"],
             "fork_repo": fork["repo"],
             "fork_version": version,
+            "rocm_version": rocm_version,
             "fork_backend": backend,
             "experimental": fork.get("experimental", False),
         }
@@ -605,6 +652,7 @@ def update_leaderboard(
                 "fork_label": fork["label"],
                 "fork_repo": fork["repo"],
                 "fork_version": version,
+                "rocm_version": result.get("rocm_version"),
                 "backend": br.get("backend"),
                 "tps_mean": round(tps_mean, 2),
                 "tps_p95": round(sc.get("tps", {}).get("p95", 0), 2),
@@ -759,6 +807,11 @@ def main() -> int:
         if binary_path is None:
             continue
 
+        rocm_version = resolve_rocm_version(
+            fork, version, binary_path, binaries_dir, args.token
+        )
+        print(f"ROCm: {rocm_version or 'n/a'}")
+
         # Install the fork backend before running any models
         base_url = "http://127.0.0.1:8000"
         if args.port:
@@ -822,6 +875,7 @@ def main() -> int:
                 prev_result,
                 args.dry_run,
                 lemonade_bin,
+                rocm_version,
             )
 
             if result is None:
