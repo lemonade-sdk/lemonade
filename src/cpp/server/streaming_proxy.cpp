@@ -4,10 +4,32 @@
 #include <chrono>
 #include <cstring>
 #include <stdexcept>
+#include <string_view>
 #include <curl/curl.h>
 #include <lemon/utils/aixlog.hpp>
 
 namespace lemon {
+
+nlohmann::ordered_json StreamingProxy::error_event_schema() {
+    return nlohmann::ordered_json::parse(R"({
+        "type": "object",
+        "title": "Error event",
+        "description": "Sent in place of the rest of the stream when the backend fails after the stream has started. No `[DONE]` follows it.",
+        "x-no-example": "Only a backend that fails mid-stream sends it.",
+        "required": ["error"],
+        "properties": {
+            "error": {
+                "type": ["object", "string"],
+                "description": "The backend's error, as an object or, when the backend sent one, a string.",
+                "properties": {
+                    "message": {"type": "string", "description": "What failed."},
+                    "type": {"type": "string", "description": "The error's type, such as `backend_error`."},
+                    "status_code": {"type": "integer", "description": "The status the backend answered with, or `502` when it closed the stream without a response."}
+                }
+            }
+        }
+    })");
+}
 
 namespace {
 
@@ -77,6 +99,38 @@ void extract_telemetry_from_chunk(const nlohmann::json& chunk, StreamingProxy::T
     }
 }
 
+struct Field {
+    std::string_view name;
+    std::string_view value;
+};
+
+// Everything before the first colon names the field and the rest is its value,
+// minus the optional single space that may follow the colon. A line with no
+// colon is a field name carrying an empty value.
+Field parse_field(std::string_view line) {
+    const auto colon = line.find(':');
+    if (colon == std::string_view::npos) {
+        return {line, {}};
+    }
+    std::string_view value = line.substr(colon + 1);
+    if (!value.empty() && value.front() == ' ') {
+        value.remove_prefix(1);
+    }
+    return {line.substr(0, colon), value};
+}
+
+std::string lower_copy(std::string s) {
+    std::transform(s.begin(), s.end(), s.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return s;
+}
+
+bool is_gpu_hang_or_compute_error(const std::string& message) {
+    const std::string lowered = lower_copy(message);
+    return lowered.find("compute error") != std::string::npos ||
+           lowered.find("gpu hang") != std::string::npos;
+}
+
 } // namespace
 
 
@@ -86,7 +140,8 @@ void StreamingProxy::forward_sse_stream(
     httplib::DataSink& sink,
     std::function<void(const TelemetryData&)> on_complete,
     long timeout_seconds,
-    std::function<void()> on_chunk) {
+    std::function<void()> on_chunk,
+    long heartbeat_interval_ms) {
 
     TelemetryData telemetry;
     try {
@@ -101,21 +156,44 @@ void StreamingProxy::forward_sse_stream(
     bool has_first_token = false;
     double time_to_first_token = 0.0;
     const auto start_time = std::chrono::steady_clock::now();
+    auto last_activity_time = start_time;
 
     int backend_status = 200;
     std::string error_body;
     static constexpr size_t max_error_body = 64 * 1024;
 
-    auto process_line = [&telemetry](const std::string& line) {
-        std::string json_str;
-        if (line.find("data: ") == 0) {
-            json_str = line.substr(6);
-        } else if (line.find("ChatCompletionChunk: ") == 0) {
-            json_str = line.substr(21);
+    // Chunk boundaries are arbitrary, so whether the stream carried any event
+    // at all is decided per reassembled line rather than per received chunk. An
+    // event only counts once its blank-line terminator arrives: a data field cut
+    // off before that is discarded by the client, so it delivered nothing.
+    bool has_data_event = false;
+    bool has_pending_data_field = false;
+
+    auto process_line = [&telemetry, &has_data_event, &has_pending_data_field](const std::string& line) {
+        if (line.empty()) {
+            has_data_event = has_data_event || has_pending_data_field;
+            has_pending_data_field = false;
+            return;
         }
-        if (!json_str.empty() && json_str != "[DONE]") {
+
+        if (line.front() == ':') {
+            // SSE comment, such as the heartbeat.
+            return;
+        }
+
+        const Field field = parse_field(line);
+        if (field.name == "data") {
+            has_pending_data_field = true;
+        } else if (field.name == "ChatCompletionChunk") {
+            // Not SSE, so there is no blank-line terminator to wait for.
+            has_data_event = true;
+        } else {
+            return;
+        }
+
+        if (!field.value.empty() && field.value != "[DONE]") {
             try {
-                auto chunk = json::parse(json_str);
+                auto chunk = json::parse(field.value.begin(), field.value.end());
                 extract_telemetry_from_chunk(chunk, telemetry);
             } catch (...) {}
         }
@@ -125,16 +203,18 @@ void StreamingProxy::forward_sse_stream(
         backend_url,
         request_body,
         [&sink, &line_buffer, &has_done_marker, &has_first_token, &time_to_first_token,
-         &start_time, &on_chunk, &process_line, &backend_status, &error_body](const char* data, size_t length) {
-            if (on_chunk) {
-                on_chunk();
-            }
+         &start_time, &last_activity_time, &on_chunk, &process_line, &backend_status, &error_body](const char* data, size_t length) {
+            last_activity_time = std::chrono::steady_clock::now();
 
             if (backend_status != 200) {
                 if (error_body.size() < max_error_body) {
                     error_body.append(data, std::min(length, max_error_body - error_body.size()));
                 }
                 return true;
+            }
+
+            if (on_chunk) {
+                on_chunk();
             }
 
             line_buffer.append(data, length);
@@ -161,10 +241,31 @@ void StreamingProxy::forward_sse_stream(
         timeout_seconds,
         [&backend_status](int status) { backend_status = status; },
         utils::HttpSecurityPolicy::TrustedLoopback,
-        [&sink]() {
-            return sink.is_writable && !sink.is_writable();
+        [&sink, &last_activity_time, &backend_status, heartbeat_interval_ms]() {
+            if (sink.is_writable && !sink.is_writable()) {
+                return true;
+            }
+
+            if (heartbeat_interval_ms > 0 && backend_status == 200) {
+                const auto now = std::chrono::steady_clock::now();
+                const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    now - last_activity_time).count();
+                if (elapsed >= heartbeat_interval_ms) {
+                    static constexpr const char* heartbeat = ": ping\n\n";
+                    if (!sink.write(heartbeat, std::strlen(heartbeat))) {
+                        return true;
+                    }
+                    last_activity_time = now;
+                }
+            }
+
+            return false;
         }
     );
+
+    // A CR held back as a possible split CRLF terminates its line once no more
+    // bytes can arrive, so the last event of a CR-terminated stream still counts.
+    process_sse_lines(line_buffer, process_line, true);
 
     const bool client_disconnected =
         result.curl_code == CURLE_WRITE_ERROR ||
@@ -196,11 +297,16 @@ void StreamingProxy::forward_sse_stream(
 
     if (!client_disconnected &&
         (result.status_code != 200 || backend_status != 200)) {
-        stream_error = true;
         const int status = backend_status != 200 ? backend_status : result.status_code;
         LOG(ERROR, "StreamingProxy") << "Backend returned error: " << status
                                      << (error_body.empty() ? "" : ": " + error_body) << std::endl;
         telemetry.error_message = "Backend returned error status code: " + std::to_string(status);
+
+        if (is_gpu_hang_or_compute_error(error_body)) {
+            throw std::runtime_error("backend compute error / GPU hang during streaming: " + error_body);
+        }
+
+        stream_error = true;
 
         // The response is already committed as 200 text/event-stream, so an
         // unframed error body is dropped by every spec-compliant client parser.
@@ -227,6 +333,23 @@ void StreamingProxy::forward_sse_stream(
         sink.write(event.data(), event.size());
     }
 
+    // A backend that closed a 200 event-stream without ever emitting a data
+    // event produced no response at all. Synthesizing [DONE] below would report
+    // that failure to the client as an empty but successful completion.
+    if (!stream_error && !has_data_event) {
+        static constexpr const char* empty_stream_message =
+            "Backend closed the stream without producing a response";
+        LOG(ERROR, "StreamingProxy") << empty_stream_message << std::endl;
+        telemetry.error_message = empty_stream_message;
+        stream_error = true;
+
+        const json payload{{"error", {{"message", empty_stream_message},
+                                      {"type", "backend_error"},
+                                      {"status_code", 502}}}};
+        const std::string event = "data: " + payload.dump() + "\n\n";
+        sink.write(event.data(), event.size());
+    }
+
     if (!stream_error) {
         // Ensure [DONE] marker is sent only for clean transports. If the transport
         // was interrupted before [DONE], the block above throws and recovery is
@@ -242,9 +365,8 @@ void StreamingProxy::forward_sse_stream(
         LOG(INFO, "Server") << "Streaming completed - 200 OK" << std::endl;
 
         if (!line_buffer.empty()) {
-            if (line_buffer.back() == '\r') {
-                line_buffer.pop_back();
-            }
+            // Whatever is left is an unterminated final line: the end-of-stream
+            // pass above already consumed every CR and LF.
             process_line(line_buffer);
         }
 
@@ -292,15 +414,15 @@ void StreamingProxy::forward_byte_stream(
         backend_url,
         request_body,
         [&sink, &on_chunk, &backend_status, &error_body](const char* data, size_t length) {
-            if (on_chunk) {
-                on_chunk();
-            }
-
             if (backend_status != 200) {
                 if (error_body.size() < max_error_body) {
                     error_body.append(data, std::min(length, max_error_body - error_body.size()));
                 }
                 return true;
+            }
+
+            if (on_chunk) {
+                on_chunk();
             }
 
             if (!sink.write(data, length)) {
@@ -335,10 +457,15 @@ void StreamingProxy::forward_byte_stream(
     }
 
     if (result.status_code != 200 || backend_status != 200) {
-        stream_error = true;
         const int status = backend_status != 200 ? backend_status : result.status_code;
         LOG(ERROR, "StreamingProxy") << "Backend returned error " << status
                                      << (error_body.empty() ? "" : ": " + error_body) << std::endl;
+
+        if (is_gpu_hang_or_compute_error(error_body)) {
+            throw std::runtime_error("backend compute error / GPU hang during byte stream: " + error_body);
+        }
+
+        stream_error = true;
 
         json payload;
         try {
@@ -380,16 +507,14 @@ StreamingProxy::TelemetryData StreamingProxy::parse_telemetry(const std::string&
     json last_chunk_with_usage;
 
     while (std::getline(stream, line)) {
-        std::string json_str;
-        if (line.find("data: ") == 0) {
-            json_str = line.substr(6);
-        } else if (line.find("ChatCompletionChunk: ") == 0) {
-            json_str = line.substr(21);
+        const Field field = parse_field(line);
+        if (field.name != "data" && field.name != "ChatCompletionChunk") {
+            continue;
         }
 
-        if (!json_str.empty() && json_str != "[DONE]") {
+        if (!field.value.empty() && field.value != "[DONE]") {
             try {
-                auto chunk = json::parse(json_str);
+                auto chunk = json::parse(field.value.begin(), field.value.end());
                 bool has_usage = chunk.contains("usage") || chunk.contains("timings");
                 if (!has_usage && chunk.contains("response") && chunk["response"].is_object()) {
                     has_usage = chunk["response"].contains("usage") || chunk["response"].contains("timings");
@@ -412,14 +537,25 @@ StreamingProxy::TelemetryData StreamingProxy::parse_telemetry(const std::string&
     return telemetry;
 }
 
-void StreamingProxy::process_sse_lines(std::string& line_buffer, std::function<void(const std::string&)> line_callback) {
+void StreamingProxy::process_sse_lines(std::string& line_buffer, std::function<void(const std::string&)> line_callback,
+                                       bool end_of_stream) {
     size_t pos;
-    while ((pos = line_buffer.find('\n')) != std::string::npos) {
-        std::string line = line_buffer.substr(0, pos);
-        line_buffer.erase(0, pos + 1);
-        if (!line.empty() && line.back() == '\r') {
-            line.pop_back();
+    while ((pos = line_buffer.find_first_of("\r\n")) != std::string::npos) {
+        size_t terminator_length = 1;
+        if (line_buffer[pos] == '\r') {
+            if (pos + 1 == line_buffer.size()) {
+                // The LF of a CRLF split across chunks may still be in flight,
+                // and consuming the CR now would invent a blank line that
+                // terminates the event early.
+                if (!end_of_stream) {
+                    return;
+                }
+            } else if (line_buffer[pos + 1] == '\n') {
+                terminator_length = 2;
+            }
         }
+        std::string line = line_buffer.substr(0, pos);
+        line_buffer.erase(0, pos + terminator_length);
         line_callback(line);
     }
 }

@@ -1,11 +1,18 @@
 #include <cstdio>
 #include <stdexcept>
 #include <string>
+#include <vector>
 #include <nlohmann/json.hpp>
-#include <lemon/model_registry.h>
+#include <lemon/backends/fastflowlm/fastflowlm_models.h>
+#include <lemon/model_manager.h>
+#include <lemon/models/registry_types.h>
 #include <lemon/runtime_config.h>
 
 using json = nlohmann::json;
+using lemon::ModelInfo;
+using lemon::ModelManager;
+using lemon::ModelManagerConfig;
+using lemon::RegistryId;
 using lemon::RuntimeConfig;
 using lemon::apply_default_pull_source;
 
@@ -183,6 +190,49 @@ int main() {
         apply_default_pull_source(req, "modelscope");
         check(!req.contains("source"),
               "checkpoint-less refresh gets no injected source");
+    }
+
+    // An explicit source on a bare refresh is preserved for self-managed
+    // backend download selection.
+    {
+        json req = {{"model_name", "qwen3-0.6b-FLM"}, {"source", "modelscope"}};
+        apply_default_pull_source(req, "huggingface");
+        check(req.value("source", "") == "modelscope",
+              "checkpoint-less refresh preserves explicit source");
+    }
+
+    {
+        ModelManager unpinned;
+        ModelInfo info;
+        check(unpinned.download_source_for(info) == lemon::models::huggingface_descriptor().id,
+              "unpinned download falls back to huggingface without a provider");
+
+        ModelManagerConfig config;
+        config.default_model_source = []() { return "modelscope"; };
+        ModelManager manager(std::move(config));
+        check(manager.download_source_for(info) == lemon::models::modelscope_descriptor().id,
+              "unpinned FLM download follows the configured default");
+
+        info.registry_source = "huggingface";
+        check(manager.download_source_for(info) == lemon::models::huggingface_descriptor().id,
+              "explicit huggingface overrides the configured default");
+
+        info.registry_source = "modelscope";
+        check(manager.download_source_for(info) == lemon::models::modelscope_descriptor().id,
+              "explicit modelscope overrides the configured default");
+    }
+
+    {
+        const auto modelscope_args = lemon::backends::fastflowlm::flm_pull_arguments(
+            "qwen3:0.6b", false, lemon::models::modelscope_descriptor().id);
+        check(modelscope_args == std::vector<std::string>({
+                  "pull", "qwen3:0.6b", "--force", "--modelscope", "1"}),
+              "FLM ModelScope pull includes the registry flag");
+
+        const auto huggingface_args = lemon::backends::fastflowlm::flm_pull_arguments(
+            "qwen3:0.6b", true, lemon::models::huggingface_descriptor().id);
+        check(huggingface_args == std::vector<std::string>({"pull", "qwen3:0.6b"}),
+              "FLM Hugging Face pull omits the registry flag");
     }
 
     // When both fields are present, `checkpoints` is authoritative and its

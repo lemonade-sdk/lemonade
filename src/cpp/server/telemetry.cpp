@@ -449,7 +449,10 @@ private:
     }
 };
 
-static MetricsWorker g_metrics_worker;
+static MetricsWorker& get_metrics_worker() {
+    static MetricsWorker worker;
+    return worker;
+}
 
 class TelemetryQueue {
 private:
@@ -792,13 +795,17 @@ static TelemetryQueue& get_queue() {
     return queue;
 }
 
+void initialize() {
+    (void)get_metrics_worker();
+}
+
 void shutdown() {
-    g_metrics_worker.stop();
+    get_metrics_worker().stop();
     get_queue().shutdown();
 }
 
 void flush() {
-    g_metrics_worker.drain();
+    get_metrics_worker().drain();
     get_queue().flush();
 }
 
@@ -909,7 +916,7 @@ static std::string format_namespaced_session(const std::string& client, const st
 InferenceSpan::InferenceSpan(const std::string& span_kind, const std::string& name, const std::string& model_name, const nlohmann::json& request_json)
     : span_kind_(span_kind), name_(name), model_name_(model_name), start_time_(std::chrono::steady_clock::now()) {
     // When the caller supplies a valid W3C trace context (gated behind
-    // telemetry.trust_incoming_trace_context in server.cpp), adopt its trace id
+    // telemetry.trust_incoming_trace_context in request_middleware.cpp), adopt its trace id
     // and treat its span id as this span's parent so the request joins the
     // caller's distributed trace. Otherwise start a fresh root trace.
     if (!g_incoming_trace_id.empty()) {
@@ -1399,7 +1406,7 @@ void end_llm_span_async(
         return;
     }
 
-    if (!g_metrics_worker.enqueue(span, metrics_url, parser, usage_payload, text_output, tool_calls)) {
+    if (!get_metrics_worker().enqueue(span, metrics_url, parser, usage_payload, text_output, tool_calls)) {
         LOG(WARNING, "Telemetry") << "MetricsWorker queue full. Dropping optional metrics and completing span immediately." << std::endl;
         span->end_with_success(usage_payload, text_output, tool_calls);
     }

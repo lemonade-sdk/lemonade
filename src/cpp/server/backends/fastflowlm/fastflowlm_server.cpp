@@ -66,11 +66,8 @@ FastFlowLMServer::FastFlowLMServer(const std::string& log_level, ModelManager* m
     : WrappedServer("FastFlowLM", log_level, model_manager, backend_manager) {
 }
 
-FastFlowLMServer::~FastFlowLMServer() {
-    unload();
-}
-
-std::string FastFlowLMServer::download_model(const std::string& checkpoint, bool do_not_upgrade) {
+std::string FastFlowLMServer::download_model(const std::string& checkpoint, bool do_not_upgrade,
+                                             RegistryId source) {
     LOG(INFO, "FastFlowLM") << "Pulling model with FLM: " << checkpoint << std::endl;
 
     std::string flm_path = get_flm_path();
@@ -78,10 +75,8 @@ std::string FastFlowLMServer::download_model(const std::string& checkpoint, bool
         throw std::runtime_error("FLM not found");
     }
 
-    std::vector<std::string> args = {"pull", checkpoint};
-    if (!do_not_upgrade) {
-        args.push_back("--force");
-    }
+    std::vector<std::string> args = fastflowlm::flm_pull_arguments(
+        checkpoint, do_not_upgrade, source);
 
     LOG(INFO, "ProcessManager") << "Starting process: \"" << flm_path << "\"";
     for (const auto& arg : args) {
@@ -176,7 +171,13 @@ void FastFlowLMServer::load(const std::string& model_name,
             "\nVisit " + DRIVER_INSTALL_URL + " for driver installation instructions.");
     }
 
-    download_model(model_info.checkpoint(), do_not_upgrade);
+    if (model_manager_ == nullptr) {
+        throw std::runtime_error("Model manager is unavailable while resolving the download source for: " +
+                                 model_info.checkpoint());
+    }
+    const RegistryId source = model_manager_->download_source_for(model_info);
+
+    download_model(model_info.checkpoint(), do_not_upgrade, source);
 
     port_ = choose_port();
 
@@ -216,73 +217,23 @@ void FastFlowLMServer::load(const std::string& model_name,
     }
     LOG(INFO, "ProcessManager") << std::endl;
 
-    set_process_handle(utils::ProcessManager::start_process(flm_path, args, "", is_debug(), true),
-                       flm_path, args);
-    LOG(INFO, "ProcessManager") << "Process started successfully" << std::endl;
-
-    bool ready = wait_for_ready();
-    if (!ready) {
-        const ProcessHandle handle = consume_process_handle_for_cleanup();
-        if (has_process_handle(handle)) {
-            utils::ProcessManager::stop_process(handle);
-        }
-        throw std::runtime_error("flm-server failed to start");
+    ServerCommand command;
+    command.program = flm_path;
+    command.args = std::move(args);
+    command.port = port_;
+    // FLM has no /health route.
+    command.ready_endpoint = "/api/tags";
+    try {
+        // 5 minutes: large models can take time to load
+        start_server(std::make_unique<NativeProcess>(ProcessOutput{is_debug(), true}), command, 300);
+    } catch (const std::runtime_error&) {
+        if (load_cancelled()) throw;
+        LOG(ERROR, "FastFlowLM") << "Troubleshooting tips:" << std::endl;
+        LOG(ERROR, "FastFlowLM") << "  1. Check if FLM is installed correctly: flm --version" << std::endl;
+        LOG(ERROR, "FastFlowLM") << "  2. Try running: flm serve <model> --ctx-len 8192 --port 8001" << std::endl;
+        LOG(ERROR, "FastFlowLM") << "  3. Check NPU drivers are installed (Windows only)" << std::endl;
+        throw;
     }
-
-    is_loaded_ = true;
-    LOG(INFO, "FastFlowLM") << "Model loaded on port " << get_backend_port() << std::endl;
-}
-
-void FastFlowLMServer::unload() {
-    stop_backend_watchdog();
-    LOG(INFO, "FastFlowLM") << "Unloading model..." << std::endl;
-
-    const ProcessHandle handle = consume_process_handle_for_cleanup();
-    if (has_process_handle(handle)) {
-        utils::ProcessManager::stop_process(handle);
-    }
-    is_loaded_ = false;
-}
-
-bool FastFlowLMServer::wait_for_ready() {
-    // FLM doesn't have a health endpoint, so we use /api/tags to check if it's up
-    std::string tags_url = get_base_url() + "/api/tags";
-
-    LOG(INFO, "FastFlowLM") << "Waiting for " + server_name_ + " to be ready..." << std::endl;
-
-    const int max_attempts = 300;  // 5 minutes timeout (large models can take time to load)
-    for (int attempt = 0; attempt < max_attempts; ++attempt) {
-        // Check if process is still running. If it already exited, consume and
-        // reap the owned handle here so failed-start cleanup cannot later signal
-        // a stale PID.
-        const ProcessHandle handle = get_process_handle_snapshot();
-        if (!has_process_handle(handle) || !utils::ProcessManager::is_running(handle)) {
-            LOG(ERROR, "FastFlowLM") << server_name_ << " process has terminated!" << std::endl;
-            const ProcessHandle exited_handle = consume_process_handle_for_cleanup();
-            int exit_code = has_process_handle(exited_handle)
-                ? utils::ProcessManager::reap_process(exited_handle)
-                : -1;
-            LOG(ERROR, "FastFlowLM") << "Process exit code: " << exit_code << std::endl;
-            LOG(ERROR, "FastFlowLM") << "Troubleshooting tips:" << std::endl;
-            LOG(ERROR, "FastFlowLM") << "  1. Check if FLM is installed correctly: flm --version" << std::endl;
-            LOG(ERROR, "FastFlowLM") << "  2. Try running: flm serve <model> --ctx-len 8192 --port 8001" << std::endl;
-            LOG(ERROR, "FastFlowLM") << "  3. Check NPU drivers are installed (Windows only)" << std::endl;
-            return false;
-        }
-
-        if (utils::HttpClient::is_reachable(
-                tags_url, 1, utils::HttpSecurityPolicy::TrustedLoopback)) {
-            LOG(INFO, "FastFlowLM") << server_name_ + " is ready!" << std::endl;
-            start_backend_watchdog("/api/tags");
-            return true;
-        }
-
-        std::this_thread::sleep_for(std::chrono::seconds(1));
-    }
-
-    LOG(ERROR, "FastFlowLM") << server_name_ << " failed to start within "
-              << max_attempts << " seconds" << std::endl;
-    return false;
 }
 
 json FastFlowLMServer::chat_completion(const json& request) {
@@ -480,8 +431,17 @@ public:
     }
 
     void download_model(const ModelInfo& info, bool do_not_upgrade, DownloadProgressCallback progress,
-                        const BackendOpsContext&) const override {
-        flm_download(info.checkpoint(), do_not_upgrade, progress);
+                        const BackendOpsContext& ctx) const override {
+        if (ctx.fetch == nullptr) {
+            throw std::runtime_error("No fetch service while resolving the download source for: " +
+                                     info.checkpoint());
+        }
+        flm_download(info.checkpoint(), do_not_upgrade, progress,
+                     ctx.fetch->download_source_for(info));
+    }
+
+    void remove_self_managed_model(const ModelInfo& info) const override {
+        flm_remove(info.checkpoint());
     }
 
     bool invalidates_cache_after_download() const override { return true; }

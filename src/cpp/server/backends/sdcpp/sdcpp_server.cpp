@@ -16,6 +16,7 @@
 #include <filesystem>
 #include <fstream>
 #include <chrono>
+#include <cstring>
 #include <random>
 #include <sstream>
 #include <set>
@@ -26,7 +27,6 @@ using namespace lemon::utils;
 
 namespace lemon {
 namespace backends {
-
 
 namespace {
 bool is_rocm_backend(const std::string& backend) {
@@ -87,7 +87,7 @@ int generate_random_seed() {
 
 InstallParams SDServer::get_install_params(const std::string& backend, const std::string& version) {
     InstallParams params;
-    params.repo = "leejet/stable-diffusion.cpp";
+    params.repo = "lemonade-sdk/stable-diffusion.cpp";
     std::string resolved_backend = resolve_sdcpp_backend(backend);
 
     // Transform generated sd.cpp versions for asset names:
@@ -143,7 +143,6 @@ InstallParams SDServer::get_install_params(const std::string& backend, const std
         throw std::runtime_error("Vulkan sd.cpp only supported on Windows and Linux");
     #endif
     } else if (is_cuda_backend(resolved_backend)) {
-        params.repo = "lemonade-sdk/stable-diffusion.cpp";
         std::string target_arch = SystemInfo::get_cuda_arch();
         if (target_arch.empty()) {
             throw std::runtime_error(
@@ -180,18 +179,12 @@ SDServer::SDServer(const std::string& log_level, ModelManager* model_manager, Ba
     LOG(DEBUG, "SDServer") << "Created with log_level=" << log_level << std::endl;
 }
 
-SDServer::~SDServer() {
-    unload();
-}
-
 void SDServer::load(const std::string& model_name,
                     const ModelInfo& model_info,
                     const RecipeOptions& options,
                     bool /* do_not_upgrade */) {
     LOG(INFO, "SDServer") << "Loading model: " << model_name << std::endl;
     LOG(DEBUG, "SDServer") << "Per-model settings: " << options.to_log_string() << std::endl;
-
-    image_defaults_ = model_info.image_defaults;
 
     std::string backend = options.get_option("sd-cpp_backend");
     if (backend.empty()) {
@@ -334,19 +327,7 @@ void SDServer::load(const std::string& model_name,
                         new_path = *it + ";" + new_path;
                     }
 
-                    fs::path therock_dll = fs::path(therock_bin) / "amdhip64_7.dll";
-                    fs::path target_dll = exe_dir / "amdhip64_7.dll";
-                    if (fs::exists(therock_dll)) {
-                        std::error_code ec;
-                        fs::copy_file(therock_dll, target_dll, fs::copy_options::overwrite_existing, ec);
-                        if (!ec) {
-                            LOG(INFO, "SDServer") << "Copied amdhip64_7.dll from TheRock to " << path_to_utf8(target_dll) << std::endl;
-                        } else {
-                            LOG(ERROR, "SDServer") << "Failed to copy amdhip64_7.dll: " << ec.message() << std::endl;
-                        }
-                    } else {
-                        LOG(DEBUG, "SDServer") << "amdhip64_7.dll not found in TheRock at " << path_to_utf8(therock_dll) << std::endl;
-                    }
+                    BackendUtils::stage_therock_hip_runtime(rocm_arch, exe_dir);
                 }
             }
         }
@@ -384,53 +365,28 @@ void SDServer::load(const std::string& model_name,
     working_dir = path_to_utf8(executable_path.parent_path());
 #endif
 
-    ProcessHandle started_handle = utils::ProcessManager::start_process(
-        process_exe_path,
-        args,
-        working_dir,
-        is_debug(),  // inherit_output
-        false,  // filter_health_logs
-        env_vars
-    );
-    set_process_handle(started_handle, process_exe_path, args);
-
-    if (!has_process_handle(started_handle)) {
-        throw std::runtime_error("Failed to start sd-server process");
-    }
-
-    LOG(INFO, "SDServer") << "Process started with PID: " << started_handle.pid << std::endl;
-
-    if (!wait_for_ready("/")) {
-        unload();
-        throw std::runtime_error("sd-server failed to start or become ready");
-    }
-
-    LOG(INFO, "SDServer") << "Server is ready at http://127.0.0.1:" << get_backend_port() << std::endl;
-}
-
-void SDServer::unload() {
-    stop_backend_watchdog();
-    const ProcessHandle handle = consume_process_handle_for_cleanup();
-    if (has_process_handle(handle)) {
-        LOG(INFO, "SDServer") << "Stopping server (PID: " << handle.pid << ")" << std::endl;
-        utils::ProcessManager::stop_process(handle);
-    }
-    image_defaults_ = ImageDefaults{};
+    ServerCommand command;
+    command.program = process_exe_path;
+    command.args = std::move(args);
+    command.env = std::move(env_vars);
+    command.port = port_;
+    command.ready_endpoint = "/";
+    start_server(std::make_unique<NativeProcess>(ProcessOutput{is_debug(), false}, working_dir),
+                 command);
 }
 
 json SDServer::build_extra_args(const json& request, bool include_flow_shift) const {
     // sd-server reads these from inside <sd_cpp_extra_args>{...}</sd_cpp_extra_args>
-    // in the prompt (via SDGenerationParams::from_json_str). Top-level copies on
-    // the HTTP body are ignored for everything except `size` / `n` / `prompt`, so
-    // this is the only channel for step count, cfg scale, etc.
-    //
-    // sd-cpp master nests sample_steps / sample_method / scheduler / flow_shift
-    // under a "sample_params" object, and cfg scale under "sample_params.guidance".
-    // The old flat keys (`steps`, `cfg_scale`) are silently ignored, which is why
-    // setting them at the top level of extra_args has no effect.
-    //
-    // Precedence for each value: request override -> model image_defaults
-    // -> recipe_options.
+    // in the prompt (via SDGenerationParams::from_json_str); top-level copies on
+    // the HTTP body are ignored except for `size` / `n` / `prompt`. sd-cpp
+    // master nests steps/method/scheduler/flow_shift under "sample_params" and
+    // cfg scale under "sample_params.guidance"; the old flat keys (`steps`,
+    // `cfg_scale`) are silently ignored.
+    // Per-value precedence, highest → lowest: per-request body fields, then the
+    // effective recipe options, which already fold user-saved > model
+    // recipe_options > image_defaults > architecture > global config (via
+    // RecipeOptions::merge_precedence_layers / inherit); a value absent from
+    // every layer is omitted, letting sd-server apply its own defaults.
     json extra_args;
     json sample_params = json::object();
     json guidance = json::object();
@@ -441,61 +397,43 @@ json SDServer::build_extra_args(const json& request, bool include_flow_shift) co
         }
         return fallback;
     };
-    auto resolve_float = [&](const std::string& key, float fallback) -> float {
-        if (request.contains(key) && request[key].is_number()) {
-            return request[key].get<float>();
-        }
-        return fallback;
-    };
     auto resolve_string = [&](const std::string& key, const std::string& fallback) -> std::string {
         if (request.contains(key) && request[key].is_string()) {
             return request[key].get<std::string>();
         }
         return fallback;
     };
+    auto option_int = [&](const std::string& key) -> int {
+        return recipe_options_.has_option(key) ? static_cast<int>(recipe_options_.get_option(key)) : 0;
+    };
+    auto option_string = [&](const std::string& key) -> std::string {
+        return recipe_options_.has_option(key) ? recipe_options_.get_option(key).get<std::string>() : "";
+    };
 
     // steps -> sample_params.sample_steps
-    int steps = image_defaults_.has_defaults
-                  ? image_defaults_.steps
-                  : static_cast<int>(recipe_options_.get_option("steps"));
-    steps = resolve_int("steps", steps);
-    if (steps > 0) {
-        sample_params["sample_steps"] = steps;
-    }
+    int steps = resolve_int("steps", option_int("steps"));
+    if (steps > 0) sample_params["sample_steps"] = steps;
 
     // cfg_scale -> sample_params.guidance.txt_cfg
-    float cfg_scale = image_defaults_.has_defaults
-                        ? image_defaults_.cfg_scale
-                        : static_cast<float>(recipe_options_.get_option("cfg_scale"));
-    cfg_scale = resolve_float("cfg_scale", cfg_scale);
-    if (cfg_scale > 0.0f) {
-        guidance["txt_cfg"] = cfg_scale;
+    // 0.0 is a valid explicit value (disables CFG guidance); only omit the key
+    // when it is absent from every layer so sd-server applies its own default.
+    if (request.contains("cfg_scale") && request["cfg_scale"].is_number()) {
+        guidance["txt_cfg"] = request["cfg_scale"].get<float>();
+    } else if (recipe_options_.has_option("cfg_scale")) {
+        guidance["txt_cfg"] = static_cast<float>(recipe_options_.get_option("cfg_scale"));
     }
 
     // sample_method -> sample_params.sample_method
-    std::string sample_method;
-    if (image_defaults_.has_defaults && !image_defaults_.sampling_method.empty()) {
-        sample_method = image_defaults_.sampling_method;
-    } else {
-        sample_method = recipe_options_.get_option("sampling_method");
-    }
-    sample_method = resolve_string("sample_method", sample_method);
-    if (!sample_method.empty()) {
-        sample_params["sample_method"] = sample_method;
-    }
+    std::string sample_method = resolve_string("sample_method", option_string("sampling_method"));
+    if (!sample_method.empty()) sample_params["sample_method"] = sample_method;
 
     // flow_shift -> sample_params.flow_shift
+    // Like cfg_scale, 0.0 is a real value here; only omit when unset everywhere.
     if (include_flow_shift) {
-        float flow_shift = 0.0f;
-        if (image_defaults_.has_defaults && image_defaults_.flow_shift > 0.0f) {
-            flow_shift = image_defaults_.flow_shift;
-        } else {
-            float fs = recipe_options_.get_option("flow_shift");
-            if (fs > 0.0f) flow_shift = fs;
-        }
-        flow_shift = resolve_float("flow_shift", flow_shift);
-        if (flow_shift > 0.0f) {
-            sample_params["flow_shift"] = flow_shift;
+        if (request.contains("flow_shift") && request["flow_shift"].is_number()) {
+            sample_params["flow_shift"] = request["flow_shift"].get<float>();
+        } else if (recipe_options_.has_option("flow_shift")) {
+            sample_params["flow_shift"] = static_cast<float>(recipe_options_.get_option("flow_shift"));
         }
     }
 
@@ -526,11 +464,13 @@ std::string SDServer::resolve_size(const json& request) const {
         return std::to_string(request["width"].get<int>()) + "x"
              + std::to_string(request["height"].get<int>());
     }
-    if (image_defaults_.has_defaults) {
-        return std::to_string(image_defaults_.width) + "x"
-             + std::to_string(image_defaults_.height);
-    }
-    return "";
+    // Fall back to the effective recipe options (ladder in build_extra_args()).
+    // Return "" when unset so sd-server picks its own native defaults.
+    if (!recipe_options_.has_option("width") || !recipe_options_.has_option("height")) return "";
+    int w = static_cast<int>(recipe_options_.get_option("width"));
+    int h = static_cast<int>(recipe_options_.get_option("height"));
+    if (w <= 0 || h <= 0) return "";
+    return std::to_string(w) + "x" + std::to_string(h);
 }
 
 // ICompletionServer implementation - not supported for image generation
@@ -603,10 +543,25 @@ json SDServer::image_edits(const json& request) {
         fields.push_back({"size", size, "", ""});
     }
 
-    if (request.contains("image_data")) {
+    if (request.contains("image_files") && request["image_files"].is_array()
+        && !request["image_files"].empty()) {
+        // A repeated multipart image[] is one reference, in its upload order.
+        for (const auto& image : request["image_files"]) {
+            std::string image_binary = JsonUtils::base64_decode(
+                image.at("data").get<std::string>());
+            std::string filename = image.value("filename", std::string("image.png"));
+            std::string mime = image.value("content_type", std::string("application/octet-stream"));
+            fields.push_back({"image[]", image_binary,
+                              filename.empty() ? "image.png" : filename,
+                              mime.empty() ? "application/octet-stream" : mime});
+        }
+    } else if (request.contains("image_data")) {
+        // Backward compatibility for direct single-image requests.
         std::string image_binary = JsonUtils::base64_decode(
             request["image_data"].get<std::string>());
-        fields.push_back({"image[]", image_binary, "image.png", "image/png"});
+        fields.push_back({"image[]", image_binary,
+                          request.value("image_filename", std::string("image.png")),
+                          request.value("image_content_type", std::string("image/png"))});
     }
     if (request.contains("mask_data")) {
         std::string mask_binary = JsonUtils::base64_decode(
@@ -657,16 +612,89 @@ json SDServer::image_variations(const json& request) {
 
 std::string SDServer::upscale_via_cli(
     const std::string& b64_image,
-    const std::string& upscale_model_path,
-    const std::string& cli_exe_path,
-    const std::vector<std::pair<std::string, std::string>>& env_vars,
-    bool debug) {
+    const std::string& upscale_model_path) {
 
-    if (!fs::exists(cli_exe_path)) {
+    std::string backend;
+    if (auto* cfg = RuntimeConfig::global()) {
+        json recipe_opts = cfg->recipe_options("");
+        if (recipe_opts.contains("sd-cpp_backend") &&
+            recipe_opts["sd-cpp_backend"].is_string()) {
+            backend = recipe_opts["sd-cpp_backend"].get<std::string>();
+        }
+    }
+    if (backend.empty()) {
+        auto supported = SystemInfo::get_supported_backends("sd-cpp");
+        backend = supported.backends.empty() ? "cpu" : supported.backends[0];
+    }
+
+    std::string exe_dir = BackendUtils::get_backend_binary_path(*sdcpp::spec(), backend);
+    std::filesystem::path cli_exe = std::filesystem::path(exe_dir).parent_path() /
+#ifdef _WIN32
+        "sd-cli.exe";
+#else
+        "sd-cli";
+#endif
+
+    if (!fs::exists(cli_exe)) {
         LOG(ERROR, "SDServer") << "sd-cli binary not found at: "
-            << cli_exe_path << std::endl;
+            << cli_exe.string() << std::endl;
         return "";
     }
+
+    std::vector<std::pair<std::string, std::string>> env_vars;
+    std::filesystem::path cli_dir = cli_exe.parent_path();
+
+    std::string resolved_backend = backend;
+    if (backend == "rocm") {
+        std::string channel = "stable";
+        if (auto* cfg = RuntimeConfig::global()) {
+            channel = cfg->rocm_channel_for_recipe("sd-cpp");
+        }
+        resolved_backend = "rocm-" + channel;
+    }
+#ifndef _WIN32
+    std::string lib_path = cli_dir.string();
+
+    if (resolved_backend == "rocm-stable") {
+        std::string rocm_arch = SystemInfo::get_rocm_arch();
+        if (!rocm_arch.empty()) {
+            std::string therock_dirs = BackendUtils::join_runtime_dirs(
+                BackendUtils::get_therock_lib_paths(rocm_arch));
+            if (!therock_dirs.empty()) {
+                lib_path = therock_dirs + ":" + lib_path;
+            }
+        }
+    }
+
+    const char* existing_ld_path = std::getenv("LD_LIBRARY_PATH");
+    if (existing_ld_path && strlen(existing_ld_path) > 0) {
+        lib_path = lib_path + ":" + std::string(existing_ld_path);
+    }
+    env_vars.push_back({"LD_LIBRARY_PATH", lib_path});
+#else
+    if (resolved_backend == "rocm-stable") {
+        std::string new_path = cli_dir.string();
+        std::string rocm_arch = SystemInfo::get_rocm_arch();
+        std::vector<std::string> therock_dirs;
+        if (!rocm_arch.empty()) {
+            therock_dirs =
+                BackendUtils::get_therock_lib_paths(rocm_arch);
+            for (auto it = therock_dirs.rbegin(); it != therock_dirs.rend(); ++it) {
+                if (!it->empty()) {
+                    new_path = *it + ";" + new_path;
+                }
+            }
+        }
+
+        const char* existing_path = std::getenv("PATH");
+        if (existing_path && strlen(existing_path) > 0) new_path += ";" + std::string(existing_path);
+        env_vars.push_back({"PATH", new_path});
+
+        if (!therock_dirs.empty()) {
+            BackendUtils::stage_therock_hip_runtime(rocm_arch, cli_exe.parent_path());
+        }
+    }
+#endif
 
     std::string raw = JsonUtils::base64_decode(b64_image);
 
@@ -729,7 +757,7 @@ std::string SDServer::upscale_via_cli(
     // inherit_output = true so subprocess stderr/stdout is visible in server
     // logs for debugging failed upscale operations
     auto proc = ProcessManager::start_process(
-        cli_exe_path, cli_args, "", true, false, env_vars);
+        cli_exe.string(), cli_args, "", true, false, env_vars);
 
     int exit_code = ProcessManager::wait_for_exit(proc, 300);
 
@@ -745,7 +773,7 @@ std::string SDServer::upscale_via_cli(
     } else {
         LOG(WARNING, "SDServer") << "ESRGAN upscale failed (exit code: "
             << exit_code << ", model: " << upscale_model_path
-            << ", cli: " << cli_exe_path << ")" << std::endl;
+            << ", cli: " << cli_exe.string() << ")" << std::endl;
     }
 
     return result;
@@ -761,7 +789,6 @@ namespace sdcpp {
 std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
     return make_server<SDServer>(ctx);
 }
-
 
 const BackendSpec* spec() { return make_spec<SDServer>(descriptor); }
 const BackendOps* ops() { return default_backend_ops(); }

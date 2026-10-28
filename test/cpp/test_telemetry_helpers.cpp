@@ -11,6 +11,7 @@
 #include "lemon/runtime_config.h"
 #include "lemon/streaming_proxy.h"
 #include "lemon/utils/conversation_fingerprint.h"
+#include "lemon/wrapped_server.h"
 #include "telemetry.h"
 
 namespace lemon::telemetry {
@@ -492,7 +493,7 @@ int main() {
             {"port", 13305},
             {"host", "localhost"},
             {"telemetry", {
-                {"enabled", true},
+                {"enabled", false},
                 {"max_attribute_length", 20},
                 {"otlp", {
                     {"semantics", {"openinference", "otel_genai"}}
@@ -579,7 +580,7 @@ int main() {
             {"port", 13305},
             {"host", "localhost"},
             {"telemetry", {
-                {"enabled", true},
+                {"enabled", false},
                 {"hide_outputs", false},
                 {"hide_thinking", true},
                 {"otlp", {
@@ -601,7 +602,7 @@ int main() {
             {"port", 13305},
             {"host", "localhost"},
             {"telemetry", {
-                {"enabled", true},
+                {"enabled", false},
                 {"hide_outputs", true},
                 {"otlp", {
                     {"semantics", {"openinference", "otel_genai"}}
@@ -627,7 +628,7 @@ int main() {
                 {"port", 13305},
                 {"host", "localhost"},
                 {"telemetry", {
-                    {"enabled", true},
+                    {"enabled", false},
                     {"max_attribute_length", bound},
                     {"otlp", {
                         {"semantics", {"openinference"}}
@@ -645,11 +646,47 @@ int main() {
                 nlohmann::json p = nlohmann::json::parse(bound_args, nullptr, false);
                 check_bool("InferenceSpan unicode args valid JSON", p.is_discarded(), false);
             }
+            lemon::RuntimeConfig::set_global(nullptr);
         }
 
         // Clean up
         lemon::telemetry::unregister_span_listener();
         lemon::RuntimeConfig::set_global(nullptr);
+        lemon::telemetry::flush();
+        lemon::telemetry::shutdown();
+    }
+
+    // --- Telemetry::to_json — timing field rendering ---
+    // A non-positive timing value means the upstream omitted the timing
+    // field; it is rendered as JSON null (same convention as cache_tokens).
+    {
+        lemon::Telemetry unmeasured;  // defaults: 0.0 / 0.0
+        check_bool("to_json: unmeasured ttft renders null",
+                   unmeasured.to_json()["time_to_first_token"].is_null(), true);
+        check_bool("to_json: unmeasured tps renders null",
+                   unmeasured.to_json()["tokens_per_second"].is_null(), true);
+
+        lemon::Telemetry negative;
+        negative.time_to_first_token = -1.0;
+        negative.tokens_per_second = -2.0;
+        check_bool("to_json: negative values render null",
+                   negative.to_json()["time_to_first_token"].is_null()
+                       && negative.to_json()["tokens_per_second"].is_null(), true);
+
+        lemon::Telemetry measured;
+        measured.time_to_first_token = 0.25;
+        measured.tokens_per_second = 40.0;
+        check_bool("to_json: measured values render numbers",
+                   measured.to_json()["time_to_first_token"].is_number()
+                       && std::abs(measured.to_json()["time_to_first_token"].get<double>() - 0.25) <= 1e-9
+                       && measured.to_json()["tokens_per_second"].is_number()
+                       && std::abs(measured.to_json()["tokens_per_second"].get<double>() - 40.0) <= 1e-9, true);
+
+        // reset() returns the record to the fresh (unmeasured) state.
+        measured.reset();
+        check_bool("to_json: reset record renders null again",
+                   measured.to_json()["time_to_first_token"].is_null()
+                       && measured.to_json()["tokens_per_second"].is_null(), true);
     }
 
     std::printf("===========================================\n");

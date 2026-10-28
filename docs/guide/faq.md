@@ -5,23 +5,23 @@
 ### 1. **What is Lemonade and what does it include?**
 
    Lemonade is an open-source local LLM solution that:
-      - Gets you started in minutes with one-click installers.
-      - Auto-configures optimized inference engines for your PC.
-      - Provides a convenient app to get set up and test out LLMs.
-      - Provides LLMs through the OpenAI API standard, enabling apps on your PC to access them.
+
+   - Gets you started in minutes with one-click installers.
+   - Auto-configures optimized inference engines for your PC.
+   - Provides a convenient app to get set up and test out LLMs.
+   - Provides LLMs through the OpenAI API standard, enabling apps on your PC to access them.
 
 ### 2. **What are the use cases for different audiences?**
 
-   - **LLM Enthusiasts**: LLMs on your GPU or NPU with minimal setup, and connect to great apps listed [here](https://lemonade-server.ai/docs/server/apps/).
-   - **Developers**: Integrate LLMs into apps using standard APIs with no device-specific code. See the [Server Integration Guide](https://lemonade-server.ai/docs/server/server_integration/
-   ).
+   - **LLM Enthusiasts**: LLMs on your GPU or NPU with minimal setup, and connect to great apps listed [here](../integrations/README.md).
+   - **Developers**: Integrate LLMs into apps using standard APIs with no device-specific code. See the [Server Integration Guide](../api/README.md).
    - **Agent Developers**: Use [GAIA](https://github.com/amd/gaia) to quickly develop local-first agents.
 
 ## Installation & Compatibility
 
 ### 1. **How do I install Lemonade SDK or Server?**
 
-   Visit https://lemonade-server.ai/docs/guide/install/ and click the options that apply to you.
+   Visit the [installation guide](./install/README.md) and click the options that apply to you.
 
 ### 2. **Which devices are supported?**
 
@@ -33,8 +33,8 @@
 
    Yes, both Linux and macOS are supported!
 
-   - **Linux**: Visit https://lemonade-server.ai/docs/guide/install/ for installation instructions.
-   - **macOS**: A macOS installer (.pkg) is available for Apple Silicon Macs. Visit https://lemonade-server.ai/docs/guide/install/ to download. macOS support uses the llama.cpp backend with Metal acceleration.
+   - **Linux**: Visit the [installation guide](./install/README.md) for installation instructions.
+   - **macOS**: A macOS installer (.pkg) is available for Apple Silicon Macs. Visit the [installation guide](./install/README.md) to download. macOS support uses the llama.cpp backend with Metal acceleration.
 
    Visit the [Supported Configurations](https://github.com/lemonade-sdk/lemonade?tab=readme-ov-file#supported-configurations) section to see the support matrix for CPU, GPU, and NPU.
 
@@ -65,20 +65,20 @@
 
    **Secondary: Extra Models Directory (GGUF)**
 
-   Lemonade Server can discover GGUF models from a secondary directory using the `extra_models_dir` option, enabling compatibility with llama.cpp and LM Studio model caches. Suggested paths:
+   Lemonade Server can discover GGUF models from a secondary directory using the `extra_models_dir` option, so a library you already have works without downloading anything again. Suggested paths:
 
-   - **Windows:**
-       - LM Studio: `C:\Users\You\.lmstudio\models`
-       - llamacpp: `%LOCALAPPDATA%\llama.cpp` (e.g., `C:\Users\You\AppData\Local\llama.cpp`)
-   - **Linux:** `~/.cache/llama.cpp`
+   - **LM Studio:** `~/.lmstudio/models`, or `C:\Users\You\.lmstudio\models` on Windows
+   - **A Hugging Face cache:** `~/.cache/huggingface/hub`
 
    Set `extra_models_dir` (see [Server Configuration](./configuration/README.md)):
 
    ```bash
-   lemonade config set extra_models_dir="/home/you/.cache/llama.cpp"
+   lemonade config set extra_models_dir="/home/you/.lmstudio/models"
    ```
 
-   Any `.gguf` files found in this directory (including subdirectories) will automatically appear in Lemonade's model list in the `custom` category.
+   With the Linux `.deb`/`.rpm` packages, a folder under `/home` is hidden from the server by default; see [the note under Imported models](./configuration/custom-models.md#imported-models-extra_models_dir) for the drop-in that exposes it.
+
+   Any `.gguf` files in this directory, including its subdirectories, appear in Lemonade's model list in the `custom` category. For how they are named and how the folder layout selects the way they run, see [Imported models](./configuration/custom-models.md#imported-models-extra_models_dir).
 
    **FastFlowLM**
 
@@ -89,7 +89,7 @@
    Lemonade supports a wide range of LLMs including LLaMA, DeepSeek, Qwen, Gemma, Phi, gpt-oss, LFM, and many more. Most GGUF models can also be added to Lemonade Server by users using the Model Manager interface in the app or the `pull` command on the CLI.
 
    👉 [Supported Models List](https://lemonade-server.ai/models.html)
-   👉 [pull command](https://lemonade-server.ai/docs/lemonade-cli/#options-for-pull)
+   👉 [pull command](./cli.md#options-for-pull)
 
 ### 3. **How do I know what size model will work with my setup?**
 
@@ -107,7 +107,7 @@
 
    You can:
 
-   - Add a custom model manually via the app's "Add a Model" interface or the [CLI pull command](https://lemonade-server.ai/docs/lemonade-cli/#options-for-pull). For advanced manual configuration, see the [Custom Model Configuration Guide](https://lemonade-server.ai/docs/server/custom-models/).
+   - Add a custom model manually via the app's "Add a Model" interface or the [CLI pull command](./cli.md#options-for-pull). For advanced manual configuration, see the [Custom Model Configuration Guide](./configuration/custom-models.md).
    - Use a pull request to add the model to the built-in `server_models.json` file.
    - Request support by opening a [GitHub issue](https://github.com/lemonade-sdk/lemonade/issues).
 
@@ -228,20 +228,6 @@
    Lemonade Server allows you to use custom `llama-server` or `whisper-server` binaries instead of the bundled ones by setting environment variables to the full path of your binary.
 
    👉 [Custom Backend Binaries](./configuration/README.md)
-
-## TTS
-
-### 1. **What voices are supported?**
-
-Lemonade supports most of the voices listed in [Kokoro-82M VOICES](https://huggingface.co/hexgrad/Kokoro-82M/blob/main/VOICES.md). OpenAI voices can be selected from a default list, while other voices must be entered manually via text.
-
-### 2. **Can voices be mixed?**
-
-Yes, two voices can be mixed using the following format: `af_jessica.5+af_kore.4`
-
-### 3. **I entered a voice, but no audio is playing?**
-
-Some voices are not supported yet. If you manually enter a voice name instead of selecting one from the default list, and that voice is not supported, a muted audio will be generated.
 
 ## TTS
 

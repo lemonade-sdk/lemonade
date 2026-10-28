@@ -17,6 +17,7 @@ RUN apt-get update && apt-get install -y \
     git \
     nodejs \
     npm \
+    python3 \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy source code

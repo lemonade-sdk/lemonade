@@ -20,7 +20,6 @@ This guide covers everything you need to build, test, and contribute to Lemonade
 - [Architecture Overview](#architecture-overview)
   - [Overview](#overview)
   - [Client-Server Communication](#client-server-communication)
-  - [Internal Endpoints](#internal-endpoints)
   - [Dependencies](#dependencies)
 - [Usage](#usage)
   - [lemond (Server Only)](#lemond-server-only)
@@ -55,6 +54,7 @@ Lemonade consists of these main executables:
 
 **Windows:**
 - Visual Studio 2022 or later (2022 and 2026 are supported via CMake presets)
+- Visual Studio -> Tools -> Get Tools and Features -> Install Desktop development with C++
 - WiX 5.x (only required for building the installer)
 
 **Linux:**
@@ -451,7 +451,6 @@ The notarization process will:
 src/cpp/
 ├── CPackRPM.cmake              # RPM packaging configuration
 ├── DOCKER_GUIDE.md             # Docker containerization guide
-├── Extra-Models-Dir-Spec.md    # Extra models directory specification
 ├── Multi-Model-Spec.md         # Multi-model loading specification
 ├── postinst                    # Debian package post-install script
 ├── postinst-full               # Debian package post-install script (full version)
@@ -469,7 +468,10 @@ src/cpp/
 │
 ├── server/                     # Server implementation
 │   ├── main.cpp                # Entry point, CLI routing
-│   ├── server.cpp              # HTTP server (cpp-httplib)
+│   ├── server.cpp              # HTTP server: builds and starts the parts below
+│   ├── core/                   # Listener, middleware, route registry, route base classes
+│   ├── services/               # Model loading, model JSON, downloads, shared helpers
+│   ├── routes/                 # One file per HTTP route, one folder per docs/api page
 │   ├── router.cpp              # Routes requests to backends
 │   ├── model_manager.cpp       # Model registry, downloads, caching
 │   ├── cli_parser.cpp          # Command-line argument parsing (CLI11)
@@ -586,12 +588,18 @@ A GUI application for desktop users that exposes the server via a system tray ic
 - Used by application launchers, desktop shortcuts, and autostart entries
 - Provides seamless GUI experience for non-technical users
 
+**`lemonade-tray` options (Linux/macOS):**
+- `--port, -p <port>` / `--host <host>` - server to connect to (defaults read from the server's `config.json`).
+- `--spawn-server` - Linux only; ignored with a warning on macOS. If no server is reachable, spawn a local `lemond` and supervise it. The tray opens a watchdog pipe and passes `--watchdog-fd <FD>` to the child; when the tray exits for any reason (including SIGKILL), the OS closes the pipe and `lemond` shuts itself down, so no orphaned server is left behind. This flag is intended for standalone environments where `lemond` is not already managed by a service manager such as `systemd`; when running alongside a managed daemon, the existing server is detected and no child is spawned.
+- `--launch-app, --open` - open the desktop app once the server is ready.
+- `--silent` - suppress the startup notification.
+
 ### Client-Server Communication
 
 The `lemonade` client communicates with `lemond` server via HTTP:
 - **Model operations:** `/api/v1/models`, `/api/v1/pull`, `/api/v1/delete`
 - **Model control:** `/api/v1/load`, `/api/v1/unload`
-- **Server management:** `/api/v1/health`, `/internal/shutdown`, `/internal/set`, `/internal/config`, `/internal/cleanup-cache`, `/internal/pin`
+- **Server management:** `/api/v1/health`, `/internal/shutdown`, `/internal/set`, `/internal/config`, `/internal/cleanup-cache`, `/internal/pin`, `/internal/models/sync`, `/internal/models/sync/status`
 - **Inference:** `/api/v1/chat/completions`, `/api/v1/completions`, `/api/v1/audio/transcriptions`
 
 The client automatically:
@@ -611,80 +619,6 @@ The client automatically:
 - Uses machine hostname as broadcast name.
 - The custom flag --no-broadcast is available in the command line to disable.
 - Auto protection, doesnt broadcast on non RFC1918 Networks.
-
-### Internal Endpoints
-
-> **These endpoints are for first-party Lemonade software only** (CLI, tray app, desktop app). They are not part of the public API, may change without notice, and must not be relied upon by third-party integrations.
-
-Internal endpoints accept connections from any address, so first-party clients on other machines can manage a shared `lemond`. When `LEMONADE_ADMIN_API_KEY` is set (or `LEMONADE_API_KEY`, which the admin key defaults to), internal endpoints require the admin key as a Bearer token; with no keys set they are unauthenticated.
-
-> **Warning:** If `lemond` is bound to a non-loopback host (e.g. `0.0.0.0`), these control endpoints — including shutdown and config — are reachable from the network. `LEMONADE_API_KEY` secures all endpoints; `LEMONADE_ADMIN_API_KEY` on its own secures only `/internal/*` and leaves the inference and model-management endpoints (`/api`, `/v0`, `/v1`) open, so set `LEMONADE_API_KEY` to protect those too. `lemond` logs a startup warning when bound to a non-loopback host without the regular key.
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/internal/shutdown` | Unloads all models and shuts down the server |
-| `POST` | `/internal/set` | Unified config setter (see below) |
-| `GET`  | `/internal/config` | Returns the full runtime config snapshot |
-| `GET`  | `/internal/config/defaults` | Returns the canonical default config (factory defaults) |
-| `POST` | `/internal/cleanup-cache` | Cleans up orphaned files in the Hugging Face cache |
-| `POST` | `/internal/pin` | Pin or unpin a loaded model |
-
-#### `POST /internal/set`
-
-Accepts a JSON object with one or more keys to update atomically. Returns `{"status":"success","updated":{...}}` on success, or `400` with an error message on validation failure.
-
-**Server-level keys** (trigger immediate side effects):
-
-| Key | Type | Side Effect |
-|-----|------|-------------|
-| `port` | int (1–65535) | HTTP rebind |
-| `host` | string | HTTP rebind |
-| `log_level` | string (`trace`, `debug`, `info`, `warning`, `error`, `fatal`, `none`) | Reconfigures log filter |
-| `global_timeout` | int (positive) | Updates default HTTP client timeout |
-| `broadcast` | bool | Starts or stops UDP beacon |
-| `extra_models_dir` | string | Updates model manager search path |
-
-**Deferred keys** (affect the next model load or eviction decision, no immediate side effect):
-
-| Key | Type |
-|-----|------|
-| `max_loaded_models` | int (-1 or positive) |
-| `ctx_size` | int (positive) |
-| `llamacpp_backend` | string |
-| `llamacpp_args` | string |
-| `llamacpp_device` | string |
-| `sdcpp_backend` | string |
-| `whispercpp_backend` | string |
-| `whispercpp_args` | string |
-| `steps` | int (positive) |
-| `cfg_scale` | number |
-| `width` | int (positive) |
-| `height` | int (positive) |
-
-**Example:**
-```bash
-curl -X POST http://localhost:13305/internal/set \
-  -H "Content-Type: application/json" \
-  -d '{"ctx_size": 8192, "max_loaded_models": 3, "log_level": "debug"}'
-```
-
-#### `GET /internal/config`
-
-Returns the full runtime configuration as a flat JSON object containing all server-level and recipe option keys with their current values.
-
-**Example:**
-```bash
-curl http://localhost:13305/internal/config
-```
-
-#### `GET /internal/config/defaults`
-
-Returns the canonical default configuration — the values a brand-new `config.json` is seeded with, independent of this instance's current config or deployment overrides. The per-recipe sections come from the backend descriptors (each descriptor's `config_defaults()`), making this the authoritative source of the factory defaults. `docs/tools/gen_backend_boilerplate.py` reads this endpoint to regenerate the committed `src/cpp/resources/defaults.json`, and a CI `--check` fails if that file drifts from the descriptors.
-
-**Example:**
-```bash
-curl http://localhost:13305/internal/config/defaults
-```
 
 ### Dependencies
 
@@ -793,7 +727,7 @@ The tray application provides a system tray icon for desktop users:
 ### Logging and Console Output
 
 When running `LemonadeServer.exe` or `lemond`:
-- **Log File:** Direct runs write logs to a persistent log file (default: `%TEMP%\lemonade-server.log` on Windows). When `lemond` runs as the systemd service, logs go to the journal instead.
+- **Log File:** Direct CLI server runs (`lemond`) default to standard console output (`stdout`/`stderr`) with file logging disabled (`"auto"` mode), allowing systemd, launchd, container runtimes, and CI runners to capture and rotate logs natively. When running via `LemonadeServer.exe` (embedded tray app) or when file logging is explicitly enabled (`--log-file enabled` or a custom file path), logs are written to `lemonade-server.log` (under `%TEMP%` on Windows, `$XDG_RUNTIME_DIR/lemonade/` on Linux) with automatic log rotation (10 MB file cap, 5 rotated backups `.1` through `.5`, bounding steady-state log disk usage to ~60 MB under normal record sizes). Pre-existing legacy logs at startup are rotated into `.1` to preserve diagnostic history and pruned across subsequent rotation cycles.
 - **Logs UI:** Click "Show Logs" in the tray or use `lemonade logs` to open the desktop app's logs view
   - Connects to the server's WebSocket log stream
   - Shows retained recent log history plus live entries
@@ -824,6 +758,7 @@ The C++ implementation is tested using the existing Python test suite.
 |-----------|-------------|
 | `server_cli2.py` | CLI commands (version, status, list, export, backends, pull, import, load, unload, run, launch, delete) |
 | `server_endpoints.py` | HTTP endpoints (health, models, pull, load, unload, system-info, stats) |
+| `server_cancellation.py` | Client disconnect robustness (server stays healthy; prompt-abort regression lives in `test_request_cancellation`) |
 | `server_llm.py` | LLM inference (chat completions, embeddings, reranking) |
 | `server_whisper.py` | Audio transcription (whisper models) |
 | `server_sd.py` | Image generation (Stable Diffusion, ~2-3 min per image on CPU) |
@@ -835,6 +770,9 @@ python test/server_cli2.py
 
 # Endpoint tests (no inference backend needed)
 python test/server_endpoints.py
+
+# Client disconnect robustness tests (health checks; prompt-abort regression lives in the C++ suite)
+python test/server_cancellation.py
 
 # LLM tests (specify wrapped server and backend)
 python test/server_llm.py --wrapped-server llamacpp --backend vulkan

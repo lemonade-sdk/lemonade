@@ -48,13 +48,16 @@ public:
         }
     };
 
+    static nlohmann::ordered_json error_event_schema();
+
     static void forward_sse_stream(
         const std::string& backend_url,
         const std::string& request_body,
         httplib::DataSink& sink,
         std::function<void(const TelemetryData&)> on_complete = nullptr,
         long timeout_seconds = 300,
-        std::function<void()> on_chunk = nullptr
+        std::function<void()> on_chunk = nullptr,
+        long heartbeat_interval_ms = 1000
     );
 
     static void forward_byte_stream(
@@ -65,7 +68,11 @@ public:
         std::function<void()> on_chunk = nullptr
     );
 
-    static void process_sse_lines(std::string& line_buffer, std::function<void(const std::string&)> line_callback);
+    // Splits on all three SSE line terminators (LF, CRLF, CR). A trailing CR is
+    // held back until the next chunk disambiguates it from a split CRLF, so the
+    // final line of a CR-terminated stream needs end_of_stream to be dispatched.
+    static void process_sse_lines(std::string& line_buffer, std::function<void(const std::string&)> line_callback,
+                                  bool end_of_stream = false);
 
     static TelemetryData parse_telemetry(const std::string& buffer);
 

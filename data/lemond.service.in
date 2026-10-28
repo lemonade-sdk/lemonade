@@ -15,8 +15,6 @@ CacheDirectoryMode=0755
 # RuntimeDirectory for ephemeral state (PID files, Unix sockets)
 RuntimeDirectory=lemonade
 RuntimeDirectoryMode=0700
-# HuggingFace model cache for the system service
-Environment=HF_HOME=/var/cache/huggingface
 WorkingDirectory=%S/lemonade
 # Server settings (port, host, models_dir, …) live in config.json, not env vars.
 # The few env vars lemond still reads (HF_TOKEN, LEMONADE_API_KEY,

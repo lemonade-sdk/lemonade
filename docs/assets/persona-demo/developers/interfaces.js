@@ -144,7 +144,7 @@
     { title: 'System', icon: 'monitor_heart', eps: [['GET', '/v1/system-info'], ['GET', '/v1/system-stats']] },
     { title: 'Models', icon: 'inventory_2', eps: [['POST', '/v1/pull'], ['POST', '/v1/load'], ['POST', '/v1/unload'], ['POST', '/v1/delete']] },
     { title: 'Backends', icon: 'memory', eps: [['POST', '/v1/install'], ['POST', '/v1/uninstall']] },
-    { title: 'Config & scale', icon: 'tune', eps: [['POST', '/v1/params'], ['POST', '/v1/cloud/auth'], ['POST', '/internal/set']] },
+    { title: 'Config & scale', icon: 'tune', eps: [['POST', '/v1/cloud/auth'], ['POST', '/internal/set'], ['GET', '/internal/config']] },
     { title: 'Lifecycle', icon: 'restart_alt', eps: [['GET', '/v1/health'], ['GET', '/v1/logs/stream'], ['POST', '/internal/shutdown']], wide: true }
   ];
 

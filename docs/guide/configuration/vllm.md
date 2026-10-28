@@ -5,7 +5,7 @@ Lemonade integrates [vLLM](https://github.com/vllm-project/vllm) as an experimen
 1. **Day-0 model support.** vLLM typically supports new transformer architectures within hours of their release on Hugging Face — checkpoints load directly, with no per-architecture porting.
 2. **Concurrency and multi-GPU.** Paged-attention KV cache, continuous batching, and chunked prefill scale aggregate throughput with in-flight request count; tensor and pipeline parallelism are supported across multiple GPUs.
 
-> **Status: experimental.** The backend has been validated on **gfx1151 (Strix Halo)** and **gfx1150 (Strix Point)**. Prebuilt wheels also exist for `gfx110X` (RDNA3) and `gfx120X` (RDNA4) but those targets have not been exercised end-to-end yet. **gfx942 (AMD Instinct MI300X, CDNA3)** is **staged, not auto-installable yet** — the resolver, per-architecture pinning, launch policy, and recipes are all in place and have been manually validated on real MI300X hardware, but gfx942 is held out of the installable support matrix until the official `-gfx942` release asset is published (see [Deploying on MI300X](#deploying-on-mi300x-gfx942--quickstart)).
+> **Status: experimental.** The backend has been validated on **gfx1151 (Strix Halo)** and **gfx1150 (Strix Point)**. Prebuilt wheels also exist for `gfx110X` (RDNA3) and `gfx120X` (RDNA4) but those targets have not been exercised end-to-end yet. **gfx942 (AMD Instinct MI300X, CDNA3)** is **staged, not auto-installable yet** — the resolver, per-architecture pinning, launch policy, and recipes are all in place and have been manually validated on real MI300X hardware, but gfx942 is held out of the installable support matrix until the official `-gfx942` release asset is published (see [Deploying on MI300X](#deploying-on-mi300x-gfx942)).
 
 ## Available Backend
 
@@ -37,7 +37,7 @@ The install fetches a per-GPU-target release (e.g. `…-gfx1151`, `…-gfx1150`)
 
 Some GPU targets ride a different vLLM/ROCm wheel cadence than the default pin and cannot share a single release tag — CDNA-dcgpu (gfx942 / MI300X), for example, uses its own vLLM/ROCm release line, separate from the RDNA line (its official asset is not published yet — see the staged-status note above). For those, `backend_versions.json` carries an optional `vllm.rocm_arch_overrides` map keyed by asset family; the override base is resolved for the detected arch (falling back to the default pin otherwise) before the `-{gfx_target}` suffix is appended. An explicit `vllm.rocm_bin` pin (`latest` or a specific tag) still takes precedence over the builtin per-arch override — the override only replaces the *default* base. A pin that already carries a `-{gfx_target}` suffix must match the detected architecture: a cross-arch pin (for example a repo-wide `latest` that resolved to a suffixed RDNA tag, or an explicit tag for a different target) is **rejected** rather than installed against the wrong architecture line. Note that pinning `vllm.rocm_bin` to the exact default base tag is treated the same as leaving it unset (`builtin`) — the per-arch override still applies; set an explicit *non-default* tag to opt out of the override.
 
-### Deploying on MI300X (gfx942) — quickstart
+### Deploying on MI300X (gfx942)
 
 > **gfx942 is currently staged, not auto-installable.** The resolver, per-arch release pinning,
 > device-class launch policy, and FP8/MTP recipes are all in place, but gfx942 is intentionally

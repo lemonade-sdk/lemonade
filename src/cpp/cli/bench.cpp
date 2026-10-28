@@ -1,5 +1,6 @@
 #include "lemon_cli/bench.h"
 #include "lemon_cli/bench_comparison.h"
+#include "lemon_cli/bench_context.h"
 #include "lemon_cli/bench_output.h"
 #include "lemon_cli/bench_sysinfo.h"
 #include "lemon_cli/lemonade_client.h"
@@ -154,6 +155,11 @@ double BenchScenarioResult::ttft_min_ms() const { return reduce_min(collect_fiel
 double BenchScenarioResult::ttft_max_ms() const { return reduce_max(collect_field(*this, &BenchRunResult::ttft_ms)); }
 double BenchScenarioResult::ttft_p50_ms() const { return percentile(collect_field(*this, &BenchRunResult::ttft_ms), 50.0); }
 double BenchScenarioResult::ttft_p95_ms() const { return percentile(collect_field(*this, &BenchRunResult::ttft_ms), 95.0); }
+double BenchScenarioResult::pp_tps_mean() const { return reduce_mean(collect_field(*this, &BenchRunResult::pp_tps)); }
+double BenchScenarioResult::pp_tps_min() const { return reduce_min(collect_field(*this, &BenchRunResult::pp_tps)); }
+double BenchScenarioResult::pp_tps_max() const { return reduce_max(collect_field(*this, &BenchRunResult::pp_tps)); }
+double BenchScenarioResult::pp_tps_p50() const { return percentile(collect_field(*this, &BenchRunResult::pp_tps), 50.0); }
+double BenchScenarioResult::pp_tps_p95() const { return percentile(collect_field(*this, &BenchRunResult::pp_tps), 95.0); }
 double BenchScenarioResult::tps_mean() const { return reduce_mean(collect_field(*this, &BenchRunResult::tps)); }
 double BenchScenarioResult::tps_min() const { return reduce_min(collect_field(*this, &BenchRunResult::tps)); }
 double BenchScenarioResult::tps_max() const { return reduce_max(collect_field(*this, &BenchRunResult::tps)); }
@@ -260,7 +266,7 @@ static std::string extract_user_content(const std::vector<json>& messages) {
 
 std::string expand_context(const json& context_block, const std::vector<json>& messages) {
     std::string filler = context_block.value("filler", "");
-    int target_tokens = context_block.value("target_tokens", 2000);
+    int target_tokens = context_block.value("target_tokens", BENCH_DEFAULT_TARGET_TOKENS);
     std::string position = context_block.value("position", "end");
     if (filler.empty()) return "";
 
@@ -333,6 +339,8 @@ static std::vector<BenchScenario> parse_scenario_file(const std::string& path) {
             scenario.max_tokens = item.value("max_tokens", 128);
             scenario.warmup_runs = item.value("warmup_runs", 0);
             if (item.contains("context") && item["context"].is_object()) {
+                scenario.minimum_ctx_size = bench_context_for_target_tokens(
+                    item["context"].value("target_tokens", BENCH_DEFAULT_TARGET_TOKENS));
                 std::string expanded = expand_context(item["context"], scenario.messages);
                 for (auto& msg : scenario.messages) {
                     if (msg.contains("role") && msg["role"] == "user" &&
@@ -447,6 +455,16 @@ static bool model_has_embeddings_label(const json& model_info) {
     return false;
 }
 
+static bool is_usable_backend_state(const std::string& state) {
+    return state == "installed" || state == "update_required" || state == "update_available";
+}
+
+static std::string model_recipe_of(const json& model_info) {
+    if (model_info.contains("recipe") && model_info["recipe"].is_string())
+        return model_info["recipe"].get<std::string>();
+    return "";
+}
+
 std::vector<BackendDiscovery> discover_backends(const json& sys_info,
                                                 const std::vector<std::string>& requested,
                                                 const json& model_info) {
@@ -456,16 +474,14 @@ std::vector<BackendDiscovery> discover_backends(const json& sys_info,
         return result;
     }
 
-    std::string model_recipe;
-    if (model_info.contains("recipe") && model_info["recipe"].is_string())
-        model_recipe = model_info["recipe"].get<std::string>();
+    std::string model_recipe = model_recipe_of(model_info);
 
     for (const auto& [recipe_name, recipe_data] : sys_info["recipes"].items()) {
         if (!model_recipe.empty() && recipe_name != model_recipe) continue;
         if (!recipe_data.contains("backends") || !recipe_data["backends"].is_object()) continue;
         for (const auto& [backend_name, backend_data] : recipe_data["backends"].items()) {
             std::string state = backend_data.value("state", "unknown");
-            if (state != "installed" && state != "update_required" && state != "update_available") continue;
+            if (!is_usable_backend_state(state)) continue;
             if (!requested.empty()) {
                 bool found = false;
                 for (const auto& req : requested)
@@ -476,6 +492,158 @@ std::vector<BackendDiscovery> discover_backends(const json& sys_info,
         }
     }
     return result;
+}
+
+struct BenchBackendCandidate {
+    std::string recipe;
+    std::string backend;
+    std::string state;
+    std::string message;
+    std::string action;
+};
+
+static std::vector<BenchBackendCandidate> collect_backend_candidates(
+        const json& sys_info, const json& model_info, const std::vector<std::string>& requested) {
+    std::vector<BenchBackendCandidate> candidates;
+    if (!sys_info.contains("recipes") || !sys_info["recipes"].is_object()) return candidates;
+
+    const std::string model_recipe = model_recipe_of(model_info);
+    for (const auto& [recipe_name, recipe_data] : sys_info["recipes"].items()) {
+        if (!model_recipe.empty() && recipe_name != model_recipe) continue;
+        if (!recipe_data.is_object()) continue;
+        if (!recipe_data.contains("backends") || !recipe_data["backends"].is_object()) continue;
+
+        std::vector<BenchBackendCandidate> per_recipe;
+        for (const auto& [backend_name, backend_data] : recipe_data["backends"].items()) {
+            if (!backend_data.is_object()) continue;
+            if (!requested.empty() &&
+                std::find(requested.begin(), requested.end(), backend_name) == requested.end())
+                continue;
+            per_recipe.push_back({recipe_name, backend_name,
+                                  backend_data.value("state", ""),
+                                  backend_data.value("message", ""),
+                                  backend_data.value("action", "")});
+        }
+
+        const std::string default_backend = recipe_data.value("default_backend", "");
+        std::stable_sort(per_recipe.begin(), per_recipe.end(),
+                         [&default_backend](const BenchBackendCandidate& a, const BenchBackendCandidate& b) {
+                             return !default_backend.empty() && a.backend == default_backend &&
+                                    b.backend != default_backend;
+                         });
+        candidates.insert(candidates.end(), per_recipe.begin(), per_recipe.end());
+    }
+    return candidates;
+}
+
+static std::string install_command_for(const BenchBackendCandidate& candidate) {
+    if (!candidate.action.empty()) return candidate.action;
+    return "lemonade backends install " + candidate.recipe + ":" + candidate.backend;
+}
+
+static bool starts_with(const std::string& s, const std::string& prefix) {
+    return s.size() >= prefix.size() && s.compare(0, prefix.size(), prefix) == 0;
+}
+
+static void point_at_backends(std::ostream& out) {
+    out << "Run 'lemonade backends --all' to see which backends this machine supports." << std::endl;
+}
+
+static void suggest_install(std::ostream& out, const BenchBackendCandidate& candidate, const char* preamble) {
+    const std::string cmd = install_command_for(candidate);
+    if (starts_with(cmd, "lemonade")) out << preamble << " " << cmd << std::endl;
+    else point_at_backends(out);  // the server named remediation docs instead of an install
+}
+
+static void report_no_usable_backends(const std::string& model,
+                                      const std::vector<BenchBackendCandidate>& candidates) {
+    std::cerr << "Error: No installed backends found for model '" << model << "'." << std::endl;
+
+    bool suggested = false;
+    for (const auto& c : candidates) {
+        if (is_usable_backend_state(c.state) || c.state == "unsupported") continue;
+        if (!suggested) {
+            std::cerr << "Install one first:" << std::endl;
+            suggested = true;
+        }
+        std::cerr << "  " << install_command_for(c) << std::endl;
+    }
+
+    if (!suggested) {
+        point_at_backends(std::cerr);
+    } else {
+        std::cerr << "\nOr rerun the lemonade bench command with the --backend <name> flag to automatically install the backend(s)." << std::endl;
+    }
+}
+
+static bool install_requested_backends(lemonade::LemonadeClient& client, json& sys_info,
+                                      const std::vector<std::string>& models,
+                                      const std::map<std::string, json>& model_info_by_name,
+                                      const std::vector<std::string>& requested) {
+    std::vector<BenchBackendCandidate> queue;
+    std::unordered_set<std::string> queued;
+
+    for (const auto& model : models) {
+        const auto it = model_info_by_name.find(model);
+        const json& model_info = (it != model_info_by_name.end()) ? it->second : json::object();
+        const auto candidates = collect_backend_candidates(sys_info, model_info, requested);
+
+        std::unordered_set<std::string> listed;
+        for (const auto& c : candidates) {
+            listed.insert(c.backend);
+            if (is_usable_backend_state(c.state)) continue;
+            if (c.state == "unsupported") {
+                std::cerr << "Error: Backend '" << c.recipe << ":" << c.backend << "' cannot be installed here";
+                if (!c.message.empty()) std::cerr << ": " << c.message;
+                std::cerr << std::endl;
+                point_at_backends(std::cerr);
+                return false;
+            }
+            if (queued.insert(c.recipe + ":" + c.backend).second) queue.push_back(c);
+        }
+
+        for (const auto& req : requested) {
+            if (listed.count(req)) continue;
+            std::cerr << "Error: Backend '" << req << "' is not available for model '" << model << "'." << std::endl;
+            const auto all = collect_backend_candidates(sys_info, model_info, {});
+            std::vector<std::string> known;
+            for (const auto& c : all) known.push_back(c.backend);
+            if (known.empty()) {
+                point_at_backends(std::cerr);
+                return false;
+            }
+            std::cerr << "Available backends: " << join_list(known) << std::endl;
+            for (const auto& c : all) {
+                if (is_usable_backend_state(c.state) || c.state == "unsupported") continue;
+                suggest_install(std::cerr, c, "Install one with:");
+                break;
+            }
+            return false;
+        }
+    }
+
+    if (queue.empty()) return true;
+
+    for (const auto& c : queue) {
+        std::cout << "Preflight: backend '" << c.recipe << ":" << c.backend
+                  << "' is not installed. Installing..." << std::endl;
+        if (client.install_backend(c.recipe, c.backend) != 0) {
+            std::cerr << "Error: Failed to install backend '" << c.recipe << ":" << c.backend << "'."
+                      << std::endl;
+            suggest_install(std::cerr, c, "Install it manually with:");
+            return false;
+        }
+    }
+
+    try {
+        std::string resp = client.make_request("/api/v1/system-info", "GET", "", "", 10000, 10000);
+        sys_info = json::parse(resp);
+    } catch (const std::exception& e) {
+        std::cerr << "Error: Failed to refresh system-info after installing backends: " << e.what()
+                  << std::endl;
+        return false;
+    }
+    return true;
 }
 
 static const std::map<std::string, std::string> RECIPE_ARGS_KEY = {
@@ -547,6 +715,7 @@ static void extract_usage_into_result(const json& usage, BenchRunResult& result)
 
 static void extract_timings_into_result(const json& timings, BenchRunResult& result) {
     if (timings.contains("prompt_ms")) result.ttft_ms = timings["prompt_ms"].get<double>();
+    if (timings.contains("prompt_per_second")) result.pp_tps = timings["prompt_per_second"].get<double>();
     if (timings.contains("predicted_per_second")) result.tps = timings["predicted_per_second"].get<double>();
     if (timings.contains("prompt_n")) result.input_tokens = timings["prompt_n"].get<int>();
     if (timings.contains("predicted_n")) result.output_tokens = timings["predicted_n"].get<int>();
@@ -567,6 +736,13 @@ static void extract_mem_use_into_result(lemonade::LemonadeClient& client, BenchR
 static void compute_tps_from_tokens_and_time(BenchRunResult& result) {
     if (result.tps <= 0 && result.output_tokens > 0 && result.total_time_ms > 0)
         result.tps = (result.output_tokens * 1000.0) / result.total_time_ms;
+}
+
+// Backends that report no prompt_per_second still expose enough to recover it: TTFT is the
+// prefill wall-clock, so the sent prompt tokens divided by it gives prefill throughput.
+static void compute_pp_tps_from_tokens_and_time(BenchRunResult& result) {
+    if (result.pp_tps <= 0 && result.input_tokens > 0 && result.ttft_ms > 0)
+        result.pp_tps = (result.input_tokens * 1000.0) / result.ttft_ms;
 }
 
 struct BenchStrategy {
@@ -607,6 +783,7 @@ static BenchRunResult run_bench_with_strategy(lemonade::LemonadeClient& client,
     auto end = steady_clock::now();
     result.total_time_ms = duration<double, std::milli>(end - start).count();
     compute_tps_from_tokens_and_time(result);
+    compute_pp_tps_from_tokens_and_time(result);
 
     if (memory_tracking)
         extract_mem_use_into_result(client, result);
@@ -880,6 +1057,7 @@ BenchScenarioResult run_scenario(lemonade::LemonadeClient& client,
                 entry["input_tokens"] = run_result.input_tokens;
                 entry["output_tokens"] = run_result.output_tokens;
                 entry["ttft_ms"] = run_result.ttft_ms;
+                entry["pp_tps"] = run_result.pp_tps;
                 entry["tps"] = run_result.tps;
                 entry["response"] = run_result.response_text;
                 log << entry.dump() << "\n";
@@ -890,8 +1068,10 @@ BenchScenarioResult run_scenario(lemonade::LemonadeClient& client,
             run_result.response_text.shrink_to_fit();
         }
 
-        std::cout << " TTFT=" << std::fixed << std::setprecision(1) << run_result.ttft_ms << "ms"
-                  << " TPS=" << std::fixed << std::setprecision(1) << run_result.tps << std::endl;
+        std::cout << " TTFT=" << std::fixed << std::setprecision(1) << run_result.ttft_ms << "ms";
+        if (run_result.pp_tps > 0)
+            std::cout << " PP=" << std::fixed << std::setprecision(1) << run_result.pp_tps << "t/s";
+        std::cout << " TPS=" << std::fixed << std::setprecision(1) << run_result.tps << std::endl;
         result.runs.push_back(run_result);
     }
 
@@ -1095,12 +1275,20 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
         std::cerr << "Warning: Failed to fetch lemonade version from /health: " << e.what() << std::endl;
     }
 
+    if (!config.backends.empty() &&
+        !install_requested_backends(client, sys_info, unique_models, model_info_by_name, config.backends))
+        return 1;
+
     std::unordered_set<std::string> test_recipes, test_backends;
     std::map<std::string, std::vector<BackendDiscovery>> backends_by_model;
     for (const auto& model : unique_models) {
         const auto it = model_info_by_name.find(model);
         const json& model_info = (it != model_info_by_name.end()) ? it->second : json::object();
         auto backends = discover_backends(sys_info, config.backends, model_info);
+        if (backends.empty()) {
+            report_no_usable_backends(model, collect_backend_candidates(sys_info, model_info, config.backends));
+            return 1;
+        }
         backends_by_model[model] = backends;
         for (const auto& [recipe, backend] : backends) {
             test_recipes.insert(recipe);
@@ -1117,6 +1305,7 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
     struct ModelBenchResult {
         std::string model;
         std::string timestamp;
+        json model_info;
         std::vector<BenchBackendResult> results;
     };
     std::vector<ModelBenchResult> by_model;
@@ -1131,21 +1320,27 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
         const std::string model_timestamp = get_timestamp_iso();
 
         auto backends = backends_by_model[model];
-        if (backends.empty()) {
-            std::cerr << "Error: No suitable backends found for model '" << model << "'." << std::endl;
-            return 1;
-        }
 
-        // Determine context sizes
-        std::vector<int> ctx_sizes = config.ctx_sizes;
-        if (ctx_sizes.empty()) {
-            int default_ctx = 4096;
-            if (model_info.contains("recipe_options") && model_info["recipe_options"].is_object()) {
-                auto& opts = model_info["recipe_options"];
-                if (opts.contains("ctx_size") && opts["ctx_size"].is_number())
-                    default_ctx = opts["ctx_size"].get<int>();
-            }
-            ctx_sizes = {default_ctx};
+        int default_ctx = config.ctx_sizes.empty() ? 4096 : -1;
+        if (model_info.contains("recipe_options") && model_info["recipe_options"].is_object()) {
+            const auto& opts = model_info["recipe_options"];
+            if (opts.contains("ctx_size") && opts["ctx_size"].is_number())
+                default_ctx = opts["ctx_size"].get<int>();
+        }
+        std::vector<int> required_ctx_sizes;
+        required_ctx_sizes.reserve(scenarios.size());
+        for (const auto& scenario : scenarios)
+            required_ctx_sizes.push_back(scenario.minimum_ctx_size);
+        const auto context_plan = plan_bench_contexts(config.ctx_sizes, default_ctx,
+                                                       required_ctx_sizes);
+        for (const auto& [ctx, index] : context_plan.skipped) {
+            std::cerr << "Skipping scenario " << scenarios[index].name
+                      << " at --ctx-size " << ctx << " (needs at least "
+                      << scenarios[index].minimum_ctx_size << ")" << std::endl;
+        }
+        if (context_plan.batches.empty()) {
+            std::cerr << "Error: No scenarios fit the requested context size(s)." << std::endl;
+            return 1;
         }
 
         std::vector<BenchBackendResult> all_results;
@@ -1158,7 +1353,7 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
             else
                 recipe_args_list = {""};
 
-            for (int ctx_size : ctx_sizes) {
+            for (const auto& [ctx_size, scenario_indices] : context_plan.batches) {
                 for (const auto& recipe_args : recipe_args_list) {
                     BenchBackendResult tmp;
                     tmp.recipe = recipe;
@@ -1173,7 +1368,8 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
                     backend_result.ctx_size = ctx_size;
                     backend_result.backend_args = recipe_args;
 
-                    for (const auto& scenario : scenarios) {
+                    for (std::size_t scenario_index : scenario_indices) {
+                        const auto& scenario = scenarios[scenario_index];
                         std::cout << "  Scenario: " << scenario.name << " (" << scenario.category << ")" << std::endl;
 
                         // Filter backends based on scenario category
@@ -1220,7 +1416,7 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
             return 1;
         }
 
-        by_model.push_back({model, model_timestamp, std::move(all_results)});
+        by_model.push_back({model, model_timestamp, model_info, std::move(all_results)});
     }
 
     // Output results
@@ -1232,7 +1428,7 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
             output["hardware"] = hardware_profile;
             output["models"] = json::array();
             for (const auto& mr : by_model)
-                output["models"].push_back(to_json(mr.results, mr.model, mr.timestamp, config));
+                output["models"].push_back(to_json(mr.results, mr.model, mr.timestamp, config, mr.model_info));
 
             maybe_submit_results(config, output);
 
@@ -1258,7 +1454,7 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
                 output["hardware"] = hardware_profile;
                 output["models"] = json::array();
                 for (const auto& mr : by_model)
-                    output["models"].push_back(to_json(mr.results, mr.model, mr.timestamp, config));
+                    output["models"].push_back(to_json(mr.results, mr.model, mr.timestamp, config, mr.model_info));
                 std::ofstream out(config.output_file);
                 if (out.is_open()) {
                     out << output.dump(2);
@@ -1288,6 +1484,7 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
         struct ModelComparisonResult {
             std::string model;
             std::string timestamp;
+            json model_info;
             json previous_for_model;
             std::vector<BenchComparisonDelta> deltas;
             const std::vector<BenchBackendResult>* results = nullptr;
@@ -1300,7 +1497,7 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
             auto it = previous_by_model.find(mr.model);
             if (it != previous_by_model.end()) prev_for_model = it->second;
             comparison_results.emplace_back(ModelComparisonResult{
-                mr.model, mr.timestamp, prev_for_model,
+                mr.model, mr.timestamp, mr.model_info, prev_for_model,
                 compute_deltas(mr.results, prev_for_model), &mr.results
             });
         }
@@ -1321,7 +1518,7 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
             output["models"] = json::array();
             for (const auto& c : comparison_results)
                 output["models"].push_back(build_comparison_json(*c.results, c.model, c.timestamp,
-                                                                  config, c.previous_for_model, c.deltas));
+                                                                  config, c.model_info, c.previous_for_model, c.deltas));
 
             maybe_submit_results(config, output);
 

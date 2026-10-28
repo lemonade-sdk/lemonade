@@ -5,7 +5,9 @@ const RAW_BASE = 'https://raw.githubusercontent.com/lemonade-sdk/lemonade';
 /* BEGIN GENERATED: models-js-recipes */
 const RECIPE_PRIORITY = [
   'acestep',
+  'ds4',
   'flm',
+  'llamacpp-hrx',
   'kokoro',
   'llamacpp',
   'moonshine',
@@ -22,12 +24,14 @@ const RECIPE_PRIORITY = [
 
 const RECIPE_DISPLAY_NAMES = {
   llamacpp: 'llama.cpp GPU',
+  'llamacpp-hrx': 'HRX GPU',
   whispercpp: 'whisper.cpp',
   'sd-cpp': 'stable-diffusion.cpp',
   flm: 'FastFlowLM NPU',
   'ryzenai-llm': 'Ryzen AI SW NPU',
-  vllm: 'vLLM ROCm (experimental)',
+  vllm: 'vLLM ROCm',
   thenoise: 'thenoise',
+  ds4: 'DwarfStar4',
   thinksound: 'ThinkSound',
   acestep: 'ACE-Step',
   onnxruntime: 'ONNX Runtime',

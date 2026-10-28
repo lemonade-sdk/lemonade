@@ -51,7 +51,7 @@ In the OpenAI API standard, applications and servers communicate in the form of 
 | Assistant | Messages sent from the LLM to the application. |
 | User      | Messages sent from the application to the LLM. Often these messages are written by the application's end-user. |
 
-OpenAI also provides [convenient libraries](https://platform.openai.com/docs/libraries/python-library#install-an-official-sdk) in JavaScript, Python, .Net, Java, and Go to help application and server developers adhere to the standard.
+OpenAI also provides [convenient libraries](https://developers.openai.com/api/docs/libraries) in JavaScript, Python, .Net, Java, and Go to help application and server developers adhere to the standard.
 
 For example, the following Python code demonstrates how an application can request an LLM response from the Lemonade Server:
 

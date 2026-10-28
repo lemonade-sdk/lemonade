@@ -1,8 +1,10 @@
 #include "lemon/runtime_config.h"
 #include "lemon/backends/backend_descriptor_registry.h"
+#include "lemon/models/configured_catalog.h"
 #include "lemon/system_info.h"
 #include "lemon/utils/aixlog.hpp"
 #include "lemon/utils/path_utils.h"
+#include "lemon/utils/rate_limit_utils.h"
 #include <algorithm>
 #include <atomic>
 #include <cstdlib>
@@ -48,6 +50,30 @@ static bool has_backend_selection(const std::string& config_section) {
     for (const auto* desc : lemon::backends::all_descriptors()) {
         if (desc->selectable_backend && desc->effective_config_section() == config_section) {
             return true;
+        }
+    }
+    return false;
+}
+
+// A "<variant>_bin" / "<variant>_args" key is valid when <variant> is declared
+// in the section's defaults schema or is one of its support-row backends, which
+// the runtime also resolves (e.g. flm reads "npu_bin", llamacpp "cuda_args").
+static bool is_backend_variant_key(const std::string& config_section,
+                                   const std::string& key,
+                                   const std::string& suffix) {
+    if (key.size() <= suffix.size() ||
+        key.compare(key.size() - suffix.size(), suffix.size(), suffix) != 0) {
+        return false;
+    }
+    const std::string variant = key.substr(0, key.size() - suffix.size());
+    for (const auto* desc : lemon::backends::all_descriptors()) {
+        if (desc->effective_config_section() != config_section) continue;
+        const auto& declared = (suffix == "_bin") ? desc->bin_variants : desc->arg_variants;
+        if (std::find(declared.begin(), declared.end(), variant) != declared.end()) {
+            return true;
+        }
+        for (const auto& row : desc->support) {
+            if (row.backend == variant) return true;
         }
     }
     return false;
@@ -273,11 +299,28 @@ RuntimeConfig::RuntimeConfig(const json& config)
         config_.erase("no_broadcast");
     }
 
+    // Validate logging settings on startup
+    if (config_.contains("log_max_file_size_mb")) {
+        validate("log_max_file_size_mb", config_["log_max_file_size_mb"]);
+    }
+    if (config_.contains("log_max_files")) {
+        validate("log_max_files", config_["log_max_files"]);
+    }
+    if (config_.contains("log_file")) {
+        validate("log_file", config_["log_file"]);
+    }
+    if (config_.contains("log_level")) {
+        validate("log_level", config_["log_level"]);
+    }
+
     // In CI mode, override log level to debug for easier diagnostics
     const char* ci_mode = std::getenv("LEMONADE_CI_MODE");
     if (ci_mode && (std::string(ci_mode) == "1" || std::string(ci_mode) == "true" ||
                     std::string(ci_mode) == "True" || std::string(ci_mode) == "TRUE")) {
         config_["log_level"] = "debug";
+        // Dozens of CI servers start at once sharing one token, and the
+        // per-repo startup check alone is enough to exhaust its rate limit.
+        config_["auto_check_model_updates"] = false;
     }
 }
 
@@ -321,9 +364,63 @@ std::string RuntimeConfig::log_level() const {
     return config_["log_level"].get<std::string>();
 }
 
+std::string RuntimeConfig::log_file() const {
+    {
+        std::shared_lock lock(mutex_);
+        if (log_file_override_.has_value()) {
+            return *log_file_override_;
+        }
+    }
+    return get_string_opt(nullptr, {"log_file"}, "auto");
+}
+
+void RuntimeConfig::set_log_file_override(std::optional<std::string> override_val) {
+    std::unique_lock lock(mutex_);
+    log_file_override_ = std::move(override_val);
+}
+
+int RuntimeConfig::log_max_file_size_mb() const {
+    {
+        std::shared_lock lock(mutex_);
+        if (log_max_file_size_mb_override_.has_value()) {
+            return *log_max_file_size_mb_override_;
+        }
+    }
+    return get_int_opt(nullptr, {"log_max_file_size_mb"}, 10);
+}
+
+void RuntimeConfig::set_log_max_file_size_mb_override(std::optional<int> override_val) {
+    std::unique_lock lock(mutex_);
+    log_max_file_size_mb_override_ = override_val;
+}
+
+int RuntimeConfig::log_max_files() const {
+    {
+        std::shared_lock lock(mutex_);
+        if (log_max_files_override_.has_value()) {
+            return *log_max_files_override_;
+        }
+    }
+    return get_int_opt(nullptr, {"log_max_files"}, 5);
+}
+
+void RuntimeConfig::set_log_max_files_override(std::optional<int> override_val) {
+    std::unique_lock lock(mutex_);
+    log_max_files_override_ = override_val;
+}
+
 std::string RuntimeConfig::extra_models_dir() const {
     std::shared_lock lock(mutex_);
     return config_["extra_models_dir"].get<std::string>();
+}
+
+json RuntimeConfig::model_catalogs() const {
+    std::shared_lock lock(mutex_);
+    const auto found = config_.find("model_catalogs");
+    if (found == config_.end() || !found->is_array()) {
+        return json::array();
+    }
+    return *found;
 }
 
 bool RuntimeConfig::broadcast() const {
@@ -353,6 +450,37 @@ long RuntimeConfig::global_timeout() const {
 int RuntimeConfig::max_loaded_models() const {
     std::shared_lock lock(mutex_);
     return config_["max_loaded_models"].get<int>();
+}
+
+int64_t RuntimeConfig::download_rate_limit_bytes_per_second() const {
+    std::shared_lock lock(mutex_);
+    if (!config_.contains("download_rate_limit") || !config_["download_rate_limit"].is_string()) {
+        return 0;
+    }
+    const int64_t parsed = utils::parse_rate_limit_to_bytes(config_["download_rate_limit"].get<std::string>());
+    if (parsed < 0) {
+        LOG(WARNING, "RuntimeConfig") << "Invalid download_rate_limit value in config, treating as unlimited" << std::endl;
+        return 0;
+    }
+    return parsed;
+}
+
+std::string RuntimeConfig::allowed_origins_unlocked() const {
+    if (allowed_origins_override_.has_value()) {
+        return *allowed_origins_override_;
+    }
+    if (const char* env = std::getenv("LEMONADE_ALLOWED_ORIGINS")) {
+        return std::string(env);
+    }
+    if (config_.contains("allowed_origins") && config_["allowed_origins"].is_string()) {
+        return config_["allowed_origins"].get<std::string>();
+    }
+    return "";
+}
+
+std::string RuntimeConfig::allowed_origins() const {
+    std::shared_lock lock(mutex_);
+    return allowed_origins_unlocked();
 }
 
 std::string RuntimeConfig::models_dir() const {
@@ -392,14 +520,24 @@ double RuntimeConfig::auto_evict_threshold_pct() const {
 }
 
 bool RuntimeConfig::offline() const {
-
     std::shared_lock lock(mutex_);
     return config_["offline"].get<bool>();
 }
 
 bool RuntimeConfig::auto_check_model_updates() const {
     std::shared_lock lock(mutex_);
-    return config_.value("auto_check_model_updates", true);
+    if (config_.contains("auto_check_model_updates")) {
+        return config_["auto_check_model_updates"].get<bool>();
+    }
+    return true;
+}
+
+bool RuntimeConfig::auto_update_models() const {
+    std::shared_lock lock(mutex_);
+    if (config_.contains("auto_update_models")) {
+        return config_["auto_update_models"].get<bool>();
+    }
+    return false;
 }
 
 bool RuntimeConfig::no_fetch_executables() const {
@@ -409,12 +547,12 @@ bool RuntimeConfig::no_fetch_executables() const {
 
 bool RuntimeConfig::disable_model_filtering() const {
     std::shared_lock lock(mutex_);
-    return config_["disable_model_filtering"].get<bool>();
+    return config_.value("disable_model_filtering", false);
 }
 
 bool RuntimeConfig::enable_dgpu_gtt() const {
     std::shared_lock lock(mutex_);
-    return config_["enable_dgpu_gtt"].get<bool>();
+    return config_.value("enable_dgpu_gtt", false);
 }
 
 std::string RuntimeConfig::default_model_source() const {
@@ -577,40 +715,50 @@ json RuntimeConfig::backend_config(const std::string& backend_name) const {
     return json::object();
 }
 
+namespace {
+
+// A config.json the operator edited by hand can hold any type at any key. Reading one
+// as the wrong type must not throw: a caller that asks for a backend's settings and gets
+// an exception loses whatever it was building, and recipe detection losing means every
+// model on the machine reads as unavailable. Absence and mismatch read the same way.
+const json* find_backend_value(const json& config, const std::string& backend,
+                               const std::string& key) {
+    const auto section = config.find(backend);
+    if (section == config.end() || !section->is_object()) {
+        return nullptr;
+    }
+    const auto value = section->find(key);
+    return value == section->end() ? nullptr : &*value;
+}
+
+}  // namespace
+
 std::string RuntimeConfig::backend_string(const std::string& backend,
                                            const std::string& key) const {
     std::shared_lock lock(mutex_);
-    if (config_.contains(backend) && config_[backend].contains(key)) {
-        return config_[backend][key].get<std::string>();
-    }
-    return "";
+    const json* value = find_backend_value(config_, backend, key);
+    return value != nullptr && value->is_string() ? value->get<std::string>() : "";
 }
 
 bool RuntimeConfig::backend_bool(const std::string& backend,
                                   const std::string& key) const {
     std::shared_lock lock(mutex_);
-    if (config_.contains(backend) && config_[backend].contains(key)) {
-        return config_[backend][key].get<bool>();
-    }
-    return false;
+    const json* value = find_backend_value(config_, backend, key);
+    return value != nullptr && value->is_boolean() ? value->get<bool>() : false;
 }
 
 int RuntimeConfig::backend_int(const std::string& backend,
                                 const std::string& key) const {
     std::shared_lock lock(mutex_);
-    if (config_.contains(backend) && config_[backend].contains(key)) {
-        return config_[backend][key].get<int>();
-    }
-    return 0;
+    const json* value = find_backend_value(config_, backend, key);
+    return value != nullptr && value->is_number_integer() ? value->get<int>() : 0;
 }
 
 double RuntimeConfig::backend_double(const std::string& backend,
                                       const std::string& key) const {
     std::shared_lock lock(mutex_);
-    if (config_.contains(backend) && config_[backend].contains(key)) {
-        return config_[backend][key].get<double>();
-    }
-    return 0.0;
+    const json* value = find_backend_value(config_, backend, key);
+    return value != nullptr && value->is_number() ? value->get<double>() : 0.0;
 }
 
 json RuntimeConfig::recipe_options(const std::string& backend) const {
@@ -673,7 +821,7 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
         if (!value.is_number_integer()) {
             throw std::invalid_argument("'port' must be an integer");
         }
-        int p = value.get<int>();
+        int64_t p = value.get<int64_t>();
         if (p < 1 || p > 65535) {
             throw std::invalid_argument("'port' must be between 1 and 65535");
         }
@@ -688,7 +836,7 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
                     "'websocket_port' must be \"auto\" or an integer 0-65535");
             }
         } else if (value.is_number_integer()) {
-            int p = value.get<int>();
+            int64_t p = value.get<int64_t>();
             if (p < 0 || p > 65535) {
                 throw std::invalid_argument(
                     "'websocket_port' must be between 0 and 65535");
@@ -707,6 +855,36 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
             throw std::invalid_argument(
                 "'log_level' must be one of: trace, debug, info, warning, error, fatal, none");
         }
+    } else if (key == "log_file") {
+        if (!value.is_string()) {
+            throw std::invalid_argument("'log_file' must be a string");
+        }
+        std::string mode = value.get<std::string>();
+        if (mode != "auto" && mode != "enabled" && mode != "disabled" && !mode.empty()) {
+            std::error_code ec;
+            fs::path p = utils::path_from_utf8(mode);
+            if (fs::exists(p, ec) && fs::is_directory(p, ec)) {
+                throw std::invalid_argument("'log_file' path cannot be a directory: " + mode);
+            }
+        }
+    } else if (key == "log_max_file_size_mb") {
+        if (!value.is_number_integer()) {
+            throw std::invalid_argument("'log_max_file_size_mb' must be an integer");
+        }
+        int64_t sz = value.get<int64_t>();
+        if (sz < 1 || sz > 2048) {
+            throw std::invalid_argument("'log_max_file_size_mb' must be between 1 and 2048");
+        }
+    } else if (key == "log_max_files") {
+        if (!value.is_number_integer()) {
+            throw std::invalid_argument("'log_max_files' must be an integer");
+        }
+        int64_t n = value.get<int64_t>();
+        if (n < 0 || n > 100) {
+            throw std::invalid_argument("'log_max_files' must be between 0 and 100");
+        }
+    } else if (key == "model_catalogs") {
+        models::reject_refused_catalogs(value);
     } else if (key == "extra_models_dir" || key == "models_dir") {
         if (!value.is_string()) {
             throw std::invalid_argument("'" + key + "' must be a string");
@@ -723,8 +901,22 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
             throw std::invalid_argument(
                 "'default_model_source' must be either 'huggingface', or 'modelscope'");
         }
+    } else if (key == "download_rate_limit") {
+        if (!value.is_string()) {
+            throw std::invalid_argument("'download_rate_limit' must be a byte rate string");
+        }
+        if (utils::parse_rate_limit_to_bytes(value.get<std::string>()) < 0) {
+            throw std::invalid_argument(
+                "'download_rate_limit' must be a byte rate like \"512\", \"100K\", \"10M\", etc. "
+                "Use \"\" for unlimited download speed");
+        }
+    } else if (key == "allowed_origins") {
+        if (!value.is_string()) {
+            throw std::invalid_argument("'allowed_origins' must be a string");
+        }
     } else if (key == "broadcast" || key == "no_broadcast" || key == "offline" ||
                key == "auto_check_model_updates" ||
+               key == "auto_update_models" ||
                key == "no_fetch_executables" ||
                key == "disable_model_filtering" || key == "enable_dgpu_gtt") {
         if (!value.is_boolean()) {
@@ -972,7 +1164,7 @@ void RuntimeConfig::validate_backend(const std::string& backend, const std::stri
         }
         validate_backend_choice(backend, value.get<std::string>());
     }
-    else if (key == "args" || key.find("_args") != std::string::npos) {
+    else if (key == "args" || is_backend_variant_key(backend, key, "_args")) {
         if (!value.is_string()) {
             throw std::invalid_argument("'" + backend + "." + key + "' must be a string");
         }
@@ -982,7 +1174,7 @@ void RuntimeConfig::validate_backend(const std::string& backend, const std::stri
             throw std::invalid_argument("'" + backend + "." + key + "' must be a string");
         }
     }
-    else if (key.find("_bin") != std::string::npos) {
+    else if (is_backend_variant_key(backend, key, "_bin")) {
         if (!value.is_string()) {
             throw std::invalid_argument("'" + backend + "." + key + "' must be a string");
         }
@@ -1110,6 +1302,14 @@ void RuntimeConfig::apply_changes(const json& changes, json& applied_diff) {
             broadcast_override_ = std::nullopt;
             if (prev_effective_bcast != bcast) {
                 applied_diff["broadcast"] = bcast;
+            }
+        } else if (key == "allowed_origins") {
+            std::string prev_effective = allowed_origins_unlocked();
+            std::string new_origins = value.is_string() ? value.get<std::string>() : "";
+            config_["allowed_origins"] = new_origins;
+            allowed_origins_override_ = new_origins;
+            if (prev_effective != new_origins) {
+                applied_diff["allowed_origins"] = new_origins;
             }
         } else {
             if (!config_.contains(key) || config_[key] != value) {

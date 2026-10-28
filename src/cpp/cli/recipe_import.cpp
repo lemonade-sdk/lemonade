@@ -1,7 +1,8 @@
 #include "lemon_cli/recipe_import.h"
 
+#include "lemon/canonical_id.h"
 #include "lemon/model_manager.h"
-#include "lemon/model_registry.h"
+#include <lemon/models/registry_types.h>
 #include "lemon/utils/github_api.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/path_utils.h"
@@ -29,6 +30,7 @@ const std::vector<std::string> kKnownKeys = {
     "model_name",
     "models",
     "image_defaults",
+    "audio_defaults",
     "labels",
     "recipe",
     "recipe_options",

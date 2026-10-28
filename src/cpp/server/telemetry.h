@@ -15,6 +15,9 @@ struct ToolCall {
     std::string function_arguments;
 };
 
+// Start the metrics worker explicitly after process-wide startup configuration.
+void initialize();
+
 class InferenceSpan {
 public:
     InferenceSpan(const std::string& span_kind, const std::string& name, const std::string& model_name, const nlohmann::json& request_json);

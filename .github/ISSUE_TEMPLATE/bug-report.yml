@@ -7,6 +7,8 @@ body:
       value: |
         Thanks for taking the time to report a bug! Please fill out the details below so we can investigate.
 
+        Please write this report in your own words, per the [AI content policy](https://github.com/lemonade-sdk/lemonade/blob/main/docs/dev/ai-content-policy.md).
+
   - type: dropdown
     id: platform
     attributes:

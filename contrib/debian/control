@@ -25,6 +25,7 @@ Build-Depends:
  nlohmann-json3-dev,
  node-buffer,
  node-css-loader,
+ node-dompurify,
  node-highlight.js,
  node-html-webpack-plugin,
  node-markdown-it,
@@ -39,6 +40,7 @@ Build-Depends:
  node-webpack-cli,
  nodejs,
  pkgconf,
+ python3,
 Vcs-Browser: https://salsa.debian.org/debian/lemonade
 Vcs-Git: https://salsa.debian.org/debian/lemonade.git
 Homepage: https://lemonade-server.ai/

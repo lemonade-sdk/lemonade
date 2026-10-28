@@ -49,7 +49,7 @@ inline const char* slot_policy_to_string(SlotPolicy p) {
 // paired WrappedServer subclass (see backend_registry.h for how they bind).
 struct BackendDescriptor {
     std::string recipe;             // "vllm"
-    std::string display_name;       // "vLLM ROCm (experimental)"
+    std::string display_name;       // "vLLM ROCm"
     std::string binary;             // subprocess to launch/install ("" = none, e.g. cloud)
     std::string config_section;     // config.json section; defaults to recipe (sd-cpp -> "sdcpp")
 
@@ -79,7 +79,6 @@ struct BackendDescriptor {
     std::vector<std::string>      default_capabilities;
 
     // Editorial metadata for the generated docs (README support matrix, website).
-    bool        experimental = false; // true renders "(experimental)" next to the recipe in generated docs
     std::string web_display_name;   // name used on the docs website ("" = fall back to display_name)
 
     // ROCm release channels this backend publishes (e.g. {"stable","nightly"}).
@@ -113,6 +112,11 @@ struct BackendDescriptor {
     std::vector<std::string> arg_variants;         // each emits `<variant>_args: ""`
     std::vector<std::string> bin_variants;         // each emits `<variant>_bin: "builtin"`
     nlohmann::json config_extra = nlohmann::json::object();  // fixed extras (e.g. prefer_system, image defaults)
+
+    // True if the backend streams the model from storage rather than loading it
+    // fully resident (ds4 --ssd-streaming); changes how it is size-filtered (see
+    // filter_for_host in model_manager.cpp).
+    bool streams_model_from_storage = false;
 
     // The config.json section name for this backend, falling back to the recipe.
     std::string effective_config_section() const {

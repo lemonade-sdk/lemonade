@@ -4,7 +4,9 @@ Lemonade is a community-driven project whose roadmap is determined by a set of *
 
 ## Charters
 
-Charters are reviewed by the community in PRs and committed to this directory. Each charter should have clear goals and be aligned to the overall [project philosophy](../philosophy.md). Measurable goals and a well‑defined end state are ideal, but not always possible due to the fast moving nature of the AI space. Maintainers are expected to keep their roadmap up to date as they progress.
+Charters are proposed in [RFC discussions](../spec-driven-dev.md) and then committed to this directory. Each charter should have clear goals and be aligned to the overall [project philosophy](../philosophy.md). Measurable goals and a well‑defined end state are ideal, but not always possible due to the fast moving nature of the AI space. Maintainers are expected to keep their roadmap up to date as they progress.
+
+Any PR that is fully within the scope of a charter does not need its own RFC. Further RFCs are only needed to change the scope of a charter.
 
 ## Governance
 
@@ -12,7 +14,7 @@ Charters are ratified by @jeremyfowers with two primary considerations (in order
 
 ## Maintainers
 
-You can see the full set of project maintainers, and the subject areas they maintain, in the [contribution guide](../contribute.md#maintainers). Working groups are focused areas of roadmap development, and are a subset of the end‑to‑end maintainance and support of this project.
+You can see the full set of project maintainers, and the subject areas they maintain, in the [contribution guide](../contribute.md#maintainers). Working groups are focused areas of roadmap development, and are a subset of the end‑to‑end maintenance and support of this project.
 
 ## Table of Working Groups
 

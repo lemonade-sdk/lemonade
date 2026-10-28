@@ -1,13 +1,21 @@
 #pragma once
 
 #include <cstdint>
+#include <map>
+#include <string>
 #include <type_traits>
+#include <vector>
 #include <nlohmann/json.hpp>
 #include <httplib.h>
 
 namespace lemon {
 
 using json = nlohmann::json;
+
+struct AudioFormatMetadata {
+    std::string content_type;
+    std::map<std::string, std::string> headers;
+};
 
 class ICapability {
 public:
@@ -61,6 +69,10 @@ public:
     // buffered set — Kokoros hands back raw PCM on its streaming path whatever the
     // request asked for. Empty means the buffered list applies to both transports.
     virtual std::vector<std::string> supported_streaming_audio_formats() const { return {}; }
+    // Optional wire metadata for a selected encoded/raw format. Empty values
+    // keep the server-wide MIME mapping. Raw PCM backends use this to expose
+    // their actual sample rate/channel contract instead of being mislabeled.
+    virtual AudioFormatMetadata audio_format_metadata(const std::string&) const { return {}; }
 };
 
 // Text-classification capability (encoder classifiers: PII, prompt-safety,
@@ -80,6 +92,13 @@ public:
     virtual json image_variations(const json& request) = 0;
 };
 
+class IUpscaleServer : public virtual ICapability {
+public:
+    virtual ~IUpscaleServer() = default;
+    virtual std::string upscale_via_cli(const std::string& b64_image,
+                                const std::string& upscale_model_path) = 0;
+};
+
 // Generative audio capability (text -> audio clip). Serves both music and
 // sound-effect models; the loaded model decides which. Streams the encoded
 // audio bytes to the sink, like ITextToSpeechServer.
@@ -88,6 +107,7 @@ public:
     virtual ~IAudioGenerationServer() = default;
     virtual void audio_generations(const json& request, httplib::DataSink& sink) = 0;
     virtual std::vector<std::string> supported_audio_formats() const { return {"wav"}; }
+    virtual AudioFormatMetadata audio_format_metadata(const std::string&) const { return {}; }
 };
 
 class IModel3DServer : public virtual ICapability {
@@ -133,9 +153,10 @@ enum CapabilityMask : uint32_t {
     CAP_IMAGE                   = 1u << 6,
     CAP_AUDIO_GENERATION        = 1u << 7,
     CAP_MODEL_3D                = 1u << 8,
+    CAP_UPSCALE                 = 1u << 9,
     // Every bit above. BackendModeContractTest sweeps this so a capability added
     // without being classified fails the test instead of going unchecked.
-    CAP_ALL                     = (1u << 9) - 1,
+    CAP_ALL                     = (1u << 10) - 1,
 };
 
 template<typename T>
@@ -149,7 +170,8 @@ constexpr uint32_t capability_mask_of() {
            (std::is_base_of<IClassificationServer, T>::value ? CAP_CLASSIFICATION : 0u) |
            (std::is_base_of<IImageServer, T>::value ? CAP_IMAGE : 0u) |
            (std::is_base_of<IAudioGenerationServer, T>::value ? CAP_AUDIO_GENERATION : 0u) |
-           (std::is_base_of<IModel3DServer, T>::value ? CAP_MODEL_3D : 0u);
+           (std::is_base_of<IModel3DServer, T>::value ? CAP_MODEL_3D : 0u) |
+           (std::is_base_of<IUpscaleServer, T>::value ? CAP_UPSCALE : 0u);
 }
 
 } // namespace lemon

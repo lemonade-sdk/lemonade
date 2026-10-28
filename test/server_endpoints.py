@@ -20,6 +20,7 @@ Usage:
     python server_endpoints.py
 """
 
+import contextlib
 import json
 import os
 import platform
@@ -101,6 +102,66 @@ def _lemond_health_ok(port, headers):
         return response.status_code == 200
     except requests.RequestException:
         return False
+
+
+@contextlib.contextmanager
+def _running_lemond(config=None, cache_prefix="lemond_test_", extra_env=None):
+    """Spawn lemond on a free port with the given config.json body.
+
+    Skips the calling test when no daemon binary is available. Yields
+    (proc, port, headers, log_path) and terminates the daemon plus removes
+    its cache directory on exit.
+    """
+    lemond_binary = _resolve_lemond_binary()
+    if not lemond_binary:
+        raise unittest.SkipTest("lemond binary not found (build it or add it to PATH)")
+
+    headers = {}
+    api_key = os.environ.get("LEMONADE_API_KEY")
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    port = _pick_free_port()
+    cache_dir = tempfile.mkdtemp(prefix=cache_prefix)
+    log_path = os.path.join(cache_dir, "lemond.log")
+    with open(os.path.join(cache_dir, "config.json"), "w", encoding="utf-8") as f:
+        json.dump({"config_version": 2, **(config or {})}, f)
+
+    spawn_env = os.environ.copy()
+    if extra_env:
+        spawn_env.update(extra_env)
+
+    proc = None
+    try:
+        with open(log_path, "w", encoding="utf-8") as log:
+            proc = subprocess.Popen(
+                [lemond_binary, cache_dir, "--port", str(port), "--no-broadcast"],
+                stdout=log,
+                stderr=subprocess.STDOUT,
+                env=spawn_env,
+            )
+        yield proc, port, headers, log_path
+    finally:
+        if proc is not None and proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait(timeout=10)
+        shutil.rmtree(cache_dir, ignore_errors=True)
+
+
+def _wait_until_healthy(proc, port, headers, timeout_s=60):
+    """Poll /api/v1/health until lemond answers or the deadline expires."""
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        if proc.poll() is not None:
+            return False
+        if _lemond_health_ok(port, headers):
+            return True
+        time.sleep(1)
+    return False
 
 
 class EndpointTests(ServerTestBase):
@@ -262,6 +323,9 @@ class EndpointTests(ServerTestBase):
             public_name = body.get("model_name")
             self.assertIsInstance(public_name, str)
             self.assertTrue(public_name)
+            registered = body.get("model")
+            self.assertIsInstance(registered, dict, f"echo of the row: {body}")
+            self.assertEqual(registered.get("checkpoint"), checkpoint)
 
             models_response = requests.get(
                 f"{self.base_url}/models?show_all=true",
@@ -599,6 +663,57 @@ class EndpointTests(ServerTestBase):
             self.assertIn(key, stats, f"{key} missing from /stats")
         print("[OK] cache and routing telemetry series present in /metrics and /stats")
 
+    def test_002c_system_stats_gpu_schema(self):
+        """/system-stats reports a well-formed gpus[] with sane per-device values."""
+        response = requests.get(
+            f"{self.base_url}/system-stats", timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+
+        self.assertIn("gpus", data)
+        self.assertIsInstance(data["gpus"], list)
+        self.assertIn("primary_gpu_id", data)
+
+        ids = set()
+        for gpu in data["gpus"]:
+            for field in ("id", "vendor", "name", "memory_type"):
+                self.assertIn(field, gpu)
+            self.assertNotIn(gpu["id"], ids, "duplicate GPU id")
+            ids.add(gpu["id"])
+            self.assertIn(gpu["memory_type"], ("shared", "dedicated", "unknown"))
+
+            pct = gpu.get("gpu_percent")
+            if pct is not None:
+                self.assertGreaterEqual(pct, 0.0)
+                self.assertLessEqual(pct, 100.0)
+
+            total = gpu.get("memory_total_gb")
+            used = gpu.get("memory_used_gb")
+            if total is not None:
+                self.assertGreaterEqual(total, 0.0)
+            if used is not None:
+                self.assertGreaterEqual(used, 0.0)
+            if total is not None and used is not None:
+                self.assertLessEqual(used, total + 1e-6)
+
+        if data["gpus"]:
+            self.assertIn(data["primary_gpu_id"], ids)
+
+        # On a host that advertises an AMD GPU, system-stats must enumerate it.
+        info = requests.get(
+            f"{self.base_url}/system-info", timeout=TIMEOUT_DEFAULT
+        ).json()
+        amd_available = any(
+            dev.get("available") for dev in info.get("devices", {}).get("amd_gpu", [])
+        )
+        if amd_available:
+            self.assertTrue(
+                any(gpu["vendor"] == "amd" for gpu in data["gpus"]),
+                "AMD GPU advertised in system-info but absent from system-stats",
+            )
+        print(f"[OK] /system-stats reported {len(data['gpus'])} GPU(s)")
+
     def test_003_models_list(self):
         """Test listing available models via /models endpoint."""
         # Model is already pulled in setUpClass
@@ -622,6 +737,38 @@ class EndpointTests(ServerTestBase):
         # Verify our pulled model is in the list
         model_ids = [m["id"] for m in data["data"]]
         self.assertIn(ENDPOINT_TEST_MODEL, model_ids)
+
+        # checkpoint_status[] and update_available are part of the row contract.
+        pulled = next(m for m in data["data"] if m["id"] == ENDPOINT_TEST_MODEL)
+        self.assertIsInstance(pulled.get("checkpoint_status"), list)
+        self.assertTrue(
+            any(
+                entry.get("type") == "main"
+                and entry.get("present") is True
+                and entry.get("required") is True
+                for entry in pulled["checkpoint_status"]
+            ),
+            f"downloaded model reports its main checkpoint: {pulled['checkpoint_status']}",
+        )
+        # Filesystem paths are opt-in on every listing surface, as they are on
+        # /models/{id}/files.
+        self.assertFalse(
+            any("path" in entry for entry in pulled["checkpoint_status"]),
+            f"the default listing discloses paths: {pulled['checkpoint_status']}",
+        )
+        opted_in = requests.get(
+            f"{self.base_url}/models/{ENDPOINT_TEST_MODEL}?include_paths=true",
+            timeout=TIMEOUT_DEFAULT,
+        ).json()
+        self.assertTrue(
+            any(
+                entry.get("type") == "main" and entry.get("path")
+                for entry in opted_in.get("checkpoint_status", [])
+            ),
+            f"include_paths=true answers where the checkpoint is: "
+            f"{opted_in.get('checkpoint_status')}",
+        )
+        self.assertIsInstance(pulled.get("update_available"), bool)
 
         print(f"[OK] /models returned {len(data['data'])} downloaded models")
 
@@ -714,6 +861,168 @@ class EndpointTests(ServerTestBase):
             client.models.retrieve("non-existent-model-xyz-123")
 
         print("[OK] NotFoundError raised for non-existent model")
+
+    def _retrieve_model_json(self, model=ENDPOINT_TEST_MODEL):
+        """Fetch one model entry. The OpenAI SDK object does not expose
+        context_length, so read the raw JSON."""
+        response = requests.get(
+            f"{self.base_url}/models/{model}", timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        return response.json()
+
+    def _unload_for_configured_context(self):
+        """Unload first: a loaded model reports its own size, which outranks
+        the configured value these tests check."""
+        requests.post(f"{self.base_url}/unload", json={}, timeout=TIMEOUT_DEFAULT)
+
+    def test_006a_context_length_uses_explicit_ctx_size(self):
+        """An explicit per-model ctx_size is what context_length reports."""
+        self._snapshot_options()
+        self._unload_for_configured_context()
+        self._reset_options()
+
+        requests.post(
+            self._options_url(), json={"ctx_size": 8192}, timeout=TIMEOUT_DEFAULT
+        )
+
+        model = self._retrieve_model_json()
+        self.assertEqual(
+            model.get("context_length"),
+            8192,
+            "context_length should match the explicitly saved ctx_size",
+        )
+
+        print("[OK] context_length reflects an explicit ctx_size")
+
+    def test_006b_context_length_inherits_global_ctx_size(self):
+        """With nothing saved on the model, context_length follows the global."""
+        original_ctx_size = requests.get(
+            f"{self.internal_url}/config", timeout=TIMEOUT_DEFAULT
+        ).json()["ctx_size"]
+        self._snapshot_options()
+        self.addCleanup(self._set_global_ctx_size, original_ctx_size)
+
+        self._unload_for_configured_context()
+        self._reset_options()
+        self._set_global_ctx_size(4096)
+
+        model = self._retrieve_model_json()
+        self.assertEqual(
+            model.get("context_length"),
+            4096,
+            "context_length should inherit the server-wide ctx_size",
+        )
+
+        print("[OK] context_length inherits the global ctx_size")
+
+    def test_006c_context_length_never_reports_a_sentinel(self):
+        """ctx_size=-1 means "size automatically" and must never be returned."""
+        self._snapshot_options()
+        self._unload_for_configured_context()
+        self._reset_options()
+
+        requests.post(
+            self._options_url(), json={"ctx_size": -1}, timeout=TIMEOUT_DEFAULT
+        )
+
+        model = self._retrieve_model_json()
+        context_length = model.get("context_length")
+        self.assertIsNotNone(
+            context_length,
+            "context_length should still be present when ctx_size is automatic",
+        )
+        self.assertGreater(
+            context_length,
+            0,
+            "context_length must never surface the -1 auto sentinel",
+        )
+
+        print(
+            f"[OK] context_length with automatic ctx_size resolved to {context_length}"
+        )
+
+    def test_006d_context_length_agrees_between_list_and_retrieve(self):
+        """The list and retrieve endpoints must report the same value."""
+        response = requests.get(f"{self.base_url}/models", timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(response.status_code, 200)
+
+        listed = {m["id"]: m for m in response.json()["data"]}
+        self.assertIn(ENDPOINT_TEST_MODEL, listed)
+
+        for model_id, entry in listed.items():
+            if "context_length" in entry:
+                self.assertGreater(
+                    entry["context_length"],
+                    0,
+                    f"{model_id} reported a non-positive context_length",
+                )
+
+        self.assertEqual(
+            listed[ENDPOINT_TEST_MODEL].get("context_length"),
+            self._retrieve_model_json().get("context_length"),
+            "list and retrieve should report the same context_length",
+        )
+
+        print("[OK] context_length agrees across /models and /models/{id}")
+
+    def test_006e_context_length_resolves_user_alias(self):
+        """An alias and its loaded target must report the same context length."""
+        alias_name = "test-context-length-alias"
+        loaded_ctx_size = 3072
+
+        self.addCleanup(
+            requests.post,
+            f"{self.base_url}/unload",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_DEFAULT,
+        )
+
+        try:
+            add_res = requests.post(
+                f"{self.internal_url}/aliases",
+                json={"alias": alias_name, "target": ENDPOINT_TEST_MODEL},
+                headers=_auth_headers(),
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(add_res.status_code, 200, add_res.text)
+
+            load_res = requests.post(
+                f"{self.base_url}/load",
+                json={
+                    "model_name": ENDPOINT_TEST_MODEL,
+                    "ctx_size": loaded_ctx_size,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(load_res.status_code, 200, load_res.text)
+
+            list_res = requests.get(f"{self.base_url}/models", timeout=TIMEOUT_DEFAULT)
+            self.assertEqual(list_res.status_code, 200, list_res.text)
+            listed = {model["id"]: model for model in list_res.json()["data"]}
+
+            self.assertIn(ENDPOINT_TEST_MODEL, listed)
+            self.assertIn(alias_name, listed)
+            self.assertEqual(
+                listed[ENDPOINT_TEST_MODEL].get("context_length"), loaded_ctx_size
+            )
+            self.assertEqual(
+                listed[alias_name].get("context_length"),
+                listed[ENDPOINT_TEST_MODEL].get("context_length"),
+            )
+            self.assertEqual(
+                self._retrieve_model_json(alias_name).get("context_length"),
+                listed[ENDPOINT_TEST_MODEL].get("context_length"),
+            )
+        finally:
+            delete_res = requests.delete(
+                f"{self.internal_url}/aliases/{requests.utils.quote(alias_name)}",
+                headers=_auth_headers(),
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertIn(delete_res.status_code, (200, 404), delete_res.text)
+
+        print("[OK] context_length resolves user aliases")
 
     def test_007_pull_model_non_streaming(self):
         """Test pulling/downloading a model (non-streaming mode)."""
@@ -813,6 +1122,55 @@ class EndpointTests(ServerTestBase):
         )
 
         print(f"[OK] Pull (streaming): received events: {set(events_received)}")
+
+    def test_008b_inference_pulls_missing_model(self):
+        """Inference on a registered model that is not downloaded pulls it first."""
+        delete_response = requests.post(
+            f"{self.base_url}/delete",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertIn(delete_response.status_code, [200, 422])
+
+        models_response = requests.get(
+            f"{self.base_url}/models", timeout=TIMEOUT_DEFAULT
+        )
+        model_ids = [m["id"] for m in models_response.json()["data"]]
+        self.assertNotIn(
+            ENDPOINT_TEST_MODEL,
+            model_ids,
+            "Model should be deleted before the inference request",
+        )
+
+        response = requests.post(
+            f"{self.base_url}/chat/completions",
+            json={
+                "model": ENDPOINT_TEST_MODEL,
+                "messages": [{"role": "user", "content": "hi"}],
+                "max_tokens": 5,
+            },
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertTrue(response.json()["choices"])
+
+        models_response = requests.get(
+            f"{self.base_url}/models", timeout=TIMEOUT_DEFAULT
+        )
+        model_ids = [m["id"] for m in models_response.json()["data"]]
+        self.assertIn(
+            ENDPOINT_TEST_MODEL,
+            model_ids,
+            "Model should be downloaded after the inference request",
+        )
+
+        requests.post(
+            f"{self.base_url}/unload",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_DEFAULT,
+        )
+
+        print(f"[OK] Inference pulled missing model: {ENDPOINT_TEST_MODEL}")
 
     def test_009_load_model_basic(self):
         """Test loading a model into memory."""
@@ -1341,7 +1699,7 @@ class EndpointTests(ServerTestBase):
             timeout=TIMEOUT_DEFAULT,
         )
         self._reset_options()
-        self._set_global_llamacpp_args("--no-mmap --threads 1")
+        self._set_global_llamacpp_args("--load-mode none --threads 1")
 
         response = requests.post(
             self._options_url(),
@@ -1368,7 +1726,7 @@ class EndpointTests(ServerTestBase):
         self.assertIsNotNone(loaded)
         loaded_args = loaded.get("recipe_options", {}).get("llamacpp_args", "")
         self.assertIn("--threads 2", loaded_args)
-        self.assertIn("--no-mmap", loaded_args)
+        self.assertIn("--load-mode none", loaded_args)
         self.assertNotIn("--threads-batch 1", loaded_args)
         self.assertNotIn("--threads 1 ", loaded_args + " ")
 
@@ -1429,11 +1787,11 @@ class EndpointTests(ServerTestBase):
         )
         merged = requests.post(
             self._options_url(),
-            json={"llamacpp_args": "--no-mmap"},
+            json={"llamacpp_args": "--load-mode none"},
             timeout=TIMEOUT_DEFAULT,
         ).json()
         self.assertEqual(merged["saved"].get("ctx_size"), 4096)
-        self.assertEqual(merged["saved"].get("llamacpp_args"), "--no-mmap")
+        self.assertEqual(merged["saved"].get("llamacpp_args"), "--load-mode none")
 
         # Clearing one key leaves the other alone
         partial = requests.post(
@@ -1595,7 +1953,7 @@ class EndpointTests(ServerTestBase):
                 self._reset_options()
                 requests.post(
                     self._options_url(),
-                    json={"ctx_size": ctx_size, "llamacpp_args": "--no-mmap"},
+                    json={"ctx_size": ctx_size, "llamacpp_args": "--load-mode none"},
                     timeout=TIMEOUT_DEFAULT,
                 )
                 effective = requests.get(
@@ -1764,7 +2122,6 @@ class EndpointTests(ServerTestBase):
                 "max_completion_tokens",
                 "model",
                 "pinned",
-                "llamacpp_args",
                 "auto_evict",
                 "evict_idle_timeout",
             ]
@@ -1775,6 +2132,15 @@ class EndpointTests(ServerTestBase):
                     f"Request-scoped field '{field}' must NOT leak into recipe_options "
                     f"on auto-load (found: {recipe_options.get(field)})",
                 )
+
+            # Runtime defaults may populate llamacpp_args; the inference request must not.
+            effective_llamacpp_args = recipe_options.get("llamacpp_args", "")
+            self.assertIsInstance(effective_llamacpp_args, str)
+            self.assertNotIn(
+                "--foo-bar",
+                effective_llamacpp_args,
+                "Request llamacpp_args must not leak into recipe_options on auto-load",
+            )
 
             print(
                 f"[OK] Auto-load forwarded only ctx_size={custom_ctx_size}; "
@@ -1807,7 +2173,14 @@ class EndpointTests(ServerTestBase):
         class _FakeProvider(BaseHTTPRequestHandler):
             def do_GET(self):  # noqa: N802
                 if self.path.rstrip("/").endswith("/models"):
-                    data = [{"id": uid, "object": "model"} for uid in upstream_ids]
+                    data = []
+                    for item in upstream_ids:
+                        if isinstance(item, dict):
+                            entry = dict(item)
+                            entry.setdefault("object", "model")
+                            data.append(entry)
+                        else:
+                            data.append({"id": item, "object": "model"})
                     payload = _json.dumps({"object": "list", "data": data}).encode()
                     self.send_response(200)
                     self.send_header("Content-Type", "application/json")
@@ -1903,8 +2276,18 @@ class EndpointTests(ServerTestBase):
                 },
             }
 
+        mock_model = {
+            "id": upstream_id,
+            "object": "model",
+            "context_length": 1310720,
+            "top_provider": {
+                "context_length": 1048576,
+                "max_completion_tokens": 943718,
+            },
+        }
+
         base_url, stop_provider = self._start_mock_cloud_provider(
-            [upstream_id],
+            [mock_model],
             chat_handler=chat_response,
         )
 
@@ -1961,17 +2344,23 @@ class EndpointTests(ServerTestBase):
             self.assertTrue(auth_data["auth_state"]["runtime_key_set"])
             self.assertEqual(auth_data["models_discovered"], 1)
 
-            # (4) /models now lists the discovered cloud model.
+            # (4) /models now lists the discovered cloud model with parsed limits.
             models = requests.get(
                 f"{self.base_url}/models",
                 timeout=TIMEOUT_DEFAULT,
             ).json()
-            ids = [m["id"] for m in models.get("data", [])]
-            self.assertIn(
-                public_name,
-                ids,
-                f"Discovered cloud model should appear in /models; got {ids}",
+            cloud_entry = next(
+                (m for m in models.get("data", []) if m.get("id") == public_name),
+                None,
             )
+            self.assertIsNotNone(
+                cloud_entry,
+                f"Discovered cloud model should appear in /models; got {models.get('data', [])}",
+            )
+            self.assertEqual(cloud_entry.get("context_length"), 1310720)
+            self.assertEqual(cloud_entry.get("max_context_window"), 1310720)
+            self.assertEqual(cloud_entry.get("max_output_tokens"), 943718)
+            self.assertEqual(cloud_entry.get("max_completion_tokens"), 943718)
 
             # (5) Round-trip chat completion through the mock.
             resp = requests.post(
@@ -2545,6 +2934,75 @@ class EndpointTests(ServerTestBase):
             )
         print("[OK] Cloud refresh is idempotent — re-auth produces no duplicates")
 
+    def test_012w_cloud_startup_preserves_discovered_limits(self):
+        """A cloud provider configured in config.json with an API key in env
+        is discovered on startup during build_cache(), and its context and token
+        limits are preserved through populate_model_metadata()."""
+        provider = "startupcloud"
+        upstream_id = "vendor/startup-model"
+        public_name = f"{provider}.{upstream_id}"
+
+        mock_model = {
+            "id": upstream_id,
+            "object": "model",
+            "context_length": 1310720,
+            "top_provider": {
+                "context_length": 1048576,
+                "max_completion_tokens": 943718,
+            },
+        }
+
+        base_url, stop_provider = self._start_mock_cloud_provider([mock_model])
+        self.addCleanup(stop_provider)
+
+        cfg = {
+            "cloud_providers": [
+                {
+                    "name": provider,
+                    "base_url": base_url,
+                    "allow_insecure_http": True,
+                }
+            ]
+        }
+        extra_env = {
+            f"LEMONADE_{provider.upper()}_API_KEY": "dummy-key",
+        }
+
+        with _running_lemond(
+            config=cfg,
+            cache_prefix="lemond_cloud_startup_",
+            extra_env=extra_env,
+        ) as (proc, port, headers, log_path):
+            self.assertTrue(
+                _wait_until_healthy(proc, port, headers),
+                f"lemond never became healthy on port {port} (see {log_path})",
+            )
+
+            models_resp = requests.get(
+                f"http://localhost:{port}/api/v1/models",
+                headers=headers,
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(models_resp.status_code, 200, models_resp.text)
+            models = models_resp.json()
+            cloud_entry = next(
+                (m for m in models.get("data", []) if m.get("id") == public_name),
+                None,
+            )
+            self.assertIsNotNone(
+                cloud_entry,
+                f"Cloud model should be discovered on startup; got {models.get('data', [])}",
+            )
+            self.assertEqual(cloud_entry.get("context_length"), 1310720)
+            self.assertEqual(
+                cloud_entry.get("max_context_window"),
+                1310720,
+                "Startup build_cache() must preserve max_context_window through populate_model_metadata",
+            )
+            self.assertEqual(cloud_entry.get("max_output_tokens"), 943718)
+            self.assertEqual(cloud_entry.get("max_completion_tokens"), 943718)
+        print("[OK] Cloud startup build_cache() preserved discovered limits")
+
     def test_013_unload_specific_model(self):
         """Test unloading a specific model by name."""
         # First load a model
@@ -2594,6 +3052,32 @@ class EndpointTests(ServerTestBase):
         )
 
         print(f"[OK] Unloaded specific model: {ENDPOINT_TEST_MODEL}")
+
+    def test_013b_unload_latest_tag_under_either_spelling(self):
+        """An Ollama-style `:latest` name unloads the model, sent as `model` or `model_name`."""
+        for field in ("model", "model_name"):
+            requests.post(
+                f"{self.base_url}/load",
+                json={"model_name": ENDPOINT_TEST_MODEL},
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            response = requests.post(
+                f"{self.base_url}/unload",
+                json={field: f"{ENDPOINT_TEST_MODEL}:latest"},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(response.status_code, 200, f"{field}: {response.text}")
+            self.assertEqual(response.json().get("model_name"), ENDPOINT_TEST_MODEL)
+
+            health_data = requests.get(
+                f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
+            ).json()
+            loaded_models = [
+                m["model_name"] for m in health_data.get("all_models_loaded", [])
+            ]
+            self.assertNotIn(ENDPOINT_TEST_MODEL, loaded_models, field)
+
+        print("[OK] :latest names unload the model under model and model_name")
 
     def test_014_unload_nonexistent_model(self):
         """Test that unloading a model that isn't loaded returns 404."""
@@ -3209,6 +3693,68 @@ class EndpointTests(ServerTestBase):
         )
         self.assertEqual(model_res_del.status_code, 404)
         print(f"[OK] /internal/aliases POST/GET/DELETE verified")
+
+    def test_021ab_alias_resolves_on_every_surface(self):
+        """An alias means the same model on OpenAI, Ollama and Anthropic surfaces."""
+        alias_name = "test-surface-alias"
+        target_model = ENDPOINT_TEST_MODEL
+
+        add_res = requests.post(
+            f"{self.internal_url}/aliases",
+            headers=_auth_headers(),
+            json={"alias": alias_name, "target": target_model},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(add_res.status_code, 200)
+
+        try:
+            model_res = requests.get(
+                f"{self.base_url}/models/{alias_name}", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(model_res.status_code, 200)
+            self.assertEqual(model_res.json()["id"], alias_name)
+
+            ollama_res = requests.post(
+                f"http://localhost:{PORT}/api/chat",
+                json={
+                    "model": alias_name,
+                    "messages": [
+                        {"role": "user", "content": "Reply with the word ok."}
+                    ],
+                    "stream": False,
+                    "options": {"num_predict": 4},
+                },
+                timeout=240,
+            )
+            self.assertEqual(ollama_res.status_code, 200, ollama_res.text)
+            self.assertEqual(ollama_res.json()["model"], target_model)
+
+            anthropic_res = requests.post(
+                f"http://localhost:{PORT}/v1/messages",
+                headers=_auth_headers(),
+                json={
+                    "model": alias_name,
+                    "max_tokens": 4,
+                    "messages": [
+                        {"role": "user", "content": "Reply with the word ok."}
+                    ],
+                },
+                timeout=240,
+            )
+            self.assertEqual(anthropic_res.status_code, 200, anthropic_res.text)
+            self.assertEqual(anthropic_res.json()["model"], target_model)
+        finally:
+            requests.delete(
+                f"{self.internal_url}/aliases/{requests.utils.quote(alias_name)}",
+                headers=_auth_headers(),
+                timeout=TIMEOUT_DEFAULT,
+            )
+
+        gone_res = requests.get(
+            f"{self.base_url}/models/{alias_name}", timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(gone_res.status_code, 404)
+        print("[OK] alias resolves on OpenAI, Ollama and Anthropic surfaces")
 
     def test_021e_naming_spec_user_shadows_builtin(self):
         """Naming spec: a user.X registration shadows a built-in X.
@@ -4422,6 +4968,57 @@ class EndpointTests(ServerTestBase):
         self.assertEqual(decision["route_to"], "Qwen3-8B-GGUF")
         self.assertTrue(decision["default_used"])
         print("[OK] /routing/validate fell through to the default model")
+
+    def test_021zta_routing_validate_total_chars_uses_prompt_length(self):
+        """A test prompt is a single turn with no history, so `min_total_chars`
+        measures the prompt itself — the same equality the history-less
+        completions form gives. A context that left the total at 0 would make
+        every whole-conversation rule untestable in the Router Builder."""
+        policy = {
+            "version": "1",
+            "recipe": "collection.router",
+            "components": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+            "routing": {
+                "candidates": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+                "default_model": "Qwen3-8B-GGUF",
+                "rules": [
+                    {
+                        "id": "long-conversation-to-big",
+                        "match": {"min_total_chars": 100},
+                        "route_to": "vllm.qwen3-32b",
+                    }
+                ],
+            },
+        }
+        long_prompt = "tell me more about this topic. " * 10  # 310 chars
+        self.assertGreater(len(long_prompt), 100)
+        response = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "prompt": long_prompt},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        decision = response.json()["decision"]
+        self.assertEqual(decision["route_to"], "vllm.qwen3-32b")
+        self.assertEqual(decision["matched_rule"], "long-conversation-to-big")
+        self.assertFalse(decision["default_used"])
+        self.assertTrue(
+            any(
+                entry.get("condition") == "min_total_chars"
+                and entry.get("result") is True
+                for entry in decision.get("trace", [])
+            ),
+            f"trace must include the matched min_total_chars condition: {decision}",
+        )
+
+        short_response = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "prompt": "hi"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(short_response.status_code, 200, short_response.text)
+        self.assertTrue(short_response.json()["decision"]["default_used"])
+        print("[OK] /routing/validate measures min_total_chars on the test prompt")
 
     def test_021zu_routing_validate_bad_policy_returns_400(self):
         """A malformed policy (missing the required 'routing' key) is rejected
@@ -6066,28 +6663,93 @@ class EndpointTests(ServerTestBase):
         )
         return prior
 
-    def _write_stub_gguf(self, directory, bare_name):
-        """Drop a stub GGUF in a subdir so extras discovery emits extra.<bare_name>."""
-        import struct
+    def _set_config_key(self, key, value):
+        """Set one config.json key through /internal/set; returns the prior value."""
+        prior = (
+            requests.get(
+                f"http://localhost:{PORT}/internal/config",
+                headers=_auth_headers(),
+                timeout=TIMEOUT_DEFAULT,
+            )
+            .json()
+            .get(key)
+        )
+        response = requests.post(
+            f"http://localhost:{PORT}/internal/set",
+            json={key: value},
+            headers=_auth_headers(),
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(
+            response.status_code, 200, f"/internal/set failed: {response.text}"
+        )
+        return prior
 
-        sub_dir = os.path.join(directory, bare_name)
-        os.makedirs(sub_dir, exist_ok=True)
-        with open(os.path.join(sub_dir, "model.gguf"), "wb") as f:
-            f.write(b"GGUF")
-            f.write(struct.pack("<I", 3))  # version
-            f.write(struct.pack("<Q", 0))  # tensor_count
-            f.write(struct.pack("<Q", 0))  # kv_count
+    @contextlib.contextmanager
+    def _model_catalogs(self, catalogs):
+        """Run with config.json's model_catalogs set, then put back what it was."""
+        prior = self._set_config_key("model_catalogs", catalogs)
+        try:
+            yield
+        finally:
+            self._set_config_key("model_catalogs", prior if prior is not None else [])
 
-    def _write_root_stub_gguf(self, directory, filename):
-        """Drop a stub GGUF directly in extra_models_dir."""
-        import struct
+    def _catalog_sources(self):
+        """Every catalog GET /internal/model-sources says built the store."""
+        response = requests.get(
+            f"http://localhost:{PORT}/internal/model-sources",
+            headers=_auth_headers(),
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200)
+        return {source["id"]: source for source in response.json()["catalogs"]}
 
-        os.makedirs(directory, exist_ok=True)
-        with open(os.path.join(directory, filename), "wb") as f:
-            f.write(b"GGUF")
-            f.write(struct.pack("<I", 3))  # version
-            f.write(struct.pack("<Q", 0))  # tensor_count
-            f.write(struct.pack("<Q", 0))  # kv_count
+    def test_021n_configured_model_catalog(self):
+        """A registry named in config.json adds a model, and removing it takes it back."""
+        catalog_id = "endpoints-tmp-catalog"
+        model_name = "endpoints-tmp-configured-model"
+        directory = tempfile.mkdtemp(prefix=f"lemon_catalog_{self._testMethodName}_")
+        document = os.path.join(directory, "catalog.json")
+        with open(document, "w", encoding="utf-8") as handle:
+            json.dump(
+                {
+                    model_name: {
+                        "recipe": "llamacpp",
+                        "labels": ["chat"],
+                        "checkpoints": {"main": "lemonade-tests/configured:main.gguf"},
+                    }
+                },
+                handle,
+            )
+        try:
+            with self._model_catalogs([{"id": catalog_id, "path": document}]):
+                self.assertIn(catalog_id, self._catalog_sources())
+                self.assertIn(model_name, self._listed_models())
+
+            # What is left of the set is what the catalogs say built it.
+            self.assertNotIn(catalog_id, self._catalog_sources())
+            self.assertNotIn(model_name, self._listed_models())
+            print(f"[OK] configured catalog {catalog_id} adds and removes a model")
+        finally:
+            shutil.rmtree(directory, ignore_errors=True)
+
+    def test_021n2_configured_model_catalog_rejects_unsafe_url(self):
+        """A plaintext catalog URL is refused rather than saved for later."""
+        with self._model_catalogs([]):
+            response = requests.post(
+                f"http://localhost:{PORT}/internal/set",
+                json={
+                    "model_catalogs": [
+                        {"id": "unsafe", "url": "http://example.invalid/models.json"}
+                    ]
+                },
+                headers=_auth_headers(),
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(response.status_code, 400, response.text)
+            self.assertIn("allow_insecure_http", response.text)
+            self.assertNotIn("unsafe", self._catalog_sources())
+            print("[OK] a plaintext catalog url costs the setting")
 
     def _write_stub_gguf_file(self, path):
         """Write a tiny valid-enough GGUF file at an exact path."""
@@ -6100,6 +6762,63 @@ class EndpointTests(ServerTestBase):
             f.write(struct.pack("<Q", 0))  # tensor_count
             f.write(struct.pack("<Q", 0))  # kv_count
 
+    @contextlib.contextmanager
+    def _extra_models_dir(self, ggufs=(), gguf_sizes=None, refs=None, other_files=()):
+        """Serve a fresh extra_models_dir holding stub GGUFs, optional other
+        files, and refs/main entries. Then restore the previous setting."""
+        extra_dir = tempfile.mkdtemp(prefix=f"lemon_{self._testMethodName}_")
+        for relative in ggufs:
+            self._write_stub_gguf_file(os.path.join(extra_dir, *relative.split("/")))
+        for relative in other_files:
+            path = os.path.join(extra_dir, *relative.split("/"))
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "wb") as f:
+                f.write(b"\x00" * 128)
+        for relative, size in (gguf_sizes or {}).items():
+            with open(os.path.join(extra_dir, *relative.split("/")), "r+b") as f:
+                f.truncate(size)
+        for repo, commit in (refs or {}).items():
+            refs_dir = os.path.join(extra_dir, repo, "refs")
+            os.makedirs(refs_dir, exist_ok=True)
+            with open(os.path.join(refs_dir, "main"), "w") as f:
+                f.write(commit)
+
+        prior_dir = self._set_extra_models_dir(extra_dir)
+        try:
+            yield extra_dir
+        finally:
+            self._set_extra_models_dir(prior_dir)
+            shutil.rmtree(extra_dir, ignore_errors=True)
+
+    def _listed_models(self):
+        """Every model /models?show_all=true lists, keyed by id."""
+        response = requests.get(
+            f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(response.status_code, 200)
+        return {model["id"]: model for model in response.json()["data"]}
+
+    def _get_model(self, name):
+        response = requests.get(
+            f"{self.base_url}/models/{name}", timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(response.status_code, 200, f"GET /models/{name}")
+        return response.json()
+
+    def assertExtraModelsListed(self, extra_dir, expected):
+        """Assert that the models listed from `extra_dir` are exactly `expected`,
+        which maps each id to the '/'-separated path it was made from. A folder
+        model is made from its folder, written with a trailing '/'."""
+        listed = {}
+        for model_id, model in self._listed_models().items():
+            checkpoint = model.get("checkpoint", "")
+            if not checkpoint.startswith(extra_dir + os.sep):
+                continue
+            self.assertEqual(model.get("source"), "extra_models_dir", model_id)
+            path = os.path.relpath(checkpoint, extra_dir).replace(os.sep, "/")
+            listed[model_id] = path + "/" if os.path.isdir(checkpoint) else path
+        self.assertEqual(listed, expected)
+
     def test_021g_naming_spec_three_way_collision(self):
         """Naming spec: built-in + user.* + extra.* all sharing a bare name.
 
@@ -6107,240 +6826,152 @@ class EndpointTests(ServerTestBase):
         """
         bare = ENDPOINT_TEST_MODEL  # known built-in
         user_canonical = f"user.{bare}"
-        extra_dir = tempfile.mkdtemp(prefix="lemon_extra_3way_")
-        self._write_stub_gguf(extra_dir, bare)
-
-        prior_dir = self._set_extra_models_dir(extra_dir)
-        try:
-            pull_response = requests.post(
-                f"{self.base_url}/pull",
-                json={
-                    "model_name": user_canonical,
-                    "checkpoint": USER_MODEL_MAIN_CHECKPOINT,
-                    "recipe": "llamacpp",
-                    "stream": False,
-                },
-                timeout=TIMEOUT_MODEL_OPERATION,
-            )
-            self.assertEqual(pull_response.status_code, 200)
-
-            models_response = requests.get(
-                f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
-            )
-            self.assertEqual(models_response.status_code, 200)
-            ids = {m["id"] for m in models_response.json()["data"]}
-
-            self.assertIn(bare, ids, "Winner emits bare id")
-            self.assertIn(f"extra.{bare}", ids, "Imported source under canonical id")
-            self.assertIn(f"builtin.{bare}", ids, "Built-in under canonical id")
-            self.assertNotIn(
-                user_canonical,
-                ids,
-                "Winning user.* not also emitted under canonical id",
-            )
-
-            bare_resp = requests.get(
-                f"{self.base_url}/models/{bare}", timeout=TIMEOUT_DEFAULT
-            ).json()
-            user_resp = requests.get(
-                f"{self.base_url}/models/{user_canonical}", timeout=TIMEOUT_DEFAULT
-            ).json()
-            extra_resp = requests.get(
-                f"{self.base_url}/models/extra.{bare}", timeout=TIMEOUT_DEFAULT
-            ).json()
-            builtin_resp = requests.get(
-                f"{self.base_url}/models/builtin.{bare}", timeout=TIMEOUT_DEFAULT
-            ).json()
-
-            self.assertEqual(bare_resp["checkpoint"], user_resp["checkpoint"])
-            self.assertNotEqual(extra_resp["checkpoint"], bare_resp["checkpoint"])
-            self.assertNotEqual(builtin_resp["checkpoint"], bare_resp["checkpoint"])
-            self.assertNotEqual(extra_resp["checkpoint"], builtin_resp["checkpoint"])
-
-            print(
-                f"[OK] three-way collision: bare/{bare}, extra.{bare}, builtin.{bare}"
-            )
-        finally:
+        with self._extra_models_dir(ggufs=[f"{bare}/model.gguf"]) as extra_dir:
             try:
-                requests.post(
-                    f"{self.base_url}/delete",
-                    json={"model_name": user_canonical},
-                    timeout=TIMEOUT_DEFAULT,
+                pull_response = requests.post(
+                    f"{self.base_url}/pull",
+                    json={
+                        "model_name": user_canonical,
+                        "checkpoint": USER_MODEL_MAIN_CHECKPOINT,
+                        "recipe": "llamacpp",
+                        "stream": False,
+                    },
+                    timeout=TIMEOUT_MODEL_OPERATION,
                 )
-            except Exception:
-                pass
-            self._set_extra_models_dir(prior_dir)
-            shutil.rmtree(extra_dir, ignore_errors=True)
+                self.assertEqual(pull_response.status_code, 200)
+
+                self.assertExtraModelsListed(extra_dir, {f"extra.{bare}": f"{bare}/"})
+
+                ids = set(self._listed_models())
+                self.assertIn(bare, ids, "Winner emits bare id")
+                self.assertIn(f"builtin.{bare}", ids, "Built-in under canonical id")
+                self.assertNotIn(
+                    user_canonical,
+                    ids,
+                    "Winning user.* not also emitted under canonical id",
+                )
+
+                bare_checkpoint = self._get_model(bare)["checkpoint"]
+                user_checkpoint = self._get_model(user_canonical)["checkpoint"]
+                extra_checkpoint = self._get_model(f"extra.{bare}")["checkpoint"]
+                builtin_checkpoint = self._get_model(f"builtin.{bare}")["checkpoint"]
+
+                self.assertEqual(bare_checkpoint, user_checkpoint)
+                self.assertNotEqual(extra_checkpoint, bare_checkpoint)
+                self.assertNotEqual(builtin_checkpoint, bare_checkpoint)
+                self.assertNotEqual(extra_checkpoint, builtin_checkpoint)
+
+                print(
+                    f"[OK] three-way collision: bare/{bare}, extra.{bare}, builtin.{bare}"
+                )
+            finally:
+                try:
+                    requests.post(
+                        f"{self.base_url}/delete",
+                        json={"model_name": user_canonical},
+                        timeout=TIMEOUT_DEFAULT,
+                    )
+                except Exception:
+                    pass
 
     def test_021h_naming_spec_extra_shadows_builtin(self):
         """Naming spec: extra.* + built-in (no user.*); extra wins precedence."""
         bare = ENDPOINT_TEST_MODEL
-        extra_dir = tempfile.mkdtemp(prefix="lemon_extra_shadow_")
-        self._write_stub_gguf(extra_dir, bare)
-
-        prior_dir = self._set_extra_models_dir(extra_dir)
-        try:
-            models_response = requests.get(
-                f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
-            )
-            self.assertEqual(models_response.status_code, 200)
-            ids = {m["id"] for m in models_response.json()["data"]}
-
+        with self._extra_models_dir(ggufs=[f"{bare}/model.gguf"]) as extra_dir:
+            # The winning extra takes the bare id, not also extra.<bare>.
+            self.assertExtraModelsListed(extra_dir, {bare: f"{bare}/"})
             self.assertIn(
-                bare, ids, "extra wins precedence over builtin; emits bare id"
-            )
-            self.assertIn(f"builtin.{bare}", ids, "shadowed builtin under canonical id")
-            self.assertNotIn(
-                f"extra.{bare}",
-                ids,
-                "winning extra.* not also emitted under canonical id",
+                f"builtin.{bare}",
+                self._listed_models(),
+                "shadowed builtin under canonical id",
             )
 
-            bare_resp = requests.get(
-                f"{self.base_url}/models/{bare}", timeout=TIMEOUT_DEFAULT
-            ).json()
-            extra_resp = requests.get(
-                f"{self.base_url}/models/extra.{bare}", timeout=TIMEOUT_DEFAULT
-            ).json()
-            builtin_resp = requests.get(
-                f"{self.base_url}/models/builtin.{bare}", timeout=TIMEOUT_DEFAULT
-            ).json()
-
-            self.assertEqual(bare_resp["checkpoint"], extra_resp["checkpoint"])
-            self.assertNotEqual(bare_resp["checkpoint"], builtin_resp["checkpoint"])
+            bare_checkpoint = self._get_model(bare)["checkpoint"]
+            self.assertEqual(
+                bare_checkpoint, self._get_model(f"extra.{bare}")["checkpoint"]
+            )
+            self.assertNotEqual(
+                bare_checkpoint, self._get_model(f"builtin.{bare}")["checkpoint"]
+            )
 
             print(
                 f"[OK] extra shadows built-in: bare/{bare} -> extra, builtin.{bare} -> built-in"
             )
-        finally:
-            self._set_extra_models_dir(prior_dir)
-            shutil.rmtree(extra_dir, ignore_errors=True)
 
     def test_021i_extra_root_gguf_emits_stem_name(self):
         """Root-level extra_models_dir GGUF files emit the filename stem."""
         bare = "Qwen3.5-4B-UD-Q4_K_XL"
-        extra_dir = tempfile.mkdtemp(prefix="lemon_extra_root_")
-        self._write_root_stub_gguf(extra_dir, f"{bare}.gguf")
+        with self._extra_models_dir(ggufs=[f"{bare}.gguf"]) as extra_dir:
+            self.assertExtraModelsListed(extra_dir, {bare: f"{bare}.gguf"})
 
-        prior_dir = self._set_extra_models_dir(extra_dir)
-        try:
-            models_response = requests.get(
-                f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
-            )
-            self.assertEqual(models_response.status_code, 200)
-            ids = {m["id"] for m in models_response.json()["data"]}
-
-            self.assertIn(bare, ids)
-            self.assertNotIn(f"{bare}.gguf", ids)
-
-            bare_resp = requests.get(
-                f"{self.base_url}/models/{bare}", timeout=TIMEOUT_DEFAULT
-            )
-            self.assertEqual(bare_resp.status_code, 200)
-            self.assertEqual(bare_resp.json()["id"], bare)
+            model = self._get_model(bare)
+            self.assertEqual(model["id"], bare)
             self.assertEqual(
-                bare_resp.json()["checkpoint"],
-                os.path.join(extra_dir, f"{bare}.gguf"),
+                model["checkpoint"], os.path.join(extra_dir, f"{bare}.gguf")
             )
 
             print(f"[OK] root GGUF emits stem: {bare}")
-        finally:
-            self._set_extra_models_dir(prior_dir)
-            shutil.rmtree(extra_dir, ignore_errors=True)
 
     def test_021t_extra_subdir_multiple_quantization_variants_emit_separate_models(
         self,
     ):
         """A split extra folder lists variants and still accepts the folder name."""
-        extra_dir = tempfile.mkdtemp(prefix="lemon_extra_variants_")
-        folder_name = "Qwen3.6-35B-A3B-GGUF"
-        model_dir = os.path.join(extra_dir, folder_name)
-        # Q4 comes alphabetically before Q8
-        q4_file = os.path.join(model_dir, "Qwen3.6-35B-A3B-Q4_K_M.gguf")
-        q8_file = os.path.join(model_dir, "Qwen3.6-35B-A3B-Q8_0.gguf")
-        mmproj_file = os.path.join(model_dir, "mmproj-Qwen3.6-35B-A3B-BF16.gguf")
-        self._write_stub_gguf_file(q4_file)
-        self._write_stub_gguf_file(q8_file)
-        self._write_stub_gguf_file(mmproj_file)
+        folder = "Qwen3.6-35B-A3B-GGUF"
+        with self._extra_models_dir(
+            ggufs=[
+                f"{folder}/Qwen3.6-35B-A3B-Q4_K_M.gguf",
+                f"{folder}/Qwen3.6-35B-A3B-Q8_0.gguf",
+                f"{folder}/mmproj-Qwen3.6-35B-A3B-BF16.gguf",
+            ]
+        ) as extra_dir:
+            self.assertExtraModelsListed(
+                extra_dir,
+                {
+                    "Qwen3.6-35B-A3B-Q4_K_M": f"{folder}/Qwen3.6-35B-A3B-Q4_K_M.gguf",
+                    "Qwen3.6-35B-A3B-Q8_0": f"{folder}/Qwen3.6-35B-A3B-Q8_0.gguf",
+                },
+            )
 
-        prior_dir = self._set_extra_models_dir(extra_dir)
-        try:
-            models_response = requests.get(
-                f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
-            )
-            self.assertEqual(models_response.status_code, 200)
-            models_by_id = {
-                model["id"]: model for model in models_response.json()["data"]
-            }
+            # The folder name is not listed, but still resolves to the first
+            # quant alphabetically.
+            for requested in (folder, f"extra.{folder}"):
+                model = self._get_model(requested)
+                self.assertEqual(model["id"], "Qwen3.6-35B-A3B-Q4_K_M")
+                self.assertEqual(
+                    model["checkpoint"],
+                    os.path.join(extra_dir, folder, "Qwen3.6-35B-A3B-Q4_K_M.gguf"),
+                )
 
-            # The model list shows the real choices in the folder.
-            self.assertIn("Qwen3.6-35B-A3B-Q4_K_M", models_by_id)
-            self.assertIn("Qwen3.6-35B-A3B-Q8_0", models_by_id)
-
-            # The old folder name still works in requests, but is not listed as
-            # another model.
-            self.assertNotIn(folder_name, models_by_id)
-            legacy_response = requests.get(
-                f"{self.base_url}/models/{folder_name}", timeout=TIMEOUT_DEFAULT
-            )
-            self.assertEqual(legacy_response.status_code, 200)
-            self.assertEqual(legacy_response.json()["id"], "Qwen3.6-35B-A3B-Q4_K_M")
-            self.assertEqual(legacy_response.json()["checkpoint"], q4_file)
-
-            canonical_legacy_response = requests.get(
-                f"{self.base_url}/models/extra.{folder_name}",
-                timeout=TIMEOUT_DEFAULT,
-            )
-            self.assertEqual(canonical_legacy_response.status_code, 200)
-            self.assertEqual(
-                canonical_legacy_response.json()["id"], "Qwen3.6-35B-A3B-Q4_K_M"
-            )
-            self.assertEqual(canonical_legacy_response.json()["checkpoint"], q4_file)
-
-            self.assertNotIn("mmproj-Qwen3.6-35B-A3B-BF16", models_by_id)
-
-            self.assertEqual(
-                models_by_id["Qwen3.6-35B-A3B-Q4_K_M"]["checkpoint"], q4_file
-            )
-            self.assertEqual(
-                models_by_id["Qwen3.6-35B-A3B-Q8_0"]["checkpoint"], q8_file
-            )
-            self.assertEqual(
-                models_by_id["Qwen3.6-35B-A3B-Q4_K_M"]["checkpoints"]["mmproj"],
-                os.path.basename(mmproj_file),
-            )
-            self.assertEqual(
-                models_by_id["Qwen3.6-35B-A3B-Q8_0"]["checkpoints"]["mmproj"],
-                os.path.basename(mmproj_file),
-            )
+            listed = self._listed_models()
+            for variant in ("Qwen3.6-35B-A3B-Q4_K_M", "Qwen3.6-35B-A3B-Q8_0"):
+                self.assertEqual(
+                    listed[variant]["checkpoints"]["mmproj"],
+                    "mmproj-Qwen3.6-35B-A3B-BF16.gguf",
+                )
 
             print("[OK] split extra folder lists variants and accepts folder name")
-        finally:
-            self._set_extra_models_dir(prior_dir)
-            shutil.rmtree(extra_dir, ignore_errors=True)
 
     def test_021x_extra_split_folder_alias_shadows_builtin_without_visible_duplicate(
         self,
     ):
         """A split extra folder name is chosen over a built-in with the same name."""
         bare = ENDPOINT_TEST_MODEL
-        extra_dir = tempfile.mkdtemp(prefix="lemon_extra_alias_shadow_")
-        model_dir = os.path.join(extra_dir, bare)
-        q4_file = os.path.join(model_dir, "Local-Compat-Q4_K_M.gguf")
-        q8_file = os.path.join(model_dir, "Local-Compat-Q8_0.gguf")
-        self._write_stub_gguf_file(q4_file)
-        self._write_stub_gguf_file(q8_file)
-
-        prior_dir = self._set_extra_models_dir(extra_dir)
-        try:
-            models_response = requests.get(
-                f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
+        with self._extra_models_dir(
+            ggufs=[
+                f"{bare}/Local-Compat-Q4_K_M.gguf",
+                f"{bare}/Local-Compat-Q8_0.gguf",
+            ]
+        ) as extra_dir:
+            # The folder name is not listed as a duplicate of either variant.
+            self.assertExtraModelsListed(
+                extra_dir,
+                {
+                    "Local-Compat-Q4_K_M": f"{bare}/Local-Compat-Q4_K_M.gguf",
+                    "Local-Compat-Q8_0": f"{bare}/Local-Compat-Q8_0.gguf",
+                },
             )
-            self.assertEqual(models_response.status_code, 200)
-            ids = {model["id"] for model in models_response.json()["data"]}
 
-            self.assertIn("Local-Compat-Q4_K_M", ids)
-            self.assertIn("Local-Compat-Q8_0", ids)
+            ids = set(self._listed_models())
             self.assertIn(f"builtin.{bare}", ids)
             self.assertNotIn(
                 bare,
@@ -6348,102 +6979,64 @@ class EndpointTests(ServerTestBase):
                 "bare folder alias should not be emitted as a duplicate model",
             )
 
-            alias_response = requests.get(
-                f"{self.base_url}/models/{bare}", timeout=TIMEOUT_DEFAULT
+            alias = self._get_model(bare)
+            self.assertEqual(alias["id"], "Local-Compat-Q4_K_M")
+            self.assertEqual(
+                alias["checkpoint"],
+                os.path.join(extra_dir, bare, "Local-Compat-Q4_K_M.gguf"),
             )
-            self.assertEqual(alias_response.status_code, 200)
-            self.assertEqual(alias_response.json()["id"], "Local-Compat-Q4_K_M")
-            self.assertEqual(alias_response.json()["checkpoint"], q4_file)
 
-            builtin_response = requests.get(
-                f"{self.base_url}/models/builtin.{bare}",
-                timeout=TIMEOUT_DEFAULT,
-            )
-            self.assertEqual(builtin_response.status_code, 200)
-            self.assertEqual(builtin_response.json()["id"], f"builtin.{bare}")
-            self.assertNotEqual(builtin_response.json()["checkpoint"], q4_file)
-            self.assertNotEqual(builtin_response.json()["checkpoint"], q8_file)
+            builtin = self._get_model(f"builtin.{bare}")
+            self.assertEqual(builtin["id"], f"builtin.{bare}")
+            self.assertFalse(builtin["checkpoint"].startswith(extra_dir))
 
             print(
                 "[OK] split extra folder name is chosen over builtin without duplicate model"
             )
-        finally:
-            self._set_extra_models_dir(prior_dir)
-            shutil.rmtree(extra_dir, ignore_errors=True)
 
     def test_021u_extra_subdir_sharded_models_remain_grouped(self):
         """extra_models_dir folders with sharded GGUFs remain grouped as one model."""
-        extra_dir = tempfile.mkdtemp(prefix="lemon_extra_shards_")
-        folder_name = "Llama-3-70B-Instruct-GGUF"
-        model_dir = os.path.join(extra_dir, folder_name)
-        shard1 = os.path.join(model_dir, "Llama-3-70B-Instruct-00001-of-00002.gguf")
-        shard2 = os.path.join(model_dir, "Llama-3-70B-Instruct-00002-of-00002.gguf")
-        self._write_stub_gguf_file(shard1)
-        self._write_stub_gguf_file(shard2)
-
-        prior_dir = self._set_extra_models_dir(extra_dir)
-        try:
-            models_response = requests.get(
-                f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
-            )
-            self.assertEqual(models_response.status_code, 200)
-            models_by_id = {
-                model["id"]: model for model in models_response.json()["data"]
-            }
-
-            # Shards should not be listed as standalone models.
-            self.assertNotIn("Llama-3-70B-Instruct-00001-of-00002", models_by_id)
-            self.assertNotIn("Llama-3-70B-Instruct-00002-of-00002", models_by_id)
-
-            self.assertIn(folder_name, models_by_id)
-            # One sharded model stays grouped under the folder name.
-            self.assertEqual(models_by_id[folder_name]["checkpoint"], model_dir)
+        folder = "Llama-3-70B-Instruct-GGUF"
+        with self._extra_models_dir(
+            ggufs=[
+                f"{folder}/Llama-3-70B-Instruct-00001-of-00002.gguf",
+                f"{folder}/Llama-3-70B-Instruct-00002-of-00002.gguf",
+            ]
+        ) as extra_dir:
+            # One model named after the folder; no shard is listed on its own.
+            self.assertExtraModelsListed(extra_dir, {folder: f"{folder}/"})
 
             print("[OK] extra subdir sharded models remain grouped")
-        finally:
-            self._set_extra_models_dir(prior_dir)
-            shutil.rmtree(extra_dir, ignore_errors=True)
 
     def test_021ub_extra_subdir_sharded_size_sums_shards_but_files_stay_per_file(self):
         """Issue #2972: a sharded model reports the whole family's size, while
         /models/{id}/files keeps reporting each file's own size."""
-        extra_dir = tempfile.mkdtemp(prefix="lemon_extra_shard_size_")
-        folder_name = "Sharded-Size-GGUF"
-        model_dir = os.path.join(extra_dir, folder_name)
-        shard1 = os.path.join(model_dir, "Sharded-Size-00001-of-00002.gguf")
-        shard2 = os.path.join(model_dir, "Sharded-Size-00002-of-00002.gguf")
-        self._write_stub_gguf_file(shard1)
-        self._write_stub_gguf_file(shard2)
-
+        folder = "Sharded-Size-GGUF"
+        shard1 = f"{folder}/Sharded-Size-00001-of-00002.gguf"
+        shard2 = f"{folder}/Sharded-Size-00002-of-00002.gguf"
         # The resolved path is the first shard, which in unsloth-style layouts
         # is a small stub; the bulk of the weights live in the later shards.
         shard2_bytes = 200 * 1024 * 1024
-        with open(shard2, "r+b") as f:
-            f.truncate(shard2_bytes)
-        shard1_bytes = os.path.getsize(shard1)
-        expected_gb = (shard1_bytes + shard2_bytes) / (1024**3)
-        shard1_only_gb = shard1_bytes / (1024**3)
+        with self._extra_models_dir(
+            ggufs=[shard1, shard2], gguf_sizes={shard2: shard2_bytes}
+        ) as extra_dir:
+            shard1_bytes = os.path.getsize(os.path.join(extra_dir, *shard1.split("/")))
+            expected_gb = (shard1_bytes + shard2_bytes) / (1024**3)
+            shard1_only_gb = shard1_bytes / (1024**3)
 
-        prior_dir = self._set_extra_models_dir(extra_dir)
-        try:
-            models_response = requests.get(
-                f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
-            )
-            self.assertEqual(models_response.status_code, 200)
-            models_by_id = {
-                model["id"]: model for model in models_response.json()["data"]
-            }
-            self.assertIn(folder_name, models_by_id)
+            self.assertExtraModelsListed(extra_dir, {folder: f"{folder}/"})
+
+            size = self._listed_models()[folder]["size"]
             self.assertAlmostEqual(
-                models_by_id[folder_name]["size"],
+                size,
                 expected_gb,
                 places=2,
                 msg="model size must cover every shard, not just the resolved one",
             )
-            self.assertGreater(models_by_id[folder_name]["size"], shard1_only_gb)
+            self.assertGreater(size, shard1_only_gb)
 
             files_response = requests.get(
-                f"{self.base_url}/models/{folder_name}/files",
+                f"{self.base_url}/models/{folder}/files",
                 timeout=TIMEOUT_DEFAULT,
             )
             self.assertEqual(files_response.status_code, 200)
@@ -6458,177 +7051,857 @@ class EndpointTests(ServerTestBase):
             )
 
             print("[OK] sharded size sums shards while /files stays per-file")
-        finally:
-            self._set_extra_models_dir(prior_dir)
-            shutil.rmtree(extra_dir, ignore_errors=True)
 
     def test_021v_extra_subdir_multiple_sharded_quantizations_split_by_variant(self):
         """A folder with multiple sharded variants lists one model per variant."""
-        extra_dir = tempfile.mkdtemp(prefix="lemon_extra_sharded_variants_")
-        folder_name = "Mixtral-8x7B-Instruct-GGUF"
-        model_dir = os.path.join(extra_dir, folder_name)
-        q4_shard1 = os.path.join(
-            model_dir, "Mixtral-8x7B-Instruct-Q4_K_M-00001-of-00002.gguf"
-        )
-        q4_shard2 = os.path.join(
-            model_dir, "Mixtral-8x7B-Instruct-Q4_K_M-00002-of-00002.gguf"
-        )
-        q8_shard1 = os.path.join(
-            model_dir, "Mixtral-8x7B-Instruct-Q8_0-00001-of-00002.gguf"
-        )
-        q8_shard2 = os.path.join(
-            model_dir, "Mixtral-8x7B-Instruct-Q8_0-00002-of-00002.gguf"
-        )
-        for shard in [q4_shard1, q4_shard2, q8_shard1, q8_shard2]:
-            self._write_stub_gguf_file(shard)
-
-        prior_dir = self._set_extra_models_dir(extra_dir)
-        try:
-            models_response = requests.get(
-                f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
-            )
-            self.assertEqual(models_response.status_code, 200)
-            models_by_id = {
-                model["id"]: model for model in models_response.json()["data"]
-            }
-
-            self.assertIn("Mixtral-8x7B-Instruct-Q4_K_M", models_by_id)
-            self.assertIn("Mixtral-8x7B-Instruct-Q8_0", models_by_id)
-            self.assertNotIn(folder_name, models_by_id)
-            self.assertNotIn(
-                "Mixtral-8x7B-Instruct-Q4_K_M-00001-of-00002", models_by_id
+        folder = "Mixtral-8x7B-Instruct-GGUF"
+        with self._extra_models_dir(
+            ggufs=[
+                f"{folder}/Mixtral-8x7B-Instruct-{quant}-0000{n}-of-00002.gguf"
+                for quant in ("Q4_K_M", "Q8_0")
+                for n in (1, 2)
+            ]
+        ) as extra_dir:
+            # Each variant is made from its first shard.
+            self.assertExtraModelsListed(
+                extra_dir,
+                {
+                    "Mixtral-8x7B-Instruct-Q4_K_M": f"{folder}/Mixtral-8x7B-Instruct-Q4_K_M-00001-of-00002.gguf",
+                    "Mixtral-8x7B-Instruct-Q8_0": f"{folder}/Mixtral-8x7B-Instruct-Q8_0-00001-of-00002.gguf",
+                },
             )
 
+            legacy = self._get_model(folder)
+            self.assertEqual(legacy["id"], "Mixtral-8x7B-Instruct-Q4_K_M")
             self.assertEqual(
-                models_by_id["Mixtral-8x7B-Instruct-Q4_K_M"]["checkpoint"],
-                q4_shard1,
+                legacy["checkpoint"],
+                os.path.join(
+                    extra_dir,
+                    folder,
+                    "Mixtral-8x7B-Instruct-Q4_K_M-00001-of-00002.gguf",
+                ),
             )
-            self.assertEqual(
-                models_by_id["Mixtral-8x7B-Instruct-Q8_0"]["checkpoint"],
-                q8_shard1,
-            )
-
-            legacy_response = requests.get(
-                f"{self.base_url}/models/{folder_name}", timeout=TIMEOUT_DEFAULT
-            )
-            self.assertEqual(legacy_response.status_code, 200)
-            self.assertEqual(
-                legacy_response.json()["id"], "Mixtral-8x7B-Instruct-Q4_K_M"
-            )
-            self.assertEqual(legacy_response.json()["checkpoint"], q4_shard1)
 
             print("[OK] extra folder with multiple sharded variants lists variants")
-        finally:
-            self._set_extra_models_dir(prior_dir)
-            shutil.rmtree(extra_dir, ignore_errors=True)
 
     def test_021w_extra_subdir_multiple_mmproj_files_choose_first_alphabetically(self):
         """A folder with multiple mmproj files chooses the first name alphabetically."""
-        extra_dir = tempfile.mkdtemp(prefix="lemon_extra_mmproj_")
-        folder_name = "Vision-Model-GGUF"
-        model_dir = os.path.join(extra_dir, folder_name)
-        model_file = os.path.join(model_dir, "Vision-Model-Q4_K_M.gguf")
-        first_mmproj = os.path.join(model_dir, "mmproj-a-Vision-Model.gguf")
-        second_mmproj = os.path.join(model_dir, "mmproj-z-Vision-Model.gguf")
-        self._write_stub_gguf_file(model_file)
-        self._write_stub_gguf_file(second_mmproj)
-        self._write_stub_gguf_file(first_mmproj)
-
-        prior_dir = self._set_extra_models_dir(extra_dir)
-        try:
-            models_response = requests.get(
-                f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
-            )
-            self.assertEqual(models_response.status_code, 200)
-            models_by_id = {
-                model["id"]: model for model in models_response.json()["data"]
-            }
-
-            self.assertIn(folder_name, models_by_id)
+        folder = "Vision-Model-GGUF"
+        with self._extra_models_dir(
+            ggufs=[
+                f"{folder}/Vision-Model-Q4_K_M.gguf",
+                f"{folder}/mmproj-z-Vision-Model.gguf",
+                f"{folder}/mmproj-a-Vision-Model.gguf",
+            ]
+        ) as extra_dir:
+            self.assertExtraModelsListed(extra_dir, {folder: f"{folder}/"})
             self.assertEqual(
-                models_by_id[folder_name]["checkpoints"]["mmproj"],
-                os.path.basename(first_mmproj),
+                self._listed_models()[folder]["checkpoints"]["mmproj"],
+                "mmproj-a-Vision-Model.gguf",
             )
 
             print("[OK] extra folder with multiple mmproj files chooses first name")
-        finally:
-            self._set_extra_models_dir(prior_dir)
-            shutil.rmtree(extra_dir, ignore_errors=True)
 
     def test_021y_extra_identical_filenames_in_two_folders_stay_distinct(self):
         """Two folders holding the same variant filenames keep every model."""
-        extra_dir = tempfile.mkdtemp(prefix="lemon_extra_collision_")
-        expected = []
-        for folder in ("Llama-Local-GGUF", "Mistral-Local-GGUF"):
-            for name in ("model-Q4_K_M.gguf", "model-Q8_0.gguf"):
-                path = os.path.join(extra_dir, folder, name)
-                self._write_stub_gguf_file(path)
-                expected.append(path)
-
-        prior_dir = self._set_extra_models_dir(extra_dir)
-        try:
-            models_response = requests.get(
-                f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
+        with self._extra_models_dir(
+            ggufs=[
+                "Llama-Local-GGUF/model-Q4_K_M.gguf",
+                "Llama-Local-GGUF/model-Q8_0.gguf",
+                "Mistral-Local-GGUF/model-Q4_K_M.gguf",
+                "Mistral-Local-GGUF/model-Q8_0.gguf",
+            ]
+        ) as extra_dir:
+            # The alphabetically later folder is qualified with its own folder name.
+            self.assertExtraModelsListed(
+                extra_dir,
+                {
+                    "model-Q4_K_M": "Llama-Local-GGUF/model-Q4_K_M.gguf",
+                    "model-Q8_0": "Llama-Local-GGUF/model-Q8_0.gguf",
+                    "Mistral-Local-GGUF-model-Q4_K_M": "Mistral-Local-GGUF/model-Q4_K_M.gguf",
+                    "Mistral-Local-GGUF-model-Q8_0": "Mistral-Local-GGUF/model-Q8_0.gguf",
+                },
             )
-            self.assertEqual(models_response.status_code, 200)
-            found = {
-                model["id"]: model["checkpoint"]
-                for model in models_response.json()["data"]
-                if model.get("checkpoint") in expected
-            }
-
-            # Four files, four models: no folder may overwrite another's entry.
-            self.assertEqual(
-                len(found), len(expected), f"expected 4 models, got {found}"
-            )
-            self.assertEqual(sorted(found.values()), sorted(expected))
 
             print("[OK] identical filenames in two extra folders stay distinct")
-        finally:
-            self._set_extra_models_dir(prior_dir)
-            shutil.rmtree(extra_dir, ignore_errors=True)
 
     def test_021ya_extra_same_quant_non_shard_files_remain_separate(self):
         """An -imatrix file beside the plain one is a second model, not a shard."""
-        extra_dir = tempfile.mkdtemp(prefix="lemon_extra_imatrix_")
-        model_dir = os.path.join(extra_dir, "Local-Imatrix-GGUF")
-        plain = os.path.join(model_dir, "Model-Q4_K_M.gguf")
-        imatrix = os.path.join(model_dir, "Model-Q4_K_M-imatrix.gguf")
-        self._write_stub_gguf_file(plain)
-        self._write_stub_gguf_file(imatrix)
-
-        prior_dir = self._set_extra_models_dir(extra_dir)
-        try:
-            models_response = requests.get(
-                f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
-            )
-            self.assertEqual(models_response.status_code, 200)
-            models_by_id = {
-                model["id"]: model for model in models_response.json()["data"]
-            }
-
+        with self._extra_models_dir(
+            ggufs=[
+                "Local-Imatrix-GGUF/Model-Q4_K_M.gguf",
+                "Local-Imatrix-GGUF/Model-Q4_K_M-imatrix.gguf",
+            ]
+        ) as extra_dir:
             # Sharing a quant token is not enough to make them one sharded model.
-            self.assertIn("Model-Q4_K_M", models_by_id)
-            self.assertIn("Model-Q4_K_M-imatrix", models_by_id)
-            self.assertEqual(models_by_id["Model-Q4_K_M"]["checkpoint"], plain)
-            self.assertEqual(
-                models_by_id["Model-Q4_K_M-imatrix"]["checkpoint"], imatrix
+            self.assertExtraModelsListed(
+                extra_dir,
+                {
+                    "Model-Q4_K_M": "Local-Imatrix-GGUF/Model-Q4_K_M.gguf",
+                    "Model-Q4_K_M-imatrix": "Local-Imatrix-GGUF/Model-Q4_K_M-imatrix.gguf",
+                },
             )
 
             print("[OK] same-quant non-shard files remain separate models")
+
+    def test_021yf_extra_root_shards_are_one_model(self):
+        """Shard files at the search root are one model, as they are in a folder."""
+        with self._extra_models_dir(
+            ggufs=[
+                "Big-Q4_K_M-00001-of-00002.gguf",
+                "Big-Q4_K_M-00002-of-00002.gguf",
+                "Small-Q8_0.gguf",
+            ]
+        ) as extra_dir:
+            self.assertExtraModelsListed(
+                extra_dir,
+                {
+                    "Big-Q4_K_M": "Big-Q4_K_M-00001-of-00002.gguf",
+                    "Small-Q8_0": "Small-Q8_0.gguf",
+                },
+            )
+
+            print("[OK] root shard files are one model")
+
+    def test_021yg_extra_shared_folder_name_has_one_owner(self):
+        """When several folders share a name, the first one found owns that name
+        in both its bare and extra. forms."""
+        with self._extra_models_dir(
+            ggufs=[
+                f"{publisher}/Qwen3-8B-GGUF/{name}"
+                for publisher in ("bartowski", "lmstudio-community", "unsloth")
+                for name in ("Qwen3-8B-Q4_K_M.gguf", "Qwen3-8B-Q8_0.gguf")
+            ]
+        ) as extra_dir:
+            for requested in ("Qwen3-8B-GGUF", "extra.Qwen3-8B-GGUF"):
+                self.assertEqual(
+                    self._get_model(requested)["checkpoint"],
+                    os.path.join(
+                        extra_dir, "bartowski", "Qwen3-8B-GGUF", "Qwen3-8B-Q4_K_M.gguf"
+                    ),
+                    f"{requested} must resolve to the first folder found",
+                )
+
+            print("[OK] a shared folder name has one owner")
+
+    def test_021ygb_extra_shared_folder_name_qualifies_a_later_single_model(self):
+        """A later single-model folder whose name an earlier folder owns is
+        qualified with the folder that contains it, and the earlier folder
+        keeps the name."""
+        with self._extra_models_dir(
+            ggufs=[
+                "alpha/Shared/Llama-Q4_K_M.gguf",
+                "alpha/Shared/Llama-Q8_0.gguf",
+                "beta/Shared/Mistral-Q4_K_M.gguf",
+            ]
+        ) as extra_dir:
+            self.assertExtraModelsListed(
+                extra_dir,
+                {
+                    "Llama-Q4_K_M": "alpha/Shared/Llama-Q4_K_M.gguf",
+                    "Llama-Q8_0": "alpha/Shared/Llama-Q8_0.gguf",
+                    "beta-Shared": "beta/Shared/",
+                },
+            )
+            for requested in ("Shared", "extra.Shared"):
+                self.assertEqual(
+                    self._get_model(requested)["checkpoint"],
+                    os.path.join(extra_dir, "alpha", "Shared", "Llama-Q4_K_M.gguf"),
+                    f"{requested} must resolve to the first folder found",
+                )
+
+            print("[OK] a later single-model folder is qualified")
+
+    def test_021yb_extra_hf_cache_is_named_after_its_repo(self):
+        """Naming rule: a model in a Hugging Face or ModelScope cache is named
+        after its repo, not after the commit folder it sits in."""
+        hf = "models--lemontest--Hf-7B-GGUF"
+        ms = "modelscope--models--lemontest--Ms-3B-GGUF"
+        with self._extra_models_dir(
+            ggufs=[
+                f"{hf}/snapshots/commit-1-old/Hf-7B-Q4_K_M.gguf",
+                f"{hf}/snapshots/commit-2-live/Hf-7B-Q4_K_M.gguf",
+                f"{ms}/snapshots/commit-live/Ms-3B-Q4_K_M.gguf",
+            ],
+            refs={hf: "commit-2-live", ms: "commit-live"},
+        ) as extra_dir:
+            self.assertExtraModelsListed(
+                extra_dir,
+                {
+                    "Hf-7B-GGUF": f"{hf}/snapshots/commit-2-live/",
+                    "Ms-3B-GGUF": f"{ms}/snapshots/commit-live/",
+                    # An older revision left in the cache is prefixed with its commit.
+                    "commit-1-old-Hf-7B-GGUF": f"{hf}/snapshots/commit-1-old/",
+                },
+            )
+
+            legacy = requests.get(
+                f"{self.base_url}/models/commit-2-live", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(legacy.status_code, 404, "commit folder must not resolve")
+
+            print("[OK] cache folders are named after their repo")
+
+    def test_021yc_extra_hf_cache_collision_qualifies_with_the_org(self):
+        """Naming rule: two orgs shipping one repo name both stay readable,
+        because the second is qualified with its org rather than its commit."""
+        first = "alpha-commit"
+        second = "beta-commit"
+        with self._extra_models_dir(
+            ggufs=[
+                f"models--alpha--Collide-7B-GGUF/snapshots/{first}/Collide-7B-Q4_K_M.gguf",
+                f"models--beta--Collide-7B-GGUF/snapshots/{second}/Collide-7B-Q4_K_M.gguf",
+            ],
+            refs={
+                "models--alpha--Collide-7B-GGUF": first,
+                "models--beta--Collide-7B-GGUF": second,
+            },
+        ) as extra_dir:
+            # Caches sort by directory, so alpha claims the bare name and beta
+            # is qualified with its org, not its commit.
+            self.assertExtraModelsListed(
+                extra_dir,
+                {
+                    "Collide-7B-GGUF": f"models--alpha--Collide-7B-GGUF/snapshots/{first}/",
+                    "beta-Collide-7B-GGUF": f"models--beta--Collide-7B-GGUF/snapshots/{second}/",
+                },
+            )
+
+            print("[OK] a cache collision is qualified with the org")
+
+    def test_021yd_extra_hf_cache_subfolder_takes_the_repo_name(self):
+        """Naming rule: a cache whose GGUFs sit in quantization subfolders names
+        them <repo>-<folder>, and the subfolder name is not kept as a name."""
+        commit = "commit-live"
+        snapshot = f"models--lemontest--Subfolder-235B-GGUF/snapshots/{commit}"
+        with self._extra_models_dir(
+            ggufs=[
+                f"{snapshot}/Q4_K_M/Subfolder-235B-Q4_K_M-00001-of-00002.gguf",
+                f"{snapshot}/Q4_K_M/Subfolder-235B-Q4_K_M-00002-of-00002.gguf",
+                f"{snapshot}/Q8_0/Subfolder-235B-Q8_0.gguf",
+            ],
+            refs={"models--lemontest--Subfolder-235B-GGUF": commit},
+        ) as extra_dir:
+            self.assertExtraModelsListed(
+                extra_dir,
+                {
+                    "Subfolder-235B-GGUF-Q4_K_M": f"{snapshot}/Q4_K_M/",
+                    "Subfolder-235B-GGUF-Q8_0": f"{snapshot}/Q8_0/",
+                },
+            )
+
+            # A bare Q8_0 would collide with every other repo shipping that folder.
+            legacy = requests.get(
+                f"{self.base_url}/models/Q8_0", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(legacy.status_code, 404, "Q8_0 must not resolve")
+
+            print("[OK] cache subfolders carry the repo name")
+
+    def test_021ye_extra_hf_cache_live_revision_owns_the_plain_names(self):
+        """Naming rule: names follow the revision refs/main points at, whatever
+        order the revisions are discovered in."""
+        superseded = "commit-1-old"
+        live = "commit-2-live"
+        repo = "models--lemontest--Revision-7B-GGUF"
+        snapshots = f"{repo}/snapshots"
+        with self._extra_models_dir(
+            ggufs=[
+                f"{snapshots}/{commit}/Revision-7B-{quant}.gguf"
+                for commit in (superseded, live)
+                for quant in ("Q4_K_M", "Q8_0")
+            ],
+            refs={repo: live},
+        ) as extra_dir:
+            # The superseded revision sorts first, so this fails if discovery
+            # order decides the winner instead of refs/main.
+            self.assertExtraModelsListed(
+                extra_dir,
+                {
+                    "Revision-7B-Q4_K_M": f"{snapshots}/{live}/Revision-7B-Q4_K_M.gguf",
+                    "Revision-7B-Q8_0": f"{snapshots}/{live}/Revision-7B-Q8_0.gguf",
+                    f"{superseded}-Revision-7B-Q4_K_M": f"{snapshots}/{superseded}/Revision-7B-Q4_K_M.gguf",
+                    f"{superseded}-Revision-7B-Q8_0": f"{snapshots}/{superseded}/Revision-7B-Q8_0.gguf",
+                },
+            )
+
+            print("[OK] the live cache revision owns the plain names")
+
+    def test_021yh_extra_cache_lookalikes_keep_folder_naming(self):
+        """Naming rule: cache naming needs a real cache with a live revision;
+        anything that only resembles one is named like any other folder."""
+        with self._extra_models_dir(
+            ggufs=[
+                # Named like a cache, but has no snapshots/ inside.
+                "models--lemontest--Plain-GGUF/model.gguf",
+                # Has a snapshots/ folder, but is not inside a cache.
+                "projects/snapshots/v1/model.gguf",
+                # A cache whose refs/main names a revision that is not on disk,
+                # so there is no live revision to name the model after.
+                "models--lemontest--Broken-GGUF/snapshots/commit-on-disk/model.gguf",
+            ],
+            refs={"models--lemontest--Broken-GGUF": "commit-not-on-disk"},
+        ) as extra_dir:
+            self.assertExtraModelsListed(
+                extra_dir,
+                {
+                    "models--lemontest--Plain-GGUF": "models--lemontest--Plain-GGUF/",
+                    "v1": "projects/snapshots/v1/",
+                    "commit-on-disk": "models--lemontest--Broken-GGUF/snapshots/commit-on-disk/",
+                },
+            )
+
+            print("[OK] cache lookalikes keep folder naming")
+
+    def test_021yi_extra_hf_cache_follows_a_refs_main_switch(self):
+        """Switching refs/main on a running server moves the repo name to the
+        new revision without resetting extra_models_dir."""
+        repo = "models--lemontest--Switch-7B-GGUF"
+        snapshots = f"{repo}/snapshots"
+        with self._extra_models_dir(
+            ggufs=[
+                f"{snapshots}/{commit}/Switch-7B-Q4_K_M.gguf"
+                for commit in ("commit-1", "commit-2")
+            ],
+            refs={repo: "commit-1"},
+        ) as extra_dir:
+            self.assertExtraModelsListed(
+                extra_dir,
+                {
+                    "Switch-7B-GGUF": f"{snapshots}/commit-1/",
+                    "commit-2-Switch-7B-GGUF": f"{snapshots}/commit-2/",
+                },
+            )
+
+            # Written the way llama.cpp updates a ref: a temp file renamed over it.
+            refs_main = os.path.join(extra_dir, repo, "refs", "main")
+            with open(refs_main + ".tmp", "w") as f:
+                f.write("commit-2")
+            os.replace(refs_main + ".tmp", refs_main)
+
+            live = os.path.join(extra_dir, *snapshots.split("/"), "commit-2")
+            deadline = time.time() + 10
+            while (
+                self._get_model("Switch-7B-GGUF")["checkpoint"] != live
+                and time.time() < deadline
+            ):
+                time.sleep(0.25)
+
+            self.assertExtraModelsListed(
+                extra_dir,
+                {
+                    "Switch-7B-GGUF": f"{snapshots}/commit-2/",
+                    "commit-1-Switch-7B-GGUF": f"{snapshots}/commit-1/",
+                },
+            )
+            self.assertEqual(self._get_model("Switch-7B-GGUF")["checkpoint"], live)
+
+            print("[OK] the repo name follows a refs/main switch")
+
+    def test_021yj_extra_cache_keeps_registered_identity(self):
+        """Relocating a complete registered cache must not turn it into extra.*."""
+        candidates = [
+            (
+                "LFM2.5-8B-A1B",
+                "LiquidAI",
+                "LFM2.5-8B-A1B-GGUF",
+                "LFM2.5-8B-A1B-Q4_K_M.gguf",
+            ),
+            (
+                "MiniCPM5-1B-GGUF",
+                "OpenBMB",
+                "MiniCPM5-1B-GGUF",
+                "MiniCPM5-1B-Q4_K_M.gguf",
+            ),
+            ("Jan-v1-4B-GGUF", "janhq", "Jan-v1-4B-GGUF", "Jan-v1-4B-Q4_K_M.gguf"),
+        ]
+        models = self._listed_models()
+        chosen = next(
+            (
+                entry
+                for entry in candidates
+                if entry[0] in models and not models[entry[0]].get("downloaded")
+            ),
+            None,
+        )
+        if chosen is None:
+            self.skipTest("no uninstalled registered GGUF available")
+
+        name, org, repo_name, filename = chosen
+        repo = f"models--{org}--{repo_name}"
+        rel = f"{repo}/snapshots/test-active/{filename}"
+        checkpoint = self._get_model(name)["checkpoint"]
+        with self._extra_models_dir(
+            ggufs=[rel], refs={repo: "test-active"}
+        ) as extra_dir:
+            info = self._get_model(name)
+            self.assertEqual(info["checkpoint"], checkpoint)
+            self.assertTrue(info["downloaded"], f"registered model missing: {info}")
+            self.assertNotEqual(info.get("source"), "extra_models_dir")
+            self.assertExtraModelsListed(extra_dir, {})
+
+            # A registered alias must not allow deletion of external files.
+            response = requests.post(
+                f"{self.base_url}/delete",
+                json={"model_name": name},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertNotEqual(response.status_code, 200)
+            self.assertTrue(os.path.exists(os.path.join(extra_dir, *rel.split("/"))))
+
+    def test_021yk_extra_cache_draft_files_are_not_main_models(self):
+        """MTP/DFlash companions do not create duplicate standalone entries."""
+        repo = "models--lemontest--Draft-7B-GGUF"
+        snap = f"{repo}/snapshots/test-active"
+        with self._extra_models_dir(
+            ggufs=[
+                f"{snap}/Draft-7B-Q4_K_M.gguf",
+                f"{snap}/Draft-7B-Q8_0.gguf",
+                f"{snap}/MTP-Draft-7B-Q4_K_M.gguf",
+                f"{snap}/DFlash.gguf",
+                f"{snap}/Qwen3.8-Flash-Next-MTP-UD-Q3_K_XL.gguf",
+                "standalone/MTP-Orphan.gguf",
+            ],
+            refs={repo: "test-active"},
+        ) as extra_dir:
+            self.assertExtraModelsListed(
+                extra_dir,
+                {
+                    "Draft-7B-Q4_K_M": f"{snap}/Draft-7B-Q4_K_M.gguf",
+                    "Draft-7B-Q8_0": f"{snap}/Draft-7B-Q8_0.gguf",
+                },
+            )
+
+    def test_021yl_extra_cache_restores_multifile_image_model(self):
+        """Non-GGUF catalog models keep their recipes after cache relocation."""
+        name = "Krea-2-Turbo"
+        models = self._listed_models()
+        if name not in models or models[name].get("downloaded"):
+            self.skipTest("Krea-2-Turbo unavailable or already in managed cache")
+        repo = "models--Comfy-Org--Krea-2"
+        snap = f"{repo}/snapshots/test-active"
+        files = [
+            f"{snap}/diffusion_models/krea2_turbo_bf16.safetensors",
+            f"{snap}/text_encoders/qwen3vl_4b_bf16.safetensors",
+            f"{snap}/vae/qwen_image_vae.safetensors",
+        ]
+        with self._extra_models_dir(
+            other_files=files, refs={repo: "test-active"}
+        ) as extra_dir:
+            info = self._get_model(name)
+            self.assertEqual(info["recipe"], "thenoise")
+            self.assertTrue(info["downloaded"], f"moved Krea files not found: {info}")
+            self.assertNotEqual(info.get("source"), "extra_models_dir")
+
+    def test_021ylb_incomplete_auxiliary_keeps_single_gguf(self):
+        """Missing companion must not hide an otherwise usable external GGUF."""
+        suffix = uuid.uuid4().hex[:8]
+        repo_name = f"MissingAux-{suffix}-GGUF"
+        repo = f"models--lemon-test--{repo_name}"
+        snap = f"{repo}/snapshots/active"
+        main_file = "Model-Q4_K_M.gguf"
+        mmproj_file = "mmproj-F16.gguf"
+        name = f"user.MissingAux-{suffix}"
+        response = requests.post(
+            f"{self.base_url}/models/register",
+            json={
+                "model_name": name,
+                "recipe": "llamacpp",
+                "checkpoints": {
+                    "main": f"lemon-test/{repo_name}:{main_file}",
+                    "mmproj": f"lemon-test/{repo_name}:{mmproj_file}",
+                },
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        try:
+            with self._extra_models_dir(
+                ggufs=[f"{snap}/{main_file}"], refs={repo: "active"}
+            ) as extra_dir:
+                self.assertFalse(self._get_model(name)["downloaded"])
+                self.assertExtraModelsListed(extra_dir, {repo_name: f"{snap}/"})
+                extra = self._get_model(repo_name)
+                self.assertTrue(extra["downloaded"])
+                self.assertEqual(extra["recipe"], "llamacpp")
+
+            # When the companion is present, the registered model owns both files.
+            with self._extra_models_dir(
+                ggufs=[f"{snap}/{main_file}", f"{snap}/{mmproj_file}"],
+                refs={repo: "active"},
+            ) as extra_dir:
+                self.assertTrue(self._get_model(name)["downloaded"])
+                self.assertExtraModelsListed(extra_dir, {})
         finally:
-            self._set_extra_models_dir(prior_dir)
-            shutil.rmtree(extra_dir, ignore_errors=True)
+            response = requests.post(
+                f"{self.base_url}/delete",
+                json={"model_name": name},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+
+    def test_021ylc_incomplete_flux_gguf_stays_visible(self):
+        """A FLUX image registration without its encoder must not claim its GGUF."""
+        name = "Flux-2-Klein-9B-GGUF"
+        catalog = self._listed_models()
+        if name not in catalog or catalog[name]["downloaded"]:
+            self.skipTest("FLUX image recipe unavailable or installed in managed cache")
+
+        repo = "models--unsloth--FLUX.2-klein-9B-GGUF"
+        snap = f"{repo}/snapshots/active"
+        main_file = "flux-2-klein-9b-Q8_0.gguf"
+        with self._extra_models_dir(
+            ggufs=[f"{snap}/{main_file}"], refs={repo: "active"}
+        ) as extra_dir:
+            registered = self._get_model(name)
+            self.assertEqual(registered["recipe"], "sd-cpp")
+            self.assertFalse(registered["downloaded"])
+            self.assertExtraModelsListed(
+                extra_dir, {"FLUX.2-klein-9B-GGUF": f"{snap}/"}
+            )
+
+    def test_021ym_registered_shards_and_unrelated_quantization(self):
+        """Every registered shard stays out of extra.*, other variants remain."""
+        name = f"user.Shards-{uuid.uuid4().hex[:8]}"
+        repo = "models--lemon-test--Shards-GGUF"
+        snap = f"{repo}/snapshots/active"
+        first = "Shards-Q4_K_M-00001-of-00002.gguf"
+        second = "Shards-Q4_K_M-00002-of-00002.gguf"
+        response = requests.post(
+            f"{self.base_url}/models/register",
+            json={
+                "model_name": name,
+                "checkpoint": f"lemon-test/Shards-GGUF:{first}",
+                "recipe": "llamacpp",
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        try:
+            with self._extra_models_dir(
+                ggufs=[
+                    f"{snap}/{first}",
+                    f"{snap}/{second}",
+                    f"{snap}/Shards-Q8_0.gguf",
+                    f"{snap}/Shards-Q5_K_M.gguf",
+                ],
+                refs={repo: "active"},
+            ) as extra_dir:
+                self.assertTrue(self._get_model(name)["downloaded"])
+                self.assertExtraModelsListed(
+                    extra_dir,
+                    {
+                        "Shards-Q8_0": f"{snap}/Shards-Q8_0.gguf",
+                        "Shards-Q5_K_M": f"{snap}/Shards-Q5_K_M.gguf",
+                    },
+                )
+
+            # Missing shards must not create an extra.* duplicate of the
+            # registered model, while unrelated quantizations remain discoverable.
+            with self._extra_models_dir(
+                ggufs=[
+                    f"{snap}/{first}",
+                    f"{snap}/Shards-Q8_0.gguf",
+                    f"{snap}/Shards-Q5_K_M.gguf",
+                ],
+                refs={repo: "active"},
+            ) as extra_dir:
+                self.assertFalse(self._get_model(name)["downloaded"])
+                self.assertExtraModelsListed(
+                    extra_dir,
+                    {
+                        "Shards-Q8_0": f"{snap}/Shards-Q8_0.gguf",
+                        "Shards-Q5_K_M": f"{snap}/Shards-Q5_K_M.gguf",
+                    },
+                )
+
+            # Corrupting either shard must suppress the whole registered family.
+            for damaged in (first, second):
+                with self._extra_models_dir(
+                    ggufs=[
+                        f"{snap}/{first}",
+                        f"{snap}/{second}",
+                        f"{snap}/Shards-Q8_0.gguf",
+                        f"{snap}/Shards-Q5_K_M.gguf",
+                    ],
+                    gguf_sizes={f"{snap}/{damaged}": 1},
+                    refs={repo: "active"},
+                ) as extra_dir:
+                    self.assertFalse(self._get_model(name)["downloaded"])
+                    self.assertExtraModelsListed(
+                        extra_dir,
+                        {
+                            "Shards-Q8_0": f"{snap}/Shards-Q8_0.gguf",
+                            "Shards-Q5_K_M": f"{snap}/Shards-Q5_K_M.gguf",
+                        },
+                    )
+        finally:
+            # Restore the original extra directory before removing registration.
+            response = requests.post(
+                f"{self.base_url}/delete",
+                json={"model_name": name},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+
+    def test_021ymb_empty_draft_does_not_expose_main_shards(self):
+        """An invalid auxiliary role must not expose registered main shards."""
+        suffix = uuid.uuid4().hex[:8]
+        model_base = f"EarlyAux-{suffix}"
+        repo_name = f"{model_base}-GGUF"
+        repo = f"models--lemon-test--{repo_name}"
+        snap = f"{repo}/snapshots/active"
+        first = f"{model_base}-Q4_K_M-00001-of-00002.gguf"
+        second = f"{model_base}-Q4_K_M-00002-of-00002.gguf"
+        other = f"{model_base}-Q8_0.gguf"
+        unrelated = f"{model_base}-Q5_K_M.gguf"
+        name = f"user.{model_base}"
+
+        response = requests.post(
+            f"{self.base_url}/models/register",
+            json={
+                "model_name": name,
+                "recipe": "llamacpp",
+                "checkpoints": {
+                    "draft": "",
+                    "main": f"lemon-test/{repo_name}:{first}",
+                },
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        try:
+            for main_files in ([first, second], [first]):
+                with self._extra_models_dir(
+                    ggufs=[
+                        f"{snap}/{file}" for file in [*main_files, other, unrelated]
+                    ],
+                    refs={repo: "active"},
+                ) as extra_dir:
+                    self.assertFalse(self._get_model(name)["downloaded"])
+                    self.assertExtraModelsListed(
+                        extra_dir,
+                        {
+                            f"{model_base}-Q8_0": f"{snap}/{other}",
+                            f"{model_base}-Q5_K_M": f"{snap}/{unrelated}",
+                        },
+                    )
+        finally:
+            # A blank draft checkpoint makes the registration undeletable.
+            response = requests.post(
+                f"{self.base_url}/models/register",
+                json={
+                    "model_name": name,
+                    "recipe": "llamacpp",
+                    "checkpoint": f"lemon-test/{repo_name}:{first}",
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+            response = requests.post(
+                f"{self.base_url}/delete",
+                json={"model_name": name},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+
+    def test_021yn_external_ref_cannot_escape_its_repository(self):
+        """A refs/main redirect into a sibling cache may not adopt its files."""
+        name = f"user.Ref-Escape-{uuid.uuid4().hex[:8]}"
+        repo = "models--lemon-test--Ref-Escape-GGUF"
+        sibling = "models--other--Sibling-GGUF"
+        filename = "Ref-Escape-Q4_K_M.gguf"
+        response = requests.post(
+            f"{self.base_url}/models/register",
+            json={
+                "model_name": name,
+                "checkpoint": f"lemon-test/Ref-Escape-GGUF:{filename}",
+                "recipe": "llamacpp",
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        try:
+            with self._extra_models_dir(
+                ggufs=[f"{sibling}/snapshots/live/{filename}"],
+                refs={repo: f"../../{sibling}/snapshots/live"},
+            ):
+                self.assertFalse(self._get_model(name)["downloaded"])
+            with self._extra_models_dir(
+                ggufs=[f"{sibling}/snapshots/live/{filename}"],
+                other_files=[f"{repo}/snapshots/.keep"],
+                refs={repo: f"../../{sibling}/snapshots/live"},
+            ):
+                self.assertFalse(self._get_model(name)["downloaded"])
+        finally:
+            response = requests.post(
+                f"{self.base_url}/delete",
+                json={"model_name": name},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+
+    def test_021yo_delete_user_registration_with_external_weights(self):
+        """Deleting a user registration must leave its external GGUF untouched."""
+        name = f"user.External-Only-{uuid.uuid4().hex[:8]}"
+        repo = "models--lemon-test--External-Only-GGUF"
+        filename = "External-Only-Q4_K_M.gguf"
+        relative = f"{repo}/snapshots/live/{filename}"
+        response = requests.post(
+            f"{self.base_url}/models/register",
+            json={
+                "model_name": name,
+                "checkpoint": f"lemon-test/External-Only-GGUF:{filename}",
+                "recipe": "llamacpp",
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        try:
+            with self._extra_models_dir(
+                ggufs=[relative], refs={repo: "live"}
+            ) as extra_dir:
+                self.assertTrue(self._get_model(name)["downloaded"])
+                response = requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": name},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertTrue(
+                    os.path.isfile(os.path.join(extra_dir, *relative.split("/")))
+                )
+                self.assertNotIn(name.removeprefix("user."), self._listed_models())
+        finally:
+            if name.removeprefix("user.") in self._listed_models():
+                requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": name},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+
+    def test_021yp_legacy_auxiliary_in_managed_main_repo(self):
+        """Deletion must still work for an old multi-repo cache layout."""
+        # Use an isolated daemon/cache so no developer or CI model files are touched.
+        with tempfile.TemporaryDirectory(prefix="lemond_legacy_aux_") as root:
+            models_root = os.path.join(root, "models")
+            repo = "models--lemon-test--Legacy-Main-GGUF"
+            repo_dir = os.path.join(models_root, repo)
+            snapshot = os.path.join(repo_dir, "snapshots", "active")
+            os.makedirs(os.path.join(repo_dir, "refs"), exist_ok=True)
+            with open(os.path.join(repo_dir, "refs", "main"), "w") as f:
+                f.write("active")
+            main_file = "Legacy-Main-Q4_K_M.gguf"
+            mmproj_file = "mmproj-legacy.gguf"
+            self._write_stub_gguf_file(os.path.join(snapshot, main_file))
+            self._write_stub_gguf_file(os.path.join(snapshot, mmproj_file))
+
+            with _running_lemond(
+                config={"models_dir": models_root, "disable_model_filtering": True},
+                cache_prefix="lemond_legacy_layout_",
+            ) as (proc, port, headers, log_path):
+                self.assertTrue(
+                    _wait_until_healthy(proc, port, headers),
+                    f"isolated lemond did not start (log: {log_path})",
+                )
+                url = f"http://127.0.0.1:{port}/api/v1"
+                name = f"user.Legacy-Aux-{uuid.uuid4().hex[:8]}"
+                response = requests.post(
+                    f"{url}/models/register",
+                    headers=headers,
+                    json={
+                        "model_name": name,
+                        "recipe": "llamacpp",
+                        "checkpoints": {
+                            "main": f"lemon-test/Legacy-Main-GGUF:{main_file}",
+                            "mmproj": f"lemon-test/Legacy-Aux-GGUF:{mmproj_file}",
+                        },
+                    },
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                self.assertEqual(response.status_code, 200, response.text)
+                response = requests.get(
+                    f"{url}/models/{name}", headers=headers, timeout=TIMEOUT_DEFAULT
+                )
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertTrue(response.json()["downloaded"], response.text)
+                response = requests.post(
+                    f"{url}/delete",
+                    headers=headers,
+                    json={"model_name": name},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertFalse(
+                    os.path.exists(repo_dir),
+                    "managed legacy cache must be deleted, not just unregistered",
+                )
+                response = requests.get(
+                    f"{url}/models?show_all=true",
+                    headers=headers,
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertNotIn(name, [m["id"] for m in response.json()["data"]])
+
+    def test_021yq_legacy_external_auxiliary_preserves_identity(self):
+        """Relocated legacy auxiliary files keep the registration and remain user-managed."""
+        name = f"user.Legacy-Extra-{uuid.uuid4().hex[:8]}"
+        repo = "models--lemon-test--Legacy-Extra-GGUF"
+        snap = f"{repo}/snapshots/active"
+        main_file = "Legacy-Extra-Q4_K_M.gguf"
+        mmproj_file = "mmproj-legacy-extra.gguf"
+        response = requests.post(
+            f"{self.base_url}/models/register",
+            json={
+                "model_name": name,
+                "recipe": "llamacpp",
+                "checkpoints": {
+                    "main": f"lemon-test/Legacy-Extra-GGUF:{main_file}",
+                    "mmproj": f"lemon-test/Legacy-Other-GGUF:{mmproj_file}",
+                },
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        try:
+            with self._extra_models_dir(
+                ggufs=[f"{snap}/{main_file}", f"{snap}/{mmproj_file}"],
+                refs={repo: "active"},
+            ) as extra_dir:
+                info = self._get_model(name)
+                self.assertTrue(info["downloaded"], info)
+                self.assertNotEqual(info.get("source"), "extra_models_dir")
+                self.assertExtraModelsListed(extra_dir, {})
+                response = requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": name},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertTrue(
+                    os.path.isfile(os.path.join(extra_dir, *snap.split("/"), main_file))
+                )
+                self.assertTrue(
+                    os.path.isfile(
+                        os.path.join(extra_dir, *snap.split("/"), mmproj_file)
+                    )
+                )
+        finally:
+            if name.removeprefix("user.") in self._listed_models():
+                requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": name},
+                    timeout=TIMEOUT_DEFAULT,
+                )
 
     def test_021r_openai_chat_extra_models_precedence(self):
         """Regression test for #2014: OpenAI API resolves aliases to local files, shadowing built-ins."""
         # Use a built-in model name to prove precedence and alias resolution simultaneously
         bare = ENDPOINT_TEST_MODEL
-        extra_dir = tempfile.mkdtemp(prefix="lemon_extra_regression_")
-        self._write_root_stub_gguf(extra_dir, f"{bare}.gguf")
+        with self._extra_models_dir(ggufs=[f"{bare}.gguf"]) as extra_dir:
+            self.assertExtraModelsListed(extra_dir, {bare: f"{bare}.gguf"})
 
-        prior_dir = self._set_extra_models_dir(extra_dir)
-        try:
             # 500 (Failed to load) proves it resolved to our local stub instead of the real built-in.
             payload = {"model": bare, "messages": [{"role": "user", "content": "hi"}]}
             resp = requests.post(
@@ -6643,9 +7916,6 @@ class EndpointTests(ServerTestBase):
             )
 
             print(f"[OK] OpenAI API correctly resolves local shadowing for: {bare}")
-        finally:
-            self._set_extra_models_dir(prior_dir)
-            shutil.rmtree(extra_dir, ignore_errors=True)
 
     def _get_test_backend(self):
         """Get a lightweight test backend based on platform."""
@@ -6989,11 +8259,39 @@ class EndpointTests(ServerTestBase):
             )
             self.assertIsInstance(v["sharded"], bool)
             self.assertIsInstance(v["size_bytes"], int)
+            self.assertGreater(
+                v["size_bytes"],
+                0,
+                f"Variant '{v.get('name')}' has no file size metadata",
+            )
 
         print(
             f"[OK] Valid checkpoint returned {len(variants)} variant(s): "
             f"{[v['name'] for v in variants]}"
         )
+
+    @unittest.skipUnless(
+        os.environ.get("LEMONADE_INTEGRATION_TESTS") == "1",
+        "Skipped: set LEMONADE_INTEGRATION_TESTS=1 to run live HuggingFace tests",
+    )
+    def test_033_pull_variants_rejects_incompatible_gguf(self):
+        """A GGUF repository without a model architecture is not a llama.cpp model."""
+        checkpoint = "stduhpf/Krea-2-Turbo-GGUF"
+        response = requests.get(
+            f"{self.base_url}/pull/variants",
+            params={"checkpoint": checkpoint},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(
+            response.status_code,
+            400,
+            f"Expected 400 for incompatible checkpoint, got "
+            f"{response.status_code}: {response.text}",
+        )
+        error = response.json().get("error", "")
+        self.assertIn("not compatible with llama.cpp", error)
+        self.assertIn("does not declare a model architecture", error)
+        print("[OK] Incompatible GGUF checkpoint was rejected before download")
 
     def test_035_second_lemond_on_busy_port_exits_nonzero(self):
         """A second lemond on an in-use port must refuse to start and exit non-zero.
@@ -7787,6 +9085,439 @@ class EndpointTests(ServerTestBase):
                 provenance_file.write(original_provenance)
 
         print("[OK] /models/check-updates ignores stale provenance snapshots")
+
+    def test_056_models_sync_internal_security_boundary(self):
+        """Verify that model sync routes are exclusively administrative internal routes and public routes return 404."""
+        # 1. Verify GET /internal/models/sync/status returns the status JSON
+        status_url = f"http://localhost:{PORT}/internal/models/sync/status"
+        resp = requests.get(status_url, timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(
+            resp.status_code, 200, f"/internal/models/sync/status failed: {resp.text}"
+        )
+        status_json = resp.json()
+        self.assertIn("status", status_json)
+        self.assertIn("sync_id", status_json)
+        self.assertIn("completed_sync_id", status_json)
+        self.assertIn("checked_count", status_json)
+        self.assertIn("models_updated", status_json)
+        self.assertIn("terminal_error", status_json)
+
+        # 2. Verify POST /internal/models/sync dry_run returns dry_run: true
+        sync_url = f"http://localhost:{PORT}/internal/models/sync"
+        resp = requests.post(
+            sync_url,
+            json={"dry_run": True, "models": [ENDPOINT_TEST_MODEL]},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(
+            resp.status_code, 200, f"/internal/models/sync dry run failed: {resp.text}"
+        )
+        sync_json = resp.json()
+        self.assertTrue(sync_json.get("dry_run"))
+        self.assertIn("checked_count", sync_json)
+
+        # 3. Verify POST /internal/models/sync async returns 202 Accepted
+        resp = requests.post(
+            sync_url,
+            json={"async": True, "models": [ENDPOINT_TEST_MODEL]},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(
+            resp.status_code,
+            202,
+            f"/internal/models/sync async dispatch failed: {resp.text}",
+        )
+        async_json = resp.json()
+        self.assertTrue(async_json.get("async"))
+        self.assertIn("sync_id", async_json)
+
+        # 4. Verify querying status by sync_id
+        target_sync_id = async_json.get("sync_id")
+        if target_sync_id:
+            resp = requests.get(
+                f"{status_url}?sync_id={target_sync_id}", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(
+                resp.status_code,
+                200,
+                f"/internal/models/sync/status?sync_id={target_sync_id} failed: {resp.text}",
+            )
+            sync_id_json = resp.json()
+            self.assertEqual(sync_id_json.get("sync_id"), target_sync_id)
+
+        # 5. Verify public quad-prefix route /api/v1/models/sync returns 404
+        public_url = f"{self.base_url}/models/sync"
+        resp = requests.post(
+            public_url, json={"dry_run": True}, timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(
+            resp.status_code,
+            404,
+            f"public /api/v1/models/sync should not exist, got {resp.status_code}",
+        )
+
+        # 5. Verify invalid payload types return 400 Bad Request
+        resp = requests.post(
+            sync_url, json={"models": "invalid_not_array"}, timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(
+            resp.status_code,
+            400,
+            f"Expected 400 for non-array models, got {resp.status_code}",
+        )
+
+        resp = requests.post(sync_url, json={"models": [123]}, timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(
+            resp.status_code,
+            400,
+            f"Expected 400 for non-string model item, got {resp.status_code}",
+        )
+
+        resp = requests.post(
+            sync_url, json={"dry_run": "invalid_not_bool"}, timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(
+            resp.status_code,
+            400,
+            f"Expected 400 for non-bool dry_run, got {resp.status_code}",
+        )
+
+        resp = requests.post(
+            sync_url, json={"async": "invalid_not_bool"}, timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(
+            resp.status_code,
+            400,
+            f"Expected 400 for non-bool async, got {resp.status_code}",
+        )
+
+        print("[OK] /internal/models/sync security boundary is secure")
+
+    def test_057_download_rate_limit_config(self):
+        """download_rate_limit is a string cap that validates and round-trips
+        via /internal/set. Spawns its own lemond so it does not depend on an
+        externally-managed server (unlike the shared-server assumption of
+        ServerTestBase)."""
+        with _running_lemond(cache_prefix="lemond_ratecfg_") as (
+            proc,
+            port,
+            headers,
+            log_path,
+        ):
+            self.assertTrue(
+                _wait_until_healthy(proc, port, headers),
+                f"lemond never became healthy on port {port} (see {log_path})",
+            )
+
+            config_url = f"http://localhost:{port}/internal/config"
+            set_url = f"http://localhost:{port}/internal/set"
+
+            # Invalid values are rejected by config validation.
+            bad_changes = [
+                {"download_rate_limit": "10M5"},  # malformed rate string
+                {"download_rate_limit": -5},  # non-string / negative
+                {"download_rate_limit": "abc"},  # invalid rate string
+            ]
+            for body in bad_changes:
+                resp = requests.post(
+                    set_url,
+                    headers=headers,
+                    json=body,
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                self.assertEqual(
+                    resp.status_code,
+                    400,
+                    f"expected 400 for {body!r}, got {resp.status_code}: {resp.text}",
+                )
+
+            # A full round-trip persists in the config snapshot.
+            resp = requests.post(
+                set_url,
+                headers=headers,
+                json={"download_rate_limit": "10M"},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(
+                resp.status_code, 200, f"/internal/set failed: {resp.text}"
+            )
+            cfg = requests.get(
+                config_url, headers=headers, timeout=TIMEOUT_DEFAULT
+            ).json()
+            self.assertEqual(cfg["download_rate_limit"], "10M")
+
+            # A partial update preserves unrelated keys.
+            resp = requests.post(
+                set_url,
+                headers=headers,
+                json={"download_rate_limit": "20M"},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(
+                resp.status_code, 200, f"/internal/set failed: {resp.text}"
+            )
+            cfg = requests.get(
+                config_url, headers=headers, timeout=TIMEOUT_DEFAULT
+            ).json()
+            self.assertEqual(cfg["download_rate_limit"], "20M")
+
+            # Clearing the cap means runtime unlimited.
+            resp = requests.post(
+                set_url,
+                headers=headers,
+                json={"download_rate_limit": ""},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(
+                resp.status_code, 200, f"/internal/set failed: {resp.text}"
+            )
+            cfg = requests.get(
+                config_url, headers=headers, timeout=TIMEOUT_DEFAULT
+            ).json()
+            self.assertEqual(cfg["download_rate_limit"], "")
+
+            print(
+                "[OK] download_rate_limit validates and round-trips via /internal/set"
+            )
+
+    def test_058_download_rate_limit_invalid_config_startup(self):
+        """An invalid download_rate_limit in config.json must not crash
+        lemond: the raw value is preserved in the snapshot and the server stays
+        healthy (invalid caps are treated as unlimited)."""
+        with _running_lemond(
+            config={"download_rate_limit": "-1"},
+            cache_prefix="lemond_badcfg_",
+        ) as (proc, port, headers, log_path):
+            if not _wait_until_healthy(proc, port, headers):
+                with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+                    log = f.read()
+                self.fail(
+                    f"lemond with invalid download_rate_limit crashed or never "
+                    f"became healthy on port {port}.\n=== lemond log ===\n{log}"
+                )
+
+            cfg = requests.get(
+                f"http://localhost:{port}/internal/config",
+                headers=headers,
+                timeout=TIMEOUT_DEFAULT,
+            ).json()
+            # The raw value is preserved verbatim in the config snapshot.
+            self.assertEqual(cfg.get("download_rate_limit"), "-1")
+
+            print(
+                "[OK] lemond stays healthy with an invalid download_rate_limit "
+                "in config.json"
+            )
+
+    def test_059_download_rate_limit_runtime_effect(self):
+        """Changing download_rate_limit via /internal/set must actually apply
+        the cap to HttpClient at runtime: the side-effect log line records the
+        newly active byte rate, clearing it disables capping, and the last
+        value is persisted to config.json."""
+        with _running_lemond(
+            config={"download_rate_limit": "10M"},
+            cache_prefix="lemond_ratecfg_",
+        ) as (proc, port, headers, log_path):
+            config_path = os.path.join(os.path.dirname(log_path), "config.json")
+            self.assertTrue(
+                _wait_until_healthy(proc, port, headers),
+                f"lemond never became healthy on port {port} (see {log_path})",
+            )
+
+            config_url = f"http://localhost:{port}/internal/config"
+            set_url = f"http://localhost:{port}/internal/set"
+
+            def _wait_for_log(needle, timeout_s=10.0):
+                deadline = time.time() + timeout_s
+                while time.time() < deadline:
+                    with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+                        if needle in f.read():
+                            return True
+                    time.sleep(0.2)
+                return False
+
+            cfg = requests.get(
+                config_url, headers=headers, timeout=TIMEOUT_DEFAULT
+            ).json()
+            self.assertEqual(cfg.get("download_rate_limit"), "10M")
+
+            # Raising the cap takes effect immediately and is logged.
+            resp = requests.post(
+                set_url,
+                headers=headers,
+                json={"download_rate_limit": "50M"},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(resp.status_code, 200, resp.text)
+            self.assertTrue(
+                _wait_for_log("Download rate limit enabled at 52428800 B/s"),
+                "runtime cap change was not applied to HttpClient",
+            )
+
+            # Clearing the cap disables limiting at runtime too.
+            resp = requests.post(
+                set_url,
+                headers=headers,
+                json={"download_rate_limit": ""},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(resp.status_code, 200, resp.text)
+            self.assertTrue(
+                _wait_for_log("Download rate limit disabled"),
+                "clearing the cap did not disable runtime limiting",
+            )
+
+            # The persistent channel wrote the final value; "" equals the
+            # default, so the key may be pruned from disk.
+            with open(config_path, "r", encoding="utf-8") as f:
+                self.assertEqual(json.load(f).get("download_rate_limit", ""), "")
+
+            cfg = requests.get(
+                config_url, headers=headers, timeout=TIMEOUT_DEFAULT
+            ).json()
+            self.assertEqual(cfg.get("download_rate_limit"), "")
+
+            print(
+                "[OK] /internal/set applies download_rate_limit at runtime "
+                "and persists it"
+            )
+
+    def test_060_docs_index(self):
+        """GET /docs returns an index of the bundled documentation (#1700)."""
+        response = requests.get(f"{self.base_url}/docs", timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("application/json", response.headers.get("Content-Type", ""))
+
+        body = response.json()
+        self.assertIn("version", body)
+        self.assertEqual(body["format"], "text/markdown")
+        self.assertGreater(len(body["docs"]), 0)
+
+        for entry in body["docs"]:
+            for field in ("id", "title", "url", "bytes"):
+                self.assertIn(field, entry)
+
+        ids = [entry["id"] for entry in body["docs"]]
+        self.assertIn("api/lemonade", ids)
+        self.assertEqual(ids, sorted(ids))
+
+    def test_061_docs_index_quad_prefix(self):
+        """The index is served on all four prefixes and echoes the one used."""
+        prefixes = ["/api/v0", "/api/v1", "/v0", "/v1"]
+        id_sets = []
+        for prefix in prefixes:
+            response = requests.get(
+                f"http://localhost:{PORT}{prefix}/docs", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(
+                response.status_code, 200, f"{prefix}/docs did not return 200"
+            )
+            body = response.json()
+            for entry in body["docs"]:
+                self.assertEqual(
+                    entry["url"],
+                    f"{prefix}/docs/{entry['id']}",
+                    f"{prefix}/docs returned a url for another prefix",
+                )
+            id_sets.append(sorted(entry["id"] for entry in body["docs"]))
+
+        for ids in id_sets[1:]:
+            self.assertEqual(ids, id_sets[0], "docs index differs between prefixes")
+
+    def test_062_docs_pages_are_fetchable(self):
+        """Every url the index advertises serves that document as markdown."""
+        index = requests.get(f"{self.base_url}/docs", timeout=TIMEOUT_DEFAULT).json()
+
+        for entry in index["docs"]:
+            response = requests.get(
+                f"http://localhost:{PORT}{entry['url']}", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(
+                response.status_code, 200, f"{entry['url']} did not return 200"
+            )
+            self.assertIn("text/markdown", response.headers.get("Content-Type", ""))
+            self.assertGreater(len(response.text), 0)
+
+        lemonade = requests.get(
+            f"{self.base_url}/docs/api/lemonade", timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(lemonade.status_code, 200)
+        self.assertIn("# Lemonade API", lemonade.text)
+
+    def test_063_docs_page_not_found(self):
+        """Unknown documents and path traversal both 404 rather than leaking files.
+
+        Traversal is percent-encoded because HTTP clients resolve a literal ".."
+        before sending, which would never reach the server's guard.
+        """
+        for path in (
+            "/docs/api/does-not-exist",
+            "/docs/%2e%2e/%2e%2e/CMakeLists.txt",
+            "/docs/api/%2e%2e/%2e%2e/%2e%2e/CMakeLists.txt",
+        ):
+            response = requests.get(f"{self.base_url}{path}", timeout=TIMEOUT_DEFAULT)
+            self.assertEqual(response.status_code, 404, f"{path} was not rejected")
+
+    def test_064_docs_endpoint_rejects_post(self):
+        """POST /docs is not a defined route, consistent with other GET-only endpoints."""
+        response = requests.post(f"{self.base_url}/docs", timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(response.status_code, 404)
+
+    def test_065_unversioned_docs_returns_404_and_not_spa(self):
+        """GET /docs and /docs/ return 404; with web-app resources present, /docs-example falls through to SPA."""
+        server_origin = f"http://localhost:{PORT}"
+
+        # 1. Unconditional /docs subtree rejection
+        for path in ["/docs", "/docs/", "/docs/api/lemonade"]:
+            res = requests.get(f"{server_origin}{path}", timeout=TIMEOUT_DEFAULT)
+            self.assertEqual(res.status_code, 404, f"{path} did not return 404")
+            self.assertIn("application/json", res.headers.get("Content-Type", ""))
+            self.assertIn("For API documentation, use /v1/docs", res.text)
+
+        # 2. Determine web-app availability independently to test SPA fallback
+        root_res = requests.get(f"{server_origin}/", timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(root_res.status_code, 200)
+        self.assertIn("text/html", root_res.headers.get("Content-Type", ""))
+        has_web_app = (
+            "window.api" in root_res.text or '<div id="root">' in root_res.text
+        )
+
+        spa_res = requests.get(f"{server_origin}/docs-example", timeout=TIMEOUT_DEFAULT)
+        if has_web_app:
+            self.assertEqual(
+                spa_res.status_code, 200, "/docs-example failed to reach SPA fallback"
+            )
+            self.assertIn("text/html", spa_res.headers.get("Content-Type", ""))
+        else:
+            self.assertEqual(
+                spa_res.status_code,
+                404,
+                "/docs-example returned unexpected status without web app",
+            )
+
+    def test_066_backend_bin_and_args_keys_must_name_a_real_variant(self):
+        """/internal/set rejects *_bin / *_args keys that name no backend variant."""
+        config_url = f"http://localhost:{PORT}/internal/config"
+        set_url = f"http://localhost:{PORT}/internal/set"
+
+        for key in ("flm_bin", "foo_args"):
+            bad = requests.post(
+                set_url, json={"flm": {key: "builtin"}}, timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(bad.status_code, 400, bad.text)
+            self.assertIn(f"Unknown key: 'flm.{key}'", bad.text)
+
+        config = requests.get(config_url, timeout=TIMEOUT_DEFAULT).json()
+        self.assertNotIn("flm_bin", config.get("flm", {}))
+        self.assertNotIn("foo_args", config.get("flm", {}))
+
+        prior = config.get("llamacpp", {}).get("vulkan_bin", "builtin")
+        resp = requests.post(
+            set_url,
+            json={"llamacpp": {"vulkan_bin": prior}},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(resp.status_code, 200, f"/internal/set failed: {resp.text}")
 
 
 if __name__ == "__main__":

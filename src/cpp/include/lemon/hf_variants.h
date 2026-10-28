@@ -8,6 +8,11 @@
 
 namespace lemon {
 
+namespace models {
+class ArtifactSourceResolver;
+}  // namespace models
+
+
 // Single GGUF variant detected in a remote model registry repository.
 struct GgufVariant {
     // Display label and selector. Callers pull `checkpoint:name`, so this must
@@ -18,6 +23,9 @@ struct GgufVariant {
     // how `name` was disambiguated. Empty when no quant could be recognized.
     std::string quant;
     std::string primary_file;  // First file (lexicographic) representing this variant.
+    // Repository-relative speculative draft companion selected for this main variant.
+    // Empty when no single draft mechanism can be selected safely.
+    std::string draft_file;
     std::vector<std::string> files;  // All files belonging to this variant.
     bool sharded = false;
     uint64_t size_bytes = 0;   // Sum of file sizes (0 if unknown).
@@ -30,6 +38,8 @@ struct GgufVariantSet {
     std::vector<std::string> draft_files;   // Bare filenames of recognized draft GGUF companions.
 };
 
+std::string gguf_quant_token(const std::string& name);
+
 // Enumerate GGUF variants from a normalized repository file list.
 //
 // `repo_files` is the normalized path list returned by the selected registry. `file_sizes` is an optional map (rfilename -> size in bytes) used to
@@ -41,18 +51,24 @@ GgufVariantSet enumerate_gguf_variants(
     const std::vector<std::string>& repo_files,
     const std::vector<std::pair<std::string, uint64_t>>& file_sizes = {});
 
+std::string llamacpp_gguf_incompatibility(
+    const nlohmann::json& repository_metadata,
+    const std::string& registry_source);
+
 // Build the JSON response body for GET /api/v{0,1}/pull/variants.
 //
 // Queries the selected registry, runs `enumerate_gguf_variants`,
 // derives suggested labels from the repo id, and returns the response JSON.
 // Throws std::runtime_error on transport failure; sets `not_found` true if
 // the registry reports a missing/inaccessible repo so the caller can return HTTP 404.
-nlohmann::json fetch_pull_variants(const std::string& checkpoint,
+nlohmann::json fetch_pull_variants(const models::ArtifactSourceResolver& resolver,
+                                   const std::string& checkpoint,
                                    const std::string& registry_source,
                                    bool& not_found);
 
-inline nlohmann::json fetch_pull_variants(const std::string& checkpoint, bool& not_found) {
-    return fetch_pull_variants(checkpoint, "huggingface", not_found);
+inline nlohmann::json fetch_pull_variants(const models::ArtifactSourceResolver& resolver,
+                                          const std::string& checkpoint, bool& not_found) {
+    return fetch_pull_variants(resolver, checkpoint, "huggingface", not_found);
 }
 
 }  // namespace lemon
