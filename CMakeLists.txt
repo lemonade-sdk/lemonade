@@ -1273,6 +1273,16 @@ if(BUILD_TESTING AND EXISTS "${VLLM_ARG_RESOLVER_TEST_SOURCE}")
     add_cpp_ci_test(vllm_arg_resolver CI ON COMMAND test_vllm_arg_resolver)
 endif()
 
+set(AMICA_BUNDLE_TEST_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_amica_bundle.cpp")
+if(BUILD_TESTING AND EXISTS "${AMICA_BUNDLE_TEST_SOURCE}")
+    add_executable(test_amica_bundle
+        ${AMICA_BUNDLE_TEST_SOURCE}
+        src/cpp/server/backends/amica/amica_bundle.cpp
+    )
+    target_link_libraries(test_amica_bundle PRIVATE nlohmann_json::nlohmann_json)
+    add_cpp_ci_test(amica_bundle CI ON COMMAND test_amica_bundle)
+endif()
+
 set(LLAMACPP_REQUEST_TEST_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_llamacpp_request.cpp")
 if(BUILD_TESTING AND EXISTS "${LLAMACPP_REQUEST_TEST_SOURCE}")
     add_executable(test_llamacpp_request

@@ -1,5 +1,6 @@
 #include "lemon/backends/amica/amica_server.h"
 #include "lemon/backends/amica/amica.h"
+#include "lemon/backends/amica/amica_bundle.h"
 #include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_utils.h"
@@ -148,6 +149,21 @@ std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
 namespace {
 class AmicaOps : public BackendOps {
 public:
+    void populate_metadata(ModelInfo& info, const BackendOpsContext& /*ctx*/) const override {
+        const std::string model_dir = info.resolved_path();
+        if (model_dir.empty() || !fs::is_directory(path_from_utf8(model_dir))) return;
+        if (const auto context = bundle_context_length(model_dir)) {
+            info.max_context_window = *context;
+        }
+    }
+
+    // An explicit ctx_size keeps memory-based auto-sizing from replacing it.
+    void resolve_runtime_options(const ModelInfo& info, RecipeOptions& options) const override {
+        if (info.max_context_window > 0) {
+            options.set_option("ctx_size", info.max_context_window);
+        }
+    }
+
     void download_model(const ModelInfo& info, bool /*do_not_upgrade*/,
                         DownloadProgressCallback /*progress*/,
                         const BackendOpsContext& /*ctx*/) const override {
