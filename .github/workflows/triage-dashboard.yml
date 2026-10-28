@@ -4,8 +4,8 @@ name: Triage dashboard
 # (lemonade-sdk/lemonade-triage -> https://lemonade-sdk.github.io/lemonade-triage/)
 # rather than this repo's Pages. This repo's Pages serves the production
 # lemonade-server.ai site from the `website` branch (deploy-from-branch) and is
-# only meant to refresh at release boundaries, so the dashboard must never
-# touch it.
+# only meant to refresh at release boundaries and when news posts merge, so the
+# dashboard must never touch it.
 #
 # One-time setup (admin):
 #   1. lemonade-sdk/lemonade-triage exists with Pages set to "Deploy from a
