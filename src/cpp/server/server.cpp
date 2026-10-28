@@ -106,6 +106,7 @@ Server::Server(std::shared_ptr<RuntimeConfig> config,
     model_json_ = std::make_unique<ModelJson>(model_manager_.get(), router_.get());
     model_loader_ = std::make_unique<ModelLoader>(router_.get(), model_manager_.get());
     downloads_ = std::make_unique<DownloadManager>();
+    backend_manager_->set_download_manager(downloads_.get());
 
     ctx_.router = router_.get();
     ctx_.model_manager = model_manager_.get();
