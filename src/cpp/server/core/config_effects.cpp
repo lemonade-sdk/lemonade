@@ -50,6 +50,9 @@ void ConfigEffects::apply(const std::string& key, const json& value) {
         utils::HttpClient::set_download_rate_limit(bps);
     } else if (key == "allowed_origins") {
         LOG(INFO, "Server") << "Allowed origins updated: " << config.allowed_origins() << std::endl;
+    } else if (key == "model_catalogs") {
+        LOG(INFO, "Server") << "Configured model catalogs changed" << std::endl;
+        ctx_.model_manager->catalog_set_changed();
     } else if (key == "extra_models_dir") {
         std::string dir = config.extra_models_dir();
         LOG(INFO, "Server") << "Extra models dir changed to: " << dir << std::endl;

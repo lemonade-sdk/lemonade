@@ -5,7 +5,7 @@
 #include <functional>
 #include <unordered_map>
 #include <nlohmann/json.hpp>
-#include "model_manager.h"  // For DownloadProgressCallback
+#include <lemon/models/download_progress.h>
 
 namespace lemon {
 

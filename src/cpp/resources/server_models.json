@@ -1481,6 +1481,18 @@
         ],
         "size": 14.9
     },
+    "Flint-GGUF": {
+        "checkpoint": "unsloth/flint-GGUF:flint-UD-Q4_K_XL.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "coding",
+            "reasoning",
+            "tool-calling"
+        ],
+        "size": 25.1
+    },
     "PromptBridge-0.6b-Alpha-GGUF": {
         "checkpoint": "mradermacher/PromptBridge-0.6b-Alpha-GGUF:PromptBridge-0.6b-Alpha.Q4_K_M.gguf",
         "recipe": "llamacpp",
