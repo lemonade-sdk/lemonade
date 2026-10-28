@@ -163,15 +163,6 @@ public:
         return 0.0; // First call, no delta yet
     }
 
-    double get_memory_total_gb() override {
-        std::ifstream meminfo("/proc/meminfo");
-        std::string label;
-        long long total_kb = 0;
-        if (meminfo >> label >> total_kb && label == "MemTotal:" && total_kb > 0)
-            return static_cast<double>(total_kb) / (1024.0 * 1024.0);
-        return 0.0;
-    }
-
     double get_memory_usage_gb() override {
         std::ifstream meminfo("/proc/meminfo");
         if (!meminfo.is_open()) {

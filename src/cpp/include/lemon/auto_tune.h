@@ -24,6 +24,8 @@ constexpr int64_t EMBEDDING_CTX_SIZE = 8192;
 
 // Fallback context size when auto-resolution cannot be computed
 constexpr int64_t AUTO_CTX_FALLBACK = 4096;
+// Auto-sizing failed after checking all supported memory placements.
+constexpr int64_t AUTO_CTX_NO_CAPACITY = 0;
 
 // Hard cap on context size when the model's max context window is unknown.
 // No modern model supports less than this, and it prevents runaway allocation.
@@ -362,7 +364,8 @@ inline int64_t compute_auto_context_size(const ModelInfo& model_info,
         (swa_profile ? static_cast<double>(swa_profile->swa_cells(
             is_embedding ? EMBEDDING_CTX_SIZE : AUTO_CTX_FALLBACK)) *
             swa_bytes_per_cell / BYTES_PER_GIB : 0.0);
-    // As on main (#3986), context fitting is not a load-admission gate.
+    // GPU-only exhaustion is not a load rejection: first test CPU offload.
+    // If even the minimum context cannot fit, signal proven no capacity.
     const int64_t fallback = is_embedding ? EMBEDDING_CTX_SIZE : AUTO_CTX_FALLBACK;
     if (max_ctx_from_memory <= 0) {
         const int64_t minimum_ctx = fallback;
@@ -386,7 +389,7 @@ inline int64_t compute_auto_context_size(const ModelInfo& model_info,
                                << " — model and runtime reserves exceed available memory ("
                                << std::fixed << std::setprecision(2) << available_memory_gb
                                << " GiB), cannot fit automatic context";
-        return fallback;
+        return AUTO_CTX_NO_CAPACITY;
     }
 
     const int64_t runtime_minimum = is_embedding ? EMBEDDING_CTX_SIZE : 0;
@@ -397,7 +400,7 @@ inline int64_t compute_auto_context_size(const ModelInfo& model_info,
         LOG(DEBUG, "AutoTune") << "compute_auto_context_size: " << model_info.model_name
                                << " — budget fits " << max_ctx_from_memory
                                << " tokens, runtime requires " << runtime_minimum;
-        return fallback;
+        return AUTO_CTX_NO_CAPACITY;
     }
 
     LOG(DEBUG, "AutoTune") << "compute_auto_context_size: " << model_info.model_name
@@ -456,7 +459,7 @@ inline int64_t resolve_auto_ctx_size(const RecipeOptions& effective_options,
         // A full GPU pool is not proof that llama.cpp cannot place layers on CPU.
         if (model_info.recipe != "llamacpp" || !(model_info.device & DEVICE_GPU) ||
             (ctx_unified_gpu && !(physical_free_gb > 0.0)))
-            return is_embedding ? EMBEDDING_CTX_SIZE : AUTO_CTX_FALLBACK;
+            return AUTO_CTX_NO_CAPACITY;
     }
 
     const json llama_args = effective_options.get_option("llamacpp_args");

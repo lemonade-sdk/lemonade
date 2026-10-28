@@ -129,9 +129,6 @@ public:
 
     // NPU utilization percentage (0-100), -1 if not available or unsupported
     virtual double get_npu_utilization() = 0;
-
-    // Physical RAM capacity in GiB, 0 if unavailable. Not the GPU/GTT aperture.
-    virtual double get_memory_total_gb() { return 0.0; }
 };
 
 // Factory function to create platform-specific implementation
