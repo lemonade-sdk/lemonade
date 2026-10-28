@@ -22,7 +22,6 @@ constexpr int64_t EMBEDDING_CTX_SIZE = 8192;
 
 // Fallback context size when auto-resolution cannot be computed
 constexpr int64_t AUTO_CTX_FALLBACK = 4096;
-constexpr int64_t AUTO_CTX_NO_CAPACITY = 0;
 
 // Hard cap on context size when the model's max context window is unknown.
 // No modern model supports less than this, and it prevents runaway allocation.
@@ -121,7 +120,11 @@ inline double get_available_memory_gb(DeviceType device_type,
                 auto metrics = create_metrics_platform();
                 if (metrics) gpu_used_gb = metrics->get_vram_usage_gb();
             }
-            const double physical_total_gb = pool.physical_total_gb;
+            double physical_total_gb = pool.physical_total_gb;
+            if (pool.unified && physical_total_gb <= 0.0) {
+                auto metrics = create_metrics_platform();
+                if (metrics) physical_total_gb = metrics->get_memory_total_gb();
+            }
             const double ram_used_gb = pool.unified
                 ? get_used_memory_gb(DEVICE_CPU) : -1.0;
             const auto available_gpu_gb = auto_context_available_gpu_gib(
@@ -294,23 +297,26 @@ inline int64_t compute_auto_context_size(const ModelInfo& model_info,
         kv_bytes_per_token, (model_info.device & DEVICE_GPU) != 0,
         speculative, unified_gpu);
     const int64_t max_ctx_from_memory = budget.max_tokens;
+    // A short budget still loads with the fallback: the estimate assumes full GPU
+    // residency, while llama.cpp can spill layers to host RAM.
+    const int64_t fallback = is_embedding ? EMBEDDING_CTX_SIZE : AUTO_CTX_FALLBACK;
     if (max_ctx_from_memory <= 0) {
         LOG(DEBUG, "AutoTune") << "compute_auto_context_size: " << model_info.model_name
                                << " — model and runtime reserves exceed available memory ("
                                << std::fixed << std::setprecision(2) << available_memory_gb
                                << " GiB), cannot fit automatic context";
-        return AUTO_CTX_NO_CAPACITY;
+        return fallback;
     }
 
     const int64_t runtime_minimum = is_embedding ? EMBEDDING_CTX_SIZE : 0;
     const int64_t ctx_size = auto_context_clamp_tokens(
         max_ctx_from_memory, model_info.max_context_window,
         AUTO_CTX_UNKNOWN_MAX, runtime_minimum);
-    if (ctx_size == AUTO_CTX_NO_CAPACITY) {
+    if (ctx_size <= 0) {
         LOG(DEBUG, "AutoTune") << "compute_auto_context_size: " << model_info.model_name
                                << " — budget fits " << max_ctx_from_memory
                                << " tokens, runtime requires " << runtime_minimum;
-        return AUTO_CTX_NO_CAPACITY;
+        return fallback;
     }
 
     LOG(DEBUG, "AutoTune") << "compute_auto_context_size: " << model_info.model_name
@@ -358,7 +364,6 @@ inline int64_t resolve_auto_ctx_size(const RecipeOptions& effective_options,
         &ctx_unified_gpu, &memory_known);
 
     if (available_gb <= 0) {
-        if (memory_known) return AUTO_CTX_NO_CAPACITY;
         int64_t fallback = is_embedding ? EMBEDDING_CTX_SIZE : AUTO_CTX_FALLBACK;
         LOG(DEBUG, "AutoTune") << "resolve_auto_ctx_size: " << model_info.model_name
                                << " — memory undetectable, returning " << fallback;
