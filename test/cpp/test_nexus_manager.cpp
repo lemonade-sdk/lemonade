@@ -553,6 +553,13 @@ int main() {
             check(locked_access && locked_access->status == 423, "Device access requires an unlocked network");
             request("device", "{}", 400);
             request("device", R"({"device_name":""})", 400);
+            {
+                auto initial = management.Get("/api/v1/nexus/status");
+                const auto first_name = initial && initial->status == 200
+                    ? nlohmann::json::parse(initial->body).value("device_name", std::string{}) : std::string{};
+                check(!first_name.empty() && first_name != "My Lemonade device" && first_name.size() <= 128,
+                      "An unnamed device carries the machine's host name");
+            }
             auto named = request("device", R"({"device_name":"My laptop"})", 200);
             check(named.at("device_name") == "My laptop", "Device name updated");
             request("lock", "{}", 200);

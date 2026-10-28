@@ -14,6 +14,12 @@
 #include <random>
 #include <set>
 #include <stdexcept>
+
+#ifdef _WIN32
+#include <winsock2.h>
+#else
+#include <unistd.h>
+#endif
 #ifdef LEMONADE_WITH_NEXUS
 #include <LemonadeNexusSDK/lemonade_nexus.h>
 #endif
@@ -553,7 +559,25 @@ struct NexusManager::Session {
         avatar_configured = ln_account_avatar_configure(client.get(), identity.get(), avatar_cache.c_str()) == LN_OK;
     }
     ~Session() { if (client) ln_mesh_disable(client.get()); }
-    std::string device_name() const { return account.value("device_name", "My Lemonade device"); }
+    // Until the user names the device, it carries the machine's host name, as
+    // people already know it from their other tools.
+    static std::string machine_name() {
+        char buffer[256] = {};
+        if (gethostname(buffer, sizeof(buffer) - 1) != 0 || buffer[0] == '\0') return "My Lemonade device";
+        std::string name = buffer;
+        static constexpr std::string_view local_suffix = ".local";
+        if (name.size() > local_suffix.size() &&
+            name.compare(name.size() - local_suffix.size(), local_suffix.size(), local_suffix) == 0) {
+            name.resize(name.size() - local_suffix.size());
+        }
+        while (!name.empty() && name.back() == '.') name.pop_back();
+        if (name.size() > 128) name.resize(128);
+        return name.empty() ? "My Lemonade device" : name;
+    }
+    std::string device_name() const {
+        const auto named = account.value("device_name", std::string{});
+        return named.empty() ? machine_name() : named;
+    }
     void persist() {
         const auto temporary = root / "account.json.tmp";
         std::ofstream output(temporary);

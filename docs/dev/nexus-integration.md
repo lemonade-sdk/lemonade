@@ -125,7 +125,9 @@ hostname used to reach a server; `lemond` reads it from `/api/health` for the
 passkey challenge when it is not configured.
 
 Identity, account metadata and enabled preference live in `nexus/` under the
-server configuration directory. Unix permissions restrict the directory to its
+server configuration directory. Until the user names the device, `status`
+reports the machine's host name as `device_name` (without a `.local` suffix),
+and a join uses it. Unix permissions restrict the directory to its
 owner. Restart leaves an enabled passkey device locked, and a long supervisor
 pause locks the mesh; a key-unlocked device unlocks again by itself in both
 cases. Transient failures reconnect with bounded backoff after a successful
