@@ -175,6 +175,7 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
   "trellis": {
     "args": "",
     "backend": "auto",
+    "cuda12_bin": "builtin",
     "cuda_bin": "builtin",
     "rocm_bin": "builtin",
     "vulkan_bin": "builtin"
