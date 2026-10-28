@@ -69,7 +69,9 @@ public:
             "come from the same config, and an optional `manifest.json` overrides them. Without a "
             "manifest, inference assumes single-label softmax, so a multi-label (sigmoid) model "
             "declares `problem_type: multi_label_classification` in its config or ships a "
-            "`manifest.json`.",
+            "`manifest.json`.\n\n"
+            "Zero-shot family: LFM2 (`Lfm2BidirForSequenceRouting`), such as "
+            "`LFM2.5-Encoder-350M-Prompt-Router-ONNX`. Every request to it carries `labels`.",
             "Some upstream models declare only generic `LABEL_<n>` label names; their model card "
             "explains them.",
         };

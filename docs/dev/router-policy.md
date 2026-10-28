@@ -99,7 +99,7 @@ window, estimate ~4 bytes per token.
 |------|---------|
 | `semantic_similarity` | Cosine similarity of the input against labelled `reference_phrases`, via an embedding model. |
 | `classifier` | A `{label: score}` classifier — an encoder model via the `onnxruntime` backend (`/v1/classify`), or any model as an LLM-as-classifier via chat. |
-| `zero_shot` | A zero-shot encoder that scores the input against the `labels` **you** declare, rather than a label set baked into the model. Needs an `onnxruntime` classification model; no LLM fallback. |
+| `zero_shot` | Scores the input against the `labels` **you** declare, sent with each request. Supports one kind of zero-shot model: an LFM2 prompt router that reads the labels and the text together in a single pass, on the `onnxruntime` backend. No LLM fallback. |
 | `llm` | An LLM picks exactly one of the declared `labels` for the request (with a rationale); the chosen label scores `1.0`, the rest `0`. You supply the `model` and a `prompt` describing when to choose each label. |
 
 A classifier condition is a band test: `{ "classifier": "<id>", "label": "<name>",
@@ -162,6 +162,9 @@ and every entry's `model` must be one of `components`:
   LLM-as-classifier via chat).
 - `zero_shot` sends your `labels` to the model on every request: the model has
   no per-label head to read them off, so the label list is an input to the graph.
+  Lemonade ships
+  [`LFM2.5-Encoder-350M-Prompt-Router-ONNX`](https://huggingface.co/lemonade-sdk/LFM2.5-Encoder-350M-Prompt-Router-ONNX)
+  for it.
 
   Every classifier's `labels` are checked at registration: unique, not blank,
   and free of control characters because a label the backend would reject
@@ -234,15 +237,15 @@ pair `fail` with `on_error: match_true`. That forces the condition true and
 
 ```json
 "classifiers": [
-  { "id": "pii", "type": "zero_shot", "model": "Prompt-Router-ONNX",
-    "labels": ["contains personal data", "no personal data"],
+  { "id": "pii", "type": "zero_shot", "model": "LFM2.5-Encoder-350M-Prompt-Router-ONNX",
+    "labels": ["contains personal identifiable information", "general question"],
     "on_truncation": "fail", "on_error": "match_true" },
-  { "id": "topic", "type": "zero_shot", "model": "Prompt-Router-ONNX",
+  { "id": "topic", "type": "zero_shot", "model": "LFM2.5-Encoder-350M-Prompt-Router-ONNX",
     "labels": ["code", "general"] }
 ],
 "rules": [
   { "id": "pii-to-local",
-    "match": { "classifier": "pii", "label": "contains personal data", "min_score": 0.5 },
+    "match": { "classifier": "pii", "label": "contains personal identifiable information", "min_score": 0.5 },
     "route_to": "LocalLLM" },
   { "id": "code-to-cloud",
     "match": { "classifier": "topic", "label": "code" },
