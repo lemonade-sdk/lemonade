@@ -103,6 +103,7 @@ std::string read_file(const std::string& path) {
 CommandResult run_on_host(const std::vector<std::string>& argv, int timeout_seconds,
                           bool capture_stderr) {
     CommandResult result;
+    if (argv.empty()) return result;
     const std::vector<std::string> args(argv.begin() + 1, argv.end());
     result.exit_code = ProcessManager::run_process_with_output(
         argv.front(), args,
