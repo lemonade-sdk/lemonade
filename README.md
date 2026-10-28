@@ -331,8 +331,13 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
       <td>Windows, Linux</td>
     </tr>
     <tr>
-      <td rowspan="3"><strong>3D generation</strong></td>
-      <td rowspan="3"><code>trellis</code></td>
+      <td rowspan="4"><strong>3D generation</strong></td>
+      <td rowspan="4"><code>trellis</code></td>
+      <td><code>cuda12</code>†</td>
+      <td>NVIDIA Pascal/Volta GPUs (CUDA 12)</td>
+      <td>Windows, Linux</td>
+    </tr>
+    <tr>
       <td><code>cuda</code>†</td>
       <td>NVIDIA GPUs</td>
       <td>Windows, Linux</td>

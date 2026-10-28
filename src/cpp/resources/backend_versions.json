@@ -38,7 +38,9 @@
           "trellis-rocm-linux-x64.tar.gz": "sha256:128ec2abd7364186ca9b079855f3f4564d7589cef88ee0f62c380c644b4be884",
           "trellis-rocm-windows-x64.zip": "sha256:87c3b3eaf14f241fdccc4618430329dd5c74033de191ced189cd889d1288f145",
           "trellis-cuda-linux-x64.tar.gz": "sha256:5257d222a7a4becb9a125aa80b24328f91da22987777d86b312bad4ab237edae",
-          "trellis-cuda-windows-x64.zip": "sha256:d2ea7b57174d3bff438064faf0b5fbcc55c29c31e6bba5f41030936fa366ed48"
+          "trellis-cuda-windows-x64.zip": "sha256:d2ea7b57174d3bff438064faf0b5fbcc55c29c31e6bba5f41030936fa366ed48",
+          "trellis-cuda12-linux-x64.tar.gz": "sha256:00e7e459284af23bb529794d2fadffacb5905cd6400f2db43380c0f99f727656",
+          "trellis-cuda12-windows-x64.zip": "sha256:8b948b62fc857cab0e064d0962b9f7961a246620bddabbc8a0c00521db78dfb5"
         }
       },
       "lemonade-sdk/ds4-rocm": {
@@ -197,7 +199,8 @@
   "trellis": {
     "vulkan": "v0.8.1",
     "rocm-stable": "v0.8.1",
-    "cuda": "v0.8.1"
+    "cuda": "v0.8.1",
+    "cuda12": "v0.8.1"
   },
   "openmoss": {
     "vulkan": "v0.3.0",

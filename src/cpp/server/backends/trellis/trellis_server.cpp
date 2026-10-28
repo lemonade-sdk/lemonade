@@ -128,7 +128,7 @@ void TrellisServer::load(const std::string& model_name,
                 BackendUtils::get_therock_lib_paths(arch));
         }
         prepend_loader_path(dirs);
-    } else if (backend == "cuda") {
+    } else if (backend.rfind("cuda", 0) == 0) {
         prepend_loader_path("");
         BackendUtils::apply_cuda_env_vars(env_vars, "trellis-server");
     }

@@ -22,7 +22,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `sd-cpp` | StableDiffusion.cpp | yes | no | cpu, cuda, metal, rocm, vulkan |
 | `thenoise` | TheNoise ROCm | yes | no | rocm |
 | `thinksound` | ThinkSound | yes | no | cuda, rocm, vulkan |
-| `trellis` | TRELLIS.2 | yes | no | cuda, rocm, vulkan |
+| `trellis` | TRELLIS.2 | yes | no | cuda, cuda12, rocm, vulkan |
 | `vllm` | vLLM ROCm | yes | yes | rocm |
 | `whispercpp` | Whisper.cpp | yes | no | cpu, metal, npu, rocm, vulkan |
 <!-- END GENERATED: backends-overview -->
@@ -66,6 +66,7 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 | `thinksound` | cuda | experimental | native | linux, windows | nvidia_gpu |
 | `thinksound` | vulkan | experimental | native | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `thinksound` | rocm | experimental | native | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
+| `trellis` | cuda12 | experimental | native | linux, windows | nvidia_gpu (sm_60, sm_61, sm_62, sm_70, sm_72) |
 | `trellis` | cuda | experimental | native | linux, windows | nvidia_gpu |
 | `trellis` | vulkan | experimental | native | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `trellis` | rocm | experimental | native | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
