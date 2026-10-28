@@ -423,7 +423,8 @@ function backendMatchesDetectedHardware(backend: string, info: SystemInfoLike): 
 
 function indexed(prefix: string, count: number, fallbackCount = 1): string[] {
   const n = Math.max(count, fallbackCount);
-  return Array.from({ length: n }, (_, i) => `${prefix}${i}`);
+  const devices = Array.from({ length: n }, (_, i) => `${prefix}${i}`);
+  return n > 1 ? [...devices, devices.join(',')] : devices;
 }
 
 function deviceOptionsForKey(key: keyof RecipeOptions, current: string | undefined, selectedBackend: string, model: ModelInfo, info: SystemInfoLike): string[] {
