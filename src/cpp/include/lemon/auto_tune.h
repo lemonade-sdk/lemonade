@@ -9,6 +9,7 @@
 #include <system_error>
 #include <lemon/auto_context_budget.h>
 #include <lemon/gguf_reader.h>
+#include <lemon/swa_cache_profile.h>
 #include <lemon/gpu_memory_selection.h>
 #include <lemon/models/model_info.h>
 #include <lemon/system_info.h>
@@ -274,6 +275,16 @@ inline int64_t compute_auto_context_size(const ModelInfo& model_info,
         estimated = true;
     }
 
+    // The only optimized layouts are architectures for which the selected
+    // backend really constructs a bounded llama_kv_cache_iswa.
+    std::optional<BoundedSwaProfile> swa_profile;
+    if (bounded_swa) {
+        swa_profile = compute_bounded_swa_profile(model_info.gguf, model_info.recipe);
+        if (swa_profile) {
+            kv_bytes_per_token = (std::max)(kv_bytes_per_token,
+                                            swa_profile->unbounded_bytes_per_token());
+        }
+    }
     if (kv_bytes_per_token <= 0) {
         return AUTO_CTX_FALLBACK;
     }
@@ -312,33 +323,56 @@ inline int64_t compute_auto_context_size(const ModelInfo& model_info,
         }
     }
 
-    double fixed_swa_gib = 0.0;
-    if (bounded_swa && model_info.recipe == "llamacpp") {
-        const double swa_slope =
-            compute_gemma4_bounded_swa_bytes_per_token(model_info.gguf) *
-            (uses_mtp ? AUTO_CTX_MTP_KV_MULTIPLIER : 1.0);
-        if (swa_slope > 0.0 && swa_slope < kv_bytes_per_token) {
-            kv_bytes_per_token -= swa_slope;
-            // Keep the bounded SWA window plus a conservative batching margin.
-            fixed_swa_gib = swa_slope *
-                (static_cast<double>(model_info.gguf.sliding_window) + 4096.0) /
-                BYTES_PER_GIB;
-        }
-    }
-    const double effective_weights_gib = model_weight_gb + fixed_swa_gib;
+    // Preserve all existing runtime and memory reserves. Only the KV fitting
+    // curve changes: full-attention and draft KV grow with context, while the
+    // SWA cache is capped at its actual (conservatively padded) cell count.
+    const double swa_bytes_per_cell = swa_profile
+        ? swa_profile->swa_bytes_per_cell *
+              (uses_mtp ? AUTO_CTX_MTP_KV_MULTIPLIER : 1.0) : 0.0;
+    const int64_t model_limit = (std::max)(
+        model_info.max_context_window > 0 ? model_info.max_context_window : AUTO_CTX_UNKNOWN_MAX,
+        is_embedding ? int64_t(EMBEDDING_CTX_SIZE) : int64_t(0));
     const auto budget = estimate_auto_context_budget(
-        available_memory_gb, effective_weights_gib,
+        available_memory_gb, model_weight_gb,
         kv_bytes_per_token, (model_info.device & DEVICE_GPU) != 0,
         speculative, unified_gpu, physical_free_gb);
-    const int64_t max_ctx_from_memory = budget.max_tokens;
-    // A short budget still loads with the fallback: the estimate assumes full GPU
-    // residency, while llama.cpp can spill layers to host RAM.
+    const double full_slope = swa_profile
+        ? (std::max)(0.0, kv_bytes_per_token - swa_bytes_per_cell) : kv_bytes_per_token;
+    double extra_workspace_gib = 0.0;
+    if (swa_profile) {
+        const double max_swa_gib = swa_bytes_per_cell *
+            static_cast<double>(swa_profile->swa_cells(model_limit)) / BYTES_PER_GIB;
+        const auto& policy = !(model_info.device & DEVICE_GPU) ? AUTO_CTX_HOST_RESERVE
+            : unified_gpu ? AUTO_CTX_UNIFIED_GPU_RESERVE : AUTO_CTX_DISCRETE_GPU_RESERVE;
+        extra_workspace_gib = (std::max)(0.0,
+            policy.compute_workspace.estimate(model_weight_gb + max_swa_gib) -
+            policy.compute_workspace.estimate(model_weight_gb));
+    }
+    const int64_t max_ctx_from_memory = swa_profile
+        ? bounded_swa_context_limit(*swa_profile,
+                                    (std::max)(0.0, budget.kv_gib - extra_workspace_gib),
+                                    full_slope, swa_bytes_per_cell, model_limit)
+        : budget.max_tokens;
+    const double fixed_swa_gib = swa_profile && max_ctx_from_memory > 0
+        ? static_cast<double>(swa_profile->swa_cells(max_ctx_from_memory)) *
+          swa_bytes_per_cell / BYTES_PER_GIB : 0.0;
+    // The existing GPU-to-CPU fallback can account for a bounded minimum KV
+    // window as fixed weight-like memory, but cannot use a zero linear slope.
+    const double effective_weights_gib = model_weight_gb +
+        (swa_profile ? static_cast<double>(swa_profile->swa_cells(
+            is_embedding ? EMBEDDING_CTX_SIZE : AUTO_CTX_FALLBACK)) *
+            swa_bytes_per_cell / BYTES_PER_GIB : 0.0);
+    // As on main (#3986), context fitting is not a load-admission gate.
     const int64_t fallback = is_embedding ? EMBEDDING_CTX_SIZE : AUTO_CTX_FALLBACK;
     if (max_ctx_from_memory <= 0) {
-        const int64_t minimum_ctx = is_embedding ? EMBEDDING_CTX_SIZE : AUTO_CTX_FALLBACK;
+        const int64_t minimum_ctx = fallback;
         const int64_t offload_ctx = auto_context_cpu_offload_fallback(
             max_ctx_from_memory, available_memory_gb, physical_free_gb,
-            effective_weights_gib, kv_bytes_per_token, speculative, unified_gpu,
+            effective_weights_gib,
+            // Pure SWA has no *actual* full KV slope. For CPU-offload admission
+            // use the original conservative unbounded estimate at minimum ctx.
+            full_slope > 0.0 ? full_slope : kv_bytes_per_token,
+            speculative, unified_gpu,
             model_info.recipe == "llamacpp" && (model_info.device & DEVICE_GPU),
             minimum_ctx);
         if (offload_ctx > 0) {
@@ -422,36 +456,15 @@ inline int64_t resolve_auto_ctx_size(const RecipeOptions& effective_options,
         // A full GPU pool is not proof that llama.cpp cannot place layers on CPU.
         if (model_info.recipe != "llamacpp" || !(model_info.device & DEVICE_GPU) ||
             (ctx_unified_gpu && !(physical_free_gb > 0.0)))
-            return AUTO_CTX_NO_CAPACITY;
+            return is_embedding ? EMBEDDING_CTX_SIZE : AUTO_CTX_FALLBACK;
     }
 
-    // Non-default cache layouts may allocate more than a bounded SWA window.
-    bool bounded_swa = std::getenv("LLAMA_ARG_SWA_FULL") == nullptr &&
-                       std::getenv("LLAMA_ARG_UBATCH") == nullptr &&
-                       std::getenv("LLAMA_ARG_N_PARALLEL") == nullptr &&
-                       std::getenv("LLAMA_ARG_CACHE_TYPE_K") == nullptr &&
-                       std::getenv("LLAMA_ARG_CACHE_TYPE_V") == nullptr;
-    const json custom_args = effective_options.get_option("llamacpp_args");
-    if (custom_args.is_string()) {
-        const std::string args = " " + custom_args.get<std::string>() + " ";
-        if (args.find("--swa-full") != std::string::npos ||
-            args.find("--ubatch-size") != std::string::npos ||
-            args.find(" -ub ") != std::string::npos ||
-            args.find(" -ub=") != std::string::npos ||
-            args.find("--cache-type-") != std::string::npos ||
-            args.find(" -ctk ") != std::string::npos ||
-            args.find(" -ctv ") != std::string::npos ||
-            args.find(" -ctk=") != std::string::npos ||
-            args.find(" -ctv=") != std::string::npos ||
-            (args.find("--parallel") != std::string::npos &&
-             args.find(" --parallel 1 ") == std::string::npos &&
-             args.find(" --parallel=1 ") == std::string::npos) ||
-            (args.find(" -np ") != std::string::npos &&
-             args.find(" -np 1 ") == std::string::npos) ||
-            (args.find(" -np=") != std::string::npos &&
-             args.find(" -np=1 ") == std::string::npos))
-            bounded_swa = false;
-    }
+    const json llama_args = effective_options.get_option("llamacpp_args");
+    const json hrx_args = effective_options.get_option("hrx_args");
+    const bool bounded_swa = bounded_swa_runtime_compatible_for_recipe(
+        recipe,
+        llama_args.is_string() ? llama_args.get<std::string>() : "",
+        hrx_args.is_string() ? hrx_args.get<std::string>() : "");
     int64_t result = compute_auto_context_size(model_info, available_gb,
                                                is_embedding, ctx_unified_gpu,
                                                physical_free_gb, bounded_swa);
