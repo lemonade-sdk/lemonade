@@ -2,7 +2,7 @@
 
 #include "lemon/server/model_sync.h"
 #include "lemon/model_manager.h"
-#include "lemon/model_registry.h"
+#include "lemon/models/registry_types.h"
 #include "lemon/runtime_config.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/download_manager.h"
@@ -276,8 +276,10 @@ public:
             if (stream) {
                 ModelManager* model_manager = ctx_.model_manager;
                 DownloadManager::Operation operation =
-                    [model_manager, model_name, download_request, do_not_upgrade](DownloadProgressCallback progress_cb) {
-                        model_manager->download_model(model_name, download_request, do_not_upgrade, progress_cb);
+                    [model_manager, model_name, download_request,
+                     do_not_upgrade](DownloadProgressCallback progress_cb, utils::CancelToken cancel) {
+                        model_manager->download_model(model_name, download_request, do_not_upgrade,
+                                                      progress_cb, cancel);
                     };
 
                 if (!subscribe) {
