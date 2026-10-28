@@ -87,8 +87,9 @@ public:
     // Health
     // -----------------------------------------------------------------
 
-    /// GET /api/health. With a session, it also fails when the session's
-    /// server is no longer a verified Tier 1 server, so the caller can join
+    /// GET /api/health. With a session, it also fails once when the session's
+    /// server is no longer a verified Tier 1 server; the SDK drops that
+    /// session (see MeshTunnelStatus::needs_rejoin), so the caller joins
     /// again through another one.
     [[nodiscard]] Result<HealthStatus> check_health();
 
@@ -382,7 +383,10 @@ public:
     /// call it, enable_mesh(), or leave_network() from a mesh state callback.
     void disable_mesh();
 
-    /// Get mesh tunnel status including all peers with live stats.
+    /// Get mesh tunnel status including all peers with live stats. Its
+    /// `needs_rejoin` is true after the SDK dropped a session whose Tier 1
+    /// server left the verified membership: call join_network() again, which
+    /// authenticates through a current member and clears it.
     [[nodiscard]] MeshTunnelStatus mesh_status() const;
 
     /// Get the current list of known mesh peers.

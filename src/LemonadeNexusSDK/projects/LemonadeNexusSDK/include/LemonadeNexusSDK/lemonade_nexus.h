@@ -421,7 +421,10 @@ ln_error_t ln_mesh_disable(ln_client_t* client);
 
 /** Get mesh tunnel status as JSON.
  *  Returns: {is_up, tunnel_ip, peer_count, online_count,
- *  total_rx_bytes, total_tx_bytes, peers: [...]}.
+ *  total_rx_bytes, total_tx_bytes, peers: [...], needs_rejoin}.
+ *  needs_rejoin is true when the SDK dropped the session because the Tier 1
+ *  server that issued it left the verified membership: private-API calls are
+ *  refused until ln_join_network succeeds again, which clears it.
  *  Caller must ln_free(*out_json). */
 ln_error_t ln_mesh_status(ln_client_t* client, char** out_json);
 

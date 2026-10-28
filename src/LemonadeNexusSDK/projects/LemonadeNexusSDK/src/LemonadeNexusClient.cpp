@@ -166,6 +166,10 @@ struct LemonadeNexusClient::Impl {
     Tier1Directory tier1;
     std::string    session_node;
     std::string    challenge_node;
+    // Set when the session was dropped because its server left the verified
+    // membership; cleared by the next successful join. Reported by
+    // mesh_status() so the application knows to join again.
+    std::atomic<bool> rejoin_needed{false};
 
     // The client's single userspace mesh dataplane (boringtun Noise + smoltcp
     // netstack, no TUN). Brought up at join; carries both mesh P2P traffic and
@@ -390,6 +394,25 @@ struct LemonadeNexusClient::Impl {
             return "no session bound to a verified Tier 1 server: authenticate or join first";
         }
         if (!tier1.is_verified_member(node)) {
+            // Tier 1 rotates members out at epoch boundaries. The session is a
+            // bearer token for a server that no longer holds the tree, and
+            // join_network() reuses a held token, so a join that kept it
+            // would still target that server. Drop the session: the next
+            // join authenticates through a current member.
+            bool dropped = false;
+            {
+                std::lock_guard lock(transport_mtx);
+                if (session_node == node) {
+                    session_token.clear();
+                    session_node.clear();
+                    dropped = true;
+                }
+            }
+            if (dropped) {
+                rejoin_needed.store(true, std::memory_order_relaxed);
+                spdlog::info("[LemonadeNexusClient] the session's server left Tier 1: "
+                             "session dropped, join again");
+            }
             return "the session's server is no longer a verified Tier 1 server: join again";
         }
         return {};
@@ -2258,6 +2281,7 @@ Result<JoinResult> LemonadeNexusClient::join_network(const std::string& username
         std::lock_guard lock(impl_->mutex);
         impl_->set_token(token);
     }
+    impl_->rejoin_needed.store(false, std::memory_order_relaxed);
 
     auto node_id   = resp->value("node_id", std::string{});
     auto tunnel_ip = resp->value("tunnel_ip", std::string{});
@@ -2644,11 +2668,15 @@ void LemonadeNexusClient::disable_mesh() {
 }
 
 MeshTunnelStatus LemonadeNexusClient::mesh_status() const {
-    std::lock_guard lock(impl_->mutex);
-    if (impl_->mesh_orchestrator) {
-        return impl_->mesh_orchestrator->status();
+    MeshTunnelStatus status;
+    {
+        std::lock_guard lock(impl_->mutex);
+        if (impl_->mesh_orchestrator) {
+            status = impl_->mesh_orchestrator->status();
+        }
     }
-    return {};
+    status.needs_rejoin = impl_->rejoin_needed.load(std::memory_order_relaxed);
+    return status;
 }
 
 std::vector<MeshPeer> LemonadeNexusClient::get_mesh_peers() const {

@@ -1393,6 +1393,7 @@ ln_error_t ln_mesh_status(ln_client_t* client, char** out_json) {
     j["online_count"]   = st.online_count;
     j["total_rx_bytes"] = st.total_rx_bytes;
     j["total_tx_bytes"] = st.total_tx_bytes;
+    j["needs_rejoin"]   = st.needs_rejoin;
 
     json peers_arr = json::array();
     for (const auto& p : st.peers) {

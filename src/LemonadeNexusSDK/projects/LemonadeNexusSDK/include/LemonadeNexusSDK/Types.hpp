@@ -368,6 +368,12 @@ struct MeshTunnelStatus {
     uint64_t    total_rx_bytes{0};
     uint64_t    total_tx_bytes{0};
     std::vector<MeshPeer> peers;
+    /// True when the SDK dropped the session because the Tier 1 server that
+    /// issued it left the verified membership. The dataplane may still be up,
+    /// but every private-API call is refused until join_network() binds a new
+    /// session; a successful join clears it. Reported by
+    /// LemonadeNexusClient::mesh_status(), not by the mesh state callback.
+    bool        needs_rejoin{false};
 };
 
 /// Configuration for the mesh orchestrator.
