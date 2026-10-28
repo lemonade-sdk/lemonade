@@ -467,6 +467,15 @@ std::pair<int, std::string> assignment_error(const std::string& reason) {
     return {502, "The network refused the change: " + reason};
 }
 
+uint64_t newer_tier1_epoch(const json& membership, uint64_t saved) {
+    if (!membership.is_object()) return 0;
+    const auto epoch = membership.find("epoch");
+    if (epoch == membership.end() || !epoch->is_number_integer() ||
+        (!epoch->is_number_unsigned() && epoch->get<int64_t>() < 0)) return 0;
+    const auto value = epoch->get<uint64_t>();
+    return value > saved ? value : 0;
+}
+
 bool constant_time_equals(const std::string& candidate, const std::string& expected) {
     unsigned char difference = candidate.size() == expected.size() ? 0 : 1;
     for (size_t i = 0; i < expected.size(); ++i) {
@@ -1031,12 +1040,14 @@ struct NexusManager::Session {
             refresh_devices();
         } catch (const std::exception& e) { set_error(e); }
     }
-    // Keeps the verified Tier 1 epoch so a restart refuses an older membership list.
+    // Keeps the verified Tier 1 epoch so a restart refuses an older membership list. The
+    // SDK reports its last verified membership without network I/O, so this runs after
+    // every join and every successful poll and writes only when the epoch advanced.
     void remember_tier1_epoch() {
         try {
             const auto membership = sdk_call([&](auto out) { return ln_tier1_membership(client.get(), out); });
-            const auto epoch = membership.value("epoch", uint64_t{0});
-            if (epoch > account.value("tier1_epoch", uint64_t{0})) {
+            const auto epoch = nexus_access::newer_tier1_epoch(membership, account.value("tier1_epoch", uint64_t{0}));
+            if (epoch != 0) {
                 account["tier1_epoch"] = epoch;
                 persist();
             }
@@ -1067,6 +1078,7 @@ struct NexusManager::Session {
             }
             else {
                 refresh_devices();
+                remember_tier1_epoch();
                 clear_error();
                 detail = "running";
             }

@@ -508,6 +508,12 @@ int main() {
         check(throws([&] { access::account_avatar(invalid_profile, "cluster"); }), "Profile images cannot load external tracking URLs");
         invalid_profile = profile; invalid_profile["revision"] = -1;
         check(throws([&] { access::account_avatar(invalid_profile, "cluster"); }), "Negative image revisions are rejected");
+        // The saved Tier 1 epoch feeds ln_set_genesis_key as the lowest epoch a restart
+        // accepts, so it follows a verified advance and never goes back.
+        check(access::newer_tier1_epoch(json{{"epoch", 7}, {"members", json::array()}}, 3) == 7, "A verified membership that advanced is saved");
+        check(access::newer_tier1_epoch(json{{"epoch", 3}}, 3) == 0 && access::newer_tier1_epoch(json{{"epoch", 2}}, 3) == 0, "An equal or older membership is not saved");
+        check(access::newer_tier1_epoch(json{{"epoch", -1}}, 0) == 0 && access::newer_tier1_epoch(json{{"epoch", "7"}}, 0) == 0 &&
+              access::newer_tier1_epoch(json::array(), 0) == 0, "A malformed membership saves nothing");
         check_access_rules(check);
 #ifdef LEMONADE_WITH_NEXUS
         check_sdk_failures(check);

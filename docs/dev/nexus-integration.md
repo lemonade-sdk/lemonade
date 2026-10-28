@@ -215,9 +215,11 @@ replaces a pinned key. This is trust on first use: it rests on verified-HTTPS
 domain ownership and agreement of several hosts.
 
 `LEMONADE_NEXUS_GENESIS_PUBKEY` overrides discovery for another federation.
-`lemond` also stores the verified Tier 1 epoch in `account.json` so a restart
-refuses an older membership list. If discovery fails, those calls fail and
-`status` reports `genesis_key_set: false`.
+`lemond` also stores the verified Tier 1 epoch in `account.json`
+(`tier1_epoch`) after a join and whenever a poll sees it advance, and passes
+it to the SDK at start, so a restart refuses an older membership list. If
+discovery fails, those calls fail and `status` reports
+`genesis_key_set: false`.
 
 ## Control API
 

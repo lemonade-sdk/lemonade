@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <condition_variable>
+#include <cstdint>
 #include <deque>
 #include <functional>
 #include <httplib.h>
@@ -54,6 +55,10 @@ nlohmann::json role_permissions(const nlohmann::json& current, bool admin);
 nlohmann::json group_permissions(const nlohmann::json& requested, bool admin);
 nlohmann::json device_permissions(const nlohmann::json& current, bool see, bool connect);
 std::pair<int, std::string> assignment_error(const std::string& reason);
+/// The verified Tier 1 epoch to save from an ln_tier1_membership reply, or 0 when the
+/// reply carries no epoch above `saved`. The saved epoch only grows: it is the lowest
+/// epoch the SDK accepts after a restart.
+uint64_t newer_tier1_epoch(const nlohmann::json& membership, uint64_t saved);
 #ifdef LEMONADE_WITH_NEXUS
 /// The HTTP answer for a failed SDK call. `retryable` is true when the federation was
 /// not reached rather than refusing the device, so the same request may succeed later
