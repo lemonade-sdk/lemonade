@@ -491,6 +491,15 @@ function stateBadge(state: BackendInfo['state']): { label: string; cls: string }
   }
 }
 
+function isWebUrl(text: string): boolean {
+  try {
+    const { protocol } = new URL(text);
+    return protocol === 'http:' || protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 function uniq<T>(values: T[]): T[] {
   return Array.from(new Set(values));
 }
@@ -1236,7 +1245,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
                         {isInstalling ? t('Updating…') : t('Update')}
                       </WorkspaceActionButton>
                     )}
-                    {info.state === 'action_required' && info.action && (
+                    {info.state === 'action_required' && isWebUrl(info.action) && (
                       <WorkspaceActionButton
                         size="small"
                         appearance="secondary"
@@ -1291,6 +1300,12 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
                 )}
                 {backendDownload?.status === 'error' && backendDownload.error ? (
                   <p className="backend-card__note backend-card__note--error">{backendDownload.error}</p>
+                ) : info.state === 'action_required' && info.action && !isWebUrl(info.action) ? (
+                  <details className="backend-card__setup">
+                    <summary>{t('Setup required')}</summary>
+                    {info.message && <p className="backend-card__note">{t(info.message)}</p>}
+                    <p className="backend-card__setup-steps">{info.action}</p>
+                  </details>
                 ) : ((showTech || info.state === 'update_available' || info.state === 'update_required') && info.message && (
                   <p className="backend-card__note">{t(info.message)}</p>
                 ))}
