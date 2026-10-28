@@ -699,6 +699,12 @@ struct NexusManager::Session {
         }
         client.reset(ln_create_tls(host.c_str(), static_cast<uint16_t>(public_port)));
         if (!client) throw NexusError(500, "Cannot create Nexus client");
+        // The SDK moves the session when its Tier 1 server leaves; the journal keeps
+        // the record. The callback owns the text and runs on an SDK thread.
+        ln_set_session_moved_callback(client.get(), [](char* event_json, void*) {
+            std::unique_ptr<char, decltype(&ln_free)> owned(event_json, ln_free);
+            LOG(INFO, "Nexus") << "Session moved: " << (event_json ? event_json : "") << std::endl;
+        }, nullptr);
         const auto path = utils::path_to_utf8(root / "identity.json");
         identity.reset(ln_identity_load(path.c_str()));
         if (!identity) {
