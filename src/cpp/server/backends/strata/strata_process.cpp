@@ -681,7 +681,9 @@ struct StrataProcess::Impl : NativePipe {
     json generate(const Request& request, const std::function<bool()>& cancelled,
                   const std::function<bool(const json&)>& delta = {}) {
         if (!alive()) throw std::runtime_error("Strata engine is unavailable");
-        bool sent_stop = false, matched_stop = false, done_received = false;
+        bool sent_stop = false, matched_stop = false, done_received = false, prefilling = true;
+        const auto prefill_timeout = std::chrono::minutes(5) +
+            std::chrono::milliseconds(100) * static_cast<int64_t>(request.tokens.size());
         std::string output;
         common_chat_msg previous;
         std::vector<std::string> tool_ids;
@@ -738,7 +740,8 @@ struct StrataProcess::Impl : NativePipe {
                 if (cancelled()) stop();
                 std::string line;
                 if (!next(line)) {
-                    if (Clock::now() - heard > std::chrono::minutes(5)) throw std::runtime_error("Strata engine protocol timed out");
+                    const auto timeout = prefilling && !sent_stop ? prefill_timeout : std::chrono::minutes(5);
+                    if (Clock::now() - heard > timeout) throw std::runtime_error("Strata engine protocol timed out");
                     if (delta && !sent_stop && Clock::now() - heartbeat > std::chrono::seconds(5)) {
                         if (!delta(json::object())) stop();
                         heartbeat = Clock::now();
@@ -765,6 +768,7 @@ struct StrataProcess::Impl : NativePipe {
                     break;
                 }
                 if (line.rfind("T ", 0) != 0 || sent_stop) continue;
+                prefilling = false;
                 size_t used = 0;
                 const auto token = std::stoi(line.substr(2), &used);
                 const auto* vocab = llama_model_get_vocab(model.get());

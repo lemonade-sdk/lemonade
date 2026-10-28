@@ -10,7 +10,7 @@ Engine binaries are downloaded from
 for officially supported GPU/OS combinations.
 The draft vocabulary and expert profiles are fetched from the official Strata
 repository at the backend's release tag in
-[`backend_versions.json`](../../src/cpp/resources/backend_versions.json).
+[`backend_versions.json`](https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/resources/backend_versions.json).
 Model weights, projectors and draft heads use their Hugging Face repositories'
 default revisions; Lemonade does not maintain separate runtime commit, hash or
 size pins. Available registry-provided hashes are checked during downloads.
@@ -317,7 +317,7 @@ Lemonade fetches the multilingual vocabulary from `data/draft_vocab.bin` in the
 official Strata repository at the configured backend release. The draft weights
 come from their Hugging Face repository's default revision. Source repositories,
 relative filenames, compatible backends and draft confidence settings live in
-[`strata.json`](../../src/cpp/resources/strata.json), without duplicated hashes,
+[`strata.json`](https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/resources/strata.json), without duplicated hashes,
 sizes or commit pins.
 
 The draft head needs roughly another 1 GB of VRAM, reducing the room available
@@ -461,8 +461,8 @@ invalidates that receipt without forcing text weights to be rebuilt.
 
 ### Routine engine upgrades
 
-Change only the relevant `strata` release tags in
-[`backend_versions.json`](../../src/cpp/resources/backend_versions.json).
+Update the relevant `strata` release tags and verified engine-archive checksums in
+[`backend_versions.json`](https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/resources/backend_versions.json).
 For example, a compatible release bump changes:
 
 ```json
@@ -478,8 +478,10 @@ These are [upstream Strata release tags](https://github.com/Niko1221/Strata/rele
 not the independently versioned engine number
 embedded in archive names. During installation, Lemonade queries that exact
 release, selects the archive matching the OS/CPU/GPU pattern, and verifies the
-download against the asset's published SHA-256 digest. There is no separate
-engine-version pin or checksum list to update. Missing/ambiguous assets, missing
+download against the pinned SHA-256 checksum when available, falling back to the
+asset's published SHA-256 digest for unpinned releases. Verify new checksum pins
+against the upstream release's `SHA256SUMS.txt` and GitHub asset digests.
+There is no separate engine-version pin. Missing/ambiguous assets, missing
 or invalid SHA-256 digests, API failures and hash mismatches fail explicitly.
 There is no fallback to a different release or unverified download.
 
@@ -510,7 +512,7 @@ installation; `GITHUB_TOKEN` or `GH_TOKEN` can raise the limit.
 ### Model or adapter changes
 
 Stable metadata lives separately in
-[`strata.json`](../../src/cpp/resources/strata.json), independent of release tags:
+[`strata.json`](https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/resources/strata.json), independent of release tags:
 
 | Section | Contents |
 |---------|----------|
@@ -527,7 +529,7 @@ To update a checkpoint's layout, change its repository, shard list or relative
 profile path. There is no fixed shard count; list the primary GGUF shard
 first. Add compatible model/quant entries
 to `models` and the public model definitions to
-[`server_models.json`](../../src/cpp/resources/server_models.json).
+[`server_models.json`](https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/resources/server_models.json).
 `preparation` is `gguf-pack` (default), `native-gguf`, or `ready-pack`.
 `compat_bf16` enables upstream-compatible dense conversions.
 `backends` limits hardware choices; `arguments` replaces the release's tuning

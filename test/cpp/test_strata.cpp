@@ -441,6 +441,16 @@ void test_model_formats(const fs::path& root) {
     strata::finish_preparation({direct / "model.gguf"}, direct / "pack", "native-gguf");
     check("Direct native GGUF requires no dense pack or profile", strata::pack_present(direct / "pack") &&
         !fs::exists(direct / "pack" / "dense.bin") && !fs::exists(direct / "expert-profile.bin"));
+    const auto temporary_marker = direct / "pack" / "lemonade-native.json.tmp";
+    check("Published completion marker leaves no temporary file", !fs::exists(temporary_marker));
+    fs::create_directory(temporary_marker);
+    rejects("Failed marker write is reported", [&] {
+        strata::finish_preparation({direct / "model.gguf"}, direct / "pack", "native-gguf");
+    });
+    check("Failed marker write preserves the published pack", strata::pack_present(direct / "pack"));
+    fs::remove(temporary_marker);
+    strata::finish_preparation({direct / "model.gguf"}, direct / "pack", "native-gguf");
+    check("Completion marker can be replaced", strata::pack_present(direct / "pack"));
     const auto ready = root / "ready";
     fs::create_directories(ready / "pack");
     std::vector<fs::path> sources;
@@ -690,6 +700,14 @@ void test_memory() {
     const auto flash = model_info("Qwen3.8-Flash-Next-Q2_0-Strata");
     const auto qwen = model_info("Qwen3.6-35B-A3B-Q8_0-Strata");
     const auto* ops = strata::ops();
+    auto invalid = flash;
+    invalid.checkpoints["main"] = "unknown/strata-model:invalid";
+    check("Invalid checkpoints keep the device memory budget",
+        ops->streaming_memory_pool_gb(invalid, 64.0, 15.8, json::object()) == 15.8);
+    check("Invalid checkpoints preserve the unknown RAM behavior",
+        ops->streaming_memory_pool_gb(invalid, 0.0, 15.8, json::object()) == 0.0);
+    check("Native GGUF keeps its system RAM budget",
+        ops->streaming_memory_pool_gb(qwen, 64.0, 15.8, json::object()) == 64.0);
     const auto fits = [&](const ModelInfo& info, double ram, double device, double dedicated) {
         const json hardware = {{"amd_gpu", json::array({
             {{"available", true}, {"integrated", dedicated == 0.0}, {"vram_gb", dedicated}}
@@ -863,6 +881,32 @@ void test_cache_isolation() {
         std::ofstream(path, std::ios::binary) << contents;
     };
     const auto repo = utils::path_from_utf8(utils::get_hf_cache_dir()) / "models--org--strata-shared";
+    check("Missing cache is not backend-private-only", !hf_cache::is_backend_private_cache_only(repo));
+    fs::create_directories(repo);
+    check("Empty cache is not backend-private-only", !hf_cache::is_backend_private_cache_only(repo));
+    for (const auto& name : {"strata-drafts", "strata-vision", "strata"}) {
+        const auto isolated = repo.parent_path() / (std::string("models--org--only-") + name);
+        write_file(isolated / name / "main" / "mmproj.gguf");
+        check(std::string("Recognizes private-only cache: ") + name,
+            hf_cache::is_backend_private_cache_only(isolated));
+        CheckpointResolveContext auxiliary;
+        auxiliary.hf_cache = utils::path_to_utf8(isolated.parent_path());
+        auxiliary.repo_id = auxiliary.main_repo_id = "org/only-" + std::string(name);
+        auxiliary.model_cache_path = utils::path_to_utf8(isolated);
+        auxiliary.type = "mmproj";
+        auxiliary.variant = "mmproj.gguf";
+        check(std::string("Private auxiliary is excluded: ") + name,
+            default_backend_ops()->resolve_checkpoint_path({}, auxiliary).empty());
+        auxiliary.repo_id = "org/missing-projector";
+        auxiliary.model_cache_path = utils::path_to_utf8(repo.parent_path() / "models--org--missing-projector");
+        check(std::string("Private legacy auxiliary is excluded: ") + name,
+            default_backend_ops()->resolve_checkpoint_path({}, auxiliary).empty());
+        auxiliary.repo_id = auxiliary.main_repo_id;
+        auxiliary.model_cache_path = utils::path_to_utf8(isolated);
+        auxiliary.variant.clear();
+        check(std::string("Private-only cache is not a generic checkpoint: ") + name,
+            default_backend_ops()->resolve_checkpoint_path({}, auxiliary).empty());
+    }
     write_file(repo / "strata" / "UD-Q4_K_XL" / "model.gguf");
     write_file(repo / "strata" / "vision" / "main" / "mmproj.gguf");
     const auto user_models = utils::path_from_utf8(utils::get_config_dir()) / "user_models.json";
@@ -1578,6 +1622,11 @@ void test_metadata(const fs::path& root) {
     mixed["recipes"]["strata"]["backends"]["cuda"] = {{"state", "installable"}};
     check("Catalog filters NVFP4 on AMD-only hosts", !strata::ops()->model_support_error(nvfp4, amd).empty());
     check("Catalog retains NVFP4 when NVIDIA is also present", strata::ops()->model_support_error(nvfp4, mixed).empty());
+    auto invalid = nvfp4;
+    invalid.checkpoints["main"] = "unknown/strata-model:invalid";
+    check("Invalid checkpoints report validation errors during availability probing",
+        strata::ops()->model_support_error(invalid, mixed) ==
+            strata::ops()->validate_registration_checkpoint(invalid.checkpoint()));
     models::BackendAvailability availability;
     availability.models["builtin.nvfp4"].unsupported_reason =
         strata::ops()->model_support_error(nvfp4, amd);

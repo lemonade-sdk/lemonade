@@ -584,10 +584,16 @@ void finish_preparation(const std::vector<fs::path>& sources, const fs::path& de
         if (mode == "ready-pack") outputs.push_back("experts.bin");
     }
     for (const auto& name : outputs) manifest["pack_files"][name] = fs::file_size(destination / name);
-    std::ofstream marker(destination / "lemonade-native.json");
+    const auto temporary = destination / "lemonade-native.json.tmp";
+    const auto final = destination / "lemonade-native.json";
+    std::ofstream marker(temporary, std::ios::binary | std::ios::trunc);
     marker << manifest.dump(2) << "\n";
     marker.close();
     if (!marker) throw std::runtime_error("Could not write Strata pack completion marker");
+    std::error_code error;
+    fs::remove(final, error);
+    if (error) throw std::runtime_error("Could not replace Strata pack completion marker: " + error.message());
+    fs::rename(temporary, final);
 }
 
 std::pair<fs::path, fs::path> prepare_metal_native(const std::vector<fs::path>& shards, const fs::path& destination) {

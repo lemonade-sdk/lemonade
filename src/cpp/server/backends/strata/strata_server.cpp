@@ -439,13 +439,17 @@ public:
     }
 
     std::string model_support_error(const ModelInfo& info, const json& system) const override {
-        const auto checkpoint = strata::model_checkpoint(info.checkpoint());
-        const auto variants = system.value("recipes", json::object()).value("strata", json::object())
-            .value("backends", json::object());
-        for (const auto& backend : checkpoint.backends) {
-            if (variants.contains(backend) && variants.at(backend).value("state", "unsupported") != "unsupported") return "";
+        try {
+            const auto checkpoint = strata::model_checkpoint(info.checkpoint());
+            const auto variants = system.value("recipes", json::object()).value("strata", json::object())
+                .value("backends", json::object());
+            for (const auto& backend : checkpoint.backends) {
+                if (variants.contains(backend) && variants.at(backend).value("state", "unsupported") != "unsupported") return "";
+            }
+            return "No supported Strata engine backend for " + info.checkpoint();
+        } catch (const std::invalid_argument& e) {
+            return e.what();
         }
-        return "No supported Strata engine backend for " + info.checkpoint();
     }
 
     std::string validate_registration_checkpoint(const std::string& checkpoint) const override {
@@ -460,7 +464,11 @@ public:
     double streaming_memory_pool_gb(const ModelInfo& info, double system_ram_gb,
                                     double device_pool_gb, const json& hardware) const override {
         if (system_ram_gb <= 0.0) return 0.0;
-        if (strata::model_checkpoint(info.checkpoint()).preparation == "native-gguf") return system_ram_gb;
+        try {
+            if (strata::model_checkpoint(info.checkpoint()).preparation == "native-gguf") return system_ram_gb;
+        } catch (const std::invalid_argument&) {
+            return device_pool_gb;
+        }
         double dedicated_vram_gb = 0.0;
         for (const auto& [type, devices] : hardware.items()) {
             if (type != "amd_gpu" && type != "nvidia_gpu") continue;
