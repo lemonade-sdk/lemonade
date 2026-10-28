@@ -497,7 +497,7 @@ bool bearer_matches(const std::string& authorization, const std::string& api_key
 bool remote_operation(const std::string& operation) {
     static const std::vector<std::string> operations = {"status", "join/status", "devices", "members",
         "members/role", "members/permissions", "devices/access", "devices/remove", "invites", "invites/cancel", "join", "relay",
-        "selection", "tree", "tree/children", "tree/groups", "tree/rename", "tree/permissions", "tree/invites",
+        "selection", "device/check", "tree", "tree/children", "tree/groups", "tree/rename", "tree/permissions", "tree/invites",
         "tree/move", "invites/accept", "memberships", "memberships/leave"};
     return std::find(operations.begin(), operations.end(), operation) != operations.end();
 }
@@ -1180,6 +1180,19 @@ struct NexusManager::Session {
         if (path == "/lock") { hold_locked = true; lock(); return status(); }
         if (path == "/link-token/cancel") return {{"cancelled", true}, {"revoked", false}};
         if (locked) throw NexusError(423, "Unlock your network first");
+        if (path == "/device/check") {
+            // Advisory: tells the UI whether a device name folds to a free DNS label in
+            // the target group. The federation still refuses a collision on join or
+            // rename, so two devices checking the same name at once cannot both win.
+            const auto name = body.value("name", std::string{});
+            if (name.empty() || name.size() > 128) throw NexusError(400, "Enter a device name (up to 128 characters)");
+            const auto code = body.value("code", std::string{});
+            if (joined && code.empty()) {
+                return sdk_call([&](auto out) { return ln_check_device_name(client.get(), name.c_str(), group_id.c_str(), "", out); });
+            }
+            if (!nexus_access::invite_code(code)) throw NexusError(400, "Enter the invite code for the group you are joining");
+            return sdk_call([&](auto out) { return ln_check_device_name(client.get(), name.c_str(), "", code.c_str(), out); });
+        }
         if (path == "/join") {
             const auto code = body.at("code").get<std::string>();
             if (!nexus_access::invite_code(code)) throw NexusError(400, "Enter an 8-digit code or a full invite token");
@@ -1715,7 +1728,7 @@ void NexusManager::register_routes(httplib::Server& server, NexusListener listen
         for (const auto* operation : {"status", "passkey/challenge", "devices", "members", "join/status", "events", "tree", "account", "selection", "memberships"}) {
             server.Get(std::string(prefix) + operation, [dispatch, operation](const auto& req, auto& res) { dispatch(req, res, operation); });
         }
-        for (const auto* operation : {"enable", "disable", "passkey/register", "passkey/unlock", "key/unlock", "invites", "invites/cancel", "join", "egress", "lock", "device", "account/avatar", "selection", "invites/accept", "account/delete"}) {
+        for (const auto* operation : {"enable", "disable", "passkey/register", "passkey/unlock", "key/unlock", "invites", "invites/cancel", "join", "egress", "lock", "device", "device/check", "account/avatar", "selection", "invites/accept", "account/delete"}) {
             server.Post(std::string(prefix) + operation, [dispatch, operation](const auto& req, auto& res) { dispatch(req, res, operation); });
         }
         server.Post(std::string(prefix) + R"(devices/([A-Za-z0-9_-]+)/remove)",

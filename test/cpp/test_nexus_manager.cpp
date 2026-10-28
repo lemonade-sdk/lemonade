@@ -101,7 +101,7 @@ void check_route_access(const std::function<void(bool, const char*)>& check) {
     check(access(NexusListener::Public, false, "members", "Bearer admin", "key", "admin").first == 0, "The admin key also authorizes remote management");
     for (const auto* operation : {"status", "join/status", "devices", "members", "members/role", "members/permissions",
                                   "devices/access", "devices/remove", "invites", "invites/cancel", "join", "tree", "tree/children", "tree/groups", "tree/rename", "tree/permissions",
-                                  "tree/invites", "tree/move", "invites/accept", "memberships", "memberships/leave"}) {
+                                  "tree/invites", "tree/move", "invites/accept", "memberships", "memberships/leave", "device/check"}) {
         check(access(NexusListener::Public, false, operation, "Bearer key", "key").first == 0, "Group operations are available remotely");
     }
     for (const auto* operation : {"tree/invites", "tree/move", "invites/accept", "memberships", "memberships/leave", "account/delete"}) {
@@ -588,6 +588,7 @@ int main() {
             request("join", R"({"code":"12345678"})", 423);
             request("egress", R"({"node_id":"another-device"})", 423);
             request("invites", R"({"device_name":"New device"})", 423);
+            request("device/check", R"({"name":"Work PC"})", 423);
             request("passkey/unlock", R"({"passkey_assertion":{"credential_id":"wrong"}})", 403);
             request("members/peer/role", R"({"role":"admin"})", 423);
             request("members/peer/permissions", R"({"permissions":["read"]})", 423);

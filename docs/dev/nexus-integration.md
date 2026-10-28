@@ -232,6 +232,7 @@ Routes are available under `/api/v0/nexus/`, `/api/v1/nexus/`, `/v0/nexus/`,
 | GET | `passkey/challenge` | Federation challenge (`register=1` for enrollment) |
 | POST | `passkey/register`, `passkey/unlock` | Register or verify the device's credential |
 | POST | `key/unlock` | Unlock with the device key (`{defer_join?}`); local-only, refused once a passkey is registered |
+| POST | `device/check` | Advisory check that a device name folds to a free DNS label: `{name, code?}`; uses this account's group when joined, else the invite code's group. Answers `{label, available, conflicts, suggestion}`. The federation still refuses a collision on join or rename |
 | POST | `enable`, `disable`, `lock`, `device` | Local state and device name |
 | POST | `invites`, `invites/cancel`, `join` | Invite a device into this account's top-level group with `{device_name, permissions?, ttl_sec?}`, or join as a new device with `{code}` |
 | POST | `tree/{id}/invites` | Invite into group `{id}` with `{permissions?, ttl_sec?, device_name?}`; needs `add_child` or admin above it |
