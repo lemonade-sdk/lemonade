@@ -315,6 +315,7 @@ When the container tool is Podman, the checks are:
 | Podman installed | `podman` is not on `PATH` | The install command for the host's `ID` |
 | Device nodes accessible | Podman is rootless and the user's account is not in both `video` and `render` | 1. `sudo usermod -aG video,render $USER`<br>2. Log out and back in |
 | Podman answers | `podman info` fails | Run `podman info` and fix the error it prints |
+| Network reachable | Podman is rootful and its network backend is CNI, which gives an internal network no gateway for `lemond` to reach the container by | Unset `CONTAINER_HOST` to use rootless Podman |
 
 When the container tool is Docker, the checks are:
 
@@ -356,6 +357,7 @@ When the container tool is Podman, the checks are:
 | Device nodes accessible | `lemonade` is not in both `video` and `render` | 1. `sudo usermod -aG video,render lemonade`<br>2. `sudo systemctl restart lemond` |
 | Subordinate IDs allocated | Podman is rootless and `getsubids lemonade` or `getsubids -g lemonade` prints no range | Ask the host's administrator to allocate 65,536 subordinate UIDs and GIDs to `lemonade`, then `sudo systemctl restart lemond` |
 | Podman answers | `podman info` fails | Run `podman info` and fix the error it prints |
+| Network reachable | Podman is rootful and its network backend is CNI | 1. Remove `CONTAINER_HOST` from `/etc/default/lemond` to use rootless Podman<br>2. `sudo systemctl restart lemond` |
 
 When the container tool is Docker, the checks are:
 

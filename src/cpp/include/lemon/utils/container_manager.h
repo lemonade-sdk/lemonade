@@ -159,6 +159,8 @@ private:
     ContainerHost host_;
     mutable std::mutex podman_mode_mutex_;
     mutable std::optional<bool> podman_rootless_;
+    // Podman's network backend, "netavark" or "cni", from the same answer.
+    mutable std::string podman_network_backend_;
 };
 
 }  // namespace utils

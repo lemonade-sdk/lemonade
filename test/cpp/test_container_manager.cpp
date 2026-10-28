@@ -46,6 +46,7 @@ struct FakeHost {
     // `podman info`'s exit code and its Host.Security.Rootless answer.
     int podman_info_exit = 0;
     std::string podman_rootless = "true";
+    std::string network_backend = "netavark";
     // What Podman prints on stderr, which reaches `output` only when captured.
     std::string stderr_noise =
         "time=\"2026-10-17T00:57:31Z\" level=warning msg=\"Falling back to --cgroup-manager=cgroupfs\"\n";
@@ -80,7 +81,7 @@ struct FakeHost {
             lemon::utils::CommandResult result;
             if (argv.size() > 1 && argv[0] == "podman" && argv[1] == "info") {
                 result.exit_code = podman_info_exit;
-                result.output = podman_rootless + "\n";
+                result.output = podman_rootless + " " + network_backend + "\n";
             } else if (argv.size() > 1 && argv[1] == "network") {
                 result.exit_code = 0;
             } else if (argv.front() == "getsubids") {
@@ -346,6 +347,39 @@ void test_rootful_service() {
           !failure || failure->id != "subordinate_ids");
 }
 
+void test_rootful_cni() {
+    // Rootful lemond connects to the container's address, which an internal
+    // network on Podman 4's CNI backend leaves unreachable. Either the port is
+    // published or setup reports the problem, instead of a load that times out.
+    FakeHost cni;
+    cni.tools = {"podman"};
+    cni.podman_rootless = "false";
+    cni.network_backend = "cni";
+    const ContainerManager cni_manager(cni.host());
+    const bool published =
+        join(cni_manager.run_command(example_spec())).find(" -p 127.0.0.1:") != std::string::npos;
+    check("rootful Podman on CNI publishes the port or reports a setup failure",
+          published || cni_manager.check_podman().has_value());
+
+    FakeHost cni_service = cni;
+    cni_service.account = "lemonade";
+    cni_service.env = {{"CONTAINER_HOST", "unix:///run/podman-lemonade.sock"}};
+    const auto cni_failure = ContainerManager(cni_service.host()).check_podman();
+    check("the service's CNI fix removes CONTAINER_HOST and restarts lemond",
+          cni_failure && cni_failure->id == "rootful_cni" &&
+              lemon::utils::SetupReport{{*cni_failure}}.action() ==
+                  "1. Remove CONTAINER_HOST from /etc/default/lemond to use rootless Podman\n"
+                  "2. sudo systemctl restart lemond");
+    FakeHost netavark = cni;
+    netavark.network_backend = "netavark";
+    check("rootful Podman on netavark passes the setup check",
+          !ContainerManager(netavark.host()).check_podman());
+    FakeHost rootless_cni = cni;
+    rootless_cni.podman_rootless = "true";
+    check("rootless Podman on CNI passes the setup check, since it publishes a port",
+          !ContainerManager(rootless_cni.host()).check_podman());
+}
+
 void test_install_commands() {
     const auto command = ContainerManager::podman_install_command;
     check("Rocky Linux matches fedora through ID_LIKE",
@@ -437,6 +471,7 @@ int main() {
     test_system_service_setup();
     test_create_network();
     test_rootful_service();
+    test_rootful_cni();
     test_install_commands();
     test_helpers();
 #ifndef _WIN32

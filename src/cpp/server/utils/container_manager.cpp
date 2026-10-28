@@ -196,13 +196,18 @@ std::optional<bool> ContainerManager::podman_info_rootless() const {
         std::lock_guard<std::mutex> lock(podman_mode_mutex_);
         if (podman_rootless_) return podman_rootless_;
     }
-    const CommandResult info =
-        host_.run({"podman", "info", "--format", "{{.Host.Security.Rootless}}"},
-                  kCommandTimeoutSeconds, /*capture_stderr=*/false);
+    const CommandResult info = host_.run(
+        {"podman", "info", "--format", "{{.Host.Security.Rootless}} {{.Host.NetworkBackend}}"},
+        kCommandTimeoutSeconds, /*capture_stderr=*/false);
     if (info.exit_code != 0) return std::nullopt;
-    const bool rootless = trim(info.output) == "true";
+    std::istringstream fields(info.output);
+    std::string rootless_field;
+    std::string backend;
+    fields >> rootless_field >> backend;
+    const bool rootless = rootless_field == "true";
     std::lock_guard<std::mutex> lock(podman_mode_mutex_);
     podman_rootless_ = rootless;
+    podman_network_backend_ = backend;
     return rootless;
 }
 
@@ -263,9 +268,34 @@ std::optional<SetupFailure> ContainerManager::check_podman() const {
                                 "sudo systemctl restart lemond"};
         }
     }
-    if (podman_info_rootless()) return std::nullopt;
-    return SetupFailure{"podman_info", "`podman info` fails",
-                        {"Run `podman info` and fix the error it prints"}, ""};
+    const std::optional<bool> rootless = podman_info_rootless();
+    if (!rootless) {
+        return SetupFailure{"podman_info", "`podman info` fails",
+                            {"Run `podman info` and fix the error it prints"}, ""};
+    }
+    // Rootful lemond connects at the container's address, and Podman 4's CNI
+    // backend gives an internal network no gateway on the host to reach it by.
+    // Rootless Podman publishes a port instead, so it works on CNI too.
+    std::string backend;
+    {
+        std::lock_guard<std::mutex> lock(podman_mode_mutex_);
+        backend = podman_network_backend_;
+    }
+    if (!*rootless && backend == "cni") {
+        const bool service = host_.account() == kServiceAccount;
+        std::string step = "Run lemond as a regular account to use rootless Podman";
+        std::string apply;
+        if (!host_.env("CONTAINER_HOST").empty()) {
+            step = service ? "Remove CONTAINER_HOST from /etc/default/lemond to use rootless Podman"
+                           : "Unset CONTAINER_HOST to use rootless Podman";
+            if (service) apply = "sudo systemctl restart lemond";
+        }
+        return SetupFailure{
+            "rootful_cni",
+            "Rootful Podman's CNI network backend gives lemond no route to its containers",
+            {step}, apply};
+    }
+    return std::nullopt;
 }
 
 std::vector<std::string> SetupReport::ids() const {
@@ -482,8 +512,8 @@ void ContainerManager::create_network(const std::string& name) const {
     // Rootless Podman starts the network's DNS server through the account's
     // systemd user manager, which lemond.service's account does not have, and
     // lemond reaches its one container through a published port. Rootful
-    // Podman keeps DNS: CNI gives an internal network without it no gateway,
-    // and lemond connects at the container's address.
+    // Podman keeps DNS: netavark gives an internal network without it no
+    // gateway, and lemond connects at the container's address.
     if (rootless_podman()) args.push_back("--disable-dns");
     args.push_back(name);
     const CommandResult result = invoke(args, kCommandTimeoutSeconds);
