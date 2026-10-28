@@ -67,6 +67,17 @@ inside the desktop app. Linux requires libudev and working hidraw permissions.
 macOS Touch ID is not a native backend in this integration. A matching-origin
 webview can also use WebAuthn.
 
+A server without a person at it unlocks with its device key instead. The device
+key is the Ed25519 identity in `nexus/identity.json`, which already
+authenticates every federation session. `POST key/unlock` on the local
+controller authenticates with it, creates the account on first use, and marks
+the device as key-unlocked. From then on the device unlocks again by itself
+after a restart or a supervisor pause, and the passkey routes answer 409. A
+device unlocks with a passkey or with its device key, never both. An explicit
+`lock` holds until the next `key/unlock` or restart. Whoever can read
+`identity.json` can unlock the device, so key unlock belongs on servers whose
+disk access already equals control of lemond.
+
 ### Remote management
 
 GUI3 can manage a `lemond` on another machine. Connect to the server's address
@@ -108,8 +119,9 @@ the hostname used to reach that server.
 
 Identity, account metadata and enabled preference live in `nexus/` under the
 server configuration directory. Unix permissions restrict the directory to its
-owner. Restart leaves an enabled device locked. A long supervisor pause locks
-the mesh. Transient failures reconnect with bounded backoff after a successful
+owner. Restart leaves an enabled passkey device locked, and a long supervisor
+pause locks the mesh; a key-unlocked device unlocks again by itself in both
+cases. Transient failures reconnect with bounded backoff after a successful
 join, without replaying consumed invite tokens.
 
 Virtual TCP port `13305` forwards to a separate loopback listener that
@@ -197,6 +209,7 @@ Routes are available under `/api/v0/nexus/`, `/api/v1/nexus/`, `/v0/nexus/`,
 | GET | `status`, `join/status` | Network/device state and local controller URL |
 | GET | `passkey/challenge` | Federation challenge (`register=1` for enrollment) |
 | POST | `passkey/register`, `passkey/unlock` | Register or verify the device's credential |
+| POST | `key/unlock` | Unlock with the device key (`{defer_join?}`); local-only, refused once a passkey is registered |
 | POST | `enable`, `disable`, `lock`, `device` | Local state and device name |
 | POST | `invites`, `invites/cancel`, `join` | Invite a device into this account's top-level group with `{device_name, permissions?, ttl_sec?}`, or join as a new device with `{code}` |
 | POST | `tree/{id}/invites` | Invite into group `{id}` with `{permissions?, ttl_sec?, device_name?}`; needs `add_child` or admin above it |

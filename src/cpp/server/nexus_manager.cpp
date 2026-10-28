@@ -466,6 +466,7 @@ struct NexusManager::Session {
     std::string mesh_port_error;
     json account = json::object();
     bool locked{true};
+    bool hold_locked{false};  // an explicit lock stops key unlock until the next key unlock or restart
     bool joined{false};
     bool reconnect{false};
     bool avatar_configured{false};
@@ -569,6 +570,24 @@ struct NexusManager::Session {
         }
         account["user_id"] = result.at("user_id");
         return result;
+    }
+    // A device unlocks with a passkey or with its device key, never both. The device
+    // key is the Ed25519 identity in identity.json, which already authenticates every
+    // federation session; key unlock removes the user-presence step for servers
+    // without a person at them, so it also unlocks again by itself after a restart.
+    bool key_unlock() const { return account.value("unlock", std::string{}) == "device_key"; }
+    void unlock_with_key(bool defer_join) {
+        if (account.contains("credential_id")) throw NexusError(409, "This device unlocks with its passkey");
+        authenticate_identity();
+        if (!key_unlock()) {
+            account["unlock"] = "device_key";
+            persist();
+        }
+        hold_locked = false;
+        locked = false;
+        last_poll = std::chrono::system_clock::now();
+        detail = joined ? "running" : "ready";
+        if (!defer_join && !joined) join("");
     }
     json private_call(const char* method, const std::string& path, const std::string& body = "") {
         auto value = sdk_call([&](auto out) { return ln_private_api_call(client.get(), method, path.c_str(), body.c_str(), out); });
@@ -718,7 +737,8 @@ struct NexusManager::Session {
         return {{"status", detail}, {"locked", locked}, {"mesh_up", !locked && ln_mesh_is_active(client.get()) != 0},
             {"node_id", node_id}, {"group_node_id", group_id}, {"tunnel_ip", tunnel_ip},
             {"peer_count", mesh.value("peer_count", 0)}, {"device_name", device_name()}, {"server", host},
-            {"registered", account.contains("credential_id")}, {"members", devices},
+            {"registered", account.contains("credential_id") || key_unlock()},
+            {"unlock", key_unlock() ? "device_key" : "passkey"}, {"members", devices},
             {"exposed", json::array({{{"vport", 13305}, {"local_port", ingress_port}}})}, {"error", error},
             {"genesis_key_set", genesis_key_set}, {"mesh_port", mesh_port_status()}};
     }
@@ -764,7 +784,7 @@ struct NexusManager::Session {
         return reply;
     }
     void join(const std::string& code) {
-        if (locked) throw NexusError(423, "Unlock with your passkey before joining");
+        if (locked) throw NexusError(423, "Unlock this device before joining");
         if (ingress_port <= 0) throw NexusError(503, "The mesh service listener is not running");
         detail = "joining";
         ln_set_link_token(client.get(), code.c_str());
@@ -813,8 +833,18 @@ struct NexusManager::Session {
         const auto now = std::chrono::system_clock::now();
         const auto elapsed = now - last_poll;
         last_poll = now;
-        if (!locked && elapsed > std::chrono::minutes(5)) { lock(); return; }
-        if (locked || !reconnect || std::chrono::steady_clock::now() < retry_at) return;
+        if (!locked && elapsed > std::chrono::minutes(5)) lock();
+        if (locked) {
+            if (!key_unlock() || hold_locked || std::chrono::steady_clock::now() < retry_at) return;
+            try { unlock_with_key(false); }
+            catch (const std::exception& e) {
+                error = e.what(); detail = "degraded";
+                retry_at = std::chrono::steady_clock::now() + retry_delay;
+                retry_delay = std::min(retry_delay * 2, std::chrono::seconds(60));
+            }
+            return;
+        }
+        if (!reconnect || std::chrono::steady_clock::now() < retry_at) return;
         try {
             if (!joined || !ln_mesh_is_active(client.get())) {
                 ln_mesh_disable(client.get());
@@ -852,6 +882,7 @@ struct NexusManager::Session {
         }
         if (path == "/passkey/register") {
             if (account.contains("credential_id")) throw NexusError(409, "This device already has a passkey");
+            if (key_unlock()) throw NexusError(409, "This device unlocks with its device key");
             if (!account.contains("user_id")) throw NexusError(409, "Request a registration challenge first");
             const auto authenticated = authenticate_identity();
             const auto user_id = authenticated.at("user_id").get<std::string>();
@@ -863,7 +894,12 @@ struct NexusManager::Session {
             persist();
             return status();
         }
+        if (path == "/key/unlock") {
+            unlock_with_key(body.value("defer_join", false));
+            return status();
+        }
         if (path == "/unlock") {
+            if (key_unlock()) throw NexusError(409, "This device unlocks with its device key");
             const auto& assertion = body.at("passkey_assertion");
             if (!account.contains("credential_id") || assertion.at("credential_id") != account.at("credential_id")) throw NexusError(403, "Use this device's registered passkey");
             auto encoded = assertion.at("authenticator_data").get<std::string>();
@@ -885,7 +921,7 @@ struct NexusManager::Session {
             if (!body.value("defer_join", false) && !joined) join("");
             return status();
         }
-        if (path == "/lock") { lock(); return status(); }
+        if (path == "/lock") { hold_locked = true; lock(); return status(); }
         if (path == "/link-token/cancel") return {{"cancelled", true}, {"revoked", false}};
         if (locked) throw NexusError(423, "Unlock your network first");
         if (path == "/join") {
@@ -1420,7 +1456,7 @@ void NexusManager::register_routes(httplib::Server& server, NexusListener listen
         for (const auto* operation : {"status", "passkey/challenge", "devices", "members", "join/status", "events", "tree", "account", "selection", "memberships"}) {
             server.Get(std::string(prefix) + operation, [dispatch, operation](const auto& req, auto& res) { dispatch(req, res, operation); });
         }
-        for (const auto* operation : {"enable", "disable", "passkey/register", "passkey/unlock", "invites", "invites/cancel", "join", "egress", "lock", "device", "account/avatar", "selection", "invites/accept", "account/delete"}) {
+        for (const auto* operation : {"enable", "disable", "passkey/register", "passkey/unlock", "key/unlock", "invites", "invites/cancel", "join", "egress", "lock", "device", "account/avatar", "selection", "invites/accept", "account/delete"}) {
             server.Post(std::string(prefix) + operation, [dispatch, operation](const auto& req, auto& res) { dispatch(req, res, operation); });
         }
         server.Post(std::string(prefix) + R"(devices/([A-Za-z0-9_-]+)/remove)",

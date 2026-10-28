@@ -103,8 +103,9 @@ void check_route_access(const std::function<void(bool, const char*)>& check) {
     for (const auto* operation : {"tree/invites", "tree/move", "invites/accept", "memberships", "memberships/leave", "account/delete"}) {
         check(access(NexusListener::MeshIngress, true, operation, "Bearer key", "key").first == 403, "Mesh ingress refuses invite, membership, move and deletion routes");
     }
-    for (const auto* operation : {"passkey/challenge", "passkey/register", "passkey/unlock", "enable", "disable", "lock", "device", "events", "egress", "account", "account/delete"}) {
+    for (const auto* operation : {"passkey/challenge", "passkey/register", "passkey/unlock", "key/unlock", "enable", "disable", "lock", "device", "events", "egress", "account", "account/delete"}) {
         check(access(NexusListener::Public, false, operation, "Bearer key", "key").first == 403, "Local device operations stay local");
+        check(access(NexusListener::MeshIngress, true, operation, "Bearer key", "key").first == 403, "Mesh ingress refuses local device operations");
     }
     check(access(NexusListener::MeshIngress, true, "relay", "Bearer key", "key").first == 403, "Mesh peers cannot use the relay");
     check(access(NexusListener::Public, true, "relay", "", "").first == 0, "Local clients use the relay under the local rules");
@@ -344,6 +345,10 @@ int main() {
     const auto root = std::filesystem::temp_directory_path() / ("lemonade-nexus-test-" +
         std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
     const auto cleanup = [&] { std::error_code ec; std::filesystem::remove_all(root, ec); };
+    // Point the SDK at a closed loopback port: the manager's supervisor must never reach a
+    // real federation from a test, and every federation call fails fast and locally.
+    set_environment("LEMONADE_NEXUS_SERVER", "127.0.0.1");
+    set_environment("LEMONADE_NEXUS_PORT", "9");
     try {
         const json group = {{"id", "root"}, {"parent_id", "outside"}, {"type", "customer"}, {"hostname", "Team"},
             {"assignments", json::array({{{"management_pubkey", "self"}, {"permissions", json::array({"admin"})}}})}};
@@ -498,6 +503,27 @@ int main() {
             auto named = request("device", R"({"device_name":"My laptop"})", 200);
             check(named.at("device_name") == "My laptop", "Device name updated");
             request("lock", "{}", 200);
+            // A device that unlocks with its device key reports itself registered, refuses the
+            // passkey routes, and stays locked after an explicit lock even though the supervisor
+            // would unlock it again by itself.
+            request("disable", "{}", 200);
+            {
+                std::ifstream saved_input(root / "nexus/account.json");
+                auto saved = nlohmann::json::parse(saved_input, nullptr, false);
+                saved_input.close();
+                if (!saved.is_object()) saved = nlohmann::json::object();
+                saved["unlock"] = "device_key";
+                std::ofstream saved_output(root / "nexus/account.json");
+                saved_output << saved.dump();
+            }
+            auto keyed = request("enable", "{}", 200);
+            check(keyed.at("registered") == true && keyed.at("unlock") == "device_key", "Device key unlock counts as registered");
+            request("passkey/register", R"({"credential_id":"c","public_key_x":"x","public_key_y":"y"})", 409);
+            request("passkey/unlock", R"({"passkey_assertion":{"credential_id":"c"}})", 409);
+            request("lock", "{}", 200);
+            std::this_thread::sleep_for(std::chrono::seconds(6));
+            auto held = management.Get("/api/v1/nexus/status");
+            check(held && held->status == 200 && nlohmann::json::parse(held->body).at("locked") == true, "An explicit lock holds against key unlock");
 #else
             request("enable", "{}", 503);
             request("selection", R"({"target":"local"})", 503);
