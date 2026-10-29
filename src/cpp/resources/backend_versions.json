@@ -182,7 +182,7 @@
     "cpu": "moonshine0.0.62"
   },
   "onnxruntime": {
-    "cpu": "0.3.7"
+    "cpu": "0.4.0"
   },
   "thinksound": {
     "vulkan": "v0.1.2",
