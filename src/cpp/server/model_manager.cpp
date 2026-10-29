@@ -222,6 +222,8 @@ void ModelManager::on_model_updated(std::function<void(const std::string&)> subs
     change_notifier_.on_model_updated(std::move(subscriber));
 }
 
+std::uint64_t ModelManager::models_generation() const { return store_.generation(); }
+
 std::set<std::string> ModelManager::active_helper_models() {
     build_cache();
     return store_.read()->helper_models;

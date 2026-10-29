@@ -303,8 +303,11 @@ function backendDownloadName(recipe: string, backend: string): string {
 
 function backendDownloadMatches(download: DownloadListItem, recipe: string, backend: string): boolean {
   const name = backendDownloadName(recipe, backend);
+  const id = backendDownloadId(recipe, backend);
+  const resolvedRocm = backend === 'rocm'
+    && (download.id === `${id}-stable` || download.id === `${id}-nightly`);
   return download.downloadType === 'backend'
-    && (download.id === backendDownloadId(recipe, backend) || download.modelName === name);
+    && (download.id === id || download.modelName === name || resolvedRocm);
 }
 
 function backendProgressPercent(download: DownloadListItem): number {
@@ -488,6 +491,15 @@ function stateBadge(state: BackendInfo['state']): { label: string; cls: string }
     case 'action_required':  return { label: 'Action required',   cls: 'cell__badge--warn' };
     case 'unsupported':      return { label: 'Unsupported',       cls: 'cell__badge--off' };
     default:                 return { label: state,                cls: '' };
+  }
+}
+
+function isWebUrl(text: string): boolean {
+  try {
+    const { protocol } = new URL(text);
+    return protocol === 'http:' || protocol === 'https:';
+  } catch {
+    return false;
   }
 }
 
@@ -1236,7 +1248,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
                         {isInstalling ? t('Updating…') : t('Update')}
                       </WorkspaceActionButton>
                     )}
-                    {info.state === 'action_required' && info.action && (
+                    {info.state === 'action_required' && isWebUrl(info.action) && (
                       <WorkspaceActionButton
                         size="small"
                         appearance="secondary"
@@ -1291,6 +1303,12 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
                 )}
                 {backendDownload?.status === 'error' && backendDownload.error ? (
                   <p className="backend-card__note backend-card__note--error">{backendDownload.error}</p>
+                ) : info.state === 'action_required' && info.action && !isWebUrl(info.action) ? (
+                  <details className="backend-card__setup">
+                    <summary>{t('Setup required')}</summary>
+                    {info.message && <p className="backend-card__note">{t(info.message)}</p>}
+                    <p className="backend-card__setup-steps">{info.action}</p>
+                  </details>
                 ) : ((showTech || info.state === 'update_available' || info.state === 'update_required') && info.message && (
                   <p className="backend-card__note">{t(info.message)}</p>
                 ))}
