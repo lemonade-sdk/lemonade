@@ -2,7 +2,15 @@
 
 A container backend runs its server from a container image instead of a downloaded binary. `lemonade backends` lists these backends with the format `container`. Installing one pulls its image, pinned by digest, and loading a model starts a container from that image.
 
-Container backends run on Linux with Podman or Docker. Lemonade uses Podman when it is installed, and Docker otherwise.
+Container backends run on Linux with Podman or Docker. Lemonade picks one when it runs a container:
+
+| Engine | Used when |
+|--------|-----------|
+| Rootless Podman (default) | Podman is installed. Containers run as the account `lemond` runs under. |
+| Rootful Podman | Podman is installed and `CONTAINER_HOST` points at a root Podman socket, or `lemond` runs as root. |
+| Docker | Podman is not installed. |
+
+Rootful Podman and Docker give that account root-equivalent control of the host's containers.
 
 | Backend | Engine | Image |
 |---------|--------|-------|
@@ -12,7 +20,7 @@ Container backends run on Linux with Podman or Docker. Lemonade uses Podman when
 
 ## Setup
 
-When `lemond` runs under your own account, from a shell, a `systemctl --user` unit, or an app that embeds it, Podman runs containers as that account. Set `CONTAINER_HOST` to root's Podman socket to run them with rootful Podman instead.
+When `lemond` runs under your own account, from a shell, a `systemctl --user` unit, or an app that embeds it, its containers sit beside your own in `podman ps`, and it uses whatever `CONTAINER_HOST` your environment sets.
 
 **With Podman:**
 
@@ -25,7 +33,37 @@ When `lemond` runs under your own account, from a shell, a `systemctl --user` un
 1. Add your account to the `docker` group: `sudo usermod -aG docker $USER`.
 2. Log out and back in.
 
-When `lemond` runs as `lemond.service`, installed by the `.deb`, PPA or `.rpm` package, it runs under the `lemonade` account. The package pulls in Podman, adds `lemonade` to `video` and `render`, and allocates its subordinate UID and GID range, so Podman needs no further setup. To use Docker instead, run `sudo usermod -aG docker lemonade` and `sudo systemctl restart lemond`.
+Docker Desktop and rootless Docker can't run container backends. With either one, install Podman instead.
+
+When `lemond` runs as `lemond.service`, installed by the `.deb`, PPA or `.rpm` package, it runs under the `lemonade` account. The package pulls in Podman, adds `lemonade` to `video` and `render`, and allocates its subordinate UID and GID range, so rootless Podman needs no further setup.
+
+**`lemond.service` with rootful Podman:** give `lemonade` its own root Podman socket, leaving root's `podman.socket` as it is. Rootful Podman needs the netavark network backend, Podman's default; on Podman 4's older CNI backend, `lemond` cannot reach its containers. Switching root's Podman to netavark (`network_backend = "netavark"` in `/etc/containers/containers.conf`) needs `podman system reset`, which deletes all of root's containers and images.
+
+1. Create `/etc/systemd/system/podman-lemonade.socket`:
+   ```ini
+   [Socket]
+   ListenStream=/run/podman-lemonade.sock
+   SocketGroup=lemonade
+   SocketMode=0660
+
+   [Install]
+   WantedBy=sockets.target
+   ```
+2. Create `/etc/systemd/system/podman-lemonade.service`:
+   ```ini
+   [Service]
+   Delegate=true
+   Type=exec
+   KillMode=process
+   ExecStart=/usr/bin/podman system service
+   ```
+3. `sudo systemctl daemon-reload && sudo systemctl enable --now podman-lemonade.socket`
+4. Add `CONTAINER_HOST=unix:///run/podman-lemonade.sock` to `/etc/default/lemond`, then `sudo systemctl restart lemond`.
+
+**`lemond.service` with Docker:**
+
+1. Remove Podman, which takes precedence: `sudo apt remove podman` or `sudo dnf remove podman`.
+2. `sudo usermod -aG docker lemonade`, then `sudo systemctl restart lemond`.
 
 **With SELinux enforcing**, as on Fedora, ROCm backends also need containers allowed to map GPU devices: `sudo setsebool -P container_use_devices 1`.
 
@@ -42,7 +80,7 @@ Install pulls the image, so loading a model starts from the image already on dis
 
 ## How Containers Run
 
-Each loaded model gets its own container, named `lemonade-<recipe>-<backend>-<model>` and labeled `ai.lemonade`, so `podman ps --filter label=ai.lemonade` lists them. Every load logs its full `podman run` or `docker run` command. Each container:
+Each loaded model gets its own container, named `lemonade-<recipe>-<backend>-<model>` and labeled `ai.lemonade`, so `podman ps --filter label=ai.lemonade` lists them. Under `lemond.service`, run Podman inside the service's private `/tmp`: `sudo systemd-run --quiet --wait --pty -p JoinsNamespaceOf=lemond.service -p PrivateTmp=yes -p User=lemonade -p WorkingDirectory=/ podman ps --filter label=ai.lemonade`. Plain `sudo -u lemonade podman` does not see the service's runtime state, and Podman 5 then loses track of its running containers. Every load logs its full `podman run` or `docker run` command. Each container:
 
 - mounts only the model's files, read-only, under `/mnt/models`, with the shared SELinux label so other containers and programs can still read them
 - opens only the GPU device nodes its backend needs
