@@ -8,7 +8,7 @@ const peer: NexusDevice = { node_id: 'peer', device_name: 'Kitchen PC', tunnel_i
 
 export async function setupNexusAccount(page: Page, options: {
   desktop?: boolean; registered?: boolean; joined?: boolean; readOnly?: boolean; cancelPasskey?: boolean; unauthorized?: boolean;
-  avatarUnsupported?: boolean; needsUserKey?: boolean;
+  avatarUnsupported?: boolean; needsUserKey?: boolean; inviteWithoutCode?: boolean;
 } = {}) {
   const members = [{ ...self, ...(options.readOnly ? { is_admin: false, permissions: ['read'] } : {}) }, peer];
   const state: NexusStatus = { available: true, controller_url: 'http://127.0.0.1:15555', enabled: true,
@@ -79,7 +79,7 @@ export async function setupNexusAccount(page: Page, options: {
       fixture.avatar = {...fixture.avatar, image: body?.image as string | null, pending: false, revision: fixture.avatar.revision + 1};
       return route.fulfill({headers, json: fixture.avatar});
     }
-    if (path.endsWith('/invites')) return route.fulfill({ headers, json: { code: '12345678', link_token: `lnk_${'a'.repeat(64)}`, expires_at: Math.floor(Date.now() / 1000) + 600, device_name: body?.device_name } });
+    if (path.endsWith('/invites')) return route.fulfill({ headers, json: { ...(options.inviteWithoutCode ? {} : { code: '12345678' }), link_token: `lnk_${'a'.repeat(64)}`, expires_at: Math.floor(Date.now() / 1000) + 600, device_name: body?.device_name } });
     const mutation = path.match(/\/tree\/([^/]+)\/(groups|rename|permissions)$/);
     if (mutation) {
       if (fixture.rejectWrites) return route.fulfill({ status: 403, headers, json: { error: 'This group cannot be changed.' } });

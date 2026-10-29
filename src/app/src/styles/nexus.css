@@ -264,6 +264,8 @@
 .nexus-account-dialog .nexus-group-actions { margin-top: 18px; justify-content: flex-end; }
 .nexus-account-dialog form > .workspace-action-button[type="submit"] { width: 100%; margin-top: 10px; }
 .nexus-account-invitation { margin: 20px 0 12px; padding: 16px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-2); font-family: monospace; font-size: var(--text-lg); text-align: center; overflow-wrap: anywhere; user-select: all; }
+.nexus-account-invitation--code { font-size: var(--text-3xl); font-weight: 600; letter-spacing: 0.08em; }
+.nexus-account-dialog .nexus-account-invitation + [role="timer"] + .workspace-action-button + .workspace-action-button { margin-top: 8px; }
 @media (max-width: 480px) {
   .nexus-account-dialog-backdrop { padding: 12px; }
   .nexus-account-dialog { padding: 20px; max-height: calc(100dvh - 24px); }

@@ -111,11 +111,18 @@ export function NexusAccountInviteDialog({ service, session, onClose }: {
     return () => { window.clearInterval(timer); document.removeEventListener('keydown', escape); };
   }, [busy, onClose]);
   const expires = invite ? Math.max(0, Math.min(600, Math.ceil(invite.expires_at - now / 1000))) : 0;
+  // Older servers return only the token; the 8-digit code is easier to read out, so it leads when present.
+  const code = invite && /^[0-9]{8}$/.test(invite.code || '') ? invite.code! : '';
+  const copy = (value: string) => void navigator.clipboard.writeText(value).catch(() => setError(t('Could not copy. Select the code and copy it manually.')));
   return <div className="nexus-account-dialog-backdrop"><div ref={ref} className="nexus-account-dialog" role="dialog" aria-modal="true" aria-labelledby={`${id}-title`}>
     <div className="nexus-account-dialog__header"><h2 id={`${id}-title`}>{t('Connect another device')}</h2><WorkspaceActionButton iconOnly icon="x" size="small" appearance="quiet" aria-label={t('Close invitation')} disabled={busy} onClick={onClose} /></div>
-    {invite ? <><p>{t('On the other device, choose Join by invitation and enter this code or token.')}</p><div className="nexus-account-invitation" aria-label={t('Invitation code or token')}>{invite.code || invite.link_token}</div><p role="timer">{expires ? t('Expires in {minutes}:{seconds}', { minutes: Math.floor(expires / 60), seconds: String(expires % 60).padStart(2, '0') }) : t('This invitation has expired.')}</p><WorkspaceActionButton ref={copyRef} disabled={!expires} onClick={() => {
-      void navigator.clipboard.writeText(invite.code || invite.link_token).catch(() => setError(t('Could not copy. Select the code and copy it manually.')));
-    }}>{t('Copy invitation')}</WorkspaceActionButton><p className="nexus-hint">{t('The invitation works once and expires after 10 minutes. Closing this dialog does not revoke it.')}</p></> : <form onSubmit={event => {
+    {invite ? <><p>{t('On the other device, choose Join by invitation and enter this code or token.')}</p>
+      {code ? <div className="nexus-account-invitation nexus-account-invitation--code" aria-label={t('Invitation code')}>{`${code.slice(0, 4)} ${code.slice(4)}`}</div>
+        : <div className="nexus-account-invitation" aria-label={t('Invitation code or token')}>{invite.link_token}</div>}
+      <p role="timer">{expires ? t('Expires in {minutes}:{seconds}', { minutes: Math.floor(expires / 60), seconds: String(expires % 60).padStart(2, '0') }) : t('This invitation has expired.')}</p>
+      <WorkspaceActionButton ref={copyRef} disabled={!expires} onClick={() => copy(code || invite.link_token)}>{code ? t('Copy invitation code') : t('Copy invitation')}</WorkspaceActionButton>
+      {code && invite.link_token && <WorkspaceActionButton appearance="quiet" size="small" disabled={!expires} onClick={() => copy(invite.link_token)}>{t('Copy full invite token')}</WorkspaceActionButton>}
+      <p className="nexus-hint">{t('The invitation works once and expires after 10 minutes. Closing this dialog does not revoke it.')}</p></> : <form onSubmit={event => {
       event.preventDefault(); if (busy || !deviceName.trim()) return; setBusy(true); setError('');
       void service.invite(session, deviceName).then(setInvite).catch(error => setError(error instanceof Error ? error.message : String(error))).finally(() => setBusy(false));
     }}><label htmlFor={id}>{t('Device you are inviting')}</label><input autoFocus id={id} className="input" value={deviceName} maxLength={128} onChange={event => setDeviceName(event.target.value)} placeholder={t('For example, my phone')} /><WorkspaceActionButton type="submit" disabled={busy || !deviceName.trim()}>{busy ? t('Creating invitation…') : t('Create invitation')}</WorkspaceActionButton></form>}

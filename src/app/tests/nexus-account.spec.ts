@@ -223,18 +223,41 @@ test('read-only members have no admin badge or invitation action', async ({ page
   await expect(page.getByRole('button', { name: 'Connect another device' })).toHaveCount(0);
 });
 
-test('an authorized account creates an expiring device invitation', async ({ page }) => {
-  const fixture = await setupNexusAccount(page);
-  await enableNexusMesh(page);
+async function createInvitation(page: Page) {
   await page.locator('.nexus-device-disclosure > summary').click();
   await page.getByRole('button', { name: 'Connect another device' }).click();
   const dialog = page.getByRole('dialog', { name: 'Connect another device' });
   await dialog.getByRole('textbox', { name: 'Device you are inviting' }).fill('My phone');
   await dialog.getByRole('button', { name: 'Create invitation', exact: true }).click();
-  await expect(dialog).toContainText('12345678');
+  return dialog;
+}
+const clipboard = (page: Page) => page.evaluate(() => navigator.clipboard.readText());
+
+test('an authorized account creates an expiring device invitation with a readable code', async ({ page, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  const fixture = await setupNexusAccount(page);
+  await enableNexusMesh(page);
+  const dialog = await createInvitation(page);
+  await expect(dialog.getByLabel('Invitation code', { exact: true })).toHaveText('1234 5678');
+  await expect(dialog).not.toContainText('lnk_');
   await expect(dialog.getByRole('timer')).toContainText('Expires in');
   await expect(dialog).toContainText('Closing this dialog does not revoke it.');
+  await dialog.getByRole('button', { name: 'Copy invitation code', exact: true }).click();
+  expect(await clipboard(page)).toBe('12345678');
+  await dialog.getByRole('button', { name: 'Copy full invite token', exact: true }).click();
+  expect(await clipboard(page)).toBe(`lnk_${'a'.repeat(64)}`);
   expect(fixture.calls.find(call => call.path.endsWith('/invites'))?.body).toEqual({ device_name: 'My phone', ttl_sec: 600 });
+});
+
+test('an older server without invitation codes still shows the token', async ({ page, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  await setupNexusAccount(page, { inviteWithoutCode: true });
+  await enableNexusMesh(page);
+  const dialog = await createInvitation(page);
+  await expect(dialog.getByLabel('Invitation code or token', { exact: true })).toHaveText(`lnk_${'a'.repeat(64)}`);
+  await expect(dialog.getByRole('button', { name: 'Copy full invite token', exact: true })).toHaveCount(0);
+  await dialog.getByRole('button', { name: 'Copy invitation', exact: true }).click();
+  expect(await clipboard(page)).toBe(`lnk_${'a'.repeat(64)}`);
 });
 
 test('Advanced navigates recursive groups and leaves have no group actions', async ({ page }) => {
