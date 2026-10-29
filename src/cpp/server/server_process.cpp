@@ -153,7 +153,7 @@ std::string ContainerProcess::start(const ServerCommand& command) {
 
     if (std::find(policy_.devices.begin(), policy_.devices.end(), "/dev/kfd") !=
         policy_.devices.end()) {
-        const std::string gpu = hip_visible_device(SystemInfo::get_rocm_arch());
+        const std::string gpu = hip_visible_device(recipe_, backend_);
         if (!gpu.empty()) spec.env.push_back({"HIP_VISIBLE_DEVICES", gpu});
     }
     for (const auto& [key, value] : command.env) {
