@@ -295,6 +295,11 @@ struct JoinResult {
     std::string private_subnet;
     std::string mesh_pubkey;        ///< mesh public key (base64)
     std::string error;
+    /// The device name set with set_device_name was taken in the target group,
+    /// so the device joined under the server's default name.
+    bool        device_name_refused{false};
+    /// A free name for a rename after a refused device name ("" when unknown).
+    std::string device_name_suggestion;
 };
 
 // ---------------------------------------------------------------------------

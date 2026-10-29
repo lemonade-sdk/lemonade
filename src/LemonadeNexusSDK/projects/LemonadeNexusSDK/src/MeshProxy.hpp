@@ -9,6 +9,7 @@
 #include <httplib.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -114,12 +115,23 @@ void reply_error(httplib::Response& res, int status, const std::string& message)
 /// multipart request needs this. Returns {Content-Type, body}.
 std::pair<std::string, std::string> multipart_body(const httplib::Request& req);
 
+/// An attempt that ends without response headers within this time found a dead
+/// bridge (the connection closed or failed before any byte came back), not a slow
+/// service. Equal to the upstream connect timeout.
+inline constexpr std::chrono::seconds kDeadBridgeWindow{10};
+
 /// Forwards `req` as `target` to the HTTP service at host:port with `headers` and
 /// `body`, and streams the upstream response into `res` with its status and
 /// Content-Type. A service that does not answer gets 502. The response streams
 /// chunk by chunk, so server-sent events pass through as they arrive.
+/// `reopen`, when set, is called once when the first attempt ends without a
+/// response byte within kDeadBridgeWindow; it replaces the loopback bridge and
+/// returns its port (0: none), and the request is sent once more on that port.
+/// A request that reached the service and died before its first response byte
+/// can then run twice.
 void proxy_request(const std::shared_ptr<MeshPortProxies>& proxies, const std::string& host, uint16_t port,
                    const httplib::Request& req, const std::string& target, httplib::Headers headers,
-                   const std::string& body, httplib::Response& res);
+                   const std::string& body, httplib::Response& res,
+                   const std::function<uint16_t()>& reopen = {});
 
 }  // namespace lnsdk

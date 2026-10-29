@@ -944,6 +944,10 @@ ln_error_t ln_join_network(ln_client_t* client,
     j["tunnel_ip"]      = result.value.tunnel_ip;
     j["private_subnet"] = result.value.private_subnet;
     j["mesh_pubkey"]    = result.value.mesh_pubkey;
+    if (result.value.device_name_refused) {
+        j["device_name_refused"]    = true;
+        j["device_name_suggestion"] = result.value.device_name_suggestion;
+    }
     if (!result.ok) j["error"] = result.error;
 
     *out_json = strdup_json(j);
@@ -1455,6 +1459,11 @@ ln_error_t ln_set_inference_node(ln_client_t* client, int inference) {
     return LN_OK;
 }
 
+ln_error_t ln_set_device_name(ln_client_t* client, const char* name) {
+    if (!client) return LN_ERR_NULL_ARG;
+    return client->client.set_device_name(name ? name : "") ? LN_OK : LN_ERR_REJECTED;
+}
+
 ln_error_t ln_link_token_create(ln_client_t* client, uint32_t ttl_sec, char** out_json) {
     if (!client || !out_json) return LN_ERR_NULL_ARG;
     auto result = client->client.create_link_token(ttl_sec);
@@ -1694,65 +1703,16 @@ ln_error_t ln_mesh_disable(ln_client_t* client) {
 
 ln_error_t ln_mesh_status(ln_client_t* client, char** out_json) {
     if (!client || !out_json) return LN_ERR_NULL_ARG;
-    auto st = client->client.mesh_status();
-    json j;
-    j["is_up"]          = st.is_up;
-    j["tunnel_ip"]      = st.tunnel_ip;
-    j["peer_count"]     = st.peer_count;
-    j["online_count"]   = st.online_count;
-    j["total_rx_bytes"] = st.total_rx_bytes;
-    j["total_tx_bytes"] = st.total_tx_bytes;
-    j["needs_rejoin"]   = st.needs_rejoin;
-
-    json peers_arr = json::array();
-    for (const auto& p : st.peers) {
-        json pj;
-        pj["node_id"]        = p.node_id;
-        pj["hostname"]       = p.hostname;
-        pj["mesh_pubkey"]    = p.mesh_pubkey;
-        pj["tunnel_ip"]      = p.tunnel_ip;
-        pj["private_subnet"] = p.private_subnet;
-        pj["endpoint"]       = p.endpoint;
-        pj["relay_endpoint"] = p.relay_endpoint;
-        pj["is_online"]      = p.is_online;
-        pj["last_handshake"] = p.last_handshake;
-        pj["last_rx"] = p.last_rx;
-        pj["rx_bytes"]       = p.rx_bytes;
-        pj["tx_bytes"]       = p.tx_bytes;
-        pj["latency_ms"]     = p.latency_ms;
-        pj["keepalive"]      = p.keepalive;
-        peers_arr.push_back(std::move(pj));
-    }
-    j["peers"] = std::move(peers_arr);
-
+    // The shared to_json(MeshTunnelStatus) and to_json(MeshPeer) keep the C
+    // ABI in step with every field the header documents.
+    const json j = client->client.mesh_status();
     *out_json = strdup_json(j);
     return LN_OK;
 }
 
 ln_error_t ln_mesh_peers(ln_client_t* client, char** out_json) {
     if (!client || !out_json) return LN_ERR_NULL_ARG;
-    auto peers = client->client.get_mesh_peers();
-
-    json arr = json::array();
-    for (const auto& p : peers) {
-        json pj;
-        pj["node_id"]        = p.node_id;
-        pj["hostname"]       = p.hostname;
-        pj["mesh_pubkey"]    = p.mesh_pubkey;
-        pj["tunnel_ip"]      = p.tunnel_ip;
-        pj["private_subnet"] = p.private_subnet;
-        pj["endpoint"]       = p.endpoint;
-        pj["relay_endpoint"] = p.relay_endpoint;
-        pj["is_online"]      = p.is_online;
-        pj["last_handshake"] = p.last_handshake;
-        pj["last_rx"] = p.last_rx;
-        pj["rx_bytes"]       = p.rx_bytes;
-        pj["tx_bytes"]       = p.tx_bytes;
-        pj["latency_ms"]     = p.latency_ms;
-        pj["keepalive"]      = p.keepalive;
-        arr.push_back(std::move(pj));
-    }
-
+    const json arr = client->client.get_mesh_peers();
     *out_json = strdup_json(arr);
     return LN_OK;
 }

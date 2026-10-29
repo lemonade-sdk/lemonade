@@ -20,6 +20,7 @@
 #include <filesystem>
 #include <fstream>
 #include <map>
+#include <set>
 
 #ifndef _WIN32
 #include <cerrno>
@@ -402,14 +403,28 @@ MeshPortAutoRoute auto_route(const std::string& model, const std::vector<MeshPor
     return route;
 }
 
+std::set<std::string> loaded_model_names(const MeshPortPeerModels& peer) {
+    std::set<std::string> names;
+    if (!peer.loaded.is_array()) return names;
+    for (const auto& entry : peer.loaded) {
+        if (!entry.is_object()) continue;
+        const auto name = entry.find("model_name");
+        if (name != entry.end() && name->is_string() && !name->get_ref<const std::string&>().empty()) {
+            names.insert(name->get<std::string>());
+        }
+    }
+    return names;
+}
+
 json merge_models(const json& local, const std::vector<MeshPortPeerModels>& peers) {
     json result = local.is_object() ? local : json{{"object", "list"}, {"data", json::array()}};
     if (!result.contains("data") || !result["data"].is_array()) result["data"] = json::array();
     for (const auto& peer : peers) {
         const auto owner = peer.device_name.empty() ? peer.node_id : peer.device_name;
+        const auto loaded = loaded_model_names(peer);
         for (const auto& id : peer.available) {
             result["data"].push_back({{"id", owner + "/" + id}, {"object", "model"},
-                {"owned_by", owner}, {"nexus_node_id", peer.node_id}});
+                {"owned_by", owner}, {"nexus_node_id", peer.node_id}, {"loaded", loaded.contains(id)}});
         }
     }
     return result;
@@ -502,6 +517,7 @@ MeshPortBackend make_mesh_port_backend(LemonadeNexusClient& client) {
                 if (peer.node_id != child.id) continue;
                 member.is_online = is_self || peer.is_online;
                 member.latency_ms = peer.latency_ms > 0 ? static_cast<double>(peer.latency_ms) : 0.0;
+                member.relay_endpoint = peer.relay_endpoint;
                 break;
             }
             members.push_back(std::move(member));
@@ -858,9 +874,15 @@ void MeshPort::refresh_members() {
             return;
         }
         error_.clear();
+        // A bridge carries virtual TCP connections over the mesh path that was
+        // current when they opened. When the device's address or its relay
+        // changes, close the bridge so the next request opens a fresh one;
+        // connections left on the old relay allocation answer nothing.
         for (auto it = egress_ips_.begin(); it != egress_ips_.end();) {
             const auto* member = find_member(*loaded, it->first);
-            if (!member || strip_prefix_length(member->tunnel_ip) != it->second) {
+            const auto* before = find_member(members_, it->first);
+            if (!member || strip_prefix_length(member->tunnel_ip) != it->second ||
+                (before && before->relay_endpoint != member->relay_endpoint)) {
                 closed.emplace_back(it->first, it->second);
                 it = egress_ips_.erase(it);
             } else {
@@ -1048,9 +1070,15 @@ nlohmann::json MeshPort::status() const {
     const auto self = backend_.self_node_id ? backend_.self_node_id() : std::string();
     const auto local_catalog = backend_.local_catalog ? backend_.local_catalog() : json::object();
     std::map<std::string, CachedCatalog> catalogs;
+    // The newest model probe of each device, whatever peer key it used.
+    std::map<std::string, CachedModels> models;
     {
         std::lock_guard lock(cache_mutex_);
         catalogs = catalog_cache_;
+        for (const auto& [key, cached] : peer_cache_) {
+            auto& newest = models[key.first];
+            if (cached.fetched >= newest.fetched) newest = cached;
+        }
     }
     std::lock_guard lock(state_mutex_);
     const bool tls = tls_state_ == "active";
@@ -1059,8 +1087,15 @@ nlohmann::json MeshPort::status() const {
         if (member.node_id == self || !member.is_inference || !member.can_connect) continue;
         MeshPortPeerCatalog catalog;
         if (const auto cached = catalogs.find(member.node_id); cached != catalogs.end()) catalog = cached->second.catalog;
+        size_t models_count = 0;
+        size_t loaded_count = 0;
+        if (const auto cached = models.find(member.node_id); cached != models.end()) {
+            models_count = cached->second.models.available.size();
+            loaded_count = mesh_port::loaded_model_names(cached->second.models).size();
+        }
         devices.push_back({{"node_id", member.node_id}, {"device_name", member.device_name}, {"is_online", member.is_online},
-            {"app", catalog_json(catalog)}, {"families", catalog.families}, {"catalog_status", catalog.status}});
+            {"app", catalog_json(catalog)}, {"families", catalog.families}, {"catalog_status", catalog.status},
+            {"models_count", models_count}, {"loaded_count", loaded_count}});
     }
     return {
         {"running", running_},
@@ -1237,13 +1272,25 @@ void MeshPort::forward_to_node(const std::string& node_id, const std::string& pa
         std::lock_guard lock(state_mutex_);
         egress_ips_[node_id] = target.second;
     }
+    // A bridge whose virtual connections fail at once (no response byte) is
+    // replaced once before the request is answered: its mesh path changed
+    // under it, for example to a new relay allocation.
+    const auto address = target.second;
+    const auto reopen = [this, &address, &node_id]() -> uint16_t {
+        if (!backend_.close_egress || !backend_.open_egress) return 0;
+        spdlog::info("[MeshPort] the bridge to {} answered nothing; opening a new one", node_id);
+        backend_.close_egress(address, kMeshPortPeerServicePort);
+        return backend_.open_egress(address, kMeshPortPeerServicePort);
+    };
     if (req.is_multipart_form_data()) {
         const auto [type, encoded] = multipart_body(req);
-        proxy_request(proxies_, "127.0.0.1", port, req, path, forwarded_headers(req, peer_authorization, type), encoded, res);
+        proxy_request(proxies_, "127.0.0.1", port, req, path, forwarded_headers(req, peer_authorization, type), encoded,
+                      res, reopen);
         return;
     }
     const auto type = req.has_header("Content-Type") ? req.get_header_value("Content-Type") : std::string();
-    proxy_request(proxies_, "127.0.0.1", port, req, path, forwarded_headers(req, peer_authorization, type), body, res);
+    proxy_request(proxies_, "127.0.0.1", port, req, path, forwarded_headers(req, peer_authorization, type), body, res,
+                  reopen);
 }
 
 void MeshPort::forward_local(const std::string& path, const httplib::Request& req, httplib::Response& res,

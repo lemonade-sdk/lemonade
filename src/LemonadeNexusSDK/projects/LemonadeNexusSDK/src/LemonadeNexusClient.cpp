@@ -4,6 +4,7 @@
 
 #include <LemonadeNexus/Api/TreeRouteGate.hpp>
 #include <LemonadeNexus/Auth/AccountDeletionProof.hpp>
+#include <LemonadeNexus/Tree/DeviceLabel.hpp>
 
 #include <httplib.h>
 #include <spdlog/spdlog.h>
@@ -99,6 +100,8 @@ constexpr std::chrono::milliseconds kInviteHopDelay{1500};
 // two hops, whatever the size of the membership, so a join spends at most
 // one wrong code on each of three members.
 constexpr int kInviteJoinMaxAttempts = 3;
+// The start of the tree's device-name refusal (tree::rules::device_name_refusal).
+constexpr std::string_view kDeviceNameRefusal = "device name '";
 // Private requests that get no answer at the connect or handshake level for
 // this long, while the session server stays a verified member whose public
 // API answers, start a forced session move (see note_private_path_unanswered).
@@ -147,6 +150,8 @@ struct LemonadeNexusClient::Impl {
     std::string  node_id;
     std::string  link_token;           // single-use device link token for the next join
     bool         inference_node{false};  // join as Tier 3 (inference) instead of Tier 4
+    std::string  device_name;          // endpoint name for the next join ("" = server default)
+    bool         omit_device_name_once{false};  // the name was refused; join under the default
     std::vector<std::pair<uint16_t, std::string>> exposed_services;  // vport -> target
     std::string  server_seip_fqdn;     // e.g. "<id>.<region>.seip.lemonade-nexus.io" — public API after join
     std::string  server_private_fqdn;  // e.g. "private.<id>.<region>.seip.lemonade-nexus.io"
@@ -1274,6 +1279,23 @@ void LemonadeNexusClient::set_invite_hop_delay(std::chrono::milliseconds first_h
 void LemonadeNexusClient::set_inference_node(bool inference) {
     std::lock_guard lock(impl_->mutex);
     impl_->inference_node = inference;
+}
+
+bool LemonadeNexusClient::set_device_name(const std::string& name) {
+    // Peers drop a listed peer whose hostname carries one of these characters
+    // (fetch_mesh_peers), so such a name would hide the device.
+    constexpr std::string_view kRefused = ";|&$`(){}<>'\"\\";
+    const bool usable =
+        name.empty() ||
+        (name.size() <= 64 && !nexus::tree::device_label(name).empty() &&
+         std::none_of(name.begin(), name.end(), [&](unsigned char c) {
+             return c < 0x20 || c == 0x7f || kRefused.find(static_cast<char>(c)) != std::string_view::npos;
+         }));
+    if (!usable) return false;
+    std::lock_guard lock(impl_->mutex);
+    impl_->device_name = name;
+    impl_->omit_device_name_once = false;
+    return true;
 }
 
 Result<nlohmann::json> LemonadeNexusClient::create_link_token(
@@ -2568,6 +2590,10 @@ Result<JoinResult> LemonadeNexusClient::join_network(const std::string& username
             join_body["link_token"] = impl_->link_token;
         }
         join_body["is_inference"] = impl_->inference_node;
+        // The server applies the name only when this join creates the node.
+        if (!std::exchange(impl_->omit_device_name_once, false) && !impl_->device_name.empty()) {
+            join_body["hostname"] = impl_->device_name;
+        }
     }
 
     // Include auth credentials so /api/join can authenticate inline. The
@@ -2708,6 +2734,33 @@ Result<JoinResult> LemonadeNexusClient::join_network(const std::string& username
         std::this_thread::sleep_for(std::chrono::seconds(1));
     }
     restore_avoid();
+
+    // The tree refuses a device name whose mesh-port label another device of
+    // the target group holds. The join itself is still wanted: join again
+    // under the server's default name and report a free name for a rename.
+    if (status == 409 && join_body.contains("hostname") &&
+        resp->value("error", std::string{}).starts_with(kDeviceNameRefusal)) {
+        const auto name = join_body["hostname"].get<std::string>();
+        std::string invite;
+        {
+            std::lock_guard lock(impl_->mutex);
+            invite = impl_->link_token;
+            impl_->omit_device_name_once = true;
+        }
+        spdlog::info("[LemonadeNexusClient] device name '{}' is taken in the target group; "
+                     "joining under the server's default name", name);
+        std::string suggestion;
+        if (!invite.empty()) {
+            // Checking does not spend the invite.
+            if (const auto check = check_device_name(name, {}, invite)) {
+                suggestion = check.value.suggestion;
+            }
+        }
+        auto joined = join_network(username, password);
+        joined.value.device_name_refused = true;
+        joined.value.device_name_suggestion = suggestion;
+        return joined;
+    }
 
     if (status != 200) {
         result.error = resp->value("error", resp->value("error_message", "join failed"));

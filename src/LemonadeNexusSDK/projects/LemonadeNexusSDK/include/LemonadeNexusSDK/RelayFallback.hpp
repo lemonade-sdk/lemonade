@@ -61,8 +61,10 @@ public:
         /// How long a direct endpoint may go without a handshake before the
         /// peer falls back to a relay.
         std::chrono::milliseconds direct_grace{20000};
-        /// How long a paired relay may go without a handshake before it is
-        /// abandoned.
+        /// How long a paired relay may go without carrying traffic (a
+        /// handshake or an authenticated packet) before it is abandoned and
+        /// blamed. A relay that carried traffic is abandoned only after
+        /// handshake_fresh_sec plus this grace without any.
         std::chrono::milliseconds handshake_grace{30000};
         /// A handshake younger than this counts as a working path, in seconds.
         int64_t handshake_fresh_sec{180};
@@ -113,6 +115,33 @@ public:
                                            int64_t now_unix, std::chrono::milliseconds known_for,
                                            bool prefer_direct, const Timing& timing);
 
+    /// What a maintenance pass does with a paired relay channel.
+    enum class PairedAction {
+        Wait,             ///< Paired, no traffic through it yet; within the grace period
+        Working,          ///< The relay carried traffic recently
+        PromoteDirect,    ///< A direct path answered; close the relay
+        AbandonUnproven,  ///< No traffic within handshake_grace; blame the relay
+        AbandonStale,     ///< Carried traffic once, none for handshake_fresh_sec + grace
+    };
+
+    /// The decision for a paired relay channel. Pure.
+    /// @param relay_seen       Unix seconds of the newest handshake or
+    ///                         authenticated packet that arrived through the
+    ///                         relay since pairing, 0 if none. The dataplane
+    ///                         reads no handshake while an idle session
+    ///                         renegotiates after REJECT_AFTER_TIME, so this
+    ///                         keeps the last one seen.
+    /// @param handshake        Unix seconds of a handshake since pairing that
+    ///                         the dataplane reports now, 0 if none
+    /// @param paired_for       time since the channel paired
+    /// @param direct_answered  prefer_direct is set, the server lists a direct
+    ///                         endpoint, and the dataplane moved the peer to
+    ///                         another address than the relay
+    [[nodiscard]] static PairedAction paired_action(int64_t relay_seen, int64_t handshake,
+                                                    int64_t now_unix,
+                                                    std::chrono::milliseconds paired_for,
+                                                    bool direct_answered, const Timing& timing);
+
 private:
     using Clock = std::chrono::steady_clock;
 
@@ -123,6 +152,7 @@ private:
         Clock::time_point             next_attempt{};
         Clock::time_point             paired_at{};
         int64_t                       paired_unix{0};     ///< Unix seconds of pairing
+        int64_t                       relay_seen{0};      ///< see paired_action()
         int64_t                       abandoned_unix{0};  ///< Unix seconds of the last abandon
         uint32_t                      failures{0};
         bool                          applied{false};
