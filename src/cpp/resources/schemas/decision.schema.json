@@ -57,6 +57,14 @@
         "rationale": {
           "description": "Optional; the classifier's short reasoning for its score. The `llm` router records the model's pick rationale here.",
           "type": "string"
+        },
+        "error": {
+          "description": "Optional; why a model-backed classifier failed, so a condition that errored is distinguishable from one that simply scored below its band. Present only when the classifier failed and the backend gave a reason; the entry's `result` then reflects the classifier's `on_error`.",
+          "type": "string"
+        },
+        "truncated": {
+          "description": "Optional; whether the backend cut the input text to fit its token window before scoring: `true` cut, `false` scored whole. Absent when the backend does not report cuts (ort-server before 0.4.0, or a chat-LLM `classifier`), so absence means unknown. `zero_shot` keeps the head and the tail of the text, a fixed-label `classifier` keeps the head and drops the end. Labels are never cut, so a score on this entry still covers every label the policy declared. Under the default `on_truncation: score` the entry carries that score. Under `on_truncation: fail` a cut, or an unknown, is itself the failure, so the entry carries `error` and no `score`, and `result` reflects the classifier's `on_error`.",
+          "type": "boolean"
         }
       },
       "additionalProperties": false
