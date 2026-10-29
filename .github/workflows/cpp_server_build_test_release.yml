@@ -1447,8 +1447,7 @@ jobs:
         uses: ./.github/actions/cleanup-processes-linux
 
   # Container backends run on Devlab Dispatch's ephemeral Strix Halo Linux
-  # runners, which have the memory for DS4 and Halogen models. Models go in the
-  # workspace volume, which has room for DS4's 87 GB checkpoint.
+  # runners, which have the memory and scratch disk for DS4 and Halogen models.
   test-container-backends:
     name: Test container backend - ${{ matrix.name }}
     runs-on: [self-hosted, Linux, devlab-dispatch, strix-halo]
