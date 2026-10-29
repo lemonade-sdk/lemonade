@@ -9,7 +9,7 @@ All filters AND together; total always visible.
 
 Usage:
     python .github/scripts/triage_maintainer.py [--output PATH] [--repo OWNER/REPO]
-        [--wg-predictions PATH]
+        [--wg-predictions PATH] [--reviewer-suggestions PATH] [--include-rfcs]
 
 Requirements:
     - gh CLI authenticated
@@ -21,8 +21,11 @@ import json
 import re
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+HOT_LABEL = "priority::\U0001f525hot"
+WARM_LABEL = "priority::\U0001f60ewarm"
 
 WRITE_ASSOCIATIONS = {"OWNER", "MEMBER", "COLLABORATOR"}
 
@@ -235,6 +238,7 @@ def fetch_prs(repo, top_contributors, wg_predictions):
                 "is_draft": bool(it.get("draft", False)),
             }
         )
+        prs[-1]["priority_score"] = compute_priority_score(prs[-1])
     return prs
 
 
@@ -247,8 +251,6 @@ def fetch_activity(repo, days=30):
     """
     now = datetime.now(timezone.utc)
     cutoff = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    from datetime import timedelta
-
     window_start = cutoff - timedelta(days=days - 1)
 
     # Paginate closed PRs until we go past the window
@@ -303,8 +305,6 @@ def fetch_activity(repo, days=30):
         pass
 
     # Build per-day buckets
-    from datetime import timedelta
-
     days_list = [window_start + timedelta(days=i) for i in range(days)]
     day_keys = [d.strftime("%Y-%m-%d") for d in days_list]
     opened = {k: 0 for k in day_keys}
@@ -356,6 +356,157 @@ def fetch_activity(repo, days=30):
         }
         for d in day_keys
     ]
+
+
+def compute_priority_score(pr):
+    score = 0
+    labels = set(pr["labels"])
+    if HOT_LABEL in labels:
+        score += 1000
+    elif WARM_LABEL in labels:
+        score += 500
+    if "rfc:required" in labels:
+        score += 300
+    if "bug" in labels:
+        score += 200
+    if pr["days_stale"] >= 60:
+        score += 300
+    elif pr["days_stale"] >= 30:
+        score += 150
+    elif pr["days_stale"] >= 14:
+        score += 75
+    if not pr["assignees"]:
+        score += 150
+    if pr.get("community_tier") == "first-timer":
+        score += 75
+    score += min(pr["comments"], 20) * 5
+    return score
+
+
+def fetch_rfcs(repo, prs):
+    """Return RFC discussions sorted stalest-first, cross-referenced with PR labels."""
+    now = datetime.now(timezone.utc)
+    pr_rfc_map = {}
+    for pr in prs:
+        if pr.get("rfc_status"):
+            body = pr.get("body") or ""
+            for m in re.finditer(r"discussions/(\d+)", body, re.I):
+                pr_rfc_map[int(m.group(1))] = pr["rfc_status"]
+    try:
+        raw = gh_api_pages(f"/repos/{repo}/discussions?per_page=100")
+    except Exception as exc:
+        print(f"  [warn] discussions API failed ({exc})", file=sys.stderr)
+        return []
+    out = []
+    for d in raw:
+        cat = (d.get("category") or {}).get("name", "")
+        if cat != "Request for Comment (RFC)":
+            continue
+        created_str = d.get("created_at") or d.get("createdAt") or ""
+        updated_str = d.get("updated_at") or d.get("updatedAt") or created_str
+        try:
+            created_dt = datetime.fromisoformat(created_str.replace("Z", "+00:00"))
+            updated_dt = datetime.fromisoformat(updated_str.replace("Z", "+00:00"))
+        except Exception:
+            continue
+        num = d.get("number") or 0
+        out.append(
+            {
+                "number": num,
+                "title": d.get("title") or "",
+                "url": d.get("html_url") or d.get("url") or "",
+                "author": (d.get("user") or d.get("author") or {}).get("login") or "?",
+                "comments": d.get("comments") or 0,
+                "days_open": (now - created_dt).days,
+                "days_quiet": (now - updated_dt).days,
+                "rfc_status": pr_rfc_map.get(num, "open"),
+            }
+        )
+    out.sort(key=lambda x: x["days_quiet"], reverse=True)
+    return out
+
+
+def fetch_issue_trend(repo, days=90):
+    """Return [{date, open_issues, open_prs}] over the last N days."""
+    now = datetime.now(timezone.utc)
+    cutoff = (now - timedelta(days=days)).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    cutoff_str = cutoff.strftime("%Y-%m-%dT%H:%M:%SZ")
+    try:
+        raw = gh_api_pages(
+            f"/repos/{repo}/issues?state=all&per_page=100&since={cutoff_str}"
+        )
+    except Exception as exc:
+        print(f"  [warn] issue trend API failed ({exc})", file=sys.stderr)
+        return []
+    items = []
+    for it in raw:
+        created_str = it.get("created_at") or ""
+        closed_str = it.get("closed_at")
+        try:
+            created_dt = datetime.fromisoformat(created_str.replace("Z", "+00:00"))
+        except Exception:
+            continue
+        closed_dt = None
+        if closed_str:
+            try:
+                closed_dt = datetime.fromisoformat(closed_str.replace("Z", "+00:00"))
+            except Exception:
+                pass
+        is_pr = bool(it.get("pull_request"))
+        items.append((created_dt, closed_dt, is_pr))
+    day_list = [cutoff + timedelta(days=i) for i in range(days + 1)]
+    result = []
+    for day in day_list:
+        day_end = day + timedelta(days=1)
+        open_issues = sum(
+            1
+            for created, closed, is_pr in items
+            if not is_pr and created < day_end and (closed is None or closed >= day)
+        )
+        open_prs = sum(
+            1
+            for created, closed, is_pr in items
+            if is_pr and created < day_end and (closed is None or closed >= day)
+        )
+        result.append(
+            {
+                "date": day.strftime("%Y-%m-%d"),
+                "open_issues": open_issues,
+                "open_prs": open_prs,
+            }
+        )
+    return result
+
+
+def build_focus_data(prs):
+    """Return {wg: [top3 community PRs by priority_score]} for the focus panel."""
+    from collections import defaultdict
+
+    by_wg = defaultdict(list)
+    for pr in prs:
+        if pr.get("wg") and not pr.get("is_draft") and not pr.get("is_maintainer"):
+            by_wg[pr["wg"]].append(pr)
+    focus = {}
+    for wg, wg_prs in by_wg.items():
+        top = sorted(wg_prs, key=lambda p: p["priority_score"], reverse=True)[:3]
+        focus[wg] = [
+            {
+                "number": p["number"],
+                "title": p["title"],
+                "url": p["url"],
+                "score": p["priority_score"],
+                "days_stale": p["days_stale"],
+                "wg": p["wg"],
+                "labels": p["labels"],
+                "assignees": p["assignees"],
+                "community_tier": p.get("community_tier"),
+                "rfc_status": p.get("rfc_status"),
+            }
+            for p in top
+        ]
+    return focus
 
 
 def script_safe_json(obj):
@@ -517,6 +668,35 @@ MAINTAINER_TEMPLATE = r"""<!doctype html>
   .site-nav a { color:var(--muted); font-size:13px; font-weight:500; padding:10px 18px; border-bottom:2px solid transparent; text-decoration:none; white-space:nowrap; }
   .site-nav a:hover { color:var(--fg); text-decoration:none; }
   .site-nav a.active { color:var(--fg); border-bottom-color:var(--link); }
+
+  /* focus panel */
+  #focus-panel { padding:14px 24px; border-bottom:1px solid var(--border); background:var(--panel); }
+  #focus-panel summary { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; color:var(--muted); cursor:pointer; user-select:none; }
+  #focus-panel summary:hover { color:var(--fg); }
+  .focus-wg-section { margin-top:14px; }
+  .focus-wg-label { font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; color:var(--muted); margin-bottom:6px; }
+  .focus-cards { display:flex; gap:10px; flex-wrap:wrap; }
+  .focus-card { background:var(--panel-2); border:1px solid var(--border); border-radius:6px; padding:10px 14px; flex:1; min-width:220px; max-width:360px; position:relative; }
+  .focus-card:hover { border-color:var(--link); }
+  .focus-card a { color:var(--fg); font-size:13px; font-weight:500; }
+  .focus-card a:hover { color:var(--link); text-decoration:underline; }
+  .score-badge { position:absolute; top:10px; right:10px; font-size:11px; font-weight:700; background:var(--panel); border:1px solid var(--border); border-radius:4px; padding:1px 6px; color:var(--muted); }
+  .focus-meta { font-size:11px; color:var(--muted); margin-top:4px; display:flex; gap:8px; flex-wrap:wrap; }
+
+  /* RFC panel */
+  #rfc-panel { padding:14px 24px; border-bottom:1px solid var(--border); background:var(--panel); }
+  #rfc-panel summary { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; color:var(--muted); cursor:pointer; user-select:none; }
+  #rfc-panel summary:hover { color:var(--fg); }
+  .rfc-table { width:100%; border-collapse:collapse; font-size:12px; margin-top:12px; }
+  .rfc-table th { text-align:left; color:var(--muted); font-weight:600; font-size:11px; text-transform:uppercase; letter-spacing:0.5px; padding:4px 8px; border-bottom:1px solid var(--border); }
+  .rfc-table td { padding:6px 8px; border-bottom:1px solid var(--border); vertical-align:top; }
+  .rfc-table tr:last-child td { border-bottom:none; }
+  .rfc-stale td { color:var(--stale); }
+  .rfc-very-stale td { color:var(--hot); }
+  .rfc-status-chip { display:inline-block; padding:1px 6px; border-radius:8px; font-size:10px; font-weight:600; background:var(--panel-2); border:1px solid var(--border); }
+
+  /* trend chart */
+  #trend-chart-wrap { width:100%; overflow:hidden; }
 </style>
 </head>
 <body>
@@ -573,6 +753,18 @@ MAINTAINER_TEMPLATE = r"""<!doctype html>
     <div id="cumulative-chart"></div>
   </div>
 </div>
+<div class="chart-row">
+  <div class="mini-chart" style="grid-column:1/-1">
+    <h3>Open count — last 90 days &nbsp;<span style="color:var(--stale);font-size:10px;font-weight:400;text-transform:none">&#9644; Issues</span> &nbsp;<span style="color:#d2a8ff;font-size:10px;font-weight:400;text-transform:none">&#9644; PRs</span></h3>
+    <div id="trend-chart-wrap"></div>
+  </div>
+</div>
+
+<details id="focus-panel">
+  <summary>&#9650; WG Focus — top community PRs by merit &nbsp;<span id="focus-count" style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)"></span></summary>
+  <div id="focus-body"></div>
+</details>
+
 <div id="filter-bar" class="page-band">
   <div class="filter-group">
     <label>Filter by</label>
@@ -630,6 +822,11 @@ MAINTAINER_TEMPLATE = r"""<!doctype html>
 
 <div id="pr-list"></div>
 
+<details id="rfc-panel">
+  <summary>RFC Tracker — <span id="rfc-panel-count">0</span> open RFCs</summary>
+  <div id="rfc-body" style="overflow-x:auto"></div>
+</details>
+
 <footer>
   Re-run <code>python .github/scripts/triage_maintainer.py</code> to refresh.
   &nbsp;|&nbsp; <a href="index.html">Label dashboard</a>
@@ -638,6 +835,9 @@ MAINTAINER_TEMPLATE = r"""<!doctype html>
 <script>
 const DATA = __DATA__;
 const ALL_WGS = __ALL_WGS__;
+const FOCUS_DATA = __FOCUS_DATA__;
+const RFC_DATA = __RFC_DATA__;
+const TREND_DATA = __TREND_DATA__;
 
 // ── filter state ──
 const state = {
@@ -819,6 +1019,97 @@ function render() {
   if(state.suggested) parts.push("has suggested reviewer");
   document.getElementById("result-breakdown").textContent =
     parts.length ? "Filters: " + parts.join(" · ") : "All open PRs";
+}
+
+function renderFocusPanel() {
+  const body = document.getElementById("focus-body");
+  const countEl = document.getElementById("focus-count");
+  const wgs = Object.keys(FOCUS_DATA).sort();
+  if (!wgs.length) { body.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:10px 0">No workgroup data</div>'; return; }
+  let total = 0;
+  let html = "";
+  for (const wg of ALL_WGS) {
+    const prs = FOCUS_DATA[wg];
+    if (!prs || !prs.length) continue;
+    total += prs.length;
+    html += `<div class="focus-wg-section"><div class="focus-wg-label">${esc(wg)}</div><div class="focus-cards">`;
+    for (const pr of prs) {
+      const reasons = [];
+      if (pr.labels.some(l=>l.includes("hot"))) reasons.push("HOT");
+      else if (pr.labels.some(l=>l.includes("warm"))) reasons.push("WARM");
+      if (pr.labels.includes("bug")) reasons.push("bug");
+      if (pr.rfc_status==="required") reasons.push("RFC required");
+      if (pr.days_stale>=60) reasons.push(`${pr.days_stale}d stale`);
+      else if (pr.days_stale>=30) reasons.push(`${pr.days_stale}d stale`);
+      if (!pr.assignees.length) reasons.push("unassigned");
+      if (pr.community_tier==="first-timer") reasons.push("first-timer");
+      html += `<div class="focus-card">
+        <span class="score-badge">${pr.score}</span>
+        <div><a href="${pr.url}" target="_blank" rel="noopener">#${pr.number} ${esc(pr.title.length>60?pr.title.slice(0,60)+"…":pr.title)}</a></div>
+        <div class="focus-meta">${reasons.map(r=>`<span>${esc(r)}</span>`).join(" · ")}</div>
+      </div>`;
+    }
+    html += "</div></div>";
+  }
+  body.innerHTML = html;
+  countEl.textContent = `${total} highlight${total===1?"":"s"} across ${wgs.filter(w=>FOCUS_DATA[w]?.length).length} workgroups`;
+}
+
+function renderRFCPanel() {
+  const body = document.getElementById("rfc-body");
+  const countEl = document.getElementById("rfc-panel-count");
+  countEl.textContent = RFC_DATA.length;
+  if (!RFC_DATA.length) {
+    body.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:10px 0">No open RFCs found</div>';
+    return;
+  }
+  const STATUS_COLOR = {"required":"var(--hot)","on-roadmap":"var(--first)","open-for-comment":"var(--link)","open":"var(--muted)","not-required":"var(--muted)"};
+  const STATUS_LABEL = {"required":"RFC required","on-roadmap":"on roadmap","open-for-comment":"open for comment","open":"open","not-required":"not required"};
+  let html = `<table class="rfc-table"><thead><tr>
+    <th>Title</th><th>Author</th><th>Days open</th><th>Last activity</th><th>Comments</th><th>Status</th>
+  </tr></thead><tbody>`;
+  for (const rfc of RFC_DATA) {
+    const rowCls = rfc.days_quiet>=30?"rfc-very-stale":rfc.days_quiet>=14?"rfc-stale":"";
+    const color = STATUS_COLOR[rfc.rfc_status] || "var(--muted)";
+    const label = STATUS_LABEL[rfc.rfc_status] || rfc.rfc_status;
+    html += `<tr class="${rowCls}">
+      <td><a href="${esc(rfc.url)}" target="_blank" rel="noopener">#${rfc.number} ${esc(rfc.title)}</a></td>
+      <td>@${esc(rfc.author)}</td>
+      <td>${rfc.days_open}d</td>
+      <td>${rfc.days_quiet===0?"today":rfc.days_quiet+"d ago"}</td>
+      <td>${rfc.comments}</td>
+      <td><span class="rfc-status-chip" style="color:${color};border-color:${color}">${esc(label)}</span></td>
+    </tr>`;
+  }
+  html += "</tbody></table>";
+  body.innerHTML = html;
+}
+
+function renderTrendChart() {
+  const el = document.getElementById("trend-chart-wrap");
+  if (!TREND_DATA.length) { el.innerHTML = ""; return; }
+  const W = el.getBoundingClientRect().width || el.parentElement.getBoundingClientRect().width || 600;
+  const H = 100;
+  const maxIssues = Math.max(...TREND_DATA.map(d=>d.open_issues), 1);
+  const maxPRs    = Math.max(...TREND_DATA.map(d=>d.open_prs), 1);
+  const maxY = Math.max(maxIssues, maxPRs, 1);
+  const n = TREND_DATA.length;
+  const ptIssues = TREND_DATA.map((d,i)=>[((i/(n-1||1))*W).toFixed(1), (H-((d.open_issues/maxY)*H)).toFixed(1)]);
+  const ptPRs    = TREND_DATA.map((d,i)=>[((i/(n-1||1))*W).toFixed(1), (H-((d.open_prs/maxY)*H)).toFixed(1)]);
+  const pathI = ptIssues.map((p,i)=>`${i===0?"M":"L"} ${p[0]} ${p[1]}`).join(" ");
+  const pathP = ptPRs.map((p,i)=>`${i===0?"M":"L"} ${p[0]} ${p[1]}`).join(" ");
+  const idxs = [0, Math.floor(n/4), Math.floor(n/2), Math.floor(3*n/4), n-1];
+  const xLabels = idxs.map(i=>{
+    if(i>=n) return "";
+    const x = (i/(n-1||1))*W;
+    return `<text x="${x.toFixed(1)}" y="${H+14}" fill="var(--muted)" font-size="9" text-anchor="middle">${TREND_DATA[i].date.slice(5)}</text>`;
+  }).join("");
+  el.innerHTML = `<svg width="100%" viewBox="0 0 ${W} ${H+18}" preserveAspectRatio="none" style="display:block;overflow:visible">
+    <path d="${pathI}" fill="none" stroke="var(--stale)" stroke-width="1.5" stroke-linejoin="round" opacity="0.85"/>
+    <path d="${pathP}" fill="none" stroke="#d2a8ff" stroke-width="1.5" stroke-linejoin="round" opacity="0.85"/>
+    ${xLabels}
+    <text x="4" y="10" fill="var(--muted)" font-size="9">${maxY}</text>
+  </svg>`;
 }
 
 function updateSummary() {
@@ -1066,6 +1357,9 @@ updateSummary();
 renderActivityChart();
 renderWGBreakdown();
 setTimeout(() => renderCumulativeChart(), 50);
+setTimeout(() => renderTrendChart(), 60);
+renderFocusPanel();
+renderRFCPanel();
 render();
 </script>
 </body>
@@ -1087,6 +1381,11 @@ def main():
     p.add_argument(
         "--reviewer-suggestions",
         help="JSON written by auto_assign.py --json; shown as suggested reviewers",
+    )
+    p.add_argument(
+        "--include-rfcs",
+        action="store_true",
+        help="Fetch GitHub Discussions RFCs and render the RFC panel",
     )
     args = p.parse_args()
     wg_predictions = load_wg_predictions(args.wg_predictions)
@@ -1112,8 +1411,24 @@ def main():
         pr["suggested_reviewers"] = reviewer_suggestions.get(pr["number"], [])
 
     print("Fetching 30-day activity…", file=sys.stderr)
-    activity = fetch_activity(args.repo, days=30)  # JS window slider slices client-side
+    activity = fetch_activity(args.repo, days=30)
     print(f"  built {len(activity)} days of activity data", file=sys.stderr)
+
+    print("Building 90-day issue/PR trend…", file=sys.stderr)
+    trend = fetch_issue_trend(args.repo, days=90)
+    print(f"  built {len(trend)} data points", file=sys.stderr)
+
+    focus = build_focus_data(prs)
+    focus_wg_count = sum(1 for v in focus.values() if v)
+    print(
+        f"  focus panel: {focus_wg_count} workgroups with highlights", file=sys.stderr
+    )
+
+    rfcs = []
+    if args.include_rfcs:
+        print("Fetching RFCs…", file=sys.stderr)
+        rfcs = fetch_rfcs(args.repo, prs)
+        print(f"  found {len(rfcs)} open RFCs", file=sys.stderr)
 
     wg_options = chr(10).join(
         f'      <option value="{wg}">{wg} (lead: {WG_LEADS[wg]})</option>'
@@ -1127,6 +1442,9 @@ def main():
         .replace("__ALL_WGS__", script_safe_json(ACTIVE_WGS))
         .replace("__WG_OPTIONS__", wg_options)
         .replace("__ACTIVITY_DATA__", script_safe_json(activity))
+        .replace("__FOCUS_DATA__", script_safe_json(focus))
+        .replace("__RFC_DATA__", script_safe_json(rfcs))
+        .replace("__TREND_DATA__", script_safe_json(trend))
     )
 
     out = Path(args.output)
