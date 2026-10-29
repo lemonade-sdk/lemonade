@@ -310,10 +310,15 @@ void RequestMiddleware::log_response(const httplib::Request& req, const httplib:
         req.path.find(".woff") != std::string::npos
     ));
 
-    if (!is_quiet_get) {
-        const auto& peer = nexus_access::request_peer();
-        LOG(DEBUG, "Server") << req.method << " " << req.path << " - " << res.status
-                             << (peer.node_id.empty() ? "" : " peer " + peer.node_id + " family " + peer.family) << std::endl;
+    // A request from a mesh peer is always logged at INFO with the peer and
+    // family the Nexus SDK attributed, quiet GETs included: it is the audit
+    // trail of what other devices did on this server.
+    const auto& peer = nexus_access::request_peer();
+    if (!peer.node_id.empty()) {
+        LOG(INFO, "Server") << req.method << " " << req.path << " - " << res.status
+                            << " peer " << peer.node_id << " family " << peer.family << std::endl;
+    } else if (!is_quiet_get) {
+        LOG(DEBUG, "Server") << req.method << " " << req.path << " - " << res.status << std::endl;
     }
 }
 

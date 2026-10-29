@@ -1673,7 +1673,8 @@ struct NexusManager::Session {
             // Advisory: tells the UI whether a device name folds to a free DNS label in
             // the target group. The federation still refuses a collision on join or
             // rename, so two devices checking the same name at once cannot both win.
-            const auto name = body.value("name", std::string{});
+            // `device_name` is accepted too: it is the field the `device` route uses.
+            const auto name = body.contains("name") ? body.value("name", std::string{}) : body.value("device_name", std::string{});
             if (name.empty() || name.size() > 128) throw NexusError(400, "Enter a device name (up to 128 characters)");
             const auto code = body.value("code", std::string{});
             if (joined && code.empty()) {

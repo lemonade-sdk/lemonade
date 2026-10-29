@@ -333,7 +333,7 @@ An allowed request arrives at the mesh ingress listener with the headers the
 SDK set: `X-Nexus-Peer-Node`, `X-Nexus-Peer-Key`, `X-Nexus-Peer-Permissions`,
 `X-Nexus-Family` and `X-Nexus-Catalog-Version`. They are trusted on that
 listener only: `RequestMiddleware` records the peer node and family for the
-request (`nexus_access::request_peer()`, shown in the access log) and removes
+request (`nexus_access::request_peer()`; every mesh request is logged at INFO with its peer and family, quiet GETs included) and removes
 the headers on the public and management listeners before any route or
 session-header setting can read them.
 
@@ -422,7 +422,7 @@ Routes are available under `/api/v0/nexus/`, `/api/v1/nexus/`, `/v0/nexus/`,
 | POST | `passkey/register`, `passkey/unlock` | Register or verify the device's credential |
 | POST | `key/unlock` | Unlock with the device key (`{defer_join?, identity_envelope?}`); local-only, refused once a passkey is registered. An `identity_envelope` from `ln_identity_handoff_seal` delivers the user's identity first (see [Identity storage](#identity-storage)) |
 | GET | `key/handoff` | Start a single-use identity hand-off and return the SDK's request JSON; local-only |
-| POST | `device/check` | Advisory check that a device name folds to a free DNS label: `{name, code?}`; uses this account's group when joined, else the invite code's group. Answers `{label, available, conflicts, suggestion}`. The federation still refuses a collision on join or rename |
+| POST | `device/check` | Advisory check that a device name folds to a free DNS label: `{name, code?}` (`device_name` is accepted in place of `name`); uses this account's group when joined, else the invite code's group. Answers `{label, available, conflicts, suggestion}`. The federation still refuses a collision on join or rename |
 | POST | `enable`, `disable`, `lock`, `device` | Local state and device name |
 | POST | `invites`, `invites/cancel`, `join` | Invite a device into this account's top-level group with `{device_name, permissions? \| role?, ttl_sec?}`, or join as a new device with `{code}`. Without `permissions` or `role` the invite grants the `user` preset reduced to what this device holds |
 | POST | `tree/{id}/invites` | Invite into group `{id}` with `{permissions? \| role?, ttl_sec?, device_name?}`; needs `add_child` or admin above it; the same default as `invites` |
