@@ -18,7 +18,7 @@ This spec describes how we will add new container backends to Lemonade.
 A **container backend** is a Lemonade backend whose executable is a digest-pinned OCI image instead of a downloaded binary.
 
 - Install, load, unload, `/system-info`, benchmarking and the backend manager work unchanged.
-- The one new host requirement is a container tool on Linux: Podman first, then Docker, each verified by a socket probe. Users will be guided to install Podman if needed.
+- The one new host requirement is a container tool on Linux: Podman first, then Docker, verified by `podman info` and `docker info`. Users will be guided to install Podman if needed.
 
 ## Design Philosophy
 
@@ -178,7 +178,7 @@ These options are the same for Podman and Docker:
 | `--rm`, `--init`, `--cap-drop=all`, `--security-opt=no-new-privileges` | Same for every container † | Fixed |
 | `--pull=never` | Same for every container | Fixed |
 | seccomp | The tool's default profile: the command passes no `seccomp` option † | Fixed |
-| `--name` | `lemonade-<recipe>-<backend>-<model>` | The loaded model |
+| `--name` | `lemonade-<recipe>-<backend>-<model>`, where each part keeps letters, digits, `.` and `-`, doubles `_`, and writes any other character as `_` plus its two hex digits (`user.foo/bar` becomes `user.foo_2fbar`) | The loaded model |
 | `--label` | `ai.lemonade`, `ai.lemonade.recipe`, `.backend`, `.model`, `.port` † | The loaded model |
 | `--network` | A private `--internal` network named after the container | Fixed |
 | `-v` | `<host path>:/mnt/models/<name>:ro,z`, one per model file the command names †. A directory the command names, such as Halogen's tokenizer directory, gets one mount per file inside it at the same relative path, such as `/mnt/models/tokenizer/vocab.json` ‡. Each host path is resolved through symlinks first, so files in a Hugging Face cache, which link into the cache's `blobs/` folder, mount as the files themselves. `z` gives the files a shared SELinux label that every container can read, so the same model can be mounted by several containers, whether Lemonade started them or not. It does nothing on hosts without SELinux | The model's files |
@@ -306,14 +306,14 @@ Containers are started by:
 | Container tool | Containers started by |
 | --- | --- |
 | Podman | Podman, as the account that runs `lemond`: rootless by default, or rootful when `CONTAINER_HOST` points at root's Podman socket |
-| Docker | The Docker daemon, through `/var/run/docker.sock` |
+| Docker | The Docker daemon that `docker` connects to (`DOCKER_HOST` or the active Docker context) |
 
 When the container tool is Podman, the checks are:
 
 | Check | Fails when | `action` |
 | --- | --- | --- |
 | Podman installed | `podman` is not on `PATH` | The install command for the host's `ID` |
-| Device nodes accessible | Podman is rootless and the user's account is not in both `video` and `render` | 1. `sudo usermod -aG video,render $USER`<br>2. Log out and back in |
+| Device nodes accessible | Podman is rootless and the user's account cannot read and write `/dev/kfd` and every `/dev/dri/renderD*` node | 1. `sudo usermod -aG video,render $USER`<br>2. Log out and back in |
 | Podman answers | `podman info` fails | Run `podman info` and fix the error it prints |
 | Network reachable | Podman is rootful and its network backend is CNI, which gives an internal network no gateway for `lemond` to reach the container by | Unset `CONTAINER_HOST` to use rootless Podman |
 
@@ -321,7 +321,9 @@ When the container tool is Docker, the checks are:
 
 | Check | Fails when | `action` |
 | --- | --- | --- |
-| Docker reachable | The Docker daemon refuses the user's account | 1. `sudo usermod -aG docker $USER`<br>2. Log out and back in |
+| Docker reachable | `docker info` fails | 1. `sudo usermod -aG docker $USER`<br>2. Log out and back in |
+| Not Docker Desktop | `docker info` reports `Docker Desktop`, whose containers run in a VM without the host GPU | The Podman install command for the host's `ID` |
+| Not rootless Docker | `docker info` lists `name=rootless`, which can neither publish a port from an `--internal` network nor expose the container's address to `lemond` | The Podman install command for the host's `ID` |
 
 ### `lemond` as a System Service
 
@@ -347,23 +349,25 @@ Containers are started by:
 | Container tool | Containers started by |
 | --- | --- |
 | Podman | `lemond.service` itself, rootless, as the `lemonade` account |
-| Docker | The Docker daemon, through `/var/run/docker.sock` |
+| Docker | The Docker daemon that `docker` connects to (`DOCKER_HOST` or the active Docker context) |
 
 When the container tool is Podman, the checks are:
 
 | Check | Fails when | `action` |
 | --- | --- | --- |
 | Podman installed | `podman` is not on `PATH` | The install command for the host's `ID` |
-| Device nodes accessible | `lemonade` is not in both `video` and `render` | 1. `sudo usermod -aG video,render lemonade`<br>2. `sudo systemctl restart lemond` |
-| Subordinate IDs allocated | Podman is rootless and `getsubids lemonade` or `getsubids -g lemonade` prints no range | Ask the host's administrator to allocate 65,536 subordinate UIDs and GIDs to `lemonade`, then `sudo systemctl restart lemond` |
 | Podman answers | `podman info` fails | Run `podman info` and fix the error it prints |
+| Device nodes accessible | `lemonade` cannot read and write `/dev/kfd` and every `/dev/dri/renderD*` node | 1. `sudo usermod -aG video,render lemonade`<br>2. `sudo systemctl restart lemond` |
+| Subordinate IDs allocated | Podman is rootless and `getsubids lemonade` or `getsubids -g lemonade` prints no range | Ask the host's administrator to allocate 65,536 subordinate UIDs and GIDs to `lemonade`, then `sudo systemctl restart lemond` |
 | Network reachable | Podman is rootful and its network backend is CNI | 1. Remove `CONTAINER_HOST` from `/etc/default/lemond` to use rootless Podman<br>2. `sudo systemctl restart lemond` |
 
 When the container tool is Docker, the checks are:
 
 | Check | Fails when | `action` |
 | --- | --- | --- |
-| Docker reachable | The Docker daemon refuses `lemonade` | 1. `sudo usermod -aG docker lemonade`<br>2. `sudo systemctl restart lemond` |
+| Docker reachable | `docker info` fails | 1. `sudo usermod -aG docker lemonade`<br>2. `sudo systemctl restart lemond` |
+| Not Docker Desktop | `docker info` reports `Docker Desktop` | The Podman install command for the host's `ID` |
+| Not rootless Docker | `docker info` lists `name=rootless` | The Podman install command for the host's `ID` |
 
 #### `lemond.service` and rootless Podman
 

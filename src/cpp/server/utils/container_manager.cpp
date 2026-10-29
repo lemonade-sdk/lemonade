@@ -21,8 +21,6 @@
 #ifndef _WIN32
 #include <grp.h>
 #include <pwd.h>
-#include <sys/socket.h>
-#include <sys/un.h>
 #include <unistd.h>
 #endif
 
@@ -35,9 +33,9 @@ namespace {
 
 constexpr const char* kLabel = "ai.lemonade";
 constexpr const char* kServiceAccount = "lemonade";
-constexpr const char* kDockerSocket = "/var/run/docker.sock";
 constexpr int kStopSeconds = 10;
 constexpr int kCommandTimeoutSeconds = 60;
+constexpr int kDockerInfoTimeoutSeconds = 10;
 constexpr int kPullTimeoutSeconds = 3 * 3600;
 constexpr const char* kRelogin = "Log out and back in";
 
@@ -75,16 +73,20 @@ std::optional<gid_t> lookup_group(const std::string& group) {
     return found->gr_gid;
 }
 
-bool process_in_group(const std::string& group) {
-    const std::optional<gid_t> found = lookup_group(group);
-    if (!found) return true;
-    const gid_t gid = *found;
-    if (::getgid() == gid || ::getegid() == gid) return true;
-    const int count = ::getgroups(0, nullptr);
-    if (count <= 0) return false;
-    std::vector<gid_t> groups(static_cast<size_t>(count));
-    if (::getgroups(count, groups.data()) < 0) return false;
-    return std::find(groups.begin(), groups.end(), gid) != groups.end();
+// Desktop distros often grant the logged-in account device access through
+// ACLs rather than video/render membership, so this tests access itself.
+bool account_opens_gpu_devices() {
+    std::vector<fs::path> nodes = {"/dev/kfd"};
+    std::error_code ec;
+    for (const auto& entry : fs::directory_iterator("/dev/dri", ec)) {
+        if (entry.path().filename().string().rfind("renderD", 0) == 0) {
+            nodes.push_back(entry.path());
+        }
+    }
+    for (const auto& node : nodes) {
+        if (fs::exists(node, ec) && ::access(node.c_str(), R_OK | W_OK) != 0) return false;
+    }
+    return true;
 }
 
 std::string process_account() {
@@ -101,18 +103,6 @@ std::string host_group_id(const std::string& group) {
     const std::optional<gid_t> found = lookup_group(group);
     return found ? std::to_string(static_cast<unsigned long>(*found)) : "";
 }
-
-bool docker_socket_accepts_connection() {
-    const int fd = ::socket(AF_UNIX, SOCK_STREAM, 0);
-    if (fd < 0) return false;
-    struct sockaddr_un address = {};
-    address.sun_family = AF_UNIX;
-    std::snprintf(address.sun_path, sizeof(address.sun_path), "%s", kDockerSocket);
-    const bool connected =
-        ::connect(fd, reinterpret_cast<struct sockaddr*>(&address), sizeof(address)) == 0;
-    ::close(fd);
-    return connected;
-}
 #endif
 
 std::string read_file(const std::string& path) {
@@ -125,6 +115,7 @@ std::string read_file(const std::string& path) {
 CommandResult run_on_host(const std::vector<std::string>& argv, int timeout_seconds,
                           bool capture_stderr) {
     CommandResult result;
+    if (argv.empty()) return result;
     const std::vector<std::string> args(argv.begin() + 1, argv.end());
     result.exit_code = ProcessManager::run_process_with_output(
         argv.front(), args,
@@ -137,13 +128,24 @@ CommandResult run_on_host(const std::vector<std::string>& argv, int timeout_seco
     return result;
 }
 
-// A container name accepts [A-Za-z0-9][A-Za-z0-9_.-]*.
+// A container name accepts [A-Za-z0-9][A-Za-z0-9_.-]*. `_` is the escape
+// character, so it is doubled and every other rejected byte becomes `_` plus
+// two hex digits, which keeps distinct tokens distinct.
 std::string name_token(const std::string& token) {
+    static constexpr char kHex[] = "0123456789abcdef";
     std::string out;
     out.reserve(token.size());
     for (const char c : token) {
         const unsigned char uc = static_cast<unsigned char>(c);
-        out.push_back((std::isalnum(uc) || c == '-' || c == '_' || c == '.') ? c : '-');
+        if (std::isalnum(uc) || c == '-' || c == '.') {
+            out.push_back(c);
+        } else if (c == '_') {
+            out += "__";
+        } else {
+            out.push_back('_');
+            out.push_back(kHex[uc >> 4]);
+            out.push_back(kHex[uc & 0xf]);
+        }
     }
     return out;
 }
@@ -154,15 +156,13 @@ ContainerHost ContainerHost::real() {
     ContainerHost host;
     host.on_path = [](const std::string& name) { return !find_executable_in_path(name).empty(); };
 #ifdef _WIN32
-    host.in_group = [](const std::string&) { return false; };
+    host.gpu_devices_accessible = []() { return false; };
     host.account = []() { return std::string(); };
     host.group_id = [](const std::string&) { return std::string(); };
-    host.docker_socket_accepts = []() { return false; };
 #else
-    host.in_group = process_in_group;
+    host.gpu_devices_accessible = account_opens_gpu_devices;
     host.account = process_account;
     host.group_id = host_group_id;
-    host.docker_socket_accepts = docker_socket_accepts_connection;
 #endif
     host.env = [](const std::string& name) {
         const char* value = std::getenv(name.c_str());
@@ -230,9 +230,22 @@ std::vector<SetupFailure> ContainerManager::check_host() const {
     const std::string apply = service ? "sudo systemctl restart lemond" : kRelogin;
     const std::optional<ContainerTool> chosen = tool();
     if (chosen == ContainerTool::Docker) {
-        if (!host_.docker_socket_accepts()) {
+        const CommandResult info = host_.run(
+            {"docker", "info", "--format", "{{.OperatingSystem}}|{{json .SecurityOptions}}"},
+            kDockerInfoTimeoutSeconds, /*capture_stderr=*/false);
+        const std::string install = podman_install_command(host_.read_file("/etc/os-release"));
+        if (info.exit_code != 0) {
             failures.push_back({"docker_access", "The Docker daemon refuses the account",
                                 {"sudo usermod -aG docker " + member}, apply});
+        } else if (info.output.find("Docker Desktop") != std::string::npos) {
+            // Its containers run in a VM that has no access to the host GPU.
+            failures.push_back(
+                {"docker_desktop", "Docker Desktop cannot give containers the GPU", {install}, ""});
+        } else if (info.output.find("name=rootless") != std::string::npos) {
+            // Rootless Docker can neither publish a port from an --internal
+            // network nor expose the container's address to lemond.
+            failures.push_back(
+                {"docker_rootless", "Rootless Docker cannot run container backends", {install}, ""});
         }
         return failures;
     }
@@ -242,8 +255,8 @@ std::vector<SetupFailure> ContainerManager::check_host() const {
         failures.push_back({"container_tool", "podman is not on PATH",
                             {podman_install_command(host_.read_file("/etc/os-release"))}, ""});
     }
-    if (expect_rootless() && (!host_.in_group("video") || !host_.in_group("render"))) {
-        failures.push_back({"device_groups", "Account is not in both video and render",
+    if (expect_rootless() && !host_.gpu_devices_accessible()) {
+        failures.push_back({"device_groups", "Account cannot open the GPU devices",
                             {"sudo usermod -aG video,render " + member}, apply});
     }
     return failures;

@@ -143,13 +143,11 @@ const BackendOps* default_backend_ops() {
 
 std::optional<utils::SetupReport> container_setup_failure() {
     const auto& manager = utils::ContainerManager::global();
+    // check_podman() first, so check_host() sees Podman's actual rootless mode.
+    const std::optional<utils::SetupFailure> podman = manager.check_podman();
     utils::SetupReport report;
     report.failures = manager.check_host();
-    if (report.empty()) {
-        if (auto failure = manager.check_podman()) {
-            report.failures.push_back(*failure);
-        }
-    }
+    if (report.empty() && podman) report.failures.push_back(*podman);
     if (report.empty()) return std::nullopt;
     return report;
 }
