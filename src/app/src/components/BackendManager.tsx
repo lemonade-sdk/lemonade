@@ -303,8 +303,11 @@ function backendDownloadName(recipe: string, backend: string): string {
 
 function backendDownloadMatches(download: DownloadListItem, recipe: string, backend: string): boolean {
   const name = backendDownloadName(recipe, backend);
+  const id = backendDownloadId(recipe, backend);
+  const resolvedRocm = backend === 'rocm'
+    && (download.id === `${id}-stable` || download.id === `${id}-nightly`);
   return download.downloadType === 'backend'
-    && (download.id === backendDownloadId(recipe, backend) || download.modelName === name);
+    && (download.id === id || download.modelName === name || resolvedRocm);
 }
 
 function backendProgressPercent(download: DownloadListItem): number {
