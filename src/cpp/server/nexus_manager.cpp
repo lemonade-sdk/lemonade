@@ -1491,6 +1491,9 @@ struct NexusManager::Session {
         detail = "joining";
         ln_set_link_token(client.get(), code.c_str());
         if (ln_set_inference_node(client.get(), 1) != LN_OK) throw NexusError(500, "Cannot join as an inference node");
+        // The join names the device; a name the SDK refuses (too long, or with a
+        // character peers would drop) leaves the server default, renamed below.
+        ln_set_device_name(client.get(), device_name().c_str());
         json joined_result;
         try { joined_result = sdk_call([&](auto out) { return ln_join_network(client.get(), device_name().c_str(), "", out); }); }
         catch (const std::exception& e) {
