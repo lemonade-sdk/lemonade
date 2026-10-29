@@ -1,19 +1,6 @@
 {
-  "generated_at": "2026-10-29T17:27:00.232628+00:00",
+  "generated_at": "2026-10-29T18:35:02.900233+00:00",
   "regressions": [
-    {
-      "severity": "WARN",
-      "fork_id": "llamacpp-rocm-nightly",
-      "model": "Qwen3-Coder-30B-A3B-Instruct-GGUF",
-      "scenario": "chat-short",
-      "metric": "tps",
-      "delta_pct": -12.42,
-      "prev": 73.52,
-      "curr": 64.39,
-      "timestamp": "2026-10-16T05:17:56.215338+00:00",
-      "run_id": "38838624277",
-      "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/38838624277"
-    },
     {
       "severity": "WARN",
       "fork_id": "llamacpp-rocm-nightly",
@@ -2600,6 +2587,19 @@
       "timestamp": "2026-10-29T08:26:06.256886+00:00",
       "run_id": "40804393706",
       "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/40804393706"
+    },
+    {
+      "severity": "WARN",
+      "fork_id": "llamacpp-rocm-stable",
+      "model": "MiniCPM5-1B-GGUF",
+      "scenario": "context-4k",
+      "metric": "ttft_ms",
+      "delta_pct": 18.18,
+      "prev": 403.67,
+      "curr": 477.05,
+      "timestamp": "2026-10-29T18:35:02.900233+00:00",
+      "run_id": "40923551108",
+      "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/40923551108"
     }
   ]
 }
