@@ -71,8 +71,18 @@ export interface NexusStatus {
   event_sequence?: number;
   remote_management?: boolean;
   identity_source?: 'system' | 'user' | 'handoff';
+  unlock?: 'passkey' | 'device_key';
   // True while lemond has no device identity, for example while the macOS tray delivers the user's key.
   needs_user_key?: boolean;
+}
+// A device unlocks with its device key or with a passkey, never both. lemond reports
+// `unlock: device_key` once the key has unlocked the device; a `user` or `handoff`
+// identity source means the key is the only option even before the first unlock.
+export function usesNexusDeviceKey(status: NexusStatus): boolean {
+  return status.unlock === 'device_key' || status.identity_source === 'user' || status.identity_source === 'handoff';
+}
+export class NexusRequestError extends Error {
+  constructor(message: string, readonly status: number, readonly retryable: boolean) { super(message); }
 }
 export interface NexusInvite {
   code?: string;
@@ -189,7 +199,7 @@ export async function nexusRequest<T>(path: string, body?: unknown, pinnedContro
   }
   if (response.status === 401) throw new Error(API_KEY_ERROR);
   const data = await response.json();
-  if (!response.ok) throw new Error(typeof data?.error === 'string' ? data.error : `Network request failed (${response.status}).`);
+  if (!response.ok) throw new NexusRequestError(typeof data?.error === 'string' ? data.error : `Network request failed (${response.status}).`, response.status, data?.retryable === true);
   return data as T;
 }
 export async function refreshNexus(): Promise<void> {
@@ -345,6 +355,15 @@ export async function prepareNexus(deviceName: string, joining: boolean, request
   if (!status || status.status === 'starting') throw new Error('Network is still starting. Try again shortly.');
   beforeUnlock?.(status);
   await request('device', { device_name: deviceName });
+  if (usesNexusDeviceKey(status)) {
+    if (!status.locked) return;
+    try { await request('key/unlock', { defer_join: joining }); }
+    catch (error) {
+      if (error instanceof NexusRequestError && error.retryable) throw new Error(`${error.message} The network could not be reached. Try again shortly.`);
+      throw error;
+    }
+    return;
+  }
   if (!status.registered) await registerNexusPasskey(deviceName, request);
   await unlockNexus(joining, request);
 }

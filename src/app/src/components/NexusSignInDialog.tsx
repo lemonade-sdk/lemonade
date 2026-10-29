@@ -5,7 +5,7 @@ import {
   loadNexusAccountLabel, validNexusInvitation,
   type NexusAccountInspection, type NexusAccountService, type NexusSignInInput, type SavedNexusAccount, type VerifiedNexusAccount,
 } from '../features/nexus/accountSession';
-import type { NexusInvite } from '../features/nexus/nexus';
+import { usesNexusDeviceKey, type NexusInvite } from '../features/nexus/nexus';
 import { Icon } from './Icon';
 import { WorkspaceActionButton } from './WorkspacePanels';
 
@@ -48,6 +48,7 @@ export function NexusSignInDialog({ service, onClose, onSignedIn, passkeyActive 
   }, [busy, passkeyActive, onClose]);
   const available = inspection?.status.available && inspection.local && inspection.desktop;
   const waitingForKey = Boolean(available && inspection.status.needs_user_key);
+  const deviceKey = Boolean(available && usesNexusDeviceKey(inspection.status));
   const nameTooLong = new TextEncoder().encode(deviceName.trim()).length > 128;
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -68,7 +69,7 @@ export function NexusSignInDialog({ service, onClose, onSignedIn, passkeyActive 
         {inspection && !available && <p className="nexus-hint">{!inspection.status.available ? t('This server does not include Nexus account support.') : t('Open the Lemonade desktop app on this computer to verify your passkey.')}</p>}
         {waitingForKey && <p role="status">{t('Waiting for your device key from the Lemonade tray.')}</p>}
         {available && !waitingForKey && <form onSubmit={event => void submit(event)}>
-          <p className="nexus-hint">{t('Nexus uses a device key and passkey. Other devices see this device under its device name.')}</p>
+          <p className="nexus-hint">{deviceKey ? t('Nexus uses this device’s key. Other devices see this device under its device name.') : t('Nexus uses a device key and passkey. Other devices see this device under its device name.')}</p>
           <fieldset className="nexus-sign-in__fields" disabled={busy}>
             <legend className="sr-only">{t('Account access')}</legend>
             <div className="nexus-sign-in__choices">
@@ -81,7 +82,7 @@ export function NexusSignInDialog({ service, onClose, onSignedIn, passkeyActive 
           </fieldset>
           {nameTooLong && <p className="nexus-error" role="alert">{t('This name is too long. Try a shorter name.')}</p>}
           <WorkspaceActionButton type="submit" disabled={busy || !deviceName.trim() || nameTooLong || (action === 'join' && !validNexusInvitation(invitation))}>{busy ? t('Enabling Mesh…') : t('Enable Mesh')}</WorkspaceActionButton>
-          <p className="nexus-hint">{t('Use the passkey registered for this device. New devices will register a passkey first.')}</p>
+          {!deviceKey && <p className="nexus-hint">{t('Use the passkey registered for this device. New devices will register a passkey first.')}</p>}
         </form>}
         {error && <p ref={errorRef} className="nexus-error" role="alert" tabIndex={-1}>{t(error)}</p>}
         <div className="nexus-group-actions">{!busy && <WorkspaceActionButton size="small" appearance="quiet" icon="rotate-ccw" onClick={() => void inspect()}>{t('Check again')}</WorkspaceActionButton>}<WorkspaceActionButton appearance="quiet" disabled={busy || passkeyActive} onClick={onClose}>{t('Cancel')}</WorkspaceActionButton></div>

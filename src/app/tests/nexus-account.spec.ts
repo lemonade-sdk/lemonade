@@ -149,6 +149,75 @@ test('a device waiting for its key from the tray shows no passkey form', async (
   await expect(dialog.getByRole('textbox', { name: 'Device name', exact: true })).toHaveValue('My laptop');
 });
 
+const passkeyCalls = (fixture: { calls: { path: string }[] }) => fixture.calls.filter(call => call.path.includes('/passkey/'));
+const keyUnlocks = (fixture: { calls: { path: string; body: Record<string, unknown> | null }[] }) => fixture.calls.filter(call => call.path.endsWith('/key/unlock')).map(call => call.body);
+
+test('a device-key device re-enables through key/unlock without a passkey', async ({ page }) => {
+  const fixture = await setupNexusAccount(page, { deviceKey: true, joined: false });
+  await page.getByRole('button', { name: 'Enable Mesh', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Enable Mesh' });
+  await expect(dialog.getByRole('radio', { name: 'Use this device’s key' })).toBeChecked();
+  await expect(dialog).not.toContainText('passkey');
+  await dialog.getByRole('button', { name: 'Enable Mesh', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'User: My laptop', exact: true })).toBeVisible();
+  expect(keyUnlocks(fixture)).toEqual([{ defer_join: false }]);
+  expect(passkeyCalls(fixture)).toEqual([]);
+  expect(fixture.calls.some(call => call.path.endsWith('/join'))).toBe(false);
+});
+
+test('an unlocked device-key device skips the unlock', async ({ page }) => {
+  const fixture = await setupNexusAccount(page, { deviceKey: true });
+  await enableNexusMesh(page);
+  expect(keyUnlocks(fixture)).toEqual([]);
+  expect(passkeyCalls(fixture)).toEqual([]);
+  expect(fixture.calls.some(call => call.path.endsWith('/device'))).toBe(true);
+});
+
+test('a device-key device creates the account with its key', async ({ page }) => {
+  const fixture = await setupNexusAccount(page, { deviceKey: true, joined: false, registered: false });
+  await page.getByRole('button', { name: 'Enable Mesh', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Enable Mesh' });
+  await expect(dialog.getByRole('radio', { name: 'Create a new account' })).toBeChecked();
+  await expect(dialog).not.toContainText('passkey');
+  await dialog.getByRole('button', { name: 'Enable Mesh', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'User: My laptop', exact: true })).toBeVisible();
+  await expect(page.locator('.nexus-role')).toHaveText('Admin');
+  expect(keyUnlocks(fixture)).toEqual([{ defer_join: false }]);
+  expect(passkeyCalls(fixture)).toEqual([]);
+  expect(fixture.calls.some(call => call.path.endsWith('/join'))).toBe(false);
+});
+
+test('a device-key device joins by invitation after a deferred key unlock', async ({ page }) => {
+  const fixture = await setupNexusAccount(page, { deviceKey: true, joined: false, registered: false, readOnly: true });
+  await page.getByRole('button', { name: 'Enable Mesh', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Enable Mesh' });
+  await dialog.getByRole('radio', { name: 'Join by invitation' }).check();
+  await dialog.getByRole('textbox', { name: 'Invitation code or token' }).fill('12345678');
+  await dialog.getByRole('button', { name: 'Enable Mesh', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'User: My laptop', exact: true })).toBeVisible();
+  expect(keyUnlocks(fixture)).toEqual([{ defer_join: true }]);
+  expect(passkeyCalls(fixture)).toEqual([]);
+  const paths = fixture.calls.map(call => call.path);
+  expect(paths.findIndex(path => path.endsWith('/join'))).toBeGreaterThan(paths.findIndex(path => path.endsWith('/key/unlock')));
+  expect(fixture.calls.find(call => call.path.endsWith('/join'))?.body).toEqual({ code: '12345678' });
+});
+
+test('an unreachable network during key unlock is a retryable error', async ({ page }) => {
+  const fixture = await setupNexusAccount(page, { deviceKey: true, joined: false });
+  fixture.unlockUnreachable = true;
+  await page.getByRole('button', { name: 'Enable Mesh', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Enable Mesh' });
+  await dialog.getByRole('button', { name: 'Enable Mesh', exact: true }).click();
+  await expect(dialog.getByRole('alert')).toContainText('No network server found for mesh.example. The network could not be reached. Try again shortly.');
+  await expect(page.getByRole('button', { name: 'User: Mesh disabled' })).toBeVisible();
+  expect(fixture.calls.some(call => call.path.endsWith('/account'))).toBe(false);
+  fixture.unlockUnreachable = false;
+  await dialog.getByRole('button', { name: 'Enable Mesh', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'User: My laptop', exact: true })).toBeVisible();
+  expect(keyUnlocks(fixture)).toEqual([{ defer_join: false }, { defer_join: false }]);
+  expect(passkeyCalls(fixture)).toEqual([]);
+});
+
 test('cancelled passkey verification keeps the draft and signed-out state', async ({ page }) => {
   const fixture = await setupNexusAccount(page, { cancelPasskey: true });
   await page.getByRole('button', { name: 'Enable Mesh', exact: true }).click();

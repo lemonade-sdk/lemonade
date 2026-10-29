@@ -29,6 +29,7 @@ const ZH_CN: Record<string, string> = {
   "This server does not include Nexus account support.": "此服务器不支持 Nexus 账户。",
   "Open the Lemonade desktop app on this computer to verify your passkey.": "在此电脑上打开 Lemonade 桌面应用，验证通行密钥。",
   "Nexus uses a device key and passkey. Other devices see this device under its device name.": "Nexus 使用设备密钥和通行密钥。其他设备将以设备名称看到此设备。",
+  "Nexus uses this device’s key. Other devices see this device under its device name.": "Nexus 使用此设备的密钥。其他设备将以设备名称看到此设备。",
   "Account access": "账户访问",
   "Use this device’s key": "使用此设备的密钥",
   "Create a new account": "创建新账户",

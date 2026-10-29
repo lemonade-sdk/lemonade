@@ -8,13 +8,14 @@ const peer: NexusDevice = { node_id: 'peer', device_name: 'Kitchen PC', tunnel_i
 
 export async function setupNexusAccount(page: Page, options: {
   desktop?: boolean; registered?: boolean; joined?: boolean; readOnly?: boolean; cancelPasskey?: boolean; unauthorized?: boolean;
-  avatarUnsupported?: boolean; needsUserKey?: boolean; inviteWithoutCode?: boolean;
+  avatarUnsupported?: boolean; needsUserKey?: boolean; inviteWithoutCode?: boolean; deviceKey?: boolean;
 } = {}) {
   const members = [{ ...self, ...(options.readOnly ? { is_admin: false, permissions: ['read'] } : {}) }, peer];
   const state: NexusStatus = { available: true, controller_url: 'http://127.0.0.1:15555', enabled: true,
     registered: options.registered ?? true, locked: options.joined === false, mesh_up: options.joined !== false,
     status: options.joined === false ? 'locked' : 'running', node_id: 'self', group_node_id: options.joined === false ? '' : 'group',
-    device_name: 'My laptop', members, ...(options.needsUserKey ? { identity_source: 'handoff' as const, needs_user_key: true } : {}) };
+    device_name: 'My laptop', members, ...(options.needsUserKey ? { identity_source: 'handoff' as const, needs_user_key: true } : {}),
+    ...(options.deviceKey ? { identity_source: 'user' as const, unlock: options.registered === false ? 'passkey' as const : 'device_key' as const } : {}) };
   const entry = (id: string, name: string, kind: 'group' | 'node', parent_id: string): NexusTreeEntry => ({
     id, name, kind, parent_id, node_type: kind === 'group' ? 'customer' : 'endpoint', tunnel_ip: '', is_inference: false,
     management_pubkey: `${id}-key`, permissions: options.readOnly ? ['read'] : ['admin'],
@@ -31,7 +32,7 @@ export async function setupNexusAccount(page: Page, options: {
     lab: { parent: lab, children: [entry('workstation', 'Lab workstation', 'node', 'lab')] },
   };
   const calls: { path: string; method: string; body: Record<string, unknown> | null; authorization?: string }[] = [];
-  const fixture = { state, calls, accountError: false, rejectWrites: false, invalidTree: false,
+  const fixture = { state, calls, accountError: false, rejectWrites: false, invalidTree: false, unlockUnreachable: false,
     avatarSaveGate: undefined as Promise<void> | undefined,
     avatar: {state: 'ready', image: null as string | null, revision: 0, can_write: !options.readOnly, pending: false} };
   await page.addInitScript(({ desktop, cancelPasskey }) => {
@@ -66,6 +67,11 @@ export async function setupNexusAccount(page: Page, options: {
     if (path.endsWith('/device')) { state.device_name = String(body?.device_name); members[0].device_name = state.device_name; }
     if (path.endsWith('/lock')) { state.locked = true; state.mesh_up = false; state.members = []; }
     if (path.endsWith('/passkey/unlock')) { state.locked = false; if (!body?.defer_join) { state.mesh_up = true; state.group_node_id = 'group'; } }
+    if (path.endsWith('/key/unlock')) {
+      if (fixture.unlockUnreachable) return route.fulfill({ status: 503, headers, json: { error: 'No network server found for mesh.example.', retryable: true } });
+      state.locked = false; state.registered = true; state.unlock = 'device_key';
+      if (!body?.defer_join) { state.mesh_up = true; state.group_node_id = 'group'; }
+    }
     if (path.endsWith('/join')) { state.mesh_up = true; state.group_node_id = 'group'; }
     if (path.endsWith('/account')) return route.fulfill(fixture.accountError
       ? { status: 409, headers, json: { error: 'Account access ended' } }
