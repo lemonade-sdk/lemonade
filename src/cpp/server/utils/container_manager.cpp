@@ -286,9 +286,8 @@ std::optional<SetupFailure> ContainerManager::check_podman() const {
         return SetupFailure{"podman_info", "`podman info` fails",
                             {"Run `podman info` and fix the error it prints"}, ""};
     }
-    // Rootful lemond connects at the container's address, and Podman 4's CNI
-    // backend gives an internal network no gateway on the host to reach it by.
-    // Rootless Podman publishes a port instead, so it works on CNI too.
+    // Podman 4's CNI backend gives an internal network no gateway on the host,
+    // so rootful lemond cannot reach the container's address (see run_command).
     std::string backend;
     {
         std::lock_guard<std::mutex> lock(podman_mode_mutex_);
@@ -425,6 +424,8 @@ std::vector<std::string> ContainerManager::run_command(const ContainerRunSpec& s
         argv.push_back("--env");
         argv.push_back(key + "=" + value);
     }
+    // lemond reaches a rootless container through this published port and a
+    // rootful one at the container's address on its network.
     if (rootless) {
         const std::string port = std::to_string(spec.port);
         argv.push_back("-p");
@@ -536,10 +537,9 @@ void ContainerManager::create_network(const std::string& name) const {
     remove_network(name);
     std::vector<std::string> args = {"network", "create", "--internal", "--label", kLabel};
     // Rootless Podman starts the network's DNS server through the account's
-    // systemd user manager, which lemond.service's account does not have, and
-    // lemond reaches its one container through a published port. Rootful
-    // Podman keeps DNS: netavark gives an internal network without it no
-    // gateway, and lemond connects at the container's address.
+    // systemd user manager, which lemond.service's account does not have.
+    // Rootful Podman keeps DNS because netavark gives an internal network
+    // without it no gateway (see run_command).
     if (rootless_podman()) args.push_back("--disable-dns");
     args.push_back(name);
     const CommandResult result = invoke(args, kCommandTimeoutSeconds);
