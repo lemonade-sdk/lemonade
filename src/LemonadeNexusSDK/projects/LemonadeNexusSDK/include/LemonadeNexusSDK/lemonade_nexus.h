@@ -507,6 +507,126 @@ char* ln_group_key_wrap(const char* recipient_ed25519_pubkey, const char* group_
 char* ln_group_key_unwrap(const ln_identity_t* identity, const char* envelope_json);
 
 /* ------------------------------------------------------------------ */
+/* Per-user identity store (protected by the OS keystore)              */
+/* ------------------------------------------------------------------ */
+
+/* The store keeps one identity for the effective OS user. The 32-byte seed
+ * is wrapped with a random key-encryption key (KEK) and the KEK lives in the
+ * OS keystore: the login keychain on macOS ("keychain"), a user-scope DPAPI
+ * blob on Windows ("dpapi"), the Secret Service through libsecret on Linux
+ * ("libsecret"). The file `identity.v2.json` in the user directory holds the
+ * public key, the wrapped seed and the KEK reference; it never holds the seed
+ * or the KEK. When no keystore is usable the functions return
+ * LN_ERR_UNSUPPORTED and write nothing; there is no plaintext fallback.
+ * The ln_identity_user_* functions serialize against each other and are
+ * thread-safe. No output of these functions carries secret material. */
+
+/** The per-user identity directory as UTF-8:
+ *  macOS `~/Library/Application Support/LemonadeNexus/identity`,
+ *  Windows `%LOCALAPPDATA%\LemonadeNexus\identity`,
+ *  Linux `${XDG_DATA_HOME:-~/.local/share}/lemonade-nexus/identity`.
+ *  The home directory is that of the effective user (never SUDO_USER); HOME
+ *  is consulted only when the account database has none. The directory is
+ *  not created by this call. Returns NULL when it cannot be resolved.
+ *  Caller must ln_free(). */
+char* ln_identity_user_dir(void);
+
+/** Report the store as JSON {present, backend, unlocked, public_key?, dir}.
+ *  `backend` is "keychain" | "dpapi" | "libsecret" | "none" (none means no
+ *  usable keystore in this process). `unlocked` is true when the stored
+ *  identity loads right now; computing it reads the KEK from the keystore,
+ *  which may ask the OS for access. `public_key` ("ed25519:<base64>") is
+ *  present only when a file exists. Caller must ln_free(*out_json).
+ *  @return LN_OK, or LN_ERR_NULL_ARG for a NULL argument. */
+ln_error_t ln_identity_user_status(char** out_json);
+
+/** Load the user's stored identity. Caller owns the handle and must
+ *  ln_identity_destroy() it. `out_err` may be NULL; otherwise it receives
+ *  LN_OK, LN_ERR_NOT_FOUND (nothing stored), LN_ERR_AUTH (keystore locked
+ *  or access denied), LN_ERR_UNSUPPORTED (no usable keystore, or the file
+ *  was wrapped by another keystore), LN_ERR_REJECTED (the file or the
+ *  wrapped seed failed verification, or the keystore no longer has the
+ *  KEK: remove and create again), or LN_ERR_INTERNAL.
+ *  @return the identity, or NULL on failure. */
+ln_identity_t* ln_identity_user_load(ln_error_t* out_err);
+
+/** Create a new identity for the user and store it. Fails with
+ *  LN_ERR_REJECTED when an identity file is present, LN_ERR_UNSUPPORTED
+ *  when no keystore is usable (no file is written), LN_ERR_AUTH when the
+ *  keystore refuses, LN_ERR_INTERNAL when the file cannot be written (the
+ *  keystore item is removed again). `out_err` may be NULL. Caller owns the
+ *  handle and must ln_identity_destroy() it.
+ *  @return the identity, or NULL on failure. */
+ln_identity_t* ln_identity_user_create(ln_error_t* out_err);
+
+/** Store an existing identity for the user, for a one-time migration from
+ *  an identity.json file. The handle stays owned by the caller.
+ *  @return LN_OK; LN_ERR_NULL_ARG; LN_ERR_REJECTED when an identity file is
+ *          present or the identity is not valid; LN_ERR_UNSUPPORTED,
+ *          LN_ERR_AUTH and LN_ERR_INTERNAL as for ln_identity_user_create. */
+ln_error_t ln_identity_user_import(const ln_identity_t* identity);
+
+/** Remove the user's stored identity: the keystore item first, then the
+ *  file. The file stays when the keystore refuses to remove the item, so
+ *  the call can be repeated.
+ *  @return LN_OK; LN_ERR_NOT_FOUND when nothing is stored; LN_ERR_AUTH or
+ *          LN_ERR_INTERNAL when the keystore item or the file cannot be
+ *          removed. */
+ln_error_t ln_identity_user_remove(void);
+
+/* ------------------------------------------------------------------ */
+/* Identity hand-off (single-use sealed transfer between processes)    */
+/* ------------------------------------------------------------------ */
+
+/* The receiver (for example a daemon) begins a hand-off and publishes the
+ * request; the sender (a process in the user's session) seals its identity
+ * to the request and returns the envelope; the receiver opens it once. The
+ * ephemeral secret of a request is wiped on the first open whatever its
+ * result, so an envelope cannot be replayed. A request expires after 60 s.
+ * The envelope carries ciphertext only. A handle is not thread-safe except
+ * for ln_identity_handoff_open, which serializes concurrent calls. */
+
+typedef struct ln_handoff_s ln_handoff_t;
+
+/** Receiver: create an ephemeral X25519 key and the request JSON
+ *  {alg:"x25519-sealedbox-v1", pubkey, nonce, expires_at} (base64 values,
+ *  expires_at in Unix seconds). Caller must ln_free(*out_request_json) and
+ *  ln_identity_handoff_destroy() the handle.
+ *  @return the handle, or NULL for a NULL argument or on failure
+ *          (*out_request_json is then NULL). */
+ln_handoff_t* ln_identity_handoff_begin(char** out_request_json);
+
+/** Sender: seal `identity` to a request. Returns the envelope JSON
+ *  {alg, nonce, sealed}; the seed is sealed together with the request nonce,
+ *  so the envelope opens only for that request. Caller must ln_free().
+ *  @return the envelope, or NULL for a NULL argument, an invalid identity,
+ *          a malformed request, or an unknown alg. */
+char* ln_identity_handoff_seal(const ln_identity_t* identity, const char* request_json);
+
+/** Receiver: open an envelope. The first call on a handle consumes its
+ *  ephemeral secret whatever the result; a later call fails. `out_err` may
+ *  be NULL; otherwise it receives LN_OK, LN_ERR_NULL_ARG (nothing consumed),
+ *  LN_ERR_REJECTED (handle already used, request expired, wrong alg, or an
+ *  envelope for another request), LN_ERR_PARSE (malformed envelope),
+ *  LN_ERR_AUTH (the sealed box does not open for this request), or
+ *  LN_ERR_INTERNAL. Caller owns the returned handle and must
+ *  ln_identity_destroy() it.
+ *  @return the identity, or NULL on failure. */
+ln_identity_t* ln_identity_handoff_open(ln_handoff_t* handoff, const char* envelope_json,
+                                        ln_error_t* out_err);
+
+/** Destroy a hand-off handle and wipe its ephemeral secret if still present.
+ *  NULL is ignored. */
+void ln_identity_handoff_destroy(ln_handoff_t* handoff);
+
+/** Parse an identity from JSON text in the identity.json format
+ *  {"public_key":"<base64>","private_key":"<base64>"} held in memory, for
+ *  migration tooling. The caller keeps ownership of `json_text` and should
+ *  wipe it afterwards. Caller must ln_identity_destroy() the handle.
+ *  @return the identity, or NULL for a NULL argument or malformed text. */
+ln_identity_t* ln_identity_from_json(const char* json_text);
+
+/* ------------------------------------------------------------------ */
 /* Ed25519 challenge-response authentication                           */
 /* ------------------------------------------------------------------ */
 

@@ -51,9 +51,15 @@ target_link_libraries(lemonade_nexus_sdk PRIVATE nlohmann_json::nlohmann_json
     boringtun-ffi virtual-netstack)
 set_target_properties(lemonade_nexus_sdk PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON
     MACOSX_RPATH ON INSTALL_NAME_DIR "@rpath")
-if(WIN32)
+# The per-user identity store keeps its wrapping key in the OS keystore:
+# Keychain on macOS, DPAPI on Windows, libsecret loaded with dlopen on Linux.
+if(APPLE)
+    target_link_libraries(lemonade_nexus_sdk PRIVATE "-framework Security" "-framework CoreFoundation")
+elseif(WIN32)
     target_compile_definitions(lemonade_nexus_sdk PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
-    target_link_libraries(lemonade_nexus_sdk PRIVATE ws2_32 mswsock iphlpapi)
+    target_link_libraries(lemonade_nexus_sdk PRIVATE ws2_32 mswsock iphlpapi crypt32)
+else()
+    target_link_libraries(lemonade_nexus_sdk PRIVATE ${CMAKE_DL_LIBS})
 endif()
 if(UNIX AND NOT APPLE)
     target_link_options(lemonade_nexus_sdk PRIVATE "LINKER:--exclude-libs,ALL")

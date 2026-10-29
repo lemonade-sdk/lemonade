@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace lnsdk {
@@ -17,11 +18,27 @@ inline constexpr std::size_t kEd25519SignatureSize  = 64;
 using Ed25519PublicKey  = std::array<uint8_t, kEd25519PublicKeySize>;
 using Ed25519PrivateKey = std::array<uint8_t, kEd25519PrivateKeySize>;
 
+/// Ed25519 seed size. The 64-byte secret key is seed || public key, so the
+/// seed alone reproduces the keypair.
+inline constexpr std::size_t kEd25519SeedSize = 32;
+
 /// Manages an Ed25519 keypair for client identity.
 /// Uses libsodium directly — no server dependencies.
+///
+/// The private key is wiped when an Identity is destroyed or moved from.
+/// Copies hold their own key bytes and wipe them separately; prefer moving
+/// or passing by reference so the key lives in as few places as possible.
 class Identity {
 public:
     Identity() = default;
+    ~Identity();
+
+    Identity(const Identity&) = default;
+    Identity& operator=(const Identity&) = default;
+
+    /// Takes the keypair and leaves `other` invalid with its key wiped.
+    Identity(Identity&& other) noexcept;
+    Identity& operator=(Identity&& other) noexcept;
 
     /// Generate a new random Ed25519 keypair.
     void generate();
@@ -42,6 +59,11 @@ public:
     /// Load keypair from a JSON file.
     /// Format: {"public_key":"<base64>","private_key":"<base64>"}
     [[nodiscard]] bool load(const std::filesystem::path& path);
+
+    /// Load keypair from JSON text in the format that load() reads. The
+    /// caller owns `text` and should wipe it afterwards. Returns false and
+    /// leaves this identity unchanged when the text is malformed.
+    [[nodiscard]] bool from_json_text(std::string_view text);
 
     /// Save keypair to a JSON file, in the format that load() reads.
     ///
@@ -70,6 +92,11 @@ public:
 
     /// Return the raw private key.
     [[nodiscard]] const Ed25519PrivateKey& private_key() const noexcept { return privkey_; }
+
+    /// Return the 32-byte seed: the first half of the private key. Secret.
+    [[nodiscard]] std::span<const uint8_t, kEd25519SeedSize> seed() const noexcept {
+        return std::span<const uint8_t, kEd25519SeedSize>(privkey_.data(), kEd25519SeedSize);
+    }
 
     /// Encode bytes as base64 (URL-safe, no padding).
     [[nodiscard]] static std::string to_base64(std::span<const uint8_t> data);

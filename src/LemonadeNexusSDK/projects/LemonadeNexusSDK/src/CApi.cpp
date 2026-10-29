@@ -3,6 +3,8 @@
 #include <LemonadeNexusSDK/LemonadeNexusClient.hpp>
 #include <LemonadeNexusSDK/ServerDiscovery.hpp>
 #include <LemonadeNexusSDK/GroupKey.hpp>
+#include <LemonadeNexusSDK/IdentityHandoff.hpp>
+#include <LemonadeNexusSDK/IdentityStore.hpp>
 #include <LemonadeNexusSDK/MeshPort.hpp>
 
 #include <nlohmann/json.hpp>
@@ -72,6 +74,10 @@ struct ln_client_s {
 
 struct ln_identity_s {
     lnsdk::Identity identity;
+};
+
+struct ln_handoff_s {
+    lnsdk::IdentityHandoff handoff;
 };
 
 static char* strdup_json(const json& j) {
@@ -1050,6 +1056,168 @@ char* ln_derive_seed(const char* username, const char* password) {
     auto seed = lnsdk::Identity::derive_seed(username, password);
     if (seed.empty()) return nullptr;
     return strdup_str(lnsdk::Identity::to_base64(seed));
+}
+
+// ---------------------------------------------------------------------------
+// Per-user identity store and hand-off
+// ---------------------------------------------------------------------------
+
+static ln_error_t ln_map_store(lnsdk::StoreResult result) {
+    using lnsdk::StoreResult;
+    switch (result) {
+    case StoreResult::Ok:          return LN_OK;
+    case StoreResult::NotFound:    return LN_ERR_NOT_FOUND;
+    case StoreResult::Denied:      return LN_ERR_AUTH;
+    case StoreResult::Unsupported: return LN_ERR_UNSUPPORTED;
+    case StoreResult::Exists:
+    case StoreResult::Invalid:     return LN_ERR_REJECTED;
+    case StoreResult::Failed:      break;
+    }
+    return LN_ERR_INTERNAL;
+}
+
+static ln_error_t ln_map_handoff(lnsdk::IdentityHandoff::OpenResult result) {
+    using Open = lnsdk::IdentityHandoff::OpenResult;
+    switch (result) {
+    case Open::Ok:          return LN_OK;
+    case Open::AlreadyUsed:
+    case Open::Expired:
+    case Open::Rejected:    return LN_ERR_REJECTED;
+    case Open::Malformed:   return LN_ERR_PARSE;
+    case Open::Unsealable:  return LN_ERR_AUTH;
+    }
+    return LN_ERR_INTERNAL;
+}
+
+static void ln_set_err(ln_error_t* out_err, ln_error_t err) {
+    if (out_err) *out_err = err;
+}
+
+// UTF-8 text of a path; std::filesystem::path::u8string() is char8_t in C++20.
+static std::string ln_path_utf8(const std::filesystem::path& path) {
+    const auto u8 = path.u8string();
+    return std::string(u8.begin(), u8.end());
+}
+
+// One store per process: the file and the keystore item are shared state,
+// so the operations run one at a time.
+static std::mutex g_user_store_mutex;
+
+char* ln_identity_user_dir(void) {
+    try {
+        const auto store = lnsdk::IdentityStore::for_user();
+        if (store.dir().empty()) return nullptr;
+        return strdup_str(ln_path_utf8(store.dir()));
+    } catch (...) { return nullptr; }
+}
+
+ln_error_t ln_identity_user_status(char** out_json) {
+    if (out_json) *out_json = nullptr;
+    if (!out_json) return LN_ERR_NULL_ARG;
+    try {
+        std::lock_guard lock(g_user_store_mutex);
+        const auto status = lnsdk::IdentityStore::for_user().status();
+        json j;
+        j["present"]  = status.present;
+        j["backend"]  = status.backend;
+        j["unlocked"] = status.unlocked;
+        j["dir"]      = ln_path_utf8(status.dir);
+        if (status.present) j["public_key"] = status.public_key;
+        *out_json = strdup_json(j);
+        return *out_json ? LN_OK : LN_ERR_INTERNAL;
+    } catch (...) { return LN_ERR_INTERNAL; }
+}
+
+ln_identity_t* ln_identity_user_load(ln_error_t* out_err) {
+    ln_set_err(out_err, LN_ERR_INTERNAL);
+    try {
+        auto id = std::unique_ptr<ln_identity_s>(new(std::nothrow) ln_identity_s);
+        if (!id) return nullptr;
+        std::lock_guard lock(g_user_store_mutex);
+        const ln_error_t err = ln_map_store(lnsdk::IdentityStore::for_user().load(id->identity));
+        ln_set_err(out_err, err);
+        return err == LN_OK ? id.release() : nullptr;
+    } catch (...) { return nullptr; }
+}
+
+ln_identity_t* ln_identity_user_create(ln_error_t* out_err) {
+    ln_set_err(out_err, LN_ERR_INTERNAL);
+    try {
+        auto id = std::unique_ptr<ln_identity_s>(new(std::nothrow) ln_identity_s);
+        if (!id) return nullptr;
+        std::lock_guard lock(g_user_store_mutex);
+        auto store = lnsdk::IdentityStore::for_user();
+        const ln_error_t err = ln_map_store(store.create(id->identity));
+        ln_set_err(out_err, err);
+        return err == LN_OK ? id.release() : nullptr;
+    } catch (...) { return nullptr; }
+}
+
+ln_error_t ln_identity_user_import(const ln_identity_t* identity) {
+    if (!identity) return LN_ERR_NULL_ARG;
+    try {
+        std::lock_guard lock(g_user_store_mutex);
+        auto store = lnsdk::IdentityStore::for_user();
+        return ln_map_store(store.import(identity->identity));
+    } catch (...) { return LN_ERR_INTERNAL; }
+}
+
+ln_error_t ln_identity_user_remove(void) {
+    try {
+        std::lock_guard lock(g_user_store_mutex);
+        auto store = lnsdk::IdentityStore::for_user();
+        return ln_map_store(store.remove());
+    } catch (...) { return LN_ERR_INTERNAL; }
+}
+
+ln_handoff_t* ln_identity_handoff_begin(char** out_request_json) {
+    if (out_request_json) *out_request_json = nullptr;
+    if (!out_request_json) return nullptr;
+    try {
+        auto handoff = std::unique_ptr<ln_handoff_s>(new(std::nothrow) ln_handoff_s);
+        if (!handoff || !handoff->handoff.valid()) return nullptr;
+        *out_request_json = strdup_str(handoff->handoff.request_json());
+        if (!*out_request_json) return nullptr;
+        return handoff.release();
+    } catch (...) { return nullptr; }
+}
+
+char* ln_identity_handoff_seal(const ln_identity_t* identity, const char* request_json) {
+    if (!identity || !request_json) return nullptr;
+    try {
+        const auto envelope = lnsdk::IdentityHandoff::seal(identity->identity, request_json);
+        if (!envelope) return nullptr;
+        return strdup_str(*envelope);
+    } catch (...) { return nullptr; }
+}
+
+ln_identity_t* ln_identity_handoff_open(ln_handoff_t* handoff, const char* envelope_json,
+                                        ln_error_t* out_err) {
+    if (!handoff || !envelope_json) {
+        ln_set_err(out_err, LN_ERR_NULL_ARG);
+        return nullptr;
+    }
+    ln_set_err(out_err, LN_ERR_INTERNAL);
+    try {
+        auto id = std::unique_ptr<ln_identity_s>(new(std::nothrow) ln_identity_s);
+        if (!id) return nullptr;
+        const ln_error_t err = ln_map_handoff(handoff->handoff.open(envelope_json, id->identity));
+        ln_set_err(out_err, err);
+        return err == LN_OK ? id.release() : nullptr;
+    } catch (...) { return nullptr; }
+}
+
+void ln_identity_handoff_destroy(ln_handoff_t* handoff) {
+    delete handoff;
+}
+
+ln_identity_t* ln_identity_from_json(const char* json_text) {
+    if (!json_text) return nullptr;
+    try {
+        auto id = std::unique_ptr<ln_identity_s>(new(std::nothrow) ln_identity_s);
+        if (!id || !id->identity.from_json_text(json_text)) return nullptr;
+        return id.release();
+    } catch (...) { return nullptr; }
 }
 
 // ---------------------------------------------------------------------------

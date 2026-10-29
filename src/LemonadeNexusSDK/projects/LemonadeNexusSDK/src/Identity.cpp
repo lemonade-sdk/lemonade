@@ -1,5 +1,7 @@
 #include <LemonadeNexusSDK/Identity.hpp>
 
+#include "OwnerOnlyFile.hpp"
+
 #include <nlohmann/json.hpp>
 #include <sodium.h>
 #include <spdlog/spdlog.h>
@@ -7,6 +9,7 @@
 #include <algorithm>
 #include <cstring>
 #include <fstream>
+#include <iterator>
 #include <limits>
 #include <system_error>
 
@@ -23,6 +26,27 @@
 #endif
 
 namespace lnsdk {
+
+Identity::~Identity() {
+    sodium_memzero(privkey_.data(), privkey_.size());
+}
+
+Identity::Identity(Identity&& other) noexcept
+    : pubkey_(other.pubkey_), privkey_(other.privkey_), valid_(other.valid_) {
+    sodium_memzero(other.privkey_.data(), other.privkey_.size());
+    other.valid_ = false;
+}
+
+Identity& Identity::operator=(Identity&& other) noexcept {
+    if (this != &other) {
+        pubkey_  = other.pubkey_;
+        privkey_ = other.privkey_;
+        valid_   = other.valid_;
+        sodium_memzero(other.privkey_.data(), other.privkey_.size());
+        other.valid_ = false;
+    }
+    return *this;
+}
 
 void Identity::generate() {
     if (sodium_init() < 0) {
@@ -133,39 +157,50 @@ bool Identity::is_valid() const noexcept {
 }
 
 bool Identity::load(const std::filesystem::path& path) {
+    std::string text;
+    {
+        std::ifstream file(path, std::ios::binary);
+        if (!file.is_open()) {
+            spdlog::debug("[Identity] keypair file not found: {}", path.string());
+            return false;
+        }
+        text.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+    }
+    const bool ok = from_json_text(text);
+    sodium_memzero(text.data(), text.size());
+    if (ok) {
+        spdlog::info("[Identity] loaded keypair from {}", path.string());
+    }
+    return ok;
+}
+
+bool Identity::from_json_text(std::string_view text) {
     if (sodium_init() < 0) {
         spdlog::error("[Identity] libsodium initialization failed");
         return false;
     }
 
+    std::vector<uint8_t> priv_bytes;
+    bool ok = false;
     try {
-        std::ifstream file(path);
-        if (!file.is_open()) {
-            spdlog::debug("[Identity] keypair file not found: {}", path.string());
-            return false;
-        }
-
-        auto j = nlohmann::json::parse(file);
-        auto pub_bytes  = from_base64(j.value("public_key", ""));
-        auto priv_bytes = from_base64(j.value("private_key", ""));
+        auto j = nlohmann::json::parse(text);
+        auto pub_bytes = from_base64(j.value("public_key", ""));
+        priv_bytes     = from_base64(j.value("private_key", ""));
 
         if (pub_bytes.size() != kEd25519PublicKeySize ||
             priv_bytes.size() != kEd25519PrivateKeySize) {
             spdlog::warn("[Identity] stored keypair has wrong size");
-            return false;
+        } else {
+            std::memcpy(pubkey_.data(), pub_bytes.data(), kEd25519PublicKeySize);
+            std::memcpy(privkey_.data(), priv_bytes.data(), kEd25519PrivateKeySize);
+            valid_ = true;
+            ok = true;
         }
-
-        std::memcpy(pubkey_.data(), pub_bytes.data(), kEd25519PublicKeySize);
-        std::memcpy(privkey_.data(), priv_bytes.data(), kEd25519PrivateKeySize);
-        valid_ = true;
-
-        spdlog::info("[Identity] loaded keypair from {}", path.string());
-        return true;
-
     } catch (const std::exception& e) {
-        spdlog::warn("[Identity] failed to load keypair: {}", e.what());
-        return false;
+        spdlog::warn("[Identity] failed to parse keypair: {}", e.what());
     }
+    sodium_memzero(priv_bytes.data(), priv_bytes.size());
+    return ok;
 }
 
 namespace {
@@ -215,6 +250,37 @@ bool write_owner_only_file(const std::filesystem::path& tmp, const std::string& 
 
 } // namespace
 
+namespace detail {
+
+bool replace_owner_only_file(const std::filesystem::path& path, const std::string& text) {
+    // Write a new owner-only file beside the target, then rename it over
+    // the target. The content is never in a file that others can read, and
+    // a reader sees either the old file or the complete new one.
+    unsigned char suffix[8];
+    char suffix_hex[sizeof suffix * 2 + 1];
+    randombytes_buf(suffix, sizeof suffix);
+    sodium_bin2hex(suffix_hex, sizeof suffix_hex, suffix, sizeof suffix);
+    std::filesystem::path tmp = path;
+    tmp += std::string(".tmp-") + suffix_hex;
+
+    if (!write_owner_only_file(tmp, text)) {
+        spdlog::error("[Identity] cannot write {}", tmp.string());
+        std::error_code ec;
+        std::filesystem::remove(tmp, ec);
+        return false;
+    }
+    std::error_code ec;
+    std::filesystem::rename(tmp, path, ec);
+    if (ec) {
+        spdlog::error("[Identity] cannot replace {}: {}", path.string(), ec.message());
+        std::filesystem::remove(tmp, ec);
+        return false;
+    }
+    return true;
+}
+
+} // namespace detail
+
 bool Identity::save(const std::filesystem::path& path) const {
     if (!valid_) {
         spdlog::warn("[Identity] cannot save: no valid keypair");
@@ -222,7 +288,6 @@ bool Identity::save(const std::filesystem::path& path) const {
     }
 
     std::string text;
-    std::filesystem::path tmp;
     bool ok = false;
     try {
         if (path.has_parent_path()) {
@@ -236,21 +301,8 @@ bool Identity::save(const std::filesystem::path& path) const {
         auto& encoded = j["private_key"].get_ref<std::string&>();
         sodium_memzero(encoded.data(), encoded.size());
 
-        // Write a new owner-only file beside the target, then rename it over
-        // the target. The key is never in a file that others can read, and a
-        // reader sees either the old file or the complete new one.
-        unsigned char suffix[8];
-        char suffix_hex[sizeof suffix * 2 + 1];
-        randombytes_buf(suffix, sizeof suffix);
-        sodium_bin2hex(suffix_hex, sizeof suffix_hex, suffix, sizeof suffix);
-        tmp = path;
-        tmp += std::string(".tmp-") + suffix_hex;
-
-        if (!write_owner_only_file(tmp, text)) {
-            spdlog::error("[Identity] cannot write {}", tmp.string());
-        } else {
-            std::filesystem::rename(tmp, path);
-            ok = true;
+        ok = detail::replace_owner_only_file(path, text);
+        if (ok) {
             spdlog::info("[Identity] saved keypair to {}", path.string());
         }
     } catch (const std::exception& e) {
@@ -258,10 +310,6 @@ bool Identity::save(const std::filesystem::path& path) const {
     }
 
     sodium_memzero(text.data(), text.size());
-    if (!ok && !tmp.empty()) {
-        std::error_code ec;
-        std::filesystem::remove(tmp, ec);
-    }
     return ok;
 }
 
