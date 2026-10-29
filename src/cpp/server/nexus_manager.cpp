@@ -382,22 +382,25 @@ uint64_t catalog_version(const std::string& lemond_version) {
     return ((parts[0] * 1000 + parts[1]) * 1000 + parts[2]) * 100 + kCatalogRevision;
 }
 
-nlohmann::ordered_json service_catalog(const nlohmann::ordered_json& routes, const std::string& lemond_version) {
+namespace {
+// One catalog claim of a registered route: the URL as the SDK compares it. An exact
+// path loses a trailing slash (except "/"); a {parameter} path becomes the prefix
+// before it. `raw` keeps the URL as registered.
+struct CatalogClaim {
+    bool exact;
+    std::string url;
+    std::string raw;
+};
+// Calls `visit(family, id, method, claim)` for every method and URL of every route,
+// after validating the family. Throws std::logic_error for a route without a family.
+void for_each_catalog_claim(const nlohmann::ordered_json& routes,
+                            const std::function<void(const std::string&, const std::string&, const std::string&, const CatalogClaim&)>& visit) {
     static const char* const quad_prefixes[] = {"/api/v0/", "/api/v1/", "/v0/", "/v1/"};
-    nlohmann::ordered_json families = nlohmann::ordered_json::array();
-    std::map<std::string, std::string> claims;  // "METHOD path" or "METHOD prefix/" -> family
     for (const auto& route : routes) {
         const auto id = route.value("id", std::string());
         const auto family = route.value("family", std::string());
         if (!valid_route_family(family)) throw std::logic_error("Route '" + id + "' has no valid route policy family");
         const auto prefixes = route.value("prefixes", std::string());
-        auto entry = std::find_if(families.begin(), families.end(), [&](const nlohmann::ordered_json& item) {
-            return item.at("name") == family;
-        });
-        if (entry == families.end()) {
-            families.push_back({{"name", family}, {"routes", nlohmann::ordered_json::array()}});
-            entry = std::prev(families.end());
-        }
         for (const auto& path_item : route.at("paths")) {
             const auto path = path_item.get<std::string>();
             std::vector<std::string> urls;
@@ -409,21 +412,68 @@ nlohmann::ordered_json service_catalog(const nlohmann::ordered_json& routes, con
                 urls.push_back(path);
             }
             for (const auto& url : urls) {
+                CatalogClaim claim;
+                claim.raw = url;
                 const auto parameter = url.find('{');
-                const bool exact = parameter == std::string::npos;
-                const auto key = exact ? url : url.substr(0, parameter);
-                for (const auto& method : route.at("methods")) {
-                    const auto claim = method.get<std::string>() + " " + key + (exact ? "" : "*");
-                    const auto owner = claims.emplace(claim, family);
-                    if (!owner.second && owner.first->second != family) {
-                        throw std::logic_error("Route '" + id + "' claims " + claim + " for family '" + family +
-                                               "', which family '" + owner.first->second + "' already serves");
-                    }
-                }
-                (*entry)["routes"].push_back({{"methods", route.at("methods")}, {exact ? "path" : "prefix", key}});
+                claim.exact = parameter == std::string::npos;
+                claim.url = claim.exact ? url : url.substr(0, parameter);
+                while (claim.exact && claim.url.size() > 1 && claim.url.back() == '/') claim.url.pop_back();
+                for (const auto& method : route.at("methods")) visit(family, id, method.get<std::string>(), claim);
             }
         }
     }
+}
+}
+
+nlohmann::ordered_json service_catalog(const nlohmann::ordered_json& routes, const std::string& lemond_version) {
+    // The SDK refuses a catalog that lists one method and URL twice, even within a
+    // family, so every claim appears once: repeats of a prefix (several {id} routes
+    // under one collection) or of a path collapse, and an exact path that equals a
+    // prefix of the same family and method is already covered by that prefix.
+    std::set<std::string> prefixes;  // "family METHOD prefix"
+    for_each_catalog_claim(routes, [&](const std::string& family, const std::string&, const std::string& method, const CatalogClaim& claim) {
+        if (!claim.exact) prefixes.insert(family + " " + method + " " + claim.url);
+    });
+    nlohmann::ordered_json families = nlohmann::ordered_json::array();
+    std::map<std::string, std::string> claims;  // "METHOD path|prefix url", as the SDK keys them -> family
+    // The methods of one route and URL form one catalog entry, written when the next
+    // URL starts.
+    std::string current_family;
+    std::string current_key;
+    nlohmann::ordered_json current_methods = nlohmann::ordered_json::array();
+    const auto family_routes = [&](const std::string& family) -> nlohmann::ordered_json& {
+        for (auto& item : families) {
+            if (item.at("name") == family) return item["routes"];
+        }
+        families.push_back({{"name", family}, {"routes", nlohmann::ordered_json::array()}});
+        return families.back()["routes"];
+    };
+    const auto flush = [&] {
+        if (!current_methods.empty()) {
+            family_routes(current_family).push_back({{"methods", current_methods},
+                {current_key.compare(0, 5, "path ") == 0 ? "path" : "prefix", current_key.substr(current_key.find(' ') + 1)}});
+        }
+        current_methods = nlohmann::ordered_json::array();
+    };
+    for_each_catalog_claim(routes, [&](const std::string& family, const std::string& id, const std::string& method, const CatalogClaim& claim) {
+        family_routes(family);
+        const std::string kind_and_url = (claim.exact ? "path " : "prefix ") + claim.url;
+        if (current_family != family || current_key != kind_and_url) {
+            flush();
+            current_family = family;
+            current_key = kind_and_url;
+        }
+        const auto key = method + " " + kind_and_url;
+        const auto owner = claims.emplace(key, family);
+        if (!owner.second && owner.first->second != family) {
+            throw std::logic_error("Route '" + id + "' claims " + key + " for family '" + family +
+                                   "', which family '" + owner.first->second + "' already serves");
+        }
+        if (!owner.second) return;
+        if (claim.exact && prefixes.count(family + " " + method + " " + claim.raw)) return;
+        current_methods.push_back(method);
+    });
+    flush();
     return {{"version", catalog_version(lemond_version)},
         {"app", {{"name", "lemonade"}, {"version", lemond_version}}},
         {"families", families}};
@@ -832,7 +882,7 @@ struct NexusManager::Session {
     using IdentityPtr = std::unique_ptr<ln_identity_t, decltype(&ln_identity_destroy)>;
     std::unique_ptr<ln_client_t, decltype(&ln_destroy)> client{nullptr, ln_destroy};
     IdentityPtr identity{nullptr, ln_identity_destroy};
-    const IdentitySource source{nexus_access::identity_source(nexus_access::current_process_role())};
+    const IdentitySource source;
     // The outstanding hand-off request; a new request replaces it, and an open consumes it.
     std::unique_ptr<ln_handoff_t, decltype(&ln_identity_handoff_destroy)> handoff{nullptr, ln_identity_handoff_destroy};
     json identity_store = nullptr;  // the SDK's user store status at the last load attempt (User only)
@@ -868,9 +918,10 @@ struct NexusManager::Session {
     const nlohmann::ordered_json catalog;  // mesh route catalog for vport 13305, or null
     std::string catalog_error;             // the SDK refused the catalog at the last join
 
-    Session(const std::string& data_root, int port, int mesh_listener_port, nlohmann::ordered_json service_catalog)
-        : root(utils::path_from_utf8(data_root)), ingress_port(port), mesh_port(mesh_listener_port),
-          catalog(std::move(service_catalog)) {
+    Session(const std::string& data_root, int port, int mesh_listener_port, nlohmann::ordered_json service_catalog,
+            const ProcessRole& role)
+        : source(nexus_access::identity_source(role)), root(utils::path_from_utf8(data_root)), ingress_port(port),
+          mesh_port(mesh_listener_port), catalog(std::move(service_catalog)) {
         std::filesystem::create_directories(root);
 #ifndef _WIN32
         std::filesystem::permissions(root, std::filesystem::perms::owner_all);
@@ -1789,9 +1840,10 @@ NexusManager::NexusManager(const std::string& config_dir,
                            const std::function<void(httplib::Server&)>& install_policy,
                            const std::function<void(httplib::Server&)>& install_api,
                            int mesh_port,
-                           nlohmann::ordered_json service_catalog)
+                           nlohmann::ordered_json service_catalog,
+                           std::optional<ProcessRole> process_role)
     : data_root_(utils::path_to_utf8(utils::path_from_utf8(config_dir) / "nexus")), catalog_(std::move(service_catalog)),
-      selection_port_(mesh_port) {
+      role_(process_role ? *process_role : nexus_access::current_process_role()), selection_port_(mesh_port) {
 #ifdef LEMONADE_WITH_NEXUS
     if (!catalog_.is_object()) {
         LOG(INFO, "Nexus") << "Route policy is unavailable: no route catalog" << std::endl;
@@ -1888,7 +1940,7 @@ bool NexusManager::enable(std::string& error) {
 #else
     try {
         if (stopping_) throw std::runtime_error("Server is shutting down");
-        if (!session_) session_ = std::make_unique<Session>(data_root_, ingress_port_, selection_port_, catalog_);
+        if (!session_) session_ = std::make_unique<Session>(data_root_, ingress_port_, selection_port_, catalog_, role_);
         enabled_ = true;
         persist_enabled_locked();
         update_snapshot_locked(session_->status());

@@ -9,6 +9,7 @@
 #include <memory>
 #include <mutex>
 #include <nlohmann/json.hpp>
+#include <optional>
 #include <string>
 #include <thread>
 #include <utility>
@@ -225,11 +226,15 @@ public:
     /// `service_catalog` (nexus_access::service_catalog) is registered with the SDK for
     /// virtual port 13305 after every join, when the SDK supports it; null registers
     /// nothing and status reports the route policy unavailable.
+    /// `process_role` fixes the identity source (nexus_access::identity_source). lemond
+    /// leaves it unset and reads its own role; tests pass a role so that no test ever
+    /// reaches an OS keystore. It is not a product setting.
     NexusManager(const std::string& config_dir,
                  const std::function<void(httplib::Server&)>& install_policy,
                  const std::function<void(httplib::Server&)>& install_api,
                  int mesh_port,
-                 nlohmann::ordered_json service_catalog = nullptr);
+                 nlohmann::ordered_json service_catalog = nullptr,
+                 std::optional<ProcessRole> process_role = std::nullopt);
     ~NexusManager();
     void register_routes(httplib::Server& server, NexusListener listener = NexusListener::Public);
     void stop();
@@ -248,6 +253,7 @@ private:
     std::pair<int, json> control(const std::string& method, const std::string& path, const json& body);
     std::string data_root_;
     nlohmann::ordered_json catalog_;
+    ProcessRole role_;
     int ingress_port_{0};
     std::unique_ptr<Session> session_;
     mutable std::mutex mutex_;

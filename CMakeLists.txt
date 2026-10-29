@@ -3609,6 +3609,9 @@ if(BUILD_TESTING AND EXISTS "${_NEXUS_MANAGER_TEST_SRC}")
     add_executable(test_nexus_manager test/cpp/test_nexus_manager.cpp)
     target_link_libraries(test_nexus_manager PRIVATE lemonade-server-core)
     add_cpp_ci_test(NexusManagerTest CI ON COMMAND test_nexus_manager)
+    # The test finishes in well under a minute; a bound keeps a stalled keystore or
+    # listener from holding a CI runner.
+    set_tests_properties(NexusManagerTest PROPERTIES TIMEOUT 300)
     if(LEMONADE_WITH_NEXUS)
         add_dependencies(test_nexus_manager nexus-sdk-runtime)
     endif()

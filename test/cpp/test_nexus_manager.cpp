@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <future>
 #include <iostream>
 #include <map>
 #include <string>
@@ -43,6 +44,12 @@ void register_mcp_routes(RouteRegistry& registry, ServerContext& ctx);
 namespace {
 using nlohmann::json;
 namespace access = lemon::nexus_access;
+
+// Every manager in this test runs as a system service with its own identity file under
+// the temporary root, whatever the host OS: no test reaches an OS keystore. The role is
+// injected through the constructor; the rule itself is tested in check_identity_rules.
+const lemon::ProcessRole kSystemRole{lemon::ProcessRole::Os::Linux, false, true};
+const lemon::ProcessRole kUserRole{lemon::ProcessRole::Os::Linux, false, false};
 
 bool throws(const std::function<void()>& action) {
     try { action(); } catch (const std::runtime_error&) { return true; }
@@ -333,6 +340,40 @@ void check_service_catalog(const std::function<void(bool, const char*)>& check) 
     untagged[0]["family"] = "";
     check(throws_logic([&] { access::service_catalog(untagged, "2026.46.3"); }), "A catalog refuses a route without a family");
 
+    // The SDK refuses one method and URL listed twice, even within a family. Several
+    // {id} routes under one collection share a prefix, a trailing slash is not another
+    // path, and a path that equals a prefix of the same method is covered by it.
+    const auto duplicate_claim = [](const nlohmann::ordered_json& catalog) {
+        std::set<std::string> seen;
+        for (const auto& family : catalog.at("families")) {
+            for (const auto& route : family.at("routes")) {
+                const bool exact = route.contains("path");
+                for (const auto& method : route.at("methods")) {
+                    const auto key = method.get<std::string>() + (exact ? " path " : " prefix ") + route.at(exact ? "path" : "prefix").get<std::string>();
+                    if (!seen.insert(key).second) return key;
+                }
+            }
+        }
+        return std::string();
+    };
+    lemon::RouteRegistry repeated;
+    repeated.add(stub(ctx, "test.model", "models/{id}", lemon::Prefixes::Quad), "inference");
+    repeated.add(stub(ctx, "test.files", "models/{id}/files", lemon::Prefixes::Quad), "inference");
+    repeated.add(stub(ctx, "test.options", "models/{id}/options", lemon::Prefixes::Quad, {"GET", "POST"}), "inference");
+    repeated.add(stub(ctx, "test.list-slash", "models/", lemon::Prefixes::Quad), "inference");
+    repeated.add(stub(ctx, "test.docs-slash", "docs/", lemon::Prefixes::Quad), "inference");
+    repeated.add(stub(ctx, "test.root", "/", lemon::Prefixes::Root), "inference");
+    const auto collapsed_catalog = access::service_catalog(repeated.list(), "2026.46.3");
+    const auto& collapsed = collapsed_catalog.at("families")[0].at("routes");
+    check(collapsed.size() == 13, "Repeated prefixes, covered paths and trailing slashes collapse");
+    check(collapsed.size() == 13 && collapsed[0] == nlohmann::ordered_json({{"methods", {"GET"}}, {"prefix", "/api/v0/models/"}}) &&
+          collapsed[3] == nlohmann::ordered_json({{"methods", {"GET"}}, {"prefix", "/v1/models/"}}) &&
+          collapsed[4] == nlohmann::ordered_json({{"methods", {"POST"}}, {"prefix", "/api/v0/models/"}}) &&
+          collapsed[8] == nlohmann::ordered_json({{"methods", {"GET"}}, {"path", "/api/v0/docs"}}) &&
+          collapsed[12] == nlohmann::ordered_json({{"methods", {"GET"}}, {"path", "/"}}),
+          "A repeated method drops from a later route, a trailing slash is stripped and the root path stays");
+    check(duplicate_claim(collapsed_catalog).empty() && duplicate_claim(catalog).empty(), "No catalog lists a method and URL twice");
+
     check(access::catalog_version("2026.46.0~1780.7d29cf99") == 202604600000ULL + access::kCatalogRevision, "A development version packs its release numbers");
     check(access::catalog_version("2026.47.0") > access::catalog_version("2026.46.9") &&
           access::catalog_version("2027.1.0") > access::catalog_version("2026.52.9"), "Catalog versions grow with releases");
@@ -385,6 +426,18 @@ void check_service_catalog(const std::function<void(bool, const char*)>& check) 
         }
     }
     check(chat_in_inference && shutdown_in_internal, "The live catalog places chat completions and shutdown in their families");
+    const auto repeated_live = duplicate_claim(live);
+    check(repeated_live.empty(), ("The live catalog lists every method and URL once: " + repeated_live).c_str());
+#ifdef LEMONADE_WITH_NEXUS
+    // The vendored SDK validates the catalog the way lemond's Tier 1 registration does;
+    // no mesh is needed, and the closed port is never reached.
+    std::unique_ptr<ln_client_t, decltype(&ln_destroy)> sdk(ln_create_tls("127.0.0.1", 9), ln_destroy);
+    check(sdk != nullptr && ln_mesh_service_set_catalog(sdk.get(), 13305, live.dump().c_str()) == LN_OK, "The SDK accepts the live catalog");
+    auto twice = live;
+    twice["families"][0]["routes"].push_back(twice["families"][0]["routes"][0]);
+    check(sdk != nullptr && ln_mesh_service_set_catalog(sdk.get(), 13305, twice.dump().c_str()) == LN_ERR_REJECTED,
+          "The SDK refuses a repeated route, so the acceptance check is live");
+#endif
 }
 
 void check_role_presets(const std::function<void(bool, const char*)>& check) {
@@ -487,7 +540,7 @@ void check_status_fields(const std::filesystem::path& root, const std::function<
     lemon::RouteRegistry registry;
     registry.add(stub(ctx, "test.chat", "chat/completions", lemon::Prefixes::Quad, {"POST"}), "inference");
     lemon::NexusManager manager((root / "status").string(), listener_policy, listener_policy, 0,
-        access::service_catalog(registry.list(), "2026.46.3"));
+        access::service_catalog(registry.list(), "2026.46.3"), kSystemRole);
     const auto status = manager.status();
     check(status.at("catalog_version") == 202604600300ULL + access::kCatalogRevision, "Status reports the catalog version");
     check(status.at("app") == json({{"name", "lemonade"}, {"version", "2026.46.3"}}), "Status reports the catalog's app");
@@ -498,7 +551,7 @@ void check_status_fields(const std::filesystem::path& root, const std::function<
     check(status.at("route_policy") == "unavailable", "Route policy is unavailable without the SDK");
 #endif
     manager.stop();
-    lemon::NexusManager bare((root / "status-bare").string(), listener_policy, listener_policy, 0);
+    lemon::NexusManager bare((root / "status-bare").string(), listener_policy, listener_policy, 0, nullptr, kSystemRole);
     const auto bare_status = bare.status();
     check(bare_status.at("catalog_version") == 0 && bare_status.at("route_policy") == "unavailable" &&
           bare_status.at("app") == json({{"name", "lemonade"}, {"version", LEMON_VERSION_STRING}}), "Without a catalog the route policy is unavailable");
@@ -542,7 +595,7 @@ void check_listener_isolation(const std::filesystem::path& root, const std::func
     set_environment("LEMONADE_ADMIN_API_KEY", "");
     set_environment("LEMONADE_API_KEY", "remote-test-key");
     {
-        lemon::NexusManager manager((root / "isolation").string(), listener_policy, listener_policy, 0);
+        lemon::NexusManager manager((root / "isolation").string(), listener_policy, listener_policy, 0, nullptr, kSystemRole);
         httplib::Server mesh;
         manager.register_routes(mesh, lemon::NexusListener::MeshIngress);
         const int mesh_port = mesh.bind_to_any_port("127.0.0.1");
@@ -711,7 +764,16 @@ void check_identity_rules(const std::function<void(bool, const char*)>& check) {
     check(std::string(access::identity_source_name(IdentitySource::System)) == "system" &&
           std::string(access::identity_source_name(IdentitySource::User)) == "user" &&
           std::string(access::identity_source_name(IdentitySource::Handoff)) == "handoff", "Sources have their status names");
-    check(access::current_process_role().state_directory, "The process role reads STATE_DIRECTORY");
+    {
+        const auto saved = lemon::utils::get_environment_variable_utf8("STATE_DIRECTORY");
+        set_environment("STATE_DIRECTORY", "/var/lib/lemonade");
+        check(access::current_process_role().state_directory, "The process role reads STATE_DIRECTORY");
+        set_environment("STATE_DIRECTORY", "");
+        check(!access::current_process_role().state_directory, "The process role sees an unset STATE_DIRECTORY");
+        set_environment("STATE_DIRECTORY", saved);
+    }
+    check(access::identity_source(kSystemRole) == IdentitySource::System && access::identity_source(kUserRole) == IdentitySource::User,
+          "The test roles resolve as intended on every host");
 
     check(access::account_file_tag("ed25519:YWRt+aW4/bg==") == "YWRt-aW4_bg", "An account tag is URL-safe base64 without padding");
     check(access::account_file_tag("ed25519:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstu=").size() == 16, "An account tag is 16 characters");
@@ -848,28 +910,35 @@ void check_handoff(httplib::Client& management, const std::filesystem::path& roo
           "No reply carries a seed, private key or envelope");
 }
 
+#ifdef __linux__
 // User mode fails closed: without a usable keystore lemond has no identity, writes no
-// identity file and refuses a key unlock. This runs only where the SDK reports no
-// keystore for this process, so a developer's real keystore is never touched.
+// identity file and refuses a key unlock. Linux only, and only where the SDK reports no
+// keystore for this process: on macOS and Windows even the status call reaches the
+// keychain or DPAPI, and a developer's real keystore is never touched from a test. The
+// probe runs on its own thread with a time bound, so a Secret Service that does not
+// answer cannot stall the test.
 void check_user_mode_fails_closed(const std::filesystem::path& root, const std::function<void(bool, const char*)>& check) {
-    char* out = nullptr;
-    const auto store = ln_identity_user_status(&out) == LN_OK && out ? json::parse(out, nullptr, false) : json();
-    ln_free(out);
-    if (!store.is_object() || store.value("backend", "") != "none") {
-        std::cout << "Skipping the user-mode check: this process has a keystore (" << store.value("backend", "?") << ")\n";
+    auto probe = std::make_shared<std::promise<json>>();
+    auto answer = probe->get_future();
+    std::thread([probe] {
+        char* out = nullptr;
+        json store = ln_identity_user_status(&out) == LN_OK && out ? json::parse(out, nullptr, false) : json();
+        ln_free(out);
+        probe->set_value(std::move(store));
+    }).detach();
+    if (answer.wait_for(std::chrono::seconds(5)) != std::future_status::ready) {
+        std::cout << "Skipping the user-mode check: the keystore did not answer within 5 s\n";
         return;
     }
-    const auto saved = lemon::utils::get_environment_variable_utf8("STATE_DIRECTORY");
-    set_environment("STATE_DIRECTORY", "");
-    if (access::identity_source(access::current_process_role()) != lemon::IdentitySource::User) {
-        std::cout << "Skipping the user-mode check: this process is a system service\n";
-        set_environment("STATE_DIRECTORY", saved);
+    const auto store = answer.get();
+    if (!store.is_object() || store.value("backend", "") != "none") {
+        std::cout << "Skipping the user-mode check: this process has a keystore (" << store.value("backend", "?") << ")\n";
         return;
     }
     const auto user_dir = std::filesystem::path(store.value("dir", std::string()));
     const bool stored_before = !user_dir.empty() && std::filesystem::exists(user_dir / "identity.v2.json");
     {
-        lemon::NexusManager manager((root / "user-mode").string(), listener_policy, listener_policy, 0);
+        lemon::NexusManager manager((root / "user-mode").string(), listener_policy, listener_policy, 0, nullptr, kUserRole);
         std::string error;
         check(manager.enable(error), "Enable succeeds without a usable keystore");
         const auto state = manager.status();
@@ -889,8 +958,8 @@ void check_user_mode_fails_closed(const std::filesystem::path& root, const std::
         manager.stop();
     }
     check((!user_dir.empty() && std::filesystem::exists(user_dir / "identity.v2.json")) == stored_before, "The user store is left as it was");
-    set_environment("STATE_DIRECTORY", saved);
 }
+#endif
 
 // The SDK's C ABI reports a federation 401 and 403 alike as LN_ERR_AUTH, and no
 // transport, a timeout and a 5xx alike as LN_ERR_CONNECT.
@@ -923,10 +992,6 @@ int main() {
     // real federation from a test, and every federation call fails fast and locally.
     set_environment("LEMONADE_NEXUS_SERVER", "127.0.0.1");
     set_environment("LEMONADE_NEXUS_PORT", "9");
-    // On Linux this makes the manager a system service with its own identity file, as the
-    // packaged unit is; a user's keystore is never touched from a test. macOS and Windows
-    // decide by the process role alone.
-    set_environment("STATE_DIRECTORY", root.string());
     try {
         const json group = {{"id", "root"}, {"parent_id", "outside"}, {"type", "customer"}, {"hostname", "Team"},
             {"assignments", json::array({{{"management_pubkey", "self"}, {"permissions", json::array({"admin"})}}})}};
@@ -1007,11 +1072,11 @@ int main() {
         check_mesh_ingress_routes(check);
         check_listener_isolation(root, check);
         check_status_fields(root, check);
-#ifdef LEMONADE_WITH_NEXUS
+#if defined(LEMONADE_WITH_NEXUS) && defined(__linux__)
         check_user_mode_fails_closed(root, check);
 #endif
         {
-            lemon::NexusManager manager(root.string(), listener_policy, listener_policy, 0);
+            lemon::NexusManager manager(root.string(), listener_policy, listener_policy, 0, nullptr, kSystemRole);
             httplib::Server server;
             manager.register_routes(server);
             const int port = server.bind_to_any_port("127.0.0.1");
@@ -1195,14 +1260,14 @@ int main() {
         }
 #ifdef LEMONADE_WITH_NEXUS
         {
-            lemon::NexusManager restored(root.string(), listener_policy, listener_policy, 0);
+            lemon::NexusManager restored(root.string(), listener_policy, listener_policy, 0, nullptr, kSystemRole);
             const auto status = restored.status();
             check(status.at("enabled") && status.at("locked") && !status.at("mesh_up"), "Restarts enabled and locked");
             check(status.at("device_name") == "My laptop", "Name survives restart");
             restored.disable();
         }
         {
-            lemon::NexusManager disabled(root.string(), listener_policy, listener_policy, 0);
+            lemon::NexusManager disabled(root.string(), listener_policy, listener_policy, 0, nullptr, kSystemRole);
             check(!disabled.status().at("enabled"), "Disable survives restart");
         }
 #endif

@@ -272,6 +272,12 @@ URL. `nexus_access::kFamilies` lists the families:
 
 A route with a `{parameter}` becomes the prefix before it; other paths are
 exact, one entry per URL prefix (`/api/v0/`, `/api/v1/`, `/v0/`, `/v1/`).
+The SDK refuses a catalog that lists one method and URL twice, so the builder
+lists each claim once: several `{id}` routes under one collection (such as
+`models/{id}`, `models/{id}/files` and `models/{id}/options`) share one
+prefix entry per method, an exact path loses a trailing slash, and a path that
+equals a prefix of the same family and method is covered by the prefix. Two
+families that claim one method and URL still fail at startup.
 The version packs `lemond`'s `YEAR.WEEK.N` version as
 `YEAR * 10^6 + WEEK * 10^3 + N`, times 100, plus
 `nexus_access::kCatalogRevision`. Bump the revision (below 100) when a route's
