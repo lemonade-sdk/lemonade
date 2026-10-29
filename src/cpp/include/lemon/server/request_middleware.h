@@ -17,14 +17,16 @@ class RequestMiddleware {
 public:
     RequestMiddleware(RuntimeConfig* config, const RouteRegistry* registry);
 
-    void install(httplib::Server& server);
+    // `mesh_ingress` is true only for the listener behind the Nexus mesh: there the SDK's
+    // X-Nexus-* peer headers are trusted; every other listener drops them.
+    void install(httplib::Server& server, bool mesh_ingress = false);
 
     bool api_key_set() const { return !api_key_.empty(); }
     bool admin_api_key_set() const { return !admin_api_key_.empty(); }
 
 private:
     httplib::Server::HandlerResponse pre_route(const httplib::Request& req,
-                                               httplib::Response& res);
+                                               httplib::Response& res, bool mesh_ingress);
     httplib::Server::HandlerResponse authenticate(const httplib::Request& req,
                                                   httplib::Response& res);
     void log_response(const httplib::Request& req, const httplib::Response& res);

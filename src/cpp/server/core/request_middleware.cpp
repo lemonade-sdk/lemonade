@@ -10,6 +10,7 @@
 #include <nlohmann/json.hpp>
 
 #include "../telemetry.h"
+#include "lemon/nexus_manager.h"
 #include "lemon/runtime_config.h"
 #include "lemon/server/route_registry.h"
 #include "lemon/utils/origin_utils.h"
@@ -87,9 +88,9 @@ RequestMiddleware::RequestMiddleware(RuntimeConfig* config, const RouteRegistry*
     admin_api_key_ = admin_api_key_env ? std::string(admin_api_key_env) : api_key_;
 }
 
-void RequestMiddleware::install(httplib::Server& server) {
-    server.set_pre_routing_handler([this](const httplib::Request& req, httplib::Response& res) {
-        return pre_route(req, res);
+void RequestMiddleware::install(httplib::Server& server, bool mesh_ingress) {
+    server.set_pre_routing_handler([this, mesh_ingress](const httplib::Request& req, httplib::Response& res) {
+        return pre_route(req, res, mesh_ingress);
     });
 
     server.set_default_headers({
@@ -138,7 +139,11 @@ void RequestMiddleware::install(httplib::Server& server) {
 }
 
 httplib::Server::HandlerResponse RequestMiddleware::pre_route(const httplib::Request& req,
-                                                              httplib::Response& res) {
+                                                              httplib::Response& res, bool mesh_ingress) {
+    // httplib hands its pre-routing hook a const view of the request it is about to
+    // route; this is the one place that runs before every route, and removing a spoofed
+    // peer header here is what keeps it from any route or session-header setting.
+    nexus_access::accept_peer_headers(const_cast<httplib::Request&>(req), mesh_ingress);
     if (!registry_->is_quiet(req.path)) {
         LOG(DEBUG, "Server") << req.method << " " << req.path << std::endl;
     }
@@ -306,7 +311,9 @@ void RequestMiddleware::log_response(const httplib::Request& req, const httplib:
     ));
 
     if (!is_quiet_get) {
-        LOG(DEBUG, "Server") << req.method << " " << req.path << " - " << res.status << std::endl;
+        const auto& peer = nexus_access::request_peer();
+        LOG(DEBUG, "Server") << req.method << " " << req.path << " - " << res.status
+                             << (peer.node_id.empty() ? "" : " peer " + peer.node_id + " family " + peer.family) << std::endl;
     }
 }
 

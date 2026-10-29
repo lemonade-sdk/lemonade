@@ -1,8 +1,11 @@
 #include "lemon/nexus_manager.h"
 #include "lemon/error_types.h"
+#include "lemon/server/route_registry.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
+#include "lemon/version.h"
+#include "nexus_sdk_compat.h"
 #include <lemon/utils/aixlog.hpp>
 
 #include <algorithm>
@@ -16,11 +19,15 @@
 
 #ifdef _WIN32
 #include <winsock2.h>
+#include <windows.h>
 #else
 #include <unistd.h>
 #endif
 #ifdef LEMONADE_WITH_NEXUS
 #include <LemonadeNexusSDK/lemonade_nexus.h>
+#ifndef _WIN32
+#include <dlfcn.h>
+#endif
 #endif
 
 namespace lemon {
@@ -311,9 +318,38 @@ json tree_path(const std::string& id, const std::vector<std::string>& root_ids,
     throw NexusError(403, "That node is outside your group or its hierarchy is too deep");
 }
 
+const std::vector<std::string> kFamilies = {"inference", "mcp", "models_manage", "backends", "jobs", "internal", "system", "management"};
+
+bool service_permission(const std::string& name) {
+    static const std::string prefix = "svc:";
+    return name.size() > prefix.size() && name.compare(0, prefix.size(), prefix) == 0 &&
+        valid_route_family(name.substr(prefix.size()));
+}
+
+json role_permissions(const std::string& role) {
+    const auto with_families = [](json names, std::initializer_list<const char*> families) {
+        for (const char* family : families) names.push_back(std::string("svc:") + family);
+        return names;
+    };
+    if (role == "administrator" || role == "admin") {
+        json names = json::array({"read", "connect_private", "admin"});
+        for (const auto& family : kFamilies) names.push_back("svc:" + family);
+        return ordered(names);
+    }
+    if (role == "moderator") {
+        return ordered(with_families(json::array({"read", "write", "add_child", "connect_private"}),
+            {"inference", "mcp", "models_manage", "jobs"}));
+    }
+    if (role == "user" || role == "member") {
+        return ordered(with_families(json::array({"read", "connect_private"}), {"inference"}));
+    }
+    throw NexusError(400, "Choose the administrator, moderator or user role");
+}
+
 json invite_permissions(const json& requested) {
     if (requested.is_null()) return nullptr;
-    // The federation refuses any other name in an invite.
+    // The federation refuses any other tree name in an invite; svc: names pass through
+    // and the federation reduces them to what the inviter holds.
     static const std::vector<std::string> grantable = {"read", "write", "add_child", "connect_private", "connect_shared"};
     if (!requested.is_array() || requested.empty()) throw NexusError(400, "Send permissions as a list of names");
     json result = json::array();
@@ -321,12 +357,127 @@ json invite_permissions(const json& requested) {
         if (!name.is_string()) throw NexusError(400, "Send permissions as a list of names");
         const auto value = name.get<std::string>();
         if (value == "admin") throw NexusError(400, "An invite cannot grant admin. Change the member's role after it joins.");
-        if (std::find(grantable.begin(), grantable.end(), value) == grantable.end()) {
+        if (std::find(grantable.begin(), grantable.end(), value) == grantable.end() && !service_permission(value)) {
             throw NexusError(400, "An invite cannot grant this permission: " + value);
         }
         if (!contains(result, value)) result.push_back(value);
     }
     return ordered(result);
+}
+
+const unsigned kCatalogRevision = 0;
+
+uint64_t catalog_version(const std::string& lemond_version) {
+    uint64_t parts[3] = {0, 0, 0};
+    size_t pos = 0;
+    for (auto& part : parts) {
+        const auto start = pos;
+        while (pos < lemond_version.size() && lemond_version[pos] >= '0' && lemond_version[pos] <= '9' && pos - start < 6) {
+            part = part * 10 + static_cast<uint64_t>(lemond_version[pos] - '0');
+            ++pos;
+        }
+        if (pos == start) return 0;
+        if (&part != &parts[2]) {
+            if (pos >= lemond_version.size() || lemond_version[pos] != '.') return 0;
+            ++pos;
+        }
+    }
+    if (parts[1] > 999 || parts[2] > 999) return 0;
+    return ((parts[0] * 1000 + parts[1]) * 1000 + parts[2]) * 100 + kCatalogRevision;
+}
+
+nlohmann::ordered_json service_catalog(const nlohmann::ordered_json& routes, const std::string& lemond_version) {
+    static const char* const quad_prefixes[] = {"/api/v0/", "/api/v1/", "/v0/", "/v1/"};
+    nlohmann::ordered_json families = nlohmann::ordered_json::array();
+    std::map<std::string, std::string> claims;  // "METHOD path" or "METHOD prefix/" -> family
+    for (const auto& route : routes) {
+        const auto id = route.value("id", std::string());
+        const auto family = route.value("family", std::string());
+        if (!valid_route_family(family)) throw std::logic_error("Route '" + id + "' has no valid route policy family");
+        const auto prefixes = route.value("prefixes", std::string());
+        auto entry = std::find_if(families.begin(), families.end(), [&](const nlohmann::ordered_json& item) {
+            return item.at("name") == family;
+        });
+        if (entry == families.end()) {
+            families.push_back({{"name", family}, {"routes", nlohmann::ordered_json::array()}});
+            entry = std::prev(families.end());
+        }
+        for (const auto& path_item : route.at("paths")) {
+            const auto path = path_item.get<std::string>();
+            std::vector<std::string> urls;
+            if (prefixes == "Quad") {
+                for (const char* prefix : quad_prefixes) urls.push_back(prefix + path);
+            } else if (prefixes == "Internal") {
+                urls.push_back("/internal/" + path);
+            } else {
+                urls.push_back(path);
+            }
+            for (const auto& url : urls) {
+                const auto parameter = url.find('{');
+                const bool exact = parameter == std::string::npos;
+                const auto key = exact ? url : url.substr(0, parameter);
+                for (const auto& method : route.at("methods")) {
+                    const auto claim = method.get<std::string>() + " " + key + (exact ? "" : "*");
+                    const auto owner = claims.emplace(claim, family);
+                    if (!owner.second && owner.first->second != family) {
+                        throw std::logic_error("Route '" + id + "' claims " + claim + " for family '" + family +
+                                               "', which family '" + owner.first->second + "' already serves");
+                    }
+                }
+                (*entry)["routes"].push_back({{"methods", route.at("methods")}, {exact ? "path" : "prefix", key}});
+            }
+        }
+    }
+    return {{"version", catalog_version(lemond_version)},
+        {"app", {{"name", "lemonade"}, {"version", lemond_version}}},
+        {"families", families}};
+}
+
+std::string ingress_denied_log_line(const json& event) {
+    const auto field = [&](const char* key, size_t limit = 256) {
+        std::string value;
+        const auto it = event.is_object() ? event.find(key) : event.end();
+        if (it == event.end()) return value;
+        if (it->is_string()) value = it->get<std::string>();
+        else if (it->is_number_unsigned()) value = std::to_string(it->get<uint64_t>());
+        else if (it->is_number_integer()) value = std::to_string(it->get<int64_t>());
+        else if (it->is_array()) {
+            for (const auto& item : *it) {
+                if (!item.is_string()) continue;
+                if (!value.empty()) value += ",";
+                value += item.get<std::string>();
+            }
+        }
+        if (value.size() > limit) value = value.substr(0, limit) + "...";
+        for (auto& c : value) {
+            if (static_cast<unsigned char>(c) < 0x20 || c == 0x7f) c = '?';
+        }
+        return value.empty() ? std::string("-") : value;
+    };
+    return "Nexus route policy: " + field("kind", 32) + " " + field("method", 16) + " " + field("path") + " from " +
+        field("peer_node_id", 128) + " (family " + field("family", 64) + ", needs " + field("required") + ", catalog " +
+        field("catalog_version", 32) + ")";
+}
+
+const std::vector<std::string> kPeerHeaders = {"X-Nexus-Peer-Node", "X-Nexus-Peer-Key", "X-Nexus-Peer-Permissions",
+    "X-Nexus-Family", "X-Nexus-Catalog-Version"};
+
+namespace {
+thread_local PeerContext g_request_peer;
+}
+
+void accept_peer_headers(httplib::Request& req, bool mesh_ingress) {
+    g_request_peer = PeerContext{};
+    if (mesh_ingress) {
+        g_request_peer.node_id = req.get_header_value("X-Nexus-Peer-Node");
+        g_request_peer.family = req.get_header_value("X-Nexus-Family");
+        return;
+    }
+    for (const auto& name : kPeerHeaders) req.headers.erase(name);
+}
+
+const PeerContext& request_peer() {
+    return g_request_peer;
 }
 
 bool invite_code(const std::string& code) {
@@ -420,15 +571,6 @@ json device_access(const json& members, const std::string& device_id, const std:
         {"access_known", access_known}, {"can_manage", can_manage}, {"members", rows}};
 }
 
-json role_permissions(const json& current, bool admin) {
-    json result = json::array({"read"});
-    for (const auto& name : string_list(current)) {
-        if (name != "admin" && !contains(result, name.get<std::string>())) result.push_back(name);
-    }
-    if (admin) result.push_back("admin");
-    return ordered(result);
-}
-
 json group_permissions(const json& requested, bool admin) {
     if (!requested.is_array()) throw NexusError(400, "Send permissions as a list of names");
     json result = json::array({"read"});
@@ -436,7 +578,7 @@ json group_permissions(const json& requested, bool admin) {
         if (!name.is_string()) throw NexusError(400, "Send permissions as a list of names");
         const auto value = name.get<std::string>();
         if (value == "admin") throw NexusError(400, "Change the member's role to grant or remove admin");
-        if (std::find(kPermissions.begin(), kPermissions.end(), value) == kPermissions.end()) {
+        if (std::find(kPermissions.begin(), kPermissions.end(), value) == kPermissions.end() && !service_permission(value)) {
             throw NexusError(400, "Unknown permission: " + value);
         }
         if (!contains(result, value)) result.push_back(value);
@@ -606,6 +748,34 @@ SdkFailure sdk_failure(int code, const json& reply, int rejected_status) {
     const int status = code == LN_ERR_AUTH ? 403 : code == LN_ERR_NOT_FOUND ? 404 : code == LN_ERR_REJECTED ? rejected_status : 502;
     return {status, message, false};
 }
+bool route_policy_available() {
+    return nexus_sdk::route_policy_api().available();
+}
+}
+namespace nexus_sdk {
+namespace {
+void* sdk_symbol(const char* name) {
+#ifdef _WIN32
+    const HMODULE module = GetModuleHandleW(L"lemonade_nexus_sdk.dll");
+    return module ? reinterpret_cast<void*>(GetProcAddress(module, name)) : nullptr;
+#else
+    return dlsym(RTLD_DEFAULT, name);
+#endif
+}
+}
+const RoutePolicyApi& route_policy_api() {
+    // The SDK library is loaded with lemond, so a lookup in the global scope finds
+    // its exports; an SDK without them leaves the pointers null.
+    static const RoutePolicyApi api = [] {
+        RoutePolicyApi found;
+        found.set_catalog = reinterpret_cast<set_catalog_fn>(sdk_symbol("ln_mesh_service_set_catalog"));
+        found.catalog = reinterpret_cast<catalog_fn>(sdk_symbol("ln_mesh_service_catalog"));
+        found.set_ingress_denied_callback =
+            reinterpret_cast<set_ingress_denied_callback_fn>(sdk_symbol("ln_set_ingress_denied_callback"));
+        return found;
+    }();
+    return api;
+}
 }
 namespace {
 // `rejected_status` is the HTTP status for LN_ERR_REJECTED (the federation refused the
@@ -657,9 +827,12 @@ struct NexusManager::Session {
     bool error_retryable{false};  // `error` is a failure to reach the federation, not a refusal
     json devices = json::array();
     std::chrono::system_clock::time_point last_poll{std::chrono::system_clock::now()};
+    const nlohmann::ordered_json catalog;  // mesh route catalog for vport 13305, or null
+    std::string catalog_error;             // the SDK refused the catalog at the last join
 
-    Session(const std::string& data_root, int port, int mesh_listener_port)
-        : root(utils::path_from_utf8(data_root)), ingress_port(port), mesh_port(mesh_listener_port) {
+    Session(const std::string& data_root, int port, int mesh_listener_port, nlohmann::ordered_json service_catalog)
+        : root(utils::path_from_utf8(data_root)), ingress_port(port), mesh_port(mesh_listener_port),
+          catalog(std::move(service_catalog)) {
         std::filesystem::create_directories(root);
 #ifndef _WIN32
         std::filesystem::permissions(root, std::filesystem::perms::owner_all);
@@ -705,6 +878,17 @@ struct NexusManager::Session {
             std::unique_ptr<char, decltype(&ln_free)> owned(event_json, ln_free);
             LOG(INFO, "Nexus") << "Session moved: " << (event_json ? event_json : "") << std::endl;
         }, nullptr);
+        // The SDK answers a refused mesh request itself and reports it here, on an SDK
+        // thread: one log line per event, no SDK call besides releasing the text.
+        if (const auto& policy = nexus_sdk::route_policy_api(); policy.available()) {
+            policy.set_ingress_denied_callback(client.get(), [](char* event_json, void*) {
+                std::unique_ptr<char, decltype(&ln_free)> owned(event_json, ln_free);
+                const auto event = event_json ? json::parse(event_json, nullptr, false) : json();
+                const auto line = nexus_access::ingress_denied_log_line(event.is_object() ? event : json::object());
+                if (event.is_object() && event.value("kind", "") == "denied") LOG(WARNING, "Nexus") << line << std::endl;
+                else LOG(INFO, "Nexus") << line << std::endl;
+            }, nullptr);
+        }
         const auto path = utils::path_to_utf8(root / "identity.json");
         identity.reset(ln_identity_load(path.c_str()));
         if (!identity) {
@@ -894,7 +1078,15 @@ struct NexusManager::Session {
     json create_invite(const std::string& target, const json& body) {
         const auto ttl = body.value("ttl_sec", 600);
         if (ttl < 60 || ttl > 600) throw NexusError(400, "Invite lifetime must be 60 to 600 seconds");
-        const auto permissions = nexus_access::invite_permissions(body.contains("permissions") ? body["permissions"] : json());
+        json requested = body.contains("permissions") ? body["permissions"] : json();
+        if (body.contains("role")) {
+            // A role expands like members/{id}/role; administrator carries admin, which
+            // invite_permissions refuses.
+            if (!requested.is_null()) throw NexusError(400, "Send a role or a list of permissions, not both");
+            if (!body["role"].is_string()) throw NexusError(400, "Send role as a string");
+            requested = nexus_access::role_permissions(body["role"].get<std::string>());
+        }
+        const auto permissions = nexus_access::invite_permissions(requested);
         const auto list = permissions.is_null() ? std::string() : permissions.dump();
         return sdk_call([&](auto out) {
             return ln_invite_create(client.get(), target.empty() ? nullptr : target.c_str(),
@@ -977,12 +1169,30 @@ struct NexusManager::Session {
             {"registered", account.contains("credential_id") || key_unlock()},
             {"unlock", key_unlock() ? "device_key" : "passkey"}, {"members", devices},
             {"exposed", json::array({{{"vport", 13305}, {"local_port", ingress_port}}})}, {"error", error},
-            {"error_retryable", error_retryable}, {"genesis_key_set", genesis_key_set}, {"mesh_port", mesh_port_status()}};
+            {"error_retryable", error_retryable}, {"genesis_key_set", genesis_key_set}, {"mesh_port", mesh_port_status()},
+            {"catalog_error", catalog_error}};
     }
     json mesh_port_status() {
         json port = sdk_call([&](auto out) { return ln_mesh_port_status(client.get(), out); });
         if (!mesh_port_error.empty()) port["error"] = mesh_port_error;
         return port;
+    }
+    // The SDK keeps the catalog with the mesh session, so every join registers it
+    // again. An SDK without the interface enforces nothing; status says so.
+    void register_catalog() {
+        catalog_error.clear();
+        const auto& policy = nexus_sdk::route_policy_api();
+        if (!policy.available() || !catalog.is_object()) return;
+        const auto text = catalog.dump();
+        const auto code = policy.set_catalog(client.get(), 13305, text.c_str());
+        if (code != LN_OK) {
+            catalog_error = "The SDK refused the route catalog (SDK error " + std::to_string(code) + ")";
+            LOG(WARNING, "Nexus") << catalog_error << std::endl;
+            return;
+        }
+        LOG(INFO, "Nexus") << "Registered route catalog version " << catalog.value("version", uint64_t{0})
+                           << " with " << catalog.value("families", nlohmann::ordered_json::array()).size()
+                           << " families" << std::endl;
     }
     // The SDK owns the mesh port; lemond is its local service through the mesh ingress
     // listener, which is always on loopback and applies lemond's API-key policy.
@@ -1046,6 +1256,7 @@ struct NexusManager::Session {
         retry_delay = std::chrono::seconds(5);
         detail = "running";
         clear_error();
+        register_catalog();
         start_mesh_port();
         remember_tier1_epoch();
         try {
@@ -1399,10 +1610,8 @@ struct NexusManager::Session {
             const bool admin = target.at("is_admin").get<bool>();
             json permissions;
             if (action == "role") {
-                const auto role = body.at("role").get<std::string>();
-                if (role != "admin" && role != "member") throw NexusError(400, "Choose the admin or member role");
-                if (role == "member" && target.at("is_owner").get<bool>()) throw NexusError(403, "The group creator always administers the group");
-                permissions = nexus_access::role_permissions(target.at("permissions"), role == "admin");
+                permissions = nexus_access::role_permissions(body.at("role").get<std::string>());
+                if (!contains(permissions, "admin") && target.at("is_owner").get<bool>()) throw NexusError(403, "The group creator always administers the group");
             } else {
                 permissions = nexus_access::group_permissions(body.at("permissions"), admin);
             }
@@ -1420,8 +1629,17 @@ struct NexusManager::Session {};
 NexusManager::NexusManager(const std::string& config_dir,
                            const std::function<void(httplib::Server&)>& install_policy,
                            const std::function<void(httplib::Server&)>& install_api,
-                           int mesh_port)
-    : data_root_(utils::path_to_utf8(utils::path_from_utf8(config_dir) / "nexus")), selection_port_(mesh_port) {
+                           int mesh_port,
+                           nlohmann::ordered_json service_catalog)
+    : data_root_(utils::path_to_utf8(utils::path_from_utf8(config_dir) / "nexus")), catalog_(std::move(service_catalog)),
+      selection_port_(mesh_port) {
+#ifdef LEMONADE_WITH_NEXUS
+    if (!catalog_.is_object()) {
+        LOG(INFO, "Nexus") << "Route policy is unavailable: no route catalog" << std::endl;
+    } else if (!nexus_access::route_policy_available()) {
+        LOG(INFO, "Nexus") << "Route policy is unavailable: the Nexus SDK does not export ln_mesh_service_set_catalog" << std::endl;
+    }
+#endif
     // Built once and never rebound: a main-port rebind leaves the mesh listener alone.
     register_routes(mesh_server_, NexusListener::MeshIngress);
     install_api(mesh_server_);
@@ -1481,6 +1699,14 @@ NexusManager::json NexusManager::status() const {
 #endif
     result["event_sequence"] = event_sequence_;
     if (!active_invite_.is_null()) result["active_invite"] = {{"device_name", active_invite_.value("device_name", "")}, {"expires_at", active_invite_.value("expires_at", uint64_t{0})}};
+    const bool catalog = catalog_.is_object();
+    result["catalog_version"] = catalog ? catalog_.value("version", uint64_t{0}) : uint64_t{0};
+    result["app"] = catalog ? json(catalog_.at("app")) : json{{"name", "lemonade"}, {"version", LEMON_VERSION_STRING}};
+    bool enforced = false;
+#ifdef LEMONADE_WITH_NEXUS
+    enforced = catalog && nexus_access::route_policy_available() && snapshot_.value("catalog_error", std::string()).empty();
+#endif
+    result["route_policy"] = enforced ? "enforced" : "unavailable";
     return result;
 }
 void NexusManager::persist_enabled_locked() {
@@ -1503,7 +1729,7 @@ bool NexusManager::enable(std::string& error) {
 #else
     try {
         if (stopping_) throw std::runtime_error("Server is shutting down");
-        if (!session_) session_ = std::make_unique<Session>(data_root_, ingress_port_, selection_port_);
+        if (!session_) session_ = std::make_unique<Session>(data_root_, ingress_port_, selection_port_, catalog_);
         enabled_ = true;
         persist_enabled_locked();
         update_snapshot_locked(session_->status());

@@ -2,17 +2,42 @@
 #include "lemon/server/route_registry.h"
 #include "lemon/utils/origin_utils.h"
 #include "lemon/utils/path_utils.h"
+#include "lemon/version.h"
+#include <algorithm>
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <functional>
 #include <iostream>
+#include <map>
 #include <string>
 #include <thread>
 #ifdef LEMONADE_WITH_NEXUS
 #include <LemonadeNexusSDK/lemonade_nexus.h>
 #endif
+
+namespace lemon {
+// Each route folder's registration function, as server.cpp declares them: the test
+// builds the real registry so the catalog check covers every route lemond serves.
+void register_openai_text_routes(RouteRegistry& registry, ServerContext& ctx);
+void register_openai_audio_routes(RouteRegistry& registry, ServerContext& ctx);
+void register_openai_images_routes(RouteRegistry& registry, ServerContext& ctx);
+void register_lemonade_models_routes(RouteRegistry& registry, ServerContext& ctx);
+void register_openai_models_routes(RouteRegistry& registry, ServerContext& ctx);
+void register_lemonade_load_routes(RouteRegistry& registry, ServerContext& ctx);
+void register_lemonade_downloads_routes(RouteRegistry& registry, ServerContext& ctx);
+void register_lemonade_inference_routes(RouteRegistry& registry, ServerContext& ctx);
+void register_lemonade_backends_routes(RouteRegistry& registry, ServerContext& ctx);
+void register_lemonade_system_routes(RouteRegistry& registry, ServerContext& ctx);
+void register_lemonade_jobs_routes(RouteRegistry& registry, ServerContext& ctx);
+void register_llamacpp_routes(RouteRegistry& registry, ServerContext& ctx);
+void register_router_routes(RouteRegistry& registry, ServerContext& ctx);
+void register_internal_routes(RouteRegistry& registry, ServerContext& ctx);
+void register_ollama_routes(RouteRegistry& registry, ServerContext& ctx);
+void register_anthropic_routes(RouteRegistry& registry, ServerContext& ctx);
+void register_mcp_routes(RouteRegistry& registry, ServerContext& ctx);
+}
 
 namespace {
 using nlohmann::json;
@@ -20,6 +45,11 @@ namespace access = lemon::nexus_access;
 
 bool throws(const std::function<void()>& action) {
     try { action(); } catch (const std::runtime_error&) { return true; }
+    return false;
+}
+
+bool throws_logic(const std::function<void()>& action) {
+    try { action(); } catch (const std::logic_error&) { return true; }
     return false;
 }
 
@@ -220,16 +250,25 @@ void check_relay_stream(const std::function<void(bool, const char*)>& check) {
 }
 
 // A route that answers 200 so a test can tell a registered path from a missing one.
+// A {name} in the path gets a string path argument, as a real route declares.
 class StubRoute : public lemon::ApiRoute {
 public:
-    StubRoute(lemon::ServerContext& ctx, std::string id, std::string path, lemon::Prefixes prefixes)
-        : lemon::ApiRoute(ctx), id_(std::move(id)), path_(std::move(path)), prefixes_(prefixes) {}
+    StubRoute(lemon::ServerContext& ctx, std::string id, std::string path, lemon::Prefixes prefixes,
+              std::vector<std::string> methods = {"GET"})
+        : lemon::ApiRoute(ctx), id_(std::move(id)), path_(std::move(path)), prefixes_(prefixes), methods_(std::move(methods)) {}
     lemon::RouteSpec spec() const override {
         lemon::RouteSpec s;
         s.id = id_;
-        s.methods = {"GET"};
+        s.methods = methods_;
         s.paths = {path_};
         s.prefixes = prefixes_;
+        for (size_t open = path_.find('{'); open != std::string::npos; open = path_.find('{', open + 1)) {
+            lemon::RouteArg arg;
+            arg.name = path_.substr(open + 1, path_.find('}', open) - open - 1);
+            arg.in = lemon::ArgIn::Path;
+            arg.schema = {{"type", "string"}};
+            s.args.push_back(arg);
+        }
         return s;
     }
     void handle(lemon::RouteRequest&, httplib::Response& res) override { res.set_content("{}", "application/json"); }
@@ -237,7 +276,233 @@ public:
 private:
     std::string id_, path_;
     lemon::Prefixes prefixes_;
+    std::vector<std::string> methods_;
 };
+
+std::unique_ptr<StubRoute> stub(lemon::ServerContext& ctx, const char* id, const char* path, lemon::Prefixes prefixes,
+                                std::vector<std::string> methods = {"GET"}) {
+    return std::make_unique<StubRoute>(ctx, id, path, prefixes, std::move(methods));
+}
+
+// The catalog the SDK enforces at the mesh ingress: every registered route, grouped by
+// family, with exact URLs or the prefix before a path parameter.
+void check_service_catalog(const std::function<void(bool, const char*)>& check) {
+    check(lemon::valid_route_family("inference") && lemon::valid_route_family("a") && lemon::valid_route_family("a.b-c_d9") &&
+          lemon::valid_route_family(std::string(63, 'a')), "Family names follow the SDK grammar");
+    check(!lemon::valid_route_family("") && !lemon::valid_route_family("Inference") && !lemon::valid_route_family("-x") &&
+          !lemon::valid_route_family("a b") && !lemon::valid_route_family(std::string(64, 'a')), "Malformed family names are refused");
+
+    lemon::ServerContext ctx;
+    lemon::RouteRegistry registry;
+    registry.add(stub(ctx, "test.chat", "chat/completions", lemon::Prefixes::Quad, {"POST"}), "inference");
+    registry.add(stub(ctx, "test.models", "models", lemon::Prefixes::Quad), "inference");
+    registry.add(stub(ctx, "test.model", "models/{id}", lemon::Prefixes::Quad), "inference");
+    registry.add(stub(ctx, "test.options", "models/{id}/options", lemon::Prefixes::Quad, {"POST", "DELETE"}), "models_manage");
+    registry.add(stub(ctx, "test.shutdown", "shutdown", lemon::Prefixes::Internal, {"POST"}), "internal");
+    registry.add(stub(ctx, "test.mcp", "/mcp", lemon::Prefixes::Root, {"POST"}), "mcp");
+    check(throws_logic([&] { registry.add(stub(ctx, "test.untagged", "untagged", lemon::Prefixes::Quad), ""); }), "Every route needs a family");
+    check(throws_logic([&] { registry.add(stub(ctx, "test.upper", "upper", lemon::Prefixes::Quad), "Inference"); }), "A family name must match the grammar");
+    const auto routes = registry.list();
+    check(routes.size() == 6 && routes[0].at("family") == "inference" && routes[3].at("family") == "models_manage", "The route list carries each family");
+
+    const auto catalog = access::service_catalog(routes, "2026.46.3");
+    check(catalog.at("version") == 202604600300ULL + access::kCatalogRevision, "The catalog version packs the lemond version and the revision");
+    check(catalog.at("app") == nlohmann::ordered_json({{"name", "lemonade"}, {"version", "2026.46.3"}}), "The catalog names the app");
+    const auto& families = catalog.at("families");
+    check(families.size() == 4 && families[0].at("name") == "inference" && families[1].at("name") == "models_manage" &&
+          families[2].at("name") == "internal" && families[3].at("name") == "mcp", "Families keep registration order");
+    const auto& inference = families[0].at("routes");
+    check(inference.size() == 12, "A Quad route lists one entry per URL prefix");
+    check(inference[0] == nlohmann::ordered_json({{"methods", {"POST"}}, {"path", "/api/v0/chat/completions"}}) &&
+          inference[1].at("path") == "/api/v1/chat/completions" && inference[2].at("path") == "/v0/chat/completions" &&
+          inference[3].at("path") == "/v1/chat/completions", "Exact paths carry their methods");
+    check(inference[8] == nlohmann::ordered_json({{"methods", {"GET"}}, {"prefix", "/api/v0/models/"}}) &&
+          !inference[8].contains("path"), "A path parameter becomes the prefix before it");
+    check(families[1].at("routes")[1] == nlohmann::ordered_json({{"methods", {"POST", "DELETE"}}, {"prefix", "/api/v1/models/"}}),
+          "A prefix claimed with other methods belongs to its own family");
+    check(families[2].at("routes") == nlohmann::ordered_json::array({{{"methods", {"POST"}}, {"path", "/internal/shutdown"}}}),
+          "Internal routes are catalogued under /internal/");
+    check(families[3].at("routes")[0].at("path") == "/mcp", "Root routes keep their path");
+
+    lemon::RouteRegistry conflicting;
+    conflicting.add(stub(ctx, "test.model", "models/{id}", lemon::Prefixes::Quad), "inference");
+    conflicting.add(stub(ctx, "test.files", "models/{id}/files", lemon::Prefixes::Quad), "models_manage");
+    check(throws_logic([&] { access::service_catalog(conflicting.list(), "2026.46.3"); }), "Two families cannot claim one method and prefix");
+    auto untagged = routes;
+    untagged[0]["family"] = "";
+    check(throws_logic([&] { access::service_catalog(untagged, "2026.46.3"); }), "A catalog refuses a route without a family");
+
+    check(access::catalog_version("2026.46.0~1780.7d29cf99") == 202604600000ULL + access::kCatalogRevision, "A development version packs its release numbers");
+    check(access::catalog_version("2026.47.0") > access::catalog_version("2026.46.9") &&
+          access::catalog_version("2027.1.0") > access::catalog_version("2026.52.9"), "Catalog versions grow with releases");
+    check(access::catalog_version("9.1") == 0 && access::catalog_version("") == 0 && access::catalog_version("x.y.z") == 0 &&
+          access::catalog_version("2026.1000.0") == 0, "A version without three numbers packs as 0");
+    check(access::kCatalogRevision < 100, "The catalog revision fits its two digits");
+
+    // The registry lemond serves: every route tagged with a known family, no conflicts.
+    lemon::RouteRegistry real;
+    lemon::register_openai_text_routes(real, ctx);
+    lemon::register_openai_audio_routes(real, ctx);
+    lemon::register_openai_images_routes(real, ctx);
+    lemon::register_lemonade_models_routes(real, ctx);
+    lemon::register_openai_models_routes(real, ctx);
+    lemon::register_lemonade_load_routes(real, ctx);
+    lemon::register_lemonade_downloads_routes(real, ctx);
+    lemon::register_lemonade_inference_routes(real, ctx);
+    lemon::register_lemonade_backends_routes(real, ctx);
+    lemon::register_lemonade_system_routes(real, ctx);
+    lemon::register_lemonade_jobs_routes(real, ctx);
+    lemon::register_llamacpp_routes(real, ctx);
+    lemon::register_router_routes(real, ctx);
+    lemon::register_internal_routes(real, ctx);
+    lemon::register_ollama_routes(real, ctx);
+    lemon::register_anthropic_routes(real, ctx);
+    lemon::register_mcp_routes(real, ctx);
+    const auto all = real.list();
+    std::map<std::string, int> per_family;
+    bool known = true;
+    for (const auto& route : all) {
+        const auto family = route.value("family", std::string());
+        known = known && std::find(access::kFamilies.begin(), access::kFamilies.end(), family) != access::kFamilies.end();
+        ++per_family[family];
+        if (route.value("prefixes", std::string()) == "Internal") known = known && family == "internal";
+    }
+    check(all.size() == 85 && known, "Every lemond route has one of the known families");
+    check(per_family["inference"] == 32 && per_family["models_manage"] == 18 && per_family["internal"] == 14 && per_family["jobs"] == 7 &&
+          per_family["backends"] == 5 && per_family["system"] == 5 && per_family["mcp"] == 2 && per_family["management"] == 2,
+          "The family assignment matches the documented table");
+    nlohmann::ordered_json live;
+    check(!throws_logic([&] { live = access::service_catalog(all, LEMON_VERSION_STRING); }), "The live registry builds a catalog without conflicts");
+    check(live.is_object() && live.at("version") == access::catalog_version(LEMON_VERSION_STRING) &&
+          live.at("app").at("version") == LEMON_VERSION_STRING, "The live catalog carries lemond's version");
+    bool chat_in_inference = false;
+    bool shutdown_in_internal = false;
+    for (const auto& family : live.value("families", nlohmann::ordered_json::array())) {
+        for (const auto& route : family.at("routes")) {
+            if (route.value("path", "") == "/api/v1/chat/completions") chat_in_inference = family.at("name") == "inference";
+            if (route.value("path", "") == "/internal/shutdown") shutdown_in_internal = family.at("name") == "internal";
+        }
+    }
+    check(chat_in_inference && shutdown_in_internal, "The live catalog places chat completions and shutdown in their families");
+}
+
+void check_role_presets(const std::function<void(bool, const char*)>& check) {
+    const json administrator = json::array({"read", "connect_private", "admin", "svc:inference", "svc:mcp", "svc:models_manage",
+        "svc:backends", "svc:jobs", "svc:internal", "svc:system", "svc:management"});
+    const json moderator = json::array({"read", "write", "add_child", "connect_private", "svc:inference", "svc:mcp", "svc:models_manage", "svc:jobs"});
+    const json user = json::array({"read", "connect_private", "svc:inference"});
+    check(access::role_permissions("administrator") == administrator, "Administrator holds admin, connect and every family");
+    check(access::role_permissions("moderator") == moderator, "Moderator holds the tree names and the four families");
+    check(access::role_permissions("user") == user, "User holds read, connect and inference");
+    check(access::role_permissions("admin") == administrator && access::role_permissions("member") == user, "The former role names map to the presets");
+    check(throws([&] { access::role_permissions("owner"); }) && throws([&] { access::role_permissions(""); }), "Unknown roles are refused");
+    check(access::kFamilies.size() == 8, "Every family appears in the administrator preset");
+
+    check(access::service_permission("svc:inference") && access::service_permission("svc:a.b-c_d") &&
+          access::service_permission("svc:" + std::string(63, 'a')), "svc names follow the family grammar");
+    check(!access::service_permission("svc:") && !access::service_permission("svc:Inference") && !access::service_permission("inference") &&
+          !access::service_permission("svc:" + std::string(64, 'a')) && !access::service_permission("svc:a b"), "Malformed svc names are refused");
+    check(access::group_permissions(json::array({"svc:inference", "write"}), false) == json::array({"read", "write", "svc:inference"}),
+          "Group permissions accept svc names after the tree names");
+    check(throws([&] { access::group_permissions(json::array({"svc:"}), false); }) &&
+          throws([&] { access::group_permissions(json::array({"svc:Bad"}), false); }), "Group permissions refuse malformed svc names");
+    check(access::invite_permissions(json::array({"svc:inference", "read"})) == json::array({"read", "svc:inference"}), "Invites carry svc names");
+    check(throws([&] { access::invite_permissions(json::array({"svc:Bad"})); }), "Invites refuse malformed svc names");
+    check(access::invite_permissions(access::role_permissions("moderator")) == moderator &&
+          access::invite_permissions(access::role_permissions("user")) == user, "The moderator and user presets fit an invite");
+    check(throws([&] { access::invite_permissions(access::role_permissions("administrator")); }), "An invite cannot carry the administrator preset");
+
+    const json denied = {{"kind", "denied"}, {"vport", 13305}, {"peer_node_id", "node-a"}, {"peer_key", "ed25519:secret-key"},
+        {"peer_tunnel_ip", "10.8.0.3"}, {"method", "POST"}, {"path", "/api/v1/chat/completions"}, {"family", "inference"},
+        {"required", "svc:inference"}, {"catalog_version", 202604600300ULL}, {"time", "2026-10-28T00:00:00Z"}};
+    const auto line = access::ingress_denied_log_line(denied);
+    check(line == "Nexus route policy: denied POST /api/v1/chat/completions from node-a (family inference, needs svc:inference, catalog 202604600300)",
+          "A refusal event becomes one log line");
+    check(line.find("secret") == std::string::npos && line.find("10.8.0.3") == std::string::npos, "The log line carries no key or address");
+    check(access::ingress_denied_log_line(json{{"kind", "unattributed"}, {"method", "GET"}, {"path", "/x"}}) ==
+          "Nexus route policy: unattributed GET /x from - (family -, needs -, catalog -)", "Missing fields print as dashes");
+    const auto hostile = access::ingress_denied_log_line(json{{"kind", "unregistered"}, {"method", "GET"}, {"path", "/a\nb\x7f"},
+        {"peer_node_id", "n"}, {"required", json::array({"svc:a", "svc:b"})}, {"catalog_version", 7}});
+    check(hostile == "Nexus route policy: unregistered GET /a?b? from n (family -, needs svc:a,svc:b, catalog 7)", "Control characters and lists are flattened");
+    check(access::ingress_denied_log_line(json{{"path", std::string(300, 'p')}}).find(std::string(256, 'p') + "...") != std::string::npos,
+          "Long fields are cut");
+}
+
+// The SDK sets the X-Nexus-* headers on a request it admitted to the mesh ingress
+// listener. Every other listener removes them, so a client cannot pose as a mesh peer.
+void check_peer_headers(const std::function<void(bool, const char*)>& check) {
+    const httplib::Headers spoofed = {{"X-Nexus-Peer-Node", "node-a"}, {"X-Nexus-Peer-Key", "ed25519:k"}, {"X-Nexus-Peer-Permissions", "read,svc:inference"},
+        {"x-nexus-family", "inference"}, {"X-Nexus-Catalog-Version", "7"}, {"Authorization", "Bearer key"}};
+    httplib::Request req;
+    req.headers = spoofed;
+    access::accept_peer_headers(req, false);
+    bool stripped = true;
+    for (const auto& name : access::kPeerHeaders) stripped = stripped && !req.has_header(name);
+    check(stripped && req.get_header_value("Authorization") == "Bearer key" && access::request_peer().node_id.empty(),
+          "A non-mesh listener drops every peer header and keeps the rest");
+    httplib::Request mesh;
+    mesh.headers = spoofed;
+    access::accept_peer_headers(mesh, true);
+    check(mesh.get_header_value("X-Nexus-Peer-Node") == "node-a" && access::request_peer().node_id == "node-a" &&
+          access::request_peer().family == "inference", "The mesh ingress listener keeps the headers and records the peer");
+    httplib::Request plain;
+    access::accept_peer_headers(plain, false);
+    check(access::request_peer().node_id.empty() && access::request_peer().family.empty(), "The next request clears the peer");
+
+    const auto install = [](httplib::Server& server, bool mesh_ingress) {
+        server.set_pre_routing_handler([mesh_ingress](const httplib::Request& req, httplib::Response&) {
+            access::accept_peer_headers(const_cast<httplib::Request&>(req), mesh_ingress);
+            return httplib::Server::HandlerResponse::Unhandled;
+        });
+        server.Get("/echo", [](const httplib::Request& req, httplib::Response& res) {
+            res.set_content(json{{"header", req.get_header_value("X-Nexus-Peer-Node")}, {"peer", access::request_peer().node_id},
+                {"family", access::request_peer().family}}.dump(), "application/json");
+        });
+    };
+    httplib::Server front;
+    install(front, false);
+    const int front_port = front.bind_to_any_port("127.0.0.1");
+    std::thread front_worker([&] { front.listen_after_bind(); });
+    front.wait_until_ready();
+    httplib::Client client("127.0.0.1", front_port);
+    auto echoed = client.Get("/echo", spoofed);
+    check(echoed && echoed->status == 200 && json::parse(echoed->body) == json({{"header", ""}, {"peer", ""}, {"family", ""}}),
+          "No route on a non-mesh listener sees a spoofed peer header");
+    front.stop(); front_worker.join();
+    httplib::Server ingress;
+    install(ingress, true);
+    const int ingress_port = ingress.bind_to_any_port("127.0.0.1");
+    std::thread ingress_worker([&] { ingress.listen_after_bind(); });
+    ingress.wait_until_ready();
+    httplib::Client peer("127.0.0.1", ingress_port);
+    auto attributed = peer.Get("/echo", spoofed);
+    check(attributed && attributed->status == 200 && json::parse(attributed->body) == json({{"header", "node-a"}, {"peer", "node-a"}, {"family", "inference"}}),
+          "Routes on the mesh ingress listener see the peer the SDK attributed");
+    ingress.stop(); ingress_worker.join();
+}
+
+void check_status_fields(const std::filesystem::path& root, const std::function<void(bool, const char*)>& check) {
+    lemon::ServerContext ctx;
+    lemon::RouteRegistry registry;
+    registry.add(stub(ctx, "test.chat", "chat/completions", lemon::Prefixes::Quad, {"POST"}), "inference");
+    lemon::NexusManager manager((root / "status").string(), listener_policy, listener_policy, 0,
+        access::service_catalog(registry.list(), "2026.46.3"));
+    const auto status = manager.status();
+    check(status.at("catalog_version") == 202604600300ULL + access::kCatalogRevision, "Status reports the catalog version");
+    check(status.at("app") == json({{"name", "lemonade"}, {"version", "2026.46.3"}}), "Status reports the catalog's app");
+#ifdef LEMONADE_WITH_NEXUS
+    check(status.at("route_policy") == (access::route_policy_available() ? "enforced" : "unavailable"),
+          "Route policy follows the SDK's catalog interface");
+#else
+    check(status.at("route_policy") == "unavailable", "Route policy is unavailable without the SDK");
+#endif
+    manager.stop();
+    lemon::NexusManager bare((root / "status-bare").string(), listener_policy, listener_policy, 0);
+    const auto bare_status = bare.status();
+    check(bare_status.at("catalog_version") == 0 && bare_status.at("route_policy") == "unavailable" &&
+          bare_status.at("app") == json({{"name", "lemonade"}, {"version", LEMON_VERSION_STRING}}), "Without a catalog the route policy is unavailable");
+    bare.stop();
+}
 
 // server.cpp installs the route registry on the mesh ingress listener without the
 // /internal/* control routes: a peer arrives on loopback, where the admin key is usually unset.
@@ -400,8 +665,8 @@ void check_access_rules(const std::function<void(bool, const char*)>& check) {
     check(member_view[2].at("permissions_known") && member_view[2].at("permissions") == json::array({"read"}), "Members see their own permissions");
     check(!access::device_access(member_view, "workstation", "laptop").at("can_manage"), "Members cannot manage access");
 
-    check(access::role_permissions(json::array({"write", "read"}), true) == json::array({"read", "write", "admin"}), "Promotion adds admin");
-    check(access::role_permissions(json::array({"admin", "write"}), false) == json::array({"read", "write"}), "Demotion keeps read");
+    check(access::role_permissions("admin").back() == "svc:management" && access::role_permissions("admin")[2] == "admin", "Promotion grants the administrator preset");
+    check(!access::grants(access::role_permissions("member"), "write"), "Demotion leaves the user preset");
     check(access::group_permissions(json::array({"add_child"}), false) == json::array({"read", "add_child"}), "Group permissions always include read");
     check(access::group_permissions(json::array({"write"}), true) == json::array({"read", "write", "admin"}), "Group permissions keep the admin role");
     check(throws([&] { access::group_permissions(json::array({"admin"}), false); }), "Admin is granted only through the role");
@@ -520,6 +785,9 @@ int main() {
         check(!access::session_dropped(json{{"needs_rejoin", false}}) && !access::session_dropped(json::object()) &&
               !access::session_dropped(json::array()), "Without the flag, or with a malformed status, the session stays");
         check_access_rules(check);
+        check_role_presets(check);
+        check_service_catalog(check);
+        check_peer_headers(check);
 #ifdef LEMONADE_WITH_NEXUS
         check_sdk_failures(check);
 #endif
@@ -527,6 +795,7 @@ int main() {
         check_relay_stream(check);
         check_mesh_ingress_routes(check);
         check_listener_isolation(root, check);
+        check_status_fields(root, check);
         {
             lemon::NexusManager manager(root.string(), listener_policy, listener_policy, 0);
             httplib::Server server;
@@ -596,6 +865,7 @@ int main() {
             request("device/check", R"({"name":"Work PC"})", 423);
             request("passkey/unlock", R"({"passkey_assertion":{"credential_id":"wrong"}})", 403);
             request("members/peer/role", R"({"role":"admin"})", 423);
+            request("members/peer/role", R"({"role":"moderator"})", 423);
             request("members/peer/permissions", R"({"permissions":["read"]})", 423);
             request("devices/peer/access", R"({"member_node_id":"other","see":true,"connect":false})", 423);
             request("tree/root/groups", R"({"name":"Team"})", 423);

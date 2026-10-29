@@ -41,7 +41,8 @@ nlohmann::json tree_path(const std::string& id, const std::vector<std::string>& 
     const std::function<nlohmann::json(const std::string&)>& fetch);
 /// Validates the permissions of an invite. Null selects the federation default and returns
 /// null. Otherwise returns the ordered list. Throws 400 for a value that is not a list of
-/// names, for "admin", and for a name an invite cannot grant.
+/// names, for "admin", and for a name an invite cannot grant; `svc:` names are allowed,
+/// and the federation reduces them to what the inviter holds.
 nlohmann::json invite_permissions(const nlohmann::json& requested);
 /// True for an 8-digit invite code or a full "lnk_" invite token.
 bool invite_code(const std::string& code);
@@ -51,7 +52,21 @@ nlohmann::json merge_members(const nlohmann::json& group, const nlohmann::json& 
     const nlohmann::json& peers, const std::string& self_key, const std::string& self_node_id);
 nlohmann::json device_access(const nlohmann::json& members, const std::string& device_id,
     const std::string& self_node_id);
-nlohmann::json role_permissions(const nlohmann::json& current, bool admin);
+/// Route policy families of lemond's routes (RouteSpec::family), in catalog order.
+/// The Nexus SDK enforces them at the mesh ingress with the `svc:<family>` permissions
+/// of the calling peer; see docs/dev/nexus-integration.md, "Route policy".
+extern const std::vector<std::string> kFamilies;
+/// True for an opaque `svc:<family>` permission name: the family matches
+/// [a-z0-9][a-z0-9_.-]{0,62}. lemond passes these names through to the tree.
+bool service_permission(const std::string& name);
+/// The group entry a role preset expands to: `administrator` (admin, connect_private
+/// and every family), `moderator` (read, write, add_child, connect_private, svc:inference,
+/// svc:mcp, svc:models_manage, svc:jobs) or `user` (read, connect_private, svc:inference).
+/// `admin` and `member` are the former names of administrator and user. Throws 400 for
+/// any other role.
+nlohmann::json role_permissions(const std::string& role);
+/// Validates a group entry: tree permission names and `svc:` names, `read` always
+/// included, `admin` only through `admin`. Throws 400 otherwise.
 nlohmann::json group_permissions(const nlohmann::json& requested, bool admin);
 nlohmann::json device_permissions(const nlohmann::json& current, bool see, bool connect);
 std::pair<int, std::string> assignment_error(const std::string& reason);
@@ -102,6 +117,47 @@ extern const char* const kPeerAuthorizationHeader;
 /// prefix length} or an HTTP error status and message.
 std::pair<int, std::string> relay_target(const nlohmann::json& members, const std::string& self_node_id,
     const std::string& node_id);
+/// The catalog revision: bump it when a route's family changes within one lemond
+/// version. It must stay below 100.
+extern const unsigned kCatalogRevision;
+/// The mesh route catalog version: lemond's YEAR.WEEK.N version packed as
+/// YEAR * 10^6 + WEEK * 10^3 + N, times 100, plus kCatalogRevision. It grows with every
+/// release and with every revision bump, so the SDK and its refusal events can tell
+/// catalogs apart. A version string without three leading numbers packs as 0.
+uint64_t catalog_version(const std::string& lemond_version);
+/// Builds the mesh route catalog the SDK enforces, from RouteRegistry::list():
+/// `{"version", "app": {"name": "lemonade", "version"}, "families": [{"name", "routes":
+/// [{"methods", "path" | "prefix"}]}]}`. A route path with a `{parameter}` becomes the
+/// prefix before it; the other paths are exact, one per URL prefix. Throws
+/// std::logic_error when a route has no valid family or two families claim one method
+/// and URL, so a bad registration fails at startup.
+nlohmann::ordered_json service_catalog(const nlohmann::ordered_json& routes, const std::string& lemond_version);
+/// One log line for an SDK ingress refusal event (`{"kind", "method", "path",
+/// "peer_node_id", "family", "required", "catalog_version", ...}`): "Nexus route policy:
+/// <kind> <method> <path> from <peer_node_id> (family <family>, needs <required>, catalog
+/// <version>)". Control characters are replaced and long fields are cut; no body or
+/// secret is ever part of the event.
+std::string ingress_denied_log_line(const nlohmann::json& event);
+/// Headers the SDK sets on a request it admitted to the mesh ingress listener:
+/// X-Nexus-Peer-Node, X-Nexus-Peer-Key, X-Nexus-Peer-Permissions, X-Nexus-Family and
+/// X-Nexus-Catalog-Version. They are trusted only on NexusListener::MeshIngress.
+extern const std::vector<std::string> kPeerHeaders;
+/// The mesh peer the SDK attributed a request to. lemond logs it; it never decides
+/// authorization in lemond, the SDK already did.
+struct PeerContext {
+    std::string node_id;
+    std::string family;
+};
+/// Runs once per request before any route. On the mesh ingress listener it records
+/// the peer headers for request_peer(); on every other listener it removes them, so a
+/// client cannot spoof a mesh peer, and clears request_peer().
+void accept_peer_headers(httplib::Request& req, bool mesh_ingress);
+/// The peer of the request the calling thread serves; empty outside a mesh ingress request.
+const PeerContext& request_peer();
+#ifdef LEMONADE_WITH_NEXUS
+/// True when the loaded SDK exports the route catalog and refusal-event functions.
+bool route_policy_available();
+#endif
 /// Sends a GET or POST `req` to http://127.0.0.1:`port``path` with lemond's HTTP client.
 /// `peer_authorization` ("Bearer <key>" or empty) becomes the upstream Authorization;
 /// `body` replaces the request body unless the request is multipart. A POST whose JSON
@@ -123,10 +179,14 @@ public:
     /// Both run once, before the listener starts. If the mesh listener cannot bind, joining
     /// fails. Once the mesh is up, the SDK serves `mesh_port` (0 selects 13306) on
     /// 127.0.0.1 with the mesh ingress listener as this device's local service.
+    /// `service_catalog` (nexus_access::service_catalog) is registered with the SDK for
+    /// virtual port 13305 after every join, when the SDK supports it; null registers
+    /// nothing and status reports the route policy unavailable.
     NexusManager(const std::string& config_dir,
                  const std::function<void(httplib::Server&)>& install_policy,
                  const std::function<void(httplib::Server&)>& install_api,
-                 int mesh_port);
+                 int mesh_port,
+                 nlohmann::ordered_json service_catalog = nullptr);
     ~NexusManager();
     void register_routes(httplib::Server& server, NexusListener listener = NexusListener::Public);
     void stop();
@@ -144,6 +204,7 @@ private:
     void relay(const httplib::Request& req, httplib::Response& res);
     std::pair<int, json> control(const std::string& method, const std::string& path, const json& body);
     std::string data_root_;
+    nlohmann::ordered_json catalog_;
     int ingress_port_{0};
     std::unique_ptr<Session> session_;
     mutable std::mutex mutex_;

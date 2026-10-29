@@ -21,6 +21,7 @@
 #include "lemon/server/web_ui.h"
 #include "lemon/system_metrics_platform.h"
 #include "lemon/utils/http_client.h"
+#include "lemon/version.h"
 #include "telemetry.h"
 
 namespace lemon {
@@ -158,13 +159,14 @@ Server::Server(std::shared_ptr<RuntimeConfig> config,
         config_dir,
         [this](httplib::Server& server) { middleware_->install(server); },
         [this](httplib::Server& server) {
-            middleware_->install(server);
+            middleware_->install(server, /*mesh_ingress=*/true);
             // Mesh peers arrive on loopback, so the /internal/* control routes must not
             // exist on this listener rather than rely on an admin key that is usually unset.
             registry_->apply_without_internal(server);
             web_ui_->register_routes(server);
         },
-        13306);
+        13306,
+        nexus_access::service_catalog(registry_->list(), LEMON_VERSION_STRING));
     listener_ = std::make_unique<HttpListener>(
         config_.get(), router_.get(),
         [this](httplib::Server& server) {
