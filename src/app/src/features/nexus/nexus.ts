@@ -70,6 +70,9 @@ export interface NexusStatus {
   error?: string;
   event_sequence?: number;
   remote_management?: boolean;
+  identity_source?: 'system' | 'user' | 'handoff';
+  // True while lemond has no device identity, for example while the macOS tray delivers the user's key.
+  needs_user_key?: boolean;
 }
 export interface NexusInvite {
   code?: string;

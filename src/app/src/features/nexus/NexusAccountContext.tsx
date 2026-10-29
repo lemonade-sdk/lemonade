@@ -37,7 +37,7 @@ const SIGNED_OUT: NexusAccountConnection = { account: null, devices: [] };
 const NexusAccountContext = createContext<NexusAccountConnection & {
   avatarUrl?: string;
   setAvatar: (image: string | null) => Promise<void>;
-}>({ ...SIGNED_OUT, setAvatar: async () => { throw new Error('Sign in before changing your image.'); } });
+}>({ ...SIGNED_OUT, setAvatar: async () => { throw new Error('Enable Mesh before changing your image.'); } });
 
 export function NexusAccountProvider({ connection, service = nexusAccountService, children }: {
   connection?: NexusAccountConnection;

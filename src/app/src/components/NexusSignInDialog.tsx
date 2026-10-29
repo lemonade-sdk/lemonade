@@ -18,7 +18,6 @@ export function NexusSignInDialog({ service, onClose, onSignedIn, passkeyActive 
   const [inspection, setInspection] = useState<NexusAccountInspection>();
   const [saved, setSaved] = useState<SavedNexusAccount>();
   const [action, setAction] = useState<NexusSignInInput['action']>('create');
-  const [displayName, setDisplayName] = useState('');
   const [deviceName, setDeviceName] = useState('');
   const [invitation, setInvitation] = useState('');
   const [checking, setChecking] = useState(true);
@@ -37,7 +36,6 @@ export function NexusSignInDialog({ service, onClose, onSignedIn, passkeyActive 
       const profile = loadNexusAccountLabel(result.source);
       setInspection(result); setSaved(profile);
       setAction(profile || result.status.registered ? 'return' : 'create');
-      setDisplayName(profile?.displayName || '');
       setDeviceName(result.status.device_name || t('This computer'));
     } catch (error) { if (revision === request.current) setError(error instanceof TypeError ? t('Cannot reach the Lemonade server. Start it or check the connection in Settings.') : error instanceof Error ? error.message : String(error)); }
     finally { if (revision === request.current) setChecking(false); }
@@ -49,14 +47,15 @@ export function NexusSignInDialog({ service, onClose, onSignedIn, passkeyActive 
     return () => document.removeEventListener('keydown', escape);
   }, [busy, passkeyActive, onClose]);
   const available = inspection?.status.available && inspection.local && inspection.desktop;
-  const nameTooLong = [displayName, deviceName].some(value => new TextEncoder().encode(value.trim()).length > 128);
+  const waitingForKey = Boolean(available && inspection.status.needs_user_key);
+  const nameTooLong = new TextEncoder().encode(deviceName.trim()).length > 128;
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (busy || !available || !displayName.trim() || !deviceName.trim() || nameTooLong) return;
+    if (busy || !available || waitingForKey || !deviceName.trim() || nameTooLong) return;
     setBusy(true); setError('');
     const revision = request.current;
     try {
-      const session = await service.signIn({ action, displayName, deviceName, invitation,
+      const session = await service.signIn({ action, deviceName, invitation,
         source: inspection.source, expectedId: saved?.id });
       if (revision === request.current) onSignedIn(session);
     } catch (error) { if (revision === request.current) setError(error instanceof Error ? error.message : String(error)); }
@@ -64,24 +63,24 @@ export function NexusSignInDialog({ service, onClose, onSignedIn, passkeyActive 
   };
   return <div className="nexus-account-dialog-backdrop" aria-hidden={passkeyActive || undefined} onPointerDown={event => { if (event.target === event.currentTarget && !busy && !passkeyActive) onClose(); }}>
     <div ref={ref} className="nexus-account-dialog" role="dialog" aria-modal="true" aria-labelledby={`${id}-title`} aria-busy={busy || checking}>
-      <div className="nexus-account-dialog__header"><span className="nexus-tree-detail__icon"><Icon name="user-round" size={23} /></span><div><h2 id={`${id}-title`}>{t('Sign in to Lemonade')}</h2><p>{t('One account for your devices.')}</p></div><WorkspaceActionButton iconOnly icon="x" size="small" appearance="quiet" aria-label={t('Close sign-in')} disabled={busy || passkeyActive} onClick={onClose} /></div>
+      <div className="nexus-account-dialog__header"><span className="nexus-tree-detail__icon"><Icon name="user-round" size={23} /></span><div><h2 id={`${id}-title`}>{t('Enable Mesh')}</h2><p>{t('One account for your devices.')}</p></div><WorkspaceActionButton iconOnly icon="x" size="small" appearance="quiet" aria-label={t('Close Enable Mesh')} disabled={busy || passkeyActive} onClick={onClose} /></div>
       {checking ? <p role="status">{t('Checking account access…')}</p> : <>
         {inspection && !available && <p className="nexus-hint">{!inspection.status.available ? t('This server does not include Nexus account support.') : t('Open the Lemonade desktop app on this computer to verify your passkey.')}</p>}
-        {available && <form onSubmit={event => void submit(event)}>
-          <p className="nexus-hint">{t('Nexus accounts use a device key and passkey. Your account name is a label saved on this app.')}</p>
+        {waitingForKey && <p role="status">{t('Waiting for your device key from the Lemonade tray.')}</p>}
+        {available && !waitingForKey && <form onSubmit={event => void submit(event)}>
+          <p className="nexus-hint">{t('Nexus uses a device key and passkey. Other devices see this device under its device name.')}</p>
           <fieldset className="nexus-sign-in__fields" disabled={busy}>
             <legend className="sr-only">{t('Account access')}</legend>
             <div className="nexus-sign-in__choices">
-              <label><input type="radio" name={id} checked={action === 'return'} onChange={() => { setAction('return'); setError(''); }} />{t('Sign in')}</label>
-              {!saved && <>{!inspection.status.registered && <label><input type="radio" name={id} checked={action === 'create'} onChange={() => { setAction('create'); setError(''); }} />{t('Create account')}</label>}<label><input type="radio" name={id} checked={action === 'join'} onChange={() => { setAction('join'); setError(''); }} />{t('Join by invitation')}</label></>}
+              <label><input type="radio" name={id} checked={action === 'return'} onChange={() => { setAction('return'); setError(''); }} />{t('Use this device’s key')}</label>
+              {!saved && <>{!inspection.status.registered && <label><input type="radio" name={id} checked={action === 'create'} onChange={() => { setAction('create'); setError(''); }} />{t('Create a new account')}</label>}<label><input type="radio" name={id} checked={action === 'join'} onChange={() => { setAction('join'); setError(''); }} />{t('Join by invitation')}</label></>}
             </div>
-            <label htmlFor={`${id}-name`}>{t('Account name')}</label><input autoFocus id={`${id}-name`} className="input" autoComplete="nickname" value={displayName} maxLength={128} placeholder={t('Enter an account name')} onChange={event => setDisplayName(event.target.value)} />
-            {action !== 'return' && <><label htmlFor={`${id}-device`}>{t('Device name')}</label><input id={`${id}-device`} className="input" value={deviceName} maxLength={128} onChange={event => setDeviceName(event.target.value)} /></>}
+            <label htmlFor={`${id}-device`}>{t('Device name')}</label><input autoFocus id={`${id}-device`} className="input" value={deviceName} maxLength={128} onChange={event => setDeviceName(event.target.value)} />
             {action === 'join' && <><label htmlFor={`${id}-invite`}>{t('Invitation code or token')}</label><input id={`${id}-invite`} className="input" autoComplete="off" spellCheck={false} maxLength={68} value={invitation} onChange={event => setInvitation(event.target.value.trim())} /><p className="nexus-hint">{t('Get an invitation from a device already linked to the account.')}</p></>}
             {action === 'create' && <p className="nexus-hint">{t('This device will create the account. Administrator access is confirmed by Nexus after joining.')}</p>}
           </fieldset>
           {nameTooLong && <p className="nexus-error" role="alert">{t('This name is too long. Try a shorter name.')}</p>}
-          <WorkspaceActionButton type="submit" disabled={busy || !displayName.trim() || !deviceName.trim() || nameTooLong || (action === 'join' && !validNexusInvitation(invitation))}>{busy ? t('Signing in…') : action === 'create' ? t('Create with passkey') : action === 'join' ? t('Join with passkey') : t('Continue with passkey')}</WorkspaceActionButton>
+          <WorkspaceActionButton type="submit" disabled={busy || !deviceName.trim() || nameTooLong || (action === 'join' && !validNexusInvitation(invitation))}>{busy ? t('Enabling Mesh…') : t('Enable Mesh')}</WorkspaceActionButton>
           <p className="nexus-hint">{t('Use the passkey registered for this device. New devices will register a passkey first.')}</p>
         </form>}
         {error && <p ref={errorRef} className="nexus-error" role="alert" tabIndex={-1}>{t(error)}</p>}

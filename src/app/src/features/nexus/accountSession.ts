@@ -19,7 +19,6 @@ export interface VerifiedNexusAccount {
 export interface NexusAccountInspection { status: NexusStatus; source: string; local: boolean; desktop: boolean }
 export interface NexusSignInInput {
   action: 'create' | 'join' | 'return';
-  displayName: string;
   deviceName: string;
   source: string;
   invitation?: string;
@@ -48,7 +47,9 @@ export function verifyAvatarReply(value: unknown): NexusAvatarState {
 }
 
 interface AccountReply { id: string; member_id: string; device_node_id: string; role: 'admin' | 'user'; devices: NetworkDevice[]; avatar?: unknown }
-export function verifyAccountReply(value: unknown, displayName: string, source: string, expectedId?: string): VerifiedNexusAccount {
+// lemond reports no account name, so the label is this device's name from the membership
+// reply; `fallbackName` covers a reply without one (the name the user entered, or the saved label).
+export function verifyAccountReply(value: unknown, source: string, expectedId?: string, fallbackName = ''): VerifiedNexusAccount {
   const reply = value as AccountReply | null;
   if (!reply || typeof reply.id !== 'string' || !reply.id || typeof reply.member_id !== 'string' || !reply.member_id
     || typeof reply.device_node_id !== 'string' || !reply.device_node_id || !['admin', 'user'].includes(reply.role) || !Array.isArray(reply.devices)) {
@@ -65,6 +66,7 @@ export function verifyAccountReply(value: unknown, displayName: string, source: 
   }));
   let avatar: NexusAvatarState;
   try { avatar = verifyAvatarReply(reply.avatar); } catch { avatar = { state: 'unavailable' }; }
+  const displayName = [self.device_name, fallbackName].map(name => (typeof name === 'string' ? name : '').trim()).find(boundedName) || 'Lemonade device';
   return { account: { id: reply.id, displayName, role: reply.role, avatarUrl: avatar.state === 'ready' ? avatar.image ?? undefined : undefined },
     devices, memberId: reply.member_id, deviceNodeId: reply.device_node_id, source, avatar,
     canInvite: Boolean(self.permissions?.includes('admin') || self.permissions?.includes('add_child')) };
@@ -76,7 +78,7 @@ const boundedName = (name: string) => Boolean(name.trim()) && new TextEncoder().
 export function createNexusAccountService(dependencies = { controller: nexusAccountController, desktop: isNexusDesktop, prepare: prepareNexus }): NexusAccountService {
   const requireController = async (source: string) => {
     const controller = await dependencies.controller();
-    if (controller.source !== source) throw new Error('The server connection changed. Close this dialog and sign in again.');
+    if (controller.source !== source) throw new Error('The server connection changed. Close this dialog and enable Mesh again.');
     if (!controller.local || !dependencies.desktop()) throw new Error('Open the Lemonade desktop app on this computer to verify your passkey.');
     return controller;
   };
@@ -91,33 +93,33 @@ export function createNexusAccountService(dependencies = { controller: nexusAcco
       return { status: await controller.request<NexusStatus>('status'), source: controller.source, local: controller.local, desktop: dependencies.desktop() };
     },
     async signIn(input) {
-      if (!boundedName(input.displayName) || !boundedName(input.deviceName)) throw new Error('Enter an account name and device name of up to 128 bytes each.');
+      if (!boundedName(input.deviceName)) throw new Error('Enter a device name of up to 128 bytes.');
       if (input.action === 'join' && !validNexusInvitation(input.invitation || '')) throw new Error('Enter an 8-digit invitation code or a full invitation token.');
       const controller = await requireController(input.source);
       const status = await controller.request<NexusStatus>('status');
       if (!status.available) throw new Error('This server does not include Nexus account support.');
       await dependencies.prepare(input.deviceName.trim(), input.action === 'join', controller.request, prepared => {
-        if (input.action === 'create' && prepared.registered) throw new Error('This device already has a registered key. Choose Sign in to continue with it.');
-        if (input.action === 'return' && !prepared.registered) throw new Error('Create an account or join by invitation before signing in on this device.');
-        if (input.action === 'join' && (prepared.mesh_up || prepared.group_node_id)) throw new Error('This device is already linked to an account. Use Sign in to continue.');
+        if (input.action === 'create' && prepared.registered) throw new Error('This device already has a registered key. Choose Use this device’s key to continue.');
+        if (input.action === 'return' && !prepared.registered) throw new Error('Create an account or join by invitation before enabling Mesh on this device.');
+        if (input.action === 'join' && (prepared.mesh_up || prepared.group_node_id)) throw new Error('This device is already linked to an account. Choose Use this device’s key to continue.');
       });
       if (input.action === 'join') await controller.request('join', { code: input.invitation!.trim() });
-      const session = verifyAccountReply(await controller.request('account'), input.displayName.trim(), controller.source, input.expectedId);
+      const session = verifyAccountReply(await controller.request('account'), controller.source, input.expectedId, input.deviceName);
       await requireController(input.source);
       return session;
     },
     async refresh(session) {
       const controller = await requireController(session.source);
-      const next = verifyAccountReply(await controller.request('account'), session.account.displayName, session.source, session.account.id);
-      if (next.memberId !== session.memberId || next.deviceNodeId !== session.deviceNodeId) throw new Error('The account membership changed. Sign in again.');
+      const next = verifyAccountReply(await controller.request('account'), session.source, session.account.id, session.account.displayName);
+      if (next.memberId !== session.memberId || next.deviceNodeId !== session.deviceNodeId) throw new Error('The account membership changed. Enable Mesh again.');
       if (next.avatar.state === 'unavailable') next.account.avatarUrl = session.account.avatarUrl;
       return next;
     },
     async invite(session, deviceName) {
       if (!boundedName(deviceName)) throw new Error('Enter the name of the device you are inviting.');
       const controller = await requireController(session.source);
-      const current = verifyAccountReply(await controller.request('account'), session.account.displayName, session.source, session.account.id);
-      if (current.memberId !== session.memberId || current.deviceNodeId !== session.deviceNodeId) throw new Error('The account membership changed. Sign in again.');
+      const current = verifyAccountReply(await controller.request('account'), session.source, session.account.id, session.account.displayName);
+      if (current.memberId !== session.memberId || current.deviceNodeId !== session.deviceNodeId) throw new Error('The account membership changed. Enable Mesh again.');
       const invite = await controller.request<NexusInvite>('invites', { device_name: deviceName.trim(), ttl_sec: 600 });
       if (!invite || !validNexusInvitation(invite.code || invite.link_token || '') || !Number.isFinite(invite.expires_at)) {
         throw new Error('The server returned an invalid invitation. Try again.');

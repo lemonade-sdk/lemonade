@@ -60,7 +60,7 @@ for (const desktop of [true, false]) {
     for (const theme of ['dark', 'light']) {
       await page.setViewportSize({ width: 1280, height: 800 });
       if (theme === 'light') {
-        await page.getByRole('button', { name: 'User: Not signed in', exact: true }).click();
+        await page.getByRole('button', { name: 'User: Mesh disabled', exact: true }).click();
         await page.getByRole('button', { name: 'Toggle theme', exact: true }).click();
         await page.keyboard.press('Escape');
       }
@@ -117,7 +117,7 @@ for (const desktop of [true, false]) {
           });
         }
       }
-      await page.getByRole('button', { name: 'User: Not signed in', exact: true }).click();
+      await page.getByRole('button', { name: 'User: Mesh disabled', exact: true }).click();
       await expect(page.getByRole('dialog', { name: 'Lemonade Account', exact: true })).toBeVisible();
       await expect(page.getByRole('button', { name: 'Toggle theme', exact: true })).toBeVisible();
       await page.keyboard.press('Escape');

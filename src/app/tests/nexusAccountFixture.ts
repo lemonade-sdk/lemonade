@@ -8,13 +8,13 @@ const peer: NexusDevice = { node_id: 'peer', device_name: 'Kitchen PC', tunnel_i
 
 export async function setupNexusAccount(page: Page, options: {
   desktop?: boolean; registered?: boolean; joined?: boolean; readOnly?: boolean; cancelPasskey?: boolean; unauthorized?: boolean;
-  avatarUnsupported?: boolean;
+  avatarUnsupported?: boolean; needsUserKey?: boolean;
 } = {}) {
   const members = [{ ...self, ...(options.readOnly ? { is_admin: false, permissions: ['read'] } : {}) }, peer];
   const state: NexusStatus = { available: true, controller_url: 'http://127.0.0.1:15555', enabled: true,
     registered: options.registered ?? true, locked: options.joined === false, mesh_up: options.joined !== false,
     status: options.joined === false ? 'locked' : 'running', node_id: 'self', group_node_id: options.joined === false ? '' : 'group',
-    device_name: 'My laptop', members };
+    device_name: 'My laptop', members, ...(options.needsUserKey ? { identity_source: 'handoff' as const, needs_user_key: true } : {}) };
   const entry = (id: string, name: string, kind: 'group' | 'node', parent_id: string): NexusTreeEntry => ({
     id, name, kind, parent_id, node_type: kind === 'group' ? 'customer' : 'endpoint', tunnel_ip: '', is_inference: false,
     management_pubkey: `${id}-key`, permissions: options.readOnly ? ['read'] : ['admin'],
@@ -63,6 +63,7 @@ export async function setupNexusAccount(page: Page, options: {
       challenge: 'AQIDBA', user_id: 'fixture-identity', rp_id: new URL(page.url()).hostname, credential_id: state.registered ? 'AQIDBA' : '', registration: !state.registered,
     } });
     if (path.endsWith('/passkey/register')) state.registered = true;
+    if (path.endsWith('/device')) { state.device_name = String(body?.device_name); members[0].device_name = state.device_name; }
     if (path.endsWith('/lock')) { state.locked = true; state.mesh_up = false; state.members = []; }
     if (path.endsWith('/passkey/unlock')) { state.locked = false; if (!body?.defer_join) { state.mesh_up = true; state.group_node_id = 'group'; } }
     if (path.endsWith('/join')) { state.mesh_up = true; state.group_node_id = 'group'; }
@@ -103,10 +104,10 @@ export async function setupNexusAccount(page: Page, options: {
   return fixture;
 }
 
-export async function signInNexusAccount(page: Page, name = 'Geramy') {
-  await page.getByRole('button', { name: 'Connect to Mesh', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: 'Sign in to Lemonade' });
-  await dialog.getByRole('textbox', { name: 'Account name', exact: true }).fill(name);
-  await dialog.getByRole('button', { name: 'Continue with passkey' }).click();
-  await expect(page.getByRole('button', { name: `User: ${name}`, exact: true })).toBeVisible();
+export async function enableNexusMesh(page: Page) {
+  await page.getByRole('button', { name: 'Enable Mesh', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Enable Mesh' });
+  await expect(dialog.getByRole('textbox', { name: 'Device name', exact: true })).toHaveValue('My laptop');
+  await dialog.getByRole('button', { name: 'Enable Mesh', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'User: My laptop', exact: true })).toBeVisible();
 }

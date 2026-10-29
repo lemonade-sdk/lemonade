@@ -107,7 +107,7 @@ function AccountSummary() {
           {account?.role === 'admin' && <span className="nexus-role">{t('Admin')}</span>}
         </div>
         <span className={`nexus-account-status${account ? ' nexus-account-status--signed-in' : ''}`}>
-          {account && <Icon name="check" size={14} />}{account ? t('Signed in') : t('Not signed in')}
+          {account && <Icon name="check" size={14} />}{account ? t('Mesh enabled') : t('Mesh disabled')}
         </span>
         {account && avatarNotice && <p className="nexus-hint" role="status">{t(avatarNotice === 'unsupported'
           ? 'This mesh needs a Nexus server update to sync profile images.' : avatarNotice === 'pending'
@@ -125,14 +125,14 @@ function AccountAccess({ showSignOut = false }: { showSignOut?: boolean }) {
   const { account, onSignIn, onSignOut, notice } = useNexusAccount();
   const hintId = useId();
   if (account) return <div className="nexus-account-access">
-    {showSignOut && onSignOut && <WorkspaceActionButton onClick={onSignOut}>{t('Disconnect')}</WorkspaceActionButton>}
+    {showSignOut && onSignOut && <WorkspaceActionButton onClick={onSignOut}>{t('Disable Mesh')}</WorkspaceActionButton>}
     {notice && <p className="nexus-error" role="alert">{t(notice)}</p>}
   </div>;
   return <div className="nexus-account-access">
-    <p>{t('Sign in to bring your Lemonade devices together.')}</p>
-    {notice === 'session-ended' && <p className="nexus-error" role="status">{t('Account access ended. Sign in again to continue.')}</p>}
-    <WorkspaceActionButton onClick={onSignIn} disabled={!onSignIn} aria-describedby={!onSignIn ? hintId : undefined}>{t('Connect to Mesh')}</WorkspaceActionButton>
-    {!onSignIn && <p id={hintId} className="nexus-hint">{t('Nexus sign-in is not available yet.')}</p>}
+    <p>{t('Enable Mesh to bring your Lemonade devices together.')}</p>
+    {notice === 'session-ended' && <p className="nexus-error" role="status">{t('Account access ended. Enable Mesh again to continue.')}</p>}
+    <WorkspaceActionButton onClick={onSignIn} disabled={!onSignIn} aria-describedby={!onSignIn ? hintId : undefined}>{t('Enable Mesh')}</WorkspaceActionButton>
+    {!onSignIn && <p id={hintId} className="nexus-hint">{t('Nexus is not available yet.')}</p>}
   </div>;
 }
 
@@ -149,7 +149,7 @@ function MyDevices() {
       </li>)}
     </ul> : <div className="nexus-device-empty">
       <Icon name="smartphone" size={25} />
-      <div><strong>{t('Your devices')}</strong><p>{account ? t('No devices connected yet.') : t('Sign in to connect your phone or another computer.')}</p></div>
+      <div><strong>{t('Your devices')}</strong><p>{account ? t('No devices connected yet.') : t('Enable Mesh to connect your phone or another computer.')}</p></div>
     </div>}
     {account && onConnectDevice && <WorkspaceActionButton icon="plus" onClick={onConnectDevice}>{t('Connect another device')}</WorkspaceActionButton>}
     </div>
@@ -233,7 +233,7 @@ export function NexusAccountMenu({ open, onOpenChange, onOpenPage, theme, onTogg
 
   return <>
     <button ref={triggerRef} type="button" className="nexus-account-trigger" data-tauri-drag-region="false"
-      aria-label={account ? t('User: {name}', { name: account.displayName }) : t('User: Not signed in')}
+      aria-label={account ? t('User: {name}', { name: account.displayName }) : t('User: Mesh disabled')}
       aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? panelId : undefined}
       onClick={() => onOpenChange(!open)}>
       <AccountAvatar small /><span className="nexus-account-trigger__label">{account ? t('User: {name}', { name: account.displayName }) : t('User')}</span><Icon name="chevron-down" size={13} />
@@ -253,7 +253,7 @@ export function NexusAccountMenu({ open, onOpenChange, onOpenPage, theme, onTogg
       <button type="button" className="nexus-account-menu__link" onClick={() => { close(true); onOpenPage(); }}>
         <span>{t('Open Accounts')}</span><Icon name="chevron-right" size={16} />
       </button>
-      {account && onSignOut && <WorkspaceActionButton className="nexus-account-menu__sign-out" appearance="quiet" onClick={onSignOut}>{t('Disconnect')}</WorkspaceActionButton>}
+      {account && onSignOut && <WorkspaceActionButton className="nexus-account-menu__sign-out" appearance="quiet" onClick={onSignOut}>{t('Disable Mesh')}</WorkspaceActionButton>}
     </div>, document.body)}
   </>;
 }
