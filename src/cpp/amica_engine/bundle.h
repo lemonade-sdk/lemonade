@@ -30,7 +30,10 @@ public:
     // True when the bundle had no amica_app.json and its manifest was derived
     // from the bundle's own files.
     bool manifest_derived() const { return manifest_derived_; }
-    std::size_t max_prompt_tokens() const { return prefill_.back().capacity; }
+    // Chunked prefill accepts any prompt that leaves room for one generated token.
+    std::size_t max_prompt_tokens() const {
+        return chunked_prefill_ && context_capacity_ ? *context_capacity_ - 1 : prefill_.back().capacity;
+    }
 
     // The most tokens, prompt plus generated, one request can hold; unknown
     // for bundles whose cache layout does not say.
@@ -57,6 +60,7 @@ private:
     bool self_contained_ = false;
     bool chat_template_ = false;
     std::string prompt_padding_;
+    bool chunked_prefill_ = false;
     std::vector<Prefill> prefill_;
     std::optional<std::size_t> context_capacity_;
     nlohmann::json plan_;

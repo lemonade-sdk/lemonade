@@ -184,6 +184,10 @@ void Bundle::load_prefill_graphs() {
         if (truthy(policy) && policy != "smallest_capacity_covering_prompt") {
             throw std::runtime_error("Unsupported prefill selection policy: " + policy.dump());
         }
+        // Chunks continue from cached rows only in right-padded token-input
+        // graphs that declare it; others still take one prefill per prompt.
+        chunked_prefill_ = selection.is_object() && selection.value("chunked_prefill", false) == true &&
+                           self_contained_ && prompt_padding_ == "right";
     } else {
         const std::string graph = path_string(source / fs::u8path(manifest_.at("graphs").at("prefill").get<std::string>()));
         entries.emplace_back(graph, graph_capacity(graph));
@@ -222,6 +226,7 @@ void Bundle::build_plan() {
     plan_ = {
         {"logits", self_contained_ ? "graph" : "lm_head"},
         {"prompt_padding", prompt_padding_},
+        {"chunked_prefill", chunked_prefill_},
         {"prefill", prefill},
         {"decoder", decoder_},
         {"resources", path_string(source / fs::u8path(manifest_.at("resources").get<std::string>()))},

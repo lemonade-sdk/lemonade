@@ -110,6 +110,7 @@ public:
 
         graph_logits_ = plan.at("logits").get<std::string>() == "graph";
         prompt_right_aligned_ = plan.at("prompt_padding").get<std::string>() == "left";
+        chunked_prefill_ = plan.value("chunked_prefill", false);
         external_weights_min_bytes_ = plan.value("external_weights_min_bytes", std::uint64_t{0});
         const auto& names = plan.at("inputs");
         const auto name = [&](const char* key) { return names.value(key, json()).is_string()
@@ -179,7 +180,8 @@ public:
             capacities += (capacities.empty() ? "" : ",") + std::to_string(variant->capacity);
         }
         return "adapter='" + gpu_.adapter_name() + "' arch=" + gpu_.gfx_arch() + " prefill_capacity=[" + capacities +
-               "] load_ms=" + std::to_string(static_cast<long long>(load_ms_));
+               "]" + (chunked_prefill_ ? " chunked_prefill" : "") +
+               " load_ms=" + std::to_string(static_cast<long long>(load_ms_));
     }
 
     amica_engine::Generation generate(const std::vector<std::int64_t>& prompt_ids, std::size_t max_new_tokens,
@@ -205,7 +207,7 @@ public:
                 break;
             }
         }
-        if (variant == nullptr) {
+        if (variant == nullptr && !chunked_prefill_) {
             throw std::runtime_error("the prompt has " + std::to_string(prompt.size()) +
                                      " tokens, more than the largest prefill capacity " +
                                      std::to_string(prefill_.back()->capacity));
@@ -213,7 +215,7 @@ public:
 
         amica_engine::Generation result;
         const auto started = std::chrono::steady_clock::now();
-        std::size_t token = prefill(*variant, prompt);
+        std::size_t token = variant ? prefill(*variant, prompt) : prefill_chunked(prompt);
         result.ttft_ms = milliseconds_since(started);
         result.ids.push_back(static_cast<std::int64_t>(token));
         bool keep_going = on_token(static_cast<std::int64_t>(token));
@@ -546,8 +548,41 @@ private:
     }
 
     std::size_t prefill(PrefillVariant& variant, const std::vector<std::size_t>& prompt) {
+        return prefill_chunk(variant, prompt.data(), prompt.size(), 0, true);
+    }
+
+    // A prompt longer than every prefill graph goes in as one partial chunk
+    // and then full chunks of the largest graph: a chunked graph places its
+    // rows after the ones already cached, which it can tell only when every
+    // chunk after the first is full.
+    std::size_t prefill_chunked(const std::vector<std::size_t>& prompt) {
+        PrefillVariant& full = *prefill_.back();
+        const std::size_t partial = prompt.size() % full.capacity;
+        const std::size_t first = partial == 0 ? full.capacity : partial;
+        PrefillVariant* first_variant = &full;
+        for (auto& candidate : prefill_) {
+            if (candidate->capacity >= first) {
+                first_variant = candidate.get();
+                break;
+            }
+        }
+        std::size_t done = 0;
+        std::size_t token = 0;
+        while (done < prompt.size()) {
+            const std::size_t n = done == 0 ? first : full.capacity;
+            PrefillVariant& variant = done == 0 ? *first_variant : full;
+            const bool last = done + n == prompt.size();
+            token = prefill_chunk(variant, prompt.data() + done, n, done, last);
+            done += n;
+        }
+        return token;
+    }
+
+    // Feeds `n` prompt tokens after `past` cached ones. The first chunk resets
+    // the state; only the last reads back its next token.
+    std::size_t prefill_chunk(PrefillVariant& variant, const std::size_t* prompt, std::size_t n,
+                              std::size_t past, bool last) {
         PromptInputs& inputs = variant.inputs;
-        const std::size_t n = prompt.size();
         if (graph_logits_) {
             const std::size_t first = prompt_right_aligned_ ? variant.capacity - n : 0;
             inputs.token.fill(pad_token_id_);
@@ -555,12 +590,13 @@ private:
                 inputs.token.write(first + i, static_cast<std::int64_t>(prompt[i]));
             }
             const std::size_t mask_capacity = inputs.mask.elements();
-            if (n > mask_capacity) {
+            const std::size_t visible = past + n;
+            if (visible > mask_capacity) {
                 throw std::runtime_error("the prompt exceeds the prefill attention-mask capacity");
             }
-            const std::size_t mask_first = prompt_right_aligned_ ? mask_capacity - n : 0;
+            const std::size_t mask_first = prompt_right_aligned_ ? mask_capacity - visible : 0;
             inputs.mask.fill(0);
-            for (std::size_t i = 0; i < n; ++i) {
+            for (std::size_t i = 0; i < visible; ++i) {
                 inputs.mask.write(mask_first + i, 1);
             }
         } else {
@@ -576,13 +612,19 @@ private:
         if (inputs.sequence) inputs.sequence.write(0, static_cast<std::int64_t>(n));
 
         gpu_.begin_list();
-        for (const auto& [resource, reset] : resets_) {
-            gpu_.copy_into(reset.buffer.Get(), 0, reset.source ? reset.source.Get() : zero_source_.Get(), 0,
-                           reset.size);
+        if (past == 0) {
+            for (const auto& [resource, reset] : resets_) {
+                gpu_.copy_into(reset.buffer.Get(), 0, reset.source ? reset.source.Get() : zero_source_.Get(), 0,
+                               reset.size);
+            }
         }
         upload(inputs);
         gpu_.uav_barrier();
         encode(variant.graph);
+        if (!last) {
+            gpu_.submit_and_wait();
+            return 0;
+        }
 
         if (graph_logits_) {
             const std::uint64_t rows = variant.graph.output(0).size_bytes /
@@ -647,6 +689,7 @@ private:
 
     bool graph_logits_ = false;
     bool prompt_right_aligned_ = true;
+    bool chunked_prefill_ = false;
     std::uint64_t external_weights_min_bytes_ = 0;
     std::size_t vocabulary_ = 0;
     std::int64_t pad_token_id_ = 0;

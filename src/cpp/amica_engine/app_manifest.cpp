@@ -347,9 +347,11 @@ json derive_app_manifest(const std::string& model_dir) {
                 throw std::runtime_error("The default prefill graph '" + prefill_name + "' is absent from prefill_variants.json");
             }
             graphs["prefill_variants"] = list;
+            const bool chunked = variant_index.value("chunked_prefill", false) == true;
             manifest["prefill_selection"] = {{"policy", "smallest_capacity_covering_prompt"},
-                                             {"fallback", "reject_oversize_prompt"},
-                                             {"cache_capacity", cache_capacity}};
+                                             {"fallback", chunked ? "chunked_prefill" : "reject_oversize_prompt"},
+                                             {"cache_capacity", cache_capacity},
+                                             {"chunked_prefill", chunked}};
         }
     }
     manifest["graphs"] = graphs;
