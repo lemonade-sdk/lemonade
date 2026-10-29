@@ -454,6 +454,13 @@ class LLMTests(ServerTestBase):
                     complete_response,
                     "Complete response should match streamed response",
                 )
+                if event.type == "response.incomplete":
+                    # ds4-server names the reason max_tokens instead of OpenAI's
+                    # max_output_tokens.
+                    self.assertIn(
+                        event.response.incomplete_details.reason,
+                        ("max_output_tokens", "max_tokens"),
+                    )
 
             event_count += 1
             last_event_type = event.type
