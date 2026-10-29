@@ -421,26 +421,37 @@ function backendMatchesDetectedHardware(backend: string, info: SystemInfoLike): 
 }
 
 
-function indexed(prefix: string, count: number, fallbackCount = 1): string[] {
+function cudaDevicesShareArchitecture(info: SystemInfoLike): boolean {
+  const detected = (info as any)?.devices?.nvidia_gpu;
+  if (!Array.isArray(detected)) return false;
+  const available = detected.filter((gpu: any) => gpu?.available !== false);
+  const family = available[0]?.family;
+  return available.length > 1
+    && typeof family === 'string' && /^sm_\d+$/.test(family)
+    && available.every((gpu: any) => gpu?.family === family);
+}
+
+function indexed(prefix: string, count: number, fallbackCount = 1, includeCombined = true): string[] {
   const n = Math.max(count, fallbackCount);
   const devices = Array.from({ length: n }, (_, i) => `${prefix}${i}`);
-  return n > 1 ? [...devices, devices.join(',')] : devices;
+  return includeCombined && n > 1 ? [...devices, devices.join(',')] : devices;
 }
 
 function deviceOptionsForKey(key: keyof RecipeOptions, current: string | undefined, selectedBackend: string, model: ModelInfo, info: SystemInfoLike): string[] {
   const recipe = activeRecipeForModel(model);
   const backend = selectedBackend.toLowerCase();
   const devices = availableDeviceCounts(info);
+  const multiCuda = cudaDevicesShareArchitecture(info);
   let base: string[] = [];
 
   if (!backend || backend === 'auto') {
     base = ['cpu'];
-    if (devices.nvidia > 0) base.push(...indexed('cuda', devices.nvidia, 0));
+    if (devices.nvidia > 0) base.push(...indexed('cuda', devices.nvidia, 0, multiCuda));
     if (devices.amd > 0) base.push(...indexed('vulkan', devices.amd, 0));
     if (devices.metal) base.push('metal');
     if (devices.npu && recipe !== 'llamacpp') base.push('npu0');
   } else if (backend.includes('cpu')) base = ['cpu'];
-  else if (backend.includes('cuda')) base = indexed('cuda', devices.nvidia, 1);
+  else if (backend.includes('cuda')) base = indexed('cuda', devices.nvidia, 1, multiCuda);
   else if (backend.includes('vulkan')) base = indexed('vulkan', devices.amd + devices.nvidia, 1);
   else if (backend.includes('opencl')) base = indexed('opencl', devices.amd + devices.nvidia, 1);
   else if (backend.includes('rocm')) base = indexed('rocm', devices.amd, 1);
