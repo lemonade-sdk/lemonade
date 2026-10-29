@@ -437,7 +437,7 @@ std::string ingress_denied_log_line(const json& event) {
     const auto field = [&](const char* key, size_t limit = 256) {
         std::string value;
         const auto it = event.is_object() ? event.find(key) : event.end();
-        if (it == event.end()) return value;
+        if (it == event.end()) return std::string("-");
         if (it->is_string()) value = it->get<std::string>();
         else if (it->is_number_unsigned()) value = std::to_string(it->get<uint64_t>());
         else if (it->is_number_integer()) value = std::to_string(it->get<int64_t>());
