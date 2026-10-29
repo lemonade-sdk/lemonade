@@ -1547,11 +1547,21 @@ class LemonadeAPI {
       ...recipeOptions,
       save_options: false,
     };
+    let stopDownloadWatch: (() => void) | undefined;
+    try {
+      const { downloadStore } = await import(
+        /* webpackChunkName: "download-store" */ './features/downloadManager/downloadStore'
+      );
+      stopDownloadWatch = downloadStore.watchForModelLoad();
+    } catch (error) {
+      console.warn('Could not watch model load progress:', error);
+    }
     try {
       const result = await this._json('/api/v1/load', { method: 'POST', body });
       this._notifyModelsChanged();
       return result;
     } finally {
+      stopDownloadWatch?.();
       this._refreshBackendStatusAfterLoad(String(body.recipe || cachedRecipe).trim().toLowerCase(), body);
     }
   }
