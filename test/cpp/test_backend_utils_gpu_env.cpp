@@ -14,6 +14,7 @@
 
 #include <lemon/backends/backend_utils.h>
 #include <lemon/runtime_config.h>
+#include <lemon/recipe_options.h>
 
 #ifdef _WIN32
 #include <process.h>
@@ -138,16 +139,41 @@ int main() {
         try { (void)BackendUtils::cuda_visible_device_for_selection("cuda1", {{0, "GPU-0"}, {1, ""}}); }
         catch (const std::invalid_argument&) { rejected = true; }
         check(rejected, "missing UUID is rejected instead of selecting an ambiguous CUDA ordinal");
-        check(BackendUtils::cuda_visible_device_for_selection("CUDA0", {{0, "GPU-one"}}).empty(),
-              "single NVIDIA GPU does not need a UUID visibility mask");
+        check(BackendUtils::cuda_visible_device_for_selection("CUDA0", {{0, "GPU-one"}}) == "0",
+              "single NVIDIA GPU gets an explicit numeric visibility mask");
+        check(BackendUtils::cuda_visible_device_for_selection("CUDA0", {{0, ""}}) == "0",
+              "sole GPU with no UUID gets an explicit numeric mask");
+        bool valid_arch = true;
+        try {
+            BackendUtils::validate_cuda_device_arch_for_selection("CUDA1", "sm_120",
+                {{0, "sm_89"}, {1, "sm_120"}});
+        } catch (...) { valid_arch = false; }
+        check(valid_arch, "CUDA device matching sd.cpp asset architecture is accepted");
+        rejected = false;
+        try {
+            BackendUtils::validate_cuda_device_arch_for_selection("CUDA0", "sm_120",
+                {{0, "sm_89"}, {1, "sm_120"}});
+        } catch (const std::invalid_argument&) { rejected = true; }
+        check(rejected, "CUDA device incompatible with installed sd.cpp asset is rejected");
+        check(BackendUtils::rocm_visible_device_for_selection("ROCm1", 2) == "1",
+              "ROCm1 maps to HIP_VISIBLE_DEVICES=1");
+        rejected = false;
+        try { (void)BackendUtils::rocm_visible_device_for_selection("ROCm2", 2); }
+        catch (const std::invalid_argument&) { rejected = true; }
+        check(rejected, "nonexistent ROCm device is rejected");
+    }
 
-        std::vector<std::pair<std::string, std::string>> env_vars;
-        BackendUtils::apply_accelerator_device_env_vars(env_vars, "TestROCm", "rocm", "ROCm1");
-        bool rocm_one = false;
-        for (const auto& entry : env_vars) {
-            if (entry.first == "HIP_VISIBLE_DEVICES" && entry.second == "1") rocm_one = true;
-        }
-        check(rocm_one, "ROCm1 maps to HIP_VISIBLE_DEVICES=1");
+    // Test 2c: explicit auto device selection masks any inherited model value.
+    {
+        const lemon::RecipeOptions thenoise_auto("thenoise", {{"thenoise_device", "auto"}});
+        const lemon::RecipeOptions thenoise_model("thenoise", {{"thenoise_device", "CUDA0"}});
+        check(thenoise_auto.inherit(thenoise_model).get_option("thenoise_device") == "auto",
+              "TheNoise explicit auto clears inherited device");
+
+        const lemon::RecipeOptions sd_auto("sd-cpp", {{"sd-cpp_device", "auto"}});
+        const lemon::RecipeOptions sd_model("sd-cpp", {{"sd-cpp_device", "CUDA0"}});
+        check(sd_auto.inherit(sd_model).get_option("sd-cpp_device") == "auto",
+              "sd.cpp explicit auto clears inherited device");
     }
 
     // Test 3: a custom backend binary environment variable takes precedence

@@ -453,10 +453,16 @@ function deviceOptionsForKey(key: keyof RecipeOptions, current: string | undefin
   else if (backend.includes('cuda')) base = cudaOptions;
   else if (backend.includes('vulkan')) base = indexed('vulkan', devices.amd + devices.nvidia, 1);
   else if (backend.includes('opencl')) base = indexed('opencl', devices.amd + devices.nvidia, 1);
-  else if (backend.includes('rocm')) base = indexed('rocm', devices.amd, 1);
+  else if (backend.includes('rocm')) {
+    const amdGpus = (info as any)?.devices?.amd_gpu;
+    const count = Array.isArray(amdGpus) ? amdGpus.filter((gpu: any) => gpu?.available !== false).length : devices.amd;
+    base = indexed('rocm', count, 1);
+  }
   else if (backend.includes('metal') && devices.metal) base = ['metal'];
   else if (backend.includes('npu') && devices.npu && recipe !== 'llamacpp') base = ['npu0'];
 
+  // An explicit 'auto' clears inherited per-model GPU selections.
+  if (recipe === 'thenoise' || recipe === 'sd-cpp') base.unshift('auto');
   const normalizedCurrent = optionalDisplayValue(current);
   const options = normalizedCurrent && !base.includes(normalizedCurrent) ? [normalizedCurrent, ...base] : base;
   return Array.from(new Set(options.filter(Boolean)));
@@ -1778,7 +1784,7 @@ const ModelConfigurationTab: React.FC<{
               const next = { ...prev, [String(key)]: e.target.value };
               if (activeRecipe === 'thenoise' || activeRecipe === 'sd-cpp') {
                 const deviceKey = activeRecipe === 'thenoise' ? 'thenoise_device' : 'sd-cpp_device';
-                delete next[deviceKey]; // Avoid carrying an incompatible GPU to a new backend.
+                next[deviceKey] = 'auto'; // Override an incompatible inherited GPU on backend changes.
               }
               return next;
             })}

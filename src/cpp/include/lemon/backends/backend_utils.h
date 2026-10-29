@@ -292,10 +292,22 @@ namespace lemon::backends {
 
         // Pure mapping for deterministic tests. CUDA_VISIBLE_DEVICES accepts UUIDs;
         // using the detected NVIDIA index directly can select a different CUDA GPU.
-        // Returns empty if exactly one matching GPU exists (no mask needed).
+        // Always returns an explicit mask: numeric 0 for the sole GPU (avoids
+        // driver-specific UUID filtering failures), UUID on multi-GPU hosts.
         static std::string cuda_visible_device_for_selection(
             const std::string& selection,
             const std::vector<std::pair<int, std::string>>& detected_gpus);
+
+        // Reject a CUDA device incompatible with an architecture-specific asset.
+        // An empty required_arch skips validation (e.g. TheNoise portable CUDA).
+        static void validate_cuda_device_arch_for_selection(
+            const std::string& selection,
+            const std::string& required_arch,
+            const std::vector<std::pair<int, std::string>>& detected_archs);
+
+        // Pure ROCm index validation for deterministic, hardware-free tests.
+        static std::string rocm_visible_device_for_selection(
+            const std::string& selection, int available_gpu_count);
 
         // A single-device selection for CUDA/ROCm subprocesses. For CUDA, an
         // explicit device takes precedence over the inherited CUDA_VISIBLE_DEVICES;
@@ -304,7 +316,8 @@ namespace lemon::backends {
             std::vector<std::pair<std::string, std::string>>& env_vars,
             const std::string& log_tag,
             const std::string& backend,
-            const std::string& selection);
+            const std::string& selection,
+            const std::string& required_cuda_arch = "");
 
         /**
          * Validates that the device selection string prefix matches the selected backend.

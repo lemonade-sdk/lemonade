@@ -369,7 +369,8 @@ void SDServer::load(const std::string& model_name,
 
     if (is_cuda_backend(resolved_backend) || is_rocm_backend(resolved_backend)) {
         BackendUtils::apply_accelerator_device_env_vars(env_vars, "SDServer",
-                                                        resolved_backend, selected_device);
+                                                        resolved_backend, selected_device,
+                                                        is_cuda_backend(resolved_backend) ? SystemInfo::get_cuda_arch() : "");
     } else if (!selected_device.empty() && selected_device != "auto" &&
                resolved_backend != "vulkan" &&
                !(resolved_backend == "metal" && selected_device == "metal") &&
