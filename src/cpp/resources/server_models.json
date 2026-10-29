@@ -2955,10 +2955,7 @@
             "tool-calling"
         ],
         "size": 80.8,
-        "min_resident_gb": 16.0,
-        "recipe_options": {
-            "ctx_size": 262144
-        }
+        "min_resident_gb": 16.0
     },
     "DeepSeek-V4-Flash-Hybrid-Q2Q4-DS4": {
         "checkpoint": "antirez/deepseek-v4-gguf:DeepSeek-V4-Flash-Layers37-42Q4KExperts-OtherExpertLayersIQ2XXSGateUp-Q2KDown-AProjQ8-SExpQ8-OutQ8-chat-v2-imatrix-fixed-0731.gguf",
@@ -2980,10 +2977,7 @@
             "reasoning"
         ],
         "size": 153.3,
-        "min_resident_gb": 16.0,
-        "recipe_options": {
-            "ds4_args": "--dist-prefill-chunk 512 --dist-prefill-window 2"
-        }
+        "min_resident_gb": 16.0
     },
     "DeepSeek-V4-Flash-MXFP4-DS4": {
         "checkpoint": "antirez/deepseek-v4-gguf:DeepSeek-V4-Flash-MXFP4Experts-F16HC-F16Compressor-F16Indexer-Q8Attn-Q8Shared-Q8Out-chat-v2-mxfp4-0731.gguf",
@@ -3007,10 +3001,7 @@
             "vision"
         ],
         "size": 81.0,
-        "min_resident_gb": 16.0,
-        "recipe_options": {
-            "ctx_size": 262144
-        }
+        "min_resident_gb": 16.0
     },
     "DeepSeek-V4-Flash-Vision-Hybrid-Q2Q4-DS4": {
         "checkpoint": "antirez/deepseek-v4-gguf:DeepSeek-V4-Flash-Vision-Exp-Layers37-42Q4KExperts-OtherExpertLayersIQ2XXSGateUp-Q2KDown-AProjQ8-SExpQ8-OutQ8.gguf",
@@ -3045,10 +3036,7 @@
             "reasoning"
         ],
         "size": 96.5,
-        "min_resident_gb": 16.0,
-        "recipe_options": {
-            "ctx_size": 262144
-        }
+        "min_resident_gb": 16.0
     },
     "GLM-5.3-Flash-Q4_K-DS4": {
         "checkpoint": "antirez/glm-5.3-flash-gguf:GLM-5.3-Flash-Q4_K.gguf",
@@ -3059,10 +3047,7 @@
             "reasoning"
         ],
         "size": 191.0,
-        "min_resident_gb": 16.0,
-        "recipe_options": {
-            "ctx_size": 4096
-        }
+        "min_resident_gb": 16.0
     },
     "DeepSeek-V4.1-Flash-Q2-DS4": {
         "checkpoint": "antirez/deepseek-v4.1-flash-gguf:DeepSeek-V4.1-Flash-Q2.gguf",
