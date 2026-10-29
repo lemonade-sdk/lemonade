@@ -39,13 +39,16 @@ std::string join(const std::vector<std::string>& argv) {
 
 struct FakeHost {
     std::set<std::string> tools;
-    std::set<std::string> groups;
+    bool gpu_access = false;
     std::string account = "alice";
     std::map<std::string, std::string> subids;  // getsubids arguments -> output
-    bool docker_socket = true;
+    // `docker info`'s exit code and its OperatingSystem|SecurityOptions answer.
+    int docker_info_exit = 0;
+    std::string docker_info = "Ubuntu 24.04 LTS|[\"name=apparmor,profile=default\"]";
     // `podman info`'s exit code and its Host.Security.Rootless answer.
     int podman_info_exit = 0;
     std::string podman_rootless = "true";
+    std::string network_backend = "netavark";
     // What Podman prints on stderr, which reaches `output` only when captured.
     std::string stderr_noise =
         "time=\"2026-10-17T00:57:31Z\" level=warning msg=\"Falling back to --cgroup-manager=cgroupfs\"\n";
@@ -59,12 +62,11 @@ struct FakeHost {
     ContainerHost host() const {
         ContainerHost h;
         h.on_path = [this](const std::string& name) { return tools.count(name) > 0; };
-        h.in_group = [this](const std::string& group) { return groups.count(group) > 0; };
+        h.gpu_devices_accessible = [this]() { return gpu_access; };
         h.account = [this]() { return account; };
         h.group_id = [](const std::string& group) {
             return group == "video" ? std::string("44") : std::string("990");
         };
-        h.docker_socket_accepts = [this]() { return docker_socket; };
         h.env = [this](const std::string& name) {
             const auto it = env.find(name);
             return it == env.end() ? std::string() : it->second;
@@ -80,13 +82,16 @@ struct FakeHost {
             lemon::utils::CommandResult result;
             if (argv.size() > 1 && argv[0] == "podman" && argv[1] == "info") {
                 result.exit_code = podman_info_exit;
-                result.output = podman_rootless + "\n";
+                result.output = podman_rootless + " " + network_backend + "\n";
             } else if (argv.size() > 1 && argv[1] == "network") {
                 result.exit_code = 0;
             } else if (argv.front() == "getsubids") {
                 const auto it = subids.find(join({argv.begin() + 1, argv.end()}));
                 result.exit_code = it == subids.end() ? 1 : 0;
                 if (it != subids.end()) result.output = it->second;
+            }
+            if (argv.size() > 1 && argv[0] == "docker" && argv[1] == "info") {
+                result = {docker_info_exit, docker_info + "\n"};
             }
             if (capture_stderr) result.output += stderr_noise;
             return result;
@@ -191,21 +196,20 @@ void test_tool_choice_and_setup() {
               "3. Log out and back in");
     check("error text lists the problems, then the steps",
           fresh.text() ==
-              "\n  - podman is not on PATH\n  - Account is not in both video and render\n"
+              "\n  - podman is not on PATH\n  - Account cannot open the GPU devices\n"
               "To fix it:\n  1. sudo apt install podman\n"
               "  2. sudo usermod -aG video,render $USER\n  3. Log out and back in");
 
     FakeHost both;
     both.tools = {"podman", "docker"};
-    both.groups = {"video"};
     const lemon::utils::SetupReport groups{ContainerManager(both.host()).check_host()};
-    check("Podman needs the account in both video and render",
+    check("Podman needs the account to open the GPU devices",
           groups.ids() == std::vector<std::string>({"device_groups"}) &&
-              groups.message() == "Account is not in both video and render" &&
+              groups.message() == "Account cannot open the GPU devices" &&
               groups.action() == "1. sudo usermod -aG video,render $USER\n"
                                  "2. Log out and back in");
-    both.groups = {"video", "render"};
-    check("Podman passes with both groups", ContainerManager(both.host()).check_host().empty());
+    both.gpu_access = true;
+    check("Podman passes once the account can open the GPU devices", ContainerManager(both.host()).check_host().empty());
 
     FakeHost remote;
     remote.tools = {"podman"};
@@ -233,7 +237,7 @@ void test_tool_choice_and_setup() {
 
     FakeHost broken;
     broken.tools = {"podman"};
-    broken.groups = {"video", "render"};
+    broken.gpu_access = true;
     broken.podman_info_exit = 125;
     const auto silent = ContainerManager(broken.host()).check_podman();
     check("Podman must answer podman info",
@@ -243,15 +247,25 @@ void test_tool_choice_and_setup() {
 
     FakeHost docker;
     docker.tools = {"docker"};
-    docker.docker_socket = false;
+    docker.docker_info_exit = 1;
     const lemon::utils::SetupReport refused{ContainerManager(docker.host()).check_host()};
     check("Docker needs the daemon to accept the account",
           refused.ids() == std::vector<std::string>({"docker_access"}) &&
               refused.message() == "The Docker daemon refuses the account" &&
               refused.action() == "1. sudo usermod -aG docker $USER\n2. Log out and back in");
-    docker.docker_socket = true;
+    docker.docker_info_exit = 0;
     check("Docker passes once the daemon accepts the account",
           ContainerManager(docker.host()).check_host().empty());
+    docker.docker_info = "Docker Desktop|[\"name=seccomp,profile=unconfined\"]";
+    const lemon::utils::SetupReport desktop{ContainerManager(docker.host()).check_host()};
+    check("Docker Desktop is refused, with Podman as the fix",
+          desktop.ids() == std::vector<std::string>({"docker_desktop"}) &&
+              desktop.action() == "sudo apt install podman");
+    docker.docker_info = "Ubuntu 24.04 LTS|[\"name=seccomp,profile=builtin\",\"name=rootless\"]";
+    const lemon::utils::SetupReport rootless{ContainerManager(docker.host()).check_host()};
+    check("rootless Docker is refused, with Podman as the fix",
+          rootless.ids() == std::vector<std::string>({"docker_rootless"}) &&
+              rootless.action() == "sudo apt install podman");
 
     lemon::utils::SetupReport both_relogins{groups.failures};
     both_relogins.failures.push_back(refused.failures.front());
@@ -267,7 +281,6 @@ void test_system_service_setup() {
     FakeHost podman;
     podman.account = "lemonade";
     podman.tools = {"podman", "getsubids"};
-    podman.groups = {"render"};
     podman.subids = {{"lemonade", "0: lemonade 165536 65536\n"}};
     const lemon::utils::SetupReport groups{ContainerManager(podman.host()).check_host()};
     check("the service's group fix names lemonade and restarts lemond",
@@ -285,9 +298,9 @@ void test_system_service_setup() {
                   "GIDs to lemonade\n"
                   "2. sudo systemctl restart lemond");
     podman.subids["-g lemonade"] = "0: lemonade 165536 65536\n";
-    podman.groups = {"video", "render"};
+    podman.gpu_access = true;
     const ContainerManager ready(podman.host());
-    check("the service passes with both ranges and both groups",
+    check("the service passes with both ranges and GPU access",
           ready.check_host().empty() && !ready.check_podman());
 
     FakeHost user = podman;
@@ -299,7 +312,7 @@ void test_system_service_setup() {
     FakeHost docker;
     docker.account = "lemonade";
     docker.tools = {"docker"};
-    docker.docker_socket = false;
+    docker.docker_info_exit = 1;
     const lemon::utils::SetupReport refused{ContainerManager(docker.host()).check_host()};
     check("the service's Docker fix names lemonade and restarts lemond",
           refused.action() == "1. sudo usermod -aG docker lemonade\n"
@@ -333,6 +346,52 @@ void test_create_network() {
           network_create(docker) == "docker network create --internal --label ai.lemonade lemonade-n");
 }
 
+// Rootful Podman through CONTAINER_HOST never uses lemonade's local subordinate
+// IDs, so their absence must not block it.
+void test_rootful_service() {
+    FakeHost rootful_service;
+    rootful_service.account = "lemonade";
+    rootful_service.tools = {"podman", "getsubids"};
+    rootful_service.env = {{"CONTAINER_HOST", "unix:///run/podman-lemonade.sock"}};
+    rootful_service.podman_rootless = "false";
+    const auto failure = ContainerManager(rootful_service.host()).check_podman();
+    check("rootful Podman via CONTAINER_HOST needs no local subordinate IDs",
+          !failure || failure->id != "subordinate_ids");
+}
+
+void test_rootful_cni() {
+    // Rootful lemond connects to the container's address, which an internal
+    // network on Podman 4's CNI backend leaves unreachable. Either the port is
+    // published or setup reports the problem, instead of a load that times out.
+    FakeHost cni;
+    cni.tools = {"podman"};
+    cni.podman_rootless = "false";
+    cni.network_backend = "cni";
+    const ContainerManager cni_manager(cni.host());
+    const bool published =
+        join(cni_manager.run_command(example_spec())).find(" -p 127.0.0.1:") != std::string::npos;
+    check("rootful Podman on CNI publishes the port or reports a setup failure",
+          published || cni_manager.check_podman().has_value());
+
+    FakeHost cni_service = cni;
+    cni_service.account = "lemonade";
+    cni_service.env = {{"CONTAINER_HOST", "unix:///run/podman-lemonade.sock"}};
+    const auto cni_failure = ContainerManager(cni_service.host()).check_podman();
+    check("the service's CNI fix removes CONTAINER_HOST and restarts lemond",
+          cni_failure && cni_failure->id == "rootful_cni" &&
+              lemon::utils::SetupReport{{*cni_failure}}.action() ==
+                  "1. Remove CONTAINER_HOST from /etc/default/lemond to use rootless Podman\n"
+                  "2. sudo systemctl restart lemond");
+    FakeHost netavark = cni;
+    netavark.network_backend = "netavark";
+    check("rootful Podman on netavark passes the setup check",
+          !ContainerManager(netavark.host()).check_podman());
+    FakeHost rootless_cni = cni;
+    rootless_cni.podman_rootless = "true";
+    check("rootless Podman on CNI passes the setup check, since it publishes a port",
+          !ContainerManager(rootless_cni.host()).check_podman());
+}
+
 void test_install_commands() {
     const auto command = ContainerManager::podman_install_command;
     check("Rocky Linux matches fedora through ID_LIKE",
@@ -343,9 +402,14 @@ void test_install_commands() {
 }
 
 void test_helpers() {
-    check("characters a container name rejects become dashes",
+    check("characters a container name rejects are escaped as _ plus hex",
           ContainerManager::container_name("llamacpp", "nathanw", "user.My Model:Q4/x") ==
-              "lemonade-llamacpp-nathanw-user.My-Model-Q4-x");
+              "lemonade-llamacpp-nathanw-user.My_20Model_3aQ4_2fx");
+    check("names that differ only in rejected characters keep distinct containers",
+          ContainerManager::container_name("llamacpp", "nathanw", "user.foo/bar") !=
+                  ContainerManager::container_name("llamacpp", "nathanw", "user.foo-bar") &&
+              ContainerManager::container_name("llamacpp", "nathanw", "user.foo_2fbar") ==
+                  "lemonade-llamacpp-nathanw-user.foo__2fbar");
 
     FakeHost ubuntu;
     check("a host without SELinux passes the SELinux check",
@@ -444,6 +508,8 @@ int main() {
     test_tool_choice_and_setup();
     test_system_service_setup();
     test_create_network();
+    test_rootful_service();
+    test_rootful_cni();
     test_install_commands();
     test_helpers();
 #ifndef _WIN32

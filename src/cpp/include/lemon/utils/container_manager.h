@@ -73,13 +73,13 @@ struct CommandResult {
 // Each host read, defaulting to the real host so tests can fake every branch.
 struct ContainerHost {
     std::function<bool(const std::string& name)> on_path;
-    std::function<bool(const std::string& group)> in_group;
+    // True when this account can read and write /dev/kfd and every /dev/dri
+    // render node present on the host.
+    std::function<bool()> gpu_devices_accessible;
     // The group's numeric ID, or "" when the host defines no such group.
     std::function<std::string(const std::string& group)> group_id;
     // The name of the account this process runs as, or "" when it is unknown.
     std::function<std::string()> account;
-    // True when /var/run/docker.sock accepts a connection from this process.
-    std::function<bool()> docker_socket_accepts;
     // The environment variable's value, or "" when it is unset.
     std::function<std::string(const std::string& name)> env;
     std::function<bool()> is_root;
@@ -162,6 +162,8 @@ private:
     ContainerHost host_;
     mutable std::mutex podman_mode_mutex_;
     mutable std::optional<bool> podman_rootless_;
+    // Podman's network backend, "netavark" or "cni", from the same answer.
+    mutable std::string podman_network_backend_;
 };
 
 }  // namespace utils

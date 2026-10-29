@@ -105,6 +105,7 @@ class SyncService {
     void run_worker();
     void run_generation();
     nlohmann::json status_locked() const;
+    void log_outcome_locked() const;
 
     Deps deps_;
     std::atomic<bool> cancel_flag_{false};

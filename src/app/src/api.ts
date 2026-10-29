@@ -154,6 +154,12 @@ function normalizeHealth(data: unknown): HealthData {
     all_models_loaded: loaded,
     max_models: isObject(obj.max_models) ? obj.max_models as Record<string, number> : {},
     high_security: typeof obj.high_security === 'boolean' ? obj.high_security : undefined,
+    model_sync: isObject(obj.model_sync) ? {
+      status: String(obj.model_sync.status || 'idle') as HealthModelSync['status'],
+      sync_id: Number(obj.model_sync.sync_id || 0),
+      completed_sync_id: Number(obj.model_sync.completed_sync_id || 0),
+    } : undefined,
+    models_generation: typeof obj.models_generation === 'number' ? obj.models_generation : undefined,
   };
 }
 
@@ -215,6 +221,8 @@ export interface HealthData {
   all_models_loaded: LoadedModel[];
   max_models: Record<string, number>;
   high_security?: boolean;
+  model_sync?: HealthModelSync;
+  models_generation?: number;
 }
 
 export interface LoadedModel {
@@ -258,6 +266,23 @@ export interface ModelInfo {
 
 export interface ModelsData {
   data: ModelInfo[];
+}
+
+/** Server-owned update job; unrelated to /api/v1/pull download jobs. */
+export interface ModelSyncStatus {
+  status: 'idle' | 'in_progress' | 'success' | 'failed' | 'not_found';
+  sync_id: number;
+  completed_sync_id?: number;
+  failed_models?: Record<string, string>;
+  terminal_error?: string;
+  progress?: { current_model?: string; percent?: number };
+}
+
+/** The `/health` summary of the server's model sync. */
+export interface HealthModelSync {
+  status: ModelSyncStatus['status'];
+  sync_id: number;
+  completed_sync_id: number;
 }
 
 /**
@@ -767,11 +792,15 @@ class LemonadeAPI {
   private _modelsChangedListeners: Array<() => void> = [];
   private _healthData: HealthData | null = null;
   private _healthDataSignature = '';
+  private _serverModelsGeneration: number | null = null;
   private _modelsData: ModelsData | null = null;
   private _modelsDataSignature = '';
   private _modelsFetchRevision = 0;
   private _systemInfoData: Record<string, unknown> | null = null;
+  private _systemInfoFetchedAt = 0;
+  private _systemInfoListeners = new Set<(info: Record<string, unknown>) => void>();
   private _systemInfoInFlight: Promise<Record<string, unknown>> | null = null;
+  private _systemInfoGeneration = 0;
   private _modelStateSnapshot: ModelStateSnapshot = {
     status: 'disconnected',
     health: null,
@@ -1050,6 +1079,11 @@ class LemonadeAPI {
     return () => { this._modelsChangedListeners = this._modelsChangedListeners.filter(f => f !== fn); };
   }
 
+  onSystemInfoChange(fn: (info: Record<string, unknown>) => void): () => void {
+    this._systemInfoListeners.add(fn);
+    return () => { this._systemInfoListeners.delete(fn); };
+  }
+
   private _notifyModelsChanged(): void {
     this._modelsMutationRevision += 1;
     this._modelStateGeneration += 1;
@@ -1060,6 +1094,12 @@ class LemonadeAPI {
   private _setStatus(s: ConnectionStatus): void {
     const changed = this._status !== s;
     this._status = s;
+    if (changed && s === 'disconnected') {
+      this._serverModelsGeneration = null;
+      this._systemInfoGeneration++;
+      this._systemInfoInFlight = null;
+      this._systemInfoFetchedAt = 0;
+    }
     if (changed) this._listeners.forEach(fn => { try { fn(s); } catch {} });
     this._publishModelState();
   }
@@ -1386,6 +1426,14 @@ class LemonadeAPI {
       this._healthData = data;
       this._healthDataSignature = signature;
     }
+    const generation = data.models_generation;
+    if (generation !== undefined) {
+      const previous = this._serverModelsGeneration;
+      this._serverModelsGeneration = generation;
+      if (previous !== null && previous !== generation && this._modelsData) {
+        void this.models(true).catch(() => undefined);
+      }
+    }
     this._lastConnectionError = null;
     this._setStatus('connected');
     return this._healthData;
@@ -1499,9 +1547,38 @@ class LemonadeAPI {
       ...recipeOptions,
       save_options: false,
     };
-    const result = await this._json('/api/v1/load', { method: 'POST', body });
-    this._notifyModelsChanged();
-    return result;
+    let stopDownloadWatch: (() => void) | undefined;
+    try {
+      const { downloadStore } = await import(
+        /* webpackChunkName: "download-store" */ './features/downloadManager/downloadStore'
+      );
+      stopDownloadWatch = downloadStore.watchForModelLoad();
+    } catch (error) {
+      console.warn('Could not watch model load progress:', error);
+    }
+    try {
+      const result = await this._json('/api/v1/load', { method: 'POST', body });
+      this._notifyModelsChanged();
+      return result;
+    } finally {
+      stopDownloadWatch?.();
+      this._refreshBackendStatusAfterLoad(String(body.recipe || cachedRecipe).trim().toLowerCase(), body);
+    }
+  }
+
+  private _refreshBackendStatusAfterLoad(recipe: string, options: Record<string, unknown>): void {
+    const recipes = (this._systemInfoData as any)?.recipes;
+    if (!isObject(recipes)) return;
+    const recipeInfo = recipes[recipe];
+    if (!isObject(recipeInfo) || !isObject(recipeInfo.backends)) return;
+    const requested = String(options[`${recipe}_backend`] || options.backend || '').trim().toLowerCase();
+    const selected = requested && requested !== 'auto'
+      ? requested : String(recipeInfo.default_backend || '').trim().toLowerCase();
+    const backendInfo = recipeInfo.backends[selected];
+    const state = isObject(backendInfo) ? String(backendInfo.state || '').trim().toLowerCase() : '';
+    if (state !== 'installed' && state !== 'unsupported') {
+      void this.systemInfo({ afterPending: true }).catch(() => undefined);
+    }
   }
 
   async unloadModel(modelName?: string): Promise<unknown> {
@@ -1569,17 +1646,31 @@ class LemonadeAPI {
     return result;
   }
 
-  async systemInfo(): Promise<Record<string, unknown>> {
+  async systemInfo(options: { afterPending?: boolean; maxAgeMs?: number } = {}): Promise<Record<string, unknown>> {
     // Several views use the same expensive system-info endpoint. A workspace
     // preload and the view's first effect can overlap, so share the in-flight
     // request instead of making the server do the same discovery twice.
+    if (options.maxAgeMs !== undefined && this._systemInfoData
+      && Date.now() - this._systemInfoFetchedAt < options.maxAgeMs) {
+      return this._systemInfoData;
+    }
+    const generation = this._systemInfoGeneration;
+    if (options.afterPending && this._systemInfoInFlight) {
+      await this._systemInfoInFlight.catch(() => undefined);
+      if (generation !== this._systemInfoGeneration) {
+        throw new Error('Connection changed while waiting for system info');
+      }
+    }
     if (this._systemInfoInFlight) return this._systemInfoInFlight;
 
     const request = this._json<Record<string, unknown>>(
       '/api/v1/system-info',
       { cache: 'no-store' } as LemonadeRequestInit,
     ).then(data => {
+      if (generation !== this._systemInfoGeneration) return data;
       this._systemInfoData = data;
+      this._systemInfoFetchedAt = Date.now();
+      this._systemInfoListeners.forEach(fn => { try { fn(data); } catch {} });
       return data;
     }).finally(() => {
       if (this._systemInfoInFlight === request) this._systemInfoInFlight = null;
@@ -2296,6 +2387,23 @@ class LemonadeAPI {
     });
     this._notifyModelsChanged();
     return result;
+  }
+
+  // Model updates are checked and selected by lemond, not the GUI.
+  async startModelSync(models?: string[]): Promise<ModelSyncStatus> {
+    return this._json<ModelSyncStatus>('/internal/models/sync', {
+      method: 'POST',
+      body: { async: true, ...(models ? { models } : {}) },
+      auth: 'admin',
+      cache: 'no-store',
+    });
+  }
+
+  async getModelSyncStatus(): Promise<ModelSyncStatus> {
+    return this._json<ModelSyncStatus>('/internal/models/sync/status', {
+      auth: 'admin',
+      cache: 'no-store',
+    });
   }
 
   // ── SSE: Pull (model download) ──────────────────────────────────

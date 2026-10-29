@@ -147,6 +147,7 @@ public:
     void notify_models_changed();
 
     // Snapshot generation, for consumers that need currency not a callback.
+    std::uint64_t models_generation() const;
 
     std::set<std::string> active_helper_models();
 

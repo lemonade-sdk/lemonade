@@ -142,7 +142,36 @@ test.describe('Lemonade UI — Feature Parity', () => {
 
     await page.goto('/?view=monitor/telemetry');
     await page.waitForSelector('[data-view="monitor"]');
-    await expect(page).toHaveURL(/#\/monitor\/telemetry$/);
+    await expect(page).toHaveURL(/\/#\/monitor\/telemetry$/);
+
+    await page.goto('/?logs=true&keep=1#/monitor/logs');
+    await expect(page).toHaveURL(/\/\?keep=1#\/monitor\/logs$/);
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    await page.reload();
+    await expect(page).toHaveURL(/\/\?keep=1#\/models$/);
+  });
+
+  test('01a0b — deep-link params are consumed without losing history', async ({ page }) => {
+    await page.goto('/#/models');
+    await page.waitForSelector('.titlebar__nav');
+    await page.goto('/?logs=true&keep=1');
+    await page.waitForSelector('[data-view="monitor"]');
+    await expect(page).toHaveURL(/\/\?keep=1#\/monitor\/logs$/);
+    await page.goBack();
+    await expect(page).toHaveURL(/\/#\/models$/);
+
+    // A param that resolves to no route must still be stripped at startup;
+    // otherwise the first click replaces the landing entry instead of pushing.
+    await page.goto('/#/backends');
+    await page.waitForSelector('.titlebar__nav');
+    await page.goto('about:blank');
+    await page.goto('/?view=unknown');
+    await page.waitForSelector('.titlebar__nav');
+    await expect(page).toHaveURL(/\/#\/backends$/);
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    await expect(page).toHaveURL(/\/#\/models$/);
+    await page.goBack();
+    await expect(page).toHaveURL(/\/#\/backends$/);
   });
 
   test('01a — Monitor labels and URL sections stay aligned', async ({ page }) => {

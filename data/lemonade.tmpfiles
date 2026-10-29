@@ -1,0 +1,4 @@
+# Without a login session, rootless Podman keeps its runtime state in
+# lemond.service's private /tmp. Age-based cleanup of /tmp must not reach it
+# while lemond runs, as Podman's own tmpfiles.d keeps it off /tmp/storage-run-*.
+x /tmp/systemd-private-%b-lemond.service-*/tmp/*
