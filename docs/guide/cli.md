@@ -473,6 +473,18 @@ The following options are available depending on the recipe being used:
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--openmoss BACKEND` | OpenMOSS TTS backend to use | Auto-detected |
+
+#### AMICA DX12 (`amica` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--amica-args ARGS` | Custom arguments to pass to amica-engine (--adapter, --arch, --weights-vram-mib) | `""` |
+
+#### AMICA DX12 Image (`amica-image` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--amica-args ARGS` | Custom arguments to pass to amica-engine (--adapter, --arch, --weights-vram-mib) | `""` |
 <!-- END GENERATED: cli-recipe-options -->
 **Notes:**
 - Unspecified options will use the backend's default values

@@ -239,6 +239,8 @@ set(LEMON_BACKENDS
     "onnxruntime|onnxruntime"
     "trellis|trellis"
     "openmoss|openmoss"
+    "amica|amica"
+    "amica-image|amicaimage"
 )
 
 # ============================================================
@@ -1341,6 +1343,16 @@ if(BUILD_TESTING AND EXISTS "${VLLM_ARG_RESOLVER_TEST_SOURCE}")
     add_cpp_ci_test(vllm_arg_resolver CI ON COMMAND test_vllm_arg_resolver)
 endif()
 
+set(AMICA_BUNDLE_TEST_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_amica_bundle.cpp")
+if(BUILD_TESTING AND EXISTS "${AMICA_BUNDLE_TEST_SOURCE}")
+    add_executable(test_amica_bundle
+        ${AMICA_BUNDLE_TEST_SOURCE}
+        src/cpp/server/backends/amica/amica_bundle.cpp
+    )
+    target_link_libraries(test_amica_bundle PRIVATE nlohmann_json::nlohmann_json)
+    add_cpp_ci_test(amica_bundle CI ON COMMAND test_amica_bundle)
+endif()
+
 set(LLAMACPP_REQUEST_TEST_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_llamacpp_request.cpp")
 if(BUILD_TESTING AND EXISTS "${LLAMACPP_REQUEST_TEST_SOURCE}")
     add_executable(test_llamacpp_request
@@ -1496,6 +1508,82 @@ add_custom_command(TARGET ${EXECUTABLE_NAME} POST_BUILD
 
 # Ensure resources are copied before building the executable
 add_dependencies(${EXECUTABLE_NAME} copy_resources)
+
+# ============================================================
+# AMICA engine (Windows, optional)
+# ============================================================
+# The amica recipe generates through amica-engine, which links the public AMICA
+# API. AMICA is not fetched, so the engine is built only when LEMON_AMICA_ROOT
+# names an AMICA package (include/amica, lib/amica.lib, amica/amica.dll).
+set(LEMON_AMICA_ROOT "" CACHE PATH "AMICA package to build amica-engine against")
+if(WIN32 AND LEMON_AMICA_ROOT)
+    foreach(_amica_required include/amica/amica.h include/amica/amica.hpp lib/amica.lib)
+        if(NOT EXISTS "${LEMON_AMICA_ROOT}/${_amica_required}")
+            message(FATAL_ERROR "LEMON_AMICA_ROOT=${LEMON_AMICA_ROOT} is not an AMICA package: "
+                                "${_amica_required} is missing")
+        endif()
+    endforeach()
+    # minja renders the bundles' Jinja chat templates. Its "is" tests lack
+    # `undefined` and treat `true`/`false` as truthiness; Jinja2 compares with
+    # the booleans, and the chat templates rely on both.
+    set(_minja_download "${CMAKE_BINARY_DIR}/_deps/minja/minja.hpp")
+    file(DOWNLOAD
+        "https://raw.githubusercontent.com/google/minja/021c2293c187789ef13d56c6cfd89c9b134fd80f/include/minja/minja.hpp"
+        "${_minja_download}"
+        EXPECTED_HASH SHA256=55df85289038d54566ac40903617725e82a9e07e60a21b38dc6de65f7b7e10b8
+        TLS_VERIFY ON)
+    file(READ "${_minja_download}" _minja_header)
+    string(REPLACE "\r" "" _minja_header "${_minja_header}")
+    set(_minja_tests_before [=[
+              if (name == "true") return l.to_bool();
+              if (name == "false") return !l.to_bool();]=])
+    set(_minja_tests_after [=[
+              if (name == "undefined") return l.is_null();
+              if (name == "true") return l.is_boolean() && l.to_bool();
+              if (name == "false") return l.is_boolean() && !l.to_bool();]=])
+    string(FIND "${_minja_header}" "${_minja_tests_before}" _minja_tests_at)
+    if(_minja_tests_at EQUAL -1)
+        message(FATAL_ERROR "minja.hpp no longer has the 'is' tests amica-engine patches")
+    endif()
+    string(REPLACE "${_minja_tests_before}" "${_minja_tests_after}" _minja_header "${_minja_header}")
+    file(WRITE "${CMAKE_BINARY_DIR}/minja/include/minja/minja.hpp" "${_minja_header}")
+
+    add_executable(amica-engine
+        src/cpp/amica_engine/amica_engine.cpp
+        src/cpp/amica_engine/amica_runtime.cpp
+        src/cpp/amica_engine/app_manifest.cpp
+        src/cpp/amica_engine/bundle.cpp
+        src/cpp/amica_engine/cgc_graph.cpp
+        src/cpp/amica_engine/chat_frontend.cpp
+        src/cpp/amica_engine/graph_abi.cpp
+        src/cpp/amica_engine/image_api.cpp
+        src/cpp/amica_engine/image_bundle.cpp
+        src/cpp/amica_engine/image_engine.cpp
+        src/cpp/amica_engine/onnx_tokenizers.cpp
+        src/cpp/amica_engine/openai_api.cpp
+        src/cpp/amica_engine/png.cpp
+        src/cpp/amica_engine/tokenizer.cpp
+        src/cpp/amica_engine/unicode.cpp)
+    target_include_directories(amica-engine PRIVATE "${LEMON_AMICA_ROOT}/include")
+    target_include_directories(amica-engine SYSTEM PRIVATE "${CMAKE_BINARY_DIR}/minja/include")
+    # amica.dll is delay-loaded from the AMICA install configured at run time
+    # (amica.dx12_bin), not from the package the engine was built against.
+    # icu.lib is the Windows SDK's ICU (Windows 10 1903+), used for Unicode
+    # normalization and the tokenizers' Unicode regular expressions.
+    # windowscodecs (WIC) encodes generated images as PNG.
+    target_link_libraries(amica-engine PRIVATE
+        "${LEMON_AMICA_ROOT}/lib/amica.lib" delayimp d3d12 dxgi icu ole32 windowscodecs
+        lemonade-httplib nlohmann_json::nlohmann_json)
+    if(MSVC)
+        target_compile_options(amica-engine PRIVATE /bigobj)
+    endif()
+    target_link_options(amica-engine PRIVATE "/DELAYLOAD:amica.dll")
+    target_compile_definitions(amica-engine PRIVATE WIN32_LEAN_AND_MEAN)
+    set_target_properties(amica-engine PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "$<TARGET_FILE_DIR:${EXECUTABLE_NAME}>")
+    add_dependencies(${EXECUTABLE_NAME} amica-engine)
+    message(STATUS "Building amica-engine against ${LEMON_AMICA_ROOT}")
+endif()
 
 # ============================================================
 # Tauri App Integration (Cross-Platform)
