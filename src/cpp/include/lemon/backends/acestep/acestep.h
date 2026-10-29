@@ -19,6 +19,8 @@ inline const BackendDescriptor descriptor = {
     /*uses_ctx_size*/   false,
     /*dynamic_models*/  false,
     /*options*/ {
+        {"acestep_device", "--acestep-device", "", "DEVICES",
+         "GPU to use (ROCm0, ROCm1, CUDA0, CUDA1); auto selects automatically", "Audio Generation Options"},
         {"acestep_backend", "--acestep", "", "BACKEND",
          "ACE-Step backend to use", "Audio Generation Options"},
     },
