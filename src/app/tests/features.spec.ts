@@ -2518,11 +2518,6 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.clock.fastForward(4000);
     await expect(error).toHaveCount(0);
   });
-  for (const { backend, gpuKey, devices } of [
-    { backend: 'cuda', gpuKey: 'nvidia_gpu', devices: ['cuda0', 'cuda1'] },
-    { backend: 'rocm-stable', gpuKey: 'amd_gpu', devices: ['rocm0', 'rocm1'] },
-  ]) {
-    test(`25n — Device selector supports multiple GPUs with ${backend}`, async ({ page }) => {
   for (const { backend, gpuKey, devices, families, combined } of [
     { backend: 'cuda', gpuKey: 'nvidia_gpu', devices: ['cuda0', 'cuda1'], families: ['sm_120', 'sm_120'], combined: true },
     { backend: 'cuda', gpuKey: 'nvidia_gpu', devices: ['cuda0', 'cuda1'], families: ['sm_120', 'sm_89'], combined: false },
@@ -2573,6 +2568,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
       await page.locator('.model-list-panel__list .workspace-list-row').filter({ hasText: modelName }).click();
       await page.locator('#detail-tab-config').click();
       const panel = page.locator('#detail-panel-config');
+      await expect(panel.getByRole('button', { name: 'Save', exact: true })).toBeEnabled();
       await panel.locator('[id$="llamacpp_backend"]').selectOption(backend);
       const deviceSelector = panel.locator('[id$="llamacpp_device"]');
       await expect(deviceSelector.locator('option')).toHaveText([
