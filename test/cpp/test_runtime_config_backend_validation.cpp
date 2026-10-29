@@ -108,7 +108,7 @@ int main() {
     expect_accepted("thenoise", "rocm_bin", "builtin");
     expect_accepted("thenoise", "cuda_bin", "builtin");
 
-#ifdef __linux__
+#if defined(__linux__) && defined(__x86_64__)
     try {
         const auto cuda = lemon::backends::TheNoiseServer::get_install_params("cuda", "test-tag");
         if (cuda.repo == "lemonade-sdk/thenoise" &&
@@ -125,10 +125,10 @@ int main() {
 #else
     try {
         (void)lemon::backends::TheNoiseServer::get_install_params("cuda", "test-tag");
-        std::puts("[FAIL] TheNoise CUDA is accepted outside Linux");
+        std::puts("[FAIL] TheNoise CUDA is accepted outside Linux x86_64");
         ++failures;
     } catch (const std::runtime_error&) {
-        std::puts("[PASS] TheNoise CUDA is rejected outside Linux");
+        std::puts("[PASS] TheNoise CUDA is rejected outside Linux x86_64");
     }
 #endif
 

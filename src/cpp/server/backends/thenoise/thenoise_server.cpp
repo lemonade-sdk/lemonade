@@ -73,11 +73,11 @@ InstallParams TheNoiseServer::get_install_params(const std::string& backend, con
     InstallParams params;
     params.repo = "lemonade-sdk/thenoise";
     if (backend == "cuda") {
-#ifdef __linux__
+#if defined(__linux__) && defined(__x86_64__)
         params.filename = version + "-cuda-x64.tar.gz";
         return params;
 #else
-        throw std::runtime_error("TheNoise CUDA is supported on Linux only");
+        throw std::runtime_error("TheNoise CUDA is supported on Linux x86_64 only");
 #endif
     }
     if (backend != "rocm") {
