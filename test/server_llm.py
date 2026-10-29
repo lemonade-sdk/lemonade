@@ -553,7 +553,7 @@ class LLMTests(ServerTestBase):
             ],
             tools=[SAMPLE_TOOL],
             temperature=0.0,
-            max_completion_tokens=300,
+            max_completion_tokens=100,
             extra_body=get_extra_body("chat"),
         )
 
@@ -579,7 +579,7 @@ class LLMTests(ServerTestBase):
             ],
             tools=[SAMPLE_TOOL],
             temperature=0.0,
-            max_completion_tokens=300,
+            max_completion_tokens=100,
             extra_body=get_extra_body("chat"),
             stream=True,
         )
