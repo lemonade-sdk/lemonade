@@ -17,6 +17,7 @@
 #include <map>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <thread>
 #include <utility>
 
@@ -80,6 +81,10 @@ constexpr int     kMeshReadTimeoutSec     = 15;
 // After a mesh failure, fail fast (skip the doomed handshake) for this long so a
 // persistently-down tunnel doesn't re-freeze every periodic caller.
 constexpr int64_t kMeshBreakerCooldownMs  = 8000;
+// The server's answer to a link token or invite code it does not hold
+// (TokenLinkAuthProvider): the same text for an unknown, expired, or spent
+// invite, so a join treats it as "unknown here" and asks another member.
+constexpr std::string_view kInviteUnknownError = "invalid or expired link token";
 // Private requests that get no answer at the connect or handshake level for
 // this long, while the session server stays a verified member whose public
 // API answers, start a forced session move (see note_private_path_unanswered).
@@ -2593,12 +2598,48 @@ Result<JoinResult> LemonadeNexusClient::join_network(const std::string& username
     const auto pending_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
     int status = 0;
     std::optional<json> resp;
+    // An invite is minted on the inviter's session server and reaches the
+    // other Tier 1 members over the backbone, so one verified member can
+    // refuse it as unknown while another holds it: a member that restarted
+    // minutes ago has no backbone peers yet, and a mint presented within the
+    // replication delay has not arrived anywhere else. Such a refusal is not
+    // final. The join is pinned to the member that issued its challenge, so
+    // ask each other verified member once, challenge and join, before the
+    // invite is reported invalid.
+    std::set<std::string> refused_invite;
+    std::string avoid_before;
+    {
+        std::lock_guard lock(impl_->transport_mtx);
+        avoid_before = impl_->avoid_node;
+    }
+    const auto restore_avoid = [&] {
+        std::lock_guard lock(impl_->transport_mtx);
+        impl_->avoid_node = avoid_before;
+    };
     for (;;) {
-        resp = impl_->http_post("/api/join", authenticated_join(), status);
+        const auto body = authenticated_join();
+        std::string target;
+        {
+            std::lock_guard lock(impl_->transport_mtx);
+            target = impl_->challenge_node;
+        }
+        resp = impl_->http_post("/api/join", body, status);
         result.http_status = status;
         if (!resp) {
+            restore_avoid();
             result.error = "join request failed (server unreachable)";
             return result;
+        }
+        if (status == 403 && join_body.contains("link_token") && !target.empty() &&
+            resp->value("error", std::string{}) == kInviteUnknownError) {
+            refused_invite.insert(target);
+            if (refused_invite.size() < impl_->tier1.membership().servers.size()) {
+                spdlog::info("[LemonadeNexusClient] the invite is unknown to {}: asking "
+                             "another verified Tier 1 server", target.substr(0, 12));
+                std::lock_guard lock(impl_->transport_mtx);
+                impl_->avoid_node = target;
+                continue;
+            }
         }
         if (status != 202 || resp->value("status", std::string{}) != "pending") break;
         {
@@ -2607,11 +2648,13 @@ Result<JoinResult> LemonadeNexusClient::join_network(const std::string& username
         }
         join_body.erase("link_token");
         if (std::chrono::steady_clock::now() >= pending_deadline) {
+            restore_avoid();
             result.error = "join is waiting for the network to commit; sign in again shortly";
             return result;
         }
         std::this_thread::sleep_for(std::chrono::seconds(1));
     }
+    restore_avoid();
 
     if (status != 200) {
         result.error = resp->value("error", resp->value("error_message", "join failed"));
