@@ -2012,6 +2012,7 @@ sys.exit(0)
                 (
                     "{env:LEMONADE_API_KEY}"
                     if os.environ.get("LEMONADE_API_KEY")
+                    or os.environ.get("LEMONADE_ADMIN_API_KEY")
                     else "lemonade"
                 ),
             )
