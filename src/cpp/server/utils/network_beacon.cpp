@@ -1,5 +1,6 @@
 #include "lemon/utils/network_beacon.h"
 
+#include <algorithm>
 #include <cerrno>
 #include <chrono>
 #include <iostream>
@@ -72,30 +73,20 @@ std::string NetworkBeacon::getLocalHostname() {
     return "UnknownHost";
 }
 
-bool NetworkBeacon::isRFC1918(const std::string& ipAddress) {
-    struct in_addr addr;
-
-    // Convert string to network address structure
-    if (inet_pton(AF_INET, ipAddress.c_str(), &addr) != 1) {
-        return false; // Not a valid IPv4 address
+bool NetworkBeacon::isRFC1918(const std::string& ipAddress, bool includeLoopback) {
+    if (ipAddress.find('\0') != std::string::npos) return false;
+    unsigned char bytes[16]{};
+    size_t offset = 0;
+    if (inet_pton(AF_INET, ipAddress.c_str(), bytes) != 1) {
+        if (inet_pton(AF_INET6, ipAddress.c_str(), bytes) != 1 ||
+            !std::all_of(bytes, bytes + 10, [](unsigned char byte) { return byte == 0; }) ||
+            bytes[10] != 0xff || bytes[11] != 0xff) return false;
+        offset = 12;
     }
-
-    // Convert to host byte order for easier comparison
-    uint32_t ip = ntohl(addr.s_addr);
-
-    // 10.0.0.0/8
-    if ((ip & 0xFF000000) == 0x0A000000) return true;
-
-    // 172.16.0.0/12 (172.16.0.0 - 172.31.255.255)
-    if ((ip & 0xFFF00000) == 0xAC100000) return true;
-
-    // 192.168.0.0/16
-    if ((ip & 0xFFFF0000) == 0xC0A80000) return true;
-
-    // 127.0.0.0/8 (loopback)
-    if ((ip & 0xFF000000) == 0x7F000000) return true;
-
-    return false;
+    return bytes[offset] == 10 ||
+        (bytes[offset] == 172 && bytes[offset + 1] >= 16 && bytes[offset + 1] <= 31) ||
+        (bytes[offset] == 192 && bytes[offset + 1] == 168) ||
+        (includeLoopback && bytes[offset] == 127);
 }
 
 std::vector<NetworkInterfaceInfo> NetworkBeacon::getLocalRFC1918Interfaces() {

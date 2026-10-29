@@ -166,7 +166,6 @@ bool bearer_matches(const std::string& authorization, const std::string& api_key
 /// True for the operations a remote client outside RFC1918 may call on the public listener:
 /// the group operations and "relay".
 bool remote_operation(const std::string& operation);
-bool rfc1918_address(const std::string& address);
 /// Uses the socket peer address, never a client-supplied forwarding header.
 bool private_management_request(const httplib::Request& req);
 /// Decides whether a Nexus route may run. Origin, CORS and the API key are checked earlier

@@ -4,6 +4,7 @@
 #include "lemon/server/route_registry.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/json_utils.h"
+#include "lemon/utils/network_beacon.h"
 #include "lemon/utils/path_utils.h"
 #include "lemon/version.h"
 #include <lemon/utils/aixlog.hpp>
@@ -19,9 +20,7 @@
 
 #ifdef _WIN32
 #include <winsock2.h>
-#include <ws2tcpip.h>
 #else
-#include <arpa/inet.h>
 #include <unistd.h>
 #endif
 #ifdef LEMONADE_WITH_NEXUS
@@ -31,6 +30,7 @@
 namespace lemon {
 namespace {
 using json = nlohmann::json;
+constexpr const char* nexus_prefixes[] = {"/api/v0/nexus/", "/api/v1/nexus/", "/v0/nexus/", "/v1/nexus/", "/api/nexus/"};
 bool local_address(const std::string& address) {
     return address == "127.0.0.1" || address == "::1" || address == "::ffff:127.0.0.1";
 }
@@ -773,24 +773,9 @@ bool remote_operation(const std::string& operation) {
     return std::find(operations.begin(), operations.end(), operation) != operations.end();
 }
 
-bool rfc1918_address(const std::string& address) {
-    if (address.find('\0') != std::string::npos) return false;
-    unsigned char bytes[16]{};
-    size_t offset = 0;
-    if (inet_pton(AF_INET, address.c_str(), bytes) != 1) {
-        if (inet_pton(AF_INET6, address.c_str(), bytes) != 1 ||
-            !std::all_of(bytes, bytes + 10, [](unsigned char byte) { return byte == 0; }) ||
-            bytes[10] != 0xff || bytes[11] != 0xff) return false;
-        offset = 12;
-    }
-    return bytes[offset] == 10 ||
-        (bytes[offset] == 172 && bytes[offset + 1] >= 16 && bytes[offset + 1] <= 31) ||
-        (bytes[offset] == 192 && bytes[offset + 1] == 168);
-}
-
 bool private_management_request(const httplib::Request& req) {
-    if (!rfc1918_address(req.remote_addr)) return false;
-    for (const auto* prefix : {"/api/v0/nexus/", "/api/v1/nexus/", "/v0/nexus/", "/v1/nexus/", "/api/nexus/"}) {
+    if (!NetworkBeacon::isRFC1918(req.remote_addr, false)) return false;
+    for (const auto* prefix : nexus_prefixes) {
         if (req.path.rfind(prefix, 0) == 0) return true;
     }
     return false;
@@ -802,7 +787,7 @@ std::pair<int, std::string> route_access(NexusListener listener, const std::stri
     if (listener == NexusListener::MeshIngress) return {403, "Network management is not available through the mesh"};
     if (listener == NexusListener::Management) return loopback ? std::make_pair(0, std::string()) : std::make_pair(403, std::string("Local network management only"));
     if (loopback) return {operation == "status" || operation == "join/status" || operation == "relay" ? 0 : 307, ""};
-    if (rfc1918_address(address)) return {0, ""};
+    if (NetworkBeacon::isRFC1918(address, false)) return {0, ""};
     if (!remote_operation(operation)) return {403, "Use the Lemonade desktop app on this device for that action"};
     if (api_key.empty()) return {403, "Remote network management is off. Set LEMONADE_API_KEY on this server to turn it on."};
     if (!bearer_matches(authorization, api_key, admin_key)) return {401, "Invalid or missing API key"};
@@ -2136,7 +2121,7 @@ void NexusManager::handle(const httplib::Request& req, httplib::Response& res,
         if (remote && body.is_object()) {
             body.erase("controller_url");
             if (body.contains("remote_management")) {
-                body["remote_management"] = nexus_access::rfc1918_address(req.remote_addr) || !api_key().empty();
+                body["remote_management"] = NetworkBeacon::isRFC1918(req.remote_addr, false) || !api_key().empty();
             }
         }
         res.status = code;
@@ -2264,7 +2249,7 @@ void NexusManager::register_routes(httplib::Server& server, NexusListener listen
         }
         handle(req, res, operation, listener == NexusListener::Public && !loopback);
     };
-    for (const auto* prefix : {"/api/v0/nexus/", "/api/v1/nexus/", "/v0/nexus/", "/v1/nexus/", "/api/nexus/"}) {
+    for (const auto* prefix : nexus_prefixes) {
         for (const auto* operation : {"status", "passkey/challenge", "key/handoff", "devices", "members", "join/status", "events", "tree", "account", "selection", "memberships"}) {
             server.Get(std::string(prefix) + operation, [dispatch, operation](const auto& req, auto& res) { dispatch(req, res, operation); });
         }

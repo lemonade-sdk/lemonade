@@ -500,9 +500,10 @@ This policy trusts the operator's LAN/VPN routing and firewall boundary.
 A reverse proxy or source NAT can make an outside client appear private, so
 the operator must restrict access at that boundary. Origin checks and Nexus's
 own identity, lock and federation permission checks still apply. The API-key
-exemption covers only the Nexus route prefixes above; inference, MCP and
-`/internal/*` keep their existing authentication, as does the separate mesh
-ingress listener.
+exemption covers the Nexus route prefixes above, including the inference relay.
+Direct inference endpoints, MCP and `/internal/*` keep their existing
+authentication, as does the separate mesh ingress listener. Relayed requests
+retain downstream peer authentication and mesh permission checks.
 
 On the public listener, a remote request outside RFC1918 gets HTTP 403 when no
 `LEMONADE_API_KEY` is set, HTTP 401 for a missing or wrong key, and HTTP 403 for

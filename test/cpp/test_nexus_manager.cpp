@@ -3,6 +3,7 @@
 #include "lemon/runtime_config.h"
 #include "lemon/server/request_middleware.h"
 #include "lemon/server/route_registry.h"
+#include "lemon/utils/network_beacon.h"
 #include "lemon/utils/origin_utils.h"
 #include "lemon/utils/path_utils.h"
 #include "lemon/version.h"
@@ -598,6 +599,12 @@ public:
 };
 
 void check_private_management(const std::filesystem::path& root, const std::function<void(bool, const char*)>& check) {
+    for (const auto* address : {"127.0.0.1", "127.255.255.255", "::ffff:127.0.0.1"}) {
+        check(NetworkBeacon::isRFC1918(address) && !NetworkBeacon::isRFC1918(address, false),
+              "Shared address classification preserves discovery loopback without granting private access");
+    }
+    check(!NetworkBeacon::isRFC1918(std::string("10.0.0.1\0invalid", 16), false),
+          "Shared address classification rejects embedded NULs");
     const auto saved_key = lemon::utils::get_environment_variable_utf8("LEMONADE_API_KEY");
     const auto saved_admin = lemon::utils::get_environment_variable_utf8("LEMONADE_ADMIN_API_KEY");
     for (const auto* key : {"", "private-test-key"}) {
@@ -607,7 +614,8 @@ void check_private_management(const std::filesystem::path& root, const std::func
         lemon::RouteRegistry registry;
         lemon::RequestMiddleware policy(&config, &registry);
         const auto install = [&](httplib::Server& server) { policy.install(server); };
-        lemon::NexusManager manager((root / "private-access").string(), install, install, 0, nullptr, kSystemRole);
+        lemon::NexusManager manager((root / (*key ? "private-access-keyed" : "private-access-unkeyed")).string(),
+                                   install, install, 0, nullptr, kSystemRole);
         RequestServer server;
         install(server);
         manager.register_routes(server);
@@ -629,6 +637,19 @@ void check_private_management(const std::filesystem::path& root, const std::func
                 for (const auto* operation : {"enable", "device", "passkey/register", "passkey/unlock", "key/unlock", "lock"}) {
                     check(server.request(address, "POST", std::string(prefix) + operation, "[]").status == 400,
                           "Private setup requests reach body validation without API-key or local-only rejection");
+                }
+#ifdef LEMONADE_WITH_NEXUS
+                const int relay_status = 409;
+#else
+                const int relay_status = 503;
+#endif
+                for (const auto* method : {"GET", "POST"}) {
+                    for (const auto* headers : {"", "Authorization: Bearer stale-key\r\n"}) {
+                        const auto relayed = server.request(address, method,
+                            std::string(prefix) + "peers/gpu/api/v1/chat/completions", "{}", headers);
+                        check(relayed.status == relay_status,
+                              "Private relay bypasses the entry API key but still requires an available mesh session");
+                    }
                 }
             }
         }
@@ -663,6 +684,8 @@ void check_private_management(const std::filesystem::path& root, const std::func
             const auto value = json::parse(enabled.body);
             check(!value.contains("controller_url") && value.at("remote_management") == true,
                   "Private enable also returns usable remote status");
+            check(server.request("192.168.1.2", "POST", "/api/v1/nexus/peers/gpu/api/v1/chat/completions", "{}").status == 423,
+                  "Private relay still requires identity unlock after Nexus is enabled");
         }
 #else
         check(enabled.status == 503, "Private enable reaches the SDK availability check");
