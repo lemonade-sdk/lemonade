@@ -67,16 +67,18 @@ inside the desktop app. Linux requires libudev and working hidraw permissions.
 macOS Touch ID is not a native backend in this integration. A matching-origin
 webview can also use WebAuthn.
 
-A server without a person at it unlocks with its device key instead. The device
-key is the Ed25519 identity in `nexus/identity.json`, which already
-authenticates every federation session. `POST key/unlock` on the local
-controller authenticates with it, creates the account on first use, and marks
-the device as key-unlocked. From then on the device unlocks again by itself
-after a restart or a supervisor pause, and the passkey routes answer 409. A
-device unlocks with a passkey or with its device key, never both. An explicit
-`lock` holds until the next `key/unlock` or restart. Whoever can read
-`identity.json` can unlock the device, so key unlock belongs on servers whose
-disk access already equals control of lemond.
+A device also unlocks with its device key. The device key is the Ed25519
+identity, which already authenticates every federation session (see
+[Identity storage](#identity-storage) for where it lives). `POST key/unlock` on
+the local controller authenticates with it, creates the account on first use,
+and marks the device as key-unlocked. From then on the device unlocks again by
+itself after a restart or a supervisor pause, and the passkey routes answer
+409. A device unlocks with a passkey or with its device key, never both. An
+explicit `lock` holds until the next `key/unlock` or restart. On a server
+without a person at it, whoever can read `identity.json` can unlock the
+device, so that key belongs on servers whose disk access already equals
+control of lemond. On a desktop the key belongs to the signed-in OS user and
+its keystore, and the tray delivers it.
 
 ### Remote management
 
@@ -124,10 +126,11 @@ advertised server FQDN. The RP ID is the network's, independent of the
 hostname used to reach a server; `lemond` reads it from `/api/health` for the
 passkey challenge when it is not configured.
 
-Identity, account metadata and enabled preference live in `nexus/` under the
-server configuration directory. Until the user names the device, `status`
-reports the machine's host name as `device_name` (without a `.local` suffix),
-and a join uses it. Unix permissions restrict the directory to its
+Account metadata and the enabled preference live in `nexus/` under the server
+configuration directory; the identity lives there only for a system service
+(see [Identity storage](#identity-storage)). Until the user names the device,
+`status` reports the machine's host name as `device_name` (without a `.local`
+suffix), and a join uses it. Unix permissions restrict the directory to its
 owner. Restart leaves an enabled passkey device locked, and a long supervisor
 pause locks the mesh; a key-unlocked device unlocks again by itself in both
 cases. Transient failures reconnect with bounded backoff after a successful
@@ -150,6 +153,86 @@ It does not accept WebSocket upgrades. Relayed peers get an SDK egress listener 
 `127.0.0.1`. Member removal and address changes close that listener and
 existing forwarded connections. Remote HTTP requests retain normal API-key
 authentication.
+
+### Identity storage
+
+One machine runs one `lemond`, and one device identity is active at a time.
+Where that identity lives follows the process role alone
+(`nexus_access::identity_source`); no option or environment variable selects a
+weaker path. `status` reports the choice as `identity_source`.
+
+| OS and process | `identity_source` | Where the key is |
+| --- | --- | --- |
+| Linux system unit (`STATE_DIRECTORY` set) or any `lemond` running as root on Linux | `system` | `nexus/identity.json` under the data directory, generated on first use. Unchanged for headless servers. |
+| Windows `LemonadeServer.exe`; Linux `lemond` started by the per-user unit or from a terminal; macOS `lemond` started by a user | `user` | The SDK's per-user store (`ln_identity_user_load`, `ln_identity_user_create`). The seed is wrapped with a key that the OS keystore holds: the login keychain on macOS, DPAPI on Windows, the Secret Service through libsecret on Linux. `lemond` writes no identity file. |
+| macOS `lemond` as the root LaunchDaemon | `handoff` | Nowhere in `lemond`. The signed-in user's `lemonade-tray` LaunchAgent loads or creates the user's identity from the SDK store and hands it to `lemond` over the loopback management listener. `lemond` keeps it in memory only. |
+
+In `user` mode a store that is locked, refuses access or has no usable keystore
+leaves the device without an identity: `status` reports `needs_user_key: true`
+and the reason in `error`, and `lemond` tries again with backoff. There is no
+plaintext fallback. In `handoff` mode `enable` succeeds and the device waits
+with `needs_user_key: true` until a key arrives. Every route that needs the
+federation answers 409 until then.
+
+The hand-off is the SDK's single-use sealed transfer:
+
+1. The tray reads `GET /api/v1/nexus/status` on the public port. When
+   `available`, `enabled` and `needs_user_key` are all true, it runs the
+   carrier (`lemon::nexus_user_key::wants_device_key`).
+2. It calls `ln_identity_user_load`, and on `LN_ERR_NOT_FOUND`
+   `ln_identity_user_create`. Any other failure shows in the tray menu as
+   `Nexus: device key unavailable: <reason>` and is retried on a later poll.
+3. `GET key/handoff` on the management listener (`controller_url`) returns
+   `ln_identity_handoff_begin`'s request: an ephemeral X25519 key, a nonce and
+   an expiry 60 s ahead. One request is outstanding at a time; a new request
+   replaces it.
+4. The tray seals the identity to that request with
+   `ln_identity_handoff_seal`, destroys its identity handle, and sends
+   `POST key/unlock {identity_envelope, defer_join: false}`.
+5. `lemond` opens the envelope with `ln_identity_handoff_open`, which consumes
+   the request whatever the result, sets the identity on its client and runs
+   the normal key unlock. A delivered key marks the device key-unlocked, so an
+   unreachable federation at that moment is a retryable 503 and the supervisor
+   unlocks by itself later.
+
+The management listener answers 409 to an envelope when no request is
+outstanding, 400 to a malformed envelope, and 403 to an envelope that does not
+open for the outstanding request, was already used, or whose request expired.
+The envelope is never logged. The routes are management-listener only: the
+public listener redirects a loopback caller and refuses other machines, and
+the mesh ingress listener refuses them.
+
+When a different OS user's key arrives while another key is active, `lemond`
+locks the current session (mesh off, tokens dropped) and continues with the new
+key; there is no refusal and no prompt. `account.json` belongs to the key in
+use and records it as `public_key`. On a change, the current account is moved
+to `account-<tag>.json` (`tag` is the first 16 characters of the key's URL-safe
+base64) and the new key's archived account, if any, comes back. A key with no
+archived account starts fresh and carries only `server`, `genesis_pubkey`,
+`tier1_epoch` and `device_name` from the previous account: facts about the
+network and the machine, not about the identity. `authenticate_identity`
+still refuses an account whose `user_id` belongs to another key with 403.
+
+`status` fields: `identity_source` (`system`, `user` or `handoff`),
+`needs_user_key`, `public_key` (`ed25519:<base64>` of the active identity, or
+empty) and, in `user` mode, `identity_store`, the SDK's
+`ln_identity_user_status` object (`present`, `backend`, `unlocked`, `dir`,
+`public_key`). None of them carries a seed or private key. `disable` drops the
+in-memory identity and never touches the user store.
+
+The tray (`lemonade-tray`, macOS and Linux) runs the carrier at start, on
+every 5 s poll that reports `needs_user_key`, and on demand from the menu
+entry "Unlock Nexus with my device key". It logs backend names and HTTP
+outcomes only. `LemonadeServer.exe` on Windows needs no carrier: it is the
+user's process and loads the store directly.
+
+Migration: a Mac that ran an earlier `lemond` has a root-owned
+`/Library/Application Support/lemonade/.config/nexus/identity.json`. The
+recommended path is fresh enrolment: the tray creates the user's identity on
+first use, the owner removes the old device from the group and invites the new
+one. `lemond` ignores the old file in `handoff` mode, and it can be deleted
+once the user identity has joined. A headless Linux server keeps its file and
+needs no change.
 
 ### Route policy
 
@@ -325,7 +408,8 @@ Routes are available under `/api/v0/nexus/`, `/api/v1/nexus/`, `/v0/nexus/`,
 | GET | `status`, `join/status` | Network/device state and local controller URL |
 | GET | `passkey/challenge` | Federation challenge (`register=1` for enrollment) |
 | POST | `passkey/register`, `passkey/unlock` | Register or verify the device's credential |
-| POST | `key/unlock` | Unlock with the device key (`{defer_join?}`); local-only, refused once a passkey is registered |
+| POST | `key/unlock` | Unlock with the device key (`{defer_join?, identity_envelope?}`); local-only, refused once a passkey is registered. An `identity_envelope` from `ln_identity_handoff_seal` delivers the user's identity first (see [Identity storage](#identity-storage)) |
+| GET | `key/handoff` | Start a single-use identity hand-off and return the SDK's request JSON; local-only |
 | POST | `device/check` | Advisory check that a device name folds to a free DNS label: `{name, code?}`; uses this account's group when joined, else the invite code's group. Answers `{label, available, conflicts, suggestion}`. The federation still refuses a collision on join or rename |
 | POST | `enable`, `disable`, `lock`, `device` | Local state and device name |
 | POST | `invites`, `invites/cancel`, `join` | Invite a device into this account's top-level group with `{device_name, permissions? \| role?, ttl_sec?}`, or join as a new device with `{code}` |
@@ -364,9 +448,10 @@ every permission. A move keeps the node's ID, tunnel address and own
 assignments, and grants nothing in the new group.
 
 `account/delete` is irreversible. When the federation answers `deleted`,
-`lemond` removes `identity.json`, `account.json`, the account image cache and
-the certificate directory, then turns the mesh off. A `pending` answer means
-Tier 1 has not committed the deletion yet; the local files stay.
+`lemond` removes `identity.json` (system mode), `account.json`, the account
+image cache and the certificate directory, then turns the mesh off; the user
+store is not touched. A `pending` answer means Tier 1 has not committed the
+deletion yet; the local files stay.
 
 Member and access routes send one change at a time to the federation's
 `POST /api/tree/node/assignments/{node_id}` through `ln_add_group_member`, which
