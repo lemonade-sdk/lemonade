@@ -1,3 +1,4 @@
+#include <lemon/backends/thenoise/thenoise_server.h>
 #include <lemon/runtime_config.h>
 
 #include <nlohmann/json.hpp>
@@ -104,6 +105,32 @@ int main() {
     expect_accepted("flm", "args", "");
     expect_accepted("ryzenai", "server_bin", "latest");
     expect_accepted("hrx", "hrx_bin", "builtin");
+    expect_accepted("thenoise", "rocm_bin", "builtin");
+    expect_accepted("thenoise", "cuda_bin", "builtin");
+
+#ifdef __linux__
+    try {
+        const auto cuda = lemon::backends::TheNoiseServer::get_install_params("cuda", "test-tag");
+        if (cuda.repo == "lemonade-sdk/thenoise" &&
+            cuda.filename == "test-tag-cuda-x64.tar.gz") {
+            std::puts("[PASS] TheNoise CUDA uses the shared Linux release asset");
+        } else {
+            std::puts("[FAIL] TheNoise CUDA release asset name is incorrect");
+            ++failures;
+        }
+    } catch (const std::exception& e) {
+        std::printf("[FAIL] TheNoise CUDA install params failed: %s\n", e.what());
+        ++failures;
+    }
+#else
+    try {
+        (void)lemon::backends::TheNoiseServer::get_install_params("cuda", "test-tag");
+        std::puts("[FAIL] TheNoise CUDA is accepted outside Linux");
+        ++failures;
+    } catch (const std::runtime_error&) {
+        std::puts("[PASS] TheNoise CUDA is rejected outside Linux");
+    }
+#endif
 
     expect_rejected("llamacpp", "vulkan_bin", 1, "'llamacpp.vulkan_bin' must be a string");
     expect_rejected("llamacpp", "vulkan_args", 1, "'llamacpp.vulkan_args' must be a string");
