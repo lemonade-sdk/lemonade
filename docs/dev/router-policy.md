@@ -247,6 +247,12 @@ pair `fail` with `on_error: match_true`. That forces the condition true and
 3. The personal data is in the **routing input**. The classifier reads only the
    last user message, so data in an earlier turn is never scored.
 
+The example shows how the two settings combine, not a PII detector to deploy.
+`LFM2.5-Encoder-350M-Prompt-Router-ONNX` is a prompt router: it has not been
+validated for PII, and its scores depend on how the labels are worded. For a
+real privacy rule, use a classifier trained and evaluated for PII; the same
+`on_truncation` and `on_error` settings apply to it.
+
 ```json
 "classifiers": [
   { "id": "pii", "type": "zero_shot", "model": "LFM2.5-Encoder-350M-Prompt-Router-ONNX",

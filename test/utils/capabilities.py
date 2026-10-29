@@ -193,7 +193,7 @@ CAPABILITIES = {
             },
         },
         "thenoise": {
-            "backends": ["rocm"],
+            "backends": ["rocm", "cuda"],
             "supports": {
                 "image_generation": True,
                 "image_generation_b64": True,
