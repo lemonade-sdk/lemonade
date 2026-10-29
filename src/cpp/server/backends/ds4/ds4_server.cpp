@@ -1,8 +1,10 @@
 #include "lemon/backends/ds4/ds4_server.h"
 #include "lemon/backends/ds4/ds4.h"
+#include "lemon/auto_tune.h"
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/gguf_reader.h"
 #include "lemon/model_manager.h"
 #include "lemon/system_info.h"
 #include "lemon/utils/custom_args.h"
@@ -10,7 +12,9 @@
 #include <lemon/utils/aixlog.hpp>
 #include <algorithm>
 #include <filesystem>
+#include <iomanip>
 #include <set>
+#include <sstream>
 
 namespace fs = std::filesystem;
 using namespace lemon::utils;
@@ -19,14 +23,6 @@ namespace lemon {
 namespace backends {
 
 namespace {
-
-// ds4-server sizes its expert cache from the whole device arena, which on an
-// APU is the GTT window. That leaves a long prompt's prefill too little: its
-// next expert span pushes free memory under ds4's own 16 GiB reserve, the arena
-// refuses it and the request fails with "rocm prefill failed". At half the
-// arena, the model's own tensor cache still pushed free memory to 11 GiB on a
-// 62 GiB Strix Halo. 40% leaves about 7 GB more.
-constexpr double kExpertCacheFraction = 0.4;
 
 // The larger of the integrated GPU's carve-out and its GTT window, in GiB, or
 // 0 when there is no integrated AMD GPU.
@@ -105,10 +101,25 @@ void Ds4Server::load(const std::string& model_name, const ModelInfo& model_info,
     // quantize kernel and takes the server with it; chunked, it completes.
     args.push_back("--prefill-chunk");
     args.push_back("2048");
-    const int expert_cache_gb = static_cast<int>(igpu_pool_gb() * kExpertCacheFraction);
-    if (expert_cache_gb > 0) {
+    const ds4::MemoryPlan plan = ds4::memory_plan(igpu_pool_gb());
+    // ds4 grows into the memory free above its reserve, and with less than its
+    // working set there it stalls without ever serving. Failing here instead
+    // lets the router evict the other models and retry at once.
+    if (model_info.min_resident_gb > 0.0 && plan.free_reserve_gb > 0) {
+        bool memory_known = false;
+        const double free_gb = get_available_memory_gb(
+            DEVICE_GPU, gpu_memory_vendor_for_target(backend, ""), "", nullptr, &memory_known);
+        const double needed_gb = plan.free_reserve_gb + model_info.min_resident_gb;
+        if (memory_known && free_gb < needed_gb) {
+            std::ostringstream message;
+            message << std::fixed << std::setprecision(1) << "ds4 needs " << needed_gb
+                    << " GiB of free GPU memory to start, and " << free_gb << " GiB is free";
+            throw std::runtime_error(message.str());
+        }
+    }
+    if (plan.expert_cache_gb > 0) {
         args.push_back("--ssd-streaming-cache-experts");
-        args.push_back(std::to_string(expert_cache_gb) + "GB");
+        args.push_back(std::to_string(plan.expert_cache_gb) + "GB");
     }
 
     if (!ds4_args.empty()) {
@@ -129,6 +140,13 @@ void Ds4Server::load(const std::string& model_name, const ModelInfo& model_info,
     command.program = ds4::descriptor.binary;
     command.args = std::move(args);
     command.model_files = {gguf_path};
+    if (plan.model_cache_gb > 0) {
+        command.env.push_back({"DS4_ROCM_STREAM_MODEL_CACHE_GB", std::to_string(plan.model_cache_gb)});
+    }
+    if (plan.free_reserve_gb > 0) {
+        command.env.push_back(
+            {"DS4_ROCM_STREAM_FREE_RESERVE_GB", std::to_string(plan.free_reserve_gb)});
+    }
     command.port = port_;
     // ds4-server binds its port only after the model is fully loaded, so first
     // reachability means ready. There is no /health endpoint; /v1/models is the
@@ -165,8 +183,39 @@ const BackendSpec* spec() {
     return &kSpec;
 }
 
+namespace {
+
+class Ds4Ops : public BackendOps {
+public:
+    // ds4 models are GGUFs with standard <arch>.* keys, which give auto-tune
+    // the real context window and KV shape instead of a size-based guess. The
+    // capability labels stay as registered: a GGUF's MTP layer, for one, is
+    // nothing ds4-server can run.
+    void populate_metadata(ModelInfo& info, const BackendOpsContext&) const override {
+        const std::string path = info.resolved_path();
+        std::error_code ec;
+        if (path.empty() || !fs::exists(utils::path_from_utf8(path), ec)) return;
+        GgufMetadata meta;
+        if (!read_gguf_metadata(meta, path)) return;
+        info.max_context_window = meta.context_length;
+        info.gguf = std::move(meta);
+    }
+
+    // ds4 grows its caches until free memory reaches its reserve (see
+    // memory_plan), so the context comes out of what is free above that floor,
+    // after the working set the model needs to run at speed.
+    std::optional<double> auto_context_kv_budget_gib(const ModelInfo& info,
+                                                     double available_gib) const override {
+        if (info.min_resident_gb <= 0.0) return std::nullopt;
+        return available_gib - memory_plan(igpu_pool_gb()).free_reserve_gb - info.min_resident_gb;
+    }
+};
+
+}  // namespace
+
 const BackendOps* ops() {
-    return default_backend_ops();
+    static const Ds4Ops kOps;
+    return &kOps;
 }
 
 }  // namespace ds4
