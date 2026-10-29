@@ -4366,7 +4366,7 @@ ${finalText}`
             </div>
             {!micPreparation && (
               <div className="composer__live-text">
-                {liveError || micError || liveTranscript || 'Listening… start speaking to see transcription.'}
+                {liveError || micError || liveTranscript || t('Listening… start speaking to see transcription.')}
               </div>
             )}
           </div>
@@ -4730,19 +4730,19 @@ const EmptyState: React.FC<EmptyStateProps> = ({
         </p>
 
         <div className="chips" role="list">
-          <button className="chip" role="listitem" onClick={() => onChipClick('How do I get started with Lemonade?')}>
+          <button className="chip" role="listitem" onClick={() => onChipClick(t('How do I get started with Lemonade?'))}>
             <span className="chip__icon" aria-hidden="true"><Icon name="info" size={16} /></span>
             {t('How do I use Lemonade?')}
           </button>
-          <button className="chip" role="listitem" onClick={() => onChipClick('How do I download and load a model in Lemonade?')}>
+          <button className="chip" role="listitem" onClick={() => onChipClick(t('How do I download and load a model in Lemonade?'))}>
             <span className="chip__icon" aria-hidden="true"><Icon name="download" size={16} /></span>
             {t('How do I add a model?')}
           </button>
-          <button className="chip" role="listitem" onClick={() => onChipClick('What are Lemonade tools, and how do I use them?')}>
+          <button className="chip" role="listitem" onClick={() => onChipClick(t('What are Lemonade tools, and how do I use them?'))}>
             <span className="chip__icon" aria-hidden="true"><Icon name="tools" size={16} /></span>
             {t('What are Lemonade tools?')}
           </button>
-          <button className="chip" role="listitem" onClick={() => onChipClick('What can my hardware run well with Lemonade?')}>
+          <button className="chip" role="listitem" onClick={() => onChipClick(t('What can my hardware run well with Lemonade?'))}>
             <span className="chip__icon" aria-hidden="true"><Icon name="gauge" size={16} /></span>
             {t('What can my hardware run?')}
           </button>

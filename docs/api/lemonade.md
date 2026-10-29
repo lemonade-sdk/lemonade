@@ -1731,6 +1731,11 @@ This endpoint does not take any parameters.
 - `version` - Lemonade Server version.
 - `model_loaded` - The most recently used loaded model, or `null` when none is loaded.
 - `update_check_done` - Whether the startup check for model updates has finished. Until it has, models' `update_available` can be incomplete.
+- `models_generation` - Rises whenever the model list changes, including a model's `downloaded` or `update_available`. A client that polls health reads [`GET /v1/models`](./openai.md#get-v1models) again when it changes.
+- `model_sync` - The model sync, so a client that polls health can tell when one starts or finishes. Details are at [`GET /internal/models/sync/status`](./internal.md#get-internalmodelssyncstatus).
+  - `status` - Status of the latest sync.
+  - `sync_id` - The latest sync; `0` before any sync.
+  - `completed_sync_id` - The most recent sync that finished.
 - `all_models_loaded` - Every loaded model.
   - `model_name` - Name of the loaded model
   - `checkpoint` - The model's main checkpoint.
