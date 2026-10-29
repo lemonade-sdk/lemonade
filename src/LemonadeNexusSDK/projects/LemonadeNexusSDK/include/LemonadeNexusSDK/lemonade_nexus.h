@@ -732,7 +732,11 @@ ln_error_t ln_set_node_id(ln_client_t* client, const char* node_id);
 /** Get the current node ID. Caller must ln_free(). Returns NULL if not set. */
 char* ln_get_node_id(ln_client_t* client);
 
-/** Set a single-use device link token to include in the next ln_join_network. */
+/** Set the single-use invite to include in the next ln_join_network: the
+ *  8-digit invite code or the full link token ("lnk_" and 64 hex digits),
+ *  both from ln_invite_create on an already-joined device. "" clears it.
+ *  LN_ERR_REJECTED, and nothing stored, for any other value; no request is
+ *  sent. */
 ln_error_t ln_set_link_token(ln_client_t* client, const char* token);
 
 /** Join as an inference node (Tier 3, nonzero) or a client (Tier 4, zero, the
@@ -742,16 +746,18 @@ ln_error_t ln_set_inference_node(ln_client_t* client, int inference);
 
 /** Mint a device link token for adding another device to this account's group.
  *  Same as ln_invite_create(client, NULL, NULL, ttl_sec, out_json).
- *  Requires an established mesh session. Returns {link_token, group_node_id,
- *  target_node_id, permissions, expires_at} JSON. ln_free(*out_json). */
+ *  Requires an established mesh session. Returns {link_token, code,
+ *  group_node_id, target_node_id, permissions, expires_at, code_expires_at}
+ *  JSON. ln_free(*out_json). */
 ln_error_t ln_link_token_create(ln_client_t* client, uint32_t ttl_sec, char** out_json);
 
 /* ------------------------------------------------------------------ */
 /* Invites, memberships, and moves                                     */
 /* ------------------------------------------------------------------ */
 
-/** Mint a single-use invite (link token) into a group. One call serves both
- *  invite flows:
+/** Mint a single-use invite into a group: a link token and the 8-digit
+ *  invite code that names the same invite. One call serves both invite
+ *  flows:
  *   - target_node_id NULL or "": this account's own top-level group.
  *   - target_node_id a group id: that group (for example a subgroup, or
  *     another user's group where this account holds add_child).
@@ -761,12 +767,20 @@ ln_error_t ln_link_token_create(ln_client_t* client, uint32_t ttl_sec, char** ou
  *  The server refuses a target where the caller lacks add_child (403), a
  *  permission the caller does not hold (403), a name an invite cannot grant
  *  such as "admin" (400), and a target that is not a group (400).
- *  A new device joins under the target with the token (ln_set_link_token and
- *  ln_join_network). An account that already joined becomes a member with
- *  ln_invite_accept. Requires an established mesh session.
- *  On success *out_json is {link_token, group_node_id, target_node_id,
- *  permissions, expires_at}; on failure it carries "error" when the server
- *  answered. The strings passed in are not retained. The caller owns
+ *  A new device joins under the target with the code or the token
+ *  (ln_set_link_token and ln_join_network). An account that already joined
+ *  becomes a member with ln_invite_accept. Requires an established mesh
+ *  session.
+ *  On success *out_json is {link_token, code, group_node_id, target_node_id,
+ *  permissions, expires_at, code_expires_at}. link_token is "lnk_" and 64
+ *  hex digits and works until expires_at. code is 8 decimal digits, works
+ *  until code_expires_at (at most 10 minutes after minting). A server
+ *  refuses code attempts from an address after 5 wrong codes within 10
+ *  minutes, and all codes after 100 wrong codes from anywhere within 10
+ *  minutes; the token still works then. Both are returned once and are
+ *  never stored in clear.
+ *  On failure *out_json carries "error" when the server answered. The
+ *  strings passed in are not retained. The caller owns
  *  *out_json and must release it with ln_free(). Returns LN_ERR_NULL_ARG when
  *  client or out_json is NULL, LN_ERR_REJECTED for malformed
  *  permissions_json, else the mapped HTTP result. */
@@ -777,16 +791,19 @@ ln_error_t ln_invite_create(ln_client_t* client,
                             char** out_json);
 
 /** Accept an invite as an account that already joined ("join another
- *  network"). This identity becomes a member of the invite's group with the
- *  invite's permissions; nothing this account owns moves. Its own device can
- *  then reach the group's devices, and they can reach it, as the
- *  permissions allow. The token is single use and is not spent by a refusal.
+ *  network"). link_token is the 8-digit invite code or the full link token.
+ *  This identity becomes a member of the invite's group with the invite's
+ *  permissions; nothing this account owns moves. Its own device can then
+ *  reach the group's devices, and they can reach it, as the permissions
+ *  allow. The invite is single use and is not spent by a refusal.
  *  On success *out_json is {success, node_id, permissions, status}, where
  *  status is "member", or "pending" with an op_id while a tree operation
- *  commits. LN_ERR_AUTH for an invalid, expired, or used token or an inviter
- *  that lost its permission; LN_ERR_REJECTED when this identity already
- *  belongs to the group or has not joined. The caller owns *out_json and
- *  must release it with ln_free(). Requires an established mesh session. */
+ *  commits. LN_ERR_REJECTED, with an "error" and no request sent, when
+ *  link_token is neither a code nor a token; LN_ERR_AUTH for an invalid,
+ *  expired, used, or locked-out invite or an inviter that lost its
+ *  permission; LN_ERR_REJECTED when this identity already belongs to the
+ *  group or has not joined. The caller owns *out_json and must release it
+ *  with ln_free(). Requires an established mesh session. */
 ln_error_t ln_invite_accept(ln_client_t* client,
                             const char* link_token,
                             char** out_json);
@@ -828,18 +845,20 @@ ln_error_t ln_move_node(ln_client_t* client,
  *  same group already holds (HTTP 409, an "error" that names that device),
  *  and a name with no letter or digit. This call asks a Tier 1 server first.
  *  Give group_node_id (this identity needs read on the group) or link_token
- *  (an invite: its target group is checked and the token is NOT spent); the
- *  other may be NULL or "", but not both. Advisory only: a name reported
- *  available can still be taken before it is used.
+ *  (an invite, as its 8-digit code or full token: its target group is
+ *  checked and the invite is NOT spent); the other may be NULL or "", but
+ *  not both. Advisory only: a name reported available can still be taken
+ *  before it is used.
  *  *out_json is {label, available, conflicts: [{node_id, device_name}],
  *  suggestion} (suggestion is a free label such as "work-pc-2"), or carries
  *  "error" when the server refused or was not reached. The caller owns
  *  *out_json and must release it with ln_free(). Needs a session (ln_auth_*
  *  or ln_set_session_token) and a verified Tier 1 server; no mesh session.
  *  LN_ERR_NULL_ARG when client, name, or out_json is NULL or neither scope is
- *  given, LN_ERR_AUTH without read on the group or for an invalid invite,
- *  LN_ERR_NOT_FOUND for an unknown group, LN_ERR_CONNECT when no Tier 1
- *  server answered. */
+ *  given, LN_ERR_REJECTED (no request sent) when link_token is neither a
+ *  code nor a token, LN_ERR_AUTH without read on the group or for an invalid
+ *  invite, LN_ERR_NOT_FOUND for an unknown group, LN_ERR_CONNECT when no
+ *  Tier 1 server answered. */
 ln_error_t ln_check_device_name(ln_client_t* client,
                                 const char* name,
                                 const char* group_node_id,

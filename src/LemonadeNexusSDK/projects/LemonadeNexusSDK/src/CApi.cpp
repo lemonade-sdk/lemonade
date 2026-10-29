@@ -1437,8 +1437,16 @@ ln_error_t ln_set_node_id(ln_client_t* client, const char* node_id) {
 
 ln_error_t ln_set_link_token(ln_client_t* client, const char* token) {
     if (!client || !token) return LN_ERR_NULL_ARG;
-    client->client.set_link_token(token);
-    return LN_OK;
+    return client->client.set_link_token(token) ? LN_OK : LN_ERR_REJECTED;
+}
+
+/// The out_json and return code for an invite that is neither a code nor a
+/// token, written before any request. False when the invite is well formed.
+static bool refuse_malformed_invite(const char* invite, char** out_json) {
+    const auto malformed = lnsdk::invite_format_error(invite);
+    if (!malformed) return false;
+    *out_json = strdup_json(json{{"error", *malformed}});
+    return true;
 }
 
 ln_error_t ln_set_inference_node(ln_client_t* client, int inference) {
@@ -1491,6 +1499,7 @@ ln_error_t ln_invite_accept(ln_client_t* client, const char* link_token, char** 
     if (!client || !link_token || !out_json) return LN_ERR_NULL_ARG;
     *out_json = nullptr;
     try {
+        if (refuse_malformed_invite(link_token, out_json)) return LN_ERR_REJECTED;
         return json_call_result(client->client.accept_invite(link_token), out_json);
     } catch (...) {
         return LN_ERR_INTERNAL;
@@ -1544,6 +1553,9 @@ ln_error_t ln_check_device_name(ln_client_t* client, const char* name, const cha
     const std::string token = link_token ? link_token : "";
     if (group.empty() && token.empty()) return LN_ERR_NULL_ARG;
     try {
+        if (group.empty() && refuse_malformed_invite(token.c_str(), out_json)) {
+            return LN_ERR_REJECTED;
+        }
         const auto result = client->client.check_device_name(name, group, token);
         json j;
         if (result.ok) {

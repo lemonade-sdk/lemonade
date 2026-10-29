@@ -1165,9 +1165,31 @@ void LemonadeNexusClient::set_node_id(const std::string& id) {
     impl_->node_id = id;
 }
 
-void LemonadeNexusClient::set_link_token(const std::string& token) {
+std::optional<std::string> invite_format_error(std::string_view invite) {
+    constexpr std::string_view kTokenPrefix = "lnk_";
+    constexpr std::size_t kCodeDigits = 8;
+    constexpr std::size_t kTokenHexDigits = 64;
+    const auto all = [&](std::string_view s, auto&& ok) {
+        return std::all_of(s.begin(), s.end(),
+                           [&](char c) { return ok(static_cast<unsigned char>(c)); });
+    };
+    if (invite.size() == kCodeDigits && all(invite, [](unsigned char c) { return std::isdigit(c) != 0; })) {
+        return std::nullopt;
+    }
+    if (invite.starts_with(kTokenPrefix) &&
+        invite.size() == kTokenPrefix.size() + kTokenHexDigits &&
+        all(invite.substr(kTokenPrefix.size()),
+            [](unsigned char c) { return std::isxdigit(c) != 0; })) {
+        return std::nullopt;
+    }
+    return "an invite is an 8-digit code or a link token (lnk_ and 64 hex digits)";
+}
+
+bool LemonadeNexusClient::set_link_token(const std::string& token) {
+    if (!token.empty() && invite_format_error(token)) return false;
     std::lock_guard lock(impl_->mutex);
     impl_->link_token = token;
+    return true;
 }
 
 void LemonadeNexusClient::set_inference_node(bool inference) {
@@ -1230,6 +1252,11 @@ Result<nlohmann::json> LemonadeNexusClient::accept_invite(const std::string& lin
         result.error = "link token required";
         return result;
     }
+    if (const auto malformed = invite_format_error(link_token)) {
+        Result<nlohmann::json> result;
+        result.error = *malformed;
+        return result;
+    }
     int status = 0;
     auto resp = impl_->private_http_post("/api/link/accept", json{{"link_token", link_token}},
                                          status);
@@ -1278,6 +1305,12 @@ Result<DeviceNameCheck> LemonadeNexusClient::check_device_name(const std::string
     if (group_node_id.empty() && link_token.empty()) {
         result.error = "group_node_id or link_token required";
         return result;
+    }
+    if (group_node_id.empty()) {
+        if (const auto malformed = invite_format_error(link_token)) {
+            result.error = *malformed;
+            return result;
+        }
     }
     json body{{"name", name}};
     if (!group_node_id.empty()) body["group_node_id"] = group_node_id;

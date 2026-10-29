@@ -14,11 +14,21 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
 namespace lnsdk {
+
+/// Why `invite` is neither an invite code nor a link token, or nullopt when
+/// it is one of the two. An invite code is exactly 8 decimal digits; a link
+/// token is "lnk_" followed by 64 hex digits. Both name the same single-use
+/// invite and are accepted wherever a link token is. The SDK runs this check
+/// before it sends anything (set_link_token, accept_invite,
+/// check_device_name, and the C ABI), so a mistyped invite costs no request.
+[[nodiscard]] std::optional<std::string> invite_format_error(std::string_view invite);
 
 /// Standalone C++ client for the Lemonade-Nexus server.
 ///
@@ -455,9 +465,12 @@ public:
     /// Set the node ID manually.
     void set_node_id(const std::string& id);
 
-    /// Set a single-use device link token to include in the next join_network
-    /// call (obtained out-of-band from an already-joined device).
-    void set_link_token(const std::string& token);
+    /// Set the single-use invite to include in the next join_network call
+    /// (obtained out-of-band from an already-joined device): the 8-digit
+    /// invite code or the full link token (invite_format_error). An empty
+    /// string clears it. Returns false, and stores nothing, for any other
+    /// value.
+    bool set_link_token(const std::string& token);
 
     /// Join as an inference node (Tier 3) instead of a client (Tier 4). Sent
     /// with the next join_network; the server records it when it creates the
@@ -474,17 +487,22 @@ public:
     /// an account that already joined becomes a member (accept_invite). The
     /// server refuses a target where the caller lacks add_child, and any
     /// permission the caller does not hold or an invite cannot grant.
-    /// Response JSON: {link_token, group_node_id, target_node_id, permissions,
-    /// expires_at}.
+    /// Response JSON: {link_token, code, group_node_id, target_node_id,
+    /// permissions, expires_at, code_expires_at}. `code` is the 8-digit
+    /// invite code that names the same invite; it works for at most 10
+    /// minutes (code_expires_at), the token until expires_at. Both are
+    /// returned once and never again.
     [[nodiscard]] Result<nlohmann::json> create_link_token(
             uint32_t ttl_sec = 600, const std::string& target_node_id = {},
             const std::vector<std::string>& permissions = {});
 
     /// Accept an invite as an account that already joined: this identity
-    /// becomes a member of the token's target group with the token's
-    /// permissions. Nothing this account owns moves. The token is single use.
-    /// Response JSON: {success, node_id, permissions, status: "member" |
-    /// "pending", op_id?}. A refusal carries the server's "error".
+    /// becomes a member of the invite's target group with the invite's
+    /// permissions. Nothing this account owns moves. The invite is single
+    /// use. `link_token` is the 8-digit invite code or the full link token;
+    /// any other value fails before a request is sent. Response JSON:
+    /// {success, node_id, permissions, status: "member" | "pending", op_id?}.
+    /// A refusal carries the server's "error".
     [[nodiscard]] Result<nlohmann::json> accept_invite(const std::string& link_token);
 
     /// The groups this identity belongs to. Response JSON:
@@ -510,8 +528,9 @@ public:
     /// label ("Work PC" and "work-pc" are both "work-pc"), and the tree
     /// refuses a join or a rename whose label another device of the same
     /// group holds, with HTTP 409. Give `group_node_id` (needs read on the
-    /// group) or `link_token` (an invite: its target group is checked and the
-    /// token is not spent); one of the two, not both empty. Advisory: a name
+    /// group) or `link_token` (an invite, as its 8-digit code or full token:
+    /// its target group is checked and the invite is not spent); one of the
+    /// two, not both empty. Advisory: a name
     /// reported available can still be taken before it is used. Needs a
     /// session; works before a join, so a new device can check the name it
     /// will use with an invite.
