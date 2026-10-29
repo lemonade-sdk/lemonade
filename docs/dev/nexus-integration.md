@@ -197,15 +197,11 @@ itself, so the revision may return to 0 then. Two development builds of one
 release share a catalog version unless the revision changes.
 
 `GET /api/v1/nexus/status` reports `catalog_version`, `app` and
-`route_policy`: `"enforced"` when the loaded SDK exports the catalog interface
-and accepted the catalog, `"unavailable"` when it does not export it, refused
-the catalog (`catalog_error` names the SDK error) or `lemond` runs without a
-catalog. The vendored SDK does not export the interface yet:
-`src/cpp/server/nexus_sdk_compat.h` resolves `ln_mesh_service_set_catalog`,
-`ln_mesh_service_catalog` and `ln_set_ingress_denied_callback` from the loaded
-library at run time, so `lemond` starts against either SDK and logs
-`Route policy is unavailable` against the older one. Once the vendored SDK
-declares them, call them directly and delete that header.
+`route_policy`: `"enforced"` when the SDK accepted the catalog,
+`"unavailable"` when it refused the catalog (`catalog_error` names the SDK
+error) or `lemond` runs without a catalog. `lemond` registers the catalog with
+`ln_mesh_service_set_catalog` on every join and receives refusals through
+`ln_set_ingress_denied_callback`.
 
 Each refusal event becomes one log line, `WARNING` for `denied` and `INFO` for
 `unregistered` and `unattributed`:

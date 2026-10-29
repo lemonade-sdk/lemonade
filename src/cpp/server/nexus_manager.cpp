@@ -5,7 +5,6 @@
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
 #include "lemon/version.h"
-#include "nexus_sdk_compat.h"
 #include <lemon/utils/aixlog.hpp>
 
 #include <algorithm>
@@ -19,15 +18,11 @@
 
 #ifdef _WIN32
 #include <winsock2.h>
-#include <windows.h>
 #else
 #include <unistd.h>
 #endif
 #ifdef LEMONADE_WITH_NEXUS
 #include <LemonadeNexusSDK/lemonade_nexus.h>
-#ifndef _WIN32
-#include <dlfcn.h>
-#endif
 #endif
 
 namespace lemon {
@@ -748,34 +743,9 @@ SdkFailure sdk_failure(int code, const json& reply, int rejected_status) {
     const int status = code == LN_ERR_AUTH ? 403 : code == LN_ERR_NOT_FOUND ? 404 : code == LN_ERR_REJECTED ? rejected_status : 502;
     return {status, message, false};
 }
-bool route_policy_available() {
-    return nexus_sdk::route_policy_api().available();
-}
-}
-namespace nexus_sdk {
-namespace {
-void* sdk_symbol(const char* name) {
-#ifdef _WIN32
-    const HMODULE module = GetModuleHandleW(L"lemonade_nexus_sdk.dll");
-    return module ? reinterpret_cast<void*>(GetProcAddress(module, name)) : nullptr;
-#else
-    return dlsym(RTLD_DEFAULT, name);
-#endif
-}
-}
-const RoutePolicyApi& route_policy_api() {
-    // The SDK library is loaded with lemond, so a lookup in the global scope finds
-    // its exports; an SDK without them leaves the pointers null.
-    static const RoutePolicyApi api = [] {
-        RoutePolicyApi found;
-        found.set_catalog = reinterpret_cast<set_catalog_fn>(sdk_symbol("ln_mesh_service_set_catalog"));
-        found.catalog = reinterpret_cast<catalog_fn>(sdk_symbol("ln_mesh_service_catalog"));
-        found.set_ingress_denied_callback =
-            reinterpret_cast<set_ingress_denied_callback_fn>(sdk_symbol("ln_set_ingress_denied_callback"));
-        return found;
-    }();
-    return api;
-}
+// The vendored SDK (UPSTREAM.json) carries the route policy interface; the SDK
+// enforces the catalog at the mesh ingress once lemond registers it.
+bool route_policy_available() { return true; }
 }
 namespace {
 // `rejected_status` is the HTTP status for LN_ERR_REJECTED (the federation refused the
@@ -880,15 +850,13 @@ struct NexusManager::Session {
         }, nullptr);
         // The SDK answers a refused mesh request itself and reports it here, on an SDK
         // thread: one log line per event, no SDK call besides releasing the text.
-        if (const auto& policy = nexus_sdk::route_policy_api(); policy.available()) {
-            policy.set_ingress_denied_callback(client.get(), [](char* event_json, void*) {
-                std::unique_ptr<char, decltype(&ln_free)> owned(event_json, ln_free);
-                const auto event = event_json ? json::parse(event_json, nullptr, false) : json();
-                const auto line = nexus_access::ingress_denied_log_line(event.is_object() ? event : json::object());
-                if (event.is_object() && event.value("kind", "") == "denied") LOG(WARNING, "Nexus") << line << std::endl;
-                else LOG(INFO, "Nexus") << line << std::endl;
-            }, nullptr);
-        }
+        ln_set_ingress_denied_callback(client.get(), [](char* event_json, void*) {
+            std::unique_ptr<char, decltype(&ln_free)> owned(event_json, ln_free);
+            const auto event = event_json ? json::parse(event_json, nullptr, false) : json();
+            const auto line = nexus_access::ingress_denied_log_line(event.is_object() ? event : json::object());
+            if (event.is_object() && event.value("kind", "") == "denied") LOG(WARNING, "Nexus") << line << std::endl;
+            else LOG(INFO, "Nexus") << line << std::endl;
+        }, nullptr);
         const auto path = utils::path_to_utf8(root / "identity.json");
         identity.reset(ln_identity_load(path.c_str()));
         if (!identity) {
@@ -1178,13 +1146,12 @@ struct NexusManager::Session {
         return port;
     }
     // The SDK keeps the catalog with the mesh session, so every join registers it
-    // again. An SDK without the interface enforces nothing; status says so.
+    // again. Without a catalog the SDK bridges the port raw; status says so.
     void register_catalog() {
         catalog_error.clear();
-        const auto& policy = nexus_sdk::route_policy_api();
-        if (!policy.available() || !catalog.is_object()) return;
+        if (!catalog.is_object()) return;
         const auto text = catalog.dump();
-        const auto code = policy.set_catalog(client.get(), 13305, text.c_str());
+        const auto code = ln_mesh_service_set_catalog(client.get(), 13305, text.c_str());
         if (code != LN_OK) {
             catalog_error = "The SDK refused the route catalog (SDK error " + std::to_string(code) + ")";
             LOG(WARNING, "Nexus") << catalog_error << std::endl;
