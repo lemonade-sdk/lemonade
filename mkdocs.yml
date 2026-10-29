@@ -68,6 +68,12 @@ nav:
       - Docker: guide/install/docker.md
       - macOS: guide/install/macos.md
     - Local Server Concepts: guide/concepts.md
+    - Lemonade App:
+      - Overview: guide/app/README.md
+      - Models: guide/app/models.md
+      - Chat and effective settings: guide/app/chat.md
+      - Audio and 3D: guide/app/audio-and-3d.md
+      - Backends, Apps, Monitor, and Settings: guide/app/operations.md
     - CLI: guide/cli.md
     - Chat in your terminal: guide/cli-chat.md
     - Configuration:
@@ -88,6 +94,8 @@ nav:
     - Specs:
       - Writing Guide: dev/specs/spec-writing-guide.md
       - Container Backends: dev/specs/container-backends.md
+      - HTTP Server: dev/specs/http-server.md
+      - Model Management Spec: dev/specs/model-management.md
     - Working Groups: dev/working-groups/README.md
     - Contribute: dev/contribute.md
     - Documentation Guide: dev/documentation.md
@@ -115,6 +123,7 @@ nav:
     - Mindcraft: integrations/mindcraft.md
     - Open Hands: integrations/open-hands.md
     - Open WebUI: integrations/open-webui.md
+    - Pi: integrations/pi.md
     - Wut: integrations/wut.md
   - API Spec:
       - Overview: api/README.md
@@ -124,6 +133,8 @@ nav:
       - MCP Gateway: api/mcp.md
       - llama.cpp Specific: api/llamacpp.md
       - Lemonade Specific: api/lemonade.md
+      - Router: api/router.md
+      - Internal: api/internal.md
   - Embeddable Lemonade:
       - Overview: embeddable/README.md
       - Runtime: embeddable/runtime.md

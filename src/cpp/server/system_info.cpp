@@ -1562,7 +1562,7 @@ json SystemInfo::build_recipes_info(const json& devices) {
             }
         }
 
-        // Note: release_url and download_size_mb are added by Server::handle_system_info()
+        // Note: release_url and download_size_mb are added by the system-info route
         // using BackendManager as the single source of truth for repo/version mappings.
 
         set_backend_status(def, backend, kCurrentOsUnsupportedPriority);
@@ -1852,6 +1852,7 @@ std::string identify_rocm_arch_from_name(const std::string& device_name) {
 
     if (device_lower.find("8050s") != std::string::npos ||
         device_lower.find("8060s") != std::string::npos ||
+        device_lower.find("8065s") != std::string::npos ||
         device_lower.find("device 1586") != std::string::npos) {
         return "gfx1151";
     }

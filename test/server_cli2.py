@@ -3728,6 +3728,67 @@ class CLIUrlSchemeTests(unittest.TestCase):
         )
 
 
+class CLIConnectionErrorMessageTests(unittest.TestCase):
+    """The CLI must tell a closed connection apart from a server that is not running."""
+
+    @staticmethod
+    def _free_port():
+        import socket
+
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(("127.0.0.1", 0))
+            return s.getsockname()[1]
+
+    def _run_status(self, port):
+        env = os.environ.copy()
+        env["LEMONADE_HOST"] = f"http://127.0.0.1:{port}"
+        result = run_cli_command(["status"], env=env, timeout=15)
+        self.assertNotEqual(result.returncode, 0)
+        return result.stdout + result.stderr
+
+    def test_connection_closed_by_server(self):
+        """A server that accepts then drops the connection is reported as busy, not stopped."""
+        import socket
+        import threading
+
+        listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        listener.bind(("127.0.0.1", 0))
+        listener.listen(5)
+        port = listener.getsockname()[1]
+        stop = threading.Event()
+
+        def drop_connections():
+            listener.settimeout(0.2)
+            while not stop.is_set():
+                try:
+                    conn, _ = listener.accept()
+                except socket.timeout:
+                    continue
+                except OSError:
+                    return
+                conn.close()
+
+        thread = threading.Thread(target=drop_connections, daemon=True)
+        thread.start()
+        try:
+            output = self._run_status(port)
+        finally:
+            stop.set()
+            thread.join()
+            listener.close()
+
+        self.assertIn("closed the connection", output)
+        self.assertNotIn("Make sure the server is running", output)
+
+    def test_server_not_running(self):
+        """Nothing listening keeps the original 'server is running' hint."""
+        output = self._run_status(self._free_port())
+        self.assertIn("Could not connect to Lemonade server", output)
+        self.assertIn("Make sure the server is running", output)
+        self.assertNotIn("closed the connection", output)
+
+
 def run_cli_client_tests():
     """Run CLI client tests based on command line arguments."""
     args = parse_cli_args()
@@ -3743,6 +3804,7 @@ def run_cli_client_tests():
     suite.addTests(loader.loadTestsFromTestCase(PersistentServerCLIClientTests))
     suite.addTests(loader.loadTestsFromTestCase(CLIHelpDocsConsistencyTests))
     suite.addTests(loader.loadTestsFromTestCase(CLIUrlSchemeTests))
+    suite.addTests(loader.loadTestsFromTestCase(CLIConnectionErrorMessageTests))
 
     runner = unittest.TextTestRunner(verbosity=2, buffer=False, failfast=True)
     result = runner.run(suite)

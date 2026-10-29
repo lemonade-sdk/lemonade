@@ -1,7 +1,9 @@
+#include "amd_metrics_windows.h"
 #include "nvidia_metrics.h"
 #include <lemon/system_metrics_platform.h>
 #include <windows.h>
 #include <cmath>
+#include <vector>
 
 namespace lemon {
 
@@ -61,6 +63,15 @@ public:
         return 0.0;
     }
 
+    double get_memory_total_gb() override {
+        MEMORYSTATUSEX memInfo;
+        memInfo.dwLength = sizeof(MEMORYSTATUSEX);
+        if (GlobalMemoryStatusEx(&memInfo)) {
+            return memInfo.ullTotalPhys / (1024.0 * 1024.0 * 1024.0);
+        }
+        return 0.0;
+    }
+
     double get_gpu_usage() override {
         return get_system_gpu_metrics().gpu_percent;
     }
@@ -70,7 +81,10 @@ public:
     }
 
     SystemGpuMetrics get_system_gpu_metrics() override {
-        return gpu_tracker_.update(query_nvidia_gpu_metrics());
+        auto devices = query_amd_gpu_metrics();
+        auto nvidia = query_nvidia_gpu_metrics();
+        devices.insert(devices.end(), nvidia.begin(), nvidia.end());
+        return gpu_tracker_.update(devices);
     }
 
     double get_npu_utilization() override {

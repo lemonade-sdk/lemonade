@@ -54,6 +54,7 @@
   "log_max_file_size_mb": 10,
   "log_max_files": 5,
   "max_loaded_models": 1,
+  "model_catalogs": [],
   "models_dir": "auto",
   "moonshine": {
     "args": "",
@@ -123,6 +124,7 @@
   },
   "thenoise": {
     "backend": "auto",
+    "cuda_bin": "builtin",
     "lora_dir": "",
     "rocm_bin": "builtin",
     "upscaler_dir": ""

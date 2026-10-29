@@ -279,43 +279,34 @@ class PinningTests(ServerTestBase):
 
     def test_pin_api_validation(self):
         """The /pin endpoint rejects invalid requests with HTTP 400 and structured JSON errors."""
-        # 1. Invalid JSON
-        response = requests.post(f"{self.internal_url}/pin", data="{invalid json")
-        self.assertEqual(response.status_code, 400)
-        self.assertIn("Invalid JSON body", response.json()["error"]["message"])
-        self.assertEqual(response.json()["error"]["type"], "invalid_request_error")
-
-        # 2. Missing model/model_name
-        response = requests.post(f"{self.internal_url}/pin", json={"pinned": True})
-        self.assertEqual(response.status_code, 400)
-        self.assertIn(
-            "Parameter 'model' or 'model_name' is required",
-            response.json()["error"]["message"],
-        )
-        self.assertEqual(response.json()["error"]["type"], "invalid_request_error")
-
-        # 3. Missing pinned
-        response = requests.post(
-            f"{self.internal_url}/pin", json={"model": ENDPOINT_TEST_MODEL}
-        )
-        self.assertEqual(response.status_code, 400)
-        self.assertIn(
-            "Parameter 'pinned' is required and must be a boolean",
-            response.json()["error"]["message"],
-        )
-        self.assertEqual(response.json()["error"]["type"], "invalid_request_error")
-
-        # 4. Non-boolean pinned
-        response = requests.post(
-            f"{self.internal_url}/pin",
-            json={"model": ENDPOINT_TEST_MODEL, "pinned": "true"},
-        )
-        self.assertEqual(response.status_code, 400)
-        self.assertIn(
-            "Parameter 'pinned' is required and must be a boolean",
-            response.json()["error"]["message"],
-        )
-        self.assertEqual(response.json()["error"]["type"], "invalid_request_error")
+        cases = [
+            ("{invalid json", "invalid_json", "Invalid JSON in request body"),
+            (
+                {"pinned": True},
+                "missing_argument",
+                "Missing required argument 'model_name' (or 'model')",
+            ),
+            (
+                {"model": ENDPOINT_TEST_MODEL},
+                "missing_argument",
+                "Missing required argument 'pinned'",
+            ),
+            (
+                {"model": ENDPOINT_TEST_MODEL, "pinned": "true"},
+                "invalid_argument",
+                "Invalid value for 'pinned': expected boolean",
+            ),
+        ]
+        for body, code, message in cases:
+            if isinstance(body, str):
+                response = requests.post(f"{self.internal_url}/pin", data=body)
+            else:
+                response = requests.post(f"{self.internal_url}/pin", json=body)
+            self.assertEqual(response.status_code, 400, response.text)
+            error = response.json()["error"]
+            self.assertEqual(error["type"], "invalid_request_error")
+            self.assertEqual(error["code"], code)
+            self.assertIn(message, error["message"])
 
     def test_pinning_idempotency(self):
         """A subsequent load without explicit pin intent must preserve the pinned status of a model."""

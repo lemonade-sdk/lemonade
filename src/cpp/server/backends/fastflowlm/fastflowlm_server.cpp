@@ -67,7 +67,7 @@ FastFlowLMServer::FastFlowLMServer(const std::string& log_level, ModelManager* m
 }
 
 std::string FastFlowLMServer::download_model(const std::string& checkpoint, bool do_not_upgrade,
-                                             RemoteRegistrySource source) {
+                                             RegistryId source) {
     LOG(INFO, "FastFlowLM") << "Pulling model with FLM: " << checkpoint << std::endl;
 
     std::string flm_path = get_flm_path();
@@ -171,9 +171,11 @@ void FastFlowLMServer::load(const std::string& model_name,
             "\nVisit " + DRIVER_INSTALL_URL + " for driver installation instructions.");
     }
 
-    RemoteRegistrySource source = model_manager_
-        ? model_manager_->download_source_for(model_info)
-        : RemoteRegistrySource::HuggingFace;
+    if (model_manager_ == nullptr) {
+        throw std::runtime_error("Model manager is unavailable while resolving the download source for: " +
+                                 model_info.checkpoint());
+    }
+    const RegistryId source = model_manager_->download_source_for(model_info);
 
     download_model(model_info.checkpoint(), do_not_upgrade, source);
 
@@ -430,10 +432,16 @@ public:
 
     void download_model(const ModelInfo& info, bool do_not_upgrade, DownloadProgressCallback progress,
                         const BackendOpsContext& ctx) const override {
-        RemoteRegistrySource source = ctx.model_manager
-            ? ctx.model_manager->download_source_for(info)
-            : RemoteRegistrySource::HuggingFace;
-        flm_download(info.checkpoint(), do_not_upgrade, progress, source);
+        if (ctx.fetch == nullptr) {
+            throw std::runtime_error("No fetch service while resolving the download source for: " +
+                                     info.checkpoint());
+        }
+        flm_download(info.checkpoint(), do_not_upgrade, progress,
+                     ctx.fetch->download_source_for(info));
+    }
+
+    void remove_self_managed_model(const ModelInfo& info) const override {
+        flm_remove(info.checkpoint());
     }
 
     bool invalidates_cache_after_download() const override { return true; }

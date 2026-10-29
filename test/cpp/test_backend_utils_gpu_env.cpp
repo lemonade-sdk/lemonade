@@ -6,6 +6,7 @@
 
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <string>
 #include <utility>
@@ -158,6 +159,47 @@ int main() {
         check(BackendUtils::find_external_backend_binary("llamacpp", "rocm-stable").empty(),
               "builtin remains reserved after clearing the environment");
         lemon::RuntimeConfig::set_global(nullptr);
+    }
+
+    // Test 5: a *_bin directory (the documented form) resolves to the backend
+    // binary inside it, since callers exec the returned path. A file path is
+    // returned as-is, and a directory without the binary is left unchanged.
+    {
+        namespace fs = std::filesystem;
+        const auto* spec = lemon::backends::try_get_spec_for_recipe("llamacpp");
+        check(spec != nullptr && !spec->binary.empty(), "llamacpp spec has a binary name");
+        if (spec != nullptr && !spec->binary.empty()) {
+            clear_env_var("LEMONADE_LLAMACPP_VULKAN_BIN");
+#ifdef _WIN32
+            const int pid = _getpid();
+#else
+            const int pid = getpid();
+#endif
+            const fs::path dir = fs::temp_directory_path() / ("lemonade_bin_dir_test_" + std::to_string(pid));
+            const fs::path empty_dir = dir / "empty";
+            fs::remove_all(dir);
+            fs::create_directories(empty_dir);
+            const fs::path binary = dir / spec->binary;
+            std::ofstream(binary.string()) << "#!/bin/sh\n";
+
+            lemon::RuntimeConfig dir_config(lemon::json{{"llamacpp", {{"vulkan_bin", dir.string()}}}});
+            lemon::RuntimeConfig::set_global(&dir_config);
+            check(BackendUtils::find_external_backend_binary("llamacpp", "vulkan") == binary.string(),
+                  "directory *_bin resolves to the backend binary inside it");
+
+            lemon::RuntimeConfig file_config(lemon::json{{"llamacpp", {{"vulkan_bin", binary.string()}}}});
+            lemon::RuntimeConfig::set_global(&file_config);
+            check(BackendUtils::find_external_backend_binary("llamacpp", "vulkan") == binary.string(),
+                  "file *_bin is returned unchanged");
+
+            lemon::RuntimeConfig empty_config(lemon::json{{"llamacpp", {{"vulkan_bin", empty_dir.string()}}}});
+            lemon::RuntimeConfig::set_global(&empty_config);
+            check(BackendUtils::find_external_backend_binary("llamacpp", "vulkan") == empty_dir.string(),
+                  "directory *_bin without the binary is returned unchanged");
+
+            lemon::RuntimeConfig::set_global(nullptr);
+            fs::remove_all(dir);
+        }
     }
 
     if (g_failures > 0) {
