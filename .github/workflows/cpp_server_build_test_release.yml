@@ -1447,8 +1447,7 @@ jobs:
         uses: ./.github/actions/cleanup-processes-linux
 
   # Container backends run on Devlab Dispatch's ephemeral Strix Halo Linux
-  # runners, which have the memory for DS4 and Halogen models. Models go in the
-  # workspace volume, which has room for DS4's 81 GB checkpoint.
+  # runners, which have the memory and scratch disk for DS4 and Halogen models.
   test-container-backends:
     name: Test container backend - ${{ matrix.name }}
     runs-on: [self-hosted, Linux, devlab-dispatch, strix-halo]
@@ -1482,14 +1481,10 @@ jobs:
       PYTHONIOENCODING: utf-8
       GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
       LEMONADE_VERSION: ${{ needs.build-lemonade-deb.outputs.version }}
+    # No HF_HOME override: the runners set it to a cache on their scratch disk
+    # that outlives the job, so a model is downloaded once per machine.
     steps:
       - uses: actions/checkout@v5
-
-      - name: Set HF_HOME environment variable
-        run: |
-          HF_HOME="$RUNNER_TEMP/huggingface"
-          mkdir -p "$HF_HOME"
-          echo "HF_HOME=$HF_HOME" >> $GITHUB_ENV
 
       - name: Print the Docker version
         run: docker --version
@@ -1514,8 +1509,6 @@ jobs:
           lemonade backends install ${{ matrix.install }}
 
       - name: Run tests
-        env:
-          HF_HOME: ${{ env.HF_HOME }}
         run: |
           set -e
           .venv/bin/python test/${{ matrix.script }} ${{ matrix.extra_args }} --cli-binary lemonade

@@ -7,6 +7,7 @@
 #include <exception>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <set>
 #include <system_error>
 #include <string>
@@ -257,10 +258,10 @@ inline bool rocm_device_memory_from_sysfs(const std::filesystem::path& kfd_nodes
 }
 
 // HIP numbers GPUs in KFD node order, skipping the CPU node, so a container given all
-// of /dev/kfd needs this index to run on the GPU it was sized for. Empty when no GPU of
-// `arch` is present.
+// of /dev/kfd needs this index to run on the GPU it was sized for. Empty when no GPU
+// satisfies `runs_on`.
 inline std::string hip_visible_device(const std::filesystem::path& kfd_nodes_dir,
-                                      const std::string& arch) {
+                                      const std::function<bool(const std::string& arch)>& runs_on) {
     namespace fs = std::filesystem;
 
     std::error_code ec;
@@ -289,7 +290,7 @@ inline std::string hip_visible_device(const std::filesystem::path& kfd_nodes_dir
         if (gfx_target_version.empty() || gfx_target_version == "0") {
             continue;
         }
-        if (!arch.empty() && gfx_target_version_to_arch(gfx_target_version) == arch) {
+        if (runs_on(gfx_target_version_to_arch(gfx_target_version))) {
             return std::to_string(index);
         }
         ++index;

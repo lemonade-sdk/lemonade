@@ -1194,6 +1194,17 @@ void Router::load_model(const std::string& model_name,
 
             evict_all_servers();
 
+            // The eviction freed memory the first auto-tune could not count.
+            if (ctx_size_auto) {
+                effective_options.set_option("ctx_size", -1);
+                const int64_t retry_ctx = resolve_auto_ctx_size(effective_options, model_info);
+                if (retry_ctx > 0) {
+                    LOG(INFO, "Router") << "Auto-tune ctx_size resolved to " << retry_ctx
+                                        << " for the retry" << std::endl;
+                    effective_options.set_option("ctx_size", retry_ctx);
+                }
+            }
+
             // Mark loading again for retry
             is_loading_ = true;
 
