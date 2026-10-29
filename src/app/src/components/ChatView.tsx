@@ -2249,12 +2249,20 @@ const ChatView: React.FC<ChatViewProps> = ({
 
   // Restoring the active conversation from storage sets activeId directly rather
   // than going through handleSelectConversation, so the model needs restoring too.
+  // A model already loaded from the Models workspace is the newer, explicit pick.
   const startupModelRestoredRef = useRef(false);
   useEffect(() => {
     if (startupModelRestoredRef.current || !historyHydrated || !activeId) return;
     startupModelRestoredRef.current = true;
+    if (composerFocusEpoch > 0) return;
     applyConversationModel(conversations.find(c => c.id === activeId)?.model?.name);
-  }, [activeId, applyConversationModel, conversations, historyHydrated]);
+  }, [activeId, applyConversationModel, composerFocusEpoch, conversations, historyHydrated]);
+
+  // composerFocusEpoch only advances when the Models workspace loads a model and
+  // hands it to chat.
+  useEffect(() => {
+    if (composerFocusEpoch > 0) setFallbackModelOverride(null);
+  }, [composerFocusEpoch]);
 
   const handleSelectConversation = useCallback((id: string) => {
     setActiveId(id);
