@@ -167,6 +167,16 @@ function(apply_tray_deps target_name)
     endif()
 endfunction()
 
+# Helper function: the Nexus client SDK for the device key carrier (macOS/Linux tray).
+# cmake/NexusSDK.cmake defines the imported target after this directory and adds the
+# runtime copy dependency and rpath for every target in its list, lemonade-tray included.
+function(apply_tray_nexus_sdk target_name)
+    if(LEMONADE_WITH_NEXUS)
+        target_compile_definitions(${target_name} PRIVATE LEMONADE_WITH_NEXUS=1)
+        target_link_libraries(${target_name} PRIVATE lemonade-nexus-sdk)
+    endif()
+endfunction()
+
 # ============================================================
 # Windows: LemonadeServer.exe (SUBSYSTEM:WINDOWS, embedded server)
 # ============================================================
@@ -220,6 +230,7 @@ if(APPLE)
 
     apply_tray_deps(lemonade-tray)
     target_link_libraries(lemonade-tray PRIVATE ${TRAY_PLATFORM_LIBS})
+    apply_tray_nexus_sdk(lemonade-tray)
 
     # Enable ARC for Objective-C++ files
     target_compile_options(lemonade-tray PRIVATE -fobjc-arc)
@@ -240,6 +251,7 @@ if(UNIX AND NOT APPLE AND _LINUX_TRAY_BUILD)
     )
 
     apply_tray_deps(lemonade-tray)
+    apply_tray_nexus_sdk(lemonade-tray)
 
     find_package(Threads REQUIRED)
     target_link_libraries(lemonade-tray PRIVATE

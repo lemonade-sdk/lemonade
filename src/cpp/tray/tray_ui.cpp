@@ -1,4 +1,5 @@
 #include "lemon_tray/tray_ui.h"
+#include <lemon/nexus_user_key.h>
 #include <lemon/utils/path_utils.h>
 #include <lemon/version.h>
 
@@ -8,6 +9,9 @@
 #include <iostream>
 #include <sstream>
 #include <thread>
+#ifdef LEMONADE_TRAY_NEXUS_CARRIER
+#include <LemonadeNexusSDK/lemonade_nexus.h>
+#endif
 
 #ifdef _WIN32
 #include "lemon_tray/platform/windows_tray.h"
@@ -113,6 +117,9 @@ bool TrayUI::initialize() {
         return false;
     }
 
+#ifdef LEMONADE_TRAY_NEXUS_CARRIER
+    offer_device_key_if_needed();
+#endif
     build_menu();
     return true;
 }
@@ -140,6 +147,9 @@ void TrayUI::run() {
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
             auto now = std::chrono::steady_clock::now();
             if (std::chrono::duration_cast<std::chrono::seconds>(now - last_tick).count() >= 5) {
+#ifdef LEMONADE_TRAY_NEXUS_CARRIER
+                offer_device_key_if_needed();
+#endif
                 refresh_menu();
                 if (!notified_reconnect) {
                     if (fetch_server_state().has_value()) {
@@ -340,6 +350,9 @@ void TrayUI::build_menu() {
     last_menu_server_reachable_ = reachable;
     last_menu_loaded_models_ = std::move(loaded_models);
     last_menu_available_models_ = std::move(available_models);
+#ifdef LEMONADE_TRAY_NEXUS_CARRIER
+    last_menu_nexus_key_status_ = nexus_key_status_;
+#endif
 }
 
 void TrayUI::refresh_menu() {
@@ -360,6 +373,9 @@ bool TrayUI::menu_needs_refresh() {
     if (reachable != last_menu_server_reachable_) return true;
     if (loaded != last_menu_loaded_models_) return true;
     if (current_available != last_menu_available_models_) return true;
+#ifdef LEMONADE_TRAY_NEXUS_CARRIER
+    if (nexus_key_status_ != last_menu_nexus_key_status_) return true;
+#endif
     return false;
 }
 
@@ -479,6 +495,13 @@ Menu TrayUI::create_menu(const std::vector<LoadedModelInfo>& loaded_models,
     menu.add_item(MenuItem::Submenu("Max Loaded Models", max_models_submenu));
 
     menu.add_separator();
+#ifdef LEMONADE_TRAY_NEXUS_CARRIER
+    if (const auto key_status = nexus_key_status(); !key_status.empty()) {
+        menu.add_item(MenuItem::Action(key_status, nullptr, false));
+    }
+    menu.add_item(MenuItem::Action("Unlock Nexus with my device key", [this]() { on_unlock_nexus(); }));
+    menu.add_separator();
+#endif
     menu.add_item(MenuItem::Action("Documentation", [this]() { on_open_documentation(); }));
     menu.add_item(MenuItem::Action("Show Logs", [this]() { on_show_logs(); }));
 
@@ -600,6 +623,131 @@ void TrayUI::on_quit() {
     std::cout << "Quitting application..." << std::endl;
     stop();
 }
+
+// ---------------------------------------------------------------------------
+// Nexus device key carrier
+// ---------------------------------------------------------------------------
+
+#ifdef LEMONADE_TRAY_NEXUS_CARRIER
+void TrayUI::set_nexus_key_status(const std::string& text) {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    nexus_key_status_ = text;
+}
+
+std::string TrayUI::nexus_key_status() {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    return nexus_key_status_;
+}
+
+std::pair<int, std::string> TrayUI::controller_request(int port, bool post, const std::string& path, const std::string& body) {
+    try {
+        auto cli = make_client("127.0.0.1", port, false);
+        cli.set_connection_timeout(2);
+        cli.set_read_timeout(30);
+        const char* admin_api_key = std::getenv("LEMONADE_ADMIN_API_KEY");
+        const char* api_key = admin_api_key ? admin_api_key : std::getenv("LEMONADE_API_KEY");
+        httplib::Headers headers;
+        if (api_key && api_key[0]) headers.emplace("Authorization", std::string("Bearer ") + api_key);
+        auto res = post ? cli.Post(path, headers, body, "application/json") : cli.Get(path, headers);
+        if (res) return {res->status, res->body};
+    } catch (...) {}
+    return {0, ""};
+}
+
+void TrayUI::offer_device_key_if_needed() {
+    if (nexus_key_busy_ || std::chrono::steady_clock::now() < nexus_key_retry_at_) return;
+    const std::string body = http_get("/api/v1/nexus/status");
+    if (body.empty()) return;
+    const auto status = nlohmann::json::parse(body, nullptr, false);
+    if (!lemon::nexus_user_key::wants_device_key(status)) {
+        set_nexus_key_status("");
+        return;
+    }
+    nexus_key_busy_ = true;
+    const bool delivered = offer_device_key(status);
+    nexus_key_busy_ = false;
+    // A store that refuses or a controller that is not ready is asked again later, not
+    // on every tick: a locked keystore may prompt the user each time.
+    nexus_key_retry_at_ = std::chrono::steady_clock::now() + std::chrono::seconds(delivered ? 5 : 30);
+}
+
+void TrayUI::on_unlock_nexus() {
+    if (nexus_key_busy_) {
+        show_notification("Nexus", "The device key is being delivered. Please wait.");
+        return;
+    }
+    std::thread([this]() {
+        const std::string body = http_get("/api/v1/nexus/status");
+        const auto status = body.empty() ? nlohmann::json() : nlohmann::json::parse(body, nullptr, false);
+        if (!status.is_object() || !status.value("available", false)) {
+            show_notification("Nexus", "Lemonade Server is not reachable or has no Nexus support.");
+            return;
+        }
+        if (!status.value("enabled", false)) {
+            show_notification("Nexus", "Turn on the mesh in the Lemonade app first.");
+            return;
+        }
+        nexus_key_busy_ = true;
+        offer_device_key(status);
+        nexus_key_busy_ = false;
+        nexus_key_retry_at_ = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+        show_notification("Nexus", nexus_key_status());
+        build_menu();
+    }).detach();
+}
+
+bool TrayUI::offer_device_key(const nlohmann::json& status) {
+    namespace user_key = lemon::nexus_user_key;
+    const int port = user_key::controller_port(status);
+    if (port == 0) {
+        set_nexus_key_status("Nexus: no local controller reported by Lemonade Server");
+        return false;
+    }
+    ln_error_t code = LN_OK;
+    std::unique_ptr<ln_identity_t, decltype(&ln_identity_destroy)> identity(ln_identity_user_load(&code), ln_identity_destroy);
+    const char* origin = "loaded";
+    if (!identity && code == LN_ERR_NOT_FOUND) {
+        identity.reset(ln_identity_user_create(&code));
+        origin = "created";
+    }
+    if (!identity) {
+        const auto reason = user_key::store_failure_text(code);
+        std::cerr << "Nexus device key: " << reason << std::endl;
+        set_nexus_key_status("Nexus: device key unavailable: " + reason);
+        return false;
+    }
+    const auto request = controller_request(port, false, "/api/v1/nexus/key/handoff", "");
+    if (request.first != 200) {
+        identity.reset();
+        std::cerr << "Nexus device key: hand-off request refused (HTTP " << request.first << ")" << std::endl;
+        set_nexus_key_status("Nexus: Lemonade Server refused the key hand-off (HTTP " + std::to_string(request.first) + ")");
+        return false;
+    }
+    char* sealed = ln_identity_handoff_seal(identity.get(), request.second.c_str());
+    identity.reset();
+    if (!sealed) {
+        std::cerr << "Nexus device key: the hand-off request could not be sealed" << std::endl;
+        set_nexus_key_status("Nexus: the key hand-off request was invalid");
+        return false;
+    }
+    const nlohmann::json unlock = {{"identity_envelope", std::string(sealed)}, {"defer_join", false}};
+    ln_free(sealed);
+    const auto delivered = controller_request(port, true, "/api/v1/nexus/key/unlock", unlock.dump());
+    const auto reply = nlohmann::json::parse(delivered.second, nullptr, false);
+    const auto error = reply.is_object() ? reply.value("error", std::string()) : std::string();
+    std::cerr << "Nexus device key: " << origin << " from the user store, hand-off answered HTTP " << delivered.first << std::endl;
+    if (delivered.first == 200) {
+        set_nexus_key_status("Nexus: unlocked with your device key");
+        return true;
+    }
+    if (delivered.first == 503 && reply.is_object() && reply.value("retryable", false)) {
+        set_nexus_key_status("Nexus: device key delivered; waiting for the network");
+        return true;
+    }
+    set_nexus_key_status("Nexus: unlock refused" + (error.empty() ? std::string() : ": " + error));
+    return false;
+}
+#endif
 
 // ---------------------------------------------------------------------------
 // App launch helpers
