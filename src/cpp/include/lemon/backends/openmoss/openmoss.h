@@ -17,6 +17,8 @@ inline const BackendDescriptor descriptor = {
     /*uses_ctx_size*/   false,
     /*dynamic_models*/  false,
     /*options*/ {
+        {"openmoss_device", "--openmoss-device", "", "DEVICES",
+         "GPU to use (CUDA0, CUDA1); auto selects automatically", "Text-to-Speech Options"},
         {"openmoss_backend", "--openmoss", "", "BACKEND",
          "OpenMOSS TTS backend to use", "Text-to-Speech Options"},
     },

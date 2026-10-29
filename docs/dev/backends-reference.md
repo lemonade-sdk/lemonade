@@ -92,6 +92,7 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 
 | Option | CLI flag | Type | Default | Description |
 |--------|----------|------|---------|-------------|
+| `acestep_device` | `--acestep-device` | DEVICES | "" | GPU to use (ROCm0, ROCm1, CUDA0, CUDA1); auto selects automatically |
 | `acestep_backend` | `--acestep` | BACKEND | "" | ACE-Step backend to use |
 
 #### `ds4` — DwarfStar4
@@ -140,6 +141,7 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 
 | Option | CLI flag | Type | Default | Description |
 |--------|----------|------|---------|-------------|
+| `openmoss_device` | `--openmoss-device` | DEVICES | "" | GPU to use (CUDA0, CUDA1); auto selects automatically |
 | `openmoss_backend` | `--openmoss` | BACKEND | "" | OpenMOSS TTS backend to use |
 
 #### `sd-cpp` — StableDiffusion.cpp
@@ -177,12 +179,14 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 
 | Option | CLI flag | Type | Default | Description |
 |--------|----------|------|---------|-------------|
+| `thinksound_device` | `--thinksound-device` | DEVICES | "" | GPU to use (ROCm0, ROCm1, CUDA0, CUDA1); auto selects automatically |
 | `thinksound_backend` | `--thinksound` | BACKEND | "" | ThinkSound backend to use |
 
 #### `trellis` — TRELLIS.2
 
 | Option | CLI flag | Type | Default | Description |
 |--------|----------|------|---------|-------------|
+| `trellis_device` | `--trellis-device` | DEVICES | "" | GPU to use (ROCm0, ROCm1, CUDA0, CUDA1); auto selects automatically |
 | `trellis_backend` | `--trellis` | BACKEND | "" | Trellis backend to use |
 | `trellis_args` | `--trellis-args` | ARGS | "" | Custom arguments to pass to trellis-server |
 

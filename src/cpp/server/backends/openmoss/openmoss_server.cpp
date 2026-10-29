@@ -151,6 +151,7 @@ void OpenMossServer::load(const std::string& model_name,
         backend = supported.backends[0];
     }
     RuntimeConfig::validate_backend_choice("openmoss", backend);
+    const std::string selected_device = options.get_option("openmoss_device");
     const std::string exe_path = resolve_binary_path(backend);
 
     std::vector<std::pair<std::string, std::string>> env_vars;
@@ -168,7 +169,11 @@ void OpenMossServer::load(const std::string& model_name,
     };
     if (backend == "cuda") {
         prepend_loader_path("");
-        BackendUtils::apply_cuda_env_vars(env_vars, "openmoss-server");
+        BackendUtils::apply_accelerator_device_env_vars(env_vars, "openmoss-server", backend, selected_device);
+    }
+
+    if (backend != "cuda" && !selected_device.empty() && selected_device != "auto") {
+        throw std::invalid_argument("Device " + selected_device + " is unsupported with OpenMOSS backend " + backend);
     }
 
     std::unique_lock<std::shared_mutex> lock(request_mutex_);

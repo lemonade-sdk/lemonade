@@ -319,6 +319,10 @@ const TUNING_FIELD_HINTS: Partial<Record<keyof RecipeOptions, string>> = {
   llamacpp_device: 'Optional device selector for the selected backend.',
   thenoise_device: 'Select the GPU for TheNoise; CUDA device numbers refer to the NVIDIA GPU list.',
   'sd-cpp_device': 'Select the GPU for sd.cpp. CUDA selection uses GPU UUIDs to avoid index mismatches.',
+  acestep_device: 'Choose the ROCm or CUDA GPU for ACE-Step; auto uses the backend default.',
+  trellis_device: 'Choose the ROCm or CUDA GPU for TRELLIS; auto uses the backend default.',
+  thinksound_device: 'Choose the ROCm or CUDA GPU for ThinkSound; auto uses the backend default.',
+  openmoss_device: 'Choose the ROCm or CUDA GPU for OpenMOSS; auto uses the backend default.',
   llamacpp_args: 'CLI-style flags for llama-server, applied on Load/Reload. E.g. --gpu-layers 35 --threads 8 --batch-size 512. See llama-server --help for all options.',
   sdcpp_args: 'Raw backend args for this image model only.',
   whispercpp_args: 'Raw backend args for this transcription model only.',
@@ -431,7 +435,8 @@ function indexed(prefix: string, count: number, fallbackCount = 1): string[] {
 function deviceOptionsForKey(key: keyof RecipeOptions, current: string | undefined, selectedBackend: string, model: ModelInfo, info: SystemInfoLike): string[] {
   const recipe = activeRecipeForModel(model);
   const selected = selectedBackend.toLowerCase();
-  const backend = (selected === 'auto' || !selected) && (recipe === 'thenoise' || recipe === 'sd-cpp')
+  const singleGpuRecipe = ['thenoise', 'sd-cpp', 'acestep', 'trellis', 'thinksound', 'openmoss'].includes(recipe);
+  const backend = (selected === 'auto' || !selected) && singleGpuRecipe
     ? (recipeDefaultBackend(info, recipe) || selected)
     : selected;
   const devices = availableDeviceCounts(info);
@@ -462,7 +467,13 @@ function deviceOptionsForKey(key: keyof RecipeOptions, current: string | undefin
   else if (backend.includes('npu') && devices.npu && recipe !== 'llamacpp') base = ['npu0'];
 
   // An explicit 'auto' clears inherited per-model GPU selections.
-  if (recipe === 'thenoise' || recipe === 'sd-cpp') base.unshift('auto');
+  if (singleGpuRecipe) {
+    base.unshift('auto');
+    // These servers support CUDA/ROCm visibility masks, not native Vulkan device selection.
+    if (!['thenoise', 'sd-cpp'].includes(recipe)) {
+      base = base.filter(device => device === 'auto' || /^cuda\d+$/i.test(device) || /^rocm\d+$/i.test(device));
+    }
+  }
   const normalizedCurrent = optionalDisplayValue(current);
   const options = normalizedCurrent && !base.includes(normalizedCurrent) ? [normalizedCurrent, ...base] : base;
   return Array.from(new Set(options.filter(Boolean)));
@@ -1618,6 +1629,9 @@ const ModelConfigurationTab: React.FC<{
   const selectorKeys = recipeKeys.filter(key =>
     recipeOptionIsBackend(systemInfo, activeRecipe, String(key))
     || recipeOptionIsDevice(systemInfo, activeRecipe, String(key))
+  ).sort((a, b) =>
+    Number(recipeOptionIsDevice(systemInfo, activeRecipe, String(a)))
+    - Number(recipeOptionIsDevice(systemInfo, activeRecipe, String(b)))
   );
   const argsKeys = recipeKeys.filter(key => recipeOptionIsArgs(systemInfo, activeRecipe, String(key)));
   const otherRecipeKeys = recipeKeys.filter(key => !selectorKeys.includes(key) && !argsKeys.includes(key));
@@ -1779,12 +1793,14 @@ const ModelConfigurationTab: React.FC<{
           <select
             id={fieldId}
             className="select detail-configuration__select"
+            title={hint || undefined}
+            aria-description={hint || undefined}
             value={draftValue}
             onChange={e => setRecipeDraft(prev => {
               const next = { ...prev, [String(key)]: e.target.value };
-              if (activeRecipe === 'thenoise' || activeRecipe === 'sd-cpp') {
-                const deviceKey = activeRecipe === 'thenoise' ? 'thenoise_device' : 'sd-cpp_device';
-                next[deviceKey] = 'auto'; // Override an incompatible inherited GPU on backend changes.
+              if (['thenoise', 'sd-cpp', 'acestep', 'trellis', 'thinksound', 'openmoss'].includes(activeRecipe)) {
+                const deviceKey = activeRecipe === 'sd-cpp' ? 'sd-cpp_device' : `${activeRecipe}_device`;
+                next[deviceKey] = 'auto'; // Avoid carrying a device across incompatible backends.
               }
               return next;
             })}
@@ -1809,6 +1825,8 @@ const ModelConfigurationTab: React.FC<{
           <select
             id={fieldId}
             className="select detail-configuration__select"
+            title={hint || undefined}
+            aria-description={hint || undefined}
             value={draftValue}
             onChange={e => setRecipeDraft(prev => ({ ...prev, [String(key)]: e.target.value }))}
           >

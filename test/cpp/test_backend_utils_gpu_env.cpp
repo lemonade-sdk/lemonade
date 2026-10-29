@@ -176,6 +176,15 @@ int main() {
               "sd.cpp explicit auto clears inherited device");
     }
 
+    // Test 2d: a backend switch can explicitly suppress an inherited GPU on all single-GPU recipes.
+    for (const std::string& recipe : {"thenoise", "sd-cpp", "acestep", "trellis", "thinksound", "openmoss"}) {
+        const std::string key = recipe == "sd-cpp" ? "sd-cpp_device" : recipe + "_device";
+        const lemon::RecipeOptions requested(recipe, {{key, "auto"}});
+        const lemon::RecipeOptions inherited(recipe, {{key, "CUDA0"}});
+        check(requested.inherit(inherited).get_option(key) == "auto",
+              "explicit auto suppresses inherited GPU selection");
+    }
+
     // Test 3: a custom backend binary environment variable takes precedence
     // over config.json. ROCm channel names collapse to the public ROCm override
     // documented for users, while config remains the fallback.

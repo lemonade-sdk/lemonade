@@ -106,7 +106,9 @@ static bool is_empty_option(const std::string& key, const json& option) {
         return !option.is_number();
     }
     // An explicit auto device must override a model's inherited GPU selection.
-    if ((key == "thenoise_device" || key == "sd-cpp_device") && option == "auto") {
+    if ((key == "thenoise_device" || key == "sd-cpp_device" ||
+         key == "acestep_device" || key == "trellis_device" ||
+         key == "thinksound_device" || key == "openmoss_device") && option == "auto") {
         return false;
     }
     return is_empty_option(option);
