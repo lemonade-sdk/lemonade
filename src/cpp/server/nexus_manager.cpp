@@ -1,5 +1,6 @@
 #include "lemon/nexus_manager.h"
 #include "lemon/error_types.h"
+#include "lemon/nexus_user_key.h"
 #include "lemon/server/route_registry.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/json_utils.h"
@@ -617,6 +618,59 @@ bool session_dropped(const json& mesh_status) {
     return mesh_status.is_object() && mesh_status.value("needs_rejoin", false);
 }
 
+IdentitySource identity_source(const ProcessRole& role) {
+    switch (role.os) {
+    case ProcessRole::Os::Windows: return IdentitySource::User;
+    case ProcessRole::Os::MacOS: return role.root ? IdentitySource::Handoff : IdentitySource::User;
+    case ProcessRole::Os::Linux: break;
+    }
+    return role.root || role.state_directory ? IdentitySource::System : IdentitySource::User;
+}
+
+ProcessRole current_process_role() {
+    ProcessRole role{};
+#ifdef _WIN32
+    role.os = ProcessRole::Os::Windows;
+#else
+#ifdef __APPLE__
+    role.os = ProcessRole::Os::MacOS;
+#else
+    role.os = ProcessRole::Os::Linux;
+#endif
+    role.root = geteuid() == 0;
+#endif
+    role.state_directory = !utils::get_environment_variable_utf8("STATE_DIRECTORY").empty();
+    return role;
+}
+
+const char* identity_source_name(IdentitySource source) {
+    switch (source) {
+    case IdentitySource::System: return "system";
+    case IdentitySource::User: return "user";
+    case IdentitySource::Handoff: return "handoff";
+    }
+    return "system";
+}
+
+std::string account_file_tag(const std::string& pubkey) {
+    auto key = pubkey;
+    if (key.rfind("ed25519:", 0) == 0) key.erase(0, 8);
+    std::replace(key.begin(), key.end(), '+', '-');
+    std::replace(key.begin(), key.end(), '/', '_');
+    while (!key.empty() && key.back() == '=') key.pop_back();
+    if (key.find_first_not_of("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_") != std::string::npos) return "";
+    return key.substr(0, 16);
+}
+
+json account_for_key(const json& previous, const json& archived, const std::string& pubkey) {
+    json next = archived.is_object() ? archived : json::object();
+    for (const char* name : {"server", "genesis_pubkey", "tier1_epoch", "device_name"}) {
+        if (!next.contains(name) && previous.is_object() && previous.contains(name)) next[name] = previous.at(name);
+    }
+    next["public_key"] = pubkey;
+    return next;
+}
+
 bool constant_time_equals(const std::string& candidate, const std::string& expected) {
     unsigned char difference = candidate.size() == expected.size() ? 0 : 1;
     for (size_t i = 0; i < expected.size(); ++i) {
@@ -746,6 +800,13 @@ SdkFailure sdk_failure(int code, const json& reply, int rejected_status) {
 // The vendored SDK (UPSTREAM.json) carries the route policy interface; the SDK
 // enforces the catalog at the mesh ingress once lemond registers it.
 bool route_policy_available() { return true; }
+std::pair<int, std::string> handoff_failure(int code) {
+    if (code == LN_ERR_PARSE || code == LN_ERR_NULL_ARG) return {400, "The identity envelope is malformed"};
+    if (code == LN_ERR_AUTH || code == LN_ERR_REJECTED) {
+        return {403, "The identity envelope does not open for the outstanding hand-off request, or the request expired"};
+    }
+    return {500, "The identity envelope could not be opened (SDK error " + std::to_string(code) + ")"};
+}
 }
 namespace {
 // `rejected_status` is the HTTP status for LN_ERR_REJECTED (the federation refused the
@@ -768,8 +829,15 @@ std::string sdk_string(char* value) {
 }
 }
 struct NexusManager::Session {
+    using IdentityPtr = std::unique_ptr<ln_identity_t, decltype(&ln_identity_destroy)>;
     std::unique_ptr<ln_client_t, decltype(&ln_destroy)> client{nullptr, ln_destroy};
-    std::unique_ptr<ln_identity_t, decltype(&ln_identity_destroy)> identity{nullptr, ln_identity_destroy};
+    IdentityPtr identity{nullptr, ln_identity_destroy};
+    const IdentitySource source{nexus_access::identity_source(nexus_access::current_process_role())};
+    // The outstanding hand-off request; a new request replaces it, and an open consumes it.
+    std::unique_ptr<ln_handoff_t, decltype(&ln_identity_handoff_destroy)> handoff{nullptr, ln_identity_handoff_destroy};
+    json identity_store = nullptr;  // the SDK's user store status at the last load attempt (User only)
+    std::chrono::steady_clock::time_point store_retry_at{};
+    std::chrono::seconds store_retry_delay{5};
     std::filesystem::path root;
     int ingress_port;
     int mesh_port;
@@ -857,14 +925,21 @@ struct NexusManager::Session {
             if (event.is_object() && event.value("kind", "") == "denied") LOG(WARNING, "Nexus") << line << std::endl;
             else LOG(INFO, "Nexus") << line << std::endl;
         }, nullptr);
-        const auto path = utils::path_to_utf8(root / "identity.json");
-        identity.reset(ln_identity_load(path.c_str()));
-        if (!identity) {
-            if (std::filesystem::exists(root / "identity.json")) throw NexusError(500, "Device identity is invalid; restore identity.json");
-            identity.reset(ln_identity_generate());
-            if (!identity || ln_identity_save(identity.get(), path.c_str()) != LN_OK) throw NexusError(500, "Cannot save device identity");
+        // Only a system service keeps an identity file of its own. A desktop identity
+        // belongs to the signed-in OS user: lemond loads it from the SDK's keystore-backed
+        // store when it runs as that user, and otherwise waits for a sealed hand-off.
+        if (source == IdentitySource::System) {
+            const auto path = utils::path_to_utf8(root / "identity.json");
+            IdentityPtr loaded(ln_identity_load(path.c_str()), ln_identity_destroy);
+            if (!loaded) {
+                if (std::filesystem::exists(root / "identity.json")) throw NexusError(500, "Device identity is invalid; restore identity.json");
+                loaded.reset(ln_identity_generate());
+                if (!loaded || ln_identity_save(loaded.get(), path.c_str()) != LN_OK) throw NexusError(500, "Cannot save device identity");
+            }
+            adopt_identity(std::move(loaded));
+        } else if (source == IdentitySource::User) {
+            load_user_identity();
         }
-        if (ln_set_identity(client.get(), identity.get()) != LN_OK) throw NexusError(500, "Cannot load device identity");
         // Tree, session and private-API calls go only to Tier 1 servers verified from this key.
         if (const auto genesis = utils::get_environment_variable_utf8("LEMONADE_NEXUS_GENESIS_PUBKEY"); !genesis.empty()) {
             const auto min_epoch = account.value("tier1_epoch", uint64_t{0});
@@ -878,11 +953,86 @@ struct NexusManager::Session {
             }
             genesis_key_set = true;
         }
-        pubkey = sdk_string(ln_identity_pubkey(identity.get()));
-        const auto avatar_cache = utils::path_to_utf8(root / "avatar-cache");
-        avatar_configured = ln_account_avatar_configure(client.get(), identity.get(), avatar_cache.c_str()) == LN_OK;
     }
     ~Session() { if (client) ln_mesh_disable(client.get()); }
+    // Makes `next` the device identity. Another key while one is active ends that
+    // session first (lock, drop), then the new key takes over with its own account; the
+    // same key changes nothing. Nothing is written except the account files.
+    void adopt_identity(IdentityPtr next) {
+        const auto key = sdk_string(ln_identity_pubkey(next.get()));
+        if (key.empty()) throw NexusError(500, "Cannot read the device identity");
+        if (identity) {
+            if (key == pubkey) return;
+            lock();
+            hold_locked = false;
+            node_id.clear();
+            group_id.clear();
+            tunnel_ip.clear();
+            retry_at = {};
+        }
+        if (ln_set_identity(client.get(), next.get()) != LN_OK) throw NexusError(500, "Cannot load device identity");
+        identity = std::move(next);
+        pubkey = key;
+        switch_account(key);
+        const auto avatar_cache = utils::path_to_utf8(root / "avatar-cache");
+        avatar_configured = ln_account_avatar_configure(client.get(), identity.get(), avatar_cache.c_str()) == LN_OK;
+        clear_error();
+        LOG(INFO, "Nexus") << "Device identity in use: " << pubkey << " (" << nexus_access::identity_source_name(source) << ")" << std::endl;
+    }
+    // User mode: the identity comes from the SDK's per-user store, created on first use.
+    // A store that is locked, refused or unsupported leaves the device without an
+    // identity; there is no plaintext fallback. The next poll tries again with backoff.
+    void load_user_identity() {
+        ln_error_t code = LN_OK;
+        IdentityPtr loaded(ln_identity_user_load(&code), ln_identity_destroy);
+        if (!loaded && code == LN_ERR_NOT_FOUND) loaded.reset(ln_identity_user_create(&code));
+        char* out = nullptr;
+        if (ln_identity_user_status(&out) == LN_OK && out) {
+            auto status = json::parse(out, nullptr, false);
+            if (status.is_object()) identity_store = status;
+        }
+        ln_free(out);
+        if (!loaded) {
+            error = "The device key store is not available: " + nexus_user_key::store_failure_text(code);
+            error_retryable = false;
+            LOG(WARNING, "Nexus") << error << " (backend " << identity_store.value("backend", "unknown") << ")" << std::endl;
+            store_retry_at = std::chrono::steady_clock::now() + store_retry_delay;
+            store_retry_delay = std::min(store_retry_delay * 2, std::chrono::seconds(60));
+            return;
+        }
+        store_retry_delay = std::chrono::seconds(5);
+        adopt_identity(std::move(loaded));
+    }
+    void require_identity() const {
+        if (identity) return;
+        if (source == IdentitySource::Handoff) {
+            throw NexusError(409, "Waiting for the signed-in user's device key. Unlock Nexus from the Lemonade tray.");
+        }
+        throw NexusError(409, error.empty() ? "This device has no identity yet" : error);
+    }
+    // account.json belongs to the identity in use. When another key takes over, the
+    // current account waits as account-<tag>.json and that key's own account, if it was
+    // archived before, comes back; otherwise it starts fresh with the network facts.
+    void switch_account(const std::string& key) {
+        const auto bound = account.value("public_key", std::string{});
+        if (bound == key) return;
+        if (bound.empty()) {
+            account["public_key"] = key;
+            persist();
+            return;
+        }
+        const auto archived_path = root / ("account-" + nexus_access::account_file_tag(key) + ".json");
+        json archived;
+        if (std::ifstream input(archived_path); input) {
+            archived = json::parse(input, nullptr, false);
+            if (!archived.is_object()) throw NexusError(500, "Archived device account is invalid; restore " + archived_path.filename().string());
+        }
+        write_json(root / ("account-" + nexus_access::account_file_tag(bound) + ".json"), account);
+        account = nexus_access::account_for_key(account, archived, key);
+        persist();
+        std::error_code ec;
+        std::filesystem::remove(archived_path, ec);
+    }
     // Until the user names the device, it carries the machine's host name, as
     // people already know it from their other tools.
     static std::string machine_name() {
@@ -902,14 +1052,16 @@ struct NexusManager::Session {
         const auto named = account.value("device_name", std::string{});
         return named.empty() ? machine_name() : named;
     }
-    void persist() {
-        const auto temporary = root / "account.json.tmp";
+    void persist() { write_json(root / "account.json", account); }
+    static void write_json(const std::filesystem::path& path, const json& value) {
+        auto temporary = path;
+        temporary += ".tmp";
         std::ofstream output(temporary);
-        output << account.dump(2);
+        output << value.dump(2);
         output.close();
         if (!output) throw NexusError(500, "Cannot save device account");
         std::error_code ec;
-        if (!utils::atomic_replace_file(temporary, root / "account.json", ec)) throw NexusError(500, "Cannot replace device account");
+        if (!utils::atomic_replace_file(temporary, path, ec)) throw NexusError(500, "Cannot replace device account");
     }
     void lock() {
         locked = true;
@@ -948,6 +1100,7 @@ struct NexusManager::Session {
         genesis_key_set = true;
     }
     json authenticate_identity() {
+        require_identity();
         ensure_genesis_key();
         auto result = sdk_call([&](auto out) { return ln_auth_ed25519(client.get(), out); });
         if (account.contains("user_id") && account.at("user_id") != result.at("user_id")) {
@@ -957,11 +1110,12 @@ struct NexusManager::Session {
         return result;
     }
     // A device unlocks with a passkey or with its device key, never both. The device
-    // key is the Ed25519 identity in identity.json, which already authenticates every
-    // federation session; key unlock removes the user-presence step for servers
-    // without a person at them, so it also unlocks again by itself after a restart.
+    // key is the Ed25519 identity, which already authenticates every federation
+    // session; key unlock removes the user-presence step, so it also unlocks again by
+    // itself after a restart or, on a desktop, after the user's key arrived again.
     bool key_unlock() const { return account.value("unlock", std::string{}) == "device_key"; }
     void unlock_with_key(bool defer_join) {
+        require_identity();
         if (account.contains("credential_id")) throw NexusError(409, "This device unlocks with its passkey");
         authenticate_identity();
         if (!key_unlock()) {
@@ -1131,14 +1285,46 @@ struct NexusManager::Session {
     }
     json status() {
         auto mesh = mesh_status();
-        return {{"status", detail}, {"locked", locked}, {"mesh_up", !locked && ln_mesh_is_active(client.get()) != 0},
+        json result = {{"status", detail}, {"locked", locked}, {"mesh_up", !locked && ln_mesh_is_active(client.get()) != 0},
             {"node_id", node_id}, {"group_node_id", group_id}, {"tunnel_ip", tunnel_ip},
             {"peer_count", mesh.value("peer_count", 0)}, {"device_name", device_name()}, {"server", host},
             {"registered", account.contains("credential_id") || key_unlock()},
             {"unlock", key_unlock() ? "device_key" : "passkey"}, {"members", devices},
             {"exposed", json::array({{{"vport", 13305}, {"local_port", ingress_port}}})}, {"error", error},
             {"error_retryable", error_retryable}, {"genesis_key_set", genesis_key_set}, {"mesh_port", mesh_port_status()},
-            {"catalog_error", catalog_error}};
+            {"catalog_error", catalog_error}, {"identity_source", nexus_access::identity_source_name(source)},
+            {"needs_user_key", !identity}, {"public_key", pubkey}};
+        if (source == IdentitySource::User) result["identity_store"] = identity_store;
+        return result;
+    }
+    // Receiver side of the SDK hand-off: the request names an ephemeral key that opens
+    // one envelope. A new request replaces an unanswered one.
+    json begin_handoff() {
+        char* out = nullptr;
+        handoff.reset(ln_identity_handoff_begin(&out));
+        std::unique_ptr<char, decltype(&ln_free)> owned(out, ln_free);
+        const auto request = out ? json::parse(out, nullptr, false) : json();
+        if (!handoff || !request.is_object()) throw NexusError(500, "Cannot start an identity hand-off");
+        return request;
+    }
+    void open_handoff(const json& envelope) {
+        if (!envelope.is_string()) throw NexusError(400, "Send identity_envelope as a string");
+        if (!handoff) throw NexusError(409, "No identity hand-off is outstanding. Request key/handoff first.");
+        ln_error_t code = LN_OK;
+        IdentityPtr received(ln_identity_handoff_open(handoff.get(), envelope.get_ref<const std::string&>().c_str(), &code), ln_identity_destroy);
+        // The SDK wipes the ephemeral secret on the first open whatever the result.
+        handoff.reset();
+        if (!received) {
+            const auto failure = nexus_access::handoff_failure(code);
+            throw NexusError(failure.first, failure.second);
+        }
+        adopt_identity(std::move(received));
+        // The user's session delivered the key to unlock with. If the federation cannot
+        // be reached right now, the supervisor retries the key unlock by itself.
+        if (!account.contains("credential_id") && !key_unlock()) {
+            account["unlock"] = "device_key";
+            persist();
+        }
     }
     json mesh_port_status() {
         json port = sdk_call([&](auto out) { return ln_mesh_port_status(client.get(), out); });
@@ -1250,6 +1436,10 @@ struct NexusManager::Session {
         const auto elapsed = now - last_poll;
         last_poll = now;
         if (!locked && elapsed > std::chrono::minutes(5)) lock();
+        if (!identity) {
+            if (source == IdentitySource::User && std::chrono::steady_clock::now() >= store_retry_at) load_user_identity();
+            if (!identity) return;
+        }
         if (locked) {
             if (!key_unlock() || hold_locked || std::chrono::steady_clock::now() < retry_at) return;
             try { unlock_with_key(false); }
@@ -1345,7 +1535,9 @@ struct NexusManager::Session {
             persist();
             return status();
         }
+        if (path == "/key/handoff") return begin_handoff();
         if (path == "/key/unlock") {
+            if (body.contains("identity_envelope")) open_handoff(body.at("identity_envelope"));
             unlock_with_key(body.value("defer_join", false));
             return status();
         }
@@ -1935,7 +2127,7 @@ void NexusManager::register_routes(httplib::Server& server, NexusListener listen
         handle(req, res, operation, listener == NexusListener::Public && !loopback);
     };
     for (const auto* prefix : {"/api/v0/nexus/", "/api/v1/nexus/", "/v0/nexus/", "/v1/nexus/", "/api/nexus/"}) {
-        for (const auto* operation : {"status", "passkey/challenge", "devices", "members", "join/status", "events", "tree", "account", "selection", "memberships"}) {
+        for (const auto* operation : {"status", "passkey/challenge", "key/handoff", "devices", "members", "join/status", "events", "tree", "account", "selection", "memberships"}) {
             server.Get(std::string(prefix) + operation, [dispatch, operation](const auto& req, auto& res) { dispatch(req, res, operation); });
         }
         for (const auto* operation : {"enable", "disable", "passkey/register", "passkey/unlock", "key/unlock", "invites", "invites/cancel", "join", "egress", "lock", "device", "device/check", "account/avatar", "selection", "invites/accept", "account/delete"}) {

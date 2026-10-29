@@ -24,6 +24,22 @@ namespace lemon {
 /// from loopback, so every Nexus route on it is refused.
 enum class NexusListener { Public, Management, MeshIngress };
 
+/// Where the device identity lives.
+/// System: `nexus/identity.json` under the data directory, generated on first use;
+/// lemond is a system service without a signed-in user's keystore.
+/// User: the SDK's per-user store (ln_identity_user_load/_create), protected by the OS
+/// keystore of the user lemond runs as.
+/// Handoff: lemond creates no identity. A process in the user's session seals the
+/// user's stored identity to `GET key/handoff` and sends it with `POST key/unlock`.
+enum class IdentitySource { System, User, Handoff };
+/// The facts that decide the identity source: the platform, whether the effective user
+/// is root, and whether systemd set STATE_DIRECTORY (only the system unit does).
+struct ProcessRole {
+    enum class Os { MacOS, Windows, Linux } os;
+    bool root;
+    bool state_directory;
+};
+
 namespace nexus_access {
 extern const std::vector<std::string> kPermissions;
 bool same_key(const std::string& a, const std::string& b);
@@ -80,6 +96,33 @@ uint64_t newer_tier1_epoch(const nlohmann::json& membership, uint64_t saved);
 /// flag decides. The refusal texts are not a signal: the SDK answers the same texts
 /// while it moves the session on its own, and a second join would race that move.
 bool session_dropped(const nlohmann::json& mesh_status);
+/// Decides the identity source from the process role, and nothing else:
+/// Windows always User (LemonadeServer.exe runs as the signed-in user); macOS Handoff as
+/// root (the LaunchDaemon cannot reach a login keychain) and User otherwise; Linux System
+/// as root or under the system unit (STATE_DIRECTORY set), User otherwise (the per-user
+/// unit or a terminal). No environment variable or option changes the result.
+IdentitySource identity_source(const ProcessRole& role);
+/// The role of the calling process.
+ProcessRole current_process_role();
+/// "system", "user" or "handoff", as `status` reports it.
+const char* identity_source_name(IdentitySource source);
+/// File-name-safe tag of an `ed25519:<base64>` public key: the first 16 characters of
+/// its URL-safe base64 without padding, so the archived account of another identity is
+/// `account-<tag>.json`. Empty for an empty key.
+std::string account_file_tag(const std::string& pubkey);
+/// The account that belongs to `pubkey` when another identity's account is active:
+/// `archived` (that key's account, or null) with `server`, `genesis_pubkey`,
+/// `tier1_epoch` and `device_name` carried from `previous` when it has none of its own.
+/// Those are facts about the network and the machine, not about the identity; the
+/// Genesis pin in particular must not drop with a key change. `public_key` is set.
+nlohmann::json account_for_key(const nlohmann::json& previous, const nlohmann::json& archived, const std::string& pubkey);
+#ifdef LEMONADE_WITH_NEXUS
+/// The HTTP answer for a failed ln_identity_handoff_open: 400 for a malformed envelope
+/// (LN_ERR_PARSE, LN_ERR_NULL_ARG), 403 when the envelope does not open for the
+/// outstanding request or the request was used or expired (LN_ERR_AUTH,
+/// LN_ERR_REJECTED), 500 otherwise. The message never carries the envelope.
+std::pair<int, std::string> handoff_failure(int code);
+#endif
 #ifdef LEMONADE_WITH_NEXUS
 /// The HTTP answer for a failed SDK call. `retryable` is true when the federation was
 /// not reached rather than refusing the device, so the same request may succeed later

@@ -1,4 +1,5 @@
 #include "lemon/nexus_manager.h"
+#include "lemon/nexus_user_key.h"
 #include "lemon/server/route_registry.h"
 #include "lemon/utils/origin_utils.h"
 #include "lemon/utils/path_utils.h"
@@ -559,6 +560,8 @@ void check_listener_isolation(const std::filesystem::path& root, const std::func
         check(selection && selection->status == 403, "Mesh peers cannot change the mesh port selection");
         auto bounced = peer.Post("/api/v1/nexus/peers/gpu/api/v1/chat/completions", "{}", "application/json");
         check(bounced && bounced->status == 403, "Mesh peers cannot relay through this device");
+        auto handoff = peer.Get("/api/v1/nexus/key/handoff");
+        check(handoff && handoff->status == 403, "Mesh peers cannot start an identity hand-off");
         mesh.stop(); mesh_worker.join();
 
         const auto address = non_loopback_ipv4();
@@ -591,6 +594,10 @@ void check_listener_isolation(const std::filesystem::path& root, const std::func
 #endif
             auto unlock = remote.Post("/api/v1/nexus/passkey/unlock", valid, "{}", "application/json");
             check(unlock && unlock->status == 403, "Remote clients cannot use the passkey");
+            auto remote_handoff = remote.Get("/api/v1/nexus/key/handoff", valid);
+            check(remote_handoff && remote_handoff->status == 403, "Remote clients cannot start an identity hand-off");
+            auto remote_key = remote.Post("/api/v1/nexus/key/unlock", valid, R"({"identity_envelope":"x"})", "application/json");
+            check(remote_key && remote_key->status == 403, "Remote clients cannot deliver a device key");
             auto relayed = remote.Post("/api/v1/nexus/peers/gpu/api/v1/chat/completions", valid, "{}", "application/json");
 #ifdef LEMONADE_WITH_NEXUS
             check(relayed && relayed->status == 409, "Remote relay needs the mesh turned on");
@@ -685,7 +692,206 @@ void check_access_rules(const std::function<void(bool, const char*)>& check) {
     check(error("server unreachable").first == 502 && error("").first == 502, "Transport failures map to 502");
 }
 
+// The identity source follows the process role alone; the account files follow the key.
+void check_identity_rules(const std::function<void(bool, const char*)>& check) {
+    using lemon::IdentitySource;
+    using Role = lemon::ProcessRole;
+    const auto source = [](Role::Os os, bool root, bool state_directory) {
+        return access::identity_source(Role{os, root, state_directory});
+    };
+    check(source(Role::Os::Windows, false, false) == IdentitySource::User && source(Role::Os::Windows, true, true) == IdentitySource::User,
+          "Windows always uses the user store");
+    check(source(Role::Os::MacOS, true, false) == IdentitySource::Handoff && source(Role::Os::MacOS, true, true) == IdentitySource::Handoff,
+          "A root lemond on macOS waits for a hand-off");
+    check(source(Role::Os::MacOS, false, false) == IdentitySource::User && source(Role::Os::MacOS, false, true) == IdentitySource::User,
+          "A user's lemond on macOS uses the user store");
+    check(source(Role::Os::Linux, false, true) == IdentitySource::System && source(Role::Os::Linux, true, false) == IdentitySource::System &&
+          source(Role::Os::Linux, true, true) == IdentitySource::System, "The Linux system unit and root keep the system key");
+    check(source(Role::Os::Linux, false, false) == IdentitySource::User, "A Linux user's lemond uses the user store");
+    check(std::string(access::identity_source_name(IdentitySource::System)) == "system" &&
+          std::string(access::identity_source_name(IdentitySource::User)) == "user" &&
+          std::string(access::identity_source_name(IdentitySource::Handoff)) == "handoff", "Sources have their status names");
+    check(access::current_process_role().state_directory, "The process role reads STATE_DIRECTORY");
+
+    check(access::account_file_tag("ed25519:YWRt+aW4/bg==") == "YWRt-aW4_bg", "An account tag is URL-safe base64 without padding");
+    check(access::account_file_tag("ed25519:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstu=").size() == 16, "An account tag is 16 characters");
+    check(access::account_file_tag("").empty() && access::account_file_tag("ed25519:../x").empty(), "A malformed key has no tag");
+    const json previous = {{"server", "sn01.example"}, {"genesis_pubkey", "g"}, {"tier1_epoch", 7}, {"device_name", "My laptop"},
+        {"user_id", "u1"}, {"unlock", "device_key"}, {"credential_id", "c1"}, {"public_key", "ed25519:a"}};
+    const auto fresh = access::account_for_key(previous, nullptr, "ed25519:b");
+    check(fresh == json({{"server", "sn01.example"}, {"genesis_pubkey", "g"}, {"tier1_epoch", 7}, {"device_name", "My laptop"}, {"public_key", "ed25519:b"}}),
+          "A new key's account carries the network and machine facts only");
+    const auto restored = access::account_for_key(previous, json{{"device_name", "Other"}, {"user_id", "u2"}, {"unlock", "device_key"}}, "ed25519:b");
+    check(restored.at("device_name") == "Other" && restored.at("user_id") == "u2" && restored.at("server") == "sn01.example" &&
+          restored.at("genesis_pubkey") == "g" && restored.at("public_key") == "ed25519:b" && !restored.contains("credential_id"),
+          "An archived account keeps its own fields and gains the missing network facts");
+
+    namespace user_key = lemon::nexus_user_key;
+    check(user_key::wants_device_key(json{{"available", true}, {"enabled", true}, {"needs_user_key", true}}), "An enabled mesh without an identity asks for the key");
+    check(!user_key::wants_device_key(json{{"available", true}, {"enabled", false}, {"needs_user_key", true}}) &&
+          !user_key::wants_device_key(json{{"available", false}, {"enabled", true}, {"needs_user_key", true}}) &&
+          !user_key::wants_device_key(json{{"available", true}, {"enabled", true}, {"needs_user_key", false}}) &&
+          !user_key::wants_device_key(json{{"status", "disabled"}}) && !user_key::wants_device_key(json::array()),
+          "A disabled, unavailable or keyed mesh never asks");
+    check(user_key::controller_port(json{{"controller_url", "http://127.0.0.1:4567"}}) == 4567, "The controller port comes from the status URL");
+    check(user_key::controller_port(json{{"controller_url", "http://10.0.0.1:4567"}}) == 0 && user_key::controller_port(json{{"controller_url", "http://127.0.0.1:"}}) == 0 &&
+          user_key::controller_port(json{{"controller_url", "http://127.0.0.1:70000"}}) == 0 && user_key::controller_port(json::object()) == 0,
+          "A nonloopback or malformed controller URL yields no port");
 #ifdef LEMONADE_WITH_NEXUS
+    check(access::handoff_failure(LN_ERR_PARSE).first == 400 && access::handoff_failure(LN_ERR_NULL_ARG).first == 400, "A malformed envelope is 400");
+    check(access::handoff_failure(LN_ERR_AUTH).first == 403 && access::handoff_failure(LN_ERR_REJECTED).first == 403, "An envelope that does not open is 403");
+    check(access::handoff_failure(LN_ERR_INTERNAL).first == 500, "Other hand-off failures are 500");
+    check(!user_key::store_failure_text(LN_ERR_AUTH).empty() && user_key::store_failure_text(LN_ERR_AUTH) != user_key::store_failure_text(LN_ERR_UNSUPPORTED),
+          "Store failures have distinct texts");
+#endif
+}
+
+#ifdef LEMONADE_WITH_NEXUS
+// The hand-off routes in-process: this test is the user's session (ln_identity_generate
+// stands in for the user store) and the management listener is lemond. The federation
+// is a closed port, so every unlock ends as a retryable outage after the identity took
+// effect; the public key in status shows which identity lemond holds.
+void check_handoff(httplib::Client& management, const std::filesystem::path& root, const std::function<void(bool, const char*)>& check) {
+    using IdentityPtr = std::unique_ptr<ln_identity_t, decltype(&ln_identity_destroy)>;
+    const auto status = [&] {
+        auto result = management.Get("/api/v1/nexus/status");
+        return result && result->status == 200 ? json::parse(result->body) : json::object();
+    };
+    // Key names, not substrings: the algorithm name itself contains "sealed".
+    const auto no_key_material = [](const json& value) {
+        const auto text = value.dump();
+        return text.find("\"private_key\"") == std::string::npos && text.find("\"seed\"") == std::string::npos;
+    };
+    const auto no_secret = [&](const json& value) {
+        const auto text = value.dump();
+        return no_key_material(value) && text.find("\"sealed\"") == std::string::npos && text.find("\"identity_envelope\"") == std::string::npos;
+    };
+    const auto post_unlock = [&](const json& body) {
+        auto result = management.Post("/api/v1/nexus/key/unlock", body.dump(), "application/json");
+        return std::make_pair(result ? result->status : 0, result ? json::parse(result->body, nullptr, false) : json());
+    };
+    const auto seal = [&](const ln_identity_t* identity, const json& request) {
+        char* envelope = ln_identity_handoff_seal(identity, request.dump().c_str());
+        std::string text = envelope ? envelope : "";
+        ln_free(envelope);
+        return text;
+    };
+    const auto pubkey_of = [](const ln_identity_t* identity) {
+        char* key = ln_identity_pubkey(identity);
+        std::string text = key ? key : "";
+        ln_free(key);
+        return text;
+    };
+    const auto begin = [&] {
+        auto result = management.Get("/api/v1/nexus/key/handoff");
+        check(result && result->status == 200, "key/handoff answers on the management listener");
+        return result && result->status == 200 ? json::parse(result->body) : json::object();
+    };
+
+    const auto before = status();
+    const auto system_key = before.value("public_key", std::string());
+    check(before.at("identity_source") == "system" && before.at("needs_user_key") == false && !system_key.empty() && no_secret(before),
+          "A system service reports its own key and no need for a user key");
+    check(post_unlock(json{{"identity_envelope", 5}}).first == 400, "An envelope must be a string");
+    check(post_unlock(json{{"identity_envelope", "x"}}).first == 409, "An envelope without an outstanding hand-off is refused");
+
+    const auto request = begin();
+    check(request.value("alg", "") == "x25519-sealedbox-v1" && request.contains("pubkey") && request.contains("nonce") &&
+          request.contains("expires_at") && no_secret(request), "The hand-off request is the SDK's sealed-box request");
+
+    IdentityPtr first(ln_identity_generate(), ln_identity_destroy);
+    const auto first_key = pubkey_of(first.get());
+    const auto envelope = seal(first.get(), request);
+    check(!envelope.empty() && json::parse(envelope).value("alg", "") == "x25519-sealedbox-v1" && json::parse(envelope).contains("sealed") &&
+          no_key_material(json::parse(envelope)), "The sender seals an envelope without plaintext");
+    auto delivered = post_unlock(json{{"identity_envelope", envelope}, {"defer_join", true}});
+    check(delivered.first == 503 && delivered.second.value("retryable", false), "A delivered key is adopted, then the unreachable federation is a retryable outage");
+    auto after = status();
+    check(after.value("public_key", "") == first_key && after.at("needs_user_key") == false && after.at("locked") == true && no_secret(after),
+          "lemond holds the delivered identity");
+    check(after.at("unlock") == "device_key", "A delivered key marks the device key-unlocked, so the supervisor retries by itself");
+    check(post_unlock(json{{"identity_envelope", envelope}}).first == 409, "A second envelope for the same hand-off is refused");
+    {
+        std::ifstream input(root / "nexus/account.json");
+        const auto account = json::parse(input, nullptr, false);
+        std::ifstream archive_input(root / ("nexus/account-" + access::account_file_tag(system_key) + ".json"));
+        const auto archive = json::parse(archive_input, nullptr, false);
+        check(archive.is_object() && archive.value("public_key", "") == system_key && archive.value("unlock", "") == "device_key",
+              "The system key's account is archived as it was");
+        check(account.is_object() && account.value("public_key", "") == first_key && account.value("device_name", "") == "My laptop" &&
+              archive.is_object() && account.value("server", "") == archive.value("server", "-") && !account.contains("user_id"),
+              "The new key's account carries the device name and the server, and nothing of the other account");
+    }
+
+    const auto second_request = begin();
+    check(post_unlock(json{{"identity_envelope", envelope}}).first == 403, "An envelope sealed for an earlier request does not open");
+    check(post_unlock(json{{"identity_envelope", seal(first.get(), second_request)}}).first == 409, "A failed open still consumes the hand-off");
+    check(status().value("public_key", "") == first_key, "A refused envelope leaves the identity as it was");
+
+    IdentityPtr second(ln_identity_generate(), ln_identity_destroy);
+    const auto second_key = pubkey_of(second.get());
+    auto swapped = post_unlock(json{{"identity_envelope", seal(second.get(), begin())}, {"defer_join", true}});
+    check(swapped.first == 503 && status().value("public_key", "") == second_key, "Another user's key replaces the active one");
+    check(std::filesystem::exists(root / ("nexus/account-" + access::account_file_tag(first_key) + ".json")), "The replaced key's account is archived");
+
+    const auto identity_path = lemon::utils::path_to_utf8(root / "nexus/identity.json");
+    IdentityPtr system_identity(ln_identity_load(identity_path.c_str()), ln_identity_destroy);
+    check(system_identity != nullptr && pubkey_of(system_identity.get()) == system_key, "The system key is still on disk");
+    auto returned = post_unlock(json{{"identity_envelope", seal(system_identity.get(), begin())}, {"defer_join", true}});
+    auto restored = status();
+    check(returned.first == 503 && restored.value("public_key", "") == system_key && restored.at("registered") == true &&
+          restored.at("device_name") == "My laptop", "A key that comes back gets its archived account");
+    check(!std::filesystem::exists(root / ("nexus/account-" + access::account_file_tag(system_key) + ".json")), "A restored account leaves the archive");
+    auto same = post_unlock(json{{"identity_envelope", seal(system_identity.get(), begin())}, {"defer_join", true}});
+    check(same.first == 503 && status().value("public_key", "") == system_key, "The same key again changes nothing");
+    check(no_secret(delivered.second) && no_secret(swapped.second) && no_secret(returned.second) && no_secret(status()),
+          "No reply carries a seed, private key or envelope");
+}
+
+// User mode fails closed: without a usable keystore lemond has no identity, writes no
+// identity file and refuses a key unlock. This runs only where the SDK reports no
+// keystore for this process, so a developer's real keystore is never touched.
+void check_user_mode_fails_closed(const std::filesystem::path& root, const std::function<void(bool, const char*)>& check) {
+    char* out = nullptr;
+    const auto store = ln_identity_user_status(&out) == LN_OK && out ? json::parse(out, nullptr, false) : json();
+    ln_free(out);
+    if (!store.is_object() || store.value("backend", "") != "none") {
+        std::cout << "Skipping the user-mode check: this process has a keystore (" << store.value("backend", "?") << ")\n";
+        return;
+    }
+    const auto saved = lemon::utils::get_environment_variable_utf8("STATE_DIRECTORY");
+    set_environment("STATE_DIRECTORY", "");
+    if (access::identity_source(access::current_process_role()) != lemon::IdentitySource::User) {
+        std::cout << "Skipping the user-mode check: this process is a system service\n";
+        set_environment("STATE_DIRECTORY", saved);
+        return;
+    }
+    const auto user_dir = std::filesystem::path(store.value("dir", std::string()));
+    const bool stored_before = !user_dir.empty() && std::filesystem::exists(user_dir / "identity.v2.json");
+    {
+        lemon::NexusManager manager((root / "user-mode").string(), listener_policy, listener_policy, 0);
+        std::string error;
+        check(manager.enable(error), "Enable succeeds without a usable keystore");
+        const auto state = manager.status();
+        check(state.at("identity_source") == "user" && state.at("needs_user_key") == true && state.at("locked") == true &&
+              state.value("public_key", "x").empty(), "User mode without a keystore waits for a key");
+        check(state.contains("identity_store") && state.at("identity_store").value("backend", "") == "none", "Status reports the SDK store state");
+        check(!state.value("error", std::string()).empty(), "Status names the store failure");
+        check(!std::filesystem::exists(root / "user-mode/nexus/identity.json"), "No identity file is written in user mode");
+        httplib::Client management("127.0.0.1", std::stoi(state.at("controller_url").get<std::string>().substr(17)));
+        const char* api_key = std::getenv("LEMONADE_API_KEY");
+        if (api_key && *api_key) management.set_default_headers({{"Authorization", std::string("Bearer ") + api_key}});
+        auto unlock = management.Post("/api/v1/nexus/key/unlock", "{}", "application/json");
+        check(unlock && unlock->status == 409, "A key unlock without an identity is refused");
+        auto challenge = management.Get("/api/v1/nexus/passkey/challenge");
+        check(challenge && challenge->status == 409, "A passkey challenge without an identity is refused");
+        manager.disable();
+        manager.stop();
+    }
+    check((!user_dir.empty() && std::filesystem::exists(user_dir / "identity.v2.json")) == stored_before, "The user store is left as it was");
+    set_environment("STATE_DIRECTORY", saved);
+}
+
 // The SDK's C ABI reports a federation 401 and 403 alike as LN_ERR_AUTH, and no
 // transport, a timeout and a 5xx alike as LN_ERR_CONNECT.
 void check_sdk_failures(const std::function<void(bool, const char*)>& check) {
@@ -717,6 +923,10 @@ int main() {
     // real federation from a test, and every federation call fails fast and locally.
     set_environment("LEMONADE_NEXUS_SERVER", "127.0.0.1");
     set_environment("LEMONADE_NEXUS_PORT", "9");
+    // On Linux this makes the manager a system service with its own identity file, as the
+    // packaged unit is; a user's keystore is never touched from a test. macOS and Windows
+    // decide by the process role alone.
+    set_environment("STATE_DIRECTORY", root.string());
     try {
         const json group = {{"id", "root"}, {"parent_id", "outside"}, {"type", "customer"}, {"hostname", "Team"},
             {"assignments", json::array({{{"management_pubkey", "self"}, {"permissions", json::array({"admin"})}}})}};
@@ -785,6 +995,7 @@ int main() {
         check(!access::session_dropped(json{{"needs_rejoin", false}}) && !access::session_dropped(json::object()) &&
               !access::session_dropped(json::array()), "Without the flag, or with a malformed status, the session stays");
         check_access_rules(check);
+        check_identity_rules(check);
         check_role_presets(check);
         check_service_catalog(check);
         check_peer_headers(check);
@@ -796,6 +1007,9 @@ int main() {
         check_mesh_ingress_routes(check);
         check_listener_isolation(root, check);
         check_status_fields(root, check);
+#ifdef LEMONADE_WITH_NEXUS
+        check_user_mode_fails_closed(root, check);
+#endif
         {
             lemon::NexusManager manager(root.string(), listener_policy, listener_policy, 0);
             httplib::Server server;
@@ -824,6 +1038,8 @@ int main() {
             }
             auto members_redirect = client.Get("/api/v1/nexus/members");
             check(members_redirect && members_redirect->status == 307, "Public listener does not serve the member list");
+            auto handoff_redirect = client.Get("/api/v1/nexus/key/handoff");
+            check(handoff_redirect && handoff_redirect->status == 307, "Public listener redirects the hand-off to the management listener");
             auto denied_access = forbidden.Post("/api/v1/nexus/members/peer/role", httplib::Headers{{"Origin", "https://untrusted.example"}}, R"({"role":"admin"})", "application/json");
             check(denied_access && denied_access->status == 403, "Access management rejects untrusted origins");
             httplib::Client management("127.0.0.1", control_port);
@@ -851,6 +1067,8 @@ int main() {
             request("enable", "{", 400);
 #ifdef LEMONADE_WITH_NEXUS
             request("selection", R"({"target":"local"})", 409);
+            auto disabled_handoff = management.Get("/api/v1/nexus/key/handoff");
+            check(disabled_handoff && disabled_handoff->status == 409, "A hand-off needs the mesh enabled");
 #endif
 #ifdef LEMONADE_WITH_NEXUS
             auto enabled = request("enable", "{}", 200);
@@ -858,7 +1076,14 @@ int main() {
             request("selection", R"({"target":5})", 400);
             check(enabled.contains("mesh_port") && enabled.contains("genesis_key_set"), "Status reports the SDK mesh port and Genesis key state");
             check(enabled.at("available") && enabled.at("enabled") && enabled.at("locked"), "SDK enabled without unlocking");
-            check(std::filesystem::exists(root / "nexus/identity.json"), "Device identity persisted");
+            const bool system_identity = enabled.value("identity_source", "") == "system";
+            check(system_identity == std::filesystem::exists(root / "nexus/identity.json"), "Only a system service persists an identity file");
+            check(enabled.contains("needs_user_key") && enabled.contains("public_key") &&
+                  (enabled.at("identity_source") == "user") == enabled.contains("identity_store"), "Status reports the identity source");
+            if (!system_identity && enabled.value("needs_user_key", false)) {
+                std::cout << "Skipping the key unlock checks: this process has no user device key ("
+                          << enabled.value("error", std::string()) << ")\n";
+            }
             request("join", R"({"code":"12345678"})", 423);
             request("egress", R"({"node_id":"another-device"})", 423);
             request("invites", R"({"device_name":"New device"})", 423);
@@ -946,12 +1171,18 @@ int main() {
             // the device state stays as it was.
             request("disable", "{}", 200);
             set_environment("LEMONADE_NEXUS_GENESIS_PUBKEY", std::string(43, 'A') + "=");
-            request("enable", "{}", 200);
-            auto outage = request("key/unlock", "{}", 503);
-            check(outage.value("retryable", false) && !outage.value("error", std::string{}).empty(), "An unreachable federation is a retryable 503");
-            auto after_outage = management.Get("/api/v1/nexus/status");
-            check(after_outage && after_outage->status == 200 && nlohmann::json::parse(after_outage->body).at("locked") == true,
-                  "An outage leaves the lock state as it was");
+            auto pinned = request("enable", "{}", 200);
+            if (pinned.value("needs_user_key", false)) {
+                request("key/unlock", "{}", 409);
+            } else {
+                auto outage = request("key/unlock", "{}", 503);
+                check(outage.value("retryable", false) && !outage.value("error", std::string{}).empty(), "An unreachable federation is a retryable 503");
+                auto after_outage = management.Get("/api/v1/nexus/status");
+                check(after_outage && after_outage->status == 200 && nlohmann::json::parse(after_outage->body).at("locked") == true,
+                      "An outage leaves the lock state as it was");
+            }
+            if (pinned.value("identity_source", "") == "system") check_handoff(management, root, check);
+            else std::cout << "Skipping the hand-off round trip: it needs the system identity file\n";
             set_environment("LEMONADE_NEXUS_GENESIS_PUBKEY", "");
 #else
             request("enable", "{}", 503);
