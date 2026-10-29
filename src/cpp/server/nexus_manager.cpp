@@ -545,7 +545,7 @@ json tree_entry(const json& node, const std::string& self_key, bool ancestor_adm
         {"is_inference", flag(node, "is_inference")}, {"management_pubkey", text(node, "mgmt_pubkey")},
         {"permissions", permissions}, {"can_add_group", group && (admin || grants(permissions, "add_child"))},
         {"can_rename", group && (admin || grants(permissions, "edit_node"))},
-        {"can_manage", group && admin && access_known}, {"access_known", access_known},
+        {"can_manage", group && admin && access_known}, {"access_known", access_known}, {"is_admin", admin},
         {"assignments", access_known ? assignments : json::array()}};
 }
 
@@ -719,6 +719,30 @@ json account_for_key(const json& previous, const json& archived, const std::stri
     }
     next["public_key"] = pubkey;
     return next;
+}
+
+AccountMatch account_match(const json& account, const std::string& pubkey, const std::string& user_id) {
+    if (!account.is_object() || !account.contains("user_id") || account.at("user_id") == user_id) return AccountMatch::Own;
+    return account.value("public_key", std::string{}) == pubkey ? AccountMatch::Conflict : AccountMatch::Stale;
+}
+
+std::string stale_account_file(const json& account) {
+    const auto key = account.is_object() ? account.value("public_key", std::string{}) : std::string{};
+    if (!key.empty()) return "account-" + account_file_tag(key) + ".json";
+    const auto user = account.is_object() ? account.value("user_id", std::string{}) : std::string{};
+    const auto tag = account_file_tag(user);
+    return "account-user-" + (tag.empty() ? std::string("unknown") : tag) + ".json";
+}
+
+std::pair<json, json> default_invite_permissions(const json& held, bool admin) {
+    json granted = json::array();
+    json dropped = json::array();
+    for (const auto& name : role_permissions("user")) {
+        if (admin || grants(held, name.get<std::string>())) granted.push_back(name);
+        else dropped.push_back(name);
+    }
+    if (granted.empty()) granted = nullptr;
+    return {granted, dropped};
 }
 
 bool constant_time_equals(const std::string& candidate, const std::string& expected) {
@@ -1068,21 +1092,31 @@ struct NexusManager::Session {
         const auto bound = account.value("public_key", std::string{});
         if (bound == key) return;
         if (bound.empty()) {
+            // A file from before public_key was recorded belongs to an unknown key. The
+            // federation's user_id tells whose it is at the first authentication.
+            if (account.contains("user_id")) return;
             account["public_key"] = key;
             persist();
             return;
         }
-        const auto archived_path = root / ("account-" + nexus_access::account_file_tag(key) + ".json");
+        replace_account(nexus_access::stale_account_file(account), key);
+    }
+    // Archives the active account as `archive_name` and continues with `key`'s own
+    // account: its archived file when one exists, otherwise a fresh account that keeps
+    // the network and machine facts.
+    void replace_account(const std::string& archive_name, const std::string& key) {
+        const auto restore_path = root / ("account-" + nexus_access::account_file_tag(key) + ".json");
         json archived;
-        if (std::ifstream input(archived_path); input) {
+        if (std::ifstream input(restore_path); input) {
             archived = json::parse(input, nullptr, false);
-            if (!archived.is_object()) throw NexusError(500, "Archived device account is invalid; restore " + archived_path.filename().string());
+            if (!archived.is_object()) throw NexusError(500, "Archived device account is invalid; restore " + restore_path.filename().string());
         }
-        write_json(root / ("account-" + nexus_access::account_file_tag(bound) + ".json"), account);
+        write_json(root / archive_name, account);
         account = nexus_access::account_for_key(account, archived, key);
         persist();
         std::error_code ec;
-        std::filesystem::remove(archived_path, ec);
+        std::filesystem::remove(restore_path, ec);
+        LOG(INFO, "Nexus") << "Archived the account of another identity as " << archive_name << std::endl;
     }
     // Until the user names the device, it carries the machine's host name, as
     // people already know it from their other tools.
@@ -1154,10 +1188,17 @@ struct NexusManager::Session {
         require_identity();
         ensure_genesis_key();
         auto result = sdk_call([&](auto out) { return ln_auth_ed25519(client.get(), out); });
-        if (account.contains("user_id") && account.at("user_id") != result.at("user_id")) {
-            throw NexusError(403, "Account does not belong to this device identity");
+        const auto user_id = result.at("user_id").get<std::string>();
+        switch (nexus_access::account_match(account, pubkey, user_id)) {
+        case nexus_access::AccountMatch::Conflict: throw NexusError(403, "Account does not belong to this device identity");
+        case nexus_access::AccountMatch::Stale: replace_account(nexus_access::stale_account_file(account), pubkey); break;
+        case nexus_access::AccountMatch::Own: break;
         }
-        account["user_id"] = result.at("user_id");
+        account["user_id"] = user_id;
+        if (account.value("public_key", std::string{}) != pubkey) {
+            account["public_key"] = pubkey;
+            persist();
+        }
         return result;
     }
     // A device unlocks with a passkey or with its device key, never both. The device
@@ -1248,7 +1289,8 @@ struct NexusManager::Session {
         return result;
     }
     // An empty target selects this account's own top-level group.
-    json create_invite(const std::string& target, const json& body) {
+    // `held` and `admin` are the inviter's own permissions on the target node.
+    json create_invite(const std::string& target, const json& body, const json& held, bool admin) {
         const auto ttl = body.value("ttl_sec", 600);
         if (ttl < 60 || ttl > 600) throw NexusError(400, "Invite lifetime must be 60 to 600 seconds");
         json requested = body.contains("permissions") ? body["permissions"] : json();
@@ -1258,6 +1300,15 @@ struct NexusManager::Session {
             if (!requested.is_null()) throw NexusError(400, "Send a role or a list of permissions, not both");
             if (!body["role"].is_string()) throw NexusError(400, "Send role as a string");
             requested = nexus_access::role_permissions(body["role"].get<std::string>());
+        } else if (requested.is_null()) {
+            // The federation's own default predates route families and would leave the
+            // new device without svc:inference, so the user preset is the default here.
+            auto defaults = nexus_access::default_invite_permissions(held, admin);
+            if (!defaults.second.empty()) {
+                LOG(INFO, "Nexus") << "Invite grants the user preset without " << defaults.second.dump()
+                                   << ": this device does not hold them on the target group" << std::endl;
+            }
+            requested = std::move(defaults.first);
         }
         const auto permissions = nexus_access::invite_permissions(requested);
         const auto list = permissions.is_null() ? std::string() : permissions.dump();
@@ -1724,7 +1775,7 @@ struct NexusManager::Session {
                 if (!target.at("can_add_group").get<bool>()) throw NexusError(403, "You do not have permission to invite members to this group");
                 const auto name = body.value("device_name", std::string());
                 if (name.size() > 128) throw NexusError(400, "Enter a name of up to 128 characters");
-                auto result = create_invite(id, body);
+                auto result = create_invite(id, body, target.at("permissions"), target.at("is_admin").get<bool>());
                 if (!name.empty()) result["device_name"] = name;
                 return result;
             }
@@ -1760,7 +1811,9 @@ struct NexusManager::Session {
         if (path == "/link-token") {
             const auto name = body.at("device_name").get<std::string>();
             if (name.empty() || name.size() > 128) throw NexusError(400, "Enter the name of the device you're inviting");
-            auto result = create_invite("", body);
+            const auto self = find_member(devices, node_id);
+            auto result = create_invite("", body, self.is_object() ? self.value("permissions", json::array()) : json::array(),
+                self.is_object() && self.value("is_admin", false));
             result["device_name"] = name;
             return result;
         }

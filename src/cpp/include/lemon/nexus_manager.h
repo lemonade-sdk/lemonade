@@ -117,6 +117,24 @@ std::string account_file_tag(const std::string& pubkey);
 /// Those are facts about the network and the machine, not about the identity; the
 /// Genesis pin in particular must not drop with a key change. `public_key` is set.
 nlohmann::json account_for_key(const nlohmann::json& previous, const nlohmann::json& archived, const std::string& pubkey);
+/// How the active account relates to the key the federation just authenticated as
+/// `user_id`. Own: the account has no user yet or the same user. Stale: another user,
+/// and the account is not recorded as this key's (`public_key` absent, as files from
+/// before it was recorded, or another key): archive it and start fresh; a delivered key
+/// is never refused for a stale file. Conflict: the account is recorded as this key's
+/// and the federation names another user: refuse.
+enum class AccountMatch { Own, Stale, Conflict };
+AccountMatch account_match(const nlohmann::json& account, const std::string& pubkey, const std::string& user_id);
+/// The archive file name of a stale account: `account-<tag of its public_key>.json`
+/// when the key is recorded, else `account-user-<tag of its user_id>.json`.
+std::string stale_account_file(const nlohmann::json& account);
+/// The permissions an invite grants when the request names neither a role nor a list:
+/// the `user` preset (read, connect_private, svc:inference) reduced to what the inviter
+/// holds on the target node (`held`; `admin` holds every name). The federation requires
+/// the inviter to hold what it grants, so a name it lacks is dropped rather than failing
+/// the invite. Returns {granted, dropped}; `granted` is null when nothing remains, which
+/// selects the federation default.
+std::pair<nlohmann::json, nlohmann::json> default_invite_permissions(const nlohmann::json& held, bool admin);
 #ifdef LEMONADE_WITH_NEXUS
 /// The HTTP answer for a failed ln_identity_handoff_open: 400 for a malformed envelope
 /// (LN_ERR_PARSE, LN_ERR_NULL_ARG), 403 when the envelope does not open for the

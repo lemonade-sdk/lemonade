@@ -210,8 +210,14 @@ to `account-<tag>.json` (`tag` is the first 16 characters of the key's URL-safe
 base64) and the new key's archived account, if any, comes back. A key with no
 archived account starts fresh and carries only `server`, `genesis_pubkey`,
 `tier1_epoch` and `device_name` from the previous account: facts about the
-network and the machine, not about the identity. `authenticate_identity`
-still refuses an account whose `user_id` belongs to another key with 403.
+network and the machine, not about the identity. An `account.json` from
+before `public_key` was recorded belongs to an unknown key: no key adopts it
+at start, and the federation's `user_id` decides at the first authentication.
+When it names the same user the file is bound to the key; when it names
+another user the file is archived as `account-user-<tag of user_id>.json` and
+a fresh account starts. A delivered key is never refused because of a stale
+file. `authenticate_identity` answers 403 only when an account recorded as
+this key's names another user.
 
 `status` fields: `identity_source` (`system`, `user` or `handoff`),
 `needs_user_key`, `public_key` (`ed25519:<base64>` of the active identity, or
@@ -418,8 +424,8 @@ Routes are available under `/api/v0/nexus/`, `/api/v1/nexus/`, `/v0/nexus/`,
 | GET | `key/handoff` | Start a single-use identity hand-off and return the SDK's request JSON; local-only |
 | POST | `device/check` | Advisory check that a device name folds to a free DNS label: `{name, code?}`; uses this account's group when joined, else the invite code's group. Answers `{label, available, conflicts, suggestion}`. The federation still refuses a collision on join or rename |
 | POST | `enable`, `disable`, `lock`, `device` | Local state and device name |
-| POST | `invites`, `invites/cancel`, `join` | Invite a device into this account's top-level group with `{device_name, permissions? \| role?, ttl_sec?}`, or join as a new device with `{code}` |
-| POST | `tree/{id}/invites` | Invite into group `{id}` with `{permissions? \| role?, ttl_sec?, device_name?}`; needs `add_child` or admin above it |
+| POST | `invites`, `invites/cancel`, `join` | Invite a device into this account's top-level group with `{device_name, permissions? \| role?, ttl_sec?}`, or join as a new device with `{code}`. Without `permissions` or `role` the invite grants the `user` preset reduced to what this device holds |
+| POST | `tree/{id}/invites` | Invite into group `{id}` with `{permissions? \| role?, ttl_sec?, device_name?}`; needs `add_child` or admin above it; the same default as `invites` |
 | POST | `invites/accept` | Join another network: accept `{code}` as an account that already joined |
 | GET | `memberships` | Groups this identity belongs to (`role` is `home` or `member`) and `group_node_id` |
 | POST | `memberships/{id}/leave` | Leave a group entered through an invite |
@@ -440,8 +446,13 @@ Routes are available under `/api/v0/nexus/`, `/api/v1/nexus/`, `/v0/nexus/`,
 | GET, POST | `selection` | Selection port target (see [Selection port](#selection-port)) |
 | GET | `events` | SSE mesh/membership/lock events; `after` cursor, `once=1` snapshot |
 
-Invite permissions are optional. Without them the federation grants `read` and
-`connect_private`, reduced to what the inviter holds. Otherwise they are a list
+Invite permissions are optional. Without a `role` or a list, `lemond` grants
+the `user` preset (`read`, `connect_private`, `svc:inference`) reduced to what
+this device holds on the target group; a name it lacks is dropped and logged
+rather than failing the invite, because the federation requires the inviter to
+hold what it grants. (The federation's own default is `read` and
+`connect_private`, from before route families, which leaves a new device
+without `svc:inference`.) Otherwise they are a list
 from `read`, `write`, `add_child`, `connect_private`, `connect_shared` and the
 `svc:<family>` names, or a `role` that expands to such a list.
 `lemond` refuses `admin` and other names with 400. The reply carries the

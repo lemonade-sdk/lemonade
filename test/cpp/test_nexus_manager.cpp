@@ -788,6 +788,35 @@ void check_identity_rules(const std::function<void(bool, const char*)>& check) {
           restored.at("genesis_pubkey") == "g" && restored.at("public_key") == "ed25519:b" && !restored.contains("credential_id"),
           "An archived account keeps its own fields and gains the missing network facts");
 
+    // The federation's user_id decides whose a stale account is; a key is never refused
+    // for a file that is not recorded as its own.
+    using access::AccountMatch;
+    check(access::account_match(json::object(), "ed25519:a", "u1") == AccountMatch::Own &&
+          access::account_match(json{{"user_id", "u1"}}, "ed25519:a", "u1") == AccountMatch::Own &&
+          access::account_match(json{{"user_id", "u1"}, {"public_key", "ed25519:a"}}, "ed25519:a", "u1") == AccountMatch::Own,
+          "An account without a user or with the same user is the key's own");
+    check(access::account_match(json{{"user_id", "u2"}}, "ed25519:a", "u1") == AccountMatch::Stale &&
+          access::account_match(json{{"user_id", "u2"}, {"public_key", "ed25519:b"}}, "ed25519:a", "u1") == AccountMatch::Stale,
+          "Another user's account that is not recorded as this key's is stale");
+    check(access::account_match(json{{"user_id", "u2"}, {"public_key", "ed25519:a"}}, "ed25519:a", "u1") == AccountMatch::Conflict,
+          "Another user on an account recorded as this key's is a conflict");
+    check(access::stale_account_file(json{{"user_id", "u2"}, {"public_key", "ed25519:YWRt+aW4/bg=="}}) == "account-YWRt-aW4_bg.json" &&
+          access::stale_account_file(json{{"user_id", "0123456789abcdef0123"}}) == "account-user-0123456789abcdef.json" &&
+          access::stale_account_file(json{{"user_id", "a b"}}) == "account-user-unknown.json",
+          "A stale account archives by its key, else by its user");
+
+    // An invite without a role or list grants the user preset, reduced to what the
+    // inviter holds on the target; a name it lacks drops instead of failing the invite.
+    const json preset = json::array({"read", "connect_private", "svc:inference"});
+    check(access::default_invite_permissions(json::array({"read", "connect_private", "admin"}), true) == std::make_pair(preset, json::array()) &&
+          access::default_invite_permissions(json::array(), true) == std::make_pair(preset, json::array()), "An admin grants the whole user preset");
+    check(access::default_invite_permissions(preset, false) == std::make_pair(preset, json::array()), "An inviter that holds the preset grants it");
+    check(access::default_invite_permissions(json::array({"read", "write", "add_child"}), false) ==
+          std::make_pair(json::array({"read"}), json::array({"connect_private", "svc:inference"})), "Names the inviter lacks drop from the default");
+    check(access::default_invite_permissions(json::array(), false) == std::make_pair(json(nullptr), preset), "Nothing held leaves the federation default");
+    check(access::invite_permissions(access::default_invite_permissions(json::array({"read", "svc:inference"}), false).first) ==
+          json::array({"read", "svc:inference"}), "The reduced default is a valid invite list");
+
     namespace user_key = lemon::nexus_user_key;
     check(user_key::wants_device_key(json{{"available", true}, {"enabled", true}, {"needs_user_key", true}}), "An enabled mesh without an identity asks for the key");
     check(!user_key::wants_device_key(json{{"available", true}, {"enabled", false}, {"needs_user_key", true}}) &&
@@ -908,6 +937,36 @@ void check_handoff(httplib::Client& management, const std::filesystem::path& roo
     check(same.first == 503 && status().value("public_key", "") == system_key, "The same key again changes nothing");
     check(no_secret(delivered.second) && no_secret(swapped.second) && no_secret(returned.second) && no_secret(status()),
           "No reply carries a seed, private key or envelope");
+
+    // An account.json from before public_key was recorded (a device-key enrolment by an
+    // earlier build) belongs to an unknown key. No key adopts it as its own, and a
+    // delivered key is never refused for it: the federation's user_id decides at the
+    // first authentication (nexus_access::account_match), which archives a stale file.
+    const auto read_account = [&] {
+        std::ifstream input(root / "nexus/account.json");
+        return json::parse(input, nullptr, false);
+    };
+    management.Post("/api/v1/nexus/disable", "{}", "application/json");
+    {
+        auto legacy = read_account();
+        legacy.erase("public_key");
+        legacy["user_id"] = "legacy-user";
+        std::ofstream output(root / "nexus/account.json");
+        output << legacy.dump();
+    }
+    auto enabled = management.Post("/api/v1/nexus/enable", "{}", "application/json");
+    check(enabled && enabled->status == 200 && json::parse(enabled->body).value("public_key", "") == system_key,
+          "A system service adopts its key over a legacy account");
+    const auto unbound = read_account();
+    check(unbound.is_object() && !unbound.contains("public_key") && unbound.value("user_id", "") == "legacy-user",
+          "A legacy account is not bound to a key before the federation names its user");
+    IdentityPtr third(ln_identity_generate(), ln_identity_destroy);
+    auto over_legacy = post_unlock(json{{"identity_envelope", seal(third.get(), begin())}, {"defer_join", true}});
+    const auto after_legacy = read_account();
+    check(over_legacy.first == 503 && over_legacy.second.value("retryable", false) && status().value("public_key", "") == pubkey_of(third.get()) &&
+          after_legacy.is_object() && !after_legacy.contains("public_key") && after_legacy.value("user_id", "") == "legacy-user" &&
+          after_legacy.value("device_name", "") == "My laptop", "A delivered key is never refused because of a stale account file");
+    check(!std::filesystem::exists(root / "nexus/account-user-legacy-user.json"), "A legacy account is archived only once the federation names another user");
 }
 
 #ifdef __linux__
