@@ -30,10 +30,8 @@ AmbientCapabilities=CAP_SYS_RESOURCE
 
 # Security hardening. Rootless Podman creates user namespaces and runs the
 # setuid newuidmap/newgidmap helpers, so NoNewPrivileges and RestrictNamespaces
-# stay off. With no login session, it keeps its runtime state in /tmp, which
-# must be the host's: that is where pasta's AppArmor profile lets it write, and
-# where `podman` run as lemonade outside the service finds the same state, so
-# PrivateTmp stays off too.
+# stay off.
+PrivateTmp=yes
 ProtectSystem=full
 ProtectHome=yes
 RestrictRealtime=yes

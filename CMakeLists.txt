@@ -2134,6 +2134,17 @@ if(UNIX AND NOT APPLE)
         RENAME lemonade.conf
     )
 
+    install(FILES ${CMAKE_SOURCE_DIR}/data/lemonade.tmpfiles
+        DESTINATION ${CMAKE_INSTALL_PREFIX}/lib/tmpfiles.d
+        RENAME lemonade.conf
+    )
+    if(NOT CMAKE_INSTALL_PREFIX STREQUAL "/usr")
+        lemonade_install_systemd_symlink(
+            "/usr/lib/tmpfiles.d/lemonade.conf"
+            "${CMAKE_INSTALL_PREFIX}/lib/tmpfiles.d/lemonade.conf"
+        )
+    endif()
+
     # Configure + install the user-mode systemd unit
     configure_file(
         ${CMAKE_SOURCE_DIR}/data/lemond-user.service.in

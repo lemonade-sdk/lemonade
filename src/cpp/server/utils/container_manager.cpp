@@ -21,8 +21,6 @@
 #ifndef _WIN32
 #include <grp.h>
 #include <pwd.h>
-#include <sys/socket.h>
-#include <sys/un.h>
 #include <unistd.h>
 #endif
 
@@ -35,9 +33,9 @@ namespace {
 
 constexpr const char* kLabel = "ai.lemonade";
 constexpr const char* kServiceAccount = "lemonade";
-constexpr const char* kDockerSocket = "/var/run/docker.sock";
 constexpr int kStopSeconds = 10;
 constexpr int kCommandTimeoutSeconds = 60;
+constexpr int kDockerInfoTimeoutSeconds = 10;
 constexpr int kPullTimeoutSeconds = 3 * 3600;
 constexpr const char* kRelogin = "Log out and back in";
 
@@ -75,16 +73,20 @@ std::optional<gid_t> lookup_group(const std::string& group) {
     return found->gr_gid;
 }
 
-bool process_in_group(const std::string& group) {
-    const std::optional<gid_t> found = lookup_group(group);
-    if (!found) return true;
-    const gid_t gid = *found;
-    if (::getgid() == gid || ::getegid() == gid) return true;
-    const int count = ::getgroups(0, nullptr);
-    if (count <= 0) return false;
-    std::vector<gid_t> groups(static_cast<size_t>(count));
-    if (::getgroups(count, groups.data()) < 0) return false;
-    return std::find(groups.begin(), groups.end(), gid) != groups.end();
+// Desktop distros often grant the logged-in account device access through
+// ACLs rather than video/render membership, so this tests access itself.
+bool account_opens_gpu_devices() {
+    std::vector<fs::path> nodes = {"/dev/kfd"};
+    std::error_code ec;
+    for (const auto& entry : fs::directory_iterator("/dev/dri", ec)) {
+        if (entry.path().filename().string().rfind("renderD", 0) == 0) {
+            nodes.push_back(entry.path());
+        }
+    }
+    for (const auto& node : nodes) {
+        if (fs::exists(node, ec) && ::access(node.c_str(), R_OK | W_OK) != 0) return false;
+    }
+    return true;
 }
 
 std::string process_account() {
@@ -101,18 +103,6 @@ std::string host_group_id(const std::string& group) {
     const std::optional<gid_t> found = lookup_group(group);
     return found ? std::to_string(static_cast<unsigned long>(*found)) : "";
 }
-
-bool docker_socket_accepts_connection() {
-    const int fd = ::socket(AF_UNIX, SOCK_STREAM, 0);
-    if (fd < 0) return false;
-    struct sockaddr_un address = {};
-    address.sun_family = AF_UNIX;
-    std::snprintf(address.sun_path, sizeof(address.sun_path), "%s", kDockerSocket);
-    const bool connected =
-        ::connect(fd, reinterpret_cast<struct sockaddr*>(&address), sizeof(address)) == 0;
-    ::close(fd);
-    return connected;
-}
 #endif
 
 std::string read_file(const std::string& path) {
@@ -125,6 +115,7 @@ std::string read_file(const std::string& path) {
 CommandResult run_on_host(const std::vector<std::string>& argv, int timeout_seconds,
                           bool capture_stderr) {
     CommandResult result;
+    if (argv.empty()) return result;
     const std::vector<std::string> args(argv.begin() + 1, argv.end());
     result.exit_code = ProcessManager::run_process_with_output(
         argv.front(), args,
@@ -137,13 +128,24 @@ CommandResult run_on_host(const std::vector<std::string>& argv, int timeout_seco
     return result;
 }
 
-// A container name accepts [A-Za-z0-9][A-Za-z0-9_.-]*.
+// A container name accepts [A-Za-z0-9][A-Za-z0-9_.-]*. `_` is the escape
+// character, so it is doubled and every other rejected byte becomes `_` plus
+// two hex digits, which keeps distinct tokens distinct.
 std::string name_token(const std::string& token) {
+    static constexpr char kHex[] = "0123456789abcdef";
     std::string out;
     out.reserve(token.size());
     for (const char c : token) {
         const unsigned char uc = static_cast<unsigned char>(c);
-        out.push_back((std::isalnum(uc) || c == '-' || c == '_' || c == '.') ? c : '-');
+        if (std::isalnum(uc) || c == '-' || c == '.') {
+            out.push_back(c);
+        } else if (c == '_') {
+            out += "__";
+        } else {
+            out.push_back('_');
+            out.push_back(kHex[uc >> 4]);
+            out.push_back(kHex[uc & 0xf]);
+        }
     }
     return out;
 }
@@ -154,15 +156,13 @@ ContainerHost ContainerHost::real() {
     ContainerHost host;
     host.on_path = [](const std::string& name) { return !find_executable_in_path(name).empty(); };
 #ifdef _WIN32
-    host.in_group = [](const std::string&) { return false; };
+    host.gpu_devices_accessible = []() { return false; };
     host.account = []() { return std::string(); };
     host.group_id = [](const std::string&) { return std::string(); };
-    host.docker_socket_accepts = []() { return false; };
 #else
-    host.in_group = process_in_group;
+    host.gpu_devices_accessible = account_opens_gpu_devices;
     host.account = process_account;
     host.group_id = host_group_id;
-    host.docker_socket_accepts = docker_socket_accepts_connection;
 #endif
     host.env = [](const std::string& name) {
         const char* value = std::getenv(name.c_str());
@@ -196,13 +196,18 @@ std::optional<bool> ContainerManager::podman_info_rootless() const {
         std::lock_guard<std::mutex> lock(podman_mode_mutex_);
         if (podman_rootless_) return podman_rootless_;
     }
-    const CommandResult info =
-        host_.run({"podman", "info", "--format", "{{.Host.Security.Rootless}}"},
-                  kCommandTimeoutSeconds, /*capture_stderr=*/false);
+    const CommandResult info = host_.run(
+        {"podman", "info", "--format", "{{.Host.Security.Rootless}} {{.Host.NetworkBackend}}"},
+        kCommandTimeoutSeconds, /*capture_stderr=*/false);
     if (info.exit_code != 0) return std::nullopt;
-    const bool rootless = trim(info.output) == "true";
+    std::istringstream fields(info.output);
+    std::string rootless_field;
+    std::string backend;
+    fields >> rootless_field >> backend;
+    const bool rootless = rootless_field == "true";
     std::lock_guard<std::mutex> lock(podman_mode_mutex_);
     podman_rootless_ = rootless;
+    podman_network_backend_ = backend;
     return rootless;
 }
 
@@ -225,9 +230,22 @@ std::vector<SetupFailure> ContainerManager::check_host() const {
     const std::string apply = service ? "sudo systemctl restart lemond" : kRelogin;
     const std::optional<ContainerTool> chosen = tool();
     if (chosen == ContainerTool::Docker) {
-        if (!host_.docker_socket_accepts()) {
+        const CommandResult info = host_.run(
+            {"docker", "info", "--format", "{{.OperatingSystem}}|{{json .SecurityOptions}}"},
+            kDockerInfoTimeoutSeconds, /*capture_stderr=*/false);
+        const std::string install = podman_install_command(host_.read_file("/etc/os-release"));
+        if (info.exit_code != 0) {
             failures.push_back({"docker_access", "The Docker daemon refuses the account",
                                 {"sudo usermod -aG docker " + member}, apply});
+        } else if (info.output.find("Docker Desktop") != std::string::npos) {
+            // Its containers run in a VM that has no access to the host GPU.
+            failures.push_back(
+                {"docker_desktop", "Docker Desktop cannot give containers the GPU", {install}, ""});
+        } else if (info.output.find("name=rootless") != std::string::npos) {
+            // Rootless Docker can neither publish a port from an --internal
+            // network nor expose the container's address to lemond.
+            failures.push_back(
+                {"docker_rootless", "Rootless Docker cannot run container backends", {install}, ""});
         }
         return failures;
     }
@@ -237,8 +255,8 @@ std::vector<SetupFailure> ContainerManager::check_host() const {
         failures.push_back({"container_tool", "podman is not on PATH",
                             {podman_install_command(host_.read_file("/etc/os-release"))}, ""});
     }
-    if (expect_rootless() && (!host_.in_group("video") || !host_.in_group("render"))) {
-        failures.push_back({"device_groups", "Account is not in both video and render",
+    if (expect_rootless() && !host_.gpu_devices_accessible()) {
+        failures.push_back({"device_groups", "Account cannot open the GPU devices",
                             {"sudo usermod -aG video,render " + member}, apply});
     }
     return failures;
@@ -246,7 +264,9 @@ std::vector<SetupFailure> ContainerManager::check_host() const {
 
 std::optional<SetupFailure> ContainerManager::check_podman() const {
     if (tool() != ContainerTool::Podman) return std::nullopt;
-    if (host_.account() == kServiceAccount && host_.on_path("getsubids")) {
+    // Only local rootless Podman maps container IDs onto lemonade's own ranges;
+    // a root or remote Podman behind CONTAINER_HOST uses its own.
+    if (host_.account() == kServiceAccount && expect_rootless() && host_.on_path("getsubids")) {
         const auto has_range = [this](const std::vector<std::string>& argv) {
             const CommandResult result =
                 host_.run(argv, kCommandTimeoutSeconds, /*capture_stderr=*/false);
@@ -261,9 +281,34 @@ std::optional<SetupFailure> ContainerManager::check_podman() const {
                                 "sudo systemctl restart lemond"};
         }
     }
-    if (podman_info_rootless()) return std::nullopt;
-    return SetupFailure{"podman_info", "`podman info` fails",
-                        {"Run `podman info` and fix the error it prints"}, ""};
+    const std::optional<bool> rootless = podman_info_rootless();
+    if (!rootless) {
+        return SetupFailure{"podman_info", "`podman info` fails",
+                            {"Run `podman info` and fix the error it prints"}, ""};
+    }
+    // Rootful lemond connects at the container's address, and Podman 4's CNI
+    // backend gives an internal network no gateway on the host to reach it by.
+    // Rootless Podman publishes a port instead, so it works on CNI too.
+    std::string backend;
+    {
+        std::lock_guard<std::mutex> lock(podman_mode_mutex_);
+        backend = podman_network_backend_;
+    }
+    if (!*rootless && backend == "cni") {
+        const bool service = host_.account() == kServiceAccount;
+        std::string step = "Run lemond as a regular account to use rootless Podman";
+        std::string apply;
+        if (!host_.env("CONTAINER_HOST").empty()) {
+            step = service ? "Remove CONTAINER_HOST from /etc/default/lemond to use rootless Podman"
+                           : "Unset CONTAINER_HOST to use rootless Podman";
+            if (service) apply = "sudo systemctl restart lemond";
+        }
+        return SetupFailure{
+            "rootful_cni",
+            "Rootful Podman's CNI network backend gives lemond no route to its containers",
+            {step}, apply};
+    }
+    return std::nullopt;
 }
 
 std::optional<SetupFailure> ContainerManager::check_selinux() const {
@@ -493,8 +538,8 @@ void ContainerManager::create_network(const std::string& name) const {
     // Rootless Podman starts the network's DNS server through the account's
     // systemd user manager, which lemond.service's account does not have, and
     // lemond reaches its one container through a published port. Rootful
-    // Podman keeps DNS: CNI gives an internal network without it no gateway,
-    // and lemond connects at the container's address.
+    // Podman keeps DNS: netavark gives an internal network without it no
+    // gateway, and lemond connects at the container's address.
     if (rootless_podman()) args.push_back("--disable-dns");
     args.push_back(name);
     const CommandResult result = invoke(args, kCommandTimeoutSeconds);

@@ -683,6 +683,7 @@ jobs:
                     "model": model, "scenario": sc["name"],
                     "fork_id": fork_id, "fork_label": data.get("fork_label", fork_id),
                     "fork_repo": data.get("fork_repo", ""), "fork_version": version,
+                    "rocm_version": data.get("rocm_version"),
                     "backend": br.get("backend"),
                     "ctx_size": br.get("ctx_size"),
                     "quant": quant_from_checkpoint(me, data),
@@ -741,7 +742,8 @@ jobs:
                     pp_tps = round(in_tok * 1000.0 / ttft_block["min"], 2)
                   h = history.setdefault(mdl, {}).setdefault(sc["name"], {}).setdefault(fid, [])
                   h.append({
-                    "version": ver, "timestamp": me.get("timestamp", data.get("timestamp")),
+                    "version": ver, "rocm_version": data.get("rocm_version"),
+                    "timestamp": me.get("timestamp", data.get("timestamp")),
                     "tps_mean": round(tps_block["mean"], 2),
                     "tps_p95": round(tps_block.get("p95", 0), 2),
                     "tg_tps": round(tps_block["mean"], 2),
