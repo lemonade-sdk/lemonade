@@ -136,6 +136,31 @@ async function waitFor(predicate, timeoutMs = 1500) {
     await sleep(1150);
     assert.equal(downloadRequests, 2, 'an explicit idle refresh must remain one-shot');
 
+    // Auto-installs are registered by /load on the server, not by a GUI pull.
+    // An idle store must discover them without any SSE wake from /install.
+    const requestsBeforeLoad = downloadRequests;
+    const stopWatchingLoad = downloadStore.watchForModelLoad();
+    await waitFor(() => downloadRequests > requestsBeforeLoad);
+    serverDownloads = [{
+      id: 'backend:llamacpp:vulkan',
+      type: 'backend',
+      model_name: 'llamacpp:vulkan',
+      status: 'downloading',
+      running: true,
+      percent: 32,
+    }];
+    await waitFor(() => downloadStore.snapshot().some(item =>
+      item.id === 'backend:llamacpp:vulkan' && item.percent === 32), 1800);
+    assert.ok(downloadStore.visibleSnapshot().some(item => item.downloadType === 'backend'));
+    stopWatchingLoad();
+    stopWatchingLoad(); // Idempotent release must not leave a negative watcher count.
+    serverDownloads = [];
+    await downloadStore.refresh();
+    const requestsAfterStop = downloadRequests;
+    await sleep(1150);
+    assert.equal(downloadRequests, requestsAfterStop,
+      'once /load and its backend download finish, polling returns to idle');
+
     serverDownloads = [{
       id: 'model:test-model',
       type: 'model',
