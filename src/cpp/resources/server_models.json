@@ -2954,7 +2954,7 @@
             "reasoning",
             "tool-calling"
         ],
-        "size": 80.8,
+        "size": 86.7,
         "min_resident_gb": 16.0
     },
     "DeepSeek-V4-Flash-Hybrid-Q2Q4-DS4": {
@@ -2965,7 +2965,7 @@
             "chat",
             "reasoning"
         ],
-        "size": 97.0,
+        "size": 97.6,
         "min_resident_gb": 16.0
     },
     "DeepSeek-V4-Flash-Q4-DS4": {
@@ -2976,7 +2976,7 @@
             "chat",
             "reasoning"
         ],
-        "size": 153.3,
+        "size": 164.6,
         "min_resident_gb": 16.0
     },
     "DeepSeek-V4-Flash-MXFP4-DS4": {
@@ -3000,7 +3000,7 @@
             "tool-calling",
             "vision"
         ],
-        "size": 81.0,
+        "size": 86.7,
         "min_resident_gb": 16.0
     },
     "DeepSeek-V4-Flash-Vision-Hybrid-Q2Q4-DS4": {
@@ -3012,7 +3012,7 @@
             "reasoning",
             "vision"
         ],
-        "size": 91.0,
+        "size": 97.6,
         "min_resident_gb": 16.0
     },
     "DeepSeek-V4-Flash-Vision-MXFP4-DS4": {
@@ -3024,7 +3024,7 @@
             "reasoning",
             "vision"
         ],
-        "size": 145.0,
+        "size": 156.0,
         "min_resident_gb": 16.0
     },
     "GLM-5.3-Flash-Q2-DS4": {
@@ -3046,7 +3046,7 @@
             "chat",
             "reasoning"
         ],
-        "size": 191.0,
+        "size": 190.9,
         "min_resident_gb": 16.0
     },
     "DeepSeek-V4.1-Flash-Q2-DS4": {
@@ -3057,7 +3057,7 @@
             "chat",
             "reasoning"
         ],
-        "size": 365.71,
+        "size": 365.7,
         "min_resident_gb": 16.0
     }
 }
