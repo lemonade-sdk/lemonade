@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <condition_variable>
 #include <iostream>
+#include <lemon/model_manager.h>
 #include <mutex>
 #include <queue>
 #include <thread>
@@ -1044,11 +1045,6 @@ void Router::load_model(const std::string& model_name,
         // Done AFTER eviction so that freed VRAM/RAM is visible to the memory query.
         int64_t auto_ctx = resolve_auto_ctx_size(effective_options, model_info);
         const bool ctx_size_auto = auto_ctx != -2;
-        if (auto_ctx == AUTO_CTX_NO_CAPACITY) {
-            throw std::runtime_error(
-                "Not enough free memory to load " + canonical_model_name +
-                " with automatic context sizing. Free memory or choose a smaller model.");
-        }
         if (auto_ctx > 0) {
             LOG(INFO, "Router") << "Auto-tune ctx_size resolved to " << auto_ctx << std::endl;
             effective_options.set_option("ctx_size", auto_ctx);
@@ -1485,7 +1481,7 @@ RecipeOptions Router::resolve_effective_options(const ModelInfo& model_info,
 
     const json model_json = model_info.recipe_options.to_json();
     const json model_defaults_json =
-        model_manager_->get_model_default_options(model_info).to_json();
+        model_manager_->options(model_info.model_name)["defaults"];
     const json arch_json = arch_opts.to_json();
     const json backend_defaults_json = default_opt.to_json();
     const json merge_value = effective.get_option("merge_args");

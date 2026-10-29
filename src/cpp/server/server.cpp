@@ -2,7 +2,6 @@
 
 #include <lemon/utils/aixlog.hpp>
 
-#include "lemon/alias_manager.h"
 #include "lemon/backend_manager.h"
 #include "lemon/cloud_provider_registry.h"
 #include "lemon/jobs/job_manager.h"
@@ -67,11 +66,13 @@ Server::Server(std::shared_ptr<RuntimeConfig> config,
         }
     }
 
-    alias_manager_ = std::make_unique<AliasManager>(cache_dir);
-    model_manager_ = std::make_unique<ModelManager>(config_->extra_models_dir());
-    model_manager_->set_cloud_registry(cloud_registry_.get());
-    model_manager_->set_default_model_source_provider(
-        [this]() { return config_->default_model_source(); });
+    ModelManagerConfig manager_config;
+    manager_config.cache_dir = cache_dir;
+    manager_config.extra_models_dir = config_->extra_models_dir();
+    manager_config.cloud_providers = cloud_registry_.get();
+    manager_config.default_model_source = [this]() { return config_->default_model_source(); };
+    manager_config.model_catalogs = [this]() { return config_->model_catalogs(); };
+    model_manager_ = std::make_unique<ModelManager>(std::move(manager_config));
 
     backend_manager_ = std::make_unique<BackendManager>();
     BackendManager::set_global(backend_manager_.get());
@@ -83,24 +84,18 @@ Server::Server(std::shared_ptr<RuntimeConfig> config,
 
     // When a router collection is added, edited, or removed (via the API or an
     // on-disk edit), reclaim any routing helper no remaining policy references.
-    model_manager_->set_models_changed_callback([this](uint64_t generation) {
-        router_->reconcile_routing_helpers(active_policy_helper_models(*model_manager_),
-                                           generation);
+    model_manager_->on_models_changed([this](uint64_t generation) {
+        router_->reconcile_routing_helpers(model_manager_->active_helper_models(), generation);
     });
 
-    // Seed the router's needed-helper set from policies already present at
-    // startup so a helper loaded before the first policy change still validates
-    // against an authoritative set (see Router::load_model). Reserve the
-    // generation BEFORE snapshotting the policies: the directory watcher may
-    // already be publishing newer snapshots, and evaluating next_notify_generation()
-    // after computing the snapshot (argument evaluation order is unspecified in
-    // C++) could stamp this stale snapshot with a newer generation and clobber
-    // the watcher's authoritative state.
-    const uint64_t seed_generation = model_manager_->next_notify_generation();
-    const std::set<std::string> seed_needed = active_policy_helper_models(*model_manager_);
-    router_->reconcile_routing_helpers(seed_needed, seed_generation);
+    // Reconcile once at startup so a helper loaded before the first policy
+    // change still validates against an authoritative set (see
+    // Router::load_model). The helper set and its generation come from one
+    // published snapshot, so they cannot disagree the way two separate reads
+    // could.
+    model_manager_->notify_models_changed();
 
-    model_manager_->set_model_updated_callback([this](const std::string& model_name) {
+    model_manager_->on_model_updated([this](const std::string& model_name) {
         if (router_ && router_->is_model_loaded(model_name)) {
             LOG(INFO, "Server") << "Evicting updated model from memory: " << model_name << std::endl;
             router_->unload_model(model_name);
@@ -108,16 +103,15 @@ Server::Server(std::shared_ptr<RuntimeConfig> config,
     });
 
     metrics_platform_ = create_metrics_platform();
-    model_json_ = std::make_unique<ModelJson>(model_manager_.get(), router_.get(),
-                                              alias_manager_.get());
+    model_json_ = std::make_unique<ModelJson>(model_manager_.get(), router_.get());
     model_loader_ = std::make_unique<ModelLoader>(router_.get(), model_manager_.get());
     downloads_ = std::make_unique<DownloadManager>();
+    backend_manager_->set_download_manager(downloads_.get());
 
     ctx_.router = router_.get();
     ctx_.model_manager = model_manager_.get();
     ctx_.backend_manager = backend_manager_.get();
     ctx_.cloud_registry = cloud_registry_.get();
-    ctx_.alias_manager = alias_manager_.get();
     ctx_.metrics = metrics_platform_.get();
     ctx_.model_json = model_json_.get();
     ctx_.model_loader = model_loader_.get();
@@ -181,7 +175,7 @@ void Server::start_model_cache_warmup() {
     model_cache_warmup_thread_ = std::thread([this]() {
         try {
             LOG(DEBUG, "Server") << "Warming model list cache..." << std::endl;
-            model_manager_->get_supported_models();
+            model_manager_->snapshot();
             LOG(DEBUG, "Server") << "Model list cache warmup complete" << std::endl;
         } catch (const std::exception& e) {
             LOG(WARNING, "Server") << "Model list cache warmup failed: " << e.what() << std::endl;
@@ -192,7 +186,7 @@ void Server::start_model_cache_warmup() {
         if (config_->auto_check_model_updates()) {
             try {
                 LOG(DEBUG, "Server") << "Checking downloaded models for updates..." << std::endl;
-                auto check_res = model_manager_->check_for_model_updates();
+                auto check_res = model_manager_->check_updates();
                 LOG(DEBUG, "Server") << "Model update check complete" << std::endl;
 
                 for (const auto& [model_name, err] : check_res.failed_models) {
@@ -254,40 +248,7 @@ void Server::stop() {
         model_cache_warmup_thread_.join();
     }
 
-    std::lock_guard<std::mutex> sync_lock(background_sync_mutex_);
-    for (auto& task : background_sync_threads_) {
-        if (task.thread.joinable()) {
-            task.thread.join();
-        }
-    }
-    background_sync_threads_.clear();
-}
-
-void Server::start_background_sync() {
-    std::lock_guard<std::mutex> lock(background_sync_mutex_);
-
-    for (auto it = background_sync_threads_.begin(); it != background_sync_threads_.end(); ) {
-        if (it->finished->load() && it->thread.joinable()) {
-            it->thread.join();
-            it = background_sync_threads_.erase(it);
-        } else {
-            ++it;
-        }
-    }
-
-    auto finished_flag = std::make_shared<std::atomic<bool>>(false);
-    std::thread worker([this, finished_flag]() {
-        try {
-            LOG(INFO, "Server") << "Background model sync thread started" << std::endl;
-            model_manager_->execute_sync();
-            LOG(INFO, "Server") << "Background model sync thread completed successfully" << std::endl;
-        } catch (const std::exception& e) {
-            LOG(WARNING, "Server") << "Background model sync failed: " << e.what() << std::endl;
-        }
-        finished_flag->store(true);
-    });
-
-    background_sync_threads_.push_back({std::move(worker), finished_flag});
+    model_manager_->wait_until_sync_idle();
 }
 
 double Server::get_cpu_usage() {

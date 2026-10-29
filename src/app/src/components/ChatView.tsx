@@ -9,6 +9,7 @@ import { WorkspaceList, WorkspaceListRow } from './WorkspacePanels';
 import { backendCompactLabel, capabilityColor } from '../modelPresentation';
 import { scheduleIdleWork } from '../startupScheduler';
 import { useI18n } from '../i18n';
+import ChatReadinessProgress from './ChatReadinessProgress';
 
 const Model3DResult = lazy(() => import(/* webpackChunkName: "chat-model3d" */ './Model3DResult'));
 const LogViewer = lazy(() => import(/* webpackChunkName: "chat-logs" */ './LogViewer'));
@@ -512,12 +513,15 @@ function timeAgo(ts: number): string {
 
 interface ChatViewProps {
   currentModel: string | null;
+  dictationTarget: string | null;
   modelSelectionEpoch: number;
   composerFocusEpoch: number;
   loadedModels: LoadedModel[];
   serverModels: ModelInfo[];
   connectionStatus: ConnectionStatus;
   onModelSelect: (model: string) => void;
+  onDictationStart: (model: string) => void;
+  onDictationEnd: (failed?: boolean) => void;
   onOpenModelDetails: (model: string) => void;
   onRefresh: () => void | Promise<void>;
 }
@@ -525,7 +529,6 @@ interface ChatViewProps {
 interface ModelPreparationState {
   modelName: string;
   phase: 'waiting' | 'downloading' | 'loading';
-  percent?: number;
 }
 
 const MCP_ENABLED_KEY = 'mcp_enabled';
@@ -881,12 +884,15 @@ function friendlyRouterChatError(message: string): string {
 
 const ChatView: React.FC<ChatViewProps> = ({
   currentModel: selectedModel,
+  dictationTarget,
   modelSelectionEpoch,
   composerFocusEpoch,
   loadedModels,
   serverModels,
   connectionStatus,
   onModelSelect,
+  onDictationStart,
+  onDictationEnd,
   onOpenModelDetails,
   onRefresh,
 }) => {
@@ -995,6 +1001,7 @@ const ChatView: React.FC<ChatViewProps> = ({
   const realtimeRef = useRef<RealtimeTranscriptionHandle | null>(null);
   // Dictation uses an independent ASR model; the selected chat model stays the target for Send.
   const micSessionRef = useRef<'dictation' | 'transcription' | null>(null);
+  const micSessionIdRef = useRef(0);
   const lastDictationTextRef = useRef('');
   const finishDictationRef = useRef<(() => void) | null>(null);
   const isLiveRecordingRef = useRef(false);
@@ -1405,7 +1412,10 @@ const ChatView: React.FC<ChatViewProps> = ({
     () => canUseMicrophone() && hasRealtimeAudio,
     [hasRealtimeAudio],
   );
-  const supportsDictation = currentCapability === 'chat' && canUseMicrophone();
+  const supportsDictation = canUseMicrophone() && (
+    ['chat', 'image', 'audio-generation', 'tts'].includes(currentCapability)
+    || (currentCapability === 'model3d' && model3dSettings.sourceMode === 'text')
+  );
   const supportsChatAudioInput = useMemo(
     () => modelSupportsChatAudioInput(currentKnownModelInfo, currentLoadedModel),
     [currentKnownModelInfo, currentLoadedModel],
@@ -1748,6 +1758,7 @@ const ChatView: React.FC<ChatViewProps> = ({
   }, [modelPickerOpen]);
 
   useEffect(() => {
+    if (selectedModel && selectedModel === dictationTarget) return;
     const selectedInfo = selectedModel ? findModelInfoByName(knownModelInfos, selectedModel) : null;
     const selectedStillUsable = Boolean(selectedModel) && (
       loadedModels.some(m => m.model_name === selectedModel && canSelectInComposer(m))
@@ -1755,9 +1766,13 @@ const ChatView: React.FC<ChatViewProps> = ({
     );
     const selectedDefault = lemonadeDefaultModel(selectedModel);
     if (selectedStillUsable || selectedDefault || !selectedModel || loadedModels.length === 0) return;
+    // Do not turn an unloaded prompt model into standalone transcription
+    // merely because the dictation ASR model is running.
+    if (loadedModels.every(m => String(m.type).toLowerCase() === 'transcription')
+        && (!selectedInfo || capabilityFromModelInfo(selectedInfo) !== 'audio')) return;
     const preferred = selectPreferredLoadedModel(loadedModels);
     if (preferred && canSelectInComposer(preferred)) onModelSelect(preferred.model_name);
-  }, [knownModelInfos, loadedModels, onModelSelect, selectedModel]);
+  }, [dictationTarget, knownModelInfos, loadedModels, onModelSelect, selectedModel]);
 
   const updateConversation = useCallback((id: string, updater: (c: Conversation) => Conversation) => {
     setConversations(prev => prev.map(c => c.id === id ? updater(c) : c));
@@ -1808,7 +1823,7 @@ const ChatView: React.FC<ChatViewProps> = ({
     return api.loadModel(modelName, recipeOptions, target);
   }, [knownModelInfos, loadedModels]);
 
-  const waitForExistingModelDownload = useCallback(async (modelName: string, convoId: string): Promise<boolean> => {
+  const waitForExistingModelDownload = useCallback(async (modelName: string): Promise<boolean> => {
     const [{ downloadStore }, api] = await Promise.all([getDownloadStoreModule(), getApiClient()]);
     let sawDownload = false;
     const startedAt = Date.now();
@@ -1822,14 +1837,6 @@ const ChatView: React.FC<ChatViewProps> = ({
         if (active.status === 'paused') {
           throw new Error(`Download for ${modelName} is paused. Resume it in Downloads, then send again.`);
         }
-        setModelPreparations(prev => ({
-          ...prev,
-          [convoId]: {
-            modelName,
-            phase: 'waiting',
-            percent: Number.isFinite(active.percent) ? active.percent : undefined,
-          },
-        }));
         await new Promise(resolve => window.setTimeout(resolve, 750));
         continue;
       }
@@ -1878,6 +1885,7 @@ const ChatView: React.FC<ChatViewProps> = ({
       return snapshotFromLoaded(loaded) || snapshotFromModelInfo(initialInfo) || snapshotFromName(modelName, [loaded])!;
     }
 
+    setModelPreparations(prev => ({ ...prev, [convoId]: { modelName, phase: 'waiting' } }));
     let freshModels = await api.models(true).catch(() => ({ data: knownModelInfos }));
     let info = findModelInfoByName(freshModels.data, modelName) || initialInfo;
 
@@ -1895,7 +1903,7 @@ const ChatView: React.FC<ChatViewProps> = ({
       return snapshotFromModelInfo(info) || snapshotFromName(modelName, health.all_models_loaded || [])!;
     }
 
-    const existingFinished = await waitForExistingModelDownload(modelName, convoId);
+    const existingFinished = await waitForExistingModelDownload(modelName);
     if (existingFinished) {
       freshModels = await api.models(true).catch(() => freshModels);
       info = findModelInfoByName(freshModels.data, modelName) || info;
@@ -1905,20 +1913,10 @@ const ChatView: React.FC<ChatViewProps> = ({
       let pullError: Error | null = null;
       let pullCompleted = false;
       downloadStore.wake(modelName, 'model');
-      setModelPreparations(prev => ({ ...prev, [convoId]: { modelName, phase: 'downloading', percent: 0 } }));
+      setModelPreparations(prev => ({ ...prev, [convoId]: { modelName, phase: 'downloading' } }));
 
       await api.pullModel(modelName, {
-        onProgress: data => {
-          const item = downloadStore.wake(modelName, 'model');
-          setModelPreparations(prev => ({
-            ...prev,
-            [convoId]: {
-              modelName,
-              phase: 'downloading',
-              percent: item?.percent ?? prev[convoId]?.percent ?? 0,
-            },
-          }));
-        },
+        onProgress: () => { downloadStore.wake(modelName, 'model'); },
         onComplete: data => {
           pullCompleted = true;
           downloadStore.wake(modelName, 'model');
@@ -1937,7 +1935,7 @@ const ChatView: React.FC<ChatViewProps> = ({
       }
     }
 
-    setModelPreparations(prev => ({ ...prev, [convoId]: { modelName, phase: 'loading', percent: 100 } }));
+    setModelPreparations(prev => ({ ...prev, [convoId]: { modelName, phase: 'loading' } }));
     await loadModelForChat(modelName, info || initialInfo);
     await Promise.resolve(onRefresh());
     health = await api.health();
@@ -2048,6 +2046,10 @@ const ChatView: React.FC<ChatViewProps> = ({
   const currentStream = activeId ? streaming.getStream(activeId) : undefined;
   const isStreaming = !!currentStream;
   const modelPreparation = activeId ? modelPreparations[activeId] || null : null;
+  const progressModelName = modelPreparation?.modelName || modelPickerLoading || currentModel;
+  const progressModelInfo = progressModelName === currentModel
+    ? currentKnownModelInfo : findModelInfoByName(knownModelInfos, progressModelName);
+  const progressRecipe = String((progressModelInfo as any)?.recipe || (progressModelName === currentModel ? currentRecipe : '')).toLowerCase();
   const capabilityBusy = activeId ? capabilityBusyConvoIds.has(activeId) : false;
   const isBusy = isStreaming || capabilityBusy || isLiveRecording || micPreparation !== null || modelPreparation !== null;
 
@@ -2446,7 +2448,8 @@ ${finalText}`
 
   const handleMicStart = useCallback(async () => {
     if (!currentModel || !currentModelSnapshot || micPreparation !== null || isStreaming || capabilityBusy
-      || (currentCapability === 'chat' ? !supportsDictation : !supportsRealtimeAudio)) return;
+      || (!supportsDictation && !supportsRealtimeAudio)) return;
+    const sessionId = ++micSessionIdRef.current;
     if (liveFinalizeTimerRef.current) {
       window.clearTimeout(liveFinalizeTimerRef.current);
       liveFinalizeTimerRef.current = null;
@@ -2458,9 +2461,24 @@ ${finalText}`
     setLiveTranscript('');
     liveTranscriptRef.current = '';
     lastDictationTextRef.current = '';
-    const dictating = currentCapability === 'chat';
+    const dictating = supportsDictation;
     micSessionRef.current = dictating ? 'dictation' : 'transcription';
+    if (dictating) onDictationStart(currentModel);
     setMicPreparation(dictating ? t('Preparing dictation...') : t('Connecting microphone…'));
+    const isCurrent = () => sessionId === micSessionIdRef.current;
+    const failDictation = () => {
+      if (!dictating || !isCurrent() || micSessionRef.current !== 'dictation') return;
+      // Keep committed draft text when the socket closes after Stop.
+      if (liveFinalizeTimerRef.current !== null) return finishDictationRef.current?.();
+      ++micSessionIdRef.current;
+      micSessionRef.current = null;
+      const handle = realtimeRef.current;
+      realtimeRef.current = null;
+      handle?.close();
+      stopRecording();
+      clearLiveMicState();
+      onDictationEnd(true);
+    };
     try {
       const api = await getApiClient();
       let transcriptionModel = currentModel;
@@ -2487,25 +2505,38 @@ ${finalText}`
         }
       }
       const handle = await api.connectRealtimeTranscription(transcriptionModel, {
-        onConnected: () => setIsLiveConnected(true),
-        onDisconnected: () => setIsLiveConnected(false),
-        onError: message => setLiveError(message),
-        onSpeechEvent: handleLiveSpeechEvent,
-        onTranscription: handleLiveTranscription,
+        onConnected: () => { if (isCurrent()) setIsLiveConnected(true); },
+        onDisconnected: () => {
+          // A failed primary socket may still close while the legacy port connects.
+          if (!isCurrent() || !realtimeRef.current) return;
+          setIsLiveConnected(false);
+          if (dictating && liveFinalizeTimerRef.current === null) setLiveError('Realtime microphone disconnected.');
+          failDictation();
+        },
+        onError: message => { if (isCurrent()) { setLiveError(message); failDictation(); } },
+        onSpeechEvent: event => { if (isCurrent()) handleLiveSpeechEvent(event); },
+        onTranscription: (text, final) => { if (isCurrent()) handleLiveTranscription(text, final); },
       });
+      if (!isCurrent()) { handle.close(); return; }
+      if (!handle.isConnected()) throw new Error('Realtime microphone disconnected.');
       realtimeRef.current = handle;
       isLiveRecordingRef.current = true;
       await startRecording();
+      if (!isCurrent()) { stopRecording(); return; }
+      if (!handle.isConnected()) throw new Error('Realtime microphone disconnected.');
       setIsLiveRecording(true);
     } catch (err) {
+      if (!isCurrent()) return;
+      ++micSessionIdRef.current;
+      micSessionRef.current = null;
       realtimeRef.current?.close();
       realtimeRef.current = null;
       stopRecording();
       clearLiveMicState();
-      micSessionRef.current = null;
+      if (dictating) onDictationEnd(true);
       setLiveError(friendlyErrorMessage(err));
     } finally {
-      setMicPreparation(null);
+      if (isCurrent() || micSessionRef.current === null) setMicPreparation(null);
     }
   }, [
     capabilityBusy,
@@ -2520,6 +2551,8 @@ ${finalText}`
     loadedModels,
     micPreparation,
     onRefresh,
+    onDictationStart,
+    onDictationEnd,
     startRecording,
     stopRecording,
     supportsDictation,
@@ -2528,6 +2561,7 @@ ${finalText}`
   ]);
 
   const handleMicStop = useCallback(() => {
+    const sessionId = micSessionIdRef.current;
     stopRecording();
     const handle = realtimeRef.current;
     const dictating = micSessionRef.current === 'dictation';
@@ -2537,29 +2571,35 @@ ${finalText}`
     // A final ASR segment may arrive well after Stop on slower CPUs.
     // Finish when the server sends it, with a bounded fallback for silence/errors.
     const finish = () => {
+      if (sessionId !== micSessionIdRef.current) return;
       if (liveFinalizeTimerRef.current !== null) window.clearTimeout(liveFinalizeTimerRef.current);
       const finalText = liveTranscriptRef.current.trim();
       if (!dictating && finalText) appendLiveTranscript(finalText);
       if (dictating) requestAnimationFrame(() => inputRef.current?.focus());
       setLiveTranscript('');
       liveTranscriptRef.current = '';
-      handle?.close();
-      if (realtimeRef.current === handle) realtimeRef.current = null;
+      ++micSessionIdRef.current;
       micSessionRef.current = null;
+      if (realtimeRef.current === handle) realtimeRef.current = null;
       finishDictationRef.current = null;
+      handle?.close();
       liveFinalizeTimerRef.current = null;
+      if (dictating) onDictationEnd();
     };
     if (dictating) finishDictationRef.current = finish;
     liveFinalizeTimerRef.current = window.setTimeout(finish, dictating ? 10000 : 1200);
-  }, [appendLiveTranscript, clearLiveMicState, stopRecording]);
+  }, [appendLiveTranscript, clearLiveMicState, onDictationEnd, stopRecording]);
 
   useEffect(() => {
     return () => {
+      ++micSessionIdRef.current;
       stopRecording();
       realtimeRef.current?.close();
       if (liveFinalizeTimerRef.current) window.clearTimeout(liveFinalizeTimerRef.current);
+      if (micSessionRef.current === 'dictation') onDictationEnd();
+      micSessionRef.current = null;
     };
-  }, [stopRecording]);
+  }, [onDictationEnd, stopRecording]);
 
   const runCapabilityRequest = useCallback(async (
     convoId: string,
@@ -3467,14 +3507,7 @@ ${finalText}`
     || currentCapability === 'model3d'
     || (currentCapability === 'tts' && isOpenMossTts);
 
-  const composerHint = modelPreparation
-    ? (modelPreparation.phase === 'loading'
-      ? t('Loading {model} for chat…', { model: modelPreparation.modelName })
-      : t(modelPreparation.phase === 'waiting' ? 'Waiting for {model}…' : 'Downloading {model}{progress}…', {
-        model: modelPreparation.modelName,
-        progress: Number.isFinite(modelPreparation.percent) ? ` · ${Math.round(modelPreparation.percent!)}%` : '',
-      }))
-    : supportsChatAudioInput && modeSupportsChatCompletions
+  const composerHint = supportsChatAudioInput && modeSupportsChatCompletions
     ? (supportsRealtimeAudio
       ? 'Chat + audio mode · mic transcribes into the draft, and audio files are routed through chat completions'
       : 'Chat + audio mode · attached audio is routed through chat completions')
@@ -3734,26 +3767,6 @@ ${finalText}`
                 </article>
               )}
 
-              {modelPreparation && !isStreaming && (
-                <article className="message message--assistant" data-model-preparation={modelPreparation.phase}>
-                  <div className="message__avatar"><Icon name="download" size={16} /></div>
-                  <div className="message__body">
-                    <div className="message__author-row">
-                      <div className="message__author">{t('Lemonade')}</div>
-                    </div>
-                    <div className="message__content message__content--pending">
-                      <span className="streaming-cursor streaming-cursor--leading" aria-hidden="true" />
-                      {modelPreparation.phase === 'loading'
-                        ? t('Loading {model} for chat…', { model: modelPreparation.modelName })
-                        : t(modelPreparation.phase === 'waiting' ? 'Waiting for {model}…' : 'Downloading {model}{progress}…', {
-                          model: modelPreparation.modelName,
-                          progress: Number.isFinite(modelPreparation.percent) ? ` · ${Math.round(modelPreparation.percent!)}%` : '',
-                        })}
-                    </div>
-                  </div>
-                </article>
-              )}
-
               {capabilityBusy && !isStreaming && !modelPreparation && (
                 <article className="message message--assistant">
                   <div className="message__avatar"><CapabilityIcon capability={currentCapability} size={16} /></div>
@@ -3802,27 +3815,36 @@ ${finalText}`
           {(modelPickerOptions.length > 0 || modelPickerOpen) && (
             <div className="composer__model-picker" ref={modelPickerRef}>
               <span className="composer__model-label">{t('Model')}</span>
-              <button
-                type="button"
-                className="composer__model-button"
-                onClick={() => { setModelPickerOpen(v => !v); setModelPickerError(null); }}
-                aria-haspopup="listbox"
-                aria-expanded={modelPickerOpen}
-              >
-                {currentLoadedModel ? (
-                  <span className={`composer__model-mode composer__model-mode--${modelModeBadge(currentCapability, currentRecipe)}`}>
+              <div className="composer__model-stack">
+                <button
+                  type="button"
+                  className="composer__model-button"
+                  onClick={() => { setModelPickerOpen(v => !v); setModelPickerError(null); }}
+                  aria-haspopup="listbox"
+                  aria-expanded={modelPickerOpen}
+                >
+                  {currentLoadedModel ? (
+                    <span className={`composer__model-mode composer__model-mode--${modelModeBadge(currentCapability, currentRecipe)}`}>
+                      <ModelModeIcons capability={currentCapability} recipe={currentRecipe} audioInput={supportsChatAudioInput} size={14} />
+                      <span>{modelModeDisplayLabel(currentCapability, supportsChatAudioInput, currentRecipe)}</span>
+                    </span>
+                  ) : (
                     <ModelModeIcons capability={currentCapability} recipe={currentRecipe} audioInput={supportsChatAudioInput} size={14} />
-                    <span>{modelModeDisplayLabel(currentCapability, supportsChatAudioInput, currentRecipe)}</span>
-                  </span>
-                ) : (
-                  <ModelModeIcons capability={currentCapability} recipe={currentRecipe} audioInput={supportsChatAudioInput} size={14} />
-                )}
-                <span className="composer__model-button-name">{currentModel}</span>
-                {selectableModels.length > 0 && (
-                  <span className="composer__model-button-badge">({selectableModels.length})</span>
-                )}
-                <span className="composer__model-button-caret">▾</span>
-              </button>
+                  )}
+                  <span className="composer__model-button-name">{currentModel}</span>
+                  {selectableModels.length > 0 && (
+                    <span className="composer__model-button-badge">({selectableModels.length})</span>
+                  )}
+                  <span className="composer__model-button-caret">▾</span>
+                </button>
+                <ChatReadinessProgress
+                  modelName={progressModelName}
+                  recipe={progressRecipe}
+                  modelSizeGiB={progressModelInfo?.size}
+                  phase={modelPreparation?.phase || (modelPickerLoading ? 'loading' : null)}
+                  isLoaded={loadedModels.some(model => model.model_name.toLowerCase() === progressModelName.toLowerCase())}
+                />
+              </div>
               {modelPickerOpen && (
                 <div className="composer__model-menu" role="dialog" aria-label={t('Search models')}>
                   <label className="composer__model-search">
@@ -4307,13 +4329,13 @@ ${finalText}`
             <div className="composer__live-head">
               <span className={`composer__live-dot${isSpeaking ? ' composer__live-dot--speaking' : ''}`} />
               <span>{micPreparation || (micSessionRef.current === 'dictation'
-                ? t('Dictation to chat draft')
+                ? (currentCapability === 'chat' ? t('Dictation to chat draft') : t('Dictate message'))
                 : isLiveRecording ? (isLiveConnected ? t('Live microphone') : t('Connecting microphone…')) : t('Microphone'))}</span>
               {isLiveRecording && <span className="composer__live-meter"><span style={{ width: `${Math.round(audioLevel * 100)}%` }} /></span>}
             </div>
             {!micPreparation && (
               <div className="composer__live-text">
-                {liveError || micError || liveTranscript || 'Listening… start speaking to see transcription.'}
+                {liveError || micError || liveTranscript || t('Listening… start speaking to see transcription.')}
               </div>
             )}
           </div>
@@ -4595,13 +4617,15 @@ ${finalText}`
               className={`composer__mic${isLiveRecording ? ' composer__mic--recording' : ''}`}
               onClick={isLiveRecording ? handleMicStop : handleMicStart}
               disabled={!currentModel || !!micPreparation || (!supportsDictation && !supportsRealtimeAudio && !isLiveRecording) || ((isStreaming || capabilityBusy) && !isLiveRecording)}
-              title={isLiveRecording ? t('Stop microphone') : currentCapability === 'chat'
-                ? t('Dictate speech into the chat draft (uses a transcription model)')
+              title={isLiveRecording ? t('Stop microphone') : supportsDictation
+                ? (currentCapability === 'chat'
+                  ? t('Dictate speech into the chat draft (uses a transcription model)')
+                  : t('Dictate message'))
                 : t('Start live audio transcription')}
-              aria-label={isLiveRecording ? t('Stop microphone') : currentCapability === 'chat' ? t('Dictate message') : t('Start live audio transcription')}
+              aria-label={isLiveRecording ? t('Stop microphone') : supportsDictation ? t('Dictate message') : t('Start live audio transcription')}
               aria-pressed={isLiveRecording}
             >
-              <Icon name={isLiveRecording ? 'stop' : currentCapability === 'chat' ? 'mic' : 'audio'} size={16} />
+              <Icon name={isLiveRecording ? 'stop' : supportsDictation ? 'mic' : 'audio'} size={16} />
             </button>
           )}
           {isStreaming ? (
@@ -4675,19 +4699,19 @@ const EmptyState: React.FC<EmptyStateProps> = ({
         </p>
 
         <div className="chips" role="list">
-          <button className="chip" role="listitem" onClick={() => onChipClick('How do I get started with Lemonade?')}>
+          <button className="chip" role="listitem" onClick={() => onChipClick(t('How do I get started with Lemonade?'))}>
             <span className="chip__icon" aria-hidden="true"><Icon name="info" size={16} /></span>
             {t('How do I use Lemonade?')}
           </button>
-          <button className="chip" role="listitem" onClick={() => onChipClick('How do I download and load a model in Lemonade?')}>
+          <button className="chip" role="listitem" onClick={() => onChipClick(t('How do I download and load a model in Lemonade?'))}>
             <span className="chip__icon" aria-hidden="true"><Icon name="download" size={16} /></span>
             {t('How do I add a model?')}
           </button>
-          <button className="chip" role="listitem" onClick={() => onChipClick('What are Lemonade tools, and how do I use them?')}>
+          <button className="chip" role="listitem" onClick={() => onChipClick(t('What are Lemonade tools, and how do I use them?'))}>
             <span className="chip__icon" aria-hidden="true"><Icon name="tools" size={16} /></span>
             {t('What are Lemonade tools?')}
           </button>
-          <button className="chip" role="listitem" onClick={() => onChipClick('What can my hardware run well with Lemonade?')}>
+          <button className="chip" role="listitem" onClick={() => onChipClick(t('What can my hardware run well with Lemonade?'))}>
             <span className="chip__icon" aria-hidden="true"><Icon name="gauge" size={16} /></span>
             {t('What can my hardware run?')}
           </button>

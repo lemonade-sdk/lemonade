@@ -105,38 +105,38 @@ Both non-streaming and `stream: true` are supported. In streaming mode the media
 
 ```json
 {
-  "id": "chatcmpl-Ur8WXBSFmCy4xSW1gr9J6imPMcSBsmG7",
+  "id": "chatcmpl-gNDT8sExJxtiR4rOy3b11ADbUWEjLmPU",
   "object": "chat.completion",
-  "created": 1791990411,
+  "created": 1792807169,
   "model": "Qwen3-0.6B-GGUF",
-  "system_fingerprint": "b11393-dbe4c3ed4",
+  "system_fingerprint": "b11846-1a24df163",
   "choices": [
     {
       "index": 0,
       "message": {
         "role": "assistant",
-        "content": "The population of Paris, France, is approximately **2,015,000**. This number reflects the city's size and population, making it one of the most populous cities in the world.",
-        "reasoning_content": "Okay, so I need to figure out the population of Paris. Let me think. First, I remember that Paris is a big city in France, right? I think it's the capital. But how do I find the exact population?\n\nWait, I think I heard that the population is around 2 million. But I'm not sure. Maybe I should check a reliable source. Oh, right! The official website of Paris might have the population numbers. Let me recall... Oh! Oh, right! The city's population is about 2,015,000. I think that's correct. But I'm a bit fuzzy on the exact number. Maybe I should confirm with another source. Wait, I'm not sure. Hmm. Let me think... Oh, yeah, I think it's 2,015,000. But sometimes people might say 2 million. But 2,015,000 is more accurate. So I'll go with that.\n"
+        "content": "The population of Paris, France, is approximately **2,200,000** as of the latest available data. This figure reflects a population estimate and may vary slightly depending on the source or time period. For the most recent year, as of 2023, the population of Paris was approximately 2,200,000.",
+        "reasoning_content": "Okay, so the user is asking about the population of Paris. Let me start by recal... (1,100 characters)"
       },
       "finish_reason": "stop"
     }
   ],
   "usage": {
     "prompt_tokens": 15,
-    "completion_tokens": 255,
-    "total_tokens": 270,
+    "completion_tokens": 350,
+    "total_tokens": 365,
     "prompt_tokens_details": {"cached_tokens": 0}
   },
   "timings": {
     "cache_n": 0,
-    "predicted_ms": 756.876,
-    "predicted_n": 255,
-    "predicted_per_second": 335.5899777506487,
-    "predicted_per_token_ms": 2.9798267716535434,
-    "prompt_ms": 9.652,
+    "predicted_ms": 1077.037,
+    "predicted_n": 350,
+    "predicted_per_second": 324.03715007005326,
+    "predicted_per_token_ms": 3.0860659025787966,
+    "prompt_ms": 360.596,
     "prompt_n": 15,
-    "prompt_per_second": 1554.0820555325322,
-    "prompt_per_token_ms": 0.6434666666666666
+    "prompt_per_second": 41.597799199103704,
+    "prompt_per_token_ms": 24.039733333333334
   }
 }
 ```
@@ -172,11 +172,11 @@ Both non-streaming and `stream: true` are supported. In streaming mode the media
 **Response:** `200 OK`
 
 ```text
-data: {"id": "chatcmpl-VvTqNsZLc33H6Q9uQlBqRQ4sk3dvCSX5", "object": "chat.completion.chunk", "created": 1791990411, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b11393-dbe4c3ed4", "choices": [{"index": 0, "delta": {"role": "assistant", "content": null}, "finish_reason": null}]}
-data: {"id": "chatcmpl-VvTqNsZLc33H6Q9uQlBqRQ4sk3dvCSX5", "object": "chat.completion.chunk", "created": 1791990411, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b11393-dbe4c3ed4", "choices": [{"index": 0, "delta": {"reasoning_content": "Okay"}, "finish_reason": null}]}
-data: {"id": "chatcmpl-VvTqNsZLc33H6Q9uQlBqRQ4sk3dvCSX5", "object": "chat.completion.chunk", "created": 1791990411, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b11393-dbe4c3ed4", "choices": [{"index": 0, "delta": {"reasoning_content": ","}, "finish_reason": null}]}
+data: {"id": "chatcmpl-qcgxaK06JWDivkB03OlhgUyXNjkUogTw", "object": "chat.completion.chunk", "created": 1792807169, "model": "~\\.cache\\huggingface\\hub/models--unsloth--Qwen3-0.6B-GGUF\\snapshots\\50968a4468ef4233ed78cd7c3de230dd1d61a56b\\Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b11846-1a24df163", "choices": [{"index": 0, "delta": {"role": "assistant", "content": null}, "finish_reason": null}]}
+data: {"id": "chatcmpl-qcgxaK06JWDivkB03OlhgUyXNjkUogTw", "object": "chat.completion.chunk", "created": 1792807169, "model": "~\\.cache\\huggingface\\hub/models--unsloth--Qwen3-0.6B-GGUF\\snapshots\\50968a4468ef4233ed78cd7c3de230dd1d61a56b\\Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b11846-1a24df163", "choices": [{"index": 0, "delta": {"reasoning_content": "Okay"}, "finish_reason": null}]}
+data: {"id": "chatcmpl-qcgxaK06JWDivkB03OlhgUyXNjkUogTw", "object": "chat.completion.chunk", "created": 1792807169, "model": "~\\.cache\\huggingface\\hub/models--unsloth--Qwen3-0.6B-GGUF\\snapshots\\50968a4468ef4233ed78cd7c3de230dd1d61a56b\\Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b11846-1a24df163", "choices": [{"index": 0, "delta": {"reasoning_content": ","}, "finish_reason": null}]}
 ...
-data: {"id": "chatcmpl-VvTqNsZLc33H6Q9uQlBqRQ4sk3dvCSX5", "object": "chat.completion.chunk", "created": 1791990412, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b11393-dbe4c3ed4", "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}], "timings": {"cache_n": 14, "prompt_n": 1, "prompt_ms": 4.081, "prompt_per_token_ms": 4.081, "prompt_per_second": 245.03798088703746, "predicted_n": 392, "predicted_ms": 1176.378, "predicted_per_token_ms": 3.008639386189258, "predicted_per_second": 332.37615800363494}}
+data: {"id": "chatcmpl-qcgxaK06JWDivkB03OlhgUyXNjkUogTw", "object": "chat.completion.chunk", "created": 1792807170, "model": "~\\.cache\\huggingface\\hub/models--unsloth--Qwen3-0.6B-GGUF\\snapshots\\50968a4468ef4233ed78cd7c3de230dd1d61a56b\\Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b11846-1a24df163", "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}], "timings": {"cache_n": 14, "prompt_n": 1, "prompt_ms": 4.407, "prompt_per_token_ms": 4.407, "prompt_per_second": 226.9117313365101, "predicted_n": 400, "predicted_ms": 1172.479, "predicted_per_token_ms": 2.938543859649123, "predicted_per_second": 340.304602470492}}
 data: [DONE]
 ```
 
@@ -240,38 +240,38 @@ Asks a vision model what `image.png` shows. A `messages[*].content` array mixes 
 
 ```json
 {
-  "id": "chatcmpl-CXUhlv8GPMS7biiWtkuu27a3Gy3eNEUS",
+  "id": "chatcmpl-0yaTud0tMDlybgWABZbPAWrbZSVX0Xjd",
   "object": "chat.completion",
-  "created": 1792076819,
+  "created": 1792807182,
   "model": "Qwen3.5-0.8B-GGUF",
-  "system_fingerprint": "b11393-dbe4c3ed4",
+  "system_fingerprint": "b11846-1a24df163",
   "choices": [
     {
       "index": 0,
       "message": {
         "role": "assistant",
-        "content": "This image is a **minimalist graphic design**.\n\nHere are the specific details:\n\n*   **Central Element:** There is a solid **red circle** (often described as a \"dot\" or \"target\" symbol) centered on the image.\n*   **Background:** The background is a colorful gradient (transitioning from blue on the left, to grey in the middle, and to purple/grey on the right).\n*   **Style:** It is a simple, flat vector design—no shading, no textures—often used in interfaces or branding to draw immediate attention to a specific focus point.",
-        "reasoning_content": "The user is asking about the content of the image.\n\n1.  **Analyze the image:** T... (2,072 characters)"
+        "content": "Based on the visual content, the image features:\n\n*   **A large red circle:** The central focus of the image is a solid red circle.\n*   **A gradient background:** The background is a smooth color transition. On the far left, it is a medium blue and purple gradient, while on the far right, it is a greyish-blue and green gradient.\n\nThe red circle stands out clearly against the colorful background. It appears to be a graphic design or a logo icon.",
+        "reasoning_content": "The user wants me to describe the image provided.\n\n1.  **Identify the main subje... (1,770 characters)"
       },
       "finish_reason": "stop"
     }
   ],
   "usage": {
     "prompt_tokens": 82,
-    "completion_tokens": 619,
-    "total_tokens": 701,
+    "completion_tokens": 522,
+    "total_tokens": 604,
     "prompt_tokens_details": {"cached_tokens": 0}
   },
   "timings": {
     "cache_n": 0,
-    "predicted_ms": 2706.181,
-    "predicted_n": 619,
-    "predicted_per_second": 228.36609968069394,
-    "predicted_per_token_ms": 4.378933656957929,
-    "prompt_ms": 52.671,
+    "predicted_ms": 2641.657,
+    "predicted_n": 522,
+    "predicted_per_second": 197.22469646892083,
+    "predicted_per_token_ms": 5.070358925143954,
+    "prompt_ms": 4811.837,
     "prompt_n": 82,
-    "prompt_per_second": 1556.8339313853924,
-    "prompt_per_token_ms": 0.6423292682926829
+    "prompt_per_second": 17.04130875588678,
+    "prompt_per_token_ms": 58.68093902439025
   }
 }
 ```
@@ -489,15 +489,15 @@ Naming a `collection.router` model routes the request to one of its candidates; 
 
 ```json
 {
-  "id": "chatcmpl-f4ExiyuFYahpItfZ9kgOsndtQcaHrBjz",
+  "id": "chatcmpl-0oYtA00jtJ0cgg6P0zqYKYqJUZ8x6t8L",
   "object": "text_completion",
-  "created": 1791943134,
+  "created": 1792807185,
   "model": "Qwen3-0.6B-GGUF",
-  "system_fingerprint": "b11393-dbe4c3ed4",
+  "system_fingerprint": "b11846-1a24df163",
   "choices": [
     {
       "index": 0,
-      "text": " And what does the Parisian metro system include?\n\nThe population of Paris is approximately 2 million people. The Parisian metro system includes the Paris Métro, the Paris Underground, and the Paris TGV, which is a train system.\n\nNow, the question is: What is the population of the city of Paris?\n\n",
+      "text": " What is the population of Paris in 2022?\nAnswer:\n\nThe population of Paris in 2022 was approximately **16 million**. The population of Paris in 2022 was about 16 million.\n\n**Answer:** The population of Paris in 2022 was",
       "logprobs": null,
       "finish_reason": "length"
     }
@@ -510,14 +510,14 @@ Naming a `collection.router` model routes the request to one of its candidates; 
   },
   "timings": {
     "cache_n": 0,
-    "predicted_ms": 184.8,
+    "predicted_ms": 180.322,
     "predicted_n": 64,
-    "predicted_per_second": 340.9090909090909,
-    "predicted_per_token_ms": 2.9333333333333336,
-    "prompt_ms": 6.219,
+    "predicted_per_second": 349.3750069320438,
+    "predicted_per_token_ms": 2.8622539682539685,
+    "prompt_ms": 1476.666,
     "prompt_n": 7,
-    "prompt_per_second": 1125.5828911400547,
-    "prompt_per_token_ms": 0.8884285714285715
+    "prompt_per_second": 4.740408460681021,
+    "prompt_per_token_ms": 210.9522857142857
   }
 }
 ```
@@ -555,11 +555,11 @@ Naming a `collection.router` model routes the request to one of its candidates; 
 **Response:** `200 OK`
 
 ```text
-data: {"id": "chatcmpl-QP1hqogXI4lxTag36ZFzMXdKhpHcqVKv", "object": "text_completion", "created": 1791943134, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b11393-dbe4c3ed4", "choices": [{"index": 0, "text": " What", "logprobs": null, "finish_reason": null}]}
-data: {"id": "chatcmpl-QP1hqogXI4lxTag36ZFzMXdKhpHcqVKv", "object": "text_completion", "created": 1791943134, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b11393-dbe4c3ed4", "choices": [{"index": 0, "text": " is", "logprobs": null, "finish_reason": null}]}
-data: {"id": "chatcmpl-QP1hqogXI4lxTag36ZFzMXdKhpHcqVKv", "object": "text_completion", "created": 1791943134, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b11393-dbe4c3ed4", "choices": [{"index": 0, "text": " the", "logprobs": null, "finish_reason": null}]}
+data: {"id": "chatcmpl-zri3AcEH7W5VFZwd9UN1ZAEwF2eoKPFQ", "object": "text_completion", "created": 1792807185, "model": "~\\.cache\\huggingface\\hub/models--unsloth--Qwen3-0.6B-GGUF\\snapshots\\50968a4468ef4233ed78cd7c3de230dd1d61a56b\\Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b11846-1a24df163", "choices": [{"index": 0, "text": " And", "logprobs": null, "finish_reason": null}]}
+data: {"id": "chatcmpl-zri3AcEH7W5VFZwd9UN1ZAEwF2eoKPFQ", "object": "text_completion", "created": 1792807185, "model": "~\\.cache\\huggingface\\hub/models--unsloth--Qwen3-0.6B-GGUF\\snapshots\\50968a4468ef4233ed78cd7c3de230dd1d61a56b\\Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b11846-1a24df163", "choices": [{"index": 0, "text": " what", "logprobs": null, "finish_reason": null}]}
+data: {"id": "chatcmpl-zri3AcEH7W5VFZwd9UN1ZAEwF2eoKPFQ", "object": "text_completion", "created": 1792807185, "model": "~\\.cache\\huggingface\\hub/models--unsloth--Qwen3-0.6B-GGUF\\snapshots\\50968a4468ef4233ed78cd7c3de230dd1d61a56b\\Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b11846-1a24df163", "choices": [{"index": 0, "text": " is", "logprobs": null, "finish_reason": null}]}
 ...
-data: {"id": "chatcmpl-QP1hqogXI4lxTag36ZFzMXdKhpHcqVKv", "object": "text_completion", "created": 1791943134, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b11393-dbe4c3ed4", "choices": [{"index": 0, "text": "", "logprobs": null, "finish_reason": "length"}], "usage": {"prompt_tokens": 7, "completion_tokens": 64, "total_tokens": 71, "prompt_tokens_details": {"cached_tokens": 6}}, "timings": {"cache_n": 6, "prompt_n": 1, "prompt_ms": 3.04, "prompt_per_token_ms": 3.04, "prompt_per_second": 328.9473684210526, "predicted_n": 64, "predicted_ms": 184.45, "predicted_per_token_ms": 2.9277777777777776, "predicted_per_second": 341.5559772296015}}
+data: {"id": "chatcmpl-zri3AcEH7W5VFZwd9UN1ZAEwF2eoKPFQ", "object": "text_completion", "created": 1792807185, "model": "~\\.cache\\huggingface\\hub/models--unsloth--Qwen3-0.6B-GGUF\\snapshots\\50968a4468ef4233ed78cd7c3de230dd1d61a56b\\Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b11846-1a24df163", "choices": [{"index": 0, "text": "", "logprobs": null, "finish_reason": "length"}], "usage": {"prompt_tokens": 7, "completion_tokens": 64, "total_tokens": 71, "prompt_tokens_details": {"cached_tokens": 6}}, "timings": {"cache_n": 6, "prompt_n": 1, "prompt_ms": 3.129, "prompt_per_token_ms": 3.129, "prompt_per_second": 319.59092361776925, "predicted_n": 64, "predicted_ms": 176.423, "predicted_per_token_ms": 2.8003650793650796, "predicted_per_second": 357.0962969680824}}
 data: [DONE]
 ```
 
@@ -692,7 +692,7 @@ Requires `LEMONADE_API_KEY` when it is set.
     {
       "object": "embedding",
       "index": 0,
-      "embedding": [0.03513138368725777, 0.0010724958265200257, 0.0043548960238695145, -0.024502824991941452, -0.02874191850423813, 0.029377534985542297, -0.01320538017898798, 0.01702793687582016, ... 760 more]
+      "embedding": [0.035327356308698654, -0.0001410358672728762, 0.003338671289384365, -0.02462325245141983, -0.028079617768526077, 0.029758796095848083, -0.010972246527671814, 0.016291150823235512, ... 760 more]
     },
     ... 1 more
   ],
@@ -790,10 +790,10 @@ Naming a `collection.router` model routes the request to one of its candidates; 
 
 ```json
 {
-  "id": "resp_UMCsVMSLV0H1cGKewMgTRY02v5PgKvr3",
+  "id": "resp_JVO4S4mP7iKKGMPqCMiRRUxtdMTukXsc",
   "object": "response",
-  "created_at": 1791943139,
-  "completed_at": 1791943139,
+  "created_at": 1792807187,
+  "completed_at": 1792807187,
   "model": "Llama-3.2-1B-Instruct-GGUF",
   "status": "completed",
   "output": [
@@ -802,11 +802,11 @@ Naming a `collection.router` model routes the request to one of its candidates; 
         {
           "annotations": [],
           "logprobs": [],
-          "text": "As of my knowledge cutoff in December 2023, the estimated population of Paris, the capital city of France, is approximately 2.1 million people. However, please note that this information may have changed since my knowledge cutoff date.",
+          "text": "As of my knowledge cutoff in December 2023, the population of Paris, the capital city of France, is approximately 2.1 million people within the city limits and around 12.2 million people in the metropolitan area.",
           "type": "output_text"
         }
       ],
-      "id": "msg_10jrFYwxMq9LWHeZAWQTw2bwfytTnjmU",
+      "id": "msg_yrrn3oLfu5Ha0yvhJnyn4PGkmOFWtTn6",
       "role": "assistant",
       "status": "completed",
       "type": "message"
@@ -814,8 +814,8 @@ Naming a `collection.router` model routes the request to one of its candidates; 
   ],
   "usage": {
     "input_tokens": 42,
-    "output_tokens": 49,
-    "total_tokens": 91,
+    "output_tokens": 48,
+    "total_tokens": 90,
     "input_tokens_details": {"cached_tokens": 0}
   }
 }
@@ -853,14 +853,14 @@ Naming a `collection.router` model routes the request to one of its candidates; 
 
 ```text
 event: response.created
-data: {"type": "response.created", "response": {"id": "resp_8drxh5e9wHyCQgOlZJEKtK6LYBvjZjhQ", "object": "response", "status": "in_progress"}}
+data: {"type": "response.created", "response": {"id": "resp_sEdqwsaCiN9lw0UMr5vdqMX8DG2HLcK8", "object": "response", "status": "in_progress"}}
 event: response.in_progress
-data: {"type": "response.in_progress", "response": {"id": "resp_8drxh5e9wHyCQgOlZJEKtK6LYBvjZjhQ", "object": "response", "status": "in_progress"}}
+data: {"type": "response.in_progress", "response": {"id": "resp_sEdqwsaCiN9lw0UMr5vdqMX8DG2HLcK8", "object": "response", "status": "in_progress"}}
 event: response.output_item.added
-data: {"type": "response.output_item.added", "item": {"content": [], "id": "msg_uHVyDCXC7R9egagst1wl8LBcZewNzxgB", "role": "assistant", "status": "in_progress", "type": "message"}}
+data: {"type": "response.output_item.added", "item": {"content": [], "id": "msg_NSeiLWbMMIs3Tyy9rkAE53miBpCziSeM", "role": "assistant", "status": "in_progress", "type": "message"}, "output_index": 0}
 ...
 event: response.completed
-data: {"type": "response.completed", "response": {"id": "resp_8drxh5e9wHyCQgOlZJEKtK6LYBvjZjhQ", "object": "response", "created_at": 1791943139, "status": "completed", "model": "~/.cache/huggingface/hub/models--unsloth--Llama-3.2-1B-Instruct-GGUF/snapshots/b69aef112e9f895e6f98d7ae0949f72ff09aa401/Llama-3.2-1B-Instruct-UD-Q4_K_XL.gguf", "output": [{"type": "message", "status": "completed", "id": "msg_uHVyDCXC7R9egagst1wl8LBcZewNzxgB", "content": [{"type": "output_text", "annotations": [], "logprobs": [], "text": "As of the latest available estimates, the population of Paris, the capital city of France, is approximately 2.1 million people within the city limits. However, the larger metropolitan area, which includes the surrounding regions, has a population of over 13.2 million people, according to the City of Paris's official statistics for 2020."}], "role": "assistant"}], "usage": {"input_tokens": 42, "output_tokens": 71, "total_tokens": 113, "input_tokens_details": {"cached_tokens": 41}}}, "timings": {"cache_n": 41, "prompt_n": 1, "prompt_ms": 4.586, "prompt_per_token_ms": 4.586, "prompt_per_second": 218.0549498473615, "predicted_n": 71, "predicted_ms": 310.157, "predicted_per_token_ms": 4.430814285714286, "predicted_per_second": 225.69214945978973}}
+data: {"type": "response.completed", "response": {"id": "resp_sEdqwsaCiN9lw0UMr5vdqMX8DG2HLcK8", "object": "response", "created_at": 1792807187, "status": "completed", "model": "~\\.cache\\huggingface\\hub/models--unsloth--Llama-3.2-1B-Instruct-GGUF\\snapshots\\b69aef112e9f895e6f98d7ae0949f72ff09aa401\\Llama-3.2-1B-Instruct-UD-Q4_K_XL.gguf", "output": [{"type": "message", "status": "completed", "id": "msg_NSeiLWbMMIs3Tyy9rkAE53miBpCziSeM", "content": [{"type": "output_text", "annotations": [], "logprobs": [], "text": "As of my knowledge cutoff in 2023, the population of Paris is approximately 2.1 million people within the city limits, and around 12 million in the metropolitan area. However, please note that these numbers may have changed since my knowledge cutoff date."}], "role": "assistant"}], "usage": {"input_tokens": 42, "output_tokens": 54, "total_tokens": 96, "input_tokens_details": {"cached_tokens": 41}}}, "timings": {"cache_n": 41, "prompt_n": 1, "prompt_ms": 4.928, "prompt_per_token_ms": 4.928, "prompt_per_second": 202.92207792207793, "predicted_n": 54, "predicted_ms": 234.54, "predicted_per_token_ms": 4.425283018867924, "predicted_per_second": 225.97424746311927}}
 data: [DONE]
 ```
 
@@ -893,6 +893,7 @@ An event of the response, passed through from the backend.
 - `type` - Event type, passed through from the backend, such as `response.created`, `response.output_text.delta` or `response.completed`; see OpenAI's [streaming reference](https://platform.openai.com/docs/api-reference/responses-streaming).
 - `response` - Lifecycle events, such as `response.created`, `response.in_progress` and `response.completed`, only: the response so far.
 - `item` - Output item events, such as `response.output_item.added`, only: the output item.
+- `output_index` - Zero-based index of the output item in the response's `output` array, on output-item and delta events.
 - `item_id` - Delta events only: the `id` of the output item the text belongs to.
 - `delta` - Delta events, such as `response.output_text.delta` and `response.reasoning_text.delta`, only: the next text.
 - `timings` - `response.completed` only: prompt processing and generation timings, passed through from backends that report them, such as llama.cpp.
@@ -1657,6 +1658,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
 | `show_all` (query) | No | `true` also lists catalog models that are not downloaded. Defaults to `false`, which lists downloaded models only. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `include_paths` (query) | No | `true` adds each present checkpoint's absolute `path` to its `checkpoint_status` entry, which can reveal local usernames and the cache layout. Defaults to `false`. The files a model is made of have their own list, at [`GET /v1/models/{id}/files`](./openai.md#get-v1modelsidfiles). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 A model alias whose target is listed appears too, as a copy of the target with the alias as its `id`.
 
@@ -1698,6 +1700,9 @@ With cloud providers configured, their models are listed too, with `recipe: "clo
       "labels": ["classification"],
       "components": [],
       "checkpoints": {"main": "lemonade-sdk/phishing-email-detection-distilbert-ONNX"},
+      "checkpoint_status": [
+        {"type": "main", "present": true, "required": true, "registry": "huggingface"}
+      ],
       "source": "huggingface",
       "registry_source": "huggingface",
       "recipe_options": {}
@@ -1738,6 +1743,12 @@ With cloud providers configured, their models are listed too, with `recipe: "clo
   - `models` - Omni collections only: each component's full model object, in the order of `components`, so an exported collection can be imported elsewhere through [`/v1/pull`](./lemonade.md#post-v1pull).
   - `checkpoints` - Every checkpoint by role, such as `main`, `mmproj`, `draft`, `text_encoder` or `vae`.
     - The checkpoint that fills the role named by its key.
+  - `checkpoint_status` - One entry per checkpoint of the model, answering whether its bytes are there.
+    - `type` - Checkpoint slot, e.g. `main`, `mmproj`, `vae`.
+    - `present` - `true` only when the checkpoint's bytes are complete and readable.
+    - `required` - A missing required checkpoint keeps the model undownloaded; an optional one, loaded lazily, does not.
+    - `registry` - Registry hosting the checkpoint; empty for local files and directories.
+    - `path` - Absolute path to the checkpoint file; present only with `include_paths=true` and when `present` is `true`.
   - `source` - Where the model came from: a registry name, `local_upload`, `local_path` or `extra_models_dir`.
   - `registry_source` - Remote registry the checkpoint downloads from: `huggingface` or `modelscope`.
   - `recipe_options` - The model's own options: its image defaults and registry options, with what was saved in `recipe_options.json` on top.
@@ -1838,7 +1849,8 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
-| `id` (path) | Yes | Model id, as listed by [`GET /v1/models`](#get-v1models), or an alias. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `id` (path) | Yes | Model id, as listed by [`GET /v1/models`](#get-v1models), or an alias. A trailing `:latest`, the tag Ollama clients append, names the bare id when nothing is registered under the tagged name. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `include_paths` (query) | No | `true` adds each present checkpoint's absolute `path` to its `checkpoint_status` entry, which can reveal local usernames and the cache layout. Defaults to `false`. The files a model is made of have their own list, at [`GET /v1/models/{id}/files`](./openai.md#get-v1modelsidfiles). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 ### Example
 
@@ -1873,6 +1885,9 @@ Requires `LEMONADE_API_KEY` when it is set.
   "labels": ["chat", "reasoning", "tool-calling"],
   "components": [],
   "checkpoints": {"main": "unsloth/Qwen3-0.6B-GGUF:Q4_0"},
+  "checkpoint_status": [
+    {"type": "main", "present": true, "required": true, "registry": "huggingface"}
+  ],
   "source": "huggingface",
   "registry_source": "huggingface",
   "recipe_options": {}
@@ -1908,6 +1923,12 @@ Requires `LEMONADE_API_KEY` when it is set.
 - `models` - Omni collections only: each component's full model object, in the order of `components`, so an exported collection can be imported elsewhere through [`/v1/pull`](./lemonade.md#post-v1pull).
 - `checkpoints` - Every checkpoint by role, such as `main`, `mmproj`, `draft`, `text_encoder` or `vae`.
   - The checkpoint that fills the role named by its key.
+- `checkpoint_status` - One entry per checkpoint of the model, answering whether its bytes are there.
+  - `type` - Checkpoint slot, e.g. `main`, `mmproj`, `vae`.
+  - `present` - `true` only when the checkpoint's bytes are complete and readable.
+  - `required` - A missing required checkpoint keeps the model undownloaded; an optional one, loaded lazily, does not.
+  - `registry` - Registry hosting the checkpoint; empty for local files and directories.
+  - `path` - Absolute path to the checkpoint file; present only with `include_paths=true` and when `present` is `true`.
 - `source` - Where the model came from: a registry name, `local_upload`, `local_path` or `extra_models_dir`.
 - `registry_source` - Remote registry the checkpoint downloads from: `huggingface` or `modelscope`.
 - `recipe_options` - The model's own options: its image defaults and registry options, with what was saved in `recipe_options.json` on top.
@@ -1998,7 +2019,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
-| `id` (path) | Yes | Model id, as listed by [`GET /v1/models`](#get-v1models), or an alias. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `id` (path) | Yes | Model id, as listed by [`GET /v1/models`](#get-v1models), or an alias. A trailing `:latest`, the tag Ollama clients append, names the bare id when nothing is registered under the tagged name. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 Per-architecture defaults are chosen by the architecture in the model's GGUF metadata, so a model that has not been downloaded yet shows every key with the value it has before those defaults apply.
 
@@ -2060,7 +2081,7 @@ Per-architecture defaults are chosen by the architecture in the model's GGUF met
 - `saved` - The model's own entry in `recipe_options.json`: only what was explicitly saved, or `{}` when nothing is. It can also hold keys this endpoint does not accept, such as `pinned` written by `/v1/load`, so replay `effective` rather than `saved`.
 - `effective` - The body a [`POST /v1/load`](./lemonade.md#post-v1load) for this model uses now: every option the recipe accepts, resolved through the full priority chain. Posting it back whole saves every resolved value as an override, so send only the options that changed.
 - `defaults` - What `effective` becomes if `saved` is erased, in the same shape. A `ctx_size` of `-1` means the server picks the context size automatically.
-- `resolved_ctx_size` - The context size a load right now would use: the effective `ctx_size`, or the automatically computed size when that is `-1`. `null` means automatic sizing found insufficient memory and no valid context is available.
+- `resolved_ctx_size` - The context size a load right now would use: the effective `ctx_size`, or the automatically computed size when that is `-1`.
 
 ### Errors
 
@@ -2083,7 +2104,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
-| `id` (path) | Yes | Model id, as listed by [`GET /v1/models`](#get-v1models), or an alias. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `id` (path) | Yes | Model id, as listed by [`GET /v1/models`](#get-v1models), or an alias. A trailing `:latest`, the tag Ollama clients append, names the bare id when nothing is registered under the tagged name. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `ctx_size` | No | Context size: a positive whole number, or `-1` to size it automatically even when the server-wide `ctx_size` is a specific number. Only recipes that take a context size use it, such as `llamacpp`, `flm`, `ryzenai-llm` and `vllm`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `dry_run` | No | `true` reports what the request would do without doing it. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `model_name` | No | Ignored; the URL names the model. Accepted so `effective` can be posted back as is. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
@@ -2162,7 +2183,7 @@ A running model keeps its current options until it is next loaded.
 - `saved` - The model's own entry in `recipe_options.json`: only what was explicitly saved, or `{}` when nothing is. It can also hold keys this endpoint does not accept, such as `pinned` written by `/v1/load`, so replay `effective` rather than `saved`.
 - `effective` - The body a [`POST /v1/load`](./lemonade.md#post-v1load) for this model uses now: every option the recipe accepts, resolved through the full priority chain. Posting it back whole saves every resolved value as an override, so send only the options that changed.
 - `defaults` - What `effective` becomes if `saved` is erased, in the same shape. A `ctx_size` of `-1` means the server picks the context size automatically.
-- `resolved_ctx_size` - The context size a load right now would use: the effective `ctx_size`, or the automatically computed size when that is `-1`. `null` means automatic sizing found insufficient memory and no valid context is available.
+- `resolved_ctx_size` - The context size a load right now would use: the effective `ctx_size`, or the automatically computed size when that is `-1`.
 
 ### Errors
 
@@ -2191,7 +2212,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
-| `id` (path) | Yes | Model id, as listed by [`GET /v1/models`](#get-v1models), or an alias. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `id` (path) | Yes | Model id, as listed by [`GET /v1/models`](#get-v1models), or an alias. A trailing `:latest`, the tag Ollama clients append, names the bare id when nothing is registered under the tagged name. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 ### Example
 
@@ -2253,7 +2274,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 - `saved` - The model's own entry in `recipe_options.json`: only what was explicitly saved, or `{}` when nothing is. It can also hold keys this endpoint does not accept, such as `pinned` written by `/v1/load`, so replay `effective` rather than `saved`.
 - `effective` - The body a [`POST /v1/load`](./lemonade.md#post-v1load) for this model uses now: every option the recipe accepts, resolved through the full priority chain. Posting it back whole saves every resolved value as an override, so send only the options that changed.
 - `defaults` - What `effective` becomes if `saved` is erased, in the same shape. A `ctx_size` of `-1` means the server picks the context size automatically.
-- `resolved_ctx_size` - The context size a load right now would use: the effective `ctx_size`, or the automatically computed size when that is `-1`. `null` means automatic sizing found insufficient memory and no valid context is available.
+- `resolved_ctx_size` - The context size a load right now would use: the effective `ctx_size`, or the automatically computed size when that is `-1`.
 
 ### Errors
 

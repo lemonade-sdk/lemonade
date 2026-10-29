@@ -256,6 +256,9 @@ Requires `LEMONADE_API_KEY` when it is set.
     "labels": ["chat", "custom"],
     "components": [],
     "checkpoints": {"main": "unsloth/Phi-4-mini-instruct-GGUF:Q3_K_M"},
+    "checkpoint_status": [
+      {"type": "main", "present": false, "required": true, "registry": "huggingface"}
+    ],
     "source": "huggingface",
     "registry_source": "huggingface",
     "recipe_options": {}
@@ -296,6 +299,12 @@ Requires `LEMONADE_API_KEY` when it is set.
   - `models` - Omni collections only: each component's full model object, in the order of `components`, so an exported collection can be imported elsewhere through [`/v1/pull`](./lemonade.md#post-v1pull).
   - `checkpoints` - Every checkpoint by role, such as `main`, `mmproj`, `draft`, `text_encoder` or `vae`.
     - The checkpoint that fills the role named by its key.
+  - `checkpoint_status` - One entry per checkpoint of the model, answering whether its bytes are there.
+    - `type` - Checkpoint slot, e.g. `main`, `mmproj`, `vae`.
+    - `present` - `true` only when the checkpoint's bytes are complete and readable.
+    - `required` - A missing required checkpoint keeps the model undownloaded; an optional one, loaded lazily, does not.
+    - `registry` - Registry hosting the checkpoint; empty for local files and directories.
+    - `path` - Absolute path to the checkpoint file; present only with `include_paths=true` and when `present` is `true`.
   - `source` - Where the model came from: a registry name, `local_upload`, `local_path` or `extra_models_dir`.
   - `registry_source` - Remote registry the checkpoint downloads from: `huggingface` or `modelscope`.
   - `recipe_options` - The model's own options: its image defaults and registry options, with what was saved in `recipe_options.json` on top.
@@ -1652,36 +1661,49 @@ This endpoint does not take any parameters.
 ```json
 {
   "status": "ok",
-  "version": "2026.43.0~1689.0292987c",
+  "version": "2026.45.0~1719.034d3f52",
   "model_loaded": "Qwen3-0.6B-GGUF",
   "update_check_done": true,
   "all_models_loaded": [
     {
-      "model_name": "Qwen3-0.6B-GGUF",
-      "checkpoint": "unsloth/Qwen3-0.6B-GGUF:Q4_0",
-      "last_use": 66265129,
-      "type": "llm",
+      "model_name": "nomic-embed-text-v1-GGUF",
+      "checkpoint": "nomic-ai/nomic-embed-text-v1-GGUF:Q4_K_S",
+      "last_use": 872883217,
+      "type": "embedding",
       "device": "gpu",
       "pinned": false,
       "is_busy": false,
       "is_streaming": false,
-      "backend_url": "http://127.0.0.1:8001/v1",
-      "pid": 193678,
-      "launch_command": ["~/.cache/lemonade/bin/llamacpp/vulkan/llama-server", "-m", "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "--ctx-size", "40960", "--port", "8001", "--jinja", ... 13 more],
+      "backend_url": "http://127.0.0.1:8002/v1",
+      "pid": 15836,
+      "launch_command": [
+        "~/.cache/lemonade\\bin\\llamacpp\\vulkan\\llama-server.exe",
+        "-m",
+        "~\\.cache\\huggingface\\hub/models--nomic-ai--nomic-embed-text-v1-GGUF\\snapshots\\90c80ac5c2a0d13de9a36cf1dec39f34acee54a8\\nomic-embed-text-v1.Q4_K_S.gguf",
+        "--ctx-size",
+        "8192",
+        "--port",
+        "8002",
+        "--jinja",
+        "--metrics",
+        "-lv",
+        "4",
+        "--embeddings",
+        "--parallel",
+        "1"
+      ],
       "recipe": "llamacpp",
-      "recipe_options": {
-        "ctx_size": 40960,
-        "llamacpp_args": "--temp 0.6 --top-p 0.85 --top-k 20 --min-p 0.0 --repeat-penalty 1.0 --parallel 1"
-      },
+      "recipe_options": {"ctx_size": 8192, "llamacpp_args": "--parallel 1"},
       "residency_class": "standard",
-      "slot_pool": "standard/llm",
+      "slot_pool": "standard/embedding",
       "status": "ready",
       "backend_alive": true,
       "backend_health": "ready",
       "loaded": true,
       "watchdog_reset": false,
-      "max_context_window": 40960
-    }
+      "max_context_window": 2048
+    },
+    ... 1 more
   ],
   "pinned_models": {"classification": 0, ... 6 more},
   "max_models": {
@@ -1693,7 +1715,7 @@ This endpoint does not take any parameters.
     "tts": 1,
     "classification": 1
   },
-  "websocket_port": 9001,
+  "websocket_port": 9000,
   "telemetry": {"enabled": false},
   "pinned_helper_models": {"classification": 0, ... 6 more}
 }
@@ -1705,6 +1727,11 @@ This endpoint does not take any parameters.
 - `version` - Lemonade Server version.
 - `model_loaded` - The most recently used loaded model, or `null` when none is loaded.
 - `update_check_done` - Whether the startup check for model updates has finished. Until it has, models' `update_available` can be incomplete.
+- `models_generation` - Rises whenever the model list changes, including a model's `downloaded` or `update_available`. A client that polls health reads [`GET /v1/models`](./openai.md#get-v1models) again when it changes.
+- `model_sync` - The model sync, so a client that polls health can tell when one starts or finishes. Details are at [`GET /internal/models/sync/status`](./internal.md#get-internalmodelssyncstatus).
+  - `status` - Status of the latest sync.
+  - `sync_id` - The latest sync; `0` before any sync.
+  - `completed_sync_id` - The most recent sync that finished.
 - `all_models_loaded` - Every loaded model.
   - `model_name` - Name of the loaded model
   - `checkpoint` - The model's main checkpoint.
@@ -1780,17 +1807,17 @@ This endpoint does not take any parameters.
 
 ```json
 {
-  "time_to_first_token": 0.010258,
-  "tokens_per_second": 330.7515771574438,
-  "input_tokens": 15,
+  "time_to_first_token": 0.00445,
+  "tokens_per_second": 350.4584986185915,
+  "input_tokens": 1,
   "output_tokens": 327,
   "prompt_tokens": 15,
-  "cache_tokens": 0,
-  "request_count_total": 1,
-  "input_tokens_total": 15,
-  "output_tokens_total": 327,
-  "prompt_tokens_total": 15,
-  "cache_tokens_total": 0,
+  "cache_tokens": 14,
+  "request_count_total": 9,
+  "input_tokens_total": 165,
+  "output_tokens_total": 2104,
+  "prompt_tokens_total": 226,
+  "cache_tokens_total": 75,
   "routing_decisions_total": 0,
   "routing_switches_total": 0,
   "live": {"active_requests": 0, "estimated_tokens_per_second": 0.0}
@@ -1799,8 +1826,8 @@ This endpoint does not take any parameters.
 
 ### Response format
 
-- `time_to_first_token` - Time in seconds until the first token was generated
-- `tokens_per_second` - Generation speed in tokens per second
+- `time_to_first_token` - Time in seconds until the first token was generated, as reported by the backend for the latest request; a reliable TTFT requires backend timing, since the first streamed chunk is not necessarily the first token. `null` when no timing was available (e.g. non-streaming OpenAI-compatible cloud completions)
+- `tokens_per_second` - Generation speed in tokens per second, as reported by the backend or calculated from a streamed response for the latest request; `null` when no timing was available (e.g. non-streaming OpenAI-compatible cloud completions)
 - `input_tokens` - Number of tokens processed
 - `output_tokens` - Number of tokens generated
 - `prompt_tokens` - Total prompt tokens including cached tokens
@@ -1993,11 +2020,7 @@ This endpoint does not take any parameters.
 
 ### Backend Tiers and Formats
 
-| Tier | Meaning |
-|------|---------|
-| `core` | Supported by Lemonade's maintainers for production use. |
-| `experimental` | Provided by Lemonade's maintainers, not supported for production use. |
-| `guest` | Developed and published outside Lemonade's maintainers. Use at your own risk. The models of a recipe whose only backends on this system are guest backends stay hidden from [`GET /v1/models`](./openai.md#get-v1models) with `show_all=true` until one of those backends is installed. |
+A backend's tier is `core`, `experimental`, or `guest`, as defined by the [backend support tier policy](../dev/adding-a-backend.md#support-tier). The models of a recipe whose only backends on this system are guest backends stay hidden from [`GET /v1/models`](./openai.md#get-v1models) with `show_all=true` until one of those backends is installed.
 
 | Format | Meaning |
 |--------|---------|

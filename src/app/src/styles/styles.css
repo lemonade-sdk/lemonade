@@ -1405,7 +1405,7 @@ input[type="checkbox"]:disabled {
 
 .composer__model-picker {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--space-2);
 }
 
@@ -1413,10 +1413,12 @@ input[type="checkbox"]:disabled {
   max-width: var(--max-content-width);
   margin: 0 auto var(--space-2);
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--space-3);
   flex-wrap: wrap;
 }
+
+.composer__toolbar > .composer__tools-toggle { margin-top: 3px; }
 
 .composer__tools-toggle {
   display: inline-flex;
@@ -1728,6 +1730,7 @@ input[type="checkbox"]:disabled {
   text-transform: uppercase;
   letter-spacing: 0.05em;
   font-weight: var(--weight-medium);
+  margin-top: 7px;
 }
 
 .composer__bar {
@@ -3427,7 +3430,8 @@ optgroup {
   animation: toast-in var(--duration-base) var(--ease-out);
 }
 
-.manager__toast--external-model {
+.manager__toast--external-model,
+.manager__toast--sync {
   width: min(560px, calc(100vw - var(--space-8)));
   padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
   border-radius: var(--radius-lg);
@@ -3442,7 +3446,8 @@ optgroup {
   min-width: 0;
 }
 
-.manager__toast-dismiss {
+.manager__toast-dismiss,
+.manager__toast-action {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -3453,8 +3458,17 @@ optgroup {
   font: inherit;
 }
 
-.manager__toast-dismiss:hover {
+.manager__toast-dismiss:hover,
+.manager__toast-action:hover {
   background: var(--surface-3);
+}
+
+.manager__toast-action {
+  flex: 0 0 auto;
+  height: 30px;
+  padding: 0 var(--space-3);
+  background: transparent;
+  white-space: nowrap;
 }
 
 .manager__toast-dismiss {
@@ -4018,7 +4032,7 @@ optgroup {
 }
 
 /* ─────────────────────────────────────────────────────────
-   DASHBOARD v2
+   MONITOR v2
    ───────────────────────────────────────────────────────── */
 
 .dash2 {
@@ -4325,7 +4339,7 @@ optgroup {
   letter-spacing: 0.04em;
 }
 
-/* ── Dashboard inline-style replacements ───────────────── */
+/* ── Monitor inline-style replacements ───────────────── */
 
 .dash2-hero-metrics {
   display: flex;
@@ -4434,7 +4448,7 @@ optgroup {
 
 .dash2-mt-auto { margin-top: auto; }
 
-/* ── Dashboard responsive ──────────────────────────────── */
+/* ── Monitor responsive ──────────────────────────────── */
 
 @media (max-width: 900px) {
   .dash2-grid-2col { grid-template-columns: 1fr; }
@@ -5629,6 +5643,47 @@ optgroup {
   white-space: pre-wrap;
 }
 
+.composer__readiness-anchor { width: 100%; }
+
+.composer__readiness {
+  width: 100%;
+  margin: 0;
+  padding: 5px var(--space-3);
+  border-radius: var(--radius-pill);
+}
+
+.composer__readiness .composer__live-head {
+  min-width: 0;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+}
+
+.composer__readiness-icon { flex-shrink: 0; color: var(--text-tertiary); }
+
+.composer__readiness-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer__readiness .composer__live-meter { flex-shrink: 0; margin-left: auto; }
+.composer__readiness .composer__live-meter span { border-radius: var(--radius-pill); }
+
+.composer__readiness .composer__live-meter .is-indeterminate {
+  width: 35%;
+  animation: chat-readiness-pulse 1.2s ease-in-out infinite alternate;
+}
+
+@keyframes chat-readiness-pulse {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(285%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .composer__readiness .composer__live-meter .is-indeterminate { animation: none; }
+}
+
 .cap-chip__icon {
   width: 1.15em;
   min-width: 1.15em;
@@ -5788,6 +5843,20 @@ optgroup {
 .composer__model-picker {
 
   position: relative;
+}
+
+.composer__model-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  width: max-content;
+  min-width: 220px;
+  max-width: min(420px, 46vw);
+}
+
+.composer__model-stack > .composer__model-button {
+  width: 100%;
+  max-width: 100%;
 }
 
 .composer__model-button {
@@ -6153,11 +6222,6 @@ optgroup {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
-  }
-
-  /* Bottom sheet: skip slide, snap to open/closed */
-  .bottom-sheet {
-    transform: none !important;
   }
 }
 
@@ -11763,38 +11827,38 @@ a.backend-card__version:focus-visible {
   .backend-card__actions { flex-wrap: wrap; }
 }
 
-/* Dashboard */
-.dashboard-workspace {
+/* Monitor */
+.monitor-performance {
   display: block;
 }
 
-.dashboard-main {
+.monitor-main {
   display: flex;
   flex-direction: column;
   height: 100%;
 }
 
-.dashboard-header__actions,
-.dashboard-header__server,
-.dashboard-header__server > span:last-child {
+.monitor-header__actions,
+.monitor-header__server,
+.monitor-header__server > span:last-child {
   display: flex;
   align-items: center;
 }
-.dashboard-header__actions { flex: 0 0 auto; gap: var(--space-3); }
-.dashboard-header > div:first-child { flex: 1 1 auto; }
-.dashboard-header__server { gap: var(--space-2); }
-.dashboard-header__server > span:last-child { flex-direction: column; align-items: flex-start; }
-.dashboard-header__server strong { font-size: var(--text-xs); font-weight: var(--weight-medium); white-space: nowrap; }
-.dashboard-header__server small { color: var(--text-tertiary); font-size: var(--type-overline-size); }
-.dashboard-workspace .dash2-scroll { min-height: 0; padding: var(--space-4); gap: var(--space-4); }
-.dashboard-workspace .dash2-card {
+.monitor-header__actions { flex: 0 0 auto; gap: var(--space-3); }
+.monitor-header > div:first-child { flex: 1 1 auto; }
+.monitor-header__server { gap: var(--space-2); }
+.monitor-header__server > span:last-child { flex-direction: column; align-items: flex-start; }
+.monitor-header__server strong { font-size: var(--text-xs); font-weight: var(--weight-medium); white-space: nowrap; }
+.monitor-header__server small { color: var(--text-tertiary); font-size: var(--type-overline-size); }
+.monitor-performance .dash2-scroll { min-height: 0; padding: var(--space-4); gap: var(--space-4); }
+.monitor-performance .dash2-card {
   padding: var(--space-4);
   border-radius: var(--radius-md);
   background: var(--surface-1);
   box-shadow: none;
 }
-.dashboard-workspace .dash2-card__h { margin-bottom: var(--space-4); font-size: var(--text-xs); }
-.dashboard-workspace .dash2-hero-metric__val { font-size: var(--text-2xl); }
+.monitor-performance .dash2-card__h { margin-bottom: var(--space-4); font-size: var(--text-xs); }
+.monitor-performance .dash2-hero-metric__val { font-size: var(--text-2xl); }
 
 .monitor-workspace {
   display: grid;
