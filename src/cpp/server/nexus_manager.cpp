@@ -361,7 +361,7 @@ json invite_permissions(const json& requested) {
     return ordered(result);
 }
 
-const unsigned kCatalogRevision = 0;
+const unsigned kCatalogRevision = 1;
 
 uint64_t catalog_version(const std::string& lemond_version) {
     uint64_t parts[3] = {0, 0, 0};

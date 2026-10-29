@@ -410,9 +410,19 @@ void check_service_catalog(const std::function<void(bool, const char*)>& check) 
         if (route.value("prefixes", std::string()) == "Internal") known = known && family == "internal";
     }
     check(all.size() == 85 && known, "Every lemond route has one of the known families");
-    check(per_family["inference"] == 32 && per_family["models_manage"] == 18 && per_family["internal"] == 14 && per_family["jobs"] == 7 &&
-          per_family["backends"] == 5 && per_family["system"] == 5 && per_family["mcp"] == 2 && per_family["management"] == 2,
+    check(per_family["inference"] == 34 && per_family["models_manage"] == 18 && per_family["internal"] == 14 && per_family["jobs"] == 7 &&
+          per_family["backends"] == 5 && per_family["system"] == 3 && per_family["mcp"] == 2 && per_family["management"] == 2,
           "The family assignment matches the documented table");
+    bool status_reads_in_inference = true;
+    for (const auto& route : all) {
+        for (const auto& path : route.at("paths")) {
+            const auto name = path.get<std::string>();
+            if (name == "system-stats" || name == "system-info" || name == "health" || name == "live") {
+                status_reads_in_inference = status_reads_in_inference && route.value("family", std::string()) == "inference";
+            }
+        }
+    }
+    check(status_reads_in_inference, "Device status reads belong to the inference family");
     nlohmann::ordered_json live;
     check(!throws_logic([&] { live = access::service_catalog(all, LEMON_VERSION_STRING); }), "The live registry builds a catalog without conflicts");
     check(live.is_object() && live.at("version") == access::catalog_version(LEMON_VERSION_STRING) &&
