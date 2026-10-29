@@ -80,30 +80,34 @@ def resolve_latest_version(
     tag_prefix: str = "",
     pinned: str = "",
     fallback: str = "",
+    asset_for=None,
 ) -> str:
     if pinned:
         return pinned
+
+    def usable(r: dict) -> bool:
+        if r.get("draft") or not r.get("assets"):
+            return False
+        name = asset_for(r["tag_name"]) if asset_for else None
+        return not name or name in {a["name"] for a in r["assets"]}
+
     if tag_prefix:
         releases = gh_api(f"repos/{repo}/releases?per_page=10", token)
         for r in releases:
-            if r["tag_name"].startswith(tag_prefix):
+            if r["tag_name"].startswith(tag_prefix) and usable(r):
                 return r["tag_name"]
         raise RuntimeError(f"No release with prefix {tag_prefix!r} in {repo}")
     try:
-        # /releases/latest can be a binary-less semver tag; require assets so a
-        # binary-less tag is never picked. Prefer a stable release, else newest bNNNN.
+        # A repo's "latest" release can be a binary-less tag (ggml-org's v0.8.0),
+        # so only accept releases that ship this fork's asset. Prefer stable, else
+        # the newest bNNNN build.
         releases = gh_api(f"repos/{repo}/releases?per_page=20", token)
         for r in releases:
-            if not r.get("draft") and not r.get("prerelease") and r.get("assets"):
+            if not r.get("prerelease") and usable(r):
                 return r["tag_name"]
         for r in releases:
             tag = r.get("tag_name", "")
-            if (
-                not r.get("draft")
-                and r.get("assets")
-                and tag.startswith("b")
-                and tag[1:].isdigit()
-            ):
+            if tag.startswith("b") and tag[1:].isdigit() and usable(r):
                 return tag
     except Exception as e:
         if fallback:
@@ -779,7 +783,15 @@ def main() -> int:
                 )
                 fallback = fork.get("version_fallback", "")
                 version = resolve_latest_version(
-                    fork["repo"], args.token, tag_prefix, pinned, fallback
+                    fork["repo"],
+                    args.token,
+                    tag_prefix,
+                    pinned,
+                    fallback,
+                    asset_for=lambda tag, f=fork: resolve_binary_url(f, tag).rsplit(
+                        "/", 1
+                    )[-1]
+                    or None,
                 )
                 install_fork_binary(
                     fork, version, binaries_dir, args.token, args.dry_run
@@ -819,7 +831,15 @@ def main() -> int:
                 )
                 fallback = fork.get("version_fallback", "")
                 version = resolve_latest_version(
-                    fork["repo"], args.token, tag_prefix, pinned, fallback
+                    fork["repo"],
+                    args.token,
+                    tag_prefix,
+                    pinned,
+                    fallback,
+                    asset_for=lambda tag, f=fork: resolve_binary_url(f, tag).rsplit(
+                        "/", 1
+                    )[-1]
+                    or None,
                 )
             print(f"Version: {version}")
         except Exception as e:
