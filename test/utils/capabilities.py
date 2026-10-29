@@ -259,6 +259,7 @@ CAPABILITIES = {
             },
             "test_models": {
                 "classification": "Phishing-Email-Detection-ONNX",
+                "zero_shot_classification": "LFM2.5-Encoder-350M-Prompt-Router-ONNX",
             },
         },
     },
