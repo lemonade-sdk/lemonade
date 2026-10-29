@@ -529,7 +529,7 @@ static void test_auto_context_budget() {
                                                      true, false);
     check("auto ctx: known insufficient VRAM returns zero, not 4096",
           barely_fits.max_tokens == 0);
-    auto tiny_budget = estimate_auto_context_budget(8.0, 6.7, 65536.0,
+    auto tiny_budget = estimate_auto_context_budget(8.0, 6.4, 65536.0,
                                                      true, false);
     check("auto ctx: low but positive budget is not raised to a fallback",
           tiny_budget.max_tokens > 0 && tiny_budget.max_tokens < 4096);

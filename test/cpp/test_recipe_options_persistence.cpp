@@ -1,6 +1,7 @@
 #include "lemon/model_manager.h"
 #include "lemon/utils/path_utils.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <filesystem>
@@ -248,6 +249,13 @@ static void test_corrupt_file_is_not_fatal() {
 
 int main() {
     ShowAllModels show_all_models;
+    const auto has_ctx_size = [](const char* recipe) {
+        const auto keys = lemon::RecipeOptions::keys_for_recipe(recipe);
+        return std::find(keys.begin(), keys.end(), "ctx_size") != keys.end();
+    };
+    check("TRELLIS does not support ctx_size", !has_ctx_size("trellis"));
+    check("llama.cpp and HRX support ctx_size",
+          has_ctx_size("llamacpp") && has_ctx_size("llamacpp-hrx"));
     Fixture fx = create_fixture();
     use_fixture_dirs(fx);
 

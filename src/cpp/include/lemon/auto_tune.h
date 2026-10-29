@@ -432,6 +432,10 @@ inline int64_t compute_auto_context_size(const ModelInfo& model_info,
 /// The caller should check the return value and update RecipeOptions accordingly.
 inline int64_t resolve_auto_ctx_size(const RecipeOptions& effective_options,
                                       const ModelInfo& model_info) {
+    // Do not estimate a KV cache for non-context backends such as TRELLIS.
+    const auto keys = RecipeOptions::keys_for_recipe(effective_options.get_recipe());
+    if (std::find(keys.begin(), keys.end(), "ctx_size") == keys.end())
+        return -2;
     json ctx_json = effective_options.get_option("ctx_size");
     int64_t ctx_size = ctx_json.is_number() ? ctx_json.get<int64_t>() : -1;
 
