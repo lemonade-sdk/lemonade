@@ -5,6 +5,7 @@
 #include <LemonadeNexusSDK/Identity.hpp>
 #include <LemonadeNexusSDK/LatencyMonitor.hpp>
 #include <LemonadeNexusSDK/RoutingTypes.hpp>
+#include <LemonadeNexusSDK/ServiceIngress.hpp>
 #include <LemonadeNexusSDK/Tier1Directory.hpp>
 #include <LemonadeNexusSDK/Types.hpp>
 #include <LemonadeNexusSDK/BoringtunMesh.hpp>
@@ -536,11 +537,43 @@ public:
 
     /// Publish a local service to mesh peers: our mesh IP:vport bridges to
     /// `target` ("tcp:127.0.0.1:PORT"). Requires an active mesh (join first);
-    /// exposures are remembered and re-applied on re-join.
+    /// exposures are remembered and re-applied on re-join. A port with a
+    /// service catalog (set_service_catalog) is served through the SDK's
+    /// ingress front end, which enforces the catalog's route policy; its
+    /// target must be "tcp:<host>:<port>". Other ports bridge raw bytes.
     [[nodiscard]] StatusResult expose_service(uint16_t vport, const std::string& target);
 
     /// Exposures registered via expose_service ({vport, target} pairs).
     [[nodiscard]] std::vector<std::pair<uint16_t, std::string>> exposed_services() const;
+
+    /// Register the route catalog of the service exposed on `vport`
+    /// (service_ingress::parse_catalog gives the format and the rules),
+    /// replacing any previous catalog of that port. From then on the SDK
+    /// terminates HTTP at that port's ingress: it attributes each connection
+    /// to the mesh peer it came from, matches method and path to a family,
+    /// and forwards the request to the local service with the trusted
+    /// X-Nexus-* headers only when the peer's listed permissions hold `admin`
+    /// or `svc:<family>`. Every refusal answers 403 with a JSON body and is
+    /// reported to the callback of set_ingress_denied_callback. Works before
+    /// a join; an exposure already in force moves behind the front end at
+    /// once. Errors: a validation failure (http_status 400, the message
+    /// names the rule), or the forward could not be installed (503).
+    [[nodiscard]] StatusResult set_service_catalog(uint16_t vport, const nlohmann::json& catalog);
+
+    /// The catalog registered for `vport`, as given, or {} when none.
+    [[nodiscard]] nlohmann::json service_catalog(uint16_t vport) const;
+
+    /// Callback type for ingress refusals.
+    using IngressDeniedCallback = ServiceIngress::DeniedCallback;
+
+    /// Set the callback that runs for every request an ingress front end
+    /// refuses (empty clears it): an unregistered route, a peer without the
+    /// family permission, or a connection no listed peer accounts for. It
+    /// runs on an SDK thread while the refused request waits, so it must
+    /// return promptly. When this returns, the previous callback is not
+    /// running and is not called again. Do not call this method, or destroy
+    /// the client, from the callback. The event never carries a request body.
+    void set_ingress_denied_callback(IngressDeniedCallback cb);
 
     /// Open (or reuse) a loopback bridge to a mesh peer's dst_ip:dst_port.
     /// Returns the bound 127.0.0.1 port, or 0 when the mesh is inactive.

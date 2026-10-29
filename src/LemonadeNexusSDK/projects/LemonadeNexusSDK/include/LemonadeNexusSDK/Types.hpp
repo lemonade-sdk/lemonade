@@ -376,6 +376,13 @@ struct MeshPeer {
     int32_t     latency_ms{-1};         ///< -1 = unknown
     uint16_t    keepalive{5};           ///< Persistent keepalive (seconds)
     uint64_t    last_seen{0};           ///< Server-reported last heartbeat (Unix epoch)
+    /// The peer's management key ("ed25519:..."), when the server lists it.
+    std::string mgmt_pubkey;
+    /// The permissions the peer's key holds on this device and its ancestor
+    /// groups ("admin", "svc:<family>", ...), as the server lists them in
+    /// peer_permissions. The service ingress (ServiceIngress) decides from
+    /// them which route families the peer may call. Empty grants nothing.
+    std::vector<std::string> permissions;
 };
 
 /// Status of the entire mesh tunnel.

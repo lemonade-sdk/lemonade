@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <chrono>
 #include <functional>
 #include <map>
@@ -204,6 +205,11 @@ struct LemonadeNexusClient::Impl {
     std::mutex                               session_moved_mtx;
     LemonadeNexusClient::SessionMovedCallback session_moved_callback;
 
+    // The front ends of the exposed services that have a catalog. Declared
+    // before meshplane: the netstack reports connection sources to it until
+    // the dataplane stops.
+    ServiceIngress service_ingress;
+
     // The client's single userspace mesh dataplane (boringtun Noise + smoltcp
     // netstack, no TUN). Brought up at join; carries both mesh P2P traffic and
     // the private-API transport (see private_http_*).
@@ -257,10 +263,38 @@ struct LemonadeNexusClient::Impl {
         : config{cfg},
           tier1{[this](const ServerEndpoint& ep, const std::string& path) {
               return discovery_get(ep, path);
-          }} {
+          }},
+          service_ingress{[this] { return mesh_peers_snapshot(); }} {
         for (const auto& ep : config.servers) {
             server_pool.push_back({ep, true, 0, 0});
         }
+        meshplane.set_ingress_source_handler(
+            [this](uint16_t vport, uint16_t bridge_port, const std::string& src_ip, uint16_t src_port,
+                   bool opened) {
+                if (opened) service_ingress.connection_opened(vport, bridge_port, src_ip, src_port);
+                else service_ingress.connection_closed(vport, bridge_port);
+            });
+    }
+
+    /// The latest peer list (empty while the mesh orchestrator is not running).
+    std::vector<MeshPeer> mesh_peers_snapshot() {
+        std::lock_guard lock(mutex);
+        return mesh_orchestrator ? mesh_orchestrator->peers() : std::vector<MeshPeer>{};
+    }
+
+    /// Install the netstack forward for an exposure: through the service
+    /// ingress front end when `vport` has a catalog, else straight to `target`.
+    bool apply_ingress(uint16_t vport, const std::string& target, std::string& error) {
+        const auto bridge = service_ingress.bridge_target(vport, target);
+        if (!bridge.ok) {
+            error = bridge.error;
+            return false;
+        }
+        if (!meshplane.tcp_ingress(vport, bridge.target, bridge.front_end)) {
+            error = "failed to register ingress forward";
+            return false;
+        }
+        return true;
     }
 
     // --- Tier 1 transport -----------------------------------------------------
@@ -1342,10 +1376,7 @@ StatusResult LemonadeNexusClient::expose_service(uint16_t vport, const std::stri
         result.error = "mesh dataplane not active — join first";
         return result;
     }
-    if (!impl_->meshplane.tcp_ingress(vport, target)) {
-        result.error = "failed to register ingress forward";
-        return result;
-    }
+    if (!impl_->apply_ingress(vport, target, result.error)) return result;
     {
         std::lock_guard lock(impl_->mutex);
         auto& v = impl_->exposed_services;
@@ -1362,6 +1393,36 @@ StatusResult LemonadeNexusClient::expose_service(uint16_t vport, const std::stri
 std::vector<std::pair<uint16_t, std::string>> LemonadeNexusClient::exposed_services() const {
     std::lock_guard lock(impl_->mutex);
     return impl_->exposed_services;
+}
+
+StatusResult LemonadeNexusClient::set_service_catalog(uint16_t vport, const nlohmann::json& catalog) {
+    auto result = impl_->service_ingress.set_catalog(vport, catalog);
+    if (!result.ok) return result;
+    // An exposure of this port that the netstack bridges raw moves behind
+    // the front end now. The last exposure of a port is the one in force.
+    std::string target;
+    {
+        std::lock_guard lock(impl_->mutex);
+        for (const auto& [exposed_port, exposed_target] : impl_->exposed_services) {
+            if (exposed_port == vport) target = exposed_target;
+        }
+    }
+    if (target.empty() || !impl_->meshplane.is_active()) return result;
+    std::string error;
+    if (!impl_->apply_ingress(vport, target, error)) {
+        result.ok = false;
+        result.http_status = 503;
+        result.error = error;
+    }
+    return result;
+}
+
+nlohmann::json LemonadeNexusClient::service_catalog(uint16_t vport) const {
+    return impl_->service_ingress.catalog(vport);
+}
+
+void LemonadeNexusClient::set_ingress_denied_callback(IngressDeniedCallback cb) {
+    impl_->service_ingress.set_denied_callback(std::move(cb));
 }
 
 uint16_t LemonadeNexusClient::open_egress(const std::string& dst_ip, uint16_t dst_port) {
@@ -2572,9 +2633,10 @@ Result<JoinResult> LemonadeNexusClient::join_network(const std::string& username
                 exposures = impl_->exposed_services;
             }
             for (const auto& [vport, target] : exposures) {
-                if (!impl_->meshplane.tcp_ingress(vport, target)) {
-                    spdlog::warn("[LemonadeNexusClient] re-exposing {} -> {} failed",
-                                 vport, target);
+                std::string error;
+                if (!impl_->apply_ingress(vport, target, error)) {
+                    spdlog::warn("[LemonadeNexusClient] re-exposing {} -> {} failed: {}",
+                                 vport, target, error);
                 }
             }
         }
@@ -3018,6 +3080,22 @@ Result<std::vector<MeshPeer>> LemonadeNexusClient::fetch_mesh_peers(const std::s
                 mp.endpoint       = p.value("endpoint", "");
                 mp.relay_endpoint = p.value("relay_endpoint", "");
                 mp.is_online      = p.value("is_online", false);
+                mp.mgmt_pubkey    = p.value("mgmt_pubkey", "");
+                // peer_permissions: what the peer's key holds on this device.
+                // A permission is one token; anything else is dropped, so a
+                // listed value can never widen access or break a header.
+                if (p.contains("peer_permissions") && p["peer_permissions"].is_array()) {
+                    for (const auto& permission : p["peer_permissions"]) {
+                        if (!permission.is_string()) continue;
+                        const auto& text = permission.get_ref<const std::string&>();
+                        const bool token = !text.empty() && text.size() <= 80 &&
+                            std::all_of(text.begin(), text.end(), [](unsigned char c) {
+                                return std::isalnum(c) || c == '_' || c == '.' || c == ':' || c == '-';
+                            });
+                        if (token) mp.permissions.push_back(text);
+                        else spdlog::debug("[MeshPeers] peer '{}' lists a malformed permission; ignored", mp.node_id);
+                    }
+                }
 
                 // Validate critical fields — reject peers with shell-unsafe
                 // or malformed data before they reach mesh commands.
@@ -3035,7 +3113,8 @@ Result<std::vector<MeshPeer>> LemonadeNexusClient::fetch_mesh_peers(const std::s
                 };
                 if (has_unsafe_chars(mp.mesh_pubkey) || has_unsafe_chars(mp.endpoint) ||
                     has_unsafe_chars(mp.tunnel_ip) || has_unsafe_chars(mp.private_subnet) ||
-                    has_unsafe_chars(mp.relay_endpoint) || has_unsafe_chars(mp.hostname)) {
+                    has_unsafe_chars(mp.relay_endpoint) || has_unsafe_chars(mp.hostname) ||
+                    has_unsafe_chars(mp.mgmt_pubkey)) {
                     spdlog::warn("[MeshPeers] Rejected peer '{}' with shell-unsafe characters",
                                   mp.node_id);
                     continue;  // skip this peer entirely

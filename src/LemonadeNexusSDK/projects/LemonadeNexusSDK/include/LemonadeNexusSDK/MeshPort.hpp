@@ -44,6 +44,18 @@ struct MeshPortMember {
     double      latency_ms{0.0};      ///< Mesh latency; 0 when unknown.
 };
 
+/// What a device's SDK answers at GET /.nexus/catalog: the app that registered
+/// its service catalog and the catalog's route families (see ServiceIngress).
+struct MeshPortPeerCatalog {
+    /// HTTP status of the probe; 0 when the device did not answer in time. 404
+    /// means the device's SDK has no catalog (the request reached its service).
+    int                      status{0};
+    std::string              app_name;     ///< "" when unknown
+    std::string              app_version;  ///< "" when unknown
+    uint64_t                 version{0};   ///< catalog version
+    std::vector<std::string> families;     ///< family names
+};
+
 /// What an inference device offers, as read from its /api/v1/health and /api/v1/models.
 struct MeshPortPeerModels {
     std::string              node_id;
@@ -55,6 +67,7 @@ struct MeshPortPeerModels {
     /// 401 or 403 means the device refused the peer key, so it offers no models to
     /// this device until the key changes.
     int                      models_status{0};
+    MeshPortPeerCatalog      catalog;                           ///< its /.nexus/catalog
 };
 
 /// Where the auto router sends one request. `target` is "local" or a node ID and
@@ -167,6 +180,9 @@ struct MeshPortBackend {
     /// on failure. May be empty: the port then stays on plain HTTP until a certificate
     /// arrives through certificate_renewed() or install_certificate().
     std::function<std::optional<MeshPortCertificate>(const std::string& cert_dir)> ensure_certificate;
+    /// The service catalog this device registered for mesh port 13305
+    /// (LemonadeNexusClient::service_catalog), or {} when none. May be empty.
+    std::function<nlohmann::json()> local_catalog;
 };
 
 /// Reads "fullchain.pem" and "privkey.pem" at the given paths. Returns nullopt when
@@ -222,6 +238,9 @@ public:
         /// a peer that has not answered by the deadline counts as offering no models
         /// until the next round.
         std::chrono::milliseconds peer_probe_deadline{std::chrono::seconds(3)};
+        /// How long a peer's /.nexus/catalog answer stays fresh. The refresh thread
+        /// and the model probes read it again after this.
+        std::chrono::milliseconds catalog_ttl{std::chrono::seconds(60)};
     };
 
     explicit MeshPort(MeshPortBackend backend);
@@ -252,11 +271,14 @@ public:
     /// Status JSON: {running, port, scheme, local_domain, local_service, error,
     /// selection: {target, peer_key_set}, tls: {state, domain, expires_at, error},
     /// urls: [{node_id, device_name, url, self}],
-    /// devices: [{node_id, device_name, is_online}]}. tls.state is "off", "waiting",
-    /// "activating" (the first certificate is installed; TLS starts when the open
-    /// plain requests finish), "active", "unsupported_certificate" or "error".
-    /// `devices` lists the Tier 3 devices that this device may connect to. The peer
-    /// key is never included.
+    /// devices: [{node_id, device_name, is_online, app: {name, version}, families,
+    /// catalog_status}], catalog}. tls.state is "off", "waiting", "activating" (the
+    /// first certificate is installed; TLS starts when the open plain requests
+    /// finish), "active", "unsupported_certificate" or "error". `devices` lists the
+    /// Tier 3 devices that this device may connect to, each with what its
+    /// /.nexus/catalog last answered (MeshPortPeerCatalog; empty strings and 0 until
+    /// it answers). `catalog` is MeshPortBackend::local_catalog's answer, or {}. The
+    /// peer key is never included.
     [[nodiscard]] nlohmann::json status() const;
 
     /// Installs a device certificate. `domain` must be a group wildcard
@@ -293,6 +315,7 @@ private:
 
     void refresh_loop();
     void refresh_members();
+    void refresh_catalogs();
     void check_certificate();
     void activate_pending_tls();
     bool activate_tls_locked();
@@ -311,6 +334,8 @@ private:
     std::vector<MeshPortPeerModels> peer_models(const std::vector<MeshPortMember>& members,
                                                 const std::string& self,
                                                 const std::string& peer_authorization);
+    std::optional<MeshPortPeerCatalog> cached_catalog(const std::string& node_id);
+    void store_catalog(const std::string& node_id, const MeshPortPeerCatalog& catalog);
     MeshPortStartResult bind_listener(uint16_t port, bool tls);
     void stop_listener();
 
@@ -357,8 +382,13 @@ private:
         std::chrono::steady_clock::time_point fetched;
         MeshPortPeerModels models;
     };
-    std::mutex cache_mutex_;
+    struct CachedCatalog {
+        std::chrono::steady_clock::time_point fetched;
+        MeshPortPeerCatalog catalog;
+    };
+    mutable std::mutex cache_mutex_;
     std::map<std::pair<std::string, std::string>, CachedModels> peer_cache_;  // (node, auth)
+    std::map<std::string, CachedCatalog> catalog_cache_;                      // node
     std::string local_models_authorization_;
     std::chrono::steady_clock::time_point local_models_fetched_{};
     std::vector<std::string> local_models_;

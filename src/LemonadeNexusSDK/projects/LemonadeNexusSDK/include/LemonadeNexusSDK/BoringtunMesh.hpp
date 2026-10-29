@@ -20,6 +20,7 @@
 #include <array>
 #include <chrono>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <span>
@@ -58,7 +59,29 @@ public:
     /// bridged to `target` ("tcp:127.0.0.1:PORT" or "unix:/path"), making it
     /// reachable by authorized mesh peers. Returns false if inactive / failed.
     /// Re-registering a virtual port updates the target for new connections.
-    bool tcp_ingress(uint16_t vport, const std::string& target);
+    /// With `report_source`, every connection the port accepts is reported to
+    /// the ingress source handler (set_ingress_source_handler) before its
+    /// first byte reaches `target`; a later registration without it stops
+    /// the reports for that port.
+    bool tcp_ingress(uint16_t vport, const std::string& target, bool report_source = false);
+
+    /// The source of a connection accepted by an ingress registered with
+    /// report_source: the virtual port, the loopback port the bridge connected
+    /// to the target from (what the target sees as the remote port; 0 for a
+    /// "unix:" target), the peer's tunnel address and port, and whether the
+    /// connection opened (true) or ended (false). The dataplane accepts a
+    /// packet only when its inner source address is inside the sending peer's
+    /// allowed IPs, so the address names the peer the netstack received the
+    /// connection from, or the server when the server forwarded it.
+    using IngressSourceHandler = std::function<void(uint16_t vport, uint16_t bridge_port,
+                                                    const std::string& src_ip, uint16_t src_port,
+                                                    bool opened)>;
+
+    /// Set the handler for ingress sources (empty clears it). It runs on the
+    /// netstack thread and must return promptly; it must not call this
+    /// object. When this returns, the previous handler is not running and is
+    /// not called again. Thread-safe.
+    void set_ingress_source_handler(IngressSourceHandler handler);
 
     /// The dataplane's bound local UDP port (0 when inactive).
     [[nodiscard]] uint16_t bound_port() const;

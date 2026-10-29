@@ -25,7 +25,7 @@ use mio::{Token, Waker};
 use smoltcp::wire::{IpCidr, IpEndpoint, Ipv4Address};
 
 use bridge::BridgeTarget;
-use stack::{Command, Stack};
+use stack::{Command, IngressNotify, Stack};
 
 /// Callback invoked with each outbound IP packet the stack emits.
 pub type NsOutputFn = unsafe extern "C" fn(ctx: *mut c_void, pkt: *const u8, len: usize);
@@ -77,6 +77,47 @@ impl UdpRecvCallback {
                 dst.port,
                 data.as_ptr(),
                 data.len(),
+            )
+        }
+    }
+}
+
+/// Callback invoked on the stack thread for each connection that an ingress
+/// forward registered with `ns_add_tcp_forward_observed` accepts: once with
+/// `opened` 1 before any byte of the connection reaches the bridge target, and
+/// once with `opened` 0 when the connection is removed. `bridge_port` is the
+/// loopback port the stack's bridge socket connected from, which the target
+/// sees as the connection's remote port (0 for a Unix target). `src_ip` and
+/// `src_port` are the virtual connection's remote endpoint, IPv4 in host byte
+/// order.
+pub type NsIngressFn = unsafe extern "C" fn(
+    ctx: *mut c_void,
+    vport: u16,
+    bridge_port: u16,
+    src_ip: u32,
+    src_port: u16,
+    opened: c_int,
+);
+
+struct IngressCallback {
+    f: NsIngressFn,
+    ctx: *mut c_void,
+}
+// Safety: the C++ owner guarantees `ctx` outlives the stack and that `f` is
+// safe to call from the stack thread.
+unsafe impl Send for IngressCallback {}
+unsafe impl Sync for IngressCallback {}
+
+impl IngressCallback {
+    fn notify(&self, vport: u16, bridge_port: u16, remote: IpEndpoint, opened: bool) {
+        unsafe {
+            (self.f)(
+                self.ctx,
+                vport,
+                bridge_port,
+                ipv4_to_u32(&remote.addr),
+                remote.port,
+                c_int::from(opened),
             )
         }
     }
@@ -335,7 +376,8 @@ pub unsafe extern "C" fn ns_feed_inbound(handle: *mut NsHandle, pkt: *const u8, 
 
 /// Add an ingress forward: virtual `vip:vport` -> bridge `target`.
 /// `target` is "tcp:127.0.0.1:PORT" or "unix:/path".
-/// Re-registering an endpoint replaces the target for subsequent connections.
+/// Re-registering an endpoint replaces the target for subsequent connections,
+/// and drops the observer of a forward made with `ns_add_tcp_forward_observed`.
 ///
 /// # Safety
 /// `handle` valid; string args NUL-terminated UTF-8.
@@ -345,6 +387,40 @@ pub unsafe extern "C" fn ns_add_tcp_forward(
     vip: *const c_char,
     vport: u16,
     target: *const c_char,
+) -> c_int {
+    add_tcp_forward(handle, vip, vport, target, None)
+}
+
+/// Add an ingress forward like `ns_add_tcp_forward`, and report every
+/// connection it accepts to `observe` (see `NsIngressFn`), so the bridge
+/// target can attribute each loopback connection to its virtual source.
+/// Re-registering the endpoint replaces the target and the observer.
+///
+/// # Safety
+/// `handle` valid; string args NUL-terminated UTF-8; `observe` a valid
+/// function pointer; `ctx` must outlive the stack.
+#[no_mangle]
+pub unsafe extern "C" fn ns_add_tcp_forward_observed(
+    handle: *mut NsHandle,
+    vip: *const c_char,
+    vport: u16,
+    target: *const c_char,
+    observe: NsIngressFn,
+    ctx: *mut c_void,
+) -> c_int {
+    let callback = IngressCallback { f: observe, ctx };
+    let notify: IngressNotify = Arc::new(move |vport, bridge_port, remote, opened| {
+        callback.notify(vport, bridge_port, remote, opened)
+    });
+    add_tcp_forward(handle, vip, vport, target, Some(notify))
+}
+
+unsafe fn add_tcp_forward(
+    handle: *mut NsHandle,
+    vip: *const c_char,
+    vport: u16,
+    target: *const c_char,
+    observer: Option<IngressNotify>,
 ) -> c_int {
     let handle = match handle.as_ref() {
         Some(h) => h,
@@ -360,7 +436,7 @@ pub unsafe extern "C" fn ns_add_tcp_forward(
     };
     if handle
         .cmd_tx
-        .send(Command::AddTcpForward { vip, vport, target })
+        .send(Command::AddTcpForward { vip, vport, target, observer })
         .is_err()
     {
         return -1;

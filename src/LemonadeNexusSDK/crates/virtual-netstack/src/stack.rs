@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::io;
 use std::rc::Rc;
 use std::sync::mpsc::{Receiver, TryRecvError};
+use std::sync::Arc;
 use std::time::{Duration, Instant as StdInstant};
 
 use mio::event::Source;
@@ -42,6 +43,13 @@ pub const MIN_IPV4_MTU: usize = 68;
 /// the stack thread with (source, destination, payload).
 pub type UdpDeliver = Box<dyn Fn(IpEndpoint, IpEndpoint, &[u8]) + Send>;
 
+/// Receiver for the lifecycle of connections accepted by an observed ingress
+/// forward. Called on the stack thread with (vport, bridge port, virtual
+/// remote endpoint, opened): once with `opened` true before any byte of the
+/// connection reaches the bridge, and once with `opened` false when the
+/// connection is removed.
+pub type IngressNotify = Arc<dyn Fn(u16, u16, IpEndpoint, bool) + Send + Sync>;
+
 /// Commands sent from FFI callers to the stack thread.
 pub enum Command {
     AddLocalIp(IpCidr),
@@ -49,6 +57,8 @@ pub enum Command {
         vip: Ipv4Address,
         vport: u16,
         target: BridgeTarget,
+        /// Reports each accepted connection's source; None for a plain bridge.
+        observer: Option<IngressNotify>,
     },
     /// Real loopback listener -> virtual TCP connect to (dst_ip, dst_port).
     AddTcpEgress {
@@ -84,6 +94,16 @@ struct Listener {
     endpoint: IpListenEndpoint,
     target_spec: String,
     handle: SocketHandle,
+    observer: Option<IngressNotify>,
+}
+
+/// The attribution of an observed ingress connection, reported closed when
+/// the connection is removed.
+struct Observed {
+    notify: IngressNotify,
+    vport: u16,
+    bridge_port: u16,
+    remote: IpEndpoint,
 }
 
 struct EgressListener {
@@ -100,6 +120,7 @@ struct Conn {
     established: bool,     // virtual socket reached Established at least once
     bridge_eof: bool,     // bridge read returned 0
     fin_to_bridge: bool,  // we already half-closed the bridge write side
+    observed: Option<Observed>,
 }
 
 pub struct Stack {
@@ -212,6 +233,7 @@ impl Stack {
                 vip,
                 vport,
                 target,
+                observer,
             } => {
                 let endpoint = IpListenEndpoint {
                     addr: Some(IpAddress::Ipv4(vip)),
@@ -223,6 +245,7 @@ impl Stack {
                 };
                 if let Some(listener) = self.listeners.iter_mut().find(|l| l.endpoint == endpoint) {
                     listener.target_spec = spec;
+                    listener.observer = observer;
                     return true;
                 }
                 if let Some(handle) = self.new_listening_socket(endpoint) {
@@ -230,6 +253,7 @@ impl Stack {
                         endpoint,
                         target_spec: spec,
                         handle,
+                        observer,
                     });
                     log::info!("virtual-netstack: ingress {vip}:{vport} -> bridge");
                 }
@@ -274,10 +298,9 @@ impl Stack {
                     })
                     .collect();
                 for token in connections {
-                    if let Some(mut conn) = self.conns.remove(&token) {
+                    if let Some(conn) = self.conns.remove(&token) {
                         self.sockets.get_mut::<tcp::Socket>(conn.tcp).abort();
-                        conn.bridge.deregister(self.poll.registry());
-                        self.sockets.remove(conn.tcp);
+                        self.finish_conn(conn);
                     }
                 }
                 log::info!("virtual-netstack: egress to {dst} removed");
@@ -400,20 +423,28 @@ impl Stack {
     /// Promote any listener whose socket accepted a connection, then bring up
     /// the real bridge for it.
     fn manage_listeners(&mut self) {
-        let mut promoted: Vec<(usize, SocketHandle, String, IpListenEndpoint)> = Vec::new();
+        struct Promoted {
+            idx: usize,
+            handle: SocketHandle,
+            spec: String,
+            endpoint: IpListenEndpoint,
+            observer: Option<IngressNotify>,
+        }
+        let mut promoted: Vec<Promoted> = Vec::new();
         for (idx, listener) in self.listeners.iter().enumerate() {
             let socket = self.sockets.get::<tcp::Socket>(listener.handle);
             if socket.state() != tcp::State::Listen {
-                promoted.push((
+                promoted.push(Promoted {
                     idx,
-                    listener.handle,
-                    listener.target_spec.clone(),
-                    listener.endpoint,
-                ));
+                    handle: listener.handle,
+                    spec: listener.target_spec.clone(),
+                    endpoint: listener.endpoint,
+                    observer: listener.observer.clone(),
+                });
             }
         }
 
-        for (idx, handle, spec, endpoint) in promoted {
+        for Promoted { idx, handle, spec, endpoint, observer } in promoted {
             // Replace the listening socket so the next connection is accepted.
             if let Some(new_handle) = self.new_listening_socket(endpoint) {
                 self.listeners[idx].handle = new_handle;
@@ -433,6 +464,21 @@ impl Stack {
                         self.abort_socket(handle);
                         continue;
                     }
+                    // Reported before the connection is pumped, so the bridge
+                    // target can attribute the first byte it reads.
+                    let observed = observer.map(|notify| {
+                        let remote = self
+                            .sockets
+                            .get::<tcp::Socket>(handle)
+                            .remote_endpoint()
+                            .unwrap_or(IpEndpoint {
+                                addr: IpAddress::Ipv4(Ipv4Address::UNSPECIFIED),
+                                port: 0,
+                            });
+                        let bridge_port = bridge.local_port();
+                        notify(endpoint.port, bridge_port, remote, true);
+                        Observed { notify, vport: endpoint.port, bridge_port, remote }
+                    });
                     self.conns.insert(
                         token,
                         Conn {
@@ -443,6 +489,7 @@ impl Stack {
                             established: false,
                             bridge_eof: false,
                             fin_to_bridge: false,
+                            observed,
                         },
                     );
                 }
@@ -505,6 +552,7 @@ impl Stack {
                         established: false,
                         bridge_eof: false,
                         fin_to_bridge: false,
+                        observed: None,
                     },
                 );
             }
@@ -514,6 +562,16 @@ impl Stack {
     fn abort_socket(&mut self, handle: SocketHandle) {
         self.sockets.get_mut::<tcp::Socket>(handle).abort();
         self.sockets.remove(handle);
+    }
+
+    /// Release a connection removed from `conns`: deregister its bridge, drop
+    /// its virtual socket, and report an observed connection closed.
+    fn finish_conn(&mut self, mut conn: Conn) {
+        conn.bridge.deregister(self.poll.registry());
+        self.sockets.remove(conn.tcp);
+        if let Some(observed) = conn.observed {
+            (observed.notify)(observed.vport, observed.bridge_port, observed.remote, false);
+        }
     }
 
     /// Move bytes between every connection's smoltcp socket and its bridge.
@@ -605,9 +663,8 @@ impl Stack {
         }
 
         for token in finished {
-            if let Some(mut conn) = self.conns.remove(&token) {
-                conn.bridge.deregister(self.poll.registry());
-                self.sockets.remove(conn.tcp);
+            if let Some(conn) = self.conns.remove(&token) {
+                self.finish_conn(conn);
             }
         }
         progressed
@@ -674,9 +731,10 @@ impl Stack {
             self.manage_egress(&ready);
         }
 
-        // Teardown: deregister bridges.
-        for (_, mut conn) in self.conns.drain() {
-            conn.bridge.deregister(self.poll.registry());
+        // Teardown: deregister bridges and report observed connections closed.
+        let conns: Vec<Conn> = self.conns.drain().map(|(_, conn)| conn).collect();
+        for conn in conns {
+            self.finish_conn(conn);
         }
         for (_, mut eg) in self.egress.drain() {
             let _ = eg.listener.deregister(self.poll.registry());

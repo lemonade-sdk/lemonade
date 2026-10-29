@@ -68,6 +68,16 @@ impl Bridge {
         }
     }
 
+    /// The local port of a TCP bridge socket, which the target sees as the
+    /// connection's remote port. 0 for a Unix socket or an unbound stream.
+    pub fn local_port(&self) -> u16 {
+        match self {
+            Bridge::Tcp(s) => s.local_addr().map(|a| a.port()).unwrap_or(0),
+            #[cfg(unix)]
+            Bridge::Unix(_) => 0,
+        }
+    }
+
     /// Shut down the write half (propagates a virtual-side FIN to the bridge).
     pub fn shutdown_write(&mut self) {
         match self {

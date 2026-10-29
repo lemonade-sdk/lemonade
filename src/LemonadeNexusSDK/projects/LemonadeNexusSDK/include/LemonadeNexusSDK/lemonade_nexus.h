@@ -465,7 +465,10 @@ ln_error_t ln_set_session_moved_callback(ln_client_t* client,
 /** Get current mesh peers as JSON array.
  *  Each peer: {node_id, hostname, mesh_pubkey, tunnel_ip, private_subnet,
  *  endpoint, relay_endpoint, is_online, last_handshake, rx_bytes, tx_bytes,
- *  latency_ms, keepalive}.
+ *  latency_ms, keepalive, last_seen, mgmt_pubkey, peer_permissions}.
+ *  peer_permissions lists what the peer's key holds on this device and its
+ *  ancestor groups ("admin", "svc:<family>", ...), as the server reports it;
+ *  the service ingress (ln_mesh_service_set_catalog) enforces them.
  *  A peer whose traffic goes through a relay (relay fallback) has a non-empty
  *  relay_endpoint ("ip:port" of the relay); ln_mesh_status also reports its
  *  endpoint as empty.
@@ -880,8 +883,82 @@ ln_error_t ln_check_device_name(ln_client_t* client,
 ln_error_t ln_account_delete(ln_client_t* client, char** out_json);
 
 /** Publish a local service to mesh peers: our mesh IP:vport bridges to `target`
- *  ("tcp:127.0.0.1:PORT"). Requires an active mesh; re-applied on re-join. */
+ *  ("tcp:127.0.0.1:PORT"). Requires an active mesh; re-applied on re-join. A
+ *  port with a service catalog (ln_mesh_service_set_catalog) is served through
+ *  the SDK's ingress front end instead of a raw bridge; its target must be
+ *  "tcp:<host>:<port>". */
 ln_error_t ln_mesh_expose_service(ln_client_t* client, uint16_t vport, const char* target);
+
+/* ------------------------------------------------------------------ */
+/* Service catalog and route policy                                    */
+/* ------------------------------------------------------------------ */
+
+/** Register the route catalog of the service exposed on `vport`, replacing any
+ *  previous catalog of that port. catalog_json:
+ *    {"version": <uint>, "app": {"name": "...", "version": "..."},
+ *     "families": [{"name": "inference",
+ *                   "routes": [{"methods": ["POST"], "path": "/api/v1/chat/completions"},
+ *                              {"methods": ["GET"], "prefix": "/api/v1/models"}]}]}
+ *  `version` is required; `app` is optional. Family names match
+ *  [a-z0-9][a-z0-9_.-]{0,62} and are unique. A route needs at least one method
+ *  and exactly one of `path` (exact) or `prefix` (the prefix itself and every
+ *  path below it), both absolute; the same method and path or prefix may
+ *  appear only once. At most 64 families, 1024 routes and 256 KiB of JSON.
+ *
+ *  From then on the SDK terminates HTTP at that port's mesh ingress. For each
+ *  request it attributes the connection to the mesh peer it came from (the
+ *  source tunnel address, which the dataplane binds to the sending peer's
+ *  key), matches method and path to the first route of the catalog, in
+ *  catalog order, and forwards the request to the local service only when the
+ *  peer's peer_permissions (ln_mesh_peers) hold "admin" or "svc:<family>".
+ *  Allowed requests reach the service with the trusted headers
+ *  X-Nexus-Peer-Node, X-Nexus-Peer-Key, X-Nexus-Peer-Permissions
+ *  (comma-separated), X-Nexus-Family and X-Nexus-Catalog-Version; any
+ *  client-supplied X-Nexus-* header is removed first. Status, Content-Type
+ *  and streamed bodies pass through unchanged. GET /.nexus/catalog is
+ *  answered by the SDK itself with the catalog for any attributed peer.
+ *
+ *  Every refusal answers HTTP 403 with Content-Type application/json and the
+ *  body {"error", "code", "family", "required", "catalog_version",
+ *  "app": {"name", "version"}}, where code is "nexus_permission_denied" (the
+ *  peer lacks the family permission), "nexus_route_unregistered" (no route
+ *  matches) or "nexus_peer_unattributed" (no listed peer accounts for the
+ *  connection), and is reported to the ln_set_ingress_denied_callback
+ *  callback. Ports without a catalog keep the raw bridge. Works before a
+ *  join; an exposure already in force moves behind the front end at once.
+ *  The string is copied.
+ *  @return LN_OK; LN_ERR_NULL_ARG for a NULL argument; LN_ERR_REJECTED when
+ *          the catalog is not valid JSON or breaks a rule above (the reason
+ *          is logged); LN_ERR_CONNECT when the forward of a live exposure
+ *          could not be installed. Thread-safe. */
+ln_error_t ln_mesh_service_set_catalog(ln_client_t* client, uint16_t vport, const char* catalog_json);
+
+/** The catalog registered for `vport`, as given, or "{}" when none. Caller
+ *  must ln_free(*out_json). Returns LN_ERR_NULL_ARG for a NULL argument.
+ *  Thread-safe. */
+ln_error_t ln_mesh_service_catalog(ln_client_t* client, uint16_t vport, char** out_json);
+
+/** Called for every request an ingress front end refuses.
+ *  event_json: {kind ("denied" | "unregistered" | "unattributed"), vport,
+ *  peer_node_id, peer_key, peer_tunnel_ip, method, path, family, required
+ *  ("svc:<family>" or ""), catalog_version, time (Unix seconds)}. peer_key
+ *  is the peer's management key when the peer list carries it, otherwise
+ *  its mesh public key; peer_node_id and peer_key are empty for
+ *  "unattributed". The event never carries a request body.
+ *  event_json is allocated for this call: the callback owns it and releases
+ *  it with ln_free(), during the call or later from any thread. Runs on an
+ *  SDK thread while the refused request waits, so it must return promptly.
+ *  The function must return normally (no longjmp, no C++ exception) and must
+ *  not call ln_set_ingress_denied_callback or ln_destroy for this client. */
+typedef void (*ln_ingress_denied_fn)(char* event_json, void* user);
+
+/** Set the ingress refusal callback and its user pointer (fn NULL clears it).
+ *  When this returns, the previous callback is not running and is not called
+ *  again, so its user data may be released. No callback runs after
+ *  ln_destroy returns. Returns LN_ERR_NULL_ARG when client is NULL. */
+ln_error_t ln_set_ingress_denied_callback(ln_client_t* client,
+                                          ln_ingress_denied_fn fn,
+                                          void* user);
 
 /** Open (or reuse) a loopback bridge to a mesh peer's dst_ip:dst_port.
  *  On success *out_port is the bound 127.0.0.1 port to dial. */
@@ -1101,15 +1178,23 @@ ln_error_t ln_mesh_port_set_selection(ln_client_t* client, const char* target,
  *   tls: {state ("off" | "waiting" | "activating" | "active" |
  *   "unsupported_certificate" | "error"), domain, expires_at, error},
  *   urls: [{node_id, device_name, url, self}],
- *   devices: [{node_id, device_name, is_online}]}.
+ *   devices: [{node_id, device_name, is_online, app: {name, version},
+ *              families: [...], catalog_status}],
+ *   catalog: {...}}.
  *  "activating" means the first certificate is installed and the port switches
  *  to TLS as soon as the open plain HTTP requests finish; a running stream is
  *  never cut. `urls` lists this device and each online Tier 3 device that this
  *  device may connect to. Before TLS is active, only "http://127.0.0.1:<port>"
  *  is listed.
- *  `devices` lists the Tier 3 devices that can be selected. The peer key is
- *  never included. Caller must ln_free(*out_json). Returns LN_ERR_NULL_ARG for a
- *  NULL argument. Thread-safe. */
+ *  `devices` lists the Tier 3 devices that can be selected, each with what its
+ *  GET /.nexus/catalog last answered: the app name and version and the family
+ *  names of its service catalog, and catalog_status (the HTTP status of that
+ *  probe; 0 when the device has not answered yet, 404 when its SDK has no
+ *  catalog). A device that reports no catalog shows empty strings. `catalog`
+ *  is the catalog this client registered for mesh port 13305
+ *  (ln_mesh_service_set_catalog), or {}. The peer key is never included.
+ *  Caller must ln_free(*out_json). Returns LN_ERR_NULL_ARG for a NULL
+ *  argument. Thread-safe. */
 ln_error_t ln_mesh_port_status(ln_client_t* client, char** out_json);
 
 #if defined(__GNUC__) || defined(__clang__)

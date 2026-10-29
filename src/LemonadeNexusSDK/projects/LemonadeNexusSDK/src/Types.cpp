@@ -199,6 +199,8 @@ void to_json(json& j, const MeshPeer& p) {
         {"latency_ms",     p.latency_ms},
         {"keepalive",      p.keepalive},
         {"last_seen",      p.last_seen},
+        {"mgmt_pubkey",    p.mgmt_pubkey},
+        {"peer_permissions", p.permissions},
     };
 }
 
@@ -217,6 +219,13 @@ void from_json(const json& j, MeshPeer& p) {
     p.latency_ms     = j.value("latency_ms", int32_t{-1});
     p.keepalive      = j.value("keepalive", uint16_t{5});
     p.last_seen      = j.value("last_seen", uint64_t{0});
+    p.mgmt_pubkey    = j.value("mgmt_pubkey", "");
+    p.permissions.clear();
+    if (j.contains("peer_permissions") && j["peer_permissions"].is_array()) {
+        for (const auto& permission : j["peer_permissions"]) {
+            if (permission.is_string()) p.permissions.push_back(permission.get<std::string>());
+        }
+    }
 }
 
 // --- MeshTunnelStatus ---

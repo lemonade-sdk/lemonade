@@ -1,6 +1,8 @@
 #include <LemonadeNexusSDK/MeshPort.hpp>
 #include <LemonadeNexusSDK/CertRenewal.hpp>
 #include <LemonadeNexusSDK/LemonadeNexusClient.hpp>
+#include <LemonadeNexusSDK/ServiceIngress.hpp>
+#include "MeshProxy.hpp"
 
 #include <LemonadeNexus/Tree/DeviceLabel.hpp>
 
@@ -15,11 +17,9 @@
 #include <algorithm>
 #include <atomic>
 #include <cctype>
-#include <deque>
 #include <filesystem>
 #include <fstream>
 #include <map>
-#include <random>
 
 #ifndef _WIN32
 #include <cerrno>
@@ -35,8 +35,6 @@ using json = nlohmann::json;
 /// The mesh port sends it to that device as Authorization and never forwards the
 /// caller's own Authorization to a peer.
 constexpr const char* kPeerAuthorizationHeader = "X-Lemonade-Peer-Authorization";
-constexpr size_t kPayloadLimit = 256u * 1024u * 1024u;
-constexpr size_t kPipeLimit = 1u * 1024u * 1024u;
 
 std::string lower(std::string_view text) {
     std::string result(text);
@@ -89,65 +87,8 @@ bool grants_connect(const std::vector<Assignment>& assignments, const std::strin
     return false;
 }
 
-void reply_error(httplib::Response& res, int status, const std::string& message) {
-    res.set_header("Cache-Control", "no-store");
-    res.status = status;
-    res.set_content(json{{"error", message}}.dump(), "application/json");
-}
-
 bool is_models_path(const std::string& path) {
     return path == "/api/v1/models" || path == "/api/v0/models" || path == "/v1/models" || path == "/v0/models";
-}
-
-struct FormPart {
-    std::string name;
-    std::string filename;
-    std::string content_type;
-    std::string content;
-};
-
-/// cpp-httplib 0.23 replaced Request::files with Request::form (fields and files);
-/// distributions ship both generations, so read whichever the header provides.
-template <typename Request>
-auto form_parts(const Request& req, int) -> decltype(req.form.files, std::vector<FormPart>()) {
-    std::vector<FormPart> parts;
-    for (const auto& [name, field] : req.form.fields) parts.push_back({field.name, "", "", field.content});
-    for (const auto& [name, file] : req.form.files) parts.push_back({file.name, file.filename, file.content_type, file.content});
-    return parts;
-}
-template <typename Request>
-std::vector<FormPart> form_parts(const Request& req, long) {
-    std::vector<FormPart> parts;
-    for (const auto& [name, part] : req.files) parts.push_back({part.name, part.filename, part.content_type, part.content});
-    return parts;
-}
-
-/// httplib parses a multipart body into its form parts and leaves req.body empty, so a
-/// forwarded multipart request is encoded again with a fresh boundary.
-std::pair<std::string, std::string> multipart_body(const httplib::Request& req) {
-    const auto parts = form_parts(req, 0);
-    std::random_device random;
-    std::string boundary;
-    std::string body;
-    for (int attempt = 0; attempt < 4; ++attempt) {
-        boundary = "lemonade-mesh-port-" + std::to_string(random()) + std::to_string(random()) + std::to_string(random());
-        body.clear();
-        for (const auto& part : parts) {
-            body += "--" + boundary + "\r\nContent-Disposition: form-data; name=\"" + part.name + "\"";
-            if (!part.filename.empty()) {
-                body += "; filename=\"" + part.filename + "\"\r\nContent-Type: " +
-                    (part.content_type.empty() ? std::string("application/octet-stream") : part.content_type);
-            }
-            body += "\r\n\r\n" + part.content + "\r\n";
-        }
-        body += "--" + boundary + "--\r\n";
-        bool collides = false;
-        for (const auto& part : parts) {
-            if (part.content.find(boundary) != std::string::npos) collides = true;
-        }
-        if (!collides) break;
-    }
-    return {"multipart/form-data; boundary=" + boundary, body};
 }
 
 /// Binds without SO_REUSEPORT, so a second process cannot share the port. Unix keeps
@@ -180,239 +121,6 @@ bool port_in_use(uint16_t port) {
 #endif
     httplib::detail::close_socket(sock);
     return in_use;
-}
-
-struct Pipe;
-
-}  // namespace
-
-/// The open requests of the listener: the handlers that are running and the pipes
-/// that still stream a response after their handler returned. stop() aborts the
-/// pipes; the switch from plain HTTP to TLS waits until nothing is open, because
-/// stopping an httplib server cuts every chunked response it is still writing.
-struct MeshPortProxies {
-    std::mutex mutex;
-    std::vector<std::weak_ptr<Pipe>> pipes;
-    size_t handlers{0};
-    bool switching{false};       // refuse new requests while the listener is replaced
-    bool wake_when_idle{false};  // a switch is waiting for the open requests to finish
-    std::function<void()> on_idle;
-
-    /// Registers a handler. False while the listener is being replaced.
-    bool enter() {
-        std::lock_guard lock(mutex);
-        if (switching) return false;
-        ++handlers;
-        return true;
-    }
-    void leave() {
-        std::function<void()> wake;
-        {
-            std::lock_guard lock(mutex);
-            --handlers;
-            wake = idle_wake_locked();
-        }
-        if (wake) wake();
-    }
-    void add(const std::shared_ptr<Pipe>& pipe) {
-        std::lock_guard lock(mutex);
-        prune_locked();
-        pipes.push_back(pipe);
-    }
-    /// Called by a pipe's destructor, once its response is written or aborted.
-    void released() {
-        std::function<void()> wake;
-        {
-            std::lock_guard lock(mutex);
-            wake = idle_wake_locked();
-        }
-        if (wake) wake();
-    }
-    /// Starts refusing new requests when nothing is open. Otherwise arranges for
-    /// on_idle to run when the last open request finishes and returns false.
-    bool begin_switch() {
-        std::lock_guard lock(mutex);
-        if (!idle_locked()) {
-            wake_when_idle = true;
-            return false;
-        }
-        wake_when_idle = false;
-        switching = true;
-        return true;
-    }
-    void end_switch() {
-        std::lock_guard lock(mutex);
-        switching = false;
-    }
-    void forget_switch() {
-        std::lock_guard lock(mutex);
-        switching = false;
-        wake_when_idle = false;
-    }
-    void cancel_all();
-
-private:
-    void prune_locked() {
-        pipes.erase(std::remove_if(pipes.begin(), pipes.end(), [](const auto& p) { return p.expired(); }), pipes.end());
-    }
-    bool idle_locked() {
-        prune_locked();
-        return handlers == 0 && pipes.empty();
-    }
-    std::function<void()> idle_wake_locked() {
-        if (!wake_when_idle || !idle_locked()) return {};
-        wake_when_idle = false;
-        return on_idle;
-    }
-};
-
-namespace {
-
-/// One forwarded request. A worker thread reads the upstream response into a bounded
-/// queue; the listener streams the queue to the caller with the upstream status and
-/// Content-Type.
-struct Pipe {
-    std::mutex mutex;
-    std::condition_variable changed;
-    bool headers{false};
-    bool finished{false};
-    bool cancelled{false};
-    int status{0};
-    std::string content_type;
-    std::deque<std::string> chunks;
-    size_t buffered{0};
-    std::unique_ptr<httplib::Client> client;
-    std::thread worker;
-    std::shared_ptr<MeshPortProxies> owner;
-
-    void cancel() {
-        {
-            std::lock_guard lock(mutex);
-            cancelled = true;
-        }
-        changed.notify_all();
-        if (client) client->stop();
-    }
-    void join() {
-        if (worker.joinable()) worker.join();
-    }
-    ~Pipe() {
-        if (worker.joinable()) {
-            cancel();
-            worker.join();
-        }
-        if (owner) owner->released();
-    }
-};
-
-}  // namespace
-
-void MeshPortProxies::cancel_all() {
-    std::vector<std::shared_ptr<Pipe>> open;
-    {
-        std::lock_guard lock(mutex);
-        for (const auto& weak : pipes) {
-            if (auto pipe = weak.lock()) open.push_back(std::move(pipe));
-        }
-        pipes.clear();
-    }
-    for (const auto& pipe : open) pipe->cancel();
-}
-
-namespace {
-
-void proxy(const std::shared_ptr<MeshPortProxies>& proxies, const std::string& host, uint16_t port,
-           const httplib::Request& req, const std::string& target, httplib::Headers headers,
-           const std::string& body, httplib::Response& res) {
-    auto pipe = std::make_shared<Pipe>();
-    pipe->owner = proxies;
-    pipe->client = std::make_unique<httplib::Client>(host, port);
-    pipe->client->set_connection_timeout(10, 0);
-    pipe->client->set_read_timeout(300, 0);
-    pipe->client->set_write_timeout(300, 0);
-    pipe->client->set_keep_alive(false);
-    proxies->add(pipe);
-
-    httplib::Request upstream;
-    upstream.method = req.method;
-    upstream.path = target;
-    upstream.headers = std::move(headers);
-    upstream.body = body;
-    Pipe* raw = pipe.get();
-    upstream.response_handler = [raw](const httplib::Response& reply) {
-        std::lock_guard lock(raw->mutex);
-        raw->status = reply.status;
-        raw->content_type = reply.get_header_value("Content-Type");
-        raw->headers = true;
-        raw->changed.notify_all();
-        return !raw->cancelled;
-    };
-    upstream.content_receiver = [raw](const char* data, size_t size, uint64_t, uint64_t) {
-        std::unique_lock lock(raw->mutex);
-        raw->changed.wait(lock, [raw] { return raw->cancelled || raw->buffered < kPipeLimit; });
-        if (raw->cancelled) return false;
-        raw->chunks.emplace_back(data, size);
-        raw->buffered += size;
-        raw->changed.notify_all();
-        return true;
-    };
-    // The worker holds a raw pointer: every path below joins it before the pipe is freed.
-    raw->worker = std::thread([raw, upstream = std::move(upstream)] {
-        auto result = raw->client->send(upstream);
-        (void)result;
-        std::lock_guard lock(raw->mutex);
-        raw->finished = true;
-        raw->changed.notify_all();
-    });
-
-    {
-        std::unique_lock lock(pipe->mutex);
-        pipe->changed.wait(lock, [&] { return pipe->headers || pipe->finished || pipe->cancelled; });
-    }
-    res.set_header("Cache-Control", "no-store");
-    bool ready = false;
-    int status = 0;
-    std::string type;
-    {
-        std::lock_guard lock(pipe->mutex);
-        ready = pipe->headers && !pipe->cancelled;
-        status = pipe->status;
-        type = pipe->content_type;
-    }
-    if (!ready) {
-        pipe->cancel();
-        pipe->join();
-        reply_error(res, 502, "Cannot reach that service");
-        return;
-    }
-    res.status = status;
-    if (status == 204 || status == 304) {
-        pipe->join();
-        return;
-    }
-    res.set_chunked_content_provider(
-        type.empty() ? "application/octet-stream" : type,
-        [pipe](size_t, httplib::DataSink& sink) {
-            std::string chunk;
-            {
-                std::unique_lock lock(pipe->mutex);
-                pipe->changed.wait(lock, [&] { return !pipe->chunks.empty() || pipe->finished || pipe->cancelled; });
-                if (pipe->chunks.empty()) {
-                    lock.unlock();
-                    sink.done();
-                    return true;
-                }
-                chunk = std::move(pipe->chunks.front());
-                pipe->chunks.pop_front();
-                pipe->buffered -= chunk.size();
-            }
-            pipe->changed.notify_all();
-            return sink.write(chunk.data(), chunk.size());
-        },
-        [pipe](bool) {
-            pipe->cancel();
-            pipe->join();
-        });
 }
 
 httplib::Headers forwarded_headers(const httplib::Request& req, const std::string& authorization,
@@ -469,6 +177,75 @@ std::vector<std::string> model_ids(const json& listing) {
 
 int64_t epoch_seconds() {
     return std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+}
+
+/// One GET of a device's /.nexus/catalog. The probe needs no credentials: the
+/// device's SDK answers it for any attributed peer.
+MeshPortPeerCatalog fetch_catalog(httplib::Client& client) {
+    MeshPortPeerCatalog catalog;
+    const auto reply = get_json(client, std::string(service_ingress::kCatalogPath), "");
+    catalog.status = reply.status;
+    if (!reply.body || !reply.body->is_object()) return catalog;
+    const auto& body = *reply.body;
+    if (body.contains("version") && body["version"].is_number_integer() && body["version"].get<int64_t>() >= 0) {
+        catalog.version = body["version"].get<uint64_t>();
+    }
+    if (body.contains("app") && body["app"].is_object()) {
+        catalog.app_name = body["app"].value("name", "");
+        catalog.app_version = body["app"].value("version", "");
+    }
+    if (body.contains("families") && body["families"].is_array()) {
+        for (const auto& family : body["families"]) {
+            if (family.is_object() && family.contains("name") && family["name"].is_string()) {
+                catalog.families.push_back(family["name"].get<std::string>());
+            }
+        }
+    }
+    return catalog;
+}
+
+/// Runs `work(i)` for every i in [0, count) on at most eight threads at once and
+/// waits until all finish or `deadline` passes. Then `cancel(i)` runs for each i
+/// that has not finished, and every thread is joined: `work` must return soon
+/// after `cancel`, and must skip its request when cancelled before it started.
+void run_probes(size_t count, std::chrono::steady_clock::time_point deadline,
+                const std::function<void(size_t)>& work, const std::function<void(size_t)>& cancel) {
+    if (count == 0) return;
+    constexpr size_t kProbeThreads = 8;
+    std::mutex done_mutex;
+    std::condition_variable done;
+    std::vector<bool> finished(count, false);
+    size_t finished_count = 0;
+    std::atomic<size_t> next{0};
+    std::vector<std::thread> workers;
+    for (size_t i = 0; i < std::min(kProbeThreads, count); ++i) {
+        workers.emplace_back([&] {
+            for (size_t index = next++; index < count; index = next++) {
+                work(index);
+                std::lock_guard lock(done_mutex);
+                finished[index] = true;
+                ++finished_count;
+                done.notify_all();
+            }
+        });
+    }
+    {
+        std::unique_lock lock(done_mutex);
+        done.wait_until(lock, deadline, [&] { return finished_count == count; });
+    }
+    std::vector<size_t> unfinished;
+    {
+        std::lock_guard lock(done_mutex);
+        for (size_t i = 0; i < count; ++i) {
+            if (!finished[i]) unfinished.push_back(i);
+        }
+    }
+    for (const auto index : unfinished) cancel(index);
+    for (auto& worker : workers) worker.join();
+}
+
+json catalog_json(const MeshPortPeerCatalog& catalog) {
+    return json{{"name", catalog.app_name}, {"version", catalog.app_version}};
 }
 
 }  // namespace
@@ -731,6 +508,7 @@ MeshPortBackend make_mesh_port_backend(LemonadeNexusClient& client) {
         }
         return members;
     };
+    backend.local_catalog = [&client] { return client.service_catalog(kMeshPortPeerServicePort); };
     backend.ensure_certificate = [&client](const std::string& cert_dir) -> std::optional<MeshPortCertificate> {
         const auto result = client.renew_certificate_if_needed(std::string(kGroupLoopbackCertTarget), cert_dir);
         if (result.status == CertRenewalStatus::Failed) {
@@ -919,7 +697,7 @@ MeshPortStartResult MeshPort::bind_listener(uint16_t port, bool tls) {
     server.set_read_timeout(30, 0);
     server.set_write_timeout(300, 0);
     server.set_keep_alive_timeout(2);
-    server.set_payload_max_length(kPayloadLimit);
+    server.set_payload_max_length(kProxyPayloadLimit);
     if (!server.bind_to_port("127.0.0.1", port)) {
         return port_in_use(port) ? MeshPortStartResult::PortInUse : MeshPortStartResult::BindFailed;
     }
@@ -1031,6 +809,7 @@ void MeshPort::stop() {
     {
         std::lock_guard lock(cache_mutex_);
         peer_cache_.clear();
+        catalog_cache_.clear();
         local_models_.clear();
         local_models_authorization_.clear();
         local_models_fetched_ = {};
@@ -1055,6 +834,7 @@ void MeshPort::refresh_now() {
     try {
         activate_pending_tls();
         refresh_members();
+        refresh_catalogs();
         check_certificate();
     } catch (const std::exception& e) {
         spdlog::warn("[MeshPort] refresh failed: {}", e.what());
@@ -1265,13 +1045,22 @@ int MeshPort::set_selection(const std::string& target, const std::string& peer_k
 }
 
 nlohmann::json MeshPort::status() const {
-    std::lock_guard lock(state_mutex_);
     const auto self = backend_.self_node_id ? backend_.self_node_id() : std::string();
+    const auto local_catalog = backend_.local_catalog ? backend_.local_catalog() : json::object();
+    std::map<std::string, CachedCatalog> catalogs;
+    {
+        std::lock_guard lock(cache_mutex_);
+        catalogs = catalog_cache_;
+    }
+    std::lock_guard lock(state_mutex_);
     const bool tls = tls_state_ == "active";
     json devices = json::array();
     for (const auto& member : members_) {
         if (member.node_id == self || !member.is_inference || !member.can_connect) continue;
-        devices.push_back({{"node_id", member.node_id}, {"device_name", member.device_name}, {"is_online", member.is_online}});
+        MeshPortPeerCatalog catalog;
+        if (const auto cached = catalogs.find(member.node_id); cached != catalogs.end()) catalog = cached->second.catalog;
+        devices.push_back({{"node_id", member.node_id}, {"device_name", member.device_name}, {"is_online", member.is_online},
+            {"app", catalog_json(catalog)}, {"families", catalog.families}, {"catalog_status", catalog.status}});
     }
     return {
         {"running", running_},
@@ -1288,6 +1077,7 @@ nlohmann::json MeshPort::status() const {
                                ? std::string("No certificate directory is set") : tls_error_}}},
         {"urls", running_ ? mesh_port::device_urls(members_, self, local_domain_, port_, tls) : json::array()},
         {"devices", devices},
+        {"catalog", local_catalog.is_object() ? local_catalog : json::object()},
     };
 }
 
@@ -1449,11 +1239,11 @@ void MeshPort::forward_to_node(const std::string& node_id, const std::string& pa
     }
     if (req.is_multipart_form_data()) {
         const auto [type, encoded] = multipart_body(req);
-        proxy(proxies_, "127.0.0.1", port, req, path, forwarded_headers(req, peer_authorization, type), encoded, res);
+        proxy_request(proxies_, "127.0.0.1", port, req, path, forwarded_headers(req, peer_authorization, type), encoded, res);
         return;
     }
     const auto type = req.has_header("Content-Type") ? req.get_header_value("Content-Type") : std::string();
-    proxy(proxies_, "127.0.0.1", port, req, path, forwarded_headers(req, peer_authorization, type), body, res);
+    proxy_request(proxies_, "127.0.0.1", port, req, path, forwarded_headers(req, peer_authorization, type), body, res);
 }
 
 void MeshPort::forward_local(const std::string& path, const httplib::Request& req, httplib::Response& res,
@@ -1473,11 +1263,11 @@ void MeshPort::forward_local(const std::string& path, const httplib::Request& re
     const auto authorization = req.get_header_value("Authorization");
     if (req.is_multipart_form_data()) {
         const auto [type, encoded] = multipart_body(req);
-        proxy(proxies_, host, port, req, path, forwarded_headers(req, authorization, type), encoded, res);
+        proxy_request(proxies_, host, port, req, path, forwarded_headers(req, authorization, type), encoded, res);
         return;
     }
     const auto type = req.has_header("Content-Type") ? req.get_header_value("Content-Type") : std::string();
-    proxy(proxies_, host, port, req, path, forwarded_headers(req, authorization, type), body, res);
+    proxy_request(proxies_, host, port, req, path, forwarded_headers(req, authorization, type), body, res);
 }
 
 nlohmann::json MeshPort::local_models(const std::string& authorization) {
@@ -1514,17 +1304,111 @@ std::vector<std::string> MeshPort::local_model_ids(const std::string& authorizat
     return ids;
 }
 
+std::optional<MeshPortPeerCatalog> MeshPort::cached_catalog(const std::string& node_id) {
+    std::lock_guard lock(cache_mutex_);
+    const auto cached = catalog_cache_.find(node_id);
+    if (cached == catalog_cache_.end() ||
+        std::chrono::steady_clock::now() - cached->second.fetched >= options_.catalog_ttl) {
+        return std::nullopt;
+    }
+    return cached->second.catalog;
+}
+
+void MeshPort::store_catalog(const std::string& node_id, const MeshPortPeerCatalog& catalog) {
+    std::lock_guard lock(cache_mutex_);
+    catalog_cache_[node_id] = {std::chrono::steady_clock::now(), catalog};
+}
+
+namespace {
+
+/// One peer probe: an egress and an HTTP client, cancelled by the coordinator
+/// at the deadline through `cancelled` and the client.
+struct MeshPortProbe {
+    const MeshPortMember* member{nullptr};
+    std::mutex mutex;
+    std::shared_ptr<httplib::Client> client;
+    bool cancelled{false};
+    bool done{false};
+
+    /// Opens the egress and the client; null when cancelled or unreachable.
+    std::shared_ptr<httplib::Client> open(const MeshPortBackend& backend, const MeshPort::Options& options,
+                                          std::mutex& state_mutex, std::map<std::string, std::string>& egress_ips) {
+        const auto address = strip_prefix_length(member->tunnel_ip);
+        const uint16_t egress = backend.open_egress && !address.empty()
+            ? backend.open_egress(address, kMeshPortPeerServicePort) : 0;
+        if (egress == 0) return nullptr;
+        {
+            std::lock_guard lock(state_mutex);
+            egress_ips[member->node_id] = address;
+        }
+        std::lock_guard lock(mutex);
+        if (cancelled) return nullptr;
+        client = std::make_shared<httplib::Client>("127.0.0.1", egress);
+        set_timeouts(*client, options.peer_probe_connect_timeout, options.peer_probe_deadline);
+        return client;
+    }
+    bool is_cancelled() {
+        std::lock_guard lock(mutex);
+        return cancelled;
+    }
+    void finish() {
+        std::lock_guard lock(mutex);
+        done = true;
+        client.reset();
+    }
+    /// Shuts the socket down under the probe thread, so its read fails now.
+    void cancel() {
+        std::shared_ptr<httplib::Client> open_client;
+        {
+            std::lock_guard lock(mutex);
+            if (done) return;
+            cancelled = true;
+            open_client = client;
+        }
+        if (open_client) open_client->stop();
+    }
+};
+
+}  // namespace
+
+// Runs on the refresh thread: reads the catalog of every reachable peer whose
+// cached answer is stale, so the status shows each device's app without a
+// request having probed it.
+void MeshPort::refresh_catalogs() {
+    std::vector<MeshPortMember> members;
+    {
+        std::lock_guard lock(state_mutex_);
+        if (!running_) return;
+        members = members_;
+    }
+    const auto self = backend_.self_node_id ? backend_.self_node_id() : std::string();
+    std::vector<std::unique_ptr<MeshPortProbe>> probes;
+    for (const auto& member : members) {
+        if (!reachable_peer(member, self) || cached_catalog(member.node_id)) continue;
+        auto probe = std::make_unique<MeshPortProbe>();
+        probe->member = &member;
+        probes.push_back(std::move(probe));
+    }
+    run_probes(probes.size(), std::chrono::steady_clock::now() + options_.peer_probe_deadline,
+        [&](size_t index) {
+            auto& probe = *probes[index];
+            MeshPortPeerCatalog catalog;
+            if (const auto client = probe.open(backend_, options_, state_mutex_, egress_ips_)) {
+                catalog = fetch_catalog(*client);
+            }
+            probe.finish();
+            // A peer that did not answer is cached as unknown until the next interval.
+            store_catalog(probe.member->node_id, catalog);
+        },
+        [&](size_t index) { probes[index]->cancel(); });
+}
+
 std::vector<MeshPortPeerModels> MeshPort::peer_models(const std::vector<MeshPortMember>& members,
                                                       const std::string& self,
                                                       const std::string& peer_authorization) {
-    // One peer's probe: egress, health and models, run on a probe thread. The
-    // coordinator cancels it at the deadline through `cancelled` and the client.
     struct Probe {
-        const MeshPortMember* member{nullptr};
+        MeshPortProbe probe;
         std::optional<MeshPortPeerModels> models;  // set for a cached or finished probe
-        std::mutex mutex;
-        std::shared_ptr<httplib::Client> client;
-        bool cancelled{false};
     };
     std::vector<std::unique_ptr<Probe>> probes;
     std::vector<Probe*> pending;
@@ -1532,7 +1416,7 @@ std::vector<MeshPortPeerModels> MeshPort::peer_models(const std::vector<MeshPort
     for (const auto& member : members) {
         if (!reachable_peer(member, self)) continue;
         auto probe = std::make_unique<Probe>();
-        probe->member = &member;
+        probe->probe.member = &member;
         {
             std::lock_guard lock(cache_mutex_);
             const auto cached = peer_cache_.find(std::make_pair(member.node_id, peer_authorization));
@@ -1544,99 +1428,55 @@ std::vector<MeshPortPeerModels> MeshPort::peer_models(const std::vector<MeshPort
         probes.push_back(std::move(probe));
     }
 
-    std::mutex done_mutex;
-    std::condition_variable done;
-    size_t finished = 0;
-    const auto run = [&](Probe& probe) {
-        const auto& member = *probe.member;
-        MeshPortPeerModels models;
-        models.node_id = member.node_id;
-        models.device_name = member.device_name;
-        models.latency_ms = member.latency_ms;
-        const auto address = strip_prefix_length(member.tunnel_ip);
-        const uint16_t port = backend_.open_egress && !address.empty()
-            ? backend_.open_egress(address, kMeshPortPeerServicePort) : 0;
-        if (port != 0) {
-            {
-                std::lock_guard lock(state_mutex_);
-                egress_ips_[member.node_id] = address;
-            }
-            std::shared_ptr<httplib::Client> client;
-            {
-                std::lock_guard lock(probe.mutex);
-                if (!probe.cancelled) {
-                    client = std::make_shared<httplib::Client>("127.0.0.1", port);
-                    set_timeouts(*client, options_.peer_probe_connect_timeout, options_.peer_probe_deadline);
-                    probe.client = client;
-                }
-            }
-            if (client) {
+    // A bounded set of threads probes the peers at the same time, so the listing
+    // waits for the slowest peer or the deadline, not for the sum.
+    run_probes(pending.size(), now + options_.peer_probe_deadline,
+        [&](size_t index) {
+            auto& entry = *pending[index];
+            const auto& member = *entry.probe.member;
+            MeshPortPeerModels models;
+            models.node_id = member.node_id;
+            models.device_name = member.device_name;
+            models.latency_ms = member.latency_ms;
+            if (const auto client = entry.probe.open(backend_, options_, state_mutex_, egress_ips_)) {
                 const auto health = get_json(*client, "/api/v1/health", peer_authorization);
                 if (health.body && health.body->is_object() && health.body->contains("all_models_loaded")) {
                     models.loaded = (*health.body)["all_models_loaded"];
                 }
-                bool cancelled = false;
-                {
-                    std::lock_guard lock(probe.mutex);
-                    cancelled = probe.cancelled;
-                }
-                if (!cancelled) {
+                if (!entry.probe.is_cancelled()) {
                     const auto listing = get_json(*client, "/api/v1/models", peer_authorization);
                     models.models_status = listing.status;
                     if (listing.body) models.available = model_ids(*listing.body);
                 }
+                if (const auto cached = cached_catalog(member.node_id)) {
+                    models.catalog = *cached;
+                } else if (!entry.probe.is_cancelled()) {
+                    models.catalog = fetch_catalog(*client);
+                    store_catalog(member.node_id, models.catalog);
+                }
             }
-        }
-        {
-            std::lock_guard lock(probe.mutex);
-            probe.models = std::move(models);
-            probe.client.reset();
-        }
-        std::lock_guard lock(done_mutex);
-        ++finished;
-        done.notify_all();
-    };
-
-    if (!pending.empty()) {
-        // A bounded set of threads probes the peers at the same time, so the listing
-        // waits for the slowest peer or the deadline, not for the sum.
-        constexpr size_t kProbeThreads = 8;
-        std::atomic<size_t> next{0};
-        std::vector<std::thread> workers;
-        for (size_t i = 0; i < std::min(kProbeThreads, pending.size()); ++i) {
-            workers.emplace_back([&] {
-                for (size_t index = next++; index < pending.size(); index = next++) run(*pending[index]);
-            });
-        }
-        {
-            std::unique_lock lock(done_mutex);
-            done.wait_until(lock, now + options_.peer_probe_deadline, [&] { return finished == pending.size(); });
-        }
-        for (auto* probe : pending) {
-            std::shared_ptr<httplib::Client> client;
-            {
-                std::lock_guard lock(probe->mutex);
-                if (probe->models) continue;
-                probe->cancelled = true;
-                client = probe->client;
-            }
-            // Shuts the socket down under the probe thread, so its read fails now.
-            if (client) client->stop();
-        }
-        for (auto& worker : workers) worker.join();
-    }
+            entry.probe.finish();
+            std::lock_guard lock(entry.probe.mutex);
+            entry.models = std::move(models);
+        },
+        [&](size_t index) { pending[index]->probe.cancel(); });
 
     std::vector<MeshPortPeerModels> result;
     const auto fetched = std::chrono::steady_clock::now();
     std::lock_guard lock(cache_mutex_);
     for (auto& probe : probes) {
-        if (!probe->models) continue;
+        std::optional<MeshPortPeerModels> models;
+        {
+            std::lock_guard probe_lock(probe->probe.mutex);
+            models = probe->models;
+        }
+        if (!models) continue;
         // A peer that did not answer by the deadline is cached as offering nothing,
         // so it is not probed again before the next interval.
         if (std::find(pending.begin(), pending.end(), probe.get()) != pending.end()) {
-            peer_cache_[std::make_pair(probe->member->node_id, peer_authorization)] = {fetched, *probe->models};
+            peer_cache_[std::make_pair(probe->probe.member->node_id, peer_authorization)] = {fetched, *models};
         }
-        result.push_back(std::move(*probe->models));
+        result.push_back(std::move(*models));
     }
     return result;
 }

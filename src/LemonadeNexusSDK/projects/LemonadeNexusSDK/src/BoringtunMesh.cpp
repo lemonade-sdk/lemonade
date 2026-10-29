@@ -120,6 +120,25 @@ struct BoringtunMesh::Impl {
     std::string                                        stun_server;
     std::optional<nexus::network::stun::MappedAddress> stun_result;
 
+    // The ingress source handler runs under ingress_mtx on the netstack
+    // thread, so set_ingress_source_handler returns only when no call runs.
+    std::mutex                           ingress_mtx;
+    BoringtunMesh::IngressSourceHandler  ingress_handler;
+
+    /// The netstack reports an observed ingress connection here; ctx is the Impl.
+    static void ingress_trampoline(void* ctx, uint16_t vport, uint16_t bridge_port,
+                                   uint32_t src_ip, uint16_t src_port, int opened) {
+        auto* impl = static_cast<Impl*>(ctx);
+        if (!impl) return;
+        char text[16];
+        std::snprintf(text, sizeof text, "%u.%u.%u.%u", (src_ip >> 24) & 0xFF,
+                      (src_ip >> 16) & 0xFF, (src_ip >> 8) & 0xFF, src_ip & 0xFF);
+        std::lock_guard lock(impl->ingress_mtx);
+        if (impl->ingress_handler) {
+            impl->ingress_handler(vport, bridge_port, text, src_port, opened != 0);
+        }
+    }
+
     void on_stun(std::span<const uint8_t> msg, const std::string& from) {
         std::lock_guard lock(stun_mtx);
         if (!stun_txn || stun_result || from != stun_server) return;
@@ -282,20 +301,28 @@ void BoringtunMesh::close_egress(const std::string& dst_ip, uint16_t dst_port) {
     spdlog::debug("[BoringtunMesh] egress to {}:{} closed", dst_ip, dst_port);
 }
 
-bool BoringtunMesh::tcp_ingress(uint16_t vport, const std::string& target) {
+bool BoringtunMesh::tcp_ingress(uint16_t vport, const std::string& target, bool report_source) {
     if (!impl_->active.load()) return false;
     if (vport == 0 || target.empty()) return false;
     std::lock_guard lock(impl_->ns_mtx);
     if (!impl_->ns || impl_->tunnel_addr.empty()) return false;
-    if (ns_add_tcp_forward(impl_->ns, impl_->tunnel_addr.c_str(), vport,
-                           target.c_str()) != 0) {
+    const int rc = report_source
+        ? ns_add_tcp_forward_observed(impl_->ns, impl_->tunnel_addr.c_str(), vport,
+                                      target.c_str(), &Impl::ingress_trampoline, impl_.get())
+        : ns_add_tcp_forward(impl_->ns, impl_->tunnel_addr.c_str(), vport, target.c_str());
+    if (rc != 0) {
         spdlog::warn("[BoringtunMesh] ingress {}:{} -> {} failed",
                      impl_->tunnel_addr, vport, target);
         return false;
     }
-    spdlog::info("[BoringtunMesh] ingress {}:{} -> {}",
-                 impl_->tunnel_addr, vport, target);
+    spdlog::info("[BoringtunMesh] ingress {}:{} -> {}{}",
+                 impl_->tunnel_addr, vport, target, report_source ? " (attributed)" : "");
     return true;
+}
+
+void BoringtunMesh::set_ingress_source_handler(IngressSourceHandler handler) {
+    std::lock_guard lock(impl_->ingress_mtx);
+    impl_->ingress_handler = std::move(handler);
 }
 
 uint16_t BoringtunMesh::bound_port() const {

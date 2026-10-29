@@ -41,8 +41,29 @@ void ns_feed_inbound(NsHandle* handle, const uint8_t* pkt, size_t len);
 
 /// Add an ingress forward: virtual `vip:vport` -> `target`, where target is
 /// "tcp:127.0.0.1:PORT" or "unix:/path". Returns 0 on success, -1 on error.
+/// Registering `vip:vport` again replaces the target for new connections and
+/// drops the observer of a forward made with ns_add_tcp_forward_observed.
 int ns_add_tcp_forward(NsHandle* handle, const char* vip, uint16_t vport,
                        const char* target);
+
+/// Callback invoked on the stack thread for each connection that an observed
+/// ingress forward accepts: once with `opened` 1 before any byte of the
+/// connection reaches the target, and once with `opened` 0 when the
+/// connection is removed (also at ns_destroy). `bridge_port` is the loopback
+/// port the stack connected to the target from, which the target sees as the
+/// connection's remote port (0 for a "unix:" target). `src_ip` and
+/// `src_port` are the virtual connection's remote endpoint, IPv4 in host
+/// byte order. The callback must return promptly and must not call
+/// ns_destroy.
+typedef void (*ns_ingress_fn)(void* ctx, uint16_t vport, uint16_t bridge_port,
+                              uint32_t src_ip, uint16_t src_port, int opened);
+
+/// Add an ingress forward like ns_add_tcp_forward and report every
+/// connection it accepts to `observe` with `ctx`, so the target can attribute
+/// each loopback connection to its virtual source. `ctx` must outlive the
+/// stack. Returns 0 on success, -1 on error.
+int ns_add_tcp_forward_observed(NsHandle* handle, const char* vip, uint16_t vport,
+                                const char* target, ns_ingress_fn observe, void* ctx);
 
 /// Add an egress: bind a real loopback TCP listener and bridge each accepted
 /// connection to a virtual TCP connection toward `dst_ip:dst_port`, sourced

@@ -55,21 +55,28 @@ struct ln_client_s {
     std::mutex session_callback_mutex;
     ln_session_moved_fn session_callback{nullptr};
     void* session_callback_user{nullptr};
+    // The application's ingress refusal callback, same rules.
+    std::mutex ingress_callback_mutex;
+    ln_ingress_denied_fn ingress_callback{nullptr};
+    void* ingress_callback_user{nullptr};
 
     explicit ln_client_s(const lnsdk::ServerConfig& cfg) : client{cfg} {
         client.set_cert_renewed_callback([this](const lnsdk::CertRenewedEvent& event) { on_cert_renewed(event); });
         client.set_session_moved_callback([this](const lnsdk::SessionMoveEvent& event) { on_session_moved(event); });
+        client.set_ingress_denied_callback([this](const lnsdk::IngressDeniedEvent& event) { on_ingress_denied(event); });
     }
     ~ln_client_s() {
         // Waits for a running callback, so none runs during member destruction.
         client.set_cert_renewed_callback({});
         client.set_session_moved_callback({});
+        client.set_ingress_denied_callback({});
     }
     ln_client_s(const ln_client_s&) = delete;
     ln_client_s& operator=(const ln_client_s&) = delete;
 
     void on_cert_renewed(const lnsdk::CertRenewedEvent& event);
     void on_session_moved(const lnsdk::SessionMoveEvent& event);
+    void on_ingress_denied(const lnsdk::IngressDeniedEvent& event);
 };
 
 struct ln_identity_s {
@@ -720,6 +727,35 @@ void ln_client_s::on_session_moved(const lnsdk::SessionMoveEvent& event) {
         session_callback(text, session_callback_user);
     } catch (...) {
         spdlog::warn("[CApi] session moved event not delivered");
+    }
+}
+
+ln_error_t ln_set_ingress_denied_callback(ln_client_t* client,
+                                          ln_ingress_denied_fn fn,
+                                          void* user) {
+    if (!client) return LN_ERR_NULL_ARG;
+    try {
+        // on_ingress_denied() calls the callback under this lock, so the old
+        // callback is not running when the lock is held here.
+        std::lock_guard lock(client->ingress_callback_mutex);
+        client->ingress_callback = fn;
+        client->ingress_callback_user = fn ? user : nullptr;
+        return LN_OK;
+    } catch (...) {
+        return LN_ERR_INTERNAL;
+    }
+}
+
+void ln_client_s::on_ingress_denied(const lnsdk::IngressDeniedEvent& event) {
+    std::lock_guard lock(ingress_callback_mutex);
+    if (!ingress_callback) return;
+    try {
+        // The callback owns the text (see ln_ingress_denied_fn).
+        char* text = strdup_json(json(event));
+        if (!text) return;
+        ingress_callback(text, ingress_callback_user);
+    } catch (...) {
+        spdlog::warn("[CApi] ingress denied event not delivered");
     }
 }
 
@@ -1554,6 +1590,32 @@ ln_error_t ln_mesh_expose_service(ln_client_t* client, uint16_t vport, const cha
     if (!client || !target) return LN_ERR_NULL_ARG;
     auto result = client->client.expose_service(vport, target);
     return result.ok ? LN_OK : LN_ERR_CONNECT;
+}
+
+ln_error_t ln_mesh_service_set_catalog(ln_client_t* client, uint16_t vport, const char* catalog_json) {
+    if (!client || !catalog_json) return LN_ERR_NULL_ARG;
+    try {
+        // Bounded before it is parsed: a catalog is a small document.
+        if (std::strlen(catalog_json) > lnsdk::service_ingress::kCatalogTextLimit) return LN_ERR_REJECTED;
+        const auto parsed = json::parse(catalog_json, nullptr, false);
+        if (parsed.is_discarded()) return LN_ERR_REJECTED;
+        const auto result = client->client.set_service_catalog(vport, parsed);
+        if (result.ok) return LN_OK;
+        spdlog::info("[CApi] service catalog for vport {} refused: {}", vport, result.error);
+        return result.http_status == 503 ? LN_ERR_CONNECT : LN_ERR_REJECTED;
+    } catch (...) {
+        return LN_ERR_INTERNAL;
+    }
+}
+
+ln_error_t ln_mesh_service_catalog(ln_client_t* client, uint16_t vport, char** out_json) {
+    if (!client || !out_json) return LN_ERR_NULL_ARG;
+    try {
+        *out_json = strdup_json(client->client.service_catalog(vport));
+        return *out_json ? LN_OK : LN_ERR_INTERNAL;
+    } catch (...) {
+        return LN_ERR_INTERNAL;
+    }
 }
 
 ln_error_t ln_mesh_open_egress(ln_client_t* client, const char* dst_ip,
