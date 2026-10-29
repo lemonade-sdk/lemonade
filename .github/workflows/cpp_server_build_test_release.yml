@@ -1448,7 +1448,7 @@ jobs:
 
   # Container backends run on Devlab Dispatch's ephemeral Strix Halo Linux
   # runners, which have the memory for DS4 and Halogen models. Models go in the
-  # workspace volume, which has room for DS4's 81 GB checkpoint.
+  # workspace volume, which has room for DS4's 87 GB checkpoint.
   test-container-backends:
     name: Test container backend - ${{ matrix.name }}
     runs-on: [self-hosted, Linux, devlab-dispatch, strix-halo]
