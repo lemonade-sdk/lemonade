@@ -21,8 +21,15 @@ on:
     branches: [main]
     paths:
       - ".github/scripts/triage_dashboard.py"
+      - ".github/scripts/triage_maintainer.py"
       - ".github/scripts/test_triage_dashboard.py"
       - ".github/workflows/triage-dashboard.yml"
+
+# Only one publish run at a time — concurrent pushes to lemonade-triage
+# race on the expected SHA and fail. Queue; never cancel in progress.
+concurrency:
+  group: triage-dashboard-publish
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -31,6 +38,7 @@ jobs:
       contents: read
       issues: read
       pull-requests: read
+      discussions: read
     steps:
       - uses: actions/checkout@v4
 
@@ -49,6 +57,9 @@ jobs:
           python .github/scripts/triage_dashboard.py \
             --repo "${{ github.repository }}" \
             --output _site/index.html
+          python .github/scripts/triage_maintainer.py \
+            --repo "${{ github.repository }}" \
+            --output _site/maintainer.html
 
       - name: Publish to triage dashboard repo
         env:
