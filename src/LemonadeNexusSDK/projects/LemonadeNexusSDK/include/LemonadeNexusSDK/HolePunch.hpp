@@ -20,9 +20,14 @@
 ///     handshake. A burst of probes, then a few probes at each pair slot.
 ///   - Upgrade: the peer goes through a relay and prefer_direct is set. A few
 ///     probes at each pair slot. A punched path replaces the relay
-///     (RelayFallback closes the relay channel).
+///     (RelayFallback closes the relay channel). A peer that moves onto a
+///     relay during its Direct burst finishes that burst first.
 ///   - Idle: a fresh handshake on a direct path, no listed endpoint, or a
 ///     relayed peer without prefer_direct.
+/// renew() and burst_now() start a new burst at the next pass, outside the
+/// slot schedule: the mesh orchestrator calls them when a peer's endpoint
+/// changed, when the peer list was refreshed on request, and after the
+/// process resumed from a suspension.
 /// A pair slot is a wall-clock time that both peers compute from their two
 /// public keys (pair_slot_offset), so both sides probe at about the same
 /// moment without extra signaling. This works when the clocks of the two
@@ -37,6 +42,7 @@
 #include <chrono>
 #include <cstdint>
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -120,6 +126,19 @@ public:
     /// Forget every peer schedule.
     void reset();
 
+    /// The paths to these peers (mesh public keys) may have changed: the
+    /// server lists a new endpoint, the peer came back online, or this
+    /// device resumed from a suspension. A handshake from before this call
+    /// no longer counts as a fresh path for them, and each gets a new burst
+    /// of probes at the next pass, also when it is relayed and prefer_direct
+    /// is set. A handshake after this call ends the renewal. Peers that the
+    /// next pass does not list are ignored.
+    void renew(const std::vector<std::string>& pubkeys);
+
+    /// Start a new burst at the next pass for every peer that is being
+    /// probed (Direct or Upgrade), instead of waiting for its next slot.
+    void burst_now();
+
     /// Probes sent since construction. Thread-safe.
     [[nodiscard]] uint64_t probes_sent() const { return probes_sent_.load(); }
 
@@ -160,6 +179,10 @@ private:
     BoringtunMesh&                   mesh_;
     Timing                           timing_;
     std::map<std::string, PeerState> peers_;  // by mesh public key
+    /// Renewed peers: mesh public key -> Unix seconds of the renewal. A
+    /// handshake at or before that time does not count as fresh.
+    std::map<std::string, int64_t>   stale_before_;
+    std::set<std::string>            burst_next_;  // renewed peers due a new burst
     std::atomic<uint64_t>            probes_sent_{0};
 };
 

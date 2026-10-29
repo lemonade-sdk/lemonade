@@ -91,7 +91,7 @@ void RelayFallback::abandon(const std::string& pubkey, PeerState& state, bool bl
         relayed_.erase(pubkey);
     }
     // A handshake from before now came through the path just abandoned.
-    state.abandoned_unix = unix_now();
+    state.stale_before = unix_now();
     if (blame_relay && !state.relay_id.empty()) {
         cooldown_[state.relay_id] = Clock::now() + timing_.relay_cooldown;
     }
@@ -116,6 +116,33 @@ void RelayFallback::promote_direct(const std::string& pubkey, PeerState& state,
     }
     spdlog::info("[RelayFallback] peer {} answered on a direct path; relay closed",
                  short_key(pubkey));
+}
+
+void RelayFallback::release_unused(const std::string& pubkey, PeerState& state) {
+    if (state.channel) {
+        state.channel->close();
+        state.channel.reset();
+    }
+    state.failures = 0;
+    state.next_attempt = {};
+    spdlog::info("[RelayFallback] peer {} answered on a direct path before its relay was in "
+                 "use; relay request closed",
+                 short_key(pubkey));
+}
+
+void RelayFallback::renew(const std::vector<std::string>& pubkeys, bool skip_grace) {
+    const auto now = Clock::now();
+    const int64_t now_unix = unix_now();
+    for (const auto& pubkey : pubkeys) {
+        if (pubkey.empty()) continue;
+        auto& state = peers_[pubkey];
+        state.listed = true;
+        state.stale_before = std::max(state.stale_before, now_unix);
+        state.direct_since = skip_grace ? now - timing_.direct_grace : now;
+        // A retry delay earned while the peer was away (a relay request it
+        // never joined) says nothing about its new path.
+        state.next_attempt = {};
+    }
 }
 
 std::vector<RelayCandidate> RelayFallback::usable_candidates(Clock::time_point now) {
@@ -168,28 +195,33 @@ bool RelayFallback::open_channel(PeerState& state, const MeshPeer& peer,
 
     state.channel = std::move(channel);
     state.relay_id = relay.relay_id;
+    state.opened_unix = unix_now();
     spdlog::info("[RelayFallback] peer {} has no direct path; allocating at relay {}",
                  short_key(peer.mesh_pubkey), state.channel->relay_endpoint());
     return true;
 }
 
-void RelayFallback::maintain(const std::vector<MeshPeer>& peers, bool prefer_direct) {
+std::chrono::steady_clock::time_point RelayFallback::maintain(const std::vector<MeshPeer>& peers,
+                                                              bool prefer_direct) {
     const auto now = Clock::now();
     const int64_t now_unix = unix_now();
+    auto next_due = now + kMaxPassGap;
     const auto own = mesh_.public_key();
     if (own.empty()) {
         stop();
-        return;
+        return next_due;
     }
 
     std::map<std::string, int64_t> handshakes;
     std::map<std::string, int64_t> last_rx;
+    std::map<std::string, std::string> endpoints;  // where the dataplane sends now
     // Peers with a relay path whose traffic now comes from another address
     // (mesh_status reports it as a direct endpoint).
     std::set<std::string> moved_off_relay;
     for (const auto& p : mesh_.mesh_status().peers) {
         handshakes[p.mesh_pubkey] = p.last_handshake;
         last_rx[p.mesh_pubkey] = p.last_rx;
+        endpoints[p.mesh_pubkey] = p.endpoint;
         if (!p.endpoint.empty() && p.relay_endpoint.empty()) moved_off_relay.insert(p.mesh_pubkey);
     }
 
@@ -217,13 +249,39 @@ void RelayFallback::maintain(const std::vector<MeshPeer>& peers, bool prefer_dir
     for (const auto& peer : peers) {
         const auto& pubkey = peer.mesh_pubkey;
         if (pubkey.empty() || pubkey == own) continue;
-        auto [it, inserted] = peers_.try_emplace(pubkey);
-        auto& state = it->second;
-        if (inserted) state.first_seen = now;
+        auto& state = peers_[pubkey];
+        if (!state.listed) {
+            state.listed = true;
+            state.direct_since = now;
+        }
         const auto found = handshakes.find(pubkey);
-        const int64_t handshake = found == handshakes.end() ? 0 : found->second;
+        // The dataplane reports a handshake as now minus whole seconds
+        // since it, so one handshake can read a second earlier on a later
+        // pass. The newest reading keeps a handshake that once counted as
+        // newer than stale_before from dropping back to it.
+        state.handshake_seen =
+            std::max(state.handshake_seen, found == handshakes.end() ? 0 : found->second);
+        const int64_t handshake = state.handshake_seen;
+
+        if (state.channel && !state.applied && prefer_direct) {
+            // A handshake since the channel opened, from an address other
+            // than the channel's own port, came over a direct path: the
+            // relay is not needed. A handshake that the relay already
+            // carried to the channel's port means the peer uses the relay.
+            const auto at = endpoints.find(pubkey);
+            const bool direct = at != endpoints.end() && !at->second.empty() &&
+                                at->second != state.channel->local_endpoint();
+            if (direct && handshake > 0 && handshake >= state.opened_unix &&
+                handshake > state.stale_before) {
+                release_unused(pubkey, state);
+                continue;
+            }
+        }
 
         if (state.channel) {
+            if (!state.applied || state.relay_seen == 0) {
+                next_due = std::min(next_due, now + kPendingPassGap);
+            }
             switch (state.channel->state()) {
                 case RelayChannel::State::Paired:
                     if (!state.applied) {
@@ -301,15 +359,26 @@ void RelayFallback::maintain(const std::vector<MeshPeer>& peers, bool prefer_dir
             continue;
         }
 
-        const int64_t usable_handshake = handshake > state.abandoned_unix ? handshake : 0;
+        const int64_t usable_handshake = handshake > state.stale_before ? handshake : 0;
         const auto known_for =
-            std::chrono::duration_cast<std::chrono::milliseconds>(now - state.first_seen);
+            std::chrono::duration_cast<std::chrono::milliseconds>(now - state.direct_since);
         if (!relay_needed(!peer.endpoint.empty(), usable_handshake, now_unix, known_for,
                           prefer_direct, timing_)) {
+            // Come back when the grace period ends, unless a working path
+            // makes the relay unnecessary anyway.
+            const bool working = prefer_direct && usable_handshake > 0 &&
+                                 now_unix - usable_handshake < timing_.handshake_fresh_sec;
+            if (!working) next_due = std::min(next_due, state.direct_since + timing_.direct_grace);
             continue;
         }
-        if (now < state.next_attempt) continue;
-        if (opened >= kMaxOpensPerPass || open_count >= kMaxChannels) continue;
+        if (now < state.next_attempt) {
+            next_due = std::min(next_due, state.next_attempt);
+            continue;
+        }
+        if (opened >= kMaxOpensPerPass || open_count >= kMaxChannels) {
+            next_due = std::min(next_due, now + kPendingPassGap);
+            continue;
+        }
 
         if (!candidates) candidates = usable_candidates(now);
         std::vector<std::string> ids;
@@ -323,10 +392,13 @@ void RelayFallback::maintain(const std::vector<MeshPeer>& peers, bool prefer_dir
         ++opened;
         if (open_channel(state, peer, (*candidates)[*choice])) {
             ++open_count;
+            next_due = std::min(next_due, now + kPendingPassGap);
         } else {
             schedule_retry(state);
+            next_due = std::min(next_due, state.next_attempt);
         }
     }
+    return std::max(next_due, now + kMinPassGap);
 }
 
 void RelayFallback::stop() {

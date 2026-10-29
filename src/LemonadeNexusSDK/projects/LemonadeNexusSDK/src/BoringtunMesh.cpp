@@ -380,6 +380,17 @@ bool BoringtunMesh::probe_peer(const std::string& pubkey, const std::string& end
     return impl_->dp.probe_endpoint(pubkey, endpoint);
 }
 
+std::size_t BoringtunMesh::rehandshake_all() {
+    if (!impl_->active.load()) return 0;
+    std::size_t sent = 0;
+    for (const auto& peer : impl_->dp.snapshot_peers()) {
+        if (!peer.endpoint.empty() && impl_->dp.probe_endpoint(peer.public_key, peer.endpoint)) {
+            ++sent;
+        }
+    }
+    return sent;
+}
+
 StatusResult BoringtunMesh::sync_peers(const std::vector<MeshPeer>& desired) {
     StatusResult result;
     if (!impl_->active.load()) {
