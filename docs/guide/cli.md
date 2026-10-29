@@ -407,6 +407,7 @@ The following options are available depending on the recipe being used:
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--sdcpp BACKEND` | SD.cpp backend to use | Auto-detected |
+| `--sdcpp-device DEVICES` | GPU to use (ROCm0, CUDA0, CUDA1, Vulkan0, ...); empty selects automatically | `""` |
 | `--sdcpp-args ARGS` | Custom arguments to pass to sd-server (must not conflict with managed args) | `""` |
 
 #### FastFlowLM NPU (`flm` recipe)
@@ -435,6 +436,7 @@ The following options are available depending on the recipe being used:
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--thenoise BACKEND` | TheNoise backend to use | Auto-detected |
+| `--thenoise-device DEVICES` | GPU to use (ROCm0, CUDA0, CUDA1, ...); empty selects automatically | `""` |
 
 #### DwarfStar4 (`ds4` recipe)
 

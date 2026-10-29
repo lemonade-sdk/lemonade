@@ -147,6 +147,7 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 | Option | CLI flag | Type | Default | Description |
 |--------|----------|------|---------|-------------|
 | `sd-cpp_backend` | `--sdcpp` | BACKEND | "" | SD.cpp backend to use |
+| `sd-cpp_device` | `--sdcpp-device` | DEVICES | "" | GPU to use (ROCm0, CUDA0, CUDA1, Vulkan0, ...); empty selects automatically |
 | `sdcpp_args` | `--sdcpp-args` | ARGS | "" | Custom arguments to pass to sd-server (must not conflict with managed args) |
 | `steps` | — | SIZE | 20 | Number of diffusion steps |
 | `cfg_scale` | — | SIZE | 7.0 | Classifier-free guidance scale |
@@ -160,6 +161,7 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 | Option | CLI flag | Type | Default | Description |
 |--------|----------|------|---------|-------------|
 | `thenoise_backend` | `--thenoise` | BACKEND | "" | TheNoise backend to use |
+| `thenoise_device` | `--thenoise-device` | DEVICES | "" | GPU to use (ROCm0, CUDA0, CUDA1, ...); empty selects automatically |
 | `steps` | — | SIZE | 20 | Number of denoising steps |
 | `cfg_scale` | — | SIZE | 7.0 | CFG scale (<= 1.0 disables CFG) |
 | `width` | — | SIZE | 512 | Output image width |
