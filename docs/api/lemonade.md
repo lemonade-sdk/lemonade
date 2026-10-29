@@ -109,7 +109,8 @@ Some upstream models declare only generic `LABEL_<n>` label names; their model c
 {
   "object": "classification",
   "model": "Phishing-Email-Detection-ONNX",
-  "labels": {"LABEL_0": 5.558096745517105e-05, ... 3 more}
+  "labels": {"LABEL_0": 5.558096745517105e-05, ... 3 more},
+  "truncated": false
 }
 ```
 
