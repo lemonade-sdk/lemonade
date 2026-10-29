@@ -151,6 +151,101 @@ It does not accept WebSocket upgrades. Relayed peers get an SDK egress listener 
 existing forwarded connections. Remote HTTP requests retain normal API-key
 authentication.
 
+### Route policy
+
+The Nexus SDK decides which mesh peer may call which `lemond` route family at
+the receiving device. `lemond` only describes its routes: it builds a catalog
+from the route registry, registers it with the SDK for virtual port `13305`
+after every join (`ln_mesh_service_set_catalog`), and logs the refusals the SDK
+reports (`ln_set_ingress_denied_callback`). A refused request never reaches
+`lemond`; the SDK answers 403 itself. `lemond` makes no authorization decision
+from the peer headers.
+
+Every route carries a family, set where the route folder registers it
+(`RouteRegistry::add(route, family)`; `RouteSpec::family`). A route without a
+valid family fails at startup, and so do two families that claim one method and
+URL. `nexus_access::kFamilies` lists the families:
+
+| Family | Routes |
+| --- | --- |
+| `inference` | chat/completions, completions, responses, embeddings, audio, images, 3d and audio generations, classify, rerank, tokenize, slots (read), the Anthropic messages route, the Ollama chat, generate, embed, embeddings, tags, show, ps and version routes, models list and model detail reads (`models`, `models/{id}`, `models/{id}/files`, `models/{id}/options` GET), health, live, stats |
+| `mcp` | `/mcp` RPC and SSE |
+| `models_manage` | pull, pull/variants, registry/search, delete, load, unload, models/register, models/check-updates, `models/{id}/options` POST and DELETE, downloads and downloads/control, Ollama pull, delete, create, copy, push and blobs |
+| `backends` | install, install/dry-run, uninstall, cloud/auth, `cloud/auth/{provider}` |
+| `jobs` | jobs create, list, get, delete, pause, resume, interrupt |
+| `internal` | every `/internal/*` route; the mesh ingress listener still does not mount them |
+| `system` | docs, `docs/{page}`, system-info, system-stats, metrics |
+| `management` | routes with no other family: routing/validate, `slots/{id}` actions |
+
+`nexus_access::service_catalog(registry.list(), LEMON_VERSION_STRING)` builds:
+
+```json
+{"version": 202604600300,
+ "app": {"name": "lemonade", "version": "2026.46.3"},
+ "families": [{"name": "inference", "routes": [
+   {"methods": ["POST"], "path": "/api/v1/chat/completions"},
+   {"methods": ["GET"], "prefix": "/api/v1/models/"}]}]}
+```
+
+A route with a `{parameter}` becomes the prefix before it; other paths are
+exact, one entry per URL prefix (`/api/v0/`, `/api/v1/`, `/v0/`, `/v1/`).
+The version packs `lemond`'s `YEAR.WEEK.N` version as
+`YEAR * 10^6 + WEEK * 10^3 + N`, times 100, plus
+`nexus_access::kCatalogRevision`. Bump the revision (below 100) when a route's
+family changes within one `lemond` version; a release changes the version by
+itself, so the revision may return to 0 then. Two development builds of one
+release share a catalog version unless the revision changes.
+
+`GET /api/v1/nexus/status` reports `catalog_version`, `app` and
+`route_policy`: `"enforced"` when the loaded SDK exports the catalog interface
+and accepted the catalog, `"unavailable"` when it does not export it, refused
+the catalog (`catalog_error` names the SDK error) or `lemond` runs without a
+catalog. The vendored SDK does not export the interface yet:
+`src/cpp/server/nexus_sdk_compat.h` resolves `ln_mesh_service_set_catalog`,
+`ln_mesh_service_catalog` and `ln_set_ingress_denied_callback` from the loaded
+library at run time, so `lemond` starts against either SDK and logs
+`Route policy is unavailable` against the older one. Once the vendored SDK
+declares them, call them directly and delete that header.
+
+Each refusal event becomes one log line, `WARNING` for `denied` and `INFO` for
+`unregistered` and `unattributed`:
+
+```
+Nexus route policy: denied POST /api/v1/chat/completions from <peer_node_id> (family inference, needs svc:inference, catalog 202604600300)
+```
+
+The line never carries a body, key or address; control characters are replaced
+and long fields are cut. The callback runs on an SDK thread, copies the fields
+it logs, releases the event with `ln_free` and makes no other SDK call.
+
+Permissions on the tree gain an opaque `svc:<family>` namespace
+(`[a-z0-9][a-z0-9_.-]{0,62}` after `svc:`). A group entry's `svc:` names apply
+to every device in the group; `admin` implies all. `members/{id}/permissions`,
+`tree/{id}/permissions` and invites accept them next to the tree names.
+`members/{id}/role` and an invite's `role` expand a preset
+(`nexus_access::role_permissions`):
+
+| Role | Group entry |
+| --- | --- |
+| `administrator` (formerly `admin`) | `read`, `connect_private`, `admin`, `svc:` for every family |
+| `moderator` | `read`, `write`, `add_child`, `connect_private`, `svc:inference`, `svc:mcp`, `svc:models_manage`, `svc:jobs` |
+| `user` (formerly `member`) | `read`, `connect_private`, `svc:inference` |
+
+A role replaces the member's group entry. An invite takes `role` or
+`permissions`, not both; `administrator` carries `admin`, which an invite
+cannot grant, so an invite expands `moderator` or `user`. The federation reduces
+invite permissions to what the inviter holds. A federation that does not know
+the `svc:` names answers the assignment with `unknown permission`, which
+`lemond` maps to 400.
+
+An allowed request arrives at the mesh ingress listener with the headers the
+SDK set: `X-Nexus-Peer-Node`, `X-Nexus-Peer-Key`, `X-Nexus-Peer-Permissions`,
+`X-Nexus-Family` and `X-Nexus-Catalog-Version`. They are trusted on that
+listener only: `RequestMiddleware` records the peer node and family for the
+request (`nexus_access::request_peer()`, shown in the access log) and removes
+the headers on the public and management listeners before any route or
+session-header setting can read them.
+
 ### Inference relay
 
 `lemond` relays any request under
@@ -237,8 +332,8 @@ Routes are available under `/api/v0/nexus/`, `/api/v1/nexus/`, `/v0/nexus/`,
 | POST | `key/unlock` | Unlock with the device key (`{defer_join?}`); local-only, refused once a passkey is registered |
 | POST | `device/check` | Advisory check that a device name folds to a free DNS label: `{name, code?}`; uses this account's group when joined, else the invite code's group. Answers `{label, available, conflicts, suggestion}`. The federation still refuses a collision on join or rename |
 | POST | `enable`, `disable`, `lock`, `device` | Local state and device name |
-| POST | `invites`, `invites/cancel`, `join` | Invite a device into this account's top-level group with `{device_name, permissions?, ttl_sec?}`, or join as a new device with `{code}` |
-| POST | `tree/{id}/invites` | Invite into group `{id}` with `{permissions?, ttl_sec?, device_name?}`; needs `add_child` or admin above it |
+| POST | `invites`, `invites/cancel`, `join` | Invite a device into this account's top-level group with `{device_name, permissions? \| role?, ttl_sec?}`, or join as a new device with `{code}` |
+| POST | `tree/{id}/invites` | Invite into group `{id}` with `{permissions? \| role?, ttl_sec?, device_name?}`; needs `add_child` or admin above it |
 | POST | `invites/accept` | Join another network: accept `{code}` as an account that already joined |
 | GET | `memberships` | Groups this identity belongs to (`role` is `home` or `member`) and `group_node_id` |
 | POST | `memberships/{id}/leave` | Leave a group entered through an invite |
@@ -250,8 +345,8 @@ Routes are available under `/api/v0/nexus/`, `/api/v1/nexus/`, `/v0/nexus/`,
 | GET | `tree`, `tree/{id}/children` | Current group or a descendant group and direct children |
 | POST | `tree/{id}/groups`, `tree/{id}/rename` | Create a child group or rename a group with `{name}` |
 | POST | `tree/{id}/permissions` | Group assignment with `{member_node_id, admin, permissions}` |
-| POST | `members/{node_id}/role` | `{"role": "admin" \| "member"}` |
-| POST | `members/{node_id}/permissions` | `{"permissions": [...]}` on the group node |
+| POST | `members/{node_id}/role` | `{"role": "administrator" \| "moderator" \| "user"}`; `admin` and `member` still name the first and last preset (see [Route policy](#route-policy)) |
+| POST | `members/{node_id}/permissions` | `{"permissions": [...]}` on the group node, tree names and `svc:` names |
 | GET, POST | `devices/{node_id}/access` | Device access list; POST `{"member_node_id", "see", "connect"}` |
 | POST | `devices/{node_id}/remove` | Removal; needs `delete_node` on the device |
 | POST | `egress` | Loopback endpoint for a selected group member |
@@ -261,7 +356,8 @@ Routes are available under `/api/v0/nexus/`, `/api/v1/nexus/`, `/v0/nexus/`,
 
 Invite permissions are optional. Without them the federation grants `read` and
 `connect_private`, reduced to what the inviter holds. Otherwise they are a list
-from `read`, `write`, `add_child`, `connect_private` and `connect_shared`.
+from `read`, `write`, `add_child`, `connect_private`, `connect_shared` and the
+`svc:<family>` names, or a `role` that expands to such a list.
 `lemond` refuses `admin` and other names with 400. The reply carries the
 `link_token`, `target_node_id`, `permissions` and `expires_at`. A new device
 joins with the token through `join`. An account that already joined accepts it
