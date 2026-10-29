@@ -1799,8 +1799,15 @@ const ModelConfigurationTab: React.FC<{
             onChange={e => setRecipeDraft(prev => {
               const next = { ...prev, [String(key)]: e.target.value };
               if (['thenoise', 'sd-cpp', 'acestep', 'trellis', 'thinksound', 'openmoss'].includes(activeRecipe)) {
-                const deviceKey = activeRecipe === 'sd-cpp' ? 'sd-cpp_device' : `${activeRecipe}_device`;
-                next[deviceKey] = 'auto'; // Avoid carrying a device across incompatible backends.
+                const defaultBackend = activeBackend.toLowerCase() === 'auto'
+                  ? recipeDefaultBackend(info, activeRecipe).toLowerCase()
+                  : activeBackend.toLowerCase();
+                const effectiveBackend = (value: string) =>
+                  value && value.toLowerCase() !== 'auto' ? value.toLowerCase() : defaultBackend;
+                if (effectiveBackend(prev[String(key)] || '') !== effectiveBackend(e.target.value)) {
+                  const deviceKey = activeRecipe === 'sd-cpp' ? 'sd-cpp_device' : `${activeRecipe}_device`;
+                  next[deviceKey] = 'auto';
+                }
               }
               return next;
             })}
