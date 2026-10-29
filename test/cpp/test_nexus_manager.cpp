@@ -244,8 +244,8 @@ private:
 void check_mesh_ingress_routes(const std::function<void(bool, const char*)>& check) {
     lemon::ServerContext ctx;
     lemon::RouteRegistry registry;
-    registry.add(std::make_unique<StubRoute>(ctx, "test.health", "health", lemon::Prefixes::Quad));
-    registry.add(std::make_unique<StubRoute>(ctx, "test.shutdown", "shutdown", lemon::Prefixes::Internal));
+    registry.add(std::make_unique<StubRoute>(ctx, "test.health", "health", lemon::Prefixes::Quad), "inference");
+    registry.add(std::make_unique<StubRoute>(ctx, "test.shutdown", "shutdown", lemon::Prefixes::Internal), "internal");
 
     httplib::Server mesh;
     registry.apply_without_internal(mesh);

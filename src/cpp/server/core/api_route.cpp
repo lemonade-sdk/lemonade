@@ -449,6 +449,7 @@ nlohmann::ordered_json route_spec_to_json(const RouteSpec& spec) {
         {"error_format", to_string(spec.error_format)},
         {"request_format", to_string(spec.request_format)},
         {"quiet_log", spec.quiet_log},
+        {"family", spec.family},
     };
 }
 

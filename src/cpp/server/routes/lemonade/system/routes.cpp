@@ -12,14 +12,14 @@ std::unique_ptr<ApiRoute> make_system_stats_route(ServerContext& ctx);
 std::unique_ptr<ApiRoute> make_system_info_route(ServerContext& ctx);
 
 void register_lemonade_system_routes(RouteRegistry& registry, ServerContext& ctx) {
-    registry.add(make_live_route(ctx));
-    registry.add(make_metrics_route(ctx));
-    registry.add(make_health_route(ctx));
-    registry.add(make_docs_route(ctx));
-    registry.add(make_docs_page_route(ctx));
-    registry.add(make_stats_route(ctx));
-    registry.add(make_system_stats_route(ctx));
-    registry.add(make_system_info_route(ctx));
+    registry.add(make_live_route(ctx), "inference");
+    registry.add(make_metrics_route(ctx), "system");
+    registry.add(make_health_route(ctx), "inference");
+    registry.add(make_docs_route(ctx), "system");
+    registry.add(make_docs_page_route(ctx), "system");
+    registry.add(make_stats_route(ctx), "inference");
+    registry.add(make_system_stats_route(ctx), "system");
+    registry.add(make_system_info_route(ctx), "system");
 }
 
 } // namespace lemon
