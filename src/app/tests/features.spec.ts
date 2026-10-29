@@ -2259,11 +2259,13 @@ test.describe('Lemonade UI — Feature Parity', () => {
     }
   });
 
-  for (const { backend, gpuKey, devices } of [
-    { backend: 'cuda', gpuKey: 'nvidia_gpu', devices: ['cuda0', 'cuda1'] },
-    { backend: 'rocm-stable', gpuKey: 'amd_gpu', devices: ['rocm0', 'rocm1'] },
+  for (const { backend, gpuKey, devices, families, combined } of [
+    { backend: 'cuda', gpuKey: 'nvidia_gpu', devices: ['cuda0', 'cuda1'], families: ['sm_120', 'sm_120'], combined: true },
+    { backend: 'cuda', gpuKey: 'nvidia_gpu', devices: ['cuda0', 'cuda1'], families: ['sm_120', 'sm_89'], combined: false },
+    { backend: 'cuda', gpuKey: 'nvidia_gpu', devices: ['cuda0', 'cuda1'], families: ['sm_120', ''], combined: false },
+    { backend: 'rocm-stable', gpuKey: 'amd_gpu', devices: ['rocm0', 'rocm1'], families: ['gfx1151', 'gfx1151'], combined: true },
   ]) {
-    test(`25h — Device selector supports multiple GPUs with ${backend}`, async ({ page }) => {
+    test(`25h — Device selector supports ${backend} GPUs (${families.join(',')})`, async ({ page }) => {
       const modelName = `multi-gpu-${backend}`;
       const multiDevice = devices.join(',');
       let loadRequestBody: Record<string, unknown> | null = null;
@@ -2281,7 +2283,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
           },
           devices: {
             cpu: { available: true },
-            [gpuKey]: [{ available: true }, { available: true }],
+            [gpuKey]: families.map(family => ({ available: true, ...(family ? { family } : {}) })),
           },
         },
       }));
@@ -2309,11 +2311,14 @@ test.describe('Lemonade UI — Feature Parity', () => {
       const panel = page.locator('#detail-panel-config');
       await panel.locator('[id$="llamacpp_backend"]').selectOption(backend);
       const deviceSelector = panel.locator('[id$="llamacpp_device"]');
-      await expect(deviceSelector.locator('option')).toHaveText(['auto', ...devices, multiDevice]);
-      await deviceSelector.selectOption(multiDevice);
+      await expect(deviceSelector.locator('option')).toHaveText([
+        'auto', ...devices, ...(combined ? [multiDevice] : []),
+      ]);
+      const selectedDevice = combined ? multiDevice : devices[0];
+      await deviceSelector.selectOption(selectedDevice);
       await page.getByRole('button', { name: `Load ${modelName}` }).click();
       await expect.poll(() => loadRequestBody?.llamacpp_backend).toBe(backend);
-      await expect.poll(() => loadRequestBody?.llamacpp_device).toBe(multiDevice);
+      await expect.poll(() => loadRequestBody?.llamacpp_device).toBe(selectedDevice);
     });
   }
 
