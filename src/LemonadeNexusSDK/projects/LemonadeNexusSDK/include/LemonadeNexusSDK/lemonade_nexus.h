@@ -366,15 +366,7 @@ ln_error_t ln_join_network(ln_client_t* client,
                             const char* password,
                             char** out_json);
 
-/** Leave the network: delete this device's own node on the server (see
- *  LemonadeNexusClient::leave_network). Requires an established mesh
- *  session. On success the mesh stops and the node id and session token are
- *  cleared. The device key stays valid, so the device can join again later
- *  (for example with a new invite). On failure the mesh stays
- *  up. *out_json is {success, error?}; error names the node, the HTTP status
- *  or that the server was not reached, and the server's reason. The caller
- *  owns *out_json and must release it with ln_free(). Returns LN_OK,
- *  LN_ERR_NULL_ARG, or LN_ERR_REJECTED for any failure. */
+/** Submit delete_node delta for current node. */
 ln_error_t ln_leave_network(ln_client_t* client, char** out_json);
 
 /* ------------------------------------------------------------------ */
@@ -490,13 +482,7 @@ ln_error_t ln_set_session_moved_callback(ln_client_t* client,
  *  Caller must ln_free(*out_json). */
 ln_error_t ln_mesh_peers(ln_client_t* client, char** out_json);
 
-/** Check the mesh paths now instead of on their intervals: fetch the peer
- *  list and sync the dataplane, query STUN, start a new punch burst toward
- *  every peer without a direct path, and run the relay fallback, in one
- *  orchestrator pass. Call it when the network changed (another Wi-Fi, a
- *  VPN, cellular). The SDK detects a resume from suspension by itself.
- *  Returns at once; the pass runs on the orchestrator thread. No effect
- *  while the mesh is disabled. */
+/** Force an immediate mesh peer refresh (fetch from server + sync tunnel). */
 ln_error_t ln_mesh_refresh(ln_client_t* client);
 
 /* ------------------------------------------------------------------ */

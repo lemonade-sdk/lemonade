@@ -258,17 +258,7 @@ public:
     [[nodiscard]] Result<JoinResult> join_network(const std::string& username,
                                                     const std::string& password);
 
-    /// Leave the network: delete this device's own node through the private
-    /// API (POST /api/tree/node/delete/{node_id}), which is reachable only
-    /// over the mesh. The server lets a device delete the node its key joined
-    /// as, including a device that joined through an invite and holds no
-    /// delete_node there. On success the mesh stops and the node id and the
-    /// session token (with its server binding) are cleared. The device key
-    /// stays valid, so the device can join again later, for example with a
-    /// new invite. On failure nothing changes and the mesh stays up for a
-    /// retry; the error names the node, the HTTP status (or that the server
-    /// was not reached), and the server's reason. Fails without a node id.
-    /// Blocks on network I/O. Do not call it from a mesh state callback.
+    /// Submit delete_node delta for the current node.
     [[nodiscard]] StatusResult leave_network();
 
     // -----------------------------------------------------------------
@@ -425,9 +415,7 @@ public:
     /// Get the current list of known mesh peers.
     [[nodiscard]] std::vector<MeshPeer> get_mesh_peers() const;
 
-    /// Check the mesh paths now (see MeshOrchestrator::refresh_now): peer
-    /// refresh, STUN, a new punch burst, and relay fallback in one pass.
-    /// Returns at once. No effect while the mesh is disabled.
+    /// Force an immediate peer refresh (fetch from server + sync tunnel).
     void refresh_mesh_peers();
 
     /// Callback type for mesh state changes.
@@ -467,14 +455,9 @@ public:
     /// Used internally by MeshOrchestrator; also available for direct use.
     [[nodiscard]] Result<std::vector<MeshPeer>> fetch_mesh_peers(const std::string& node_id);
 
-    /// Send a heartbeat to the server reporting our current endpoint (empty:
-    /// keep the stored one). On success, `value` is the server's
-    /// `peers_revision`: an opaque string that changes when this node's peer
-    /// list changes (see POST /api/mesh/heartbeat). It is empty when the
-    /// server sends none (older servers) or sends a malformed one. Compare
-    /// it only for equality; it carries no peer data.
-    [[nodiscard]] Result<std::string> mesh_heartbeat(const std::string& node_id,
-                                                     const std::string& endpoint);
+    /// Send a heartbeat to the server reporting our current endpoint.
+    [[nodiscard]] StatusResult mesh_heartbeat(const std::string& node_id,
+                                               const std::string& endpoint);
 
     // -----------------------------------------------------------------
     // Session state
