@@ -70,10 +70,20 @@ namespace {
 // (it stops repeated long waits) and by deferring UI fetches off the transition,
 // NOT by starving the handshake.
 constexpr int     kMeshConnectTimeoutSec  = 3;
-constexpr int     kMeshReadTimeoutSec     = 8;
+// The read timeout must exceed the server's tree-op commit wait: a private
+// tree route (POST /api/tree/node/update, for example) answers only after the
+// op commits through Tier 1 consensus or that wait ends, which is
+// nexus::tree::kTreeOpCommitWaitMs (10 s, TreeConsensus.hpp) plus the
+// request's own round trips. A shorter timeout reports NO RESPONSE for an op
+// the server then commits anyway.
+constexpr int     kMeshReadTimeoutSec     = 15;
 // After a mesh failure, fail fast (skip the doomed handshake) for this long so a
 // persistently-down tunnel doesn't re-freeze every periodic caller.
 constexpr int64_t kMeshBreakerCooldownMs  = 8000;
+// Private requests that get no answer at the connect or handshake level for
+// this long, while the session server stays a verified member whose public
+// API answers, start a forced session move (see note_private_path_unanswered).
+constexpr int64_t kMeshUnansweredWindowMs = 30'000;
 
 int64_t steady_now_ms() {
     return std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -220,6 +230,11 @@ struct LemonadeNexusClient::Impl {
     // Circuit breaker for the private mesh transport: steady-clock ms until which
     // private calls fail fast without attempting the SSL handshake (0 = closed).
     std::atomic<int64_t> mesh_breaker_until_ms{0};
+
+    // Steady-clock ms at which the first of the private requests in a row
+    // that got no answer at the connect or handshake level failed (0 while
+    // the private path answers). See note_private_path_unanswered().
+    std::atomic<int64_t> private_unanswered_since_ms{0};
 
     // Every private request shares one loopback egress through the netstack, so
     // only one may be in flight: the orchestrator's heartbeat/peer-refresh
@@ -521,15 +536,17 @@ struct LemonadeNexusClient::Impl {
             session_node.clear();
         }
         rejoin_needed.store(true, std::memory_order_relaxed);
-        spdlog::info("[LemonadeNexusClient] the session's server left Tier 1: session dropped, "
-                     "join again ({})", event.error);
+        spdlog::info("[LemonadeNexusClient] the session cannot move by itself: session "
+                     "dropped, join again ({})", event.error);
         notify_session_moved(event);
     }
 
     // Start a session move on its own thread, unless one runs. `hint_epoch`
     // is the next epoch a departure notice named (0 when the trigger carried
-    // none); a notice starts at most one move per epoch.
-    void start_session_move(std::string reason, uint64_t hint_epoch) {
+    // none); a notice starts at most one move per epoch. A `forced` move
+    // re-joins even when the session's server is still a verified member
+    // (see run_session_move).
+    void start_session_move(std::string reason, uint64_t hint_epoch, bool forced = false) {
         std::thread finished;
         {
             std::lock_guard lock(move_mtx);
@@ -540,9 +557,9 @@ struct LemonadeNexusClient::Impl {
             }
             finished = std::move(move_thread);  // the previous move ended
             move_running = true;
-            move_thread = std::thread([this, reason = std::move(reason), hint_epoch] {
+            move_thread = std::thread([this, reason = std::move(reason), hint_epoch, forced] {
                 try {
-                    owner->run_session_move(reason, hint_epoch);
+                    owner->run_session_move(reason, hint_epoch, forced);
                 } catch (const std::exception& e) {
                     spdlog::warn("[LemonadeNexusClient] session move failed: {}", e.what());
                 } catch (...) {
@@ -583,6 +600,36 @@ struct LemonadeNexusClient::Impl {
         start_session_move("the session's server leaves Tier 1 at epoch " +
                                std::to_string(next_epoch),
                            next_epoch);
+    }
+
+    // A private request to the session's server got no answer at the
+    // connect or handshake level (the Noise or TLS handshake never
+    // completed), although the server is still a verified member. A Tier 1
+    // server that restarted in place has forgotten this client's dataplane
+    // peer and keeps it forgotten until a fresh join adds it back; nothing
+    // else (no departure notice, no 421, no membership change) says so. Once
+    // such requests have failed for kMeshUnansweredWindowMs with no answer in
+    // between (the window starts at the first failure, so one lost handshake
+    // never counts), a forced session move re-joins through a verified
+    // member. The move verifies the membership again over the public API
+    // first, so a device that lost its network (nothing verifiable) does
+    // not move. The window restarts at the move, so one move starts per
+    // window.
+    void note_private_path_unanswered() {
+        const int64_t now   = steady_now_ms();
+        const int64_t since = private_unanswered_since_ms.load(std::memory_order_relaxed);
+        if (since == 0) {
+            private_unanswered_since_ms.store(now, std::memory_order_relaxed);
+            return;
+        }
+        if (now - since < kMeshUnansweredWindowMs) return;
+        private_unanswered_since_ms.store(0, std::memory_order_relaxed);
+        start_session_move("the session's server stopped answering over the mesh", 0,
+                           /*forced=*/true);
+    }
+
+    void private_path_answered() {
+        private_unanswered_since_ms.store(0, std::memory_order_relaxed);
     }
 
     // Build the base URL for a specific server. Always HTTPS — the mesh has no
@@ -888,6 +935,9 @@ struct LemonadeNexusClient::Impl {
         // applied a POST whose response was lost, so a POST is retried only
         // when httplib reports that no request byte was written.
         const bool is_get = std::string(method) == "GET";
+        // Set when the final attempt failed before any request byte went
+        // out: the path to the server is dead, not merely slow.
+        bool unanswered = false;
         for (int attempt = 0; attempt < 2; ++attempt) {
             try {
                 auto* cli = private_client(lp);
@@ -898,6 +948,7 @@ struct LemonadeNexusClient::Impl {
                     served = true;
                     status_out = res->status;
                     mesh_breaker_until_ms.store(0, std::memory_order_relaxed);  // healthy
+                    private_path_answered();
                     spdlog::debug("[LemonadeNexusClient] private(mesh) {} {} -> HTTP {}",
                                   method, path, res->status);
                     if (res->status == nexus::api::kTreeRouteRefusedStatus) {
@@ -924,6 +975,7 @@ struct LemonadeNexusClient::Impl {
                 }
                 spdlog::warn("[LemonadeNexusClient] private(mesh) {} {} NO RESPONSE "
                              "(httplib err={})", method, path, httplib::to_string(res.error()));
+                unanswered = request_not_sent(res.error());
                 break;
             } catch (const std::exception& e) {
                 // An exception does not show how much of the request was sent.
@@ -938,6 +990,7 @@ struct LemonadeNexusClient::Impl {
             mesh_breaker_until_ms.store(now_ms + kMeshBreakerCooldownMs,
                                         std::memory_order_relaxed);
         }
+        if (unanswered) note_private_path_unanswered();
         return std::nullopt;
     }
 
@@ -2653,8 +2706,10 @@ Result<JoinResult> LemonadeNexusClient::join_network(const std::string& username
             spdlog::warn("[LemonadeNexusClient] mesh dataplane start failed");
         } else {
             // Fresh dataplane — close the breaker so private calls probe at once,
-            // and drop any connection pooled against the old egress.
+            // forget the old path's unanswered requests, and drop any
+            // connection pooled against the old egress.
             impl_->mesh_breaker_until_ms.store(0, std::memory_order_relaxed);
+            impl_->private_path_answered();
             {
                 std::lock_guard lock(impl_->private_api_mtx);
                 impl_->drop_private_client();
@@ -3001,7 +3056,8 @@ void LemonadeNexusClient::set_session_moved_callback(SessionMovedCallback cb) {
     impl_->session_moved_callback = std::move(cb);
 }
 
-void LemonadeNexusClient::run_session_move(const std::string& reason, uint64_t hint_epoch) {
+void LemonadeNexusClient::run_session_move(const std::string& reason, uint64_t hint_epoch,
+                                           bool forced) {
     SessionMoveEvent event;
     {
         std::lock_guard lock(impl_->transport_mtx);
@@ -3026,17 +3082,27 @@ void LemonadeNexusClient::run_session_move(const std::string& reason, uint64_t h
                            [&node](const Tier1Server& s) { return s.node_id == node; });
     };
     if (member(event.from_node_id)) {
-        // The session's server still serves the verified epoch. A notice for
-        // a later epoch moves the session early, onto another verified
-        // server, when there is one; otherwise the move waits for the
-        // handoff, which the server's tree refusal then reports.
-        const bool another = std::any_of(
-            membership.servers.begin(), membership.servers.end(),
-            [&event](const Tier1Server& s) { return s.node_id != event.from_node_id; });
-        if (hint_epoch <= membership.epoch || !another) {
-            spdlog::info("[LemonadeNexusClient] session stays ({}): its server is a verified "
-                         "member of epoch {}", reason, membership.epoch);
-            return;
+        if (forced) {
+            // The session's server stopped answering over the mesh, yet the
+            // refresh just proved it a verified member reachable over the
+            // public API (`servers` lists only members that answered): the
+            // server forgot this client's peer, and a fresh join adds it
+            // back, so the same server is as good as any other. A device
+            // that lost its network never gets here: nothing verifies.
+        } else {
+            // The session's server still serves the verified epoch. A
+            // notice for a later epoch moves the session early, onto
+            // another verified server, when there is one; otherwise the move
+            // waits for the handoff, which the server's tree refusal then
+            // reports.
+            const bool another = std::any_of(
+                membership.servers.begin(), membership.servers.end(),
+                [&event](const Tier1Server& s) { return s.node_id != event.from_node_id; });
+            if (hint_epoch <= membership.epoch || !another) {
+                spdlog::info("[LemonadeNexusClient] session stays ({}): its server is a "
+                             "verified member of epoch {}", reason, membership.epoch);
+                return;
+            }
         }
     }
 
@@ -3059,7 +3125,8 @@ void LemonadeNexusClient::run_session_move(const std::string& reason, uint64_t h
                  membership.epoch);
     // The orchestrator stops first: the join brings the dataplane up for the
     // new server. The old session goes, so the join authenticates afresh,
-    // and its server takes no challenge while it is still verified.
+    // and a departing server takes no challenge while it is still verified.
+    // A forced move avoids no server: the join may land on the same one.
     disable_mesh();
     {
         std::lock_guard lock(impl_->transport_mtx);
@@ -3067,7 +3134,7 @@ void LemonadeNexusClient::run_session_move(const std::string& reason, uint64_t h
             impl_->session_token.clear();
             impl_->session_node.clear();
         }
-        impl_->avoid_node = event.from_node_id;
+        if (!forced) impl_->avoid_node = event.from_node_id;
     }
     const auto joined = join_network({}, {});
     {

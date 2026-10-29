@@ -106,9 +106,13 @@ public:
 
     /// Sync peers with the desired state from tree nodes.
     /// Returns the number of changes made (adds + removes + updates),
-    /// or -1 on error.
-    [[nodiscard]] int sync_peers_from_tree(const std::vector<TreeNodePeer>& desired_peers) {
-        return self().do_sync_peers_from_tree(desired_peers);
+    /// or -1 on error. With `remove_stale` false the reconcile is additive:
+    /// peers absent from `desired_peers` are kept, which the startup restore
+    /// relies on so it does not drop the backbone peers that are not in the
+    /// tree.
+    [[nodiscard]] int sync_peers_from_tree(const std::vector<TreeNodePeer>& desired_peers,
+                                           bool remove_stale = true) {
+        return self().do_sync_peers_from_tree(desired_peers, remove_stale);
     }
 
     /// Add a secondary address to the existing interface (no flush).

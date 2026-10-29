@@ -405,8 +405,10 @@ struct MeshTunnelStatus {
 };
 
 /// One session move: the Tier 1 server that issued the session left the
-/// verified membership, or announced that it leaves at the next epoch, and
-/// the SDK bound the session to another verified Tier 1 server
+/// verified membership, announced that it leaves at the next epoch, or
+/// stopped answering over the mesh while its public API answered, and the
+/// SDK bound the session to a verified Tier 1 server again (another one, or
+/// the same one after a mesh outage)
 /// (LemonadeNexusClient::set_session_moved_callback).
 struct SessionMoveEvent {
     std::string from_node_id;  ///< base64 node id of the server that issued the old session

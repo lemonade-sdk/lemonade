@@ -427,7 +427,12 @@ public:
     /// another verified server exists), authenticates with the device
     /// identity through another verified Tier 1 server, joins again, and
     /// restarts the mesh orchestrator as it was. The notice never chooses the
-    /// server: the SDK picks it from the membership it verified. Without an
+    /// server: the SDK picks it from the membership it verified. The SDK also
+    /// moves a session whose server stays a verified member but stops
+    /// answering private requests over the mesh for 30 s (a server that
+    /// restarted in place forgot this client's dataplane peer) while its
+    /// public API still answers: it joins again through a verified member,
+    /// the same one included, which adds the peer back. Without an
     /// identity, or when that join fails, the session is dropped and
     /// `needs_rejoin` is set (`silent` false). Runs on an SDK background
     /// thread, or on the thread whose call found the server gone, outside
@@ -612,8 +617,12 @@ private:
     /// One session move, on the SDK's move thread: verify the membership
     /// again, then authenticate and join through another verified Tier 1
     /// server, or drop the session when that is impossible. `hint_epoch` is
-    /// the next epoch a departure notice named (0 when none did).
-    void run_session_move(const std::string& reason, uint64_t hint_epoch);
+    /// the next epoch a departure notice named (0 when none did). A `forced`
+    /// move (the session's server stopped answering over the mesh) joins
+    /// again even when that server is still a verified member reachable
+    /// over the public API, through any verified member including the same
+    /// one. When nothing can be verified, the session stays.
+    void run_session_move(const std::string& reason, uint64_t hint_epoch, bool forced);
 
     struct Impl;
     std::unique_ptr<Impl> impl_;
