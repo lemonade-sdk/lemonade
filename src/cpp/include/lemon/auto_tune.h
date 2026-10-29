@@ -364,11 +364,10 @@ inline int64_t compute_auto_context_size(const ModelInfo& model_info,
         (swa_profile ? static_cast<double>(swa_profile->swa_cells(
             is_embedding ? EMBEDDING_CTX_SIZE : AUTO_CTX_FALLBACK)) *
             swa_bytes_per_cell / BYTES_PER_GIB : 0.0);
-    // GPU-only exhaustion is not a load rejection: first test CPU offload.
-    // If even the minimum context cannot fit, signal proven no capacity.
+    // A GPU-only context below the useful minimum can still use CPU offload.
+    // Keep a positive GPU-only result if the offload budget does not fit.
     const int64_t fallback = is_embedding ? EMBEDDING_CTX_SIZE : AUTO_CTX_FALLBACK;
-    if (max_ctx_from_memory <= 0) {
-        const int64_t minimum_ctx = fallback;
+    if (max_ctx_from_memory < fallback) {
         const int64_t offload_ctx = auto_context_cpu_offload_fallback(
             max_ctx_from_memory, available_memory_gb, physical_free_gb,
             effective_weights_gib,
@@ -377,13 +376,19 @@ inline int64_t compute_auto_context_size(const ModelInfo& model_info,
             full_slope > 0.0 ? full_slope : kv_bytes_per_token,
             speculative, unified_gpu,
             model_info.recipe == "llamacpp" && (model_info.device & DEVICE_GPU),
-            minimum_ctx);
+            fallback);
         if (offload_ctx > 0) {
             LOG(INFO, "AutoTune") << "Using " << offload_ctx
                                    << " context tokens; llama.cpp may offload layers to CPU";
             return auto_context_clamp_tokens(
                 offload_ctx, model_info.max_context_window, AUTO_CTX_UNKNOWN_MAX,
                 is_embedding ? EMBEDDING_CTX_SIZE : 0);
+        }
+        if (max_ctx_from_memory > 0) {
+            // Keep a valid GPU-only context if CPU placement cannot fit.
+            return auto_context_clamp_tokens(
+                max_ctx_from_memory, model_info.max_context_window,
+                AUTO_CTX_UNKNOWN_MAX, is_embedding ? EMBEDDING_CTX_SIZE : 0);
         }
         LOG(DEBUG, "AutoTune") << "compute_auto_context_size: " << model_info.model_name
                                << " — model and runtime reserves exceed available memory ("
@@ -464,10 +469,14 @@ inline int64_t resolve_auto_ctx_size(const RecipeOptions& effective_options,
 
     const json llama_args = effective_options.get_option("llamacpp_args");
     const json hrx_args = effective_options.get_option("hrx_args");
+    const json merge_args_json = effective_options.get_option("merge_args");
+    const bool merge_args = !merge_args_json.is_boolean() ||
+        merge_args_json.get<bool>();
     const bool bounded_swa = bounded_swa_runtime_compatible_for_recipe(
         recipe,
         llama_args.is_string() ? llama_args.get<std::string>() : "",
-        hrx_args.is_string() ? hrx_args.get<std::string>() : "");
+        hrx_args.is_string() ? hrx_args.get<std::string>() : "",
+        merge_args, backend);
     int64_t result = compute_auto_context_size(model_info, available_gb,
                                                is_embedding, ctx_unified_gpu,
                                                physical_free_gb, bounded_swa);

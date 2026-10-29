@@ -407,6 +407,11 @@ static void test_auto_context_budget() {
                                                            false, false, true, 24.0);
     check("auto ctx: CPU budget ignores any UMA GPU hint",
           cpu_budget.max_tokens == cpu_with_uma_hint.max_tokens);
+    check("auto ctx: host workspace minimum is 0.5 GiB",
+          approx_eq(cpu_budget.reserve_gib, 1.5));
+    check("auto ctx: dGPU headroom is fixed at 1 GiB",
+          approx_eq(lemon::AUTO_CTX_DISCRETE_GPU_RESERVE.memory_headroom.estimate(8.0), 1.0) &&
+          approx_eq(lemon::AUTO_CTX_DISCRETE_GPU_RESERVE.memory_headroom.estimate(32.0), 1.0));
     auto original_apple = estimate_auto_context_budget(3.2, 0.73, 128.0 * 1024.0,
                                                       true, false, true);
     auto apple_no_physical_reading = estimate_auto_context_budget(
@@ -450,15 +455,27 @@ static void test_auto_context_budget() {
           auto_context_cpu_offload_fallback(
               strix64.max_tokens, 64.0, 116.0, 58.5, 65536.0,
               false, true, true) == 0);
+    check("auto ctx: positive but too-small GPU context tries CPU offload",
+          auto_context_cpu_offload_fallback(819, 8.0, 48.0, 6.7,
+                                            65536.0, false, false, true) == 4096);
+    check("auto ctx: GPU context at minimum keeps GPU-first placement",
+          auto_context_cpu_offload_fallback(4096, 8.0, 48.0, 6.7,
+                                            65536.0, false, false, true) == 0);
     check("auto ctx: dGPU may spill when VRAM does not fit model",
           auto_context_cpu_offload_fallback(
               0, 22.0, 48.0, 60.0, 65536.0, false, false, true) == 4096);
     check("auto ctx: dGPU may spill even with no VRAM left",
           auto_context_cpu_offload_fallback(
               0, 0.0, 68.0, 60.0, 65536.0, false, false, true) == 4096);
-    check("auto ctx: borderline dGPU split is decided by llama.cpp",
+    check("auto ctx: borderline dGPU split respects both reserves",
           auto_context_cpu_offload_fallback(
-              0, 24.0, 36.5, 60.0, 65536.0, false, false, true) == 4096);
+              0, 24.0, 36.5, 60.0, 65536.0, false, false, true) == 0);
+    check("auto ctx: dGPU split fits after both reserves",
+          auto_context_cpu_offload_fallback(
+              0, 24.0, 44.0, 60.0, 65536.0, false, false, true) == 4096);
+    check("auto ctx: host-only spill rejects missing runtime headroom",
+          auto_context_cpu_offload_fallback(
+              0, 0.0, 4.0, 3.6, 65536.0, false, false, true) == 0);
     check("auto ctx: dGPU cannot use unavailable combined RAM/VRAM",
           auto_context_cpu_offload_fallback(
               0, 8.0, 12.0, 60.0, 65536.0, false, false, true) == 0);
@@ -785,6 +802,20 @@ static void test_bounded_swa_fallbacks_and_runtime() {
               "llamacpp-hrx", "--parallel 2", "--parallel 1") &&
           !lemon::bounded_swa_runtime_compatible_for_recipe(
               "llamacpp", "--swa-full", "--parallel 1"));
+    check("merge_args=false needs an explicit single slot",
+          !lemon::bounded_swa_runtime_compatible_for_recipe(
+              "llamacpp", "", "", false) &&
+          lemon::bounded_swa_runtime_compatible_for_recipe(
+              "llamacpp", "-np 1", "", false) &&
+          !lemon::bounded_swa_runtime_compatible_for_recipe(
+              "llamacpp", "-np 2", "", false));
+    check("unknown system llama.cpp disables bounded SWA",
+          !lemon::bounded_swa_runtime_compatible_for_recipe(
+              "llamacpp", "--parallel 1", "", true, "system") &&
+          lemon::bounded_swa_runtime_compatible_for_recipe(
+              "llamacpp", "--parallel 1", "", true, "rocm") &&
+          lemon::bounded_swa_runtime_compatible_for_recipe(
+              "llamacpp-hrx", "", "", true, "system"));
     check("both recipe types use one SWA profile",
           compute_bounded_swa_profile(make_swa_fixture("gemma3", 6), "llamacpp") &&
           compute_bounded_swa_profile(make_swa_fixture("gemma3", 6), "llamacpp-hrx"));
@@ -793,6 +824,8 @@ static void test_bounded_swa_fallbacks_and_runtime() {
     check("LLAMA_ARG_N_PARALLEL=unset is safe", bounded_swa_runtime_compatible(""));
     set_swa_test_env("LLAMA_ARG_N_PARALLEL", "1");
     check("LLAMA_ARG_N_PARALLEL=1 is safe", bounded_swa_runtime_compatible(""));
+    check("env pins one slot even with merge_args=false",
+          bounded_swa_runtime_compatible("", false));
     set_swa_test_env("LLAMA_ARG_N_PARALLEL", "2");
     check("LLAMA_ARG_N_PARALLEL=2 forces full-KV fallback",
           !bounded_swa_runtime_compatible(""));

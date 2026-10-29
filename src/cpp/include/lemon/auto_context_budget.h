@@ -55,12 +55,12 @@ struct AutoContextReservePolicy {
 // Conservative runtime estimates, calibrated separately for discrete VRAM,
 // shared physical RAM, and host-only backends. Not additional model weights.
 inline constexpr AutoContextReservePolicy AUTO_CTX_DISCRETE_GPU_RESERVE{
-    {0.045, 0.75, 2.0}, {0.05, 0.5, 1.75}};
+    {0.0, 1.0, 1.0}, {0.05, 0.5, 1.75}};
 inline constexpr AutoContextReservePolicy AUTO_CTX_UNIFIED_GPU_RESERVE{
     {0.08, 0.75, 10.0}, {0.04, 0.5, 3.0}};
 inline constexpr AutoContextReservePolicy AUTO_CTX_HOST_RESERVE{
     {0.05, 1.0, std::numeric_limits<double>::max()},
-    {0.05, 1.0, std::numeric_limits<double>::max()}};
+    {0.05, 0.5, std::numeric_limits<double>::max()}};
 inline constexpr double AUTO_CTX_SPECULATIVE_WORKSPACE_GIB = 0.25;
 inline constexpr double AUTO_CTX_MTP_KV_MULTIPLIER = 1.07;
 inline constexpr double AUTO_CTX_UNKNOWN_DRAFT_KV_MULTIPLIER = 1.25;
@@ -146,13 +146,13 @@ inline AutoContextBudget estimate_auto_context_budget(double free_gib,
     return result;
 }
 
-// A GPU-only budget of zero does not prove that llama.cpp cannot load:
+// A GPU-only budget below the minimum does not prove llama.cpp cannot load:
 // its automatic layer placement can spill weights to system RAM.
 inline int64_t auto_context_cpu_offload_fallback(
     int64_t gpu_tokens, double gpu_free_gib, double physical_free_gib,
     double weights_gib, double kv_bytes_per_token, bool speculative,
     bool unified_gpu, bool allow_cpu_offload, int64_t minimum_ctx = 4096) {
-    if (!allow_cpu_offload || gpu_tokens > 0 || minimum_ctx <= 0 ||
+    if (!allow_cpu_offload || gpu_tokens >= minimum_ctx || minimum_ctx <= 0 ||
         !std::isfinite(weights_gib) || weights_gib <= 0.0 ||
         !std::isfinite(kv_bytes_per_token) || kv_bytes_per_token <= 0.0)
         return 0;
@@ -168,9 +168,18 @@ inline int64_t auto_context_cpu_offload_fallback(
 
     if (!std::isfinite(physical_free_gib) || physical_free_gib < 0.0)
         return minimum_ctx;
-    const double combined_gib = (std::max)(0.0, gpu_free_gib) +
-        (std::max)(0.0, physical_free_gib);
-    const double required_gib = weights_gib +
+    // Measured GPU VRAM and host RAM are independent pools. Leave headroom in
+    // both, and charge a conservative workspace for either placement; the
+    // llama.cpp fit algorithm decides the actual GPU/CPU layer split.
+    const double gpu_usable_gib = (std::max)(0.0, gpu_free_gib -
+        AUTO_CTX_DISCRETE_GPU_RESERVE.memory_headroom.estimate(gpu_free_gib));
+    const double ram_usable_gib = (std::max)(0.0, physical_free_gib -
+        AUTO_CTX_HOST_RESERVE.memory_headroom.estimate(physical_free_gib));
+    const double combined_gib = gpu_usable_gib + ram_usable_gib;
+    const double workspace_gib = (std::max)(
+        AUTO_CTX_DISCRETE_GPU_RESERVE.compute_workspace.estimate(weights_gib),
+        AUTO_CTX_HOST_RESERVE.compute_workspace.estimate(weights_gib));
+    const double required_gib = weights_gib + workspace_gib +
         static_cast<double>(minimum_ctx) * kv_bytes_per_token /
             (1024.0 * 1024.0 * 1024.0) +
         (speculative ? AUTO_CTX_SPECULATIVE_WORKSPACE_GIB : 0.0);

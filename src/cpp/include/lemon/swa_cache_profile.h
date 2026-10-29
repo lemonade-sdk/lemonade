@@ -206,11 +206,13 @@ inline int64_t bounded_swa_context_limit(const BoundedSwaProfile& profile,
     return low;
 }
 
-// Both recipes pin --parallel 1 unless overridden by custom arguments.
+// One slot is guaranteed only if a default, explicit argument, or env pins it.
 // Unknown overrides that change cache allocation deliberately fall back.
-inline bool bounded_swa_runtime_compatible(const std::string& custom_args) {
+inline bool bounded_swa_runtime_compatible(const std::string& custom_args,
+                                           bool parallel_one_by_default = true) {
     const char* parallel_env = std::getenv("LLAMA_ARG_N_PARALLEL");
     if (parallel_env && !swa_detail::is_parallel_one(parallel_env)) return false;
+    bool parallel_one_explicit = parallel_env != nullptr;
     for (const char* name : {"LLAMA_ARG_SWA_FULL", "LLAMA_ARG_UBATCH",
                              "LLAMA_ARG_CACHE_TYPE_K", "LLAMA_ARG_CACHE_TYPE_V",
                              "LLAMA_ARG_KV_UNIFIED"}) {
@@ -232,15 +234,19 @@ inline bool bounded_swa_runtime_compatible(const std::string& custom_args) {
             const std::string value = eq != std::string::npos
                 ? token.substr(eq + 1) : (i + 1 < args.size() ? args[++i] : "");
             if (!swa_detail::is_parallel_one(value)) return false;
+            parallel_one_explicit = true;
         }
     }
-    return true;
+    return parallel_one_by_default || parallel_one_explicit;
 }
 
 inline bool bounded_swa_runtime_compatible_for_recipe(
     const std::string& recipe, const std::string& llamacpp_args,
-    const std::string& hrx_args) {
-    if (recipe == "llamacpp") return bounded_swa_runtime_compatible(llamacpp_args);
+    const std::string& hrx_args, bool merge_args = true,
+    const std::string& backend = "") {
+    if (recipe == "llamacpp")
+        return backend != "system" &&
+            bounded_swa_runtime_compatible(llamacpp_args, merge_args);
     if (recipe == "llamacpp-hrx") return bounded_swa_runtime_compatible(hrx_args);
     return false;
 }
