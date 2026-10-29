@@ -194,6 +194,7 @@ void to_json(json& j, const MeshPeer& p) {
         {"relay_endpoint", p.relay_endpoint},
         {"is_online",      p.is_online},
         {"last_handshake", p.last_handshake},
+        {"last_rx", p.last_rx},
         {"rx_bytes",       p.rx_bytes},
         {"tx_bytes",       p.tx_bytes},
         {"latency_ms",     p.latency_ms},
@@ -214,6 +215,7 @@ void from_json(const json& j, MeshPeer& p) {
     p.relay_endpoint = j.value("relay_endpoint", "");
     p.is_online      = j.value("is_online", false);
     p.last_handshake = j.value("last_handshake", int64_t{0});
+    p.last_rx = j.value("last_rx", int64_t{0});
     p.rx_bytes       = j.value("rx_bytes", uint64_t{0});
     p.tx_bytes       = j.value("tx_bytes", uint64_t{0});
     p.latency_ms     = j.value("latency_ms", int32_t{-1});

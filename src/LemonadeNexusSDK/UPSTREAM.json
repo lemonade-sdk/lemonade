@@ -1,6 +1,6 @@
 {
   "repository": "https://github.com/lemonade-sdk/lemonade-nexus.git",
-  "commit": "ebb1b5dc592a81fb7a4d678197c9e96351c72326",
+  "commit": "bc77791e0449d741be8f4baef5654b54b3a6dd22",
   "version": "0.9.8",
   "paths": [
     "LICENSE",

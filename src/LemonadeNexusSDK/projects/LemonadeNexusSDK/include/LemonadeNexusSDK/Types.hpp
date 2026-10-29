@@ -371,6 +371,10 @@ struct MeshPeer {
     std::string relay_endpoint;         ///< Relay fallback "ip:port" (empty if not needed)
     bool        is_online{false};
     int64_t     last_handshake{0};      ///< Unix timestamp
+    /// Unix timestamp of the last authenticated packet from the peer,
+    /// keepalives included (0 = none yet). Keepalives do not renew the
+    /// handshake, so this is the liveness signal.
+    int64_t     last_rx{0};
     uint64_t    rx_bytes{0};
     uint64_t    tx_bytes{0};
     int32_t     latency_ms{-1};         ///< -1 = unknown

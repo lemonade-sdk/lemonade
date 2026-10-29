@@ -19,6 +19,9 @@ struct BoringtunPeer {
     std::string allowed_ips;
     std::string endpoint;
     uint64_t    last_handshake{0};
+    /// Unix seconds of the last authenticated packet, keepalives included;
+    /// 0 when the provider does not track it or nothing arrived yet.
+    uint64_t    last_rx{0};
     uint64_t    rx_bytes{0};
     uint64_t    tx_bytes{0};
     uint16_t    persistent_keepalive{25};

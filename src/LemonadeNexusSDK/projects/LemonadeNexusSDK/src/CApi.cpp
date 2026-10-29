@@ -1716,6 +1716,7 @@ ln_error_t ln_mesh_status(ln_client_t* client, char** out_json) {
         pj["relay_endpoint"] = p.relay_endpoint;
         pj["is_online"]      = p.is_online;
         pj["last_handshake"] = p.last_handshake;
+        pj["last_rx"] = p.last_rx;
         pj["rx_bytes"]       = p.rx_bytes;
         pj["tx_bytes"]       = p.tx_bytes;
         pj["latency_ms"]     = p.latency_ms;
@@ -1744,6 +1745,7 @@ ln_error_t ln_mesh_peers(ln_client_t* client, char** out_json) {
         pj["relay_endpoint"] = p.relay_endpoint;
         pj["is_online"]      = p.is_online;
         pj["last_handshake"] = p.last_handshake;
+        pj["last_rx"] = p.last_rx;
         pj["rx_bytes"]       = p.rx_bytes;
         pj["tx_bytes"]       = p.tx_bytes;
         pj["latency_ms"]     = p.latency_ms;

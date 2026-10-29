@@ -12,6 +12,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <chrono>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -245,6 +246,15 @@ public:
     // -----------------------------------------------------------------
 
     /// Authenticate → create endpoint node → allocate tunnel IP.
+    ///
+    /// With an invite (set_link_token), a verified Tier 1 server that answers
+    /// 403 "invalid or expired link token" may only lack the mint, which
+    /// replicates over the backbone. The join then waits (see
+    /// set_invite_hop_delay) and joins through another verified server that
+    /// has not refused it, up to three attempts in all, each server at most
+    /// once. Each refusal counts against the server's wrong-code limit for
+    /// this device's address. When no other server remains, the last refusal
+    /// is returned. Blocks on network I/O and on these waits.
     [[nodiscard]] Result<JoinResult> join_network(const std::string& username,
                                                     const std::string& password);
 
@@ -482,6 +492,13 @@ public:
     /// endpoint and derives the routing identifier from it ("infer-..." vs
     /// "client-..."). Default false.
     void set_inference_node(bool inference);
+
+    /// Set the wait before join_network() asks another Tier 1 server after
+    /// one refused the invite as unknown. The second such hop waits twice as
+    /// long. The default, 1.5 s, gives a fresh mint time to replicate; keep
+    /// it outside tests. A negative value counts as zero. Thread-safe; takes
+    /// effect at the next join_network().
+    void set_invite_hop_delay(std::chrono::milliseconds first_hop);
 
     /// Mint a single-use link token (an invite) for a target group (requires
     /// an established mesh session; calls the private API). An empty

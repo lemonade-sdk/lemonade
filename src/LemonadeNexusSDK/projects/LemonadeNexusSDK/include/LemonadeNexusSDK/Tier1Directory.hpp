@@ -8,6 +8,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -146,14 +147,16 @@ public:
     /// server that answered last, and fails over to the next verified server
     /// when no response arrives or a server answers 421 (it holds no tree).
     /// With `pin_node` set, only that member's server is tried: a session is
-    /// bound to the server that issued it. Without a pin, `avoid_node` names
-    /// a member whose server is not tried (the server a session moves away
-    /// from while it is still verified). Returns the first other response,
-    /// and sets `answered` to the server that sent it. nullopt with `error`
-    /// set when no verified server answered.
+    /// bound to the server that issued it. Without a pin, `avoid_nodes`
+    /// names members (base64 node ids) whose servers are not tried: the
+    /// server a session moves away from while it is still verified, and the
+    /// members that refused a join's invite as unknown. Returns the first
+    /// other response, and sets `answered` to the server that sent it.
+    /// nullopt with `error` set when no verified server answered, also when
+    /// every verified server is avoided.
     std::optional<HttpReply> send(const Tier1Attempt& attempt, const std::string& pin_node,
                                   Tier1Server* answered, std::string& error,
-                                  const std::string& avoid_node = {});
+                                  const std::set<std::string>& avoid_nodes = {});
 
 private:
     Result<Tier1Membership> refresh_verified(const std::vector<ServerEndpoint>& sources);
