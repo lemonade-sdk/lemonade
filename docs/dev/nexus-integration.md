@@ -361,9 +361,9 @@ relayed.
   forwarded.
 - `X-Lemonade-Peer-Authorization: Bearer <peer key>` is sent to the peer as its
   `Authorization`.
-- Loopback clients follow the normal API-key rules. Other machines need
-  `LEMONADE_API_KEY` set on this server and a matching bearer token, as for
-  remote management.
+- Loopback clients follow the normal API-key rules. Direct RFC1918 clients need
+  no API key on this server. Other remote clients need `LEMONADE_API_KEY` set
+  and a matching bearer token, as for remote management.
 - The mesh ingress listener refuses the relay, so a peer cannot relay through
   this device.
 - The target must be another group member that is a Tier 3 inference node,
@@ -420,8 +420,8 @@ Routes are available under `/api/v0/nexus/`, `/api/v1/nexus/`, `/v0/nexus/`,
 | GET | `status`, `join/status` | Network/device state and local controller URL |
 | GET | `passkey/challenge` | Federation challenge (`register=1` for enrollment) |
 | POST | `passkey/register`, `passkey/unlock` | Register or verify the device's credential |
-| POST | `key/unlock` | Unlock with the device key (`{defer_join?, identity_envelope?}`); local-only, refused once a passkey is registered. An `identity_envelope` from `ln_identity_handoff_seal` delivers the user's identity first (see [Identity storage](#identity-storage)) |
-| GET | `key/handoff` | Start a single-use identity hand-off and return the SDK's request JSON; local-only |
+| POST | `key/unlock` | Unlock with the device key (`{defer_join?, identity_envelope?}`); loopback or RFC1918 only, refused once a passkey is registered. An `identity_envelope` from `ln_identity_handoff_seal` delivers the user's identity first (see [Identity storage](#identity-storage)) |
+| GET | `key/handoff` | Start a single-use identity hand-off and return the SDK's request JSON; loopback or RFC1918 only |
 | POST | `device/check` | Advisory check that a device name folds to a free DNS label: `{name, code?}` (`device_name` is accepted in place of `name`); uses this account's group when joined, else the invite code's group. Answers `{label, available, conflicts, suggestion}`. The federation still refuses a collision on join or rename |
 | POST | `enable`, `disable`, `lock`, `device` | Local state and device name |
 | POST | `invites`, `invites/cancel`, `join` | Invite a device into this account's top-level group with `{device_name, permissions? \| role?, ttl_sec?}`, or join as a new device with `{code}`. Without `permissions` or `role` the invite grants the `user` preset reduced to what this device holds |
@@ -430,10 +430,10 @@ Routes are available under `/api/v0/nexus/`, `/api/v1/nexus/`, `/v0/nexus/`,
 | GET | `memberships` | Groups this identity belongs to (`role` is `home` or `member`) and `group_node_id` |
 | POST | `memberships/{id}/leave` | Leave a group entered through an invite |
 | POST | `tree/{id}/move` | Move device or group `{id}` under `{parent_id}` |
-| POST | `account/delete` | Delete this account permanently with `{account_id, member_id, device_node_id, confirm: "delete"}`; local-only |
+| POST | `account/delete` | Delete this account permanently with `{account_id, member_id, device_node_id, confirm: "delete"}`; loopback or RFC1918 only |
 | GET | `devices` | Group devices with tier, admin flag and permissions |
 | GET | `members` | Devices plus `can_manage` (this device is an admin) |
-| GET | `account` | Verified current account ID, membership identity, device ID, role and devices; local-only |
+| GET | `account` | Verified current account ID, membership identity, device ID, role and devices; loopback or RFC1918 only |
 | GET | `tree`, `tree/{id}/children` | Current group or a descendant group and direct children |
 | POST | `tree/{id}/groups`, `tree/{id}/rename` | Create a child group or rename a group with `{name}` |
 | POST | `tree/{id}/permissions` | Group assignment with `{member_node_id, admin, permissions}` |
@@ -483,19 +483,36 @@ Each listener applies its own rules:
 | Listener | Client | Nexus routes |
 | --- | --- | --- |
 | Public | Loopback | `status` and the relay directly; every other route redirects with HTTP 307 to the management listener |
-| Public | Other machines | `status`, `join/status`, `devices`, `members`, `members/{id}/role`, `members/{id}/permissions`, `devices/{id}/access`, `devices/{id}/remove`, `invites`, `invites/cancel`, `join`, the tree routes, `invites/accept`, `memberships`, `memberships/{id}/leave` and the relay, only with `LEMONADE_API_KEY` set and `Authorization: Bearer <key>` |
+| Public | RFC1918 peers | All Nexus routes, including setup, unlock and the relay, without an API key |
+| Public | Other remote peers | `status`, `join/status`, `devices`, `members`, `members/{id}/role`, `members/{id}/permissions`, `devices/{id}/access`, `devices/{id}/remove`, `invites`, `invites/cancel`, `join`, the tree routes, `invites/accept`, `memberships`, `memberships/{id}/leave` and the relay, only with `LEMONADE_API_KEY` set and `Authorization: Bearer <key>` |
 | Management (`127.0.0.1`, ephemeral port) | Local desktop | All routes |
 | Mesh ingress (`127.0.0.1`, ephemeral port) | Mesh peers | None (HTTP 403); `/internal/*` is not registered (HTTP 404) |
 
-On the public listener, a remote request gets HTTP 403 when no
-`LEMONADE_API_KEY` is set, HTTP 401 for a missing or wrong key, and HTTP 403 for
-a local-only route. `LEMONADE_ADMIN_API_KEY` is also accepted once
-`LEMONADE_API_KEY` is set. Keys are compared in constant time. The public
-listener's origin checks still apply. Remote `status` omits `controller_url`
-and reports `remote_management`.
+Direct clients in `10.0.0.0/8`, `172.16.0.0/12` or `192.168.0.0/16` can set up
+and manage Nexus through the public listener without `LEMONADE_API_KEY`, even
+when a key is configured. IPv4-mapped IPv6 addresses in those ranges also
+qualify. The socket peer address decides access; `Forwarded`, `X-Forwarded-For`
+and `X-Real-IP` headers do not. Other IPv6 ranges, CGNAT and link-local addresses
+do not qualify. Private requests run directly on the public listener rather
+than being redirected to a loopback URL on the client's machine.
 
-`account` is a local management operation and is refused on remote and mesh
-ingress requests. It requires an unlocked, joined session and known current
+This policy trusts the operator's LAN/VPN routing and firewall boundary.
+A reverse proxy or source NAT can make an outside client appear private, so
+the operator must restrict access at that boundary. Origin checks and Nexus's
+own identity, lock and federation permission checks still apply. The API-key
+exemption covers only the Nexus route prefixes above; inference, MCP and
+`/internal/*` keep their existing authentication, as does the separate mesh
+ingress listener.
+
+On the public listener, a remote request outside RFC1918 gets HTTP 403 when no
+`LEMONADE_API_KEY` is set, HTTP 401 for a missing or wrong key, and HTTP 403 for
+a setup or account route. `LEMONADE_ADMIN_API_KEY` is also accepted once
+`LEMONADE_API_KEY` is set. Keys are compared in constant time. The public
+listener's origin checks still apply. Remote status responses omit
+`controller_url` and report `remote_management: true` for RFC1918 clients.
+
+`account` is available to loopback and RFC1918 clients and is refused on other
+remote and mesh ingress requests. It requires an unlocked, joined session and known current
 membership permissions. It contains no private key material or client display
 label; those labels belong to the GUI3 client.
 

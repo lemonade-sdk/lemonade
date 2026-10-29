@@ -28,7 +28,7 @@ private:
     httplib::Server::HandlerResponse pre_route(const httplib::Request& req,
                                                httplib::Response& res, bool mesh_ingress);
     httplib::Server::HandlerResponse authenticate(const httplib::Request& req,
-                                                  httplib::Response& res);
+                                                  httplib::Response& res, bool mesh_ingress);
     void log_response(const httplib::Request& req, const httplib::Response& res);
 
     RuntimeConfig* config_;

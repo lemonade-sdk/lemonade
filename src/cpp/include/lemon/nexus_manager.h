@@ -18,8 +18,8 @@
 namespace lemon {
 /// The listener a Nexus route is registered on.
 /// Public: lemond's normal port. Loopback clients read status and are redirected to
-/// Management for every other route. Nonloopback clients may call the group operations
-/// accepted by nexus_access::remote_operation, only with LEMONADE_API_KEY configured.
+/// Management for every other route. RFC1918 clients may manage Nexus without an API key.
+/// Other remote clients need LEMONADE_API_KEY and are limited to remote_operation.
 /// Management: the loopback listener owned by NexusManager for the local desktop.
 /// MeshIngress: the loopback listener behind Nexus virtual port 13305. Mesh peers arrive
 /// from loopback, so every Nexus route on it is refused.
@@ -163,14 +163,17 @@ SdkFailure sdk_failure(int code, const nlohmann::json& reply, int rejected_statu
 bool constant_time_equals(const std::string& candidate, const std::string& expected);
 /// True when `authorization` is "Bearer <key>" for `api_key` or a nonempty `admin_key`.
 bool bearer_matches(const std::string& authorization, const std::string& api_key, const std::string& admin_key);
-/// True for the operations a nonloopback client may call on the public listener:
+/// True for the operations a remote client outside RFC1918 may call on the public listener:
 /// the group operations and "relay".
 bool remote_operation(const std::string& operation);
+bool rfc1918_address(const std::string& address);
+/// Uses the socket peer address, never a client-supplied forwarding header.
+bool private_management_request(const httplib::Request& req);
 /// Decides whether a Nexus route may run. Origin, CORS and the API key are checked earlier
 /// by lemond's shared listener policy; this adds the per-listener rules. Returns {0, ""}
 /// to run the route, {307, ""} to redirect it to the management listener, or an HTTP
-/// error status and message. An empty `api_key` turns remote management off.
-std::pair<int, std::string> route_access(NexusListener listener, bool loopback, const std::string& operation,
+/// error status and message. RFC1918 clients on the public listener need no API key.
+std::pair<int, std::string> route_access(NexusListener listener, const std::string& address, const std::string& operation,
     const std::string& authorization, const std::string& api_key, const std::string& admin_key);
 /// Header that carries the selected peer's API key through the relay. The relay sends it
 /// to that peer as Authorization and never forwards the caller's own Authorization.

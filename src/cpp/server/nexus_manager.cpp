@@ -19,7 +19,9 @@
 
 #ifdef _WIN32
 #include <winsock2.h>
+#include <ws2tcpip.h>
 #else
+#include <arpa/inet.h>
 #include <unistd.h>
 #endif
 #ifdef LEMONADE_WITH_NEXUS
@@ -29,8 +31,8 @@
 namespace lemon {
 namespace {
 using json = nlohmann::json;
-bool local_request(const httplib::Request& req) {
-    return req.remote_addr == "127.0.0.1" || req.remote_addr == "::1" || req.remote_addr == "::ffff:127.0.0.1";
+bool local_address(const std::string& address) {
+    return address == "127.0.0.1" || address == "::1" || address == "::ffff:127.0.0.1";
 }
 std::string api_key() { return utils::get_environment_variable_utf8("LEMONADE_API_KEY"); }
 std::string admin_api_key() { return utils::get_environment_variable_utf8("LEMONADE_ADMIN_API_KEY"); }
@@ -771,11 +773,36 @@ bool remote_operation(const std::string& operation) {
     return std::find(operations.begin(), operations.end(), operation) != operations.end();
 }
 
-std::pair<int, std::string> route_access(NexusListener listener, bool loopback, const std::string& operation,
+bool rfc1918_address(const std::string& address) {
+    if (address.find('\0') != std::string::npos) return false;
+    unsigned char bytes[16]{};
+    size_t offset = 0;
+    if (inet_pton(AF_INET, address.c_str(), bytes) != 1) {
+        if (inet_pton(AF_INET6, address.c_str(), bytes) != 1 ||
+            !std::all_of(bytes, bytes + 10, [](unsigned char byte) { return byte == 0; }) ||
+            bytes[10] != 0xff || bytes[11] != 0xff) return false;
+        offset = 12;
+    }
+    return bytes[offset] == 10 ||
+        (bytes[offset] == 172 && bytes[offset + 1] >= 16 && bytes[offset + 1] <= 31) ||
+        (bytes[offset] == 192 && bytes[offset + 1] == 168);
+}
+
+bool private_management_request(const httplib::Request& req) {
+    if (!rfc1918_address(req.remote_addr)) return false;
+    for (const auto* prefix : {"/api/v0/nexus/", "/api/v1/nexus/", "/v0/nexus/", "/v1/nexus/", "/api/nexus/"}) {
+        if (req.path.rfind(prefix, 0) == 0) return true;
+    }
+    return false;
+}
+
+std::pair<int, std::string> route_access(NexusListener listener, const std::string& address, const std::string& operation,
                                          const std::string& authorization, const std::string& api_key, const std::string& admin_key) {
+    const bool loopback = local_address(address);
     if (listener == NexusListener::MeshIngress) return {403, "Network management is not available through the mesh"};
     if (listener == NexusListener::Management) return loopback ? std::make_pair(0, std::string()) : std::make_pair(403, std::string("Local network management only"));
     if (loopback) return {operation == "status" || operation == "join/status" || operation == "relay" ? 0 : 307, ""};
+    if (rfc1918_address(address)) return {0, ""};
     if (!remote_operation(operation)) return {403, "Use the Lemonade desktop app on this device for that action"};
     if (api_key.empty()) return {403, "Remote network management is off. Set LEMONADE_API_KEY on this server to turn it on."};
     if (!bearer_matches(authorization, api_key, admin_key)) return {401, "Invalid or missing API key"};
@@ -2105,7 +2132,13 @@ void NexusManager::supervise() {
 void NexusManager::handle(const httplib::Request& req, httplib::Response& res,
                            const std::string& operation, bool remote) {
     res.set_header("Cache-Control", "no-store");
-    const auto reply = [&](int code, const json& body) {
+    const auto reply = [&](int code, json body) {
+        if (remote && body.is_object()) {
+            body.erase("controller_url");
+            if (body.contains("remote_management")) {
+                body["remote_management"] = nexus_access::rfc1918_address(req.remote_addr) || !api_key().empty();
+            }
+        }
         res.status = code;
         res.set_content(body.dump(), "application/json");
     };
@@ -2118,7 +2151,6 @@ void NexusManager::handle(const httplib::Request& req, httplib::Response& res,
     try {
         if (operation == "status" || operation == "join/status") {
             auto current = status();
-            if (remote) current.erase("controller_url");
             reply(200, current);
             return;
         }
@@ -2217,8 +2249,8 @@ void NexusManager::relay(const httplib::Request& req, httplib::Response& res) {
 
 void NexusManager::register_routes(httplib::Server& server, NexusListener listener) {
     const auto dispatch = [this, listener](const httplib::Request& req, httplib::Response& res, const std::string& operation) {
-        const bool loopback = local_request(req);
-        const auto access = nexus_access::route_access(listener, loopback, operation,
+        const bool loopback = local_address(req.remote_addr);
+        const auto access = nexus_access::route_access(listener, req.remote_addr, operation,
             req.get_header_value("Authorization"), api_key(), admin_api_key());
         if (access.first == 307) {
             res.set_redirect("http://127.0.0.1:" + std::to_string(management_port_) + req.target, 307);
@@ -2259,7 +2291,7 @@ void NexusManager::register_routes(httplib::Server& server, NexusListener listen
         }
         const auto relayed = std::string(prefix) + R"(peers/([A-Za-z0-9_-]+)(/.*))";
         const auto relay_route = [this, listener](const httplib::Request& req, httplib::Response& res) {
-            const auto access = nexus_access::route_access(listener, local_request(req), "relay",
+            const auto access = nexus_access::route_access(listener, req.remote_addr, "relay",
                 req.get_header_value("Authorization"), api_key(), admin_api_key());
             if (access.first != 0) { reply_error(res, access.first, access.second); return; }
             relay(req, res);

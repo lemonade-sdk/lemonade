@@ -182,11 +182,11 @@ httplib::Server::HandlerResponse RequestMiddleware::pre_route(const httplib::Req
         }
     }
 
-    return authenticate(req, res);
+    return authenticate(req, res, mesh_ingress);
 }
 
 httplib::Server::HandlerResponse RequestMiddleware::authenticate(const httplib::Request& req,
-                                                                 httplib::Response& res) {
+                                                                 httplib::Response& res, bool mesh_ingress) {
     telemetry::g_request_start_time = std::chrono::steady_clock::now();
     telemetry::g_current_auth_token = "";
     if (req.has_header("X-Client-Session-Id")) {
@@ -255,6 +255,12 @@ httplib::Server::HandlerResponse RequestMiddleware::authenticate(const httplib::
     }
 
     telemetry::g_current_auth_token = auth_token;
+
+    // Direct private-network Nexus management is authorized by the LAN/VPN boundary.
+    // The mesh listener has its own identity policy and never gets this exemption.
+    if (!mesh_ingress && nexus_access::private_management_request(req)) {
+        return httplib::Server::HandlerResponse::Unhandled;
+    }
 
     if (is_internal_route) {
         if (!admin_api_key_.empty() && req.method != "OPTIONS") {
