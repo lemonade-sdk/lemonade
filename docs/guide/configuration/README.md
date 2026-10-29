@@ -162,6 +162,7 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
   },
   "thenoise": {
     "backend": "auto",
+    "cuda_bin": "builtin",
     "lora_dir": "",
     "rocm_bin": "builtin",
     "upscaler_dir": ""
