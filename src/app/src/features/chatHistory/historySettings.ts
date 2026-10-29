@@ -29,3 +29,14 @@ export function saveChatHistoryPreference(persist: boolean): void {
     // Browser events are best effort.
   }
 }
+
+export function retainSavedConversations(stored: unknown[], openIds: ReadonlySet<string>): unknown[] {
+  return stored.filter(entry => {
+    const id = entry && typeof entry === 'object' ? (entry as { id?: unknown }).id : undefined;
+    return typeof id !== 'string' || openIds.has(id);
+  });
+}
+
+export function conversationVersion(conversation: { updatedAt: number; messages: unknown[] }): string {
+  return `${conversation.updatedAt}:${conversation.messages.length}`;
+}
