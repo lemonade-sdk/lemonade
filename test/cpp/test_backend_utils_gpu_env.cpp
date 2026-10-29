@@ -116,6 +116,40 @@ int main() {
               "validate_device_backend_match accepts matching pairs and system/auto backends gracefully");
     }
 
+    // Test 2b: explicit CUDA selection uses the physical GPU UUID, not CUDA
+    // runtime ordinals (which can differ from nvidia-smi on 4090 + 5090 hosts).
+    {
+        const std::vector<std::pair<int, std::string>> gpus = {
+            {0, "GPU-test-4090"}, {1, "GPU-test-5090"}
+        };
+        check(BackendUtils::cuda_visible_device_for_selection("CUDA1", gpus) == "GPU-test-5090",
+              "CUDA1 resolves to the matching NVIDIA GPU UUID");
+        check(BackendUtils::cuda_visible_device_for_selection("cuda0", gpus) == "GPU-test-4090",
+              "CUDA0 resolves to the other NVIDIA GPU UUID");
+        bool rejected = false;
+        try { (void)BackendUtils::cuda_visible_device_for_selection("cuda2", gpus); }
+        catch (const std::invalid_argument&) { rejected = true; }
+        check(rejected, "nonexistent CUDA device is rejected");
+        rejected = false;
+        try { (void)BackendUtils::cuda_visible_device_for_selection("cuda0,cuda1", gpus); }
+        catch (const std::invalid_argument&) { rejected = true; }
+        check(rejected, "multi-GPU string is rejected for single-device backends");
+        rejected = false;
+        try { (void)BackendUtils::cuda_visible_device_for_selection("cuda1", {{0, "GPU-0"}, {1, ""}}); }
+        catch (const std::invalid_argument&) { rejected = true; }
+        check(rejected, "missing UUID is rejected instead of selecting an ambiguous CUDA ordinal");
+        check(BackendUtils::cuda_visible_device_for_selection("CUDA0", {{0, "GPU-one"}}).empty(),
+              "single NVIDIA GPU does not need a UUID visibility mask");
+
+        std::vector<std::pair<std::string, std::string>> env_vars;
+        BackendUtils::apply_accelerator_device_env_vars(env_vars, "TestROCm", "rocm", "ROCm1");
+        bool rocm_one = false;
+        for (const auto& entry : env_vars) {
+            if (entry.first == "HIP_VISIBLE_DEVICES" && entry.second == "1") rocm_one = true;
+        }
+        check(rocm_one, "ROCm1 maps to HIP_VISIBLE_DEVICES=1");
+    }
+
     // Test 3: a custom backend binary environment variable takes precedence
     // over config.json. ROCm channel names collapse to the public ROCm override
     // documented for users, while config remains the fallback.

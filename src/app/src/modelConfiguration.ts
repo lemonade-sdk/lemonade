@@ -12,6 +12,8 @@ export interface RecipeOptions {
   llamacpp_backend?: string;
   llamacpp_device?: string;
   llamacpp_args?: string;
+  thenoise_backend?: string;
+  thenoise_device?: string;
   steps?: number;
   cfg_scale?: number;
   width?: number;
@@ -19,6 +21,7 @@ export interface RecipeOptions {
   sampling_method?: string;
   flow_shift?: number;
   'sd-cpp_backend'?: string;
+  'sd-cpp_device'?: string;
   sdcpp_args?: string;
   whispercpp_backend?: string;
   whispercpp_args?: string;
@@ -548,11 +551,22 @@ export function modelDefaultRecipeOptions(model: ModelInfo | null | undefined, f
     out['sd-cpp_backend'] = readStringFromModelOrRecipe(model, [
       ['recipe_options', 'sd-cpp_backend'], ['options', 'sd-cpp_backend'], ['sd-cpp_backend'],
     ]) ?? backend;
+    out['sd-cpp_device'] = readStringFromModelOrRecipe(model, [
+      ['recipe_options', 'sd-cpp_device'], ['options', 'sd-cpp_device'], ['sd-cpp_device'],
+    ]);
     out.sampling_method = readStringFromModelOrRecipe(model, [['recipe_options', 'sampling_method'], ['sample_params', 'sampling_method'], ['sampling_method']]);
     out.flow_shift = readNumberFromModelOrRecipe(model, [['recipe_options', 'flow_shift'], ['sample_params', 'flow_shift'], ['flow_shift']]);
     out.sdcpp_args = readStringFromModelOrRecipe(model, [['recipe_options', 'sdcpp_args'], ['options', 'sdcpp_args'], ['sdcpp_args'], ['args']]);
   }
 
+  if (recipe === 'thenoise') {
+    out.thenoise_backend = readStringFromModelOrRecipe(model, [
+      ['recipe_options', 'thenoise_backend'], ['options', 'thenoise_backend'], ['thenoise_backend'],
+    ]) ?? backend;
+    out.thenoise_device = readStringFromModelOrRecipe(model, [
+      ['recipe_options', 'thenoise_device'], ['options', 'thenoise_device'], ['thenoise_device'],
+    ]);
+  }
   if (recipe === 'moonshine') {
     out.moonshine_backend = readStringFromModelOrRecipe(model, [
       ['recipe_options', 'moonshine_backend'], ['options', 'moonshine_backend'], ['moonshine_backend'],
@@ -684,7 +698,7 @@ export function recipeOptionsForCapability(
   if (!options || Object.keys(options).length === 0) return {};
   switch (capability) {
     case 'image':
-      return pickRecipeOptions(options, ['sd-cpp_backend', 'steps', 'cfg_scale', 'width', 'height', 'sampling_method', 'flow_shift', 'sdcpp_args', 'merge_args']);
+      return pickRecipeOptions(options, ['sd-cpp_backend', 'sd-cpp_device', 'thenoise_backend', 'thenoise_device', 'steps', 'cfg_scale', 'width', 'height', 'sampling_method', 'flow_shift', 'sdcpp_args', 'merge_args']);
     case 'audio':
     case 'transcription':
       return pickRecipeOptions(options, ['whispercpp_backend', 'whispercpp_args', 'moonshine_backend', 'moonshine_args', 'merge_args']);

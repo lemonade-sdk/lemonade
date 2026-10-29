@@ -2462,6 +2462,87 @@ namespace lemon::backends {
 #endif
     }
 
+    int BackendUtils::parse_gpu_device_index(const std::string& selection,
+                                              const std::string& prefix) {
+        std::string normalized = selection;
+        std::transform(normalized.begin(), normalized.end(), normalized.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        if (normalized.size() <= prefix.size() || normalized.compare(0, prefix.size(), prefix) != 0 ||
+            !std::all_of(normalized.begin() + prefix.size(), normalized.end(),
+                         [](unsigned char c) { return std::isdigit(c) != 0; })) {
+            throw std::invalid_argument("Invalid GPU selection '" + selection +
+                                        "' (expected " + prefix + "0, " + prefix + "1, ...)");
+        }
+        try {
+            return std::stoi(normalized.substr(prefix.size()));
+        } catch (const std::exception&) {
+            throw std::invalid_argument("GPU index out of range: " + selection);
+        }
+    }
+
+    std::string BackendUtils::cuda_visible_device_for_selection(
+            const std::string& selection,
+            const std::vector<std::pair<int, std::string>>& detected_gpus) {
+        const int index = parse_gpu_device_index(selection, "cuda");
+        for (const auto& gpu : detected_gpus) {
+            if (gpu.first != index) continue;
+            if (detected_gpus.size() == 1) return "";  // Avoid unnecessary UUID masks.
+            if (gpu.second.empty()) {
+                throw std::invalid_argument("Cannot safely select " + selection +
+                    ": NVIDIA GPU UUID unavailable on a multi-GPU host");
+            }
+            return gpu.second;
+        }
+        throw std::invalid_argument("Selected GPU " + selection + " is not available");
+    }
+
+    void BackendUtils::apply_accelerator_device_env_vars(
+            std::vector<std::pair<std::string, std::string>>& env_vars,
+            const std::string& log_tag,
+            const std::string& backend,
+            const std::string& selection) {
+        const bool automatic = selection.empty() || selection == "auto";
+        if (backend == "cuda") {
+            if (automatic) {
+                apply_cuda_env_vars(env_vars, log_tag);
+                return;
+            }
+
+            const json system_info = SystemInfoCache::get_system_info_with_cache();
+            std::vector<std::pair<int, std::string>> gpus;
+            if (system_info.contains("devices") && system_info["devices"].contains("nvidia_gpu") &&
+                system_info["devices"]["nvidia_gpu"].is_array()) {
+                int ordinal = 0;
+                for (const auto& gpu : system_info["devices"]["nvidia_gpu"]) {
+                    if (gpu.value("available", false)) {
+                        gpus.emplace_back(gpu.value("index", ordinal), gpu.value("uuid", ""));
+                    }
+                    ++ordinal;
+                }
+            }
+            const std::string visible = cuda_visible_device_for_selection(selection, gpus);
+            if (!visible.empty()) {
+                env_vars.emplace_back("CUDA_VISIBLE_DEVICES", visible);
+                LOG(INFO, log_tag) << "Selecting " << selection
+                                   << " via CUDA_VISIBLE_DEVICES=" << visible << std::endl;
+            }
+            apply_cuda_env_vars(env_vars, log_tag, /*skip_visible_devices=*/true);
+            return;
+        }
+        if (backend == "rocm" || backend == "rocm-stable") {
+            if (!automatic) {
+                const int index = parse_gpu_device_index(selection, "rocm");
+                env_vars.emplace_back("HIP_VISIBLE_DEVICES", std::to_string(index));
+                LOG(INFO, log_tag) << "Selecting ROCm device " << index << std::endl;
+            }
+            return;
+        }
+        if (!automatic) {
+            throw std::invalid_argument("GPU selection '" + selection +
+                                        "' is not supported by backend '" + backend + "'");
+        }
+    }
+
     void BackendUtils::validate_device_backend_match(
             const std::string& backend,
             const std::string& target_device) {

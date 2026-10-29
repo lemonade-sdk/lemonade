@@ -317,6 +317,8 @@ const TUNING_FIELD_HINTS: Partial<Record<keyof RecipeOptions, string>> = {
   trellis_backend: 'TRELLIS accelerator backend for 3D reconstruction.',
   'sd-cpp_backend': 'Stable Diffusion accelerator backend for this image model. Switching back restores the last draft args for that backend in this browser session.',
   llamacpp_device: 'Optional device selector for the selected backend.',
+  thenoise_device: 'Select the GPU for TheNoise; CUDA device numbers refer to the NVIDIA GPU list.',
+  'sd-cpp_device': 'Select the GPU for sd.cpp. CUDA selection uses GPU UUIDs to avoid index mismatches.',
   llamacpp_args: 'CLI-style flags for llama-server, applied on Load/Reload. E.g. --gpu-layers 35 --threads 8 --batch-size 512. See llama-server --help for all options.',
   sdcpp_args: 'Raw backend args for this image model only.',
   whispercpp_args: 'Raw backend args for this transcription model only.',
@@ -428,18 +430,27 @@ function indexed(prefix: string, count: number, fallbackCount = 1): string[] {
 
 function deviceOptionsForKey(key: keyof RecipeOptions, current: string | undefined, selectedBackend: string, model: ModelInfo, info: SystemInfoLike): string[] {
   const recipe = activeRecipeForModel(model);
-  const backend = selectedBackend.toLowerCase();
+  const selected = selectedBackend.toLowerCase();
+  const backend = (selected === 'auto' || !selected) && (recipe === 'thenoise' || recipe === 'sd-cpp')
+    ? (recipeDefaultBackend(info, recipe) || selected)
+    : selected;
   const devices = availableDeviceCounts(info);
+  const nvidiaList = (info as any)?.devices?.nvidia_gpu;
+  const detectedCudaOptions: string[] = Array.isArray(nvidiaList)
+    ? nvidiaList.flatMap((gpu: any, ordinal: number) => gpu?.available === false ? []
+      : [`cuda${Number.isInteger(gpu?.index) && gpu.index >= 0 ? gpu.index : ordinal}`])
+    : [];
+  const cudaOptions = detectedCudaOptions.length ? detectedCudaOptions : indexed('cuda', devices.nvidia, 1);
   let base: string[] = [];
 
   if (!backend || backend === 'auto') {
     base = ['cpu'];
-    if (devices.nvidia > 0) base.push(...indexed('cuda', devices.nvidia, 0));
+    if (devices.nvidia > 0) base.push(...cudaOptions);
     if (devices.amd > 0) base.push(...indexed('vulkan', devices.amd, 0));
     if (devices.metal) base.push('metal');
     if (devices.npu && recipe !== 'llamacpp') base.push('npu0');
   } else if (backend.includes('cpu')) base = ['cpu'];
-  else if (backend.includes('cuda')) base = indexed('cuda', devices.nvidia, 1);
+  else if (backend.includes('cuda')) base = cudaOptions;
   else if (backend.includes('vulkan')) base = indexed('vulkan', devices.amd + devices.nvidia, 1);
   else if (backend.includes('opencl')) base = indexed('opencl', devices.amd + devices.nvidia, 1);
   else if (backend.includes('rocm')) base = indexed('rocm', devices.amd, 1);
@@ -451,6 +462,16 @@ function deviceOptionsForKey(key: keyof RecipeOptions, current: string | undefin
   return Array.from(new Set(options.filter(Boolean)));
 }
 
+function deviceOptionLabel(option: string, info: SystemInfoLike): string {
+  const match = /^cuda(\d+)$/i.exec(option);
+  if (!match) return option;
+  const gpus = (info as any)?.devices?.nvidia_gpu;
+  if (!Array.isArray(gpus)) return option;
+  const index = Number(match[1]);
+  const gpu = gpus.find((value: any, ordinal: number) => value?.available !== false
+    && (Number.isInteger(value?.index) ? value.index : ordinal) === index);
+  return gpu?.name ? `${option.toUpperCase()} (${gpu.name})` : option;
+}
 
 /** Regex: only attempt HF README fetch when the derived value looks like `owner/repo`. */
 const HF_REPO_RE = /^[\w.-]+\/[\w.-]+$/;
@@ -1753,7 +1774,14 @@ const ModelConfigurationTab: React.FC<{
             id={fieldId}
             className="select detail-configuration__select"
             value={draftValue}
-            onChange={e => setRecipeDraft(prev => ({ ...prev, [String(key)]: e.target.value }))}
+            onChange={e => setRecipeDraft(prev => {
+              const next = { ...prev, [String(key)]: e.target.value };
+              if (activeRecipe === 'thenoise' || activeRecipe === 'sd-cpp') {
+                const deviceKey = activeRecipe === 'thenoise' ? 'thenoise_device' : 'sd-cpp_device';
+                delete next[deviceKey]; // Avoid carrying an incompatible GPU to a new backend.
+              }
+              return next;
+            })}
           >
             <option value="">{activeBackend}</option>
             {options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
@@ -1778,8 +1806,8 @@ const ModelConfigurationTab: React.FC<{
             value={draftValue}
             onChange={e => setRecipeDraft(prev => ({ ...prev, [String(key)]: e.target.value }))}
           >
-            <option value="">{activeDevice}</option>
-            {options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+            <option value="">{deviceOptionLabel(activeDevice, info)}</option>
+            {options.map(opt => <option key={opt} value={opt}>{deviceOptionLabel(opt, info)}</option>)}
           </select>
         </label>
       );

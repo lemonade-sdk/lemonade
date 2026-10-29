@@ -285,6 +285,27 @@ namespace lemon::backends {
             const std::string& log_tag,
             bool skip_visible_devices = false);
 
+        // Parse a single physical GPU selection like CUDA1 or ROCm0. Reject lists and
+        // invalid indices: these backends run on a single selected device.
+        static int parse_gpu_device_index(const std::string& selection,
+                                          const std::string& prefix);
+
+        // Pure mapping for deterministic tests. CUDA_VISIBLE_DEVICES accepts UUIDs;
+        // using the detected NVIDIA index directly can select a different CUDA GPU.
+        // Returns empty if exactly one matching GPU exists (no mask needed).
+        static std::string cuda_visible_device_for_selection(
+            const std::string& selection,
+            const std::vector<std::pair<int, std::string>>& detected_gpus);
+
+        // A single-device selection for CUDA/ROCm subprocesses. For CUDA, an
+        // explicit device takes precedence over the inherited CUDA_VISIBLE_DEVICES;
+        // with no selection, retain the standard architecture-based auto filter.
+        static void apply_accelerator_device_env_vars(
+            std::vector<std::pair<std::string, std::string>>& env_vars,
+            const std::string& log_tag,
+            const std::string& backend,
+            const std::string& selection);
+
         /**
          * Validates that the device selection string prefix matches the selected backend.
          * Throws std::invalid_argument if a device prefix contradicts the backend choice

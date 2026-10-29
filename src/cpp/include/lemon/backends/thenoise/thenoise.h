@@ -25,6 +25,8 @@ inline const BackendDescriptor descriptor = {
     /*options*/ {
         {"thenoise_backend", "--thenoise", "", "BACKEND",
          "TheNoise backend to use", "TheNoise Options"},
+        {"thenoise_device", "--thenoise-device", "", "DEVICES",
+         "GPU to use (CUDA0, CUDA1, ROCm0, ...); empty selects automatically", "TheNoise Options"},
         // Image generation defaults (recipe-level only, not CLI flags).
         {"steps", "", 20, "SIZE", "Number of denoising steps", "TheNoise Options"},
         {"cfg_scale", "", 7.0, "SIZE", "CFG scale (<= 1.0 disables CFG)", "TheNoise Options"},
