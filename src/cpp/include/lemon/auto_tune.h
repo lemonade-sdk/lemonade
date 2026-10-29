@@ -8,9 +8,11 @@
 #include <optional>
 #include <system_error>
 #include <lemon/auto_context_budget.h>
+#include <lemon/backends/backend_descriptor_registry.h>
 #include <lemon/gguf_reader.h>
 #include <lemon/gpu_memory_selection.h>
 #include <lemon/models/model_info.h>
+#include <lemon/models/store_builder.h>
 #include <lemon/system_info.h>
 #include <lemon/system_metrics_platform.h>
 #include <lemon/utils/aixlog.hpp>
@@ -272,10 +274,16 @@ inline int64_t compute_auto_context_size(const ModelInfo& model_info,
     const std::string draft_path = model_info.resolved_path("draft");
     // refresh_on_disk_size() includes every resolved artifact in info.size.
     // The separately resolved files must NOT be charged a second time.
-    const double model_weight_gb = auto_context_total_weights_gib(
+    double model_weight_gb = auto_context_total_weights_gib(
         model_info.size, file_gib(model_info.resolved_path()),
         file_gib(mmproj_path), file_gib(draft_path));
     if (model_weight_gb <= 0.0) return AUTO_CTX_FALLBACK;
+    // A backend that streams weights from disk keeps only its working set
+    // resident, so the rest of the weights never compete with the KV cache.
+    const auto* descriptor = backends::descriptor_for(model_info.recipe);
+    if (descriptor && descriptor->streams_model_from_storage) {
+        model_weight_gb = models::streaming_working_set_gb(model_info.min_resident_gb, model_weight_gb);
+    }
 
     const bool uses_mtp = std::find(model_info.labels.begin(), model_info.labels.end(),
                                     "mtp") != model_info.labels.end();
