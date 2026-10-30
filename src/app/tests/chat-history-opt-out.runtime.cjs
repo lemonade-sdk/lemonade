@@ -15,23 +15,48 @@ Function('exports', outputText)(settings);
 const stored = [
   { id: 'a', messages: [] },
   { id: 'b', messages: [] },
-  { title: 'legacy entry without id', messages: [] },
+  { id: 'saved-by-another-tab', messages: [] },
+  { id: 'line\nbreak', messages: [] },
 ];
 
 assert.deepEqual(
-  settings.retainSavedConversations(stored, new Set(['a', 'b', 'new'])),
+  settings.removeDeletedConversations(stored, new Set()),
   stored,
   'opting out keeps every conversation saved earlier',
 );
 assert.deepEqual(
-  settings.retainSavedConversations(stored, new Set(['a'])).map(entry => entry.id),
-  ['a', undefined],
-  'deleting a saved conversation while opted out removes it from storage',
+  settings.removeDeletedConversations(stored, new Set(['a'])).map(entry => entry.id),
+  ['b', 'saved-by-another-tab', 'line\nbreak'],
+  'deleting a chat removes only that chat, never one saved by another tab',
 );
 assert.deepEqual(
-  settings.retainSavedConversations(stored, new Set()).map(entry => entry.id),
-  [undefined],
-  'clearing every conversation keeps only entries that cannot be matched',
+  settings.removeDeletedConversations(stored, new Set(['line\nbreak'])).map(entry => entry.id),
+  ['a', 'b', 'saved-by-another-tab'],
+  'ids are matched whole, even when they contain a newline',
+);
+
+assert.deepEqual(
+  [...settings.deletedConversationIds(new Set(['a', 'b', 'c']), new Set(['a', 'c', 'new']))],
+  ['b'],
+  'only ids that disappeared count as deleted; new ids do not',
+);
+
+let nextId = 0;
+const generate = () => `generated-${++nextId}`;
+assert.equal(settings.assignMissingConversationIds(stored, generate), null, 'no write when every entry has an id');
+const migrated = settings.assignMissingConversationIds(
+  [{ id: 'a', messages: [] }, { title: 'Legacy chat', messages: [] }, 'not a conversation'],
+  generate,
+);
+assert.deepEqual(
+  migrated,
+  [{ id: 'a', messages: [] }, { title: 'Legacy chat', messages: [], id: 'generated-1' }, 'not a conversation'],
+  'legacy entries get a stable id so a later delete can match them',
+);
+assert.deepEqual(
+  settings.removeDeletedConversations(migrated, new Set(['generated-1'])).map(entry => entry.id ?? entry),
+  ['a', 'not a conversation'],
+  'a migrated legacy chat can be deleted',
 );
 
 const saved = { updatedAt: 1, messages: [{}, {}] };

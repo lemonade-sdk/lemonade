@@ -574,7 +574,7 @@ const ZH_CN: Record<string, string> = {
   'Save chat history in this browser': '在此浏览器中保存聊天历史',
   'Chat media is never persisted.': '聊天媒体文件永远不会被持久化。',
   'Save chat history': '保存聊天历史',
-  'Chat history is not saved. Refreshing loses messages sent since saving was turned off. Turning saving on keeps the text of what is already here, but not images or audio.': '聊天历史未保存。刷新将丢失关闭保存后发送的消息。开启保存后会保留此处已有的文本，但不包括图片或音频。',
+  'Chat history is not saved. Refreshing loses messages sent or edited since saving was turned off. Turning saving on keeps the text of what is already here, but not images or audio.': '聊天历史未保存。刷新将丢失关闭保存后发送或编辑的消息。开启保存后会保留此处已有的文本，但不包括图片或音频。',
   'Dismiss chat history warning': '关闭聊天历史提醒',
   'Collapse thinking by default': '默认折叠思考过程',
   'Reasoning remains available in an expandable section on every assistant message.': '每条助手消息仍可在可展开区域中查看推理过程。',

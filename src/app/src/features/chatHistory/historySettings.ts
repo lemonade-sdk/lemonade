@@ -30,10 +30,32 @@ export function saveChatHistoryPreference(persist: boolean): void {
   }
 }
 
-export function retainSavedConversations(stored: unknown[], openIds: ReadonlySet<string>): unknown[] {
+function storedConversationId(entry: unknown): string | undefined {
+  const id = entry && typeof entry === 'object' ? (entry as { id?: unknown }).id : undefined;
+  return typeof id === 'string' ? id : undefined;
+}
+
+// A generated id that is not written back changes on every load, so a delete
+// made while saving is off could never match the stored entry.
+export function assignMissingConversationIds(stored: unknown[], generateId: () => string): unknown[] | null {
+  let changed = false;
+  const next = stored.map(entry => {
+    if (!entry || typeof entry !== 'object' || storedConversationId(entry) !== undefined) return entry;
+    changed = true;
+    return { ...entry, id: generateId() };
+  });
+  return changed ? next : null;
+}
+
+export function deletedConversationIds(previous: ReadonlySet<string>, current: ReadonlySet<string>): Set<string> {
+  return new Set([...previous].filter(id => !current.has(id)));
+}
+
+// Only explicit deletions leave storage: another tab may have saved chats this tab never loaded.
+export function removeDeletedConversations(stored: unknown[], deletedIds: ReadonlySet<string>): unknown[] {
   return stored.filter(entry => {
-    const id = entry && typeof entry === 'object' ? (entry as { id?: unknown }).id : undefined;
-    return typeof id !== 'string' || openIds.has(id);
+    const id = storedConversationId(entry);
+    return id === undefined || !deletedIds.has(id);
   });
 }
 
