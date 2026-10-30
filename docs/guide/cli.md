@@ -680,8 +680,15 @@ Pi-only options:
 | `--mcp`, `--no-mcp` | Add or remove the `lemonade` server in pi's `mcp.json`, giving pi Lemonade's MCP tools. The choice is kept for later launches. Needs pi 1.0 or newer. | No |
 | `--codemode` | Enable pi's `codemode` tool for this launch. Combine with `--mcp` so its scripts can call Lemonade's tools. Needs pi 1.1 or newer. | No |
 
+OpenCode-only options:
+
+| Option/Argument | Description | Required |
+|-----------------|-------------|----------|
+| `--mcp`, `--no-mcp` | Add or remove the `lemonade` server in `opencode.json`, giving OpenCode Lemonade's MCP tools. The choice is kept for later launches. | No |
+| `--codemode` | Put the `lemonade` server's tools in OpenCode's Code Mode for this launch. Needs OpenCode 2 and `--mcp`. | No |
+
 **Notes:**
-- The model load request is asynchronous: launch starts the agent immediately while loading continues in the background. The exception is `pi` with an automatic context size: launch waits for the load so it can give pi the size Lemonade picked.
+- The model load request is asynchronous: launch starts the agent immediately while loading continues in the background. The exception is `pi` and `opencode` with an automatic context size: launch waits for the load so it can give the agent the size Lemonade picked.
 - If a model is already provided, launch skips recipe import prompts.
 - `--directory` and `--recipe-file` are only used for remote recipe import at prompt time.
 - For local recipe files, run `lemonade import <LOCAL_RECIPE_JSON>` first, then launch with the imported model id.
@@ -691,10 +698,10 @@ Pi-only options:
 - To customize recipe options (e.g. context size) for the launched model, configure them ahead of time with `lemonade load <model> ... --save-options`, or with `lemonade config set`.
 - `--agent-args` is parsed and appended to the launched agent command.
 - Supported agents: `claude`, `codex`, `opencode`, `pi`, `junie`
-- `opencode` uses an auto-managed config file at `~/.config/opencode/opencode.json`.
+- `opencode` uses an auto-managed config file at `~/.config/opencode/opencode.json`, including the `lemonade` MCP server with `--mcp`. See [OpenCode](../integrations/opencode.md).
 - `pi` uses auto-managed config files at `~/.pi/agent/models.json` and `~/.pi/agent/settings.json` (honors `PI_CODING_AGENT_DIR`), plus `mcp.json` with `--mcp`. See [Pi](../integrations/pi.md).
 - `junie` uses an auto-managed custom model profile at `~/.junie/models/lemonade.json` (honors `JUNIE_HOME`) and is launched with `--model custom:lemonade`.
-- When no `--api-key` is provided, the generated `opencode`, `pi`, and `junie` providers use a default `apiKey` value of `lemonade`. With an API key, `pi`'s config references `${LEMONADE_API_KEY}`, which launch exports to pi, instead of storing the key.
+- When no `--api-key` is provided, the generated `opencode`, `pi`, and `junie` providers use a default `apiKey` value of `lemonade`. With an API key, `pi`'s config references `${LEMONADE_API_KEY}` and `opencode`'s references `{env:LEMONADE_API_KEY}`, which launch exports to the agent, instead of storing the key.
 
 **Examples:**
 
@@ -710,6 +717,9 @@ lemonade launch codex --model Qwen3.5-0.8B-GGUF --provider my-provider
 
 # Launch pi with Lemonade's MCP tools and codemode
 lemonade launch pi --model Qwen3.5-35B-A3B-GGUF --mcp --codemode
+
+# Launch opencode with Lemonade's MCP tools in Code Mode
+lemonade launch opencode --model Qwen3.5-35B-A3B-GGUF --mcp --codemode
 
 # Launch junie against a local model (writes the custom:lemonade profile)
 lemonade launch junie --model Qwen3.5-0.8B-GGUF

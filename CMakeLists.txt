@@ -4044,12 +4044,26 @@ set(_PI_PROFILE_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_pi_profile.c
 if(BUILD_TESTING AND EXISTS "${_PI_PROFILE_TEST_SRC}")
     add_executable(test_pi_profile
         test/cpp/test_pi_profile.cpp
+        src/cpp/cli/agent_config_file.cpp
         src/cpp/cli/agent_launcher.cpp
         src/cpp/cli/pi_profile.cpp
     )
     target_include_directories(test_pi_profile PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include)
     target_link_libraries(test_pi_profile PRIVATE lemonade-server-core nlohmann_json::nlohmann_json)
     add_cpp_ci_test(PiProfileTest CI ON COMMAND test_pi_profile)
+endif()
+
+# What `lemonade launch opencode` writes into opencode.json.
+set(_OPENCODE_PROFILE_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_opencode_profile.cpp")
+if(BUILD_TESTING AND EXISTS "${_OPENCODE_PROFILE_TEST_SRC}")
+    add_executable(test_opencode_profile
+        test/cpp/test_opencode_profile.cpp
+        src/cpp/cli/agent_config_file.cpp
+        src/cpp/cli/opencode_profile.cpp
+    )
+    target_include_directories(test_opencode_profile PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include)
+    target_link_libraries(test_opencode_profile PRIVATE nlohmann_json::nlohmann_json)
+    add_cpp_ci_test(OpencodeProfileTest CI ON COMMAND test_opencode_profile)
 endif()
 
 set(_MODEL_SYNC_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_model_sync_service.cpp")
