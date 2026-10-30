@@ -112,6 +112,16 @@ public:
     /// Thread-safe.
     bool probe_peer(const std::string& pubkey, const std::string& endpoint);
 
+    /// Send a fresh handshake initiation to every peer, the server peer
+    /// included, at the address the dataplane sends to now (a relayed peer:
+    /// its relay channel). Use it after the process resumed from a
+    /// suspension: sessions and NAT mappings may have expired meanwhile, and
+    /// the keepalive and rekey timers would find out only later. Like a
+    /// probe, it changes no state; the peer's current session stays in use
+    /// until a new handshake completes. Returns the number of initiations
+    /// sent (0 when inactive). Thread-safe.
+    std::size_t rehandshake_all();
+
     /// Sync the desired mesh peer set into the dataplane (add/update/remove).
     /// The server peer is preserved. Each peer's routes come from
     /// peer_allowed_ips; a peer that gets no route is not added. A peer with

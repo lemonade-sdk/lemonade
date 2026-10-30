@@ -58,8 +58,10 @@ public:
         uint32_t                  allocate_attempts{5};
         std::chrono::milliseconds heartbeat_interval{10000};
         /// Fail when the relay sends nothing for this long after allocation.
+        /// Time the process spent suspended does not count.
         std::chrono::milliseconds relay_silence_limit{45000};
         /// Fail when the peer has not joined this long after allocation.
+        /// Time the process spent suspended does not count.
         std::chrono::milliseconds pending_limit{35000};
     };
 

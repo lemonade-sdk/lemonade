@@ -53,6 +53,26 @@ struct PeerLiveness {
 /// Pure.
 [[nodiscard]] PeerLiveness next_peer_liveness(PeerLiveness previous, bool fresh);
 
+/// Interval of the orchestrator's monitor pass (liveness and relay checks).
+inline constexpr std::chrono::seconds kMonitorInterval{5};
+
+/// A run-loop gap longer than this, beyond the pass's own work and planned
+/// sleep, means the process was suspended (two monitor intervals).
+inline constexpr std::chrono::milliseconds kResumeGap{2 * kMonitorInterval};
+
+/// Whether the process was suspended between two run-loop passes. Pure.
+/// @param wall_elapsed  wall-clock time between the starts of the two passes
+/// @param busy          steady-clock time the first pass spent working
+/// @param planned_wait  the sleep the first pass then asked for
+/// The wall clock keeps running while a process is suspended, and the steady
+/// clock may stop with it (Linux CLOCK_MONOTONIC during system suspend), so
+/// neither the steady clock nor the loop's timers notice the gap. A wall
+/// clock step forward also reads as a suspension; the resume path it starts
+/// is safe to run at any time.
+[[nodiscard]] bool loop_was_suspended(std::chrono::milliseconds wall_elapsed,
+                                      std::chrono::milliseconds busy,
+                                      std::chrono::milliseconds planned_wait);
+
 /// Background orchestrator for P2P mesh networking over the boringtun dataplane.
 ///
 /// Periodically:
@@ -73,8 +93,26 @@ struct PeerLiveness {
 ///   8. Checks the client's registered certificates and renews due ones on a
 ///      separate thread, so a slow certificate request never delays steps 1-7
 ///
+/// Some events make a pass run steps 1, 3, 5 and 7 at once instead of on
+/// their intervals, with a new punch burst for every peer still being probed:
+///   - the first pass after start() (join and enable_mesh),
+///   - a refresh request (refresh_now(), or a heartbeat answer whose
+///     peers_revision differs from the previous answer's),
+///   - a resume: the wall clock shows a gap larger than kResumeGap between
+///     passes (loop_was_suspended). The pass also sends a fresh handshake
+///     initiation to every peer (BoringtunMesh::rehandshake_all) and the
+///     heartbeat, and treats every peer's path as possibly changed.
+/// A peer refresh that finds a known peer with a new listed endpoint, or a
+/// peer that this device reads offline while the server saw it again, renews
+/// that peer: it gets a punch burst at once, a handshake from its old path
+/// no longer counts, and it may get a relay without the direct grace period.
+/// A relay pairs when a direct endpoint gives no handshake within
+/// kDirectAnswerWindow; the punch goes on, and a direct path replaces the
+/// relay when it answers.
+///
 /// Peer endpoints come only from the verified server's peer list. Listed
-/// endpoints that fail peer_endpoint_usable are dropped before any use.
+/// endpoints that fail peer_endpoint_usable are dropped before any use. A
+/// peers_revision only advances the next peer list fetch; it adds no peer.
 class MeshOrchestrator {
 public:
     using StateCallback = std::function<void(const MeshTunnelStatus&)>;
@@ -103,34 +141,51 @@ public:
     /// Get current mesh peers (thread-safe snapshot).
     [[nodiscard]] std::vector<MeshPeer> peers() const;
 
-    /// Wake the loop and run a peer refresh now, without waiting for the next
-    /// refresh interval. Thread-safe. Has no effect when the loop is stopped.
+    /// Wake the loop and run a pass now: peer refresh, STUN, a new punch
+    /// burst for every peer still being probed, and relay fallback, without
+    /// waiting for their intervals. Thread-safe. Has no effect when the loop
+    /// is stopped.
     void refresh_now();
 
     /// Set callback for mesh state changes.
     void set_callback(StateCallback cb);
 
+    /// The wall clock the loop reads to detect a suspension.
+    using WallClock = std::function<std::chrono::system_clock::time_point()>;
+
+    /// Replace the wall clock (tests simulate a suspension with it). Call
+    /// before start(). An empty function restores the system clock.
+    void set_wall_clock(WallClock clock);
+
 private:
     /// Main orchestration loop (runs on background thread).
     void run_loop();
 
-    /// Fetch peers from server and sync to the mesh dataplane.
-    void do_peer_refresh();
+    /// Fetch peers from server and sync to the mesh dataplane. Returns the
+    /// mesh keys of known peers whose path may have changed: a new listed
+    /// endpoint, or offline here while the server saw them again.
+    std::vector<std::string> do_peer_refresh();
 
-    /// Send heartbeat to server with our current endpoint.
+    /// Send heartbeat to server with our current endpoint. A peers_revision
+    /// that differs from the previous answer's requests a peer refresh.
     void do_heartbeat();
 
     /// Learn our reflexive address from the session server's STUN service.
-    void do_stun_refresh();
+    /// Returns true when the address changed.
+    bool do_stun_refresh();
 
     /// Run one hole-punch pass. Returns when the next probe is due.
     std::chrono::steady_clock::time_point do_punch();
 
-    /// Poll mesh dataplane status and fire callback if changed.
-    void do_monitor();
+    /// Poll mesh dataplane status and fire callback if changed. With
+    /// `count_stale` false (an extra pass between monitor intervals), a stale
+    /// signal changes nothing, so a peer still needs kPeerOfflinePasses
+    /// stale monitor intervals to read offline; a fresh one sets it online.
+    void do_monitor(bool count_stale);
 
-    /// Run one relay fallback pass over the known peers.
-    void do_relay_maintenance();
+    /// Run one relay fallback pass over the known peers. Returns when the
+    /// next pass is due.
+    std::chrono::steady_clock::time_point do_relay_maintenance();
 
     /// The relays the client may use: verified Tier 1 servers and listed relays.
     std::vector<RelayCandidate> relay_candidates();
@@ -160,7 +215,9 @@ private:
     MeshTunnelStatus         last_status_;
     StateCallback            callback_;
     std::string              our_endpoint_; // reflexive endpoint we publish ("" until learned)
-    bool                     refresh_requested_{false};  // set by refresh_now()
+    bool                     refresh_requested_{false};  // set by refresh_now() and do_heartbeat()
+    WallClock                wall_clock_;                // empty: the system clock
+    std::string              peers_revision_;            // last heartbeat answer's; loop thread only
     std::thread              cert_thread_;               // runs one renewal pass
     std::atomic<bool>        cert_busy_{false};          // cert_thread_ still working
     std::unique_ptr<RelayFallback> relay_fallback_;      // used by the loop thread only

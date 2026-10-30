@@ -5,6 +5,7 @@
 
 #include <spdlog/spdlog.h>
 
+#include <algorithm>
 #include <chrono>
 #include <utility>
 
@@ -61,6 +62,11 @@ std::optional<bool> peer_signal_fresh(const MeshPeer& peer, int64_t now_unix,
         return session_live || seen_recently;
     }
     return std::nullopt;
+}
+
+bool loop_was_suspended(std::chrono::milliseconds wall_elapsed, std::chrono::milliseconds busy,
+                        std::chrono::milliseconds planned_wait) {
+    return wall_elapsed - busy - std::max(planned_wait, std::chrono::milliseconds{0}) > kResumeGap;
 }
 
 PeerLiveness next_peer_liveness(PeerLiveness previous, bool fresh) {
@@ -132,6 +138,7 @@ void MeshOrchestrator::stop() {
         last_status_ = {};
         our_endpoint_.clear();
     }
+    peers_revision_.clear();
 
     spdlog::info("[MeshOrchestrator] stopped for node {}", node_id_);
 }
@@ -163,57 +170,115 @@ void MeshOrchestrator::set_callback(StateCallback cb) {
     callback_ = std::move(cb);
 }
 
+void MeshOrchestrator::set_wall_clock(WallClock clock) {
+    std::lock_guard lock(mutex_);
+    wall_clock_ = std::move(clock);
+}
+
 void MeshOrchestrator::run_loop() {
     using clock = std::chrono::steady_clock;
+    using std::chrono::duration_cast;
+    using std::chrono::milliseconds;
 
     auto next_peer_refresh = clock::now();
     auto next_stun         = clock::now();
     auto next_heartbeat    = clock::now();
     auto next_punch        = clock::now();
+    auto next_relay        = clock::now();
     auto next_monitor      = clock::now();
     auto next_cert_check   = clock::now();
+
+    std::optional<std::chrono::system_clock::time_point> last_wall;
+    milliseconds busy{0};
+    milliseconds planned_wait{0};
 
     while (running_.load()) {
         auto now = clock::now();
 
         MeshConfig cfg;
         bool refresh_requested = false;
+        std::chrono::system_clock::time_point wall_now;
         {
             std::lock_guard lock(mutex_);
             cfg = config_;
             refresh_requested = std::exchange(refresh_requested_, false);
+            wall_now = wall_clock_ ? wall_clock_() : std::chrono::system_clock::now();
         }
+
+        // A suspended process (an app in the background, a sleeping laptop)
+        // finds its sessions, NAT mappings, and reflexive address possibly
+        // gone, and its peers may have moved meanwhile.
+        const bool resumed =
+            last_wall &&
+            loop_was_suspended(duration_cast<milliseconds>(wall_now - *last_wall), busy,
+                               planned_wait);
+        last_wall = wall_now;
+        if (resumed) {
+            const auto sent = mesh_.rehandshake_all();
+            std::vector<std::string> all;
+            {
+                std::lock_guard lock(mutex_);
+                for (const auto& peer : known_peers_) all.push_back(peer.mesh_pubkey);
+            }
+            hole_puncher_->renew(all);
+            relay_fallback_->renew(all, false);
+            spdlog::info("[MeshOrchestrator] resumed after a suspension: {} handshakes sent, "
+                         "checking {} peer paths",
+                         sent, all.size());
+        }
+        const bool urgent = refresh_requested || resumed;
 
         // Reflexive address, before the heartbeat that publishes it
         if (cfg.stun_refresh_interval_sec == 0) {
             next_stun = now + std::chrono::hours(24);
-        } else if (now >= next_stun) {
-            do_stun_refresh();
+        } else if (urgent || now >= next_stun) {
+            // A new address goes out at once: peers can punch only toward
+            // the address the server lists.
+            if (do_stun_refresh()) next_heartbeat = now;
             next_stun = now + std::chrono::seconds(cfg.stun_refresh_interval_sec);
         }
 
         // Peer refresh
-        if (refresh_requested || now >= next_peer_refresh) {
-            do_peer_refresh();
+        bool refreshed = false;
+        if (urgent || now >= next_peer_refresh) {
+            const auto renewed = do_peer_refresh();
+            if (!renewed.empty()) {
+                hole_puncher_->renew(renewed);
+                relay_fallback_->renew(renewed, true);
+            }
             next_peer_refresh = now + std::chrono::seconds(cfg.peer_refresh_interval_sec);
+            refreshed = true;
         }
 
         // Heartbeat
-        if (now >= next_heartbeat) {
+        if (resumed || now >= next_heartbeat) {
             do_heartbeat();
             next_heartbeat = now + std::chrono::seconds(cfg.heartbeat_interval_sec);
         }
 
-        // Direct paths
-        if (now >= next_punch) {
+        // Direct paths. A refreshed peer list may hold new or renewed peers:
+        // punch them in this pass, not at the next probe time.
+        bool paths_checked = false;
+        if (urgent) hole_puncher_->burst_now();
+        if (urgent || refreshed || now >= next_punch) {
             next_punch = do_punch();
+            paths_checked = true;
         }
 
-        // Monitor, then move unreachable peers onto a relay
+        // Relays, in the same pass, so a peer without a direct path gets one
+        // as soon as its direct grace period ends.
+        if (urgent || refreshed || now >= next_relay || now >= next_monitor) {
+            next_relay = do_relay_maintenance();
+            paths_checked = true;
+        }
+
+        // Liveness. Between monitor intervals, a pass that touched the paths
+        // reports a peer that came online without waiting for the interval.
         if (now >= next_monitor) {
-            do_relay_maintenance();
-            do_monitor();
-            next_monitor = now + std::chrono::seconds(5); // 5s monitor interval
+            do_monitor(true);
+            next_monitor = now + kMonitorInterval;
+        } else if (paths_checked) {
+            do_monitor(false);
         }
 
         // Certificate renewal
@@ -224,7 +289,10 @@ void MeshOrchestrator::run_loop() {
 
         // Sleep until next event or woken early
         auto next_wake = std::min({next_peer_refresh, next_stun, next_heartbeat, next_punch,
-                                   next_monitor, next_cert_check});
+                                   next_relay, next_monitor, next_cert_check});
+        const auto pass_end = clock::now();
+        busy = duration_cast<milliseconds>(pass_end - now);
+        planned_wait = std::max(milliseconds{0}, duration_cast<milliseconds>(next_wake - pass_end));
         std::unique_lock lock(mutex_);
         cv_.wait_until(lock, next_wake,
                        [this] { return !running_.load() || refresh_requested_; });
@@ -253,12 +321,12 @@ void MeshOrchestrator::maybe_start_cert_renewal() {
     }
 }
 
-void MeshOrchestrator::do_peer_refresh() {
+std::vector<std::string> MeshOrchestrator::do_peer_refresh() {
     // Fetch peers from server via HTTP
     auto result = client_.fetch_mesh_peers(node_id_);
     if (!result) {
         spdlog::warn("[MeshOrchestrator] peer refresh failed: {}", result.error);
-        return;
+        return {};
     }
 
     auto server_peers = std::move(result.value);
@@ -283,6 +351,7 @@ void MeshOrchestrator::do_peer_refresh() {
     }
 
     size_t peer_count;
+    std::vector<std::string> renewed;
     {
         std::lock_guard lock(mutex_);
         // Keep what do_monitor worked out for peers already known: the
@@ -291,6 +360,17 @@ void MeshOrchestrator::do_peer_refresh() {
         for (auto& peer : server_peers) {
             for (const auto& old : known_peers_) {
                 if (old.node_id != peer.node_id || old.mesh_pubkey != peer.mesh_pubkey) continue;
+                // The peer moved (a new reflexive address, another network,
+                // a rejoin), or it is offline here while the server saw it
+                // again: the old path may be gone, and the peer's side is
+                // probing toward this device now.
+                const bool moved = !peer.endpoint.empty() && peer.endpoint != old.endpoint;
+                const bool back = !old.is_online && peer.last_seen > old.last_seen;
+                if (moved || back) {
+                    renewed.push_back(peer.mesh_pubkey);
+                    spdlog::info("[MeshOrchestrator] peer {} {}; probing it now", peer.node_id,
+                                 moved ? "lists a new endpoint" : "is back online at the server");
+                }
                 peer.last_handshake = std::max(peer.last_handshake, old.last_handshake);
                 peer.last_rx        = std::max(peer.last_rx, old.last_rx);
                 peer.is_online      = old.is_online;
@@ -306,6 +386,7 @@ void MeshOrchestrator::do_peer_refresh() {
     }
 
     spdlog::debug("[MeshOrchestrator] peer refresh: {} peers synced", peer_count);
+    return renewed;
 }
 
 void MeshOrchestrator::do_heartbeat() {
@@ -321,38 +402,49 @@ void MeshOrchestrator::do_heartbeat() {
     auto result = client_.mesh_heartbeat(node_id_, endpoint);
     if (!result) {
         spdlog::debug("[MeshOrchestrator] heartbeat failed: {}", result.error);
+        return;
     }
+    // A server without peers_revision leaves the peer refresh interval as
+    // the only schedule. The first value is the baseline: the start pass
+    // has just fetched the list.
+    if (result.value.empty()) return;
+    if (!peers_revision_.empty() && result.value != peers_revision_) {
+        spdlog::debug("[MeshOrchestrator] peer list changed at the server; refreshing");
+        std::lock_guard lock(mutex_);
+        refresh_requested_ = true;
+    }
+    peers_revision_ = std::move(result.value);
 }
 
-void MeshOrchestrator::do_stun_refresh() {
+bool MeshOrchestrator::do_stun_refresh() {
     // The STUN server is the session server: the host of the dataplane's
     // server peer. The query leaves from the dataplane socket, so the answer
     // is the mapping that mesh peers can reach.
     const auto server = mesh_.server_endpoint();
-    if (server.empty()) return;
+    if (server.empty()) return false;
     const auto stun_ip = resolve_relay_ipv4(split_endpoint(server).first);
     if (!stun_ip) {
         spdlog::debug("[MeshOrchestrator] STUN server {} does not resolve", server);
-        return;
+        return false;
     }
     const auto reflexive =
         mesh_.query_reflexive(*stun_ip + ":" + std::to_string(kStunPort), kStunTimeout);
     if (!reflexive) {
         spdlog::debug("[MeshOrchestrator] no STUN answer from {}", *stun_ip);
-        return;
+        return false;
     }
     // STUN is not authenticated: publish only an address that the STUN
     // server could have observed.
     if (!reflexive_publishable(*reflexive, *stun_ip)) {
         spdlog::warn("[MeshOrchestrator] STUN reported unusable address '{}'; not published",
                      *reflexive);
-        return;
+        return false;
     }
     std::lock_guard lock(mutex_);
-    if (our_endpoint_ != *reflexive) {
-        spdlog::info("[MeshOrchestrator] reflexive endpoint {}", *reflexive);
-    }
+    if (our_endpoint_ == *reflexive) return false;
+    spdlog::info("[MeshOrchestrator] reflexive endpoint {}", *reflexive);
     our_endpoint_ = *reflexive;
+    return true;
 }
 
 std::chrono::steady_clock::time_point MeshOrchestrator::do_punch() {
@@ -384,7 +476,7 @@ std::vector<RelayCandidate> MeshOrchestrator::relay_candidates() {
     return out;
 }
 
-void MeshOrchestrator::do_relay_maintenance() {
+std::chrono::steady_clock::time_point MeshOrchestrator::do_relay_maintenance() {
     std::vector<MeshPeer> peers;
     bool prefer_direct = true;
     {
@@ -393,13 +485,14 @@ void MeshOrchestrator::do_relay_maintenance() {
         prefer_direct = config_.prefer_direct;
     }
     try {
-        relay_fallback_->maintain(peers, prefer_direct);
+        return relay_fallback_->maintain(peers, prefer_direct);
     } catch (const std::exception& e) {
         spdlog::warn("[MeshOrchestrator] relay fallback pass failed: {}", e.what());
     }
+    return std::chrono::steady_clock::now() + kMonitorInterval;
 }
 
-void MeshOrchestrator::do_monitor() {
+void MeshOrchestrator::do_monitor(bool count_stale) {
     auto ms = mesh_.mesh_status();
 
     auto now_epoch = static_cast<int64_t>(
@@ -435,6 +528,10 @@ void MeshOrchestrator::do_monitor() {
                 peer_signal_fresh(peer, now_epoch, config_.peer_refresh_interval_sec);
             if (!fresh) continue;
             const auto found = stale_passes_.find(peer.mesh_pubkey);
+            if (!count_stale && !*fresh) {
+                if (found != stale_passes_.end()) stale_passes[peer.mesh_pubkey] = found->second;
+                continue;
+            }
             const auto next = next_peer_liveness(
                 {peer.is_online, found == stale_passes_.end() ? 0u : found->second}, *fresh);
             peer.is_online = next.online;

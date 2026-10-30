@@ -161,7 +161,27 @@ HolePuncher::Clock::time_point HolePuncher::next_slot(Clock::time_point now,
     return now + std::chrono::milliseconds(delay);
 }
 
-void HolePuncher::reset() { peers_.clear(); }
+void HolePuncher::reset() {
+    peers_.clear();
+    stale_before_.clear();
+    burst_next_.clear();
+}
+
+void HolePuncher::renew(const std::vector<std::string>& pubkeys) {
+    const int64_t now_unix = unix_now();
+    for (const auto& pubkey : pubkeys) {
+        if (pubkey.empty()) continue;
+        stale_before_[pubkey] = now_unix;
+        burst_next_.insert(pubkey);
+    }
+}
+
+void HolePuncher::burst_now() {
+    for (auto& [pubkey, state] : peers_) {
+        state.burst_left = timing_.burst_count;
+        state.next = Clock::time_point{};
+    }
+}
 
 HolePuncher::Clock::time_point HolePuncher::maintain(
     const std::vector<MeshPeer>& peers, const std::map<std::string, std::string>& relayed,
@@ -185,20 +205,38 @@ HolePuncher::Clock::time_point HolePuncher::maintain(
         if (pubkey.empty() || pubkey == own) continue;
         listed.insert(pubkey);
         const auto found = handshakes.find(pubkey);
-        const int64_t handshake = found == handshakes.end() ? 0 : found->second;
+        int64_t handshake = found == handshakes.end() ? 0 : found->second;
+        if (const auto stale = stale_before_.find(pubkey); stale != stale_before_.end()) {
+            // A handshake from before the renewal went to the old path.
+            if (handshake > stale->second ||
+                now_unix - stale->second > timing_.handshake_fresh_sec) {
+                stale_before_.erase(stale);
+            } else {
+                handshake = 0;
+            }
+        }
         const Mode mode = punch_mode(!peer.endpoint.empty(), relayed.contains(pubkey), handshake,
                                      now_unix, prefer_direct, timing_);
         if (mode == Mode::Idle) {
             peers_.erase(pubkey);
+            burst_next_.erase(pubkey);
             continue;
         }
 
         auto& state = peers_[pubkey];
-        if (state.target != peer.endpoint || state.mode != mode) {
+        const bool renewed = burst_next_.erase(pubkey) > 0;
+        if (renewed || state.target != peer.endpoint || state.mode != mode) {
+            const bool onto_relay = !renewed && state.target == peer.endpoint &&
+                                    state.mode == Mode::Direct && mode == Mode::Upgrade;
             state.target = peer.endpoint;
             state.mode = mode;
-            if (mode == Mode::Direct) {
-                // A new endpoint: probe at once, in a burst.
+            if (onto_relay) {
+                // The relay paired while the direct schedule ran: keep it, so
+                // a direct path that opens a moment later still replaces the
+                // relay soon. Later slots use the upgrade interval.
+            } else if (mode == Mode::Direct || renewed) {
+                // A new endpoint, or a path that may have changed: probe at
+                // once, in a burst.
                 state.burst_left = timing_.burst_count;
                 state.next = now;
             } else {
@@ -231,6 +269,9 @@ HolePuncher::Clock::time_point HolePuncher::maintain(
     }
 
     std::erase_if(peers_, [&listed](const auto& entry) { return !listed.contains(entry.first); });
+    std::erase_if(stale_before_,
+                  [&listed](const auto& entry) { return !listed.contains(entry.first); });
+    std::erase_if(burst_next_, [&listed](const auto& pubkey) { return !listed.contains(pubkey); });
     return std::max(next_due, now + kMinPassGap);
 }
 
