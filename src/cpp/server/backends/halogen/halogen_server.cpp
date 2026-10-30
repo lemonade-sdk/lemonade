@@ -6,6 +6,7 @@
 #include "lemon/backends/halogen/halogen.h"
 #include "lemon/model_manager.h"
 #include "lemon/system_info.h"
+#include "lemon/system_metrics_platform.h"
 #include "lemon/utils/container_manager.h"
 #include "lemon/utils/http_client.h"
 
@@ -13,6 +14,7 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <iomanip>
 #include <map>
 #include <sstream>
 #include <stdexcept>
@@ -29,8 +31,10 @@ namespace {
 constexpr const char* kBackend = "rocm";
 constexpr int kNativeContext = 262144;
 constexpr const char* kTokenizerDir = "tokenizer";
+constexpr const char* kLookupTableSuffix = "-ngram.hgn";
+constexpr const char* kVisionTowerSuffix = "-vision.hgn";
 
-// Registering a 115 GiB checkpoint with the GPU is bounded by storage
+// Registering a 62 GiB checkpoint with the GPU is bounded by storage
 // bandwidth, not by anything global_timeout describes, so it gets its own
 // floor; a larger global_timeout still raises it.
 constexpr long kStartupTimeoutSeconds = 1800;
@@ -59,22 +63,18 @@ public:
         }
     }
 
-    // A bundle is the checkpoint <stem>.hgn, its <stem>.overlay*.hgn overlays,
-    // the *-vision.hgn tower and the tokenizer directory. Every Halogen model
-    // names the same checkpoint and picks its overlay at launch, so one
-    // download serves all of them; the repository's other checkpoints stay
-    // behind.
+    // A bundle is the checkpoint, its lookup table, the vision tower and the
+    // tokenizer directory. The repository's other checkpoints and their
+    // sidecars stay behind.
     std::optional<std::vector<std::string>> select_checkpoint_files(
         const std::string& main_variant, const std::vector<std::string>& repo_files) const override {
         if (!ends_with(main_variant, ".hgn")) {
             return std::nullopt;
         }
-        const std::string overlay_prefix =
-            main_variant.substr(0, main_variant.size() - 4) + ".overlay";
         std::vector<std::string> selected;
         for (const auto& file : repo_files) {
-            const bool overlay = file.rfind(overlay_prefix, 0) == 0 && ends_with(file, ".hgn");
-            if (file == main_variant || overlay || ends_with(file, "-vision.hgn") ||
+            if (file == main_variant || ends_with(file, kLookupTableSuffix) ||
+                ends_with(file, kVisionTowerSuffix) ||
                 file.rfind(std::string(kTokenizerDir) + "/", 0) == 0) {
                 selected.push_back(file);
             }
@@ -148,21 +148,41 @@ void HalogenServer::load(const std::string& model_name, const ModelInfo& model_i
                                  "' (checkpoint: " + model_info.checkpoint() + ")");
     }
 
-    // The overlay, the tokenizer and the optional vision tower sit beside the
-    // checkpoint in the same snapshot.
+    // The lookup table, the tokenizer and the optional vision tower sit beside
+    // the checkpoint in the same snapshot.
     const fs::path bundle = fs::path(checkpoint).parent_path();
-    const std::string overlay_name = model_info.extra<std::string>("halogen_overlay", "");
-    if (overlay_name.empty()) {
-        throw std::runtime_error("halogen: model '" + model_name + "' names no halogen_overlay");
+    const std::string table_name = model_info.extra<std::string>("halogen_lookup_table", "");
+    if (table_name.empty()) {
+        throw std::runtime_error("halogen: model '" + model_name +
+                                 "' names no halogen_lookup_table");
     }
-    const std::string overlay = (bundle / overlay_name).string();
+    const std::string lookup_table = (bundle / table_name).string();
     const std::string tokenizer = (bundle / kTokenizerDir).string();
     const std::string vision_name = model_info.extra<std::string>("halogen_vision_tower", "");
     const std::string vision = vision_name.empty() ? "" : (bundle / vision_name).string();
-    for (const auto& required : {overlay, tokenizer, vision}) {
+    for (const auto& required : {lookup_table, tokenizer, vision}) {
         if (!required.empty() && !fs::exists(required)) {
             throw std::runtime_error("halogen: the bundle for '" + model_name + "' is missing " +
                                      required);
+        }
+    }
+
+    // Halogen sizes its KV pool from MemTotal, blind to other models, and on a
+    // host already short of the weights plus that pool it stalls in the kernel
+    // instead of failing. Failing here lets the router evict the other models
+    // and retry. The lookup table is paged on demand and needs no room.
+    if (model_info.min_resident_gb > 0.0) {
+        double weights_gb = fs::file_size(checkpoint) / BYTES_PER_GIB;
+        if (!vision.empty()) weights_gb += fs::file_size(vision) / BYTES_PER_GIB;
+        const double needed_gb = weights_gb + model_info.min_resident_gb;
+        const auto metrics = create_metrics_platform();
+        const double total_gb = metrics ? metrics->get_memory_total_gb() : 0.0;
+        const double free_gb = total_gb - (metrics ? metrics->get_memory_usage_gb() : 0.0);
+        if (total_gb > 0.0 && free_gb < needed_gb) {
+            std::ostringstream message;
+            message << std::fixed << std::setprecision(1) << "halogen needs " << needed_gb
+                    << " GiB of free memory to start, and " << free_gb << " GiB is free";
+            throw std::runtime_error(message.str());
         }
     }
 
@@ -175,10 +195,10 @@ void HalogenServer::load(const std::string& model_name, const ModelInfo& model_i
     port_ = choose_port();
 
     ServerCommand command;
-    command.model_files = {checkpoint, overlay, tokenizer, vision};
+    command.model_files = {checkpoint, lookup_table, tokenizer, vision};
     command.env = {
         {"HALOGEN_CHECKPOINT", checkpoint},
-        {"HALOGEN_CK_OVERLAY", overlay},
+        {"HALOGEN_NGRAM_TABLE", lookup_table},
         {"HALOGEN_TOKENIZER", tokenizer},
     };
     if (!vision.empty()) {
@@ -187,9 +207,6 @@ void HalogenServer::load(const std::string& model_name, const ModelInfo& model_i
     command.env.insert(command.env.end(), {
         {"HALOGEN_API_PORT", std::to_string(port_)},
         {"HALOGEN_CTX", std::to_string(ctx_size)},
-        {"HALOGEN_KV_POOL_POSITIONS", "524288"},
-        {"HALOGEN_KV_SLOTS", "4"},
-        {"HALOGEN_PROMPT_CACHE", "2"},
     });
     command.port = port_;
     command.ready_endpoint = "/health";

@@ -301,8 +301,10 @@ std::string identify_cuda_arch_from_name(const std::string& device_name);
 // Check if kernel has CWSR fix for Strix Halo
 bool needs_gfx1151_cwsr_fix();
 
-// HIP_VISIBLE_DEVICES for the first GPU of `arch`, or "" when none is present.
-std::string hip_visible_device(const std::string& arch);
+// HIP_VISIBLE_DEVICES for the first GPU `recipe:backend` supports, or "" when none
+// is present. A host-wide pick such as get_rocm_arch() prefers a discrete GPU the
+// backend may not support.
+std::string hip_visible_device(const std::string& recipe, const std::string& backend);
 
 // The KFD properties file of the first GPU of `arch`, or "" when none is present.
 std::string kfd_gpu_properties(const std::string& arch);

@@ -14,13 +14,6 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - name: Set HF_HOME environment variable
-      shell: bash
-      run: |
-        HF_HOME="$RUNNER_TEMP/huggingface"
-        mkdir -p "$HF_HOME"
-        echo "HF_HOME=$HF_HOME" >> $GITHUB_ENV
-
     - name: Print the container tool version
       shell: bash
       run: podman --version 2>/dev/null || docker --version

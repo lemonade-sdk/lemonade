@@ -358,10 +358,14 @@ int main() {
         sysfs.add_node("2", "110501", "129");
         failures += !expect_string(
             "the HIP index skips the CPU node and counts other GPUs before the match",
-            hip_visible_device(sysfs.kfd_nodes(), "gfx1151"), "1");
+            hip_visible_device(sysfs.kfd_nodes(),
+                               [](const std::string& arch) { return arch == "gfx1151"; }),
+            "1");
         failures += !expect_string(
             "no HIP index when no GPU matches",
-            hip_visible_device(sysfs.kfd_nodes(), "gfx942"), "");
+            hip_visible_device(sysfs.kfd_nodes(),
+                               [](const std::string& arch) { return arch == "gfx942"; }),
+            "");
         failures += !expect_string(
             "the KFD properties are the matching GPU's",
             kfd_gpu_properties(sysfs.kfd_nodes(), "gfx1151"),

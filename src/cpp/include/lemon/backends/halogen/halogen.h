@@ -8,8 +8,8 @@ namespace halogen {
 
 // Halogen Flash is Peonist's inference engine with hand-written gfx1151
 // kernels. It serves one model family, Qwen3.8-Flash-Next, as an HGN checkpoint
-// plus an overlay, from its own image, and takes its settings as HALOGEN_*
-// environment variables rather than a command line.
+// beside its lookup table, from its own image, and takes its settings as
+// HALOGEN_* environment variables rather than a command line.
 inline const BackendDescriptor descriptor = {
     /*recipe*/          "halogen",
     /*display_name*/    "Halogen Flash",
