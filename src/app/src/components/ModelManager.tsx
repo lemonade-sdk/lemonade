@@ -1078,7 +1078,14 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   const loadedModels = serverModelState.health?.all_models_loaded ?? EMPTY_LOADED_MODELS;
   const connectionStatus = serverModelState.status;
   const modelsLoading = serverModelState.refreshing && !fullModelStateReady && fastLocalModels.length === 0;
-  const [loadingModel, setLoadingModel] = useState<string | null>(null);
+  const [busyModels, setBusyModels] = useState<ReadonlySet<string>>(() => new Set());
+  const markBusy = (name: string) => setBusyModels(prev => new Set(prev).add(name));
+  const clearBusy = (name: string) => setBusyModels(prev => {
+    if (!prev.has(name)) return prev;
+    const next = new Set(prev);
+    next.delete(name);
+    return next;
+  });
   const [loadError, setLoadError] = useState<{ modelName: string; message: string } | null>(null);
   const [pulling, setPulling] = useState<Record<string, number>>({});  // model -> percent
   const [modelSync, setModelSync] = useState<ModelSyncSnapshot>(() => modelSyncStore.snapshot());
@@ -1653,15 +1660,15 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   };
 
   const handleLoad = async (model: ModelInfo, overrideOptions?: Record<string, unknown>) => {
-    if (loadingModel) return;
     const name = modelName(model);
+    if (busyModels.has(name)) return;
     if (activeDownloadForModel(downloadStore.snapshot(), name)) {
       setLoadError({ modelName: name, message: `${name} is still downloading. Wait for the download to finish before loading it.` });
       window.setTimeout(() => setLoadError(prev => prev?.modelName === name ? null : prev), 6000);
       return;
     }
-    setLoadError(null);
-    setLoadingModel(name);
+    setLoadError(prev => prev?.modelName === name ? null : prev);
+    markBusy(name);
     try {
       await loadModelRuntime(model, new Set<string>(), overrideOptions);
       await refresh();
@@ -1672,21 +1679,30 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       setLoadError({ modelName: name, message });
       window.setTimeout(() => setLoadError(prev => prev?.modelName === name ? null : prev), 6000);
     }
-    setLoadingModel(null);
+    clearBusy(name);
   };
 
   const handleUnload = async (model: LoadedModel) => {
-    setLoadingModel(model.model_name);
+    const name = model.model_name;
+    if (busyModels.has(name)) return;
+    setLoadError(prev => prev?.modelName === name ? null : prev);
+    markBusy(name);
     const virtualComponents = Array.isArray(model.recipe_options?.components) && model.recipe_options?.virtual_collection === true
       ? model.recipe_options.components.filter((component): component is string => typeof component === 'string')
       : [];
-    if (virtualComponents.length > 0) {
-      await Promise.allSettled(virtualComponents.map(component => api.unloadModel(component)));
-    } else {
-      await api.unloadModel(model.model_name);
+    try {
+      if (virtualComponents.length > 0) {
+        await Promise.allSettled(virtualComponents.map(component => api.unloadModel(component)));
+      } else {
+        await api.unloadModel(name);
+      }
+    } catch (err) {
+      console.error('Unload failed:', err);
+      setLoadError({ modelName: name, message: friendlyErrorMessage(err) });
+      window.setTimeout(() => setLoadError(prev => prev?.modelName === name ? null : prev), 6000);
     }
     await refresh();
-    setLoadingModel(null);
+    clearBusy(name);
   };
 
   // #2356 (simplified): a load-time template change needs a real reload. The
@@ -1699,9 +1715,15 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     model: LoadedModel,
     recipeOptions?: Record<string, unknown>,
   ) => {
-    const info = allModels.find(m => modelName(m) === model.model_name) ?? null;
-    await api.reloadModel(model.model_name, recipeOptions, info);
-    await refresh();
+    const name = model.model_name;
+    const info = allModels.find(m => modelName(m) === name) ?? null;
+    markBusy(name);
+    try {
+      await api.reloadModel(name, recipeOptions, info);
+    } finally {
+      await refresh();
+      clearBusy(name);
+    }
   };
 
   const handleDeleteRouterDefinition = async (name: string): Promise<void> => {
@@ -1744,6 +1766,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
 
   const handleDelete = async (model: ModelInfo) => {
     const name = modelName(model);
+    if (busyModels.has(name)) return;
     if (isExtraModelsDirModel(model)) {
       showExternalModelDeleteNotice(model);
       return;
@@ -1769,14 +1792,14 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       return;
     }
     if (!confirm(`Delete "${model.display_name || name}"? This removes the downloaded files. If the model is loaded, it will be unloaded first.`)) return;
-    setLoadingModel(name);
+    markBusy(name);
     try {
       await api.deleteModel(name);
       await refresh();
     } catch (err: any) {
       console.error('Delete failed:', err);
     }
-    setLoadingModel(null);
+    clearBusy(name);
   };
 
   const handlePull = async (model: ModelInfo) => {
@@ -1848,7 +1871,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
         delete pullAbortRef.current[name];
         setPulling(p => { const next = { ...p }; delete next[name]; return next; });
         await refresh();
-        setLoadingModel(name);
+        markBusy(name);
         try {
           await loadModelRuntime(model, new Set<string>(), overrideOptions);
           await refresh();
@@ -1859,7 +1882,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
           setLoadError({ modelName: name, message });
           window.setTimeout(() => setLoadError(prev => prev?.modelName === name ? null : prev), 6000);
         }
-        setLoadingModel(null);
+        clearBusy(name);
       },
       onError: (err) => {
         const message = friendlyErrorMessage(err);
@@ -3272,7 +3295,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
           loadedModel={selectedDetailModelId
             ? (displayLoadedModels.find(m => m.model_name === selectedDetailModelId) ?? null)
             : null}
-          loadingModel={loadingModel}
+          busyModels={busyModels}
           pulling={effectivePulling}
           loadError={loadError}
           onLoad={handleLoad}

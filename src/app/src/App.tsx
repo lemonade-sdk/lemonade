@@ -1006,11 +1006,11 @@ const App: React.FC = () => {
     if (failed) setDictationTarget(null);
   }, []);
 
-  const handleModelSelect = useCallback((modelName: string) => {
+  const handleModelSelect = useCallback((modelName: string, options?: { navigate?: boolean }) => {
     setDictationTarget(null);
     setCurrentModel(modelName);
     setModelSelectionEpoch(epoch => epoch + 1);
-    setView('chat');
+    if (options?.navigate !== false) setView('chat');
   }, [setView]);
 
   const handleModelSelectFromModels = useCallback((modelName: string) => {
