@@ -467,6 +467,43 @@ async function waitFor(predicate, timeoutMs = 1500) {
           model_name: 'staged-model', llamacpp_args: '--threads 2', merge_args: false, save_options: false,
         }, 'ordinary loads without options must retain intentional session overrides');
 
+        const originalCreateJob = api.createJob;
+        try {
+          const jobBodies = [];
+          api.createJob = async (_name, steps) => {
+            assert.equal(steps.length, 1);
+            assert.equal(steps[0].op, 'load');
+            jobBodies.push(steps[0].params);
+            return { id: 'policy-job' };
+          };
+          for (const options of [{ ctx_size: 2048 }, {}, undefined]) {
+            await api.createModelLoadJob('staged-model', [{
+              name: 'staged-model', recipeOptions: options, info: stagedModel,
+              argumentSource: 'server-config',
+            }]);
+            assert.deepEqual(jobBodies.at(-1), {
+              ...options, save_options: false, model: 'staged-model',
+            }, 'a GUI load job must not replay hidden session arguments');
+          }
+          for (const args of ['--threads 4', '', null]) {
+            await api.createModelLoadJob('staged-model', [{
+              name: 'staged-model', info: stagedModel, argumentSource: 'server-config',
+              recipeOptions: { llamacpp_args: args, merge_args: false },
+            }]);
+            assert.deepEqual(jobBodies.at(-1), {
+              llamacpp_args: args, merge_args: false, save_options: false, model: 'staged-model',
+            }, 'explicit edits and tombstones must reach the job unchanged');
+          }
+          await api.createModelLoadJob('staged-model', [{
+            name: 'staged-model', info: stagedModel, argumentSource: 'local-overrides',
+          }]);
+          assert.deepEqual(jobBodies.at(-1), {
+            llamacpp_args: '--threads 2', merge_args: false, save_options: false, model: 'staged-model',
+          }, 'ordinary load jobs retain intentional session arguments');
+        } finally {
+          api.createJob = originalCreateJob;
+        }
+
         const beforeReload = unloadRequests;
         await api.reloadModel('staged-model', { ctx_size: 4096 }, stagedModel, 'server-config');
         assert.equal(unloadRequests, beforeReload + 1, 'panel reload must use the real unload/load path');

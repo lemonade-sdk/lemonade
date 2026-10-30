@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { mockCompletedModelLoadJobs } from './modelLoadJobs.mock';
 
 const oldModel = 'handoff-old-model';
 const newModel = 'handoff-new-model';
@@ -88,6 +89,12 @@ async function mockRestartedServer(page: Page) {
     loaded.clear();
     loaded.add(name);
     return route.fulfill({ json: { status: 'success', model_name: name } });
+  });
+  await mockCompletedModelLoadJobs(page, params => {
+    const name = String(params.model);
+    loadRequests.push(name);
+    loaded.clear();
+    loaded.add(name);
   });
   await page.route(/\/api\/v1\/pull$/, route => {
     pullRequests.push(String((route.request().postDataJSON() as Record<string, unknown>).model_name));

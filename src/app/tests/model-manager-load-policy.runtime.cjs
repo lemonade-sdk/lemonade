@@ -43,13 +43,19 @@ require.extensions['.ts'] = (module, file) => {
     const loadCalls = [];
     const reloadCalls = [];
     const api = {
-      loadModel: async (...args) => { loadCalls.push(args); },
+      createModelLoadJob: async (_name, targets) => {
+        recordTargets(targets);
+        return { id: 'policy-job' };
+      },
+      getJob: async () => ({ status: 'completed', steps: [{ status: 'completed' }] }),
+      deleteJob: async () => {},
+      systemInfo: async () => ({}),
       reloadModel: async (...args) => { reloadCalls.push(args); },
       pullModel: async (_name, callbacks) => { await callbacks.onComplete({ status: 'success' }); },
     };
     const modelName = model => model.model_name;
     const noop = () => {};
-    const loadModelRuntime = instantiate('loadModelRuntime', {
+    const resolveTargets = instantiate('loadModelRuntime', {
       api, modelName, customLoadOptions,
       findCurrentModel: name => name === collection.model_name ? collection : custom,
       isRouterModelInfo: () => false,
@@ -57,6 +63,17 @@ require.extensions['.ts'] = (module, file) => {
       isCollectionModel: info => info.recipe === 'collection.omni',
       getCollectionComponents: info => info.components || [],
     });
+
+    function recordTargets(targets) {
+      for (const { name, recipeOptions, info, argumentSource } of targets) {
+        loadCalls.push([name, recipeOptions, info, argumentSource]);
+      }
+    }
+    async function loadModelRuntime(target, visited = new Set(), overrideOptions) {
+      const targets = [];
+      await resolveTargets(target, targets, visited, overrideOptions);
+      recordTargets(targets);
+    }
 
     await loadModelRuntime(custom, new Set(), { ctx_size: 4096 });
     assert.deepEqual(loadCalls.at(-1), [custom.model_name,
@@ -99,16 +116,31 @@ require.extensions['.ts'] = (module, file) => {
 
     let pulling = {};
     const selected = [];
+    const activeLoadRef = { current: new Map() };
+    const latestLoadRequestRef = { current: '' };
+    const downloadStore = {
+      snapshot: () => ({}), wake: () => ({ percent: 100 }),
+      watchForModelLoad: () => noop,
+    };
+    const refresh = async () => {};
+    const onModelSelect = name => selected.push(name);
+    const showModelError = (_name, error) => { throw new Error(error); };
+    const friendlyErrorMessage = error => String(error);
+    const t = (key, values) => key.replace('{name}', values?.name ?? '');
+    const runLoadJob = instantiate('runLoadJob', {
+      api, modelName, loadModelRuntime: resolveTargets, activeLoadRef,
+      latestLoadRequestRef, downloadStore, refresh, onModelSelect,
+      markBusy: noop, clearBusy: noop, updateLoadJob: noop, setLoadNotice: noop,
+      isRouterModelInfo: () => false, requestLoadInterrupt: async () => {},
+      showLoadError: showModelError, t,
+    });
     const handlePullAndLoad = instantiate('handlePullAndLoad', {
-      api, modelName, loadModelRuntime,
-      pulling, activeDownloadForModel: () => false,
-      downloadStore: { snapshot: () => ({}), wake: () => ({ percent: 100 }) },
-      pullAbortRef: { current: {} }, latestLoadRequestRef: { current: '' },
+      api, modelName, runLoadJob, activeLoadRef, latestLoadRequestRef,
+      pulling, activeDownloadForModel: () => false, downloadStore,
+      pullAbortRef: { current: {} },
       setPulling: update => { pulling = update(pulling); },
-      markBusy: noop, clearBusy: noop, refresh: async () => {},
-      onModelSelect: name => selected.push(name),
-      showModelError: (_name, error) => { throw new Error(error); },
-      friendlyErrorMessage: error => String(error),
+      markBusy: noop, clearBusy: noop, refresh, onModelSelect,
+      showModelError, friendlyErrorMessage, setLoadNotice: noop, t,
     });
     await handlePullAndLoad(custom, { ctx_size: 4096 });
     assert.deepEqual(loadCalls.at(-1), [custom.model_name,

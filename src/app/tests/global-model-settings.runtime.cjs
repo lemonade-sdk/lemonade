@@ -139,7 +139,7 @@ assert.doesNotMatch(managerSource, /api\.getModelSyncStatus\(/, 'the Models view
 assert.doesNotMatch(managerSource, /handledModelSyncIds/);
 assert.doesNotMatch(managerSource, /const candidates = allModels\.filter\(model =>/);
 assert.doesNotMatch(managerSource, /showGlobalSettings|<GlobalModelSettingsPanel|loadWithGlobalModelPolicy|automaticUpdateIsDue|lastAutomaticUpdateAt/);
-assert.match(managerSource, /await loadModelRuntime\(model, new Set<string>\(\), overrideOptions\)/);
+assert.match(managerSource, /await runLoadJob\(model, overrideOptions\)/);
 assert.match(managerSource, /handleUpdateAllModels/);
 
 for (const label of [
