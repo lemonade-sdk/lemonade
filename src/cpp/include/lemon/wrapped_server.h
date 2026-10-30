@@ -506,6 +506,11 @@ public:
         return descriptor_ ? descriptor_->slot_policy : SlotPolicy::Standard;
     }
 
+    // Every free-memory reading lemond takes counts reclaimable page cache as
+    // free, so memory a backend holds there (Halogen's pinned weights) would be
+    // promised to the next model too. Returns that memory in GiB. Default: 0.
+    virtual double unreported_resident_gb() const { return 0.0; }
+
     // Dynamic availability check. Returns "" if the backend can run on this
     // system, or a user-facing reason why it cannot. Defaults to "available";
     // backends with runtime-dependent availability (cloud) override.

@@ -95,7 +95,8 @@ inline double get_available_memory_gb(DeviceType device_type,
                                       GpuMemoryVendor gpu_vendor = GpuMemoryVendor::Any,
                                       const std::string& gpu_device = "",
                                       bool* unified_gpu_out = nullptr,
-                                      bool* memory_known_out = nullptr) {
+                                      bool* memory_known_out = nullptr,
+                                      double unreported_used_gb = 0.0) {
     if (unified_gpu_out) *unified_gpu_out = false;
     if (memory_known_out) *memory_known_out = false;
     auto si = create_system_info();
@@ -129,7 +130,7 @@ inline double get_available_memory_gb(DeviceType device_type,
                 if (metrics) physical_total_gb = metrics->get_memory_total_gb();
             }
             const double ram_used_gb = pool.unified
-                ? get_used_memory_gb(DEVICE_CPU) : -1.0;
+                ? get_used_memory_gb(DEVICE_CPU) + unreported_used_gb : -1.0;
             const auto available_gpu_gb = auto_context_available_gpu_gib(
                 pool.total_gb, gpu_used_gb, pool.unified,
                 physical_total_gb, ram_used_gb);
@@ -155,7 +156,7 @@ inline double get_available_memory_gb(DeviceType device_type,
     }
 
     // CPU / NPU: use system RAM
-    const double used_gb = get_used_memory_gb(device_type);
+    const double used_gb = get_used_memory_gb(device_type) + unreported_used_gb;
     // Apple Silicon: the full unified-memory pool (total physical RAM) is reported
     // as virtual_gb on the Apple Silicon device.
     auto apple = si->get_apple_silicon_device();
@@ -350,7 +351,8 @@ inline int64_t compute_auto_context_size(const ModelInfo& model_info,
 /// (i.e. ctx_size was already set to an explicit non-negative value).
 /// The caller should check the return value and update RecipeOptions accordingly.
 inline int64_t resolve_auto_ctx_size(const RecipeOptions& effective_options,
-                                      const ModelInfo& model_info) {
+                                      const ModelInfo& model_info,
+                                      double unreported_used_gb = 0.0) {
     json ctx_json = effective_options.get_option("ctx_size");
     int64_t ctx_size = ctx_json.is_number() ? ctx_json.get<int64_t>() : -1;
 
@@ -370,7 +372,7 @@ inline int64_t resolve_auto_ctx_size(const RecipeOptions& effective_options,
     bool memory_known = false;
     double available_gb = get_available_memory_gb(
         model_info.device, gpu_memory_vendor_for_target(backend, device), device,
-        &ctx_unified_gpu, &memory_known);
+        &ctx_unified_gpu, &memory_known, unreported_used_gb);
 
     if (available_gb <= 0) {
         int64_t fallback = is_embedding ? EMBEDDING_CTX_SIZE : AUTO_CTX_FALLBACK;
