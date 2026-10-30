@@ -60,7 +60,7 @@
     "cuda": "b11836",
     "metal": "b11846",
     "cpu": "b11846",
-    "nathanw": "vulkan-radv-performance@sha256:548fabbe96e2f9dbadd24de50a3f395f883069e8cda858fae1bf01913a454073"
+    "nathanw": "vulkan-radv-performance@sha256:41018261e61b7e32fb38e4985ba569d0837804e727dcc62689c2fb1d73ec8f15"
   },
   "llamacpp-hrx": {
     "hrx": "hrx-b99"
