@@ -106,7 +106,7 @@ CAPABILITIES = {
                 "static_max_context_window": True,
             },
             "test_models": {
-                "llm": "Qwen3.8-27B-ROCmFP4-FAST",
+                "llm": "Qwen3.8-27B-ROCmFP4-STRIX-MTP",
             },
             "chat_extra_body": {"enable_thinking": False},
             "responses_extra_body": {"reasoning": {"effort": "none"}},
