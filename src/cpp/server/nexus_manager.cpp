@@ -4,7 +4,6 @@
 #include "lemon/server/route_registry.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/json_utils.h"
-#include "lemon/utils/network_beacon.h"
 #include "lemon/utils/path_utils.h"
 #include "lemon/version.h"
 #include <lemon/utils/aixlog.hpp>
@@ -34,8 +33,6 @@ constexpr const char* nexus_prefixes[] = {"/api/v0/nexus/", "/api/v1/nexus/", "/
 bool local_address(const std::string& address) {
     return address == "127.0.0.1" || address == "::1" || address == "::ffff:127.0.0.1";
 }
-std::string api_key() { return utils::get_environment_variable_utf8("LEMONADE_API_KEY"); }
-std::string admin_api_key() { return utils::get_environment_variable_utf8("LEMONADE_ADMIN_API_KEY"); }
 class NexusError : public std::runtime_error {
 public:
     NexusError(int status, const std::string& message, bool retryable = false)
@@ -363,7 +360,7 @@ json invite_permissions(const json& requested) {
     return ordered(result);
 }
 
-const unsigned kCatalogRevision = 1;
+const unsigned kCatalogRevision = 2;
 
 uint64_t catalog_version(const std::string& lemond_version) {
     uint64_t parts[3] = {0, 0, 0};
@@ -476,6 +473,9 @@ nlohmann::ordered_json service_catalog(const nlohmann::ordered_json& routes, con
         current_methods.push_back(method);
     });
     flush();
+    for (const auto* prefix : nexus_prefixes) {
+        family_routes("management").push_back({{"methods", {"GET", "POST"}}, {"prefix", prefix}});
+    }
     return {{"version", catalog_version(lemond_version)},
         {"app", {{"name", "lemonade"}, {"version", lemond_version}}},
         {"families", families}};
@@ -767,31 +767,69 @@ bool bearer_matches(const std::string& authorization, const std::string& api_key
 
 bool remote_operation(const std::string& operation) {
     static const std::vector<std::string> operations = {"status", "join/status", "devices", "members",
-        "members/role", "members/permissions", "devices/access", "devices/remove", "invites", "invites/cancel", "join", "relay",
-        "selection", "device/check", "tree", "tree/children", "tree/groups", "tree/rename", "tree/permissions", "tree/invites",
-        "tree/move", "invites/accept", "memberships", "memberships/leave"};
+        "members/role", "members/permissions", "devices/access", "devices/remove", "invites", "invites/cancel",
+        "device/check", "tree", "tree/children", "tree/groups", "tree/rename", "tree/permissions", "tree/invites", "tree/move"};
     return std::find(operations.begin(), operations.end(), operation) != operations.end();
 }
 
-bool private_management_request(const httplib::Request& req) {
-    if (!local_address(req.remote_addr) && !NetworkBeacon::isRFC1918(req.remote_addr, false)) return false;
+bool nexus_request(const httplib::Request& req) {
     for (const auto* prefix : nexus_prefixes) {
         if (req.path.rfind(prefix, 0) == 0) return true;
     }
     return false;
 }
 
-std::pair<int, std::string> route_access(NexusListener listener, const std::string& address, const std::string& operation,
-                                         const std::string& authorization, const std::string& api_key, const std::string& admin_key) {
-    const bool loopback = local_address(address);
-    if (listener == NexusListener::MeshIngress) return {403, "Network management is not available through the mesh"};
+bool administers_tree(const json& path, const std::string& key) {
+    if (key.empty() || !path.is_array()) return false;
+    for (const auto& node : path) {
+        for (const auto& entry : node.value("assignments", json::array())) {
+            if (same_key(text(entry, "management_pubkey"), key) &&
+                contains(entry.value("permissions", json::array()), "admin")) return true;
+        }
+    }
+    return false;
+}
+
+std::pair<int, std::string> mesh_request_access(const httplib::Request& req, bool management) {
+    if (!local_address(req.remote_addr)) return {403, "Nexus identity must come from the mesh ingress"};
+    for (const auto& name : kPeerHeaders) {
+        if (req.get_header_value_count(name) != 1 || req.get_header_value(name).empty()) {
+            return {403, "A verified Nexus caller identity is required"};
+        }
+    }
+    const auto family = req.get_header_value("X-Nexus-Family");
+    if (std::find(kFamilies.begin(), kFamilies.end(), family) == kFamilies.end()) {
+        return {403, "Unknown Nexus service family"};
+    }
+    json permissions = json::array();
+    const auto names = req.get_header_value("X-Nexus-Peer-Permissions");
+    size_t start = 0;
+    while (start < names.size()) {
+        const auto end = names.find(',', start);
+        permissions.push_back(names.substr(start, end == std::string::npos ? end : end - start));
+        if (end == std::string::npos) break;
+        start = end + 1;
+    }
+    if (!grants(permissions, "connect_private") || !grants(permissions, "svc:" + family)) {
+        return {403, "This Nexus caller lacks connection or service permission"};
+    }
+    if (management && (family != "management" || !contains(permissions, "admin"))) {
+        return {403, "Nexus administration requires an administrator"};
+    }
+    return {0, ""};
+}
+
+std::pair<int, std::string> route_access(NexusListener listener, const httplib::Request& req, const std::string& operation) {
+    const bool loopback = local_address(req.remote_addr);
+    if (listener == NexusListener::MeshIngress) {
+        const auto access = mesh_request_access(req, true);
+        if (access.first != 0) return access;
+        return remote_operation(operation) ? std::make_pair(0, std::string()) :
+            std::make_pair(403, std::string("Use the local controller for identity, lifecycle and relay operations"));
+    }
     if (listener == NexusListener::Management) return loopback ? std::make_pair(0, std::string()) : std::make_pair(403, std::string("Local network management only"));
     if (loopback) return {operation == "status" || operation == "join/status" || operation == "relay" ? 0 : 307, ""};
-    if (NetworkBeacon::isRFC1918(address, false)) return {0, ""};
-    if (!remote_operation(operation)) return {403, "Use the Lemonade desktop app on this device for that action"};
-    if (api_key.empty()) return {403, "Remote network management is off. Set LEMONADE_API_KEY on this server to turn it on."};
-    if (!bearer_matches(authorization, api_key, admin_key)) return {401, "Invalid or missing API key"};
-    return {0, ""};
+    return {403, "Connect through the authenticated Nexus mesh. Initial setup requires the local controller or SSH forwarding."};
 }
 
 const char* const kPeerAuthorizationHeader = "X-Lemonade-Peer-Authorization";
@@ -926,6 +964,7 @@ struct NexusManager::Session {
     std::chrono::seconds store_retry_delay{5};
     std::filesystem::path root;
     int ingress_port;
+    int local_service_port;
     int mesh_port;
     bool genesis_key_set{false};
     std::string mesh_port_error;
@@ -954,10 +993,10 @@ struct NexusManager::Session {
     const nlohmann::ordered_json catalog;  // mesh route catalog for vport 13305, or null
     std::string catalog_error;             // the SDK refused the catalog at the last join
 
-    Session(const std::string& data_root, int port, int mesh_listener_port, nlohmann::ordered_json service_catalog,
+    Session(const std::string& data_root, int port, int local_port, int mesh_listener_port, nlohmann::ordered_json service_catalog,
             const ProcessRole& role)
         : source(nexus_access::identity_source(role)), root(utils::path_from_utf8(data_root)), ingress_port(port),
-          mesh_port(mesh_listener_port), catalog(std::move(service_catalog)) {
+          local_service_port(local_port), mesh_port(mesh_listener_port), catalog(std::move(service_catalog)) {
         std::filesystem::create_directories(root);
 #ifndef _WIN32
         std::filesystem::permissions(root, std::filesystem::perms::owner_all);
@@ -1461,15 +1500,14 @@ struct NexusManager::Session {
                            << " with " << catalog.value("families", nlohmann::ordered_json::array()).size()
                            << " families" << std::endl;
     }
-    // The SDK owns the mesh port; lemond is its local service through the mesh ingress
-    // listener, which is always on loopback and applies lemond's API-key policy.
+    // Local selection traffic has no mesh attribution and uses the local operator policy.
     void start_mesh_port() {
         mesh_port_error.clear();
         const auto cert_dir = utils::path_to_utf8(root / "certs" / "group-loopback");
         std::error_code ec;
         std::filesystem::create_directories(root / "certs" / "group-loopback", ec);
         ln_mesh_port_set_cert_dir(client.get(), cert_dir.c_str());
-        const auto local = "http://127.0.0.1:" + std::to_string(ingress_port);
+        const auto local = "http://127.0.0.1:" + std::to_string(local_service_port);
         const auto started = ln_mesh_port_start(client.get(), static_cast<uint16_t>(mesh_port), local.c_str());
         if (started == LN_ERR_PORT_IN_USE) {
             mesh_port_error = "Another program, such as the Lemonade Nexus app, already uses the mesh port";
@@ -1599,8 +1637,24 @@ struct NexusManager::Session {
             retry_delay = std::min(retry_delay * 2, std::chrono::seconds(60));
         }
     }
-    json request(const std::string& method, const std::string& path, const json& body) {
-        try { return dispatch(method, path, body); }
+    json request(const std::string& method, const std::string& path, const json& body, const std::string& caller_key) {
+        try {
+            if (!caller_key.empty()) {
+                if (locked) throw NexusError(423, "Unlock your network first");
+                const auto require_admin = [&](const std::string& id) {
+                    if (!nexus_access::administers_tree(scoped_tree_path(id), caller_key)) {
+                        throw NexusError(403, "This Nexus caller does not administer the requested group");
+                    }
+                };
+                require_admin(group_id);
+                if (path.rfind("/tree/", 0) == 0) {
+                    const auto separator = path.find('/', 6);
+                    require_admin(path.substr(6, separator - 6));
+                    if (path.substr(separator + 1) == "move") require_admin(body.at("parent_id").get<std::string>());
+                }
+            }
+            return dispatch(method, path, body);
+        }
         catch (const NexusError& e) {
             // A federation that cannot be reached is not a refusal: the device stays
             // unlocked and joined, and status reports the outage until the next success.
@@ -1907,7 +1961,8 @@ NexusManager::NexusManager(const std::string& config_dir,
                            const std::function<void(httplib::Server&)>& install_api,
                            int mesh_port,
                            nlohmann::ordered_json service_catalog,
-                           std::optional<ProcessRole> process_role)
+                           std::optional<ProcessRole> process_role,
+                           const std::function<void(httplib::Server&)>& install_local_api)
     : data_root_(utils::path_to_utf8(utils::path_from_utf8(config_dir) / "nexus")), catalog_(std::move(service_catalog)),
       role_(process_role ? *process_role : nexus_access::current_process_role()), selection_port_(mesh_port) {
 #ifdef LEMONADE_WITH_NEXUS
@@ -1929,6 +1984,13 @@ NexusManager::NexusManager(const std::string& config_dir,
     } else {
         LOG(WARNING, "Nexus") << "Cannot bind the mesh listener; mesh peers cannot reach this server" << std::endl;
     }
+    register_routes(management_server_, NexusListener::Management);
+    if (install_local_api) install_local_api(management_server_);
+    install_policy(management_server_);
+    management_port_ = management_server_.bind_to_any_port("127.0.0.1");
+    if (management_port_ < 0) { stop(); throw std::runtime_error("Cannot bind local network management listener"); }
+    management_thread_ = std::thread([this] { management_server_.listen_after_bind(); });
+    management_server_.wait_until_ready();
 #ifdef LEMONADE_WITH_NEXUS
     std::ifstream input(utils::path_from_utf8(data_root_) / "preferences.json");
     auto saved = json::parse(input, nullptr, false);
@@ -1938,13 +2000,6 @@ NexusManager::NexusManager(const std::string& config_dir,
     }
     worker_ = std::thread(&NexusManager::supervise, this);
 #endif
-    register_routes(management_server_, NexusListener::Management);
-    install_policy(management_server_);
-    management_port_ = management_server_.bind_to_any_port("127.0.0.1");
-    if (management_port_ < 0) { stop(); throw std::runtime_error("Cannot bind local network management listener"); }
-    management_thread_ = std::thread([this] { management_server_.listen_after_bind(); });
-    management_server_.wait_until_ready();
-
 }
 
 NexusManager::~NexusManager() { stop(); }
@@ -1968,7 +2023,7 @@ NexusManager::json NexusManager::status() const {
     auto result = snapshot_;
     result["enabled"] = enabled_;
     result["controller_url"] = "http://127.0.0.1:" + std::to_string(management_port_);
-    result["remote_management"] = !api_key().empty();
+    result["remote_management"] = result.value("mesh_up", false);
 #ifdef LEMONADE_WITH_NEXUS
     result["available"] = true;
 #else
@@ -2006,7 +2061,7 @@ bool NexusManager::enable(std::string& error) {
 #else
     try {
         if (stopping_) throw std::runtime_error("Server is shutting down");
-        if (!session_) session_ = std::make_unique<Session>(data_root_, ingress_port_, selection_port_, catalog_, role_);
+        if (!session_) session_ = std::make_unique<Session>(data_root_, ingress_port_, management_port_, selection_port_, catalog_, role_);
         enabled_ = true;
         persist_enabled_locked();
         update_snapshot_locked(session_->status());
@@ -2029,7 +2084,8 @@ void NexusManager::disable() {
     update_snapshot_locked({{"status", "disabled"}, {"locked", true}, {"mesh_up", false}, {"members", json::array()}});
     persist_enabled_locked();
 }
-std::pair<int, NexusManager::json> NexusManager::control(const std::string& method, const std::string& path, const json& body) {
+std::pair<int, NexusManager::json> NexusManager::control(const std::string& method, const std::string& path, const json& body,
+                                                       const std::string& caller_key) {
 #ifdef LEMONADE_WITH_NEXUS
     // session_mutex_ serializes SDK work; mutex_ guards only the published state, so status,
     // events and shutdown do not wait for a slow federation request.
@@ -2039,7 +2095,7 @@ std::pair<int, NexusManager::json> NexusManager::control(const std::string& meth
         if (!enabled_ || !session_) return {409, {{"error", "Enable mesh first"}}};
     }
     std::pair<int, json> result;
-    try { result = {200, session_->request(method, path, body)}; }
+    try { result = {200, session_->request(method, path, body, caller_key)}; }
     catch (const NexusError& e) {
         result = {e.status, {{"error", e.what()}}};
         if (e.retryable) result.second["retryable"] = true;
@@ -2120,9 +2176,6 @@ void NexusManager::handle(const httplib::Request& req, httplib::Response& res,
     const auto reply = [&](int code, json body) {
         if (remote && body.is_object()) {
             body.erase("controller_url");
-            if (body.contains("remote_management")) {
-                body["remote_management"] = NetworkBeacon::isRFC1918(req.remote_addr, false) || !api_key().empty();
-            }
         }
         res.status = code;
         res.set_content(body.dump(), "application/json");
@@ -2195,7 +2248,7 @@ void NexusManager::handle(const httplib::Request& req, httplib::Response& res,
         else if (operation == "memberships/leave") path = "/memberships/" + req.matches[1].str() + "/leave";
         else if (operation.rfind("tree/", 0) == 0) path = "/tree/" + req.matches[1].str() + "/" + operation.substr(5);
         else path = "/" + operation;
-        auto result = control(req.method, path, body);
+        auto result = control(req.method, path, body, remote ? req.get_header_value("X-Nexus-Peer-Key") : "");
         // The federation deleted the account and the session removed its local files.
         if (operation == "account/delete" && result.first == 200 && result.second.value("status", "") == "deleted") disable();
         std::lock_guard<std::mutex> lock(mutex_);
@@ -2235,8 +2288,7 @@ void NexusManager::relay(const httplib::Request& req, httplib::Response& res) {
 void NexusManager::register_routes(httplib::Server& server, NexusListener listener) {
     const auto dispatch = [this, listener](const httplib::Request& req, httplib::Response& res, const std::string& operation) {
         const bool loopback = local_address(req.remote_addr);
-        const auto access = nexus_access::route_access(listener, req.remote_addr, operation,
-            req.get_header_value("Authorization"), api_key(), admin_api_key());
+        const auto access = nexus_access::route_access(listener, req, operation);
         if (access.first == 307) {
             res.set_redirect("http://127.0.0.1:" + std::to_string(management_port_) + req.target, 307);
             return;
@@ -2247,7 +2299,7 @@ void NexusManager::register_routes(httplib::Server& server, NexusListener listen
             res.set_content(json{{"error", access.second}}.dump(), "application/json");
             return;
         }
-        handle(req, res, operation, listener == NexusListener::Public && !loopback);
+        handle(req, res, operation, listener == NexusListener::MeshIngress || !loopback);
     };
     for (const auto* prefix : nexus_prefixes) {
         for (const auto* operation : {"status", "passkey/challenge", "key/handoff", "devices", "members", "join/status", "events", "tree", "account", "selection", "memberships"}) {
@@ -2276,8 +2328,7 @@ void NexusManager::register_routes(httplib::Server& server, NexusListener listen
         }
         const auto relayed = std::string(prefix) + R"(peers/([A-Za-z0-9_-]+)(/.*))";
         const auto relay_route = [this, listener](const httplib::Request& req, httplib::Response& res) {
-            const auto access = nexus_access::route_access(listener, req.remote_addr, "relay",
-                req.get_header_value("Authorization"), api_key(), admin_api_key());
+            const auto access = nexus_access::route_access(listener, req, "relay");
             if (access.first != 0) { reply_error(res, access.first, access.second); return; }
             relay(req, res);
         };

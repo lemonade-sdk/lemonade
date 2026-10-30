@@ -3,7 +3,6 @@
 #include "lemon/runtime_config.h"
 #include "lemon/server/request_middleware.h"
 #include "lemon/server/route_registry.h"
-#include "lemon/utils/network_beacon.h"
 #include "lemon/utils/origin_utils.h"
 #include "lemon/utils/path_utils.h"
 #include "lemon/version.h"
@@ -91,48 +90,58 @@ void set_environment(const char* name, const std::string& value) {
 
 void check_route_access(const std::function<void(bool, const char*)>& check) {
     using lemon::NexusListener;
-    const auto access = [](NexusListener listener, bool loopback, const std::string& operation,
-                           const std::string& authorization, const std::string& key, const std::string& admin = "") {
-        return access::route_access(listener, loopback ? "127.0.0.1" : "203.0.113.1", operation, authorization, key, admin);
+    const auto route = [](NexusListener listener, const std::string& address, const std::string& operation,
+                          const httplib::Headers& headers = httplib::Headers{}) {
+        httplib::Request req;
+        req.remote_addr = address;
+        req.headers = headers;
+        return access::route_access(listener, req, operation);
     };
     check(access::constant_time_equals("secret", "secret"), "Equal secrets match");
     check(!access::constant_time_equals("secre", "secret") && !access::constant_time_equals("secrets", "secret"), "Length differences never match");
-    check(!access::constant_time_equals("secreT", "secret") && !access::constant_time_equals("", "secret"), "Different secrets never match");
-    check(!access::bearer_matches("Bearer ", "", ""), "An empty bearer never matches an unset key");
-    check(!access::bearer_matches("Basic secret", "secret", ""), "Only bearer credentials are accepted");
-
-    for (const auto* operation : {"status", "members", "enable", "passkey/unlock", "members/role", "devices/access", "events", "tree", "tree/children", "tree/groups", "tree/rename", "tree/permissions", "account", "account/avatar"}) {
-        check(access(NexusListener::MeshIngress, true, operation, "Bearer key", "key").first == 403, "Mesh ingress refuses every Nexus route");
+    check(!access::bearer_matches("Bearer ", "", ""), "Empty API keys are not credentials");
+    for (const auto* address : {"192.168.1.2", "10.1.2.3", "203.0.113.1"}) {
+        for (const auto* op : {"status", "members", "enable", "relay", "key/handoff", "account/delete"}) {
+            check(route(NexusListener::Public, address, op, {{"Authorization", "Bearer admin"}}).first == 403,
+                  "Neither a LAN address nor an API key authorizes remote Nexus requests");
+        }
     }
-    check(access(NexusListener::Public, true, "status", "", "").first == 0, "Local clients read status on the public listener");
-    check(access(NexusListener::Public, true, "members", "Bearer key", "key").first == 307, "Local clients are redirected to the management listener");
-    check(access(NexusListener::Management, true, "members", "", "").first == 0, "The management listener serves loopback clients");
-    check(access(NexusListener::Management, false, "members", "Bearer key", "key").first == 403, "The management listener refuses other clients");
-
-    const auto off = access(NexusListener::Public, false, "members", "Bearer key", "");
-    check(off.first == 403 && off.second.find("LEMONADE_API_KEY") != std::string::npos, "Remote management is off without an API key");
-    check(access(NexusListener::Public, false, "status", "Bearer admin", "", "admin").first == 403, "An admin key alone does not turn on remote management");
-    check(access(NexusListener::Public, false, "members", "", "key").first == 401, "Remote management requires a bearer key");
-    check(access(NexusListener::Public, false, "members", "Bearer wrong", "key").first == 401, "Remote management rejects a wrong key");
-    check(access(NexusListener::Public, false, "members", "Bearer keyx", "key").first == 401, "Remote management rejects a longer key");
-    check(access(NexusListener::Public, false, "members", "Bearer admin", "key", "admin").first == 0, "The admin key also authorizes remote management");
-    for (const auto* operation : {"status", "join/status", "devices", "members", "members/role", "members/permissions",
-                                  "devices/access", "devices/remove", "invites", "invites/cancel", "join", "tree", "tree/children", "tree/groups", "tree/rename", "tree/permissions",
-                                  "tree/invites", "tree/move", "invites/accept", "memberships", "memberships/leave", "device/check"}) {
-        check(access(NexusListener::Public, false, operation, "Bearer key", "key").first == 0, "Group operations are available remotely");
+    check(route(NexusListener::Public, "127.0.0.1", "status").first == 0, "Local discovery is key-free");
+    check(route(NexusListener::Public, "127.0.0.1", "members").first == 307, "Local management retains its redirect");
+    check(route(NexusListener::Management, "127.0.0.1", "enable").first == 0, "Local bootstrap is key-free");
+    check(route(NexusListener::Management, "192.168.1.2", "enable").first == 403, "Bootstrap stays local");
+    for (const auto* role : {"administrator", "moderator", "user"}) {
+        std::string permissions;
+        for (const auto& name : access::role_permissions(role)) {
+            if (!permissions.empty()) permissions += ',';
+            permissions += name.get<std::string>();
+        }
+        const httplib::Headers identity = {{"X-Nexus-Peer-Node", "caller"}, {"X-Nexus-Peer-Key", "ed25519:caller"},
+            {"X-Nexus-Peer-Permissions", permissions}, {"X-Nexus-Family", "management"}, {"X-Nexus-Catalog-Version", "2"}};
+        for (const auto* op : {"status", "members", "members/role", "tree/permissions", "tree/move", "invites"}) {
+            check(route(NexusListener::MeshIngress, "127.0.0.1", op, identity).first == (std::string(role) == "administrator" ? 0 : 403),
+                  "Only attributed administrators may use remote management");
+        }
+        for (const auto* op : {"key/handoff", "key/unlock", "passkey/register", "account/delete", "enable", "disable", "relay", "selection", "invites/accept", "memberships/leave"}) {
+            check(route(NexusListener::MeshIngress, "127.0.0.1", op, identity).first == 403,
+                  "Even an administrator cannot remotely control local identity, lifecycle or relay");
+        }
     }
-    for (const auto* operation : {"tree/invites", "tree/move", "invites/accept", "memberships", "memberships/leave", "account/delete"}) {
-        check(access(NexusListener::MeshIngress, true, operation, "Bearer key", "key").first == 403, "Mesh ingress refuses invite, membership, move and deletion routes");
-    }
-    for (const auto* operation : {"passkey/challenge", "passkey/register", "passkey/unlock", "key/unlock", "enable", "disable", "lock", "device", "events", "egress", "account", "account/delete"}) {
-        check(access(NexusListener::Public, false, operation, "Bearer key", "key").first == 403, "Local device operations stay local");
-        check(access(NexusListener::MeshIngress, true, operation, "Bearer key", "key").first == 403, "Mesh ingress refuses local device operations");
-    }
-    check(access(NexusListener::MeshIngress, true, "relay", "Bearer key", "key").first == 403, "Mesh peers cannot use the relay");
-    check(access(NexusListener::Public, true, "relay", "", "").first == 0, "Local clients use the relay under the local rules");
-    check(access(NexusListener::Public, false, "relay", "Bearer key", "").first == 403, "Remote relay is off without an API key");
-    check(access(NexusListener::Public, false, "relay", "Bearer wrong", "key").first == 401, "Remote relay rejects a wrong key");
-    check(access(NexusListener::Public, false, "relay", "Bearer key", "key").first == 0, "Remote relay accepts the API key");
+    check(route(NexusListener::MeshIngress, "127.0.0.1", "members").first == 403, "Missing caller identity is refused");
+    check(route(NexusListener::Public, "127.0.0.1", "relay").first == 0, "Local operators retain the relay");
+    const json group_path = json::array({{{"assignments", json::array({
+        {{"management_pubkey", "ed25519:owner"}, {"permissions", {"admin"}}},
+        {{"management_pubkey", "ed25519:user"}, {"permissions", {"read", "connect_private", "svc:inference"}}}})}}});
+    check(access::administers_tree(group_path, "ed25519:owner"), "Group ACL authorizes its administrator");
+    check(!access::administers_tree(group_path, "ed25519:user") && !access::administers_tree(group_path, "ed25519:other"),
+          "Server permissions cannot confer group administration on another caller");
+    check(!access::administers_tree(json::array(), "ed25519:owner"), "Unavailable assignments fail closed");
+    auto descendant = group_path;
+    descendant.insert(descendant.begin(), json{{"assignments", json::array()}});
+    check(access::administers_tree(descendant, "ed25519:owner"), "Ancestor administration applies within the group");
+    auto revoked = group_path;
+    revoked[0]["assignments"][0]["permissions"] = json::array({"read"});
+    check(!access::administers_tree(revoked, "ed25519:owner"), "Revoked administration does not reuse an earlier grant");
 
     const json members = json::array({
         {{"node_id", "self"}, {"is_inference", true}, {"is_online", true}, {"tunnel_ip", "10.8.0.2/32"}},
@@ -296,7 +305,7 @@ void check_service_catalog(const std::function<void(bool, const char*)>& check) 
     check(catalog.at("version") == 202604600300ULL + access::kCatalogRevision, "The catalog version packs the lemond version and the revision");
     check(catalog.at("app") == nlohmann::ordered_json({{"name", "lemonade"}, {"version", "2026.46.3"}}), "The catalog names the app");
     const auto& families = catalog.at("families");
-    check(families.size() == 4 && families[0].at("name") == "inference" && families[1].at("name") == "models_manage" &&
+    check(families.size() == 5 && families[0].at("name") == "inference" && families[1].at("name") == "models_manage" &&
           families[2].at("name") == "internal" && families[3].at("name") == "mcp", "Families keep registration order");
     const auto& inference = families[0].at("routes");
     check(inference.size() == 12, "A Quad route lists one entry per URL prefix");
@@ -415,6 +424,14 @@ void check_service_catalog(const std::function<void(bool, const char*)>& check) 
         }
     }
     check(chat_in_inference && shutdown_in_internal, "The live catalog places chat completions and shutdown in their families");
+    int nexus_prefix_count = 0;
+    for (const auto& family : live.at("families")) {
+        if (family.at("name") != "management") continue;
+        for (const auto& route : family.at("routes")) {
+            if (route.value("prefix", "").find("/nexus/") != std::string::npos) ++nexus_prefix_count;
+        }
+    }
+    check(nexus_prefix_count == 5, "The SDK catalog includes every Nexus alias under management");
     const auto repeated_live = duplicate_claim(live);
     check(repeated_live.empty(), ("The live catalog lists every method and URL once: " + repeated_live).c_str());
 #ifdef LEMONADE_WITH_NEXUS
@@ -599,12 +616,6 @@ public:
 };
 
 void check_private_management(const std::filesystem::path& root, const std::function<void(bool, const char*)>& check) {
-    for (const auto* address : {"127.0.0.1", "127.255.255.255", "::ffff:127.0.0.1"}) {
-        check(NetworkBeacon::isRFC1918(address) && !NetworkBeacon::isRFC1918(address, false),
-              "Shared address classification preserves discovery loopback without granting private access");
-    }
-    check(!NetworkBeacon::isRFC1918(std::string("10.0.0.1\0invalid", 16), false),
-          "Shared address classification rejects embedded NULs");
     const auto saved_key = lemon::utils::get_environment_variable_utf8("LEMONADE_API_KEY");
     const auto saved_admin = lemon::utils::get_environment_variable_utf8("LEMONADE_ADMIN_API_KEY");
     for (const auto* key : {"", "private-test-key"}) {
@@ -614,12 +625,21 @@ void check_private_management(const std::filesystem::path& root, const std::func
         lemon::RouteRegistry registry;
         lemon::RequestMiddleware policy(&config, &registry);
         const auto install = [&](httplib::Server& server) { policy.install(server); };
+        const auto ok = [](const auto&, auto& res) { res.set_content("{}", "application/json"); };
         lemon::NexusManager manager((root / (*key ? "private-access-keyed" : "private-access-unkeyed")).string(),
-                                   install, install, 0, nullptr, kSystemRole);
+                                   install, install, 0, nullptr, kSystemRole,
+                                   [&](httplib::Server& local) { local.Get("/api/v1/models", ok); });
+        const int controller_port = std::stoi(manager.status().at("controller_url").get<std::string>().substr(17));
+        httplib::Client local_selection("127.0.0.1", controller_port);
+        const auto local_models = local_selection.Get("/api/v1/models");
+        check(local_models && local_models->status == (*key ? 401 : 200),
+              "Local selection uses ordinary API authentication without requiring a remote mesh identity");
+        local_selection.set_default_headers({{"Authorization", "Bearer private-admin-key"}});
+        const auto authorized_models = local_selection.Get("/api/v1/models");
+        check(authorized_models && authorized_models->status == 200, "Local selection retains valid API-key access");
         RequestServer server;
         install(server);
         manager.register_routes(server);
-        const auto ok = [](const auto&, auto& res) { res.set_content("{}", "application/json"); };
         server.Get("/api/v1/models", ok);
         server.Get("/api/v1/nexus-other/status", ok);
         server.Get("/internal/config", ok);
@@ -627,44 +647,25 @@ void check_private_management(const std::filesystem::path& root, const std::func
         for (const auto* address : {"10.0.0.0", "10.255.255.255", "172.16.0.0", "172.31.255.255",
                                     "192.168.0.0", "192.168.255.255", "::ffff:192.168.1.2", "::FFFF:ac10:1"}) {
             for (const auto* prefix : {"/api/v0/nexus/", "/api/v1/nexus/", "/v0/nexus/", "/v1/nexus/", "/api/nexus/"}) {
-                const auto status = server.request(address, "GET", std::string(prefix) + "status");
-                check(status.status == 200, "RFC1918 Nexus status needs no API key, even when a key is configured");
-                if (status.status == 200) {
-                    const auto value = json::parse(status.body);
-                    check(value.at("remote_management") == true && !value.contains("controller_url"),
-                          "Private remote status reports management access without a loopback URL");
-                }
-                for (const auto* operation : {"enable", "device", "passkey/register", "passkey/unlock", "key/unlock", "lock"}) {
-                    check(server.request(address, "POST", std::string(prefix) + operation, "[]").status == 400,
-                          "Private setup requests reach body validation without API-key or local-only rejection");
-                }
-#ifdef LEMONADE_WITH_NEXUS
-                const int relay_status = 409;
-#else
-                const int relay_status = 503;
-#endif
-                for (const auto* method : {"GET", "POST"}) {
-                    for (const auto* headers : {"", "Authorization: Bearer stale-key\r\n"}) {
-                        const auto relayed = server.request(address, method,
-                            std::string(prefix) + "peers/gpu/api/v1/chat/completions", "{}", headers);
-                        check(relayed.status == relay_status,
-                              "Private relay bypasses the entry API key but still requires an available mesh session");
+                for (const auto* operation : {"status", "enable", "device", "passkey/register", "key/unlock", "account/delete", "peers/gpu/api/v1/chat/completions"}) {
+                    for (const auto* headers : {"", "Authorization: Bearer private-test-key\r\n", "Authorization: Bearer private-admin-key\r\n"}) {
+                        check(server.request(address, operation == std::string("status") ? "GET" : "POST",
+                                             std::string(prefix) + operation, "{}", headers).status == 403,
+                              "Private callers need mesh identity even when an API key matches");
                     }
                 }
             }
         }
-        check(server.request("192.168.1.2", "GET", "/api/v1/nexus/status", "", "Authorization: Bearer wrong\r\n").status == 200,
-              "A stale client API key does not block private Nexus management");
         check(server.request("192.168.1.2", "GET", "/api/v1/nexus/status", "", "Origin: https://untrusted.example\r\n").status == 403,
               "Private management still checks the browser origin");
         for (const auto* address : {"9.255.255.255", "11.0.0.0", "172.15.255.255", "172.32.0.0",
                                     "192.167.255.255", "192.169.0.0", "100.64.0.1", "169.254.1.2", "203.0.113.1",
                                     "fc00::1", "2001:db8::1", "::ffff:203.0.113.1", "", "10.1.2.3.invalid"}) {
-            check(server.request(address, "GET", "/api/v1/nexus/status").status == (*key ? 401 : 403),
-                  "Addresses outside RFC1918 retain the remote API-key policy");
+            check(server.request(address, "GET", "/api/v1/nexus/status").status == 403,
+                  "Public remote Nexus requests require the authenticated mesh");
             check(server.request(address, "GET", "/api/v1/nexus/status", "",
-                                 "X-Forwarded-For: 10.1.2.3\r\nForwarded: for=10.1.2.3\r\nX-Real-IP: 10.1.2.3\r\n").status == (*key ? 401 : 403),
-                  "Forwarded headers cannot grant private-network access");
+                                 "X-Forwarded-For: 10.1.2.3\r\nForwarded: for=10.1.2.3\r\nX-Real-IP: 10.1.2.3\r\n").status == 403,
+                  "Forwarded headers cannot grant local operator access");
         }
         for (const auto* path : {"/api/v1/models", "/api/v1/nexus-other/status"}) {
             check(server.request("192.168.1.2", "GET", path).status == (*key ? 401 : 200),
@@ -698,29 +699,54 @@ void check_private_management(const std::filesystem::path& root, const std::func
             check(server.request(address, "GET", "/api/v1/nexus/status", "", "Origin: https://untrusted.example\r\n").status == 403,
                   "Local Nexus access still validates browser origins");
         }
-        const auto enabled = server.request("192.168.1.2", "POST", "/api/v1/nexus/enable", "{}");
-#ifdef LEMONADE_WITH_NEXUS
-        check(enabled.status == 200 && manager.status().at("enabled") && manager.status().at("locked"),
-              "Private enable starts Nexus but does not bypass identity unlock");
-        if (enabled.status == 200) {
-            const auto value = json::parse(enabled.body);
-            check(!value.contains("controller_url") && value.at("remote_management") == true,
-                  "Private enable also returns usable remote status");
-            check(server.request("192.168.1.2", "POST", "/api/v1/nexus/peers/gpu/api/v1/chat/completions", "{}").status == 423,
-                  "Private relay still requires identity unlock after Nexus is enabled");
-        }
-#else
-        check(enabled.status == 503, "Private enable reaches the SDK availability check");
-#endif
+        check(!manager.status().at("enabled"), "Refused LAN setup leaves Nexus disabled");
         RequestServer mesh;
         policy.install(mesh, true);
         manager.register_routes(mesh, lemon::NexusListener::MeshIngress);
         for (const auto* address : {"127.0.0.1", "192.168.1.2"}) {
-            check(mesh.request(address, "GET", "/api/v1/nexus/status").status == (*key ? 401 : 403),
+            check(mesh.request(address, "GET", "/api/v1/nexus/status").status == 403,
                   "Mesh ingress never receives the private-network API-key exemption");
             check(mesh.request(address, "GET", "/api/v1/nexus/status", "", "Authorization: Bearer private-admin-key\r\n").status == 403,
                   "Mesh ingress refuses management regardless of the source address");
         }
+        mesh.Get("/api/v1/models", ok);
+        mesh.Post("/mcp", ok);
+        const auto attributed = [](const std::string& permissions, const std::string& family) {
+            return "X-Nexus-Peer-Node: caller\r\nX-Nexus-Peer-Key: ed25519:caller\r\nX-Nexus-Catalog-Version: 2\r\n" +
+                std::string("X-Nexus-Peer-Permissions: ") + permissions + "\r\nX-Nexus-Family: " + family + "\r\n";
+        };
+        for (const auto* role : {"administrator", "moderator", "user"}) {
+            std::string permissions;
+            for (const auto& name : access::role_permissions(role)) {
+                if (!permissions.empty()) permissions += ',';
+                permissions += name.get<std::string>();
+            }
+            for (const auto* authorization : {"", "Authorization: Bearer stale-key\r\n"}) {
+                const auto identity = attributed(permissions, "management") + authorization;
+                const auto status = mesh.request("127.0.0.1", "GET", "/api/v1/nexus/status", "", identity);
+                check(status.status == (std::string(role) == "administrator" ? 200 : 403),
+                      "Real middleware permits only SDK-attributed administrators to read Nexus status without an API key");
+                if (status.status == 200) check(!json::parse(status.body).contains("controller_url"), "Remote status hides the local controller");
+                check(mesh.request("127.0.0.1", "GET", "/api/v1/models", "", attributed(permissions, "inference") + authorization).status == 200,
+                      "All preset roles may use attributed inference without an API key");
+                check(mesh.request("127.0.0.1", "POST", "/mcp", "{}", attributed(permissions, "mcp") + authorization).status ==
+                      (std::string(role) == "user" ? 403 : 200), "Service grants distinguish user and moderator access");
+                check(server.request("192.168.1.2", "GET", "/api/v1/nexus/status", "", identity).status == 403,
+                      "Public listener rejects forged SDK identity headers");
+                check(mesh.request("127.0.0.1", "POST", "/api/v1/nexus/account/delete", "{}", identity).status == 403,
+                      "Remote callers cannot delete the server identity");
+            }
+        }
+        for (const auto* permissions : {"svc:inference", "connect_private", "connect_shared,svc:inference", "connect_private,svc:inference_extra"}) {
+            check(mesh.request("127.0.0.1", "GET", "/api/v1/models", "", attributed(permissions, "inference")).status == 403,
+                  "Inference needs both exact private-connection and inference grants");
+        }
+        check(mesh.request("127.0.0.1", "GET", "/api/v1/nexus/status", "", attributed("connect_private,svc:management", "management")).status == 403,
+              "A management service grant alone cannot administer Nexus");
+        check(mesh.request("127.0.0.1", "GET", "/api/v1/models", "", attributed("admin", "inference") +
+                           "X-Nexus-Peer-Key: forged\r\n").status == 403, "Ambiguous peer attribution is refused");
+        check(mesh.request("127.0.0.1", "GET", "/api/v1/models", "", "Authorization: Bearer private-admin-key\r\n").status == 403,
+              "An API key never bypasses missing mesh identity");
         manager.stop();
     }
     set_environment("LEMONADE_API_KEY", saved_key);
@@ -759,24 +785,12 @@ void check_listener_isolation(const std::filesystem::path& root, const std::func
         manager.register_routes(server);
         const std::string address = "203.0.113.1";
         const std::string valid = "Authorization: Bearer remote-test-key\r\n";
-        check(server.request(address, "GET", "/api/v1/nexus/members").status == 401,
-              "Public remote members need the API key");
-        check(server.request(address, "GET", "/api/v1/nexus/members", "", "Authorization: Bearer wrong\r\n").status == 401,
-              "Public remote members reject a wrong key");
-        const auto remote_status = server.request(address, "GET", "/api/v1/nexus/status", "", valid);
-        check(remote_status.status == 200, "Public remote status is available with the API key");
-        if (remote_status.status == 200) {
-            const auto body = json::parse(remote_status.body);
-            check(body.at("remote_management") == true && !body.contains("controller_url"),
-                  "Public remote status hides the loopback controller");
+        for (const auto* headers : {"", "Authorization: Bearer wrong\r\n", "Authorization: Bearer remote-test-key\r\n"}) {
+            for (const auto* op : {"status", "members", "peers/gpu/api/v1/chat/completions"}) {
+                check(server.request(address, "GET", std::string("/api/v1/nexus/") + op, "", headers).status == 403,
+                      "Public remote requests cannot borrow the server identity using an API key");
+            }
         }
-#ifdef LEMONADE_WITH_NEXUS
-        const int controller_status = 409;
-#else
-        const int controller_status = 503;
-#endif
-        check(server.request(address, "GET", "/api/v1/nexus/members", "", valid).status == controller_status,
-              "Authenticated public members reach the network controller");
         for (const auto* operation : {"enable", "passkey/unlock", "key/unlock"}) {
             check(server.request(address, "POST", std::string("/api/v1/nexus/") + operation, "{}", valid).status == 403,
                   "Public clients cannot enable or unlock Nexus");
@@ -784,9 +798,9 @@ void check_listener_isolation(const std::filesystem::path& root, const std::func
         check(server.request(address, "GET", "/api/v1/nexus/key/handoff", "", valid).status == 403,
               "Public clients cannot start an identity hand-off");
         const std::string relay = "/api/v1/nexus/peers/gpu/api/v1/chat/completions";
-        check(server.request(address, "POST", relay, "{}", valid).status == controller_status,
-              "Authenticated public relay reaches the network controller");
-        check(server.request(address, "POST", relay, "{}").status == 401, "Public remote relay needs the API key");
+        check(server.request(address, "POST", relay, "{}", valid).status == 403,
+              "An API key cannot authorize the remote relay");
+        check(server.request(address, "POST", relay, "{}").status == 403, "Public remote relay requires a direct mesh connection instead");
         set_environment("LEMONADE_API_KEY", "");
         check(server.request(address, "GET", "/api/v1/nexus/members", "", valid).status == 403,
               "Public management is refused without a configured API key");

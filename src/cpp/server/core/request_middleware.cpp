@@ -256,9 +256,18 @@ httplib::Server::HandlerResponse RequestMiddleware::authenticate(const httplib::
 
     telemetry::g_current_auth_token = auth_token;
 
-    // Local Nexus access trusts loopback; private-network access trusts the LAN/VPN boundary.
-    // The mesh listener has its own identity policy and never gets this exemption.
-    if (!mesh_ingress && nexus_access::private_management_request(req)) {
+    if (mesh_ingress) {
+        const auto access = nexus_access::mesh_request_access(req);
+        if (access.first != 0) {
+            res.status = access.first;
+            res.set_content(nlohmann::json{{"error", access.second}}.dump(), "application/json");
+            return httplib::Server::HandlerResponse::Handled;
+        }
+        return httplib::Server::HandlerResponse::Unhandled;
+    }
+
+    // Nexus routes authorize local operators or SDK-attributed peers, never API keys.
+    if (nexus_access::nexus_request(req)) {
         return httplib::Server::HandlerResponse::Unhandled;
     }
 

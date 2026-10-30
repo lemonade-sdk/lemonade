@@ -29,8 +29,7 @@ public:
     // Server: Starts a blocking loop to shout presence
     std::string getLocalHostname();
     std::string buildStandardPayloadPattern(std::string hostname, std::string hostUrl);
-    // Discovery includes loopback; access policies can request strict RFC1918 matching.
-    static bool isRFC1918(const std::string& ipAddress, bool includeLoopback = true);
+    bool isRFC1918(const std::string& ipAddress);
     std::vector<NetworkInterfaceInfo> getLocalRFC1918Interfaces();
     void startBroadcasting(int beaconPort, int serverPort, uint16_t intervalSeconds);
     void stopBroadcasting();
