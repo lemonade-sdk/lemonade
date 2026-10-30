@@ -1,4 +1,5 @@
 import { test, expect, Page, type Route } from '@playwright/test';
+import { mockCompletedModelLoadJobs } from './modelLoadJobs.mock';
 
 const realServerRequired = /@real-server\b/;
 
@@ -820,9 +821,8 @@ test.describe('Lemonade UI — Feature Parity', () => {
         },
       },
     }));
-    await page.route('**/api/v1/load', route => {
-      loadRequestBody = route.request().postDataJSON() as Record<string, unknown>;
-      return route.fulfill({ json: { status: 'ok' } });
+    await mockCompletedModelLoadJobs(page, params => {
+      loadRequestBody = params;
     });
     const modelOptionsRouteState13c = new Map<string, Record<string, unknown>>();
     await page.route('**/api/v1/models**', async route => {
@@ -938,7 +938,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await unknownAutoTune.check();
 
     await page.getByRole('button', { name: 'Load unknown-context-model' }).click();
-    await expect.poll(() => loadRequestBody?.model_name).toBe('unknown-context-model');
+    await expect.poll(() => loadRequestBody?.model).toBe('unknown-context-model');
     // Auto tune is the explicit -1, not an omission: an omitted ctx_size means
     // "use whatever is saved", which is not what the panel is showing.
     expect(loadRequestBody?.ctx_size).toBe(-1);
@@ -999,9 +999,8 @@ test.describe('Lemonade UI — Feature Parity', () => {
         },
       },
     }));
-    await page.route('**/api/v1/load', route => {
-      loadRequestBody = route.request().postDataJSON() as Record<string, unknown>;
-      return route.fulfill({ json: { status: 'ok' } });
+    await mockCompletedModelLoadJobs(page, params => {
+      loadRequestBody = params;
     });
     const modelOptionsRouteState13d: ModelOptionsState = new Map();
     await page.route('**/api/v1/models**', async route => {
@@ -1058,6 +1057,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.getByRole('button', { name: 'Load source-hf-model' }).click();
     await expect.poll(() => loadRequestBody?.llamacpp_backend).toBe('vulkan');
     expect(loadRequestBody?.ctx_size).toBe(16384);
+    await expect(page.locator('.model-list-panel__list')).toBeHidden();
     // Applying settings for one load must not make them the server's new default.
     expect(loadRequestBody?.save_options).toBe(false);
 
@@ -1766,9 +1766,8 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.route('**/api/v1/system-info**', route => route.fulfill({
       json: { recipes: { llamacpp: llamacppRecipe() } },
     }));
-    await page.route('**/api/v1/load', route => {
-      loadRequestBody = route.request().postDataJSON() as Record<string, unknown>;
-      return route.fulfill({ json: { status: 'ok' } });
+    await mockCompletedModelLoadJobs(page, params => {
+      loadRequestBody = params;
     });
     await page.route('**/api/v1/models**', async route => {
       if (new URL(route.request().url()).pathname.endsWith(`/${modelB}/options`)) await heldFetch;
@@ -1802,12 +1801,13 @@ test.describe('Lemonade UI — Feature Parity', () => {
     // An empty draft is not a set of tombstones: with nothing loaded to show,
     // Load carries no options and lemond keeps using what is saved.
     await page.getByRole('button', { name: `Load ${modelB}` }).click();
-    await expect.poll(() => loadRequestBody?.model_name).toBe(modelB);
+    await expect.poll(() => loadRequestBody?.model).toBe(modelB);
     expect(loadRequestBody).not.toHaveProperty('llamacpp_args');
     expect(loadRequestBody).not.toHaveProperty('ctx_size');
 
     // Loading switches to Chat, so come back before reading the panel again.
     releaseB?.();
+    await expect(page.locator('.model-list-panel__list')).toBeHidden();
     await page.locator('.titlebar__nav').getByText('Models').click();
     await expect(panel.getByRole('button', { name: 'Save', exact: true })).toBeEnabled();
     loadRequestBody = null;
@@ -1829,9 +1829,8 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.route('**/api/v1/system-info**', route => route.fulfill({
       json: { recipes: { llamacpp: llamacppRecipe() } },
     }));
-    await page.route('**/api/v1/load', route => {
-      loadRequestBody = route.request().postDataJSON() as Record<string, unknown>;
-      return route.fulfill({ json: { status: 'ok' } });
+    await mockCompletedModelLoadJobs(page, params => {
+      loadRequestBody = params;
     });
     await page.route('**/api/v1/models**', async route => {
       const url = new URL(route.request().url());
@@ -1887,7 +1886,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
     // lemond is told not to merge them back in underneath.
     await argsField.fill(savedArgs);
     await page.getByRole('button', { name: `Load ${modelName}` }).click();
-    await expect.poll(() => loadRequestBody?.model_name).toBe(modelName);
+    await expect.poll(() => loadRequestBody?.model).toBe(modelName);
     expect(loadRequestBody?.llamacpp_args).toBe(savedArgs);
     expect(loadRequestBody?.merge_args).toBe(false);
     expect(loadRequestBody?.save_options).toBe(false);
@@ -1905,9 +1904,8 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.route('**/api/v1/system-info**', route => route.fulfill({
       json: { recipes: { llamacpp: llamacppRecipe() } },
     }));
-    await page.route('**/api/v1/load', route => {
-      loadRequestBody = route.request().postDataJSON() as Record<string, unknown>;
-      return route.fulfill({ json: { status: 'ok' } });
+    await mockCompletedModelLoadJobs(page, params => {
+      loadRequestBody = params;
     });
     await page.route('**/api/v1/models**', async route => {
       if (new URL(route.request().url()).pathname.endsWith('/options')) {
@@ -1998,13 +1996,14 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await expect(freeformArgs).toHaveValue('--zeta 1 --no-mmap');
 
     await page.getByRole('button', { name: `Load ${modelName}` }).click();
-    await expect.poll(() => loadRequestBody?.model_name).toBe(modelName);
+    await expect.poll(() => loadRequestBody?.model).toBe(modelName);
     expect(loadRequestBody?.llamacpp_args)
       .toBe('--temp 1.05 --top-k 20 --presence-penalty 0.05 --zeta 1 --no-mmap');
     expect(loadRequestBody?.merge_args).toBe(false);
 
     // Loading swaps the view, so come back before editing the form again. The
     // section stays open across the trip, which is the point of remembering it.
+    await expect(page.locator('.model-list-panel__list')).toBeHidden();
     await page.locator('.titlebar__nav').getByText('Models').click();
     await expect(field('Temperature')).toBeVisible();
     await expect(details).toHaveAttribute('aria-expanded', 'true');
