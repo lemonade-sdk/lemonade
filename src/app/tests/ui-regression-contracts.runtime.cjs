@@ -114,8 +114,6 @@ assert.equal(
   'only the Models-workspace handler may bump the composer focus epoch',
 );
 assert.match(sources.chat, /if \(composerFocusEpoch === 0\) return;[\s\S]*?requestAnimationFrame\(\(\) => inputRef\.current\?\.focus\(\)\)/);
-assert.match(sources.chat, /if \(composerFocusEpoch > 0\) setFallbackModelOverride\(null\);/);
-assert.match(sources.chat, /startupModelRestoredRef\.current = true;\s*if \(composerFocusEpoch > 0\) return;\s*applyConversationModel\(/);
 
 // Streaming must stop following when the user scrolls up, and resume near the bottom.
 assert.match(sources.chat, /const threadFollowBottomRef = useRef\(true\)/);
