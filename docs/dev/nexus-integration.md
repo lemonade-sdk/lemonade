@@ -433,6 +433,7 @@ Routes are available under `/api/v0/nexus/`, `/api/v1/nexus/`, `/v0/nexus/`,
 | POST | `account/delete` | Delete this account permanently with `{account_id, member_id, device_node_id, confirm: "delete"}`; local controller only |
 | GET | `devices` | Group devices with tier, admin flag and permissions |
 | GET | `members` | Devices plus `can_manage` (this device is an admin) |
+| GET | `route-permissions` | Read-only Admin, Moderator and User presets with allowed mesh methods, path templates and aliases, plus `catalog_version` and `route_policy`. Derived from the registered routes; excludes `/internal/*` and local-only Nexus operations. Local controller or authenticated mesh Admin only; group and handler checks still apply. |
 | GET | `account` | Verified current account ID, membership identity, device ID, role and devices; local controller only |
 | GET | `tree`, `tree/{id}/children` | Current group or a descendant group and direct children |
 | POST | `tree/{id}/groups`, `tree/{id}/rename` | Create a child group or rename a group with `{name}` |

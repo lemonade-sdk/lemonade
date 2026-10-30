@@ -15,6 +15,7 @@
 #include <future>
 #include <iostream>
 #include <map>
+#include <set>
 #include <string>
 #include <thread>
 #ifdef LEMONADE_WITH_NEXUS
@@ -101,7 +102,7 @@ void check_route_access(const std::function<void(bool, const char*)>& check) {
     check(!access::constant_time_equals("secre", "secret") && !access::constant_time_equals("secrets", "secret"), "Length differences never match");
     check(!access::bearer_matches("Bearer ", "", ""), "Empty API keys are not credentials");
     for (const auto* address : {"192.168.1.2", "10.1.2.3", "203.0.113.1"}) {
-        for (const auto* op : {"status", "members", "enable", "relay", "key/handoff", "account/delete"}) {
+        for (const auto* op : {"status", "members", "enable", "relay", "key/handoff", "account/delete", "route-permissions"}) {
             check(route(NexusListener::Public, address, op, {{"Authorization", "Bearer admin"}}).first == 403,
                   "Neither a LAN address nor an API key authorizes remote Nexus requests");
         }
@@ -118,7 +119,7 @@ void check_route_access(const std::function<void(bool, const char*)>& check) {
         }
         const httplib::Headers identity = {{"X-Nexus-Peer-Node", "caller"}, {"X-Nexus-Peer-Key", "ed25519:caller"},
             {"X-Nexus-Peer-Permissions", permissions}, {"X-Nexus-Family", "management"}, {"X-Nexus-Catalog-Version", "2"}};
-        for (const auto* op : {"status", "members", "members/role", "tree/permissions", "tree/move", "invites"}) {
+        for (const auto* op : {"status", "members", "members/role", "tree/permissions", "tree/move", "invites", "route-permissions"}) {
             check(route(NexusListener::MeshIngress, "127.0.0.1", op, identity).first == (std::string(role) == "administrator" ? 0 : 403),
                   "Only attributed administrators may use remote management");
         }
@@ -434,6 +435,37 @@ void check_service_catalog(const std::function<void(bool, const char*)>& check) 
     check(nexus_prefix_count == 5, "The SDK catalog includes every Nexus alias under management");
     const auto repeated_live = duplicate_claim(live);
     check(repeated_live.empty(), ("The live catalog lists every method and URL once: " + repeated_live).c_str());
+    const auto permissions = access::route_permissions(all);
+    check(permissions.at("roles").size() == 3, "The route view publishes all three presets");
+    std::set<std::string> displayed;
+    bool accurate = true;
+    bool parameterized = false;
+    for (const auto& route : permissions.at("routes")) {
+        for (const auto& item : route.at("paths")) {
+            const auto path = item.get<std::string>();
+            accurate = accurate && displayed.insert(route.at("method").get<std::string>() + " " + path).second &&
+                path.rfind("/internal/", 0) != 0;
+            parameterized = parameterized || path.find("{id}") != std::string::npos;
+            const auto nexus = path.find("/nexus/");
+            if (nexus != std::string::npos) {
+                auto operation = path.substr(nexus + 7);
+                const auto parameter = operation.find("{node_id}/");
+                if (parameter != std::string::npos) operation.erase(parameter, 10);
+                accurate = accurate && access::remote_operation(operation);
+            }
+        }
+        const auto family = route.at("family").get<std::string>();
+        for (const auto& role : permissions.at("roles")) {
+            const auto id = role.at("id").get<std::string>();
+            const bool expected = id == "admin" || family == "inference" ||
+                (id == "moderator" && (family == "mcp" || family == "models_manage" || family == "jobs"));
+            accurate = accurate && (std::find(route.at("roles").begin(), route.at("roles").end(), id) != route.at("roles").end()) == expected;
+        }
+    }
+    check(accurate && parameterized, "The live route view preserves exact templates and role access without duplicates, internal or local-only operations");
+    check(displayed.count("POST /api/v1/chat/completions") && displayed.count("POST /mcp") &&
+        displayed.count("POST /api/v1/nexus/members/{node_id}/role") && displayed.count("GET /v1/nexus/route-permissions"),
+        "The route view includes registered inference, MCP, management and alias routes");
 #ifdef LEMONADE_WITH_NEXUS
     // The vendored SDK validates the catalog the way lemond's Tier 1 registration does;
     // no mesh is needed, and the closed port is never reached.
@@ -628,7 +660,8 @@ void check_private_management(const std::filesystem::path& root, const std::func
         const auto ok = [](const auto&, auto& res) { res.set_content("{}", "application/json"); };
         lemon::NexusManager manager((root / (*key ? "private-access-keyed" : "private-access-unkeyed")).string(),
                                    install, install, 0, nullptr, kSystemRole,
-                                   [&](httplib::Server& local) { local.Get("/api/v1/models", ok); });
+                                   [&](httplib::Server& local) { local.Get("/api/v1/models", ok); },
+                                   access::route_permissions(registry.list()));
         const int controller_port = std::stoi(manager.status().at("controller_url").get<std::string>().substr(17));
         httplib::Client local_selection("127.0.0.1", controller_port);
         const auto local_models = local_selection.Get("/api/v1/models");
@@ -678,6 +711,11 @@ void check_private_management(const std::filesystem::path& root, const std::func
         RequestServer management;
         install(management);
         manager.register_routes(management, lemon::NexusListener::Management);
+        const auto routes = management.request("127.0.0.1", "GET", "/api/v1/nexus/route-permissions");
+        check(routes.status == 200 && json::parse(routes.body).at("roles").size() == 3 &&
+            json::parse(routes.body).contains("route_policy"), "Local route metadata requires no API key");
+        check(server.request("192.168.1.2", "GET", "/api/v1/nexus/route-permissions", "", "Authorization: Bearer private-admin-key\r\n").status == 403,
+            "The route metadata endpoint grants no LAN or API-key bypass");
         for (const auto* address : {"127.0.0.1", "::1", "::ffff:127.0.0.1"}) {
             for (const auto* prefix : {"/api/v0/nexus/", "/api/v1/nexus/", "/v0/nexus/", "/v1/nexus/", "/api/nexus/"}) {
                 for (const auto* headers : {"", "Authorization: Bearer stale-key\r\n"}) {
@@ -724,6 +762,21 @@ void check_private_management(const std::filesystem::path& root, const std::func
             for (const auto* authorization : {"", "Authorization: Bearer stale-key\r\n"}) {
                 const auto identity = attributed(permissions, "management") + authorization;
                 const auto status = mesh.request("127.0.0.1", "GET", "/api/v1/nexus/status", "", identity);
+                const auto routes = mesh.request("127.0.0.1", "GET", "/api/v1/nexus/route-permissions", "", identity);
+                check(routes.status == (std::string(role) == "administrator" ? 200 : 403),
+                    "Only an attributed mesh administrator can read the route metadata remotely");
+                if (routes.status == 200) {
+                    const auto route_data = json::parse(routes.body);
+                    for (const auto& route : route_data.at("routes")) {
+                        for (const auto& item : route.at("paths")) {
+                            auto path = item.get<std::string>();
+                            const auto parameter = path.find("{node_id}");
+                            if (parameter != std::string::npos) path.replace(parameter, 9, "test-node");
+                            check(mesh.request("127.0.0.1", route.at("method"), path, "[]", identity).status == 400,
+                                "Every advertised Nexus method, path template and alias reaches the registered handler");
+                        }
+                    }
+                }
                 check(status.status == (std::string(role) == "administrator" ? 200 : 403),
                       "Real middleware permits only SDK-attributed administrators to read Nexus status without an API key");
                 if (status.status == 200) check(!json::parse(status.body).contains("controller_url"), "Remote status hides the local controller");

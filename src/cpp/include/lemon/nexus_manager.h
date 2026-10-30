@@ -195,6 +195,7 @@ uint64_t catalog_version(const std::string& lemond_version);
 /// std::logic_error when a route has no valid family or two families claim one method
 /// and URL, so a bad registration fails at startup.
 nlohmann::ordered_json service_catalog(const nlohmann::ordered_json& routes, const std::string& lemond_version);
+nlohmann::json route_permissions(const nlohmann::ordered_json& routes);
 /// One log line for an SDK ingress refusal event (`{"kind", "method", "path",
 /// "peer_node_id", "family", "required", "catalog_version", ...}`): "Nexus route policy:
 /// <kind> <method> <path> from <peer_node_id> (family <family>, needs <required>, catalog
@@ -254,7 +255,8 @@ public:
                  int mesh_port,
                  nlohmann::ordered_json service_catalog = nullptr,
                  std::optional<ProcessRole> process_role = std::nullopt,
-                 const std::function<void(httplib::Server&)>& install_local_api = {});
+                 const std::function<void(httplib::Server&)>& install_local_api = {},
+                 nlohmann::json route_permissions = nullptr);
     ~NexusManager();
     void register_routes(httplib::Server& server, NexusListener listener = NexusListener::Public);
     void stop();
@@ -274,6 +276,7 @@ private:
                                const std::string& caller_key = "");
     std::string data_root_;
     nlohmann::ordered_json catalog_;
+    const json route_permissions_;
     ProcessRole role_;
     int ingress_port_{0};
     std::unique_ptr<Session> session_;

@@ -30,6 +30,34 @@ namespace lemon {
 namespace {
 using json = nlohmann::json;
 constexpr const char* nexus_prefixes[] = {"/api/v0/nexus/", "/api/v1/nexus/", "/v0/nexus/", "/v1/nexus/", "/api/nexus/"};
+struct NexusRoute {
+    std::string method;
+    std::string path;
+    std::string operation;
+};
+const std::vector<NexusRoute>& nexus_routes() {
+    static const auto routes = [] {
+        std::vector<NexusRoute> result;
+        for (const auto* operation : {"status", "passkey/challenge", "key/handoff", "devices", "members", "join/status", "events", "tree", "account", "selection", "memberships", "route-permissions"}) {
+            result.push_back({"GET", operation, operation});
+        }
+        for (const auto* operation : {"enable", "disable", "passkey/register", "passkey/unlock", "key/unlock", "invites", "invites/cancel", "join", "egress", "lock", "device", "device/check", "account/avatar", "selection", "invites/accept", "account/delete"}) {
+            result.push_back({"POST", operation, operation});
+        }
+        result.push_back({"POST", "devices/{node_id}/remove", "devices/remove"});
+        result.push_back({"GET", "devices/{node_id}/access", "devices/access"});
+        result.push_back({"POST", "devices/{node_id}/access", "devices/access"});
+        result.push_back({"POST", "members/{node_id}/role", "members/role"});
+        result.push_back({"POST", "members/{node_id}/permissions", "members/permissions"});
+        result.push_back({"POST", "memberships/{node_id}/leave", "memberships/leave"});
+        result.push_back({"GET", "tree/{node_id}/children", "tree/children"});
+        for (const auto* action : {"groups", "rename", "permissions", "invites", "move"}) {
+            result.push_back({"POST", std::string("tree/{node_id}/") + action, std::string("tree/") + action});
+        }
+        return result;
+    }();
+    return routes;
+}
 bool local_address(const std::string& address) {
     return address == "127.0.0.1" || address == "::1" || address == "::ffff:127.0.0.1";
 }
@@ -785,7 +813,7 @@ bool bearer_matches(const std::string& authorization, const std::string& api_key
 bool remote_operation(const std::string& operation) {
     static const std::vector<std::string> operations = {"status", "join/status", "devices", "members",
         "members/role", "members/permissions", "devices/access", "devices/remove", "invites", "invites/cancel",
-        "device/check", "tree", "tree/children", "tree/groups", "tree/rename", "tree/permissions", "tree/invites", "tree/move"};
+        "device/check", "tree", "tree/children", "tree/groups", "tree/rename", "tree/permissions", "tree/invites", "tree/move", "route-permissions"};
     return std::find(operations.begin(), operations.end(), operation) != operations.end();
 }
 
@@ -807,6 +835,57 @@ bool administers_tree(const json& path, const std::string& key) {
     return false;
 }
 
+namespace {
+std::pair<int, std::string> service_access(const json& permissions, const std::string& family, bool management) {
+    if (std::find(kFamilies.begin(), kFamilies.end(), family) == kFamilies.end()) {
+        return {403, "Unknown Nexus service family"};
+    }
+    if (!grants(permissions, "connect_private") || !grants(permissions, "svc:" + family)) {
+        return {403, "This Nexus caller lacks connection or service permission"};
+    }
+    if (management && (family != "management" || !contains(permissions, "admin"))) {
+        return {403, "Nexus administration requires an administrator"};
+    }
+    return {0, ""};
+}
+}
+
+json route_permissions(const nlohmann::ordered_json& routes) {
+    json result = {{"roles", json::array()}, {"routes", json::array()}};
+    for (const auto* role : {"admin", "moderator", "user"}) {
+        result["roles"].push_back({{"id", role}, {"permissions", role_permissions(role)}});
+    }
+    const auto append = [&](const std::string& family, const std::string& method, const json& paths, bool management) {
+        json allowed = json::array();
+        for (const auto& role : result["roles"]) {
+            if (service_access(role.at("permissions"), family, management).first == 0) allowed.push_back(role.at("id"));
+        }
+        result["routes"].push_back({{"family", family}, {"method", method}, {"paths", paths}, {"roles", allowed}});
+    };
+    for (const auto& route : routes) {
+        if (route.value("prefixes", "") == "Internal") continue;
+        for (const auto& path : route.at("paths")) {
+            auto single = route;
+            single["paths"] = nlohmann::ordered_json::array({path});
+            std::map<std::string, json> paths_by_method;
+            for_each_catalog_claim(nlohmann::ordered_json::array({single}),
+                [&](const std::string&, const std::string&, const std::string& method, const CatalogClaim& claim) {
+                    auto& paths = paths_by_method[method];
+                    if (paths.is_null()) paths = json::array();
+                    paths.push_back(claim.raw);
+                });
+            for (const auto& entry : paths_by_method) append(route.at("family"), entry.first, entry.second, false);
+        }
+    }
+    for (const auto& route : nexus_routes()) {
+        if (!remote_operation(route.operation)) continue;
+        json paths = json::array();
+        for (const auto* prefix : nexus_prefixes) paths.push_back(prefix + route.path);
+        append("management", route.method, paths, true);
+    }
+    return result;
+}
+
 std::pair<int, std::string> mesh_request_access(const httplib::Request& req, bool management) {
     if (!local_address(req.remote_addr)) return {403, "Nexus identity must come from the mesh ingress"};
     for (const auto& name : kPeerHeaders) {
@@ -815,9 +894,6 @@ std::pair<int, std::string> mesh_request_access(const httplib::Request& req, boo
         }
     }
     const auto family = req.get_header_value("X-Nexus-Family");
-    if (std::find(kFamilies.begin(), kFamilies.end(), family) == kFamilies.end()) {
-        return {403, "Unknown Nexus service family"};
-    }
     json permissions = json::array();
     const auto names = req.get_header_value("X-Nexus-Peer-Permissions");
     size_t start = 0;
@@ -827,13 +903,7 @@ std::pair<int, std::string> mesh_request_access(const httplib::Request& req, boo
         if (end == std::string::npos) break;
         start = end + 1;
     }
-    if (!grants(permissions, "connect_private") || !grants(permissions, "svc:" + family)) {
-        return {403, "This Nexus caller lacks connection or service permission"};
-    }
-    if (management && (family != "management" || !contains(permissions, "admin"))) {
-        return {403, "Nexus administration requires an administrator"};
-    }
-    return {0, ""};
+    return service_access(permissions, family, management);
 }
 
 std::pair<int, std::string> route_access(NexusListener listener, const httplib::Request& req, const std::string& operation) {
@@ -1985,8 +2055,10 @@ NexusManager::NexusManager(const std::string& config_dir,
                            int mesh_port,
                            nlohmann::ordered_json service_catalog,
                            std::optional<ProcessRole> process_role,
-                           const std::function<void(httplib::Server&)>& install_local_api)
+                           const std::function<void(httplib::Server&)>& install_local_api,
+                           json route_permissions)
     : data_root_(utils::path_to_utf8(utils::path_from_utf8(config_dir) / "nexus")), catalog_(std::move(service_catalog)),
+      route_permissions_(std::move(route_permissions)),
       role_(process_role ? *process_role : nexus_access::current_process_role()), selection_port_(mesh_port) {
 #ifdef LEMONADE_WITH_NEXUS
     if (!catalog_.is_object()) {
@@ -2215,6 +2287,15 @@ void NexusManager::handle(const httplib::Request& req, httplib::Response& res,
             reply(200, current);
             return;
         }
+        if (operation == "route-permissions") {
+            if (!route_permissions_.is_object()) { reply_error(res, 503, "Route permissions are unavailable on this server"); return; }
+            auto permissions = route_permissions_;
+            const auto current = status();
+            permissions["route_policy"] = current.at("route_policy");
+            permissions["catalog_version"] = current.at("catalog_version");
+            reply(200, permissions);
+            return;
+        }
         if (operation == "enable") {
             std::string error;
             if (!enable(error)) { reply(503, {{"error", error}}); return; }
@@ -2325,29 +2406,13 @@ void NexusManager::register_routes(httplib::Server& server, NexusListener listen
         handle(req, res, operation, listener == NexusListener::MeshIngress || !loopback);
     };
     for (const auto* prefix : nexus_prefixes) {
-        for (const auto* operation : {"status", "passkey/challenge", "key/handoff", "devices", "members", "join/status", "events", "tree", "account", "selection", "memberships"}) {
-            server.Get(std::string(prefix) + operation, [dispatch, operation](const auto& req, auto& res) { dispatch(req, res, operation); });
-        }
-        for (const auto* operation : {"enable", "disable", "passkey/register", "passkey/unlock", "key/unlock", "invites", "invites/cancel", "join", "egress", "lock", "device", "device/check", "account/avatar", "selection", "invites/accept", "account/delete"}) {
-            server.Post(std::string(prefix) + operation, [dispatch, operation](const auto& req, auto& res) { dispatch(req, res, operation); });
-        }
-        server.Post(std::string(prefix) + R"(devices/([A-Za-z0-9_-]+)/remove)",
-            [dispatch](const auto& req, auto& res) { dispatch(req, res, "devices/remove"); });
-        server.Get(std::string(prefix) + R"(devices/([A-Za-z0-9_-]+)/access)",
-            [dispatch](const auto& req, auto& res) { dispatch(req, res, "devices/access"); });
-        server.Post(std::string(prefix) + R"(devices/([A-Za-z0-9_-]+)/access)",
-            [dispatch](const auto& req, auto& res) { dispatch(req, res, "devices/access"); });
-        server.Post(std::string(prefix) + R"(members/([A-Za-z0-9_-]+)/role)",
-            [dispatch](const auto& req, auto& res) { dispatch(req, res, "members/role"); });
-        server.Post(std::string(prefix) + R"(members/([A-Za-z0-9_-]+)/permissions)",
-            [dispatch](const auto& req, auto& res) { dispatch(req, res, "members/permissions"); });
-        server.Post(std::string(prefix) + R"(memberships/([A-Za-z0-9_-]+)/leave)",
-            [dispatch](const auto& req, auto& res) { dispatch(req, res, "memberships/leave"); });
-        server.Get(std::string(prefix) + R"(tree/([A-Za-z0-9_-]+)/children)",
-            [dispatch](const auto& req, auto& res) { dispatch(req, res, "tree/children"); });
-        for (const auto* action : {"groups", "rename", "permissions", "invites", "move"}) {
-            server.Post(std::string(prefix) + R"(tree/([A-Za-z0-9_-]+)/)" + action,
-                [dispatch, action](const auto& req, auto& res) { dispatch(req, res, std::string("tree/") + action); });
+        for (const auto& route : nexus_routes()) {
+            auto pattern = std::string(prefix) + route.path;
+            const auto parameter = pattern.find("{node_id}");
+            if (parameter != std::string::npos) pattern.replace(parameter, 9, "([A-Za-z0-9_-]+)");
+            const auto handler = [dispatch, operation = route.operation](const auto& req, auto& res) { dispatch(req, res, operation); };
+            if (route.method == "GET") server.Get(pattern, handler);
+            else server.Post(pattern, handler);
         }
         const auto relayed = std::string(prefix) + R"(peers/([A-Za-z0-9_-]+)(/.*))";
         const auto relay_route = [this, listener](const httplib::Request& req, httplib::Response& res) {

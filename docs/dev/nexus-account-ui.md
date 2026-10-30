@@ -144,6 +144,18 @@ the full assignment list is not visible. Membership and permission requests are
 still subject to federation authorization.
 
 Service access and group/network permissions use separate collapsible sections.
+Advanced also includes a read-only Route permissions panel for Admin, Moderator
+and User presets. It loads `GET /api/v1/nexus/route-permissions` on expansion,
+using the selected controller and the existing Nexus authorization rules. The
+server derives methods, paths and aliases from the route registry and the same
+Nexus route definitions used to register handlers. Presets reuse the service
+permission check; internal routes and local-only Nexus operations are excluded.
+The list describes preset mesh access, not a device's effective assignments or
+guaranteed request success. Group authorization and handler validation still apply.
+Filtering or selecting a role does not write permissions. Unsupported servers,
+unavailable policies and failed requests show an explicit unavailable/error state.
+Service groups start collapsed when selecting a role; searching expands matching
+groups so results are visible.
 Saving preserves permissions the client does not recognize. Invitations offer
 the server's User and Moderator presets; the server limits delegated permissions
 to those the inviting device holds. Administrator access is assigned after joining.

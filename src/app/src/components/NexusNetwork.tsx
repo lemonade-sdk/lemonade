@@ -4,6 +4,7 @@ import {
   isNexusDesktop, prepareNexus, refreshNexus, useNexusNetwork,
 } from '../features/nexus/nexus';
 import { NexusHierarchy } from './NexusHierarchy';
+import { NexusRoutePermissions } from './NexusRoutePermissions';
 import { Icon } from './Icon';
 import { WorkspaceActionButton } from './WorkspacePanels';
 
@@ -24,6 +25,7 @@ export function NexusNetwork({ advanced, showCompact = true }: { advanced: boole
     finally { await refreshNexus(); setBusy(false); }
   };
   return <>
+    {advanced && connected && status && <NexusRoutePermissions key={`${network.selectedServerId}:${status.group_node_id}:${status.node_id}`} />}
     {connected && status ? (advanced || showCompact) && <NexusHierarchy key={`${status.group_node_id}:${status.node_id}`} status={status} advanced={advanced} /> : advanced && <div className="nexus-network-empty">
       <span className="nexus-network-empty__icon"><Icon name="layers" size={28} /></span>
       <h4>{status?.enabled && status.locked ? t('Unlock your network') : t('A place for every group and device')}</h4>
