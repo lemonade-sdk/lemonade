@@ -46,6 +46,7 @@ import {
   modelStructure,
 } from '../modelCapabilities';
 import { storageKey } from '../storage';
+import { captureBrowserDraftSend, hasBrowserPromptContext, readBrowserPromptDraft, saveBrowserPromptDraft } from '../features/browserPrompt';
 import { CHAT_HISTORY_PREFERENCE_EVENT, loadChatHistoryPreference, saveChatHistoryPreference } from '../features/chatHistory/historySettings';
 import { prepareToolCallsForStorage } from '../features/chatHistory/toolCallPersistence';
 import type { DownloadListItem } from '../features/downloadManager/downloadStore';
@@ -86,6 +87,7 @@ interface Message {
   toolCalls?: ToolCallEntry[];
   model?: ModelSnapshot | null;
   isError?: boolean;
+  fromBrowserPrompt?: boolean;
 }
 
 interface Conversation {
@@ -304,6 +306,7 @@ function normalizeConversation(raw: unknown): Conversation | null {
       toolCalls: Array.isArray(m.toolCalls) ? m.toolCalls as ToolCallEntry[] : undefined,
       model: normalizeSnapshot(m.model),
       isError: m.isError === true || (typeof m.content === 'string' && /^Error:/i.test(m.content)),
+      fromBrowserPrompt: m.fromBrowserPrompt === true || undefined,
     }));
   return {
     id,
@@ -512,6 +515,7 @@ function timeAgo(ts: number): string {
 }
 
 interface ChatViewProps {
+  isVisible: boolean;
   currentModel: string | null;
   dictationTarget: string | null;
   modelSelectionEpoch: number;
@@ -883,6 +887,7 @@ function friendlyRouterChatError(message: string): string {
 }
 
 const ChatView: React.FC<ChatViewProps> = ({
+  isVisible,
   currentModel: selectedModel,
   dictationTarget,
   modelSelectionEpoch,
@@ -917,7 +922,8 @@ const ChatView: React.FC<ChatViewProps> = ({
   const [historyHydrated, setHistoryHydrated] = useState(() => !loadPersistencePreference());
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [inputValue, setInputValue] = useState('');
+  const [incomingPrompt] = useState(readBrowserPromptDraft);
+  const [inputValue, setInputValue] = useState(incomingPrompt);
   const [imageMode, setImageMode] = useState<ImageMode>('generate');
   const [imageSettings, setImageSettings] = useState<ImageGenerationSettings>(DEFAULT_IMAGE_SETTINGS);
   const [audioGenerationSettings, setAudioGenerationSettings] = useState<AudioGenerationSettings>(DEFAULT_AUDIO_GENERATION_SETTINGS);
@@ -1009,7 +1015,18 @@ const ChatView: React.FC<ChatViewProps> = ({
   const liveFinalizeTimerRef = useRef<number | null>(null);
   const audioLevelRef = useRef(0);
   const autoSpeechRef = useRef<{ audio: HTMLAudioElement; url: string } | null>(null);
-  const handleSendRef = useRef<(overrideText?: string) => Promise<void>>(async () => {});
+  const incomingPromptHandledRef = useRef(false);
+  const [, setIncomingPromptDismissals] = useState(0);
+  // The imported prompt belongs to the new chat it opened. Once the user moves
+  // on, it must not be sent later or attach its tool restriction to their input.
+  const dismissIncomingPrompt = useCallback((): boolean => {
+    if (!incomingPrompt || incomingPromptHandledRef.current) return false;
+    incomingPromptHandledRef.current = true;
+    saveBrowserPromptDraft('');
+    setIncomingPromptDismissals(count => count + 1);
+    return true;
+  }, [incomingPrompt]);
+  const handleSendRef = useRef<(overrideText?: string, fromBrowserPrompt?: boolean) => Promise<void>>(async () => {});
 
   const generatedMediaUrlsRef = useRef<Set<string>>(new Set());
   const trackGeneratedMediaUrl = useCallback((url: string): string => {
@@ -1036,7 +1053,7 @@ const ChatView: React.FC<ChatViewProps> = ({
         const existing = new Set(current.map(conversation => conversation.id));
         return [...current, ...storedConversations.filter(conversation => !existing.has(conversation.id))];
       });
-      setActiveId(current => current || storedActiveId);
+      setActiveId(current => current || (incomingPrompt && !incomingPromptHandledRef.current ? null : storedActiveId));
       setHistoryHydrated(true);
     }, 500);
     return cancelSchedule;
@@ -1592,11 +1609,12 @@ const ChatView: React.FC<ChatViewProps> = ({
   }, []);
 
   const startLemonadeToolPrompt = useCallback((text: string) => {
+    dismissIncomingPrompt();
     persistMcpEnabled(true);
     persistMcpSelection([LEMONADE_MCP_SERVER_ID], null);
     setInputValue(text);
     inputRef.current?.focus();
-  }, [persistMcpEnabled, persistMcpSelection]);
+  }, [dismissIncomingPrompt, persistMcpEnabled, persistMcpSelection]);
 
   const selectedMcpServerIdSet = useMemo(() => new Set(selectedMcpServerIds), [selectedMcpServerIds]);
   const selectedMcpToolNameSet = useMemo(() => selectedMcpToolNames === null ? null : new Set(selectedMcpToolNames), [selectedMcpToolNames]);
@@ -2088,6 +2106,18 @@ const ChatView: React.FC<ChatViewProps> = ({
 
   const activeConvo = conversations.find(c => c.id === activeId) || null;
   const messages = activeConvo?.messages || [];
+  const incomingPromptPending = !activeId && !!incomingPrompt && !incomingPromptHandledRef.current;
+  const toolsUnavailable = hasBrowserPromptContext(messages) || incomingPromptPending;
+  useEffect(() => {
+    if (toolsUnavailable) setMcpPickerOpen(false);
+  }, [toolsUnavailable]);
+
+  // Covers typing, dictation, and any other draft update while the prompt waits.
+  useEffect(() => {
+    if (!incomingPromptPending) return;
+    if (inputValue.trim()) saveBrowserPromptDraft(inputValue);
+    else dismissIncomingPrompt();
+  }, [dismissIncomingPrompt, incomingPromptPending, inputValue]);
 
   useFocusTrap(bottomSheetRef, mobileSheetOpen);
 
@@ -2166,9 +2196,9 @@ const ChatView: React.FC<ChatViewProps> = ({
   // Persist active conversation id only after the initial stored value has been
   // hydrated, otherwise an empty cold-start state could overwrite it.
   useEffect(() => {
-    if (!historyHydrated) return;
+    if (!historyHydrated || (incomingPrompt && !incomingPromptHandledRef.current && !activeId)) return;
     saveActiveId(activeId, persistHistory);
-  }, [activeId, historyHydrated, persistHistory]);
+  }, [activeId, historyHydrated, persistHistory, incomingPrompt]);
 
   // Active ID can point at stale/missing data after manual localStorage edits or migrations.
   useEffect(() => {
@@ -2228,11 +2258,12 @@ const ChatView: React.FC<ChatViewProps> = ({
   }, []);
 
   const handleNewChat = useCallback(() => {
+    if (dismissIncomingPrompt()) setInputValue('');
     setShowLoadedOverview(true);
     setActiveId(null);
     setFallbackModelOverride(null);
     inputRef.current?.focus();
-  }, []);
+  }, [dismissIncomingPrompt]);
 
   // Each conversation answers with the model it was started on. Without this the
   // app-level selection leaks across conversations and an old thread silently
@@ -2257,9 +2288,11 @@ const ChatView: React.FC<ChatViewProps> = ({
   }, [activeId, applyConversationModel, conversations, historyHydrated]);
 
   const handleSelectConversation = useCallback((id: string) => {
+    // The imported text must not follow the user into a conversation where tools may run.
+    if (dismissIncomingPrompt()) setInputValue('');
     setActiveId(id);
     applyConversationModel(conversations.find(c => c.id === id)?.model?.name);
-  }, [applyConversationModel, conversations]);
+  }, [applyConversationModel, conversations, dismissIncomingPrompt]);
 
   // An explicit pick outranks a conversation-restored override, which would
   // otherwise keep winning and make the click look like it did nothing.
@@ -2813,6 +2846,7 @@ ${finalText}`
     const text = userMessage.content.trim();
     const images = userMessage.images?.length ? [...userMessage.images] : undefined;
     const hasImages = !!images?.length;
+    const allowTools = !hasBrowserPromptContext([...priorMessages, userMessage]);
     const collectionInfo = currentKnownModelInfo && isCollectionModel(currentKnownModelInfo) ? currentKnownModelInfo : null;
 
     if (appendUserToConversation) {
@@ -2856,7 +2890,7 @@ ${finalText}`
     let includeDirectAudioParts = canUseAudioInput && modeSupportsChatCompletions && audioFiles.length > 0;
 
     let omniRuntime: ChatToolRuntime | null = null;
-    if (collectionInfo) {
+    if (collectionInfo && allowTools) {
       const { buildOmniToolRuntime } = await import(
         /* webpackChunkName: "omni-tools" */ '../tools/omniTools'
       );
@@ -2910,7 +2944,7 @@ ${finalText}`
     }
 
     let selectedMcpRuntime: ChatToolRuntime | null = null;
-    if (useMcp && modeSupportsMcp) {
+    if (allowTools && useMcp && modeSupportsMcp) {
       try {
         const { buildSelectedMcpRuntime } = await import(
           /* webpackChunkName: "mcp-runtime" */ '../tools/mcpRuntime'
@@ -3022,8 +3056,9 @@ ${finalText}`
     useMcp,
   ]);
 
-  const handleSend = async (overrideText?: string) => {
+  const handleSend = async (overrideText?: string, fromBrowserPrompt = false) => {
     const text = (overrideText ?? inputValue).trim();
+    const isExternalPrompt = captureBrowserDraftSend(overrideText, fromBrowserPrompt, incomingPrompt, incomingPromptHandledRef.current);
     const audioFiles = [...pendingAudioFiles];
     const hasImages = pendingImages.length > 0;
     const canSubmitContent = currentCapability === 'audio' && !modeSupportsChatCompletions
@@ -3038,10 +3073,14 @@ ${finalText}`
               ? (!!text && !openMossDescribeUnavailable && !openMossCloneUnavailable)
               : (!!text || hasImages || (canUseAudioInput && audioFiles.length > 0));
     if (!canSubmitContent || isBusy || !currentModelSnapshot) return;
+    if (isExternalPrompt) {
+      incomingPromptHandledRef.current = true;
+      saveBrowserPromptDraft('');
+    }
 
     // Sending a new message explicitly resumes following the latest reply.
     threadFollowBottomRef.current = true;
-    let convoId = activeId;
+    let convoId = isExternalPrompt ? null : activeId;
     const initialSnapshot = currentModelSnapshot;
     const currentMessages = (conversations.find(c => c.id === convoId)?.messages || []);
     const userMessage: Message = {
@@ -3050,6 +3089,7 @@ ${finalText}`
       images: hasImages ? [...pendingImages] : undefined,
       audioName: audioFiles[0]?.name,
       model: initialSnapshot,
+      fromBrowserPrompt: isExternalPrompt || undefined,
     };
 
     if (!convoId) {
@@ -3074,10 +3114,10 @@ ${finalText}`
       }));
     }
 
-    setInputValue('');
+    if (overrideText === undefined) setInputValue('');
     setPendingImages([]);
     setPendingAudioFiles([]);
-    void speakWithPinnedTts(text, 'user');
+    if (!isExternalPrompt) void speakWithPinnedTts(text, 'user');
 
     if (connectionStatus !== 'connected') {
       appendAssistantMessage(convoId, {
@@ -3191,12 +3231,28 @@ ${finalText}`
       updatedAt: Date.now(),
     } : c));
 
-    await startAssistantResponse(activeId, currentModelSnapshot, editedUserMessage, priorMessages, [], false);
+    await startAssistantResponse(
+      activeId,
+      currentModelSnapshot,
+      editedUserMessage,
+      priorMessages,
+      [],
+      false,
+    );
   }, [activeId, connectionStatus, conversations, currentModel, currentModelSnapshot, isBusy, startAssistantResponse]);
 
   // Keep option-button callbacks stable across unrelated Chat state updates. This
   // lets memoized completed Markdown messages retain their DOM and selection.
   handleSendRef.current = handleSend;
+
+  useEffect(() => {
+    if (!isVisible || activeId || !incomingPrompt || incomingPromptHandledRef.current || !historyHydrated
+        || connectionStatus !== 'connected' || !currentModelSnapshot
+        || !modeSupportsChatCompletions || !currentLoadedModel || isBusy) return;
+
+    setShowLoadedOverview(false);
+    void handleSendRef.current(undefined, true);
+  }, [isVisible, activeId, incomingPrompt, historyHydrated, connectionStatus, currentModelSnapshot, modeSupportsChatCompletions, currentLoadedModel, isBusy]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -4394,21 +4450,23 @@ ${finalText}`
                   role="menuitem"
                   data-mcp-entry="tools"
                   onClick={openMcpPicker}
-                  disabled={!modeSupportsMcp}
+                  disabled={!modeSupportsMcp || toolsUnavailable}
                   aria-label={t('Tools')}
                   aria-haspopup="dialog"
                 >
                   <span className="composer__add-icon"><Icon name="tools" size={16} /></span>
                   <span className="composer__add-text">
                     <strong>{t('Tools')}</strong>
-                    <small>{useMcp
-                      ? `${selectedMcpToolCount} selected · Lemonade and external MCP`
-                      : 'Lemonade tools and external MCP servers'}</small>
+                    <small>{toolsUnavailable
+                      ? 'Unavailable for imported webpage context'
+                      : useMcp
+                        ? `${selectedMcpToolCount} selected · Lemonade and external MCP`
+                        : 'Lemonade tools and external MCP servers'}</small>
                   </span>
                 </button>
               </div>
             )}
-            {addMenuOpen && mcpPickerOpen && (
+            {addMenuOpen && mcpPickerOpen && !toolsUnavailable && (
               <div
                 className="composer__mcp-modal"
                 onMouseDown={event => {
@@ -4641,6 +4699,13 @@ ${finalText}`
         </div>
         </div>
         <div className="composer__hint">{composerHint}</div>
+        {toolsUnavailable && (
+          <div className="composer__hint" role="status">
+            {incomingPromptPending
+              ? 'Imported webpage content: tools are unavailable for this prompt. Clear it or open another chat to use tools.'
+              : 'Imported webpage content: tools are unavailable in this conversation. Start a new chat to use tools.'}
+          </div>
+        )}
       </div>
       </div>
       <div aria-live="assertive" aria-atomic="true" className="sr-only">
