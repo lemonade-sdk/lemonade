@@ -14992,6 +14992,12 @@ button.workspace-metadata-chip:hover {
 
 .recipes > .scrim { display: none; }
 /* Shared creation-editor grammar */
+/* The form body, not the pane wrapper, owns scrolling on desktop and mobile. */
+.manager__detail-form-panel--custom { overflow: hidden; }
+@media (max-width: 768px) {
+  .manager--detail.manager--detail-mobile-open .manager__detail-form-panel--custom { overflow: hidden; }
+}
+
 .custom-model-editor__title {
   margin: 0;
   font-size: var(--detail-type-title);
@@ -15006,11 +15012,12 @@ button.workspace-metadata-chip:hover {
 
 .custom-model-form__body {
   min-height: 0;
-  flex: 1 1 auto;
+  flex: 1 1 0;
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
   overflow-y: auto;
+  overscroll-behavior-y: contain;
   padding: var(--space-3) var(--detail-gutter) var(--detail-section-space);
   scrollbar-gutter: stable;
 }
@@ -15022,6 +15029,7 @@ button.workspace-metadata-chip:hover {
 }
 
 .custom-model-form__body .custom-model-form__grid {
+  flex: 0 0 auto;
   padding: 0;
 }
 
