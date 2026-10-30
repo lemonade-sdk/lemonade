@@ -1060,11 +1060,18 @@ json BackendManager::get_all_backends_status() {
     return result;
 }
 
+// A sideloaded archive or a *_bin path is not a GitHub release, so it has no release page.
+static bool is_user_supplied_backend(const std::string& recipe, const std::string& backend,
+                                     const BackendManager::InstallParams& params) {
+    return !params.local_archive.empty() ||
+           utils::looks_like_path(backends::BackendUtils::get_bin_config_value(recipe, backend));
+}
+
 std::string BackendManager::get_release_url(const std::string& recipe, const std::string& backend) {
     try {
         std::string resolved_backend = normalize_backend_name(recipe, backend);
         auto params = get_install_params(recipe, resolved_backend);
-        if (!params.local_archive.empty()) {
+        if (is_user_supplied_backend(recipe, resolved_backend, params)) {
             return "";
         }
         return "https://github.com/" + params.repo + "/releases/tag/" + params.version;
@@ -1097,7 +1104,7 @@ BackendManager::BackendEnrichment BackendManager::get_backend_enrichment(const s
         }
         // All standard recipes (including ryzenai-llm): one get_install_params() call gives us everything
         auto params = get_install_params(recipe, resolved_backend);
-        if (params.local_archive.empty()) {
+        if (!is_user_supplied_backend(recipe, resolved_backend, params)) {
             result.release_url = "https://github.com/" + params.repo + "/releases/tag/" + params.version;
         }
         result.download_filename = params.filename;

@@ -29,7 +29,8 @@ inline const BackendDescriptor descriptor = {
          "FastFlowLM Options"},
     },
     /*support*/ {
-        // XDNA3 (Medusa) has no public FLM build; it installs from flm.xdna3_archive.
+        // XDNA3 (Medusa) has no public FLM build: users supply one via flm.npu_bin or
+        // flm.xdna3_archive. FastFlowLM's XDNA3 (ryzenai-corelib) build is Windows-only.
         {"npu", BackendTier::Core, BackendFormat::Native, {"windows", "linux"},
          {{"amd_npu", {"XDNA2", "XDNA3"}}}, "XDNA2 / XDNA3 NPU",
          {{"XDNA3", {/*os*/ {"windows"}, /*channels*/ {}}}}},

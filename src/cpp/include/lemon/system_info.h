@@ -134,8 +134,6 @@ public:
     // Device support detection
     static std::string get_rocm_arch();
     static std::string get_cuda_arch();
-    // NPU family of this host ("XDNA2", "XDNA3"), or empty when there is no NPU.
-    static std::string get_npu_arch();
 
     // Picks the ROCm compute target from an "amd_gpu" device array: a discrete GPU wins
     // over an integrated one on a hybrid host (e.g. Strix Halo APU + MI300X dGPU).
@@ -153,7 +151,7 @@ public:
     // therock.url_mapping, which maps it to gfx94X-dcgpu.
     static std::string vllm_rocm_version_override(const std::string& asset_family);
 
-    // <recipe>.npu_arch_overrides[get_npu_arch()] from backend_versions.json, or empty
+    // <recipe>.npu_arch_overrides[get_npu_family()] from backend_versions.json, or empty
     // for the default "npu" pin. Lets one recipe pin a different build per NPU family.
     static std::string npu_version_override(const std::string& recipe);
 
@@ -162,6 +160,12 @@ public:
     // for an arbitrary GPU topology with no GPU present. Per-thread so it cannot
     // affect concurrent requests.
     static void set_rocm_arch_override(const std::string& arch);
+
+    // NPU family of this host ("XDNA2", "XDNA3"), or empty when there is no NPU.
+    static std::string get_npu_family();
+
+    // get_npu_family() counterpart of set_rocm_arch_override().
+    static void set_npu_family_override(const std::string& family);
 
     // True if (recipe, backend) is published for the given ROCm family/ISA, per
     // the backend support matrix. Lets callers tell "this arch should have an
