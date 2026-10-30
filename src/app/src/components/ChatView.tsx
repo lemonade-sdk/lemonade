@@ -75,7 +75,6 @@ import {
 interface Message {
   role: 'user' | 'assistant';
   content: string;
-  nativeVoice?: boolean; // assistant text also has a generated native-audio attachment
   images?: string[];  // transient base64 data URLs for user messages with images
   generatedImages?: string[]; // transient generated image data URLs
   audioUrl?: string; // transient object URL for TTS output
@@ -426,16 +425,18 @@ function mcpToolNamesForServers(servers: McpServerToolOption[], serverIds: strin
     .flatMap(server => server.toolOptions.map(tool => tool.runtimeName));
 }
 
-function modelModeBadge(capability: ModelCapability, recipe?: string | null): string {
-  return capabilityBadge(identityFor(capability, recipe));
+function modelModeBadge(capability: ModelCapability, recipe?: string | null, nativeOmni = false): string {
+  return nativeOmni ? 'omni' : capabilityBadge(identityFor(capability, recipe));
 }
 
 const ModelModeIcons: React.FC<{
   capability: ModelCapability;
   recipe?: string | null;
   audioInput?: boolean;
+  nativeOmni?: boolean;
   size?: number;
-}> = ({ capability, recipe, audioInput = false, size = 14 }) => {
+}> = ({ capability, recipe, audioInput = false, nativeOmni = false, size = 14 }) => {
+  if (nativeOmni) return <CapabilityIcon capability="omni" size={size} aria-hidden="true" />;
   const identity = identityFor(capability, recipe);
   if (identity !== capability) {
     return <CapabilityIcon capability={identity} size={size} aria-hidden="true" />;
@@ -455,7 +456,8 @@ function modelModeLabel(capability: ModelCapability, audioInput = false): string
     : capabilityLabel(capability);
 }
 
-function modelModeDisplayLabel(capability: ModelCapability, audioInput = false, recipe?: string | null): string {
+function modelModeDisplayLabel(capability: ModelCapability, audioInput = false, recipe?: string | null, nativeOmni = false): string {
+  if (nativeOmni) return 'Omni';
   const identity = identityFor(capability, recipe);
   return identity === capability ? modelModeLabel(capability, audioInput) : capabilityLabel(identity);
 }
@@ -809,34 +811,6 @@ async function imageToBase64(file: File | Blob): Promise<string> {
   });
 }
 
-// Native Omni speech stays transient: do not put large base64 blobs in chat history.
-function nativeVoiceAudioUrl(data: string, format: string): string {
-  const normalizedFormat = format.toLowerCase();
-  const mime = normalizedFormat === 'mp3' ? 'audio/mpeg'
-    : normalizedFormat === 'flac' ? 'audio/flac'
-    : normalizedFormat === 'ogg' ? 'audio/ogg' : 'audio/wav';
-  const payload = data.startsWith('data:') ? data.slice(data.indexOf(',') + 1) : data;
-  const decoded = atob(payload.replace(/\s/g, ''));
-  const chunks: Uint8Array[] = [];
-  for (let offset = 0; offset < decoded.length; offset += 32768) {
-    const part = decoded.slice(offset, offset + 32768);
-    const bytes = new Uint8Array(part.length);
-    for (let i = 0; i < part.length; i++) bytes[i] = part.charCodeAt(i);
-    chunks.push(bytes);
-  }
-  // TypedArray<ArrayBufferLike> is not a BlobPart on newer TypeScript DOM libs.
-  return URL.createObjectURL(new Blob(chunks.map(bytes => bytes.buffer as ArrayBuffer), { type: mime }));
-}
-
-function nativeVoiceSplitThinking(text: string): { content: string; thinking?: string } {
-  const match = /<think>([\s\S]*?)<\/think>/i.exec(text);
-  if (!match) return { content: text };
-  return {
-    content: text.replace(match[0], '').trim(),
-    thinking: match[1].trim() || undefined,
-  };
-}
-
 async function audioToInputAudio(file: File): Promise<{ type: 'input_audio'; input_audio: { data: string; format: string } }> {
   const dataUrl = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -946,10 +920,6 @@ const ChatView: React.FC<ChatViewProps> = ({
   const [historyHydrated, setHistoryHydrated] = useState(() => !loadPersistencePreference());
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [voiceOutputEnabled, setVoiceOutputEnabled] = useState(false);
-  const [voiceOutputVoice, setVoiceOutputVoice] = useState<'Chelsie' | 'Ethan'>('Chelsie');
-  const [nativeVoiceBusyConvoIds, setNativeVoiceBusyConvoIds] = useState<Set<string>>(() => new Set());
-  const nativeVoiceControllersRef = useRef<Map<string, AbortController>>(new Map());
   const [inputValue, setInputValue] = useState('');
   const [imageMode, setImageMode] = useState<ImageMode>('generate');
   const [imageSettings, setImageSettings] = useState<ImageGenerationSettings>(DEFAULT_IMAGE_SETTINGS);
@@ -1261,6 +1231,8 @@ const ChatView: React.FC<ChatViewProps> = ({
     && !isCollectionModel(currentEffectiveSettingsModelInfo);
   // A collection deploys as chat; its Omni surface comes from the recipe.
   const currentIsOmniCollection = snapshotIdentity(currentModelSnapshot) === 'omni';
+  const currentIsNativeOmni = !currentIsOmniCollection && [currentKnownModelInfo, currentLoadedModel]
+    .some(model => (model?.labels || []).some(label => label.toLowerCase() === 'omni'));
 
   useEffect(() => {
     if (!currentLoadedModel || currentCapability !== 'chat') return;
@@ -1565,6 +1537,7 @@ const ChatView: React.FC<ChatViewProps> = ({
       loaded: true,
       downloaded: true,
       audioInput: audioInputForLoaded(model),
+      info: findModelInfoByName(knownModelInfos, model.model_name) || undefined,
       detail: model.device ? t('Loaded · {device}', { device: model.device }) : t('Loaded'),
     }));
 
@@ -1601,16 +1574,14 @@ const ChatView: React.FC<ChatViewProps> = ({
 
     const q = modelPickerQuery.trim().toLowerCase();
     const filtered = q
-      ? options.filter(option => `${option.name} ${option.defaultLabel || ''} ${modelModeDisplayLabel(option.capability, option.audioInput, option.recipe)} ${option.detail}`.toLowerCase().includes(q))
+      ? options.filter(option => `${option.name} ${option.defaultLabel || ''} ${modelModeDisplayLabel(option.capability, option.audioInput, option.recipe,
+          Boolean(option.info?.labels?.includes('omni')))} ${option.detail}`.toLowerCase().includes(q))
       : options;
     return filtered.slice(0, 80);
   }, [audioInputForLoaded, capabilityForLoaded, downloadItems, knownModelInfos, modelPickerQuery, selectableModels]);
 
   const modeSupportsChatCompletions = currentCapability === 'chat';
   const modeSupportsMcp = modeSupportsChatCompletions;
-  const supportsNativeVoiceOutput = currentCapability === 'chat' && !currentIsOmniCollection
-    && [currentKnownModelInfo, currentLoadedModel].some(model =>
-      (model?.labels || []).some(label => label.toLowerCase() === 'chat-speech'));
   const canUseAudioInput = currentIsOmniCollection || currentCapability === 'audio' || (currentCapability === 'chat' && supportsChatAudioInput);
 
   const persistMcpEnabled = useCallback((next: boolean) => {
@@ -2087,8 +2058,7 @@ const ChatView: React.FC<ChatViewProps> = ({
     ? currentKnownModelInfo : findModelInfoByName(knownModelInfos, progressModelName);
   const progressRecipe = String((progressModelInfo as any)?.recipe || (progressModelName === currentModel ? currentRecipe : '')).toLowerCase();
   const capabilityBusy = activeId ? capabilityBusyConvoIds.has(activeId) : false;
-  const nativeVoiceBusy = activeId ? nativeVoiceBusyConvoIds.has(activeId) : false;
-  const isBusy = isStreaming || capabilityBusy || nativeVoiceBusy || isLiveRecording || micPreparation !== null || modelPreparation !== null;
+  const isBusy = isStreaming || capabilityBusy || isLiveRecording || micPreparation !== null || modelPreparation !== null;
 
   useEffect(() => {
     if (isBusy) setThinkingMenuOpen(false);
@@ -3000,7 +2970,7 @@ ${finalText}`
 
     const historyMessages = priorMessages.filter(m => {
       if (m.role === 'assistant' && !isPersistableAssistantMessage(m)) return false;
-      if (m.generatedImages?.length || (m.audioUrl && !m.nativeVoice) || m.model3dUrl) return false;
+      if (m.generatedImages?.length || m.audioUrl || m.model3dUrl) return false;
       return true;
     });
 
@@ -3034,45 +3004,6 @@ ${finalText}`
       chatMessages.push({ role: 'user' as const, content: requestText });
     }
 
-    if (supportsNativeVoiceOutput && voiceOutputEnabled && !toolRuntime && !useMcp) {
-      const controller = new AbortController();
-      nativeVoiceControllersRef.current.set(convoId, controller);
-      setNativeVoiceBusyConvoIds(prev => new Set(prev).add(convoId));
-      try {
-        const result = await api.chatCompletionWithAudio(
-          requestModelName, chatMessages, voiceOutputVoice, controller.signal,
-        );
-        const { content, thinking } = nativeVoiceSplitThinking(result.content);
-        const url = trackGeneratedMediaUrl(nativeVoiceAudioUrl(result.audio.data, result.audio.format));
-        appendAssistantMessage(convoId, {
-          content: content || t('Generated native speech.'),
-          thinking,
-          nativeVoice: true,
-          audioUrl: url,
-          audioName: `native-voice.${result.audio.format.toLowerCase().replace(/[^a-z0-9]/g, '') || 'wav'}`,
-          model: modelSnapshot,
-        });
-      } catch (error) {
-        if ((error as Error).name !== 'AbortError') {
-          appendAssistantMessage(convoId, {
-            content: friendlyChatError(friendlyErrorMessage(error)),
-            model: modelSnapshot,
-            isError: true,
-          });
-        }
-      } finally {
-        if (nativeVoiceControllersRef.current.get(convoId) === controller) {
-          nativeVoiceControllersRef.current.delete(convoId);
-        }
-        setNativeVoiceBusyConvoIds(prev => {
-          const next = new Set(prev);
-          next.delete(convoId);
-          return next;
-        });
-      }
-      return;
-    }
-
     streamModelsRef.current[convoId] = modelSnapshot;
     await streaming.send(convoId, requestModelName, chatMessages, toolRuntime, thinkingMode);
   }, [
@@ -3089,10 +3020,6 @@ ${finalText}`
     persistMcpEnabled,
     selectedMcpServerIds,
     selectedMcpToolNames,
-    supportsNativeVoiceOutput,
-    voiceOutputEnabled,
-    voiceOutputVoice,
-    trackGeneratedMediaUrl,
     supportsChatImageInput,
     thinkingMode,
     runCapabilityRequest,
@@ -3904,12 +3831,12 @@ ${finalText}`
                   aria-expanded={modelPickerOpen}
                 >
                   {currentLoadedModel ? (
-                    <span className={`composer__model-mode composer__model-mode--${modelModeBadge(currentCapability, currentRecipe)}`}>
-                      <ModelModeIcons capability={currentCapability} recipe={currentRecipe} audioInput={supportsChatAudioInput} size={14} />
-                      <span>{modelModeDisplayLabel(currentCapability, supportsChatAudioInput, currentRecipe)}</span>
+                    <span className={`composer__model-mode composer__model-mode--${modelModeBadge(currentCapability, currentRecipe, currentIsNativeOmni)}`}>
+                      <ModelModeIcons capability={currentCapability} recipe={currentRecipe} audioInput={supportsChatAudioInput} nativeOmni={currentIsNativeOmni} size={14} />
+                      <span>{modelModeDisplayLabel(currentCapability, supportsChatAudioInput, currentRecipe, currentIsNativeOmni)}</span>
                     </span>
                   ) : (
-                    <ModelModeIcons capability={currentCapability} recipe={currentRecipe} audioInput={supportsChatAudioInput} size={14} />
+                    <ModelModeIcons capability={currentCapability} recipe={currentRecipe} audioInput={supportsChatAudioInput} nativeOmni={currentIsNativeOmni} size={14} />
                   )}
                   <span className="composer__model-button-name">{currentModel}</span>
                   {selectableModels.length > 0 && (
@@ -3985,7 +3912,8 @@ ${finalText}`
                           selected={option.name === currentModel}
                           disabled={busy}
                           tabIndex={option.name === currentModel ? 0 : -1}
-                          ariaLabel={`${option.name}, ${modelModeDisplayLabel(option.capability, option.audioInput, option.recipe)}, ${option.detail}${option.defaultLabel ? `, ${option.defaultLabel}` : ''}`}
+                          ariaLabel={`${option.name}, ${modelModeDisplayLabel(option.capability, option.audioInput, option.recipe,
+          Boolean(option.info?.labels?.includes('omni')))}, ${option.detail}${option.defaultLabel ? `, ${option.defaultLabel}` : ''}`}
                           onClick={() => handleModelPickerSelect(option)}
                           // Each row offers the one thing left to do to it. Eject
                           // latches because a loaded model is holding memory and
@@ -4630,35 +4558,6 @@ ${finalText}`
             rows={1}
             aria-label={t('Message')}
           />
-          {supportsNativeVoiceOutput && !useMcp && (
-            <div className="composer__native-voice">
-              <button
-                type="button"
-                className="composer__thinking-trigger"
-                disabled={isBusy}
-                aria-label={t('Native voice output')}
-                aria-pressed={voiceOutputEnabled}
-                title={voiceOutputEnabled ? t('Disable native voice output') : t('Enable native voice output (slower)')}
-                onClick={() => setVoiceOutputEnabled(enabled => !enabled)}
-              >
-                <Icon name="audio" size={16} aria-hidden="true" />
-                <span>{voiceOutputEnabled ? t('Voice on') : t('Voice off')}</span>
-              </button>
-              {voiceOutputEnabled && (
-                <select
-                  className="composer__native-voice-select"
-                  aria-label={t('Native voice')}
-                  title={t('Native voice')}
-                  value={voiceOutputVoice}
-                  disabled={isBusy}
-                  onChange={event => setVoiceOutputVoice(event.target.value as 'Chelsie' | 'Ethan')}
-                >
-                  <option value="Chelsie">Chelsie</option>
-                  <option value="Ethan">Ethan</option>
-                </select>
-              )}
-            </div>
-          )}
           {modeSupportsChatCompletions && (
             <div
               className="composer__thinking"
@@ -4737,13 +4636,7 @@ ${finalText}`
               <Icon name={isLiveRecording ? 'stop' : supportsDictation ? 'mic' : 'audio'} size={16} />
             </button>
           )}
-          {nativeVoiceBusy && activeId ? (
-            <button className="composer__stop"
-              onClick={() => nativeVoiceControllersRef.current.get(activeId)?.abort()}
-              aria-label={t('Stop native voice generation')} title={t('Stop native voice generation')}>
-              <Icon name="stop" size={16} />
-            </button>
-          ) : isStreaming ? (
+          {isStreaming ? (
             <button className="composer__stop" onClick={handleStop} aria-label={t('Stop generating')} title={t('Stop')}><Icon name="stop" size={16} /></button>
           ) : (
             <button
@@ -4848,7 +4741,8 @@ const EmptyState: React.FC<EmptyStateProps> = ({
               const modelInfo = findModelInfoByName(modelInfos, model.model_name);
               const capability = modelInfo ? capabilityFromModelInfo(modelInfo) : capabilityFromLoaded(model);
               const audioInput = modelSupportsChatAudioInput(modelInfo, model);
-              const modeLabel = modelModeDisplayLabel(capability, audioInput, model.recipe);
+              const modeLabel = modelModeDisplayLabel(capability, audioInput, model.recipe,
+                 Boolean(modelInfo?.labels?.includes('omni')));
               const taskColor = capabilityColor(isRouterRecipe(model.recipe) ? 'router' : capability);
               const selectable = canSelectInComposer(model) || isComposerSelectableCapability(capability);
               const isActive = currentModel === model.model_name;

@@ -100,6 +100,17 @@ assert.deepEqual(
   'the model exposes both Chat and Audio tags without becoming audio-only',
 );
 
+assert.deepEqual(
+  modelCapabilityTags({ id: 'native-omni-tts', recipe: 'vllm', labels: ['tts', 'omni'] }),
+  ['omni', 'tts'],
+  'a native Omni TTS model exposes the Omni badge without becoming a collection',
+);
+assert.equal(
+  identityFromModelInfo({ id: 'native-omni-chat', recipe: 'vllm', labels: ['chat', 'omni'] }),
+  'chat',
+  'single-model Omni must retain its direct chat routing identity',
+);
+
 assert.equal(
   deploymentKindFromLabels(['chat', 'tool-calling', 'vision', 'audio']),
   'chat',
@@ -190,7 +201,8 @@ assert.match(chatViewSource, /<CapabilityIcon capability="audio"/,
   'paired mode icons must include the Audio glyph');
 assert.match(chatViewSource, /const showAudio = audioInput && capability === 'chat'/,
   'the paired Audio icon must only decorate Chat mode, not Omni collections');
-assert.match(chatViewSource, /currentLoadedModel \? \([\s\S]*composer__model-mode--\$\{modelModeBadge\(currentCapability, currentRecipe\)\}[\s\S]*modelModeDisplayLabel\(currentCapability, supportsChatAudioInput, currentRecipe\)/,
+assert.match(chatViewSource,
+  /currentLoadedModel\s*\?\s*\([\s\S]*?composer__model-mode--\$\{modelModeBadge\(currentCapability,\s*currentRecipe,\s*currentIsNativeOmni\)\}[\s\S]*?modelModeDisplayLabel\(currentCapability,\s*supportsChatAudioInput,\s*currentRecipe,\s*currentIsNativeOmni\)/,
   'the active model pill must include the colored mode label only for the currently loaded model');
 assert.doesNotMatch(chatViewSource, /composer__mode-badge--interactive/,
   'the redundant standalone mode pill must not remain in the chat composer');

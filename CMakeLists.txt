@@ -230,7 +230,6 @@ set(LEMON_BACKENDS
     "sd-cpp|sdcpp"
     "flm|fastflowlm"
     "ryzenai-llm|ryzenai"
-    "vllm-omni|vllm_omni"
     "vllm|vllm"
     "thenoise|thenoise"
     "ds4|ds4"

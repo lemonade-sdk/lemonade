@@ -2701,50 +2701,6 @@ class LemonadeAPI {
     }
   }
 
-  async chatCompletionWithAudio(
-    model: string,
-    messages: ChatMessage[],
-    voice: 'Chelsie' | 'Ethan',
-    signal?: AbortSignal,
-  ): Promise<{ content: string; audio: { data: string; format: string } }> {
-    const { samplingForModel } = await import(
-      /* webpackChunkName: "model-configuration" */ './modelConfiguration'
-    );
-    const data = await this._json<Record<string, any>>('/api/v1/chat/completions', {
-      method: 'POST',
-      body: {
-        model, messages, stream: false,
-        ...samplingForModel(model, this.allModels.find(candidate =>
-          modelInfoKey(candidate).toLowerCase() === model.trim().toLowerCase()) || null),
-        modalities: ['text', 'audio'],
-        voice,
-        audio: { voice, format: 'wav' },
-      },
-      signal,
-      includeSessionHeaders: true,
-    });
-    if (data.error) throw new Error(data.error?.message || 'Omni chat failed');
-    if (!Array.isArray(data.choices) || data.choices.length === 0) {
-      throw new Error('Omni chat returned no choices');
-    }
-    let content = '';
-    let audio: { data: string; format: string } | undefined;
-    // vLLM-Omni returns text/audio in separate choices; OpenAI may combine them.
-    for (const choice of data.choices) {
-      const message = choice?.message;
-      if (!message) continue;
-      if (!content && typeof message.content === 'string') content = message.content;
-      if (!content && Array.isArray(message.content)) {
-        content = message.content.map((part: any) => typeof part?.text === 'string' ? part.text : '').join('');
-      }
-      if (!audio && typeof message.audio?.data === 'string' && message.audio.data) {
-        audio = { data: message.audio.data, format: String(message.audio.format || 'wav') };
-      }
-    }
-    if (!audio) throw new Error('Omni chat did not return generated audio');
-    return { content, audio };
-  }
-
   async chatCompletionOnce(
     model: string,
     messages: ChatMessage[],

@@ -9,6 +9,7 @@
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
 #include "lemon/utils/http_client.h"
+#include "lemon/utils/custom_args.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
 #include <lemon/utils/aixlog.hpp>
@@ -21,6 +22,7 @@
 #include <iomanip>
 #include <random>
 #include <regex>
+#include <set>
 #include <sstream>
 
 namespace fs = std::filesystem;
@@ -290,7 +292,20 @@ static void configure_vllm_rocm_env(
 InstallParams VLLMServer::get_install_params(const std::string& backend, const std::string& version) {
     InstallParams params;
 
-    if (backend == "rocm") {
+    if (backend == "omni-rocm") {
+        params.repo = "lemonade-sdk/vllm-rocm";
+        const std::string arch = SystemInfo::rocm_asset_family(SystemInfo::get_rocm_arch());
+        if (arch != "gfx1151") {
+            throw std::runtime_error("vLLM Omni extension is currently published only for gfx1151");
+        }
+#ifdef __linux__
+        const std::string tag = version + "-" + arch;
+        params.version_override = tag;
+        params.filename = tag + "-x64.tar.gz";
+#else
+        throw std::runtime_error("vLLM Omni extension requires Linux");
+#endif
+    } else if (backend == "rocm") {
         params.repo = "lemonade-sdk/vllm-rocm";
         std::string target_arch =
             SystemInfo::rocm_asset_family(SystemInfo::get_rocm_arch());
@@ -361,10 +376,21 @@ void VLLMServer::load(const std::string& model_name,
     std::string vllm_args = options.get_option("vllm_args");
     int ctx_size = options.get_option("ctx_size");
     max_model_len_ = ctx_size;
+    omni_runtime_ = model_info.extra<std::string>("runtime", "") == "vllm-omni";
+    omni_default_voice_ = model_info.extra<std::string>("omni_default_voice", "");
+    omni_tts_task_type_ = model_info.extra<std::string>("omni_tts_task_type", "");
 
     RuntimeConfig::validate_backend_choice("vllm", vllm_backend);
-
-    backend_manager_->install_backend(vllm::spec()->recipe, vllm_backend);
+    if (omni_runtime_ && vllm_backend != "rocm") {
+        throw std::runtime_error("vLLM Omni is currently supported only with ROCm on gfx1151");
+    }
+    const std::string runtime_backend = omni_runtime_ ? "omni-rocm" : vllm_backend;
+    if (omni_runtime_) {
+        // The parent stays a complete, uninstallable vLLM backend even when
+        // auto-loading Omni on a machine without a prior vLLM install.
+        backend_manager_->install_backend(vllm::spec()->recipe, vllm_backend);
+    }
+    backend_manager_->install_backend(vllm::spec()->recipe, runtime_backend);
 
     std::string model_id = model_info.checkpoint();
     if (model_id.empty()) {
@@ -398,6 +424,89 @@ void VLLMServer::load(const std::string& model_name,
     }
 
     LOG(DEBUG, "vLLM") << "Using model target: " << model_target << std::endl;
+
+    // Omni is an optional vLLM runtime variant, NOT another Lemonade recipe.
+    // It needs its own launcher/argv; the ordinary vLLM launch path below is unchanged.
+    if (omni_runtime_) {
+        port_ = choose_port();
+        const fs::path normal_launcher = path_from_utf8(
+            BackendUtils::get_backend_binary_path(*vllm::spec(), runtime_backend));
+        const fs::path omni_launcher = normal_launcher.parent_path() / "vllm-omni-server";
+        if (!fs::exists(omni_launcher)) {
+            throw std::runtime_error("The vLLM Omni package has no vllm-omni-server launcher");
+        }
+        std::vector<std::string> omni_args = {
+            "serve", model_target, "--omni", "--host", "127.0.0.1",
+            "--port", std::to_string(port_), "--served-model-name", model_name,
+        };
+        if (ctx_size > 0) {
+            omni_args.push_back("--max-model-len");
+            omni_args.push_back(std::to_string(ctx_size));
+        }
+        if (model_info.extra<bool>("omni_trust_remote_code", false)) {
+            omni_args.push_back("--trust-remote-code");
+        }
+        if (model_info.extra<bool>("omni_enforce_eager", false)) {
+            omni_args.push_back("--enforce-eager");
+        }
+        const std::string config_name =
+            model_info.extra<std::string>("omni_deploy_config", "");
+        if (!config_name.empty()) {
+            // Resolve a bundled vllm_omni/deploy filename, never an arbitrary user path.
+            if (config_name.find('/') != std::string::npos ||
+                config_name.find('\\') != std::string::npos ||
+                config_name == "." || config_name == "..") {
+                throw std::runtime_error("Invalid vLLM Omni deploy config filename");
+            }
+            fs::path deploy_path;
+            const fs::path lib_root = normal_launcher.parent_path().parent_path() / "lib";
+            if (fs::exists(lib_root)) {
+                for (const auto& entry : fs::directory_iterator(lib_root)) {
+                    const fs::path candidate = entry.path() / "site-packages" /
+                                               "vllm_omni" / "deploy" / config_name;
+                    if (fs::is_regular_file(candidate)) {
+                        deploy_path = candidate;
+                        break;
+                    }
+                }
+            }
+            if (deploy_path.empty()) {
+                throw std::runtime_error("Bundled vLLM Omni deploy config missing: " + config_name);
+            }
+            omni_args.push_back("--deploy-config");
+            omni_args.push_back(path_to_utf8(deploy_path));
+        }
+        if (!vllm_args.empty()) {
+            static const std::set<std::string> reserved = {
+                "--host", "--port", "--model", "--served-model-name",
+                "--max-model-len", "--deploy-config", "--omni", "--api-key"};
+            const std::string error = validate_custom_args(vllm_args, reserved);
+            if (!error.empty()) {
+                throw std::invalid_argument("Invalid Omni launch arguments: " + error);
+            }
+            const auto extra = parse_custom_args(vllm_args);
+            omni_args.insert(omni_args.end(), extra.begin(), extra.end());
+        }
+        std::vector<std::pair<std::string, std::string>> env_vars;
+        configure_vllm_rocm_env(vllm_backend, env_vars, rocm_shim_dir_);
+        env_vars.push_back({"FLASH_ATTENTION_TRITON_AMD_ENABLE", "TRUE"});
+        env_vars.push_back({"PYTHONNOUSERSITE", "1"});
+        ServerCommand command;
+        command.program = path_to_utf8(omni_launcher);
+        command.args = std::move(omni_args);
+        command.env = std::move(env_vars);
+        command.port = port_;
+        command.ready_endpoint = "/v1/models";
+        try {
+            start_server(std::make_unique<NativeProcess>(ProcessOutput{is_debug(), true}),
+                         command, 1800);
+        } catch (...) {
+            cleanup_vllm_rocm_shim_dir(rocm_shim_dir_);
+            max_model_len_ = 0;
+            throw;
+        }
+        return;
+    }
 
     std::string vllm_model_config_path =
         utils::get_resource_path("resources/vllm_model_config.json");
@@ -552,6 +661,9 @@ void VLLMServer::load(const std::string& model_name,
 void VLLMServer::unload() {
     stop_server();
     cleanup_vllm_rocm_shim_dir(rocm_shim_dir_);
+    omni_runtime_ = false;
+    omni_default_voice_.clear();
+    omni_tts_task_type_.clear();
 }
 
 json VLLMServer::chat_completion(const json& request) {
@@ -564,6 +676,29 @@ json VLLMServer::completion(const json& request) {
 
 json VLLMServer::responses(const json& request) {
     return forward_request("/v1/responses", request);
+}
+
+void VLLMServer::audio_speech(const json& request, httplib::DataSink& sink) {
+    if (!omni_runtime_) {
+        throw std::runtime_error("Speech generation requires the vLLM Omni extension");
+    }
+    json payload = request;
+    const std::string voice = payload.value("voice", "");
+    if (omni_tts_task_type_ == "VoiceDesign") {
+        payload["task_type"] = "VoiceDesign";
+        if (!payload.contains("instructions")) {
+            payload["instructions"] = voice.empty() || voice == "alloy"
+                ? "A clear, natural speaking voice" : voice;
+        }
+        payload.erase("voice");
+    } else if (voice.empty() || voice == "alloy") {
+        if (!omni_default_voice_.empty()) {
+            payload["voice"] = omni_default_voice_;
+        } else {
+            payload.erase("voice");
+        }
+    }
+    forward_streaming_request("/v1/audio/speech", payload.dump(), sink, false);
 }
 
 void VLLMServer::forward_streaming_request(const std::string& endpoint,

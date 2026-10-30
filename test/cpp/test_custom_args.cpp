@@ -5,7 +5,6 @@
 #include "lemon/utils/custom_args.h"
 
 #include <cstdio>
-#include <set>
 #include <map>
 #include <string>
 #include <vector>
@@ -69,27 +68,6 @@ static bool expect_has_flag(const char* name, const std::string& input,
     if (!ok) {
         std::printf("  got:  %d\n  want: %d\n", actual, expected);
     }
-    return ok;
-}
-
-// PR #2527: tokenize quoted Omni arguments and reject managed launch flags.
-static bool omni_expect_tokens(const char* name,
-                               const std::string& input,
-                               const std::vector<std::string>& expected) {
-    const auto actual = parse_custom_args(input);
-    const bool ok = actual == expected;
-    std::printf("[%s] %s\n", ok ? "PASS" : "FAIL", name);
-    return ok;
-}
-
-static bool omni_expect_reserved(const char* name,
-                                 const std::string& input,
-                                 bool rejected_expected) {
-    static const std::set<std::string> reserved = {
-        "--host", "--port", "--served-model-name", "--max-model-len", "--deploy-config"};
-    const bool rejected = !lemon::utils::validate_custom_args(input, reserved).empty();
-    const bool ok = rejected == rejected_expected;
-    std::printf("[%s] %s\n", ok ? "PASS" : "FAIL", name);
     return ok;
 }
 
@@ -181,29 +159,6 @@ int main() {
     failures += !expect_has_flag(
         "missing alias does not match",
         "--threads 8", "--load-mode", false);
-
-    // vLLM-Omni-specific regressions kept alongside main's CustomArgsTest.
-    failures += !omni_expect_tokens("plain tokens", "--max-num-seqs 4 --gpu-memory-utilization 0.8",
-                                    {"--max-num-seqs", "4", "--gpu-memory-utilization", "0.8"});
-    failures += !omni_expect_tokens("double-quoted token", "--some-option \"value with spaces\"",
-                                    {"--some-option", "value with spaces"});
-    failures += !omni_expect_tokens("single-quoted token", "--some-option 'value with spaces'",
-                                    {"--some-option", "value with spaces"});
-    failures += !omni_expect_tokens("JSON quoting", "--override '{\"key\": \"a b\"}'",
-                                    {"--override", "{\"key\": \"a b\"}"});
-    failures += !omni_expect_tokens("empty arguments", "", {});
-    failures += !omni_expect_tokens("literal unquoted backslash", "a\\ b", {"a\\", "b"});
-    failures += !omni_expect_reserved("reject --port value", "--port 9999", true);
-    failures += !omni_expect_reserved("reject --port=value", "--port=9999", true);
-    failures += !omni_expect_reserved("reject deploy config", "--deploy-config /tmp/x.yaml", true);
-    failures += !omni_expect_reserved("reject served model", "--served-model-name=foo", true);
-    failures += !omni_expect_reserved("reject host", "--host 0.0.0.0", true);
-    failures += !omni_expect_reserved("reject context override", "--max-model-len=8192", true);
-    failures += !omni_expect_reserved("reject mixed managed flag",
-                                      "--gpu-memory-utilization 0.8 --port 1234", true);
-    failures += !omni_expect_reserved("allow unrelated flags",
-                                      "--gpu-memory-utilization 0.8 --enforce-eager", false);
-    failures += !omni_expect_reserved("allow empty flags", "", false);
 
     std::printf("\n%d failures\n", failures);
     return failures == 0 ? 0 : 1;

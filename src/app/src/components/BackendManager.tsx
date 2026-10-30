@@ -989,6 +989,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
     const updates: { recipe: string; backend: string }[] = [];
     for (const [recipe, recipeInfo] of Object.entries(sysInfo.recipes)) {
       for (const [backend, bInfo] of Object.entries(recipeInfo.backends)) {
+        if (recipe === 'vllm' && backend === 'omni-rocm') continue;
         if (bInfo.state === 'update_required' || bInfo.state === 'update_available') updates.push({ recipe, backend });
       }
     }
@@ -1040,6 +1041,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
     for (const [recipe, recipeInfo] of Object.entries(sysInfo.recipes)) {
       const cap = recipeCapability(sysInfo, recipe) as CapabilityCol;
       for (const [backend, backendInfo] of Object.entries(recipeInfo.backends)) {
+        if (recipe === 'vllm' && backend === 'omni-rocm') continue;
         const effectiveInfo: BackendInfo = {
           ...backendInfo,
           experimental: isExperimentalBackend(recipe, recipeInfo, backendInfo),
@@ -1062,8 +1064,9 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
   const updatesAvailable = useMemo(() => {
     if (!sysInfo?.recipes) return 0;
     let count = 0;
-    for (const recipeInfo of Object.values(sysInfo.recipes)) {
-      for (const bInfo of Object.values(recipeInfo.backends)) {
+    for (const [recipe, recipeInfo] of Object.entries(sysInfo.recipes)) {
+      for (const [backend, bInfo] of Object.entries(recipeInfo.backends)) {
+        if (recipe === 'vllm' && backend === 'omni-rocm') continue;
         if (bInfo.state === 'update_required' || bInfo.state === 'update_available') count++;
       }
     }
@@ -1074,7 +1077,8 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
     const counts = { all: 0, installed: 0, available: 0, updates: 0, experimental: 0 };
     if (!sysInfo?.recipes) return counts;
     for (const [recipe, recipeInfo] of Object.entries(sysInfo.recipes)) {
-      for (const backendInfo of Object.values(recipeInfo.backends)) {
+      for (const [backend, backendInfo] of Object.entries(recipeInfo.backends)) {
+        if (recipe === 'vllm' && backend === 'omni-rocm') continue;
         if (backendInfo.state === 'unsupported' && !showUnsupported) continue;
         counts.all++;
         if (
@@ -1142,8 +1146,21 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
             const badge = stateBadge(info.state);
             const cellKey = backendKey(recipe, backend);
             const canEditArgs = backendArgsTarget(runtimeConfig, cellKey) !== null;
-            const isInstalling = installing === cellKey;
-            const backendDownload = downloadItems.find(download => backendDownloadMatches(download, recipe, backend));
+            const omniInfo = recipe === 'vllm' && backend === 'rocm'
+              ? sysInfo?.recipes?.vllm?.backends?.['omni-rocm'] : undefined;
+            const omniInstalled = omniInfo && (
+              omniInfo.state === 'installed' || omniInfo.state === 'update_available'
+              || omniInfo.state === 'update_required');
+            const omniCanInstall = omniInfo && (
+              omniInfo.state === 'installable' || omniInfo.state === 'update_available'
+              || omniInfo.state === 'update_required');
+            const parentInstalled = info.state === 'installed'
+              || info.state === 'update_available' || info.state === 'update_required';
+            const omniBusy = installing === 'vllm:omni-rocm';
+            const isInstalling = installing === cellKey || Boolean(omniInfo && omniBusy);
+            const backendDownload = downloadItems.find(download =>
+              backendDownloadMatches(download, recipe, backend)
+              || (omniInfo && omniBusy && backendDownloadMatches(download, 'vllm', 'omni-rocm')));
             const showBackendProgress = Boolean(backendDownload && (isDownloadActive(backendDownload) || backendDownload.status === 'paused'));
             const tuning = backendTunings[cellKey] || null;
             const name = `${engineName} · ${backend}`;
@@ -1250,6 +1267,30 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
                       >
                         {t('Setup guide')}
                       </WorkspaceActionButton>
+                    )}
+                    {parentInstalled && omniCanInstall && !omniInstalled && !omniBusy && (
+                      <WorkspaceActionButton
+                        size="small"
+                        appearance="secondary"
+                        icon="download"
+                        aria-label={t('Upgrade to Omni')}
+                        disabled={isInstalling}
+                        onClick={() => void handleInstall('vllm', 'omni-rocm')}
+                      >
+                        {t('Upgrade to Omni')}
+                      </WorkspaceActionButton>
+                    )}
+                    {parentInstalled && omniInstalled && omniInfo && (
+                      omniInfo.state === 'update_available'
+                      || omniInfo.state === 'update_required' ? (
+                        <WorkspaceActionButton
+                          size="small" appearance="secondary" icon="rotate-ccw"
+                          disabled={isInstalling}
+                          onClick={() => void handleInstall('vllm', 'omni-rocm', true)}
+                        >
+                          {t('Update Omni')}
+                        </WorkspaceActionButton>
+                      ) : <span className="cell__badge cell__badge--ok">{t('Omni enabled')}</span>
                     )}
                     {canShowUninstall(info) && (
                       <WorkspaceActionButton

@@ -15780,17 +15780,3 @@ button.workspace-metadata-chip:hover {
   .loaded-overview__selection-pill { min-width: 66px; height: 30px; font-size: var(--text-xs); padding-inline: var(--space-2); }
   .loaded-overview__unload { width: 48px; }
 }
-
-/* Native Omni voice output, opt-in and separate from dictation/TTS. */
-.composer__native-voice { display: inline-flex; align-items: center; gap: 6px; }
-.composer__native-voice-select {
-  max-width: 94px;
-  min-width: 0;
-  padding: 5px 6px;
-  border: 1px solid currentColor;
-  border-radius: 6px;
-  color: inherit;
-  background: transparent;
-  font: inherit;
-}
-.composer__native-voice-select:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }

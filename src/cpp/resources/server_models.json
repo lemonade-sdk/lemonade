@@ -2798,6 +2798,43 @@
         ],
         "size": 0.067
     },
+    "Voxtral-4B-TTS-2603-vLLM": {
+        "checkpoint": "mistralai/Voxtral-4B-TTS-2603",
+        "recipe": "vllm",
+        "runtime": "vllm-omni",
+        "omni_default_voice": "casual_female",
+        "omni_trust_remote_code": true,
+        "suggested": false,
+        "labels": [
+            "tts",
+            "omni"
+        ]
+    },
+    "Qwen3-TTS-1.7B-VoiceDesign-vLLM": {
+        "checkpoint": "Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign",
+        "recipe": "vllm",
+        "runtime": "vllm-omni",
+        "omni_tts_task_type": "VoiceDesign",
+        "omni_deploy_config": "qwen3_tts.yaml",
+        "omni_trust_remote_code": true,
+        "omni_enforce_eager": true,
+        "suggested": false,
+        "labels": [
+            "tts",
+            "omni"
+        ]
+    },
+    "Fish-Speech-S2-Pro-vLLM": {
+        "checkpoint": "fishaudio/s2-pro",
+        "recipe": "vllm",
+        "runtime": "vllm-omni",
+        "omni_default_voice": "default",
+        "suggested": false,
+        "labels": [
+            "tts",
+            "omni"
+        ]
+    },
     "Qwen3.5-0.8B-FP16-vLLM": {
         "checkpoint": "Qwen/Qwen3.5-0.8B",
         "recipe": "vllm",
@@ -2807,20 +2844,6 @@
             "reasoning"
         ],
         "size": 1.77
-    },
-    "Qwen2.5-Omni-3B-vLLM-Omni": {
-        "checkpoint": "Qwen/Qwen2.5-Omni-3B",
-        "recipe": "vllm-omni",
-        "deploy_config": "resources/omni_deploy/qwen2_5_omni_1gpu.yaml",
-        "suggested": true,
-        "labels": [
-            "chat",
-            "vision",
-            "chat-transcription",
-            "chat-speech",
-            "omni"
-        ],
-        "size": 7.0
     },
     "Qwen3.5-2B-FP16-vLLM": {
         "checkpoint": "Qwen/Qwen3.5-2B",
