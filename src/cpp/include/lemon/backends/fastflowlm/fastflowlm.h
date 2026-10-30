@@ -29,7 +29,10 @@ inline const BackendDescriptor descriptor = {
          "FastFlowLM Options"},
     },
     /*support*/ {
-        {"npu", BackendTier::Core, BackendFormat::Native, {"windows", "linux"}, {{"amd_npu", {"XDNA2"}}}, "XDNA2 NPU"},
+        {"npu", BackendTier::Core, BackendFormat::Native, {"windows", "linux"},
+         {{"amd_npu", {"XDNA2", "XDNA3"}}}, "XDNA2/XDNA3 NPU",
+         // FastFlowLM's XDNA3 (ryzenai-corelib) build is Windows-only.
+         {{"XDNA3", {/*os*/ {"windows"}, /*channels*/ {}}}}},
     },
     /*about*/ {
         {"npu", {"NPU-native runtime for LLMs, speech and embeddings, with kernels built for Ryzen AI NPUs.",
