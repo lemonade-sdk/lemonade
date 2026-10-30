@@ -63,6 +63,21 @@ assert.deepEqual(
   'a legacy chat can be deleted by its derived id',
 );
 
+// Identical ID-less records must not share React keys or deletion identities.
+const duplicates = [legacy, { ...legacy }, { id: legacyId, title: 'Explicit', messages: [] }];
+const duplicateIds = settings.storedConversationIds(duplicates);
+assert.equal(new Set(duplicateIds).size, duplicates.length, 'duplicate legacy entries get unique IDs');
+assert.equal(duplicateIds[2], legacyId, 'existing stored IDs are not rewritten');
+assert.deepEqual(settings.storedConversationIds(JSON.parse(JSON.stringify(duplicates))), duplicateIds);
+const onlySecondDuplicate = settings.removeDeletedConversations(duplicates, new Set([duplicateIds[0]]));
+assert.equal(onlySecondDuplicate.length, 2, 'only the selected copy is deleted');
+assert.deepEqual(settings.storedConversationIds(onlySecondDuplicate), duplicateIds.slice(1),
+  'the surviving duplicate keeps its ID after a reload');
+const onlyFirstDuplicate = settings.removeDeletedConversations(duplicates, new Set([duplicateIds[1]]));
+assert.equal(onlyFirstDuplicate.length, 2, 'deleting the second occurrence keeps the first');
+assert.equal(settings.storedConversationIds(onlyFirstDuplicate)[0], duplicateIds[0],
+  'the first surviving duplicate keeps its ID');
+
 const saved = { updatedAt: 1, messages: [{}, {}] };
 assert.equal(settings.conversationVersion(saved), settings.conversationVersion({ ...saved }));
 assert.notEqual(

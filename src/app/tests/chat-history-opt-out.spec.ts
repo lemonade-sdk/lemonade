@@ -87,6 +87,19 @@ test.describe('Chat history with saving turned off', () => {
     await expect(railRow(page, 'Legacy chat')).toHaveCount(0);
   });
 
+  test('only one of two identical legacy chats is deleted', async ({ page }) => {
+    const same = conversation(undefined, 'Duplicate chat');
+    await openWithSavingOff(page, [same, { ...same }]);
+    const rows = railRow(page, 'Duplicate chat');
+    await expect(rows).toHaveCount(2);
+    await rows.first().hover();
+    await rows.first().locator('button[aria-label="Delete conversation: Duplicate chat"]').click();
+    await expect(rows).toHaveCount(1);
+    expect(await storedTitles(page)).toEqual(['Duplicate chat']);
+    await page.reload();
+    await expect(rows).toHaveCount(1);
+  });
+
   test('a deletion whose write failed is retried on the next change', async ({ page }) => {
     await openWithSavingOff(page, [
       conversation('a', 'Alpha chat'),
@@ -101,9 +114,54 @@ test.describe('Chat history with saving turned off', () => {
     });
     await deleteChat(page, 'Beta chat');
     expect(await storedTitles(page)).toEqual(['Alpha chat', 'Beta chat', 'Gamma chat']);
+    await expect(page.locator('.composer__history-notice[role="alert"]')).toContainText('Could not update saved chat history');
     await page.evaluate(() => (window as unknown as { restoreSetItem: () => void }).restoreSetItem());
+    await page.locator('.composer__history-notice[role="alert"]').getByRole('button', { name: 'Retry' }).click();
+    await expect.poll(() => storedTitles(page)).toEqual(['Alpha chat', 'Gamma chat']);
     await deleteChat(page, 'Gamma chat');
     expect(await storedTitles(page)).toEqual(['Alpha chat']);
+    await expect(page.locator('.composer__history-notice[role="alert"]')).toHaveCount(0);
+  });
+
+  test('failed full save warns even while saving is enabled', async ({ page }) => {
+    await openWithSavingOff(page, [conversation('a', 'Alpha chat')]);
+    await expect(railRow(page, 'Alpha chat')).toHaveCount(1);
+    await page.evaluate(() => {
+      const original = Storage.prototype.setItem;
+      (window as unknown as { restoreSetItem: () => void }).restoreSetItem = () => { Storage.prototype.setItem = original; };
+      Storage.prototype.setItem = () => { throw new Error('quota exceeded'); };
+      window.dispatchEvent(new CustomEvent('lemonade:chat-history-preference-changed', { detail: true }));
+    });
+    await expect(page.locator('.composer__history-notice[role="alert"]')).toContainText('Could not update saved chat history');
+    await expect.poll(() => page.evaluate(() => {
+      const event = new Event('beforeunload', { cancelable: true });
+      window.dispatchEvent(event);
+      return event.defaultPrevented;
+    })).toBe(true);
+    await page.evaluate(() => (window as unknown as { restoreSetItem: () => void }).restoreSetItem());
+    await page.locator('.composer__history-notice[role="alert"]').getByRole('button', { name: 'Retry' }).click();
+    await expect(page.locator('.composer__history-notice[role="alert"]')).toHaveCount(0);
+    expect(await page.evaluate(key => localStorage.getItem(key), PERSIST_KEY)).toBe('true');
+  });
+
+  test('failed preference-only write is reported and can be retried', async ({ page }) => {
+    await openWithSavingOff(page, [conversation('a', 'Alpha chat')]);
+    await expect(railRow(page, 'Alpha chat')).toHaveCount(1);
+    await page.evaluate(key => {
+      const original = Storage.prototype.setItem;
+      (window as unknown as { restoreSetItem: () => void }).restoreSetItem = () => { Storage.prototype.setItem = original; };
+      Storage.prototype.setItem = function (name: string, value: string) {
+        if (name === key) throw new Error('blocked preference');
+        return original.call(this, name, value);
+      };
+      window.dispatchEvent(new CustomEvent('lemonade:chat-history-preference-changed', { detail: true }));
+    }, PERSIST_KEY);
+    await expect(page.locator('.composer__history-notice[role="alert"]')).toContainText('Could not update saved chat history');
+    expect(await page.evaluate(key => localStorage.getItem(key), PERSIST_KEY)).toBe('false');
+    await page.evaluate(() => (window as unknown as { restoreSetItem: () => void }).restoreSetItem());
+    await page.locator('.composer__history-notice[role="alert"]').getByRole('button', { name: 'Retry' }).click();
+    expect(await page.evaluate(key => localStorage.getItem(key), PERSIST_KEY)).toBe('true');
+    await expect(page.locator('.composer__history-notice[role="alert"]')).toHaveCount(0);
   });
 
   test('turning saving back on saves the chats on screen', async ({ page }) => {
