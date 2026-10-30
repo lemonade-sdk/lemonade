@@ -191,7 +191,9 @@ void to_json(json& j, const MeshPeer& p) {
         {"tunnel_ip",      p.tunnel_ip},
         {"private_subnet", p.private_subnet},
         {"endpoint",       p.endpoint},
+        {"local_endpoints", p.local_endpoints},
         {"relay_endpoint", p.relay_endpoint},
+        {"path",           p.path},
         {"is_online",      p.is_online},
         {"last_handshake", p.last_handshake},
         {"last_rx", p.last_rx},
@@ -213,6 +215,13 @@ void from_json(const json& j, MeshPeer& p) {
     p.private_subnet = j.value("private_subnet", "");
     p.endpoint       = j.value("endpoint", "");
     p.relay_endpoint = j.value("relay_endpoint", "");
+    p.path           = j.value("path", "");
+    p.local_endpoints.clear();
+    if (j.contains("local_endpoints") && j["local_endpoints"].is_array()) {
+        for (const auto& endpoint : j["local_endpoints"]) {
+            if (endpoint.is_string()) p.local_endpoints.push_back(endpoint.get<std::string>());
+        }
+    }
     p.is_online      = j.value("is_online", false);
     p.last_handshake = j.value("last_handshake", int64_t{0});
     p.last_rx = j.value("last_rx", int64_t{0});

@@ -36,6 +36,10 @@ namespace relay = nexus::relay;
 
 namespace {
 
+/// A channel pass follows the previous one within the 100 ms receive
+/// timeout. A gap longer than this means the process was suspended.
+constexpr std::chrono::seconds kSuspendGap{5};
+
 void ensure_sockets() {
 #ifdef _WIN32
     static std::once_flag once;
@@ -168,6 +172,7 @@ void RelayChannel::Impl::run() {
     auto allocated_at = clock::time_point{};
     auto next_heartbeat = clock::time_point{};
     auto last_relay_rx = clock::now();
+    auto last_pass = clock::now();
     uint32_t attempts = 0;
 
     std::vector<uint8_t> buf(65536);
@@ -176,6 +181,18 @@ void RelayChannel::Impl::run() {
     while (running.load()) {
         const auto now = clock::now();
         const State current = state.load();
+
+        // The relay could not reach a suspended process (an app in the
+        // background, a stopped process): its silence during the gap says
+        // nothing about the relay. Blaming it put the relay in cooldown on
+        // this side only, so the two sides chose different relays. Restart
+        // the silence and pending windows and send a heartbeat now.
+        if (const auto gap = now - last_pass; gap > kSuspendGap) {
+            last_relay_rx = now;
+            allocated_at += gap;
+            next_heartbeat = now;
+        }
+        last_pass = now;
 
         if (current == State::Allocating && now >= next_allocate) {
             if (attempts >= opts.allocate_attempts) {

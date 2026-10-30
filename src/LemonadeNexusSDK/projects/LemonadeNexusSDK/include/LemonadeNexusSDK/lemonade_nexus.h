@@ -366,7 +366,15 @@ ln_error_t ln_join_network(ln_client_t* client,
                             const char* password,
                             char** out_json);
 
-/** Submit delete_node delta for current node. */
+/** Leave the network: delete this device's own node on the server (see
+ *  LemonadeNexusClient::leave_network). Requires an established mesh
+ *  session. On success the mesh stops and the node id and session token are
+ *  cleared. The device key stays valid, so the device can join again later
+ *  (for example with a new invite). On failure the mesh stays
+ *  up. *out_json is {success, error?}; error names the node, the HTTP status
+ *  or that the server was not reached, and the server's reason. The caller
+ *  owns *out_json and must release it with ln_free(). Returns LN_OK,
+ *  LN_ERR_NULL_ARG, or LN_ERR_REJECTED for any failure. */
 ln_error_t ln_leave_network(ln_client_t* client, char** out_json);
 
 /* ------------------------------------------------------------------ */
@@ -468,8 +476,16 @@ ln_error_t ln_set_session_moved_callback(ln_client_t* client,
 
 /** Get current mesh peers as JSON array.
  *  Each peer: {node_id, hostname, mesh_pubkey, tunnel_ip, private_subnet,
- *  endpoint, relay_endpoint, is_online, last_handshake, last_rx, rx_bytes,
- *  tx_bytes, latency_ms, keepalive, last_seen, mgmt_pubkey, peer_permissions}.
+ *  endpoint, local_endpoints, relay_endpoint, path, is_online,
+ *  last_handshake, last_rx, rx_bytes, tx_bytes, latency_ms, keepalive,
+ *  last_seen, mgmt_pubkey, peer_permissions}.
+ *  local_endpoints are the peer's LAN endpoints ("a.b.c.d:port") that the
+ *  SDK probes because the peer is on this device's network (the same public
+ *  address, or a LAN endpoint inside one of this device's subnets); empty
+ *  otherwise. path is the route the peer's traffic takes now: "lan" (one of
+ *  local_endpoints), "direct" (another direct address, normally the punched
+ *  public endpoint), "relay", or "" (no working path yet, or the path went
+ *  silent).
  *  last_handshake, last_rx and last_seen are Unix seconds (0 = none):
  *  last_rx is the last authenticated packet from the peer (keepalives
  *  included), last_seen the server's last contact with it.
@@ -482,7 +498,13 @@ ln_error_t ln_set_session_moved_callback(ln_client_t* client,
  *  Caller must ln_free(*out_json). */
 ln_error_t ln_mesh_peers(ln_client_t* client, char** out_json);
 
-/** Force an immediate mesh peer refresh (fetch from server + sync tunnel). */
+/** Check the mesh paths now instead of on their intervals: fetch the peer
+ *  list and sync the dataplane, query STUN, start a new punch burst toward
+ *  every peer without a direct path, and run the relay fallback, in one
+ *  orchestrator pass. Call it when the network changed (another Wi-Fi, a
+ *  VPN, cellular). The SDK detects a resume from suspension by itself.
+ *  Returns at once; the pass runs on the orchestrator thread. No effect
+ *  while the mesh is disabled. */
 ln_error_t ln_mesh_refresh(ln_client_t* client);
 
 /* ------------------------------------------------------------------ */
@@ -1218,7 +1240,7 @@ ln_error_t ln_mesh_port_set_selection(ln_client_t* client, const char* target,
  *   tls: {state ("off" | "waiting" | "activating" | "active" |
  *   "unsupported_certificate" | "error"), domain, expires_at, error},
  *   urls: [{node_id, device_name, url, self}],
- *   devices: [{node_id, device_name, is_online, app: {name, version},
+ *   devices: [{node_id, device_name, is_online, path, app: {name, version},
  *              families: [...], catalog_status, models_count, loaded_count}],
  *   catalog: {...}}.
  *  "activating" means the first certificate is installed and the port switches
@@ -1226,7 +1248,9 @@ ln_error_t ln_mesh_port_set_selection(ln_client_t* client, const char* target,
  *  never cut. `urls` lists this device and each online Tier 3 device that this
  *  device may connect to. Before TLS is active, only "http://127.0.0.1:<port>"
  *  is listed.
- *  `devices` lists the Tier 3 devices that can be selected, each with what its
+ *  `devices` lists the Tier 3 devices that can be selected, each with its mesh
+ *  path ("lan", "direct", "relay", or "" without a working path; see
+ *  ln_mesh_peers) and what its
  *  GET /.nexus/catalog last answered: the app name and version and the family
  *  names of its service catalog, and catalog_status (the HTTP status of that
  *  probe; 0 when the device has not answered yet, 404 when its SDK has no

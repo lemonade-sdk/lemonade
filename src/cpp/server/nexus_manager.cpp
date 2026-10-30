@@ -592,7 +592,11 @@ json merge_members(const json& group, const json& children, const json& peers,
             for (const auto& connection : mesh_peers) {
                 if (!connection.is_object() || text(connection, "node_id") != id || !flag(connection, "is_online")) continue;
                 if (connection.value("last_rx", int64_t{0}) > 0 || connection.value("last_handshake", int64_t{0}) > 0) {
-                    if (!text(connection, "relay_endpoint").empty()) connection_type = "relay";
+                    if (connection.contains("path")) {
+                        const auto path = text(connection, "path");
+                        if (path == "relay") connection_type = "relay";
+                        else if (path == "lan" || path == "direct") connection_type = "p2p";
+                    } else if (!text(connection, "relay_endpoint").empty()) connection_type = "relay";
                     else if (!text(connection, "endpoint").empty()) connection_type = "p2p";
                 }
                 break;
@@ -1557,6 +1561,9 @@ struct NexusManager::Session {
         detail = "joining";
         ln_set_link_token(client.get(), code.c_str());
         if (ln_set_inference_node(client.get(), 1) != LN_OK) throw NexusError(500, "Cannot join as an inference node");
+        // The join names the device; a name the SDK refuses (too long, or with a
+        // character peers would drop) leaves the server default, renamed below.
+        ln_set_device_name(client.get(), device_name().c_str());
         json joined_result;
         try { joined_result = sdk_call([&](auto out) { return ln_join_network(client.get(), device_name().c_str(), "", out); }); }
         catch (const std::exception& e) {

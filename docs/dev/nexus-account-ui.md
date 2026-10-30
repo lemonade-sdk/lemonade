@@ -128,6 +128,9 @@ The server supplies `connection_type` from the SDK's active tunnel status,
 not discovery candidates. Local devices, offline peers and peers without a
 confirmed path have no path badge; Advanced shows an unknown connection when
 the server cannot determine it. Older servers that omit the field remain supported.
+The current SDK's `path` is authoritative: `lan` and `direct` display as P2P,
+`relay` displays as Relay, and an empty path clears the badge even if old endpoint
+values remain. Endpoint-based detection is retained only for SDKs without `path`.
 Each device also shows its reported online state: a steady green dot and Online,
 a hollow gray dot and Offline, or Status unknown when presence is unavailable.
 Presence and path badges use the same current network snapshot in every view.

@@ -373,7 +373,17 @@ struct MeshPeer {
     std::string tunnel_ip;              ///< e.g. "10.64.0.5/32"
     std::string private_subnet;         ///< e.g. "10.128.17.4/30"
     std::string endpoint;               ///< Direct "ip:port" (from STUN/hole-punch)
+    /// The peer's LAN endpoints ("a.b.c.d:port", private addresses) that this
+    /// device probes: the server lists them from the peer's heartbeats, and
+    /// the mesh orchestrator keeps them only when the peer is on this
+    /// device's network (lan_probe_targets). Empty otherwise.
+    std::vector<std::string> local_endpoints;
     std::string relay_endpoint;         ///< Relay fallback "ip:port" (empty if not needed)
+    /// The path the peer's traffic takes now, as the mesh orchestrator's
+    /// last monitor pass found it: "lan" (one of local_endpoints), "direct"
+    /// (another address, normally the punched public endpoint), "relay", or
+    /// "" (no working path yet, or the path went silent).
+    std::string path;
     bool        is_online{false};
     int64_t     last_handshake{0};      ///< Unix timestamp
     /// Unix timestamp of the last authenticated packet from the peer,

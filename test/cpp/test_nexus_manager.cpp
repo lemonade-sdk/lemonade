@@ -861,6 +861,22 @@ void check_access_rules(const std::function<void(bool, const char*)>& check) {
     connections[0]["relay_endpoint"] = "";
     check(access::merge_members(group, children, candidates, admin_key, "server", connections)[1].at("connection_type") == "p2p",
           "Leaving the relay restores the P2P label");
+    connections[0]["relay_endpoint"] = "192.0.2.30:9103";
+    for (const auto* path : {"lan", "direct"}) {
+        connections[0]["path"] = path;
+        check(access::merge_members(group, children, candidates, admin_key, "server", connections)[1].at("connection_type") == "p2p",
+              "The SDK's current direct path overrides a stale relay endpoint");
+    }
+    connections[0]["relay_endpoint"] = "";
+    connections[0]["path"] = "relay";
+    check(access::merge_members(group, children, candidates, admin_key, "server", connections)[1].at("connection_type") == "relay",
+          "The SDK's current relay path overrides a stale direct endpoint");
+    for (const auto* path : {"", "unrecognized"}) {
+        connections[0]["path"] = path;
+        check(access::merge_members(group, children, candidates, admin_key, "server", connections)[1].at("connection_type") == "unknown",
+              "A missing or unrecognized SDK path never falls back to a stale endpoint");
+    }
+    connections[0]["path"] = "direct";
     connections[0]["is_online"] = false;
     check(access::merge_members(group, children, candidates, admin_key, "server", connections)[1].at("connection_type") == "unknown",
           "An offline tunnel never retains a path label");
