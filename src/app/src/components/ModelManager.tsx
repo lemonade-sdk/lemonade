@@ -1124,6 +1124,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   const latestLoadRequestRef = useRef<string | null>(null);
   const [loadJobs, setLoadJobs] = useState<ReadonlyMap<string, GuiLoadProgress>>(() => new Map());
   const activeLoadRef = useRef<Map<string, GuiLoadToken>>(new Map());
+  const [loadNotice, setLoadNotice] = useState<string | null>(null);
   const [pulling, setPulling] = useState<Record<string, number>>({});  // model -> percent
   const [modelSync, setModelSync] = useState<ModelSyncSnapshot>(() => modelSyncStore.snapshot());
   const [downloadItems, setDownloadItems] = useState<DownloadListItem[]>(() => downloadStore.snapshot());
@@ -1715,12 +1716,12 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     active.interruptSent = true;
     try {
       await api.interruptJob(active.id);
-    } catch (err) {
+      const notice = t('{name}: cancellation could not be confirmed. Retrying.', { name: active.modelName });
+      setLoadNotice(prev => prev === notice ? null : prev);
+    } catch {
       if (activeLoadRef.current.get(active.modelName) !== active) return;
-      active.cancelRequested = false;
       active.interruptSent = false;
-      updateLoadJob(active.modelName, prev => prev?.modelName === active.modelName ? { ...prev, cancelling: false } : prev);
-      showLoadError(active.modelName, err);
+      setLoadNotice(prev => prev ?? t('{name}: cancellation could not be confirmed. Retrying.', { name: active.modelName }));
     }
   };
 
@@ -1738,6 +1739,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   ) => {
     const name = modelName(model);
     if (activeLoadRef.current.has(name)) return;
+    const recoveringNotice = t('{name}: checking server jobs after a lost load response.', { name });
     const active: GuiLoadToken = {
       modelName: name, id: null, cancelRequested: false, interruptSent: false,
     };
@@ -1750,6 +1752,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     });
     const stopDownloadWatch = downloadStore.watchForModelLoad();
     let terminal = false;
+    let failedJob = false;
     try {
       const targets: Array<{ name: string; recipeOptions?: Record<string, unknown>; info?: ModelInfo | null }> = [];
       await loadModelRuntime(model, targets, new Set<string>(), overrideOptions);
@@ -1760,18 +1763,28 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
         return;
       }
       updateLoadJob(name, prev => prev?.modelName === name ? { ...prev, total: targets.length } : prev);
-      const { id } = await api.createModelLoadJob(name, targets);
+      const { id } = await api.createModelLoadJob(name, targets, () => setLoadNotice(recoveringNotice));
+      setLoadNotice(prev => prev === recoveringNotice ? null : prev);
       active.id = id;
-      if (active.cancelRequested) await requestLoadInterrupt(active);
+      if (active.cancelRequested) void requestLoadInterrupt(active);
       let failedPolls = 0;
+      const trackingNotice = t('{name}: unable to read the load status. Retrying; the job may still be running.', { name });
       while (true) {
         let job;
         try {
           job = await api.getJob(id);
+          if (!job || !Array.isArray(job.steps)) throw new Error('Invalid load-job response');
           failedPolls = 0;
+          setLoadNotice(prev => prev === trackingNotice ? null : prev);
         } catch (err) {
-          if (++failedPolls >= 3) throw err;
-          await new Promise<void>(resolve => window.setTimeout(resolve, 800));
+          if ((err as { status?: number }).status === 404) {
+            terminal = true;
+            await refresh().catch(() => undefined);
+            throw new Error(`Load job ${id} no longer exists on the server.`);
+          }
+          if (++failedPolls === 3) setLoadNotice(trackingNotice);
+          if (active.cancelRequested && !active.interruptSent) void requestLoadInterrupt(active);
+          await new Promise<void>(resolve => window.setTimeout(resolve, Math.min(5000, 800 * failedPolls)));
           continue;
         }
         const completed = job.steps.filter(step => step.status === 'completed').length;
@@ -1790,26 +1803,49 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
         });
         if (job.status === 'completed') {
           terminal = true;
-          await refresh();
-          if (latestLoadRequestRef.current === name) onModelSelect(name);
+          await refresh().catch(() => undefined);
+          if (active.cancelRequested) setLoadNotice(t('{name} finished loading before cancellation took effect.', { name }));
+          else if (latestLoadRequestRef.current === name) onModelSelect(name);
           void api.systemInfo({ afterPending: true }).catch(() => undefined);
           return;
         }
         if (job.status === 'interrupted') {
           terminal = true;
-          await refresh();
+          setLoadNotice(prev => prev === t('{name}: cancellation could not be confirmed. Retrying.', { name }) ? null : prev);
+          await refresh().catch(() => undefined);
           return;
         }
         if (job.status === 'failed') {
           terminal = true;
+          failedJob = true;
           await refresh().catch(() => undefined);
           throw new Error(job.steps.find(step => step.status === 'failed')?.error || `Failed to load ${name}`);
         }
+        if (active.cancelRequested && !active.interruptSent) void requestLoadInterrupt(active);
         await new Promise<void>(resolve => window.setTimeout(resolve, 800));
       }
     } catch (err) {
-      if (!terminal && active.id) void api.interruptJob(active.id).catch(() => undefined);
-      if (!active.cancelRequested) {
+      const reportError = failedJob || !active.cancelRequested;
+      if (!terminal && active.id) {
+        active.cancelRequested = true;
+        updateLoadJob(name, prev => prev?.modelName === name ? { ...prev, cancelling: true } : prev);
+        while (!terminal) {
+          void requestLoadInterrupt(active);
+          try {
+            const job = await api.getJob(active.id);
+            terminal = job.status === 'interrupted' || job.status === 'completed' || job.status === 'failed';
+          } catch (pollError) {
+            terminal = (pollError as { status?: number }).status === 404;
+          }
+          if (!terminal) await new Promise<void>(resolve => window.setTimeout(resolve, 2000));
+        }
+        await refresh().catch(() => undefined);
+      }
+      if (!active.id) {
+        setLoadNotice(prev => prev === recoveringNotice
+          ? t('{name}: could not confirm the load request. Check server jobs before retrying.', { name }) : prev);
+      }
+      if (reportError) {
         console.error('Load failed:', err);
         showLoadError(name, err);
       }
@@ -2012,27 +2048,32 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     downloadStore.wake(name, 'model');
     latestLoadRequestRef.current = name;
 
+    let completion: Promise<void> | undefined;
+
     const callbacks: PullCallbacks = {
       onProgress: (data) => {
         const item = downloadStore.wake(name, 'model');
         setPulling(p => ({ ...p, [name]: item?.percent ?? p[name] ?? 0 }));
       },
-      onComplete: async (data) => {
-        downloadStore.wake(name, 'model');
-        markBusy(name); // Keep this model busy while pull changes into load.
-        setPulling(p => { const next = { ...p }; delete next[name]; return next; });
-        let handedOff = false;
-        try {
-          await refresh();
-          if (ac.signal.aborted) return;
-          if (activeLoadRef.current.has(name)) return;
-          handedOff = true;
-          await runLoadJob(model, overrideOptions, true, false);
-        } catch (err) {
-          showModelError(name, friendlyErrorMessage(err));
-        } finally {
-          if (!handedOff && !activeLoadRef.current.has(name)) clearBusy(name);
-        }
+      onComplete: (data) => {
+        // pullModel does not await onComplete; track the handoff until it settles.
+        completion = (async () => {
+          downloadStore.wake(name, 'model');
+          markBusy(name);
+          let handedOff = false;
+          try {
+            await refresh();
+            if (ac.signal.aborted) return;
+            setPulling(p => { const next = { ...p }; delete next[name]; return next; });
+            if (activeLoadRef.current.has(name)) return;
+            handedOff = true;
+            await runLoadJob(model, overrideOptions, true, false);
+          } finally {
+            if (!handedOff && !activeLoadRef.current.has(name)) clearBusy(name);
+          }
+        })().catch(err => {
+          if (!ac.signal.aborted) showModelError(name, friendlyErrorMessage(err));
+        });
       },
       onError: (err) => {
         downloadStore.wake(name, 'model');
@@ -2045,6 +2086,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
 
     try {
       await api.pullModel(name, callbacks);
+      if (completion) await completion;
     } finally {
       delete pullAbortRef.current[name];
       setPulling(p => {
@@ -2956,7 +2998,20 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       style={panelResize.style}
     >
       {mobileRail.isOpen && <div className="workspace-mobile-rail-backdrop" onClick={mobileRail.close} aria-hidden="true" />}
-      {customJsonNotice && <div className="manager__toast" role="status" aria-live="polite">{customJsonNotice}</div>}
+      {(loadNotice || customJsonNotice) && (
+        <div className={`manager__toast${loadNotice && !customJsonNotice ? ' manager__toast--sync' : ''}`}
+          role="status" aria-live="polite" aria-atomic="true">
+          {!customJsonNotice ? (
+            <>
+              <span className="manager__toast-message">{loadNotice}</span>
+              <button type="button" className="manager__toast-dismiss" onClick={() => setLoadNotice(null)}
+                aria-label={t('Dismiss notification')} title={t('Dismiss')}>
+                <Icon name="x" size={14} aria-hidden="true" />
+              </button>
+            </>
+          ) : customJsonNotice}
+        </div>
+      )}
       {(modelSyncBusy || modelSyncError) && (
         <div className="manager__toast manager__toast--sync" role={modelSyncError && !modelSyncBusy ? 'alert' : 'status'}>
           <span className="manager__toast-message">
