@@ -2115,8 +2115,11 @@ bool needs_gfx1151_cwsr_fix() {
     return false;
 }
 
-std::string hip_visible_device(const std::string& arch) {
-    return system_info_detail::hip_visible_device("/sys/class/kfd/kfd/topology/nodes", arch);
+std::string hip_visible_device(const std::string& recipe, const std::string& backend) {
+    return system_info_detail::hip_visible_device(
+        "/sys/class/kfd/kfd/topology/nodes", [&](const std::string& arch) {
+            return SystemInfo::backend_supports_arch(recipe, backend, arch);
+        });
 }
 
 std::string kfd_gpu_properties(const std::string& arch) {

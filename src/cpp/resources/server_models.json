@@ -2954,7 +2954,7 @@
             "reasoning",
             "tool-calling"
         ],
-        "size": 80.8,
+        "size": 86.7,
         "min_resident_gb": 16.0
     },
     "DeepSeek-V4-Flash-Hybrid-Q2Q4-DS4": {
@@ -2965,7 +2965,7 @@
             "chat",
             "reasoning"
         ],
-        "size": 97.0,
+        "size": 97.6,
         "min_resident_gb": 16.0
     },
     "DeepSeek-V4-Flash-Q4-DS4": {
@@ -2976,7 +2976,7 @@
             "chat",
             "reasoning"
         ],
-        "size": 153.3,
+        "size": 164.6,
         "min_resident_gb": 16.0
     },
     "DeepSeek-V4-Flash-MXFP4-DS4": {
@@ -3000,7 +3000,7 @@
             "tool-calling",
             "vision"
         ],
-        "size": 81.0,
+        "size": 86.7,
         "min_resident_gb": 16.0
     },
     "DeepSeek-V4-Flash-Vision-Hybrid-Q2Q4-DS4": {
@@ -3012,7 +3012,7 @@
             "reasoning",
             "vision"
         ],
-        "size": 91.0,
+        "size": 97.6,
         "min_resident_gb": 16.0
     },
     "DeepSeek-V4-Flash-Vision-MXFP4-DS4": {
@@ -3024,7 +3024,7 @@
             "reasoning",
             "vision"
         ],
-        "size": 145.0,
+        "size": 156.0,
         "min_resident_gb": 16.0
     },
     "GLM-5.3-Flash-Q2-DS4": {
@@ -3046,7 +3046,7 @@
             "chat",
             "reasoning"
         ],
-        "size": 191.0,
+        "size": 190.9,
         "min_resident_gb": 16.0
     },
     "DeepSeek-V4.1-Flash-Q2-DS4": {
@@ -3057,20 +3057,8 @@
             "chat",
             "reasoning"
         ],
-        "size": 365.71,
+        "size": 365.7,
         "min_resident_gb": 16.0
-    },
-    "Qwen3.8-27B-ROCmFP4-FAST": {
-        "checkpoint": "julianmb/Qwen-3.8-27B-ROCmFP4-FAST-GGUF:Qwen3.8-27B-ROCmFP4-FAST.gguf",
-        "recipe": "rocmfpx",
-        "suggested": true,
-        "labels": [
-            "chat",
-            "reasoning",
-            "tool-calling"
-        ],
-        "size": 14.6,
-        "uploaded_by": "julianmb"
     },
     "Qwen3.8-27B-ROCmFP4-STRIX-MTP": {
         "checkpoints": {
@@ -3079,7 +3067,7 @@
             "mmproj": "kingjones777/Qwen3.8-27B-ROCmFP4-STRIX-MTP-GGUF:mmproj-Qwen3.8-27B-BF16.gguf"
         },
         "recipe": "rocmfpx",
-        "suggested": false,
+        "suggested": true,
         "labels": [
             "chat",
             "reasoning",
@@ -3090,33 +3078,37 @@
         "size": 17.4,
         "uploaded_by": "kingjones777"
     },
-    "Qwen3.8-27B-ROCmI4-MTP": {
+    "Gemma-4-26B-A4B-it-ROCmFP4": {
         "checkpoints": {
-            "main": "cafonez/Qwen3.8-27B-ROCmI4-MTP-GGUF:Qwen3.8-27B-Q4_0_ROCMI4.gguf",
-            "mmproj": "cafonez/Qwen3.8-27B-ROCmI4-MTP-GGUF:mmproj-BF16.gguf"
+            "main": "kingjones777/Gemma-4-26B-A4B-it-ROCmFP4-GGUF:gemma-4-26B-A4B-it-Q4_0_ROCMFP4_FAST_COHERENT.gguf",
+            "mmproj": "kingjones777/Gemma-4-26B-A4B-it-ROCmFP4-GGUF:mmproj-BF16.gguf"
         },
         "recipe": "rocmfpx",
-        "suggested": false,
+        "suggested": true,
+        "labels": [
+            "chat",
+            "tool-calling",
+            "vision"
+        ],
+        "size": 14.9,
+        "uploaded_by": "kingjones777"
+    },
+    "Qwen3.6-35B-A3B-ROCmFP4-MTP": {
+        "checkpoints": {
+            "main": "plunderstruck/Qwen3.6-35B-A3B-MTP-ROCmFP4-GGUF:Qwen3.6-35B-A3B-MTP-ROCmFP4-STRIX-embF16-headQ6.gguf",
+            "mmproj": "plunderstruck/Qwen3.6-35B-A3B-MTP-ROCmFP4-GGUF:mmproj-F32.gguf"
+        },
+        "recipe": "rocmfpx",
+        "suggested": true,
         "labels": [
             "chat",
             "reasoning",
             "tool-calling",
-            "vision"
+            "vision",
+            "mtp"
         ],
-        "size": 15.4,
-        "uploaded_by": "cafonez"
-    },
-    "Qwopus3.6-27B-v2-ROCmFP4-MTP": {
-        "checkpoint": "jcbtc/qwopus3.6-27b-v2-chadrock-rocmfp4-mtp:Qwopus3.6-27B-v2-MTP-BF16-to-ROCmFP4-STRIX_LEAN.gguf",
-        "recipe": "rocmfpx",
-        "suggested": false,
-        "labels": [
-            "chat",
-            "reasoning",
-            "tool-calling"
-        ],
-        "size": 14.8,
-        "uploaded_by": "jcbtc"
+        "size": 21.7,
+        "uploaded_by": "plunderstruck"
     },
     "Qwen3.8-Flash-Next-Halogen": {
         "checkpoint": "peonist-ai/halogen-qwen3.8-flash-next:qwen38-flash-next-w4b.hgn",

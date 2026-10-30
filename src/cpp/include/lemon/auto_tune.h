@@ -8,6 +8,8 @@
 #include <optional>
 #include <system_error>
 #include <lemon/auto_context_budget.h>
+#include <lemon/backends/backend_ops.h>
+#include <lemon/backends/backend_registry.h>
 #include <lemon/gguf_reader.h>
 #include <lemon/gpu_memory_selection.h>
 #include <lemon/models/model_info.h>
@@ -297,7 +299,13 @@ inline int64_t compute_auto_context_size(const ModelInfo& model_info,
         available_memory_gb, model_weight_gb,
         kv_bytes_per_token, (model_info.device & DEVICE_GPU) != 0,
         speculative, unified_gpu);
-    const int64_t max_ctx_from_memory = budget.max_tokens;
+    const std::optional<double> backend_kv_gib =
+        backends::ops_for(model_info.recipe)
+            ->auto_context_kv_budget_gib(model_info, available_memory_gb);
+    const int64_t max_ctx_from_memory =
+        backend_kv_gib ? static_cast<int64_t>((std::max)(0.0, *backend_kv_gib) * BYTES_PER_GIB /
+                                              kv_bytes_per_token)
+                       : budget.max_tokens;
     // A short budget still loads with the fallback: the estimate assumes full GPU
     // residency, while llama.cpp can spill layers to host RAM.
     const int64_t fallback = is_embedding ? EMBEDDING_CTX_SIZE : AUTO_CTX_FALLBACK;

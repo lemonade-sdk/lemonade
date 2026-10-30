@@ -75,13 +75,13 @@
     "metal": "master-957-90e86d1"
   },
   "rocmfpx": {
-    "rocm": "rocm-10.0-rocmfpx@sha256:ee2ef51d6d9eef8817560babf171828626c7c74dad4594edff02b75bba0eae58"
+    "rocm": "rocm-10.0-rocmfpx@sha256:4df326e907a469f4acc6091fa7fb68fb275c2d5a7136bacd8e47e7339a5c49f7"
   },
   "halogen": {
     "rocm": "latest@sha256:28ef278ab621a67b02550d1f1bfecfe641552803b96dae588018425fcfe38f36"
   },
   "ds4": {
-    "rocm": "rocm-10.0@sha256:127783182e7cb721104b043be69508eafeae837dde1ad20e966e9db34a48f291"
+    "rocm": "rocm-10.0@sha256:31b4e7e3584684768ee060e3dfeb62c1d716219da468090f3483977fdf6dfb47"
   },
   "therock": {
     "version": "10.1.0",

@@ -24,6 +24,28 @@ inline const std::set<std::string>& reserved_custom_arg_flags() {
     return flags;
 }
 
+// On an APU the GPU pool is the desktop's memory too. Left alone, ds4-server
+// grows its caches until its own free check reads 16 GiB, but that check misses
+// its model tensor cache and streaming buffers, so on a 62 GiB Strix Halo the
+// pool really fell to 15 GB free and the compositor died with the login
+// session. The free floor and tensor cache cap here kept 25 GB free under a
+// long prompt at full prefill speed. Auto-tune reads the same plan to keep the
+// context out of that floor.
+struct MemoryPlan {
+    int expert_cache_gb = 0;  // --ssd-streaming-cache-experts
+    int model_cache_gb = 0;   // DS4_ROCM_STREAM_MODEL_CACHE_GB
+    int free_reserve_gb = 0;  // DS4_ROCM_STREAM_FREE_RESERVE_GB
+};
+
+inline MemoryPlan memory_plan(double pool_gb) {
+    MemoryPlan plan;
+    if (pool_gb <= 0.0) return plan;
+    plan.expert_cache_gb = static_cast<int>(pool_gb * 0.4);
+    plan.model_cache_gb = static_cast<int>(pool_gb * 0.2);
+    plan.free_reserve_gb = static_cast<int>(pool_gb * 0.6);
+    return plan;
+}
+
 // The ds4 backend descriptor (plain data). DS4 (DwarfStar) is antirez's
 // self-contained DeepSeek V4 inference engine with an OpenAI-compatible HTTP
 // server (ds4-server). It runs from Donato Capitella's Strix Halo DS4 image.
