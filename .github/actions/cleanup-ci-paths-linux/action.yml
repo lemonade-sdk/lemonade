@@ -1,0 +1,111 @@
+name: Cleanup Linux CI paths
+
+description: Remove or prune Linux CI directories.
+
+inputs:
+  paths:
+    description: Newline-separated list of paths to remove, or roots to prune when prune-children-older-than-days is set.
+    required: true
+  expected-root:
+    description: Optional root that every deleted path must be under.
+    required: false
+    default: ''
+  prune-children-older-than-days:
+    description: Optional age threshold. When set, delete child directories under each path that are older than this many days instead of deleting the paths themselves.
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Cleanup Linux CI paths
+      shell: bash
+      env:
+        CLEANUP_PATHS: ${{ inputs.paths }}
+        EXPECTED_ROOT: ${{ inputs.expected-root }}
+        PRUNE_CHILDREN_OLDER_THAN_DAYS: ${{ inputs.prune-children-older-than-days }}
+      run: |
+        set -euo pipefail
+
+        # Resolve path cleanly
+        get_normalized_fullpath() {
+            local path=$1
+            readlink -f "$path"
+        }
+
+        # Check if path is under expected root
+        test_path_under_root() {
+            local path=$1
+            local expected_root=$2
+
+            if [ -z "$expected_root" ]; then
+                return 0
+            fi
+            if [ -z "$path" ]; then
+                return 1
+            fi
+
+            local full_path
+            full_path=$(get_normalized_fullpath "$path")
+            local full_root
+            full_root=$(get_normalized_fullpath "$expected_root")
+
+            # Check if full_path starts with full_root
+            if [[ "$full_path" == "$full_root"/* ]] || [[ "$full_path" == "$full_root" ]]; then
+                return 0
+            fi
+            return 1
+        }
+
+        # Parse paths input into array
+        IFS=$'\n' read -rd '' -a paths_arr <<< "$CLEANUP_PATHS"$'\n' || true
+
+        prune_days=""
+        if [ -n "$PRUNE_CHILDREN_OLDER_THAN_DAYS" ]; then
+            prune_days="$PRUNE_CHILDREN_OLDER_THAN_DAYS"
+        fi
+
+        if [ -n "$prune_days" ]; then
+            echo "Pruning child directories older than $prune_days days..."
+            for root in "${paths_arr[@]}"; do
+                root=$(echo "$root" | xargs) # trim whitespace
+                if [ -z "$root" ] || [ ! -d "$root" ]; then
+                    continue
+                fi
+
+                if ! test_path_under_root "$root" "$EXPECTED_ROOT"; then
+                    echo "Skipping prune root outside expected root: $root"
+                    continue
+                fi
+
+                echo "Pruning children under root: $root"
+                # Find directories directly under $root that are older than N days
+                # -mindepth 1 -maxdepth 1 limits search to direct children
+                # -type d matches directories only
+                # -mtime +N matches directories modified more than N days ago
+                find "$root" -mindepth 1 -maxdepth 1 -type d -mtime +"$prune_days" | while read -r child; do
+                    if test_path_under_root "$child" "$EXPECTED_ROOT"; then
+                        echo "  Removing: $child"
+                        rm -rf "$child"
+                    else
+                        echo "  Skipping child outside expected root: $child"
+                    fi
+                done
+            done
+        else
+            echo "Removing specified paths..."
+            for path in "${paths_arr[@]}"; do
+                path=$(echo "$path" | xargs) # trim whitespace
+                if [ -z "$path" ] || [ ! -e "$path" ]; then
+                    continue
+                fi
+
+                if ! test_path_under_root "$path" "$EXPECTED_ROOT"; then
+                    echo "Skipping cleanup outside expected root: $path"
+                    continue
+                fi
+
+                echo "Removing path: $path"
+                rm -rf "$path"
+            done
+        fi

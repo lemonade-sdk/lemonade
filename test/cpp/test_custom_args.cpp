@@ -1,100 +1,209 @@
-// Test for lemon::utils::parse_custom_args() — the quote-aware tokenizer the
-// backends use to split a free-form user-args string into argv elements.
+// Standalone test for lemon::utils custom arg parsing helpers.
 // Build with: cmake --build --preset default --target test_custom_args
-// Run with: ctest --test-dir build -R custom_args --output-on-failure
+// Run with: ctest --test-dir build -R '^CustomArgsTest$' --output-on-failure
 
 #include "lemon/utils/custom_args.h"
 
 #include <cstdio>
 #include <set>
+#include <map>
 #include <string>
 #include <vector>
 
+using lemon::utils::build_custom_args_map;
+using lemon::utils::custom_args_has_flag;
+using lemon::utils::map_to_args_string;
+using lemon::utils::merge_args_maps;
 using lemon::utils::parse_custom_args;
-using lemon::utils::validate_custom_args;
 
-static bool expect_tokens(const char* name,
-                          const std::string& input,
-                          const std::vector<std::string>& expected) {
-    std::vector<std::string> got = parse_custom_args(input);
-    bool ok = got == expected;
+using ArgMap = lemon::utils::CustomArgsMap;
+
+static std::string dump(const ArgMap& m) {
+    std::string s = "{";
+    for (const auto& [flag, occurrences] : m) {
+        s += " " + flag + ":";
+        for (const auto& vals : occurrences) {
+            s += " [";
+            for (size_t i = 0; i < vals.size(); ++i) {
+                if (i) s += ", ";
+                s += vals[i];
+            }
+            s += "]";
+        }
+    }
+    return s + " }";
+}
+
+static bool expect_map(const char* name, const std::string& input,
+                       const ArgMap& expected) {
+    ArgMap actual = build_custom_args_map(parse_custom_args(input));
+    bool ok = (actual == expected);
+    std::printf("[%s] %s\n", ok ? "PASS" : "FAIL", name);
     if (!ok) {
-        std::printf("FAIL: %s\n  input:    [%s]\n  expected:", name, input.c_str());
-        for (const auto& t : expected) std::printf(" [%s]", t.c_str());
-        std::printf("\n  got:     ");
-        for (const auto& t : got) std::printf(" [%s]", t.c_str());
-        std::printf("\n");
-    } else {
-        std::printf("ok: %s\n", name);
+        std::printf("  got:  %s\n  want: %s\n",
+                    dump(actual).c_str(), dump(expected).c_str());
     }
     return ok;
 }
 
-// Mirrors the flags vLLM-Omni manages on the launch command line.
-static const std::set<std::string> kReserved = {
-    "--host", "--port", "--served-model-name", "--max-model-len", "--deploy-config"};
+static bool expect_merge(const char* name, const std::string& target,
+                         const std::string& incoming,
+                         const std::string& expected) {
+    ArgMap target_map = build_custom_args_map(parse_custom_args(target));
+    ArgMap incoming_map = build_custom_args_map(parse_custom_args(incoming));
+    std::string actual = map_to_args_string(merge_args_maps(target_map, incoming_map));
+    bool ok = (actual == expected);
+    std::printf("[%s] %s\n", ok ? "PASS" : "FAIL", name);
+    if (!ok) {
+        std::printf("  got:  %s\n  want: %s\n",
+                    actual.c_str(), expected.c_str());
+    }
+    return ok;
+}
 
-static bool expect_reserved(const char* name,
-                            const std::string& input,
-                            bool should_reject) {
-    bool rejected = !validate_custom_args(input, kReserved).empty();
-    bool ok = rejected == should_reject;
-    std::printf("%s: %s (%s)\n", ok ? "ok" : "FAIL", name,
-                rejected ? "rejected" : "allowed");
+static bool expect_has_flag(const char* name, const std::string& input,
+                            const std::string& flag, bool expected) {
+    bool actual = custom_args_has_flag(parse_custom_args(input), flag);
+    bool ok = (actual == expected);
+    std::printf("[%s] %s\n", ok ? "PASS" : "FAIL", name);
+    if (!ok) {
+        std::printf("  got:  %d\n  want: %d\n", actual, expected);
+    }
+    return ok;
+}
+
+// PR #2527: tokenize quoted Omni arguments and reject managed launch flags.
+static bool omni_expect_tokens(const char* name,
+                               const std::string& input,
+                               const std::vector<std::string>& expected) {
+    const auto actual = parse_custom_args(input);
+    const bool ok = actual == expected;
+    std::printf("[%s] %s\n", ok ? "PASS" : "FAIL", name);
+    return ok;
+}
+
+static bool omni_expect_reserved(const char* name,
+                                 const std::string& input,
+                                 bool rejected_expected) {
+    static const std::set<std::string> reserved = {
+        "--host", "--port", "--served-model-name", "--max-model-len", "--deploy-config"};
+    const bool rejected = !lemon::utils::validate_custom_args(input, reserved).empty();
+    const bool ok = rejected == rejected_expected;
+    std::printf("[%s] %s\n", ok ? "PASS" : "FAIL", name);
     return ok;
 }
 
 int main() {
     int failures = 0;
 
-    failures += !expect_tokens(
-        "plain args split on whitespace",
-        "--max-num-seqs 4 --gpu-memory-utilization 0.8",
-        {"--max-num-seqs", "4", "--gpu-memory-utilization", "0.8"});
+    // Negative numbers attach to their flag and never become phantom keys.
+    failures += !expect_map(
+        "negative integer value", "--cache-ram -1", {{"--cache-ram", {{"-1"}}}});
+    failures += !expect_map(
+        "negative float value", "--temp -0.5", {{"--temp", {{"-0.5"}}}});
+    failures += !expect_map(
+        "negative leading-dot float", "--temp -.5", {{"--temp", {{"-.5"}}}});
 
-    // The core regression: a double-quoted value with spaces stays one argument.
-    failures += !expect_tokens(
-        "double-quoted value with spaces is one token",
-        "--some-option \"value with spaces\"",
-        {"--some-option", "value with spaces"});
+    // Scientific notation.
+    failures += !expect_map(
+        "scientific notation", "--threshold -1e5", {{"--threshold", {{"-1e5"}}}});
+    failures += !expect_map(
+        "scientific notation with negative exponent",
+        "--threshold -1.5e-3", {{"--threshold", {{"-1.5e-3"}}}});
+    failures += !expect_map(
+        "scientific notation capital E",
+        "--val -1E10", {{"--val", {{"-1E10"}}}});
 
-    failures += !expect_tokens(
-        "single-quoted value with spaces is one token",
-        "--some-option 'value with spaces'",
-        {"--some-option", "value with spaces"});
+    // Identical negatives under two flags must both survive (std::map keys
+    // are unique; treating -1 as a flag would dedupe it, dropping values).
+    failures += !expect_map(
+        "duplicate negative under two flags (no phantom key)",
+        "--cache-ram -1 --reasoning-budget -1",
+        {{"--cache-ram", {{"-1"}}}, {"--reasoning-budget", {{"-1"}}}});
 
-    // Single-quote a JSON value so its inner double quotes are preserved.
-    failures += !expect_tokens(
-        "single-quoted JSON value survives intact",
-        "--override '{\"key\": \"a b\"}'",
-        {"--override", "{\"key\": \"a b\"}"});
+    // Sanity: short and long flags still parse as flags with their values.
+    failures += !expect_map(
+        "short flag with value", "-ngl 99", {{"-ngl", {{"99"}}}});
+    failures += !expect_map(
+        "long flag with value", "--threads 8", {{"--threads", {{"8"}}}});
 
-    failures += !expect_tokens(
-        "empty string yields no tokens",
-        "",
-        {});
+    // Counterexamples: incomplete numerics are flags, not values.
+    failures += !expect_map(
+        "-1foo is a flag, not a value",
+        "--foo -1foo", {{"--foo", {{}}}, {"-1foo", {{}}}});
+    failures += !expect_map(
+        "-.future is a flag, not a value",
+        "--foo -.future", {{"--foo", {{}}}, {"-.future", {{}}}});
 
-    // Escaping is done via quotes, not backslashes: an unquoted backslash is a
-    // literal character and does NOT join tokens across a space. Documents the
-    // shared parser's behavior so callers rely on quoting for spaces.
-    failures += !expect_tokens(
-        "unquoted backslash is literal; quoting is the escape mechanism",
-        "a\\ b",
-        {"a\\", "b"});
+    failures += !expect_map(
+        "repeatable flag occurrences",
+        "--override-kv a=bool:false --override-kv b=bool:false",
+        {{"--override-kv", {{"a=bool:false"}, {"b=bool:false"}}}});
 
-    // Reserved-flag validation: managed launch args must be rejected in both
-    // the "--flag value" and "--flag=value" forms.
-    failures += !expect_reserved("--port <value> is rejected", "--port 9999", true);
-    failures += !expect_reserved("--port=<value> is rejected", "--port=9999", true);
-    failures += !expect_reserved("--deploy-config is rejected", "--deploy-config /tmp/x.yaml", true);
-    failures += !expect_reserved("--served-model-name=<v> is rejected", "--served-model-name=foo", true);
-    failures += !expect_reserved("--host is rejected", "--host 0.0.0.0", true);
-    failures += !expect_reserved("--max-model-len=<v> is rejected", "--max-model-len=8192", true);
-    failures += !expect_reserved("reserved flag among allowed ones is rejected",
-                                 "--gpu-memory-utilization 0.8 --port 1234", true);
-    failures += !expect_reserved("non-reserved flags are allowed",
-                                 "--gpu-memory-utilization 0.8 --enforce-eager", false);
-    failures += !expect_reserved("empty args are allowed", "", false);
+    failures += !expect_merge(
+        "target repeatable flag takes precedence",
+        "--override-kv a=bool:false --override-kv b=bool:false --threads 8",
+        "--override-kv default=bool:true --threads 4 --cache-type-k q8_0",
+        "--cache-type-k q8_0 --override-kv a=bool:false --override-kv b=bool:false --threads 8");
+    failures += !expect_merge(
+        "incoming repeatable flag is preserved",
+        "--threads 8",
+        "--override-kv a=bool:false --override-kv b=bool:false",
+        "--override-kv a=bool:false --override-kv b=bool:false --threads 8");
+    failures += !expect_merge(
+        "binary negation precedence is preserved",
+        "--no-jinja",
+        "--jinja --override-kv a=bool:false --override-kv b=bool:false",
+        "--no-jinja --override-kv a=bool:false --override-kv b=bool:false");
+
+    // Overridable-arg detection must compare complete flag tokens, not
+    // substrings, so a flag name appearing only inside a value or file path
+    // does not suppress a Lemonade default (regression for llama.cpp arg
+    // handling, e.g. "--load-mode none" and the -lm / --load-mode aliases).
+    failures += !expect_has_flag(
+        "real long flag token matches",
+        "--load-mode none", "--load-mode", true);
+    failures += !expect_has_flag(
+        "real short alias token matches",
+        "-lm", "-lm", true);
+    failures += !expect_has_flag(
+        "key with equals-value form matches",
+        "--load-mode=auto", "--load-mode", true);
+    failures += !expect_has_flag(
+        "equals-value alias matches",
+        "-lm=auto", "-lm", true);
+    failures += !expect_has_flag(
+        "alias inside path does not match",
+        "--lora /models/alma-lm-adapter.gguf", "-lm", false);
+    failures += !expect_has_flag(
+        "long alias inside value does not match",
+        "--override-kv tokenizer.load-mode=auto", "--load-mode", false);
+    failures += !expect_has_flag(
+        "missing alias does not match",
+        "--threads 8", "--load-mode", false);
+
+    // vLLM-Omni-specific regressions kept alongside main's CustomArgsTest.
+    failures += !omni_expect_tokens("plain tokens", "--max-num-seqs 4 --gpu-memory-utilization 0.8",
+                                    {"--max-num-seqs", "4", "--gpu-memory-utilization", "0.8"});
+    failures += !omni_expect_tokens("double-quoted token", "--some-option \"value with spaces\"",
+                                    {"--some-option", "value with spaces"});
+    failures += !omni_expect_tokens("single-quoted token", "--some-option 'value with spaces'",
+                                    {"--some-option", "value with spaces"});
+    failures += !omni_expect_tokens("JSON quoting", "--override '{\"key\": \"a b\"}'",
+                                    {"--override", "{\"key\": \"a b\"}"});
+    failures += !omni_expect_tokens("empty arguments", "", {});
+    failures += !omni_expect_tokens("literal unquoted backslash", "a\\ b", {"a\\", "b"});
+    failures += !omni_expect_reserved("reject --port value", "--port 9999", true);
+    failures += !omni_expect_reserved("reject --port=value", "--port=9999", true);
+    failures += !omni_expect_reserved("reject deploy config", "--deploy-config /tmp/x.yaml", true);
+    failures += !omni_expect_reserved("reject served model", "--served-model-name=foo", true);
+    failures += !omni_expect_reserved("reject host", "--host 0.0.0.0", true);
+    failures += !omni_expect_reserved("reject context override", "--max-model-len=8192", true);
+    failures += !omni_expect_reserved("reject mixed managed flag",
+                                      "--gpu-memory-utilization 0.8 --port 1234", true);
+    failures += !omni_expect_reserved("allow unrelated flags",
+                                      "--gpu-memory-utilization 0.8 --enforce-eager", false);
+    failures += !omni_expect_reserved("allow empty flags", "", false);
 
     std::printf("\n%d failures\n", failures);
     return failures == 0 ? 0 : 1;

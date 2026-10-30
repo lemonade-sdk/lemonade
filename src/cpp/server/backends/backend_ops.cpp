@@ -2,7 +2,11 @@
 
 #include <algorithm>
 #include <filesystem>
+#include "lemon/backends/backend_descriptor.h"
+#include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/hf_cache_util.h"
+#include "lemon/models/artifact_ref.h"
+#include "lemon/models/artifact_store.h"
 #include "lemon/utils/path_utils.h"
 
 namespace fs = std::filesystem;
@@ -13,16 +17,15 @@ namespace backends {
 using lemon::utils::path_from_utf8;
 using lemon::utils::path_to_utf8;
 
-// Default checkpoint resolution: the shared Hugging Face behavior. Locate the
+// Default checkpoint resolution: the shared remote-registry cache behavior. Locate the
 // requested variant (or auxiliary file like mmproj) within the active snapshot,
 // falling back to the main repo and finally the model cache directory.
 std::string BackendOps::resolve_checkpoint_path(const ModelInfo& info,
                                                 const CheckpointResolveContext& ctx) const {
-    (void)info;
-
-    // NPU side-cache checkpoints have no resolvable local file here (the backend
-    // that uses them resolves them itself at load time).
-    if (ctx.type == "npu_cache") {
+    // A checkpoint that lives in no snapshot of its own — a side cache placed beside
+    // the file it was built for — has nothing to find here. The source that fetches
+    // it knows where it lands.
+    if (checkpoint_layout(models::CheckpointRef{info.model_name, ctx.type}) != nullptr) {
         return "";
     }
 
@@ -75,7 +78,7 @@ std::string BackendOps::resolve_checkpoint_path(const ModelInfo& info,
         // Backward-compat: older downloads placed all files in the main repo dir.
         if (ctx.repo_id != ctx.main_repo_id) {
             std::string main_cache_path =
-                ctx.hf_cache + "/" + hf_cache::repo_id_to_cache_dir_name(ctx.main_repo_id);
+                ctx.hf_cache + "/" + hf_cache::repo_id_to_cache_dir_name(ctx.main_repo_id, ctx.registry_source);
             fs::path main_cache_path_fs = path_from_utf8(main_cache_path);
             if (fs::exists(main_cache_path_fs)) {
                 for (const auto& entry : fs::recursive_directory_iterator(main_cache_path_fs)) {
@@ -97,22 +100,40 @@ std::string BackendOps::resolve_checkpoint_path(const ModelInfo& info,
         return "";
     }
 
-    // No variant: return the cache directory.
+    fs::path active_snapshot = hf_cache::active_snapshot_path(model_cache_path_fs);
+    if (!active_snapshot.empty()) {
+        return path_to_utf8(active_snapshot);
+    }
+
+    // A snapshots directory without a usable refs/main is an interrupted or
+    // otherwise uncommitted pull. Do not expose the cache root as a downloaded
+    // model; a later pull can resume the preserved .partial files.
+    if (hf_cache::exists(model_cache_path_fs / "snapshots")) {
+        return "";
+    }
     return ctx.model_cache_path;
 }
 
 bool BackendOps::is_downloaded(const ModelInfo& info, const BackendOpsContext& ctx) const {
-    // Default: the shared HF checkpoint-completeness check.
-    return ctx.model_manager != nullptr && ctx.model_manager->checkpoints_complete(info);
+    return ctx.artifacts != nullptr && ctx.artifacts->complete(info);
+}
+
+DownloadPolicy BackendOps::plan_download(const ModelInfo& info,
+                                         const BackendOpsContext&) const {
+    const lemon::BackendDescriptor* descriptor = descriptor_for(info.recipe);
+    if (descriptor != nullptr && descriptor->self_manages_downloads) {
+        return DownloadPolicy::SelfManaged;
+    }
+    return DownloadPolicy::Repository;
 }
 
 void BackendOps::download_model(const ModelInfo& info, bool do_not_upgrade,
                                 DownloadProgressCallback progress, const BackendOpsContext& ctx) const {
-    // Default: the shared Hugging Face download engine.
     (void)do_not_upgrade;
-    if (ctx.model_manager != nullptr) {
-        ctx.model_manager->download_from_huggingface_engine(info, progress);
+    if (ctx.fetch == nullptr) {
+        throw std::runtime_error("No fetch service for " + info.checkpoint());
     }
+    ctx.fetch->fetch_registry_artifacts(info, progress, ctx.cancel);
 }
 
 const BackendOps* default_backend_ops() {

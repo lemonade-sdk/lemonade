@@ -24,13 +24,12 @@ inline const BackendDescriptor descriptor = {
     /*dynamic_models*/  false,
     /*options*/ {},
     /*support*/ {
-        {"cpu", {"windows", "linux"}, {{"cpu", {"x86_64"}}}, "x86_64 CPU"},
-        {"metal", {"macos"}, {{"metal", {}}}, "Apple Silicon GPU"},
+        {"metal", BackendTier::Core, BackendFormat::Native, {"macos"}, {{"metal", {}}}, "Apple Silicon GPU"},
+        {"cpu", BackendTier::Core, BackendFormat::Native, {"windows", "linux"}, {{"cpu", {"x86_64"}}}, "x86_64 CPU"},
     },
-    /*default_labels*/  {},  // kokoro models carry "tts" explicitly in server_models.json
+    /*supported_modes*/ {"tts"},
     /*required_checkpoints*/ {"main"},
-    /*modality*/        "Text-to-speech",
-    /*experimental*/    false,
+    /*default_capabilities*/ {},
     /*web_display_name*/ "",
     /*rocm_channels*/   {},
     /*exposes_prometheus_metrics*/ false,

@@ -30,7 +30,7 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
-MODEL = "claude-haiku-4-5-20251001"
+MODEL = "claude-haiku-5-5"
 ANTHROPIC_ENDPOINT = "https://api.anthropic.com/v1/messages"
 ANTHROPIC_VERSION = "2023-06-01"
 
@@ -145,6 +145,7 @@ def classify(item, item_num):
         {
             "model": MODEL,
             "max_tokens": 256,
+            "thinking": {"type": "disabled"},
             "system": SYSTEM_PROMPT,
             "messages": [{"role": "user", "content": user_msg}],
         }
@@ -167,7 +168,12 @@ def classify(item, item_num):
             f"Anthropic API error {exc.code}: {exc.read().decode(errors='replace')}"
         )
 
-    return data["content"][0]["text"].strip()
+    text_blocks = [
+        block["text"] for block in data["content"] if block["type"] == "text"
+    ]
+    if not text_blocks:
+        raise ValueError("Anthropic response did not contain a text block")
+    return "".join(text_blocks).strip()
 
 
 KNOWN_LABELS = {
@@ -256,6 +262,7 @@ def has_write_access(login, repo):
         return False
     return data.get("permission") in WRITE_PERMISSIONS
 
+
 def is_bot_user(user):
     """Return True for GitHub bot accounts.
     Bot activity should not count as community engagement for priority labels.
@@ -265,6 +272,7 @@ def is_bot_user(user):
     login = user.get("login") or ""
     user_type = user.get("type") or ""
     return user_type == "Bot" or login.lower().endswith("[bot]")
+
 
 def _add_community_user(users, user, author_association, repo):
     if not user:

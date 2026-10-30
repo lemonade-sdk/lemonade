@@ -36,6 +36,11 @@ void EvictionEngine::stop() {
 }
 
 void EvictionEngine::on_vram_pressure(double pct) {
+    if (pct == -1.0) {
+        evaluate_servers(-1.0);
+        return;
+    }
+
     double threshold = RuntimeConfig::global()->auto_evict_threshold_pct();
     if (pct >= threshold) {
         LOG(INFO) << "VRAM pressure critical (" << (pct * 100.0) << "% >= " << (threshold * 100.0) << "%). Evaluating eviction." << std::endl;
@@ -57,6 +62,10 @@ void EvictionEngine::evaluate_servers(double current_vram_pct) {
 
     {
         std::lock_guard<std::mutex> lock(router_->load_mutex_);
+
+        // An exclusive job session owns model residency; auto-eviction and
+        // downsizing would yank models out from under its next step.
+        if (router_->exclusive_active_) return;
 
         auto now = std::chrono::steady_clock::now();
         double threshold = RuntimeConfig::global()->auto_evict_threshold_pct();
@@ -119,7 +128,7 @@ void EvictionEngine::evaluate_servers(double current_vram_pct) {
                 break;
             }
 
-            // 2. Time-based soft idle (downsize) — collect the candidate only. The
+            // 2. Time-based soft idle (downsize) - collect the candidate only. The
             // model is not claimed here; try_begin_downsize() below atomically
             // re-checks that it is still idle and transitions it to DOWNSIZING.
             if (idle_ms >= downsize_timeout_sec * 1000 && state == ModelState::READY) {
@@ -153,6 +162,7 @@ void EvictionEngine::evaluate_servers(double current_vram_pct) {
         WrappedServer* s = nullptr;
         {
             std::lock_guard<std::mutex> lk(router_->load_mutex_);
+            if (router_->exclusive_active_) break;
             s = router_->find_server_by_model_name(name);
             if (!s || !s->try_begin_downsize()) {
                 continue;  // gone, busy, or no longer idle since phase 1

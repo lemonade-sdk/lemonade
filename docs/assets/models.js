@@ -5,30 +5,36 @@ const RAW_BASE = 'https://raw.githubusercontent.com/lemonade-sdk/lemonade';
 /* BEGIN GENERATED: models-js-recipes */
 const RECIPE_PRIORITY = [
   'acestep',
+  'ds4',
   'flm',
+  'llamacpp-hrx',
   'kokoro',
   'llamacpp',
   'moonshine',
+  'onnxruntime',
   'openmoss',
   'ryzenai-llm',
   'sd-cpp',
+  'thenoise',
   'thinksound',
   'trellis',
   'vllm',
-  'vllm-omni',
   'whispercpp'
 ];
 
 const RECIPE_DISPLAY_NAMES = {
   llamacpp: 'llama.cpp GPU',
+  'llamacpp-hrx': 'HRX GPU',
   whispercpp: 'whisper.cpp',
   'sd-cpp': 'stable-diffusion.cpp',
   flm: 'FastFlowLM NPU',
   'ryzenai-llm': 'Ryzen AI SW NPU',
-  vllm: 'vLLM ROCm (experimental)',
-  'vllm-omni': 'vLLM-Omni ROCm (experimental)',
+  vllm: 'vLLM ROCm',
+  thenoise: 'thenoise',
+  ds4: 'DwarfStar4',
   thinksound: 'ThinkSound',
   acestep: 'ACE-Step',
+  onnxruntime: 'ONNX Runtime',
   trellis: 'TRELLIS.2',
   openmoss: 'OpenMOSS TTS'
 };
@@ -188,13 +194,29 @@ function renderLabelButtons() {
 
 function buildModelTableRows(name, details) {
   const rows = [];
-  const checkpoint = parseCheckpoint(name, details);
+  const singleCheckpoint = parseCheckpoint(name, details);
+  const checkpoints = details.checkpoints && typeof details.checkpoints === 'object'
+    ? details.checkpoints
+    : null;
+
+  let checkpoint = singleCheckpoint;
+  if (!checkpoint.repo && checkpoints && typeof checkpoints.main === 'string') {
+    checkpoint = parseCheckpoint(name, { ...details, checkpoint: checkpoints.main });
+  }
 
   if (checkpoint.repo) {
+    const registrySource = details.registry_source
+      || (details.source === 'modelscope' || details.source === 'huggingface'
+        ? details.source
+        : 'huggingface');
+    const checkpointUrl = registrySource === 'modelscope'
+      ? `https://modelscope.cn/models/${escapeHtml(checkpoint.repo)}/summary`
+      : `https://huggingface.co/${escapeHtml(checkpoint.repo)}`;
     rows.push({
       key: 'Checkpoint',
-      value: `<a href="https://huggingface.co/${escapeHtml(checkpoint.repo)}" target="_blank" rel="noopener">${escapeHtml(checkpoint.repo)}</a>`
+      value: `<a href="${checkpointUrl}" target="_blank" rel="noopener">${escapeHtml(checkpoint.repo)}</a>`
     });
+    rows.push({ key: 'Model Source', value: registrySource === 'modelscope' ? 'ModelScope' : 'Hugging Face' });
     if (checkpoint.variant) {
       rows.push({ key: 'GGUF Variant', value: escapeHtml(checkpoint.variant) });
     }
@@ -202,8 +224,23 @@ function buildModelTableRows(name, details) {
     rows.push({ key: 'Checkpoint', value: escapeHtml(details.checkpoint) });
   }
 
+  if (checkpoints) {
+    for (const [checkpointKey, checkpointValue] of Object.entries(checkpoints)) {
+      if (checkpointKey === 'main') {
+        continue;
+      }
+
+      const parsed = typeof checkpointValue === 'string'
+        ? parseCheckpoint(name, { ...details, checkpoint: checkpointValue })
+        : { repo: null, variant: null, display: String(checkpointValue) };
+
+      const displayValue = parsed.variant || parsed.display || String(checkpointValue);
+      rows.push({ key: toTitle(checkpointKey), value: escapeHtml(displayValue) });
+    }
+  }
+
   for (const [key, value] of Object.entries(details)) {
-    if (['checkpoint', 'max_prompt_length', 'suggested', 'labels'].includes(key)) {
+    if (['checkpoint', 'checkpoints', 'max_prompt_length', 'suggested', 'labels'].includes(key)) {
       continue;
     }
     if (key === 'image_defaults' && value && typeof value === 'object') {

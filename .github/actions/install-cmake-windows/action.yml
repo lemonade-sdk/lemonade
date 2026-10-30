@@ -1,0 +1,48 @@
+name: 'Install CMake (Windows)'
+description: 'Installs CMake on a Windows runner if it is not already on PATH'
+
+inputs:
+  version:
+    description: 'CMake version to install when none is present'
+    required: false
+    default: '3.28.1'
+
+runs:
+  using: composite
+  steps:
+    - name: Install CMake if not available
+      shell: PowerShell
+      run: |
+        $cmakeInstalled = Get-Command cmake -ErrorAction SilentlyContinue
+
+        if ($cmakeInstalled) {
+            Write-Host "CMake is already installed:" -ForegroundColor Green
+            cmake --version
+            exit 0
+        }
+
+        Write-Host "CMake not found, installing..." -ForegroundColor Yellow
+
+        $cmakeVersion = "${{ inputs.version }}"
+        $cmakeUrl = "https://github.com/Kitware/CMake/releases/download/v$cmakeVersion/cmake-$cmakeVersion-windows-x86_64.msi"
+        $cmakeInstaller = "cmake-installer.msi"
+
+        Invoke-WebRequest -Uri $cmakeUrl -OutFile $cmakeInstaller -UseBasicParsing
+
+        Start-Process msiexec.exe -ArgumentList "/i $cmakeInstaller /quiet /norestart" -Wait
+
+        # Persist to PATH for this step and for every step after it.
+        # Out-File -Encoding utf8 rather than `>>`: under Windows PowerShell
+        # 5.1 the redirect writes UTF-16LE and the runner reads GITHUB_PATH as
+        # UTF-8, so the entry would be silently garbled.
+        $cmakePath = "C:\Program Files\CMake\bin"
+        $env:PATH = "$cmakePath;$env:PATH"
+        "$cmakePath" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+        cmake --version
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "ERROR: CMake installation failed!" -ForegroundColor Red
+            exit 1
+        }
+
+        Write-Host "CMake installed successfully and added to PATH!" -ForegroundColor Green

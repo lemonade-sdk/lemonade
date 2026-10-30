@@ -1,5 +1,5 @@
 name: 'Cleanup Processes (Windows)'
-description: 'Kill all lemonade, Python, llama-server, and FLM processes on Windows'
+description: 'Kill all lemonade, llama-server, and FLM processes on Windows'
 runs:
   using: "composite"
   steps:
@@ -9,6 +9,48 @@ runs:
         Write-Host "========================================" -ForegroundColor Cyan
         Write-Host "Cleaning up processes on Windows..." -ForegroundColor Cyan
         Write-Host "========================================" -ForegroundColor Cyan
+
+        # Helper function to kill a process and its children recursively
+        function Stop-ProcessAndChildren {
+            param(
+                [int]$ParentPid
+            )
+
+            $children = Get-CimInstance Win32_Process -Filter "ParentProcessId = $ParentPid" -ErrorAction SilentlyContinue
+            foreach ($child in $children) {
+                Stop-ProcessAndChildren -ParentPid $child.ProcessId
+            }
+
+            if (Get-Process -Id $ParentPid -ErrorAction SilentlyContinue) {
+                Write-Host "  Stopping PID $ParentPid..." -ForegroundColor Yellow
+                Stop-Process -Id $ParentPid -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        # Targeted PID-file based process cleanup
+        $tmpRoot = $env:RUNNER_TEMP
+        if (-not $tmpRoot) { $tmpRoot = $PWD }
+        Write-Host "Checking for PID files in $tmpRoot..." -ForegroundColor Yellow
+        $pidFiles = Get-ChildItem (Join-Path $tmpRoot "lemond*.pid"), (Join-Path $tmpRoot "lemonade*.pid") -ErrorAction SilentlyContinue
+        foreach ($file in $pidFiles) {
+            $pidText = Get-Content $file.FullName -Raw -ErrorAction SilentlyContinue
+            $targetPid = 0
+            if ($pidText -and [int]::TryParse($pidText.Trim(), [ref]$targetPid)) {
+                Write-Host "Found PID $targetPid in $($file.Name)" -ForegroundColor Yellow
+                $proc = Get-Process -Id $targetPid -ErrorAction SilentlyContinue
+                if ($proc) {
+                    if ($proc.ProcessName -match "lemond" -or $proc.ProcessName -match "lemonade" -or $proc.ProcessName -match "llama-server") {
+                        Write-Host "Terminating PID $targetPid ($($proc.ProcessName)) and its descendants..." -ForegroundColor Yellow
+                        Stop-ProcessAndChildren -ParentPid $targetPid
+                    } else {
+                        Write-Host "Process $targetPid ($($proc.ProcessName)) is not a lemonade process (PID reused or stale). Skipping." -ForegroundColor Gray
+                    }
+                } else {
+                    Write-Host "Process $targetPid is not running." -ForegroundColor Gray
+                }
+                Remove-Item $file.FullName -Force -ErrorAction SilentlyContinue
+            }
+        }
 
         # Function to safely kill processes by name pattern
         function Stop-ProcessByPattern {
@@ -39,22 +81,37 @@ runs:
             }
         }
 
-        # Kill llama-server processes
-        Stop-ProcessByPattern -Pattern "llama-server" -Description "llama-server"
-        Stop-ProcessByPattern -Pattern "llama" -Description "llama"
+        # Determine if we are on a self-hosted (shared) runner to prevent concurrent run collisions
+        $isSelfHosted = $false
+        if ($env:RUNNER_ENVIRONMENT -eq "self-hosted") {
+            $isSelfHosted = $true
+        } elseif ($env:RUNNER_NAME -match "(stx|rai|selfhost)") {
+            $isSelfHosted = $true
+        }
 
-        # Kill FLM processes (Windows only)
-        Stop-ProcessByPattern -Pattern "flm" -Description "FLM"
+        if ($isSelfHosted) {
+            Write-Host "Running on self-hosted runner ($($env:RUNNER_NAME)). Global cleanup bypassed to prevent concurrency collisions." -ForegroundColor Cyan
+        } else {
+            Write-Host "Running on GitHub-hosted runner. Proceeding with global cleanup fallback..." -ForegroundColor Cyan
 
-        # Kill lemonade processes (lemond, lemonade, lemonade-tray, etc.)
-        Stop-ProcessByPattern -Pattern "lemonade" -Description "lemonade"
-        Stop-ProcessByPattern -Pattern "lemond" -Description "lemond"
+            # Kill llama-server processes
+            Stop-ProcessByPattern -Pattern "llama-server" -Description "llama-server"
+            Stop-ProcessByPattern -Pattern "llama" -Description "llama"
 
-        # Kill Python processes
-        Stop-ProcessByPattern -Pattern "python" -Description "Python"
+            # Kill FLM processes (Windows only)
+            Stop-ProcessByPattern -Pattern "flm" -Description "FLM"
 
-        # Kill wscript processes (VBScript launcher used by lemonade)
-        Stop-ProcessByPattern -Pattern "wscript" -Description "wscript"
+            # Kill backend subprocesses that outlive a force-killed lemond
+            Stop-ProcessByPattern -Pattern "ort-server" -Description "ort-server"
+            Stop-ProcessByPattern -Pattern "moonshine-server" -Description "moonshine-server"
+
+            # Kill lemonade processes (lemond, lemonade, lemonade-tray, etc.)
+            Stop-ProcessByPattern -Pattern "lemonade" -Description "lemonade"
+            Stop-ProcessByPattern -Pattern "lemond" -Description "lemond"
+
+            # Kill wscript processes (VBScript launcher used by lemonade)
+            Stop-ProcessByPattern -Pattern "wscript" -Description "wscript"
+        }
 
         # Wait a moment for processes to fully terminate
         Start-Sleep -Seconds 2
@@ -145,35 +202,72 @@ runs:
         Write-Host "Uninstalling Lemonade Server (MSI)..." -ForegroundColor Magenta
         Write-Host "========================================" -ForegroundColor Magenta
 
-        # Uninstall by Product Code - Attempt to find it first
+        # Uninstall by Product Code - Attempt to find it first using fast registry search
         $productName = "Lemonade Server"
+        Write-Host "Searching for product via registry: $productName" -ForegroundColor Cyan
 
-        Write-Host "Searching for product: $productName" -ForegroundColor Cyan
+        $uninstallPaths = @(
+            "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*",
+            "HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*",
+            "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*"
+        )
 
-        $product = Get-WmiObject -Class Win32_Product | Where-Object { $_.Name -eq $productName }
+        # A single stale ARP entry (uninstallable, exit code 1605) must not shadow
+        # a real registration of the same DisplayName, so collect every GUID-keyed
+        # match across all hives instead of stopping at the first one.
+        $foundProducts = @()
 
-        if ($product) {
-            Write-Host "Found installed product: $($product.Name) (Version: $($product.Version))" -ForegroundColor Green
-            Write-Host "IdentifyingNumber (ProductCode): $($product.IdentifyingNumber)" -ForegroundColor Gray
+        foreach ($path in $uninstallPaths) {
+            $subkeys = Get-ItemProperty $path -ErrorAction SilentlyContinue
+            foreach ($key in $subkeys) {
+                if ($key.DisplayName -eq $productName -and $key.PSChildName -like "{*}") {
+                    $foundProducts += $key
+                }
+            }
+        }
 
-            Write-Host "Uninstalling..." -ForegroundColor Yellow
-            $proc = Start-Process -FilePath "msiexec.exe" -ArgumentList "/x $($product.IdentifyingNumber) /qn" -Wait -PassThru
+        if ($foundProducts.Count -gt 0) {
+            foreach ($foundProduct in $foundProducts) {
+                $productCode = $foundProduct.PSChildName
+                Write-Host "Found installed product: $($foundProduct.DisplayName) (Version: $($foundProduct.DisplayVersion))" -ForegroundColor Green
+                Write-Host "Product Code: $productCode" -ForegroundColor Gray
 
-            if ($proc.ExitCode -eq 0) {
-                Write-Host "Uninstall successful!" -ForegroundColor Green
-            } else {
-                Write-Host "Uninstall failed with exit code $($proc.ExitCode)" -ForegroundColor Red
+                Write-Host "Uninstalling..." -ForegroundColor Yellow
+                $proc = Start-Process -FilePath "msiexec.exe" -ArgumentList "/x $productCode /qn /norestart" -Wait -PassThru
+
+                if ($proc.ExitCode -eq 0) {
+                    Write-Host "Uninstall successful!" -ForegroundColor Green
+                } elseif ($proc.ExitCode -eq 3010) {
+                    Write-Host "Uninstall successful (3010: reboot pending, not performed on CI runners)." -ForegroundColor Yellow
+                } elseif ($proc.ExitCode -eq 1605) {
+                    Write-Host "Windows Installer reports product not installed (1605). Removing stale ARP registry key..." -ForegroundColor Yellow
+                    try {
+                        Remove-Item -Path $foundProduct.PSPath -Recurse -Force -ErrorAction Stop
+                    } catch {
+                        Write-Host "  Remove-Item failed: $_" -ForegroundColor Red
+                    }
+
+                    if (Test-Path $foundProduct.PSPath) {
+                        Write-Host "WARNING: stale ARP registry key still present: $productCode" -ForegroundColor Red
+                    } else {
+                        Write-Host "Stale ARP registry key removed: $productCode" -ForegroundColor Green
+                    }
+                } else {
+                    Write-Host "Uninstall failed with exit code $($proc.ExitCode)" -ForegroundColor Red
+                }
             }
         } else {
-            Write-Host "Product '$productName' not found installed via MSI." -ForegroundColor Gray
+            Write-Host "Product '$productName' not found installed via MSI in registry." -ForegroundColor Gray
 
             # Fallback: Check if we can uninstall via the MSI file if it exists in current directory
             if (Test-Path "lemonade-server-minimal.msi") {
                 Write-Host "Found lemonade-server-minimal.msi in current directory. Attempting uninstall via file..." -ForegroundColor Yellow
-                $proc = Start-Process -FilePath "msiexec.exe" -ArgumentList "/x lemonade-server-minimal.msi /qn" -Wait -PassThru
+                $proc = Start-Process -FilePath "msiexec.exe" -ArgumentList "/x lemonade-server-minimal.msi /qn /norestart" -Wait -PassThru
 
                 if ($proc.ExitCode -eq 0) {
                     Write-Host "Uninstall via MSI file successful!" -ForegroundColor Green
+                } elseif ($proc.ExitCode -eq 3010) {
+                    Write-Host "Uninstall via MSI file successful (3010: reboot pending, not performed on CI runners)." -ForegroundColor Yellow
                 } else {
                     Write-Host "Uninstall via MSI file failed with exit code $($proc.ExitCode)" -ForegroundColor Red
                 }

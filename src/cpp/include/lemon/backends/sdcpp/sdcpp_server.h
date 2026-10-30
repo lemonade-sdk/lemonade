@@ -4,7 +4,7 @@
 
 #include "lemon/wrapped_server.h"
 #include "lemon/server_capabilities.h"
-#include "lemon/model_manager.h"
+#include "lemon/model_manager_types.h"
 #include "lemon/recipe_options.h"
 #include "lemon/utils/process_manager.h"
 #include "lemon/backends/backend_utils.h"
@@ -14,23 +14,18 @@
 namespace lemon {
 namespace backends {
 
-class SDServer : public WrappedServer, public IImageServer {
+class SDServer : public WrappedServer, public IImageServer, public IUpscaleServer {
 public:
     static InstallParams get_install_params(const std::string& backend, const std::string& version);
-
 
     explicit SDServer(const std::string& log_level,
                       ModelManager* model_manager,
                       BackendManager* backend_manager);
 
-    ~SDServer() override;
-
     void load(const std::string& model_name,
              const ModelInfo& model_info,
              const RecipeOptions& options,
              bool do_not_upgrade = false) override;
-
-    void unload() override;
 
     // ICompletionServer implementation (not supported - return errors)
     json chat_completion(const json& request) override;
@@ -42,27 +37,14 @@ public:
     json image_edits(const json& request) override;
     json image_variations(const json& request) override;
 
-    // ESRGAN upscaling via sd-cli subprocess.
-    //
-    // sd-server's HTTP API does not expose an upscaling endpoint, so we use the
-    // sd-cli binary's -M upscale mode as a subprocess.
-    static std::string upscale_via_cli(
+    std::string upscale_via_cli(
         const std::string& b64_image,
-        const std::string& upscale_model_path,
-        const std::string& cli_exe_path,
-        const std::vector<std::pair<std::string, std::string>>& env_vars,
-        bool debug = false);
+        const std::string& upscale_model_path) override;
 
 private:
-    // image_defaults from the currently loaded model's server_models.json entry.
-    // Applied when a request doesn't specify size / steps / cfg_scale / etc.
-    // Needed because sd-server's own defaults are fixed at process startup and
-    // OmniRouter tool calls arrive without these fields.
-    ImageDefaults image_defaults_;
-
-    // Build the <sd_cpp_extra_args> JSON. Precedence: request -> image_defaults_
-    // -> recipe_options_. `include_flow_shift` is true for /v1/images/generations
-    // and /v1/images/edits; false for /v1/images/variations (which strips prompt).
+    // Precedence and fall-through are documented in build_extra_args().
+    // `include_flow_shift` is true for /v1/images/generations and
+    // /v1/images/edits; false for /v1/images/variations.
     nlohmann::json build_extra_args(const nlohmann::json& request,
                                     bool include_flow_shift = true) const;
 
@@ -77,6 +59,7 @@ namespace sdcpp {
 std::unique_ptr<WrappedServer> create(const BackendContext& ctx);
 const BackendSpec* spec();
 const BackendOps* ops();
+constexpr uint32_t capabilities() { return capability_mask_of<SDServer>(); }
 }  // namespace sdcpp
 }  // namespace backends
 }  // namespace lemon

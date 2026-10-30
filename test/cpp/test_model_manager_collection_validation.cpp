@@ -2,31 +2,37 @@
 // collection.router policy loading (#2383).
 
 #include "lemon/model_manager.h"
-#include "lemon/utils/path_utils.h"
+#include "lemon/routing_policy.h"
 
-#include <chrono>
 #include <cstdio>
-#include <filesystem>
+#include <map>
 #include <optional>
 #include <string>
 
-namespace fs = std::filesystem;
+using lemon::ModelInfo;
 using lemon::ModelManager;
+using lemon::ModelManagerConfig;
 using lemon::json;
+using lemon::models::BackendAvailability;
+using lemon::models::RecipeAvailability;
+
+// The machine these tests mean: plenty of RAM, and no NPU. Registering a ryzenai
+// model then stays filtered wherever the suite runs, NPU hosts included.
+static BackendAvailability machine_without_npu() {
+    BackendAvailability availability;
+    availability.system_ram_gb = 64.0;
+    availability.largest_mem_pool_gb = 48.0;
+    availability.processor = "Declared for the test";
+    availability.recipes["ryzenai-llm"] =
+        RecipeAvailability{"the test machine has no NPU", "", false};
+    return availability;
+}
 
 static int g_failures = 0;
 
 static void check(const char* name, bool ok) {
     std::printf("[%s] %s\n", ok ? "PASS" : "FAIL", name);
     if (!ok) ++g_failures;
-}
-
-static fs::path make_temp_dir() {
-    fs::path dir = fs::temp_directory_path();
-    dir /= "model_manager_collection_validation_" +
-           std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
-    fs::create_directories(dir);
-    return dir;
 }
 
 static json component_def(const std::string& name) {
@@ -106,6 +112,399 @@ static void test_rejects_bad_routing(ModelManager& manager) {
           error_contains(err, "catastrophic backtracking"));
 }
 
+// Build a minimal router whose single classifier of `type` is backed by the
+// given inline model definition. `local` is the only candidate.
+static json router_with_classifier(const std::string& type,
+                                   const json& classifier_model_def) {
+    const std::string cmodel = classifier_model_def.value("model_name", "clf");
+    json classifier = {{"id", "clf"}, {"type", type}, {"model", cmodel}};
+    json match;
+    if (type == "semantic_similarity") {
+        classifier["reference_phrases"] = {{"coding", {"write code"}}};
+        match = {{"classifier", "clf"}, {"label", "coding"}, {"min_score", 0.5}};
+    } else {
+        classifier["labels"] = {"A", "B"};
+        classifier["default_label"] = "A";
+        match = {{"classifier", "clf"}, {"min_score", 0.5}};
+    }
+    return json{
+        {"model_name", "user.RouterKit"},
+        {"version", "1"},
+        {"recipe", "collection.router"},
+        {"components", {"local", cmodel}},
+        {"models", {component_def("local"), classifier_model_def}},
+        {"routing", {
+            {"candidates", {"local"}},
+            {"default_model", "local"},
+            {"classifiers", {classifier}},
+            {"rules", {{
+                {"id", "r"},
+                {"match", match},
+                {"route_to", "local"},
+            }}},
+        }},
+    };
+}
+
+// The inline type resolver must mirror registration's normalization, not just
+// read explicit labels: a label-less definition still picks up legacy flags and
+// the backend's default labels.
+static void test_inline_capability_matches_registration(ModelManager& manager) {
+    // Label-less sd-cpp -> IMAGE at registration, so it cannot be a classifier.
+    json sd_clf = router_with_classifier(
+        "classifier",
+        json{{"model_name", "img"}, {"recipe", "sd-cpp"}, {"checkpoint", "example/img"}});
+    auto err = manager.validate_collection_request("user.RouterKit", sd_clf);
+    check("label-less sd-cpp rejected as classifier (backend default label 'image')",
+          error_contains(err, "cannot serve as a classifier"));
+
+    // Legacy `embedding: true` -> EMBEDDING, valid for semantic_similarity.
+    json emb_sem = router_with_classifier(
+        "semantic_similarity",
+        json{{"model_name", "emb"}, {"recipe", "llamacpp"},
+             {"checkpoint", "example/emb:Q4_K_M"}, {"embedding", true}});
+    err = manager.validate_collection_request("user.RouterKit", emb_sem);
+    check("legacy embedding:true accepted for semantic_similarity", !err.has_value());
+
+    // Label-less regular llamacpp still defaults to LLM, valid as a classifier.
+    json llm_clf = router_with_classifier(
+        "classifier",
+        json{{"model_name", "reg"}, {"recipe", "llamacpp"},
+             {"checkpoint", "example/reg:Q4_K_M"}});
+    err = manager.validate_collection_request("user.RouterKit", llm_clf);
+    check("label-less llamacpp still defaults to LLM (valid classifier)", !err.has_value());
+}
+
+// A zero-shot model and a fixed-label one share CLASSIFICATION, but each refuses
+// the other's /classify body, so only the `zero-shot` label tells them apart.
+static void test_zero_shot_label_selects_classifier_type(ModelManager& manager) {
+    auto onnx_def = [](const char* name, json labels) {
+        return json{{"model_name", name}, {"recipe", "onnxruntime"},
+                    {"checkpoint", std::string("example/") + name}, {"labels", labels}};
+    };
+    const json zero_shot_def = onnx_def("zs", {"classification", "zero-shot"});
+    const json fixed_def = onnx_def("fixed", {"classification"});
+
+    check("inline zero-shot model accepted as zero_shot",
+          !manager.validate_collection_request(
+              "user.RouterKit", router_with_classifier("zero_shot", zero_shot_def)).has_value());
+    check("inline zero-shot model rejected as classifier",
+          error_contains(manager.validate_collection_request(
+                             "user.RouterKit", router_with_classifier("classifier", zero_shot_def)),
+                         "use type 'zero_shot'"));
+    check("inline fixed-label model rejected as zero_shot",
+          error_contains(manager.validate_collection_request(
+                             "user.RouterKit", router_with_classifier("zero_shot", fixed_def)),
+                         "is not a zero-shot model"));
+
+    manager.register_user_model(
+        "user.ZsRegistered",
+        json{{"model_name", "user.ZsRegistered"}, {"recipe", "onnxruntime"},
+             {"checkpoint", "example/zs-registered"},
+             {"labels", {"classification", "zero-shot"}}});
+    // The inline definition omits the label: a registered model keeps its own.
+    json registered = router_with_classifier(
+        "classifier", onnx_def("user.ZsRegistered", {"classification"}));
+    check("registered zero-shot model rejected as classifier",
+          error_contains(manager.validate_collection_request("user.RouterKit", registered),
+                         "use type 'zero_shot'"));
+}
+
+// A chat-indicator label (reasoning/vision/…) must not promote a non-chat
+// backend to LLM. The backend's deployment capability wins, at both the model
+// type (which drives runtime routing) and collection.router validation.
+static void test_backend_capability_over_chat_indicator(ModelManager& manager) {
+    // onnxruntime is a classification backend: reasoning:true stays CLASSIFICATION,
+    // so run_classifier routes to /classify, not the (unsupported) chat path.
+    manager.register_user_model(
+        "user.GuardX",
+        json{{"model_name", "user.GuardX"}, {"recipe", "onnxruntime"},
+             {"checkpoint", "example/guard"}, {"reasoning", true}});
+    check("onnxruntime + reasoning:true is CLASSIFICATION, not LLM",
+          manager.get_model_info("user.GuardX").type == lemon::ModelType::CLASSIFICATION);
+
+    // sd-cpp is an image backend: vision:true stays IMAGE, not LLM.
+    manager.register_user_model(
+        "user.ImgX",
+        json{{"model_name", "user.ImgX"}, {"recipe", "sd-cpp"},
+             {"checkpoint", "example/img"}, {"vision", true}});
+    check("sd-cpp + vision:true is IMAGE, not LLM",
+          manager.get_model_info("user.ImgX").type == lemon::ModelType::IMAGE);
+
+    // …and the same models used as router classifiers resolve accordingly:
+    // onnxruntime is accepted (CLASSIFICATION), sd-cpp is rejected (IMAGE).
+    json onnx_reason = router_with_classifier(
+        "classifier",
+        json{{"model_name", "guard"}, {"recipe", "onnxruntime"},
+             {"checkpoint", "example/guard"}, {"reasoning", true}});
+    check("onnxruntime + reasoning:true accepted as classifier (CLASSIFICATION)",
+          !manager.validate_collection_request("user.RouterKit", onnx_reason).has_value());
+
+    json sd_vision = router_with_classifier(
+        "classifier",
+        json{{"model_name", "img"}, {"recipe", "sd-cpp"},
+             {"checkpoint", "example/img"}, {"vision", true}});
+    check("sd-cpp + vision:true rejected as classifier (still IMAGE)",
+          error_contains(manager.validate_collection_request("user.RouterKit", sd_vision),
+                         "cannot serve as a classifier"));
+
+    // kokoro only does TTS but has no explicit labels; its default label must
+    // still keep a label-less kokoro model out of the classifier path.
+    json kokoro_clf = router_with_classifier(
+        "classifier",
+        json{{"model_name", "voice"}, {"recipe", "kokoro"}, {"checkpoint", "example/voice"}});
+    check("label-less kokoro rejected as classifier (default label 'tts')",
+          error_contains(manager.validate_collection_request("user.RouterKit", kokoro_clf),
+                         "cannot serve as a classifier"));
+
+    // The inverse: /v1/classify is served only by onnxruntime, so a
+    // `classification` label on a chat backend names a mode it cannot serve.
+    // Registration refuses it rather than registering a model that would fail
+    // when run_classifier reached Router::classify().
+    bool rejected = false;
+    try {
+        manager.register_user_model(
+            "user.LlamaClf",
+            json{{"model_name", "user.LlamaClf"}, {"recipe", "llamacpp"},
+                 {"checkpoint", "example/x:Q4_K_M"}, {"labels", {"classification"}}});
+    } catch (const lemon::InvalidModelDefinitionError&) {
+        rejected = true;
+    }
+    check("llamacpp + labels:[classification] rejected at registration", rejected);
+    check("rejected registration persists nothing",
+          !manager.model_exists("user.LlamaClf"));
+
+    // Collection import refuses the same definition up front, so validation and
+    // registration cannot disagree about whether the import is legal.
+    json llama_clf_label = router_with_classifier(
+        "classifier",
+        json{{"model_name", "xclf"}, {"recipe", "llamacpp"},
+             {"checkpoint", "example/xclf:Q4_K_M"}, {"labels", {"classification"}}});
+    check("llamacpp + labels:[classification] rejected as an inline component",
+          error_contains(manager.validate_collection_request("user.RouterKit", llama_clf_label),
+                         "cannot serve"));
+
+    // llamacpp serves chat and embeddings, but llama-server is spawned for one
+    // of them, so a model claiming both would advertise /embeddings while loaded
+    // for chat. Both mode claims are servable here — it is having two that is
+    // refused.
+    bool two_modes_rejected = false;
+    try {
+        manager.register_user_model(
+            "user.LlamaBoth",
+            json{{"model_name", "user.LlamaBoth"}, {"recipe", "llamacpp"},
+                 {"checkpoint", "example/y:Q4_K_M"}, {"labels", {"chat", "embeddings"}}});
+    } catch (const lemon::InvalidModelDefinitionError&) {
+        two_modes_rejected = true;
+    }
+    check("llamacpp + labels:[chat, embeddings] rejected at registration",
+          two_modes_rejected);
+    check("rejected two-mode registration persists nothing",
+          !manager.model_exists("user.LlamaBoth"));
+
+    // The legacy capability flags are the same claim by another spelling, so the
+    // rule cannot be sidestepped by writing `embedding: true` beside `chat`.
+    bool flag_rejected = false;
+    try {
+        manager.register_user_model(
+            "user.LlamaFlag",
+            json{{"model_name", "user.LlamaFlag"}, {"recipe", "llamacpp"},
+                 {"checkpoint", "example/z:Q4_K_M"}, {"labels", {"chat"}},
+                 {"embedding", true}});
+    } catch (const lemon::InvalidModelDefinitionError&) {
+        flag_rejected = true;
+    }
+    check("llamacpp + labels:[chat] + embedding:true rejected at registration",
+          flag_rejected);
+
+    // An LLM used as a router classifier needs no label of its own: the plain
+    // chat model is a valid classifier.
+    json llama_clf_bare = router_with_classifier(
+        "classifier",
+        json{{"model_name", "xclf2"}, {"recipe", "llamacpp"},
+             {"checkpoint", "example/xclf2:Q4_K_M"}});
+    check("label-less llamacpp accepted as classifier via LLM chat path",
+          !manager.validate_collection_request("user.RouterKit", llama_clf_bare).has_value());
+}
+
+// What #2748 actually promises is that the REST of the policy keeps working,
+// not merely that parsing did not abort. Evaluate the parsed policy with no
+// classifier backend wired up -- the runtime situation on a host missing the
+// hardware -- and assert the unrelated keyword rule still routes while the
+// classifier rule falls back through its on_error (match_false by default).
+static void check_unrelated_rules_survive(const char* label,
+                                          const lemon::ModelInfo& info) {
+    if (info.route_policy == nullptr) {
+        check(label, false);
+        return;
+    }
+    lemon::RoutingPolicyEngine engine(*info.route_policy, lemon::ClassifierServices{});
+
+    lemon::RouteContext code;
+    code.input = "def foo(): pass";
+    code.params.chars = code.input.size();
+    const lemon::Decision code_decision = engine.route(code, /*want_trace=*/false);
+
+    lemon::RouteContext plain;
+    plain.input = "hello there";
+    plain.params.chars = plain.input.size();
+    const lemon::Decision plain_decision = engine.route(plain, /*want_trace=*/false);
+
+    check(label,
+          code_decision.route_to == "remote" &&
+          code_decision.matched_rule == "code-remote" &&
+          !code_decision.default_used &&
+          plain_decision.route_to == "local" &&
+          plain_decision.default_used);
+}
+
+// #2748: a classifier needing unavailable hardware (ryzenai-llm) must not
+// drop the whole policy -- only that classifier fails, at evaluate() time,
+// via its own on_error. Registered standalone since register_user_model
+// doesn't auto-register a collection's inline `models[]`.
+static void test_filtered_classifier_component_does_not_drop_policy(ModelManager& manager) {
+    manager.register_user_model(
+        "user.npu-clf",
+        json{{"model_name", "user.npu-clf"}, {"recipe", "ryzenai-llm"},
+             {"checkpoint", "example/npu-clf"}});
+    check("npu-clf is hardware-filtered (test machine has no NPU)",
+          !manager.model_exists("user.npu-clf"));
+
+    json doc = {
+        {"model_name", "user.RouterFiltered"},
+        {"version", "1"},
+        {"recipe", "collection.router"},
+        {"components", {"local", "remote", "user.npu-clf"}},
+        {"routing", {
+            {"candidates", {"local", "remote"}},
+            {"default_model", "local"},
+            {"classifiers", {{
+                {"id", "clf"},
+                {"type", "classifier"},
+                {"model", "user.npu-clf"},
+                {"labels", {"A", "B"}},
+                {"default_label", "A"},
+            }}},
+            {"rules", {{
+                {"id", "clf-rule"},
+                {"match", {{"classifier", "clf"}, {"min_score", 0.5}}},
+                {"route_to", "local"},
+            }, {
+                {"id", "code-remote"},
+                {"match", {{"keywords_any", {"def ", "stack trace"}}}},
+                {"route_to", "remote"},
+            }}},
+        }},
+    };
+
+    manager.register_user_model("user.RouterFiltered", doc);
+
+    auto info = manager.get_model_info("user.RouterFiltered");
+    check("router policy still parses when a classifier component is "
+          "hardware-filtered (#2748)",
+          info.route_policy != nullptr);
+    check_unrelated_rules_survive(
+        "deterministic rule still routes and the filtered classifier's rule "
+        "falls back, with the component named canonically (#2748)",
+        info);
+}
+
+// #2748 follow-up: `components` lists the canonical id, classifier
+// references the bare name -- the opposite pairing from the test above.
+static void test_filtered_classifier_bare_name_resolves_through_alias(ModelManager& manager) {
+    manager.register_user_model(
+        "user.npu-clf2",
+        json{{"model_name", "user.npu-clf2"}, {"recipe", "ryzenai-llm"},
+             {"checkpoint", "example/npu-clf2"}});
+    check("npu-clf2 is hardware-filtered (test machine has no NPU)",
+          !manager.model_exists("user.npu-clf2"));
+
+    json doc = {
+        {"model_name", "user.RouterFilteredBare"},
+        {"version", "1"},
+        {"recipe", "collection.router"},
+        {"components", {"local", "remote", "user.npu-clf2"}},
+        {"routing", {
+            {"candidates", {"local", "remote"}},
+            {"default_model", "local"},
+            {"classifiers", {{
+                {"id", "clf"},
+                {"type", "classifier"},
+                {"model", "npu-clf2"},
+                {"labels", {"A", "B"}},
+                {"default_label", "A"},
+            }}},
+            {"rules", {{
+                {"id", "clf-rule"},
+                {"match", {{"classifier", "clf"}, {"min_score", 0.5}}},
+                {"route_to", "local"},
+            }, {
+                {"id", "code-remote"},
+                {"match", {{"keywords_any", {"def ", "stack trace"}}}},
+                {"route_to", "remote"},
+            }}},
+        }},
+    };
+
+    manager.register_user_model("user.RouterFilteredBare", doc);
+
+    auto info = manager.get_model_info("user.RouterFilteredBare");
+    check("router policy still parses when the classifier references the "
+          "filtered component by its bare name (#2748)",
+          info.route_policy != nullptr);
+    check_unrelated_rules_survive(
+        "deterministic rule still routes and the filtered classifier's rule "
+        "falls back, via the bare-name alias (#2748)",
+        info);
+}
+
+// #2748 follow-up: builtin.<X> is a distinct alias form from the bare name,
+// added only by compute_model_alias_maps()'s builtin.<X> pass. Uses a real
+// builtin (ryzenai-llm, which the declared machine cannot run) so no
+// registration is needed to test it.
+static void test_filtered_classifier_builtin_prefixed_alias_resolves(ModelManager& manager) {
+    check("Qwen2.5-0.5B-Instruct-CPU is hardware-filtered (test machine has no NPU)",
+          !manager.model_exists("Qwen2.5-0.5B-Instruct-CPU"));
+
+    json doc = {
+        {"model_name", "user.RouterFilteredBuiltin"},
+        {"version", "1"},
+        {"recipe", "collection.router"},
+        {"components", {"local", "remote", "Qwen2.5-0.5B-Instruct-CPU"}},
+        {"routing", {
+            {"candidates", {"local", "remote"}},
+            {"default_model", "local"},
+            {"classifiers", {{
+                {"id", "clf"},
+                {"type", "classifier"},
+                {"model", "builtin.Qwen2.5-0.5B-Instruct-CPU"},
+                {"labels", {"A", "B"}},
+                {"default_label", "A"},
+            }}},
+            {"rules", {{
+                {"id", "clf-rule"},
+                {"match", {{"classifier", "clf"}, {"min_score", 0.5}}},
+                {"route_to", "local"},
+            }, {
+                {"id", "code-remote"},
+                {"match", {{"keywords_any", {"def ", "stack trace"}}}},
+                {"route_to", "remote"},
+            }}},
+        }},
+    };
+
+    manager.register_user_model("user.RouterFilteredBuiltin", doc);
+
+    auto info2 = manager.get_model_info("user.RouterFilteredBuiltin");
+    check("router policy still parses when the classifier references a "
+          "filtered builtin via its builtin.<X> alias (#2748)",
+          info2.route_policy != nullptr);
+    check_unrelated_rules_survive(
+        "deterministic rule still routes and the filtered classifier's rule "
+        "falls back, via the builtin.<X> alias (#2748)",
+        info2);
+}
+
 static void test_register_preserves_routing(ModelManager& manager) {
     json doc = valid_router_collection();
     manager.register_user_model("user.RouterKit", doc);
@@ -116,15 +515,20 @@ static void test_register_preserves_routing(ModelManager& manager) {
 }
 
 int main() {
-    fs::path temp = make_temp_dir();
-    lemon::utils::set_cache_dir(temp.string());
-
-    ModelManager manager;
+    ModelManagerConfig config;
+    config.availability = [](const std::map<std::string, ModelInfo>&) {
+        return machine_without_npu();
+    };
+    ModelManager manager(config);
     test_accepts_valid_router_policy(manager);
     test_rejects_bad_routing(manager);
+    test_inline_capability_matches_registration(manager);
+    test_zero_shot_label_selects_classifier_type(manager);
+    test_backend_capability_over_chat_indicator(manager);
+    test_filtered_classifier_component_does_not_drop_policy(manager);
+    test_filtered_classifier_bare_name_resolves_through_alias(manager);
+    test_filtered_classifier_builtin_prefixed_alias_resolves(manager);
     test_register_preserves_routing(manager);
-
-    fs::remove_all(temp);
 
     if (g_failures == 0) {
         std::printf("All model manager collection validation tests passed.\n");

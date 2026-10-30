@@ -114,12 +114,72 @@ static void test_route_header_default_value() {
           lemon::route_decision_header_value(defaulted) == "default");
 }
 
+// #2405: trace entries may carry the tested label and the classifier's
+// rationale (the llm router's pick reason). Both are optional, serialized only
+// when non-empty, and both are declared in decision.schema.json's trace_entry
+// (which uses additionalProperties:false — a key emitted here but missing from
+// the schema would make every such response schema-invalid).
+static void test_trace_serializes_label_and_rationale() {
+    Decision decision;
+    decision.route_to = "builtin.Qwen3.5-35B-A3B-GGUF";
+    decision.matched_rule = "__route_1";
+    decision.trace.push_back(lemon::TraceEntry{
+        "classifier:__router", 1.0, true, "Qwen3.5-35B-A3B-GGUF",
+        "Qwen3.5-35B-A3B-GGUF"});
+    decision.trace.push_back(lemon::TraceEntry{"keywords_any", std::nullopt, false});
+
+    json out = lemon::route_decision_to_json(decision);
+    const json& first = out["trace"][0];
+    check("trace entry serializes label",
+          first.value("label", "") == "Qwen3.5-35B-A3B-GGUF");
+    check("trace entry serializes rationale",
+          first.value("rationale", "") == "Qwen3.5-35B-A3B-GGUF");
+    check("empty label/rationale keys are omitted",
+          !out["trace"][1].contains("label") && !out["trace"][1].contains("rationale"));
+}
+
+// `error` and `truncated` join label/rationale under the same rule, and the
+// same schema constraint: both are declared in decision.schema.json's
+// trace_entry, which is additionalProperties:false.
+static void test_trace_serializes_error_and_truncated() {
+    Decision decision;
+    decision.route_to = "builtin.Qwen3.5-35B-A3B-GGUF";
+
+    lemon::TraceEntry failed{"classifier:topic", std::nullopt, false};
+    failed.error = "classify failed: backend unreachable";
+    decision.trace.push_back(failed);
+
+    lemon::TraceEntry cut{"classifier:topic", 0.91, true};
+    cut.truncated = true;
+    decision.trace.push_back(cut);
+
+    decision.trace.push_back(lemon::TraceEntry{"keywords_any", std::nullopt, false});
+
+    lemon::TraceEntry whole{"classifier:topic", 0.12, false};
+    whole.truncated = false;
+    decision.trace.push_back(whole);
+
+    json out = lemon::route_decision_to_json(decision);
+    check("trace entry serializes error",
+          out["trace"][0].value("error", "") == "classify failed: backend unreachable");
+    check("a failed entry carries no truncated key", !out["trace"][0].contains("truncated"));
+    check("trace entry serializes truncated as true",
+          out["trace"][1].value("truncated", false) == true);
+    // Absence means "the backend did not say"; `false` means it said it did not cut.
+    check("empty error/truncated keys are omitted",
+          !out["trace"][2].contains("error") && !out["trace"][2].contains("truncated"));
+    check("trace entry serializes truncated as false",
+          out["trace"][3].contains("truncated") && out["trace"][3]["truncated"] == false);
+}
+
 int main() {
     test_lf_event_is_injected();
     test_crlf_split_event_is_injected_before_done();
     test_cr_event_is_injected();
     test_only_first_json_event_gets_route();
     test_route_header_default_value();
+    test_trace_serializes_label_and_rationale();
+    test_trace_serializes_error_and_truncated();
 
     if (g_failures == 0) {
         std::printf("All route decision response tests passed.\n");

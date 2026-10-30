@@ -94,10 +94,6 @@ bool fetch_models_from_endpoint(lemonade::LemonadeClient& client,
     }
 }
 
-bool has_label(const lemonade::ModelInfo& model, const std::string& label) {
-    return std::find(model.labels.begin(), model.labels.end(), label) != model.labels.end();
-}
-
 bool is_agent_launch_recipe(const std::string& recipe) {
     static const std::unordered_set<std::string> kAgentLaunchRecipes = {
         "flm",
@@ -108,8 +104,7 @@ bool is_agent_launch_recipe(const std::string& recipe) {
 }
 
 bool is_agent_launch_llm(const lemonade::ModelInfo& model) {
-    return is_agent_launch_recipe(model.recipe) &&
-           lemon::get_model_type_from_labels(model.labels) == lemon::ModelType::LLM;
+    return is_agent_launch_recipe(model.recipe) && has_label(model, "chat");
 }
 
 bool is_tool_calling_agent_launch_llm(const lemonade::ModelInfo& model) {
@@ -155,7 +150,8 @@ bool is_qwen35_family_model(const lemonade::ModelInfo& model) {
 
 std::vector<std::string> preferred_recipe_directories_for_agent(const std::string& agent_name) {
     const std::string agent = normalize_agent_key(agent_name);
-    if (agent == "claude" || agent == "codex" || agent == "opencode" || agent == "pi") {
+    if (agent == "claude" || agent == "codex" || agent == "junie" ||
+        agent == "opencode" || agent == "pi") {
         return {"coding-agents"};
     }
     return {};
@@ -583,6 +579,10 @@ bool prompt_model_selection(lemonade::LemonadeClient& client,
 }
 
 } // namespace
+
+bool has_label(const lemonade::ModelInfo& model, const std::string& label) {
+    return lemon::has_label(model.labels, label);
+}
 
 bool resolve_model_if_missing(lemonade::LemonadeClient& client,
                               std::string& model_out,

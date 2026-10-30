@@ -23,6 +23,7 @@ except ImportError:
 
 from utils.server_base import (
     ServerTestBase,
+    model_recipe_options,
     run_server_tests,
     unload_all_models,
 )
@@ -40,6 +41,9 @@ from utils.test_models import (
 
 OLLAMA_BASE_URL = f"http://localhost:{PORT}"
 TOOL_CALLING_LLAMA_ARGS = "--reasoning-format none"
+
+# Context the backend-error tests pin the model to so their prompt overflows it.
+OVERFLOW_CTX_SIZE = 2048
 
 
 class OllamaTests(ServerTestBase):
@@ -593,7 +597,6 @@ class OllamaTests(ServerTestBase):
                 "top_p",
                 "num_predict",
                 "pinned",
-                "llamacpp_args",
                 "auto_evict",
                 "evict_idle_timeout",
             ):
@@ -602,6 +605,14 @@ class OllamaTests(ServerTestBase):
                     recipe_options,
                     f"Request-scoped field '{field}' must not leak into recipe_options",
                 )
+
+            effective_llamacpp_args = recipe_options.get("llamacpp_args", "")
+            self.assertIsInstance(effective_llamacpp_args, str)
+            self.assertNotIn(
+                "--foo-bar",
+                effective_llamacpp_args,
+                "Ollama request llamacpp_args must not leak into recipe_options",
+            )
         finally:
             unload_all_models()
 
@@ -934,6 +945,184 @@ class OllamaTests(ServerTestBase):
                     )
             except Exception as exc:  # noqa: BLE001 - best-effort cleanup
                 print(f"Warning: cleanup unload_all_models failed: {exc}")
+
+    def _anthropic_overflow_payload(self, stream):
+        """Build a /v1/messages payload whose prompt exceeds the model context.
+
+        Pair this with `model_recipe_options(..., ctx_size=OVERFLOW_CTX_SIZE)`:
+        the prompt only overflows against a context smaller than itself, and
+        with nothing saved the model sizes itself from available memory.
+        """
+        # ~6 000 tokens, well above OVERFLOW_CTX_SIZE, so llama.cpp rejects the
+        # request with a 400 the bridge has to relay.
+        overflow_prompt = "The quick brown fox jumps over the lazy dog. " * 600
+
+        return {
+            "model": ENDPOINT_TEST_MODEL,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [{"type": "text", "text": overflow_prompt}],
+                }
+            ],
+            "max_tokens": 16,
+            "stream": stream,
+        }
+
+    def test_027_anthropic_messages_backend_error(self):
+        """Test Anthropic-compatible backend errors are reported, not returned empty."""
+        self.ensure_model_pulled()
+
+        with model_recipe_options(ENDPOINT_TEST_MODEL, ctx_size=OVERFLOW_CTX_SIZE):
+            response = requests.post(
+                f"{OLLAMA_BASE_URL}/v1/messages?beta=true",
+                json=self._anthropic_overflow_payload(stream=False),
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(response.status_code, 400, response.text[:500])
+
+            data = response.json()
+            self.assertEqual(data.get("type"), "error")
+            self.assertEqual(data.get("error", {}).get("type"), "invalid_request_error")
+            self.assertIn("context", data.get("error", {}).get("message", ""))
+
+    def test_028_anthropic_messages_streaming_backend_error(self):
+        """Test Anthropic-compatible streaming backend errors are framed as an error event."""
+        self.ensure_model_pulled()
+
+        with model_recipe_options(ENDPOINT_TEST_MODEL, ctx_size=OVERFLOW_CTX_SIZE):
+            response = requests.post(
+                f"{OLLAMA_BASE_URL}/v1/messages?beta=true",
+                json=self._anthropic_overflow_payload(stream=True),
+                timeout=TIMEOUT_MODEL_OPERATION,
+                stream=True,
+            )
+            self.assertEqual(response.status_code, 200)
+
+            event_types = []
+            error_payloads = []
+            for raw_line in response.iter_lines():
+                if not raw_line:
+                    continue
+
+                line = raw_line.decode("utf-8")
+                if line.startswith("event: "):
+                    event_types.append(line[len("event: ") :])
+                elif line.startswith("data: "):
+                    payload_json = json.loads(line[len("data: ") :])
+                    if payload_json.get("type") == "error":
+                        error_payloads.append(payload_json)
+
+            self.assertIn("error", event_types)
+            self.assertNotIn("message_stop", event_types)
+            self.assertEqual(len(error_payloads), 1)
+            self.assertEqual(
+                error_payloads[0].get("error", {}).get("type"), "invalid_request_error"
+            )
+            self.assertIn(
+                "context", error_payloads[0].get("error", {}).get("message", "")
+            )
+
+    # ========================================================================
+    # Requests as the official Ollama clients send them
+    # ========================================================================
+
+    # Ollama's Go client (api.Client, which the `ollama` CLI uses) always sends
+    # both "model" and "name" on show, pull and delete, and leaves the one it
+    # does not use empty. Ollama reads cmp.Or(model, name).
+
+    @staticmethod
+    def _go_show_request(model="", name=""):
+        return {
+            "model": model,
+            "system": "",
+            "template": "",
+            "verbose": False,
+            "options": None,
+            "name": name,
+        }
+
+    def test_029_show_go_client_run_request(self):
+        """`ollama run X` calls /api/show with model set and name empty."""
+        self.ensure_model_pulled()
+        response = requests.post(
+            f"{OLLAMA_BASE_URL}/api/show",
+            json=self._go_show_request(model=ENDPOINT_TEST_MODEL),
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertIn("details", response.json())
+
+    def test_030_show_go_client_show_request(self):
+        """`ollama show X` calls /api/show with name set and model empty."""
+        self.ensure_model_pulled()
+        response = requests.post(
+            f"{OLLAMA_BASE_URL}/api/show",
+            json=self._go_show_request(name=ENDPOINT_TEST_MODEL),
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertIn("details", response.json())
+
+    def test_031_pull_go_client_request(self):
+        """`ollama pull X` streams /api/pull with name set and model empty."""
+        self.ensure_model_pulled()
+        response = requests.post(
+            f"{OLLAMA_BASE_URL}/api/pull",
+            json={
+                "model": "",
+                "username": "",
+                "password": "",
+                "name": ENDPOINT_TEST_MODEL,
+            },
+            timeout=TIMEOUT_MODEL_OPERATION,
+            stream=True,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        chunks = [json.loads(line) for line in response.iter_lines() if line]
+        self.assertGreater(len(chunks), 0)
+        self.assertEqual(chunks[-1].get("status"), "success", chunks[-1])
+
+    def test_032_chat_think_levels(self):
+        """/api/chat accepts every think value Ollama accepts: a boolean or a level."""
+        self.ensure_model_pulled()
+        for think in (True, False, "low", "medium", "high", "max"):
+            with self.subTest(think=think):
+                response = requests.post(
+                    f"{OLLAMA_BASE_URL}/api/chat",
+                    json={
+                        "model": ENDPOINT_TEST_MODEL,
+                        "messages": [{"role": "user", "content": "Hi"}],
+                        "stream": False,
+                        "think": think,
+                        "options": {"num_predict": 1},
+                    },
+                    timeout=TIMEOUT_MODEL_OPERATION,
+                )
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertTrue(response.json()["done"])
+
+    # Runs last, so the model it removes is not needed again.
+
+    def test_099_delete_go_client_request(self):
+        """`ollama rm X` sends /api/delete with name set and model empty."""
+        self.ensure_model_pulled()
+        try:
+            response = requests.delete(
+                f"{OLLAMA_BASE_URL}/api/delete",
+                json={"model": "", "name": ENDPOINT_TEST_MODEL},
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+
+            tags = requests.get(f"{OLLAMA_BASE_URL}/api/tags", timeout=TIMEOUT_DEFAULT)
+            names = [m["name"] for m in tags.json()["models"]]
+            self.assertFalse(
+                any(n.split(":")[0] == ENDPOINT_TEST_MODEL for n in names), names
+            )
+        finally:
+            OllamaTests._model_pulled = False
+            self.ensure_model_pulled()
 
 
 if __name__ == "__main__":

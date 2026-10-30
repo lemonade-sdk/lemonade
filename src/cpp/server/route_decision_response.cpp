@@ -66,6 +66,18 @@ json route_decision_to_json(const Decision& decision) {
             if (entry.score.has_value()) {
                 trace_entry["score"] = *entry.score;
             }
+            if (!entry.label.empty()) {
+                trace_entry["label"] = entry.label;
+            }
+            if (!entry.rationale.empty()) {
+                trace_entry["rationale"] = entry.rationale;
+            }
+            if (!entry.error.empty()) {
+                trace_entry["error"] = entry.error;
+            }
+            if (entry.truncated.has_value()) {
+                trace_entry["truncated"] = *entry.truncated;
+            }
             out["trace"].push_back(std::move(trace_entry));
         }
     }

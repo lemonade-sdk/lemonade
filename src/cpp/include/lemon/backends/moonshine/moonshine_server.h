@@ -19,14 +19,10 @@ public:
                             ModelManager* model_manager,
                             BackendManager* backend_manager);
 
-    ~MoonshineServer() override;
-
     void load(const std::string& model_name,
              const ModelInfo& model_info,
              const RecipeOptions& options,
              bool do_not_upgrade = false) override;
-
-    void unload() override;
 
     // ICompletionServer implementation (not supported - return errors)
     json chat_completion(const json& request) override;
@@ -53,6 +49,7 @@ namespace moonshine {
 std::unique_ptr<WrappedServer> create(const BackendContext& ctx);
 const BackendSpec* spec();
 const BackendOps* ops();
+constexpr uint32_t capabilities() { return capability_mask_of<MoonshineServer>(); }
 }  // namespace moonshine
 }  // namespace backends
 }  // namespace lemon

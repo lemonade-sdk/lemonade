@@ -6,8 +6,53 @@
 
 namespace lemon {
 
+// Support tier, defined in docs/dev/adding-a-backend.md#support-tier.
+enum class BackendTier {
+    Core,
+    Experimental,
+    Guest,
+};
+
+// How a backend's server is packaged.
+enum class BackendFormat {
+    Native,
+    Python,
+    Container,
+};
+
+inline const char* backend_tier_to_string(BackendTier tier) {
+    switch (tier) {
+        case BackendTier::Core:         return "core";
+        case BackendTier::Experimental: return "experimental";
+        case BackendTier::Guest:        return "guest";
+    }
+    return "guest";
+}
+
+inline const char* backend_format_to_string(BackendFormat format) {
+    switch (format) {
+        case BackendFormat::Native:    return "native";
+        case BackendFormat::Python:    return "python";
+        case BackendFormat::Container: return "container";
+    }
+    return "native";
+}
+
 // Device constraints: device_type -> set of allowed families (empty = all families)
 using DeviceConstraints = std::map<std::string, std::set<std::string>>;
+
+// Optional per-arch restriction, tighter than the owning support row. Used when
+// a single family/ISA is installable on only a subset of the row's OSes or ROCm
+// channels because the upstream assets for the others aren't published yet
+// (e.g. gfx950 / MI350: only the Linux + stable asset exists so far). An arch
+// absent from the row's gate map inherits the row's full OS/channel reach.
+struct ArchInstallGate {
+    std::set<std::string> os;        // if non-empty, arch installable only on these OSes
+    std::set<std::string> channels;  // if non-empty, arch installable only on these ROCm channels
+};
+
+// arch token (as written in the support row, e.g. "gfx950") -> its extra gate.
+using ArchInstallGates = std::map<std::string, ArchInstallGate>;
 
 // A single recipe/backend support row: which OS and device families a given
 // (recipe, backend) pair runs on. The canonical support matrix is assembled by
@@ -19,11 +64,14 @@ using DeviceConstraints = std::map<std::string, std::set<std::string>>;
 struct RecipeBackendDef {
     std::string recipe;
     std::string backend;
+    BackendTier tier;
+    BackendFormat format;
     std::set<std::string> supported_os;
     DeviceConstraints devices;
     // Human-friendly device description for the generated support matrix (README).
     // May contain footnote markers (e.g. "*") whose text lives as prose in the doc.
     std::string device_summary = "";
+    ArchInstallGates arch_gates;
 };
 
 // A backend descriptor's support row, without the recipe (it's always the
@@ -31,9 +79,12 @@ struct RecipeBackendDef {
 // the descriptor literals from repeating their own recipe on every row.
 struct BackendSupport {
     std::string backend;
+    BackendTier tier;
+    BackendFormat format;
     std::set<std::string> supported_os;
     DeviceConstraints devices;
     std::string device_summary = "";
+    ArchInstallGates arch_gates;
 };
 
 } // namespace lemon

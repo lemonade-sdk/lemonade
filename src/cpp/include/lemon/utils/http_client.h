@@ -1,14 +1,19 @@
 #pragma once
 
-#include <string>
-#include <map>
-#include <vector>
-#include <functional>
-#include <chrono>
-#include <memory>
-#include <iostream>
-#include <iomanip>
+#include <lemon/utils/cancel_token.h>
+#include <lemon/utils/http_security_policy.h>
+
 #include <atomic>
+#include <chrono>
+#include <cstdint>
+#include <functional>
+#include <iomanip>
+#include <iostream>
+#include <map>
+#include <memory>
+#include <stdexcept>
+#include <string>
+#include <vector>
 
 namespace lemon {
 namespace utils {
@@ -16,6 +21,7 @@ namespace utils {
 struct HttpResponse {
     int status_code = 0;
     std::string body;
+    // Response headers, names lowercased.
     std::map<std::string, std::string> headers;
 
     // Transport status from libcurl. For non-streaming callers this remains
@@ -45,7 +51,27 @@ struct DownloadResult {
     size_t total_bytes = 0;           // Total file size (if known)
     bool can_resume = false;          // Whether partial download can be resumed
     bool disk_full = false;            // True if download failed due to insufficient disk space
+    bool permanent = false;            // Non-recoverable failure (e.g. unsupported protocol, malformed URL); do not retry
 };
+
+class HttpClientException : public std::runtime_error {
+public:
+    HttpClientException(int curl_code, const std::string& message)
+        : std::runtime_error(message), curl_code_(curl_code) {}
+    int curl_code() const noexcept { return curl_code_; }
+private:
+    int curl_code_ = 0;
+};
+
+class HttpClientCancellationException : public HttpClientException {
+public:
+    HttpClientCancellationException(int curl_code, const std::string& message)
+        : HttpClientException(curl_code, message) {}
+};
+
+// The cancellation state lives in utils/cancel_token.h, where the model
+// transfer path can name it without naming HTTP.
+using RequestCancelToken = CancelToken;
 
 // Progress callback returns bool: true = continue, false = cancel download
 using ProgressCallback = std::function<bool(size_t downloaded, size_t total)>;
@@ -60,7 +86,7 @@ struct DownloadOptions {
     int low_speed_limit = 0;       // Minimum bytes/sec before timeout (disabled — 0 = no limit)
     int low_speed_time = 0;        // Seconds below low_speed_limit before timeout (disabled)
     int connect_timeout = 30;         // Connection timeout in seconds
-    int no_progress_timeout = 60;      // Seconds without byte progress before aborting (0 = disabled)
+    int no_progress_timeout = 0;       // Seconds without byte progress before aborting; 0 uses the default timeout
     bool range_retry_on_zero_byte_retry = true; // Retry empty failed attempts with Range: 0-
     bool force_initial_range_request = false;   // Force Range: 0- even on the first attempt
 
@@ -75,6 +101,11 @@ struct DownloadOptions {
 
 class HttpClient {
 public:
+    // curl reads CURLOPT_TIMEOUT 0 as "no timeout", which collides with the
+    // 0-means-default convention every request method here uses. A caller that
+    // genuinely wants to block indefinitely passes this instead.
+    static constexpr long kNoTimeout = -1;
+
     static void set_default_timeout(long timeout_seconds) {
         default_timeout_seconds_ = timeout_seconds;
     }
@@ -83,44 +114,97 @@ public:
         return default_timeout_seconds_;
     }
 
+    // Global cap; when set, downloads are also serialized so concurrent
+    // transfers cannot exceed it in aggregate.
+    static void set_download_rate_limit(int64_t bytes_per_second) {
+        download_rate_limit_bytes_per_second_ = bytes_per_second;
+    }
+
+    static int64_t get_download_rate_limit() {
+        return download_rate_limit_bytes_per_second_.load();
+    }
+
     // Simple GET request. timeout_seconds=0 (default) uses default_timeout_seconds_.
+    // max_body_bytes > 0 aborts and throws once the response grows past it.
     static HttpResponse get(const std::string& url,
                            const std::map<std::string, std::string>& headers = {},
-                           long timeout_seconds = 0);
+                           long timeout_seconds = 0,
+                           HttpSecurityPolicy policy = HttpSecurityPolicy::ExternalHttpsOnly,
+                           size_t max_body_bytes = 0);
 
-    // Simple POST request
-    static HttpResponse post(const std::string& url,
-                            const std::string& body,
-                            const std::map<std::string, std::string>& headers = {},
-                            long timeout_seconds = 300);
+    // Simple POST request. Redirects are never followed.
+    // timeout_seconds=0 uses default_timeout_seconds_, as in get(); pass
+    // kNoTimeout to opt out deliberately.
+    static HttpResponse post(
+        const std::string& url,
+        const std::string& body,
+        const std::map<std::string, std::string>& headers = {},
+        long timeout_seconds = 300,
+        HttpSecurityPolicy policy = HttpSecurityPolicy::ExternalHttpsOnly,
+        const RequestCancelToken& cancel = {});
 
-    // Multipart form data POST request
-    static HttpResponse post_multipart(const std::string& url,
-                                       const std::vector<MultipartField>& fields,
-                                       long timeout_seconds = 300);
+    // Multipart form data POST request. Redirects are never followed.
+    // timeout_seconds=0 uses default_timeout_seconds_.
+    static HttpResponse post_multipart(
+        const std::string& url,
+        const std::vector<MultipartField>& fields,
+        long timeout_seconds = 300,
+        HttpSecurityPolicy policy = HttpSecurityPolicy::ExternalHttpsOnly,
+        const RequestCancelToken& cancel = {});
 
     // Streaming POST request (calls callback for each chunk as it arrives).
     // on_status fires once, before the first chunk is delivered, so callers can
-    // divert an error body instead of forwarding it as payload bytes.
-    static HttpResponse post_stream(const std::string& url,
-                                   const std::string& body,
-                                   StreamCallback stream_callback,
-                                   const std::map<std::string, std::string>& headers = {},
-                                   long timeout_seconds = 300,
-                                   std::function<void(int status_code)> on_status = nullptr);
+    // divert an error body instead of forwarding it as payload bytes. Redirects
+    // are never followed.
+    //
+    // out_response_headers, when non-null, is filled with the response headers
+    // (names lowercased) before on_status fires, so a caller deciding what to
+    // send downstream can see them without waiting for the transfer to finish.
+    //
+    // timeout_seconds bounds upstream silence, not total duration: a total
+    // timeout would cut off a long but healthy generation. 0 uses
+    // default_timeout_seconds_, as in get().
+    static HttpResponse post_stream(
+        const std::string& url,
+        const std::string& body,
+        StreamCallback stream_callback,
+        const std::map<std::string, std::string>& headers = {},
+        long timeout_seconds = 300,
+        std::function<void(int status_code)> on_status = nullptr,
+        HttpSecurityPolicy policy = HttpSecurityPolicy::ExternalHttpsOnly,
+        std::function<bool()> should_cancel = nullptr,
+        std::map<std::string, std::string>* out_response_headers = nullptr);
 
     // Download file to disk with automatic retry and resume support
+    // Verifies a file against an expected digest using the same algorithm
+    // parsing and digests as download_file, so a transfer that does not go over
+    // HTTP can still honour a manifest hash. Returns true when the file matches
+    // or nothing was expected; `error` describes a mismatch or a malformed
+    // expectation.
+    static bool verify_file_digest(const std::string& path,
+                                   const std::string& algorithm,
+                                   const std::string& value,
+                                   std::string& error);
+
+    // A cancelled token stops the transfer between attempts and on the next
+    // progress tick; the partial file survives for a later resume.
     static DownloadResult download_file(const std::string& url,
                                         const std::string& output_path,
                                         ProgressCallback callback = nullptr,
                                         const std::map<std::string, std::string>& headers = {},
-                                        const DownloadOptions& options = DownloadOptions());
+                                        const DownloadOptions& options = DownloadOptions(),
+                                        HttpSecurityPolicy policy = HttpSecurityPolicy::ExternalHttpsOnly,
+                                        const CancelToken& cancel = CancelToken());
 
-    // Check if URL is reachable
-    static bool is_reachable(const std::string& url, int timeout_seconds = 5);
+    // Check if URL is reachable. Redirects are never followed.
+    static bool is_reachable(
+        const std::string& url,
+        int timeout_seconds = 5,
+        HttpSecurityPolicy policy = HttpSecurityPolicy::ExternalHttpsOnly);
 
 private:
     static std::atomic<long> default_timeout_seconds_;
+    static std::atomic<int64_t> download_rate_limit_bytes_per_second_;
 
     // Single download attempt, may resume from offset
     static DownloadResult download_attempt(const std::string& url,
@@ -129,7 +213,9 @@ private:
                                            ProgressCallback callback,
                                            const std::map<std::string, std::string>& headers,
                                            const DownloadOptions& options,
-                                           bool initial_range_request);
+                                           bool initial_range_request,
+                                           HttpSecurityPolicy policy,
+                                           const CancelToken& cancel);
 };
 
 // Creates a throttled progress callback that prints at most once per second.
@@ -173,6 +259,10 @@ inline ProgressCallback create_throttled_progress_callback(size_t resume_offset 
         return true;  // Always continue (console callback never cancels)
     };
 }
+
+// Global flag: set from signal handler to cancel in-progress model downloads.
+// Checked by the libcurl progress callback during transfer.
+extern std::atomic<bool> g_download_cancelled;
 
 } // namespace utils
 } // namespace lemon

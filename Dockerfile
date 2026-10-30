@@ -17,6 +17,7 @@ RUN apt-get update && apt-get install -y \
     git \
     nodejs \
     npm \
+    python3 \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy source code
@@ -39,8 +40,9 @@ RUN echo "=== Build directory contents ===" && \
 # # ============================================================
 FROM ubuntu:24.04
 
-# Install runtime dependencies only
+# vLLM/Triton JIT-compiles native launcher modules at runtime.
 RUN apt-get update && apt-get install -y \
+    build-essential \
     libcurl4 \
     curl \
     libssl3 \
@@ -52,13 +54,14 @@ RUN apt-get update && apt-get install -y \
     xz-utils \
     libgomp1 \
     libatomic1 \
+    libreadline8 \
     && rm -rf /var/lib/apt/lists/*
 
 # Run as an unprivileged user; lemond never needs root at runtime.
 RUN useradd -r -u 10001 -s /usr/sbin/nologin lemonade
 
-# The application directory doubles as the user's HOME so the HuggingFace and
-# lemonade caches (both derived from $HOME) resolve to writable, owned paths.
+# The application directory doubles as the user's HOME so Lemonade's cache and
+# config directories (plus the HuggingFace cache) resolve to writable paths.
 WORKDIR /opt/lemonade
 ENV HOME=/opt/lemonade
 
@@ -81,6 +84,7 @@ ENV PATH="/opt/lemonade:${PATH}"
 # Create cache directories and hand the whole tree to the unprivileged user.
 RUN mkdir -p /opt/lemonade/llama/cpu \
     /opt/lemonade/llama/vulkan \
+    /opt/lemonade/.config/lemonade \
     /opt/lemonade/.cache/huggingface \
     /opt/lemonade/.cache/lemonade && \
     chown -R lemonade:lemonade /opt/lemonade /run/lemonade

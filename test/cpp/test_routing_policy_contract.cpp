@@ -44,6 +44,7 @@ using lemon::EvalContext;
 using lemon::LeafFactory;
 using lemon::MatchExpr;
 using lemon::OnError;
+using lemon::OnTruncation;
 using lemon::RouteContext;
 using lemon::RoutePolicy;
 using lemon::RoutingPolicyEngine;
@@ -113,6 +114,17 @@ static void test_types_construct() {
     check(std::string(lemon::on_error_to_string(OnError::MatchTrue)) == "match_true",
           "on_error_to_string round-trips");
 
+    check(lemon::parse_on_truncation("fail") == OnTruncation::Fail, "parse_on_truncation fail");
+    check(lemon::parse_on_truncation("score") == OnTruncation::Score,
+          "parse_on_truncation score");
+    bool threw = false;
+    try {
+        lemon::parse_on_truncation("match_true");
+    } catch (const std::invalid_argument&) {
+        threw = true;
+    }
+    check(threw, "parse_on_truncation throws on an unknown value");
+
     // Match AST: any[ leaf, not(leaf) ].
     MatchExpr leaf;
     leaf.op = MatchExpr::Op::Leaf;
@@ -166,7 +178,7 @@ struct ConstCondition : Condition {
 // them to resolve condition `label` refs.
 struct LabeledClassifier : Classifier {
     LabeledClassifier()
-        : Classifier("pii", "classifier", OnError::MatchTrue,
+        : Classifier("pii", "classifier", OnError::MatchTrue, "test-labeled-model",
                      {"PII", "NO_PII"}, std::string("PII")) {}
     Score evaluate(const ClassifierContext&) const override {
         Score s;
@@ -178,7 +190,8 @@ struct LabeledClassifier : Classifier {
 // A label-less classifier: declares no labels and returns a single score, read
 // via primary().
 struct SingleScoreClassifier : Classifier {
-    SingleScoreClassifier() : Classifier("single", "classifier", OnError::MatchFalse) {}
+    SingleScoreClassifier()
+        : Classifier("single", "classifier", OnError::MatchFalse, "test-single-model") {}
     Score evaluate(const ClassifierContext&) const override {
         Score s;
         s.labels["POSITIVE"] = 0.5;
@@ -242,7 +255,7 @@ static void test_fake_services() {
     auto vec = svc.embed("nomic-embed-text-v1.5-GGUF", "anything");
     check(vec.size() == 3 && vec[1] == 1.0f, "fake embed returns configured vector");
 
-    auto scores = svc.run_classifier("pii-detector-small", "my ssn is ...");
+    auto scores = svc.run_classifier("pii-detector-small", "my ssn is ...").scores;
     check(scores.at("PII") == 0.9, "fake run_classifier returns configured scores");
 
     auto reply = svc.chat("Qwen3-1.7B-GGUF", "route this", "hard reasoning task");

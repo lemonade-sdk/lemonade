@@ -1,9 +1,11 @@
 #include "lemon/backends/fastflowlm/fastflowlm_server.h"
 #include "lemon/backends/fastflowlm/fastflowlm.h"
 #include "lemon/backends/fastflowlm/fastflowlm_models.h"
+#include "lemon/backends/fastflowlm/flm_arg_resolver.h"
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/audio_types.h"
 #include "lemon/model_manager.h"
 #include "lemon/system_info.h"
 #include "lemon/error_types.h"
@@ -42,7 +44,7 @@ InstallParams FastFlowLMServer::get_install_params(const std::string& backend, c
         return params;
     }
 
-    params.repo = "FastFlowLM/FastFlowLM";
+    params.repo = "ROCm/FastFlowLM";
 
     // Release asset filenames use bare version numbers (no 'v' prefix)
     std::string bare_version = version;
@@ -64,11 +66,8 @@ FastFlowLMServer::FastFlowLMServer(const std::string& log_level, ModelManager* m
     : WrappedServer("FastFlowLM", log_level, model_manager, backend_manager) {
 }
 
-FastFlowLMServer::~FastFlowLMServer() {
-    unload();
-}
-
-std::string FastFlowLMServer::download_model(const std::string& checkpoint, bool do_not_upgrade) {
+std::string FastFlowLMServer::download_model(const std::string& checkpoint, bool do_not_upgrade,
+                                             RegistryId source) {
     LOG(INFO, "FastFlowLM") << "Pulling model with FLM: " << checkpoint << std::endl;
 
     std::string flm_path = get_flm_path();
@@ -76,10 +75,8 @@ std::string FastFlowLMServer::download_model(const std::string& checkpoint, bool
         throw std::runtime_error("FLM not found");
     }
 
-    std::vector<std::string> args = {"pull", checkpoint};
-    if (!do_not_upgrade) {
-        args.push_back("--force");
-    }
+    std::vector<std::string> args = fastflowlm::flm_pull_arguments(
+        checkpoint, do_not_upgrade, source);
 
     LOG(INFO, "ProcessManager") << "Starting process: \"" << flm_path << "\"";
     for (const auto& arg : args) {
@@ -143,12 +140,14 @@ std::string FastFlowLMServer::download_model(const std::string& checkpoint, bool
 }
 
 void FastFlowLMServer::load(const std::string& model_name,
-                           const ModelInfo& model_info,
-                           const RecipeOptions& options,
-                           bool do_not_upgrade) {
+                            const ModelInfo& model_info,
+                            const RecipeOptions& options,
+                            bool do_not_upgrade) {
     LOG(INFO, "FastFlowLM") << "Loading model: " << model_name << std::endl;
 
     int ctx_size = options.get_option("ctx_size");
+    std::string flm_args = options.get_option("flm_args");
+    FLMArgResolution flm_arg_resolution = resolve_flm_args(flm_args, ctx_size);
 
     std::cout << "[FastFlowLM] Options: ctx_size=" << ctx_size << std::endl;
     // Note: checkpoint_ is set by Router via set_model_metadata() before load() is called
@@ -172,7 +171,13 @@ void FastFlowLMServer::load(const std::string& model_name,
             "\nVisit " + DRIVER_INSTALL_URL + " for driver installation instructions.");
     }
 
-    download_model(model_info.checkpoint(), do_not_upgrade);
+    if (model_manager_ == nullptr) {
+        throw std::runtime_error("Model manager is unavailable while resolving the download source for: " +
+                                 model_info.checkpoint());
+    }
+    const RegistryId source = model_manager_->download_source_for(model_info);
+
+    download_model(model_info.checkpoint(), do_not_upgrade, source);
 
     port_ = choose_port();
 
@@ -183,16 +188,14 @@ void FastFlowLMServer::load(const std::string& model_name,
             "serve",
             "--asr", "1",
             "--port", std::to_string(port_),
-            "--host", "127.0.0.1",
-            "--quiet"
+            "--host", "127.0.0.1"
         };
     } else if (model_type_ == ModelType::EMBEDDING) {
         args = {
             "serve",
             "--embed", "1",
             "--port", std::to_string(port_),
-            "--host", "127.0.0.1",
-            "--quiet"
+            "--host", "127.0.0.1"
         };
     } else {
         args = {
@@ -200,10 +203,12 @@ void FastFlowLMServer::load(const std::string& model_name,
             model_info.checkpoint(),
             "--ctx-len", std::to_string(ctx_size),
             "--port", std::to_string(port_),
-            "--host", "127.0.0.1",
-            "--quiet"
+            "--host", "127.0.0.1"
         };
     }
+
+    args.insert(args.end(), flm_arg_resolution.args.begin(), flm_arg_resolution.args.end());
+    args.push_back("--quiet");
 
     LOG(INFO, "FastFlowLM") << "Starting flm-server..." << std::endl;
     LOG(INFO, "ProcessManager") << "Starting process: \"" << flm_path << "\"";
@@ -212,71 +217,23 @@ void FastFlowLMServer::load(const std::string& model_name,
     }
     LOG(INFO, "ProcessManager") << std::endl;
 
-    set_process_handle(utils::ProcessManager::start_process(flm_path, args, "", is_debug(), true));
-    LOG(INFO, "ProcessManager") << "Process started successfully" << std::endl;
-
-    bool ready = wait_for_ready();
-    if (!ready) {
-        const ProcessHandle handle = consume_process_handle_for_cleanup();
-        if (has_process_handle(handle)) {
-            utils::ProcessManager::stop_process(handle);
-        }
-        throw std::runtime_error("flm-server failed to start");
+    ServerCommand command;
+    command.program = flm_path;
+    command.args = std::move(args);
+    command.port = port_;
+    // FLM has no /health route.
+    command.ready_endpoint = "/api/tags";
+    try {
+        // 5 minutes: large models can take time to load
+        start_server(std::make_unique<NativeProcess>(ProcessOutput{is_debug(), true}), command, 300);
+    } catch (const std::runtime_error&) {
+        if (load_cancelled()) throw;
+        LOG(ERROR, "FastFlowLM") << "Troubleshooting tips:" << std::endl;
+        LOG(ERROR, "FastFlowLM") << "  1. Check if FLM is installed correctly: flm --version" << std::endl;
+        LOG(ERROR, "FastFlowLM") << "  2. Try running: flm serve <model> --ctx-len 8192 --port 8001" << std::endl;
+        LOG(ERROR, "FastFlowLM") << "  3. Check NPU drivers are installed (Windows only)" << std::endl;
+        throw;
     }
-
-    is_loaded_ = true;
-    LOG(INFO, "FastFlowLM") << "Model loaded on port " << get_backend_port() << std::endl;
-}
-
-void FastFlowLMServer::unload() {
-    stop_backend_watchdog();
-    LOG(INFO, "FastFlowLM") << "Unloading model..." << std::endl;
-
-    const ProcessHandle handle = consume_process_handle_for_cleanup();
-    if (has_process_handle(handle)) {
-        utils::ProcessManager::stop_process(handle);
-    }
-    is_loaded_ = false;
-}
-
-bool FastFlowLMServer::wait_for_ready() {
-    // FLM doesn't have a health endpoint, so we use /api/tags to check if it's up
-    std::string tags_url = get_base_url() + "/api/tags";
-
-    LOG(INFO, "FastFlowLM") << "Waiting for " + server_name_ + " to be ready..." << std::endl;
-
-    const int max_attempts = 300;  // 5 minutes timeout (large models can take time to load)
-    for (int attempt = 0; attempt < max_attempts; ++attempt) {
-        // Check if process is still running. If it already exited, consume and
-        // reap the owned handle here so failed-start cleanup cannot later signal
-        // a stale PID.
-        const ProcessHandle handle = get_process_handle_snapshot();
-        if (!has_process_handle(handle) || !utils::ProcessManager::is_running(handle)) {
-            LOG(ERROR, "FastFlowLM") << server_name_ << " process has terminated!" << std::endl;
-            const ProcessHandle exited_handle = consume_process_handle_for_cleanup();
-            int exit_code = has_process_handle(exited_handle)
-                ? utils::ProcessManager::reap_process(exited_handle)
-                : -1;
-            LOG(ERROR, "FastFlowLM") << "Process exit code: " << exit_code << std::endl;
-            LOG(ERROR, "FastFlowLM") << "Troubleshooting tips:" << std::endl;
-            LOG(ERROR, "FastFlowLM") << "  1. Check if FLM is installed correctly: flm --version" << std::endl;
-            LOG(ERROR, "FastFlowLM") << "  2. Try running: flm serve <model> --ctx-len 8192 --port 8001" << std::endl;
-            LOG(ERROR, "FastFlowLM") << "  3. Check NPU drivers are installed (Windows only)" << std::endl;
-            return false;
-        }
-
-        if (utils::HttpClient::is_reachable(tags_url, 1)) {
-            LOG(INFO, "FastFlowLM") << server_name_ + " is ready!" << std::endl;
-            start_backend_watchdog("/api/tags");
-            return true;
-        }
-
-        std::this_thread::sleep_for(std::chrono::seconds(1));
-    }
-
-    LOG(ERROR, "FastFlowLM") << server_name_ << " failed to start within "
-              << max_attempts << " seconds" << std::endl;
-    return false;
 }
 
 json FastFlowLMServer::chat_completion(const json& request) {
@@ -318,19 +275,22 @@ json FastFlowLMServer::embeddings(const json& request) {
     return forward_request("/v1/embeddings", request);
 }
 
-json FastFlowLMServer::reranking(const json& request) {
-    if (model_type_ != ModelType::LLM) {
-        return ErrorResponse::from_exception(
-            UnsupportedOperationException("Reranking", "FLM " + model_type_to_string(model_type_) + " model")
-        );
-    }
-    return forward_request("/v1/rerank", request);
-}
-
 json FastFlowLMServer::audio_transcriptions(const json& request) {
     if (model_type_ != ModelType::TRANSCRIPTION) {
         return ErrorResponse::from_exception(
             UnsupportedOperationException("Audio transcription", "FLM " + model_type_to_string(model_type_) + " model")
+        );
+    }
+
+    // FLM's transcription endpoint ignores response_format and always answers with
+    // the compact {model, text} JSON. Plain text can be derived from that; SRT and
+    // VTT cannot, because they need the per-segment timestamps FLM never returns.
+    const std::string requested_format = request.value("response_format", audio::ResponseFormat::JSON);
+    if (requested_format == audio::ResponseFormat::SRT ||
+        requested_format == audio::ResponseFormat::VTT) {
+        return ErrorResponse::from_exception(
+            UnsupportedOperationException("response_format '" + requested_format + "'",
+                                          "FLM transcription models (no segment timestamps)")
         );
     }
 
@@ -376,6 +336,8 @@ json FastFlowLMServer::audio_transcriptions(const json& request) {
             fields.push_back({"temperature", std::to_string(request["temperature"].get<double>()), "", ""});
         }
 
+        // FLM always replies with JSON here, so the strict shared helper is correct:
+        // handle_audio_transcriptions() renders the "text" field for plain-text formats.
         return forward_multipart_request("/v1/audio/transcriptions", fields);
 
     } catch (const std::exception& e) {
@@ -469,8 +431,17 @@ public:
     }
 
     void download_model(const ModelInfo& info, bool do_not_upgrade, DownloadProgressCallback progress,
-                        const BackendOpsContext&) const override {
-        flm_download(info.checkpoint(), do_not_upgrade, progress);
+                        const BackendOpsContext& ctx) const override {
+        if (ctx.fetch == nullptr) {
+            throw std::runtime_error("No fetch service while resolving the download source for: " +
+                                     info.checkpoint());
+        }
+        flm_download(info.checkpoint(), do_not_upgrade, progress,
+                     ctx.fetch->download_source_for(info));
+    }
+
+    void remove_self_managed_model(const ModelInfo& info) const override {
+        flm_remove(info.checkpoint());
     }
 
     bool invalidates_cache_after_download() const override { return true; }

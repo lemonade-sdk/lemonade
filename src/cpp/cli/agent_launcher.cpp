@@ -251,17 +251,60 @@ void configure_pi_agent(const std::string& model,
         "  npm i -g @earendil-works/pi-coding-agent";
 }
 
+void configure_junie_agent(const std::string& api_key,
+                           AgentConfig& config) {
+    const std::string resolved_api_key = api_key.empty() ? kDefaultAgentApiKey : api_key;
+
+#ifdef _WIN32
+    // The installer ships a junie.bat shim, and SearchPath does not expand PATHEXT.
+    config.binary_name = "junie.bat";
+    config.binary_alternatives = {"junie.cmd", "junie.exe"};
+    config.fallback_paths = {
+        "~/.local/bin/junie.bat",
+        "~/.local/bin/junie.cmd",
+        "~/.local/bin/junie.exe"
+    };
+#else
+    config.binary_name = "junie";
+    config.binary_alternatives = {};
+    config.fallback_paths = {
+        "~/.local/bin/junie",
+        "/usr/local/bin/junie"
+    };
+#endif
+
+    config.env_vars = {
+        {"LEMONADE_API_KEY", resolved_api_key}
+    };
+    // The model lives in the custom:lemonade profile, so the args only select it.
+    config.extra_args = {
+        "--model", "custom:lemonade"
+    };
+    config.install_instructions =
+#ifdef _WIN32
+        "Install Junie CLI:\n"
+        "  powershell -NoProfile -ExecutionPolicy Bypass -Command "
+        "\"iex (irm 'https://junie.jetbrains.com/install.ps1')\"\n"
+        "See https://junie.jetbrains.com/ for details.";
+#else
+        "Install Junie CLI:\n"
+        "  curl -fsSL https://junie.jetbrains.com/install.sh | bash\n"
+        "See https://junie.jetbrains.com/ for details.";
+#endif
+}
+
 } // namespace
 
-std::string build_agent_server_base_url(const std::string& host, int port) {
+std::string build_agent_server_base_url(const std::string& host, int port, bool is_ssl) {
+    const std::string scheme = is_ssl ? "https://" : "http://";
     if (host.empty() || host == "0.0.0.0" || host == "::" || host == "[::]" || host == "*") {
-        return "http://localhost:" + std::to_string(port);
+        return scheme + "localhost:" + std::to_string(port);
     }
-    return "http://" + host + ":" + std::to_string(port);
+    return scheme + host + ":" + std::to_string(port);
 }
 
 bool agent_needs_config_sync(const std::string& agent) {
-    return agent == "opencode" || agent == "pi";
+    return agent == "opencode" || agent == "pi" || agent == "junie";
 }
 
 bool build_agent_config(const std::string& agent,
@@ -294,7 +337,12 @@ bool build_agent_config(const std::string& agent,
         return true;
     }
 
-    error_message = "Unsupported agent: " + agent + ". Supported agents: claude, codex, opencode, pi.";
+    if (agent == "junie") {
+        configure_junie_agent(api_key, config);
+        return true;
+    }
+
+    error_message = "Unsupported agent: " + agent + ". Supported agents: claude, codex, opencode, pi, junie.";
     return false;
 }
 

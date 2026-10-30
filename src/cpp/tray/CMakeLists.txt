@@ -134,6 +134,7 @@ set(TRAY_UI_SOURCES
 if(NOT WIN32)
     list(APPEND TRAY_UI_SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/../server/utils/path_utils.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../server/utils/url_utils.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../server/utils/json_utils.cpp
     )
     # Add platform-specific path implementation
@@ -154,13 +155,10 @@ function(apply_tray_deps target_name)
         ${CMAKE_CURRENT_SOURCE_DIR}/../include
     )
 
-    target_link_libraries(${target_name} PRIVATE nlohmann_json::nlohmann_json)
-
-    if(USE_SYSTEM_HTTPLIB)
-        target_link_libraries(${target_name} PRIVATE lemonade-httplib)
-    else()
-        target_link_libraries(${target_name} PRIVATE httplib::httplib)
-    endif()
+    target_link_libraries(${target_name} PRIVATE
+        nlohmann_json::nlohmann_json
+        lemonade-httplib
+    )
 
     if(USE_SYSTEM_CLI11)
         target_include_directories(${target_name} PRIVATE ${CLI11_INCLUDE_DIRS})

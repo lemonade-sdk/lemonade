@@ -13,21 +13,18 @@ runs:
       run: |
         New-Item -ItemType Directory -Path server-logs -Force | Out-Null
 
-        # Check common log locations
-        $candidates = @(
-          "$env:TEMP\lemonade-server.log",
-          "$env:TEMP\lemond.log",
-          "$env:LOCALAPPDATA\lemonade_server\lemonade-server.log"
-        )
-
+        # Check common log locations (including rotated log files .1, .2, etc.)
+        $logFiles = Get-ChildItem -Path "$env:TEMP", "$env:LOCALAPPDATA\lemonade_server" -Filter "lemonade-server.log*" -ErrorAction SilentlyContinue
         $found = $false
-        foreach ($logFile in $candidates) {
-          if (Test-Path $logFile) {
-            Write-Host "=== Last 200 lines of $logFile ==="
-            Get-Content $logFile -Tail 200
-            Copy-Item $logFile server-logs/ -ErrorAction SilentlyContinue
-            $found = $true
-          }
+        foreach ($file in $logFiles) {
+          Write-Host "=== Last 200 lines of $($file.FullName) ==="
+          Get-Content $file.FullName -Tail 200
+          Copy-Item $file.FullName server-logs/ -ErrorAction SilentlyContinue
+          $found = $true
+        }
+        if (Test-Path "$env:TEMP\lemond.log") {
+          Copy-Item "$env:TEMP\lemond.log" server-logs/ -ErrorAction SilentlyContinue
+          $found = $true
         }
 
         if (-not $found) {
@@ -53,20 +50,22 @@ runs:
           done
         fi
 
-        # --- Linux: check file-based logs ---
+        # --- Linux: check file-based logs (including rotated backups) ---
         if [ "$RUNNER_OS" = "Linux" ]; then
           # XDG runtime dir (e.g. /run/user/1001/lemonade/)
           LEMON_RUNTIME_DIR="${XDG_RUNTIME_DIR:+${XDG_RUNTIME_DIR}/lemonade}"
-          for candidate in \
-            "${LEMON_RUNTIME_DIR}/lemonade-server.log" \
-            "$RUNNER_TEMP/lemonade-server.log" \
-            "$RUNNER_TEMP/lemond.log"; do
-            if [ -f "$candidate" ]; then
-              echo "=== Last 200 lines of $candidate ==="
-              tail -200 "$candidate"
-              cp "$candidate" server-logs/ 2>/dev/null || true
-              found=true
-            fi
+          for log_pattern in \
+            "${LEMON_RUNTIME_DIR}"/lemonade-server.log* \
+            "$RUNNER_TEMP"/lemonade-server.log* \
+            "$RUNNER_TEMP"/lemond.log*; do
+            for candidate in $log_pattern; do
+              if [ -f "$candidate" ]; then
+                echo "=== Last 200 lines of $candidate ==="
+                tail -200 "$candidate"
+                cp "$candidate" server-logs/ 2>/dev/null || true
+                found=true
+              fi
+            done
           done
 
           # Systemd journal (works when server runs as lemond.service)

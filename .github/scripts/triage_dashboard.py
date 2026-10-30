@@ -32,7 +32,9 @@ COMPONENT_LABELS = {"cpp", "app", "web ui", "audio"}
 
 def gh_api_pages(path):
     cmd = ["gh", "api", "--paginate", "--slurp", path]
-    out = subprocess.run(cmd, check=True, capture_output=True, text=True, encoding="utf-8").stdout
+    out = subprocess.run(
+        cmd, check=True, capture_output=True, text=True, encoding="utf-8"
+    ).stdout
     pages = json.loads(out)
     return [item for page in pages for item in page]
 
@@ -46,7 +48,9 @@ def fetch_items(repo):
             "url": it["html_url"],
             "author": (it.get("user") or {}).get("login", "?"),
             "labels": [lbl["name"] for lbl in it.get("labels", [])],
-            "assignees": [a["login"] for a in it.get("assignees", []) if a and a.get("login")],
+            "assignees": [
+                a["login"] for a in it.get("assignees", []) if a and a.get("login")
+            ],
             "comments": it.get("comments", 0),
             "is_pr": it.get("pull_request") is not None,
             "created_at": it["created_at"],
@@ -470,8 +474,7 @@ def main():
 
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     html = (
-        HTML_TEMPLATE
-        .replace("__REPO__", args.repo)
+        HTML_TEMPLATE.replace("__REPO__", args.repo)
         .replace("__GENERATED_AT__", now)
         .replace("__DATA__", script_safe_json(items))
     )

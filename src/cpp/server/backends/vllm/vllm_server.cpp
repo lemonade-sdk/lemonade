@@ -2,20 +2,23 @@
 #include "lemon/backends/vllm/vllm.h"
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/backends/hf_cache_util.h"
 #include "lemon/backends/vllm/vllm_arg_resolver.h"
 #include "lemon/model_manager.h"
+#include <lemon/models/registry_types.h>
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
-#include "lemon/utils/process_manager.h"
 #include <lemon/utils/aixlog.hpp>
 #include <algorithm>
 #include <chrono>
+#include <cstdint>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
 #include <random>
 #include <regex>
 #include <sstream>
@@ -27,6 +30,11 @@ namespace lemon {
 namespace backends {
 
 static constexpr int64_t VLLM_MAX_TOKENS_PREFLIGHT_THRESHOLD = 8192;
+
+static std::string registry_repo_id_from_checkpoint(const std::string& checkpoint) {
+    const auto separator = checkpoint.find(':');
+    return separator == std::string::npos ? checkpoint : checkpoint.substr(0, separator);
+}
 
 // Parse quantization_config.quant_method from a config.json body.
 static std::string parse_quant_method(const std::string& config_json) {
@@ -125,20 +133,31 @@ json VLLMServer::prepare_openai_request(const json& request) {
 }
 
 // Returns quantization_config.quant_method for the model, or empty string.
-// First checks the HuggingFace hub cache; if config.json isn't there yet,
-// fetches it over HTTP from huggingface.co directly. This ensures detection
-// works on first load before vLLM has downloaded anything.
-static std::string detect_quant_method(const std::string& model_id) {
-    // 1. Check HF cache first (fast path)
-    std::string hf_dir = "models--";
-    for (char c : model_id) {
-        if (c == '/') hf_dir += "--";
-        else hf_dir += c;
+// Prefers the active snapshot, then any snapshot of the repository, then the
+// host's resolve URL; a host without one stops at the snapshot.
+static std::string detect_quant_method(const std::string& repo_id,
+                                       const fs::path& local_snapshot,
+                                       RegistryId registry_source,
+                                       const fs::path& cache_root) {
+    if (!local_snapshot.empty()) {
+        fs::path cfg = local_snapshot / "config.json";
+        if (fs::exists(cfg)) {
+            std::ifstream f(cfg);
+            std::stringstream buf;
+            buf << f.rdbuf();
+            std::string result = parse_quant_method(buf.str());
+            if (!result.empty()) return result;
+        }
     }
 
-    const char* home = std::getenv("HOME");
-    if (home) {
-        fs::path snapshots = fs::path(home) / ".cache" / "huggingface" / "hub" / hf_dir / "snapshots";
+    const models::RegistryDescriptor* descriptor = models::descriptor_for(registry_source);
+    if (descriptor == nullptr || descriptor->endpoint_default.empty()) {
+        return "";
+    }
+
+    if (!cache_root.empty()) {
+        fs::path snapshots = cache_root /
+            hf_cache::repo_id_to_cache_dir_name(repo_id, registry_source.str()) / "snapshots";
         if (fs::exists(snapshots)) {
             for (const auto& entry : fs::directory_iterator(snapshots)) {
                 if (!entry.is_directory()) continue;
@@ -153,14 +172,14 @@ static std::string detect_quant_method(const std::string& model_id) {
         }
     }
 
-    // 2. Fetch directly from HF
-    std::string url = "https://huggingface.co/" + model_id + "/resolve/main/config.json";
+    const std::string url = descriptor->endpoint_default + "/" + repo_id + "/resolve/" +
+                            descriptor->default_revision + "/config.json";
     auto resp = HttpClient::get(url);
     if (resp.status_code == 200) {
         return parse_quant_method(resp.body);
     }
 
-    LOG(DEBUG, "vLLM") << "Could not fetch config.json for " << model_id
+    LOG(DEBUG, "vLLM") << "Could not fetch config.json for " << repo_id
                        << " (http " << resp.status_code << "); skipping quant detection" << std::endl;
     return "";
 }
@@ -327,6 +346,11 @@ VLLMServer::~VLLMServer() {
     unload();
 }
 
+static std::string registry_protocol(const RegistryId& source) {
+    const models::RegistryDescriptor* descriptor = models::descriptor_for(source);
+    return descriptor != nullptr ? descriptor->download_protocol : std::string();
+}
+
 void VLLMServer::load(const std::string& model_name,
                      const ModelInfo& model_info,
                      const RecipeOptions& options,
@@ -342,13 +366,38 @@ void VLLMServer::load(const std::string& model_name,
 
     backend_manager_->install_backend(vllm::spec()->recipe, vllm_backend);
 
-    // vLLM uses HuggingFace model IDs, not local file paths.
     std::string model_id = model_info.checkpoint();
     if (model_id.empty()) {
-        throw std::runtime_error("Model checkpoint (HuggingFace ID) not found for: " + model_name);
+        throw std::runtime_error("Model checkpoint (registry ID) not found for: " + model_name);
     }
 
-    LOG(DEBUG, "vLLM") << "Using model: " << model_id << std::endl;
+    const RegistryId registry_source =
+        parse_remote_registry_source(model_info.registry_source);
+    std::string model_target = model_id;
+    fs::path active_snapshot;
+    const fs::path cache_root = model_manager_ != nullptr
+                                    ? path_from_utf8(model_manager_->get_hf_cache_dir())
+                                    : fs::path();
+
+    // An engine that cannot resolve the id itself gets the normalized active
+    // snapshot, so it stays offline and uses the exact revision Lemonade recorded
+    // for update checks.
+    if (!vllm::ops()->resolves_download_protocol(registry_protocol(registry_source))) {
+        if (model_manager_ == nullptr) {
+            throw std::runtime_error("Model manager is unavailable while resolving a local snapshot");
+        }
+        const std::string repo_id = registry_repo_id_from_checkpoint(model_id);
+        const fs::path repo_cache = cache_root /
+            hf_cache::repo_id_to_cache_dir_name(repo_id, model_info.registry_source);
+        active_snapshot = hf_cache::active_snapshot_path(repo_cache);
+        if (active_snapshot.empty() || !fs::exists(active_snapshot)) {
+            throw std::runtime_error(
+                "Local snapshot is not downloaded or refs/main is invalid for: " + model_name);
+        }
+        model_target = path_to_utf8(active_snapshot);
+    }
+
+    LOG(DEBUG, "vLLM") << "Using model target: " << model_target << std::endl;
 
     std::string vllm_model_config_path =
         utils::get_resource_path("resources/vllm_model_config.json");
@@ -363,7 +412,7 @@ void VLLMServer::load(const std::string& model_name,
 
     std::vector<std::string> args;
     args.push_back("--model");
-    args.push_back(model_id);
+    args.push_back(model_target);
     args.push_back("--port");
     args.push_back(std::to_string(port_));
     args.push_back("--host");
@@ -373,8 +422,9 @@ void VLLMServer::load(const std::string& model_name,
     args.push_back(model_name);
     // Keep eager execution for consumer GPU inference; leave dtype selection to vLLM.
     // Discrete-HBM parts skip it: eager costs decode throughput for no stability gain.
+    const std::string rocm_arch = SystemInfo::get_rocm_arch();
     const DeviceClassLaunchPolicy launch_policy = device_class_launch_policy(
-        SystemInfo::get_rocm_arch(), resolved_vllm_args.has_memory_budget_arg,
+        rocm_arch, resolved_vllm_args.has_memory_budget_arg,
         resolved_vllm_args.has_enforce_eager);
     if (launch_policy.enforce_eager) {
         args.push_back("--enforce-eager");
@@ -390,7 +440,8 @@ void VLLMServer::load(const std::string& model_name,
     // GPTQ, etc. and forcing --quantization awq would fail the load.
     // For AWQ specifically we force the 'awq' kernel because vLLM's default
     // awq_marlin is very slow on consumer GPUs (2 tok/s -> 12 tok/s).
-    std::string quant_method = detect_quant_method(model_id);
+    std::string quant_method = detect_quant_method(
+        registry_repo_id_from_checkpoint(model_id), active_snapshot, registry_source, cache_root);
     if (quant_method == "awq" && launch_policy.force_awq_kernel) {
         if (!resolved_vllm_args.has_quantization_arg) {
             LOG(DEBUG, "vLLM") << "Detected AWQ; forcing --quantization awq" << std::endl;
@@ -424,7 +475,27 @@ void VLLMServer::load(const std::string& model_name,
     // Discrete-HBM GPUs get vLLM's native budgeting instead of a fixed cap.
     if (launch_policy.cap_kv_cache) {
         args.push_back("--kv-cache-memory-bytes");
-        args.push_back("4G");
+        args.push_back(kKvCacheCapArg);
+
+        // The cap above bounds what vLLM uses, but not what it demands be free before it
+        // will start, so a co-tenant process can still reject a model that fits.
+        uint64_t free_bytes = 0;
+        uint64_t total_bytes = 0;
+        if (SystemInfo::get_rocm_device_memory(rocm_arch, free_bytes, total_bytes)) {
+            const double utilization =
+                shared_memory_gpu_utilization(free_bytes, total_bytes);
+            if (utilization > 0.0) {
+                constexpr uint64_t mib = 1024 * 1024;
+                std::ostringstream formatted;
+                formatted << std::fixed << std::setprecision(2) << utilization;
+                LOG(DEBUG, "vLLM") << "Scaling --gpu-memory-utilization to "
+                                   << formatted.str() << "; " << rocm_arch << " has "
+                                   << (free_bytes / mib) << " MiB of "
+                                   << (total_bytes / mib) << " MiB free" << std::endl;
+                args.push_back("--gpu-memory-utilization");
+                args.push_back(formatted.str());
+            }
+        }
     }
 
     // Emitted as its own argv element, never through vllm_args: that tokenizer strips quotes
@@ -452,18 +523,22 @@ void VLLMServer::load(const std::string& model_name,
     // Prevent system/user Python packages from leaking into the bundled vLLM environment
     env_vars.push_back({"PYTHONNOUSERSITE", "1"});
 
-    bool inherit_output = (log_level_ == "info") || is_debug();
-    set_process_handle(ProcessManager::start_process(executable, args, "", inherit_output, true, env_vars));
+    ServerCommand command;
+    command.program = executable;
+    command.args = std::move(args);
+    command.env = std::move(env_vars);
+    command.port = port_;
 
-    // vLLM can take longer to start (loading model, compiling kernels)
-    if (!wait_for_ready("/health", HttpClient::get_default_timeout())) {
-        const ProcessHandle handle = consume_process_handle_for_cleanup();
-        if (has_process_handle(handle)) {
-            ProcessManager::stop_process(handle);
-        }
+    bool inherit_output = (log_level_ == "info") || is_debug();
+    try {
+        // vLLM can take longer to start (loading model, compiling kernels)
+        start_server(std::make_unique<NativeProcess>(ProcessOutput{inherit_output, true}), command,
+                     HttpClient::get_default_timeout());
+    } catch (const std::runtime_error& e) {
         cleanup_vllm_rocm_shim_dir(rocm_shim_dir_);
         max_model_len_ = 0;
-        std::string err = "vllm-server failed to start within timeout";
+        if (load_cancelled()) throw;
+        std::string err = e.what();
         // A common cause on gfx1151 is a kernel without the CWSR fix, which makes
         // any GPU dispatch hang or fault. Point users to the docs in that case.
         if (needs_gfx1151_cwsr_fix()) {
@@ -472,20 +547,11 @@ void VLLMServer::load(const std::string& model_name,
         }
         throw std::runtime_error(err);
     }
-
-    LOG(DEBUG, "vLLM") << "Model loaded on port " << get_backend_port() << std::endl;
 }
 
 void VLLMServer::unload() {
-    stop_backend_watchdog();
-    LOG(INFO, "vLLM") << "Unloading model..." << std::endl;
-
-    const ProcessHandle handle = consume_process_handle_for_cleanup();
-    if (has_process_handle(handle)) {
-        ProcessManager::stop_process(handle);
-    }
+    stop_server();
     cleanup_vllm_rocm_shim_dir(rocm_shim_dir_);
-    max_model_len_ = 0;
 }
 
 json VLLMServer::chat_completion(const json& request) {
@@ -523,23 +589,14 @@ void VLLMServer::forward_streaming_request(const std::string& endpoint,
         }
     }
 
-    Telemetry telemetry;
+    StreamingProxy::TelemetryData telemetry;
     bool has_telemetry = false;
-    std::string telemetry_error = "";
 
     WrappedServer::forward_streaming_request(
         endpoint, body, sink, sse, timeout_seconds,
-        [&telemetry, &has_telemetry, &telemetry_error](int input_tokens,
-                                     int output_tokens,
-                                     double time_to_first_token,
-                                     double tokens_per_second,
-                                     const std::string& error_message) {
+        [&telemetry, &has_telemetry](const StreamingProxy::TelemetryData& reported) {
             has_telemetry = true;
-            telemetry.input_tokens = input_tokens;
-            telemetry.output_tokens = output_tokens;
-            telemetry.time_to_first_token = time_to_first_token;
-            telemetry.tokens_per_second = tokens_per_second;
-            telemetry_error = error_message;
+            telemetry = reported;
         });
 
     if (has_telemetry) {
@@ -554,11 +611,7 @@ void VLLMServer::forward_streaming_request(const std::string& endpoint,
         }
 
         if (telemetry_callback) {
-            telemetry_callback(telemetry.input_tokens,
-                               telemetry.output_tokens,
-                               telemetry.time_to_first_token,
-                               telemetry.tokens_per_second,
-                               telemetry_error);
+            telemetry_callback(telemetry);
         }
     }
 }
@@ -703,7 +756,8 @@ std::map<std::string, nlohmann::json> VLLMServer::get_additional_telemetry() {
 
     std::string url = "http://127.0.0.1:" + std::to_string(get_backend_port()) + "/metrics";
     try {
-        auto response = utils::HttpClient::get(url, {}, 1);
+        auto response = utils::HttpClient::get(url, {}, 1,
+                                               utils::HttpSecurityPolicy::TrustedLoopback);
         if (response.status_code == 200) {
             return parse_vllm_metrics_text(response.body);
         }
@@ -735,13 +789,20 @@ namespace lemon {
 namespace backends {
 namespace vllm {
 
+class VLLMOps : public BackendOps {
+  public:
+    bool resolves_download_protocol(const std::string& protocol) const override {
+        return protocol == models::download_protocols::hf_hub;
+    }
+};
+
 std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
     return make_server<VLLMServer>(ctx);
 }
 
 
 const BackendSpec* spec() { return make_spec<VLLMServer>(descriptor, /*split=*/true); }
-const BackendOps* ops() { return default_backend_ops(); }
+const BackendOps* ops() { return single_ops<VLLMOps>(); }
 }  // namespace vllm
 }  // namespace backends
 }  // namespace lemon

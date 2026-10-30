@@ -43,7 +43,8 @@ public:
         const std::vector<std::string>& args,
         OutputLineCallback on_line,
         const std::string& working_dir,
-        int timeout_seconds) = 0;
+        int timeout_seconds,
+        bool capture_stderr = true) = 0;
 
     // Utility functions
     virtual int find_free_port(int start_port) = 0;

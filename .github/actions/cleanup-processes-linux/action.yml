@@ -10,7 +10,89 @@ runs:
         echo "Cleaning up processes on Linux..."
         echo "========================================"
 
-        # Kill processes aggressively by pattern
+        # Get all descendant PIDs (including target PID) recursively
+        get_process_tree() {
+            local target_pid=$1
+            echo "$target_pid"
+            local children
+            children=$(pgrep -P "$target_pid" 2>/dev/null || true)
+            for child in $children; do
+                get_process_tree "$child"
+            done
+        }
+
+        # Check if the process matches lemond, lemonade, or llama-server
+        is_lemonade_process() {
+            local pid=$1
+            if [ -f "/proc/$pid/cmdline" ]; then
+                local cmdline
+                cmdline=$(cat "/proc/$pid/cmdline" 2>/dev/null | tr '\0' ' ' || true)
+                if [[ "$cmdline" == *"lemond"* ]] || [[ "$cmdline" == *"lemonade"* ]] || [[ "$cmdline" == *"llama-server"* ]]; then
+                    return 0
+                fi
+            fi
+            return 1
+        }
+
+        # Helper to kill a process and all its children recursively with SIGTERM fallback to SIGKILL
+        kill_descendants() {
+            local target_pid=$1
+            if [ -z "$target_pid" ] || ! kill -0 "$target_pid" 2>/dev/null; then
+                return
+            fi
+
+            # Collect the process tree first to handle reparenting safely
+            local tree_pids
+            tree_pids=$(get_process_tree "$target_pid" 2>/dev/null || true)
+
+            echo "  Sending SIGTERM to process tree of PID $target_pid..."
+            for pid in $tree_pids; do
+                kill -15 "$pid" 2>/dev/null || true
+            done
+
+            # Wait for processes to handle SIGTERM
+            sleep 1
+
+            # Fallback to SIGKILL for any survivors
+            local still_alive=()
+            for pid in $tree_pids; do
+                if kill -0 "$pid" 2>/dev/null; then
+                    still_alive+=("$pid")
+                fi
+            done
+
+            if [ ${#still_alive[@]} -gt 0 ]; then
+                echo "  PIDs still alive after SIGTERM, sending SIGKILL: ${still_alive[*]}..."
+                for pid in "${still_alive[@]}"; do
+                    kill -9 "$pid" 2>/dev/null || true
+                done
+            fi
+        }
+
+        # Targeted PID-file based process cleanup
+        TMP_ROOT="${RUNNER_TEMP:-$PWD}"
+        echo "Checking for PID files in $TMP_ROOT..."
+        for pid_file in "$TMP_ROOT"/lemond*.pid "$TMP_ROOT"/lemonade*.pid; do
+            if [ -f "$pid_file" ]; then
+                PID=$(cat "$pid_file" 2>/dev/null || true)
+                if [ -n "$PID" ]; then
+                    echo "Found PID $PID in $pid_file"
+                    if kill -0 "$PID" 2>/dev/null; then
+                        if is_lemonade_process "$PID"; then
+                            echo "Terminating PID $PID and its descendants..."
+                            kill_descendants "$PID"
+                        else
+                            echo "Process $PID is not a lemonade process (PID reused or stale). Skipping."
+                        fi
+                    else
+                        echo "Process $PID is not running."
+                    fi
+                fi
+                rm -f "$pid_file"
+            fi
+        done
+
+        # Kill processes aggressively by pattern with SIGTERM fallback to SIGKILL
         kill_by_pattern() {
             local pattern=$1
             local description=$2
@@ -18,70 +100,139 @@ runs:
             echo ""
             echo "Killing $description processes..."
 
-            # Find and kill in one shot with SIGKILL
-            pkill -9 -f "$pattern" 2>/dev/null && echo "  Killed processes matching: $pattern" || echo "  No $description processes found"
+            if pgrep -f "$pattern" > /dev/null 2>&1; then
+                echo "  Sending SIGTERM to processes matching: $pattern"
+                pkill -15 -f "$pattern" 2>/dev/null || true
+                sleep 1
+                if pgrep -f "$pattern" > /dev/null 2>&1; then
+                    echo "  Sending SIGKILL to remaining processes matching: $pattern"
+                    pkill -9 -f "$pattern" 2>/dev/null || true
+                fi
+            else
+                echo "  No $description processes found"
+            fi
         }
 
-        # Kill by exact name (even more aggressive)
+        # Kill by exact name with SIGTERM fallback to SIGKILL
         kill_by_exact_name() {
             local name=$1
 
             if pgrep -x "$name" > /dev/null 2>&1; then
                 echo "Killing $name (exact match)..."
-                pkill -9 -x "$name"
-                sleep 0.5
+                pkill -15 -x "$name" 2>/dev/null || true
+                sleep 1
                 # Verify it's dead
                 if pgrep -x "$name" > /dev/null 2>&1; then
-                    echo "  WARNING: $name still running after kill!"
+                    echo "  $name still running after SIGTERM, sending SIGKILL..."
+                    pkill -9 -x "$name" 2>/dev/null || true
+                    sleep 0.5
+                    if pgrep -x "$name" > /dev/null 2>&1; then
+                        echo "  WARNING: $name still running after SIGKILL!"
+                    else
+                        echo "  Successfully killed $name"
+                    fi
                 else
                     echo "  Successfully killed $name"
                 fi
             fi
         }
 
-        # Kill llama processes
-        kill_by_pattern "llama-server" "llama-server"
-        kill_by_pattern "llama-cli" "llama-cli"
-        kill_by_pattern "llama-bench" "llama-bench"
+        # Target specific leaked processes by checking if their command line contains a unique string
+        # (like the current workspace path) to avoid concurrency collisions on self-hosted runners.
+        kill_targeted_by_cmdline() {
+            local pattern=$1
+            local match_str=$2
 
-        # Kill everything lemonade-related
-        kill_by_pattern "lemonade" "lemonade"
+            if [ -z "$match_str" ]; then
+                return
+            fi
 
-        # Kill Python processes (this is aggressive - be careful!)
-        kill_by_pattern "python" "Python"
+            echo "Searching for processes matching '$pattern' with '$match_str' in command line..."
+            local pids
+            pids=$(pgrep -x "$pattern" 2>/dev/null || true)
+            for pid in $pids; do
+                if [ -f "/proc/$pid/cmdline" ]; then
+                    local cmdline
+                    cmdline=$(cat "/proc/$pid/cmdline" 2>/dev/null | tr '\0' ' ' || true)
+                    if [[ "$cmdline" == *"$match_str"* ]]; then
+                        echo "  Found matching process PID $pid: $cmdline"
+                        echo "  Sending SIGTERM to PID $pid..."
+                        kill -15 "$pid" 2>/dev/null || true
+                        sleep 0.5
+                        if kill -0 "$pid" 2>/dev/null; then
+                            echo "  PID $pid still alive, sending SIGKILL..."
+                            kill -9 "$pid" 2>/dev/null || true
+                        fi
+                    fi
+                fi
+            done
+        }
 
-        # Additional pass: kill by exact process names
-        echo ""
-        echo "Second pass: killing by exact name..."
-        for proc_name in lemond lemonade-tray llama-server llama-cli llama-bench; do
-            kill_by_exact_name "$proc_name"
-        done
+        # Determine if we are on a self-hosted (shared) runner to prevent concurrent run collisions
+        IS_SELF_HOSTED=false
+        if [ "${RUNNER_ENVIRONMENT:-}" = "self-hosted" ]; then
+            IS_SELF_HOSTED=true
+        elif [[ "${RUNNER_NAME:-}" =~ (stx|rai|selfhost) ]]; then
+            IS_SELF_HOSTED=true
+        fi
 
-        # Wait for processes to die
-        sleep 2
-
-        # FINAL VERIFICATION - show what's still alive
-        echo ""
-        echo "=== Verification: checking for remaining processes ==="
-        if pgrep -f "lemonade|llama" > /dev/null 2>&1; then
-            echo "WARNING: Some processes still alive:"
-            ps aux | grep -E "lemonade|llama" | grep -v grep | grep -v "cleanup-processes" || true
-
-            # NUCLEAR OPTION: Kill them with extreme prejudice
-            echo "Using nuclear option..."
-            pkill -9 -f "llama" 2>/dev/null || true
-            pkill -9 -f "lemonade" 2>/dev/null || true
-            sleep 1
-
-            # Check again
-            if pgrep -f "lemonade|llama" > /dev/null 2>&1; then
-                echo "ERROR: Processes STILL alive after nuclear option!"
-                ps aux | grep -E "lemonade|llama" | grep -v grep || true
-            else
-                echo "Nuclear option successful"
+        if [ "$IS_SELF_HOSTED" = "true" ]; then
+            echo "Running on self-hosted runner (${RUNNER_NAME:-}). Global cleanup bypassed to prevent concurrency collisions."
+            # Targeted cleanup: only kill processes tied to this workspace to prevent resource leaks (like vllm or resource_tracker)
+            if [ -n "${GITHUB_WORKSPACE:-}" ]; then
+                echo "Performing workspace-targeted cleanup for self-hosted runner..."
+                kill_targeted_by_cmdline "vllm|resource_tracker|python[0-9.]*|lemond|lemonade|llama-server" "$GITHUB_WORKSPACE"
             fi
         else
-            echo "All target processes terminated successfully"
+            echo "Running on GitHub-hosted runner. Proceeding with global cleanup fallback..."
+
+            # Kill llama processes
+            kill_by_pattern "llama-server" "llama-server"
+            kill_by_pattern "llama-cli" "llama-cli"
+            kill_by_pattern "llama-bench" "llama-bench"
+
+            # Kill everything lemonade-related
+            kill_by_pattern "lemonade" "lemonade"
+
+            # Kill Python processes (this is aggressive - be careful!)
+            kill_by_pattern "python" "Python"
+
+            # Additional pass: kill by exact process names
+            echo ""
+            echo "Second pass: killing by exact name..."
+            for proc_name in lemond lemonade-tray llama-server llama-cli llama-bench; do
+                kill_by_exact_name "$proc_name"
+            done
+
+            # Wait for processes to die
+            sleep 2
+
+            # FINAL VERIFICATION - show what's still alive
+            echo ""
+            echo "=== Verification: checking for remaining processes ==="
+            if pgrep -f "lemonade|llama" > /dev/null 2>&1; then
+                echo "WARNING: Some processes still alive:"
+                ps aux | grep -E "lemonade|llama" | grep -v grep | grep -v "cleanup-processes" || true
+
+                # NUCLEAR OPTION: Kill them with extreme prejudice
+                echo "Using nuclear option..."
+                pkill -15 -f "llama" 2>/dev/null || true
+                pkill -15 -f "lemonade" 2>/dev/null || true
+                sleep 1
+                pkill -9 -f "llama" 2>/dev/null || true
+                pkill -9 -f "lemonade" 2>/dev/null || true
+                sleep 1
+
+                # Check again
+                if pgrep -f "lemonade|llama" > /dev/null 2>&1; then
+                    echo "ERROR: Processes STILL alive after nuclear option!"
+                    ps aux | grep -E "lemonade|llama" | grep -v grep || true
+                else
+                    echo "Nuclear option successful"
+                fi
+            else
+                echo "All target processes terminated successfully"
+            fi
         fi
 
         echo ""

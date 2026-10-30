@@ -10,6 +10,8 @@
 
 #include <nlohmann/json.hpp>
 
+#include <lemon/models/registry_types.h>
+
 namespace lemon_cli {
 
 namespace {
@@ -139,17 +141,34 @@ std::string normalize_user_model_name(std::string name) {
     return prefix + name;
 }
 
-std::string strip_huggingface_url_prefix(const std::string& arg) {
-    static const std::string prefix = "https://huggingface.co/";
-    if (arg.rfind(prefix, 0) == 0) {
-        return arg.substr(prefix.size());
+std::string normalize_source(std::string source) {
+    source = to_lower(std::move(source));
+    if (source.empty() || source == "hf" || source == "huggingface") return "huggingface";
+    if (source == "ms" || source == "modelscope") return "modelscope";
+    return source;
+}
+
+std::string strip_query_fragment(std::string value) {
+    const size_t pos = value.find_first_of("?#");
+    if (pos != std::string::npos) value.resize(pos);
+    while (!value.empty() && value.back() == '/') value.pop_back();
+    return value;
+}
+
+std::string normalize_registry_url(const std::string& arg,
+                                   std::string& source) {
+    lemon::RegistryId detected;
+    std::string repo_id;
+    if (lemon::detect_registry_url(arg, detected, repo_id)) {
+        source = lemon::remote_registry_source_name(detected);
+        return repo_id;
     }
-    return arg;
+    return strip_query_fragment(arg);
 }
 
 void split_checkpoint_variant(const std::string& arg,
                               std::string& checkpoint, std::string& variant) {
-    // HF repo ids never contain ':', so split on the last ':'.
+    // Supported registry repo ids never contain ':', so split on the last ':'.
     size_t pos = arg.rfind(':');
     if (pos == std::string::npos) {
         checkpoint = arg;
@@ -172,34 +191,58 @@ std::string format_variant_label(const json& v) {
 
 }  // namespace
 
-std::string normalize_huggingface_checkpoint_arg(const std::string& arg) {
-    return strip_huggingface_url_prefix(arg);
+std::string normalize_registry_checkpoint_arg(const std::string& arg,
+                                              const std::string& source_hint,
+                                              std::string* detected_source) {
+    // An empty hint stays empty unless the argument is a provider URL: it means
+    // "no explicit registry", letting the server apply its configured default.
+    std::string source = source_hint.empty() ? std::string()
+                                             : normalize_source(source_hint);
+    std::string checkpoint = normalize_registry_url(arg, source);
+    if (detected_source) *detected_source = source;
+    return checkpoint;
 }
 
-int hf_pull_flow(lemonade::LemonadeClient& client,
-                 const std::string& model_arg,
-                 bool assume_yes) {
+std::string normalize_huggingface_checkpoint_arg(const std::string& arg) {
+    return normalize_registry_checkpoint_arg(arg, "huggingface", nullptr);
+}
+
+int registry_pull_flow(lemonade::LemonadeClient& client,
+                       const std::string& model_arg,
+                       bool assume_yes,
+                       const std::string& registry_source) {
+    std::string source;
     std::string checkpoint;
     std::string variant;
-    std::string normalized_model_arg = normalize_huggingface_checkpoint_arg(model_arg);
+    std::string normalized_model_arg = normalize_registry_checkpoint_arg(
+        model_arg, registry_source, &source);
     split_checkpoint_variant(normalized_model_arg, checkpoint, variant);
 
     if (checkpoint.find('/') == std::string::npos) {
         std::cerr << "Error: '" << model_arg
-                  << "' does not look like a Hugging Face checkpoint (expected owner/repo)."
+                  << "' does not look like a model registry checkpoint (expected owner/repo)."
                   << std::endl;
         return 1;
     }
 
-    // Fetch variants from the local server.
+    // Fetch variants from the local server. When no registry was specified the
+    // source param is omitted so lemond resolves its configured default, which
+    // it echoes back in the response for the follow-up pull.
     std::string path = "/api/v1/pull/variants?checkpoint=" + url_encode(checkpoint);
+    if (!source.empty()) {
+        path += "&source=" + url_encode(source);
+    }
     json variants_response;
     try {
         std::string body = client.make_request(path, "GET");
         variants_response = json::parse(body);
     } catch (const lemonade::HttpError& e) {
         if (e.status_code() == 404) {
-            std::cerr << "Checkpoint '" << checkpoint << "' not found on Hugging Face." << std::endl;
+            std::cerr << "Checkpoint '" << checkpoint << "' not found on "
+                      << (source == "modelscope" ? "ModelScope"
+                          : source.empty()        ? "the configured registry"
+                                                  : "Hugging Face")
+                      << "." << std::endl;
             return 1;
         }
         std::cerr << "Error fetching variants: " << lemonade::extract_server_error_message(e) << std::endl;
@@ -207,6 +250,12 @@ int hf_pull_flow(lemonade::LemonadeClient& client,
     } catch (const std::exception& e) {
         std::cerr << "Error fetching variants: " << e.what() << std::endl;
         return 1;
+    }
+
+    // Adopt the registry lemond resolved so every pull body below records the
+    // same provenance the weights were fetched from.
+    if (source.empty()) {
+        source = variants_response.value("source", std::string("huggingface"));
     }
 
     // Omni collection repos: /pull/variants only inspected the repo and told us
@@ -228,9 +277,10 @@ int hf_pull_flow(lemonade::LemonadeClient& client,
         json pull_body;
         pull_body["model_name"] = model_name;
         pull_body["recipe"] = "collection.omni";
+        pull_body["source"] = source;
         // The repo is the checkpoint pointer; /pull resolves components from the
         // manifest it downloads to disk, and a later `lemonade pull <name>`
-        // refreshes them from Hugging Face.
+        // refreshes them from the recorded remote registry.
         pull_body["checkpoints"] = json::object();
         pull_body["checkpoints"]["main"] = checkpoint;
 
@@ -312,6 +362,7 @@ int hf_pull_flow(lemonade::LemonadeClient& client,
         pull_body["model_name"] = "user." + suggested_name;
         pull_body["checkpoint"] = checkpoint;
         pull_body["recipe"] = recipe;
+        pull_body["source"] = source;
 
         std::cout << "Pulling " << checkpoint
                   << " as " << suggested_name << std::endl;
@@ -362,6 +413,7 @@ int hf_pull_flow(lemonade::LemonadeClient& client,
     pull_body["model_name"] = normalize_user_model_name(model_name);
     pull_body["checkpoint"] = checkpoint + ":" + variant_name;
     pull_body["recipe"] = recipe;
+    pull_body["source"] = source;
 
     if (variants_response.contains("suggested_labels") &&
         variants_response["suggested_labels"].is_array() &&
@@ -375,10 +427,57 @@ int hf_pull_flow(lemonade::LemonadeClient& client,
         pull_body["mmproj"] = variants_response["mmproj_files"][0];
     }
 
+    std::string draft_file;
+    const std::string selected_variant = to_lower(variant_name);
+    for (const auto& candidate : variants) {
+        bool matches = to_lower(candidate.value("name", "")) == selected_variant;
+        if (!matches) {
+            matches = to_lower(candidate.value("primary_file", "")) == selected_variant;
+        }
+        if (!matches && candidate.contains("files") && candidate["files"].is_array()) {
+            for (const auto& file : candidate["files"]) {
+                if (file.is_string() &&
+                    to_lower(file.get<std::string>()) == selected_variant) {
+                    matches = true;
+                    break;
+                }
+            }
+        }
+        if (matches) {
+            draft_file = candidate.value("draft_file", std::string());
+            break;
+        }
+    }
+
+    // Backward compatibility with a server that only exposes the legacy list.
+    if (draft_file.empty() && variants_response.contains("draft_files") &&
+        variants_response["draft_files"].is_array() &&
+        variants_response["draft_files"].size() == 1) {
+        draft_file = variants_response["draft_files"][0].get<std::string>();
+    }
+
+    if (!draft_file.empty()) {
+        pull_body["checkpoints"] = json::object();
+        pull_body["checkpoints"]["main"] = pull_body["checkpoint"];
+        pull_body["checkpoints"]["draft"] = checkpoint + ":" + draft_file;
+    } else if (variants_response.contains("draft_files") &&
+               variants_response["draft_files"].is_array() &&
+               variants_response["draft_files"].size() > 1) {
+        std::cerr << "warning: multiple draft GGUF companions found; "
+                  << "not selecting one automatically" << std::endl;
+    }
+
     std::cout << "Pulling " << pull_body["checkpoint"].get<std::string>()
               << " as " << model_name << std::endl;
 
     return client.pull_model(pull_body, model_name, /*upgrade=*/true);
+}
+
+
+int hf_pull_flow(lemonade::LemonadeClient& client,
+                 const std::string& model_arg,
+                 bool assume_yes) {
+    return registry_pull_flow(client, model_arg, assume_yes, "huggingface");
 }
 
 }  // namespace lemon_cli

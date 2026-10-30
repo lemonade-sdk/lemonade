@@ -8,6 +8,7 @@ The `lemonade` CLI is the primary tool for interacting with Lemonade Server from
 - [Global Options](#global-options)
 - [Options for list](#options-for-list)
 - [Options for pull](#options-for-pull)
+- [Options for alias](#options-for-alias)
 - [Options for import](#options-for-import)
 - [Options for load](#options-for-load)
 - [Options for run](#options-for-run)
@@ -46,13 +47,17 @@ The `lemonade` CLI is the primary tool for interacting with Lemonade Server from
 | Command             | Description                         |
 |---------------------|-------------------------------------|
 | `list`              | List all available models. |
-| `pull MODEL_OR_CHECKPOINT` | Download a registered model, pull a Hugging Face checkpoint, or manually register a `user.*` model with `--checkpoint`/`--recipe`. See command options [below](#options-for-pull). |
+| `pull MODEL_OR_CHECKPOINT` | Download a registered model, pull a Hugging Face or ModelScope checkpoint, or manually register a `user.*` model with `--checkpoint`/`--recipe`. See command options [below](#options-for-pull). |
+| `alias add ALIAS TARGET_MODEL` | Bind an alias to a target model. See command options [below](#options-for-alias). |
+| `alias remove ALIAS` | Remove an existing model alias binding. |
+| `alias list` | List all active model alias bindings. |
 | `import JSON_FILE`  | Import a model from a JSON configuration file. See command options [below](#options-for-import). |
 | `delete MODEL_NAME` | Delete a model and its files from local storage. |
 | `load MODEL_NAME`   | Load a model for inference. See command options [below](#options-for-load). |
 | `unload [MODEL_NAME]` | Unload a model. If no model name is provided, unload all loaded models. |
 | `pin MODEL_NAME`    | Pin a loaded model to prevent auto-eviction. See options [below](#options-for-pin-and-unpin). |
 | `unpin MODEL_NAME`  | Unpin a loaded model to allow auto-eviction. See options [below](#options-for-pin-and-unpin). |
+| `update-models [MODEL_NAME ...]` | Sync/update downloaded models to the latest version. Use `--check` to preview updates without downloading. |
 | `export MODEL_NAME` | Export model information to JSON format. See command options [below](#options-for-export). |
 
 ### Benchmarking
@@ -78,6 +83,7 @@ The following options are available for all commands:
 | `--host HOST` | Server host address | `127.0.0.1` |
 | `--port PORT` | Server port number | `13305` |
 | `--api-key KEY` | API key for authentication | None |
+| `--discovery` / `--no-discovery` | Enable or disable auto-discovery of local server via UDP beacon | Enabled |
 
 These options can also be set via environment variables:
 - `LEMONADE_HOST` for `--host`
@@ -171,7 +177,7 @@ The `pull` command downloads and installs models. It can also register a custom 
 Common forms:
 
 ```bash
-lemonade pull MODEL_OR_CHECKPOINT [--checkpoint TYPE CHECKPOINT] [--recipe RECIPE] [--label LABEL] [--components MODEL ...]
+lemonade pull MODEL_OR_CHECKPOINT [--alias ALIAS] [--checkpoint TYPE CHECKPOINT] [--recipe RECIPE] [--label LABEL] [--components MODEL ...]
 ```
 
 ```bash
@@ -184,17 +190,56 @@ lemonade pull unsloth/Qwen3-8B-GGUF
 # Pull a specific Hugging Face variant
 lemonade pull unsloth/Qwen3-8B-GGUF:Q4_K_M
 
-# Register and pull a custom model
-lemonade pull user.MyModel --checkpoint main org/model:Q4_0 --recipe llamacpp
+# Register and pull a custom model with an alias
+lemonade pull user.MyModel --checkpoint main org/model:Q4_0 --recipe llamacpp --alias my-alias
 ```
 
 | Option | Description | Required |
 |--------|-------------|----------|
-| `MODEL_OR_CHECKPOINT` | Registered model name, or `owner/repo[:variant]` Hugging Face checkpoint | Yes |
+| `MODEL_OR_CHECKPOINT` | Registered model name, or `owner/repo[:variant]` Hugging Face/ModelScope checkpoint | Yes |
+| `--source` | Remote registry for checkpoint pulls: <!-- BEGIN GENERATED: cli-pull-source-values -->`huggingface` or `modelscope`<!-- END GENERATED: cli-pull-source-values -->; when omitted, the server's configured `default_model_source` applies. Direct hub URLs are auto-detected | No |
+| `--alias ALIAS` | Add an alias for the model being registered or pulled. | No |
 | `--checkpoint TYPE CHECKPOINT` | Manual registration: add a checkpoint entry. Repeat for multi-component models such as `main` + `mmproj` or `main` + `vae`. | No |
 | `--recipe RECIPE` | Manual registration: recipe to associate with the new `user.*` model (`llamacpp`, `flm`, `ryzenai-llm`, `vllm`, `whispercpp`, `sd-cpp`, `kokoro`, `collection.omni`) | No |
 | `--label LABEL` | Manual registration: add a label to the new model. Repeatable. Valid: `coding`, `embeddings`, `hot`, `mtp`, `reasoning`, `reranking`, `tool-calling`, `vision` | No |
 | `--components MODEL [MODEL ...]` | Omni-model registration: component names to bundle. Use with `--recipe collection.omni`. Components must already be registered (built-in or previously pulled `user.*`); any not-yet-downloaded components are pulled by the same call. | No |
+
+## Options for alias
+
+The `alias` command family allows you to view, add, and remove model aliases. Aliases provide a Symbolic Routing Layer, letting application code write against a stable identifier while the underlying target model can be updated dynamically.
+
+```bash
+lemonade alias list
+lemonade alias add ALIAS TARGET_MODEL
+lemonade alias remove ALIAS
+```
+
+### Subcommands
+
+| Command | Description |
+|---------|-------------|
+| `alias list` | List all registered model aliases with their target models and recipes. |
+| `alias add ALIAS TARGET_MODEL` | Bind `ALIAS` to `TARGET_MODEL`. Requests for `ALIAS` will resolve to `TARGET_MODEL`. |
+| `alias remove ALIAS` | Remove the alias binding for `ALIAS`. |
+
+**Examples:**
+
+```bash
+# Bind an alias to a model
+lemonade alias add llama Qwen3-0.6B-GGUF
+
+# Environment-independent naming: map a generic application identifier to a specific model
+lemonade alias add production-llm Qwen2.5-Coder-1.5B-Instruct
+
+# Active-standby failover: instantly swap the alias target to a fallback model without restarting clients
+lemonade alias add production-llm Tiny-Test-Model-GGUF
+
+# List all active aliases
+lemonade alias list
+
+# Remove an alias binding
+lemonade alias remove llama
+```
 
 ## Options for import
 
@@ -337,6 +382,13 @@ The following options are available depending on the recipe being used:
 | `--llamacpp-device DEVICES` | Comma-separated list of accelerator devices to use (e.g. Vulkan0) | `""` |
 | `--llamacpp-args ARGS` | Custom arguments to pass to llama-server | `""` |
 
+#### HRX GPU (`llamacpp-hrx` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--ctx-size SIZE` | Context size for the model | auto |
+| `--hrx-args ARGS` | Custom arguments to pass to the HRX llama-server | `""` |
+
 #### Whisper.cpp (`whispercpp` recipe)
 
 | Option | Description | Default |
@@ -362,6 +414,7 @@ The following options are available depending on the recipe being used:
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--ctx-size SIZE` | Context size for the model | auto |
+| `--flm-args ARGS` | Safe flm serve tuning args: --pmode, --prefill-chunk-len, --img-pre-resize, --socket, --q-len, --preemption | `""` |
 
 #### Ryzen AI LLM (`ryzenai-llm` recipe)
 
@@ -369,7 +422,7 @@ The following options are available depending on the recipe being used:
 |--------|-------------|---------|
 | `--ctx-size SIZE` | Context size for the model | auto |
 
-#### vLLM ROCm (experimental) (`vllm` recipe)
+#### vLLM ROCm (`vllm` recipe)
 
 | Option | Description | Default |
 |--------|-------------|---------|
@@ -377,13 +430,18 @@ The following options are available depending on the recipe being used:
 | `--vllm BACKEND` | vLLM backend to use | Auto-detected |
 | `--vllm-args ARGS` | Custom arguments to pass to vllm-server | `""` |
 
-#### vLLM-Omni ROCm (experimental) (`vllm-omni` recipe)
+#### TheNoise (`thenoise` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--thenoise BACKEND` | TheNoise backend to use | Auto-detected |
+
+#### DwarfStar4 (`ds4` recipe)
 
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--ctx-size SIZE` | Context size for the model | auto |
-| `--vllm-omni BACKEND` | vLLM-Omni backend to use | Auto-detected |
-| `--vllm-omni-args ARGS` | Custom arguments to pass to vllm-omni-server | `""` |
+| `--ds4-args ARGS` | Custom arguments to pass to ds4-server | `""` |
 
 #### ThinkSound (`thinksound` recipe)
 
@@ -397,11 +455,18 @@ The following options are available depending on the recipe being used:
 |--------|-------------|---------|
 | `--acestep BACKEND` | ACE-Step backend to use | Auto-detected |
 
+#### ONNX Runtime (`onnxruntime` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--onnxruntime-args ARGS` | Custom arguments to pass to ort-server | `""` |
+
 #### TRELLIS.2 (`trellis` recipe)
 
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--trellis BACKEND` | Trellis backend to use | Auto-detected |
+| `--trellis-args ARGS` | Custom arguments to pass to trellis-server | `""` |
 
 #### OpenMOSS TTS (`openmoss` recipe)
 
@@ -429,7 +494,7 @@ lemonade load Qwen3-0.6B-GGUF --ctx-size 4096 --save-options
 lemonade load Qwen3-0.6B-GGUF --llamacpp vulkan
 
 # Load a llama.cpp model with custom arguments
-lemonade load Qwen3-0.6B-GGUF --llamacpp-args "--flash-attn on --no-mmap"
+lemonade load Qwen3-0.6B-GGUF --llamacpp-args "--flash-attn on --load-mode none"
 
 # Load a model without merging global args (per-model args replace global entirely)
 lemonade load Qwen3-0.6B-GGUF --no-merge-args --llamacpp-args "--flash-attn on"
@@ -504,6 +569,42 @@ lemonade export Qwen3-0.6B-GGUF --output my-model.json
 lemonade export Qwen3-0.6B-GGUF --output model.json && cat model.json
 ```
 
+## Options for update-models
+
+
+The `update-models` command checks and updates downloaded models against upstream repositories. By default, model synchronization runs in the background.
+
+> [!NOTE]
+> Because model synchronization operates as an administrative control routing, executing `lemonade update-models` requires appropriate credentials when server-side API authentication is enabled. The client will automatically propagate the `LEMONADE_ADMIN_API_KEY` (or the standard `LEMONADE_API_KEY` if no distinct administrative key is configured) as a bearer token.
+
+```bash
+lemonade update-models [MODEL_NAME ...] [-w|--wait] [--check] [--json]
+```
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `MODEL_NAME ...` | Optional model name(s), recipe names (`user.*`), or HF checkpoints to update | Update all downloaded models |
+| `-w, --wait` | Wait for server model synchronization task to complete | `false` |
+| `--check` | Dry-run mode: check for available updates without downloading | `false` |
+| `--json` | Output update results in JSON format | `false` |
+
+**Examples:**
+
+```bash
+# Dispatch model update in the background (default)
+lemonade update-models
+
+# Check for available model updates without downloading (dry run)
+lemonade update-models --check
+
+# Update models and wait for completion
+lemonade update-models --wait
+
+# Wait for a specific model update to complete
+lemonade update-models Gemma-4-E4B-it -w
+```
+
+
 ## Options for backends
 
 The `backends` command lists supported recipes and their backends. Use `--all` to list all available backends or use the `install` and `uninstall` subcommands to manage them:
@@ -526,6 +627,7 @@ lemonade backends uninstall SPEC
 **Notes:**
 - Supported backends depend on your system and the recipe
 - Use `lemonade backends --all` to list all available recipes and backends
+- Each backend lists its tier and format. See [Backend Tiers and Formats](../api/lemonade.md#backend-tiers-and-formats) for what each value means.
 
 **Examples:**
 
@@ -559,7 +661,7 @@ lemonade launch [AGENT] [--model MODEL_NAME] [options]
 
 | Option/Argument | Description | Required |
 |-----------------|-------------|----------|
-| `AGENT` | Agent name to launch. Supported agents: `claude`, `codex`, `opencode`, `pi`. If omitted, you will be prompted to select one. | No |
+| `AGENT` | Agent name to launch. Supported agents: `claude`, `codex`, `opencode`, `pi`, `junie`. If omitted, you will be prompted to select one. | No |
 | `--model MODEL_NAME` | Model name to launch with. If omitted, you will be prompted to select one. | No |
 | `--directory DIR` | Remote recipes directory used only if you choose recipe import at prompt | No |
 | `--recipe-file FILE` | Remote recipe JSON filename used only if you choose recipe import at prompt | No |
@@ -571,8 +673,15 @@ Codex-only option:
 |-----------------|-------------|----------|
 | `--provider,-p [PROVIDER]` | Select provider name for Codex config; Lemonade does not read or modify `config.toml` (defaults to `lemonade`) | No |
 
+Pi-only options:
+
+| Option/Argument | Description | Required |
+|-----------------|-------------|----------|
+| `--mcp`, `--no-mcp` | Add or remove the `lemonade` server in pi's `mcp.json`, giving pi Lemonade's MCP tools. The choice is kept for later launches. Needs pi 1.0 or newer. | No |
+| `--codemode` | Enable pi's `codemode` tool for this launch. Combine with `--mcp` so its scripts can call Lemonade's tools. Needs pi 1.1 or newer. | No |
+
 **Notes:**
-- The model load request is asynchronous: launch starts the agent immediately while loading continues in the background.
+- The model load request is asynchronous: launch starts the agent immediately while loading continues in the background. The exception is `pi` with an automatic context size: launch waits for the load so it can give pi the size Lemonade picked.
 - If a model is already provided, launch skips recipe import prompts.
 - `--directory` and `--recipe-file` are only used for remote recipe import at prompt time.
 - For local recipe files, run `lemonade import <LOCAL_RECIPE_JSON>` first, then launch with the imported model id.
@@ -581,10 +690,11 @@ Codex-only option:
 - `--provider` is accepted only by `lemonade launch codex` and is passed directly to Codex as `model_provider`; provider resolution/errors are handled by Codex.
 - To customize recipe options (e.g. context size) for the launched model, configure them ahead of time with `lemonade load <model> ... --save-options`, or with `lemonade config set`.
 - `--agent-args` is parsed and appended to the launched agent command.
-- Supported agents: `claude`, `codex`, `opencode`, `pi`
+- Supported agents: `claude`, `codex`, `opencode`, `pi`, `junie`
 - `opencode` uses an auto-managed config file at `~/.config/opencode/opencode.json`.
-- `pi` uses auto-managed config files at `~/.pi/agent/models.json` and `~/.pi/agent/settings.json`.
-- When no `--api-key` is provided, the generated `opencode` and `pi` providers use a default `apiKey` value of `lemonade`.
+- `pi` uses auto-managed config files at `~/.pi/agent/models.json` and `~/.pi/agent/settings.json` (honors `PI_CODING_AGENT_DIR`), plus `mcp.json` with `--mcp`. See [Pi](../integrations/pi.md).
+- `junie` uses an auto-managed custom model profile at `~/.junie/models/lemonade.json` (honors `JUNIE_HOME`) and is launched with `--model custom:lemonade`.
+- When no `--api-key` is provided, the generated `opencode`, `pi`, and `junie` providers use a default `apiKey` value of `lemonade`. With an API key, `pi`'s config references `${LEMONADE_API_KEY}`, which launch exports to pi, instead of storing the key.
 
 **Examples:**
 
@@ -598,6 +708,12 @@ lemonade launch codex --model Qwen3.5-0.8B-GGUF -p
 # Launch codex using a custom provider name from your Codex config.toml
 lemonade launch codex --model Qwen3.5-0.8B-GGUF --provider my-provider
 
+# Launch pi with Lemonade's MCP tools and codemode
+lemonade launch pi --model Qwen3.5-35B-A3B-GGUF --mcp --codemode
+
+# Launch junie against a local model (writes the custom:lemonade profile)
+lemonade launch junie --model Qwen3.5-0.8B-GGUF
+
 # Pass additional arguments directly to the agent
 lemonade launch claude --model Qwen3.5-0.8B-GGUF --agent-args "--approval-mode never"
 
@@ -608,6 +724,38 @@ lemonade launch claude --model Qwen3.5-0.8B-GGUF --agent-args "--resume SESSION_
 
 # Launch and allow optional prompt-driven recipe import using prefilled remote recipe flags
 lemonade launch claude --directory coding-agents --recipe-file Qwen3.5-35B-A3B-NoThinking.json
+```
+
+## Options for status
+
+The `status` command reports whether the server can be reached and, if it can, what it currently has loaded:
+
+```bash
+lemonade status [options]
+```
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--json` | Emit machine-readable JSON instead of a table | off |
+
+With `--json`, a single JSON object is written to stdout and nothing else. It carries `port`, `version`, `websocket_port`, and a `models` array that is present even when no model is loaded. Each entry reports `model_name`, `checkpoint`, `type`, `device`, `recipe`, `status`, `pinned`, `pid`, `backend_url`, and a `recipe_options` object holding the values the model was actually loaded with, so a `ctx_size` of `auto` appears here as a number. These field names do not change, but the keys inside `recipe_options` differ from one recipe to the next, so check that a key is present before reading it. If the server cannot be reached, stdout stays empty, the error goes to stderr, and the command exits with `1`.
+
+```json
+{
+  "port": 13306,
+  "version": "11.7.0",
+  "websocket_port": 9000,
+  "models": [
+    {
+      "model_name": "Qwen3.5-0.8B-GGUF",
+      "checkpoint": "unsloth/Qwen3.5-0.8B-GGUF:Q4_K_M.gguf",
+      "type": "llm", "device": "gpu", "recipe": "llamacpp",
+      "recipe_options": { "ctx_size": 4096, "llamacpp_backend": "vulkan" },
+      "status": "ready", "pinned": false, "pid": 30932,
+      "backend_url": "http://127.0.0.1:8001/v1"
+    }
+  ]
+}
 ```
 
 ## Options for cloud
@@ -631,11 +779,24 @@ lemonade cloud install PROVIDER --base-url URL [--api-key KEY]
 | `PROVIDER` | Yes | Short identifier (e.g. `fireworks`). Used as the model-name prefix. |
 | `--base-url URL` | Yes | OpenAI-compatible base URL ending in `/v1` (or equivalent). |
 | `--api-key KEY` | No | Optional. Stored in `lemond` process memory only. |
+| `--allow-insecure-http` | No | Explicitly permit sending this provider's API key over `http://`. |
+| `--auth-header-name HEADER` | No | Header carrying the API key. Default `Authorization`. |
+| `--auth-header-prefix PREFIX` | No | Value prefix before the key. Default `Bearer `; pass `""` for none. |
+| `--wire-format FORMAT` | No | `openai` (default) or `anthropic`. `anthropic` providers are reachable via `POST /v1/messages` only. |
+
+Omitted options keep the provider's current setting, so re-running `cloud install` to change only the base URL won't reset a custom auth header.
 
 Example:
 
 ```bash
 lemonade cloud install fireworks --base-url https://api.fireworks.ai/inference/v1
+```
+
+Some gateways front an OpenAI-shaped API but expect the key in a differently-named header with no prefix:
+
+```bash
+lemonade cloud install acme --base-url https://gateway.example.com/v1 \
+  --auth-header-name X-Api-Key --auth-header-prefix ""
 ```
 
 ### `cloud uninstall`
@@ -671,11 +832,17 @@ lemonade cloud clear PROVIDER
 
 ### `cloud list`
 
-Print every installed cloud provider with its base URL, the canonical env-var name, current auth status (`env_var_set`, `runtime_key_set`), and the number of models discovered.
+Print every installed cloud provider with its base URL, the canonical env-var name, current auth status (`env_var_set`, `runtime_key_set`), and the number of models discovered. A non-default auth header or wire format is printed on its own line.
 
 ```bash
-lemonade cloud list
+lemonade cloud list [--json]
 ```
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--json` | Emit the provider list as a JSON array instead of human-readable text | Human-readable text |
+
+With `--json`, stdout is a JSON array of provider objects (the same `cloud.providers` payload from `/v1/system-info`). An empty installation emits `[]`. Fields include `name`, `base_url`, `allow_insecure_http`, `env_var`, `env_var_set`, `runtime_key_set`, and `models_discovered`. API keys are never included.
 
 ## Options for scan
 
@@ -730,7 +897,7 @@ lemonade telemetry off
 
 ## Options for bench
 
-The `bench` command measures chat completion performance (TTFT and tokens-per-second) for one or more models across one or more installed backends, context sizes, and scenario workloads. It sends `POST /api/v1/chat/completions` requests and extracts timing data from the server response.
+The `bench` command measures chat completion performance (TTFT, prefill throughput, and decode tokens-per-second) for one or more models across one or more installed backends, context sizes, and scenario workloads. It sends `POST /api/v1/chat/completions` requests and extracts timing data from the server response.
 
 ```
 lemonade bench [options] MODEL_NAME [MODEL_NAME ...]
@@ -747,7 +914,7 @@ lemonade bench [options] MODEL_NAME [MODEL_NAME ...]
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--backend BACKEND` | Backend to test (e.g., `vulkan`, `metal`, `cpu`). Repeat for multiple backends. | All installed backends |
-| `--ctx-size SIZE` | Context size to test. Repeat for multiple sizes. | Model's default context size |
+| `--ctx-size SIZE` | Context size to test. Repeat for multiple sizes. | Model default, raised per scenario when a context target requires more |
 | `--runs N` | Number of measurement runs per scenario | `3` |
 | `--warmup N` | Number of warmup runs per scenario (not included in stats) | `0` |
 | `--scenarios NAME\|CATEGORY` | Scenario name(s) or category (e.g. `chat`, `coding`, `long-context`). Use `all` to include every scenario. Repeat for multiple. | All scenarios except `long-context` |
@@ -755,6 +922,8 @@ lemonade bench [options] MODEL_NAME [MODEL_NAME ...]
 | `--scenario-dir DIR` | Load all `.json` scenario files from a directory | — |
 | `--json` | Output results as JSON instead of a table | Table output |
 | `--output FILE` | Write results to file (in addition to stdout) | — |
+| `--submit` | Submit results to the Lemonade benchmark service (implies `--json`). Cannot be combined with `--compare` | False |
+| `--submit-file FILE` | Submit an already-saved benchmark JSON file. Cannot be combined with `--compare` | — |
 | `--compare FILE` | Compare results against a previously saved JSON file | — |
 | `--auto-pull` | Automatically pull the model if not downloaded | False |
 | `--no-memory` | Disable VRAM/RAM tracking | Tracking enabled |
@@ -771,6 +940,10 @@ lemonade bench [options] MODEL_NAME [MODEL_NAME ...]
 **Timestamp behavior:**
 - Top-level `timestamp` is the command invocation time.
 - Each per-model result includes its own `timestamp` for when that model run started.
+
+**Submitting results:**
+
+`--submit` uploads the run to the Lemonade benchmark service and `--submit-file` uploads a benchmark JSON saved earlier with `--output`. The service answers with an id; `bench` prints a link to it so you can claim the results to your [bench.lemonade-server.ai](https://bench.lemonade-server.ai) account. Submission progress goes to stderr, so `--submit --json > results.json` still captures clean JSON.
 
 ### Scenario Files
 
@@ -797,7 +970,7 @@ The optional `context` block generates large input contexts by repeating a fille
 | `target_tokens` | int | Target token count (~4 chars per token for English) |
 | `position` | string | Where to place the question relative to filler: `"end"` (default), `"start"`, or `"middle"` |
 
-When `context` is present, the user message content is replaced with the expanded text. The question (extracted from the user message) is positioned relative to the filler according to `position`.
+When `context` is present, the user message content is replaced with the expanded text. The question (extracted from the user message) is positioned relative to the filler according to `position`. Without an explicit `--ctx-size`, bench rounds the target up to a suitable context size for that scenario. With an explicit `--ctx-size` sweep, scenarios needing more context are skipped at smaller sizes. Token counts are approximate and depend on the model tokenizer. If server-managed context selection is explicitly requested, the effective size may be unknown until the model is loaded.
 
 #### Default Scenarios
 
@@ -811,12 +984,67 @@ You can override these with `--scenario-file` or `--scenario-dir`.
 
 **Note:** Long-context scenarios (`context-32k`, `context-64k`, `context-128k`, `context-multi-turn`) are excluded by default because they run very long. Use `--scenarios long-context` to include them. Embedding tests are also excluded by default but can be enabled with `--scenarios embed`. To enable all scenarios, regardless of type, runtime, or resource requirement use `--scenarios all`.
 
+#### Vision Scenarios
+
+Vision scenarios benchmark a multimodal model on image understanding tasks (e.g., transcription, captioning, visual Q&A). They are **not** part of the default scenario set, so you must opt in explicitly with `--scenarios vision` (or filter by a specific scenario name).
+
+A vision scenario differs from a textgen scenario in a few ways:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `category` | string | Must be `"vision"` (required, case-sensitive) |
+| `image_path` | string | Path to the image file, relative to the scenario file (required, non-empty) |
+| `messages` | array | Chat messages in OpenAI format (required) |
+| `max_tokens` | int | Maximum output tokens (default: `1024`) |
+
+Notes on behavior:
+
+- `image_path` is **required** for vision scenarios. A missing or empty value is rejected at parse time.
+- The image path is resolved **relative to the scenario file's directory** and must reside in that same directory. Absolute paths, `../` traversal, and paths into subdirectories beneath the scenario file are rejected.
+- The image is base64-encoded and embedded into the **first `user` message** as an `image_url` data URI. Only a single image is supported; multiple user messages do not receive additional copies.
+- Supported formats are `jpeg`/`jpg`, `png`, `webp`, and `gif`.
+- The model must support vision (i.e., carry the `vision` label).
+- Some models perform better with more tokens. Gemma4, for example, may perform better on text transcription tasks when run with `--image-max-tokens 1120 --image-min-tokens 1120 --ubatch-size 2048`. Consult the model card for additional parameter suggestions.
+
+Here is an example scenario file that mirrors the bundled `bench_scenarios_vision.json`:
+
+```json
+{
+  "scenarios": [
+    {
+      "name": "hello-world",
+      "category": "vision",
+      "image_path": "hello_world.jpg",
+      "messages": [ {"role": "user", "content": "transcribe this image"} ],
+      "max_tokens": 4096
+    },
+    {
+      "name": "declaration-of-independence",
+      "category": "vision",
+      "image_path": "declaration.jpg",
+      "messages": [ {"role": "user", "content": "transcribe this image"} ],
+      "max_tokens": 4096
+    }
+  ]
+}
+```
+
+Each entry pairs a descriptive scenario `name` with an `image_path` that points to an image file stored alongside the scenario file. To build your own data set, drop the image files next to the scenario JSON (so `image_path` is a bare filename) and reference them from `image_path`.
+
+Run a vision benchmark against a vision-capable model with:
+
+```
+lemonade bench --scenario-file bench_scenarios_vision.json --scenarios vision Qwen2.5-VL-7B-GGUF
+```
+
+Vision scenarios are excluded by default both because they require a vision-capable model and because embedding and transferring image payloads adds overhead; opt in deliberately when benchmarking a multimodal model.
+
 
 ### Output
 
 #### Table Output (default)
 
-Results are printed as a table grouped by backend. Columns show TTFT (Time To First Token) and TPS (Tokens Per Second) with mean, min/max (or p50/p95 when `--runs >= 10`), and peak VRAM usage:
+Results are printed as a table grouped by backend. Columns show TTFT (Time To First Token) and TPS (decode Tokens Per Second) with mean, min/max (or p50/p95 when `--runs >= 10`), PP t/s, and peak VRAM usage:
 
 ```
 Benchmark: Qwen3-0.6B-GGUF
@@ -824,25 +1052,27 @@ Benchmark: Qwen3-0.6B-GGUF
 
 Backend: llamacpp/vulkan (ctx=4096)
 ----------------------------------------------------------------------------------------------------
-Scenario            TTFT    min     max     TPS     min     max     VRAM (GB)
+Scenario            TTFT     min      max      PP t/s  TPS      min      max      VRAM (GB)
 ----------------------------------------------------------------------------------------------------
-chat-short          45.2    42.1    48.3    185.3   178.2   192.1   1.2
-chat-long-output    48.7    46.5    51.2    142.6   138.4   147.8   1.2
-code-short          46.1    44.3    47.8    168.9   162.3   175.4   1.2
+chat-short          45.2     42.1     48.3     1327.4  185.3    178.2    192.1    1.2
+chat-long-output    48.7     46.5     51.2     1330.5  142.6    138.4    147.8    1.2
+code-short          46.1     44.3     47.8     1296.8  168.9    162.3    175.4    1.2
 ```
+
+**Note:** `PP t/s` is prefill throughput — the prompt tokens divided by TTFT. Backends that report a prompt-eval time (`timings.prompt_ms`, as llama.cpp does) yield the backend's own prefill rate; backends that only report a wall-clock TTFT (`usage.prefill_duration_ttft`, as cloud models do) include request routing and transfer overhead, so their `PP t/s` reads lower than raw compute speed. Workloads without a prefill timing, such as embedding and image generation, show `-`.
 
 #### JSON Output
 
 With `--json`, results are emitted as structured JSON. Use `--output FILE` to save them for later comparison with `--compare`.
 The top-level JSON always includes a `models` array, even for single-model runs, so downstream tooling can handle a single schema for all benchmark results.
-Each scenario includes `duration_ms` stats (`mean`, `min`, `max`, `p50`, `p95`) representing end-to-end request time per run.
+Each scenario includes `duration_ms` stats (`mean`, `min`, `max`, `p50`, `p95`) representing end-to-end request time per run, and `pp_tps` stats with the same keys when the workload reported a prefill timing.
 
 With `--response-log FILE`, the actual model output will be saved to the named destination as JSONL (one JSON object per line),
 along with test parameters such as backend, model, scenario, and context size.
 
 ### Comparison Mode
 
-Pass `--compare PREVIOUS.json` to compare current results against a saved JSON file. This shows percentage change in TTFT and TPS, plus VRAM delta.
+Pass `--compare PREVIOUS.json` to compare current results against a saved JSON file. This shows percentage change in TTFT, prefill throughput, and TPS, plus VRAM delta.
 
 Model matching behavior:
 - Models are matched by model name.
@@ -868,7 +1098,7 @@ The comparison table marks each scenario as:
 - **failed** — all measurement runs errored
 - **prev_failed** — previous run errored, no baseline
 
-**Note:** TTFT change > 0 means slower (worse). TPS change > 0 means faster (better).
+**Note:** TTFT change > 0 means slower (worse). TPS and PP (prefill throughput) change > 0 means faster (better). PP is reported as `-` when either run lacks prefill data, for example when comparing against a file written by an older `lemonade`.
 
 ### Examples
 

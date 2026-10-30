@@ -2,6 +2,7 @@
 
 #include <optional>
 #include <string>
+#include <string_view>
 
 namespace lemon {
 
@@ -14,10 +15,19 @@ namespace lemon {
 //   extra.NAME   — model discovered in --extra-models-dir
 //   builtin.NAME — model compiled into server_models.json
 //
-// `/v1/models` and Ollama `/api/tags` emit the bare name when a model is the
+// Listing surfaces (`/v1/models`, Ollama `/api/tags`, and the MCP
+// `lemonade_list_models` tool) emit the bare name when a model is the
 // precedence-winner for its bare name (precedence: Registered > Imported >
-// Builtin), or the canonical-prefixed ID when shadowed. Bare names are accepted
-// as input anywhere a model name is accepted and resolve to the winner.
+// Builtin), or the canonical-prefixed ID when shadowed.
+//
+// EXCEPTION: a non-built-in collection winner (a `user.*` / `extra.*` model
+// with recipe `collection.omni` or `collection.router`) is emitted under its
+// canonical-prefixed ID on every listing surface, even when it is the
+// precedence-winner, so the listed ID matches the one used for registration,
+// fetch, and chat (issue #2788). Built-in collections stay bare.
+//
+// Bare names are accepted as input anywhere a model name is accepted and
+// resolve to the winner.
 //
 // Display strings like "NAME (registered)" / "NAME (imported)" / "NAME (builtin)"
 // are a GUI concern only. The C++ server emits canonical IDs only; the Tauri
@@ -44,6 +54,19 @@ inline std::string canonical_id(ModelSource source, const std::string& bare_name
     return std::string(canonical_prefix(source)) + bare_name;
 }
 
+inline std::string_view user_model_prefix() { return canonical_prefix(ModelSource::Registered); }
+
+inline bool is_user_model_name(const std::string& model_name) {
+    return model_name.rfind(user_model_prefix(), 0) == 0;
+}
+
+inline std::string strip_user_model_prefix(const std::string& model_name) {
+    if (!is_user_model_name(model_name)) {
+        return model_name;
+    }
+    return model_name.substr(user_model_prefix().size());
+}
+
 inline std::string CanonicalId::full() const {
     return canonical_id(source, bare_name);
 }
@@ -64,13 +87,13 @@ inline std::optional<CanonicalId> parse_canonical_id(const std::string& id) {
     return std::nullopt;
 }
 
-inline int precedence_rank(ModelSource source) {
-    switch (source) {
-        case ModelSource::Registered: return 0;
-        case ModelSource::Imported:   return 1;
-        case ModelSource::Builtin:    return 2;
+// The canonical ID behind a model-set key: the set keys built-ins bare, so a key with no
+// prefix is a built-in's.
+inline std::string cache_key_to_canonical_id(const std::string& cache_key) {
+    if (parse_canonical_id(cache_key)) {
+        return cache_key;
     }
-    return 99;
+    return canonical_id(ModelSource::Builtin, cache_key);
 }
 
 // Only Registered (user.*) is creatable via the pull/import flows. Imported

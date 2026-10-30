@@ -31,12 +31,11 @@ inline const BackendDescriptor descriptor = {
          "Custom arguments to pass to vllm-omni-server", "vLLM-Omni Options"},
     },
     /*support*/ {
-        {"rocm", {"linux"}, {{"amd_gpu", {"gfx1151"}}}, "Strix Halo iGPU (gfx1151)"},
+        {"rocm", BackendTier::Experimental, BackendFormat::Python, {"linux"}, {{"amd_gpu", {"gfx1151"}}}, "Strix Halo iGPU (gfx1151)"},
     },
-    /*default_labels*/  {},
+    /*supported_modes*/ {"chat"},
     /*required_checkpoints*/ {"main"},
-    /*modality*/        "Omni (text, audio, vision)",
-    /*experimental*/    true,
+    /*default_capabilities*/ {},
     /*web_display_name*/ "",
     /*rocm_channels*/   {},  // single rocm artifact, no stable/nightly channels
     /*exposes_prometheus_metrics*/ false,

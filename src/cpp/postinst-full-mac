@@ -9,8 +9,8 @@
 INSTALL_ROOT="${2%/}"
 
 # Define Labels
-DAEMON_LABEL="com.lemonade.server"
-AGENT_LABEL="com.lemonade.tray"
+DAEMON_LABEL="ai.lemonadeserver.server"
+AGENT_LABEL="ai.lemonadeserver.tray"
 
 # Define Paths
 DAEMON_PLIST="${INSTALL_ROOT}/Library/LaunchDaemons/${DAEMON_LABEL}.plist"
@@ -84,9 +84,8 @@ mkdir -p "$CONFIG_DIR"
 chmod 755 "$CONFIG_DIR"
 
 # Log Directory (Critical: Service crashes if missing)
-# Permissions 777 so both the root daemon and user-level tray agent can write logs
 mkdir -p "$LOG_DIR"
-chmod 777 "$LOG_DIR"
+chmod 755 "$LOG_DIR"
 chown root:wheel "$LOG_DIR"
 
 # Share Directory

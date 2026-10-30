@@ -23,7 +23,7 @@
       "type": "boolean"
     },
     "outputs": {
-      "description": "Copied verbatim from the matched rule; the engine never interprets it.",
+      "description": "Pass-through bag from the matched rule, plus engine-attached illustrative fields. The engine never interprets trust vocabulary here. When CostServices is wired, non-empty cost metadata for the selected candidate is merged under `estimated_cost` (cost_tier, cost_input_per_million, cost_output_per_million, latency_ms_hint as available) — illustrative only, not a billing figure.",
       "type": "object"
     },
     "trace": {
@@ -48,6 +48,22 @@
         },
         "result": {
           "description": "The leaf's boolean outcome.",
+          "type": "boolean"
+        },
+        "label": {
+          "description": "Optional; the label the classifier band tested — i.e. which candidate this score belongs to. Emitted by label-scoped bands such as the identity rules synthesized from routing.router.",
+          "type": "string"
+        },
+        "rationale": {
+          "description": "Optional; the classifier's short reasoning for its score. The `llm` router records the model's pick rationale here.",
+          "type": "string"
+        },
+        "error": {
+          "description": "Optional; why a model-backed classifier failed, so a condition that errored is distinguishable from one that simply scored below its band. Present only when the classifier failed and the backend gave a reason; the entry's `result` then reflects the classifier's `on_error`.",
+          "type": "string"
+        },
+        "truncated": {
+          "description": "Optional; whether the backend cut the input text to fit its token window before scoring: `true` cut, `false` scored whole. Absent when the backend does not report cuts (ort-server before 0.4.0, or a chat-LLM `classifier`), so absence means unknown. `zero_shot` keeps the head and the tail of the text, a fixed-label `classifier` keeps the head and drops the end. Labels are never cut, so a score on this entry still covers every label the policy declared. Under the default `on_truncation: score` the entry carries that score. Under `on_truncation: fail` a cut, or an unknown, is itself the failure, so the entry carries `error` and no `score`, and `result` reflects the classifier's `on_error`.",
           "type": "boolean"
         }
       },

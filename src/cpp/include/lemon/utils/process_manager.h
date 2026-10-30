@@ -32,7 +32,8 @@ public:
         const std::vector<std::string>& args,
         OutputLineCallback on_line,
         const std::string& working_dir = "",
-        int timeout_seconds = -1);
+        int timeout_seconds = -1,
+        bool capture_stderr = true);
 
     static void stop_process(ProcessHandle handle);
 

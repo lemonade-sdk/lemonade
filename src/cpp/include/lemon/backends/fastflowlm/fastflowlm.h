@@ -22,14 +22,18 @@ inline const BackendDescriptor descriptor = {
     /*selectable_backend*/ false,
     /*uses_ctx_size*/   true,
     /*dynamic_models*/  true,  // models come from flm's model_list.json, not server_models.json
-    /*options*/ {},
-    /*support*/ {
-        {"npu", {"windows", "linux"}, {{"amd_npu", {"XDNA2"}}}, "XDNA2 NPU"},
+    /*options*/ {
+        {"flm_args", "--flm-args", "", "ARGS",
+         "Safe flm serve tuning args: --pmode, --prefill-chunk-len, "
+         "--img-pre-resize, --socket, --q-len, --preemption",
+         "FastFlowLM Options"},
     },
-    /*default_labels*/  {},
+    /*support*/ {
+        {"npu", BackendTier::Core, BackendFormat::Native, {"windows", "linux"}, {{"amd_npu", {"XDNA2"}}}, "XDNA2 NPU"},
+    },
+    /*supported_modes*/ {"chat", "embeddings", "transcription"},
     /*required_checkpoints*/ {"main"},
-    /*modality*/        "Text generation",
-    /*experimental*/    false,
+    /*default_capabilities*/ {},
     /*web_display_name*/ "FastFlowLM NPU",
     /*rocm_channels*/   {},
     /*exposes_prometheus_metrics*/ false,

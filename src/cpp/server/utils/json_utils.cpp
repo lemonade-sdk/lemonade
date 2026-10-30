@@ -49,12 +49,14 @@ std::string JsonUtils::to_string(const json& j, int indent) {
 }
 
 json JsonUtils::merge(const json& base, const json& overlay) {
-    json result = base;
-
+    if (!base.is_object()) {
+        return overlay;
+    }
     if (!overlay.is_object()) {
         return overlay;
     }
 
+    json result = base;
     for (auto it = overlay.begin(); it != overlay.end(); ++it) {
         if (result.contains(it.key()) && result[it.key()].is_object() && it.value().is_object()) {
             result[it.key()] = merge(result[it.key()], it.value());
@@ -64,6 +66,38 @@ json JsonUtils::merge(const json& base, const json& overlay) {
     }
 
     return result;
+}
+
+void JsonUtils::prune_matching(json& overlay, const json& base) {
+    if (!overlay.is_object() || !base.is_object()) {
+        return;
+    }
+
+    for (auto it = overlay.begin(); it != overlay.end(); ) {
+        const std::string& key = it.key();
+        if (key == "config_version") {
+            ++it;
+            continue;
+        }
+
+        if (base.contains(key)) {
+            if (it.value().is_object() && base[key].is_object()) {
+                prune_matching(it.value(), base[key]);
+                if (it.value().empty()) {
+                    it = overlay.erase(it);
+                    continue;
+                }
+            } else if (it.value() == base[key]) {
+                it = overlay.erase(it);
+                continue;
+            }
+        }
+        ++it;
+    }
+
+    if (overlay.size() == 1 && overlay.contains("config_version")) {
+        overlay.clear();
+    }
 }
 
 void JsonUtils::add_legacy_max_tokens_alias(json& request) {

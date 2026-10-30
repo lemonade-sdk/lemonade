@@ -1,6 +1,10 @@
 #include "lemon/routing_policy.h"
+#include "lemon/classification_labels.h"
+#include "lemon/error_types.h"
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <mutex>
@@ -18,6 +22,101 @@ Score failed_score() {
     Score score;
     score.ok = false;
     return score;
+}
+
+constexpr size_t kMaxErrorChars = 256;
+
+Score failed_score(std::string reason) {
+    Score score = failed_score();
+    if (reason.size() > kMaxErrorChars) {
+        size_t cut = kMaxErrorChars - 3;
+        while (cut > 0 && (static_cast<unsigned char>(reason[cut]) & 0xC0) == 0x80) --cut;
+        reason.resize(cut);
+        reason += "...";
+    }
+    score.error = std::move(reason);
+    return score;
+}
+
+constexpr long long kLogIntervalSeconds = 60;
+
+bool rate_limited(std::atomic<unsigned long long>& counter,
+                  std::atomic<long long>& last_log_s, unsigned long long& n) {
+    n = ++counter;
+    const long long now = std::chrono::duration_cast<std::chrono::seconds>(
+                              std::chrono::steady_clock::now().time_since_epoch())
+                              .count();
+    const long long previous = last_log_s.load(std::memory_order_relaxed);
+    if (n != 1 && now - previous < kLogIntervalSeconds) return false;
+    last_log_s.store(now, std::memory_order_relaxed);
+    return true;
+}
+
+void log_classifier_failure(const std::string& type, const std::string& id,
+                            const std::string& model, const std::string& reason,
+                            std::atomic<unsigned long long>& counter,
+                            std::atomic<long long>& last_log_s) {
+    unsigned long long n = 0;
+    if (!rate_limited(counter, last_log_s, n)) return;
+    LOG(WARNING, "Routing") << "classifier '" << id << "' (" << type << ", model '" << model
+                            << "') failed: " << reason
+                            << (n == 1 ? std::string() : " [" + std::to_string(n) + " failures]")
+                            << std::endl;
+}
+
+void log_truncated_score_used(const std::string& type, const std::string& id,
+                              const std::string& model,
+                              std::atomic<unsigned long long>& counter,
+                              std::atomic<long long>& last_log_s) {
+    unsigned long long n = 0;
+    if (!rate_limited(counter, last_log_s, n)) return;
+    LOG(WARNING, "Routing") << "classifier '" << id << "' (" << type << ", model '" << model
+                            << "') scored an input the backend had cut to fit its token "
+                               "window; set on_truncation=fail to treat that as a failure"
+                            << (n == 1 ? std::string() : " [" + std::to_string(n) + " times]")
+                            << std::endl;
+}
+
+// Under `fail` the cut IS the evaluation failure, so the entry carries `error`
+// and no score, and the classifier's `on_error` then applies. So is a backend
+// that does not say whether it cut: its silence would let a cut input through.
+void apply_on_truncation(Score& score, OnTruncation on_truncation,
+                         const std::string& type, const std::string& id,
+                         const std::string& model,
+                         std::atomic<unsigned long long>& truncated_scores,
+                         std::atomic<long long>& last_truncation_log_s) {
+    if (!score.ok) return;
+    if (on_truncation == OnTruncation::Fail && !score.truncated.has_value()) {
+        static constexpr const char* kUnreported =
+            "the backend does not report whether it cut the input, so on_truncation=fail "
+            "cannot trust the scores (ort-server reports it from 0.4.0)";
+        log_classifier_failure(type, id, model, kUnreported, truncated_scores,
+                               last_truncation_log_s);
+        score = failed_score(kUnreported);
+        return;
+    }
+    if (!score.truncated.value_or(false)) return;
+    static constexpr const char* kTruncated =
+        "the backend cut the input text to fit its token window, so the scores "
+        "cover only part of the request";
+    if (on_truncation == OnTruncation::Fail) {
+        log_classifier_failure(type, id, model, kTruncated, truncated_scores,
+                               last_truncation_log_s);
+        score = failed_score(kTruncated);
+        score.truncated = true;
+    } else {
+        log_truncated_score_used(type, id, model, truncated_scores, last_truncation_log_s);
+    }
+}
+
+// Trim leading/trailing ASCII whitespace. Used by the llm router to normalize a
+// chat reply before matching it against candidate names.
+std::string trim_copy(const std::string& s) {
+    const char* ws = " \t\r\n";
+    const auto begin = s.find_first_not_of(ws);
+    if (begin == std::string::npos) return std::string();
+    const auto end = s.find_last_not_of(ws);
+    return s.substr(begin, end - begin + 1);
 }
 
 // Cosine similarity of two equal-length, non-zero vectors. Returns nullopt when
@@ -148,7 +247,24 @@ public:
         }
 
         if (ctx.want_trace) {
-            ctx.trace.push_back(TraceEntry{"classifier:" + classifier_->id(), traced_score, result});
+            TraceEntry entry{"classifier:" + classifier_->id(), traced_score, result};
+            if (label_.has_value()) {
+                entry.label = *label_;
+            }
+            // The rationale explains the labels the classifier actually scored
+            // (for the llm router: the single selected candidate). A band that
+            // tests a different label must not carry it — otherwise the trace
+            // attaches the winner's rationale to rejected candidates.
+            const bool rationale_applies =
+                !label_.has_value() || score.labels.count(*label_) > 0;
+            if (score.ok && !score.rationale.empty() && rationale_applies) {
+                entry.rationale = score.rationale;
+            }
+            if (!score.ok && !score.error.empty()) {
+                entry.error = score.error;
+            }
+            entry.truncated = score.truncated;
+            ctx.trace.push_back(std::move(entry));
         }
         return result;
     }
@@ -159,6 +275,12 @@ private:
         if (inserted) {
             try {
                 it->second = classifier_->evaluate(ClassifierContext{ctx.request, ctx.services});
+            } catch (const RouterResidencyConflictException&) {
+                // Deliberately not converted to on_error: a residency conflict
+                // says the classifier model cannot run on this hardware
+                // alongside what is resident, which is a deterministic 409 for
+                // the caller rather than a score the band can reason about.
+                throw;
             } catch (const std::exception& e) {
                 // Classifier implementations should return Score{ok=false}
                 // rather than throw. Keep this catch as a permanent safety
@@ -168,12 +290,12 @@ private:
                 LOG(WARNING, "Routing") << "Classifier '" << classifier_->id()
                                         << "' threw during evaluation: " << e.what()
                                         << std::endl;
-                it->second = failed_score();
+                it->second = failed_score(e.what());
             } catch (...) {
                 LOG(WARNING, "Routing") << "Classifier '" << classifier_->id()
                                         << "' threw an unknown exception during evaluation"
                                         << std::endl;
-                it->second = failed_score();
+                it->second = failed_score("unknown exception");
             }
         }
         return it->second;
@@ -207,11 +329,12 @@ class ModelClassifier final : public Classifier {
 public:
     ModelClassifier(std::string id, std::string type, std::string model, OnError on_error,
                     std::vector<std::string> labels,
-                    std::optional<std::string> default_label)
-        : Classifier(std::move(id), std::move(type), on_error, std::move(labels),
-                     std::move(default_label)),
-          model_(std::move(model)) {
-        if (model_.empty()) {
+                    std::optional<std::string> default_label,
+                    OnTruncation on_truncation)
+        : Classifier(std::move(id), std::move(type), on_error, std::move(model),
+                     std::move(labels), std::move(default_label)),
+          on_truncation_(on_truncation) {
+        if (model_name_.empty()) {
             throw std::invalid_argument("classifier requires model");
         }
     }
@@ -219,20 +342,305 @@ public:
     Score evaluate(const ClassifierContext& ctx) const override {
         Score score;
         if (!ctx.services.run_classifier) {
-            return failed_score();
+            return failed_score("no classification service is configured");
         }
 
         try {
-            score.labels = ctx.services.run_classifier(model_, ctx.request.input);
+            ClassifierScores answer = ctx.services.run_classifier(model_name_, ctx.request.input);
+            score.labels = std::move(answer.scores);
+            score.truncated = answer.truncated;
             score.ok = true;
+        } catch (const RouterResidencyConflictException&) {
+            throw;
+        } catch (const std::exception& e) {
+            log_classifier_failure(type(), id(), model_name_, e.what(), failures_,
+                                   last_failure_log_s_);
+            score = failed_score(e.what());
         } catch (...) {
-            score = failed_score();
+            log_classifier_failure(type(), id(), model_name_, "unknown exception", failures_,
+                                   last_failure_log_s_);
+            score = failed_score("unknown exception");
         }
+        apply_on_truncation(score, on_truncation_, type(), id(),
+                            model_name_, truncated_scores_, last_truncation_log_s_);
         return score;
     }
 
 private:
-    std::string model_;
+    const OnTruncation on_truncation_;
+    mutable std::atomic<unsigned long long> failures_{0};
+    mutable std::atomic<long long> last_failure_log_s_{0};
+    mutable std::atomic<unsigned long long> truncated_scores_{0};
+    mutable std::atomic<long long> last_truncation_log_s_{0};
+};
+
+class ZeroShotClassifier final : public Classifier {
+public:
+    ZeroShotClassifier(std::string id, std::string type, std::string model, OnError on_error,
+                       std::vector<std::string> labels,
+                       std::optional<std::string> default_label,
+                       OnTruncation on_truncation)
+        : Classifier(std::move(id), std::move(type), on_error, std::move(model),
+                     std::move(labels), std::move(default_label)),
+          on_truncation_(on_truncation) {
+        if (model_name_.empty()) {
+            throw std::invalid_argument("zero_shot classifier requires model");
+        }
+        if (this->labels().empty()) {
+            throw std::invalid_argument(
+                "zero_shot classifier requires at least one label; the model has no "
+                "label set of its own to fall back on");
+        }
+    }
+
+    Score evaluate(const ClassifierContext& ctx) const override {
+        Score score;
+        if (!ctx.services.run_zero_shot_classifier) {
+            return failed_score("no zero-shot classification service is configured");
+        }
+
+        try {
+            ClassifierScores answer =
+                ctx.services.run_zero_shot_classifier(model_name_, ctx.request.input, labels());
+            score.labels = std::move(answer.scores);
+            score.truncated = answer.truncated;
+            score.ok = true;
+        } catch (const RouterResidencyConflictException&) {
+            throw;
+        } catch (const std::exception& e) {
+            log_classifier_failure(type(), id(), model_name_, e.what(), failures_,
+                                   last_failure_log_s_);
+            score = failed_score(e.what());
+        } catch (...) {
+            log_classifier_failure(type(), id(), model_name_, "unknown exception", failures_,
+                                   last_failure_log_s_);
+            score = failed_score("unknown exception");
+        }
+        if (score.ok && !scores_declared_labels(score)) {
+            static constexpr const char* kMismatch =
+                "the backend scored a different label set than the request sent, so it "
+                "ignored the per-request labels";
+            log_classifier_failure(type(), id(), model_name_, kMismatch, failures_,
+                                   last_failure_log_s_);
+            score = failed_score(kMismatch);
+        }
+        apply_on_truncation(score, on_truncation_, type(), id(),
+                            model_name_, truncated_scores_, last_truncation_log_s_);
+        return score;
+    }
+
+private:
+    const OnTruncation on_truncation_;
+    mutable std::atomic<unsigned long long> failures_{0};
+    mutable std::atomic<long long> last_failure_log_s_{0};
+    mutable std::atomic<unsigned long long> truncated_scores_{0};
+    mutable std::atomic<long long> last_truncation_log_s_{0};
+
+    // A backend that ignores the request's labels answers with its own head's
+    // label set. Accepting that would score every declared label 0.0, a
+    // confident miss that skips on_error instead of triggering it.
+    bool scores_declared_labels(const Score& score) const {
+        const std::set<std::string> declared(labels().begin(), labels().end());
+        if (score.labels.size() != declared.size()) return false;
+        for (const auto& entry : score.labels) {
+            if (!declared.count(entry.first)) return false;
+        }
+        return true;
+    }
+};
+
+// The `llm` router / L0(a) on-ramp. Runs a small chat model with the author's
+// prompt plus a fixed response-contract suffix (listing the candidates), and
+// requires a structured reply: a single JSON object
+//   {"model": "<exact candidate name>", "rationale": "<one short sentence>"}
+// The chosen candidate becomes the label (score 1.0) and the model's stated
+// rationale is recorded in Score::rationale for the trace. Malformed JSON, a
+// missing/unknown "model", or any extra prose yields an empty Score (ok=true,
+// no labels): no identity rule fires and the engine fails open to
+// default_model. A backend failure yields Score{ok=false} so the owning
+// condition applies on_error.
+class LlmClassifier final : public Classifier {
+public:
+    LlmClassifier(std::string id, std::string type, std::string model, std::string prompt,
+                  OnError on_error, std::vector<std::string> labels,
+                  std::optional<std::string> default_label,
+                  bool expose_request_features)
+        : Classifier(std::move(id), std::move(type), on_error, std::move(model),
+                     std::move(labels), std::move(default_label)),
+          prompt_(std::move(prompt)),
+          expose_request_features_(expose_request_features) {
+        if (model_name_.empty()) {
+            throw std::invalid_argument("llm classifier requires model");
+        }
+        if (prompt_.empty()) {
+            throw std::invalid_argument("llm classifier requires prompt");
+        }
+        if (this->labels().empty()) {
+            throw std::invalid_argument("llm classifier requires at least one label (candidate)");
+        }
+    }
+
+    Score evaluate(const ClassifierContext& ctx) const override {
+        if (!ctx.services.chat) {
+            return failed_score();
+        }
+        std::string reply;
+        try {
+            reply = ctx.services.chat(model_name_, effective_prompt(),
+                                      build_context_payload(ctx.request));
+        } catch (const RouterResidencyConflictException&) {
+            throw;
+        } catch (...) {
+            return failed_score();
+        }
+
+        Score score;
+        score.ok = true;
+
+        const json parsed = parse_structured_reply(reply);
+        if (!parsed.is_object() || parsed.size() != 2 ||
+            !parsed.contains("model") || !parsed["model"].is_string() ||
+            !parsed.contains("rationale") || !parsed["rationale"].is_string()) {
+            // The backend only guarantees a JSON object. Lemonade owns the
+            // portable protocol contract: exactly `model` and `rationale`, no
+            // missing fields and no backend/model-invented extras. Invalid
+            // replies fail open to default_model.
+            return score;
+        }
+        const std::string rationale = trim_copy(parsed["rationale"].get<std::string>());
+        if (rationale.empty()) {
+            return score;
+        }
+        const std::string chosen = parsed["model"].get<std::string>();
+        const std::string* label = match_label(chosen);
+        if (label == nullptr) {
+            // Unknown choice => same fail-open path.
+            return score;
+        }
+        score.labels[*label] = 1.0;
+        score.rationale = rationale;
+        return score;
+    }
+
+private:
+    // The user message handed to the judge: a structured JSON view of the
+    // routing context — not just the latest text. has_tools/has_images are
+    // only present when expose_request_features_ is set (see
+    // effective_prompt below for which classifiers that is); when present, an
+    // image-only request is visible as has_images=true with empty text and a
+    // tool-bearing request as has_tools=true. chars and metadata are always
+    // present regardless.
+    //
+    // History policy (explicit, per the frozen v1 RouteContext contract):
+    // `text` is the LATEST USER TURN ONLY. RouteContext deliberately carries a
+    // single turn so earlier assistant/system turns can't skew routing;
+    // supplying more history to the router requires extending that contract
+    // for all classifiers, which is out of scope for this classifier.
+    std::string build_context_payload(const RouteContext& request) const {
+        json metadata = json::object();
+        for (const auto& [key, value] : request.metadata) {
+            metadata[key] = value;
+        }
+        json payload = {
+            {"text", request.input},
+            {"chars", request.params.chars},
+            {"metadata", std::move(metadata)},
+        };
+        // Withheld entirely (not just disclaimed) unless expose_request_features_
+        // is set. When constructed through the policy parser this is only the
+        // routing.router sugar's synthesized classifier; the make_classifier(s)
+        // helpers default it to true for direct callers.
+        if (expose_request_features_) {
+            payload["has_tools"] = request.params.has_tools;
+            payload["has_images"] = request.params.has_images;
+        }
+        return payload.dump();
+    }
+
+    // The author's prompt describes routing intent; the response contract —
+    // input format, candidate vocabulary, and the required JSON shape — is
+    // appended here so every llm router speaks the same protocol regardless
+    // of authoring.
+    //
+    // has_tools/has_images reach the judge only when expose_request_features_
+    // is set, which the parser sets true solely for the routing.router
+    // sugar's synthesized classifier (#2789): it's the sole decision
+    // mechanism, so it needs them directly (e.g. "use the vision model when
+    // has_images"). An author-declared classifier always gets false — even
+    // one composed alongside a deterministic has_tools/has_images rule
+    // (risky-tool-calls-stay-local) would otherwise leak the same field into
+    // its own judgment, recreating #2789. Compose the leaf in a rule instead
+    // of trusting the judge to weigh it.
+    std::string effective_prompt() const {
+        std::string suffix;
+        if (expose_request_features_) {
+            suffix =
+                "The user message is a JSON object describing the request to "
+                "route: {\"text\": latest user turn only, \"has_tools\": "
+                "whether the API call includes a non-empty tools parameter, "
+                "\"has_images\": whether it includes image content, "
+                "\"chars\": byte length of text, \"metadata\": caller routing "
+                "hints}. has_tools and has_images describe the request's "
+                "FORMAT, not its content: treat either as evidence of intent "
+                "or risk only when the routing criteria above explicitly ask "
+                "you to condition on tool or image presence; otherwise judge "
+                "the request using \"text\" alone. You must choose exactly "
+                "one of these models: ";
+        } else {
+            suffix =
+                "The user message is a JSON object describing the request to "
+                "route: {\"text\": latest user turn only, \"chars\": byte "
+                "length of text, \"metadata\": caller routing hints}. Judge "
+                "the request using \"text\" against the routing criteria "
+                "above. You must choose exactly one of these models: ";
+        }
+        for (std::size_t i = 0; i < labels().size(); ++i) {
+            if (i > 0) suffix += ", ";
+            suffix += labels()[i];
+        }
+        suffix +=
+            ". Respond with ONLY a JSON object of the form "
+            "{\"model\": \"<one of the listed names>\", "
+            "\"rationale\": \"<one short sentence>\"} and no other text.";
+        return prompt_ + "\n\n" + suffix;
+    }
+
+    // Parse the model's reply into the structured-choice object. Strict: the
+    // trimmed reply must be a JSON object. One leading/trailing ``` fence pair
+    // is tolerated and stripped (instruction-tuned models often add it), but
+    // the closing fence must END the reply — trailing prose after it violates
+    // the "no other text" contract and rejects.
+    static json parse_structured_reply(const std::string& reply) {
+        std::string text = trim_copy(reply);
+        if (text.rfind("```", 0) == 0) {
+            const auto first_newline = text.find('\n');
+            const auto last_fence = text.rfind("```");
+            if (first_newline == std::string::npos || last_fence <= first_newline) {
+                return json(nullptr);  // opening fence without a closing fence
+            }
+            if (!trim_copy(text.substr(last_fence + 3)).empty()) {
+                return json(nullptr);  // text after the closing fence
+            }
+            text = trim_copy(text.substr(first_newline + 1, last_fence - first_newline - 1));
+        }
+        json parsed = json::parse(text, nullptr, /*allow_exceptions=*/false);
+        return parsed.is_discarded() ? json(nullptr) : parsed;
+    }
+
+    // Which candidate did the model name? Exact match only, against the
+    // structured "model" field. A substring fallback was rejected in review:
+    // it can turn contradictory or negated answers into a valid route and
+    // weakens the required invalid-choice fallback.
+    const std::string* match_label(const std::string& chosen) const {
+        for (const auto& label : labels()) {
+            if (chosen == label) return &label;
+        }
+        return nullptr;
+    }
+
+private:
+    std::string prompt_;
+    bool expose_request_features_;
 };
 
 class SemanticSimilarityClassifier final : public Classifier {
@@ -252,11 +660,10 @@ public:
                                  std::vector<Concept> concepts, OnError on_error,
                                  std::vector<std::string> labels,
                                  std::optional<std::string> default_label)
-        : Classifier(std::move(id), std::move(type), on_error, std::move(labels),
-                     std::move(default_label)),
-          model_(std::move(model)),
+        : Classifier(std::move(id), std::move(type), on_error, std::move(model),
+                     std::move(labels), std::move(default_label)),
           concepts_(std::move(concepts)) {
-        if (model_.empty()) {
+        if (model_name_.empty()) {
             throw std::invalid_argument("semantic_similarity classifier requires model");
         }
         if (concepts_.empty()) {
@@ -277,13 +684,17 @@ public:
         const ReferenceEmbeddings* references = nullptr;
         try {
             references = &reference_embeddings(ctx.services);
+        } catch (const RouterResidencyConflictException&) {
+            throw;
         } catch (...) {
             return failed_score();
         }
 
         Embedding input_embedding;
         try {
-            input_embedding = ctx.services.embed(model_, ctx.request.input);
+            input_embedding = ctx.services.embed(model_name_, ctx.request.input);
+        } catch (const RouterResidencyConflictException&) {
+            throw;
         } catch (...) {
             return failed_score();
         }
@@ -327,7 +738,7 @@ private:
                 ConceptEmbeddings phrase_embeddings;
                 phrase_embeddings.reserve(concept.second.size());
                 for (const auto& phrase : concept.second) {
-                    phrase_embeddings.push_back(services.embed(model_, phrase));
+                    phrase_embeddings.push_back(services.embed(model_name_, phrase));
                 }
                 embeddings.push_back(std::move(phrase_embeddings));
             }
@@ -337,7 +748,6 @@ private:
         return reference_embeddings_;
     }
 
-    std::string model_;
     std::vector<Concept> concepts_;
 
     mutable std::mutex cache_mutex_;
@@ -356,6 +766,10 @@ std::vector<std::string> parse_labels(const json& config, const std::string& id)
                 throw std::invalid_argument("classifier '" + id + "' labels must be non-empty strings");
             }
             labels.push_back(item.get<std::string>());
+        }
+        const std::string reason = validate_label_list(labels);
+        if (!reason.empty()) {
+            throw std::invalid_argument("classifier '" + id + "' " + reason);
         }
     }
     return labels;
@@ -689,25 +1103,37 @@ void reject_catastrophic_regex(const std::string& pattern) {
     }
 }
 
-// min_chars / max_chars — inclusive bound on input length in UTF-8 bytes.
+// min_chars / max_chars — inclusive bound on routing-input length in UTF-8
+// bytes — and min_total_chars / max_total_chars, the same bound over every text
+// part the request carries.
 class CharsCondition final : public Condition {
 public:
     enum class Bound { Min, Max };
+    enum class Source { Input, Total };
 
-    CharsCondition(std::size_t threshold, Bound bound)
-        : threshold_(threshold), bound_(bound) {}
+    CharsCondition(std::size_t threshold, Bound bound, Source source = Source::Input)
+        : threshold_(threshold), bound_(bound), source_(source) {}
 
     bool evaluate(EvalContext& ctx) const override {
-        const std::size_t n = ctx.request.params.chars;
+        const std::size_t n = source_ == Source::Input ? ctx.request.params.chars
+                                                       : ctx.request.params.total_chars;
         const bool result =
             bound_ == Bound::Min ? (n >= threshold_) : (n <= threshold_);
-        trace_leaf(ctx, bound_ == Bound::Min ? "min_chars" : "max_chars", result);
+        trace_leaf(ctx, op_name(), result);
         return result;
     }
 
 private:
+    const char* op_name() const {
+        if (source_ == Source::Input) {
+            return bound_ == Bound::Min ? "min_chars" : "max_chars";
+        }
+        return bound_ == Bound::Min ? "min_total_chars" : "max_total_chars";
+    }
+
     std::size_t threshold_;
     Bound bound_;
+    Source source_;
 };
 
 // has_tools / has_images — boolean request feature equals the authored value.
@@ -795,13 +1221,14 @@ ConditionPtr build_keywords(const json& arr, bool require_all, const char* op) {
     return std::make_shared<KeywordsCondition>(std::move(keywords), require_all);
 }
 
-ConditionPtr build_chars(const json& value, CharsCondition::Bound bound, const char* op) {
+ConditionPtr build_chars(const json& value, CharsCondition::Bound bound,
+                         CharsCondition::Source source, const char* op) {
     if (!value.is_number_integer() || value.get<long long>() < 0) {
         throw std::invalid_argument(std::string(op) +
                                     " requires a non-negative integer");
     }
     return std::make_shared<CharsCondition>(
-        static_cast<std::size_t>(value.get<long long>()), bound);
+        static_cast<std::size_t>(value.get<long long>()), bound, source);
 }
 
 ConditionPtr build_bool_feature(const json& value, BoolFeatureCondition::Feature feature,
@@ -890,7 +1317,7 @@ ConditionPtr compile_match_expr(const MatchExpr& expr, const LeafFactory& leaf_f
     return compile_match_expr_impl(expr, leaf_factory, 0);
 }
 
-ClassifierPtr make_classifier(const json& config) {
+ClassifierPtr make_classifier(const json& config, bool expose_request_features) {
     if (!config.is_object()) {
         throw std::invalid_argument("classifier entry must be an object");
     }
@@ -906,12 +1333,38 @@ ClassifierPtr make_classifier(const json& config) {
 
     OnError on_error = parse_on_error(config.value("on_error", "match_false"));
 
+    if (config.contains("on_truncation") && type != "zero_shot" && type != "classifier") {
+        throw std::invalid_argument(
+            "classifier '" + id + "' of type '" + type +
+            "' does not accept on_truncation; only the model-backed types "
+            "('classifier' and 'zero_shot') read a token window they can overflow");
+    }
+    const OnTruncation on_truncation =
+        parse_on_truncation(config.value("on_truncation", "score"));
+
     if (type == "classifier") {
         std::vector<std::string> labels = parse_labels(config, id);
         std::optional<std::string> default_label = parse_default_label(config, labels, id);
         return std::make_shared<ModelClassifier>(
             id, type, config.value("model", ""), on_error,
-            std::move(labels), std::move(default_label));
+            std::move(labels), std::move(default_label), on_truncation);
+    }
+
+    if (type == "zero_shot") {
+        if (config.contains("prompt")) {
+            throw std::invalid_argument(
+                "zero_shot classifier '" + id +
+                "' does not accept prompt; the backend builds the label block itself");
+        }
+        if (config.contains("reference_phrases")) {
+            throw std::invalid_argument(
+                "zero_shot classifier '" + id + "' does not accept reference_phrases");
+        }
+        std::vector<std::string> labels = parse_labels(config, id);
+        std::optional<std::string> default_label = parse_default_label(config, labels, id);
+        return std::make_shared<ZeroShotClassifier>(
+            id, type, config.value("model", ""), on_error,
+            std::move(labels), std::move(default_label), on_truncation);
     }
 
     if (type == "semantic_similarity") {
@@ -933,8 +1386,16 @@ ClassifierPtr make_classifier(const json& config) {
             std::move(labels), std::move(default_label));
     }
 
-    if (type == "llm" ||
-        type == "pii_detection" || type == "prompt_safety" ||
+    if (type == "llm") {
+        std::vector<std::string> labels = parse_labels(config, id);
+        std::optional<std::string> default_label = parse_default_label(config, labels, id);
+        return std::make_shared<LlmClassifier>(
+            id, type, config.value("model", ""), config.value("prompt", ""),
+            on_error, std::move(labels), std::move(default_label),
+            expose_request_features);
+    }
+
+    if (type == "pii_detection" || type == "prompt_safety" ||
         type == "language_detection" || type == "domain_classification" ||
         type == "complexity" || type == "sentiment") {
         throw std::invalid_argument("classifier type not implemented yet: " + type);
@@ -943,7 +1404,8 @@ ClassifierPtr make_classifier(const json& config) {
     throw std::invalid_argument("unknown classifier type: " + type);
 }
 
-std::map<std::string, ClassifierPtr> make_classifiers(const json& classifiers_json) {
+std::map<std::string, ClassifierPtr> make_classifiers(const json& classifiers_json,
+                                                       bool expose_request_features) {
     std::map<std::string, ClassifierPtr> classifiers;
     if (classifiers_json.is_null()) {
         return classifiers;
@@ -953,12 +1415,27 @@ std::map<std::string, ClassifierPtr> make_classifiers(const json& classifiers_js
     }
 
     for (const auto& item : classifiers_json) {
-        auto classifier = make_classifier(item);
+        auto classifier = make_classifier(item, expose_request_features);
         if (!classifiers.emplace(classifier->id(), classifier).second) {
             throw std::invalid_argument("duplicate classifier id: " + classifier->id());
         }
     }
     return classifiers;
+}
+
+std::vector<std::string> collect_policy_helper_models(const RoutePolicy& policy) {
+    std::set<std::string> unique;
+    for (const auto& [id, classifier] : policy.classifiers) {
+        if (!classifier) {
+            continue;
+        }
+        for (auto& model : classifier->referenced_models()) {
+            if (!model.empty()) {
+                unique.insert(std::move(model));
+            }
+        }
+    }
+    return {unique.begin(), unique.end()};
 }
 
 LeafFactory make_leaf_factory(const std::map<std::string, ClassifierPtr>& classifiers,
@@ -1074,10 +1551,20 @@ NamedLeafFactories make_deterministic_leaf_factories() {
         }
     };
     factories["min_chars"] = [](const json& leaf) -> ConditionPtr {
-        return build_chars(leaf.at("min_chars"), CharsCondition::Bound::Min, "min_chars");
+        return build_chars(leaf.at("min_chars"), CharsCondition::Bound::Min,
+                           CharsCondition::Source::Input, "min_chars");
     };
     factories["max_chars"] = [](const json& leaf) -> ConditionPtr {
-        return build_chars(leaf.at("max_chars"), CharsCondition::Bound::Max, "max_chars");
+        return build_chars(leaf.at("max_chars"), CharsCondition::Bound::Max,
+                           CharsCondition::Source::Input, "max_chars");
+    };
+    factories["min_total_chars"] = [](const json& leaf) -> ConditionPtr {
+        return build_chars(leaf.at("min_total_chars"), CharsCondition::Bound::Min,
+                           CharsCondition::Source::Total, "min_total_chars");
+    };
+    factories["max_total_chars"] = [](const json& leaf) -> ConditionPtr {
+        return build_chars(leaf.at("max_total_chars"), CharsCondition::Bound::Max,
+                           CharsCondition::Source::Total, "max_total_chars");
     };
     factories["has_tools"] = [](const json& leaf) -> ConditionPtr {
         return build_bool_feature(leaf.at("has_tools"), BoolFeatureCondition::Feature::Tools,
@@ -1094,8 +1581,57 @@ NamedLeafFactories make_deterministic_leaf_factories() {
     return factories;
 }
 
-RoutingPolicyEngine::RoutingPolicyEngine(RoutePolicy policy, ClassifierServices services)
-    : policy_(std::move(policy)), services_(std::move(services)) {
+namespace {
+
+void log_cost_of_failure_once(const std::string& candidate, const char* detail) {
+    static std::mutex logged_mu;
+    static std::set<std::string> logged_candidates;
+    bool should_log = false;
+    {
+        std::lock_guard<std::mutex> lock(logged_mu);
+        should_log = logged_candidates.insert(candidate).second;
+    }
+    if (!should_log) {
+        return;
+    }
+    LOG(WARNING, "Routing") << "CostServices::cost_of threw for candidate '"
+                            << candidate << "': " << detail
+                            << " (further throws for this candidate suppressed)"
+                            << std::endl;
+}
+
+// Best-effort: cost_of is caller-injected and must never make route() throw,
+// so any exception here is logged and swallowed rather than propagated. Also
+// leaves an author-set outputs["estimated_cost"] alone rather than clobbering it.
+// WARNING for a throwing candidate is emitted at most once per process to avoid
+// hot-path log spam when one model persistently fails cost lookup.
+void attach_estimated_cost(Decision& decision, const CostServices& cost_services) {
+    if (!cost_services.cost_of || decision.outputs.contains("estimated_cost")) {
+        return;
+    }
+    CostInfo info;
+    try {
+        info = cost_services.cost_of(decision.route_to);
+    } catch (const std::exception& e) {
+        log_cost_of_failure_once(decision.route_to, e.what());
+        return;
+    } catch (...) {
+        log_cost_of_failure_once(decision.route_to, "unknown exception");
+        return;
+    }
+    json estimated = info.to_json();
+    if (!estimated.empty()) {
+        decision.outputs["estimated_cost"] = std::move(estimated);
+    }
+}
+
+} // namespace
+
+RoutingPolicyEngine::RoutingPolicyEngine(RoutePolicy policy, ClassifierServices services,
+                                         CostServices cost_services)
+    : policy_(std::move(policy)),
+      services_(std::move(services)),
+      cost_services_(std::move(cost_services)) {
     // Compile every rule's match expression once, at construction, so route()
     // does pure tree-walking on immutable state. Classifier leaves resolve
     // against policy_.classifiers; deterministic leaf types (keywords/regex/
@@ -1111,17 +1647,21 @@ RoutingPolicyEngine::RoutingPolicyEngine(RoutePolicy policy, ClassifierServices 
 Decision RoutingPolicyEngine::route(const RouteContext& ctx, bool want_trace) const {
     EvalContext eval{ctx, services_, want_trace, {}, {}, {}};
 
-    // First-match-wins over the compiled rules. A classifier-level failure is
-    // already absorbed upstream by ClassifierBandCondition (Score::ok + the
-    // band's on_error), so this catch is only a last-resort guard: any
-    // unexpected throw fails the whole request open to default_model rather than
-    // escaping route().
+    // First-match-wins over the compiled rules. A classifier-level quality
+    // failure is already absorbed upstream by ClassifierBandCondition
+    // (Score::ok + the band's on_error), so this catch is only a last-resort
+    // guard: any unexpected throw fails the whole request open to default_model
+    // rather than escaping route().
     try {
         for (std::size_t i = 0; i < compiled_rules_.size(); ++i) {
             if (compiled_rules_[i]->evaluate(eval)) {
-                return Decision(policy_.rules[i], want_trace, std::move(eval.trace));
+                Decision decision(policy_.rules[i], want_trace, std::move(eval.trace));
+                attach_estimated_cost(decision, cost_services_);
+                return decision;
             }
         }
+    } catch (const RouterResidencyConflictException&) {
+        throw;
     } catch (const std::exception& e) {
         LOG(WARNING, "Routing") << "Routing policy evaluation threw; failing open to '"
                                 << policy_.default_model << "': " << e.what() << std::endl;
@@ -1131,7 +1671,9 @@ Decision RoutingPolicyEngine::route(const RouteContext& ctx, bool want_trace) co
                                 << std::endl;
     }
 
-    return Decision(policy_.default_model, want_trace, std::move(eval.trace));
+    Decision decision(policy_.default_model, want_trace, std::move(eval.trace));
+    attach_estimated_cost(decision, cost_services_);
+    return decision;
 }
 
 } // namespace lemon

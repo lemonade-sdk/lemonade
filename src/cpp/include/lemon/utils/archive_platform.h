@@ -1,10 +1,13 @@
 #pragma once
 
+#include <memory>
+#include <optional>
 #include <sstream>
 #include <string>
-#include <memory>
 
 namespace lemon::utils {
+
+inline constexpr int tarball_listing_timeout_seconds = 300;
 
 // Decide the tar --strip-components value from a newline-separated `tar -tf`
 // listing. Strips one level only when every entry lives under a single shared
@@ -50,6 +53,15 @@ inline int compute_tarball_strip_components(const std::string& entries) {
     }
 
     return (all_same_dir && !first_dir.empty() && has_nested) ? 1 : 0;
+}
+
+inline std::optional<int> resolve_tarball_strip_components(
+    int list_result,
+    const std::string& entries) {
+    if (list_result != 0) {
+        return std::nullopt;
+    }
+    return compute_tarball_strip_components(entries);
 }
 
 // Abstract interface for platform-specific archive extraction

@@ -7,6 +7,7 @@
 #include "lemon/backends/backend_utils.h"
 #include <string>
 #include <filesystem>
+#include <mutex>
 
 namespace lemon {
 namespace backends {
@@ -14,7 +15,6 @@ namespace backends {
 class WhisperServer : public WrappedServer, public ITranscriptionServer {
 public:
     static InstallParams get_install_params(const std::string& backend, const std::string& version);
-
 
     explicit WhisperServer(const std::string& log_level,
                           ModelManager* model_manager,
@@ -26,8 +26,6 @@ public:
              const ModelInfo& model_info,
              const RecipeOptions& options,
              bool do_not_upgrade = false) override;
-
-    void unload() override;
 
     // ICompletionServer implementation (not supported - return errors)
     json chat_completion(const json& request) override;
@@ -65,6 +63,7 @@ private:
 
     std::string model_path_;
     std::filesystem::path temp_dir_;  // Directory for temporary audio files
+    std::mutex inference_mutex_;
 };
 
 namespace whispercpp {
@@ -72,6 +71,7 @@ namespace whispercpp {
 std::unique_ptr<WrappedServer> create(const BackendContext& ctx);
 const BackendSpec* spec();
 const BackendOps* ops();
+constexpr uint32_t capabilities() { return capability_mask_of<WhisperServer>(); }
 }  // namespace whispercpp
 }  // namespace backends
 }  // namespace lemon

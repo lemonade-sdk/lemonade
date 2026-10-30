@@ -4,30 +4,27 @@
 
 #include "lemon/wrapped_server.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/models/registry_types.h"
 #include <string>
 
 namespace lemon {
 namespace backends {
 
-class FastFlowLMServer : public WrappedServer, public IEmbeddingsServer, public IRerankingServer, public ITranscriptionServer {
+class FastFlowLMServer : public WrappedServer, public IEmbeddingsServer, public ITranscriptionServer {
 public:
     static InstallParams get_install_params(const std::string& backend, const std::string& version);
-
 
     FastFlowLMServer(const std::string& log_level, ModelManager* model_manager = nullptr,
                      BackendManager* backend_manager = nullptr);
 
-    ~FastFlowLMServer() override;
-
     std::string download_model(const std::string& checkpoint,
-                              bool do_not_upgrade = false);
+                              bool do_not_upgrade = false,
+                              RegistryId source = models::huggingface_descriptor().id);
 
     void load(const std::string& model_name,
              const ModelInfo& model_info,
              const RecipeOptions& options,
              bool do_not_upgrade = false) override;
-
-    void unload() override;
 
     // ICompletionServer implementation
     json chat_completion(const json& request) override;
@@ -37,14 +34,8 @@ public:
     // IEmbeddingsServer implementation
     json embeddings(const json& request) override;
 
-    // IRerankingServer implementation
-    json reranking(const json& request) override;
-
     // ITranscriptionServer implementation
     json audio_transcriptions(const json& request) override;
-
-    // FLM uses /api/tags for readiness check instead of /health
-    bool wait_for_ready();
 
     // Override to transform model name to checkpoint for FLM
     void forward_streaming_request(const std::string& endpoint,
@@ -57,8 +48,6 @@ public:
 private:
     // Get the path to the flm executable from the install directory
     std::string get_flm_path();
-
-    bool is_loaded_ = false;
 };
 
 namespace fastflowlm {
@@ -66,6 +55,7 @@ namespace fastflowlm {
 std::unique_ptr<WrappedServer> create(const BackendContext& ctx);
 const BackendSpec* spec();
 const BackendOps* ops();
+constexpr uint32_t capabilities() { return capability_mask_of<FastFlowLMServer>(); }
 }  // namespace fastflowlm
 }  // namespace backends
 }  // namespace lemon

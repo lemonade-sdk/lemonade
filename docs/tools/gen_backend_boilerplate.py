@@ -7,7 +7,7 @@ server and regenerates the committed artifacts that would otherwise be
 hand-maintained:
 
   * Marker-delimited regions of the backend reference docs, from
-    ``/system-info`` ``recipes`` + ``server_models.json``.
+    ``/system-info`` ``recipes``.
   * The whole of ``src/cpp/resources/defaults.json``, mirrored verbatim from
     ``/internal/config/defaults`` (its per-recipe blocks come from each
     descriptor's ``config_defaults()``).
@@ -28,6 +28,7 @@ are rewritten; surrounding prose is left untouched.
 
 import argparse
 import json
+import os
 import re
 import socket
 import subprocess
@@ -38,7 +39,6 @@ import urllib.request
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-SERVER_MODELS = REPO_ROOT / "src" / "cpp" / "resources" / "server_models.json"
 TARGET_DOC = REPO_ROOT / "docs" / "dev" / "backends-reference.md"
 
 
@@ -66,15 +66,26 @@ def find_lemond(explicit: str | None) -> Path:
 class Lemond:
     """Boots a throwaway lemond on a free port with an isolated cache dir."""
 
-    def __init__(self, binary: Path):
-        self.binary = binary
+    def __init__(self, binary: Path, bin_dir: str | None = None):
+        self.binary = Path(binary).resolve()
         self.port = free_port()
         self._cache = tempfile.TemporaryDirectory(prefix="lemond-docs-")
         self._proc: subprocess.Popen | None = None
+        # Reusing installed backends saves gen_api_boilerplate.py from downloading
+        # every backend its examples load.
+        if bin_dir:
+            os.symlink(
+                os.path.abspath(bin_dir),
+                os.path.join(self._cache.name, "bin"),
+                target_is_directory=True,
+            )
 
     def __enter__(self):
+        # Backends that inherit lemond's working directory write relative paths there,
+        # such as llama.cpp's --slot-save-path, so it is the throwaway cache dir.
         self._proc = subprocess.Popen(
             [str(self.binary), self._cache.name, "--port", str(self.port)],
+            cwd=self._cache.name,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
@@ -93,7 +104,7 @@ class Lemond:
     def __exit__(self, *exc):
         if self._proc and self._proc.poll() is None:
             try:
-                self._get("/internal/shutdown", timeout=2)
+                self._get("/internal/shutdown", timeout=2, method="POST")
             except Exception:
                 pass
             try:
@@ -102,9 +113,16 @@ class Lemond:
                 self._proc.kill()
         self._cache.cleanup()
 
-    def _get(self, path: str, timeout: float = 5):
+    def _get(self, path: str, timeout: float = 5, method: str = "GET"):
         url = f"http://127.0.0.1:{self.port}{path}"
-        with urllib.request.urlopen(url, timeout=timeout) as r:
+        req = urllib.request.Request(url, method=method)
+        api_key = os.environ.get("LEMONADE_ADMIN_API_KEY") or os.environ.get(
+            "LEMONADE_API_KEY"
+        )
+        if api_key:
+            req.add_header("Authorization", f"Bearer {api_key}")
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        with opener.open(req, timeout=timeout) as r:
             return r.read()
 
     def system_info(self) -> dict:
@@ -161,6 +179,9 @@ def _ordered_modalities(by_mod: dict[str, list]) -> list[str]:
     return preferred + additional
 
 
+TIER_MARKS = {"experimental": "†", "guest": "‡"}
+
+
 def render_readme_matrix(recipes: dict) -> str:
     # Group descriptor-backed recipes by modality, in descriptor registry order.
     # MODALITY_ORDER controls presentation only; it must never filter recipes.
@@ -175,16 +196,17 @@ def render_readme_matrix(recipes: dict) -> str:
                 f"Backend '{recipe}' has support rows but no documentation modality"
             )
 
-        # Merge support rows sharing a (backend, device summary); union their OS.
+        # Merge support rows sharing a (backend, tier, device summary); union their OS.
         merged: list[dict] = []
         seen: dict[tuple, dict] = {}
         for row in support_rows:
-            key = (row["backend"], row.get("device_summary", ""))
+            key = (row["backend"], row.get("tier", ""), row.get("device_summary", ""))
             if key in seen:
                 seen[key]["os"] |= set(row.get("os", []))
             else:
                 d = {
                     "backend": row["backend"],
+                    "tier": row.get("tier", ""),
                     "summary": row.get("device_summary", ""),
                     "os": set(row.get("os", [])),
                 }
@@ -211,9 +233,7 @@ def render_readme_matrix(recipes: dict) -> str:
         mod_span = sum(len(merged) for _, _, merged in recipes_in)
         first_mod = True
         for recipe, info, merged in recipes_in:
-            engine = f"<code>{recipe}</code>" + (
-                " (experimental)" if info.get("experimental") else ""
-            )
+            engine = f"<code>{recipe}</code>"
             first_recipe = True
             for d in merged:
                 out.append("    <tr>")
@@ -225,11 +245,19 @@ def render_readme_matrix(recipes: dict) -> str:
                 if first_recipe:
                     out.append(f'      <td rowspan="{len(merged)}">{engine}</td>')
                     first_recipe = False
-                out.append(f'      <td><code>{d["backend"]}</code></td>')
+                out.append(
+                    f'      <td><code>{d["backend"]}</code>{TIER_MARKS.get(d["tier"], "")}</td>'
+                )
                 out.append(f"      <td>{_code_devices(d['summary'])}</td>")
                 out.append(f"      <td>{_fmt_os(d['os'])}</td>")
                 out.append("    </tr>")
-    out += ["  </tbody>", "</table>"]
+    out += [
+        "  </tbody>",
+        "</table>",
+        "",
+        "† experimental backend, ‡ guest backend. See "
+        "[Backend Tiers and Formats](./docs/api/lemonade.md#backend-tiers-and-formats).",
+    ]
     return "\n".join(out)
 
 
@@ -380,8 +408,8 @@ def render_overview(recipes: dict) -> str:
 
 def render_support_matrix(recipes: dict) -> str:
     rows = [
-        "| Recipe | Backend | OS | Device families |",
-        "|--------|---------|----|-----------------|",
+        "| Recipe | Backend | Tier | Format | OS | Device families |",
+        "|--------|---------|------|--------|----|-----------------|",
     ]
     for recipe in sorted(recipes):
         info = recipes[recipe]
@@ -391,9 +419,11 @@ def render_support_matrix(recipes: dict) -> str:
                 f = d.get("families") or []
                 fams.append(d["device"] + (f" ({', '.join(f)})" if f else ""))
             rows.append(
-                "| `{r}` | {b} | {o} | {d} |".format(
+                "| `{r}` | {b} | {t} | {f} | {o} | {d} |".format(
                     r=recipe,
                     b=row.get("backend", ""),
+                    t=row.get("tier", "—"),
+                    f=row.get("format", "—"),
                     o=", ".join(sorted(row.get("os", []))),
                     d=md_escape("; ".join(fams)) if fams else "—",
                 )
@@ -433,34 +463,6 @@ def render_options(recipes: dict) -> str:
     return "\n".join(blocks).rstrip()
 
 
-def render_models(recipes: dict) -> str:
-    models = json.loads(SERVER_MODELS.read_text())
-    by_recipe: dict[str, list] = {}
-    for name, data in models.items():
-        if not isinstance(data, dict):
-            continue
-        by_recipe.setdefault(data.get("recipe", "(unspecified)"), []).append(
-            (name, data)
-        )
-    blocks = []
-    for recipe in sorted(by_recipe):
-        entries = sorted(by_recipe[recipe])
-        display = recipes.get(recipe, {}).get("display_name", recipe)
-        blocks.append(f"#### `{recipe}` — {display} ({len(entries)} models)\n")
-        blocks.append("| Model | Size (GB) | Labels |")
-        blocks.append("|-------|-----------|--------|")
-        for name, data in entries:
-            blocks.append(
-                "| `{n}` | {s} | {l} |".format(
-                    n=md_escape(name),
-                    s=data.get("size", ""),
-                    l=md_escape(", ".join(data.get("labels", []))) or "—",
-                )
-            )
-        blocks.append("")
-    return "\n".join(blocks).rstrip()
-
-
 DEFAULT_TEMPLATE = """# Backend reference
 
 <!-- This file is generated by docs/tools/gen_backend_boilerplate.py from the C++ backend
@@ -481,11 +483,6 @@ the generator instead. Prose outside the markers is preserved. -->
 
 <!-- BEGIN GENERATED: backend-options -->
 <!-- END GENERATED: backend-options -->
-
-## Models
-
-<!-- BEGIN GENERATED: backend-models -->
-<!-- END GENERATED: backend-models -->
 """
 
 
@@ -554,7 +551,6 @@ def main() -> int:
                 "backends-overview": render_overview(recipes),
                 "backends-matrix": render_support_matrix(recipes),
                 "backend-options": render_options(recipes),
-                "backend-models": render_models(recipes),
             },
             "template": DEFAULT_TEMPLATE,
         },

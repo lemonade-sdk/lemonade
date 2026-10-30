@@ -41,6 +41,16 @@ bool looks_like_path(const std::string& v);
 std::string get_environment_variable_utf8(const std::string& name);
 
 /**
+ * Set an environment variable using platform-correct UTF-8 handling.
+ */
+void set_environment_variable_utf8(const std::string& name, const std::string& value);
+
+/**
+ * Remove an environment variable using platform-correct UTF-8 handling.
+ */
+void unset_environment_variable_utf8(const std::string& name);
+
+/**
  * Convert a UTF-8 path string to a std::filesystem::path.
  */
 std::filesystem::path path_from_utf8(const std::string& path);
@@ -64,11 +74,38 @@ std::string find_executable_in_path(const std::string& executable_name);
 void set_cache_dir(const std::string& dir);
 
 /**
+ * Set the lemonade config directory. Must be called once at startup before
+ * get_config_dir(). After this call, get_config_dir() returns this path.
+ */
+void set_config_dir(const std::string& dir);
+
+/**
  * Get the lemonade cache directory.
  * Returns the path set by set_cache_dir(), or falls back to
  * platform-specific defaults if set_cache_dir() was never called.
  */
 std::string get_cache_dir();
+
+/**
+ * Get the Lemonade configuration directory for persistent JSON/config files.
+ * Returns the path set by set_config_dir(), or falls back to the
+ * platform-specific config directory if set_config_dir() was never called.
+ */
+std::string get_config_dir();
+
+/**
+ * Migrate legacy JSON files on first startup after FHS split (issue #3027).
+ */
+void migrate_legacy_json_files_to_config_dir(const std::string& cache_dir,
+                                             const std::string& config_dir);
+
+/**
+ * Recover data left behind when an upgrade relocated the cache (issue #3387).
+ * Moves the pre-3028 home-based cache payload and HuggingFace models into the
+ * new cache/config/model directories. No-op when nothing was relocated.
+ */
+void migrate_legacy_paths(const std::string& cache_dir,
+                          const std::string& config_dir);
 
 /**
  * Set the models directory for HuggingFace model cache.
@@ -106,6 +143,10 @@ std::string get_runtime_dir();
  * to support All Users installations where the install directory may be read-only.
  */
 std::string get_downloaded_bin_dir();
+
+bool atomic_replace_file(const std::filesystem::path& src,
+                         const std::filesystem::path& dest,
+                         std::error_code& ec);
 
 } // namespace utils
 } // namespace lemon

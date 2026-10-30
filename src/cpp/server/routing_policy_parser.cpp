@@ -300,7 +300,7 @@ void validate_leaf(const json& leaf,
             throw std::invalid_argument(path + ".regex must be a non-empty string");
         }
     }
-    for (const char* op : {"min_chars", "max_chars"}) {
+    for (const char* op : {"min_chars", "max_chars", "min_total_chars", "max_total_chars"}) {
         if (leaf.contains(op)) {
             ++condition_count;
             if (!leaf.at(op).is_number_integer() || leaf.at(op).get<long long>() < 0) {
@@ -408,22 +408,91 @@ json parse_classifier_configs(const json& routing,
             }
         }
 
+        if (classifier.contains("on_truncation")) {
+            if (type != "zero_shot" && type != "classifier") {
+                throw std::invalid_argument(
+                    path + ".on_truncation is accepted on the model-backed types "
+                    "('classifier' and 'zero_shot'), not '" +
+                    type + "', which reads no token window it can overflow");
+            }
+            const std::string on_truncation =
+                optional_string(classifier, "on_truncation", path);
+            if (on_truncation != "score" && on_truncation != "fail") {
+                throw std::invalid_argument(path + ".on_truncation must be score or fail");
+            }
+        }
+
         json item = classifier;
         if (classifier.contains("model")) {
             const std::string original = optional_string(classifier, "model", path);
             std::string resolved_model = resolve_component(original, options, path + ".model");
             require_declared(resolved_model, original, declared, options, path + ".model");
+
+            // Fail at parse time, not at first request: a "classifier" model
+            // must be able to answer /v1/classify (ModelType::CLASSIFICATION)
+            // or serve as an LLM-as-classifier via chat_completion
+            // (ModelType::LLM); a "semantic_similarity" model must be able to
+            // embed (ModelType::EMBEDDING). Skipped when get_model_type isn't
+            // configured (pure parser tests, and callers that don't have a
+            // model registry to check against).
+            if (options.get_model_type) {
+                const std::optional<ModelType> resolved_type = options.get_model_type(resolved_model);
+                if (!resolved_type) {
+                    throw std::invalid_argument(
+                        path + ".model '" + original + "' has an unresolvable type; "
+                        "cannot validate it as a '" + type + "'");
+                }
+                const ModelType model_type = *resolved_type;
+                if (type == "classifier" &&
+                    model_type != ModelType::LLM && model_type != ModelType::CLASSIFICATION) {
+                    throw std::invalid_argument(
+                        path + ".model '" + original + "' has type '" +
+                        model_type_to_string(model_type) +
+                        "', which cannot serve as a classifier (needs an LLM or "
+                        "classification model)");
+                }
+                if (type == "classifier" && model_type == ModelType::LLM &&
+                    classifier.contains("on_truncation")) {
+                    throw std::invalid_argument(
+                        path + ".on_truncation needs a classification model; '" + original +
+                        "' is an LLM, and a chat model reports no truncation");
+                }
+
+                if (type == "zero_shot" && model_type != ModelType::CLASSIFICATION) {
+                    throw std::invalid_argument(
+                        path + ".model '" + original + "' has type '" +
+                        model_type_to_string(model_type) +
+                        "', which cannot serve zero_shot (needs a classification model)");
+                }
+                if (type == "semantic_similarity" && model_type != ModelType::EMBEDDING) {
+                    throw std::invalid_argument(
+                        path + ".model '" + original + "' has type '" +
+                        model_type_to_string(model_type) +
+                        "', which cannot serve semantic_similarity (needs an embedding model)");
+                }
+            }
+            if (options.serves_zero_shot) {
+                const bool zero_shot_model = options.serves_zero_shot(resolved_model);
+                if (type == "zero_shot" && !zero_shot_model) {
+                    throw std::invalid_argument(
+                        path + ".model '" + original +
+                        "' is not a zero-shot model (needs the 'zero-shot' label); a "
+                        "fixed-label classifier refuses per-request labels, so use type "
+                        "'classifier'");
+                }
+                if (type == "classifier" && zero_shot_model) {
+                    throw std::invalid_argument(
+                        path + ".model '" + original +
+                        "' is a zero-shot model, which needs its labels with every request; "
+                        "use type 'zero_shot'");
+                }
+            }
+
             item["model"] = std::move(resolved_model);
         }
 
-        // make_classifier performs the type-specific checks. Keep this local
-        // branch only for clearer errors on reserved-but-not-yet-implemented
-        // router sugar paths handled in #2405.
-        if (type == "llm") {
-            throw std::invalid_argument(
-                path + " uses classifier type 'llm', which is reserved for #2405 "
-                "routing.router desugaring and is not implemented by the M9 parser");
-        }
+        // make_classifier performs the type-specific checks (including the
+        // `llm` router classifier implemented in #2405).
         resolved.push_back(std::move(item));
     }
     return resolved;
@@ -448,11 +517,9 @@ std::vector<Rule> parse_rules(const json& routing,
                               const std::map<std::string, ClassifierPtr>& classifiers,
                               const std::set<std::string>& declared,
                               const RoutingPolicyParseOptions& options) {
-    if (routing.contains("router")) {
-        reject_unknown_keys(routing.at("router"), routing_router_keys(), "routing.router");
-        throw std::invalid_argument(
-            "routing.router desugaring is reserved for #2405 and is not implemented by the M9 parser");
-    }
+    // `routing.router` is desugared into `classifiers` + `rules` by the caller
+    // (see desugar_routing_router) before this runs, so `routing` here is
+    // always already in core form.
     const json& rules_json = required_field(routing, "rules", "routing");
     if (!rules_json.is_array() || rules_json.empty()) {
         throw std::invalid_argument("routing.rules must be a non-empty array");
@@ -514,7 +581,7 @@ const std::set<std::string>& routing_router_keys() {
 const std::set<std::string>& routing_classifier_keys() {
     static const std::set<std::string> keys = {
         "id", "type", "model", "prompt", "labels", "default_label",
-        "reference_phrases", "on_error"};
+        "reference_phrases", "on_error", "on_truncation"};
     return keys;
 }
 
@@ -527,7 +594,7 @@ const std::set<std::string>& routing_match_expr_keys() {
     static const std::set<std::string> keys = {
         "any", "all", "not", "classifier", "label", "min_score", "max_score",
         "keywords_any", "keywords_all", "regex", "min_chars", "max_chars",
-        "has_tools", "has_images", "metadata"};
+        "min_total_chars", "max_total_chars", "has_tools", "has_images", "metadata"};
     return keys;
 }
 
@@ -536,8 +603,77 @@ const std::set<std::string>& routing_metadata_match_keys() {
     return keys;
 }
 
+// Desugar the `routing.router` (L0a) sugar into the explicit core form: one
+// `llm` classifier whose labels are the candidates, plus one identity rule per
+// candidate (label X -> route_to X), evaluated first-match-wins. The engine
+// stays single-path; `routing.router` is pure load-time sugar. Returns a new
+// `routing` object with `router` removed and `classifiers`/`rules` synthesized.
+//
+// Names: the synthesized classifier labels and rule match.labels use the
+// AUTHORED candidate names (read from routing.candidates verbatim), because
+// that is the vocabulary the author's prompt exposes to the router LLM and
+// therefore what the model replies with. Only route_to is canonicalized — and
+// that happens downstream in parse_rules via the component resolver, exactly as
+// for hand-written rules. Feeding pre-resolved canonical IDs in here would
+// break label matching (the LLM never sees canonical IDs) and would
+// double-resolve route_to.
+json desugar_routing_router(const json& routing) {
+    const json& router = routing.at("router");
+    reject_unknown_keys(router, routing_router_keys(), "routing.router");
+
+    const std::string type = required_string(router, "type", "routing.router");
+    if (type != "llm") {
+        throw std::invalid_argument("routing.router.type must be 'llm'");
+    }
+    // The sugar owns classifiers + rules; authoring both forms is ambiguous.
+    if (routing.contains("classifiers") || routing.contains("rules")) {
+        throw std::invalid_argument(
+            "routing.router cannot be combined with routing.classifiers or routing.rules");
+    }
+    required_string(router, "model", "routing.router");
+    required_string(router, "prompt", "routing.router");
+
+    // Authored names, validated already by parse_candidates (shape, non-empty,
+    // declared, no duplicates after resolution) before this runs.
+    std::vector<std::string> authored;
+    for (const auto& entry : routing.at("candidates")) {
+        authored.push_back(entry.get<std::string>());
+    }
+
+    json out = routing;
+    out.erase("router");
+
+    // The single llm classifier. `model` is resolved later by
+    // parse_classifier_configs; labels are the candidates it must choose among.
+    out["classifiers"] = json::array({json{
+        {"id", "__router"},
+        {"type", "llm"},
+        {"model", router.at("model")},
+        {"prompt", router.at("prompt")},
+        {"labels", authored},
+    }});
+
+    // Identity rules. Index-based ids avoid any charset assumptions about
+    // candidate names (which may contain '.' or '-').
+    json rules = json::array();
+    for (std::size_t i = 0; i < authored.size(); ++i) {
+        rules.push_back(json{
+            {"id", "__route_" + std::to_string(i)},
+            {"match", json{
+                {"classifier", "__router"},
+                {"label", authored[i]},
+                {"min_score", 1.0},
+            }},
+            {"route_to", authored[i]},
+        });
+    }
+    out["rules"] = std::move(rules);
+    return out;
+}
+
 RoutePolicy parse_route_policy_collection(const json& collection_json,
-                                          const RoutingPolicyParseOptions& options) {
+                                          const RoutingPolicyParseOptions& options,
+                                          json* out_normalized_routing) {
     reject_unknown_keys(collection_json, routing_policy_root_keys(), "collection");
     validate_version_1(collection_json);
 
@@ -555,9 +691,30 @@ RoutePolicy parse_route_policy_collection(const json& collection_json,
     policy.candidates = parse_candidates(routing, declared, options);
     policy.default_model = parse_default_model(routing, policy.candidates, declared, options);
 
-    const json classifier_configs = parse_classifier_configs(routing, declared, options);
-    policy.classifiers = make_classifiers(classifier_configs);
-    policy.rules = parse_rules(routing, policy.candidates, policy.classifiers, declared, options);
+    // Desugar the L0a `routing.router` sugar into explicit classifiers + rules
+    // before the normal parse path runs. Everything downstream sees the core
+    // form only.
+    const bool is_router_sugar = routing.contains("router");
+    json desugared;
+    const json* routing_eff = &routing;
+    if (is_router_sugar) {
+        desugared = desugar_routing_router(routing);
+        routing_eff = &desugared;
+    }
+
+    // Only the routing.router sugar's synthesized classifier gets
+    // has_tools/has_images (#2789) — see LlmClassifier::effective_prompt in
+    // routing_policy.cpp for why an author-declared classifier never does.
+    const bool expose_request_features = is_router_sugar;
+
+    const json classifier_configs = parse_classifier_configs(*routing_eff, declared, options);
+    policy.classifiers = make_classifiers(classifier_configs, expose_request_features);
+    policy.rules = parse_rules(*routing_eff, policy.candidates, policy.classifiers, declared, options);
+    policy.helper_models = collect_policy_helper_models(policy);
+
+    if (out_normalized_routing) {
+        *out_normalized_routing = *routing_eff;
+    }
     return policy;
 }
 

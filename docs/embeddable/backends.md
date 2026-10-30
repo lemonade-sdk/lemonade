@@ -51,8 +51,8 @@ Follow these instructions if you want backends to be bundled into your app's ins
 
 #### Limitations
 At the time of this writing:
--  `flm` is not available for packaging-time bundling *on Linux*.
-- `llamacpp:rocm` is not available for packaging-time bundling on any OS.
+
+- `llamacpp:rocm` with `rocm_channel` set to `nightly` selects a release asset for the packaging host's GPU family, so the host doing the packaging would need to share its GPU family with the deployment machine. The default `stable` channel has no such limitation.
 - `vllm:rocm` is not available for packaging-time bundling on any OS — the install flow constructs a per-GPU-target release tag at runtime, so the host doing the packaging would need to share its `gfx_target` with the deployment machine.
 
 ### Installing Backends at Install-Time or Runtime
@@ -159,7 +159,7 @@ For example, to use your own Vulkan `llama-server` in place of Lemonade's:
     lemond.exe ./
 
     REM Set the llama-server vulkan binary path
-    lemonade.exe config set llamacpp.vulkan_bin C:\path\to\bins
+    lemonade.exe config set "llamacpp.vulkan_bin=C:\path\to\llama-server.exe"
     ```
 
 === "Linux (bash)"
@@ -169,7 +169,7 @@ For example, to use your own Vulkan `llama-server` in place of Lemonade's:
     ./lemond ./
 
     # Set the llama-server vulkan binary path
-    ./lemonade config set llamacpp.vulkan_bin /path/to/bins
+    ./lemonade config set llamacpp.vulkan_bin=/path/to/llama-server
     ```
 
 See the `*_bin` settings in the [Configuration Guide](../guide/configuration/README.md) for the full set of customization options.

@@ -2,6 +2,8 @@
 
 #include <string>
 
+#include <nlohmann/json.hpp>
+
 namespace lemon {
 namespace audio {
 
@@ -26,6 +28,34 @@ namespace ResponseFormat {
     constexpr const char* SRT = "srt";
     constexpr const char* VTT = "vtt";
     constexpr const char* VERBOSE_JSON = "verbose_json";
+}
+
+// True for the formats whose successful backend body is a raw text document
+// rather than JSON.
+inline bool is_plain_text_format(const std::string& response_format) {
+    return response_format == ResponseFormat::TEXT ||
+           response_format == ResponseFormat::SRT ||
+           response_format == ResponseFormat::VTT;
+}
+
+inline bool is_supported_response_format(const std::string& response_format) {
+    return response_format == ResponseFormat::JSON ||
+           response_format == ResponseFormat::VERBOSE_JSON ||
+           is_plain_text_format(response_format);
+}
+
+// Interpret a successful transcription body from a backend that honours
+// response_format. The requested format decides how the body is read, never
+// whether it happens to parse: a plain-text body is wrapped verbatim and is
+// never handed to the parser, so a transcript that is itself valid JSON
+// ("true", "null", "123") is still returned as text. JSON formats parse as
+// before and throw on malformed input.
+inline nlohmann::json interpret_transcription_body(const std::string& body,
+                                                   const std::string& response_format) {
+    if (is_plain_text_format(response_format)) {
+        return nlohmann::json{{"text", body}};
+    }
+    return nlohmann::json::parse(body);
 }
 
 // Audio-specific error types

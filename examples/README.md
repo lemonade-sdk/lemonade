@@ -42,7 +42,13 @@ python realtime_transcription.py --model Whisper-Small
 
 ### LLM Demos
 
-Open the HTML files directly in your browser.
+Serve the HTML files over localhost, then open them in your browser. Opening them directly from disk (`file://`) is blocked by the server's default `allowed_origins`.
+
+```bash
+cd examples
+python3 -m http.server 8080
+# then open http://localhost:8080/llm-debate.html or http://localhost:8080/multi-model-tester.html
+```
 
 See [debate-arena.md](debate-arena.md) for detailed instructions on the debate demo.
 

@@ -20,12 +20,13 @@ import requests
 
 from .test_models import PORT, TIMEOUT_DEFAULT
 
-
 HOST_CANDIDATES = ("127.0.0.1", "localhost")
 
 
 def _auth_headers() -> dict:
-    api_key = os.environ.get("LEMONADE_API_KEY")
+    api_key = os.environ.get("LEMONADE_ADMIN_API_KEY") or os.environ.get(
+        "LEMONADE_API_KEY"
+    )
     if api_key:
         return {"Authorization": f"Bearer {api_key}"}
     return {}

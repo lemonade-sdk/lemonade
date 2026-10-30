@@ -1,4 +1,8 @@
 #include "lemon/router.h"
+#include "lemon/runtime_config.h"
+#include "lemon/utils/json_utils.h"
+#include "lemon/utils/network_utils.h"
+#include "lemon/utils/origin_utils.h"
 #include "lemon/utils/process_manager.h"
 #include "lemon/websocket_server.h"
 #include "telemetry.h"
@@ -70,57 +74,12 @@ int WebSocketServer::ws_callback(struct lws* wsi,
             auto origin_opt = get_header(wsi, WSI_TOKEN_ORIGIN);
             if (origin_opt && !origin_opt->empty()) {
                 std::string origin = *origin_opt;
-                std::string origin_host = origin;
-                size_t scheme_end = origin.find("://");
-                if (scheme_end != std::string::npos) {
-                    origin_host = origin.substr(scheme_end + 3);
-                }
-                size_t port_pos = std::string::npos;
-                if (!origin_host.empty() && origin_host[0] == '[') {
-                    size_t bracket_end = origin_host.find(']');
-                    if (bracket_end != std::string::npos) {
-                        port_pos = origin_host.find(':', bracket_end);
-                    }
-                } else {
-                    port_pos = origin_host.find(':');
-                }
-                if (port_pos != std::string::npos) {
-                    origin_host = origin_host.substr(0, port_pos);
-                }
-                size_t path_pos = origin_host.find('/');
-                if (path_pos != std::string::npos) {
-                    origin_host = origin_host.substr(0, path_pos);
-                }
-
-                std::string host_header_val;
                 auto host_opt = get_header(wsi, WSI_TOKEN_HOST);
-                if (host_opt && !host_opt->empty()) {
-                    host_header_val = *host_opt;
-                }
-                std::string request_host = host_header_val;
-                size_t r_port_pos = std::string::npos;
-                if (!request_host.empty() && request_host[0] == '[') {
-                    size_t bracket_end = request_host.find(']');
-                    if (bracket_end != std::string::npos) {
-                        r_port_pos = request_host.find(':', bracket_end);
-                    }
-                } else {
-                    r_port_pos = request_host.find(':');
-                }
-                if (r_port_pos != std::string::npos) {
-                    request_host = request_host.substr(0, r_port_pos);
-                }
-                size_t r_path_pos = request_host.find('/');
-                if (r_path_pos != std::string::npos) {
-                    request_host = request_host.substr(0, r_path_pos);
-                }
+                std::string host = host_opt.value_or("");
+                std::string allowed_origins = utils::resolve_allowed_origins();
+                std::string bound_host = server ? server->host_ : "";
 
-                bool is_allowed = (origin_host == "localhost" || origin_host == "127.0.0.1" || origin_host == "[::1]" || origin_host == "::1");
-                if (!is_allowed && !request_host.empty() && origin_host == request_host) {
-                    is_allowed = true;
-                }
-
-                if (!is_allowed) {
+                if (!utils::is_websocket_origin_allowed(origin, allowed_origins, host, "http", bound_host)) {
                     LOG(WARNING, "WebSocket") << "Rejected connection from unauthorized origin: " << origin << std::endl;
                     return 1;
                 }
@@ -130,14 +89,32 @@ int WebSocketServer::ws_callback(struct lws* wsi,
             if (classify_path(path) == ConnectionKind::invalid) {
                 return 1;
             }
-            if (!server->authenticate_connection(wsi)) {
+            std::string authenticated_token;
+            bool authenticated = false;
+            if (!server->authenticate_connection(wsi, authenticated_token, authenticated)) {
                 return 1;
+            }
+            if (pss) {
+                pss->authenticated = authenticated;
+            }
+            {
+                std::lock_guard<std::mutex> lock(server->connections_mutex_);
+                server->pending_authenticated_tokens_[wsi] = authenticated_token;
             }
             break;
         }
 
         case LWS_CALLBACK_ESTABLISHED: {
-            std::snprintf(pss->connection_id, sizeof(pss->connection_id), "%d", static_cast<int>(lws_get_socket_fd(wsi)));
+            auto sock = static_cast<socket_t>(lws_get_socket_fd(wsi));
+#ifdef _WIN32
+            if (sock != INVALID_SOCKET) {
+#else
+            if (sock >= 0) {
+#endif
+                lemon::utils::configure_tcp_keepalive(sock);
+            }
+
+            std::snprintf(pss->connection_id, sizeof(pss->connection_id), "%d", static_cast<int>(sock));
 
             char ip[128] = {0};
             lws_get_peer_simple(wsi, ip, sizeof(ip));
@@ -150,13 +127,36 @@ int WebSocketServer::ws_callback(struct lws* wsi,
                                        << " (id: " << pss->connection_id << ")" << std::endl;
             }
 
-            server->handle_connection(pss->connection_id, wsi);
+            std::string token;
+            {
+                std::lock_guard<std::mutex> lock(server->connections_mutex_);
+                auto it = server->pending_authenticated_tokens_.find(wsi);
+                if (it != server->pending_authenticated_tokens_.end()) {
+                    token = std::move(it->second);
+                    server->pending_authenticated_tokens_.erase(it);
+                }
+            }
+
+            server->handle_connection(pss->connection_id, wsi, token, pss->authenticated);
             break;
         }
 
-        case LWS_CALLBACK_CLOSED:
+        case LWS_CALLBACK_CLOSED: {
+            {
+                std::lock_guard<std::mutex> lock(server->connections_mutex_);
+                server->pending_authenticated_tokens_.erase(wsi);
+            }
             server->handle_close(pss->connection_id);
             break;
+        }
+
+        case LWS_CALLBACK_WSI_DESTROY: {
+            {
+                std::lock_guard<std::mutex> lock(server->connections_mutex_);
+                server->pending_authenticated_tokens_.erase(wsi);
+            }
+            break;
+        }
 
         case LWS_CALLBACK_RECEIVE: {
             if (!in || len == 0) {
@@ -285,6 +285,7 @@ void WebSocketServer::stop() {
         connection_websockets_.clear();
         message_queues_.clear();
         receive_buffers_.clear();
+        pending_authenticated_tokens_.clear();
     }
     for (const auto& [_, state] : states) {
         if (!state.realtime_session_id.empty()) {
@@ -384,45 +385,58 @@ std::string WebSocketServer::extract_token_from_wsi(struct lws* wsi) const {
     if (!token) {
         token = get_url_arg(wsi, "api_key");
     }
+    if (!token) {
+        token = get_protocol_credential(wsi);
+    }
     return token ? strip_bearer_prefix(*token) : "";
 }
 
-bool WebSocketServer::authenticate_connection(struct lws* wsi) const {
-    if (api_key_.empty()) {
-        return true;
-    }
+bool WebSocketServer::authenticate_connection(struct lws* wsi, std::string& out_token, bool& out_authenticated) const {
+    out_token.clear();
+    out_authenticated = false;
 
     auto token = get_header(wsi, WSI_TOKEN_HTTP_AUTHORIZATION);
     if (!token) {
         token = get_url_arg(wsi, "api_key");
+    }
+    if (!token) {
+        token = get_protocol_credential(wsi);
+    }
+
+    std::string token_str = token ? strip_bearer_prefix(*token) : "";
+    out_token = token_str;
+
+    if (api_key_.empty()) {
+        out_authenticated = true;
+        return true;
     }
 
     if (!token) {
         std::string path = get_request_path(wsi);
         ConnectionKind kind = classify_path(path);
         if (kind == ConnectionKind::spans) {
+            out_authenticated = false;
             return true;
         }
         LOG(WARNING, "WebSocket") << "Rejected upgrade for path: " << path << " due to missing credentials" << std::endl;
         return false;
     }
 
-    std::string token_str = strip_bearer_prefix(*token);
-
-    if ((token_str != api_key_) && (admin_api_key_.empty() || (token_str != admin_api_key_))) {
-        LOG(WARNING, "WebSocket") << "Rejected websocket connection with invalid API key for "
-                                  << get_request_path(wsi) << std::endl;
-        return false;
+    if (token_str == api_key_ || (!admin_api_key_.empty() && token_str == admin_api_key_)) {
+        out_authenticated = true;
+        return true;
     }
 
-    return true;
+    LOG(WARNING, "WebSocket") << "Rejected websocket connection with invalid API key for "
+                              << get_request_path(wsi) << std::endl;
+    return false;
 }
 
-void WebSocketServer::handle_connection(const std::string& connection_id, struct lws* wsi) {
+void WebSocketServer::handle_connection(const std::string& connection_id, struct lws* wsi, const std::string& initial_token, bool initial_authenticated) {
     const std::string path = get_request_path(wsi);
     const auto kind = classify_path(path);
 
-    std::string token_str = extract_token_from_wsi(wsi);
+    std::string token_str = initial_token.empty() ? extract_token_from_wsi(wsi) : initial_token;
     auto client_session_id_opt = get_url_arg(wsi, "client_session_id");
     std::string client_session_id = client_session_id_opt ? *client_session_id_opt : "";
 
@@ -434,7 +448,7 @@ void WebSocketServer::handle_connection(const std::string& connection_id, struct
         state.authenticated_token = token_str;
         state.authenticated_token_hash = telemetry::hash_token(token_str);
         state.client_session_id = client_session_id;
-        state.authenticated = api_key_.empty() || (!token_str.empty() && (token_str == api_key_ || token_str == admin_api_key_));
+        state.authenticated = initial_authenticated;
         connection_states_[connection_id] = state;
     }
 
@@ -707,6 +721,38 @@ std::optional<std::string> WebSocketServer::get_header(struct lws* wsi, enum lws
     return std::string(buffer, static_cast<size_t>(copied));
 }
 
+std::optional<std::string> WebSocketServer::get_protocol_credential(struct lws* wsi) {
+    static constexpr char credential_prefix[] = "bearer.";
+    static constexpr size_t prefix_len = sizeof(credential_prefix) - 1;
+
+    auto header = get_header(wsi, WSI_TOKEN_PROTOCOL);
+    if (!header) {
+        return std::nullopt;
+    }
+
+    // The credential rides in Sec-WebSocket-Protocol alongside the registered
+    // application protocol. The encoding is base64url, so the value contains
+    // only token characters and ends at the next list separator.
+    const std::string& value = *header;
+    size_t pos = value.find(credential_prefix);
+    if (pos == std::string::npos) {
+        return std::nullopt;
+    }
+    size_t begin = pos + prefix_len;
+    size_t end = value.find_first_of(", \t", begin);
+    std::string encoded = value.substr(begin, end == std::string::npos ? std::string::npos : end - begin);
+
+    // Translate base64url back to standard base64 before decoding.
+    for (char& c : encoded) {
+        if (c == '-') {
+            c = '+';
+        } else if (c == '_') {
+            c = '/';
+        }
+    }
+    return utils::JsonUtils::base64_decode(encoded);
+}
+
 std::optional<std::string> WebSocketServer::get_url_arg(struct lws* wsi, const char* name) {
     char buffer[512] = {0};
     const int value_len = lws_get_urlarg_by_name_safe(wsi, name, buffer, sizeof(buffer));
@@ -725,9 +771,9 @@ std::string WebSocketServer::get_request_path(struct lws* wsi) {
 }
 
 WebSocketServer::ConnectionKind WebSocketServer::classify_path(const std::string& path) {
-    // Quad-prefix invariant: endpoints are reachable bare and under
-    // /api/v0, /api/v1, /v0, /v1. OpenAI Realtime SDK clients connect
-    // to /v1/realtime.
+    // Clients built against older releases connect bare or under /api/v0,
+    // /api/v1 or /v0 (see the HTTP server spec's compatibility section).
+    // OpenAI Realtime SDK clients connect to /v1/realtime.
     std::string stripped = path;
     for (const char* prefix : {"/api/v0", "/api/v1", "/v0", "/v1"}) {
         size_t len = std::strlen(prefix);

@@ -1,6 +1,9 @@
 #include "lemon/backends/fastflowlm/fastflowlm_models.h"
 
+#include <algorithm>
+#include <cctype>
 #include <cstdlib>
+#include <stdexcept>
 #include <vector>
 #include <nlohmann/json.hpp>
 #include "lemon/model_manager.h"
@@ -31,6 +34,12 @@ using lemon::utils::path_to_utf8;
 bool safe_exists(const fs::path& p) {
     std::error_code ec;
     return fs::exists(p, ec);
+}
+
+std::string to_lower(std::string s) {
+    std::transform(s.begin(), s.end(), s.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return s;
 }
 
 // Candidate roots that FLM may use to store models. FLM resolves its model
@@ -66,6 +75,20 @@ std::vector<fs::path> get_flm_models_dir_candidates() {
 #endif
 
     return roots;
+}
+
+// The protocol of the host a pull would run against. An unnamed host is the
+// default host, which is what flm assumed before.
+std::string pull_protocol(const RegistryId& source) {
+    const std::optional<models::RegistryId> host = models::registry_id_from(source.str());
+    if (host == std::nullopt) {
+        throw std::runtime_error("flm cannot pull from '" + source.str() + "': no such registry");
+    }
+    const models::RegistryDescriptor* descriptor = models::descriptor_for(*host);
+    if (descriptor == nullptr) {
+        throw std::runtime_error("flm cannot pull from '" + host->str() + "': unknown registry");
+    }
+    return descriptor->download_protocol;
 }
 
 } // namespace
@@ -288,8 +311,29 @@ std::vector<ModelInfo> flm_discover_models() {
                         }
                     }
 
+                    // `flm list --json` reports characteristics and input
+                    // modalities, never a deployment mode: FLM's chat models
+                    // report no label at all (llama3.2:3b, lfm2:1.2b, ...) or
+                    // only "reasoning"/"vision"/"tool-calling", and the
+                    // any-to-text ones add "audio"/"chat-transcription". The
+                    // catalog's only two non-chat models name their mode
+                    // ("embeddings" on embed-gemma:300m, "transcription" on
+                    // whisper-v3:turbo) and both are identifiable from the
+                    // checkpoint name, so classify from the name and treat the
+                    // rest as chat.
+                    // https://github.com/ROCm/FastFlowLM/issues/668 would let
+                    // FLM report the mode and remove this workaround.
+                    const std::string id = to_lower(checkpoint);
+                    if (id.find("whisper") != std::string::npos) {
+                        add_label_once(info.labels, "transcription");
+                    } else if (id.find("embed") != std::string::npos) {
+                        add_label_once(info.labels, "embeddings");
+                    } else {
+                        add_label_once(info.labels, "chat");
+                    }
+
                     info.type = get_model_type_from_labels(info.labels);
-                    const BackendDescriptor* flm_desc = descriptor_for("flm");
+                    const BackendDescriptor* flm_desc = backends::descriptor_for("flm");
                     info.device = flm_desc ? flm_desc->default_device : DEVICE_NPU;
 
                     flm_models.push_back(info);
@@ -306,8 +350,27 @@ std::vector<ModelInfo> flm_discover_models() {
 }
 
 
+std::vector<std::string> flm_pull_arguments(const std::string& checkpoint,
+                                            bool do_not_upgrade,
+                                            RegistryId source) {
+    std::vector<std::string> args = {"pull", checkpoint};
+    if (!do_not_upgrade) {
+        args.push_back("--force");
+    }
+
+    const std::string protocol = pull_protocol(source);
+    if (protocol == models::download_protocols::modelscope_api) {
+        args.push_back("--modelscope");
+        args.push_back("1");
+    } else if (protocol != models::download_protocols::hf_hub) {
+        throw std::runtime_error("flm has no pull flag for protocol '" + protocol + "'");
+    }
+    return args;
+}
+
 void flm_download(const std::string& checkpoint, bool do_not_upgrade,
-                  DownloadProgressCallback progress_callback) {
+                  DownloadProgressCallback progress_callback,
+                  RegistryId source) {
     LOG(INFO, "ModelManager") << "Pulling FLM model: " << checkpoint << std::endl;
 
     auto status = SystemInfoCache::get_flm_status();
@@ -320,10 +383,7 @@ void flm_download(const std::string& checkpoint, bool do_not_upgrade,
         throw std::runtime_error("FLM executable not found");
     }
 
-    std::vector<std::string> args = {"pull", checkpoint};
-    if (!do_not_upgrade) {
-        args.push_back("--force");
-    }
+    std::vector<std::string> args = flm_pull_arguments(checkpoint, do_not_upgrade, source);
 
     LOG(INFO, "ProcessManager") << "Starting process: \"" << flm_path << "\"";
     for (const auto& arg : args) {

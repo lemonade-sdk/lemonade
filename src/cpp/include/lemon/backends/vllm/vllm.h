@@ -10,7 +10,7 @@ namespace vllm {
 // links into both the lemonade CLI and lemond without a separate source file.
 inline const BackendDescriptor descriptor = {
     /*recipe*/          "vllm",
-    /*display_name*/    "vLLM ROCm (experimental)",
+    /*display_name*/    "vLLM ROCm",
     /*binary*/          "vllm-server",
     /*config_section*/  "",  // defaults to recipe
     /*default_device*/  DEVICE_GPU,
@@ -25,14 +25,13 @@ inline const BackendDescriptor descriptor = {
          "Custom arguments to pass to vllm-server", "vLLM Options"},
     },
     /*support*/ {
-        // gfx942 omitted until its vLLM/ROCm asset ships in lemonade-sdk/vllm-rocm;
-        // everything else is wired, so re-add it here once that lands.
-        {"rocm", {"linux"}, {{"amd_gpu", {"gfx1150", "gfx1151", "gfx110X", "gfx120X"}}}, "Strix Halo iGPU (gfx1151)"},
+        // gfx942/gfx950 (CDNA) omitted until their vLLM/ROCm assets ship in lemonade-sdk/vllm-rocm;
+        // everything else is wired (incl. the rocm_arch_overrides pins), so re-add them here once that lands.
+        {"rocm", BackendTier::Experimental, BackendFormat::Python, {"linux"}, {{"amd_gpu", {"gfx1150", "gfx1151", "gfx110X", "gfx120X"}}}, "Strix Halo iGPU (gfx1151)"},
     },
-    /*default_labels*/  {},
+    /*supported_modes*/ {"chat"},
     /*required_checkpoints*/ {"main"},
-    /*modality*/        "Text generation",
-    /*experimental*/    true,
+    /*default_capabilities*/ {},
     /*web_display_name*/ "",
     /*rocm_channels*/   {},  // single rocm artifact, no stable/nightly channels
     /*exposes_prometheus_metrics*/ false,

@@ -1,13 +1,26 @@
 #include "lemon/routing_classifier_services.h"
 
+#include "lemon/thinking_controls.h"
+
 #include <cmath>
 #include <memory>
 #include <optional>
 #include <stdexcept>
 #include <utility>
+#include <lemon/utils/aixlog.hpp>
 
 namespace lemon {
 namespace {
+
+// Output cap for internal classifier chat calls (the `llm` router). The reply
+// contract is a single small JSON object ({"model": ..., "rationale": ...});
+// this bound keeps a misbehaving router model from streaming an essay.
+constexpr int kClassifierChatMaxTokens = 256;
+
+json llm_router_response_format() {
+    // Use the portable JSON object contract; Lemonade validates the fields.
+    return {{"type", "json_object"}};
+}
 
 void throw_if_error_response(const json& response, const std::string& context) {
     if (!response.is_object() || !response.contains("error")) {
@@ -234,14 +247,25 @@ std::map<std::string, double> parse_classifier_scores(const json& response) {
     throw std::runtime_error("classifier response did not contain label scores");
 }
 
+std::optional<bool> parse_truncated(const json& response) {
+    if (response.is_object() && response.contains("truncated") &&
+        response["truncated"].is_boolean()) {
+        return response["truncated"].get<bool>();
+    }
+    return std::nullopt;
+}
+
 ClassifierServices make_classifier_services_from_router_calls(
     RouterJsonCall embeddings,
     RouterJsonCall chat_completion,
-    EnsureClassifierModelLoaded ensure_loaded) {
+    EnsureClassifierModelLoaded ensure_loaded,
+    RouterJsonCall classify,
+    RouterModelTypeCall get_model_type) {
     ClassifierServices services;
     auto embeddings_call = std::make_shared<RouterJsonCall>(std::move(embeddings));
     auto chat_completion_call =
         std::make_shared<RouterJsonCall>(std::move(chat_completion));
+    auto classify_call = std::make_shared<RouterJsonCall>(std::move(classify));
 
     services.embed = [embeddings_call,
                       ensure_loaded](const std::string& model,
@@ -257,14 +281,45 @@ ClassifierServices make_classifier_services_from_router_calls(
         return parse_embedding_vector((*embeddings_call)(request));
     };
 
-    services.run_classifier = [chat_completion_call,
+    services.run_classifier = [chat_completion_call, classify_call, get_model_type,
                                ensure_loaded](const std::string& model,
                                               const std::string& input)
-        -> std::map<std::string, double> {
+        -> ClassifierScores {
+        // Load the model BEFORE resolving its runtime type. The production
+        // resolver (Router::get_model_type) reports ModelType::LLM until the
+        // backend is loaded and alive, so resolving first would make a cold-start
+        // request — the first after startup, eviction, or a backend restart —
+        // pick the chat path for a model that only speaks /v1/classify,
+        // recreating the unsupported-capability failure this routing exists to
+        // avoid.
+        ensure_model(ensure_loaded, model);
+
+        // Models registered under ModelType::CLASSIFICATION (the onnxruntime
+        // backend) speak /v1/classify natively — a real encoder classification
+        // head, not an LLM asked to emit JSON. Route to it directly instead of
+        // going through chat_completion, which such a model can't serve at all
+        // (WrappedServer's default chat_completion() is an unsupported-capability
+        // error for any backend that doesn't implement it).
+        const bool use_classify_endpoint =
+            classify_call && *classify_call && get_model_type &&
+            get_model_type(model) == ModelType::CLASSIFICATION;
+
+        if (use_classify_endpoint) {
+            json request = {
+                {"model", model},
+                {"input", input},
+            };
+            const json response = (*classify_call)(request);
+            ClassifierScores answer;
+            answer.scores = parse_classifier_scores(response);
+            answer.truncated = parse_truncated(response);
+            return answer;
+        }
+
         if (!*chat_completion_call) {
             throw std::runtime_error("Router chat_completion call is not configured");
         }
-        ensure_model(ensure_loaded, model);
+
         json request = {
             {"model", model},
             {"stream", false},
@@ -280,7 +335,40 @@ ClassifierServices make_classifier_services_from_router_calls(
                 },
             })},
         };
-        return parse_classifier_scores((*chat_completion_call)(request));
+        // A chat backend does not say whether it cut the input.
+        ClassifierScores answer;
+        answer.scores = parse_classifier_scores((*chat_completion_call)(request));
+        return answer;
+    };
+
+    services.run_zero_shot_classifier =
+        [classify_call, get_model_type, ensure_loaded](
+            const std::string& model, const std::string& input,
+            const std::vector<std::string>& labels) -> ClassifierScores {
+        if (!classify_call || !*classify_call) {
+            throw std::runtime_error("Router classify call is not configured");
+        }
+
+        ensure_model(ensure_loaded, model);
+
+        // Deliberately no chat fallback
+        if (!get_model_type || get_model_type(model) != ModelType::CLASSIFICATION) {
+            throw std::runtime_error(
+                "zero-shot classifier model '" + model +
+                "' is not a classification model; it cannot score a per-request label list");
+        }
+
+        json request = {
+            {"model", model},
+            {"input", input},
+            {"labels", labels},
+        };
+        const json response = (*classify_call)(request);
+
+        ClassifierScores answer;
+        answer.scores = parse_classifier_scores(response);
+        answer.truncated = parse_truncated(response);
+        return answer;
     };
 
     services.chat = [chat_completion_call,
@@ -291,15 +379,25 @@ ClassifierServices make_classifier_services_from_router_calls(
             throw std::runtime_error("Router chat_completion call is not configured");
         }
         ensure_model(ensure_loaded, model);
+        // A deliberately constrained classifier invocation: deterministic
+        // (temperature 0), non-streaming, thinking disabled through the same
+        // cross-backend normalization as normal Lemonade requests (so e.g. a
+        // Qwen3-style router doesn't emit <think> blocks or burn seconds
+        // reasoning), and output tightly bounded — the reply contract is one
+        // small JSON object, never long-form text.
         json request = {
             {"model", model},
             {"stream", false},
             {"temperature", 0.0},
+            {"max_tokens", kClassifierChatMaxTokens},
+            {"enable_thinking", false},
+            {"response_format", llm_router_response_format()},
             {"messages", json::array({
                 {{"role", "system"}, {"content", prompt}},
                 {{"role", "user"}, {"content", input}},
             })},
         };
+        normalize_thinking_controls(request);
         return extract_chat_text((*chat_completion_call)(request));
     };
 
@@ -320,13 +418,34 @@ RouteContext build_route_context(const json& request_json, const std::string& mo
         ctx.params.has_tools = true;
     }
 
+    // Prefer `max_tokens` (also the alias target for `max_completion_tokens`
+    // elsewhere in the server, see JsonUtils::add_legacy_max_tokens_alias);
+    // fall back to `max_completion_tokens` directly since this function reads
+    // the caller's raw body, upstream of that aliasing. `max_output_tokens` is
+    // /v1/responses' own name for the same limit. A non-positive or
+    // non-integer value is treated the same as absent.
+    for (const char* key : {"max_tokens", "max_completion_tokens", "max_output_tokens"}) {
+        if (request_json.contains(key) && request_json[key].is_number_integer() &&
+            request_json[key].get<long long>() > 0) {
+            ctx.params.expected_output_tokens =
+                static_cast<std::size_t>(request_json[key].get<long long>());
+            break;
+        }
+    }
+
     if (request_json.contains("messages") && request_json["messages"].is_array()) {
         const auto& messages = request_json["messages"];
+        // Totalling every role's text is what makes `total_chars` a proxy for
+        // prefill size: the whole array is what the backend prefills, not just
+        // the routing turn. It cannot ride along with an image scan that stops
+        // at the first hit, so the flag is latched instead of breaking out.
         for (const auto& msg : messages) {
-            if (msg.is_object() && msg.contains("content") && content_has_image(msg["content"])) {
+            if (!msg.is_object() || !msg.contains("content")) continue;
+            const auto& content = msg["content"];
+            if (!ctx.params.has_images && content_has_image(content)) {
                 ctx.params.has_images = true;
-                break;
             }
+            ctx.params.total_chars += collect_text_from_content(content).size();
         }
         for (int i = static_cast<int>(messages.size()) - 1; i >= 0; --i) {
             const auto& msg = messages[i];
@@ -347,21 +466,30 @@ RouteContext build_route_context(const json& request_json, const std::string& mo
                 }
             }
         }
+        // Legacy completions carry no history, so every text byte in the
+        // request is already the routing input.
+        ctx.params.total_chars = ctx.input.size();
     } else if (request_json.contains("input")) {
         const auto& input = request_json["input"];
         if (input.is_string()) {
             ctx.input = input.get<std::string>();
+            ctx.params.total_chars = ctx.input.size();
         } else if (input.is_array()) {
             // Detect images anywhere in the input, mirroring how the chat path
-            // scans every message.
+            // scans every message, and total every item's text in the same pass
+            // — role-tagged or bare, which is more than the routing input takes.
             for (const auto& item : input) {
+                if (item.is_string()) {
+                    ctx.params.total_chars += item.get<std::string>().size();
+                    continue;
+                }
                 if (!item.is_object()) continue;
                 const json content =
                     item.contains("content") ? item["content"] : json::array({item});
-                if (content_has_image(content)) {
+                if (!ctx.params.has_images && content_has_image(content)) {
                     ctx.params.has_images = true;
-                    break;
                 }
+                ctx.params.total_chars += collect_text_from_content(content).size();
             }
             // Prefer the last user message's content, matching the chat path, so
             // earlier assistant/developer/system turns can't skew routing.
@@ -408,6 +536,78 @@ RouteContext build_route_context(const json& request_json, const std::string& mo
     }
 
     return ctx;
+}
+
+namespace {
+
+template <typename T>
+T extras_get(const std::map<std::string, json>& extras, const std::string& key,
+             const T& fallback) {
+    auto it = extras.find(key);
+    if (it == extras.end() || it->second.is_null()) {
+        return fallback;
+    }
+    try {
+        return it->second.get<T>();
+    } catch (...) {
+        return fallback;
+    }
+}
+
+// Non-negative numeric extras only; missing / null / negative / wrong-type →
+// nullopt so callers don't lean on a "<0 means unknown" sentinel.
+std::optional<double> extras_get_nonneg(const std::map<std::string, json>& extras,
+                                        const std::string& key) {
+    auto it = extras.find(key);
+    if (it == extras.end() || it->second.is_null()) {
+        return std::nullopt;
+    }
+    try {
+        const double value = it->second.get<double>();
+        if (value >= 0.0) {
+            return value;
+        }
+    } catch (...) {
+    }
+    return std::nullopt;
+}
+
+bool is_allowed_cost_tier(const std::string& tier) {
+    return tier == "free" || tier == "low" || tier == "medium" || tier == "high";
+}
+
+} // namespace
+
+CostInfo resolve_cost_info(std::optional<double> cost_input_per_million,
+                           std::optional<double> cost_output_per_million,
+                           const std::map<std::string, json>& extras) {
+    CostInfo out;
+
+    if (cost_input_per_million) {
+        out.cost_input_per_million = cost_input_per_million;
+    } else {
+        out.cost_input_per_million = extras_get_nonneg(extras, "cost_input_per_million");
+    }
+
+    if (cost_output_per_million) {
+        out.cost_output_per_million = cost_output_per_million;
+    } else {
+        out.cost_output_per_million = extras_get_nonneg(extras, "cost_output_per_million");
+    }
+
+    const std::string tier = extras_get<std::string>(extras, "cost_tier", "");
+    if (!tier.empty()) {
+        if (is_allowed_cost_tier(tier)) {
+            out.cost_tier = tier;
+        } else {
+            LOG(DEBUG, "Routing") << "Ignoring unrecognized cost_tier '" << tier
+                                  << "' (expected free|low|medium|high)" << std::endl;
+        }
+    }
+
+    out.latency_ms_hint = extras_get_nonneg(extras, "latency_ms_hint");
+
+    return out;
 }
 
 } // namespace lemon

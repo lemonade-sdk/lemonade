@@ -2,32 +2,35 @@
 
 ## Overview
 
-Lemonade Server starts automatically with the OS after installation. Configuration is managed through a single `config.json` file stored in the lemonade cache directory.
+Lemonade Server starts automatically with the OS after installation. Persistent JSON configuration is stored in Lemonade's config directory; caches and downloaded artifacts stay in the cache directory.
 
 ## config.json
 
 If you used an installer from the Lemonade release your `config.json` will be at these locations depending on your OS:
 
-- **Linux — `apt`/`.deb` (Debian/Ubuntu):** `/var/lib/lemonade/.cache/lemonade/config.json`
-- **Linux — `dnf`/`.rpm` (Fedora/Red Hat):** `/opt/var/lib/lemonade/.cache/lemonade/config.json`
+- **Linux — `apt`/`.deb` (Debian/Ubuntu):** `/var/lib/lemonade/config.json`
+- **Linux — `dnf`/`.rpm` (Fedora/Red Hat):** `/var/lib/lemonade/config.json`
 
-  > Note: For Debian/Ubuntu, upgrading the package automatically migrates data from the old `/opt/var/lib/lemonade` path to `/var/lib/lemonade`.
+  > Note: The systemd service runs as the `lemonade` user. Persistent config lives in `/var/lib/lemonade` (systemd StateDirectory), downloaded backends go to `/var/cache/lemonade` (CacheDirectory), and models are cached under `/var/lib/lemonade/.cache/huggingface`. For Debian/Ubuntu, upgrading the package automatically migrates data from the old `/opt/var/lib/lemonade` path to `/var/lib/lemonade`.
 
-- **Windows:** `%USERPROFILE%\.cache\lemonade\config.json`
-- **macOS:** `/Library/Application Support/lemonade/.cache/config.json`
+- **Windows:** `%USERPROFILE%\.config\lemonade\config.json`
+- **macOS:** `~/.config/lemonade/config.json` (user install) or `/Library/Application Support/lemonade/.config/config.json` (system install)
 
-If you are using a standalone `lemond` exectable, the default location is `~/.cache/lemonade/config.json`.
+If you are using a standalone `lemond` executable, the default location is `~/.config/lemonade/config.json`.
 
-> Note: If `config.json` doesn't exist, it's created automatically with default values on first run.
+On startup, Lemonade automatically migrates persistent JSON files from the legacy `.cache` location into the new `.config` location.
 
-### Seeding defaults for packaged installs
+> Note: `config.json` is a sparse override file. It only contains settings you explicitly customize; all unspecified settings automatically inherit default values and receive upstream improvements across updates.
 
-On first run, `config.json` is initialized from the defaults baked into the release (`resources/defaults.json`). Packagers can override those defaults without editing the release, in increasing precedence:
+### Defaults Precedence & Layering
 
-1. On Linux, `lemond` also merges `/usr/share/lemonade/defaults.json` if it exists, so distro packages can ship their own defaults (e.g. backend `*_bin` paths pointing at system-installed binaries).
-2. Set the `LEMONADE_DEFAULTS_PATH` environment variable to a `defaults.json` at any location to merge it on top. This is the seam for non-FHS distros (Nix, Guix) that cannot write under `/usr/share`.
+When `lemond` starts, effective configuration is resolved by deep-merging settings in increasing precedence:
 
-Values set in the user's `config.json` always take precedence over these seeded defaults.
+1. **Built-in Defaults**: Factory defaults baked into the release (`resources/defaults.json` and backend descriptors).
+2. **Distro / System Defaults**: On Linux, `lemond` merges `share/lemonade/defaults.json` under its own install prefix if it exists (`/usr/share/lemonade/defaults.json` for `/usr/bin/lemond`), so distro packages can ship system-level defaults (e.g. backend `*_bin` paths pointing at system-installed binaries).
+3. **Environment Defaults**: Set the `LEMONADE_DEFAULTS_PATH` environment variable to a `defaults.json` at any location to merge on top (for non-FHS distros like Nix/Guix that cannot write under `/usr/share`).
+4. **User Overrides (`config.json`)**: Values explicitly set in your `config.json` override defaults.
+5. **CLI Flags**: Arguments passed to `lemond` (e.g. `--port`, `--host`).
 
 ### Example config.json
 
@@ -41,11 +44,21 @@ Values set in the user's `config.json` always take precedence over these seeded 
     "rocm_bin": "builtin",
     "vulkan_bin": "builtin"
   },
+  "allowed_origins": "",
   "auto_check_model_updates": true,
+  "auto_evict": false,
+  "auto_evict_threshold_pct": 0.9,
+  "auto_update_models": false,
+  "broadcast": true,
   "cloud_providers": [],
   "config_version": 2,
   "ctx_size": -1,
+  "default_model_source": "huggingface",
   "disable_model_filtering": false,
+  "download_rate_limit": "",
+  "ds4": {
+    "args": ""
+  },
   "enable_dgpu_gtt": false,
   "extra_models_dir": "",
   "flm": {
@@ -54,6 +67,10 @@ Values set in the user's `config.json` always take precedence over these seeded 
   },
   "global_timeout": 600,
   "host": "localhost",
+  "hrx": {
+    "args": "",
+    "hrx_bin": "builtin"
+  },
   "inhibit_suspend": true,
   "kokoro": {
     "cpu_bin": "builtin"
@@ -70,25 +87,33 @@ Values set in the user's `config.json` always take precedence over these seeded 
     "vulkan_args": "",
     "vulkan_bin": "builtin"
   },
+  "log_file": "auto",
   "log_level": "info",
+  "log_max_file_size_mb": 10,
+  "log_max_files": 5,
   "max_loaded_models": 1,
+  "model_catalogs": [],
   "models_dir": "auto",
   "moonshine": {
     "args": "",
     "cpu_args": "",
     "cpu_bin": "builtin"
   },
-  "no_broadcast": false,
   "no_fetch_executables": false,
   "offline": false,
+  "onnxruntime": {
+    "args": "",
+    "cpu_args": "",
+    "cpu_bin": "builtin"
+  },
   "openmoss": {
     "backend": "auto",
     "cuda_bin": "builtin",
-    "rocm_bin": "builtin",
     "vulkan_bin": "builtin"
   },
   "port": 13305,
   "rocm_channel": "stable",
+  "rocm_install_method": "auto",
   "ryzenai": {
     "server_bin": "builtin"
   },
@@ -126,7 +151,21 @@ Values set in the user's `config.json` always take precedence over these seeded 
         "otel_genai"
       ],
       "send_batch_size": 100
-    }
+    },
+    "session": {
+      "headers": {
+        "client": [],
+        "id": []
+      }
+    },
+    "trust_incoming_trace_context": false
+  },
+  "thenoise": {
+    "backend": "auto",
+    "cuda_bin": "builtin",
+    "lora_dir": "",
+    "rocm_bin": "builtin",
+    "upscaler_dir": ""
   },
   "thinksound": {
     "backend": "auto",
@@ -135,6 +174,7 @@ Values set in the user's `config.json` always take precedence over these seeded 
     "vulkan_bin": "builtin"
   },
   "trellis": {
+    "args": "",
     "backend": "auto",
     "cuda_bin": "builtin",
     "rocm_bin": "builtin",
@@ -168,19 +208,32 @@ Values set in the user's `config.json` always take precedence over these seeded 
 | `port` | int | 13305 | Port number for the HTTP server |
 | `host` | string | "localhost" | Address to bind for connections |
 | `log_level` | string | "info" | Logging level (trace, debug, info, warning, error, fatal, none) |
+| `log_file` | string | "auto" | File logging mode: "auto" (console-only for direct server runs, lemonade-server.log for embedded tray app), "disabled", "enabled", or custom target file path |
+| `log_max_file_size_mb` | int | 10 | Max active log file size in MB before triggering rotation (steady-state footprint bounded to ~`log_max_file_size_mb * (log_max_files + 1)`) |
+| `log_max_files` | int | 5 | Max number of rotated log backup files to retain (.1 through .N); legacy oversized files are rotated into .1 and pruned over cycles |
 | `global_timeout` | int | 600 | Timeout in seconds for HTTP, inference, and readiness checks |
 | `max_loaded_models` | int | 1 | Max models per type slot. Use -1 for unlimited |
-| `no_broadcast` | bool | false | Disable UDP broadcasting for server discovery |
-| `extra_models_dir` | string | "" | Secondary directory to scan for GGUF model files |
-| `models_dir` | string | "auto" | Directory for cached model files. "auto" follows HF_HUB_CACHE / HF_HOME / platform default |
+| `auto_evict` | bool | false | Enable dynamic VRAM management based on idle time and global GPU memory pressure. Can be overridden per model. |
+| `auto_evict_threshold_pct` | number | 0.90 | Global VRAM fraction at which pressure eviction is evaluated. Must be greater than 0 and at most 1.0; `0.90` means 90%. |
+| `broadcast` | bool | true | Enable or disable UDP broadcasting for server discovery |
+| `extra_models_dir` | string | "" | Secondary directory recursively scanned for GGUF model files. Empty disables extra discovery; existing paths must be readable by `lemond`. See [Imported models](./custom-models.md#imported-models-extra_models_dir) |
+| `models_dir` | string | "auto" | Directory for cached model files. `"auto"` follows `HF_HUB_CACHE` / `HF_HOME` / platform default |
 | `ctx_size` | int | -1 | Default context size for LLM models. Use `-1` for auto-resolution: the server computes the largest context that fits in available device memory using GGUF architecture metadata. Use a positive integer to set an explicit size. |
+| `default_model_source` | string | "huggingface" | Remote registry used to pull checkpoints when a request does not name one (`huggingface` or `modelscope`). Explicit `--source`, a `source`/`registry_source` field, or a provider URL always overrides it. |
+| `download_rate_limit` | string | "" | Caps model/backend download speed. Byte rate with curl-style suffixes: `512`, `100K`, `10M`, etc. Use `""` for unlimited download speed. A non-empty value also serializes concurrent transfers. |
 | `offline` | bool | false | Skip model downloads |
 | `auto_check_model_updates` | bool | true | Check downloaded Hugging Face-backed models for updates during server startup. Set to `false` to check only with `lemonade check-updates` or `POST /v1/models/check-updates`. Manual downloads and updates remain enabled. |
+| `auto_update_models` | bool | false | Automatically download model updates when available. Can be overridden per model via `auto_update` in model options. |
 | `no_fetch_executables` | bool | false | Prevent downloading backend executable artifacts; backends must already be installed or use the system backend |
 | `disable_model_filtering` | bool | false | Show all models regardless of hardware capabilities |
 | `inhibit_suspend` | bool | true | Prevent the OS from suspending while inference is active. Linux only (uses systemd-logind); no-op on Windows/macOS/non-systemd environments. |
 | `enable_dgpu_gtt` | bool | false | Include GTT for hardware-based model filtering |
 | `rocm_channel` | string | "stable" | ROCm backend channel: "stable" (default) or "nightly". See [llama.cpp Backend](./llamacpp.md) for details |
+| `rocm_install_method` | string | "auto" | How to install the bundled ROCm runtime: "auto" (pip wheels, tarball fallback), "wheel" (wheels only), or "tarball" (no Python/pip). See [llama.cpp Backend](./llamacpp.md#choosing-the-rocm-install-method) for details |
+
+FLM manages its own model storage, so it does not persist a registry source with each model. An FLM pull follows the current `default_model_source` unless that request supplies an explicit `--source`; changing the default therefore changes the registry used by later FLM pulls and upgrades.
+
+Both `models_dir` and `extra_models_dir` can be changed at runtime through [`POST /internal/set`](../../api/internal.md#post-internalset). Existing `extra_models_dir` paths are preflighted as directories and must be enumerable by the `lemond` process. Nonexistent paths are accepted so the directory watcher can observe them if they are created later.
 
 ### Backend Configuration
 
@@ -238,8 +291,26 @@ Backend-specific settings are nested under their backend name:
 |-----|-------------|
 | `name` | Short identifier (e.g. `fireworks`). Used as the model-name prefix. |
 | `base_url` | OpenAI-compatible base URL ending in `/v1` (or equivalent). |
+| `allow_insecure_http` | Whether this provider may receive its API key over `http://`. |
+| `auth_header_name` | Header the API key is sent in. Omitted when it is the default `Authorization`. |
+| `auth_header_prefix` | Value prefix before the key. Omitted when it is the default `"Bearer "`. |
+| `wire_format` | `openai` or `anthropic`. Omitted when it is the default `openai`. |
 
 API keys for these providers are **not** stored in `config.json` — they live in `LEMONADE_<PROVIDER>_API_KEY` env vars (persistent) or `lemond` process memory via `POST /v1/cloud/auth` (ephemeral). Manage providers with `lemonade cloud install/uninstall/auth/list` rather than editing this section by hand.
+
+**model_catalogs** — Extra model registries. Array, one object per catalog. A file is read on every rebuild; a fetched document answers from its cached body for a minute after a fetch, so a rebuild caused by a local event (a pull, a delete, a file in the scan directory) costs no round trip. Changing `model_catalogs` asks every origin again:
+
+| Key | Description |
+|-----|-------------|
+| `id` | Stable name: letters, digits, `.`, `_`, `-`. Keys the catalog set, and a fetched body is kept under it. Two entries under one id are refused, the first one kept. |
+| `path` | A JSON file with the same shape as `user_models.json`. Name exactly one of `path` or `url`. |
+| `url` | An HTTP(S) URL serving such a document. One that carries credentials (`@`) is refused. A body that answers once is kept, and an outage lists what the catalog listed last instead of nothing. An edit at the origin appears once the window above passes, or on the next `model_catalogs` change. A document over 8 MB is refused and the last good body is kept; dropping the catalog drops its cached body too. |
+| `required` | True: a catalog that cannot be read fails the build. Default false: it contributes nothing. |
+| `allow_insecure_http` | Needed for an `http://` URL; an `https://` URL never asks for it. |
+
+A configured document yields any name the built-in registry or a registration already holds, so it can add models without taking one over. Any other key is refused with the catalog's name in the complaint, and a refused entry costs only its own catalog.
+
+Set the value with `POST /internal/set` — the model set rebuilds and every connected client sees the change — and see what built the current set with `GET /internal/model-sources`.
 
 **telemetry** — Unified telemetry and tracing configurations:
 
@@ -249,6 +320,7 @@ API keys for these providers are **not** stored in `config.json` — they live i
 | `hide_inputs` | bool | false | Redact prompt message content from spans. |
 | `hide_outputs` | bool | false | Redact generated assistant message content from spans. |
 | `hide_thinking` | bool | false | Redact reasoning/thought content from spans. |
+| `trust_incoming_trace_context` | bool | false | Honor a caller-supplied W3C `traceparent` header so inference spans join the caller's distributed trace instead of starting a fresh root. Opt-in because span parentage then depends on client-supplied input. |
 | `max_queue_capacity` | int | 1000 | The maximum capacity of the in-memory telemetry queue buffer. Oldest spans are dropped when full. Must be `> 0`. |
 | `otlp` | object | (nested object) | Sub-block grouping OTLP transport details (see below). |
 
@@ -284,7 +356,7 @@ Lemonade uses a unified telemetry subsystem to trace requests and capture critic
 - **vLLM Engine Telemetry**: For the vLLM backend, the server queries the local `/metrics` endpoint on completion to attach scheduler queue metrics (`llm.vllm.num_requests_waiting`, `llm.vllm.num_requests_running`, `llm.vllm.num_requests_swapped`) and KV cache utilization (`llm.vllm.gpu_cache_usage_factor`, `llm.vllm.cpu_cache_usage_factor`) directly to the trace spans.
 - **Reasoning Model Support**: For reasoning models (e.g., DeepSeek models), the server extracts and records `reasoning_content` from the assistant's generation. Any variant thought-termination tags (e.g., `</think|>`) are automatically standardized to the canonical `</think>` tag.
 - **Exporter Retry Backoff**: When retries are enabled (i.e., `max_retries > 0`), the exporter uses an exponential backoff strategy combined with randomized jitter for failed posts. The base retry interval starts at `retry_backoff_base_s` seconds (defaulting to 5), doubling on each subsequent failure (e.g., 5s, 10s, 20s, 40s), up to a maximum cap of 60 seconds. A randomized jitter factor between `0.5` and `1.5` is applied to each calculated delay to prevent a "thundering herd" when the collector recovers. Permanent client errors (`4xx` HTTP status codes, excluding `429 Too Many Requests`) are classified as non-retryable and cause the batch to be dropped immediately to save resources.
-- **OTLP Trace Batching**: Spans are aggregated in an in-memory queue buffer and exported in batches to minimize network overhead and maximize compression efficiency. Batching operates on a dual-trigger system: a batch is immediately serialized and dispatched if it reaches `send_batch_size` (default: `100`), or if `batch_timeout_s` (default: `1.0` second) has elapsed since the oldest span in the batch arrived. All remaining traces are flushed cleanly to the OTel collector upon server shutdown. Users can also trigger a manual flush at any time via the `POST /internal/telemetry/flush` endpoint.
+- **OTLP Trace Batching**: Spans are aggregated in an in-memory queue buffer and exported in batches to minimize network overhead and maximize compression efficiency. Batching operates on a dual-trigger system: a batch is immediately serialized and dispatched if it reaches `send_batch_size` (default: `100`), or if `batch_timeout_s` (default: `1.0` second) has elapsed since the oldest span in the batch arrived. All remaining traces are flushed cleanly to the OTel collector upon server shutdown. Users can also trigger a manual flush at any time via the [`POST /internal/telemetry/flush`](../../api/internal.md#post-internaltelemetryflush) endpoint.
 - **Request Failure Tracing**: Captures request failures directly on the telemetry spans. If a model fails to load, a request is rejected by the router, or a streaming connection encounters an exception or a non-200 HTTP status code from the backend, the span is ended with `Error` status and the specific error message is attached.
 - **Queue Blocking & Thundering Herd Prevention**: To prevent client requests from hanging and to avoid exhausting resources when the telemetry receiver endpoint is down, Lemonade employs a fail-fast mechanism. The exporter memory buffer is strictly bounded to a capacity of `max_queue_capacity` spans (default: `1000`). When full, a head-drop (FIFO) eviction policy is applied to drop the oldest telemetry spans to make room for newer ones, prioritizing current application state. If a telemetry transmission task fails all of its retries and is dropped, the endpoint is marked as **unreachable**. While in this unreachable state, subsequent spans in the transmission queue are attempted only once and immediately dropped without backoff delay if they fail, preventing the telemetry queue from blocking server operations. A single successful span delivery to the endpoint automatically resets the unreachable state and restores normal retry behavior.
 
@@ -367,43 +439,62 @@ lemonade config set llamacpp.backend=rocm
 
 # Set multiple values at once
 lemonade config set port=9000 llamacpp.backend=rocm sdcpp.steps=30
+
+# Set complex types like JSON arrays and objects (use single quotes to prevent shell expansion)
+lemonade config set telemetry.otlp.semantics='["openinference"]'
+lemonade config set telemetry.otlp.headers='{"Authorization":"Bearer key"}'
 ```
 
-### lemond CLI arguments (fallback)
+### lemond CLI arguments (runtime overrides)
 
-If the server cannot start (e.g., invalid port in config.json), `lemond` accepts `--port` and `--host` as CLI arguments to override config.json. These overrides are persisted so the server can start normally next time:
+`lemond` accepts `--port` and `--host` as CLI arguments to provide ephemeral runtime overrides for that specific server process without modifying `config.json`:
 
 ```bash
 lemond --port 9000 --host 0.0.0.0
 ```
 
+Because CLI overrides are ephemeral and do not mutate `config.json` on disk, if the server cannot start due to an invalid port or host setting in `config.json`:
+1. Start `lemond` using the CLI override: `lemond --port 9000`
+2. Run `lemonade config set port=9000` against the running server to persist the fix for subsequent restarts.
+3. Alternatively, edit `config.json` directly as shown below.
+
 ### Edit config.json manually (last resort)
 
-If the server won't start and CLI arguments aren't sufficient, you can edit config.json directly. Restart the server after making changes:
+If the server won't start and CLI tools aren't sufficient, you can edit config.json directly. Restart the server after making changes:
 
 ```bash
-# Linux (Debian/Ubuntu)
-sudo nano /var/lib/lemonade/.cache/lemonade/config.json
-
-# Linux (Fedora/Red Hat)
-sudo nano /opt/var/lib/lemonade/.cache/lemonade/config.json
+# Linux (Debian/Ubuntu and Fedora/Red Hat)
+sudo nano /var/lib/lemonade/config.json
 
 sudo systemctl restart lemond
 
 # Windows — edit with your preferred text editor:
-# %USERPROFILE%\.cache\lemonade\config.json
+# %USERPROFILE%\.config\lemonade\config.json
 # Then quit and relaunch from the Start Menu
 ```
 
 ## lemond CLI
 
 ```
-lemond [cache_dir] [--port PORT] [--host HOST]
+lemond [cache_dir] [config_dir] [--port PORT] [--host HOST] [--broadcast] [--no-broadcast]
 ```
 
-- **cache_dir** — Path to the lemonade cache directory containing config.json and model data. Optional; defaults to platform-specific location.
-- **--port** — Port to serve on (overrides config.json, persisted). Use as a fallback if the server cannot start.
-- **--host** — Address to bind (overrides config.json, persisted). Use as a fallback if the server cannot start.
+- **cache_dir** — Path to the lemonade cache/data directory. Optional; defaults to the platform-specific cache location.
+- **config_dir** — Path to the lemonade config directory for persistent JSON state. Optional; defaults to the platform-specific config location.
+- **--port** — Port to serve on (runtime override, does not mutate config.json).
+- **--host** — Address to bind (runtime override, does not mutate config.json).
+- **--broadcast** / **--no-broadcast** — Enable or disable UDP broadcasting for server discovery (non-persistent override).
+
+## lemonade-tray CLI (Linux/macOS)
+
+```
+lemonade-tray [--port PORT] [--host HOST] [--spawn-server] [--launch-app] [--silent]
+```
+
+- **--port** / **--host** — Server to connect to. Defaults come from the server's `config.json`.
+- **--spawn-server** — Linux only. If no server is reachable at startup, start a local `lemond` and supervise it; quitting the tray stops that `lemond`. If a server is already running, such as the `systemd` service, the tray connects to it and nothing is spawned. On macOS the flag is accepted but ignored; the LaunchDaemon installed by the macOS package runs `lemond`.
+- **--launch-app** / **--open** — Open the desktop app once the server is ready.
+- **--silent** — Suppress the startup notification.
 
 ## API Key and Security
 
@@ -429,6 +520,88 @@ The `LEMONADE_ADMIN_API_KEY` environment variable provides elevated access to bo
 | Both keys different | "regular" | "admin" | Requires admin key | Either key accepted |
 
 **Client Behavior:** Clients (CLI, tray app) automatically prefer `LEMONADE_ADMIN_API_KEY` if set, otherwise fall back to `LEMONADE_API_KEY`.
+
+### Allowed Origins
+
+The `allowed_origins` setting (in `config.json` or configured via `lemonade config set allowed_origins="..."`) controls which remote web origins are authorized to connect to the server (specifically for CORS headers on HTTP endpoints and origin validation on WebSocket connections).
+
+> Note: `allowed_origins` specifies the **client application/web page's origin** (where the request originates), **not** the target Lemonade server URL. Non-browser HTTP clients (such as CLI tools, cURL, or server-side SDKs) do not send an `Origin` header and are not restricted by origin validation.
+
+#### Configuration
+
+Set allowed origins as a comma-separated list of complete origins including scheme and optional port:
+
+- **Via CLI**:
+  ```bash
+  lemonade config set allowed_origins="https://app.lemonade.dev,http://localhost:3000"
+  ```
+- **In `config.json`**:
+  ```json
+  {
+    "allowed_origins": "https://app.lemonade.dev,http://localhost:3000"
+  }
+  ```
+
+**Wildcard Matching:**
+
+- **Wildcard Ports (`:*`)**: Specify `:*` to match any port on a configured host (e.g. `http://192.168.1.50:*`, `http://*.local:*`, `https://[::1]:*`), useful for homelab setups or frontend development servers running across varying ports.
+- **Wildcard Subdomains (`*.domain`)**: Specify `*.domain` to match subdomains (e.g. `https://*.example.com` or `http://*.local:*`). Subdomain matching strictly enforces a dot boundary so `notexample.com` will not match `*.example.com`.
+- **Universal Wildcard (`*`)**: Setting `allowed_origins` to `*` allows any origin across all schemes to connect.
+- **Scheme-Specific Wildcards (`http://*:*`)**: Setting `allowed_origins` to a wildcard pattern with an explicit scheme (such as `http://*:*`) matches any host and port for that scheme, but does not permit other schemes like HTTPS.
+
+> **Warning:** The `LEMONADE_ALLOWED_ORIGINS` environment variable is **deprecated** and will be removed in a future release.
+>
+> - **Automatic Migration**: If `LEMONADE_ALLOWED_ORIGINS` is set at startup and `allowed_origins` is unset or empty in `config.json`, Lemonade automatically migrates the value into `config.json`.
+> - **Precedence & Conflict Handling**: At startup, `LEMONADE_ALLOWED_ORIGINS` takes interim precedence over `config.json`. If both exist and differ, a warning is logged advising you to unset or remove `LEMONADE_ALLOWED_ORIGINS` to avoid shadowing your configuration file.
+> - **Runtime Updates**: Running `lemonade config set allowed_origins="..."` dynamically applies changes to the active session immediately, overriding any initial environment variable value without restarting the server.
+
+#### Zero-Configuration Defaults
+
+By default, without configuring `allowed_origins`, Lemonade automatically permits:
+
+- **Loopback Origins**: Loopback addresses (`localhost`, `127.0.0.1`, `[::1]`, and `tauri.localhost`) are permitted automatically.
+- **Native Desktop Apps**: Native desktop application schemes (`lemonade://`, `file://`, `app://.`, `vscode-webview://`, `jan://`, etc.) are permitted for client connections.
+- **Same-Origin LAN & mDNS Web App Access**: Direct browser requests to Lemonade's built-in web interface over active network interfaces (e.g. `http://192.168.1.50:13305/app`, `http://100.100.x.x:13305/app`) and local mDNS hostnames (`http://<hostname>.local:13305/app`) are dynamically permitted without manual configuration because they are same-origin to the server's own interfaces.
+
+#### When Configuration Is Required
+
+You must explicitly configure `allowed_origins` for:
+
+- **Cross-Origin Web Applications**: Any external or third-party web application hosted on a different domain or port connecting to Lemonade in the browser (e.g. a web UI hosted at `https://app.lemonade.dev` or `http://localhost:3000` calling Lemonade on `http://192.168.1.50:13305`).
+- **Reverse Proxies & TLS Frontends**: Reverse proxies, tunnels, or frontends terminating TLS (e.g., `https://lemonade.example.com` or Tailscale Serve at `https://mybox.tailnet.ts.net`). Because proxies forward HTTPS requests to an HTTP server and present external hostnames not belonging to local network interfaces, their external origins must be explicitly allowlisted. (By contrast, direct access via a local Tailscale interface IP `http://100.x.y.z:13305` is zero-config).
+- **Sandboxed Frames**: Opaque `null` origins (e.g. from sandboxed browser iframes) are rejected unless explicitly listed in `allowed_origins` to prevent CSWSH attacks.
+
+> Note: When an explicit `allowed_origins` list is configured, it is authoritative: zero-configuration fallback for unlisted non-loopback LAN origins is disabled. If you access the server through both a reverse proxy and direct LAN IP in a browser, include both in `allowed_origins`.
+
+#### Security Considerations
+
+> **Warning:**
+>
+> - **Plain HTTP Origins**: Allowing a non-local plain-HTTP origin (e.g., `http://app.example.com`) is vulnerable to on-path modification (man-in-the-middle) and interception. It is highly recommended to use HTTPS (`https://`) for all remote/non-local allowed origins.
+> - **Wildcard Security Risks**: Using wildcard origins like `*` or `http://*:*` permits matching websites running in a user's browser to make requests to your local Lemonade server. In particular, if `LEMONADE_API_KEY` is not configured, this exposes the server to unauthenticated remote access and cross-origin attacks from malicious websites. Use wildcards only for development or in secure, isolated environments.
+
+## Model Synchronization & Auto-Updates
+
+Lemonade supports manual model synchronization via `lemonade update-models` as well as automatic background updates.
+
+
+### Configuration
+- **Global Config**: Set `auto_update_models: true` in server configuration or via `lemonade config set auto_update_models=true`.
+- **Per-Model Override**: Include `"auto_update": true` or `"auto_update": false` in custom model recipes (`user.*`) to override the global default on a per-model basis.
+- **Administrative Authorization**: Because model synchronization endpoints are administrative (`/internal/*`), manual synchronization via the CLI or direct API requests requires the appropriate admin credentials (`LEMONADE_ADMIN_API_KEY`, falling back to `LEMONADE_API_KEY` if the admin key is not explicitly configured) when server-side authentication is enabled.
+
+### Risks of Automatic Model Updates
+
+> [!WARNING]
+> Enabling automatic updates (`auto_update_models: true` or per-model `"auto_update": true`) introduces operational risks that should be carefully considered:
+>
+> 1. **Output & Behavioral Drift**: Upstream Hugging Face or ModelScope repositories can release updated weights, revised tokenizers, or altered chat templates. These changes can alter model responses, reasoning characteristics, and prompt compatibility.
+> 2. **High Bandwidth & Disk Consumption**: Model updates involve downloading multi-gigabyte file revisions (e.g. GGUF quantizations). Unattended updates can unexpectedly consume substantial network bandwidth and disk space.
+> 3. **Startup & Inference Delays**: Automatic update downloads trigger on server startup when upstream revisions are detected, delaying server readiness and inference availability.
+> 4. **Quantization & Recipe Shifts**: Remote repository changes may alter file naming or tensor layouts, requiring updated recipe configurations.
+>
+> **Recommendation**: Leave `auto_update_models` set to `false` (default) in production environments. Use manual sync (`lemonade update-models --check` followed by `lemonade update-models`) to inspect and control model updates.
+
 
 ## Remote Server Connection
 

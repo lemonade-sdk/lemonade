@@ -2,7 +2,7 @@ name: 'Generate Release Notes'
 description: 'Generate formatted release notes with download table and contributor info'
 inputs:
   version:
-    description: 'The version string (e.g., 9.1.3)'
+    description: 'The version string (e.g., 2026.38.0)'
     required: true
   repo:
     description: 'Repository in owner/repo format'
@@ -27,34 +27,14 @@ runs:
       run: |
         set -e
 
-        TAG_NAME="v$VERSION"
+        TAG_NAME="${RELEASE_TAG:?set by the release job}"
+        CANDIDATE="${CANDIDATE:?set by the release job}"
+        if [ "$CANDIDATE" = "true" ]; then PPA_CHANNEL=candidate; else PPA_CHANNEL=stable; fi
         echo "Generating release notes for $TAG_NAME"
 
-        # Check if tag exists via GitHub API (works without local git tags)
-        TAG_EXISTS=$(gh api repos/$REPO/git/refs/tags/$TAG_NAME --jq '.ref' 2>/dev/null || echo "")
-
-        # Check if this tag already has a release on GitHub
-        RELEASE_EXISTS=$(gh api repos/$REPO/releases/tags/$TAG_NAME --jq '.tag_name' 2>/dev/null || echo "")
-
-        if [ -n "$TAG_EXISTS" ]; then
-          # Tag exists on GitHub - use it as target (covers both new and existing releases)
-          TARGET_COMMIT="$TAG_NAME"
-          if [ -n "$RELEASE_EXISTS" ]; then
-            # Release already exists - find the release before this one
-            echo "Tag $TAG_NAME exists with release, finding previous release..."
-            PREVIOUS_TAG=$(gh api repos/$REPO/releases --jq "[.[] | select(.tag_name != \"$TAG_NAME\")] | .[0].tag_name" 2>/dev/null || echo "")
-          else
-            # New release - use latest release as previous
-            echo "Tag $TAG_NAME exists on GitHub, creating new release..."
-            PREVIOUS_TAG=$(gh api repos/$REPO/releases/latest --jq '.tag_name' 2>/dev/null || echo "")
-          fi
-        else
-          # Tag doesn't exist yet - preview mode, use HEAD
-          echo "Tag $TAG_NAME doesn't exist yet, using HEAD for preview"
-          PREVIOUS_TAG=$(gh api repos/$REPO/releases/latest --jq '.tag_name' 2>/dev/null || echo "")
-          TARGET_COMMIT="HEAD"
-        fi
-
+        # List the new commits between this commit and the last stable release.
+        TARGET_COMMIT="$GITHUB_SHA"
+        PREVIOUS_TAG=$(gh api repos/$REPO/releases/latest --jq '.tag_name' 2>/dev/null || echo "")
         echo "Previous release: ${PREVIOUS_TAG:-none}"
         echo "Target commit: $TARGET_COMMIT"
 
@@ -95,34 +75,35 @@ runs:
         # Extract unique contributors from the changelog (exclude bots)
         CONTRIBUTORS=$(echo "$AUTO_NOTES" | grep -oE '@[a-zA-Z0-9_-]+' | grep -ivE '^@(copilot|claude)$' | sort -u | tr '\n' ' ' | sed 's/ /, /g' | sed 's/, $//' || echo "")
 
-        # Search for the release notes issue by exact title (e.g. "v10.8.0 release notes")
-        RELEASE_NOTES_ISSUE_BODY=$(gh issue list --repo "$REPO" \
-          --state open \
-          --search "\"$TAG_NAME release notes\" in:title" \
-          --json body --limit 1 \
-          | jq -r '.[0].body // ""' 2>/dev/null || echo "")
+        # The release admin edits these notes in lemonade-sdk/lemonade-testing. Read them
+        # through the contents API: raw.githubusercontent.com sits behind a CDN that can
+        # still serve a copy from before this run wrote the file.
+        NOTES_REPO="lemonade-sdk/lemonade-testing"
+        NOTES_PATH="releases/v${VERSION%.*}/notes.md"
+        echo "Reading $NOTES_PATH from $NOTES_REPO"
 
-        HEADLINE_SECTION=""
-        BREAKING_CHANGES_SECTION=""
+        NOTES_B64=$(gh api "repos/$NOTES_REPO/contents/$NOTES_PATH" --jq .content) || {
+          echo "::error::$NOTES_REPO does not have $NOTES_PATH. A release does not publish without notes."
+          exit 1
+        }
+        NOTES=$(printf '%s' "$NOTES_B64" | base64 -d)
 
-        if [ -n "$RELEASE_NOTES_ISSUE_BODY" ]; then
-          echo "Found release notes issue, extracting Headline and Breaking Changes..."
-          HEADLINE_SECTION=$(echo "$RELEASE_NOTES_ISSUE_BODY" | \
-            awk '/^## Headline/{found=1} found && /^## / && !/^## Headline/{found=0} found{print}')
-          BREAKING_CHANGES_SECTION=$(echo "$RELEASE_NOTES_ISSUE_BODY" | \
-            awk '/^## Breaking Changes/{found=1} found && /^## / && !/^## Breaking Changes/{found=0} found{print}')
-        else
-          echo "No release notes issue found; Headline and Breaking Changes will need to be added manually."
+        HEADLINE_SECTION=$(echo "$NOTES" | \
+          awk '/^## Headline/{found=1} found && /^## / && !/^## Headline/{found=0} found{print}')
+        BREAKING_CHANGES_SECTION=$(echo "$NOTES" | \
+          awk '/^## Breaking Changes/{found=1} found && /^## / && !/^## Breaking Changes/{found=0} found{print}')
+
+        if [ -z "$HEADLINE_SECTION" ]; then
+          echo "::error::$NOTES_PATH has no '## Headline' section. A release does not publish without notes."
+          exit 1
         fi
 
         # Build the release notes file
         RELEASE_NOTES_FILE="release_notes.md"
 
         {
-          if [ -n "$HEADLINE_SECTION" ]; then
-            echo "$HEADLINE_SECTION"
-            echo ""
-          fi
+          echo "$HEADLINE_SECTION"
+          echo ""
           if [ -n "$BREAKING_CHANGES_SECTION" ]; then
             echo "$BREAKING_CHANGES_SECTION"
             echo ""
@@ -135,7 +116,7 @@ runs:
           echo "| Operating System | Downloads |"
           echo "|------------------|-----------|"
           echo "| **Windows** | [lemonade.msi](https://github.com/$REPO/releases/download/$TAG_NAME/lemonade.msi) |"
-          echo "| **Ubuntu 24.04+** | [Launchpad PPA](https://launchpad.net/~lemonade-team/+archive/ubuntu/stable) |"
+          echo "| **Ubuntu 24.04+** | [Launchpad PPA](https://launchpad.net/~lemonade-team/+archive/ubuntu/$PPA_CHANNEL) |"
           echo "| **Debian 13 (x86_64)** | [lemonade-server_${VERSION}-debian13_amd64.deb](https://github.com/$REPO/releases/download/$TAG_NAME/lemonade-server_${VERSION}-debian13_amd64.deb) |"
           echo "| **Debian 13 (ARM64)** | [lemonade-server_${VERSION}-debian13_arm64.deb](https://github.com/$REPO/releases/download/$TAG_NAME/lemonade-server_${VERSION}-debian13_arm64.deb) |"
           echo "| **Fedora 43 (x86_64)** | [lemonade-server-${VERSION}-fc43.x86_64.rpm](https://github.com/$REPO/releases/download/$TAG_NAME/lemonade-server-${VERSION}-fc43.x86_64.rpm) |"
@@ -187,7 +168,11 @@ runs:
           echo ""
           echo "---"
           echo ""
-          echo "> Windows installers are signed. Free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org). See our [Code Signing Policy](https://github.com/$REPO#code-signing-policy)."
+          if [ "$CANDIDATE" = "false" ]; then
+            echo "> Windows installers are signed. Free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org). See our [Code Signing Policy](https://github.com/$REPO#code-signing-policy)."
+          else
+            echo "> The Windows installers in this release candidate are **not signed**; Windows SmartScreen will warn before installing. Stable releases are signed."
+          fi
         } >> "$RELEASE_NOTES_FILE"
 
         echo "release_notes_file=$RELEASE_NOTES_FILE" >> $GITHUB_OUTPUT

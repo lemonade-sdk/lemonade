@@ -59,7 +59,10 @@ class DirNode:
 
 
 def ensure_directory_nodes(
-    root: DirNode, rel_path: Path, nodes_by_rel: dict[str, DirNode]
+    root: DirNode,
+    rel_path: Path,
+    nodes_by_rel: dict[str, DirNode],
+    id_prefix: str = "Tauri",
 ) -> DirNode:
     """Ensure DirNode objects exist for every component of rel_path."""
     rel_str = rel_path.as_posix()
@@ -67,11 +70,11 @@ def ensure_directory_nodes(
         return nodes_by_rel[rel_str]
 
     parent = (
-        ensure_directory_nodes(root, rel_path.parent, nodes_by_rel)
+        ensure_directory_nodes(root, rel_path.parent, nodes_by_rel, id_prefix)
         if rel_path.parts
         else root
     )
-    dir_id = make_safe_id("TauriDir", rel_str or "root")
+    dir_id = make_safe_id(id_prefix + "Dir", rel_str or "root")
     node = DirNode(rel_path, dir_id, rel_path.name or None, parent)
     parent.children[rel_path.name] = node
     nodes_by_rel[rel_str or "."] = node
@@ -95,6 +98,7 @@ def generate_wxs(
     component_group: str,
     root_id: str,
     path_variable: str,
+    id_prefix: str = "Tauri",
 ) -> None:
     if not source_dir.exists():
         raise FileNotFoundError(
@@ -114,7 +118,7 @@ def generate_wxs(
 
     for file_path in files:
         rel_dir = file_path.relative_to(source_dir).parent
-        ensure_directory_nodes(root_node, rel_dir, nodes_by_rel)
+        ensure_directory_nodes(root_node, rel_dir, nodes_by_rel, id_prefix)
 
     directory_lines = render_directory_xml(root_node)
 
@@ -123,10 +127,10 @@ def generate_wxs(
         rel_path = file_path.relative_to(source_dir).as_posix()
         rel_dir = file_path.relative_to(source_dir).parent.as_posix() or "."
         dir_node = nodes_by_rel[rel_dir]
-        component_id = make_safe_id("TauriComponent", rel_path)
-        file_id = make_safe_id("TauriFile", rel_path)
+        component_id = make_safe_id(id_prefix + "Component", rel_path)
+        file_id = make_safe_id(id_prefix + "File", rel_path)
         guid_value = str(
-            uuid.uuid5(uuid.NAMESPACE_URL, f"lemonade/tauri/{rel_path}")
+            uuid.uuid5(uuid.NAMESPACE_URL, f"lemonade/{id_prefix.lower()}/{rel_path}")
         ).upper()
         guid = f"{{{guid_value}}}"
         windows_rel_path = rel_path.replace("/", "\\")
@@ -188,6 +192,15 @@ def main() -> int:
         default="TauriSourceDir",
         help="WiX preprocessor variable resolving to the Tauri source directory.",
     )
+    parser.add_argument(
+        "--id-prefix",
+        default="Tauri",
+        help=(
+            "Prefix for generated Directory/Component/File ids and the component "
+            "GUID namespace. Must differ per harvested tree, because ids are "
+            "derived from the relative path and two trees can share one."
+        ),
+    )
     args = parser.parse_args()
 
     try:
@@ -197,6 +210,7 @@ def main() -> int:
             args.component_group,
             args.root_id,
             args.path_variable,
+            args.id_prefix,
         )
     except Exception as exc:  # pylint: disable=broad-except
         print(f"[generate_tauri_fragment] ERROR: {exc}", file=sys.stderr)

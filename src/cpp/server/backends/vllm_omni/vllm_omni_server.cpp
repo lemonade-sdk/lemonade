@@ -9,7 +9,6 @@
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
-#include "lemon/utils/process_manager.h"
 #include <lemon/utils/aixlog.hpp>
 #include <chrono>
 #include <cstdlib>
@@ -17,6 +16,7 @@
 #include <fstream>
 #include <random>
 #include <set>
+#include <utility>
 #include <sstream>
 
 namespace fs = std::filesystem;
@@ -247,21 +247,25 @@ void VLLMOmniServer::load(const std::string& model_name,
     // Prevent system/user Python packages from leaking into the bundled env.
     env_vars.push_back({"PYTHONNOUSERSITE", "1"});
 
-    bool inherit_output = (log_level_ == "info") || is_debug();
-    set_process_handle(ProcessManager::start_process(executable, args, "", inherit_output, true, env_vars));
+    ServerCommand command;
+    command.program = executable;
+    command.args = std::move(args);
+    command.env = std::move(env_vars);
+    command.port = port_;
+    // Omni has no reliable /health; /v1/models answers after all stages load.
+    command.ready_endpoint = "/v1/models";
 
-    // Omni serves /v1/models once all stages register; it has no reliable
-    // /health. Multi-stage boot + JIT can take minutes on cold start.
-    if (!wait_for_ready("/v1/models", VLLM_OMNI_READY_TIMEOUT_SECONDS)) {
-        const ProcessHandle handle = consume_process_handle_for_cleanup();
-        if (has_process_handle(handle)) {
-            ProcessManager::stop_process(handle);
-        }
+    bool inherit_output = (log_level_ == "info") || is_debug();
+    try {
+        start_server(std::make_unique<NativeProcess>(ProcessOutput{inherit_output, true}),
+                     command, VLLM_OMNI_READY_TIMEOUT_SECONDS);
+    } catch (const std::runtime_error& e) {
         cleanup_omni_rocm_shim_dir(rocm_shim_dir_);
         max_model_len_ = 0;
-        std::string err = "vllm-omni-server failed to start within timeout";
+        if (load_cancelled()) throw;
+        std::string err = e.what();
         if (needs_gfx1151_cwsr_fix()) {
-            err += ". Your kernel may be missing the gfx1151 CWSR fix — "
+            err += ". Your kernel may be missing the gfx1151 CWSR fix - "
                    "see https://lemonade-server.ai/gfx1151_linux.html";
         }
         throw std::runtime_error(err);
@@ -271,13 +275,8 @@ void VLLMOmniServer::load(const std::string& model_name,
 }
 
 void VLLMOmniServer::unload() {
-    stop_backend_watchdog();
     LOG(INFO, "vLLM-Omni") << "Unloading model..." << std::endl;
-
-    const ProcessHandle handle = consume_process_handle_for_cleanup();
-    if (has_process_handle(handle)) {
-        ProcessManager::stop_process(handle);
-    }
+    stop_server();
     cleanup_omni_rocm_shim_dir(rocm_shim_dir_);
     max_model_len_ = 0;
 }

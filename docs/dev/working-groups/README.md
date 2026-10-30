@@ -4,7 +4,9 @@ Lemonade is a community-driven project whose roadmap is determined by a set of *
 
 ## Charters
 
-Charters are reviewed by the community in PRs and committed to this directory. Each charter should have clear goals and be aligned to the overall [project philosophy](../philosophy.md). Measurable goals and a well-defined end state are ideal, but not always possible due to the fast moving nature of the AI space. Maintainers are expected to keep their roadmap up to date as they progress.
+Charters are proposed in [RFC discussions](../spec-driven-dev.md) and then committed to this directory. Each charter should have clear goals and be aligned to the overall [project philosophy](../philosophy.md). Measurable goals and a well‑defined end state are ideal, but not always possible due to the fast moving nature of the AI space. Maintainers are expected to keep their roadmap up to date as they progress.
+
+Any PR that is fully within the scope of a charter does not need its own RFC. Further RFCs are only needed to change the scope of a charter.
 
 ## Governance
 
@@ -12,15 +14,21 @@ Charters are ratified by @jeremyfowers with two primary considerations (in order
 
 ## Maintainers
 
-You can see the full set of project maintainers, and the subject areas they maintain, in the [contribution guide](../contribute.md#maintainers). Working groups are focused areas of roadmap development, and are a subset of the end-to-end maintainance and support of this project.
+You can see the full set of project maintainers, and the subject areas they maintain, in the [contribution guide](../contribute.md#maintainers). Working groups are focused areas of roadmap development, and are a subset of the end‑to‑end maintenance and support of this project.
 
 ## Table of Working Groups
 
-| Working Group (link) | Lead (GH handle) | Discord contact | Goal                                                                 |
-|----------------------|------------------|-----------------|----------------------------------------------------------------------|
-| [Omni Models](./omni-models.md) | @jeremyfowers    | @jfowers_amd    | Improve Omni Models to become a staple of local AI apps and use.     |
-| [Auto-Tune](./auto-tune.md) | @bitgamma        | @mikkoph        | Enable Lemonade instances to self-optimize models and backends.      |
-| [Cross-Vendor Support](./cross-vendor.md) | @kenvandine      | @kenvandine     | Lemonade is supported on all mass-market hardware and OS platforms.  |
-| Cloud Hybrid         | @ramkrishna2910  | @ramkrishna2910 | Lemonade can intelligently route between local and cloud models.     |
-| Remote Use           | @Geramy          | @geramyl        | Lemonade can serve inference to any device in any location.          |
-| GUI App              | @kponiel          | @primaL-       | Users can explore local AI in a delightful built-in GUI.             |
+| Working Group (link) | Lead (GH handle) | Discord contact | Goal |
+|----------------------|------------------|-----------------|------|
+| [Auto‑Tune](./auto-tune.md) | @bitgamma | @mikkoph | Enable Lemonade instances to self‑optimize models and backends. |
+| [Cross‑Vendor Support](./cross-vendor.md) | @kenvandine | @kenvandine | Lemonade is supported on all mass‑market hardware and OS platforms. |
+| Cloud Hybrid | @ramkrishna2910 | @ramkrishna2910 | Lemonade can intelligently route between local and cloud models. |
+| Remote Use | @Geramy | @geramyl | Lemonade can serve inference to any device in any location. |
+| GUI App | @kponiel | @primaL- | Users can explore local AI in a delightful built‑in GUI. |
+| [Enterprise Grade](./enterprise-grade.md) | @jeremyfowers | @jfowers_amd | Provide systematic testing and quality assurance for Lemonade components. |
+
+## Archived Working Groups
+
+| Working Group (link) | Lead (GH handle) | Discord contact | Goal |
+|----------------------|------------------|-----------------|------|
+| [Omni Models](./omni-models.md) | @jeremyfowers | @jfowers_amd | Improve Omni Models to become a staple of local AI apps and use. |
