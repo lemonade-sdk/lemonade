@@ -1,11 +1,13 @@
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useI18n } from '../i18n';
-import { NEXUS_GROUP_PERMISSIONS, type NexusStatus } from '../features/nexus/nexus';
+import { NEXUS_GROUP_PERMISSIONS, NEXUS_SERVICE_PERMISSIONS, nexusConnectionLabel, nexusDeviceOnline, type NexusStatus } from '../features/nexus/nexus';
 import {
   createNexusGroup, getNexusTreeBranch, renameNexusGroup, saveNexusGroupPermissions,
   nexusKeysEqual, treeBreadcrumbs, visibleTreeRows, type NexusTreeBranches, type NexusTreeEntry,
 } from '../features/nexus/tree';
 import { Icon } from './Icon';
+import { NexusConnectionBadge } from './NexusConnectionBadge';
+import { NexusDeviceStatus, nexusDeviceStatusLabel } from './NexusDeviceStatus';
 import { WorkspaceActionButton } from './WorkspacePanels';
 
 export const nexusTreeService = {
@@ -115,7 +117,7 @@ export function NexusHierarchy({ status, advanced, service = nexusTreeService }:
   const searchResults = query.trim() ? [...entries.values()].filter(entry => name(entry).toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())) : null;
   const compactGroup = selected?.kind === 'group' ? selected : entries.get(selected?.parent_id || '') || root;
   const compactChildren = compactGroup ? branches[compactGroup.id]?.children || [] : [];
-  const online = (entry: NexusTreeEntry) => status.members.find(member => member.node_id === entry.id)?.is_online;
+  const online = (entry: NexusTreeEntry) => nexusDeviceOnline(status, entry.id);
   const childCounts = (id: string) => {
     const children = branches[id].children;
     const groups = children.filter(child => child.kind === 'group').length;
@@ -141,22 +143,34 @@ export function NexusHierarchy({ status, advanced, service = nexusTreeService }:
         {searchResults.length ? searchResults.map(entry => <button type="button" key={entry.id} onClick={() => {
           treeBreadcrumbs(entry, entries).forEach(ancestor => setExpanded(current => new Set(current).add(ancestor.id)));
           setQuery(''); select(entry); searchRef.current?.focus();
-        }}><Icon name={entry.kind === 'group' ? 'layers' : 'monitor'} size={18} /><span>{name(entry)}<small>{treeBreadcrumbs(entry, entries).map(name).join(' / ')}</small></span><Icon name="chevron-right" size={14} /></button>) : <p>{t('No matching groups or devices.')}</p>}
+        }}><Icon name={entry.kind === 'group' ? 'layers' : 'monitor'} size={18} /><span>{name(entry)}<small>{treeBreadcrumbs(entry, entries).map(name).join(' / ')}</small></span>{entry.kind === 'node' && <NexusDeviceStatus online={online(entry)} />}<Icon name="chevron-right" size={14} /></button>) : <p>{t('No matching groups or devices.')}</p>}
       </div> : advanced ? <div className="nexus-hierarchy__workspace">
+        <div className="nexus-tree-panel">
         <div className="nexus-tree" ref={treeRef} role="tree" aria-label={t('Group hierarchy')}>
-          {rows.map(({ entry, depth, position, siblings }, index) => <div key={entry.id} role="treeitem" tabIndex={selected?.id === entry.id ? 0 : -1}
+          <div className="nexus-tree__rows" role="none" style={{ '--tree-max-depth': rows.reduce((max, row) => Math.max(max, row.depth - 1), 0) } as React.CSSProperties}>
+          {rows.map(({ entry, depth, position, siblings, ancestorLines }, index) => <div key={entry.id} role="treeitem" tabIndex={selected?.id === entry.id ? 0 : -1}
             data-node-id={entry.id} aria-label={name(entry)} aria-level={depth} aria-posinset={position} aria-setsize={siblings}
+            aria-description={entry.kind === 'node' ? [t(nexusDeviceStatusLabel(online(entry))), nexusConnectionLabel(status, entry.id) && t(nexusConnectionLabel(status, entry.id)!)].filter(Boolean).join(' · ') : undefined}
             aria-selected={selected?.id === entry.id} aria-expanded={entry.kind === 'group' ? expanded.has(entry.id) : undefined}
-            className={`nexus-tree__row${selected?.id === entry.id ? ' is-selected' : ''}`} style={{ '--tree-depth': Math.min(depth - 1, 8) } as React.CSSProperties}
+            className={`nexus-tree__row${selected?.id === entry.id ? ' is-selected' : ''}${rows[index + 1]?.depth > depth ? ' nexus-tree__row--expanded' : ''}`} style={{ '--tree-depth': depth - 1 } as React.CSSProperties}
             onClick={() => select(entry)} onKeyDown={event => keyDown(event, entry, index)}>
-            <span className="nexus-tree__disclosure" aria-hidden="true" onClick={event => { if (entry.kind === 'group') { event.stopPropagation(); toggle(entry); } }}>
-              {entry.kind === 'group' && <Icon name={expanded.has(entry.id) ? 'chevron-down' : 'chevron-right'} size={14} />}
+            {depth > 1 && <span className="nexus-tree__guides" aria-hidden="true">
+              {ancestorLines.map((continues, level) => <span key={level} className={`nexus-tree__guide${continues ? ' nexus-tree__guide--continued' : ''}`} />)}
+              <span className={`nexus-tree__guide nexus-tree__guide--branch${position === siblings ? ' nexus-tree__guide--last' : ''}`} />
+            </span>}
+            {entry.kind === 'group' && <span className="nexus-tree__disclosure" aria-hidden="true" onClick={event => { event.stopPropagation(); toggle(entry); }}>
+              <Icon name={expanded.has(entry.id) ? 'chevron-down' : 'chevron-right'} size={16} />
+            </span>}
+            <span className="nexus-tree__tile">
+              <span className="nexus-tree__icon" aria-hidden="true"><Icon name={entry.kind === 'group' ? 'layers' : 'monitor'} size={17} /></span>
+              <span className="nexus-tree__name">{name(entry)}</span>
+              {loading.has(entry.id) && <span className="nexus-hint">{t('Loading…')}</span>}
+              {entry.id === status.node_id && <span className="nexus-tree__you">{t('This device')}</span>}
+              {entry.kind === 'node' && <span className="nexus-tree__status"><NexusDeviceStatus online={online(entry)} /><NexusConnectionBadge status={status} nodeId={entry.id} /></span>}
             </span>
-            <Icon name={entry.kind === 'group' ? 'layers' : 'monitor'} size={17} />
-            <span className="nexus-tree__name">{name(entry)}</span>
-            {loading.has(entry.id) && <span className="nexus-hint">{t('Loading…')}</span>}
-            {entry.id === status.node_id && <span className="nexus-tree__you">{t('This device')}</span>}
           </div>)}
+          </div>
+        </div>
         </div>
         {selected && <div className="nexus-tree-detail">
           <nav className="nexus-tree-breadcrumbs" aria-label={t('Group path')}>{treeBreadcrumbs(selected, entries).map((entry, index) => <React.Fragment key={entry.id}>
@@ -172,7 +186,7 @@ export function NexusHierarchy({ status, advanced, service = nexusTreeService }:
               await load(selected.id); if (branches[selected.parent_id]) await load(selected.parent_id);
               setExpanded(current => new Set(current).add(selected.id)); setNotice(message);
             }} />
-          </> : <dl className="nexus-tree-facts"><div><dt>{t('Status')}</dt><dd>{online(selected) === undefined ? t('Unknown') : online(selected) ? t('Online') : t('Offline')}</dd></div><div><dt>{t('Mesh address')}</dt><dd>{selected.tunnel_ip || t('Not connected')}</dd></div></dl>}
+          </> : <dl className="nexus-tree-facts"><div><dt>{t('Status')}</dt><dd><NexusDeviceStatus online={online(selected)} /></dd></div><div><dt>{t('Connection')}</dt><dd>{selected.id === status.node_id ? t('This device') : nexusConnectionLabel(status, selected.id) ? <NexusConnectionBadge status={status} nodeId={selected.id} /> : online(selected) === false ? t('Not connected') : t('Unknown')}</dd></div><div><dt>{t('Mesh address')}</dt><dd>{selected.tunnel_ip || t('Not connected')}</dd></div></dl>}
           <details className="nexus-tree-identifiers"><summary>{t('Technical details')}</summary><dl className="nexus-tree-facts"><div><dt>{t('Node ID')}</dt><dd>{selected.id}</dd></div><div><dt>{t('Parent group')}</dt><dd>{selected.parent_id || '—'}</dd></div></dl></details>
           {notice && <p className="nexus-tree-notice" role="status">{notice}</p>}
         </div>}
@@ -180,7 +194,7 @@ export function NexusHierarchy({ status, advanced, service = nexusTreeService }:
         {compactGroup && <nav className="nexus-tree-breadcrumbs" aria-label={t('Group path')}>{treeBreadcrumbs(compactGroup, entries).map(entry => <button key={entry.id} type="button" onClick={() => select(entry)} aria-current={entry.id === compactGroup.id ? 'location' : undefined}>{name(entry)}</button>)}</nav>}
         {compactGroup && errors[compactGroup.id] && <p className="nexus-error" role="alert">{errors[compactGroup.id]} <button type="button" onClick={() => void load(compactGroup.id)}>{t('Retry')}</button></p>}
         {compactGroup && loading.has(compactGroup.id) ? <p role="status">{t('Loading group…')}</p> : compactChildren.length ? compactChildren.map(entry => <button key={entry.id} type="button" className="nexus-compact__row" disabled={entry.kind === 'node'} onClick={() => select(entry)}>
-          <Icon name={entry.kind === 'group' ? 'layers' : 'monitor'} size={21} /><span><strong>{name(entry)}</strong><small>{entry.kind === 'group' ? t('Group') : entry.id === status.node_id ? t('This device') : online(entry) === undefined ? t('Status unknown') : online(entry) ? t('Online') : t('Offline')}</small></span>{entry.kind === 'group' && <Icon name="chevron-right" size={16} />}
+          <Icon name={entry.kind === 'group' ? 'layers' : 'monitor'} size={21} /><span><strong>{name(entry)}</strong><small>{entry.kind === 'group' ? t('Group') : <><NexusDeviceStatus online={online(entry)} />{entry.id === status.node_id && <> · {t('This device')}</>}</>}</small></span><NexusConnectionBadge status={status} nodeId={entry.id} />{entry.kind === 'group' && <Icon name="chevron-right" size={16} />}
         </button>) : <p className="nexus-tree-message">{compactGroup?.can_add_group ? t('This group is empty. Use Advanced to add a group.') : t('No groups or devices here yet.')}</p>}
       </div>}
     </>}
@@ -246,7 +260,13 @@ function GroupManagement({ entry, entries, selfId, service, onSaved }: {
           {memberId && <>
             <label className="nexus-permission-choice"><input type="checkbox" checked={admin} onChange={event => setAdmin(event.target.checked)} />{t('Group administrator')}</label>
             <p className="nexus-hint">{admin ? t('Administrators can manage this group and its descendants.') : t('Grant only the access this device needs.')}</p>
-            <div className="nexus-permissions">{NEXUS_GROUP_PERMISSIONS.map(permission => <label key={permission.name}><input type="checkbox" checked={admin || permission.name === 'read' || permissions.includes(permission.name)} disabled={admin || permission.name === 'read'} onChange={event => setPermissions(current => event.target.checked ? [...current, permission.name] : current.filter(value => value !== permission.name))} />{t(permission.label)}</label>)}</div>
+            <details className="nexus-service-permissions"><summary>{t('Service access')}</summary>
+              <p className="nexus-hint">{t('Nexus checks these permissions when this device calls a service over the mesh.')}</p>
+              <div className="nexus-permissions">{NEXUS_SERVICE_PERMISSIONS.map(permission => <label key={permission.name}><input type="checkbox" checked={admin || permissions.includes(permission.name)} disabled={admin} onChange={event => setPermissions(current => event.target.checked ? [...current, permission.name] : current.filter(value => value !== permission.name))} />{t(permission.label)}</label>)}</div>
+            </details>
+            <details className="nexus-network-permissions"><summary>{t('Group and network permissions')}</summary>
+              <div className="nexus-permissions">{NEXUS_GROUP_PERMISSIONS.map(permission => <label key={permission.name}><input type="checkbox" checked={admin || permission.name === 'read' || permissions.includes(permission.name)} disabled={admin || permission.name === 'read'} onChange={event => setPermissions(current => event.target.checked ? [...current, permission.name] : current.filter(value => value !== permission.name))} />{t(permission.label)}</label>)}</div>
+            </details>
           </>}
         </>}
       </fieldset>

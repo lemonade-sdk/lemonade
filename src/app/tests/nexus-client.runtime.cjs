@@ -42,6 +42,7 @@ global.fetch = async (url, init = {}) => {
     if (target.pathname.endsWith('/health')) return json({ status: 'ok', version: 'peer', all_models_loaded: [] });
     if (target.pathname.endsWith('/models')) return json({ data: [] });
   }
+  if (target.pathname.endsWith('/nexus/enable')) return json({});
   if (target.pathname.endsWith('/nexus/status')) return json({
     available: true, enabled: false, locked: true, mesh_up: false, status: 'disabled', members: [],
     controller_url: controller,
@@ -131,6 +132,12 @@ global.fetch = async (url, init = {}) => {
   await nexus.nexusRequest('status');
   assert.equal(calls.at(-1).url, 'https://nexus-server.example/api/v1/nexus/status');
   assert.equal(calls.at(-1).headers.get('Authorization'), 'Bearer test-remote-key');
+
+  api.baseUrl = 'http://192.168.10.20:13305';
+  api.setSessionApiKey('');
+  await nexus.nexusRequest('enable', {});
+  assert.equal(calls.at(-1).url, 'http://192.168.10.20:13305/api/v1/nexus/enable');
+  assert.equal(calls.at(-1).headers.get('Authorization'), null);
 
   api.baseUrl = 'http://127.0.0.1:13306';
   rejectApiKey = true;

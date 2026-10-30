@@ -552,7 +552,7 @@ json tree_entry(const json& node, const std::string& self_key, bool ancestor_adm
 }
 
 json merge_members(const json& group, const json& children, const json& peers,
-                   const std::string& self_key, const std::string& self_node_id) {
+                   const std::string& self_key, const std::string& self_node_id, const json& mesh_peers) {
     const auto group_acl = group.value("assignments", json::array());
     // The federation returns a node's full assignment list only to callers with edit_node on it.
     const bool group_acl_known = grants(permissions_for(group_acl, self_key), "edit_node");
@@ -586,6 +586,18 @@ json merge_members(const json& group, const json& children, const json& peers,
                 if (candidate.is_object() && text(candidate, "node_id") == id) { peer = candidate; break; }
             }
         }
+        std::string connection_type = self ? "local" : "unknown";
+        // Discovery endpoints are candidates; only the dataplane knows the active path.
+        if (!self && flag(peer, "is_online") && mesh_peers.is_array()) {
+            for (const auto& connection : mesh_peers) {
+                if (!connection.is_object() || text(connection, "node_id") != id || !flag(connection, "is_online")) continue;
+                if (connection.value("last_rx", int64_t{0}) > 0 || connection.value("last_handshake", int64_t{0}) > 0) {
+                    if (!text(connection, "relay_endpoint").empty()) connection_type = "relay";
+                    else if (!text(connection, "endpoint").empty()) connection_type = "p2p";
+                }
+                break;
+            }
+        }
         members.push_back({{"node_id", id}, {"device_name", text(child, "hostname")},
             {"tunnel_ip", text(child, "tunnel_ip")}, {"management_pubkey", key},
             {"permissions", ordered(permissions)}, {"permissions_known", permissions_known},
@@ -594,6 +606,7 @@ json merge_members(const json& group, const json& children, const json& peers,
             {"access", access}, {"access_known", access_known},
             {"can_remove", !self && grants(own_device, "delete_node")},
             {"is_online", self || flag(peer, "is_online")},
+            {"connection_type", connection_type},
             {"latency_ms", peer.contains("latency_ms") && peer["latency_ms"].is_number() ? peer["latency_ms"].get<double>() : 0.0}});
     }
     return members;
@@ -1408,7 +1421,8 @@ struct NexusManager::Session {
         const auto group = private_call("GET", "/api/tree/node/" + group_id);
         const auto children = group_children();
         const auto peers = sdk_call([&](auto out) { return ln_mesh_peers(client.get(), out); });
-        auto next = nexus_access::merge_members(group, children, peers, pubkey, node_id);
+        auto next = nexus_access::merge_members(group, children, peers, pubkey, node_id,
+            mesh_status().value("peers", json::array()));
         for (auto it = egress_ips.begin(); it != egress_ips.end();) {
             const auto present = std::find_if(next.begin(), next.end(), [&](const json& device) {
                 auto ip = device.value("tunnel_ip", "");

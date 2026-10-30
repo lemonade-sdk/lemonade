@@ -9,8 +9,29 @@ export type TranslationValues = Record<string, string | number>;
 export type Translate = (key: string, values?: TranslationValues) => string;
 
 const ZH_CN: Record<string, string> = {
+  'P2P': 'P2P',
+  'Connection': '连接',
+  'Relay': '中继',
+  'Direct peer-to-peer connection': '直接点对点连接',
+  'Connection through a relay server': '通过中继服务器连接',
   'API authentication required': 'API 需要身份验证',
   'The network is temporarily unavailable. Reconnecting…': '网络暂时不可用，正在重新连接…',
+  'Run inference': '运行推理',
+  'Manage models': '管理模型',
+  'Manage backends': '管理后端',
+  'Use MCP tools': '使用 MCP 工具',
+  'Manage jobs': '管理任务',
+  'Access system information': '访问系统信息',
+  'Manage Nexus': '管理 Nexus',
+  'Access internal endpoints': '访问内部端点',
+  'Service access': '服务访问权限',
+  'Nexus checks these permissions when this device calls a service over the mesh.': '此设备通过网状网络调用服务时，Nexus 会检查这些权限。',
+  'Group and network permissions': '群组和网络权限',
+  'Invitation access': '邀请权限',
+  'Moderator': '协管员',
+  'Connect to the mesh and run inference.': '连接网状网络并运行推理。',
+  'Run inference, use MCP tools, manage models and jobs, and invite devices.': '运行推理、使用 MCP 工具、管理模型和任务以及邀请设备。',
+  'Nexus limits the invitation to permissions you hold. Administrator access can only be granted after joining.': 'Nexus 会将邀请限制为你拥有的权限。管理员权限只能在加入后授予。',
   'Saving image…': '正在保存头像…',
   'The profile image could not be removed. Try again.': '无法移除头像，请重试。',
   'This mesh needs a Nexus server update to sync profile images.': '此网络需要更新 Nexus 服务器才能同步头像。',
@@ -1537,6 +1558,10 @@ const ZH_CN: Record<string, string> = {
   'Exported custom model JSON.': '已导出自定义模型 JSON。',
   'No compatible recipe/backend is available for this capability on the connected Lemonade server.': '已连接的 Lemonade 服务器上没有适用于此能力的兼容配方／后端。',
   'Please select a model': '请选择一个模型',
+  'Managing server': '正在管理的服务器',
+  'Managed server': '受管理的服务器',
+  'Create account': '创建账户',
+  'Set up this server through its local controller or SSH forwarding. After setup, manage it through the authenticated Nexus mesh.': '请通过此服务器的本地控制器或 SSH 转发进行设置。设置后，可通过经过身份验证的 Nexus 网状网络管理它。',
 };
 
 export function translate(key: string, locale: Locale = 'en-US', values?: TranslationValues): string {

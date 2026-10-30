@@ -22,6 +22,7 @@ export interface NexusDevice {
 
 export interface NexusAccountConnection {
   account: NexusAccount | null;
+  source?: string;
   devices: readonly NexusDevice[];
   onSignIn?: () => void;
   onSignOut?: () => void;
@@ -109,7 +110,7 @@ function ConnectedAccountProvider({ service, children }: { service: NexusAccount
         if (!stopped && !disconnecting.current && revision === generation.current && imageRevision === avatarGeneration.current) {
           if ((error instanceof NexusRequestError && (error.retryable || error.status === 429 || error.status >= 500))
               || error instanceof TypeError || (error instanceof Error && error.name === 'TimeoutError')) {
-            setNotice('The network is temporarily unavailable. Reconnecting…');
+            setNotice('reconnecting');
             return;
           }
           generation.current += 1; setSession(undefined); setDialog(undefined);
@@ -121,7 +122,7 @@ function ConnectedAccountProvider({ service, children }: { service: NexusAccount
     return () => { stopped = true; window.clearInterval(timer); };
   }, [session?.account.id, session?.memberId, session?.deviceNodeId, session?.source, service]);
   return <AccountStateProvider connection={{
-    account: session?.account || null, devices: session?.devices || [], notice,
+    account: session?.account || null, source: session?.source, devices: session?.devices || [], notice,
     onSignIn: () => open('signin'), onSignOut: signOut,
     onConnectDevice: session?.canInvite ? () => open('invite') : undefined,
     avatarSaving,

@@ -35,6 +35,17 @@ assert.equal(visibleTreeRows(cycleRoot, { cycle: { parent: cycleRoot, children: 
 assert.equal(treeBreadcrumbs(cycleRoot, new Map([['cycle', cycleRoot]])).length, 1);
 assert.equal(visibleTreeRows(root, { [root.id]: { parent: root, children: [group('outside', 'someone-else')] } }, new Set([root.id])).length, 1, 'misparented children are not rendered');
 
+const sibling = { ...device, id: 'desktop', parent_id: root.id };
+const branching = { ...branches, [root.id]: { parent: root, children: [team, sibling] } };
+assert.deepEqual(visibleTreeRows(root, branching, expanded).map(row => [row.entry.id, row.ancestorLines, row.position === row.siblings]), [
+  [root.id, [], true], [team.id, [], false], [person.id, [true], true], [device.id, [true, false], true], [sibling.id, [], true],
+], 'ancestor guides continue only where a later sibling exists');
+assert.deepEqual(visibleTreeRows(root, branching, new Set([root.id])).map(row => [row.entry.id, row.position, row.siblings]), [
+  [root.id, 1, 1], [team.id, 1, 2], [sibling.id, 2, 2],
+], 'collapsing descendants preserves sibling connections');
+const filtered = visibleTreeRows(root, { [root.id]: { parent: root, children: [team, team, group('outside', 'elsewhere'), root] } }, new Set([root.id]));
+assert.deepEqual(filtered.map(row => [row.entry.id, row.position, row.siblings]), [[root.id, 1, 1], [team.id, 1, 1]], 'ignored entries do not leave dangling branch guides');
+
 const deep = {};
 const open = new Set();
 for (let i = 0; i < 1000; i += 1) {

@@ -117,6 +117,21 @@ the interface. Counts describe direct children, and nested nodes without known
 presence are shown with unknown status rather than marked offline. Invalid tree
 responses produce a recoverable error before they reach the view.
 
+Advanced tree rows use branch guides that follow expanded ancestry and stop at
+the last sibling. Expand controls and guides sit in a gutter beside the selectable
+tile containing the group or device icon, name and status. Deep trees scroll
+within the tree panel without flattening indentation or widening the page.
+
+Device rows in My devices, the account menu and the hierarchy show **P2P** for
+an authenticated direct mesh path and **Relay** for a path through a relay server.
+The server supplies `connection_type` from the SDK's active tunnel status,
+not discovery candidates. Local devices, offline peers and peers without a
+confirmed path have no path badge; Advanced shows an unknown connection when
+the server cannot determine it. Older servers that omit the field remain supported.
+Each device also shows its reported online state: a steady green dot and Online,
+a hollow gray dot and Offline, or Status unknown when presence is unavailable.
+Presence and path badges use the same current network snapshot in every view.
+
 Advanced provides group creation, renaming, and group permissions for discovered
 device identities. Controls follow server-provided capabilities. The server
 independently validates ancestry, passkey-unlocked state, group rights, principal
@@ -124,6 +139,17 @@ membership, self-protection and group-owner protection before forwarding a
 change to the SDK's existing private API. Assignment editing is withheld when
 the full assignment list is not visible. Membership and permission requests are
 still subject to federation authorization.
+
+Service access and group/network permissions use separate collapsible sections.
+Saving preserves permissions the client does not recognize. Invitations offer
+the server's User and Moderator presets; the server limits delegated permissions
+to those the inviting device holds. Administrator access is assigned after joining.
+
+Account creation, invitation acceptance and unlocking remain local-controller
+operations. For a remote server, the setup dialog directs the operator to local
+setup or SSH forwarding instead of offering identity operations the server denies.
+Authenticated mesh management and public API authentication keep their existing
+authorization rules.
 
 There is no automatic replay of a failed POST: a lost response may follow a
 successful write. Group creation is therefore not duplicated automatically after

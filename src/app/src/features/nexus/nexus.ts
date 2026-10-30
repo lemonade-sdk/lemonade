@@ -14,6 +14,7 @@ export interface NexusDevice {
   access_known?: boolean;
   can_remove: boolean;
   is_online?: boolean;
+  connection_type?: 'local' | 'p2p' | 'relay' | 'unknown';
   latency_ms?: number;
 }
 export interface NexusAccessEntry {
@@ -47,6 +48,16 @@ export const NEXUS_GROUP_PERMISSIONS: { name: string; label: string }[] = [
   { name: 'stun_respond', label: 'Answer STUN requests' },
   { name: 'routing_coordinate', label: 'Coordinate routing' },
 ];
+export const NEXUS_SERVICE_PERMISSIONS: { name: string; label: string }[] = [
+  { name: 'svc:inference', label: 'Run inference' },
+  { name: 'svc:mcp', label: 'Use MCP tools' },
+  { name: 'svc:models_manage', label: 'Manage models' },
+  { name: 'svc:backends', label: 'Manage backends' },
+  { name: 'svc:jobs', label: 'Manage jobs' },
+  { name: 'svc:system', label: 'Access system information' },
+  { name: 'svc:management', label: 'Manage Nexus' },
+  { name: 'svc:internal', label: 'Access internal endpoints' },
+];
 export function hasNexusPermission(permissions: string[] | undefined, name: string): boolean {
   return Boolean(permissions?.includes(name) || permissions?.includes('admin'));
 }
@@ -74,6 +85,16 @@ export interface NexusStatus {
   unlock?: 'passkey' | 'device_key';
   // True while lemond has no device identity, for example while the macOS tray delivers the user's key.
   needs_user_key?: boolean;
+}
+export function nexusDeviceOnline(status: NexusStatus | null | undefined, nodeId: string): boolean | undefined {
+  if (!status) return undefined;
+  if (!status.mesh_up || status.locked) return nodeId === status.node_id ? false : undefined;
+  return status.members.find(device => device.node_id === nodeId)?.is_online;
+}
+export function nexusConnectionLabel(status: NexusStatus | null | undefined, nodeId: string): 'P2P' | 'Relay' | undefined {
+  if (!status || nodeId === status.node_id || nexusDeviceOnline(status, nodeId) !== true) return undefined;
+  const member = status.members.find(device => device.node_id === nodeId);
+  return member?.connection_type === 'p2p' ? 'P2P' : member?.connection_type === 'relay' ? 'Relay' : undefined;
 }
 // A device unlocks with its device key or with a passkey, never both. lemond reports
 // `unlock: device_key` once the key has unlocked the device; a `user` or `handoff`
@@ -144,8 +165,8 @@ export function decodeBase64Url(value: string): Uint8Array<ArrayBuffer> {
 export function isLoopbackUrl(value: string): boolean {
   return ['localhost', '127.0.0.1', '[::1]'].includes(new URL(value).hostname);
 }
-// A nonloopback server is managed through its public listener with the API key. Loopback
-// URLs reach the local management listener.
+// Remote controllers use the selected server's public listener and authorization policy.
+// Loopback URLs reach the local management listener.
 async function controller(): Promise<Controller> {
   const { default: api } = await import('../../api');
   await api.loadConnectionSettings();

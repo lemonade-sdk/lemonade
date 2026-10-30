@@ -29,7 +29,7 @@ export interface NexusAccountService {
   inspect: () => Promise<NexusAccountInspection>;
   signIn: (input: NexusSignInInput) => Promise<VerifiedNexusAccount>;
   refresh: (session: VerifiedNexusAccount) => Promise<VerifiedNexusAccount>;
-  invite: (session: VerifiedNexusAccount, deviceName: string) => Promise<NexusInvite>;
+  invite: (session: VerifiedNexusAccount, deviceName: string, role?: 'user' | 'moderator') => Promise<NexusInvite>;
   setAvatar: (session: VerifiedNexusAccount, image: string | null) => Promise<NexusAvatarState & { state: 'ready' }>;
 }
 
@@ -115,12 +115,12 @@ export function createNexusAccountService(dependencies = { controller: nexusAcco
       if (next.avatar.state === 'unavailable') next.account.avatarUrl = session.account.avatarUrl;
       return next;
     },
-    async invite(session, deviceName) {
+    async invite(session, deviceName, role) {
       if (!boundedName(deviceName)) throw new Error('Enter the name of the device you are inviting.');
       const controller = await requireController(session.source);
       const current = verifyAccountReply(await controller.request('account'), session.source, session.account.id, session.account.displayName);
       if (current.memberId !== session.memberId || current.deviceNodeId !== session.deviceNodeId) throw new Error('The account membership changed. Enable Mesh again.');
-      const invite = await controller.request<NexusInvite>('invites', { device_name: deviceName.trim(), ttl_sec: 600 });
+      const invite = await controller.request<NexusInvite>('invites', { device_name: deviceName.trim(), ttl_sec: 600, ...(role ? { role } : {}) });
       if (!invite || !validNexusInvitation(invite.code || invite.link_token || '') || !Number.isFinite(invite.expires_at)) {
         throw new Error('The server returned an invalid invitation. Try again.');
       }

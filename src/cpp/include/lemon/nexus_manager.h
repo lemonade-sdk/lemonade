@@ -65,7 +65,8 @@ bool invite_code(const std::string& code);
 nlohmann::json tree_entry(const nlohmann::json& node, const std::string& self_key,
     bool ancestor_admin = false);
 nlohmann::json merge_members(const nlohmann::json& group, const nlohmann::json& children,
-    const nlohmann::json& peers, const std::string& self_key, const std::string& self_node_id);
+    const nlohmann::json& peers, const std::string& self_key, const std::string& self_node_id,
+    const nlohmann::json& mesh_peers = nlohmann::json::array());
 nlohmann::json device_access(const nlohmann::json& members, const std::string& device_id,
     const std::string& self_node_id);
 /// Route policy families of lemond's routes (RouteSpec::family), in catalog order.

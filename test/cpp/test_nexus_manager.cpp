@@ -845,6 +845,29 @@ void check_access_rules(const std::function<void(bool, const char*)>& check) {
     check(members[0].at("is_admin") && members[0].at("is_owner"), "Group creator is admin");
     check(!members[1].at("is_admin") && members[1].at("permissions") == json::array({"read", "write"}), "Member keeps group permissions");
     check(members[1].at("is_online") && members[1].at("latency_ms") == 12.5, "Peer state is merged");
+    auto candidates = peers;
+    candidates[0]["endpoint"] = "192.0.2.20:51820";
+    candidates[0]["relay_endpoint"] = "192.0.2.30:9103";
+    check(access::merge_members(group, children, candidates, admin_key, "server")[1].at("connection_type") == "unknown",
+          "Discovery candidates never establish an active connection path");
+    json connections = json::array({{{"node_id", "workstation"}, {"is_online", true},
+        {"endpoint", "192.0.2.20:51820"}, {"last_rx", 123}}});
+    const auto direct = access::merge_members(group, children, candidates, admin_key, "server", connections);
+    check(direct[0].at("connection_type") == "local" && direct[1].at("connection_type") == "p2p",
+          "The local device stays local and authenticated direct traffic reports P2P");
+    connections[0]["relay_endpoint"] = "192.0.2.30:9103";
+    check(access::merge_members(group, children, candidates, admin_key, "server", connections)[1].at("connection_type") == "relay",
+          "An active relay overrides a discovered direct address");
+    connections[0]["relay_endpoint"] = "";
+    check(access::merge_members(group, children, candidates, admin_key, "server", connections)[1].at("connection_type") == "p2p",
+          "Leaving the relay restores the P2P label");
+    connections[0]["is_online"] = false;
+    check(access::merge_members(group, children, candidates, admin_key, "server", connections)[1].at("connection_type") == "unknown",
+          "An offline tunnel never retains a path label");
+    connections[0]["is_online"] = true;
+    connections[0]["last_rx"] = 0;
+    check(access::merge_members(group, children, candidates, admin_key, "server", connections)[1].at("connection_type") == "unknown",
+          "A tunnel awaiting authenticated traffic does not claim P2P");
     check(members[1].at("can_remove") && !members[2].at("can_remove") && !members[0].at("can_remove"), "Removal follows delete_node on the device");
     check(members[1].at("access_known") && !members[2].at("access_known"), "Device access is known only with edit_node on the device");
 

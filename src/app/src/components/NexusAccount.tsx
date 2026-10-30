@@ -1,10 +1,13 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNexusAccount } from '../features/nexus/NexusAccountContext';
+import { isLoopbackUrl, nexusDeviceOnline, useNexusNetwork } from '../features/nexus/nexus';
 import { useI18n } from '../i18n';
 import { Icon } from './Icon';
 import { WorkspaceActionButton } from './WorkspacePanels';
 import { NexusNetwork } from './NexusNetwork';
+import { NexusConnectionBadge } from './NexusConnectionBadge';
+import { NexusDeviceStatus } from './NexusDeviceStatus';
 import '../styles/nexus.css';
 
 function AccountAvatar({ small = false }: { small?: boolean }) {
@@ -94,7 +97,7 @@ function AvatarPicker({ errorId, onError }: { errorId: string; onError: (error: 
 
 function AccountSummary() {
   const { t } = useI18n();
-  const { account, avatarNotice } = useNexusAccount();
+  const { account, avatarNotice, source } = useNexusAccount();
   const [error, setError] = useState<string>();
   const errorId = useId();
   useEffect(() => { setError(undefined); }, [account?.id]);
@@ -116,6 +119,7 @@ function AccountSummary() {
             : 'Profile images are temporarily unavailable. Try again shortly.')}</p>}
       </div>
     </div>
+    {account && source && !isLoopbackUrl(source) && <p className="nexus-server-target"><span>{t('Managing server')}</span><strong>{new URL(source).origin}</strong></p>}
     <p id={errorId} className="nexus-error" role="alert">{error}</p>
   </div>;
 }
@@ -126,7 +130,7 @@ function AccountAccess({ showSignOut = false }: { showSignOut?: boolean }) {
   const hintId = useId();
   if (account) return <div className="nexus-account-access">
     {showSignOut && onSignOut && <WorkspaceActionButton onClick={onSignOut}>{t('Disable Mesh')}</WorkspaceActionButton>}
-    {notice && <p className="nexus-error" role="alert">{t(notice)}</p>}
+    {notice && <p className="nexus-error" role="alert">{t(notice === 'reconnecting' ? 'The network is temporarily unavailable. Reconnecting…' : notice)}</p>}
   </div>;
   return <div className="nexus-account-access">
     <p>{t('Enable Mesh to bring your Lemonade devices together.')}</p>
@@ -138,14 +142,19 @@ function AccountAccess({ showSignOut = false }: { showSignOut?: boolean }) {
 
 function MyDevices() {
   const { t } = useI18n();
-  const { account, devices, onConnectDevice } = useNexusAccount();
+  const { account, devices, onConnectDevice, source } = useNexusAccount();
+  const { status } = useNexusNetwork(false);
   return <details className="nexus-section nexus-device-disclosure">
     <summary><span>{t('My devices')}</span><Icon name="chevron-right" size={16} /></summary>
     <div className="nexus-device-disclosure__content">
     {account && devices.length ? <ul className="nexus-devices">
       {devices.map(device => <li key={device.id}>
         <Icon name={device.kind === 'phone' ? 'smartphone' : 'monitor'} size={23} />
-        <div><strong>{device.name}</strong><span>{device.current ? t('Current device') : device.connected ? t('Connected') : t('Offline')}</span></div>
+        <div><strong>{device.name}</strong><div className="nexus-device-subtitle">
+          <NexusDeviceStatus online={nexusDeviceOnline(status, device.id)} />
+          {device.current && <><span aria-hidden="true">·</span><span>{t(source && !isLoopbackUrl(source) ? 'Managed server' : 'Current device')}</span></>}
+        </div></div>
+        <NexusConnectionBadge status={status} nodeId={device.id} />
       </li>)}
     </ul> : <div className="nexus-device-empty">
       <Icon name="smartphone" size={25} />
