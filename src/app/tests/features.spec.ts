@@ -1,4 +1,5 @@
 import { test, expect, Page, type Route } from '@playwright/test';
+import { mockCompletedModelLoadJobs } from './modelLoadJobs.mock';
 
 const realServerRequired = /@real-server\b/;
 
@@ -820,9 +821,8 @@ test.describe('Lemonade UI — Feature Parity', () => {
         },
       },
     }));
-    await page.route('**/api/v1/load', route => {
-      loadRequestBody = route.request().postDataJSON() as Record<string, unknown>;
-      return route.fulfill({ json: { status: 'ok' } });
+    await mockCompletedModelLoadJobs(page, params => {
+      loadRequestBody = params;
     });
     const modelOptionsRouteState13c = new Map<string, Record<string, unknown>>();
     await page.route('**/api/v1/models**', async route => {
@@ -938,7 +938,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await unknownAutoTune.check();
 
     await page.getByRole('button', { name: 'Load unknown-context-model' }).click();
-    await expect.poll(() => loadRequestBody?.model_name).toBe('unknown-context-model');
+    await expect.poll(() => loadRequestBody?.model).toBe('unknown-context-model');
     // Auto tune is the explicit -1, not an omission: an omitted ctx_size means
     // "use whatever is saved", which is not what the panel is showing.
     expect(loadRequestBody?.ctx_size).toBe(-1);
@@ -999,9 +999,8 @@ test.describe('Lemonade UI — Feature Parity', () => {
         },
       },
     }));
-    await page.route('**/api/v1/load', route => {
-      loadRequestBody = route.request().postDataJSON() as Record<string, unknown>;
-      return route.fulfill({ json: { status: 'ok' } });
+    await mockCompletedModelLoadJobs(page, params => {
+      loadRequestBody = params;
     });
     const modelOptionsRouteState13d: ModelOptionsState = new Map();
     await page.route('**/api/v1/models**', async route => {
@@ -1058,6 +1057,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.getByRole('button', { name: 'Load source-hf-model' }).click();
     await expect.poll(() => loadRequestBody?.llamacpp_backend).toBe('vulkan');
     expect(loadRequestBody?.ctx_size).toBe(16384);
+    await expect(page.locator('.model-list-panel__list')).toBeHidden();
     // Applying settings for one load must not make them the server's new default.
     expect(loadRequestBody?.save_options).toBe(false);
 
@@ -1766,9 +1766,8 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.route('**/api/v1/system-info**', route => route.fulfill({
       json: { recipes: { llamacpp: llamacppRecipe() } },
     }));
-    await page.route('**/api/v1/load', route => {
-      loadRequestBody = route.request().postDataJSON() as Record<string, unknown>;
-      return route.fulfill({ json: { status: 'ok' } });
+    await mockCompletedModelLoadJobs(page, params => {
+      loadRequestBody = params;
     });
     await page.route('**/api/v1/models**', async route => {
       if (new URL(route.request().url()).pathname.endsWith(`/${modelB}/options`)) await heldFetch;
@@ -1802,12 +1801,13 @@ test.describe('Lemonade UI — Feature Parity', () => {
     // An empty draft is not a set of tombstones: with nothing loaded to show,
     // Load carries no options and lemond keeps using what is saved.
     await page.getByRole('button', { name: `Load ${modelB}` }).click();
-    await expect.poll(() => loadRequestBody?.model_name).toBe(modelB);
+    await expect.poll(() => loadRequestBody?.model).toBe(modelB);
     expect(loadRequestBody).not.toHaveProperty('llamacpp_args');
     expect(loadRequestBody).not.toHaveProperty('ctx_size');
 
     // Loading switches to Chat, so come back before reading the panel again.
     releaseB?.();
+    await expect(page.locator('.model-list-panel__list')).toBeHidden();
     await page.locator('.titlebar__nav').getByText('Models').click();
     await expect(panel.getByRole('button', { name: 'Save', exact: true })).toBeEnabled();
     loadRequestBody = null;
@@ -1829,9 +1829,8 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.route('**/api/v1/system-info**', route => route.fulfill({
       json: { recipes: { llamacpp: llamacppRecipe() } },
     }));
-    await page.route('**/api/v1/load', route => {
-      loadRequestBody = route.request().postDataJSON() as Record<string, unknown>;
-      return route.fulfill({ json: { status: 'ok' } });
+    await mockCompletedModelLoadJobs(page, params => {
+      loadRequestBody = params;
     });
     await page.route('**/api/v1/models**', async route => {
       const url = new URL(route.request().url());
@@ -1887,7 +1886,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
     // lemond is told not to merge them back in underneath.
     await argsField.fill(savedArgs);
     await page.getByRole('button', { name: `Load ${modelName}` }).click();
-    await expect.poll(() => loadRequestBody?.model_name).toBe(modelName);
+    await expect.poll(() => loadRequestBody?.model).toBe(modelName);
     expect(loadRequestBody?.llamacpp_args).toBe(savedArgs);
     expect(loadRequestBody?.merge_args).toBe(false);
     expect(loadRequestBody?.save_options).toBe(false);
@@ -1905,9 +1904,8 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.route('**/api/v1/system-info**', route => route.fulfill({
       json: { recipes: { llamacpp: llamacppRecipe() } },
     }));
-    await page.route('**/api/v1/load', route => {
-      loadRequestBody = route.request().postDataJSON() as Record<string, unknown>;
-      return route.fulfill({ json: { status: 'ok' } });
+    await mockCompletedModelLoadJobs(page, params => {
+      loadRequestBody = params;
     });
     await page.route('**/api/v1/models**', async route => {
       if (new URL(route.request().url()).pathname.endsWith('/options')) {
@@ -1998,13 +1996,14 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await expect(freeformArgs).toHaveValue('--zeta 1 --no-mmap');
 
     await page.getByRole('button', { name: `Load ${modelName}` }).click();
-    await expect.poll(() => loadRequestBody?.model_name).toBe(modelName);
+    await expect.poll(() => loadRequestBody?.model).toBe(modelName);
     expect(loadRequestBody?.llamacpp_args)
       .toBe('--temp 1.05 --top-k 20 --presence-penalty 0.05 --zeta 1 --no-mmap');
     expect(loadRequestBody?.merge_args).toBe(false);
 
     // Loading swaps the view, so come back before editing the form again. The
     // section stays open across the trip, which is the point of remembering it.
+    await expect(page.locator('.model-list-panel__list')).toBeHidden();
     await page.locator('.titlebar__nav').getByText('Models').click();
     await expect(field('Temperature')).toBeVisible();
     await expect(details).toHaveAttribute('aria-expanded', 'true');
@@ -2321,6 +2320,72 @@ test.describe('Lemonade UI — Feature Parity', () => {
       state.loaded = state.loaded.filter(loadedName => loadedName !== name);
       return route.fulfill({ json: { status: 'ok' } });
     });
+    // GUI loads now use jobs; reloads still go through /load above.
+    type MockJob = {
+      id: string;
+      name: string;
+      status: string;
+      steps: Array<{ id: string; op: string; status: string; params: Record<string, unknown>; error?: string }>;
+    };
+    const jobs = new Map<string, MockJob>();
+    let nextJobId = 0;
+    await page.route(/\/api\/v1\/jobs(?:\/[^/?]+(?:\/interrupt)?)?(?:\?.*)?$/, async route => {
+      const path = new URL(route.request().url()).pathname;
+      const method = route.request().method().toUpperCase();
+      if (path.endsWith('/api/v1/jobs') && method === 'POST') {
+        const body = route.request().postDataJSON() as {
+          name: string;
+          definition: { steps: Array<{ id: string; op: string; params: Record<string, unknown> }> };
+        };
+        if (!Array.isArray(body.definition?.steps) || !body.definition.steps.length) {
+          return route.fulfill({ status: 400, json: { error: 'Expected load job steps' } });
+        }
+        const id = `concurrency-job-${++nextJobId}`;
+        const job: MockJob = {
+          id, name: body.name, status: 'running',
+          steps: body.definition.steps.map(step => ({ ...step, status: 'running' })),
+        };
+        jobs.set(id, job);
+        for (const step of job.steps) {
+          const name = String(step.params.model);
+          if (handlers.load) {
+            const fakeRoute = {
+              fulfill: async (result: { status?: number; json?: { error?: { message?: string } } }) => {
+                const failed = (result.status ?? 200) >= 400;
+                step.status = failed ? 'failed' : 'completed';
+                if (failed) step.error = result.json?.error?.message ?? 'Load failed';
+                job.status = failed ? 'failed' : 'completed';
+              },
+            } as unknown as Route;
+            void handlers.load(fakeRoute, name).catch(err => {
+              step.status = 'failed';
+              step.error = String(err);
+              job.status = 'failed';
+            });
+          } else {
+            state.loaded = [...state.loaded, name];
+            step.status = 'completed';
+            job.status = 'completed';
+          }
+        }
+        return route.fulfill({ status: 202, json: { id } });
+      }
+      const match = path.match(/\/api\/v1\/jobs\/([^/]+)(?:\/interrupt)?$/);
+      if (!match) return route.fallback();
+      const id = decodeURIComponent(match[1]);
+      const job = jobs.get(id);
+      if (!job) return route.fulfill({ status: 404, json: { error: 'Unknown job' } });
+      if (path.endsWith('/interrupt') && method === 'POST') {
+        job.status = 'interrupted';
+        return route.fulfill({ json: { status: 'interrupting' } });
+      }
+      if (method === 'GET') return route.fulfill({ json: job });
+      if (method === 'DELETE') {
+        jobs.delete(id);
+        return route.fulfill({ status: 204, body: '' });
+      }
+      return route.fallback();
+    });
     return state;
   };
 
@@ -2344,7 +2409,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
 
     await rows.filter({ hasText: slowName }).click();
     await page.getByRole('button', { name: `Load ${slowName}`, exact: true }).click();
-    await expect(page.getByRole('button', { name: `Loading ${slowName}…` })).toBeVisible();
+    await expect(page.getByRole('progressbar', { name: `Loading ${slowName}` })).toBeVisible();
 
     await rows.filter({ hasText: otherName }).click();
     await page.getByRole('button', { name: `Unload ${otherName}` }).click();
@@ -2352,10 +2417,10 @@ test.describe('Lemonade UI — Feature Parity', () => {
 
     // lemond queues loads, so a second model's Load must not be swallowed by the first.
     await page.getByRole('button', { name: `Load ${otherName}`, exact: true }).click();
-    await expect(page.getByRole('button', { name: `Loading ${otherName}…` })).toBeVisible();
+    await expect(page.getByRole('progressbar', { name: `Loading ${otherName}` })).toBeVisible();
 
     await rows.filter({ hasText: slowName }).click();
-    await expect(page.getByRole('button', { name: `Loading ${slowName}…` })).toBeVisible();
+    await expect(page.getByRole('progressbar', { name: `Loading ${slowName}` })).toBeVisible();
 
     releaseLoads!();
     await expect.poll(() => [...state.loaded].sort()).toEqual([otherName, slowName].sort());

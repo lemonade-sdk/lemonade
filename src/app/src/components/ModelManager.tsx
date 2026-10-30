@@ -46,6 +46,24 @@ const EMPTY_MODELS: ModelInfo[] = [];
 const EMPTY_LOADED_MODELS: LoadedModel[] = [];
 const EXTRA_MODELS_DIR_SOURCE = 'extra_models_dir';
 
+type GuiLoadToken = {
+  modelName: string;
+  id: string | null;
+  cancelRequested: boolean;
+  interruptSent: boolean;
+};
+
+type GuiLoadProgress = {
+  modelName: string;
+  completed: number;
+  total: number;
+  cancelling: boolean;
+  activeStep: number | null;
+  stepStartedAt: number | null;
+  modelSizeGiB?: number;
+};
+
+
 type ExternalModelDeleteNotice = {
   displayName: string;
 };
@@ -1104,6 +1122,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   // Loads can overlap and finish out of order; only the most recently requested
   // one may move the user to Chat.
   const latestLoadRequestRef = useRef<string | null>(null);
+  const [loadJobs, setLoadJobs] = useState<ReadonlyMap<string, GuiLoadProgress>>(() => new Map());
+  const activeLoadRef = useRef<Map<string, GuiLoadToken>>(new Map());
   const [pulling, setPulling] = useState<Record<string, number>>({});  // model -> percent
   const [modelSync, setModelSync] = useState<ModelSyncSnapshot>(() => modelSyncStore.snapshot());
   const [downloadItems, setDownloadItems] = useState<DownloadListItem[]>(() => downloadStore.snapshot());
@@ -1639,62 +1659,180 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
 
   const loadModelRuntime = async (
     target: ModelInfo | string,
+    targets: Array<{ name: string; recipeOptions?: Record<string, unknown>; info?: ModelInfo | null }>,
     visited = new Set<string>(),
     overrideOptions?: Record<string, unknown>,
-  ) => {
+  ): Promise<void> => {
     const name = typeof target === 'string' ? target : modelName(target);
     if (!name) return;
     const key = name.toLowerCase();
     if (visited.has(key)) throw new Error(`Circular Omni collection reference: ${name}`);
     visited.add(key);
-
-    const info = typeof target === 'string' ? findCurrentModel(name) : target;
-    if (isRouterModelInfo(info)) {
-      await ensureServerRouterReady(name);
-      visited.delete(key);
-      return;
-    }
-    const components = info && isCollectionModel(info) ? getCollectionComponents(info) : [];
-
-    if (components.length > 0) {
-      // Mirror Lemonade main: collection models are registered as collection.omni
-      // entries, but loading them means loading their concrete component models.
-      // The collection itself stays the selected virtual model in the UI.
-      for (const componentName of components) {
-        const componentInfo = findCurrentModel(componentName);
-        await loadModelRuntime(componentInfo || componentName, visited);
+    try {
+      const info = typeof target === 'string' ? findCurrentModel(name) : target;
+      if (isRouterModelInfo(info)) {
+        await ensureServerRouterReady(name);
+        return;
       }
+      const components = info && isCollectionModel(info) ? getCollectionComponents(info) : [];
+      if (components.length > 0) {
+        for (const componentName of components) {
+          const componentInfo = findCurrentModel(componentName);
+          await loadModelRuntime(componentInfo || componentName, targets, visited);
+        }
+        return;
+      }
+      const custom = info ? customLoadOptions(info) : undefined;
+      const recipeOptions = overrideOptions || custom ? { ...custom, ...overrideOptions } : undefined;
+      if (!targets.some(item => item.name.toLowerCase() === key)) {
+        targets.push({ name, recipeOptions, info });
+      }
+    } finally {
       visited.delete(key);
-      return;
     }
+  };
 
-    // overrideOptions (the settings shown in the detail panel) win over the
-    // custom model's own load options, which still supply everything else.
-    const custom = info ? customLoadOptions(info) : undefined;
-    const options = overrideOptions || custom ? { ...custom, ...overrideOptions } : undefined;
-    await api.loadModel(name, options, info);
-    visited.delete(key);
+  const showLoadError = (name: string, err: unknown) =>
+    showModelError(name, friendlyErrorMessage(err));
+
+  const updateLoadJob = (
+    name: string,
+    value: GuiLoadProgress | null | ((prev: GuiLoadProgress | null) => GuiLoadProgress | null),
+  ) => {
+    setLoadJobs(prev => {
+      const current = prev.get(name) ?? null;
+      const nextValue = typeof value === 'function' ? value(current) : value;
+      if (current === nextValue) return prev;
+      const next = new Map(prev);
+      if (nextValue === null) next.delete(name);
+      else next.set(name, nextValue);
+      return next;
+    });
+  };
+
+  const requestLoadInterrupt = async (active: GuiLoadToken) => {
+    if (!active.id || active.interruptSent) return;
+    active.interruptSent = true;
+    try {
+      await api.interruptJob(active.id);
+    } catch (err) {
+      if (activeLoadRef.current.get(active.modelName) !== active) return;
+      active.cancelRequested = false;
+      active.interruptSent = false;
+      updateLoadJob(active.modelName, prev => prev?.modelName === active.modelName ? { ...prev, cancelling: false } : prev);
+      showLoadError(active.modelName, err);
+    }
+  };
+
+  const handleCancelLoad = (name: string) => {
+    const active = activeLoadRef.current.get(name);
+    if (!active || active.modelName !== name || active.cancelRequested) return;
+    active.cancelRequested = true;
+    updateLoadJob(name, prev => prev?.modelName === name ? { ...prev, cancelling: true } : prev);
+    void requestLoadInterrupt(active);
+  };
+
+  const runLoadJob = async (
+    model: ModelInfo, overrideOptions?: Record<string, unknown>,
+    preMarkedBusy = false, recordLatest = true,
+  ) => {
+    const name = modelName(model);
+    if (activeLoadRef.current.has(name)) return;
+    const active: GuiLoadToken = {
+      modelName: name, id: null, cancelRequested: false, interruptSent: false,
+    };
+    activeLoadRef.current.set(name, active);
+    if (!preMarkedBusy) markBusy(name);
+    if (recordLatest) latestLoadRequestRef.current = name;
+    updateLoadJob(name, isRouterModelInfo(model) ? null : {
+      modelName: name, completed: 0, total: 0, cancelling: false,
+      activeStep: null, stepStartedAt: null,
+    });
+    const stopDownloadWatch = downloadStore.watchForModelLoad();
+    let terminal = false;
+    try {
+      const targets: Array<{ name: string; recipeOptions?: Record<string, unknown>; info?: ModelInfo | null }> = [];
+      await loadModelRuntime(model, targets, new Set<string>(), overrideOptions);
+      if (active.cancelRequested) return;
+      if (targets.length === 0) {
+        await refresh();
+        if (latestLoadRequestRef.current === name) onModelSelect(name);
+        return;
+      }
+      updateLoadJob(name, prev => prev?.modelName === name ? { ...prev, total: targets.length } : prev);
+      const { id } = await api.createModelLoadJob(name, targets);
+      active.id = id;
+      if (active.cancelRequested) await requestLoadInterrupt(active);
+      let failedPolls = 0;
+      while (true) {
+        let job;
+        try {
+          job = await api.getJob(id);
+          failedPolls = 0;
+        } catch (err) {
+          if (++failedPolls >= 3) throw err;
+          await new Promise<void>(resolve => window.setTimeout(resolve, 800));
+          continue;
+        }
+        const completed = job.steps.filter(step => step.status === 'completed').length;
+        const activeStep = job.steps.findIndex(step => step.status === 'running');
+        const modelSizeGiB = activeStep >= 0 ? Number(targets[activeStep]?.info?.size) : NaN;
+        updateLoadJob(name, prev => {
+          if (prev?.modelName !== name) return prev;
+          return {
+            ...prev,
+            completed,
+            activeStep: activeStep >= 0 ? activeStep : null,
+            stepStartedAt: activeStep < 0 ? null
+              : prev.activeStep === activeStep ? prev.stepStartedAt ?? Date.now() : Date.now(),
+            modelSizeGiB: Number.isFinite(modelSizeGiB) && modelSizeGiB > 0 ? modelSizeGiB : undefined,
+          };
+        });
+        if (job.status === 'completed') {
+          terminal = true;
+          await refresh();
+          if (latestLoadRequestRef.current === name) onModelSelect(name);
+          void api.systemInfo({ afterPending: true }).catch(() => undefined);
+          return;
+        }
+        if (job.status === 'interrupted') {
+          terminal = true;
+          await refresh();
+          return;
+        }
+        if (job.status === 'failed') {
+          terminal = true;
+          await refresh().catch(() => undefined);
+          throw new Error(job.steps.find(step => step.status === 'failed')?.error || `Failed to load ${name}`);
+        }
+        await new Promise<void>(resolve => window.setTimeout(resolve, 800));
+      }
+    } catch (err) {
+      if (!terminal && active.id) void api.interruptJob(active.id).catch(() => undefined);
+      if (!active.cancelRequested) {
+        console.error('Load failed:', err);
+        showLoadError(name, err);
+      }
+    } finally {
+      stopDownloadWatch();
+      if (terminal && active.id) void api.deleteJob(active.id).catch(() => undefined);
+      if (activeLoadRef.current.get(name) === active) {
+        activeLoadRef.current.delete(name);
+        updateLoadJob(name, null);
+        clearBusy(name);
+      }
+    }
   };
 
   const handleLoad = async (model: ModelInfo, overrideOptions?: Record<string, unknown>) => {
     const name = modelName(model);
-    if (busyModels.has(name)) return;
+    if (busyModels.has(name) || activeLoadRef.current.has(name)) return;
     if (activeDownloadForModel(downloadStore.snapshot(), name)) {
-      showModelError(name, `${name} is still downloading. Wait for the download to finish before loading it.`);
+      showLoadError(name, new Error(`${name} is still downloading. Wait for the download to finish before loading it.`));
       return;
     }
     clearModelError(name);
-    markBusy(name);
-    latestLoadRequestRef.current = name;
-    try {
-      await loadModelRuntime(model, new Set<string>(), overrideOptions);
-      await refresh();
-      if (latestLoadRequestRef.current === name) onModelSelect(name);
-    } catch (err) {
-      console.error('Load failed:', err);
-      showModelError(name, friendlyErrorMessage(err));
-    }
-    clearBusy(name);
+    await runLoadJob(model, overrideOptions);
   };
 
   const handleUnload = async (model: LoadedModel) => {
@@ -1881,21 +2019,20 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       },
       onComplete: async (data) => {
         downloadStore.wake(name, 'model');
-        delete pullAbortRef.current[name];
-        // Mark busy in the same tick the pull entry clears, so no Load click can
-        // land in between and start a second load of this model.
-        markBusy(name);
+        markBusy(name); // Keep this model busy while pull changes into load.
         setPulling(p => { const next = { ...p }; delete next[name]; return next; });
-        await refresh();
+        let handedOff = false;
         try {
-          await loadModelRuntime(model, new Set<string>(), overrideOptions);
           await refresh();
-          if (latestLoadRequestRef.current === name) onModelSelect(name);
+          if (ac.signal.aborted) return;
+          if (activeLoadRef.current.has(name)) return;
+          handedOff = true;
+          await runLoadJob(model, overrideOptions, true, false);
         } catch (err) {
-          console.error('Load after pull failed:', err);
           showModelError(name, friendlyErrorMessage(err));
+        } finally {
+          if (!handedOff && !activeLoadRef.current.has(name)) clearBusy(name);
         }
-        clearBusy(name);
       },
       onError: (err) => {
         downloadStore.wake(name, 'model');
@@ -3302,6 +3439,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
             ? (displayLoadedModels.find(m => m.model_name === selectedDetailModelId) ?? null)
             : null}
           busyModels={busyModels}
+          loadJob={loadJobs.get(selectedDetailModelId || '') ?? null}
+          onCancelLoad={handleCancelLoad}
           pulling={effectivePulling}
           loadErrors={loadErrors}
           onLoad={handleLoad}
