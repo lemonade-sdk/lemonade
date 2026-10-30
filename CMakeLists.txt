@@ -3245,6 +3245,24 @@ if(BUILD_TESTING AND EXISTS "${_DS4_INSTALL_TEST_SRC}")
     add_cpp_ci_test(Ds4InstallParamsTest CI ON COMMAND test_ds4_install_params)
 endif()
 
+# FLM install params: XDNA2 installs the upstream FastFlowLM release; XDNA3 has
+# no downloadable build yet, so it asks for a user-supplied flm.npu_bin instead.
+set(_FLM_INSTALL_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_flm_install_params.cpp")
+if(BUILD_TESTING AND EXISTS "${_FLM_INSTALL_TEST_SRC}")
+    add_executable(test_flm_install_params test/cpp/test_flm_install_params.cpp)
+    target_link_libraries(test_flm_install_params PRIVATE lemonade-server-core)
+    add_cpp_ci_test(FlmInstallParamsTest CI ON COMMAND test_flm_install_params)
+endif()
+
+# FLM validate: the user-facing reason a `flm validate --json` result is not
+# ready, including ryzenai-corelib's diagnostics on XDNA3, which must not leak.
+set(_FLM_VALIDATION_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_flm_validation_error.cpp")
+if(BUILD_TESTING AND EXISTS "${_FLM_VALIDATION_TEST_SRC}")
+    add_executable(test_flm_validation_error test/cpp/test_flm_validation_error.cpp)
+    target_link_libraries(test_flm_validation_error PRIVATE lemonade-server-core)
+    add_cpp_ci_test(FlmValidationErrorTest CI ON COMMAND test_flm_validation_error)
+endif()
+
 # llamacpp gfx950 (MI350) install gate: only the Linux + stable-channel asset is
 # published, so the shared Windows/Linux support row must not advertise Windows
 # or nightly installs for gfx950.

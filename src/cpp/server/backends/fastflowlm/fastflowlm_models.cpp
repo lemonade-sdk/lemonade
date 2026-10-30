@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
+#include <regex>
 #include <vector>
 #include <nlohmann/json.hpp>
 #include "lemon/model_manager.h"
@@ -230,7 +231,7 @@ std::vector<ModelInfo> flm_discover_models() {
 
     std::string output;
 #ifdef _WIN32
-    std::string command = "\"" + flm_path + "\" list --json";
+    std::string command = "\"" + flm_path + "\" list --json 2>NUL";
     int rc = lemon::utils::ProcessManager::run_command(command, output);
     LOG(INFO, "ModelManager") << "flm list --json exit code: " << rc
               << ", output length: " << output.size() << std::endl;
@@ -675,6 +676,90 @@ std::string find_flm_executable() {
     return "";
 }
 
+namespace {
+
+// corelib_error is ryzenai-corelib's diagnostic, written for FastFlowLM's
+// developers; map it to what the user can act on, or "" when it says nothing
+// they can.
+std::string describe_corelib_error(const std::string& reason) {
+    static const std::regex driver_too_old(
+        R"(the NPU driver (\S+) is older than (\S+?)[ :(])");
+    std::smatch match;
+    const std::string padded = reason + " ";
+    if (std::regex_search(padded, match, driver_too_old)) {
+        return "NPU driver version is too old (installed " + match[1].str() +
+               ", requires " + match[2].str() + " or newer).";
+    }
+    auto has = [&reason](const char* text) { return reason.find(text) != std::string::npos; };
+    if (has("XRT ") && has(" is older than ")) {
+        return "NPU driver version is too old.";
+    }
+    if (has("version could not be read") || has("is not one corelib reads") ||
+        has("could not be checked")) {
+        return "NPU driver version could not be verified; update the NPU driver.";
+    }
+    if (has("XRT is not usable")) {
+        return "NPU runtime is not working; reinstall the NPU driver.";
+    }
+    if (has("no usable NPU")) {
+        return "No usable NPU was found.";
+    }
+    if (has("failed to load corelib library") || has("missing corelib symbol") ||
+        has("ABI mismatch")) {
+        return "FastFlowLM installation is incomplete; reinstall the flm backend.";
+    }
+    return "";
+}
+
+}  // namespace
+
+std::string flm_validation_error(const json& validation) {
+    if (validation.value("ready", false)) {
+        return "";
+    }
+
+    std::vector<std::string> errors;
+    auto failed = [&validation](const char* key) {
+        return validation.contains(key) && validation[key].is_boolean() &&
+               !validation[key].get<bool>();
+    };
+
+    if (failed("amd_device_found")) {
+        errors.push_back("No AMD NPU device found.");
+    }
+    if (failed("all_fw_ok")) {
+        errors.push_back("NPU firmware is incompatible.");
+    }
+    if (failed("kernel_ok")) {
+        errors.push_back("Kernel version is incompatible.");
+    }
+    if (failed("memlock_ok")) {
+        errors.push_back("Memlock limits are too low.");
+    }
+    if (failed("npu_driver_ok")) {
+        errors.push_back("NPU driver version is too old.");
+    }
+    if (failed("corelib_npu_ok")) {
+        const std::string reason = validation.contains("corelib_error") &&
+                                           validation["corelib_error"].is_string()
+                                       ? validation["corelib_error"].get<std::string>()
+                                       : "";
+        const std::string described = describe_corelib_error(reason);
+        if (!described.empty()) {
+            errors.push_back(described);
+        }
+    }
+
+    if (errors.empty()) {
+        return "NPU validation failed.";
+    }
+    std::string message;
+    for (size_t i = 0; i < errors.size(); ++i) {
+        message += errors[i] + (i == errors.size() - 1 ? "" : " ");
+    }
+    return message;
+}
+
 bool run_flm_validate(const std::string& flm_path, std::string& error_message) {
     std::string flm_exe = flm_path.empty() ? find_flm_executable() : flm_path;
     if (flm_exe.empty()) {
@@ -690,7 +775,7 @@ bool run_flm_validate(const std::string& flm_path, std::string& error_message) {
     std::string output;
     int exit_code;
 #ifdef _WIN32
-    exit_code = lemon::utils::ProcessManager::run_command(command, output);
+    exit_code = lemon::utils::ProcessManager::run_command(command + " 2>NUL", output);
 #else
     FILE* pipe = popen(command.c_str(), "r");
     if (!pipe) {
@@ -713,46 +798,8 @@ bool run_flm_validate(const std::string& flm_path, std::string& error_message) {
         if (!output.empty()) {
             json j = lemon::utils::JsonUtils::parse(output);
             if (j.is_object()) {
-                bool validation_ok = false;
-                if (j.contains("ready")) {
-                    validation_ok = j["ready"].get<bool>();
-                }
-
-                if (validation_ok) {
-                    error_message.clear();
-                    return true;
-                }
-
-                std::vector<std::string> errors;
-
-                if (j.contains("amd_device_found") && !j["amd_device_found"].get<bool>()) {
-                    errors.push_back("No AMD NPU device found.");
-                }
-
-                if (j.contains("all_fw_ok") && !j["all_fw_ok"].get<bool>()) {
-                    errors.push_back("NPU firmware is incompatible.");
-                }
-                if (j.contains("kernel_ok") && !j["kernel_ok"].get<bool>()) {
-                    errors.push_back("Kernel version is incompatible.");
-                }
-
-                if (j.contains("memlock_ok") && !j["memlock_ok"].get<bool>()) {
-                    errors.push_back("Memlock limits are too low.");
-                }
-
-                if (j.contains("npu_driver_ok") && !j["npu_driver_ok"].get<bool>()) {
-                    errors.push_back("NPU driver version is too old.");
-                }
-
-                if (errors.empty()) {
-                    error_message = "NPU validation failed.";
-                } else {
-                    error_message = "";
-                    for (size_t i = 0; i < errors.size(); ++i) {
-                        error_message += errors[i] + (i == errors.size() - 1 ? "" : " ");
-                    }
-                }
-                return false;
+                error_message = flm_validation_error(j);
+                return error_message.empty();
             }
         }
     } catch (...) {

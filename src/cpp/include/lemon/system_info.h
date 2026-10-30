@@ -136,6 +136,12 @@ public:
     // affect concurrent requests.
     static void set_rocm_arch_override(const std::string& arch);
 
+    // NPU family of this host ("XDNA2", "XDNA3"), or empty when there is no NPU.
+    static std::string get_npu_family();
+
+    // get_npu_family() counterpart of set_rocm_arch_override().
+    static void set_npu_family_override(const std::string& family);
+
     // True if (recipe, backend) is published for the given ROCm family/ISA, per
     // the backend support matrix. Lets callers tell "this arch should have an
     // asset" from "this arch is intentionally not built" without duplicating the
