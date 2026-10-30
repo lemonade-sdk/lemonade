@@ -102,9 +102,11 @@ static bool is_llamacpp_cuda_backend(const std::string& backend) {
     return backend == "cuda";
 }
 
-// llamacpp:nathanw is a Vulkan build of llama.cpp, so it takes Vulkan devices.
+// The container backends are Vulkan (nathanw) and ROCm (halobox) builds of llama.cpp.
 static std::string device_api(const std::string& backend) {
-    return backend == "nathanw" ? "vulkan" : backend;
+    if (backend == "nathanw") return "vulkan";
+    if (backend == "halobox") return "rocm";
+    return backend;
 }
 
 static bool is_dflash_draft_checkpoint(std::string checkpoint) {

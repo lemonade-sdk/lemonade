@@ -1465,6 +1465,7 @@ jobs:
         include:
           - {recipe: ds4, backend: rocm}
           - {recipe: llamacpp, backend: nathanw}
+          - {recipe: llamacpp, backend: halobox}
           - {recipe: rocmfpx, backend: rocm}
           - {recipe: halogen, backend: rocm}
     env:

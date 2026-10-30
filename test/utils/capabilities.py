@@ -47,6 +47,7 @@ CAPABILITIES = {
                 "cpu",
                 "system",
                 "nathanw",
+                "halobox",
             ],
             "supports": {
                 "chat_completions": True,
