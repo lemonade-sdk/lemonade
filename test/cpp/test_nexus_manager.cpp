@@ -1321,6 +1321,16 @@ int main() {
         auto ordinary_members = verified_members;
         ordinary_members[0]["is_admin"] = false;
         check(access::account_summary(ordinary_members, "cluster", "device", "identity").at("role") == "user", "Joining an account does not imply administrator access");
+        ordinary_members[0]["permissions"] = access::role_permissions("moderator");
+        check(access::account_summary(ordinary_members, "cluster", "device", "identity").at("role") == "moderator", "The verified moderator preset is reported as moderator");
+        ordinary_members[0]["permissions"].push_back("svc:future_service");
+        check(access::account_summary(ordinary_members, "cluster", "device", "identity").at("role") == "moderator", "Additional grants do not hide a complete moderator preset");
+        ordinary_members[0]["permissions"] = json::array({"read", "write", "add_child", "connect_private", "svc:inference"});
+        check(access::account_summary(ordinary_members, "cluster", "device", "identity").at("role") == "user", "Partial grants do not imply the moderator preset");
+        ordinary_members[0]["permissions"] = access::role_permissions("moderator");
+        ordinary_members[0]["is_admin"] = true;
+        check(access::account_summary(ordinary_members, "cluster", "device", "identity").at("role") == "admin", "Administrator status takes precedence over moderator grants");
+        ordinary_members[0]["is_admin"] = false;
         check(throws([&] { access::account_summary(verified_members, "cluster", "missing", "identity"); }), "Account access requires the current device to be a group member");
         check(throws([&] { access::account_summary(verified_members, "", "device", "identity"); }), "An account requires a group identity");
         check(throws([&] { access::account_summary(verified_members, "cluster", "device", ""); }), "An account requires an authenticated identity");

@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import type { NexusRoutePermissions } from '../src/features/nexus/routePermissions';
+import type { NexusRole, NexusRoutePermissions } from '../src/features/nexus/routePermissions';
 import { enableNexusMesh, setupNexusAccount } from './nexusAccountFixture';
 
 function policy(): NexusRoutePermissions {
@@ -23,8 +23,8 @@ function policy(): NexusRoutePermissions {
   };
 }
 
-async function openRoutes(page: Page) {
-  await setupNexusAccount(page, { apiKey: '', deviceKey: true });
+async function openRoutes(page: Page, role: NexusRole = 'admin') {
+  const fixture = await setupNexusAccount(page, { apiKey: '', deviceKey: true, role });
   const response = { status: 200, body: policy() as unknown, calls: [] as { method: string; origin: string; authorization?: string }[] };
   await page.route('**/nexus/route-permissions', route => {
     response.calls.push({ method: route.request().method(), origin: new URL(route.request().url()).origin, authorization: route.request().headers().authorization });
@@ -34,13 +34,13 @@ async function openRoutes(page: Page) {
   await page.getByRole('radio', { name: 'Advanced', exact: true }).check();
   expect(response.calls).toHaveLength(0);
   await page.locator('.nexus-route-permissions > summary').click();
-  return response;
+  return { response, fixture };
 }
 
 test('role route lists use server data and preserve templates and aliases without writing permissions', async ({ page }, testInfo) => {
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
-  const response = await openRoutes(page);
+  const { response } = await openRoutes(page);
   const panel = page.locator('.nexus-route-permissions');
   await expect(panel.getByRole('radio', { name: 'User', exact: true })).toBeChecked();
   await expect(panel.getByText('2 allowed routes', { exact: true })).toBeVisible();
@@ -85,7 +85,7 @@ test('role route lists use server data and preserve templates and aliases withou
 });
 
 test('missing, malformed and unavailable policies never display guessed permissions and can retry', async ({ page }) => {
-  const response = await openRoutes(page);
+  const { response } = await openRoutes(page);
   const panel = page.locator('.nexus-route-permissions');
   await expect(panel.getByText('2 allowed routes', { exact: true })).toBeVisible();
   await panel.locator(':scope > summary').click();
@@ -124,4 +124,43 @@ test('route permissions fit a narrow viewport and support keyboard role selectio
   const boxes = await Promise.all(labels.map(label => label.boundingBox()));
   expect(new Set(boxes.map(box => box?.y)).size).toBe(1);
   await panel.screenshot({ path: testInfo.outputPath('routes-mobile.png') });
+});
+
+for (const role of ['admin', 'moderator', 'user'] as const) {
+  test(`${role} sees only its own and lower role controls`, async ({ page }, testInfo) => {
+    await openRoutes(page, role);
+    const panel = page.locator('.nexus-route-permissions');
+    const labels = role === 'admin' ? ['Admin', 'Moderator', 'User'] : role === 'moderator' ? ['Moderator', 'User'] : ['User'];
+    await expect(panel.getByRole('radio')).toHaveCount(labels.length);
+    for (const label of ['Admin', 'Moderator', 'User']) {
+      await expect(panel.getByRole('radio', { name: label, exact: true })).toHaveCount(labels.includes(label) ? 1 : 0);
+    }
+    await panel.getByRole('radio', { name: labels[0], exact: true }).check();
+    await expect(panel.locator('.nexus-route-family[open]')).toHaveCount(0);
+    await panel.getByText('Run inference', { exact: true }).click();
+    await panel.screenshot({ path: testInfo.outputPath(`visible-controls-${role}.png`) });
+  });
+}
+
+test('account refresh removes a selected higher role without leaving stale controls', async ({ page }) => {
+  await page.clock.install();
+  const { fixture } = await openRoutes(page);
+  const panel = page.locator('.nexus-route-permissions');
+  await panel.getByRole('radio', { name: 'Admin', exact: true }).check();
+  await panel.getByText('Manage Nexus', { exact: true }).click();
+  fixture.accountRole = 'moderator';
+  fixture.state.members[0].is_admin = false;
+  fixture.state.members[0].permissions = ['read', 'write', 'add_child', 'connect_private', 'svc:inference', 'svc:mcp', 'svc:models_manage', 'svc:jobs'];
+  await page.clock.fastForward(15001);
+  await expect(panel.getByRole('radio', { name: 'Admin', exact: true })).toHaveCount(0);
+  await expect(panel.getByRole('radio', { name: 'Moderator', exact: true })).toBeChecked();
+  await expect(panel.locator('.nexus-route-family[open]')).toHaveCount(0);
+  fixture.accountRole = 'user';
+  fixture.state.members[0].permissions = ['read', 'connect_private', 'svc:inference'];
+  await page.clock.fastForward(15001);
+  await expect(panel.getByRole('radio')).toHaveCount(1);
+  await expect(panel.getByRole('radio', { name: 'User', exact: true })).toBeChecked();
+  fixture.accountError = true;
+  await page.clock.fastForward(15001);
+  await expect(panel).toHaveCount(0);
 });

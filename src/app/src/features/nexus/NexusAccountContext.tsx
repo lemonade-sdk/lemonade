@@ -4,11 +4,12 @@ import { NexusAccountInviteDialog, NexusSignInDialog } from '../../components/Ne
 import { NexusPasskeyDialog } from '../../components/NexusPasskeyDialog';
 import { nexusAccountService, saveNexusAccountLabel, type NexusAccountService, type VerifiedNexusAccount } from './accountSession';
 import { clearNexusNetwork, NexusRequestError, refreshNexus, useNexusNetwork } from './nexus';
+import type { NexusRole } from './routePermissions';
 
 export interface NexusAccount {
   id: string;
   displayName: string;
-  role?: 'admin' | 'user';
+  role?: NexusRole;
   avatarUrl?: string;
 }
 

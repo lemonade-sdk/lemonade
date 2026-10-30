@@ -1,6 +1,7 @@
 import { expect, type Page } from '@playwright/test';
 import type { NexusDevice, NexusStatus } from '../src/features/nexus/nexus';
 import type { NexusTreeBranch, NexusTreeEntry } from '../src/features/nexus/tree';
+import type { NexusRole } from '../src/features/nexus/routePermissions';
 
 const headers = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Authorization, Content-Type', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS' };
 const self: NexusDevice = { node_id: 'self', device_name: 'My laptop', tunnel_ip: '10.8.0.2', management_pubkey: 'self-key', permissions: ['read', 'admin'], permissions_known: true, is_admin: true, is_online: true, can_remove: false };
@@ -10,10 +11,14 @@ export async function setupNexusAccount(page: Page, options: {
   desktop?: boolean; registered?: boolean; joined?: boolean; readOnly?: boolean; cancelPasskey?: boolean; unauthorized?: boolean;
   avatarUnsupported?: boolean; needsUserKey?: boolean; inviteWithoutCode?: boolean; deviceKey?: boolean;
   remote?: boolean; apiKey?: string; apiUnauthorized?: boolean;
+  role?: NexusRole;
 } = {}) {
   const source = options.remote ? 'http://192.168.10.20:13305' : 'http://127.0.0.1:13305';
   const deviceName = options.remote ? 'Inference server' : 'My laptop';
-  const members = [{ ...self, device_name: deviceName, ...(options.readOnly ? { is_admin: false, permissions: ['read'] } : {}) }, { ...peer }];
+  const accountRole = options.role || (options.readOnly ? 'user' : 'admin');
+  const members = [{ ...self, device_name: deviceName, is_admin: accountRole === 'admin',
+    permissions: accountRole === 'admin' ? ['read', 'admin'] : accountRole === 'moderator'
+      ? ['read', 'write', 'add_child', 'connect_private', 'svc:inference', 'svc:mcp', 'svc:models_manage', 'svc:jobs'] : ['read'] }, { ...peer }];
   const state: NexusStatus = { available: true, controller_url: 'http://127.0.0.1:15555', enabled: true,
     registered: options.registered ?? true, locked: options.joined === false, mesh_up: options.joined !== false,
     status: options.joined === false ? 'locked' : 'running', node_id: 'self', group_node_id: options.joined === false ? '' : 'group',
@@ -36,7 +41,7 @@ export async function setupNexusAccount(page: Page, options: {
   };
   if (options.remote) { delete state.controller_url; state.remote_management = true; }
   const calls: { path: string; origin: string; method: string; body: Record<string, unknown> | null; authorization?: string }[] = [];
-  const fixture = { state, calls, branches, accountError: false, accountUnavailable: false, rejectWrites: false, invalidTree: false, unlockUnreachable: false,
+  const fixture = { state, calls, branches, accountRole, accountError: false, accountUnavailable: false, rejectWrites: false, invalidTree: false, unlockUnreachable: false,
     avatarSaveGate: undefined as Promise<void> | undefined,
     avatar: {state: 'ready', image: null as string | null, revision: 0, can_write: !options.readOnly, pending: false} };
   await page.addInitScript(({ desktop, cancelPasskey, source, key }) => {
@@ -85,7 +90,7 @@ export async function setupNexusAccount(page: Page, options: {
     });
     if (path.endsWith('/account')) return route.fulfill(fixture.accountError
       ? { status: 409, headers, json: { error: 'Account access ended' } }
-      : { headers, json: { id: state.group_node_id, member_id: 'fixture-identity', device_node_id: 'self', role: members[0].is_admin ? 'admin' : 'user', devices: members,
+      : { headers, json: { id: state.group_node_id, member_id: 'fixture-identity', device_node_id: 'self', role: fixture.accountRole, devices: members,
         avatar: options.avatarUnsupported ? {state: 'unsupported'} : fixture.avatar } });
     if (path.endsWith('/account/avatar')) {
       await fixture.avatarSaveGate;

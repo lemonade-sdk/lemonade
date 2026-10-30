@@ -107,7 +107,7 @@ function AccountSummary() {
       <div className="nexus-account-summary__details">
         <div className="nexus-account-summary__name">
           <strong>{account?.displayName || t('Lemonade account')}</strong>
-          {account?.role === 'admin' && <span className="nexus-role">{t('Admin')}</span>}
+          {account?.role && account.role !== 'user' && <span className="nexus-role">{t(account.role === 'admin' ? 'Admin' : 'Moderator')}</span>}
         </div>
         <span className={`nexus-account-status${account ? ' nexus-account-status--signed-in' : ''}`}>
           {account && <Icon name="check" size={14} />}{account ? t('Mesh enabled') : t('Mesh disabled')}

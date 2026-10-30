@@ -290,8 +290,13 @@ json account_summary(const json& members, const std::string& group_id,
     if (group_id.empty() || identity_id.empty() || self.is_null() || !self.value("permissions_known", false)) {
         throw NexusError(409, "Account membership could not be verified. Refresh the network and try again.");
     }
+    const auto permissions = self.value("permissions", json::array());
+    const auto moderator = role_permissions("moderator");
+    // Until Nexus stores named roles, only the complete preset identifies a moderator.
+    const bool is_moderator = std::all_of(moderator.begin(), moderator.end(),
+        [&](const json& permission) { return contains(permissions, permission.get<std::string>()); });
     return {{"id", group_id}, {"member_id", identity_id}, {"device_node_id", node_id},
-        {"role", self.value("is_admin", false) ? "admin" : "user"}};
+        {"role", self.value("is_admin", false) ? "admin" : is_moderator ? "moderator" : "user"}};
 }
 
 json account_avatar(const json& value, const std::string& group_id) {

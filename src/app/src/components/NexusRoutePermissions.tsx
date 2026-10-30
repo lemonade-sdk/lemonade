@@ -6,16 +6,20 @@ import { Icon } from './Icon';
 import { WorkspaceActionButton } from './WorkspacePanels';
 
 const roleLabels: Record<NexusRole, string> = { admin: 'Admin', moderator: 'Moderator', user: 'User' };
+const roleOrder: NexusRole[] = ['admin', 'moderator', 'user'];
 
-export function NexusRoutePermissions() {
+export function NexusRoutePermissions({ viewerRole }: { viewerRole: NexusRole }) {
   const { t } = useI18n();
   const id = useId();
   const [open, setOpen] = useState(false);
-  const [role, setRole] = useState<NexusRole>('user');
+  const [selectedRole, setRole] = useState<NexusRole>('user');
+  const visibleRoles = roleOrder.slice(roleOrder.indexOf(viewerRole));
+  const role = visibleRoles.includes(selectedRole) ? selectedRole : viewerRole;
   const [query, setQuery] = useState('');
   const [data, setData] = useState<RoutePermissions>();
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
+  useEffect(() => { setRole(role); }, [role]);
   useEffect(() => {
     if (!open) return;
     let active = true;
@@ -43,7 +47,7 @@ export function NexusRoutePermissions() {
           <p className="nexus-hint">{t('Preset access through the authenticated mesh. Device and group assignments can limit access.')}</p>
           <div className="nexus-route-permissions__toolbar">
             <fieldset className="nexus-view-mode nexus-role-selector"><legend className="sr-only">{t('View routes for role')}</legend>
-              {data.roles.map(item => <label key={item.id} className={role === item.id ? 'is-selected' : ''}>
+              {data.roles.filter(item => visibleRoles.includes(item.id)).map(item => <label key={item.id} className={role === item.id ? 'is-selected' : ''}>
                 <input type="radio" name={id} checked={role === item.id} onChange={() => setRole(item.id)} />
                 {t(roleLabels[item.id])}<span className="nexus-route-count" aria-hidden="true">{data.routes.filter(route => route.roles.includes(item.id)).length}</span>
               </label>)}
