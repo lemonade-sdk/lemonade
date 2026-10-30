@@ -6,7 +6,6 @@
 #include "lemon/backends/halogen/halogen.h"
 #include "lemon/model_manager.h"
 #include "lemon/system_info.h"
-#include "lemon/system_metrics_platform.h"
 #include "lemon/utils/container_manager.h"
 #include "lemon/utils/http_client.h"
 
@@ -14,7 +13,6 @@
 
 #include <algorithm>
 #include <filesystem>
-#include <iomanip>
 #include <map>
 #include <sstream>
 #include <stdexcept>
@@ -167,25 +165,6 @@ void HalogenServer::load(const std::string& model_name, const ModelInfo& model_i
         }
     }
 
-    // Halogen sizes its KV pool from MemTotal, blind to other models, and on a
-    // host already short of the weights plus that pool it stalls in the kernel
-    // instead of failing. Failing here lets the router evict the other models
-    // and retry. The lookup table is paged on demand and needs no room.
-    double weights_gb = fs::file_size(checkpoint) / BYTES_PER_GIB;
-    if (!vision.empty()) weights_gb += fs::file_size(vision) / BYTES_PER_GIB;
-    if (model_info.min_resident_gb > 0.0) {
-        const double needed_gb = weights_gb + model_info.min_resident_gb;
-        const auto metrics = create_metrics_platform();
-        const double total_gb = metrics ? metrics->get_memory_total_gb() : 0.0;
-        const double free_gb = total_gb - (metrics ? metrics->get_memory_usage_gb() : 0.0);
-        if (total_gb > 0.0 && free_gb < needed_gb) {
-            std::ostringstream message;
-            message << std::fixed << std::setprecision(1) << "halogen needs " << needed_gb
-                    << " GiB of free memory to start, and " << free_gb << " GiB is free";
-            throw std::runtime_error(message.str());
-        }
-    }
-
     const json ctx_option = options.get_option("ctx_size");
     const int ctx_size = ctx_option.is_number_integer() && ctx_option.get<int>() > 0
                              ? ctx_option.get<int>()
@@ -219,12 +198,10 @@ void HalogenServer::load(const std::string& model_name, const ModelInfo& model_i
                      BackendUtils::get_backend_image(halogen::descriptor.recipe, kBackend)),
                  command,
                  (std::max)(kStartupTimeoutSeconds, utils::HttpClient::get_default_timeout()));
-    pinned_weights_gb_ = weights_gb;
 }
 
 void HalogenServer::unload() {
     stop_server();
-    pinned_weights_gb_ = 0.0;
 }
 
 json HalogenServer::chat_completion(const json& request) {

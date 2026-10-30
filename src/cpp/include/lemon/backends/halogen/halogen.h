@@ -16,7 +16,10 @@ inline const BackendDescriptor descriptor = {
     /*binary*/          "",  // the image's entrypoint serves the model
     /*config_section*/  "",  // defaults to recipe
     /*default_device*/  DEVICE_GPU,
-    /*slot_policy*/     SlotPolicy::Standard,
+    // Halogen is built to own its machine: it sizes its KV pool from MemTotal,
+    // and the free-memory readings everything else relies on count its pinned
+    // weights as reclaimable cache.
+    /*slot_policy*/     SlotPolicy::ExclusiveHost,
     /*selectable_backend*/ false,  // rocm is the only backend
     /*uses_ctx_size*/   true,
     /*dynamic_models*/  false,

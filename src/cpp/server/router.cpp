@@ -368,43 +368,6 @@ void Router::ensure_residency_capacity(
     evict_server(lru);
 }
 
-// Returns the unreported memory still resident after making room, for
-// auto-tune to count as used.
-double Router::make_room_beside_unreported_residents(const ModelInfo& model_info) {
-    double unreported_gb = 0.0;
-    for (const auto& server : loaded_servers_) {
-        if (server->is_backend_alive()) unreported_gb += server->unreported_resident_gb();
-    }
-    if (unreported_gb <= 0.0) return 0.0;
-
-    auto metrics = create_metrics_platform();
-    const double total_gb = metrics ? metrics->get_memory_total_gb() : 0.0;
-    if (total_gb <= 0.0) return unreported_gb;
-    const double free_gb = total_gb - metrics->get_memory_usage_gb() - unreported_gb;
-    const auto* desc = backends::descriptor_for(model_info.recipe);
-    const double working_set_gb =
-        (desc && desc->streams_model_from_storage && model_info.min_resident_gb > 0.0
-             ? model_info.min_resident_gb
-             : model_info.size) * 1e9 / BYTES_PER_GIB;
-    if (working_set_gb <= free_gb) return unreported_gb;
-
-    std::vector<WrappedServer*> holders;
-    for (const auto& server : loaded_servers_) {
-        if (server->is_backend_alive() && server->unreported_resident_gb() > 0.0 &&
-            !server->is_pinned()) {
-            holders.push_back(server.get());
-        }
-    }
-    for (auto* holder : holders) {
-        LOG(INFO, "Router") << model_info.model_name << " needs about " << working_set_gb
-                            << " GiB and " << free_gb << " GiB is free beside "
-                            << holder->get_model_name() << ", evicting it" << std::endl;
-        unreported_gb -= holder->unreported_resident_gb();
-        evict_server(holder);
-    }
-    return (std::max)(0.0, unreported_gb);
-}
-
 void Router::transition_server_residency_locked(
     WrappedServer* server,
     ResidencyClass requested_residency_class) {
@@ -990,6 +953,35 @@ void Router::load_model(const std::string& model_name,
         ModelType model_type = model_info.type;
         DeviceType device_type = model_info.device;
 
+        // A host-exclusive backend shares the machine with no other local model:
+        // loading it evicts them all, and loading any other local model evicts it.
+        // Cloud models hold no local memory and stay.
+        if (!is_unmetered_recipe(model_info.recipe)) {
+            const bool exclusive_load =
+                slot_policy_for_recipe(model_info.recipe) == SlotPolicy::ExclusiveHost;
+            std::vector<std::pair<WrappedServer*, std::string>> displaced;
+            for (const auto& server : loaded_servers_) {
+                if (!server->is_backend_alive()) continue;
+                const std::string recipe = server->get_recipe_options().get_recipe();
+                const SlotPolicy policy = slot_policy_for_recipe(recipe);
+                if (policy == SlotPolicy::Unmetered) continue;
+                if (!exclusive_load && policy != SlotPolicy::ExclusiveHost) continue;
+                const std::string reason =
+                    (exclusive_load ? model_info.recipe : recipe) + " requires the machine to itself";
+                if (should_reject_residency_displacement(requested_residency_class,
+                                                         server->get_residency_class())) {
+                    throw RouterResidencyConflictException(canonical_model_name,
+                                                           server->get_model_name(), reason);
+                }
+                displaced.emplace_back(server.get(), reason);
+            }
+            for (const auto& [server, reason] : displaced) {
+                LOG(INFO, "Router") << reason << ", evicting: " << server->get_model_name()
+                                    << std::endl;
+                evict_server(server);
+            }
+        }
+
         // NPU EXCLUSIVITY CHECK — driven by the backend's slot policy (descriptor).
         //   ExclusiveNpu (ryzenai-llm, whisper-on-npu): lock the entire NPU,
         //                evicting ALL NPU servers first.
@@ -1066,6 +1058,7 @@ void Router::load_model(const std::string& model_name,
             }
             case SlotPolicy::Standard:
             case SlotPolicy::Unmetered:
+            case SlotPolicy::ExclusiveHost:
                 break;
         }
 
@@ -1078,12 +1071,9 @@ void Router::load_model(const std::string& model_name,
                                       canonical_model_name);
         }
 
-        const double unreported_gb =
-            is_unmetered_load ? 0.0 : make_room_beside_unreported_residents(model_info);
-
         // Auto-tune: resolve ctx_size = -1 → computed from memory + arch metadata
         // Done AFTER eviction so that freed VRAM/RAM is visible to the memory query.
-        int64_t auto_ctx = resolve_auto_ctx_size(effective_options, model_info, unreported_gb);
+        int64_t auto_ctx = resolve_auto_ctx_size(effective_options, model_info);
         const bool ctx_size_auto = auto_ctx != -2;
         if (auto_ctx > 0) {
             LOG(INFO, "Router") << "Auto-tune ctx_size resolved to " << auto_ctx << std::endl;

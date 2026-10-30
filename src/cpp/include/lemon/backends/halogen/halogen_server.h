@@ -17,14 +17,10 @@ public:
     void load(const std::string& model_name, const ModelInfo& model_info,
               const RecipeOptions& options, bool do_not_upgrade = false) override;
     void unload() override;
-    double unreported_resident_gb() const override { return pinned_weights_gb_; }
 
     json chat_completion(const json& request) override;
     json completion(const json& request) override;
     json responses(const json& request) override;
-
-private:
-    double pinned_weights_gb_ = 0.0;
 };
 
 namespace halogen {

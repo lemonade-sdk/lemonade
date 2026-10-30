@@ -127,7 +127,7 @@ CAPABILITIES = {
                 "responses_api_streaming": True,
                 "tool_calls": True,
                 "tool_calls_streaming": True,
-                "multi_model": True,
+                "host_exclusive": True,
                 "stop_parameter": True,
                 "static_max_context_window": True,
             },

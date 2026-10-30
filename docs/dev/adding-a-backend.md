@@ -92,7 +92,7 @@ inline const BackendDescriptor descriptor = {
 }}}  // namespace lemon::backends::myrecipe
 ```
 
-`SlotPolicy` controls accelerator sharing: `Standard` (counts toward LRU slots), `ExclusiveNpu` (evicts all NPU servers first), `CoexistByType` (one per model type), `Unmetered` (never counted, never auto-evicted — cloud).
+`SlotPolicy` controls accelerator sharing: `Standard` (counts toward LRU slots), `ExclusiveNpu` (evicts all NPU servers first), `CoexistByType` (one per model type), `ExclusiveHost` (shares the machine with no other local model: loading it evicts every other local model, and loading another local model evicts it), `Unmetered` (never counted, never auto-evicted — cloud).
 
 Each `support` row names its backend's tier (`BackendTier::Core`, `BackendTier::Experimental` or `BackendTier::Guest`) and format (`BackendFormat::Native`, `BackendFormat::Python` or `BackendFormat::Container`) right after the backend name, so a row without them does not compile. Rows for the same backend on different OSes can carry different labels; `/system-info` reports the labels of the row for the current OS. Tiers are defined in [Support Tier](#support-tier) and formats in [Backend Tiers and Formats](../api/lemonade.md#backend-tiers-and-formats).
 
