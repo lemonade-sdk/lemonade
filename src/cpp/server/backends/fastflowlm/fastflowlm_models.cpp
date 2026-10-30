@@ -230,7 +230,7 @@ std::vector<ModelInfo> flm_discover_models() {
 
     std::string output;
 #ifdef _WIN32
-    std::string command = "\"" + flm_path + "\" list --json";
+    std::string command = "\"" + flm_path + "\" list --json 2>NUL";
     int rc = lemon::utils::ProcessManager::run_command(command, output);
     LOG(INFO, "ModelManager") << "flm list --json exit code: " << rc
               << ", output length: " << output.size() << std::endl;
@@ -690,7 +690,7 @@ bool run_flm_validate(const std::string& flm_path, std::string& error_message) {
     std::string output;
     int exit_code;
 #ifdef _WIN32
-    exit_code = lemon::utils::ProcessManager::run_command(command, output);
+    exit_code = lemon::utils::ProcessManager::run_command(command + " 2>NUL", output);
 #else
     FILE* pipe = popen(command.c_str(), "r");
     if (!pipe) {

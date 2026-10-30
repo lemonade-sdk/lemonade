@@ -2075,10 +2075,33 @@ std::string identify_npu_arch() {
 namespace {
     // Per-thread arch override consumed by get_rocm_arch(). Empty = probe hardware.
     thread_local std::string g_rocm_arch_override;
+    // Per-thread family override consumed by get_npu_family(). Empty = probe hardware.
+    thread_local std::string g_npu_family_override;
 }
 
 void SystemInfo::set_rocm_arch_override(const std::string& arch) {
     g_rocm_arch_override = arch;
+}
+
+void SystemInfo::set_npu_family_override(const std::string& family) {
+    g_npu_family_override = family;
+}
+
+std::string SystemInfo::get_npu_family() {
+    if (!g_npu_family_override.empty()) {
+        return g_npu_family_override;
+    }
+    try {
+        json system_info = SystemInfoCache::get_system_info_with_cache();
+        if (system_info.contains("devices") && system_info["devices"].contains("amd_npu")) {
+            const auto& npu = system_info["devices"]["amd_npu"];
+            if (npu.is_object()) {
+                return npu.value("family", "");
+            }
+        }
+    } catch (...) {
+    }
+    return "";
 }
 
 std::string SystemInfo::rocm_asset_family(const std::string& arch) {
