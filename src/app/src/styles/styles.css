@@ -3636,6 +3636,10 @@ optgroup {
   color: var(--warn);
 }
 
+[data-theme="light"] .cell__badge--warn {
+  color: #784600;
+}
+
 .cell__badge--off {
   background: var(--surface-3);
   color: var(--text-disabled);
@@ -4210,35 +4214,30 @@ optgroup {
   overflow-wrap: anywhere;
 }
 
-/* Multi-GPU System Vitals: size the layout to the card, not the viewport. */
-.dash2-card--vitals-multi { container-type: inline-size; }
-
-.dash2-vitals-multi {
+/* Auto-fit keeps the card responsive independently of the outer window width. */
+.dash2-grid-2col > .dash2-card--vitals-multi {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(min(480px, 100%), 1fr));
   gap: var(--space-3);
   min-width: 0;
-  margin-bottom: var(--space-4);
+  container-type: inline-size;
 }
-
-.dash2-gauges--multi {
+.dash2-card--vitals-multi > .dash2-card__h,
+.dash2-card--vitals-multi > :last-child { grid-column: 1 / -1; }
+.dash2-card--vitals-multi > .dash2-card__h { margin-bottom: 0; }
+.dash2-card--vitals-multi > .dash2-gauges {
   gap: var(--space-2);
   justify-content: space-evenly;
-  margin-bottom: 0;
+  margin: 0;
   min-width: 0;
 }
-
-.dash2-gauges--multi .dash2-gauge { width: 108px; }
-.dash2-gauges--multi .dash2-gauge__svg { width: 100px; height: 100px; }
-.dash2-gauges--multi .dash2-gauge__center { width: 100px; height: 100px; }
-.dash2-gauges--multi .dash2-gauge__value { font-size: 1.05rem; }
+.dash2-card--vitals-multi .dash2-gauge { width: 108px; }
+.dash2-card--vitals-multi .dash2-gauge__svg,
+.dash2-card--vitals-multi .dash2-gauge__center { width: 100px; height: 100px; }
+.dash2-card--vitals-multi .dash2-gauge__value { font-size: 1.05rem; }
 
 .dash2-gpus { min-width: 0; }
 .dash2-gpus__heading {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: var(--space-2);
   margin-bottom: var(--space-2);
   color: var(--text-secondary);
   font-size: var(--text-xs);
@@ -4247,7 +4246,7 @@ optgroup {
 
 .dash2-gpus__list {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
   gap: var(--space-2);
   min-width: 0;
 }
@@ -4313,13 +4312,16 @@ optgroup {
 .dash2-gpus__fill--memory { background: var(--warn); }
 .dash2-gpus__more { font-size: var(--type-overline-size); color: var(--text-tertiary); }
 
-@container (min-width: 560px) {
+@container (min-width: 960px) {
+  .dash2-card--vitals-multi > .dash2-gpus { grid-column: 2 / -1; }
+}
+
+@container (min-width: 1440px) {
   .dash2-gpus__list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
-@container (min-width: 960px) {
-  .dash2-vitals-multi { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-  .dash2-gpus__list { grid-template-columns: minmax(0, 1fr); }
+@container (max-width: 540px) {
+  .dash2-card--vitals-multi > .dash2-gauges { max-width: 260px; justify-self: center; }
 }
 
 @container (max-width: 420px) {

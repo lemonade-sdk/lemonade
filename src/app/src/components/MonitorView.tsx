@@ -1,5 +1,6 @@
 import React, { Suspense, useEffect, useRef, useState } from 'react';
 import Monitor from './Monitor';
+import api from '../api';
 import WorkspaceSectionRail from './WorkspaceSectionRail';
 import { WORKSPACE_NAVIGATION, type MonitorSection } from '../features/navigation/workspaceNavigation';
 import {
@@ -70,7 +71,7 @@ export default function MonitorView({
       <div className="monitor-content">
         {mountedSectionsRef.current.has('performance') && (
           <div className="monitor-section" hidden={activeSection !== 'performance'}>
-            <Monitor isActive={isActive && activeSection === 'performance'} />
+            <Monitor key={api.baseUrl} isActive={isActive && activeSection === 'performance'} />
           </div>
         )}
         {mountedSectionsRef.current.has('telemetry') && (

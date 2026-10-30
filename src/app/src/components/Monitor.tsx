@@ -439,44 +439,42 @@ const Monitor: React.FC<MonitorProps> = ({ isActive }) => {
         <div className="dash2-grid-2col">
           <div className={multiGpu ? 'dash2-card dash2-card--vitals-multi' : 'dash2-card'}>
             <h2 className="dash2-card__h">{t('System Vitals')}</h2>
-            <div className={multiGpu ? 'dash2-vitals-multi' : undefined}>
-              <div className={multiGpu ? 'dash2-gauges dash2-gauges--multi' : 'dash2-gauges'}>
-                <RingGauge label="CPU" value={sysStats?.cpu_percent ?? null}
-                  subtitle={pct(sysStats?.cpu_percent ?? null)} />
-                {memoryTopology.unified ? (
-                  <RingGauge
-                    label={t('RAM / VRAM')}
-                    value={ramUsedGb}
-                    max={ramGaugeMax}
-                    unit="GB"
-                    color="var(--info)"
-                    thresholdPercent={memoryTopology.hostTotalGb != null ? evictionThresholdPercent : null}
-                    subtitle={[
-                      ramUsedGb == null ? t('Shared memory pool') : t('{value} GB used · shared pool', { value: ramUsedGb.toFixed(1) }),
-                      memoryTopology.hostTotalGb == null ? evictionThresholdText : null,
-                    ].filter(Boolean).join(' · ')}
-                  />
-                ) : (
-                  <RingGauge label="RAM" value={ramUsedGb} max={ramGaugeMax} unit="GB"
-                    color="var(--info)" subtitle={ramUsedGb == null ? '—' : `${ramUsedGb.toFixed(1)} GB`} />
-                )}
-                {!multiGpu && hasGpu && <RingGauge label="GPU" value={sysStats!.gpu_percent!}
-                  color="var(--accent)" subtitle={pct(sysStats!.gpu_percent)} />}
-                {!multiGpu && !memoryTopology.unified && hasGpu && sysStats!.vram_gb != null && sysStats!.vram_gb >= 0 && (
-                  <RingGauge label="VRAM" value={sysStats!.vram_gb!} max={vramGaugeMax} unit="GB"
-                    color="var(--warn)" thresholdPercent={memoryTopology.gpuTotalGb != null ? evictionThresholdPercent : null}
-                    subtitle={[
-                      `${sysStats!.vram_gb!.toFixed(1)} GB`,
-                      memoryTopology.gpuTotalGb == null ? evictionThresholdText : null,
-                    ].filter(Boolean).join(' · ')} />
-                )}
-                {hasNpu && <RingGauge label="NPU" value={sysStats!.npu_percent!}
-                  color="var(--chart-series-4)" subtitle={pct(sysStats!.npu_percent)} />}
-                <RingGauge label={t('KV Cache')} value={overallCacheUtil}
-                  color="var(--warn)" subtitle={overallCacheUtil != null ? `${overallCacheUtil.toFixed(0)}%` : '—'} />
-              </div>
-              {multiGpu && <MonitorGpuVitals gpus={gpuDevices} selectedId={activeGpu?.id ?? null} onSelect={setSelectedGpuId} />}
+            <div className="dash2-gauges">
+              <RingGauge label="CPU" value={sysStats?.cpu_percent ?? null}
+                subtitle={pct(sysStats?.cpu_percent ?? null)} />
+              {memoryTopology.unified ? (
+                <RingGauge
+                  label={t('RAM / VRAM')}
+                  value={ramUsedGb}
+                  max={ramGaugeMax}
+                  unit="GB"
+                  color="var(--info)"
+                  thresholdPercent={memoryTopology.hostTotalGb != null ? evictionThresholdPercent : null}
+                  subtitle={[
+                    ramUsedGb == null ? t('Shared memory pool') : t('{value} GB used · shared pool', { value: ramUsedGb.toFixed(1) }),
+                    memoryTopology.hostTotalGb == null ? evictionThresholdText : null,
+                  ].filter(Boolean).join(' · ')}
+                />
+              ) : (
+                <RingGauge label="RAM" value={ramUsedGb} max={ramGaugeMax} unit="GB"
+                  color="var(--info)" subtitle={ramUsedGb == null ? '—' : `${ramUsedGb.toFixed(1)} GB`} />
+              )}
+              {!multiGpu && hasGpu && <RingGauge label="GPU" value={sysStats!.gpu_percent!}
+                color="var(--accent)" subtitle={pct(sysStats!.gpu_percent)} />}
+              {!multiGpu && !memoryTopology.unified && hasGpu && sysStats!.vram_gb != null && sysStats!.vram_gb >= 0 && (
+                <RingGauge label="VRAM" value={sysStats!.vram_gb!} max={vramGaugeMax} unit="GB"
+                  color="var(--warn)" thresholdPercent={memoryTopology.gpuTotalGb != null ? evictionThresholdPercent : null}
+                  subtitle={[
+                    `${sysStats!.vram_gb!.toFixed(1)} GB`,
+                    memoryTopology.gpuTotalGb == null ? evictionThresholdText : null,
+                  ].filter(Boolean).join(' · ')} />
+              )}
+              {hasNpu && <RingGauge label="NPU" value={sysStats!.npu_percent!}
+                color="var(--chart-series-4)" subtitle={pct(sysStats!.npu_percent)} />}
+              <RingGauge label={t('KV Cache')} value={overallCacheUtil}
+                color="var(--warn)" subtitle={overallCacheUtil != null ? `${overallCacheUtil.toFixed(0)}%` : '—'} />
             </div>
+            {multiGpu && <MonitorGpuVitals gpus={gpuDevices} selectedId={activeGpu?.id ?? null} onSelect={setSelectedGpuId} t={t} />}
             <SmoothChart
               data={sysChartData}
               series={[
