@@ -281,9 +281,10 @@ public:
                     };
 
                 if (!subscribe) {
-                    const std::string display_name = recipe + ":" + backend;
-                    res.set_content(ctx_.downloads->start("backend:" + display_name, "backend",
-                                                          display_name, operation).dump(),
+                    const std::string name = recipe + ":" +
+                        BackendManager::canonical_backend_name(recipe, backend);
+                    res.set_content(ctx_.downloads->start("backend:" + name, "backend",
+                                                          name, operation).dump(),
                                     "application/json");
                     return;
                 }

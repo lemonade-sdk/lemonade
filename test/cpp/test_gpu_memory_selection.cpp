@@ -77,8 +77,8 @@ int main() {
     auto rocm0 = select_gpu_memory_pool(
         GpuMemoryVendor::Amd, amd_igpu, two_amd, nvidia, unavailable, "ROCm0");
     check(rocm0.unified && rocm0.total_gb == 8.0 &&
-          rocm0.physical_total_gb == 8.0,
-          "ROCm iGPU pool marks unified physical RAM");
+          rocm0.physical_total_gb == 0.0,
+          "ROCm iGPU pool does not report its GTT window as physical RAM");
 
 #ifdef _WIN32
     GPUInfo unmapped_igpu = gpu(2.0, 0.5);

@@ -208,6 +208,31 @@ void SyncService::cancel() {
     cancel_flag_.store(true);
 }
 
+void SyncService::log_outcome_locked() const {
+    std::string summary = std::to_string(state_.completed_targets.size()) + " updated, " +
+                          std::to_string(state_.models_up_to_date.size()) + " up to date, " +
+                          std::to_string(state_.failed_models.size()) + " failed";
+    const std::string prefix = "Model sync " + std::to_string(state_.current_generation);
+    if (state_.cancel_requested) {
+        LOG(INFO, "ModelManager") << prefix << " cancelled: " << summary << std::endl;
+        return;
+    }
+    if (state_.failed_models.empty() && state_.terminal_error.empty()) {
+        LOG(INFO, "ModelManager") << prefix << " finished: " << summary << std::endl;
+        return;
+    }
+    // One line per sync, naming each model, so a search in the log finds why it failed.
+    std::string reasons;
+    for (const auto& [model, reason] : state_.failed_models) {
+        reasons += (reasons.empty() ? "" : "; ") + model + ": " + reason;
+    }
+    if (!state_.terminal_error.empty()) {
+        reasons += (reasons.empty() ? "" : "; ") + state_.terminal_error;
+    }
+    LOG(WARNING, "ModelManager") << prefix << " finished with failures: " << summary << " ("
+                                 << reasons << ")" << std::endl;
+}
+
 SyncService::Enqueued SyncService::enqueue(const std::vector<std::string>& target_models,
                                            bool attach_if_running) {
     std::lock_guard<std::mutex> lock(state_.mutex);
@@ -482,6 +507,7 @@ void SyncService::run_generation() {
                     if (state_.completed_generation_results.size() > 32) {
                         state_.completed_generation_results.erase(state_.completed_generation_results.begin());
                     }
+                    log_outcome_locked();
                     guard.active = false;
                     state_.cv.notify_all();
                     return;
@@ -544,6 +570,7 @@ void SyncService::run_generation() {
         if (state_.completed_generation_results.size() > 32) {
             state_.completed_generation_results.erase(state_.completed_generation_results.begin());
         }
+        log_outcome_locked();
         guard.active = false;
         state_.cv.notify_all();
         return;

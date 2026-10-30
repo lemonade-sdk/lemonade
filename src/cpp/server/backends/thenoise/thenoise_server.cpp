@@ -47,6 +47,15 @@ json split_lora_specs(const std::string& specs) {
     return result;
 }
 
+std::string resolve_thenoise_backend(const std::string& requested) {
+    if (!requested.empty() && requested != "auto") return requested;
+    const auto supported = SystemInfo::get_supported_backends("thenoise");
+    if (supported.backends.empty()) {
+        throw std::runtime_error("No supported TheNoise GPU backend: " + supported.not_supported_error);
+    }
+    return supported.backends.front();
+}
+
 #ifdef _WIN32
 void launch_bundled_python(std::string& exe_path,
                            std::vector<std::string>& args,
@@ -61,14 +70,21 @@ void launch_bundled_python(std::string& exe_path,
 }  // namespace
 
 InstallParams TheNoiseServer::get_install_params(const std::string& backend, const std::string& version) {
+    InstallParams params;
+    params.repo = "lemonade-sdk/thenoise";
+    if (backend == "cuda") {
+#if defined(__linux__) && defined(__x86_64__)
+        params.filename = version + "-cuda-x64.tar.gz";
+        return params;
+#else
+        throw std::runtime_error("TheNoise CUDA is supported on Linux x86_64 only");
+#endif
+    }
     if (backend != "rocm") {
-        throw std::runtime_error("TheNoise backend '" + backend + "' is not supported. Supported: rocm");
+        throw std::runtime_error("TheNoise backend '" + backend + "' is not supported. Supported: rocm, cuda (Linux)");
     }
 
     std::string target_arch = SystemInfo::rocm_asset_family(SystemInfo::get_rocm_arch());
-
-    InstallParams params;
-    params.repo = "lemonade-sdk/thenoise";
 #ifdef _WIN32
     params.filename = version + "-" + target_arch + "-win-x64.zip";
 #else
@@ -91,10 +107,7 @@ void TheNoiseServer::load(const std::string& model_name,
 
     image_defaults_ = model_info.image_defaults;
 
-    std::string backend = options.get_option("thenoise_backend");
-    if (backend.empty()) {
-        backend = "rocm";
-    }
+    const std::string backend = resolve_thenoise_backend(options.get_option("thenoise_backend"));
 
     RuntimeConfig::validate_backend_choice("thenoise", backend);
 
@@ -424,8 +437,14 @@ std::string TheNoiseServer::upscale_via_cli(
     const std::string& b64_image,
     const std::string& upscale_model_path) {
 
-    //ROCm is currently the only available backend. If other backends are added this needs to be parameterized accordingly.
-    std::string exe_path = BackendUtils::get_backend_binary_path(*thenoise::spec(), "rocm");
+    std::string configured_backend;
+    if (auto* cfg = RuntimeConfig::global()) {
+        configured_backend = cfg->backend_string("thenoise", "backend");
+    }
+    const std::string backend = resolve_thenoise_backend(configured_backend);
+    RuntimeConfig::validate_backend_choice("thenoise", backend);
+    backend_manager_->install_backend(thenoise::spec()->recipe, backend);
+    std::string exe_path = BackendUtils::get_backend_binary_path(*thenoise::spec(), backend);
 
     if (!fs::exists(exe_path)) {
         LOG(ERROR, "TheNoise") << "thenoise binary not found at: " << exe_path << std::endl;

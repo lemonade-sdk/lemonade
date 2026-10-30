@@ -3,8 +3,9 @@
 #include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backends/install_staging.h"
-#include "lemon/runtime_config.h"
 #include "lemon/rocm_arch_override.h"
+#include "lemon/runtime_config.h"
+#include "lemon/server/download_manager.h"
 #include "lemon/system_info.h"
 #include "lemon/utils/github_api.h"
 #include "lemon/utils/http_client.h"
@@ -350,6 +351,11 @@ void install_therock_if_needed(const std::string& os, const json& backend_versio
 
 } // namespace
 
+std::string BackendManager::canonical_backend_name(const std::string& recipe,
+                                                   const std::string& backend) {
+    return normalize_backend_name(recipe, backend);
+}
+
 BackendManager::BackendManager() {
     try {
         std::string config_path = utils::get_resource_path("resources/backend_versions.json");
@@ -596,10 +602,27 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
         is_llamacpp_rocm_backend(recipe, resolved_backend) ? llamacpp_device : "");
     LOG(DEBUG, "BackendManager") << "Installing " << recipe << ":" << resolved_backend << std::endl;
 
+    if (!progress_cb && download_manager_ && resolved_backend != "system") {
+        const std::string name = recipe + ":" + resolved_backend;
+        download_manager_->run_tracked("backend:" + name, "backend", name,
+            [this, recipe, resolved_backend, force, llamacpp_device](DownloadProgressCallback report,
+                                                    utils::CancelToken) {
+                install_backend(recipe, resolved_backend, force, report, llamacpp_device);
+            });
+        return;
+    }
+
     // System backend uses a pre-installed binary from PATH - nothing to install
     if (resolved_backend == "system") {
         return;
     }
+
+    std::mutex* install_lock;
+    {
+        std::lock_guard<std::mutex> guard(install_locks_mutex_);
+        install_lock = &install_locks_[recipe + ":" + resolved_backend];
+    }
+    std::lock_guard<std::mutex> serialized_install(*install_lock);
 
     auto* spec = backends::try_get_spec_for_recipe(recipe);
     if (!spec) {

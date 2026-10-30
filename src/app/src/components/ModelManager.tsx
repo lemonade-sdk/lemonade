@@ -13,6 +13,7 @@ import {
 } from '../features/models/huggingFaceSearch';
 import { DEFAULT_CONTEXT_SIZE } from '../modelConfiguration';
 import { DownloadListItem, activeDownloadForModel, downloadStore, isDownloadActive } from '../features/downloadManager/downloadStore';
+import { isModelSyncRunning, modelSyncFailureText, modelSyncStore, openServerLogs, type ModelSyncSnapshot } from '../features/models/modelSyncStore';
 import { ModelListPanel, capabilityTagIconTarget, modelIsCustom, modelMatchesBackends, modelMatchesTags, modelMatchesTasks } from './ModelListPanel';
 import type { FilterTab, PrimaryFilter } from './ModelListPanel';
 import { ModelNavRail } from './ModelNavRail';
@@ -1080,6 +1081,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   const [loadingModel, setLoadingModel] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<{ modelName: string; message: string } | null>(null);
   const [pulling, setPulling] = useState<Record<string, number>>({});  // model -> percent
+  const [modelSync, setModelSync] = useState<ModelSyncSnapshot>(() => modelSyncStore.snapshot());
   const [downloadItems, setDownloadItems] = useState<DownloadListItem[]>(() => downloadStore.snapshot());
   const unknownActiveModelDownloadsRef = useRef<Set<string>>(new Set());
   const pullAbortRef = useRef<Record<string, AbortController>>({});
@@ -1266,6 +1268,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       console.warn('Failed to refresh model list:', err);
     }
   }, []);
+
+  useEffect(() => modelSyncStore.subscribe(setModelSync), []);
 
   // App owns startup connection. This fallback supports isolated mounts without
   // creating a second request when the global refresh is already in flight.
@@ -2487,24 +2491,13 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   const pinnedNameSet = useMemo(() => new Set(pinnedModels.map(name => name.toLowerCase())), [pinnedModels]);
   const favoriteNameSet = useMemo(() => new Set(favoriteModels.map(name => name.toLowerCase())), [favoriteModels]);
 
-  const handleUpdateAllModels = useCallback(async (): Promise<void> => {
-    const candidates = allModels.filter(model => {
-      const name = modelName(model);
-      if (!name || String((model as any).recipe || '').toLowerCase() === ROUTER_RECIPE) return false;
-      return loadedNames.has(name)
-        || (isCollectionModel(model) ? isCollectionFullyDownloaded(model, allModels) : Boolean((model as any).downloaded));
-    });
-
-    for (const model of candidates) {
-      const name = modelName(model);
-      if (pulling[name] !== undefined || activeDownloadForModel(downloadItems, name)) {
-        continue;
-      }
-      void handlePull(model).catch(error => {
-        console.error(`Could not start update for ${name}:`, error);
-      });
-    }
-  }, [allModels, downloadItems, loadedNames, pulling]);
+  const modelSyncBusy = isModelSyncRunning(modelSync);
+  const modelSyncProgress = modelSync.active?.progress;
+  const modelSyncError = modelSync.error || modelSyncFailureText(modelSync.result);
+  const handleUpdateAllModels = useCallback(() => { void modelSyncStore.startSync(); }, []);
+  const handleUpdateModel = useCallback((model: ModelInfo) => {
+    void modelSyncStore.startSync([modelName(model)]);
+  }, []);
 
   const localRegistryRefs = useMemo(() => {
     const refs = new Set<string>();
@@ -2798,6 +2791,28 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     >
       {mobileRail.isOpen && <div className="workspace-mobile-rail-backdrop" onClick={mobileRail.close} aria-hidden="true" />}
       {customJsonNotice && <div className="manager__toast" role="status" aria-live="polite">{customJsonNotice}</div>}
+      {(modelSyncBusy || modelSyncError) && (
+        <div className="manager__toast manager__toast--sync" role={modelSyncError && !modelSyncBusy ? 'alert' : 'status'}>
+          <span className="manager__toast-message">
+            {modelSyncBusy ? (
+              <>
+                {t('Updating…')}
+                {modelSyncProgress?.current_model && ` ${modelSyncProgress.current_model}`}
+                {modelSyncProgress?.current_model && typeof modelSyncProgress.percent === 'number'
+                  && ` (${modelSyncProgress.percent.toFixed(0)}%)`}
+              </>
+            ) : modelSyncError}
+          </span>
+          {!modelSyncBusy && (
+            <>
+              <button type="button" className="manager__toast-action" onClick={openServerLogs}>{t('View logs')}</button>
+              <button type="button" className="manager__toast-dismiss" onClick={() => modelSyncStore.dismissResult()} aria-label={t('Dismiss notification')}>
+                <Icon name="x" size={14} aria-hidden="true" />
+              </button>
+            </>
+          )}
+        </div>
+      )}
       {externalModelDeleteNotice && (
         <div className="manager__toast manager__toast--external-model" role="status" aria-live="polite" aria-atomic="true">
           <span className="manager__toast-message">
@@ -2893,7 +2908,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
         tagFilters={tagFilters}
         searchInputRef={searchRef}
         onOpenRouter={() => openRouterEditor(selectedDetailModel)}
-        onUpdateAllModels={() => { void handleUpdateAllModels(); }}
+        onUpdateAllModels={handleUpdateAllModels}
+        isUpdatingModels={modelSyncBusy}
         onOpenCustomModels={() => openCustomForm('model')}
         pinnedNames={pinnedNameSet}
         favoriteNames={favoriteNameSet}
@@ -3263,6 +3279,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
           onUnload={handleUnload}
           onReloadModel={handleReloadModel}
           onPull={handlePull}
+          onUpdate={handleUpdateModel}
+          isUpdating={modelSyncBusy}
           onPullAndLoad={handlePullAndLoad}
           onDelete={handleDelete}
           onCancelPull={handleCancelPull}
