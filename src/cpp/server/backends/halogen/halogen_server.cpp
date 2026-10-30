@@ -171,9 +171,9 @@ void HalogenServer::load(const std::string& model_name, const ModelInfo& model_i
     // host already short of the weights plus that pool it stalls in the kernel
     // instead of failing. Failing here lets the router evict the other models
     // and retry. The lookup table is paged on demand and needs no room.
+    double weights_gb = fs::file_size(checkpoint) / BYTES_PER_GIB;
+    if (!vision.empty()) weights_gb += fs::file_size(vision) / BYTES_PER_GIB;
     if (model_info.min_resident_gb > 0.0) {
-        double weights_gb = fs::file_size(checkpoint) / BYTES_PER_GIB;
-        if (!vision.empty()) weights_gb += fs::file_size(vision) / BYTES_PER_GIB;
         const double needed_gb = weights_gb + model_info.min_resident_gb;
         const auto metrics = create_metrics_platform();
         const double total_gb = metrics ? metrics->get_memory_total_gb() : 0.0;
@@ -219,10 +219,12 @@ void HalogenServer::load(const std::string& model_name, const ModelInfo& model_i
                      BackendUtils::get_backend_image(halogen::descriptor.recipe, kBackend)),
                  command,
                  (std::max)(kStartupTimeoutSeconds, utils::HttpClient::get_default_timeout()));
+    pinned_weights_gb_ = weights_gb;
 }
 
 void HalogenServer::unload() {
     stop_server();
+    pinned_weights_gb_ = 0.0;
 }
 
 json HalogenServer::chat_completion(const json& request) {
