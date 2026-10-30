@@ -504,12 +504,24 @@ export interface StatsData {
   };
 }
 
+export interface SystemGpuStats {
+  id: string;
+  vendor: string;
+  name: string;
+  memory_type: 'dedicated' | 'shared' | 'unknown';
+  gpu_percent: number | null;
+  memory_total_gb: number | null;
+  memory_used_gb: number | null;
+}
+
 export interface SystemStatsData {
   cpu_percent: number | null;
   memory_gb: number | null;
   gpu_percent: number | null;
   vram_gb: number | null;
   npu_percent: number | null;
+  primary_gpu_id?: string | null;
+  gpus?: SystemGpuStats[];
 }
 
 export interface SlotTimings {
