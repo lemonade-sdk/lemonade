@@ -47,7 +47,17 @@ import {
 } from '../modelCapabilities';
 import { storageKey } from '../storage';
 import { captureBrowserDraftSend, hasBrowserPromptContext, readBrowserPromptDraft, saveBrowserPromptDraft } from '../features/browserPrompt';
-import { CHAT_HISTORY_PREFERENCE_EVENT, loadChatHistoryPreference, saveChatHistoryPreference } from '../features/chatHistory/historySettings';
+import {
+  CHAT_HISTORY_PREFERENCE_EVENT,
+  conversationVersion,
+  deletedConversationIds,
+  loadChatHistoryPreference,
+  removeDeletedConversations,
+  saveChatHistoryPreference,
+  storedConversationId,
+  storedConversationIds,
+  tryWriteChatHistoryPreference,
+} from '../features/chatHistory/historySettings';
 import { prepareToolCallsForStorage } from '../features/chatHistory/toolCallPersistence';
 import type { DownloadListItem } from '../features/downloadManager/downloadStore';
 import { findModelInfoByName, getAudioTranscriptionComponent, getPrimaryChatComponent, getVisionChatComponent, isCollectionModel, virtualLoadedCollection } from '../features/collections/collectionModels';
@@ -291,10 +301,10 @@ function normalizeSnapshot(raw: unknown): ModelSnapshot | null {
   };
 }
 
-function normalizeConversation(raw: unknown): Conversation | null {
+function normalizeConversation(raw: unknown, stableId?: string): Conversation | null {
   if (!raw || typeof raw !== 'object') return null;
   const obj = raw as Record<string, unknown>;
-  const id = typeof obj.id === 'string' ? obj.id : generateId();
+  const id = stableId ?? storedConversationId(raw) ?? generateId();
   const messagesRaw = Array.isArray(obj.messages) ? obj.messages : [];
   const messages = messagesRaw
     .filter((m): m is Record<string, unknown> => !!m && typeof m === 'object')
@@ -318,26 +328,44 @@ function normalizeConversation(raw: unknown): Conversation | null {
   };
 }
 
-function loadConversations(persist: boolean): Conversation[] {
-  if (!persist) return [];
+function tryReadStoredConversations(): unknown[] | null {
   try {
     const raw = localStorage.getItem(scopedKey(STORAGE_KEY));
     if (!raw) return [];
     const parsed = JSON.parse(raw);
-    const list: unknown[] = Array.isArray(parsed) ? parsed : (Array.isArray(parsed?.conversations) ? parsed.conversations : []);
-    return list.map(normalizeConversation).filter((c): c is Conversation => !!c);
+    if (Array.isArray(parsed)) return parsed;
+    if (Array.isArray(parsed?.conversations)) return parsed.conversations;
   } catch { /* ignore */ }
-  return [];
+  return null;
 }
 
-function saveConversations(convos: Conversation[], persist: boolean) {
-  if (!persist) {
-    try {
-      localStorage.removeItem(scopedKey(STORAGE_KEY));
-      localStorage.removeItem(scopedKey(ACTIVE_KEY));
-    } catch { /* ignore */ }
-    return;
+function readStoredConversations(): unknown[] {
+  return tryReadStoredConversations() ?? [];
+}
+
+function writeStoredConversations(list: unknown[]): boolean {
+  try {
+    localStorage.setItem(scopedKey(STORAGE_KEY), JSON.stringify({ version: STORAGE_VERSION, conversations: list }));
+    return true;
+  } catch {
+    return false;
   }
+}
+
+function loadConversations(): Conversation[] {
+  const stored = readStoredConversations();
+  const ids = storedConversationIds(stored);
+  return stored.map((entry, index) => normalizeConversation(entry, ids[index])).filter((c): c is Conversation => !!c);
+}
+
+function removeSavedConversations(deletedIds: ReadonlySet<string>): boolean {
+  const stored = tryReadStoredConversations();
+  if (stored === null) return false;
+  const kept = removeDeletedConversations(stored, deletedIds);
+  return kept.length === stored.length || writeStoredConversations(kept);
+}
+
+function saveConversations(convos: Conversation[]): boolean {
   // Strip transient/generated media before persisting. Image prompts are redacted
   // so private context around an image does not leak into localStorage.
   const stripped = convos.map(c => ({
@@ -355,19 +383,16 @@ function saveConversations(convos: Conversation[], persist: boolean) {
       toolCalls: prepareToolCallsForStorage(m.toolCalls),
     })),
   }));
-  try { localStorage.setItem(scopedKey(STORAGE_KEY), JSON.stringify({ version: STORAGE_VERSION, conversations: stripped })); } catch { /* ignore */ }
+  return writeStoredConversations(stripped);
 }
 
-function loadActiveId(persist: boolean): string | null {
-  if (!persist) return null;
+function loadActiveId(): string | null {
   try { return localStorage.getItem(scopedKey(ACTIVE_KEY)); } catch { return null; }
 }
 
-function saveActiveId(id: string | null, persist: boolean) {
+function saveActiveId(id: string | null) {
   try {
-    if (!persist) {
-      localStorage.removeItem(scopedKey(ACTIVE_KEY));
-    } else if (id) {
+    if (id) {
       localStorage.setItem(scopedKey(ACTIVE_KEY), id);
     } else {
       localStorage.removeItem(scopedKey(ACTIVE_KEY));
@@ -916,10 +941,15 @@ const ChatView: React.FC<ChatViewProps> = ({
   const [modelPreparations, setModelPreparations] = useState<Record<string, ModelPreparationState>>({});
   const [persistHistory, setPersistHistory] = useState(() => loadPersistencePreference());
   const [historyNoticeDismissed, setHistoryNoticeDismissed] = useState(false);
+  const [historyWriteFailed, setHistoryWriteFailed] = useState(false);
+  const [historyPreferenceWriteFailed, setHistoryPreferenceWriteFailed] = useState(false);
   // Large persisted conversations are not required to draw the first usable
   // frame.  Hydrate them after paint instead of JSON-parsing the full history
   // synchronously inside the initial React render.
-  const [historyHydrated, setHistoryHydrated] = useState(() => !loadPersistencePreference());
+  const [historyHydrated, setHistoryHydrated] = useState(false);
+  const savedVersionsRef = useRef<Map<string, string>>(new Map());
+  const previousConversationIdsRef = useRef<Set<string> | null>(null);
+  const pendingDeletionsRef = useRef<Set<string>>(new Set());
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [incomingPrompt] = useState(readBrowserPromptDraft);
@@ -1041,13 +1071,10 @@ const ChatView: React.FC<ChatViewProps> = ({
 
   useEffect(() => {
     if (historyHydrated) return;
-    if (!persistHistory) {
-      setHistoryHydrated(true);
-      return;
-    }
     const cancelSchedule = scheduleIdleWork(() => {
-      const storedConversations = loadConversations(true);
-      const storedActiveId = loadActiveId(true);
+      const storedConversations = loadConversations();
+      const storedActiveId = loadActiveId();
+      savedVersionsRef.current = new Map(storedConversations.map(c => [c.id, conversationVersion(c)]));
       setConversations(current => {
         if (current.length === 0) return storedConversations;
         const existing = new Set(current.map(conversation => conversation.id));
@@ -1057,7 +1084,7 @@ const ChatView: React.FC<ChatViewProps> = ({
       setHistoryHydrated(true);
     }, 500);
     return cancelSchedule;
-  }, [historyHydrated, persistHistory]);
+  }, [historyHydrated]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2167,14 +2194,56 @@ const ChatView: React.FC<ChatViewProps> = ({
     };
   }, []);
 
-  // Persist conversations to localStorage only when the user explicitly opted in.
   useEffect(() => {
     if (!historyHydrated) return;
-    saveConversations(conversations, persistHistory);
-    try { localStorage.setItem(storageKey('persist_conversations'), String(persistHistory)); } catch { /* ignore */ }
+    if (persistHistory) {
+      const saved = saveConversations(conversations);
+      if (saved) {
+        savedVersionsRef.current = new Map(conversations.map(c => [c.id, conversationVersion(c)]));
+        pendingDeletionsRef.current = new Set();
+      }
+      setHistoryWriteFailed(!saved);
+    }
+    setHistoryPreferenceWriteFailed(!tryWriteChatHistoryPreference(persistHistory));
   }, [conversations, historyHydrated, persistHistory]);
 
-  const hasUnsavedConversations = !persistHistory && conversations.some(c => c.messages.length > 0);
+  useEffect(() => {
+    if (!historyHydrated) return;
+    const ids = new Set(conversations.map(c => c.id));
+    const previous = previousConversationIdsRef.current;
+    previousConversationIdsRef.current = ids;
+    // Only a successful full save may clear pending deletions.
+    if (persistHistory) return;
+    if (!previous) return;
+    const deleted = new Set([...deletedConversationIds(previous, ids), ...pendingDeletionsRef.current]);
+    if (deleted.size === 0) return;
+    // Keep failed removals pending and tell the user when a deletion was not saved.
+    const removed = removeSavedConversations(deleted);
+    pendingDeletionsRef.current = removed ? new Set() : deleted;
+    setHistoryWriteFailed(!removed);
+  }, [conversations, historyHydrated, persistHistory]);
+
+  const isUnsavedConversation = (c: Conversation) =>
+    c.messages.length > 0 && savedVersionsRef.current.get(c.id) !== conversationVersion(c);
+  const hasHistoryStorageError = historyWriteFailed || historyPreferenceWriteFailed;
+  const hasUnsavedConversations = hasHistoryStorageError || (!persistHistory && conversations.some(isUnsavedConversation));
+
+  const retryHistoryWrite = useCallback(() => {
+    setHistoryPreferenceWriteFailed(!tryWriteChatHistoryPreference(persistHistory));
+    if (persistHistory) {
+      const saved = saveConversations(conversations);
+      if (saved) {
+        savedVersionsRef.current = new Map(conversations.map(c => [c.id, conversationVersion(c)]));
+        pendingDeletionsRef.current = new Set();
+      }
+      setHistoryWriteFailed(!saved);
+    } else {
+      const deleted = pendingDeletionsRef.current;
+      const removed = deleted.size === 0 || removeSavedConversations(deleted);
+      if (removed) pendingDeletionsRef.current = new Set();
+      setHistoryWriteFailed(!removed);
+    }
+  }, [conversations, persistHistory]);
 
   // The browser owns this dialog's wording, so it cannot say what is at stake.
   // The composer notice carries the explanation; this only catches the reflex refresh.
@@ -2196,10 +2265,11 @@ const ChatView: React.FC<ChatViewProps> = ({
   // Persist active conversation id only after the initial stored value has been
   // hydrated, otherwise an empty cold-start state could overwrite it.
   useEffect(() => {
-    if (!historyHydrated || (incomingPrompt && !incomingPromptHandledRef.current && !activeId)) return;
-    saveActiveId(activeId, persistHistory);
-  }, [activeId, historyHydrated, persistHistory, incomingPrompt]);
+    if (!historyHydrated || !persistHistory ||
+        (incomingPrompt && !incomingPromptHandledRef.current && !activeId)) return;
 
+    saveActiveId(activeId);
+  }, [activeId, historyHydrated, persistHistory, incomingPrompt]);
   // Active ID can point at stale/missing data after manual localStorage edits or migrations.
   useEffect(() => {
     if (activeId && !conversations.some(c => c.id === activeId)) {
@@ -4049,11 +4119,22 @@ ${finalText}`
             {streamingToolStatus}
           </div>
         )}
-        {!persistHistory && messages.length > 0 && !historyNoticeDismissed && (
+        {hasHistoryStorageError && (
+          <div className="composer__history-notice" role="alert">
+            <Icon name="alert" size={13} aria-hidden="true" />
+            <span className="composer__history-notice-copy">
+              {t('Could not update saved chat history. Messages may be lost or deleted chats may return after refresh. Check your browser storage and try again.')}
+            </span>
+            <button type="button" className="composer__history-notice-action" onClick={retryHistoryWrite}>
+              {t('Retry')}
+            </button>
+          </div>
+        )}
+        {!hasHistoryStorageError && !persistHistory && activeConvo && isUnsavedConversation(activeConvo) && !historyNoticeDismissed && (
           <div className="composer__history-notice" role="status">
             <Icon name="alert" size={13} aria-hidden="true" />
             <span className="composer__history-notice-copy">
-              {t('Chat history is not saved. Refreshing clears this conversation. Turning saving on keeps the text of what is already here, but not images or audio.')}
+              {t('Chat history is not saved. Refreshing loses messages sent or edited since saving was turned off. Turning saving on keeps the text of what is already here, but not images or audio.')}
             </span>
             <button type="button" className="composer__history-notice-action" onClick={handleEnableHistoryPersistence}>
               {t('Save chat history')}
