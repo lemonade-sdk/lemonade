@@ -19,6 +19,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `onnxruntime` | ONNX Runtime | no | no | cpu |
 | `openmoss` | OpenMOSS TTS | yes | no | cuda, rocm, vulkan |
 | `ryzenai-llm` | Ryzen AI LLM | no | yes | npu |
+| `ryzenai-llm-medusa` | Ryzen AI LLM (Medusa) | no | yes | npu |
 | `sd-cpp` | StableDiffusion.cpp | yes | no | cpu, cuda, metal, rocm, vulkan |
 | `thenoise` | TheNoise ROCm | yes | no | rocm |
 | `thinksound` | ThinkSound | yes | no | cuda, rocm, vulkan |
@@ -36,7 +37,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `acestep` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `acestep` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
 | `ds4` | rocm | linux | amd_gpu (gfx1151) |
-| `flm` | npu | linux, windows | amd_npu (XDNA2) |
+| `flm` | npu | linux, windows | amd_npu (XDNA2, XDNA3) |
 | `kokoro` | metal | macos | metal |
 | `kokoro` | cpu | linux, windows | cpu (x86_64) |
 | `llamacpp` | system | linux | cpu (arm64, x86_64) |
@@ -56,6 +57,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `openmoss` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `openmoss` | rocm | linux, windows | amd_gpu |
 | `ryzenai-llm` | npu | windows | amd_npu (XDNA2) |
+| `ryzenai-llm-medusa` | npu | windows | amd_npu (XDNA3) |
 | `sd-cpp` | metal | macos | metal |
 | `sd-cpp` | cuda | linux, windows | nvidia_gpu (sm_100, sm_120, sm_121, sm_75, sm_80, sm_86, sm_89, sm_90) |
 | `sd-cpp` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |

@@ -422,6 +422,12 @@ The following options are available depending on the recipe being used:
 |--------|-------------|---------|
 | `--ctx-size SIZE` | Context size for the model | auto |
 
+#### Ryzen AI LLM (Medusa) (`ryzenai-llm-medusa` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--ctx-size SIZE` | Context size for the model | auto |
+
 #### vLLM ROCm (experimental) (`vllm` recipe)
 
 | Option | Description | Default |
