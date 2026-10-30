@@ -30,21 +30,17 @@ export function saveChatHistoryPreference(persist: boolean): void {
   }
 }
 
-function storedConversationId(entry: unknown): string | undefined {
-  const id = entry && typeof entry === 'object' ? (entry as { id?: unknown }).id : undefined;
-  return typeof id === 'string' ? id : undefined;
-}
-
-// A generated id that is not written back changes on every load, so a delete
-// made while saving is off could never match the stored entry.
-export function assignMissingConversationIds(stored: unknown[], generateId: () => string): unknown[] | null {
-  let changed = false;
-  const next = stored.map(entry => {
-    if (!entry || typeof entry !== 'object' || storedConversationId(entry) !== undefined) return entry;
-    changed = true;
-    return { ...entry, id: generateId() };
-  });
-  return changed ? next : null;
+// Legacy entries have no id. Deriving one from their content keeps it stable
+// across loads without writing storage, so a delete made while saving is off
+// still matches the stored entry.
+export function storedConversationId(entry: unknown): string | undefined {
+  if (!entry || typeof entry !== 'object') return undefined;
+  const id = (entry as { id?: unknown }).id;
+  if (typeof id === 'string') return id;
+  const text = JSON.stringify(entry);
+  let hash = 5381;
+  for (let i = 0; i < text.length; i += 1) hash = ((hash << 5) + hash + text.charCodeAt(i)) | 0;
+  return `legacy-${(hash >>> 0).toString(36)}`;
 }
 
 export function deletedConversationIds(previous: ReadonlySet<string>, current: ReadonlySet<string>): Set<string> {

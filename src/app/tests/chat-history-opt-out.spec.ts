@@ -75,10 +75,35 @@ test.describe('Chat history with saving turned off', () => {
   test('a deleted legacy chat without an id stays deleted', async ({ page }) => {
     await openWithSavingOff(page, [conversation('a', 'Alpha chat'), conversation(undefined, 'Legacy chat')]);
     await expect(railRow(page, 'Legacy chat')).toHaveCount(1);
+    const legacyStoredWithoutId = await page.evaluate(key => {
+      const parsed = JSON.parse(localStorage.getItem(key) || '{"conversations":[]}');
+      const entry = (parsed.conversations as { id?: string; title: string }[]).find(c => c.title === 'Legacy chat');
+      return entry !== undefined && entry.id === undefined;
+    }, CONVERSATIONS_KEY);
+    expect(legacyStoredWithoutId, 'loading with saving off must not rewrite storage').toBe(true);
     await deleteChat(page, 'Legacy chat');
     await page.reload();
     await expect(railRow(page, 'Alpha chat')).toHaveCount(1);
     await expect(railRow(page, 'Legacy chat')).toHaveCount(0);
+  });
+
+  test('a deletion whose write failed is retried on the next change', async ({ page }) => {
+    await openWithSavingOff(page, [
+      conversation('a', 'Alpha chat'),
+      conversation('b', 'Beta chat'),
+      conversation('c', 'Gamma chat'),
+    ]);
+    await expect(railRow(page, 'Beta chat')).toHaveCount(1);
+    await page.evaluate(() => {
+      const original = Storage.prototype.setItem;
+      (window as unknown as { restoreSetItem: () => void }).restoreSetItem = () => { Storage.prototype.setItem = original; };
+      Storage.prototype.setItem = () => { throw new Error('blocked'); };
+    });
+    await deleteChat(page, 'Beta chat');
+    expect(await storedTitles(page)).toEqual(['Alpha chat', 'Beta chat', 'Gamma chat']);
+    await page.evaluate(() => (window as unknown as { restoreSetItem: () => void }).restoreSetItem());
+    await deleteChat(page, 'Gamma chat');
+    expect(await storedTitles(page)).toEqual(['Alpha chat']);
   });
 
   test('turning saving back on saves the chats on screen', async ({ page }) => {

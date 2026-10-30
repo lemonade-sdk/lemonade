@@ -41,22 +41,26 @@ assert.deepEqual(
   'only ids that disappeared count as deleted; new ids do not',
 );
 
-let nextId = 0;
-const generate = () => `generated-${++nextId}`;
-assert.equal(settings.assignMissingConversationIds(stored, generate), null, 'no write when every entry has an id');
-const migrated = settings.assignMissingConversationIds(
-  [{ id: 'a', messages: [] }, { title: 'Legacy chat', messages: [] }, 'not a conversation'],
-  generate,
+const legacy = { title: 'Legacy chat', messages: [{ role: 'user', content: 'hi' }] };
+const legacyId = settings.storedConversationId(legacy);
+assert.equal(settings.storedConversationId({ id: 'a' }), 'a', 'stored ids are used as is');
+assert.equal(settings.storedConversationId('not a conversation'), undefined);
+assert.match(legacyId, /^legacy-/);
+assert.equal(
+  settings.storedConversationId(JSON.parse(JSON.stringify(legacy))),
+  legacyId,
+  'a legacy entry gets the same id on every load without writing storage',
 );
-assert.deepEqual(
-  migrated,
-  [{ id: 'a', messages: [] }, { title: 'Legacy chat', messages: [], id: 'generated-1' }, 'not a conversation'],
-  'legacy entries get a stable id so a later delete can match them',
+assert.notEqual(
+  settings.storedConversationId({ ...legacy, title: 'Other legacy chat' }),
+  legacyId,
+  'different legacy entries get different ids',
 );
+const withLegacy = [{ id: 'a', messages: [] }, legacy, 'not a conversation'];
 assert.deepEqual(
-  settings.removeDeletedConversations(migrated, new Set(['generated-1'])).map(entry => entry.id ?? entry),
-  ['a', 'not a conversation'],
-  'a migrated legacy chat can be deleted',
+  settings.removeDeletedConversations(withLegacy, new Set([legacyId])),
+  [{ id: 'a', messages: [] }, 'not a conversation'],
+  'a legacy chat can be deleted by its derived id',
 );
 
 const saved = { updatedAt: 1, messages: [{}, {}] };

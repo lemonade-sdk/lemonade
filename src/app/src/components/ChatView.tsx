@@ -48,12 +48,12 @@ import {
 import { storageKey } from '../storage';
 import {
   CHAT_HISTORY_PREFERENCE_EVENT,
-  assignMissingConversationIds,
   conversationVersion,
   deletedConversationIds,
   loadChatHistoryPreference,
   removeDeletedConversations,
   saveChatHistoryPreference,
+  storedConversationId,
 } from '../features/chatHistory/historySettings';
 import { prepareToolCallsForStorage } from '../features/chatHistory/toolCallPersistence';
 import type { DownloadListItem } from '../features/downloadManager/downloadStore';
@@ -300,7 +300,7 @@ function normalizeSnapshot(raw: unknown): ModelSnapshot | null {
 function normalizeConversation(raw: unknown): Conversation | null {
   if (!raw || typeof raw !== 'object') return null;
   const obj = raw as Record<string, unknown>;
-  const id = typeof obj.id === 'string' ? obj.id : generateId();
+  const id = storedConversationId(raw) ?? generateId();
   const messagesRaw = Array.isArray(obj.messages) ? obj.messages : [];
   const messages = messagesRaw
     .filter((m): m is Record<string, unknown> => !!m && typeof m === 'object')
@@ -343,19 +343,13 @@ function writeStoredConversations(list: unknown[]): boolean {
 }
 
 function loadConversations(): Conversation[] {
-  let stored = readStoredConversations();
-  const withIds = assignMissingConversationIds(stored, generateId);
-  if (withIds) {
-    stored = withIds;
-    writeStoredConversations(stored);
-  }
-  return stored.map(normalizeConversation).filter((c): c is Conversation => !!c);
+  return readStoredConversations().map(normalizeConversation).filter((c): c is Conversation => !!c);
 }
 
-function removeSavedConversations(deletedIds: ReadonlySet<string>) {
+function removeSavedConversations(deletedIds: ReadonlySet<string>): boolean {
   const stored = readStoredConversations();
   const kept = removeDeletedConversations(stored, deletedIds);
-  if (kept.length !== stored.length) writeStoredConversations(kept);
+  return kept.length === stored.length || writeStoredConversations(kept);
 }
 
 function saveConversations(convos: Conversation[]): boolean {
@@ -938,6 +932,7 @@ const ChatView: React.FC<ChatViewProps> = ({
   const [historyHydrated, setHistoryHydrated] = useState(false);
   const savedVersionsRef = useRef<Map<string, string>>(new Map());
   const previousConversationIdsRef = useRef<Set<string> | null>(null);
+  const pendingDeletionsRef = useRef<Set<string>>(new Set());
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [inputValue, setInputValue] = useState('');
@@ -2171,9 +2166,16 @@ const ChatView: React.FC<ChatViewProps> = ({
     const ids = new Set(conversations.map(c => c.id));
     const previous = previousConversationIdsRef.current;
     previousConversationIdsRef.current = ids;
-    if (persistHistory || !previous) return;
-    const deleted = deletedConversationIds(previous, ids);
-    if (deleted.size > 0) removeSavedConversations(deleted);
+    // A full save while saving is on already drops deleted chats.
+    if (persistHistory) {
+      pendingDeletionsRef.current = new Set();
+      return;
+    }
+    if (!previous) return;
+    const deleted = new Set([...deletedConversationIds(previous, ids), ...pendingDeletionsRef.current]);
+    if (deleted.size === 0) return;
+    // Keep failed removals pending so the next change retries them.
+    pendingDeletionsRef.current = removeSavedConversations(deleted) ? new Set() : deleted;
   }, [conversations, historyHydrated, persistHistory]);
 
   const isUnsavedConversation = (c: Conversation) =>
