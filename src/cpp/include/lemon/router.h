@@ -347,7 +347,6 @@ private:
                                                   const std::string& model_name) const;
     void ensure_residency_capacity(ModelType type, ResidencyClass residency_class,
                                    const std::string& model_name);
-    double make_room_beside_unreported_residents(const ModelInfo& model_info);
     void transition_server_residency_locked(
         WrappedServer* server,
         ResidencyClass requested_residency_class);

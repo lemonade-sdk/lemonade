@@ -368,43 +368,6 @@ void Router::ensure_residency_capacity(
     evict_server(lru);
 }
 
-// Returns the unreported memory still resident after making room, for
-// auto-tune to count as used.
-double Router::make_room_beside_unreported_residents(const ModelInfo& model_info) {
-    double unreported_gb = 0.0;
-    for (const auto& server : loaded_servers_) {
-        if (server->is_backend_alive()) unreported_gb += server->unreported_resident_gb();
-    }
-    if (unreported_gb <= 0.0) return 0.0;
-
-    auto metrics = create_metrics_platform();
-    const double total_gb = metrics ? metrics->get_memory_total_gb() : 0.0;
-    if (total_gb <= 0.0) return unreported_gb;
-    const double free_gb = total_gb - metrics->get_memory_usage_gb() - unreported_gb;
-    const auto* desc = backends::descriptor_for(model_info.recipe);
-    const double working_set_gb =
-        (desc && desc->streams_model_from_storage && model_info.min_resident_gb > 0.0
-             ? model_info.min_resident_gb
-             : model_info.size) * 1e9 / BYTES_PER_GIB;
-    if (working_set_gb <= free_gb) return unreported_gb;
-
-    std::vector<WrappedServer*> holders;
-    for (const auto& server : loaded_servers_) {
-        if (server->is_backend_alive() && server->unreported_resident_gb() > 0.0 &&
-            !server->is_pinned()) {
-            holders.push_back(server.get());
-        }
-    }
-    for (auto* holder : holders) {
-        LOG(INFO, "Router") << model_info.model_name << " needs about " << working_set_gb
-                            << " GiB and " << free_gb << " GiB is free beside "
-                            << holder->get_model_name() << ", evicting it" << std::endl;
-        unreported_gb -= holder->unreported_resident_gb();
-        evict_server(holder);
-    }
-    return (std::max)(0.0, unreported_gb);
-}
-
 void Router::transition_server_residency_locked(
     WrappedServer* server,
     ResidencyClass requested_residency_class) {
@@ -1078,12 +1041,9 @@ void Router::load_model(const std::string& model_name,
                                       canonical_model_name);
         }
 
-        const double unreported_gb =
-            is_unmetered_load ? 0.0 : make_room_beside_unreported_residents(model_info);
-
         // Auto-tune: resolve ctx_size = -1 → computed from memory + arch metadata
         // Done AFTER eviction so that freed VRAM/RAM is visible to the memory query.
-        int64_t auto_ctx = resolve_auto_ctx_size(effective_options, model_info, unreported_gb);
+        int64_t auto_ctx = resolve_auto_ctx_size(effective_options, model_info);
         const bool ctx_size_auto = auto_ctx != -2;
         if (auto_ctx > 0) {
             LOG(INFO, "Router") << "Auto-tune ctx_size resolved to " << auto_ctx << std::endl;
