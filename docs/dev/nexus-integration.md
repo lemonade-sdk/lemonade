@@ -361,8 +361,8 @@ relayed.
   forwarded.
 - `X-Lemonade-Peer-Authorization: Bearer <peer key>` is sent to the peer as its
   `Authorization`.
-- Loopback clients follow the normal API-key rules. Direct RFC1918 clients need
-  no API key on this server. Other remote clients need `LEMONADE_API_KEY` set
+- Loopback and direct RFC1918 clients need no API key on this server for Nexus
+  routes. Other remote clients need `LEMONADE_API_KEY` set
   and a matching bearer token, as for remote management.
 - The mesh ingress listener refuses the relay, so a peer cannot relay through
   this device.
@@ -482,10 +482,10 @@ Each listener applies its own rules:
 
 | Listener | Client | Nexus routes |
 | --- | --- | --- |
-| Public | Loopback | `status` and the relay directly; every other route redirects with HTTP 307 to the management listener |
+| Public | Loopback | No API key required; `status`, `join/status` and the relay directly; every other route redirects with HTTP 307 to the management listener |
 | Public | RFC1918 peers | All Nexus routes, including setup, unlock and the relay, without an API key |
 | Public | Other remote peers | `status`, `join/status`, `devices`, `members`, `members/{id}/role`, `members/{id}/permissions`, `devices/{id}/access`, `devices/{id}/remove`, `invites`, `invites/cancel`, `join`, the tree routes, `invites/accept`, `memberships`, `memberships/{id}/leave` and the relay, only with `LEMONADE_API_KEY` set and `Authorization: Bearer <key>` |
-| Management (`127.0.0.1`, ephemeral port) | Local desktop | All routes |
+| Management (`127.0.0.1`, ephemeral port) | Local desktop | All Nexus routes without an API key |
 | Mesh ingress (`127.0.0.1`, ephemeral port) | Mesh peers | None (HTTP 403); `/internal/*` is not registered (HTTP 404) |
 
 Direct clients in `10.0.0.0/8`, `172.16.0.0/12` or `192.168.0.0/16` can set up
@@ -497,6 +497,9 @@ do not qualify. Private requests run directly on the public listener rather
 than being redirected to a loopback URL on the client's machine.
 
 This policy trusts the operator's LAN/VPN routing and firewall boundary.
+Local clients on `127.0.0.1`, `::1` or `::ffff:127.0.0.1` also need no API key
+for Nexus discovery, setup, management or relay requests. Local setup retains
+the redirect to the dedicated loopback management listener.
 A reverse proxy or source NAT can make an outside client appear private, so
 the operator must restrict access at that boundary. Origin checks and Nexus's
 own identity, lock and federation permission checks still apply. The API-key

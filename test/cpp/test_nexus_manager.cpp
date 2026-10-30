@@ -674,8 +674,30 @@ void check_private_management(const std::filesystem::path& root, const std::func
               "Private Nexus access does not bypass MCP authentication");
         check(server.request("192.168.1.2", "GET", "/internal/config").status == 401,
               "Private Nexus access does not bypass the internal admin key");
-        check(server.request("127.0.0.1", "GET", "/api/v1/nexus/status").status == (*key ? 401 : 200),
-              "Loopback clients retain their existing API-key policy");
+        RequestServer management;
+        install(management);
+        manager.register_routes(management, lemon::NexusListener::Management);
+        for (const auto* address : {"127.0.0.1", "::1", "::ffff:127.0.0.1"}) {
+            for (const auto* prefix : {"/api/v0/nexus/", "/api/v1/nexus/", "/v0/nexus/", "/v1/nexus/", "/api/nexus/"}) {
+                for (const auto* headers : {"", "Authorization: Bearer stale-key\r\n"}) {
+                    const auto status = server.request(address, "GET", std::string(prefix) + "status", "", headers);
+                    check(status.status == 200 && json::parse(status.body).contains("controller_url"),
+                          "Local Nexus discovery needs no API key and returns its controller");
+                    check(server.request(address, "POST", std::string(prefix) + "enable", "{}", headers).status == 307,
+                          "Local Nexus setup retains the controller redirect without requiring an API key");
+                    check(management.request(address, "POST", std::string(prefix) + "enable", "[]", headers).status == 400,
+                          "The local Nexus controller reaches body validation without an API key");
+                }
+            }
+            check(server.request(address, "GET", "/api/v1/models").status == (*key ? 401 : 200),
+                  "Local Nexus access does not exempt direct inference API routes");
+            check(server.request(address, "POST", "/mcp", "{}").status == (*key ? 401 : 200),
+                  "Local Nexus access does not exempt MCP");
+            check(server.request(address, "GET", "/internal/config").status == 401,
+                  "Local Nexus access does not exempt the internal admin key");
+            check(server.request(address, "GET", "/api/v1/nexus/status", "", "Origin: https://untrusted.example\r\n").status == 403,
+                  "Local Nexus access still validates browser origins");
+        }
         const auto enabled = server.request("192.168.1.2", "POST", "/api/v1/nexus/enable", "{}");
 #ifdef LEMONADE_WITH_NEXUS
         check(enabled.status == 200 && manager.status().at("enabled") && manager.status().at("locked"),

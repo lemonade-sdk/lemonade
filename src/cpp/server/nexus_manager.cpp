@@ -774,7 +774,7 @@ bool remote_operation(const std::string& operation) {
 }
 
 bool private_management_request(const httplib::Request& req) {
-    if (!NetworkBeacon::isRFC1918(req.remote_addr, false)) return false;
+    if (!local_address(req.remote_addr) && !NetworkBeacon::isRFC1918(req.remote_addr, false)) return false;
     for (const auto* prefix : nexus_prefixes) {
         if (req.path.rfind(prefix, 0) == 0) return true;
     }

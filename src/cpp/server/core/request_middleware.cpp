@@ -256,7 +256,7 @@ httplib::Server::HandlerResponse RequestMiddleware::authenticate(const httplib::
 
     telemetry::g_current_auth_token = auth_token;
 
-    // Direct private-network Nexus management is authorized by the LAN/VPN boundary.
+    // Local Nexus access trusts loopback; private-network access trusts the LAN/VPN boundary.
     // The mesh listener has its own identity policy and never gets this exemption.
     if (!mesh_ingress && nexus_access::private_management_request(req)) {
         return httplib::Server::HandlerResponse::Unhandled;
