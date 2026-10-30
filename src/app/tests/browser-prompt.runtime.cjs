@@ -125,14 +125,15 @@ assert.match(chat, /readBrowserPromptDraft/);
 assert.match(chat, /current \|\| \(incomingPrompt && !incomingPromptHandledRef\.current \? null : storedActiveId\)/);
 assert.match(chat, /if \(!isVisible \|\| activeId \|\| !incomingPrompt/);
 assert.match(chat, /const isExternalPrompt = captureBrowserDraftSend\(overrideText/);
-assert.match(chat, /const audioFiles = isExternalPrompt \? \[\]/);
-assert.match(chat, /const hasImages = !isExternalPrompt/);
-assert.match(chat, /if \(!isExternalPrompt\) \{\s*setPendingImages\(\[\]\);/);
 assert.match(chat, /if \(overrideText === undefined\) setInputValue\(''\)/);
 assert.match(chat, /const allowTools = !hasBrowserPromptContext\(\[\.\.\.priorMessages, userMessage\]\)/);
 assert.match(chat, /disabled=\{!modeSupportsMcp \|\| toolsUnavailable\}/);
-assert.match(chat, /saveBrowserPromptDraft\(draft\);/);
+assert.match(chat, /saveBrowserPromptDraft\(inputValue\)/);
 assert.match(chat, /saveBrowserPromptDraft\(''\);/);
+assert.match(chat, /handleSelectConversation = useCallback\(\(id: string\) => \{[\s\S]*?dismissIncomingPrompt\(\)/,
+  'opening another conversation must release the imported prompt');
+assert.match(chat, /startLemonadeToolPrompt = useCallback\(\(text: string\) => \{\s*dismissIncomingPrompt\(\);/,
+  'starter prompts replace the imported prompt');
 assert.doesNotMatch(chat, /incomingPromptHandledRef\.current = true;\s*setShowLoadedOverview/,
   'auto effect must leave consumption to successful send');
 

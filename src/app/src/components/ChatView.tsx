@@ -1016,6 +1016,16 @@ const ChatView: React.FC<ChatViewProps> = ({
   const audioLevelRef = useRef(0);
   const autoSpeechRef = useRef<{ audio: HTMLAudioElement; url: string } | null>(null);
   const incomingPromptHandledRef = useRef(false);
+  const [, setIncomingPromptDismissals] = useState(0);
+  // The imported prompt belongs to the new chat it opened. Once the user moves
+  // on, it must not be sent later or attach its tool restriction to their input.
+  const dismissIncomingPrompt = useCallback((): boolean => {
+    if (!incomingPrompt || incomingPromptHandledRef.current) return false;
+    incomingPromptHandledRef.current = true;
+    saveBrowserPromptDraft('');
+    setIncomingPromptDismissals(count => count + 1);
+    return true;
+  }, [incomingPrompt]);
   const handleSendRef = useRef<(overrideText?: string, fromBrowserPrompt?: boolean) => Promise<void>>(async () => {});
 
   const generatedMediaUrlsRef = useRef<Set<string>>(new Set());
@@ -1599,11 +1609,12 @@ const ChatView: React.FC<ChatViewProps> = ({
   }, []);
 
   const startLemonadeToolPrompt = useCallback((text: string) => {
+    dismissIncomingPrompt();
     persistMcpEnabled(true);
     persistMcpSelection([LEMONADE_MCP_SERVER_ID], null);
     setInputValue(text);
     inputRef.current?.focus();
-  }, [persistMcpEnabled, persistMcpSelection]);
+  }, [dismissIncomingPrompt, persistMcpEnabled, persistMcpSelection]);
 
   const selectedMcpServerIdSet = useMemo(() => new Set(selectedMcpServerIds), [selectedMcpServerIds]);
   const selectedMcpToolNameSet = useMemo(() => selectedMcpToolNames === null ? null : new Set(selectedMcpToolNames), [selectedMcpToolNames]);
@@ -2095,11 +2106,18 @@ const ChatView: React.FC<ChatViewProps> = ({
 
   const activeConvo = conversations.find(c => c.id === activeId) || null;
   const messages = activeConvo?.messages || [];
-  const toolsUnavailable = hasBrowserPromptContext(messages)
-    || (!activeId && !!incomingPrompt && !incomingPromptHandledRef.current);
+  const incomingPromptPending = !activeId && !!incomingPrompt && !incomingPromptHandledRef.current;
+  const toolsUnavailable = hasBrowserPromptContext(messages) || incomingPromptPending;
   useEffect(() => {
     if (toolsUnavailable) setMcpPickerOpen(false);
   }, [toolsUnavailable]);
+
+  // Covers typing, dictation, and any other draft update while the prompt waits.
+  useEffect(() => {
+    if (!incomingPromptPending) return;
+    if (inputValue.trim()) saveBrowserPromptDraft(inputValue);
+    else dismissIncomingPrompt();
+  }, [dismissIncomingPrompt, incomingPromptPending, inputValue]);
 
   useFocusTrap(bottomSheetRef, mobileSheetOpen);
 
@@ -2269,9 +2287,11 @@ const ChatView: React.FC<ChatViewProps> = ({
   }, [activeId, applyConversationModel, conversations, historyHydrated]);
 
   const handleSelectConversation = useCallback((id: string) => {
+    // The imported text must not follow the user into a conversation where tools may run.
+    if (dismissIncomingPrompt()) setInputValue('');
     setActiveId(id);
     applyConversationModel(conversations.find(c => c.id === id)?.model?.name);
-  }, [applyConversationModel, conversations]);
+  }, [applyConversationModel, conversations, dismissIncomingPrompt]);
 
   // An explicit pick outranks a conversation-restored override, which would
   // otherwise keep winning and make the click look like it did nothing.
@@ -3038,8 +3058,8 @@ ${finalText}`
   const handleSend = async (overrideText?: string, fromBrowserPrompt = false) => {
     const text = (overrideText ?? inputValue).trim();
     const isExternalPrompt = captureBrowserDraftSend(overrideText, fromBrowserPrompt, incomingPrompt, incomingPromptHandledRef.current);
-    const audioFiles = isExternalPrompt ? [] : [...pendingAudioFiles];
-    const hasImages = !isExternalPrompt && pendingImages.length > 0;
+    const audioFiles = [...pendingAudioFiles];
+    const hasImages = pendingImages.length > 0;
     const canSubmitContent = currentCapability === 'audio' && !modeSupportsChatCompletions
       ? audioFiles.length > 0
       : currentCapability === 'image'
@@ -3094,11 +3114,9 @@ ${finalText}`
     }
 
     if (overrideText === undefined) setInputValue('');
-    if (!isExternalPrompt) {
-      setPendingImages([]);
-      setPendingAudioFiles([]);
-      void speakWithPinnedTts(text, 'user');
-    }
+    setPendingImages([]);
+    setPendingAudioFiles([]);
+    if (!isExternalPrompt) void speakWithPinnedTts(text, 'user');
 
     if (connectionStatus !== 'connected') {
       appendAssistantMessage(convoId, {
@@ -4582,14 +4600,7 @@ ${finalText}`
             className="composer__input"
             placeholder={composerPlaceholder}
             value={inputValue}
-            onChange={e => {
-              const draft = e.target.value;
-              setInputValue(draft);
-              if (incomingPrompt && !incomingPromptHandledRef.current) {
-                saveBrowserPromptDraft(draft);
-                if (!draft.trim()) incomingPromptHandledRef.current = true;
-              }
-            }}
+            onChange={e => setInputValue(e.target.value)}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
             disabled={isBusy}
@@ -4689,7 +4700,9 @@ ${finalText}`
         <div className="composer__hint">{composerHint}</div>
         {toolsUnavailable && (
           <div className="composer__hint" role="status">
-            Imported webpage content: tools are unavailable in this conversation. Start a new chat to use tools.
+            {incomingPromptPending
+              ? 'Imported webpage content: tools are unavailable for this prompt. Clear it or open another chat to use tools.'
+              : 'Imported webpage content: tools are unavailable in this conversation. Start a new chat to use tools.'}
           </div>
         )}
       </div>
