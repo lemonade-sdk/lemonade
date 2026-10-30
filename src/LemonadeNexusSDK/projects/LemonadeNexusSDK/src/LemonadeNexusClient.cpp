@@ -293,6 +293,17 @@ struct LemonadeNexusClient::Impl {
         private_cli_port = 0;
     }
 
+    // The peer list long-poll (wait_mesh_peers) holds its request for up to
+    // half a minute, so it has its own connection and does not take
+    // private_api_mtx: the netstack egress listener accepts several
+    // connections, each its own virtual TCP connection. poll_mtx guards the
+    // client pointer and the cancel flag; the request itself runs without it
+    // so cancel_mesh_peer_wait() can close the socket.
+    std::mutex                          poll_mtx;
+    std::shared_ptr<httplib::SSLClient> poll_cli;
+    uint16_t                            poll_cli_port{0};
+    bool                                poll_cancelled{false};
+
     // Device and group loopback certificates kept current on disk. Declared
     // before mesh_orchestrator: the orchestrator's renewal thread uses it
     // until the orchestrator is stopped.
@@ -3407,6 +3418,95 @@ Result<std::vector<MeshPeer>> LemonadeNexusClient::fetch_mesh_peers(const std::s
     } catch (const std::exception& e) {
         return {false, {}, status, std::string("Parse error: ") + e.what()};
     }
+}
+
+Result<std::string> LemonadeNexusClient::wait_mesh_peers(const std::string& node_id,
+                                                         const std::string& revision,
+                                                         uint32_t timeout_sec) {
+    // A wait sends no request byte the server could apply twice, and its
+    // only effect is an earlier peer refresh, so every failure is harmless.
+    constexpr std::size_t kMaxPeersRevision = 128;
+    constexpr int         kReadMarginSec    = 10;
+    timeout_sec = std::clamp<uint32_t>(timeout_sec, 1, 30);
+    if (node_id.empty() || revision.empty() || revision.size() > kMaxPeersRevision) {
+        return {false, {}, 0, "wait_mesh_peers needs a node id and a revision"};
+    }
+    if (const auto refusal = impl_->private_api_refusal(); !refusal.empty()) {
+        return {false, {}, 0, refusal};
+    }
+    std::string fqdn;
+    uint16_t lp = 0;
+    {
+        std::lock_guard egress_lock(impl_->private_api_mtx);
+        if (!impl_->meshplane.is_active() || impl_->server_tunnel_ip.empty() ||
+            impl_->server_private_fqdn.empty()) {
+            return {false, {}, 0, "the mesh is not up"};
+        }
+        fqdn = impl_->server_private_fqdn;
+        lp = impl_->meshplane.tcp_egress(impl_->server_tunnel_ip, impl_->private_port);
+    }
+    if (lp == 0) return {false, {}, 0, "no egress to the session server"};
+
+    std::shared_ptr<httplib::SSLClient> cli;
+    {
+        std::lock_guard lock(impl_->poll_mtx);
+        if (impl_->poll_cancelled) return {false, {}, 0, "cancelled"};
+        if (!impl_->poll_cli || impl_->poll_cli_port != lp) {
+            impl_->poll_cli = std::make_shared<httplib::SSLClient>(fqdn, lp);
+            impl_->poll_cli->set_hostname_addr_map({{fqdn, "127.0.0.1"}});
+            impl_->poll_cli->set_connection_timeout(kMeshConnectTimeoutSec);
+            impl_->poll_cli->set_keep_alive(true);
+            impl_->poll_cli_port = lp;
+        }
+        impl_->poll_cli->set_read_timeout(static_cast<time_t>(timeout_sec) + kReadMarginSec);
+        cli = impl_->poll_cli;
+    }
+    const auto path = "/api/mesh/peers/" + node_id + "?wait_revision=" + revision +
+                      "&timeout=" + std::to_string(timeout_sec);
+    httplib::Result res;
+    try {
+        res = cli->Get(path, impl_->auth_headers());
+    } catch (const std::exception& e) {
+        std::lock_guard lock(impl_->poll_mtx);
+        if (impl_->poll_cli == cli) impl_->poll_cli.reset();
+        return {false, {}, 0, std::string("peer wait failed: ") + e.what()};
+    }
+    if (!res) {
+        std::lock_guard lock(impl_->poll_mtx);
+        if (impl_->poll_cli == cli) impl_->poll_cli.reset();
+        return {false, {}, 0, "peer wait got no answer: " + httplib::to_string(res.error())};
+    }
+    if (res->status != 200) {
+        return {false, {}, res->status, "peer wait answered HTTP " + std::to_string(res->status)};
+    }
+    std::string next;
+    try {
+        const auto body = json::parse(res->body);
+        if (const auto found = body.find("peers_revision");
+            found != body.end() && found->is_string() &&
+            found->get_ref<const std::string&>().size() <= kMaxPeersRevision) {
+            next = found->get<std::string>();
+        }
+    } catch (...) {
+        return {false, {}, res->status, "peer wait answered invalid JSON"};
+    }
+    if (next.empty()) return {false, {}, res->status, "the server does not hold peer waits"};
+    return {true, std::move(next), res->status, ""};
+}
+
+void LemonadeNexusClient::cancel_mesh_peer_wait() {
+    std::shared_ptr<httplib::SSLClient> cli;
+    {
+        std::lock_guard lock(impl_->poll_mtx);
+        impl_->poll_cancelled = true;
+        cli = impl_->poll_cli;
+    }
+    if (cli) cli->stop();
+}
+
+void LemonadeNexusClient::begin_mesh_peer_waits() {
+    std::lock_guard lock(impl_->poll_mtx);
+    impl_->poll_cancelled = false;
 }
 
 Result<std::string> LemonadeNexusClient::mesh_heartbeat(

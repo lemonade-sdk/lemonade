@@ -119,7 +119,9 @@ void MeshOrchestrator::start(const MeshConfig& config) {
     }
 
     running_ = true;
+    client_.begin_mesh_peer_waits();
     thread_ = std::thread([this] { run_loop(); });
+    poll_thread_ = std::thread([this] { poll_loop(); });
 
     spdlog::info("[MeshOrchestrator] started for node {}", node_id_);
 }
@@ -131,6 +133,9 @@ void MeshOrchestrator::stop() {
     // check and its wait.
     { std::lock_guard lock(mutex_); }
     cv_.notify_all();
+    // A held long-poll ends when its connection closes.
+    client_.cancel_mesh_peer_wait();
+    if (poll_thread_.joinable()) poll_thread_.join();
     if (thread_.joinable()) thread_.join();
     // A renewal in progress finishes its request (bounded by the HTTP
     // timeouts); its callback must not run after stop() returns.
@@ -153,8 +158,8 @@ void MeshOrchestrator::stop() {
         our_endpoint_.clear();
         our_local_endpoints_.clear();
         own_lan_.clear();
+        peers_revision_.clear();
     }
-    peers_revision_.clear();
 
     spdlog::info("[MeshOrchestrator] stopped for node {}", node_id_);
 }
@@ -476,12 +481,66 @@ void MeshOrchestrator::do_heartbeat() {
     // the only schedule. The first value is the baseline: the start pass
     // has just fetched the list.
     if (result.value.empty()) return;
-    if (!peers_revision_.empty() && result.value != peers_revision_) {
-        spdlog::debug("[MeshOrchestrator] peer list changed at the server; refreshing");
+    bool first = false;
+    {
         std::lock_guard lock(mutex_);
-        refresh_requested_ = true;
+        first = peers_revision_.empty();
+        if (!first && result.value != peers_revision_) {
+            spdlog::debug("[MeshOrchestrator] peer list changed at the server; refreshing");
+            refresh_requested_ = true;
+        }
+        peers_revision_ = std::move(result.value);
     }
-    peers_revision_ = std::move(result.value);
+    // The first revision is what the long-poll waits on.
+    if (first) cv_.notify_all();
+}
+
+void MeshOrchestrator::poll_loop() {
+    auto retry = kPeerWaitRetryMin;
+    while (running_.load()) {
+        std::string revision;
+        {
+            std::unique_lock lock(mutex_);
+            // The first heartbeat answer gives the baseline revision.
+            cv_.wait_for(lock, std::chrono::seconds(2),
+                         [this] { return !running_.load() || !peers_revision_.empty(); });
+            if (!running_.load()) return;
+            revision = peers_revision_;
+        }
+        if (revision.empty()) continue;
+
+        const auto result = client_.wait_mesh_peers(node_id_, revision, kPeerWaitSec);
+        if (!running_.load()) return;
+        if (result) {
+            retry = kPeerWaitRetryMin;
+            bool changed = false;
+            {
+                std::lock_guard lock(mutex_);
+                if (result.value != peers_revision_) {
+                    peers_revision_ = result.value;
+                    refresh_requested_ = true;
+                    changed = true;
+                }
+            }
+            if (changed) {
+                spdlog::debug("[MeshOrchestrator] peer list changed (long-poll); refreshing");
+                cv_.notify_all();
+            }
+            continue;
+        }
+        auto pause = retry;
+        if (result.http_status == 429) {
+            pause = kPeerWaitRetryMax;
+        } else if (result.http_status == 200) {
+            pause = kPeerWaitUnsupported;  // the server does not hold waits
+        } else {
+            retry = std::min(retry * 2, kPeerWaitRetryMax);
+        }
+        spdlog::debug("[MeshOrchestrator] peer wait failed ({}); next in {} s", result.error,
+                      pause.count());
+        std::unique_lock lock(mutex_);
+        cv_.wait_for(lock, pause, [this] { return !running_.load(); });
+    }
 }
 
 bool MeshOrchestrator::do_stun_refresh() {

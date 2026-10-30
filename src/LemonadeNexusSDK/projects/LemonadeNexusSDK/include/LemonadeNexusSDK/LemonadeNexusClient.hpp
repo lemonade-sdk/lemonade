@@ -467,6 +467,30 @@ public:
     /// Used internally by MeshOrchestrator; also available for direct use.
     [[nodiscard]] Result<std::vector<MeshPeer>> fetch_mesh_peers(const std::string& node_id);
 
+    /// Long-poll the session server for a change to this node's peer list:
+    /// GET /api/mesh/peers/{node_id}?wait_revision=<revision>&timeout=<s> on
+    /// the private API, over its own connection so other private requests do
+    /// not wait behind it. The server answers when the node's peers_revision
+    /// differs from `revision`, or after `timeout_sec` (1 to 30) with the
+    /// same value. On success, `value` is the answer's peers_revision. It
+    /// fails with an empty value when the server sends no peers_revision
+    /// (an older server, which answers at once), with http_status 429 when
+    /// the server holds too many waits, and with http_status 0 when no
+    /// answer came. Blocks up to `timeout_sec` plus about 10 s;
+    /// cancel_mesh_peer_wait() ends a wait in flight. Thread-safe with
+    /// respect to the other client calls; one wait at a time.
+    [[nodiscard]] Result<std::string> wait_mesh_peers(const std::string& node_id,
+                                                      const std::string& revision,
+                                                      uint32_t timeout_sec);
+
+    /// End a wait_mesh_peers() call in flight by closing its connection, and
+    /// make waits fail at once until begin_mesh_peer_waits(). Thread-safe.
+    void cancel_mesh_peer_wait();
+
+    /// Allow wait_mesh_peers() again after cancel_mesh_peer_wait().
+    /// Thread-safe.
+    void begin_mesh_peer_waits();
+
     /// Send a heartbeat to the server reporting our current endpoint (empty:
     /// keep the stored one). With `local_endpoints`, the heartbeat also
     /// reports this device's LAN endpoints ("a.b.c.d:port", private

@@ -253,6 +253,23 @@ private:
     /// Total wait for one STUN query, including its resends.
     static constexpr std::chrono::milliseconds kStunTimeout{1500};
 
+    /// How long one peer list long-poll asks the server to hold, in seconds
+    /// (the server's default and below its 30 s limit).
+    static constexpr uint32_t kPeerWaitSec = 25;
+
+    /// Pause after a failed long-poll: doubles from the first value to the
+    /// second. A server that holds too many waits (429) gets the second at
+    /// once, and one that does not hold waits at all gets kPeerWaitUnsupported.
+    static constexpr std::chrono::seconds kPeerWaitRetryMin{1};
+    static constexpr std::chrono::seconds kPeerWaitRetryMax{30};
+    static constexpr std::chrono::seconds kPeerWaitUnsupported{300};
+
+    /// Hold one peer list long-poll open to the session server and request a
+    /// refresh pass as soon as the peers_revision changes. Runs on
+    /// poll_thread_ while the orchestrator runs; the heartbeat revision check
+    /// stays as the fallback.
+    void poll_loop();
+
     LemonadeNexusClient&     client_;
     BoringtunMesh&           mesh_;
     std::string              node_id_;
@@ -273,8 +290,9 @@ private:
     LocalAddressSource       local_address_source_; // empty: list_interface_addresses
     bool                     refresh_requested_{false};  // set by refresh_now() and do_heartbeat()
     WallClock                wall_clock_;                // empty: the system clock
-    std::string              peers_revision_;            // last heartbeat answer's; loop thread only
+    std::string              peers_revision_;            // last known; guarded by mutex_
     std::thread              cert_thread_;               // runs one renewal pass
+    std::thread              poll_thread_;               // runs poll_loop()
     std::atomic<bool>        cert_busy_{false};          // cert_thread_ still working
     std::unique_ptr<RelayFallback> relay_fallback_;      // used by the loop thread only
     std::unique_ptr<HolePuncher>   hole_puncher_;        // used by the loop thread only
