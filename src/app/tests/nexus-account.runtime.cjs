@@ -117,14 +117,23 @@ const input = { action:'create',deviceName:'Workstation',source };
   currentSource = 'https://another-server.example';
   await assert.rejects(service.signIn(input),/connection changed/);
   await assert.rejects(service.refresh(account),/connection changed/);
-  currentSource = source; local = false;
-  await assert.rejects(service.signIn(input),/desktop app/);
-  local = true; desktop = false;
+  currentSource = 'http://192.168.10.20:13305'; local = false;
+  const remoteCalls = calls.length;
+  for (const action of ['create', 'join', 'return']) {
+    await assert.rejects(service.signIn({...input,source:currentSource,action,invitation:'12345678'}),/desktop app/);
+  }
+  assert.equal(calls.length,remoteCalls,'remote setup cannot issue identity or lifecycle requests');
+  await assert.rejects(service.refresh(account),/connection changed/,'local sessions cannot mutate the remote server');
+  currentSource = source; local = true; desktop = false;
   await assert.rejects(service.signIn(input),/desktop app/);
   desktop = true;
   const invite = await service.invite(account,'My phone');
   assert.equal(invite.code,'12345678');
   assert.throws(()=>verifyAccountReply({...reply,role:'superadmin'},source),/verified account/);
+  const moderator = {...reply,role:'moderator',devices:reply.devices.map(device=>({...device,is_admin:false}))};
+  assert.equal(verifyAccountReply(moderator,source).account.role,'moderator','verified moderator roles survive account refresh');
+  assert.throws(()=>verifyAccountReply({...reply,role:'moderator'},source),/permissions/,'a moderator reply cannot also claim administrator membership');
+  assert.throws(()=>verifyAccountReply({...moderator,devices:moderator.devices.map(device=>({...device,permissions_known:false}))},source),/permissions/);
   assert.throws(()=>verifyAccountReply({...reply,device_node_id:'not-a-member'},source),/permissions/);
   assert.throws(()=>verifyAccountReply(reply,source,'different-cluster'),/different account/);
   const renamed = {...reply,devices:[{...reply.devices[0],device_name:'Studio'},reply.devices[1]]};

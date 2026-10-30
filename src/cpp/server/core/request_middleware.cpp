@@ -182,11 +182,11 @@ httplib::Server::HandlerResponse RequestMiddleware::pre_route(const httplib::Req
         }
     }
 
-    return authenticate(req, res);
+    return authenticate(req, res, mesh_ingress);
 }
 
 httplib::Server::HandlerResponse RequestMiddleware::authenticate(const httplib::Request& req,
-                                                                 httplib::Response& res) {
+                                                                 httplib::Response& res, bool mesh_ingress) {
     telemetry::g_request_start_time = std::chrono::steady_clock::now();
     telemetry::g_current_auth_token = "";
     if (req.has_header("X-Client-Session-Id")) {
@@ -255,6 +255,21 @@ httplib::Server::HandlerResponse RequestMiddleware::authenticate(const httplib::
     }
 
     telemetry::g_current_auth_token = auth_token;
+
+    if (mesh_ingress) {
+        const auto access = nexus_access::mesh_request_access(req);
+        if (access.first != 0) {
+            res.status = access.first;
+            res.set_content(nlohmann::json{{"error", access.second}}.dump(), "application/json");
+            return httplib::Server::HandlerResponse::Handled;
+        }
+        return httplib::Server::HandlerResponse::Unhandled;
+    }
+
+    // Nexus routes authorize local operators or SDK-attributed peers, never API keys.
+    if (nexus_access::nexus_request(req)) {
+        return httplib::Server::HandlerResponse::Unhandled;
+    }
 
     if (is_internal_route) {
         if (!admin_api_key_.empty() && req.method != "OPTIONS") {

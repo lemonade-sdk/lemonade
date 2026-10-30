@@ -18,11 +18,10 @@
 namespace lemon {
 /// The listener a Nexus route is registered on.
 /// Public: lemond's normal port. Loopback clients read status and are redirected to
-/// Management for every other route. Nonloopback clients may call the group operations
-/// accepted by nexus_access::remote_operation, only with LEMONADE_API_KEY configured.
+/// Management for every other route. Remote clients use the authenticated mesh.
 /// Management: the loopback listener owned by NexusManager for the local desktop.
 /// MeshIngress: the loopback listener behind Nexus virtual port 13305. Mesh peers arrive
-/// from loopback, so every Nexus route on it is refused.
+/// from loopback with SDK-attributed identity and permissions.
 enum class NexusListener { Public, Management, MeshIngress };
 
 /// Where the device identity lives.
@@ -66,7 +65,8 @@ bool invite_code(const std::string& code);
 nlohmann::json tree_entry(const nlohmann::json& node, const std::string& self_key,
     bool ancestor_admin = false);
 nlohmann::json merge_members(const nlohmann::json& group, const nlohmann::json& children,
-    const nlohmann::json& peers, const std::string& self_key, const std::string& self_node_id);
+    const nlohmann::json& peers, const std::string& self_key, const std::string& self_node_id,
+    const nlohmann::json& mesh_peers = nlohmann::json::array());
 nlohmann::json device_access(const nlohmann::json& members, const std::string& device_id,
     const std::string& self_node_id);
 /// Route policy families of lemond's routes (RouteSpec::family), in catalog order.
@@ -163,15 +163,16 @@ SdkFailure sdk_failure(int code, const nlohmann::json& reply, int rejected_statu
 bool constant_time_equals(const std::string& candidate, const std::string& expected);
 /// True when `authorization` is "Bearer <key>" for `api_key` or a nonempty `admin_key`.
 bool bearer_matches(const std::string& authorization, const std::string& api_key, const std::string& admin_key);
-/// True for the operations a nonloopback client may call on the public listener:
-/// the group operations and "relay".
+/// Operations an authenticated mesh administrator may call.
 bool remote_operation(const std::string& operation);
-/// Decides whether a Nexus route may run. Origin, CORS and the API key are checked earlier
-/// by lemond's shared listener policy; this adds the per-listener rules. Returns {0, ""}
+bool nexus_request(const httplib::Request& req);
+bool administers_tree(const nlohmann::json& path, const std::string& key);
+/// Only valid on the dedicated SDK ingress listener; public peer headers are untrusted.
+std::pair<int, std::string> mesh_request_access(const httplib::Request& req, bool management = false);
+/// Decides whether a Nexus route may run. Returns {0, ""}
 /// to run the route, {307, ""} to redirect it to the management listener, or an HTTP
-/// error status and message. An empty `api_key` turns remote management off.
-std::pair<int, std::string> route_access(NexusListener listener, bool loopback, const std::string& operation,
-    const std::string& authorization, const std::string& api_key, const std::string& admin_key);
+/// error status and message. An API key cannot replace mesh caller authorization.
+std::pair<int, std::string> route_access(NexusListener listener, const httplib::Request& req, const std::string& operation);
 /// Header that carries the selected peer's API key through the relay. The relay sends it
 /// to that peer as Authorization and never forwards the caller's own Authorization.
 extern const char* const kPeerAuthorizationHeader;
@@ -194,6 +195,7 @@ uint64_t catalog_version(const std::string& lemond_version);
 /// std::logic_error when a route has no valid family or two families claim one method
 /// and URL, so a bad registration fails at startup.
 nlohmann::ordered_json service_catalog(const nlohmann::ordered_json& routes, const std::string& lemond_version);
+nlohmann::json route_permissions(const nlohmann::ordered_json& routes);
 /// One log line for an SDK ingress refusal event (`{"kind", "method", "path",
 /// "peer_node_id", "family", "required", "catalog_version", ...}`): "Nexus route policy:
 /// <kind> <method> <path> from <peer_node_id> (family <family>, needs <required>, catalog
@@ -204,8 +206,7 @@ std::string ingress_denied_log_line(const nlohmann::json& event);
 /// X-Nexus-Peer-Node, X-Nexus-Peer-Key, X-Nexus-Peer-Permissions, X-Nexus-Family and
 /// X-Nexus-Catalog-Version. They are trusted only on NexusListener::MeshIngress.
 extern const std::vector<std::string> kPeerHeaders;
-/// The mesh peer the SDK attributed a request to. lemond logs it; it never decides
-/// authorization in lemond, the SDK already did.
+/// The mesh peer attributed by the SDK, recorded for request logging.
 struct PeerContext {
     std::string node_id;
     std::string family;
@@ -237,10 +238,11 @@ public:
     /// `install_policy` installs lemond's request middleware (origin, CORS, API keys) on the
     /// management listener. `install_api` installs the middleware and lemond's API routes on
     /// the mesh ingress listener, without the `/internal/*` control routes; NexusManager
-    /// registers its refusing Nexus routes first.
+    /// registers its Nexus authorization handlers first.
     /// Both run once, before the listener starts. If the mesh listener cannot bind, joining
     /// fails. Once the mesh is up, the SDK serves `mesh_port` (0 selects 13306) on
-    /// 127.0.0.1 with the mesh ingress listener as this device's local service.
+    /// 127.0.0.1 with the management listener as this device's local service.
+    /// `install_local_api` adds ordinary API routes there for the local selection port.
     /// `service_catalog` (nexus_access::service_catalog) is registered with the SDK for
     /// virtual port 13305 after every join, when the SDK supports it; null registers
     /// nothing and status reports the route policy unavailable.
@@ -252,7 +254,9 @@ public:
                  const std::function<void(httplib::Server&)>& install_api,
                  int mesh_port,
                  nlohmann::ordered_json service_catalog = nullptr,
-                 std::optional<ProcessRole> process_role = std::nullopt);
+                 std::optional<ProcessRole> process_role = std::nullopt,
+                 const std::function<void(httplib::Server&)>& install_local_api = {},
+                 nlohmann::json route_permissions = nullptr);
     ~NexusManager();
     void register_routes(httplib::Server& server, NexusListener listener = NexusListener::Public);
     void stop();
@@ -268,9 +272,11 @@ private:
     void emit_locked(const std::string& type, const json& data);
     void handle(const httplib::Request& req, httplib::Response& res, const std::string& operation, bool remote);
     void relay(const httplib::Request& req, httplib::Response& res);
-    std::pair<int, json> control(const std::string& method, const std::string& path, const json& body);
+    std::pair<int, json> control(const std::string& method, const std::string& path, const json& body,
+                               const std::string& caller_key = "");
     std::string data_root_;
     nlohmann::ordered_json catalog_;
+    const json route_permissions_;
     ProcessRole role_;
     int ingress_port_{0};
     std::unique_ptr<Session> session_;

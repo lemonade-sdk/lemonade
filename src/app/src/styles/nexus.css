@@ -142,6 +142,50 @@
   padding: 0 var(--space-2) var(--space-3);
 }
 .nexus-account-menu__sign-out { width: 100%; margin-top: var(--space-1); }
+.nexus-route-permissions { margin-bottom: 12px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-1); }
+.nexus-route-permissions > summary { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 10px 16px; cursor: pointer; list-style: none; }
+.nexus-route-permissions > summary::-webkit-details-marker, .nexus-route-family > summary::-webkit-details-marker { display: none; }
+.nexus-route-permissions > summary > span { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 12px; min-width: 0; }
+.nexus-route-permissions > summary strong { font-size: var(--text-sm); font-weight: var(--weight-semibold); }
+.nexus-route-permissions > summary small { font-size: var(--text-xs); color: var(--text-secondary); }
+.nexus-route-permissions[open] > summary > .app-icon, .nexus-route-family[open] > summary > .app-icon { transform: rotate(90deg); }
+.nexus-route-permissions__content { padding: 0 16px 12px; }
+.nexus-route-permissions .nexus-hint { font-size: var(--text-sm); line-height: 1.6; color: var(--text-tertiary); }
+.nexus-route-permissions__content > .nexus-hint { margin-top: 0; }
+.nexus-route-permissions__toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.nexus-route-permissions .nexus-role-selector input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.nexus-route-permissions__filters { display: flex; align-items: center; gap: 8px; margin-left: auto; min-width: 0; }
+.nexus-service-field { display: flex; flex: 0 0 230px; min-width: 0; }
+.nexus-route-permissions .nexus-service-selector { width: 100%; height: 36px; padding: 0 28px 0 10px; font-size: var(--text-sm); background-image: var(--select-chevron); background-repeat: no-repeat; background-position: right 10px center; }
+.nexus-route-count { font-variant-numeric: tabular-nums; color: var(--text-tertiary); font-size: var(--text-xs); }
+.nexus-route-search { display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 10px; min-width: 0; border: 1px solid var(--border); border-radius: var(--radius-md); color: var(--text-secondary); }
+.nexus-route-search input { width: 180px; min-width: 0; padding: 0; border: 0; background: transparent; color: var(--text-primary); font: inherit; font-size: var(--text-sm); }
+.nexus-route-permissions__list { margin-top: 12px; max-height: 350px; overflow: auto; border: 1px solid var(--border-subtle); border-radius: var(--radius-md); }
+.nexus-route-permissions__list > .nexus-hint { margin: 16px; }
+.nexus-route-family + .nexus-route-family { border-top: 1px solid var(--border-subtle); }
+.nexus-route-family > summary { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 8px; padding: 11px 12px; cursor: pointer; list-style: none; font-size: var(--text-sm); background: var(--surface-1); }
+.nexus-route-family > summary .nexus-route-count { margin-left: auto; }
+.nexus-route-family > .nexus-hint { margin: 4px 12px 12px; }
+.nexus-route-family table { width: 100%; border-collapse: collapse; table-layout: fixed; text-align: left; font-size: var(--text-xs); }
+.nexus-route-family th { color: var(--text-secondary); font-weight: var(--weight-medium); }
+.nexus-route-family th, .nexus-route-family td { padding: 9px 12px; border-top: 1px solid var(--border-subtle); vertical-align: top; }
+.nexus-route-family th:first-child { width: 80px; }
+.nexus-route-family code { overflow-wrap: anywhere; }
+.nexus-route-method { font-size: 10px; font-weight: var(--weight-semibold); color: var(--text-secondary); }
+.nexus-route-aliases { margin-top: 4px; color: var(--text-tertiary); }
+.nexus-route-aliases > summary { width: fit-content; cursor: pointer; }
+.nexus-route-aliases code { display: block; margin-top: 4px; }
+.nexus-route-permissions__content > .nexus-route-permissions__scope { margin: 12px 0 0; }
+@media (max-width: 560px) {
+  .nexus-route-permissions > summary { padding: 10px 12px; }
+  .nexus-route-permissions__content { padding: 0 12px 12px; }
+  .nexus-route-permissions__filters { flex: 1 1 100%; }
+  .nexus-service-field { flex: 1.3; }
+  .nexus-route-search { flex: 1; }
+  .nexus-route-search input { width: 100%; }
+  .nexus-route-permissions .nexus-role-selector label { min-width: 0; padding: 8px 6px; font-size: var(--text-xs); gap: 5px; }
+}
+
 .nexus-page { width: 100%; max-width: 1120px; }
 .nexus-page > .nexus-section + .nexus-section { margin-top: var(--space-6); }
 .nexus-page .nexus-section h3 { padding-bottom: var(--space-3); border-bottom: 1px solid var(--border-subtle); }
@@ -152,9 +196,9 @@
 .nexus-devices li { display: flex; align-items: center; gap: var(--space-4); padding: var(--space-3) 0; }
 .nexus-devices li + li { border-top: 1px solid var(--border-subtle); }
 .nexus-devices li > .app-icon { flex-shrink: 0; color: var(--text-secondary); }
-.nexus-devices li div { min-width: 0; overflow-wrap: anywhere; }
+.nexus-devices li > div { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .nexus-devices strong { display: block; font-size: var(--text-md); font-weight: var(--weight-medium); }
-.nexus-devices span { display: block; margin-top: var(--space-1); color: var(--text-tertiary); font-size: var(--text-sm); }
+.nexus-device-subtitle { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; margin-top: var(--space-1); color: var(--text-tertiary); font-size: var(--text-xs); }
 .nexus-avatar-picker { display: flex; flex-direction: column; align-items: center; gap: var(--space-1); width: 76px; flex-shrink: 0; }
 .nexus-avatar-picker__button { display: flex; flex-direction: column; align-items: center; gap: var(--space-2); color: var(--text-secondary); font-size: var(--text-xs); border-radius: var(--radius-sm); }
 .nexus-avatar-picker__preview { position: relative; display: inline-flex; }
@@ -181,16 +225,33 @@
 .nexus-hierarchy__search:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
 .nexus-hierarchy__search input { width: 100%; min-width: 0; padding: 0; border: 0; border-radius: 0; outline: none; box-shadow: none; background: transparent; color: var(--text-primary); font-size: var(--text-sm); }
 .nexus-hierarchy__workspace { display: grid; grid-template-columns: minmax(210px, .85fr) minmax(0, 1.2fr); border-top: 1px solid var(--border-subtle); min-height: 320px; }
-.nexus-tree { padding: 12px 8px; border-right: 1px solid var(--border-subtle); background: var(--surface-2); max-height: 600px; overflow: auto; }
-.nexus-tree__row { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 7px 9px 7px calc(5px + var(--tree-depth) * 16px); border: 1px solid transparent; border-radius: var(--radius-sm); cursor: pointer; color: var(--text-secondary); font-size: var(--text-sm); }
-.nexus-tree__row:hover { background: var(--surface-3); }
-.nexus-tree__row.is-selected { background: var(--surface-raised); border-color: var(--border); color: var(--text-primary); }
-.nexus-tree__row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-.nexus-tree__row > .app-icon { flex-shrink: 0; }
-.nexus-tree__disclosure { display: flex; align-items: center; justify-content: center; flex: 0 0 18px; height: 24px; border-radius: 3px; }
-.nexus-tree__disclosure:hover { background: var(--surface-alpha-1); }
+.nexus-tree-panel { min-width: 0; border-right: 1px solid var(--border-subtle); background: var(--surface-2); }
+.nexus-tree { padding: 12px 8px; max-height: 600px; overflow: auto; }
+.nexus-tree__rows { min-width: calc(260px + var(--tree-max-depth) * 20px); }
+.nexus-tree__row { position: relative; display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 2px 0 2px 5px; cursor: pointer; color: var(--text-secondary); font-size: var(--text-sm); }
+.nexus-tree__row[aria-level="1"] { gap: 0; }
+.nexus-tree__tile { display: flex; align-items: center; flex: 1; min-width: 0; min-height: 40px; gap: 8px; padding: 7px 10px; border: 1px solid transparent; border-radius: var(--radius-sm); }
+.nexus-tree__row:hover .nexus-tree__tile { background: var(--surface-3); }
+.nexus-tree__row.is-selected { color: var(--text-primary); }
+.nexus-tree__row.is-selected .nexus-tree__tile { background: var(--surface-raised); border-color: var(--border); }
+.nexus-tree__row:focus-visible { outline: none; }
+.nexus-tree__row:focus-visible .nexus-tree__tile { outline: 2px solid var(--accent); outline-offset: -2px; }
+.nexus-tree__guides { display: flex; align-self: stretch; flex-shrink: 0; margin: -2px -8px -2px 0; pointer-events: none; }
+.nexus-tree__guide { position: relative; flex: 0 0 20px; width: 20px; }
+.nexus-tree__guide--continued::before, .nexus-tree__guide--branch::before { content: ''; position: absolute; top: 0; bottom: 0; left: 9px; border-left: 1px solid var(--border-strong); }
+.nexus-tree__guide--last::before { bottom: 50%; }
+.nexus-tree__guide--branch::after { content: ''; position: absolute; top: 50%; left: 9px; right: 2px; border-top: 1px solid var(--border-strong); }
+.nexus-tree__row--expanded::after { content: ''; position: absolute; top: calc(50% + 10px); bottom: 0; left: calc(14px + var(--tree-depth) * 20px); border-left: 1px solid var(--border-strong); pointer-events: none; }
+.nexus-tree__disclosure, .nexus-tree__icon { display: flex; align-items: center; justify-content: center; flex: 0 0 18px; height: 24px; border-radius: 3px; }
+.nexus-tree__row:hover .nexus-tree__name { color: var(--text-primary); }
 .nexus-tree__name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .nexus-tree__you { font-size: 10px; color: var(--text-tertiary); white-space: nowrap; }
+.nexus-tree__status { display: inline-flex; align-items: center; flex: 0 0 auto; gap: 10px; }
+.nexus-device-status { display: inline-flex; align-items: center; flex: 0 0 auto; gap: 6px; color: var(--text-secondary); font-size: var(--text-xs); font-weight: var(--weight-normal); line-height: 1.4; white-space: nowrap; }
+.nexus-device-status__dot { box-sizing: border-box; width: 7px; height: 7px; flex: 0 0 7px; border: 1px solid var(--text-tertiary); border-radius: 50%; background: transparent; }
+.nexus-device-status--online .nexus-device-status__dot { border-color: var(--success); background: var(--success); }
+.nexus-device-status--unknown .nexus-device-status__dot { border-style: dashed; }
+.nexus-connection-badge { display: inline-flex; align-items: center; flex: 0 0 auto; padding: 3px 7px; border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text-secondary); background: var(--surface-2); font-size: var(--text-xs); font-weight: var(--weight-medium); line-height: 1.2; white-space: nowrap; }
 .nexus-tree-detail { padding: 20px; min-width: 0; }
 .nexus-tree-breadcrumbs { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; color: var(--text-tertiary); font-size: var(--text-xs); margin-bottom: 22px; }
 .nexus-tree-breadcrumbs button { padding: 3px 4px; border-radius: 4px; color: inherit; overflow-wrap: anywhere; text-align: left; }
@@ -212,6 +273,8 @@
 .nexus-group-editor .nexus-permission-choice { display: flex; gap: 7px; align-items: center; margin: 18px 0 8px; }
 .nexus-permissions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 8px; margin: 14px 0; }
 .nexus-permissions label { display: flex; align-items: flex-start; gap: 6px; font-size: var(--text-xs); color: var(--text-secondary); line-height: 1.5; }
+.nexus-service-permissions { margin: 14px 0; }
+.nexus-service-permissions summary, .nexus-network-permissions summary { cursor: pointer; font-size: var(--text-sm); color: var(--text-secondary); }
 .nexus-tree-facts { margin: 12px 0; font-size: var(--text-sm); }
 .nexus-tree-facts div { margin-top: 12px; }
 .nexus-tree-facts dt { color: var(--text-tertiary); font-size: var(--text-xs); }
@@ -223,14 +286,14 @@
 .nexus-tree-search-results { padding: 0 20px 18px; }
 .nexus-tree-search-results > button { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; padding: 12px 6px; border-bottom: 1px solid var(--border-subtle); }
 .nexus-tree-search-results > button:hover { background: var(--surface-2); }
-.nexus-tree-search-results > button > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.nexus-tree-search-results > button > span:not(.nexus-device-status) { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .nexus-tree-search-results small { display: block; margin-top: 5px; color: var(--text-tertiary); font-size: var(--text-xs); }
 .nexus-compact { padding: 0 20px 12px; }
 .nexus-compact .nexus-tree-breadcrumbs { margin-bottom: 10px; }
 .nexus-compact__row { display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 4px; text-align: left; border-top: 1px solid var(--border-subtle); }
 .nexus-compact__row:disabled { cursor: default; opacity: 1; }
 .nexus-compact__row:not(:disabled):hover { background: var(--surface-2); }
-.nexus-compact__row > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.nexus-compact__row > span:not(.nexus-connection-badge) { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .nexus-compact__row strong { display: block; font-size: var(--text-sm); font-weight: var(--weight-medium); }
 .nexus-compact__row small { display: block; margin-top: 4px; color: var(--text-tertiary); font-size: var(--text-xs); }
 .nexus-network-empty { padding: 36px 24px; border: 1px dashed var(--border); border-radius: var(--radius-lg); text-align: center; }
@@ -255,6 +318,8 @@
 .nexus-account-dialog__header p { margin: 4px 0 0; font-size: var(--text-sm); color: var(--text-tertiary); }
 .nexus-account-dialog p { line-height: 1.6; font-size: var(--text-sm); }
 .nexus-account-dialog .nexus-hint { color: var(--text-tertiary); }
+.nexus-server-target { display: grid; gap: 4px; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-md); overflow-wrap: anywhere; }
+.nexus-server-target > span { color: var(--text-secondary); font-size: var(--text-sm); }
 .nexus-sign-in__fields { min-width: 0; border: 0; padding: 0; margin: 20px 0; }
 .nexus-sign-in__fields > label, .nexus-account-dialog form > label { display: block; font-size: var(--text-sm); color: var(--text-secondary); margin: 16px 0 7px; }
 .nexus-account-dialog .input { width: 100%; }
@@ -276,7 +341,8 @@
 
 @media (max-width: 900px) {
   .nexus-hierarchy__workspace { grid-template-columns: minmax(0, 1fr); }
-  .nexus-tree { border-right: 0; border-bottom: 1px solid var(--border-subtle); max-height: 320px; }
+  .nexus-tree-panel { border-right: 0; border-bottom: 1px solid var(--border-subtle); }
+  .nexus-tree { max-height: 320px; }
 }
 @media (max-width: 560px) {
   .nexus-view-heading { align-items: flex-start; flex-direction: column; gap: 14px; }

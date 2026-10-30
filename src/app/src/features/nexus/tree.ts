@@ -19,7 +19,7 @@ export interface NexusTreeEntry {
 
 export interface NexusTreeBranch { parent: NexusTreeEntry; children: NexusTreeEntry[] }
 export type NexusTreeBranches = Record<string, NexusTreeBranch>;
-export interface NexusTreeRow { entry: NexusTreeEntry; depth: number; position: number; siblings: number }
+export interface NexusTreeRow { entry: NexusTreeEntry; depth: number; position: number; siblings: number; ancestorLines: boolean[] }
 
 export function nexusKeysEqual(left: string, right: string): boolean {
   const canonical = (key: string) => key.replace(/^ed25519:/, '').replace(/-/g, '+').replace(/_/g, '/').replace(/=+$/, '');
@@ -29,16 +29,22 @@ export function nexusKeysEqual(left: string, right: string): boolean {
 export function visibleTreeRows(root: NexusTreeEntry, branches: NexusTreeBranches, expanded: ReadonlySet<string>): NexusTreeRow[] {
   const rows: NexusTreeRow[] = [];
   const seen = new Set<string>();
-  const pending: NexusTreeRow[] = [{ entry: root, depth: 1, position: 1, siblings: 1 }];
+  const pending: NexusTreeRow[] = [{ entry: root, depth: 1, position: 1, siblings: 1, ancestorLines: [] }];
   while (pending.length) {
     const row = pending.pop()!;
     if (seen.has(row.entry.id)) continue;
     seen.add(row.entry.id);
     rows.push(row);
     if (row.entry.kind !== 'group' || !expanded.has(row.entry.id)) continue;
-    const children = branches[row.entry.id]?.children || [];
+    const childIds = new Set<string>();
+    const children = (branches[row.entry.id]?.children || []).filter(child => {
+      if (child.parent_id !== row.entry.id || seen.has(child.id) || childIds.has(child.id)) return false;
+      childIds.add(child.id);
+      return true;
+    });
+    const ancestorLines = row.depth > 1 ? [...row.ancestorLines, row.position < row.siblings] : [];
     for (let i = children.length - 1; i >= 0; i -= 1) {
-      if (children[i].parent_id === row.entry.id) pending.push({ entry: children[i], depth: row.depth + 1, position: i + 1, siblings: children.length });
+      pending.push({ entry: children[i], depth: row.depth + 1, position: i + 1, siblings: children.length, ancestorLines });
     }
   }
   return rows;

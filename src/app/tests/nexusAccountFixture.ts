@@ -1,6 +1,7 @@
 import { expect, type Page } from '@playwright/test';
 import type { NexusDevice, NexusStatus } from '../src/features/nexus/nexus';
 import type { NexusTreeBranch, NexusTreeEntry } from '../src/features/nexus/tree';
+import type { NexusRole } from '../src/features/nexus/routePermissions';
 
 const headers = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Authorization, Content-Type', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS' };
 const self: NexusDevice = { node_id: 'self', device_name: 'My laptop', tunnel_ip: '10.8.0.2', management_pubkey: 'self-key', permissions: ['read', 'admin'], permissions_known: true, is_admin: true, is_online: true, can_remove: false };
@@ -9,12 +10,19 @@ const peer: NexusDevice = { node_id: 'peer', device_name: 'Kitchen PC', tunnel_i
 export async function setupNexusAccount(page: Page, options: {
   desktop?: boolean; registered?: boolean; joined?: boolean; readOnly?: boolean; cancelPasskey?: boolean; unauthorized?: boolean;
   avatarUnsupported?: boolean; needsUserKey?: boolean; inviteWithoutCode?: boolean; deviceKey?: boolean;
+  remote?: boolean; apiKey?: string; apiUnauthorized?: boolean;
+  role?: NexusRole;
 } = {}) {
-  const members = [{ ...self, ...(options.readOnly ? { is_admin: false, permissions: ['read'] } : {}) }, peer];
+  const source = options.remote ? 'http://192.168.10.20:13305' : 'http://127.0.0.1:13305';
+  const deviceName = options.remote ? 'Inference server' : 'My laptop';
+  const accountRole = options.role || (options.readOnly ? 'user' : 'admin');
+  const members = [{ ...self, device_name: deviceName, is_admin: accountRole === 'admin',
+    permissions: accountRole === 'admin' ? ['read', 'admin'] : accountRole === 'moderator'
+      ? ['read', 'write', 'add_child', 'connect_private', 'svc:inference', 'svc:mcp', 'svc:models_manage', 'svc:jobs'] : ['read'] }, { ...peer }];
   const state: NexusStatus = { available: true, controller_url: 'http://127.0.0.1:15555', enabled: true,
     registered: options.registered ?? true, locked: options.joined === false, mesh_up: options.joined !== false,
     status: options.joined === false ? 'locked' : 'running', node_id: 'self', group_node_id: options.joined === false ? '' : 'group',
-    device_name: 'My laptop', members, ...(options.needsUserKey ? { identity_source: 'handoff' as const, needs_user_key: true } : {}),
+    device_name: deviceName, members, ...(options.needsUserKey ? { identity_source: 'handoff' as const, needs_user_key: true } : {}),
     ...(options.deviceKey ? { identity_source: 'user' as const, unlock: options.registered === false ? 'passkey' as const : 'device_key' as const } : {}) };
   const entry = (id: string, name: string, kind: 'group' | 'node', parent_id: string): NexusTreeEntry => ({
     id, name, kind, parent_id, node_type: kind === 'group' ? 'customer' : 'endpoint', tunnel_ip: '', is_inference: false,
@@ -27,19 +35,20 @@ export async function setupNexusAccount(page: Page, options: {
   const team = entry('team', 'Team', 'group', 'group');
   const lab = entry('lab', 'Lab', 'group', 'team');
   const branches: Record<string, NexusTreeBranch> = {
-    group: { parent: root, children: [team, entry('self', 'My laptop', 'node', 'group'), entry('peer', 'Kitchen PC', 'node', 'group')] },
+    group: { parent: root, children: [team, entry('self', deviceName, 'node', 'group'), entry('peer', 'Kitchen PC', 'node', 'group')] },
     team: { parent: team, children: [lab] },
     lab: { parent: lab, children: [entry('workstation', 'Lab workstation', 'node', 'lab')] },
   };
-  const calls: { path: string; method: string; body: Record<string, unknown> | null; authorization?: string }[] = [];
-  const fixture = { state, calls, accountError: false, rejectWrites: false, invalidTree: false, unlockUnreachable: false,
+  if (options.remote) { delete state.controller_url; state.remote_management = true; }
+  const calls: { path: string; origin: string; method: string; body: Record<string, unknown> | null; authorization?: string }[] = [];
+  const fixture = { state, calls, branches, accountRole, accountError: false, accountUnavailable: false, rejectWrites: false, invalidTree: false, unlockUnreachable: false,
     avatarSaveGate: undefined as Promise<void> | undefined,
     avatar: {state: 'ready', image: null as string | null, revision: 0, can_write: !options.readOnly, pending: false} };
-  await page.addInitScript(({ desktop, cancelPasskey }) => {
+  await page.addInitScript(({ desktop, cancelPasskey, source, key }) => {
     localStorage.setItem('lemonade_theme', 'dark');
     (window as any).api = { isWebApp: !desktop,
-      getSettings: async () => ({ baseURL: { value: 'http://127.0.0.1:13305', type: 'string' }, apiKey: { value: 'fixture-server-key', type: 'string' } }),
-      saveSettings: async () => true, getPlatform: async () => 'darwin', getServerBaseUrl: async () => 'http://127.0.0.1:13305' };
+      getSettings: async () => ({ baseURL: { value: source, type: 'string' }, apiKey: { value: key, type: 'string' } }),
+      saveSettings: async () => true, getPlatform: async () => 'darwin', getServerBaseUrl: async () => source };
     Object.defineProperty(navigator, 'credentials', { configurable: true, value: {
       get: async () => cancelPasskey ? null : { rawId: new Uint8Array([1, 2, 3, 4]).buffer,
         response: { authenticatorData: new Uint8Array(37).buffer, clientDataJSON: new TextEncoder().encode('{}').buffer, signature: new Uint8Array([1]).buffer } },
@@ -50,15 +59,18 @@ export async function setupNexusAccount(page: Page, options: {
         return { rawId: new Uint8Array([1, 2, 3, 4]).buffer, response: { getPublicKey: () => spki } };
       },
     } });
-  }, { desktop: options.desktop !== false, cancelPasskey: Boolean(options.cancelPasskey) });
+  }, { desktop: options.desktop !== false, cancelPasskey: Boolean(options.cancelPasskey), source, key: options.apiKey ?? (options.remote ? '' : 'fixture-server-key') });
   await page.route('**/api/v1/**', async route => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
     const body = request.method() === 'POST' ? request.postDataJSON() as Record<string, unknown> : null;
     if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
-    if (!path.includes('/nexus/')) return route.fulfill({ headers, json: path.endsWith('/health') ? { status: 'ok', version: 'test', all_models_loaded: [] } : path.endsWith('/models') ? { data: [] } : {} });
-    calls.push({ path, method: request.method(), body, authorization: request.headers().authorization });
+    if (!path.includes('/nexus/')) return route.fulfill(options.apiUnauthorized
+      ? { status: 401, headers, json: { error: 'Unauthorized' } }
+      : { headers, json: path.endsWith('/health') ? { status: 'ok', version: 'test', all_models_loaded: [] } : path.endsWith('/models') ? { data: [] } : {} });
+    calls.push({ path, origin: new URL(request.url()).origin, method: request.method(), body, authorization: request.headers().authorization });
     if (options.unauthorized) return route.fulfill({ status: 401, headers, json: { error: 'Unauthorized' } });
+    if (options.remote && request.method() === 'POST') return route.fulfill({ status: 403, headers, json: { error: 'Use the local controller for identity, lifecycle and relay operations' } });
     if (path.endsWith('/events')) return route.fulfill({ status: 204, headers });
     if (path.endsWith('/passkey/challenge')) return route.fulfill({ headers, json: {
       challenge: 'AQIDBA', user_id: 'fixture-identity', rp_id: new URL(page.url()).hostname, credential_id: state.registered ? 'AQIDBA' : '', registration: !state.registered,
@@ -73,9 +85,12 @@ export async function setupNexusAccount(page: Page, options: {
       if (!body?.defer_join) { state.mesh_up = true; state.group_node_id = 'group'; }
     }
     if (path.endsWith('/join')) { state.mesh_up = true; state.group_node_id = 'group'; }
+    if (path.endsWith('/account') && fixture.accountUnavailable) return route.fulfill({
+      status: 429, headers, json: { error: 'The network is busy. Try again shortly.', retryable: true },
+    });
     if (path.endsWith('/account')) return route.fulfill(fixture.accountError
       ? { status: 409, headers, json: { error: 'Account access ended' } }
-      : { headers, json: { id: state.group_node_id, member_id: 'fixture-identity', device_node_id: 'self', role: members[0].is_admin ? 'admin' : 'user', devices: members,
+      : { headers, json: { id: state.group_node_id, member_id: 'fixture-identity', device_node_id: 'self', role: fixture.accountRole, devices: members,
         avatar: options.avatarUnsupported ? {state: 'unsupported'} : fixture.avatar } });
     if (path.endsWith('/account/avatar')) {
       await fixture.avatarSaveGate;
@@ -85,7 +100,9 @@ export async function setupNexusAccount(page: Page, options: {
       fixture.avatar = {...fixture.avatar, image: body?.image as string | null, pending: false, revision: fixture.avatar.revision + 1};
       return route.fulfill({headers, json: fixture.avatar});
     }
-    if (path.endsWith('/invites')) return route.fulfill({ headers, json: { ...(options.inviteWithoutCode ? {} : { code: '12345678' }), link_token: `lnk_${'a'.repeat(64)}`, expires_at: Math.floor(Date.now() / 1000) + 600, device_name: body?.device_name } });
+    if (path.endsWith('/invites')) return route.fulfill(fixture.rejectWrites
+      ? { status: 403, headers, json: { error: 'Nexus refused this invitation.' } }
+      : { headers, json: { ...(options.inviteWithoutCode ? {} : { code: '12345678' }), link_token: `lnk_${'a'.repeat(64)}`, expires_at: Math.floor(Date.now() / 1000) + 600, device_name: body?.device_name } });
     const mutation = path.match(/\/tree\/([^/]+)\/(groups|rename|permissions)$/);
     if (mutation) {
       if (fixture.rejectWrites) return route.fulfill({ status: 403, headers, json: { error: 'This group cannot be changed.' } });
@@ -97,6 +114,10 @@ export async function setupNexusAccount(page: Page, options: {
         return route.fulfill({ headers, json: { node_id: child.id } });
       }
       if (action === 'rename') branch.parent.name = String(body?.name);
+      if (action === 'permissions') {
+        const assignment = branch.parent.assignments.find(item => item.management_pubkey === `${body?.member_node_id}-key`);
+        if (assignment) assignment.permissions = [...body?.permissions as string[], ...(body?.admin ? ['admin'] : [])];
+      }
       return route.fulfill({ headers, json: {} });
     }
     if (path.includes('/tree')) {

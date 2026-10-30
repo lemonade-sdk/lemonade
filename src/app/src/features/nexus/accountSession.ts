@@ -29,7 +29,7 @@ export interface NexusAccountService {
   inspect: () => Promise<NexusAccountInspection>;
   signIn: (input: NexusSignInInput) => Promise<VerifiedNexusAccount>;
   refresh: (session: VerifiedNexusAccount) => Promise<VerifiedNexusAccount>;
-  invite: (session: VerifiedNexusAccount, deviceName: string) => Promise<NexusInvite>;
+  invite: (session: VerifiedNexusAccount, deviceName: string, role?: 'user' | 'moderator') => Promise<NexusInvite>;
   setAvatar: (session: VerifiedNexusAccount, image: string | null) => Promise<NexusAvatarState & { state: 'ready' }>;
 }
 
@@ -46,13 +46,13 @@ export function verifyAvatarReply(value: unknown): NexusAvatarState {
   return reply as NexusAvatarState & { state: 'ready' };
 }
 
-interface AccountReply { id: string; member_id: string; device_node_id: string; role: 'admin' | 'user'; devices: NetworkDevice[]; avatar?: unknown }
+interface AccountReply { id: string; member_id: string; device_node_id: string; role: NonNullable<NexusAccount['role']>; devices: NetworkDevice[]; avatar?: unknown }
 // lemond reports no account name, so the label is this device's name from the membership
 // reply; `fallbackName` covers a reply without one (the name the user entered, or the saved label).
 export function verifyAccountReply(value: unknown, source: string, expectedId?: string, fallbackName = ''): VerifiedNexusAccount {
   const reply = value as AccountReply | null;
   if (!reply || typeof reply.id !== 'string' || !reply.id || typeof reply.member_id !== 'string' || !reply.member_id
-    || typeof reply.device_node_id !== 'string' || !reply.device_node_id || !['admin', 'user'].includes(reply.role) || !Array.isArray(reply.devices)) {
+    || typeof reply.device_node_id !== 'string' || !reply.device_node_id || !['admin', 'moderator', 'user'].includes(reply.role) || !Array.isArray(reply.devices)) {
     throw new Error('The server did not return a verified account. Update the server and try again.');
   }
   if (expectedId && reply.id !== expectedId) throw new Error('This device belongs to a different account. The saved account has been kept.');
@@ -115,12 +115,12 @@ export function createNexusAccountService(dependencies = { controller: nexusAcco
       if (next.avatar.state === 'unavailable') next.account.avatarUrl = session.account.avatarUrl;
       return next;
     },
-    async invite(session, deviceName) {
+    async invite(session, deviceName, role) {
       if (!boundedName(deviceName)) throw new Error('Enter the name of the device you are inviting.');
       const controller = await requireController(session.source);
       const current = verifyAccountReply(await controller.request('account'), session.source, session.account.id, session.account.displayName);
       if (current.memberId !== session.memberId || current.deviceNodeId !== session.deviceNodeId) throw new Error('The account membership changed. Enable Mesh again.');
-      const invite = await controller.request<NexusInvite>('invites', { device_name: deviceName.trim(), ttl_sec: 600 });
+      const invite = await controller.request<NexusInvite>('invites', { device_name: deviceName.trim(), ttl_sec: 600, ...(role ? { role } : {}) });
       if (!invite || !validNexusInvitation(invite.code || invite.link_token || '') || !Number.isFinite(invite.expires_at)) {
         throw new Error('The server returned an invalid invitation. Try again.');
       }

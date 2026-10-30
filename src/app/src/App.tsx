@@ -1020,8 +1020,8 @@ const App: React.FC = () => {
             status === 'connecting' ? 'titlebar__status-dot--connecting' : ''
           }`}
             role="status"
-            aria-label={status === 'connected' ? t('Connected') : status === 'connecting' ? t('Connecting…') : t('Offline')}
-            title={status === 'connected' ? t('Connected') : status === 'connecting' ? t('Connecting…') : t('Offline')}
+            aria-label={status === 'connected' ? t('Connected') : status === 'connecting' ? t('Connecting…') : status === 'authentication-required' ? t('API authentication required') : t('Offline')}
+            title={status === 'connected' ? t('Connected') : status === 'connecting' ? t('Connecting…') : status === 'authentication-required' ? t('API authentication required') : t('Offline')}
           />
         </div>
 
@@ -1166,7 +1166,7 @@ const App: React.FC = () => {
               <div
                 className="titlebar__utility-status"
                 role="status"
-                aria-label={`${t('Server')} ${status === 'connected' ? t('Connected') : status === 'connecting' ? t('Connecting…') : t('Offline')}`}
+                aria-label={`${t('Server')} ${status === 'connected' ? t('Connected') : status === 'connecting' ? t('Connecting…') : status === 'authentication-required' ? t('API authentication required') : t('Offline')}`}
               >
                 <span className={`titlebar__status-dot ${
                   status === 'connected' ? 'titlebar__status-dot--connected' :
@@ -1174,7 +1174,7 @@ const App: React.FC = () => {
                 }`} aria-hidden="true" />
                 <span className="titlebar__utility-label">{t('Server')}</span>
                 <span className="titlebar__utility-value">
-                  {status === 'connected' ? t('Connected') : status === 'connecting' ? t('Connecting…') : t('Offline')}
+                  {status === 'connected' ? t('Connected') : status === 'connecting' ? t('Connecting…') : status === 'authentication-required' ? t('API authentication required') : t('Offline')}
                 </span>
               </div>
               <button

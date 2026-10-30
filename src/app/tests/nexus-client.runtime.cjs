@@ -22,6 +22,7 @@ let staleController;
 let failedPeer;
 let loseMutationReply = false;
 let rejectApiKey = false;
+let rateLimitedRequests = 0;
 const json = (body, status = 200) => new Response(JSON.stringify(body), {
   status, headers: { 'Content-Type': 'application/json' },
 });
@@ -29,6 +30,10 @@ global.fetch = async (url, init = {}) => {
   const target = new URL(url);
   const headers = new Headers(init.headers);
   calls.push({ url: String(url), headers });
+  if (target.pathname.endsWith('/nexus/rate-limit-test')) {
+    if (rateLimitedRequests-- > 0) return json({ error: 'The network is busy. Try again shortly.', retryable: true }, 429);
+    return json({ ready: true });
+  }
   if (rejectApiKey && target.pathname.endsWith('/nexus/status')) return json({ error: 'Unauthorized' }, 401);
   if (loseMutationReply && target.pathname.endsWith('/tree/root/groups')) throw new TypeError('Connection lost after save');
   if (target.origin === staleController) throw new TypeError('Controller restarted');
@@ -37,6 +42,7 @@ global.fetch = async (url, init = {}) => {
     if (target.pathname.endsWith('/health')) return json({ status: 'ok', version: 'peer', all_models_loaded: [] });
     if (target.pathname.endsWith('/models')) return json({ data: [] });
   }
+  if (target.pathname.endsWith('/nexus/enable')) return json({});
   if (target.pathname.endsWith('/nexus/status')) return json({
     available: true, enabled: false, locked: true, mesh_up: false, status: 'disabled', members: [],
     controller_url: controller,
@@ -52,6 +58,13 @@ global.fetch = async (url, init = {}) => {
   assert.deepEqual(workspaceRouteFromPath('connect/devices-and-mesh'), { workspace: 'connect', section: 'nexus' }, 'existing Nexus links keep working');
   const api = require('../src/api.ts').default;
   const nexus = require('../src/features/nexus/nexus.ts');
+  for (const identity_source of ['user', 'handoff', 'system']) {
+    assert.equal(nexus.usesNexusDeviceKey({ registered: true, unlock: 'passkey', identity_source }), false,
+      'a registered passkey takes precedence over the device key storage location');
+  }
+  assert.equal(nexus.usesNexusDeviceKey({ registered: false, unlock: 'passkey', identity_source: 'user' }), true,
+    'an unregistered user identity can still initialize with its device key');
+  assert.equal(nexus.usesNexusDeviceKey({ registered: true, unlock: 'device_key', identity_source: 'user' }), true);
   await api.loadConnectionSettings();
   api.baseUrl = local;
   api.setSessionApiKey('test-local-key');
@@ -62,6 +75,13 @@ global.fetch = async (url, init = {}) => {
   assert.equal(calls.at(-1).url, `${controller}/api/v1/nexus/status`);
   assert.equal(calls.at(-1).headers.get('Authorization'), 'Bearer test-local-key');
   assert.equal(calls.at(-1).headers.get('X-Lemonade-Peer-Authorization'), null);
+
+  rateLimitedRequests = 1;
+  assert.deepEqual(await nexus.nexusRequest('rate-limit-test'), { ready: true }, 'a rate-limited read retries once');
+  rateLimitedRequests = 2;
+  await assert.rejects(nexus.nexusRequest('rate-limit-test', {}), error => error.status === 429);
+  assert.equal(rateLimitedRequests, 1, 'a rate-limited mutation is never replayed');
+  rateLimitedRequests = 0;
 
   rejectApiKey = true;
   await assert.rejects(nexus.nexusRequest('status'), /valid API key.*Settings > Server/, 'an expired key gives actionable guidance');
@@ -112,6 +132,12 @@ global.fetch = async (url, init = {}) => {
   await nexus.nexusRequest('status');
   assert.equal(calls.at(-1).url, 'https://nexus-server.example/api/v1/nexus/status');
   assert.equal(calls.at(-1).headers.get('Authorization'), 'Bearer test-remote-key');
+
+  api.baseUrl = 'http://192.168.10.20:13305';
+  api.setSessionApiKey('');
+  await nexus.nexusRequest('enable', {});
+  assert.equal(calls.at(-1).url, 'http://192.168.10.20:13305/api/v1/nexus/enable');
+  assert.equal(calls.at(-1).headers.get('Authorization'), null);
 
   api.baseUrl = 'http://127.0.0.1:13306';
   rejectApiKey = true;

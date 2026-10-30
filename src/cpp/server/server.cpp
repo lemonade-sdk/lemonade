@@ -166,7 +166,9 @@ Server::Server(std::shared_ptr<RuntimeConfig> config,
             web_ui_->register_routes(server);
         },
         13306,
-        nexus_access::service_catalog(registry_->list(), LEMON_VERSION_STRING));
+        nexus_access::service_catalog(registry_->list(), LEMON_VERSION_STRING), std::nullopt,
+        [this](httplib::Server& server) { registry_->apply_without_internal(server); },
+        nexus_access::route_permissions(registry_->list()));
     listener_ = std::make_unique<HttpListener>(
         config_.get(), router_.get(),
         [this](httplib::Server& server) {

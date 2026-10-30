@@ -205,7 +205,7 @@ function blobFromDataUrl(dataUrl: string): Blob {
   return new Blob([bytes], { type: mime });
 }
 
-export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected';
+export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'authentication-required';
 
 export interface HealthData {
   status: string;
@@ -2644,7 +2644,7 @@ class LemonadeAPI {
       this._lastConnectionError = friendlyErrorMessage(err);
       this._healthData = null;
       this._healthDataSignature = '';
-      this._setStatus('disconnected');
+      this._setStatus((err as LemonadeRequestError)?.status === 401 ? 'authentication-required' : 'disconnected');
       return false;
     }
   }
@@ -2703,7 +2703,7 @@ class LemonadeAPI {
         this._lastConnectionError = friendlyErrorMessage(err);
         this._healthData = null;
         this._healthDataSignature = '';
-        this._setStatus('disconnected');
+        this._setStatus((err as LemonadeRequestError)?.status === 401 ? 'authentication-required' : 'disconnected');
         return null;
       }
     })();

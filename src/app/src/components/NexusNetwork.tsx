@@ -1,9 +1,11 @@
 import React, { useId, useState } from 'react';
 import { useI18n } from '../i18n';
+import { useNexusAccount } from '../features/nexus/NexusAccountContext';
 import {
   isNexusDesktop, prepareNexus, refreshNexus, useNexusNetwork,
 } from '../features/nexus/nexus';
 import { NexusHierarchy } from './NexusHierarchy';
+import { NexusRoutePermissions } from './NexusRoutePermissions';
 import { Icon } from './Icon';
 import { WorkspaceActionButton } from './WorkspacePanels';
 
@@ -11,6 +13,7 @@ export function NexusNetwork({ advanced, showCompact = true }: { advanced: boole
   const { t } = useI18n();
   const network = useNexusNetwork();
   const { status } = network;
+  const { account } = useNexusAccount();
   const [deviceName, setDeviceName] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -24,6 +27,8 @@ export function NexusNetwork({ advanced, showCompact = true }: { advanced: boole
     finally { await refreshNexus(); setBusy(false); }
   };
   return <>
+    {advanced && connected && status && account && account.id === status.group_node_id && account.role && <NexusRoutePermissions
+      key={`${network.selectedServerId}:${status.group_node_id}:${status.node_id}`} viewerRole={account.role} />}
     {connected && status ? (advanced || showCompact) && <NexusHierarchy key={`${status.group_node_id}:${status.node_id}`} status={status} advanced={advanced} /> : advanced && <div className="nexus-network-empty">
       <span className="nexus-network-empty__icon"><Icon name="layers" size={28} /></span>
       <h4>{status?.enabled && status.locked ? t('Unlock your network') : t('A place for every group and device')}</h4>
