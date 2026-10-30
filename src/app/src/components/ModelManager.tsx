@@ -1086,7 +1086,23 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     next.delete(name);
     return next;
   });
-  const [loadError, setLoadError] = useState<{ modelName: string; message: string } | null>(null);
+  // Errors are keyed by model so overlapping operations keep each other's
+  // messages, and each auto-clear timer removes only the entry it created.
+  const [loadErrors, setLoadErrors] = useState<Readonly<Record<string, { message: string }>>>({});
+  const clearModelError = (name: string, entry?: { message: string }) => setLoadErrors(prev => {
+    if (!(name in prev) || (entry && prev[name] !== entry)) return prev;
+    const next = { ...prev };
+    delete next[name];
+    return next;
+  });
+  const showModelError = (name: string, message: string, autoClearMs: number | null = 6000) => {
+    const entry = { message };
+    setLoadErrors(prev => ({ ...prev, [name]: entry }));
+    if (autoClearMs !== null) window.setTimeout(() => clearModelError(name, entry), autoClearMs);
+  };
+  // Loads can overlap and finish out of order; only the most recently requested
+  // one may move the user to Chat.
+  const latestLoadRequestRef = useRef<string | null>(null);
   const [pulling, setPulling] = useState<Record<string, number>>({});  // model -> percent
   const [modelSync, setModelSync] = useState<ModelSyncSnapshot>(() => modelSyncStore.snapshot());
   const [downloadItems, setDownloadItems] = useState<DownloadListItem[]>(() => downloadStore.snapshot());
@@ -1663,21 +1679,19 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     const name = modelName(model);
     if (busyModels.has(name)) return;
     if (activeDownloadForModel(downloadStore.snapshot(), name)) {
-      setLoadError({ modelName: name, message: `${name} is still downloading. Wait for the download to finish before loading it.` });
-      window.setTimeout(() => setLoadError(prev => prev?.modelName === name ? null : prev), 6000);
+      showModelError(name, `${name} is still downloading. Wait for the download to finish before loading it.`);
       return;
     }
-    setLoadError(prev => prev?.modelName === name ? null : prev);
+    clearModelError(name);
     markBusy(name);
+    latestLoadRequestRef.current = name;
     try {
       await loadModelRuntime(model, new Set<string>(), overrideOptions);
       await refresh();
-      onModelSelect(name);
+      if (latestLoadRequestRef.current === name) onModelSelect(name);
     } catch (err) {
       console.error('Load failed:', err);
-      const message = friendlyErrorMessage(err);
-      setLoadError({ modelName: name, message });
-      window.setTimeout(() => setLoadError(prev => prev?.modelName === name ? null : prev), 6000);
+      showModelError(name, friendlyErrorMessage(err));
     }
     clearBusy(name);
   };
@@ -1685,7 +1699,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   const handleUnload = async (model: LoadedModel) => {
     const name = model.model_name;
     if (busyModels.has(name)) return;
-    setLoadError(prev => prev?.modelName === name ? null : prev);
+    clearModelError(name);
     markBusy(name);
     const virtualComponents = Array.isArray(model.recipe_options?.components) && model.recipe_options?.virtual_collection === true
       ? model.recipe_options.components.filter((component): component is string => typeof component === 'string')
@@ -1698,8 +1712,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       }
     } catch (err) {
       console.error('Unload failed:', err);
-      setLoadError({ modelName: name, message: friendlyErrorMessage(err) });
-      window.setTimeout(() => setLoadError(prev => prev?.modelName === name ? null : prev), 6000);
+      showModelError(name, friendlyErrorMessage(err));
     }
     await refresh();
     clearBusy(name);
@@ -1822,10 +1835,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
         refresh();
       },
       onError: (err) => {
-        const message = friendlyErrorMessage(err);
         downloadStore.wake(name, 'model');
-        setLoadError({ modelName: name, message });
-        window.setTimeout(() => setLoadError(prev => prev?.modelName === name ? null : prev), 6000);
+        showModelError(name, friendlyErrorMessage(err));
         delete pullAbortRef.current[name];
         setPulling(p => { const next = { ...p }; delete next[name]; return next; });
       },
@@ -1860,6 +1871,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     pullAbortRef.current[name] = ac;
     setPulling(p => ({ ...p, [name]: 0 }));
     downloadStore.wake(name, 'model');
+    latestLoadRequestRef.current = name;
 
     const callbacks: PullCallbacks = {
       onProgress: (data) => {
@@ -1869,26 +1881,24 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       onComplete: async (data) => {
         downloadStore.wake(name, 'model');
         delete pullAbortRef.current[name];
+        // Mark busy in the same tick the pull entry clears, so no Load click can
+        // land in between and start a second load of this model.
+        markBusy(name);
         setPulling(p => { const next = { ...p }; delete next[name]; return next; });
         await refresh();
-        markBusy(name);
         try {
           await loadModelRuntime(model, new Set<string>(), overrideOptions);
           await refresh();
-          onModelSelect(name);
+          if (latestLoadRequestRef.current === name) onModelSelect(name);
         } catch (err) {
           console.error('Load after pull failed:', err);
-          const message = friendlyErrorMessage(err);
-          setLoadError({ modelName: name, message });
-          window.setTimeout(() => setLoadError(prev => prev?.modelName === name ? null : prev), 6000);
+          showModelError(name, friendlyErrorMessage(err));
         }
         clearBusy(name);
       },
       onError: (err) => {
-        const message = friendlyErrorMessage(err);
         downloadStore.wake(name, 'model');
-        setLoadError({ modelName: name, message });
-        window.setTimeout(() => setLoadError(prev => prev?.modelName === name ? null : prev), 6000);
+        showModelError(name, friendlyErrorMessage(err));
         delete pullAbortRef.current[name];
         setPulling(p => { const next = { ...p }; delete next[name]; return next; });
       },
@@ -1944,10 +1954,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
         refresh();
       },
       onError: (err) => {
-        const message = friendlyErrorMessage(err);
         downloadStore.wake(targetModelName, 'model');
-        setLoadError({ modelName: targetModelName, message });
-        window.setTimeout(() => setLoadError(prev => prev?.modelName === targetModelName ? null : prev), 6000);
+        showModelError(targetModelName, friendlyErrorMessage(err));
         console.error(`${PROVIDER_META[provider].label} pull failed:`, err);
         delete pullRemoteAbortRef.current[key];
         setPullingRemote(p => { const next = { ...p }; delete next[key]; return next; });
@@ -2193,18 +2201,15 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   const togglePinnedModel = async (name: string) => {
     const loaded = loadedModels.find(model => model.model_name.toLowerCase() === name.toLowerCase());
     if (!loaded) {
-      setLoadError({
-        modelName: name,
-        message: `Cannot change pin state for ${name}: the model is no longer loaded.`,
-      });
+      showModelError(name, `Cannot change pin state for ${name}: the model is no longer loaded.`, null);
       return;
     }
 
     try {
-      setLoadError(null);
+      clearModelError(name);
       await api.setModelPinned(name, loaded.pinned !== true);
     } catch (error) {
-      setLoadError({ modelName: name, message: friendlyErrorMessage(error) });
+      showModelError(name, friendlyErrorMessage(error), null);
     }
   };
 
@@ -3297,7 +3302,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
             : null}
           busyModels={busyModels}
           pulling={effectivePulling}
-          loadError={loadError}
+          loadErrors={loadErrors}
           onLoad={handleLoad}
           onUnload={handleUnload}
           onReloadModel={handleReloadModel}

@@ -2420,4 +2420,97 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await expect(page.getByRole('button', { name: `Unload ${modelName}` })).toBeEnabled();
   });
 
+  test('25k — an earlier load that finishes last does not replace the newer chat selection', async ({ page }) => {
+    const firstName = 'first-requested-model';
+    const latestName = 'latest-requested-model';
+    const releases: Record<string, () => void> = {};
+    const held = (name: string) => new Promise<void>(resolve => { releases[name] = resolve; });
+    const gates: Record<string, Promise<void>> = { [firstName]: held(firstName), [latestName]: held(latestName) };
+    const state = await routeLoadUnloadModels(page, [firstName, latestName], [], {
+      load: async (route, name) => {
+        await gates[name];
+        state.loaded = [...state.loaded, name];
+        await route.fulfill({ json: { status: 'ok' } });
+      },
+    });
+
+    await page.goto('/');
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    await page.waitForSelector('.model-list-panel__list .workspace-list-row', { timeout: 5000 });
+    const rows = page.locator('.model-list-panel__list .workspace-list-row');
+
+    await rows.filter({ hasText: firstName }).click();
+    await page.getByRole('button', { name: `Load ${firstName}`, exact: true }).click();
+    await rows.filter({ hasText: latestName }).click();
+    await page.getByRole('button', { name: `Load ${latestName}`, exact: true }).click();
+
+    releases[latestName]();
+    await expect(page.getByRole('button', { name: new RegExp(`^Chat ${latestName}\\b`) })).toBeVisible();
+
+    releases[firstName]();
+    await expect.poll(() => [...state.loaded].sort()).toEqual([firstName, latestName].sort());
+    await expect(page.getByRole('button', { name: new RegExp(`^Chat ${latestName}\\b`) })).toBeVisible();
+    await expect(page.getByRole('button', { name: new RegExp(`^Chat ${firstName}\\b`) })).toHaveCount(0);
+  });
+
+  test('25l — overlapping load failures keep an error for each model', async ({ page }) => {
+    const names = ['fails-first-model', 'fails-second-model'];
+    const releases: Record<string, () => void> = {};
+    const gates = Object.fromEntries(names.map(name => [name, new Promise<void>(resolve => { releases[name] = resolve; })]));
+    await routeLoadUnloadModels(page, names, [], {
+      load: async (route, name) => {
+        await gates[name];
+        await route.fulfill({ status: 500, json: { error: { message: `${name} could not start` } } });
+      },
+    });
+
+    await page.goto('/');
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    await page.waitForSelector('.model-list-panel__list .workspace-list-row', { timeout: 5000 });
+    const rows = page.locator('.model-list-panel__list .workspace-list-row');
+    const error = page.locator('.model-detail-panel__error');
+
+    for (const name of names) {
+      await rows.filter({ hasText: name }).click();
+      await page.getByRole('button', { name: `Load ${name}`, exact: true }).click();
+    }
+    releases[names[0]]();
+    await rows.filter({ hasText: names[0] }).click();
+    await expect(error).toContainText(`${names[0]} could not start`);
+    releases[names[1]]();
+    await rows.filter({ hasText: names[1] }).click();
+    await expect(error).toContainText(`${names[1]} could not start`);
+
+    await rows.filter({ hasText: names[0] }).click();
+    await expect(error).toContainText(`${names[0]} could not start`);
+  });
+
+  test('25m — an older error timer does not clear a newer error for the same model', async ({ page }) => {
+    const modelName = 'flaky-unload-model';
+    await page.clock.install();
+    await routeLoadUnloadModels(page, [modelName], [modelName], {
+      unload: route => route.fulfill({ status: 500, json: { error: { message: 'backend refused to stop' } } }),
+    });
+
+    await page.goto('/');
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    await page.waitForSelector('.model-list-panel__list .workspace-list-row', { timeout: 5000 });
+    await page.locator('.model-list-panel__list .workspace-list-row').filter({ hasText: modelName }).click();
+    const unload = page.getByRole('button', { name: `Unload ${modelName}` });
+    const error = page.locator('.model-detail-panel__error');
+
+    await unload.click();
+    await expect(error).toBeVisible();
+    await page.clock.fastForward(4000);
+    await expect(unload).toBeEnabled();
+    await unload.click();
+    await expect(error).toBeVisible();
+
+    // The first error's 6 s timer has now fired; the retry's error must survive it.
+    await page.clock.fastForward(2500);
+    await expect(error).toBeVisible();
+    await page.clock.fastForward(4000);
+    await expect(error).toHaveCount(0);
+  });
+
 });

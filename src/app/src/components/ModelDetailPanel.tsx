@@ -2470,7 +2470,7 @@ export interface ModelDetailPanelProps {
   loadedModel: LoadedModel | null;
   busyModels: ReadonlySet<string>;
   pulling: Record<string, number>;
-  loadError: { modelName: string; message: string } | null;
+  loadErrors: Readonly<Record<string, { message: string }>>;
   /** Load a model, optionally with load settings that override the stored ones. */
   onLoad: (model: ModelInfo, recipeOptions?: Record<string, unknown>) => void;
   onUnload: (model: LoadedModel) => void;
@@ -2540,7 +2540,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
   loadedModel,
   busyModels,
   pulling,
-  loadError,
+  loadErrors,
   onLoad,
   onUnload,
   onReloadModel,
@@ -2838,9 +2838,9 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
 
   const detailHeaderExtras = (
     <>
-      {loadError?.modelName === name && (
+      {loadErrors[name] && (
         <div className="model-detail-panel__error" role="alert">
-          <Icon name="alert" size={13} /> {loadError.message}
+          <Icon name="alert" size={13} /> {loadErrors[name].message}
         </div>
       )}
     </>
