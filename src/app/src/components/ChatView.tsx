@@ -2258,11 +2258,12 @@ const ChatView: React.FC<ChatViewProps> = ({
   }, []);
 
   const handleNewChat = useCallback(() => {
+    if (dismissIncomingPrompt()) setInputValue('');
     setShowLoadedOverview(true);
     setActiveId(null);
     setFallbackModelOverride(null);
     inputRef.current?.focus();
-  }, []);
+  }, [dismissIncomingPrompt]);
 
   // Each conversation answers with the model it was started on. Without this the
   // app-level selection leaks across conversations and an old thread silently

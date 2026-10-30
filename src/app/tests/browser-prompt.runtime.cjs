@@ -132,6 +132,8 @@ assert.match(chat, /saveBrowserPromptDraft\(inputValue\)/);
 assert.match(chat, /saveBrowserPromptDraft\(''\);/);
 assert.match(chat, /handleSelectConversation = useCallback\(\(id: string\) => \{[\s\S]*?dismissIncomingPrompt\(\)/,
   'opening another conversation must release the imported prompt');
+assert.match(chat, /handleNewChat = useCallback\(\(\) => \{\s*if \(dismissIncomingPrompt\(\)\) setInputValue\(''\);/,
+  'starting a new chat must release the imported prompt');
 assert.match(chat, /startLemonadeToolPrompt = useCallback\(\(text: string\) => \{\s*dismissIncomingPrompt\(\);/,
   'starter prompts replace the imported prompt');
 assert.doesNotMatch(chat, /incomingPromptHandledRef\.current = true;\s*setShowLoadedOverview/,

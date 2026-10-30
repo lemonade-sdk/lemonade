@@ -122,6 +122,27 @@ test('a released prompt is not sent later when the user starts a new chat', asyn
   expect(mock.requests).toHaveLength(0);
 });
 
+test('New chat discards a waiting prompt so it is not sent once a model loads', async ({ page }) => {
+  test.setTimeout(90000);
+  const mock = await mockServer(page, false);
+  await openWithPendingPrompt(page, mock);
+
+  await page.getByRole('button', { name: /New chat/ }).first().click();
+  await expect(page.locator('.composer__input')).toHaveValue('');
+  await expect(page.getByText(/Imported webpage content/)).toHaveCount(0);
+  expect(await pendingDraft(page)).toBeNull();
+
+  // Another client loads the model; the app notices on its next health poll.
+  mock.loaded = true;
+  const checks = mock.healthChecks;
+  await expect.poll(() => mock.healthChecks, { timeout: 30000 }).toBeGreaterThan(checks);
+  await page.waitForTimeout(1500);
+  expect(mock.requests).toHaveLength(0);
+
+  await page.reload();
+  await expect(page.locator('.composer__input')).toHaveValue('');
+});
+
 test('images attached to the waiting prompt are sent with it', async ({ page }) => {
   const mock = await mockServer(page, false);
   await openWithPendingPrompt(page, mock, 'Describe this');
