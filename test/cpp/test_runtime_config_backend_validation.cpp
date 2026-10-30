@@ -1,4 +1,6 @@
+#include <lemon/backends/llamacpp/llamacpp.h>
 #include <lemon/backends/thenoise/thenoise_server.h>
+#include <lemon/backends/whispercpp/whispercpp.h>
 #include <lemon/runtime_config.h>
 
 #include <nlohmann/json.hpp>
@@ -61,6 +63,37 @@ void expect_unknown_key(const std::string& section, const std::string& key, cons
     expect_rejected(section, key, value, "Unknown key: '" + section + "." + key + "'");
 }
 
+void expect_args_variant(const lemon::BackendDescriptor& descriptor,
+                         const std::string& variant, const std::string& args) {
+    const std::string key = variant + "_args";
+    const json defaults = descriptor.config_defaults();
+    if (!defaults.contains(key) || defaults.at(key) != "") {
+        std::printf("[FAIL] %s.%s missing from defaults\n", descriptor.recipe.c_str(), key.c_str());
+        ++failures;
+    } else {
+        std::printf("[PASS] %s.%s in defaults\n", descriptor.recipe.c_str(), key.c_str());
+    }
+
+    RuntimeConfig config(json::object());
+    try {
+        config.set({{descriptor.effective_config_section(), {{key, args}}}});
+        const json resolved = config.recipe_options(variant);
+        const std::string option_key = descriptor.recipe + "_args";
+        if (resolved.value(option_key, std::string{}) == args) {
+            std::printf("[PASS] %s.%s resolves to %s\n",
+                        descriptor.recipe.c_str(), key.c_str(), option_key.c_str());
+        } else {
+            std::printf("[FAIL] %s.%s does not resolve to %s\n",
+                        descriptor.recipe.c_str(), key.c_str(), option_key.c_str());
+            ++failures;
+        }
+    } catch (const std::exception& error) {
+        std::printf("[FAIL] %s.%s could not be configured: %s\n",
+                    descriptor.recipe.c_str(), key.c_str(), error.what());
+        ++failures;
+    }
+}
+
 }  // namespace
 
 int main() {
@@ -86,6 +119,10 @@ int main() {
         std::puts("[PASS] llamacpp system backend is rejected on unsupported platforms");
 #endif
     }
+
+    expect_args_variant(lemon::backends::llamacpp::descriptor, "cuda", "--threads 4");
+    expect_args_variant(lemon::backends::whispercpp::descriptor, "vulkan", "--convert");
+    expect_args_variant(lemon::backends::whispercpp::descriptor, "rocm", "--convert");
 
     // _bin / _args keys must name a backend variant the section actually has.
     expect_unknown_key("flm", "flm_bin", "builtin");
