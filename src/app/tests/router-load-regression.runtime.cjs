@@ -149,7 +149,7 @@ try {
   assert.doesNotMatch(handleLoadSource, /registerModelDefinition/, 'Use Router click must never write a stale local Router definition');
   assert.match(manager.slice(runtimeStart, handleLoadStart), /targets\.push\(\{ name, recipeOptions, info \}\)/,
     'ordinary model loads must still forward the resolved recipe options');
-  assert.match(manager.slice(runtimeStart, handleLoadStart), /api\.createModelLoadJob\(name, targets\)/,
+  assert.match(manager.slice(runtimeStart, handleLoadStart), /api\.createModelLoadJob\(name, targets(?:,|\))/,
     'Models GUI loads must be cancellable server-side jobs');
 
   const saveStart = manager.indexOf('const handleRegisterRouter = async');

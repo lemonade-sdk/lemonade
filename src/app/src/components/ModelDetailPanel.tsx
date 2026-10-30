@@ -2542,7 +2542,7 @@ const ModelLoadMeter: React.FC<{ name: string; progress: GuiLoadProgress }> = ({
   const fraction = progress.total > 0
     ? Math.min(99, (100 * progress.completed + (estimate ?? 0)) / progress.total)
     : 0;
-  const label = progress.cancelling ? t('Working…')
+  const label = progress.cancelling ? t('Cancelling…')
     : progress.total > 1 ? `${t('Loading…')} ${progress.completed}/${progress.total}` : t('Loading…');
   const displayLabel = estimate === null && progress.stepStartedAt !== null && !progress.cancelling
     ? `${label} (${Math.floor(elapsedMs / 1000)}s)` : label;
@@ -2777,7 +2777,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
           <ModelLoadMeter name={name} progress={activeLoad} />
           <WorkspaceActionButton appearance="secondary" icon="x" disabled={activeLoad.cancelling}
             onClick={() => onCancelLoad(name)} aria-label={`Cancel load of ${name}`}>
-            {activeLoad.cancelling ? t('Working…') : t('Cancel')}
+            {activeLoad.cancelling ? t('Cancelling…') : t('Cancel')}
           </WorkspaceActionButton>
         </>
       ) : isLoaded ? (

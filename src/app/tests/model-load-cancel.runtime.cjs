@@ -22,21 +22,24 @@ for (const filename of ['src/components/ModelManager.tsx', 'src/components/Model
 assert.match(api, /async createModelLoadJob\(/);
 assert.match(api, /_modelLoadRequestBody\(target\.name, target\.recipeOptions, target\.info\)/);
 assert.match(api, /this\._assertModelNotDownloading\(target\.name\)/);
-assert.match(api, /this\.createJob\(`Load \$\{modelName\}`, steps\)/);
+assert.match(api, /this\.createJob\(jobName, steps\)/);
+assert.match(api, /this\.listJobs\(\)/, 'A lost job-creation response must recover its ID');
 assert.match(manager, /await loadModelRuntime\(componentInfo \|\| componentName, targets, visited\)/,
   'Omni children must become steps of the same cancellable load job');
-assert.match(manager, /await api\.createModelLoadJob\(name, targets\)/);
+assert.match(manager, /await api\.createModelLoadJob\(name, targets(?:,|\))/);
 assert.match(manager, /await api\.getJob\(id\)/);
 assert.match(manager, /await api\.interruptJob\(active\.id\)/);
-assert.match(manager, /if \(active\.cancelRequested\) await requestLoadInterrupt\(active\)/,
+assert.match(manager, /if \(active\.cancelRequested\) void requestLoadInterrupt\(active\)/,
   'Cancel clicked during job creation must still cancel its created job');
+assert.doesNotMatch(manager, /await requestLoadInterrupt\(active\)/,
+  'Interrupt dispatch must never block load-job status polling');
 assert.match(manager, /if \(job\.status === 'interrupted'\)/);
 assert.match(manager, /if \(terminal && active\.id\) void api\.deleteJob\(active\.id\)/);
 assert.match(manager, /if \(ac\.signal\.aborted\) return;/,
   'Cancelled Get & Load downloads must not start loading afterwards');
-assert.match(manager, /if \(activeLoadRef\.current \|\| loadingModelRef\.current\) \{[\s\S]*?showLoadError\(name, new Error\(/,
+assert.match(manager, /if \(activeLoadRef\.current \|\| loadingModelRef\.current\) \{[\s\S]*?setLoadNotice\(/,
   'Get & Load must explain if another operation prevents loading');
-assert.match(manager, /if \(job\.status === 'failed'\) \{\s*terminal = true;\s*await refresh\(\)\.catch/,
+assert.match(manager, /if \(job\.status === 'failed'\) \{\s*terminal = true;\s*failedJob = true;\s*await refresh\(\)\.catch/,
   'Failed jobs must refresh the model list without hiding the load error');
 assert.match(detail, /const displayLabel = estimate === null && progress\.stepStartedAt !== null/,
   'Loads without a size estimate must show elapsed time');
@@ -47,6 +50,7 @@ assert.doesNotMatch(css, /@keyframes model-load-progress/);
 assert.match(detail, /estimatedModelLoadPercent\(progress\.modelSizeGiB, elapsedMs\)/,
   'Models use the same estimated-load formula as Chat');
 assert.match(detail, /<ModelLoadMeter name=\{name\} progress=\{activeLoad\} \/>/);
+assert.match(detail, /t\('Cancelling…'\)/);
 assert.match(manager, /activeStep: activeStep >= 0 \? activeStep : null/);
 assert.match(manager, /stepStartedAt: activeStep < 0 \? null/);
 
@@ -58,11 +62,11 @@ assert.ok(loaderStart >= 0 && loaderEnd > loaderStart);
 const harnessSource = `
 function build(env: any) {
   const {
-    api, activeLoadRef, loadingModelRef, setLoadingModel, setLoadJob, setLoadError,
+    api, activeLoadRef, loadingModelRef, setLoadingModel, setLoadJob, setLoadError, setLoadNotice,
     downloadStore, modelName, isRouterModelInfo, findCurrentModel,
     isCollectionModel, getCollectionComponents, ensureServerRouterReady,
     customLoadOptions, activeDownloadForModel, friendlyErrorMessage,
-    refresh, onModelSelect,
+    refresh, onModelSelect, t,
   } = env;
   ${manager.slice(loaderStart, loaderEnd)}
   return { handleLoad, handleCancelLoad };
@@ -80,14 +84,16 @@ vm.runInNewContext(harnessJs, {
   window: { setTimeout(fn) { setImmediate(fn); } },
 });
 
-async function scenario(cancelEarly, failedLoad = false) {
+async function scenario(cancelEarly, failedLoad = false, pollFailures = 0, interruptFailures = 0) {
   let createResolve;
   const creation = new Promise(resolve => { createResolve = resolve; });
   let created = null;
   let interrupted = false;
-  const calls = { interrupted: [], deleted: [], selected: [], refreshes: 0 };
+  let interruptAttempts = 0;
+  const calls = { interrupted: [], deleted: [], selected: [], refreshes: 0, interruptAttempts: 0 };
   let loadJobState = null;
   let loadError = null;
+  let loadNotice = null;
   let polling = 0;
   const models = [
     { model_name: 'Omni', recipe: 'collection.omni', components: ['chat', 'image'] },
@@ -100,13 +106,19 @@ async function scenario(cancelEarly, failedLoad = false) {
       if (cancelEarly) return creation;
       return { id: 'job-test' };
     },
-    async interruptJob(id) { calls.interrupted.push(id); interrupted = true; },
+    async interruptJob(id) {
+      calls.interruptAttempts = ++interruptAttempts;
+      if (interruptAttempts <= interruptFailures) throw new Error('temporary interrupt failure');
+      calls.interrupted.push(id);
+      interrupted = true;
+    },
     async getJob() {
       if (++polling > 12) throw new Error('load polling did not terminate');
+      if (polling <= pollFailures) throw new Error('temporary status failure');
       return {
-        status: interrupted ? 'interrupted' : failedLoad ? 'failed' : 'completed',
+        status: failedLoad ? 'failed' : interrupted ? 'interrupted' : cancelEarly ? 'running' : 'completed',
         steps: created.targets.map((item, i) => ({
-          status: interrupted ? 'pending' : failedLoad && i === 0 ? 'failed' : 'completed',
+          status: failedLoad && i === 0 ? 'failed' : interrupted ? 'pending' : 'completed',
           error: failedLoad && i === 0 ? 'simulated load failure' : undefined,
         })),
       };
@@ -121,6 +133,7 @@ async function scenario(cancelEarly, failedLoad = false) {
     setLoadingModel() {},
     setLoadJob(updater) { loadJobState = typeof updater === 'function' ? updater(loadJobState) : updater; },
     setLoadError(updater) { loadError = typeof updater === 'function' ? updater(loadError) : updater; },
+    setLoadNotice(updater) { loadNotice = typeof updater === 'function' ? updater(loadNotice) : updater; },
     downloadStore: { snapshot: () => [], watchForModelLoad: () => () => {} },
     modelName: model => model?.model_name || '',
     isRouterModelInfo: model => model?.recipe === 'collection.router',
@@ -133,6 +146,7 @@ async function scenario(cancelEarly, failedLoad = false) {
     friendlyErrorMessage: error => String(error),
     refresh: async () => { calls.refreshes++; },
     onModelSelect: name => calls.selected.push(name),
+    t: (key, values) => key.replace('{name}', values?.name ?? ''),
   };
   const handlers = harnessModule.exports(env);
   env.loadingModelRef.current = 'unloading';
@@ -149,15 +163,49 @@ async function scenario(cancelEarly, failedLoad = false) {
   }
   await load;
   if (!failedLoad) assert.equal(loadError, null);
+  if (failedLoad) assert.match(loadError?.message ?? '', /simulated load failure/);
+  if (cancelEarly) assert.equal(loadNotice, null, 'confirmed cancellation must clear connection notices');
   assert.deepEqual(Array.from(created.targets, target => target.name), ['chat', 'image']);
   return calls;
 }
 
 (async () => {
+  const apiStart = api.indexOf('  async createModelLoadJob(');
+  const apiEnd = api.indexOf('\n  async loadModel(', apiStart);
+  assert.ok(apiStart >= 0 && apiEnd > apiStart);
+  const apiHarness = ts.transpileModule(`class LoadApi { ${api.slice(apiStart, apiEnd)} }; module.exports = LoadApi;`, {
+    compilerOptions: { target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.CommonJS },
+  }).outputText;
+  const apiModule = { exports: {} };
+  vm.runInNewContext(apiHarness, { module: apiModule, exports: apiModule.exports, setTimeout });
+  const client = new apiModule.exports();
+  let createdName = '';
+  let createAttempts = 0;
+  let sawUncertain = false;
+  client._assertModelNotDownloading = async () => {};
+  client._modelLoadRequestBody = async () => ({ model_name: 'chat', ctx_size: 4096 });
+  client.createJob = async (name, steps) => {
+    createdName = name;
+    createAttempts++;
+    assert.equal(steps[0].params.ctx_size, 4096);
+    throw new Error('lost job creation response');
+  };
+  client.listJobs = async () => [{ id: 'recovered-id', name: createdName }];
+  const recovered = await client.createModelLoadJob('chat', [{ name: 'chat' }], () => { sawUncertain = true; });
+  assert.equal(recovered.id, 'recovered-id');
+  assert.equal(createAttempts, 1, 'a lost response must never replay the non-idempotent POST');
+  assert.equal(sawUncertain, true);
+
   const cancelled = await scenario(true);
   assert.deepEqual(cancelled.interrupted, ['job-test']);
   assert.equal(cancelled.selected.length, 0, 'a cancelled Omni job must not select a partially loaded collection');
   assert.deepEqual(cancelled.deleted, ['job-test']);
+  const retriedCancel = await scenario(true, false, 0, 1);
+  assert.equal(retriedCancel.interruptAttempts, 2, 'a failed interrupt must be retried');
+  assert.deepEqual(retriedCancel.interrupted, ['job-test']);
+  const pollRecovered = await scenario(false, false, 4);
+  assert.equal(pollRecovered.interrupted.length, 0, 'temporary polling errors must not cancel a load');
+  assert.deepEqual(pollRecovered.selected, ['Omni']);
   const completed = await scenario(false);
   assert.equal(completed.interrupted.length, 0);
   assert.deepEqual(completed.selected, ['Omni']);
@@ -165,5 +213,7 @@ async function scenario(cancelEarly, failedLoad = false) {
   const failed = await scenario(false, true);
   assert.equal(failed.refreshes, 1, 'a failed job must refresh loaded-model state immediately');
   assert.equal(failed.selected.length, 0, 'a failed job must not select the model');
+  const failedAfterCancel = await scenario(true, true);
+  assert.equal(failedAfterCancel.selected.length, 0, 'cancel must not conceal an already-failed job');
   console.log('Cancellable GUI load regression checks passed.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

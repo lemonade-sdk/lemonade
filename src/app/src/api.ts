@@ -1548,6 +1548,7 @@ class LemonadeAPI {
   async createModelLoadJob(
     modelName: string,
     models: Array<{ name: string; recipeOptions?: Record<string, unknown>; info?: ModelInfo | null }>,
+    onRecovering?: () => void,
   ): Promise<{ id: string }> {
     const steps: Array<{ id: string; op: 'load'; params: Record<string, unknown> }> = [];
     for (const target of models) {
@@ -1556,7 +1557,29 @@ class LemonadeAPI {
       delete params.model_name;
       steps.push({ id: `load_${steps.length}`, op: 'load', params: { ...params, model: target.name } });
     }
-    return this.createJob(`Load ${modelName}`, steps);
+    // A lost POST response must not cause a second, competing load job.
+    const jobName = `Load ${modelName} [gui:${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}]`;
+    try {
+      return await this.createJob(jobName, steps);
+    } catch (error) {
+      const status = (error as { status?: number }).status;
+      if (typeof status === 'number' && status < 500) throw error;
+      onRecovering?.();
+      let confirmedMissing = 0;
+      let retries = 0;
+      while (confirmedMissing < 3) {
+        try {
+          const job = (await this.listJobs()).find(item => item.name === jobName);
+          if (job) return { id: job.id };
+          confirmedMissing++;
+        } catch {
+          // Do not assume the job is absent while the server is unreachable.
+        }
+        if (confirmedMissing >= 3) break;
+        await new Promise<void>(resolve => setTimeout(resolve, Math.min(5000, 500 * 2 ** Math.min(retries++, 4))));
+      }
+      throw error;
+    }
   }
 
   async loadModel(modelName: string, recipeOptions?: Record<string, unknown>, modelInfo?: ModelInfo | null): Promise<unknown> {
