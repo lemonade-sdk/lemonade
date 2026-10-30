@@ -2166,7 +2166,7 @@ The same backend can carry different labels on different operating systems. Each
     - `modality` - The kind of model the recipe mainly serves, such as `Text generation`.
     - `selectable_backend` - Whether a `<recipe>_backend` option chooses the recipe's backend.
     - `uses_ctx_size` - Whether the recipe accepts the shared `ctx_size` option.
-    - `slot_policy` - How the recipe's models count against loaded-model limits: `standard`, `exclusive_npu` (loading one evicts every NPU model), `coexist_by_type` (one per model type) or `unmetered` (never counted or evicted).
+    - `slot_policy` - How the recipe's models count against loaded-model limits: `standard`, `exclusive_npu` (loading one evicts every NPU model), `coexist_by_type` (one per model type), `exclusive_host` (shares the machine with no other local model) or `unmetered` (never counted or evicted).
     - `support` - Every backend's operating systems, devices and tier, the same on every host.
     - `options` - The recipe's load options, with each one's CLI flag, default and help text.
     - `backends` - Available backends for this recipe
