@@ -42,6 +42,7 @@
     "backend": "auto",
     "cpu_args": "",
     "cpu_bin": "builtin",
+    "cuda_args": "",
     "cuda_bin": "builtin",
     "prefer_system": true,
     "rocm_args": "",
@@ -153,6 +154,8 @@
     "cpu_args": "",
     "cpu_bin": "builtin",
     "npu_args": "",
-    "npu_bin": "builtin"
+    "npu_bin": "builtin",
+    "rocm_args": "",
+    "vulkan_args": ""
   }
 }
