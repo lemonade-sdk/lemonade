@@ -6,6 +6,7 @@
 #include "lemon/backends/halogen/halogen.h"
 #include "lemon/model_manager.h"
 #include "lemon/system_info.h"
+#include "lemon/system_metrics_platform.h"
 #include "lemon/utils/container_manager.h"
 #include "lemon/utils/http_client.h"
 
@@ -13,6 +14,7 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <iomanip>
 #include <map>
 #include <sstream>
 #include <stdexcept>
@@ -162,6 +164,25 @@ void HalogenServer::load(const std::string& model_name, const ModelInfo& model_i
         if (!required.empty() && !fs::exists(required)) {
             throw std::runtime_error("halogen: the bundle for '" + model_name + "' is missing " +
                                      required);
+        }
+    }
+
+    // Halogen sizes its KV pool from MemTotal, blind to other models, and on a
+    // host already short of the weights plus that pool it stalls in the kernel
+    // instead of failing. Failing here lets the router evict the other models
+    // and retry. The lookup table is paged on demand and needs no room.
+    if (model_info.min_resident_gb > 0.0) {
+        double weights_gb = fs::file_size(checkpoint) / BYTES_PER_GIB;
+        if (!vision.empty()) weights_gb += fs::file_size(vision) / BYTES_PER_GIB;
+        const double needed_gb = weights_gb + model_info.min_resident_gb;
+        const auto metrics = create_metrics_platform();
+        const double total_gb = metrics ? metrics->get_memory_total_gb() : 0.0;
+        const double free_gb = total_gb - (metrics ? metrics->get_memory_usage_gb() : 0.0);
+        if (total_gb > 0.0 && free_gb < needed_gb) {
+            std::ostringstream message;
+            message << std::fixed << std::setprecision(1) << "halogen needs " << needed_gb
+                    << " GiB of free memory to start, and " << free_gb << " GiB is free";
+            throw std::runtime_error(message.str());
         }
     }
 
