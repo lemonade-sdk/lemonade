@@ -42,8 +42,11 @@ test('role route lists use server data and preserve templates and aliases withou
   page.on('pageerror', error => errors.push(error.message));
   const { response } = await openRoutes(page);
   const panel = page.locator('.nexus-route-permissions');
+  const categories = panel.getByRole('combobox', { name: 'Service category', exact: true });
   await expect(panel.getByRole('radio', { name: 'User', exact: true })).toBeChecked();
-  await expect(panel.getByText('2 allowed routes', { exact: true })).toBeVisible();
+  await expect(categories).toHaveValue('inference');
+  await expect(categories.locator('option')).toHaveCount(1);
+  await expect(panel.locator('.nexus-route-family')).toHaveCount(1);
   await expect(panel.locator('.nexus-route-family[open]')).toHaveCount(0);
   await panel.getByText('Run inference', { exact: true }).click();
   await expect(panel.locator('code', { hasText: '/api/v1/models/{id}' })).toBeVisible();
@@ -52,24 +55,26 @@ test('role route lists use server data and preserve templates and aliases withou
   await expect(panel.getByText('/v1/chat/completions', { exact: true })).toBeVisible();
   await panel.screenshot({ path: testInfo.outputPath('routes-user.png') });
   await panel.getByRole('radio', { name: 'Moderator', exact: true }).check();
-  await expect(panel.getByText('5 allowed routes', { exact: true })).toBeVisible();
-  await expect(panel.getByText('Use MCP tools', { exact: true })).toBeVisible();
-  await expect(panel.getByText('Manage models', { exact: true })).toBeVisible();
-  await expect(panel.getByText('Manage jobs', { exact: true })).toBeVisible();
-  await expect(panel.getByText('Manage backends', { exact: true })).toHaveCount(0);
+  await expect(categories.locator('option')).toHaveCount(4);
+  await expect(categories.locator('option[value="backends"]')).toHaveCount(0);
+  await categories.selectOption('mcp');
+  await expect(panel.locator('.nexus-route-family')).toHaveCount(1);
   await expect(panel.locator('.nexus-route-family[open]')).toHaveCount(0);
   await panel.screenshot({ path: testInfo.outputPath('routes-moderator.png') });
   await panel.getByText('Use MCP tools', { exact: true }).click();
   await expect(panel.getByText('/mcp', { exact: true })).toBeVisible();
   await panel.getByRole('radio', { name: 'Admin', exact: true }).check();
-  await expect(panel.getByText('8 allowed routes', { exact: true })).toBeVisible();
-  await expect(panel.getByText('Manage backends', { exact: true })).toBeVisible();
-  await expect(panel.getByText('Access system information', { exact: true })).toBeVisible();
+  await expect(categories.locator('option')).toHaveCount(7);
+  await categories.selectOption('management');
+  await expect(panel.locator('.nexus-route-family')).toHaveCount(1);
   await expect(panel.locator('.nexus-route-family[open]')).toHaveCount(0);
   await panel.getByText('Manage Nexus', { exact: true }).click();
   await panel.getByRole('radio', { name: 'User', exact: true }).check();
+  await expect(categories).toHaveValue('inference');
+  await expect(categories.locator('option[value="management"]')).toHaveCount(0);
   await expect(panel.locator('.nexus-route-family[open]')).toHaveCount(0);
   await panel.getByRole('radio', { name: 'Admin', exact: true }).check();
+  await categories.selectOption('management');
   await panel.getByLabel('Filter routes', { exact: true }).fill('nexus');
   await expect(panel.getByText('/api/v1/nexus/members/{node_id}/role', { exact: true })).toBeVisible();
   await expect(panel).toContainText('Group actions also check current group assignments.');
@@ -80,6 +85,11 @@ test('role route lists use server data and preserve templates and aliases withou
   await panel.screenshot({ path: testInfo.outputPath('routes-admin.png') });
   await panel.getByLabel('Filter routes', { exact: true }).fill('missing-route');
   await expect(panel.getByText('No routes match your search.', { exact: true })).toBeVisible();
+  await categories.selectOption('inference');
+  await expect(panel.locator('.nexus-route-family[open]')).toHaveCount(0);
+  await panel.getByLabel('Filter routes', { exact: true }).fill('nexus');
+  await expect(panel.getByText('No routes match your search.', { exact: true })).toBeVisible();
+  await expect(categories).toHaveValue('inference');
   expect(response.calls).toEqual([{ method: 'GET', origin: 'http://127.0.0.1:15555', authorization: undefined }]);
   expect(errors).toEqual([]);
 });
@@ -87,7 +97,7 @@ test('role route lists use server data and preserve templates and aliases withou
 test('missing, malformed and unavailable policies never display guessed permissions and can retry', async ({ page }) => {
   const { response } = await openRoutes(page);
   const panel = page.locator('.nexus-route-permissions');
-  await expect(panel.getByText('2 allowed routes', { exact: true })).toBeVisible();
+  await expect(panel.getByRole('combobox', { name: 'Service category', exact: true })).toHaveValue('inference');
   await panel.locator(':scope > summary').click();
   response.status = 404; response.body = { error: 'Not found' };
   await panel.locator(':scope > summary').click();
@@ -105,7 +115,33 @@ test('missing, malformed and unavailable policies never display guessed permissi
   await expect(panel.getByRole('alert')).toContainText('requires an administrator');
   response.status = 200; response.body = policy();
   await panel.getByRole('button', { name: 'Retry', exact: true }).click();
-  await expect(panel.getByText('2 allowed routes', { exact: true })).toBeVisible();
+  await expect(panel.getByRole('combobox', { name: 'Service category', exact: true })).toHaveValue('inference');
+});
+
+test('expanded route headers remain clickable after scrolling to the bottom', async ({ page }) => {
+  const { response } = await openRoutes(page);
+  const panel = page.locator('.nexus-route-permissions');
+  await expect(panel.getByRole('combobox', { name: 'Service category', exact: true })).toHaveValue('inference');
+  await panel.locator(':scope > summary').click();
+  const manyRoutes = policy();
+  manyRoutes.routes = Array.from({ length: 40 }, (_, index) => ({
+    ...manyRoutes.routes[0], paths: [`/api/v1/test-route-${index}`],
+  }));
+  response.body = manyRoutes;
+  await panel.locator(':scope > summary').click();
+  const heading = panel.locator('.nexus-route-family > summary');
+  const list = panel.locator('.nexus-route-permissions__list');
+  await expect(heading).toContainText('40');
+  await heading.click();
+  await list.evaluate(element => { element.scrollTop = element.scrollHeight; });
+  expect(await list.evaluate(element => element.scrollTop)).toBeGreaterThan(0);
+  const headingBox = (await heading.boundingBox())!;
+  const listBox = (await list.boundingBox())!;
+  expect(Math.abs(headingBox.y - listBox.y)).toBeLessThanOrEqual(2);
+  await expect(heading).toBeInViewport();
+  await heading.click();
+  await expect(panel.locator('.nexus-route-family[open]')).toHaveCount(0);
+  await expect(panel.locator('table')).toBeHidden();
 });
 
 test('route permissions fit a narrow viewport and support keyboard role selection', async ({ page }, testInfo) => {
@@ -116,6 +152,11 @@ test('route permissions fit a narrow viewport and support keyboard role selectio
   await panel.getByRole('radio', { name: 'Admin', exact: true }).focus();
   await page.keyboard.press('Space');
   await expect(panel.getByRole('radio', { name: 'Admin', exact: true })).toBeChecked();
+  const categories = panel.getByRole('combobox', { name: 'Service category', exact: true });
+  await categories.focus();
+  await page.keyboard.press('End');
+  await page.keyboard.press('Enter');
+  await expect(categories).toHaveValue('management');
   await panel.getByLabel('Filter routes', { exact: true }).fill('nexus');
   await expect(panel.getByText('/api/v1/nexus/members/{node_id}/role', { exact: true })).toBeVisible();
   expect(await panel.evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
@@ -123,6 +164,10 @@ test('route permissions fit a narrow viewport and support keyboard role selectio
   const labels = await panel.getByRole('radio').locator('..').all();
   const boxes = await Promise.all(labels.map(label => label.boundingBox()));
   expect(new Set(boxes.map(box => box?.y)).size).toBe(1);
+  const categoryBox = (await categories.boundingBox())!;
+  const searchBox = (await panel.locator('.nexus-route-search').boundingBox())!;
+  expect(categoryBox.y).toBe(searchBox.y);
+  expect(categoryBox.x + categoryBox.width).toBeLessThan(searchBox.x);
   await panel.screenshot({ path: testInfo.outputPath('routes-mobile.png') });
 });
 
@@ -147,6 +192,7 @@ test('account refresh removes a selected higher role without leaving stale contr
   const { fixture } = await openRoutes(page);
   const panel = page.locator('.nexus-route-permissions');
   await panel.getByRole('radio', { name: 'Admin', exact: true }).check();
+  await panel.getByRole('combobox', { name: 'Service category', exact: true }).selectOption('management');
   await panel.getByText('Manage Nexus', { exact: true }).click();
   fixture.accountRole = 'moderator';
   fixture.state.members[0].is_admin = false;
@@ -154,6 +200,8 @@ test('account refresh removes a selected higher role without leaving stale contr
   await page.clock.fastForward(15001);
   await expect(panel.getByRole('radio', { name: 'Admin', exact: true })).toHaveCount(0);
   await expect(panel.getByRole('radio', { name: 'Moderator', exact: true })).toBeChecked();
+  await expect(panel.getByRole('combobox', { name: 'Service category', exact: true })).toHaveValue('inference');
+  await expect(panel.locator('.nexus-route-family')).toHaveCount(1);
   await expect(panel.locator('.nexus-route-family[open]')).toHaveCount(0);
   fixture.accountRole = 'user';
   fixture.state.members[0].permissions = ['read', 'connect_private', 'svc:inference'];

@@ -154,8 +154,12 @@ The list describes preset mesh access, not a device's effective assignments or
 guaranteed request success. Group authorization and handler validation still apply.
 Filtering or selecting a role does not write permissions. Unsupported servers,
 unavailable policies and failed requests show an explicit unavailable/error state.
-Service groups start collapsed when selecting a role; searching expands matching
-groups so results are visible.
+Role buttons offer only the verified account's role and lower roles. A service
+category dropdown sits beside the route filter; only the selected category's
+route list is displayed. Its arrow opens the list, which starts collapsed and
+closes when selecting another role or category. Searching filters the selected
+category and opens its list so results are visible. The category header stays
+visible while its routes scroll so the list can be collapsed from any position.
 Saving preserves permissions the client does not recognize. Invitations offer
 the server's User and Moderator presets; the server limits delegated permissions
 to those the inviting device holds. Administrator access is assigned after joining.

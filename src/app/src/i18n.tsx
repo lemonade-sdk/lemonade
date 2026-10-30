@@ -18,6 +18,7 @@ const ZH_CN: Record<string, string> = {
   'Preset access through the authenticated mesh. Device and group assignments can limit access.': '通过已认证网状网络的预设访问权限。设备和群组的权限分配可能限制访问。',
   'View routes for role': '查看角色的路由',
   'Filter routes': '筛选路由',
+  'Service category': '服务类别',
   '{count} allowed routes': '{count} 条允许访问的路由',
   'Nexus administration requires Admin. Group actions also check current group assignments.': 'Nexus 管理需要管理员权限。群组操作还会检查当前的群组权限分配。',
   '{role}: {service}': '{role}：{service}',

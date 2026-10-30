@@ -12,7 +12,9 @@ export function NexusRoutePermissions({ viewerRole }: { viewerRole: NexusRole })
   const { t } = useI18n();
   const id = useId();
   const [open, setOpen] = useState(false);
+  const [listOpen, setListOpen] = useState(false);
   const [selectedRole, setRole] = useState<NexusRole>('user');
+  const [selectedFamily, setFamily] = useState('inference');
   const visibleRoles = roleOrder.slice(roleOrder.indexOf(viewerRole));
   const role = visibleRoles.includes(selectedRole) ? selectedRole : viewerRole;
   const [query, setQuery] = useState('');
@@ -33,9 +35,14 @@ export function NexusRoutePermissions({ viewerRole }: { viewerRole: NexusRole })
   }, [open, attempt]);
   const familyLabel = (family: string) => t(NEXUS_SERVICE_PERMISSIONS.find(permission => permission.name === `svc:${family}`)?.label || family);
   const allowed = data?.routes.filter(route => route.roles.includes(role)) || [];
+  const families = [...new Set(allowed.map(route => route.family))];
+  const family = families.includes(selectedFamily) ? selectedFamily : families[0];
   const search = query.trim().toLocaleLowerCase();
-  const filtered = allowed.filter(route => `${route.method} ${route.paths.join(' ')} ${familyLabel(route.family)}`.toLocaleLowerCase().includes(search));
-  const families = [...new Set(filtered.map(route => route.family))];
+  const filtered = allowed.filter(route => route.family === family && `${route.method} ${route.paths.join(' ')} ${familyLabel(route.family)}`.toLocaleLowerCase().includes(search));
+  useEffect(() => {
+    if (family) setFamily(family);
+    setListOpen(false);
+  }, [role, family]);
 
   return <details className="nexus-route-permissions" onToggle={event => setOpen(event.currentTarget.open)}>
     <summary><Icon name="chevron-right" size={16} /><span><strong>{t('Route permissions')}</strong><small>{t('Allowed mesh routes by role')}</small></span></summary>
@@ -52,18 +59,27 @@ export function NexusRoutePermissions({ viewerRole }: { viewerRole: NexusRole })
                 {t(roleLabels[item.id])}<span className="nexus-route-count" aria-hidden="true">{data.routes.filter(route => route.roles.includes(item.id)).length}</span>
               </label>)}
             </fieldset>
-            <label className="nexus-route-search"><Icon name="search" size={16} /><span className="sr-only">{t('Filter routes')}</span><input type="search" value={query} placeholder={t('Filter routes')} onChange={event => setQuery(event.target.value)} /></label>
+            <div className="nexus-route-permissions__filters">
+              <label className="nexus-service-field"><span className="sr-only">{t('Service category')}</span>
+                <select className="input nexus-service-selector" value={family || ''} disabled={!families.length} onChange={event => setFamily(event.target.value)}>
+                  {families.map(item => <option key={item} value={item}>
+                    {familyLabel(item)} ({allowed.filter(route => route.family === item).length})
+                  </option>)}
+                </select>
+              </label>
+              <label className="nexus-route-search"><Icon name="search" size={16} /><span className="sr-only">{t('Filter routes')}</span><input type="search" value={query} placeholder={t('Filter routes')} onChange={event => {
+                setQuery(event.target.value);
+                if (event.target.value.trim()) setListOpen(true);
+              }} /></label>
+            </div>
           </div>
-          <p className="nexus-route-permissions__count" role="status">{t('{count} allowed routes', { count: filtered.length })}</p>
           <div className="nexus-route-permissions__list">
-            {families.map(family => {
-              const routes = filtered.filter(route => route.family === family);
-              return <details key={`${role}:${family}:${search}`} className="nexus-route-family" open={Boolean(search)}>
-                <summary><Icon name="chevron-right" size={14} /><span>{familyLabel(family)}</span><span className="nexus-route-count">{routes.length}</span></summary>
+            {family && <details key={`${role}:${family}`} className="nexus-route-family" open={listOpen}>
+                <summary onClick={event => { event.preventDefault(); setListOpen(value => !value); }}><Icon name="chevron-right" size={14} /><span>{familyLabel(family)}</span><span className="nexus-route-count">{filtered.length}</span></summary>
                 {family === 'management' && <p className="nexus-hint">{t('Nexus administration requires Admin. Group actions also check current group assignments.')}</p>}
                 <table><caption className="sr-only">{t('{role}: {service}', { role: t(roleLabels[role]), service: familyLabel(family) })}</caption>
                   <thead><tr><th scope="col">{t('Method')}</th><th scope="col">{t('Allowed route')}</th></tr></thead>
-                  <tbody>{routes.map(route => {
+                  <tbody>{filtered.map(route => {
                     const primary = route.paths.find(path => path.startsWith('/api/v1/')) || route.paths[0];
                     const aliases = route.paths.filter(path => path !== primary);
                     return <tr key={`${route.method}:${primary}`}><td><span className="nexus-route-method">{route.method}</span></td><td><code>{primary}</code>
@@ -71,9 +87,9 @@ export function NexusRoutePermissions({ viewerRole }: { viewerRole: NexusRole })
                     </td></tr>;
                   })}</tbody>
                 </table>
-              </details>;
-            })}
-            {!families.length && <p className="nexus-hint">{search ? t('No routes match your search.') : t('This role has no allowed mesh routes.')}</p>}
+                {!filtered.length && <p className="nexus-hint">{t('No routes match your search.')}</p>}
+              </details>}
+            {!family && <p className="nexus-hint">{t('This role has no allowed mesh routes.')}</p>}
           </div>
           <p className="nexus-hint nexus-route-permissions__scope">{t('Local setup, identity operations and internal endpoints are excluded. Viewing a role does not change device permissions.')}</p>
         </>}

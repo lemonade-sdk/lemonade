@@ -142,26 +142,28 @@
   padding: 0 var(--space-2) var(--space-3);
 }
 .nexus-account-menu__sign-out { width: 100%; margin-top: var(--space-1); }
-.nexus-route-permissions { margin-bottom: 16px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface-1); }
-.nexus-route-permissions > summary { display: flex; align-items: center; gap: 10px; padding: 16px 20px; cursor: pointer; list-style: none; }
+.nexus-route-permissions { margin-bottom: 12px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-1); }
+.nexus-route-permissions > summary { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 10px 16px; cursor: pointer; list-style: none; }
 .nexus-route-permissions > summary::-webkit-details-marker, .nexus-route-family > summary::-webkit-details-marker { display: none; }
-.nexus-route-permissions > summary strong, .nexus-route-permissions > summary small { display: block; }
+.nexus-route-permissions > summary > span { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 12px; min-width: 0; }
 .nexus-route-permissions > summary strong { font-size: var(--text-sm); font-weight: var(--weight-semibold); }
-.nexus-route-permissions > summary small { margin-top: 3px; font-size: var(--text-xs); color: var(--text-secondary); }
+.nexus-route-permissions > summary small { font-size: var(--text-xs); color: var(--text-secondary); }
 .nexus-route-permissions[open] > summary > .app-icon, .nexus-route-family[open] > summary > .app-icon { transform: rotate(90deg); }
-.nexus-route-permissions__content { padding: 0 20px 16px; }
+.nexus-route-permissions__content { padding: 0 16px 12px; }
 .nexus-route-permissions .nexus-hint { font-size: var(--text-sm); line-height: 1.6; color: var(--text-tertiary); }
 .nexus-route-permissions__content > .nexus-hint { margin-top: 0; }
 .nexus-route-permissions__toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
 .nexus-route-permissions .nexus-role-selector input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.nexus-route-permissions__filters { display: flex; align-items: center; gap: 8px; margin-left: auto; min-width: 0; }
+.nexus-service-field { display: flex; flex: 0 0 230px; min-width: 0; }
+.nexus-route-permissions .nexus-service-selector { width: 100%; height: 36px; padding: 0 28px 0 10px; font-size: var(--text-sm); background-image: var(--select-chevron); background-repeat: no-repeat; background-position: right 10px center; }
 .nexus-route-count { font-variant-numeric: tabular-nums; color: var(--text-tertiary); font-size: var(--text-xs); }
-.nexus-route-search { display: flex; align-items: center; gap: 8px; padding: 8px 10px; margin-left: auto; min-width: 0; border: 1px solid var(--border); border-radius: var(--radius-md); color: var(--text-secondary); }
+.nexus-route-search { display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 10px; min-width: 0; border: 1px solid var(--border); border-radius: var(--radius-md); color: var(--text-secondary); }
 .nexus-route-search input { width: 180px; min-width: 0; padding: 0; border: 0; background: transparent; color: var(--text-primary); font: inherit; font-size: var(--text-sm); }
-.nexus-route-permissions__count { margin: 14px 0 8px; color: var(--text-secondary); font-size: var(--text-xs); }
-.nexus-route-permissions__list { max-height: 350px; overflow: auto; border: 1px solid var(--border-subtle); border-radius: var(--radius-md); }
+.nexus-route-permissions__list { margin-top: 12px; max-height: 350px; overflow: auto; border: 1px solid var(--border-subtle); border-radius: var(--radius-md); }
 .nexus-route-permissions__list > .nexus-hint { margin: 16px; }
 .nexus-route-family + .nexus-route-family { border-top: 1px solid var(--border-subtle); }
-.nexus-route-family > summary { display: flex; align-items: center; gap: 8px; padding: 11px 12px; cursor: pointer; list-style: none; font-size: var(--text-sm); }
+.nexus-route-family > summary { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 8px; padding: 11px 12px; cursor: pointer; list-style: none; font-size: var(--text-sm); background: var(--surface-1); }
 .nexus-route-family > summary .nexus-route-count { margin-left: auto; }
 .nexus-route-family > .nexus-hint { margin: 4px 12px 12px; }
 .nexus-route-family table { width: 100%; border-collapse: collapse; table-layout: fixed; text-align: left; font-size: var(--text-xs); }
@@ -175,9 +177,11 @@
 .nexus-route-aliases code { display: block; margin-top: 4px; }
 .nexus-route-permissions__content > .nexus-route-permissions__scope { margin: 12px 0 0; }
 @media (max-width: 560px) {
-  .nexus-route-permissions > summary { padding: 14px 16px; }
-  .nexus-route-permissions__content { padding: 0 16px 16px; }
-  .nexus-route-search { margin-left: 0; flex: 1; }
+  .nexus-route-permissions > summary { padding: 10px 12px; }
+  .nexus-route-permissions__content { padding: 0 12px 12px; }
+  .nexus-route-permissions__filters { flex: 1 1 100%; }
+  .nexus-service-field { flex: 1.3; }
+  .nexus-route-search { flex: 1; }
   .nexus-route-search input { width: 100%; }
   .nexus-route-permissions .nexus-role-selector label { min-width: 0; padding: 8px 6px; font-size: var(--text-xs); gap: 5px; }
 }
@@ -239,7 +243,7 @@
 .nexus-tree__guide--branch::after { content: ''; position: absolute; top: 50%; left: 9px; right: 2px; border-top: 1px solid var(--border-strong); }
 .nexus-tree__row--expanded::after { content: ''; position: absolute; top: calc(50% + 10px); bottom: 0; left: calc(14px + var(--tree-depth) * 20px); border-left: 1px solid var(--border-strong); pointer-events: none; }
 .nexus-tree__disclosure, .nexus-tree__icon { display: flex; align-items: center; justify-content: center; flex: 0 0 18px; height: 24px; border-radius: 3px; }
-.nexus-tree__disclosure:hover { background: var(--surface-alpha-1); }
+.nexus-tree__row:hover .nexus-tree__name { color: var(--text-primary); }
 .nexus-tree__name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .nexus-tree__you { font-size: 10px; color: var(--text-tertiary); white-space: nowrap; }
 .nexus-tree__status { display: inline-flex; align-items: center; flex: 0 0 auto; gap: 10px; }
