@@ -1161,6 +1161,8 @@ void check_user_mode_fails_closed(const std::filesystem::path& root, const std::
 // The SDK's C ABI reports a federation 401 and 403 alike as LN_ERR_AUTH, and no
 // transport, a timeout and a 5xx alike as LN_ERR_CONNECT.
 void check_sdk_failures(const std::function<void(bool, const char*)>& check) {
+    const auto limited = access::sdk_failure(LN_ERR_REJECTED, json{{"error", "rate limited"}}, 409);
+    check(limited.status == 429 && limited.retryable, "Rate limiting is retryable, not lost account membership");
     const auto refused = access::sdk_failure(LN_ERR_AUTH, json{{"error", "session expired"}}, 409);
     check(refused.status == 403 && !refused.retryable && refused.message == "session expired", "A refused session keeps its auth status");
     const auto outage = access::sdk_failure(LN_ERR_CONNECT, json{{"error", "connection error"}}, 409);

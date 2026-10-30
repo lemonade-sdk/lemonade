@@ -915,6 +915,7 @@ bool federation_unreachable(const std::string& message) {
 SdkFailure sdk_failure(int code, const json& reply, int rejected_status) {
     const auto fallback = "Network request failed (SDK error " + std::to_string(code) + ")";
     const auto message = reply.is_object() ? reply.value("error", fallback) : fallback;
+    if (message == "rate limited" || message == "too many requests") return {429, "The network is busy. Try again shortly.", true};
     // The SDK answers LN_ERR_CONNECT for no transport, a timeout and a 5xx. Neither that
     // nor an unreachable federation refuses this device.
     if (code == LN_ERR_CONNECT || federation_unreachable(message)) return {503, message, true};
@@ -1280,7 +1281,8 @@ struct NexusManager::Session {
                 throw NexusError(403, "This device does not have permission for that change");
             }
             if (reason.find("not found") != std::string::npos) throw NexusError(404, "That group or device no longer exists");
-            throw NexusError(502, reason.empty() ? "Network request failed" : reason);
+            const auto failure = nexus_access::sdk_failure(LN_ERR_REJECTED, value, 502);
+            throw NexusError(failure.status, failure.message, failure.retryable);
         }
         return value;
     }
@@ -1312,7 +1314,7 @@ struct NexusManager::Session {
         return self.is_object() && self.value("is_admin", false);
     }
     json group_children() {
-        auto children = sdk_call([&](auto out) { return ln_tree_get_children(client.get(), group_id.c_str(), out); });
+        auto children = private_call("GET", "/api/tree/children/" + group_id);
         if (!children.is_array()) throw NexusError(502, "The network returned invalid data");
         return children;
     }
@@ -1401,9 +1403,9 @@ struct NexusManager::Session {
         return {{"parent", parent}, {"children", entries}};
     }
     void refresh_devices() {
-        const auto own = sdk_call([&](auto out) { return ln_tree_get_node(client.get(), node_id.c_str(), out); });
+        const auto own = private_call("GET", "/api/tree/node/" + node_id);
         group_id = own.at("parent_id").get<std::string>();
-        const auto group = sdk_call([&](auto out) { return ln_tree_get_node(client.get(), group_id.c_str(), out); });
+        const auto group = private_call("GET", "/api/tree/node/" + group_id);
         const auto children = group_children();
         const auto peers = sdk_call([&](auto out) { return ln_mesh_peers(client.get(), out); });
         auto next = nexus_access::merge_members(group, children, peers, pubkey, node_id);

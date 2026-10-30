@@ -1,6 +1,41 @@
 import { expect, test, type Page } from '@playwright/test';
 import { enableNexusMesh, setupNexusAccount } from './nexusAccountFixture';
 
+for (const action of ['create', 'join'] as const) {
+  test(`an unregistered device with a saved label can ${action} an account`, async ({ page }, testInfo) => {
+    const fixture = await setupNexusAccount(page, { joined: false, registered: false, deviceKey: true });
+    const previous = { id: 'previous-group', displayName: 'Previous account' };
+    await page.evaluate(value => localStorage.setItem('lemonade_nexus_account_labels', JSON.stringify({
+      'http://127.0.0.1:13305': value,
+    })), previous);
+    await page.getByRole('button', { name: 'Enable Mesh', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Enable Mesh' });
+    await expect(dialog.getByRole('radio', { name: 'Create a new account' })).toBeChecked();
+    await expect(dialog.getByRole('radio', { name: 'Use this device’s key' })).toHaveCount(0);
+    await expect(dialog.getByRole('radio', { name: 'Join by invitation' })).toBeVisible();
+    expect(await page.evaluate(() => JSON.parse(localStorage.getItem('lemonade_nexus_account_labels')!)[
+      'http://127.0.0.1:13305'])).toEqual(previous);
+    if (action === 'join') {
+      await dialog.getByRole('radio', { name: 'Join by invitation' }).check();
+      await dialog.getByRole('textbox', { name: 'Invitation code or token' }).fill('12345678');
+    }
+    await page.screenshot({ path: testInfo.outputPath('unregistered-setup.png') });
+    await dialog.getByRole('button', { name: 'Enable Mesh', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'User: My laptop', exact: true })).toBeVisible();
+    expect(fixture.calls.find(call => call.path.endsWith('/key/unlock'))?.body).toEqual({ defer_join: action === 'join' });
+    expect(fixture.calls.filter(call => call.path.endsWith('/join'))).toHaveLength(action === 'join' ? 1 : 0);
+  });
+}
+
+test('a migrated user identity retains its registered passkey unlock', async ({ page }) => {
+  const fixture = await setupNexusAccount(page, { joined: false, registered: true });
+  fixture.state.identity_source = 'user';
+  fixture.state.unlock = 'passkey';
+  await enableNexusMesh(page);
+  expect(fixture.calls.some(call => call.path.endsWith('/passkey/unlock'))).toBe(true);
+  expect(fixture.calls.some(call => call.path.endsWith('/key/unlock'))).toBe(false);
+});
+
 test('Accounts content fills the pane without a page header', async ({ page }) => {
   await setupNexusAccount(page);
   const content = page.locator('.connect__layout');
@@ -45,7 +80,7 @@ test('account images survive re-enabling Mesh and propagate removal', async ({ p
   await enableNexusMesh(page);
   await expect(page.locator('.nexus-account-trigger img')).toHaveAttribute('src', saved!);
   fixture.avatar = {...fixture.avatar, image: null, revision: 2};
-  await expect(page.locator('.nexus-account-trigger img')).toHaveCount(0, {timeout: 10000});
+  await expect(page.locator('.nexus-account-trigger img')).toHaveCount(0, {timeout: 22000});
   await page.getByLabel('Profile image file', { exact: true }).setInputFiles(avatarFile);
   await expect(page.locator('.nexus-account-trigger img')).toBeVisible();
   await page.getByRole('button', {name: 'Remove image', exact: true}).click();
@@ -437,10 +472,31 @@ test('lost account access clears the signed-in identity', async ({ page }) => {
   const fixture = await setupNexusAccount(page);
   await enableNexusMesh(page);
   fixture.accountError = true;
-  await expect(page.getByRole('button', { name: 'User: Mesh disabled' })).toBeVisible({ timeout: 12000 });
+  await expect(page.getByRole('button', { name: 'User: Mesh disabled' })).toBeVisible({ timeout: 22000 });
   await expect(page.getByText('Account access ended. Enable Mesh again to continue.')).toBeVisible();
 });
 
+
+test('rate limiting preserves the verified account and recovers without another sign-in', async ({ page }) => {
+  test.setTimeout(65000);
+  const fixture = await setupNexusAccount(page);
+  await enableNexusMesh(page);
+  fixture.accountUnavailable = true;
+  await expect(page.getByText('The network is temporarily unavailable. Reconnecting…')).toBeVisible({ timeout: 25000 });
+  await expect(page.getByRole('button', { name: 'User: My laptop', exact: true })).toBeVisible();
+  fixture.accountUnavailable = false;
+  await expect(page.getByText('The network is temporarily unavailable. Reconnecting…')).toHaveCount(0, { timeout: 20000 });
+  await expect(page.getByRole('button', { name: 'User: My laptop', exact: true })).toBeVisible();
+  expect(fixture.calls.filter(call => call.path.endsWith('/passkey/unlock'))).toHaveLength(1);
+});
+
+test('API authentication failure does not report an offline server or block local Nexus', async ({ page }) => {
+  await setupNexusAccount(page, { apiUnauthorized: true });
+  await expect(page.getByRole('complementary', { name: 'Connection settings', exact: true }).getByText('API authentication required', { exact: true })).toBeVisible();
+  await expect(page.getByText('Server offline', { exact: true })).toHaveCount(0);
+  await enableNexusMesh(page);
+  await expect(page.getByText('Mesh enabled', { exact: true })).toBeVisible();
+});
 
 test('an offline image source shows waiting guidance without blocking account access', async ({ page }) => {
   const fixture = await setupNexusAccount(page);
@@ -450,5 +506,5 @@ test('an offline image source shows waiting guidance without blocking account ac
   await expect(page.getByRole('button', { name:'Change profile image', exact:true })).toBeEnabled();
   await expect(page.locator('.nexus-account-summary img')).toHaveCount(0);
   fixture.avatar.pending = false;
-  await expect(page.getByText('Connect a device with this profile image to download it.')).toHaveCount(0, {timeout:12000});
+  await expect(page.getByText('Connect a device with this profile image to download it.')).toHaveCount(0, {timeout:22000});
 });

@@ -79,6 +79,7 @@ export interface NexusStatus {
 // `unlock: device_key` once the key has unlocked the device; a `user` or `handoff`
 // identity source means the key is the only option even before the first unlock.
 export function usesNexusDeviceKey(status: NexusStatus): boolean {
+  if (status.registered && status.unlock === 'passkey') return false;
   return status.unlock === 'device_key' || status.identity_source === 'user' || status.identity_source === 'handoff';
 }
 export class NexusRequestError extends Error {
@@ -195,6 +196,10 @@ export async function nexusRequest<T>(path: string, body?: unknown, pinnedContro
     const previousController = localController;
     localController = undefined;
     if (pinnedController || !previousController || body !== undefined) throw error;
+    ({ response } = await send());
+  }
+  if (body === undefined && response.status === 429) {
+    await new Promise(resolve => setTimeout(resolve, 5000));
     ({ response } = await send());
   }
   if (response.status === 401) throw new Error(API_KEY_ERROR);

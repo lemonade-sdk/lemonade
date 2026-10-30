@@ -342,7 +342,7 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
               status === 'connecting' ? 'connect__status-dot--connecting' : ''
             }`} />
             <span>
-              <strong>{status === 'connected' ? t('Server online') : status === 'connecting' ? t('Connecting') : t('Server offline')}</strong>
+              <strong>{status === 'connected' ? t('Server online') : status === 'connecting' ? t('Connecting') : status === 'authentication-required' ? t('API authentication required') : t('Server offline')}</strong>
               <small>{status === 'connected' ? api.baseUrl : host || api.baseUrl}</small>
             </span>
           </div>

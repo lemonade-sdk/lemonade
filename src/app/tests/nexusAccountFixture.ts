@@ -7,7 +7,7 @@ const self: NexusDevice = { node_id: 'self', device_name: 'My laptop', tunnel_ip
 const peer: NexusDevice = { node_id: 'peer', device_name: 'Kitchen PC', tunnel_ip: '10.8.0.3', management_pubkey: 'peer-key', permissions: ['read'], permissions_known: true, is_admin: false, is_online: true, can_remove: true };
 
 export async function setupNexusAccount(page: Page, options: {
-  desktop?: boolean; registered?: boolean; joined?: boolean; readOnly?: boolean; cancelPasskey?: boolean; unauthorized?: boolean;
+  desktop?: boolean; registered?: boolean; joined?: boolean; readOnly?: boolean; cancelPasskey?: boolean; unauthorized?: boolean; apiUnauthorized?: boolean;
   avatarUnsupported?: boolean; needsUserKey?: boolean; inviteWithoutCode?: boolean; deviceKey?: boolean;
 } = {}) {
   const members = [{ ...self, ...(options.readOnly ? { is_admin: false, permissions: ['read'] } : {}) }, peer];
@@ -32,7 +32,7 @@ export async function setupNexusAccount(page: Page, options: {
     lab: { parent: lab, children: [entry('workstation', 'Lab workstation', 'node', 'lab')] },
   };
   const calls: { path: string; method: string; body: Record<string, unknown> | null; authorization?: string }[] = [];
-  const fixture = { state, calls, accountError: false, rejectWrites: false, invalidTree: false, unlockUnreachable: false,
+  const fixture = { state, calls, accountError: false, accountUnavailable: false, rejectWrites: false, invalidTree: false, unlockUnreachable: false,
     avatarSaveGate: undefined as Promise<void> | undefined,
     avatar: {state: 'ready', image: null as string | null, revision: 0, can_write: !options.readOnly, pending: false} };
   await page.addInitScript(({ desktop, cancelPasskey }) => {
@@ -56,7 +56,9 @@ export async function setupNexusAccount(page: Page, options: {
     const path = new URL(request.url()).pathname;
     const body = request.method() === 'POST' ? request.postDataJSON() as Record<string, unknown> : null;
     if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
-    if (!path.includes('/nexus/')) return route.fulfill({ headers, json: path.endsWith('/health') ? { status: 'ok', version: 'test', all_models_loaded: [] } : path.endsWith('/models') ? { data: [] } : {} });
+    if (!path.includes('/nexus/')) return route.fulfill(options.apiUnauthorized
+      ? { status: 401, headers, json: { error: 'Unauthorized' } }
+      : { headers, json: path.endsWith('/health') ? { status: 'ok', version: 'test', all_models_loaded: [] } : path.endsWith('/models') ? { data: [] } : {} });
     calls.push({ path, method: request.method(), body, authorization: request.headers().authorization });
     if (options.unauthorized) return route.fulfill({ status: 401, headers, json: { error: 'Unauthorized' } });
     if (path.endsWith('/events')) return route.fulfill({ status: 204, headers });
@@ -73,6 +75,9 @@ export async function setupNexusAccount(page: Page, options: {
       if (!body?.defer_join) { state.mesh_up = true; state.group_node_id = 'group'; }
     }
     if (path.endsWith('/join')) { state.mesh_up = true; state.group_node_id = 'group'; }
+    if (path.endsWith('/account') && fixture.accountUnavailable) return route.fulfill({
+      status: 429, headers, json: { error: 'The network is busy. Try again shortly.', retryable: true },
+    });
     if (path.endsWith('/account')) return route.fulfill(fixture.accountError
       ? { status: 409, headers, json: { error: 'Account access ended' } }
       : { headers, json: { id: state.group_node_id, member_id: 'fixture-identity', device_node_id: 'self', role: members[0].is_admin ? 'admin' : 'user', devices: members,

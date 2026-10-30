@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { NexusAccountInviteDialog, NexusSignInDialog } from '../../components/NexusSignInDialog';
 import { NexusPasskeyDialog } from '../../components/NexusPasskeyDialog';
 import { nexusAccountService, saveNexusAccountLabel, type NexusAccountService, type VerifiedNexusAccount } from './accountSession';
-import { clearNexusNetwork, refreshNexus, useNexusNetwork } from './nexus';
+import { clearNexusNetwork, NexusRequestError, refreshNexus, useNexusNetwork } from './nexus';
 
 export interface NexusAccount {
   id: string;
@@ -103,15 +103,21 @@ function ConnectedAccountProvider({ service, children }: { service: NexusAccount
         if (!stopped && !disconnecting.current && revision === generation.current && imageRevision === avatarGeneration.current) {
           setSession(current => next.avatar.state === 'unavailable' && current
             ? { ...next, account: { ...next.account, avatarUrl: current.account.avatarUrl } } : next);
+          setNotice('');
         }
-      } catch {
+      } catch (error) {
         if (!stopped && !disconnecting.current && revision === generation.current && imageRevision === avatarGeneration.current) {
+          if ((error instanceof NexusRequestError && (error.retryable || error.status === 429 || error.status >= 500))
+              || error instanceof TypeError || (error instanceof Error && error.name === 'TimeoutError')) {
+            setNotice('The network is temporarily unavailable. Reconnecting…');
+            return;
+          }
           generation.current += 1; setSession(undefined); setDialog(undefined);
           setNotice('session-ended');
         }
       } finally { running = false; }
     };
-    const timer = window.setInterval(() => void refresh(), 5000);
+    const timer = window.setInterval(() => void refresh(), 15000);
     return () => { stopped = true; window.clearInterval(timer); };
   }, [session?.account.id, session?.memberId, session?.deviceNodeId, session?.source, service]);
   return <AccountStateProvider connection={{

@@ -33,9 +33,9 @@ export function NexusSignInDialog({ service, onClose, onSignedIn, passkeyActive 
     try {
       const result = await service.inspect();
       if (revision !== request.current) return;
-      const profile = loadNexusAccountLabel(result.source);
+      const profile = result.status.registered ? loadNexusAccountLabel(result.source) : undefined;
       setInspection(result); setSaved(profile);
-      setAction(profile || result.status.registered ? 'return' : 'create');
+      setAction(result.status.registered ? 'return' : 'create');
       setDeviceName(result.status.device_name || t('This computer'));
     } catch (error) { if (revision === request.current) setError(error instanceof TypeError ? t('Cannot reach the Lemonade server. Start it or check the connection in Settings.') : error instanceof Error ? error.message : String(error)); }
     finally { if (revision === request.current) setChecking(false); }
@@ -73,7 +73,7 @@ export function NexusSignInDialog({ service, onClose, onSignedIn, passkeyActive 
           <fieldset className="nexus-sign-in__fields" disabled={busy}>
             <legend className="sr-only">{t('Account access')}</legend>
             <div className="nexus-sign-in__choices">
-              <label><input type="radio" name={id} checked={action === 'return'} onChange={() => { setAction('return'); setError(''); }} />{t('Use this device’s key')}</label>
+              {inspection.status.registered && <label><input type="radio" name={id} checked={action === 'return'} onChange={() => { setAction('return'); setError(''); }} />{t('Use this device’s key')}</label>}
               {!saved && <>{!inspection.status.registered && <label><input type="radio" name={id} checked={action === 'create'} onChange={() => { setAction('create'); setError(''); }} />{t('Create a new account')}</label>}<label><input type="radio" name={id} checked={action === 'join'} onChange={() => { setAction('join'); setError(''); }} />{t('Join by invitation')}</label></>}
             </div>
             <label htmlFor={`${id}-device`}>{t('Device name')}</label><input autoFocus id={`${id}-device`} className="input" value={deviceName} maxLength={128} onChange={event => setDeviceName(event.target.value)} />

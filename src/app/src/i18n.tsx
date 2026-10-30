@@ -9,6 +9,8 @@ export type TranslationValues = Record<string, string | number>;
 export type Translate = (key: string, values?: TranslationValues) => string;
 
 const ZH_CN: Record<string, string> = {
+  'API authentication required': 'API 需要身份验证',
+  'The network is temporarily unavailable. Reconnecting…': '网络暂时不可用，正在重新连接…',
   'Saving image…': '正在保存头像…',
   'The profile image could not be removed. Try again.': '无法移除头像，请重试。',
   'This mesh needs a Nexus server update to sync profile images.': '此网络需要更新 Nexus 服务器才能同步头像。',
