@@ -221,8 +221,7 @@ void OnnxRuntimeServer::load(const std::string& model_name,
     // The pin does not decide the binary: a `cpu_bin` path or tag can run an
     // older ort-server, which cuts input without saying so. Ask the binary.
     const json health = forward_get_request("/health", 5);
-    reports_truncation_ = onnxruntime::reports_truncation(health);
-    if (reports_truncation_) {
+    if (onnxruntime::reports_truncation(health)) {
         LOG(INFO, "OnnxRuntimeServer")
             << "ort-server version " << health["version"].get<std::string>() << std::endl;
     } else {
@@ -245,12 +244,7 @@ json OnnxRuntimeServer::forward_classify(const std::string& text, const json& pa
     json body = {{"text", text}};
     if (params.contains("top_k")) body["top_k"] = params["top_k"];
     if (params.contains("labels")) body["labels"] = params["labels"];
-    json response = forward_request("/classify", body, 120);
-    // For the routing engine only: the public /v1/classify envelope drops it.
-    if (response.is_object() && !response.contains("error")) {
-        response["reports_truncation"] = reports_truncation_;
-    }
-    return response;
+    return forward_request("/classify", body, 120);
 }
 
 json OnnxRuntimeServer::classify(const json& request) {

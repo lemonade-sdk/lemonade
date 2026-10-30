@@ -2,13 +2,13 @@
 Text-classification tests for Lemonade Server.
 
 Tests the /classify endpoint (text -> {label: score}) with the onnxruntime
-backend (ort-server subprocess, CPU EP).
+backend (ort-server subprocess, CPU EP): a fixed-label model, and a zero-shot
+model that takes its labels from each request.
 
 Usage:
     python server_classify.py --wrapped-server onnxruntime --backend cpu
 
-The negative tests run first and never pull the model; only the classification
-test downloads it.
+The negative tests run first and never pull a model.
 """
 
 import requests
@@ -36,21 +36,49 @@ HF_REFERENCE = {
 }
 HF_REFERENCE_TOL = 5e-3
 
+ZERO_SHOT_LABELS = ["Coding", "Sales", "Creative writing", "General knowledge"]
+
+# route() scores from the original PyTorch model
+# (LiquidAI/LFM2.5-Encoder-350M-Prompt-Router @ 35ca4a0), copied from
+# ort-server's test/golden/LFM2.5-Encoder-350M-Prompt-Router.json. The second
+# case is near-uniform, so a pooling or tokenization error cannot hide in a
+# saturated top score. ort-server matches these within 1e-5.
+ZERO_SHOT_REFERENCE = [
+    (
+        "Can you help me debug a failing Python unit test?",
+        {
+            "Coding": 0.838118,
+            "Sales": 0.053962,
+            "Creative writing": 0.053959,
+            "General knowledge": 0.053961,
+        },
+    ),
+    (
+        "Prove that every finite integral domain is a field, with full rigor.",
+        {
+            "code generation": 0.330570,
+            "math reasoning": 0.336955,
+            "creative writing": 0.332475,
+        },
+    ),
+]
+ZERO_SHOT_REFERENCE_TOL = 1e-3
+
 
 class ClassifyTests(ServerTestBase):
     """Tests for the /classify endpoint."""
 
-    _model_pulled = False
+    _pulled = set()
 
     @classmethod
-    def _ensure_model_pulled(cls):
-        if cls._model_pulled:
+    def _ensure_model_pulled(cls, model_type="classification"):
+        model = get_test_model(model_type)
+        if model in cls._pulled:
             return
-        model = get_test_model("classification")
         print(f"\n[SETUP] Ensuring {model} is pulled...")
         pull_model_with_retry(model)
         print(f"[SETUP] {model} is ready")
-        cls._model_pulled = True
+        cls._pulled.add(model)
 
     def _payload(self, **overrides):
         payload = {
@@ -359,6 +387,72 @@ class ClassifyTests(ServerTestBase):
                 json={"model_name": collection},
                 timeout=TIMEOUT_DEFAULT,
             )
+
+    def _zero_shot(self, text, labels=ZERO_SHOT_LABELS):
+        self._ensure_model_pulled("zero_shot_classification")
+        payload = {
+            "model": get_test_model("zero_shot_classification"),
+            "input": text,
+        }
+        if labels is not None:
+            payload["labels"] = labels
+        return requests.post(
+            f"{self.base_url}/classify", json=payload, timeout=TIMEOUT_CLASSIFY
+        )
+
+    def test_510_zero_shot_picks_the_matching_label(self):
+        """The router scores the request's own labels and picks the right one."""
+        for text, expected in [
+            ("Can you help me debug a failing Python unit test?", "Coding"),
+            ("Can you help me write a poem on love?", "Creative writing"),
+            ("Can you help me close a deal on this car?", "Sales"),
+        ]:
+            response = self._zero_shot(text)
+            self.assertEqual(response.status_code, 200, response.text[:1000])
+            body = response.json()
+            labels = body["labels"]
+            self.assertEqual(set(labels), set(ZERO_SHOT_LABELS), str(labels))
+            self.assertAlmostEqual(sum(labels.values()), 1.0, delta=1e-4)
+            self.assertEqual(max(labels, key=labels.get), expected, str(labels))
+            self.assertIs(body.get("truncated"), False, str(body))
+            print(f"[OK] {text!r} -> {expected} ({labels[expected]:.3f})")
+
+    def test_511_zero_shot_matches_pytorch_reference(self):
+        """End-to-end scores must match the original model's route()."""
+        for text, reference in ZERO_SHOT_REFERENCE:
+            response = self._zero_shot(text, labels=list(reference))
+            self.assertEqual(response.status_code, 200, response.text[:1000])
+            labels = response.json()["labels"]
+            for label, expected in reference.items():
+                self.assertAlmostEqual(
+                    labels[label],
+                    expected,
+                    delta=ZERO_SHOT_REFERENCE_TOL,
+                    msg=f"{text!r} / {label}: {labels[label]:.6f} != {expected:.6f}",
+                )
+        print(f"[OK] zero-shot scores match route() within {ZERO_SHOT_REFERENCE_TOL}")
+
+    def test_512_zero_shot_requires_labels(self):
+        """A zero-shot model has no label set of its own, so omitting labels is 400."""
+        response = self._zero_shot("Can you help me book a flight?", labels=None)
+        self.assertEqual(response.status_code, 400, response.text[:1000])
+        self.assertIn("labels", response.text)
+        print("[OK] Zero-shot request without labels: 400")
+
+    def test_513_zero_shot_reports_truncation(self):
+        """A text past the 2,048-token window is cut, reported, and still routed."""
+        code = (
+            "def merge(a, b):\n    out = []\n    while a and b:\n"
+            "        out.append(a.pop(0) if a[0] < b[0] else b.pop(0))\n"
+            "    return out + a + b\n"
+        )
+        response = self._zero_shot(code * 80 + "Why does this crash on an empty list?")
+        self.assertEqual(response.status_code, 200, response.text[:1000])
+        body = response.json()
+        self.assertIs(body.get("truncated"), True, str(body))
+        labels = body["labels"]
+        self.assertEqual(max(labels, key=labels.get), "Coding", str(labels))
+        print(f"[OK] ~4,000-token text cut and still routed to Coding: {labels}")
 
 
 if __name__ == "__main__":

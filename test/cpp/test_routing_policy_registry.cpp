@@ -378,7 +378,7 @@ static void test_zero_shot_classifier_reports_truncation() {
         {"labels", json::array({"pii", "chit-chat"})}});
     auto route = make_route_context();
 
-    auto evaluate_with = [&](bool truncated) {
+    auto evaluate_with = [&](std::optional<bool> truncated) {
         lemon::testing::FakeClassifierServices fake;
         fake.set_zero_shot_scores("m", {{"pii", 0.8}, {"chit-chat", 0.2}}, truncated);
         auto services = fake.make();
@@ -388,15 +388,17 @@ static void test_zero_shot_classifier_reports_truncation() {
 
     auto cut = evaluate_with(true);
     check("zero_shot carries the backend's truncation flag",
-          cut.ok && cut.truncated && cut.score_of("pii") == 0.8);
-    check("zero_shot reports no truncation when the backend scored the whole input",
-          !evaluate_with(false).truncated);
+          cut.ok && cut.truncated == true && cut.score_of("pii") == 0.8);
+    check("zero_shot reports false when the backend scored the whole input",
+          evaluate_with(false).truncated == false);
+    check("zero_shot reports nothing when the backend does not say",
+          !evaluate_with(std::nullopt).truncated.has_value());
 }
 
 // on_truncation=fail is the only way a rule reaches a cut input, because a score
 // computed from cut text is a SUCCESS and on_error never sees it.
 static void test_zero_shot_on_truncation() {
-    auto evaluate_with = [](const char* on_truncation, bool truncated) {
+    auto evaluate_with = [](const char* on_truncation, std::optional<bool> truncated) {
         json cfg{{"id", "pii"}, {"type", "zero_shot"}, {"model", "m"},
                  {"labels", json::array({"private", "public"})}};
         if (on_truncation != nullptr) cfg["on_truncation"] = on_truncation;
@@ -414,15 +416,21 @@ static void test_zero_shot_on_truncation() {
     check("on_truncation=fail names the cut as the reason",
           cut_fail.error.find("cut the input text") != std::string::npos);
     // The trace must still show WHY it failed, and failed_score() starts clean.
-    check("on_truncation=fail keeps the truncation flag for the trace", cut_fail.truncated);
+    check("on_truncation=fail keeps the truncation flag for the trace",
+          cut_fail.truncated == true);
     check("on_truncation=fail drops the scores computed from cut text",
           cut_fail.score_of("public") == 0.0);
 
     check("on_truncation=fail is inert when nothing was cut", evaluate_with("fail", false).ok);
+    const auto unknown_fail = evaluate_with("fail", std::nullopt);
+    check("on_truncation=fail fails closed when the backend does not say",
+          !unknown_fail.ok && !unknown_fail.truncated.has_value());
+    check("on_truncation=score uses an answer that does not say",
+          evaluate_with("score", std::nullopt).ok);
 
     const auto cut_score = evaluate_with("score", true);
     check("on_truncation=score keeps using a cut answer",
-          cut_score.ok && cut_score.truncated && cut_score.score_of("public") == 0.9);
+          cut_score.ok && cut_score.truncated == true && cut_score.score_of("public") == 0.9);
 
     const auto cut_default = evaluate_with(nullptr, true);
     check("on_truncation defaults to score",

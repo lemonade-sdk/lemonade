@@ -40,6 +40,7 @@ extern const RouteArg kUser;
 
 namespace openai::models {
 extern const RouteArg kId;
+extern const RouteArg kIncludePaths;
 } // namespace openai::models
 
 namespace gateway {

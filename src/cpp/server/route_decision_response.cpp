@@ -75,8 +75,8 @@ json route_decision_to_json(const Decision& decision) {
             if (!entry.error.empty()) {
                 trace_entry["error"] = entry.error;
             }
-            if (entry.truncated) {
-                trace_entry["truncated"] = true;
+            if (entry.truncated.has_value()) {
+                trace_entry["truncated"] = *entry.truncated;
             }
             out["trace"].push_back(std::move(trace_entry));
         }

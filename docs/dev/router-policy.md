@@ -99,7 +99,7 @@ window, estimate ~4 bytes per token.
 |------|---------|
 | `semantic_similarity` | Cosine similarity of the input against labelled `reference_phrases`, via an embedding model. |
 | `classifier` | A `{label: score}` classifier — an encoder model via the `onnxruntime` backend (`/v1/classify`), or any model as an LLM-as-classifier via chat. |
-| `zero_shot` | A zero-shot encoder that scores the input against the `labels` **you** declare, rather than a label set baked into the model. Needs a classification model: an `onnxruntime` zero-shot export or a llama.cpp decision model (`systemone` label); no LLM fallback. |
+| `zero_shot` | Scores the input against the `labels` **you** declare, sent with each request. Supports two kinds of zero-shot model: an LFM2 prompt router that reads the labels and the text together in a single pass, on the `onnxruntime` backend, and a llama.cpp decision model (`systemone` label). No LLM fallback. |
 | `systemone` | One typed question (`choice`, `noul`, or `score`) with your own instructions, answered by a llama.cpp decision model through `/v1/systemone`. Its labels are the question's options. |
 | `llm` | An LLM picks exactly one of the declared `labels` for the request (with a rationale); the chosen label scores `1.0`, the rest `0`. You supply the `model` and a `prompt` describing when to choose each label. |
 
@@ -163,6 +163,11 @@ and every entry's `model` must be one of `components`:
   LLM-as-classifier via chat).
 - `zero_shot` sends your `labels` to the model on every request: the model has
   no per-label head to read them off, so the label list is an input to the graph.
+  Lemonade ships
+  [`LFM2.5-Encoder-350M-Prompt-Router-ONNX`](https://huggingface.co/lemonade-sdk/LFM2.5-Encoder-350M-Prompt-Router-ONNX)
+  for it. Its model must carry the `zero-shot` label or be a llama.cpp decision
+  model, and a `classifier`'s model must be neither: each kind of model refuses the other's request, so
+  registration refuses either mismatch.
 
   Every classifier's `labels` are checked at registration: unique, not blank,
   and free of control characters because a label the backend would reject
@@ -221,6 +226,11 @@ Against it, every evaluation under `fail` counts as a failure, so `on_error`
 applies. `score` is unaffected. A llama.cpp decision model never cuts: it
 refuses an input that is too long, so `on_error` applies.
 
+`LFM2.5-Encoder-350M-Prompt-Router-ONNX` has a default 2,048-token window, so a text
+longer than about 8,000 characters is cut. To raise it, pass
+`--onnxruntime-args "--max-length 4096"`; memory grows with the square of the
+window.
+
 The other types never read a token window and refuse the option. A `classifier`
 backed by a chat LLM refuses it too: a chat model reports no cut, so `fail`
 could never fire.
@@ -239,15 +249,15 @@ pair `fail` with `on_error: match_true`. That forces the condition true and
 
 ```json
 "classifiers": [
-  { "id": "pii", "type": "zero_shot", "model": "Prompt-Router-ONNX",
-    "labels": ["contains personal data", "no personal data"],
+  { "id": "pii", "type": "zero_shot", "model": "LFM2.5-Encoder-350M-Prompt-Router-ONNX",
+    "labels": ["contains personal identifiable information", "general question"],
     "on_truncation": "fail", "on_error": "match_true" },
-  { "id": "topic", "type": "zero_shot", "model": "Prompt-Router-ONNX",
+  { "id": "topic", "type": "zero_shot", "model": "LFM2.5-Encoder-350M-Prompt-Router-ONNX",
     "labels": ["code", "general"] }
 ],
 "rules": [
   { "id": "pii-to-local",
-    "match": { "classifier": "pii", "label": "contains personal data", "min_score": 0.5 },
+    "match": { "classifier": "pii", "label": "contains personal identifiable information", "min_score": 0.5 },
     "route_to": "LocalLLM" },
   { "id": "code-to-cloud",
     "match": { "classifier": "topic", "label": "code" },
@@ -318,11 +328,12 @@ to its own trace entry, naming the reason the backend gave. Without it a failed
 condition and one that simply scored below its threshold both read as
 `"result": false`, and `on_error` hides which of the two happened.
 
-A **`classifier`** or **`zero_shot`** entry also carries **`"truncated": true`**
-when the backend had to cut the input text to fit its token window before
-scoring. A `zero_shot` model never cuts its labels, a label pooled from half
-its tokens would score something the model only partly read. The key is absent
-whenever the whole input was scored, so its absence is the signal, not `false`.
+A **`classifier`** or **`zero_shot`** entry also carries **`truncated`**:
+`true` when the backend cut the input text to fit its token window before
+scoring, `false` when it scored the whole input. A `zero_shot` model never cuts
+its labels, a label pooled from half its tokens would score something the model
+only partly read. The key is absent when the backend does not report cuts
+(ort-server before 0.4.0, or a chat LLM), so its absence means "unknown".
 
 ## Cloud candidates
 

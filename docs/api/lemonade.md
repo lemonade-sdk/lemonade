@@ -73,6 +73,8 @@ Single-sequence encoder families: BERT, DistilBERT, RoBERTa, XLM-RoBERTa, DeBERT
 
 A servable model directory holds `model.onnx`, `tokenizer.json` and `config.json`. The `config.json` is always required: its architecture is checked against the families above, so an unsupported family such as XLNet is rejected at load time rather than served with wrong scores. Label names (`id2label`), normalization and the token budget come from the same config, and an optional `manifest.json` overrides them. Without a manifest, inference assumes single-label softmax, so a multi-label (sigmoid) model declares `problem_type: multi_label_classification` in its config or ships a `manifest.json`.
 
+Zero-shot family: LFM2 (`Lfm2BidirForSequenceRouting`), such as `LFM2.5-Encoder-350M-Prompt-Router-ONNX`. Every request to it carries `labels`.
+
 Some upstream models declare only generic `LABEL_<n>` label names; their model card explains them.
 
 ### Example
@@ -107,7 +109,8 @@ Some upstream models declare only generic `LABEL_<n>` label names; their model c
 {
   "object": "classification",
   "model": "Phishing-Email-Detection-ONNX",
-  "labels": {"LABEL_0": 5.558096745517105e-05, ... 3 more}
+  "labels": {"LABEL_0": 5.558096745517105e-05, ... 3 more},
+  "truncated": false
 }
 ```
 
@@ -117,7 +120,7 @@ Some upstream models declare only generic `LABEL_<n>` label names; their model c
 - `model` - The model that classified the input, including one chosen because it was the only one loaded.
 - `labels` - Each label's score, keyed by label name.
   - The label's score, in `[0, 1]`.
-- `truncated` - Present only when the model had to cut the input text to fit its token window before scoring. Labels are never cut, so the scores still cover every label sent. Absent whenever the whole input was scored.
+- `truncated` - `true` when the model cut the input text to fit its token window before scoring, `false` when it scored the whole input. Labels are never cut, so the scores still cover every label sent. Absent when the backend does not report cuts (ort-server before 0.4.0), so absence means unknown.
 
 ### Errors
 
@@ -259,6 +262,9 @@ Requires `LEMONADE_API_KEY` when it is set.
     "labels": ["chat", "custom"],
     "components": [],
     "checkpoints": {"main": "unsloth/Phi-4-mini-instruct-GGUF:Q3_K_M"},
+    "checkpoint_status": [
+      {"type": "main", "present": false, "required": true, "registry": "huggingface"}
+    ],
     "source": "huggingface",
     "registry_source": "huggingface",
     "recipe_options": {}
@@ -299,6 +305,12 @@ Requires `LEMONADE_API_KEY` when it is set.
   - `models` - Omni collections only: each component's full model object, in the order of `components`, so an exported collection can be imported elsewhere through [`/v1/pull`](./lemonade.md#post-v1pull).
   - `checkpoints` - Every checkpoint by role, such as `main`, `mmproj`, `draft`, `text_encoder` or `vae`.
     - The checkpoint that fills the role named by its key.
+  - `checkpoint_status` - One entry per checkpoint of the model, answering whether its bytes are there.
+    - `type` - Checkpoint slot, e.g. `main`, `mmproj`, `vae`.
+    - `present` - `true` only when the checkpoint's bytes are complete and readable.
+    - `required` - A missing required checkpoint keeps the model undownloaded; an optional one, loaded lazily, does not.
+    - `registry` - Registry hosting the checkpoint; empty for local files and directories.
+    - `path` - Absolute path to the checkpoint file; present only with `include_paths=true` and when `present` is `true`.
   - `source` - Where the model came from: a registry name, `local_upload`, `local_path` or `extra_models_dir`.
   - `registry_source` - Remote registry the checkpoint downloads from: `huggingface` or `modelscope`.
   - `recipe_options` - The model's own options: its image defaults and registry options, with what was saved in `recipe_options.json` on top.
@@ -1721,6 +1733,11 @@ This endpoint does not take any parameters.
 - `version` - Lemonade Server version.
 - `model_loaded` - The most recently used loaded model, or `null` when none is loaded.
 - `update_check_done` - Whether the startup check for model updates has finished. Until it has, models' `update_available` can be incomplete.
+- `models_generation` - Rises whenever the model list changes, including a model's `downloaded` or `update_available`. A client that polls health reads [`GET /v1/models`](./openai.md#get-v1models) again when it changes.
+- `model_sync` - The model sync, so a client that polls health can tell when one starts or finishes. Details are at [`GET /internal/models/sync/status`](./internal.md#get-internalmodelssyncstatus).
+  - `status` - Status of the latest sync.
+  - `sync_id` - The latest sync; `0` before any sync.
+  - `completed_sync_id` - The most recent sync that finished.
 - `all_models_loaded` - Every loaded model.
   - `model_name` - Name of the loaded model
   - `checkpoint` - The model's main checkpoint.

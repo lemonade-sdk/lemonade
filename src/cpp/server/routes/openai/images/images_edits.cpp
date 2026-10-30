@@ -8,6 +8,7 @@
 
 #include <lemon/utils/aixlog.hpp>
 
+#include "lemon/models/model_info.h"
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/image_responses.h"

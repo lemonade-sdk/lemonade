@@ -330,6 +330,32 @@ static void test_classifier_capability_validation() {
               parses_ok(systemone_doc(), decision));
     }
     {
+        auto doc_of = [&](const char* type) {
+            json doc = fixture("l3_classifier.json");
+            doc["routing"]["classifiers"][0]["type"] = type;
+            return doc;
+        };
+        RoutingPolicyParseOptions fixed_label;
+        fixed_label.get_model_type = [](const std::string& name) -> std::optional<ModelType> {
+            if (name == "pii-detector-small") return ModelType::CLASSIFICATION;
+            return ModelType::LLM;
+        };
+        fixed_label.serves_zero_shot = [](const std::string&) { return false; };
+        RoutingPolicyParseOptions zero_shot = fixed_label;
+        zero_shot.serves_zero_shot = [](const std::string& name) {
+            return name == "pii-detector-small";
+        };
+
+        check("zero_shot accepts a model labelled zero-shot",
+              parses_ok(doc_of("zero_shot"), zero_shot));
+        check("zero_shot rejects a fixed-label classification model",
+              throws_with_options(doc_of("zero_shot"), fixed_label, "is not a zero-shot model"));
+        check("classifier accepts a fixed-label classification model",
+              parses_ok(doc_of("classifier"), fixed_label));
+        check("classifier rejects a model labelled zero-shot",
+              throws_with_options(doc_of("classifier"), zero_shot, "use type 'zero_shot'"));
+    }
+    {
         json doc = fixture("l2_semantic.json");
         RoutingPolicyParseOptions options;
         options.get_model_type = [](const std::string&) -> std::optional<ModelType> {

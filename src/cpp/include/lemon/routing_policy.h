@@ -119,8 +119,9 @@ struct Score {
     // Why the classifier failed, when ok=false.
     std::string error;
 
-    // The backend cut the input to fit its token window before scoring.
-    bool truncated = false;
+    // true: the backend cut the input to fit its token window before scoring.
+    // false: it scored the whole input. Empty: the backend does not say.
+    std::optional<bool> truncated;
 
     // Score for an explicit label, or 0.0 if absent. Extra labels returned by
     // a classifier are ignored unless a condition references them.
@@ -174,12 +175,10 @@ inline OnTruncation parse_on_truncation(const std::string& s) {
 // ---------------------------------------------------------------------------
 
 // What a classification backend answers: the per-label scores, plus whether it
-// had to cut the input text to fit its token window.
+// had to cut the input text to fit its token window (empty when it does not say).
 struct ClassifierScores {
     std::map<std::string, double> scores;
-    bool truncated = false;
-    // False when the backend cannot report a cut, so `truncated` proves nothing.
-    bool reports_truncation = false;
+    std::optional<bool> truncated;
 };
 
 // The ONLY way the pure engine touches live backends. Real implementations bind
@@ -361,9 +360,8 @@ struct TraceEntry {
                                     // model's short pick-reason here (empty otherwise)
     std::string error;              // optional; why a model-backed classifier failed
                                     // (empty unless the score failed with a reason)
-    bool truncated = false;         // optional; the backend cut the input text to
-                                    // fit its window before scoring (either
-                                    // model-backed type)
+    std::optional<bool> truncated;  // whether the backend cut the input text to
+                                    // fit its window (empty when it does not say)
 };
 
 // The engine's output for one request. Pure selection — no verdict /

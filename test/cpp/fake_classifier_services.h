@@ -4,6 +4,7 @@
 #include <iterator>
 #include <map>
 #include <mutex>
+#include <optional>
 #include <set>
 #include <stdexcept>
 #include <string>
@@ -97,17 +98,12 @@ public:
         declare("run_classifier", model);
     }
 
-    // Make a fixed-label classifier report that the backend cut the input to
-    // fit its token window, the way ort-server's encoder path does.
-    void set_classifier_truncated(const std::string& model) {
-        truncating_classifiers_.insert(model);
+    // Make a fixed-label classifier report whether the backend cut the input to
+    // fit its token window, the way ort-server 0.4.0 does. Without this call
+    // the answer carries no report, like ort-server before 0.4.0.
+    void set_classifier_truncated(const std::string& model, bool truncated = true) {
+        classifier_truncated_[model] = truncated;
         declare("run_classifier", model);
-    }
-
-    // Serve `model` from a backend that cannot report cuts (ort-server before
-    // 0.4.0). Every other model answers like 0.4.0 and later.
-    void set_backend_reports_no_truncation(const std::string& model) {
-        unreporting_backends_.insert(model);
     }
 
     void set_chat_failure(const std::string& model) {
@@ -146,7 +142,7 @@ public:
     // which of the two services a classifier actually reached.
     void set_zero_shot_scores(const std::string& model,
                               std::map<std::string, double> scores,
-                              bool truncated = false) {
+                              std::optional<bool> truncated = std::nullopt) {
         zero_shot_scores_[model] = {std::move(scores), truncated};
         declare("run_zero_shot_classifier", model);
     }
@@ -204,12 +200,13 @@ public:
                 self->mark_used("run_classifier", model);
                 throw std::runtime_error("fake classifier failure: " + model);
             }
-            const bool truncated = self->truncating_classifiers_.count(model) != 0;
             auto it = self->classifier_scores_.find(model);
             if (it != self->classifier_scores_.end()) {
                 self->mark_used("run_classifier", model);
-                return ClassifierScores{it->second, truncated,
-                                        self->unreporting_backends_.count(model) == 0};
+                ClassifierScores answer{it->second, std::nullopt};
+                auto cut = self->classifier_truncated_.find(model);
+                if (cut != self->classifier_truncated_.end()) answer.truncated = cut->second;
+                return answer;
             }
             self->record_unexpected("run_classifier", model);
             return ClassifierScores{};
@@ -227,9 +224,7 @@ public:
             auto it = self->zero_shot_scores_.find(model);
             if (it != self->zero_shot_scores_.end()) {
                 self->mark_used("run_zero_shot_classifier", model);
-                ClassifierScores answer = it->second;
-                answer.reports_truncation = self->unreporting_backends_.count(model) == 0;
-                return answer;
+                return it->second;
             }
             self->record_unexpected("run_zero_shot_classifier", model);
             return ClassifierScores{};
@@ -289,14 +284,13 @@ private:
     int total_embed_calls_ = 0;
     std::map<std::string, std::map<std::string, double>> classifier_scores_;
     std::map<std::string, ClassifierScores> zero_shot_scores_;
-    std::set<std::string> unreporting_backends_;
     std::vector<std::string> last_zero_shot_labels_;
     std::map<std::string, json> systemone_answers_;
     nlohmann::ordered_json last_systemone_question_;
     std::map<std::string, std::string> chat_replies_;
     std::set<std::pair<std::string, std::string>> failing_embeds_;
     std::set<std::string> failing_classifiers_;
-    std::set<std::string> truncating_classifiers_;
+    std::map<std::string, bool> classifier_truncated_;
     std::set<std::string> failing_chats_;
     std::set<std::string> failing_zero_shots_;
 };

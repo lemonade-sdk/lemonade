@@ -215,33 +215,36 @@ static void test_run_zero_shot_classifier_forwards_labels() {
               json::array({"coding", "cooking", "pii"}));
     check("run_zero_shot_classifier parses classify label scores",
           near(scores.scores.at("cooking"), 0.93) && near(scores.scores.at("coding"), 0.02));
-    check("run_zero_shot_classifier reports no cut when the backend omits truncated",
-          !scores.truncated);
-    check("run_zero_shot_classifier treats a backend that omits reports_truncation as "
-          "one that cannot report cuts",
-          !scores.reports_truncation);
+    check("run_zero_shot_classifier reads an omitted truncated as unknown",
+          !scores.truncated.has_value());
 }
 
-// OnnxRuntimeServer stamps reports_truncation on each classify response; both
-// classify paths must carry it, and `truncated`, through to the engine.
-static void test_classify_paths_parse_reports_truncation() {
+// Both classify paths carry `truncated` through to the engine in all three
+// states: true, false, and absent (a backend that does not report cuts).
+static void test_classify_paths_parse_truncated() {
+    json truncated = true;
     auto services = lemon::make_classifier_services_from_router_calls(
         [](const json&) { return json::object(); },
         [](const json&) { return json::object(); },
         {},
-        [](const json&) {
-            return json{{"labels", {{"PII", 0.2}, {"NO_PII", 0.8}}},
-                        {"truncated", true},
-                        {"reports_truncation", true}};
+        [&](const json&) {
+            json response = {{"labels", {{"PII", 0.2}, {"NO_PII", 0.8}}}};
+            if (!truncated.is_null()) response["truncated"] = truncated;
+            return response;
         },
         [](const std::string&) { return lemon::ModelType::CLASSIFICATION; });
 
-    auto fixed = services.run_classifier("pii-model", "text");
-    check("run_classifier parses reports_truncation and truncated",
-          fixed.reports_truncation && fixed.truncated);
-    auto zero_shot = services.run_zero_shot_classifier("pii-model", "text", {"PII", "NO_PII"});
-    check("run_zero_shot_classifier parses reports_truncation and truncated",
-          zero_shot.reports_truncation && zero_shot.truncated);
+    for (const json& value : {json(true), json(false), json()}) {
+        truncated = value;
+        const std::optional<bool> want =
+            value.is_null() ? std::nullopt : std::optional<bool>(value.get<bool>());
+        const std::string name = value.is_null() ? "absent" : value.dump();
+        check(("run_classifier parses truncated: " + name).c_str(),
+              services.run_classifier("pii-model", "text").truncated == want);
+        check(("run_zero_shot_classifier parses truncated: " + name).c_str(),
+              services.run_zero_shot_classifier("pii-model", "text", {"PII", "NO_PII"})
+                      .truncated == want);
+    }
 }
 
 // The version rule OnnxRuntimeServer applies to ort-server's /health body.
@@ -1275,7 +1278,7 @@ int main() {
     test_run_classifier_uses_router_chat_completion();
     test_run_classifier_uses_classify_for_classification_model();
     test_run_zero_shot_classifier_forwards_labels();
-    test_classify_paths_parse_reports_truncation();
+    test_classify_paths_parse_truncated();
     test_ort_server_reports_truncation_from_0_4_0();
     test_run_zero_shot_classifier_loads_before_resolving_type();
     test_run_zero_shot_classifier_rejects_non_classification_model();

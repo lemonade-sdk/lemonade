@@ -223,8 +223,9 @@ static bool parse_vector(const json& value, std::vector<float>& out) {
 //
 // A zero_shot classifier only accepts scores for exactly the labels it declared,
 // so its answer must name every one of them and no others. Its wrapper form adds
-// the backend's report that it cut the input text to fit its window; a row that
-// uses the wrapper must state `truncated` either way.
+// the backend's report on whether it cut the input text to fit its window; a row
+// that uses the wrapper must state `truncated` either way. The bare form carries
+// no report, like a backend before ort-server 0.4.0.
 static bool apply_row_services(lemon::testing::FakeClassifierServices& fake, const json& spec,
                                const std::string& where) {
     if (!spec.is_object()) {
@@ -276,13 +277,13 @@ static bool apply_row_services(lemon::testing::FakeClassifierServices& fake, con
                     }
                     continue;
                 }
-                // A zero-shot answer may wrap its scores to also declare the cut:
-                // {"scores": {...}, "truncated": true}. The bare form stays the
-                // common case, so only the wrapper carries the extra key.
+                // A zero-shot answer may wrap its scores to also report the cut:
+                // {"scores": {...}, "truncated": true|false}. The bare form reports
+                // nothing.
                 const bool wrapped = zero_shot && answer.is_object() &&
                                      answer.contains("scores") && answer["scores"].is_object();
                 const json& score_map = wrapped ? answer["scores"] : answer;
-                bool truncated = false;
+                std::optional<bool> truncated;
                 if (wrapped) {
                     if (!answer.contains("truncated") || !answer["truncated"].is_boolean()) {
                         check(label + ".truncated: the wrapper form declares a boolean", false);

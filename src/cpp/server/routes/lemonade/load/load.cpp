@@ -212,7 +212,7 @@ public:
             if (save_options) {
                 json saved_for_write = options.to_json();
                 if (!transient_saved_option_tombstones.empty()) {
-                    const json existing_saved = model_manager.get_saved_model_options(model_name);
+                    const json existing_saved = model_manager.options(model_name)["saved"];
                     for (const auto& key : transient_saved_option_tombstones) {
                         auto it = existing_saved.find(key);
                         if (it != existing_saved.end()) {
@@ -220,7 +220,7 @@ public:
                         }
                     }
                 }
-                model_manager.set_saved_model_options(model_name, saved_for_write);
+                model_manager.replace_options(model_name, saved_for_write);
                 info = model_manager.get_model_info(model_name);
             }
 
@@ -232,8 +232,10 @@ public:
 
             // The nulled keys leave this load's options, not recipe_options.json.
             if (!transient_saved_option_tombstones.empty()) {
-                json per_model_options = model_manager.get_model_default_options(info).to_json();
-                const json saved = model_manager.get_saved_model_options(model_name);
+                const json load_opts = model_manager.options(model_name);
+                json per_model_options = load_opts["defaults"];
+                if (!per_model_options.is_object()) per_model_options = json::object();
+                const json saved = load_opts["saved"];
                 if (saved.is_object()) {
                     for (const auto& [key, value] : saved.items()) {
                         if (transient_saved_option_tombstones.count(key) == 0) {

@@ -13,6 +13,7 @@ import {
 } from '../features/models/huggingFaceSearch';
 import { DEFAULT_CONTEXT_SIZE } from '../modelConfiguration';
 import { DownloadListItem, activeDownloadForModel, downloadStore, isDownloadActive } from '../features/downloadManager/downloadStore';
+import { isModelSyncRunning, modelSyncFailureText, modelSyncStore, openServerLogs, type ModelSyncSnapshot } from '../features/models/modelSyncStore';
 import { ModelListPanel, capabilityTagIconTarget, modelIsCustom, modelMatchesBackends, modelMatchesTags, modelMatchesTasks } from './ModelListPanel';
 import type { FilterTab, PrimaryFilter } from './ModelListPanel';
 import { ModelNavRail } from './ModelNavRail';
@@ -476,6 +477,7 @@ const REMOTE_SEARCH_CACHE = new Map<string, HFModelResult[]>();
 const REMOTE_VARIANT_CACHE = new Map<string, PullVariantsResult | null>();
 const MODELSCOPE_RESULT_LIMIT = 10;
 const REMOTE_VARIANT_CONCURRENCY = 4;
+const FOCUS_SYSTEM_INFO_MAX_AGE_MS = 10_000;
 
 const providerKey = (provider: ModelRegistryProvider, modelId: string): string => `${provider}:${modelId}`;
 const providerSearchCacheKey = (provider: ModelRegistryProvider, query: string): string => `${provider}:${query.trim().toLowerCase()}`;
@@ -1079,6 +1081,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   const [loadingModel, setLoadingModel] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<{ modelName: string; message: string } | null>(null);
   const [pulling, setPulling] = useState<Record<string, number>>({});  // model -> percent
+  const [modelSync, setModelSync] = useState<ModelSyncSnapshot>(() => modelSyncStore.snapshot());
   const [downloadItems, setDownloadItems] = useState<DownloadListItem[]>(() => downloadStore.snapshot());
   const unknownActiveModelDownloadsRef = useRef<Set<string>>(new Set());
   const pullAbortRef = useRef<Record<string, AbortController>>({});
@@ -1146,7 +1149,37 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
 
   const [serverDefaultCtxSize, setServerDefaultCtxSize] = useState<number>(DEFAULT_CONTEXT_SIZE);
 
-  useEffect(() => downloadStore.subscribe(setDownloadItems), []);
+  useEffect(() => {
+    const seenBackendDownloads = new Set<string>();
+    const refreshBackendInfo = (options: { afterPending?: boolean; maxAgeMs?: number }) => {
+      if (api.isConnected) void api.systemInfo(options).catch(() => undefined);
+    };
+    const unsubscribe = downloadStore.subscribe(items => {
+      setDownloadItems(items);
+      let changed = false;
+      for (const item of items) {
+        if (item.downloadType !== 'backend' || item.status !== 'completed' || isDownloadActive(item)) continue;
+        const key = `${item.id}:${item.createdAt}`;
+        if (seenBackendDownloads.has(key)) continue;
+        seenBackendDownloads.add(key);
+        changed = true;
+      }
+      if (changed) refreshBackendInfo({ afterPending: true });
+    });
+
+    const onFocus = () => {
+      if (document.hidden) return;
+      const recipes = systemRecipeEntries(api.systemInfoData) || [];
+      const updatePending = recipes.some(([, recipe]) => Object.values(rawBackendMap(recipe))
+        .some(info => ['update_required', 'update_available'].includes(backendState(info))));
+      refreshBackendInfo(updatePending ? {} : { maxAgeMs: FOCUS_SYSTEM_INFO_MAX_AGE_MS });
+    };
+    window.addEventListener('focus', onFocus);
+    return () => {
+      unsubscribe();
+      window.removeEventListener('focus', onFocus);
+    };
+  }, []);
 
   useEffect(() => () => {
     if (externalModelDeleteNoticeTimerRef.current != null) {
@@ -1193,6 +1226,14 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     return () => { cancelled = true; };
   }, [visibleServerModels.length]);
 
+  const applySystemInfo = useCallback((info: Record<string, unknown>) => {
+    if (!api.isConnected) return;
+    const hasRecipeData = Boolean(systemRecipeEntries(info));
+    setSystemInfo(info);
+    setDynamicRecipeOptions(hasRecipeData ? recipeOptionsFromSystemInfo(info) : {});
+    setCustomRecipeAvailabilityLoaded(hasRecipeData);
+  }, []);
+
   const refreshCustomRecipeAvailability = useCallback(async () => {
     if (!api.isConnected) {
       setDynamicRecipeOptions({});
@@ -1201,18 +1242,19 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       return;
     }
 
+    const infoAtStart = api.systemInfoData;
     try {
-      const info = await api.systemInfo();
-      const hasRecipeData = Boolean(systemRecipeEntries(info));
-      setSystemInfo(info);
-      setDynamicRecipeOptions(hasRecipeData ? recipeOptionsFromSystemInfo(info) : {});
-      setCustomRecipeAvailabilityLoaded(hasRecipeData);
+      // The system-info subscriber applies the fresh snapshot to the model list.
+      await api.systemInfo();
     } catch {
+      if (!api.isConnected || api.systemInfoData !== infoAtStart) return;
       setSystemInfo(null);
       setDynamicRecipeOptions({});
       setCustomRecipeAvailabilityLoaded(false);
     }
   }, []);
+
+  useEffect(() => api.onSystemInfoChange(applySystemInfo), [applySystemInfo]);
 
   useEffect(() => {
     void refreshCustomRecipeAvailability();
@@ -1226,6 +1268,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       console.warn('Failed to refresh model list:', err);
     }
   }, []);
+
+  useEffect(() => modelSyncStore.subscribe(setModelSync), []);
 
   // App owns startup connection. This fallback supports isolated mounts without
   // creating a second request when the global refresh is already in flight.
@@ -2447,24 +2491,13 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   const pinnedNameSet = useMemo(() => new Set(pinnedModels.map(name => name.toLowerCase())), [pinnedModels]);
   const favoriteNameSet = useMemo(() => new Set(favoriteModels.map(name => name.toLowerCase())), [favoriteModels]);
 
-  const handleUpdateAllModels = useCallback(async (): Promise<void> => {
-    const candidates = allModels.filter(model => {
-      const name = modelName(model);
-      if (!name || String((model as any).recipe || '').toLowerCase() === ROUTER_RECIPE) return false;
-      return loadedNames.has(name)
-        || (isCollectionModel(model) ? isCollectionFullyDownloaded(model, allModels) : Boolean((model as any).downloaded));
-    });
-
-    for (const model of candidates) {
-      const name = modelName(model);
-      if (pulling[name] !== undefined || activeDownloadForModel(downloadItems, name)) {
-        continue;
-      }
-      void handlePull(model).catch(error => {
-        console.error(`Could not start update for ${name}:`, error);
-      });
-    }
-  }, [allModels, downloadItems, loadedNames, pulling]);
+  const modelSyncBusy = isModelSyncRunning(modelSync);
+  const modelSyncProgress = modelSync.active?.progress;
+  const modelSyncError = modelSync.error || modelSyncFailureText(modelSync.result);
+  const handleUpdateAllModels = useCallback(() => { void modelSyncStore.startSync(); }, []);
+  const handleUpdateModel = useCallback((model: ModelInfo) => {
+    void modelSyncStore.startSync([modelName(model)]);
+  }, []);
 
   const localRegistryRefs = useMemo(() => {
     const refs = new Set<string>();
@@ -2758,6 +2791,28 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     >
       {mobileRail.isOpen && <div className="workspace-mobile-rail-backdrop" onClick={mobileRail.close} aria-hidden="true" />}
       {customJsonNotice && <div className="manager__toast" role="status" aria-live="polite">{customJsonNotice}</div>}
+      {(modelSyncBusy || modelSyncError) && (
+        <div className="manager__toast manager__toast--sync" role={modelSyncError && !modelSyncBusy ? 'alert' : 'status'}>
+          <span className="manager__toast-message">
+            {modelSyncBusy ? (
+              <>
+                {t('Updating…')}
+                {modelSyncProgress?.current_model && ` ${modelSyncProgress.current_model}`}
+                {modelSyncProgress?.current_model && typeof modelSyncProgress.percent === 'number'
+                  && ` (${modelSyncProgress.percent.toFixed(0)}%)`}
+              </>
+            ) : modelSyncError}
+          </span>
+          {!modelSyncBusy && (
+            <>
+              <button type="button" className="manager__toast-action" onClick={openServerLogs}>{t('View logs')}</button>
+              <button type="button" className="manager__toast-dismiss" onClick={() => modelSyncStore.dismissResult()} aria-label={t('Dismiss notification')}>
+                <Icon name="x" size={14} aria-hidden="true" />
+              </button>
+            </>
+          )}
+        </div>
+      )}
       {externalModelDeleteNotice && (
         <div className="manager__toast manager__toast--external-model" role="status" aria-live="polite" aria-atomic="true">
           <span className="manager__toast-message">
@@ -2853,7 +2908,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
         tagFilters={tagFilters}
         searchInputRef={searchRef}
         onOpenRouter={() => openRouterEditor(selectedDetailModel)}
-        onUpdateAllModels={() => { void handleUpdateAllModels(); }}
+        onUpdateAllModels={handleUpdateAllModels}
+        isUpdatingModels={modelSyncBusy}
         onOpenCustomModels={() => openCustomForm('model')}
         pinnedNames={pinnedNameSet}
         favoriteNames={favoriteNameSet}
@@ -3223,6 +3279,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
           onUnload={handleUnload}
           onReloadModel={handleReloadModel}
           onPull={handlePull}
+          onUpdate={handleUpdateModel}
+          isUpdating={modelSyncBusy}
           onPullAndLoad={handlePullAndLoad}
           onDelete={handleDelete}
           onCancelPull={handleCancelPull}

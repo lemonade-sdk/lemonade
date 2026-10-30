@@ -79,14 +79,14 @@ void log_truncated_score_used(const std::string& type, const std::string& id,
 
 // Under `fail` the cut IS the evaluation failure, so the entry carries `error`
 // and no score, and the classifier's `on_error` then applies. So is a backend
-// that cannot report a cut: its silence would let a cut input through.
-void apply_on_truncation(Score& score, OnTruncation on_truncation, bool reports_truncation,
+// that does not say whether it cut: its silence would let a cut input through.
+void apply_on_truncation(Score& score, OnTruncation on_truncation,
                          const std::string& type, const std::string& id,
                          const std::string& model,
                          std::atomic<unsigned long long>& truncated_scores,
                          std::atomic<long long>& last_truncation_log_s) {
     if (!score.ok) return;
-    if (on_truncation == OnTruncation::Fail && !reports_truncation) {
+    if (on_truncation == OnTruncation::Fail && !score.truncated.has_value()) {
         static constexpr const char* kUnreported =
             "the backend does not report whether it cut the input, so on_truncation=fail "
             "cannot trust the scores (ort-server reports it from 0.4.0)";
@@ -95,7 +95,7 @@ void apply_on_truncation(Score& score, OnTruncation on_truncation, bool reports_
         score = failed_score(kUnreported);
         return;
     }
-    if (!score.truncated) return;
+    if (!score.truncated.value_or(false)) return;
     static constexpr const char* kTruncated =
         "the backend cut the input text to fit its token window, so the scores "
         "cover only part of the request";
@@ -341,7 +341,6 @@ public:
 
     Score evaluate(const ClassifierContext& ctx) const override {
         Score score;
-        bool reports_truncation = false;
         if (!ctx.services.run_classifier) {
             return failed_score("no classification service is configured");
         }
@@ -350,7 +349,6 @@ public:
             ClassifierScores answer = ctx.services.run_classifier(model_name_, ctx.request.input);
             score.labels = std::move(answer.scores);
             score.truncated = answer.truncated;
-            reports_truncation = answer.reports_truncation;
             score.ok = true;
         } catch (const RouterResidencyConflictException&) {
             throw;
@@ -363,7 +361,7 @@ public:
                                    last_failure_log_s_);
             score = failed_score("unknown exception");
         }
-        apply_on_truncation(score, on_truncation_, reports_truncation, type(), id(),
+        apply_on_truncation(score, on_truncation_, type(), id(),
                             model_name_, truncated_scores_, last_truncation_log_s_);
         return score;
     }
@@ -409,7 +407,6 @@ public:
 
     Score evaluate(const ClassifierContext& ctx) const override {
         Score score;
-        bool reports_truncation = false;
         if (!ctx.services.run_zero_shot_classifier) {
             return failed_score("no zero-shot classification service is configured");
         }
@@ -419,7 +416,6 @@ public:
                 ctx.services.run_zero_shot_classifier(model_name_, ctx.request.input, labels());
             score.labels = std::move(answer.scores);
             score.truncated = answer.truncated;
-            reports_truncation = answer.reports_truncation;
             score.ok = true;
         } catch (const RouterResidencyConflictException&) {
             throw;
@@ -440,7 +436,7 @@ public:
                                    last_failure_log_s_);
             score = failed_score(kMismatch);
         }
-        apply_on_truncation(score, on_truncation_, reports_truncation, type(), id(),
+        apply_on_truncation(score, on_truncation_, type(), id(),
                             model_name_, truncated_scores_, last_truncation_log_s_);
         return score;
     }

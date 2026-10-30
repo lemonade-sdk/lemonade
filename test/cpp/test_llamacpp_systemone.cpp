@@ -79,7 +79,7 @@ int main() {
     const json all = systemone_classify_response(response, labels, 0);
     expect(all["labels"].size() == 3, "every label is returned without top_k");
     expect(all["labels"]["cooking"] == 0.9888, "the probabilities are returned unchanged");
-    expect(all.value("reports_truncation", false) && !all.contains("truncated"),
+    expect(all.contains("truncated") && all["truncated"] == false,
            "the answer reports that llama-server did not cut the input");
 
     const json top = systemone_classify_response(response, labels, 1);

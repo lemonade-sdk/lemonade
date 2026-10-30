@@ -30,6 +30,11 @@ using RoutingComponentResolver =
 using RoutingModelTypeResolver =
     std::function<std::optional<ModelType>(const std::string& resolved_model)>;
 
+// Whether a resolved component takes its labels from each request. The
+// CLASSIFICATION type alone does not tell: fixed-label classifiers have it too,
+// and each kind refuses the other's /classify body. Unset skips the check.
+using RoutingZeroShotResolver = std::function<bool(const std::string& resolved_model)>;
+
 // Whether a resolved component answers /v1/systemone. A CLASSIFICATION type
 // alone does not tell: ONNX classifiers have it too. Unset skips the check.
 using RoutingSystemOneResolver = std::function<bool(const std::string& resolved_model)>;
@@ -37,6 +42,7 @@ using RoutingSystemOneResolver = std::function<bool(const std::string& resolved_
 struct RoutingPolicyParseOptions {
     RoutingComponentResolver resolve_component;
     RoutingModelTypeResolver get_model_type;
+    RoutingZeroShotResolver serves_zero_shot;
     RoutingSystemOneResolver serves_systemone;
     bool require_declared_components = true;
 };

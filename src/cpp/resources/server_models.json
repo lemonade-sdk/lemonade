@@ -1481,6 +1481,74 @@
         ],
         "size": 14.9
     },
+    "K2-Horizon-0.9B-GGUF": {
+        "checkpoint": "IFM/K2-Horizon-0.9B-GGUF:K2-Horizon-1B-Q4_K_M.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling",
+            "hot"
+        ],
+        "size": 0.67
+    },
+    "K2-Horizon-3.7B-GGUF": {
+        "checkpoint": "IFM/K2-Horizon-3.7B-GGUF:K2-Horizon-4B-Q4_K_M.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling"
+        ],
+        "size": 3.16
+    },
+    "K2-Horizon-7B-GGUF": {
+        "checkpoint": "IFM/K2-Horizon-7B-GGUF:K2-Horizon-7B-Q4_K_M.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling"
+        ],
+        "size": 5.59
+    },
+    "K2-Horizon-32B-GGUF": {
+        "checkpoint": "IFM/K2-Horizon-32B-GGUF:K2-Horizon-32B-Q4_K_M.gguf",
+        "recipe": "llamacpp",
+        "suggested": false,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling"
+        ],
+        "size": 21.08
+    },
+    "K2-Horizon-MoVA-36B-A4B-GGUF": {
+        "checkpoint": "IFM/K2-Horizon-MoVA-36B-A4B-GGUF:K2-Horizon-MoVA-36B-A4B-Q4_K_M.gguf",
+        "recipe": "llamacpp",
+        "suggested": false,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling"
+        ],
+        "size": 22.37
+    },
+    "Flint-GGUF": {
+        "checkpoint": "unsloth/flint-GGUF:flint-UD-Q4_K_XL.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "coding",
+            "reasoning",
+            "tool-calling"
+        ],
+        "size": 25.1
+    },
     "PromptBridge-0.6b-Alpha-GGUF": {
         "checkpoint": "mradermacher/PromptBridge-0.6b-Alpha-GGUF:PromptBridge-0.6b-Alpha.Q4_K_M.gguf",
         "recipe": "llamacpp",
@@ -2894,6 +2962,15 @@
             "systemone"
         ],
         "size": 0.45
+    },
+    "LFM2.5-Encoder-350M-Prompt-Router-ONNX": {
+        "checkpoint": "lemonade-sdk/LFM2.5-Encoder-350M-Prompt-Router-ONNX",
+        "recipe": "onnxruntime",
+        "labels": [
+            "classification",
+            "zero-shot"
+        ],
+        "size": 1.43
     },
     "DeepSeek-V4-Flash-IQ2XXS-DS4": {
         "checkpoint": "antirez/deepseek-v4-gguf:DeepSeek-V4-Flash-IQ2XXS-w2Q2K-AProjQ8-SExpQ8-OutQ8-chat-v2-imatrix-0731.gguf",
