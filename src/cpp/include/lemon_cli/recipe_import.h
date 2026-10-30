@@ -12,6 +12,13 @@ namespace lemon_cli {
 // Validate and normalize imported model JSON payload.
 bool validate_and_transform_model_json(nlohmann::json& model_data);
 
+int import_model_from_json(lemonade::LemonadeClient& client,
+                           nlohmann::json model_data,
+                           std::string* imported_model_out = nullptr);
+bool fetch_remote_recipe_json(const std::string& url,
+                              nlohmann::json& model_data,
+                              std::string& error_out);
+
 // Import a local JSON recipe/model file.
 int import_model_from_json_file(lemonade::LemonadeClient& client,
                                 const std::string& json_path,
