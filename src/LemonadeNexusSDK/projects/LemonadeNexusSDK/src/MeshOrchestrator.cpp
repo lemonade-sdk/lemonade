@@ -36,6 +36,41 @@ std::pair<std::string, uint16_t> split_endpoint(const std::string& endpoint) {
 
 namespace lnsdk {
 
+std::optional<bool> peer_signal_fresh(const MeshPeer& peer, int64_t now_unix,
+                                      uint32_t peer_refresh_interval_sec) {
+    // Keepalives do not renew the handshake, and an idle boringtun session
+    // lives until REJECT_AFTER_TIME (180 s) before it renegotiates, so the
+    // packets themselves are the liveness signal once one arrived. The
+    // server's last_seen arrives only with the peer list, so it may be one
+    // peer refresh old.
+    constexpr int64_t kSessionLive    = 200;  // REJECT_AFTER_TIME 180 s, a retry, jitter
+    constexpr int64_t kHeartbeatStale = 15;   // 3 missed 5 s heartbeats
+    constexpr int64_t kMonitorTick    = 5;
+    const auto last_seen = static_cast<int64_t>(peer.last_seen);
+    const bool seen_recently =
+        last_seen > 0 &&
+        now_unix - last_seen < kHeartbeatStale + static_cast<int64_t>(peer_refresh_interval_sec);
+    if (peer.last_rx > 0) {
+        const int64_t rx_stale = 3 * std::max<int64_t>(peer.keepalive, 1) + kMonitorTick;
+        return now_unix - peer.last_rx < rx_stale ||
+               (!peer.relay_endpoint.empty() && seen_recently);
+    }
+    if (peer.last_handshake > 0 || last_seen > 0) {
+        const bool session_live =
+            peer.last_handshake > 0 && now_unix - peer.last_handshake < kSessionLive;
+        return session_live || seen_recently;
+    }
+    return std::nullopt;
+}
+
+PeerLiveness next_peer_liveness(PeerLiveness previous, bool fresh) {
+    if (fresh) return {true, 0};
+    if (previous.online && previous.stale_passes + 1 < kPeerOfflinePasses) {
+        return {true, previous.stale_passes + 1};
+    }
+    return {false, 0};
+}
+
 MeshOrchestrator::MeshOrchestrator(LemonadeNexusClient& client,
                                    BoringtunMesh& mesh,
                                    const std::string& node_id)
@@ -93,6 +128,7 @@ void MeshOrchestrator::stop() {
             mesh_.remove_peer(peer.mesh_pubkey);
         }
         known_peers_.clear();
+        stale_passes_.clear();
         last_status_ = {};
         our_endpoint_.clear();
     }
@@ -249,6 +285,22 @@ void MeshOrchestrator::do_peer_refresh() {
     size_t peer_count;
     {
         std::lock_guard lock(mutex_);
+        // Keep what do_monitor worked out for peers already known: the
+        // server's list carries no dataplane timestamps, so a fresh copy read
+        // "offline" until the next monitor pass, every refresh.
+        for (auto& peer : server_peers) {
+            for (const auto& old : known_peers_) {
+                if (old.node_id != peer.node_id || old.mesh_pubkey != peer.mesh_pubkey) continue;
+                peer.last_handshake = std::max(peer.last_handshake, old.last_handshake);
+                peer.last_rx        = std::max(peer.last_rx, old.last_rx);
+                peer.is_online      = old.is_online;
+                // The server does not know the relay path; the next monitor
+                // pass corrects it. Without this the path read "" between a
+                // refresh and that pass, and the mesh port saw a path change.
+                if (peer.relay_endpoint.empty()) peer.relay_endpoint = old.relay_endpoint;
+                break;
+            }
+        }
         known_peers_ = std::move(server_peers);
         peer_count = known_peers_.size();
     }
@@ -350,15 +402,13 @@ void MeshOrchestrator::do_relay_maintenance() {
 void MeshOrchestrator::do_monitor() {
     auto ms = mesh_.mesh_status();
 
-    // Merge boringtun handshake timestamps with server-reported last_seen
-    // to get the most accurate peer liveness signal.
     auto now_epoch = static_cast<int64_t>(
         std::chrono::duration_cast<std::chrono::seconds>(
             std::chrono::system_clock::now().time_since_epoch()).count());
-    constexpr int64_t kStaleThreshold = 15;  // 3 missed 5s keepalives
 
     {
         std::lock_guard lock(mutex_);
+        std::map<std::string, uint32_t> stale_passes;
         for (auto& peer : known_peers_) {
             // Merge handshake timestamps from the dataplane status. The
             // dataplane knows a peer only by its mesh public key: its
@@ -368,17 +418,39 @@ void MeshOrchestrator::do_monitor() {
                     if (tp.last_handshake > peer.last_handshake) {
                         peer.last_handshake = tp.last_handshake;
                     }
-                    // A relayed peer reports the relay it goes through.
-                    if (!tp.relay_endpoint.empty()) peer.relay_endpoint = tp.relay_endpoint;
+                    if (tp.last_rx > peer.last_rx) peer.last_rx = tp.last_rx;
+                    // A relayed peer reports the relay it goes through. A
+                    // peer the dataplane now reaches at another address left
+                    // its relay; a listed relay node keeps its endpoint.
+                    if (!tp.relay_endpoint.empty()) {
+                        peer.relay_endpoint = tp.relay_endpoint;
+                    } else if (!tp.endpoint.empty() && peer.relay_endpoint != tp.endpoint) {
+                        peer.relay_endpoint.clear();
+                    }
                     break;
                 }
             }
 
-            // Online = best signal (Noise handshake or server last_seen) is fresh
-            int64_t best_ts = std::max(peer.last_handshake,
-                                        static_cast<int64_t>(peer.last_seen));
-            if (best_ts > 0) {
-                peer.is_online = (now_epoch - best_ts) < kStaleThreshold;
+            const auto fresh =
+                peer_signal_fresh(peer, now_epoch, config_.peer_refresh_interval_sec);
+            if (!fresh) continue;
+            const auto found = stale_passes_.find(peer.mesh_pubkey);
+            const auto next = next_peer_liveness(
+                {peer.is_online, found == stale_passes_.end() ? 0u : found->second}, *fresh);
+            peer.is_online = next.online;
+            if (next.stale_passes > 0) stale_passes[peer.mesh_pubkey] = next.stale_passes;
+        }
+        stale_passes_ = std::move(stale_passes);
+
+        // The dataplane knows its peers only by key: report them with the
+        // node, name and liveness worked out above, as get_mesh_peers does.
+        for (auto& tp : ms.peers) {
+            for (const auto& peer : known_peers_) {
+                if (peer.mesh_pubkey.empty() || peer.mesh_pubkey != tp.mesh_pubkey) continue;
+                tp.node_id   = peer.node_id;
+                tp.hostname  = peer.hostname;
+                tp.is_online = peer.is_online;
+                break;
             }
         }
 

@@ -10,6 +10,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -42,6 +43,9 @@ struct MeshPortMember {
     /// This device's key holds connect_private, connect_shared or admin on the node.
     bool        can_connect{false};
     double      latency_ms{0.0};      ///< Mesh latency; 0 when unknown.
+    /// "ip:port" of the relay the mesh reaches the device through; empty on a
+    /// direct path. A change closes the device's egress bridge.
+    std::string relay_endpoint;
 };
 
 /// What a device's SDK answers at GET /.nexus/catalog: the app that registered
@@ -138,7 +142,13 @@ namespace mesh_port {
     std::string_view self_node_id, const std::vector<std::string>& local_models,
     const std::vector<MeshPortPeerModels>& peers);
 
+/// The names in a peer's health all_models_loaded entries (model_name).
+[[nodiscard]] std::set<std::string> loaded_model_names(const MeshPortPeerModels& peer);
+
 /// The local OpenAI model list plus "<device>/<model>" entries for each peer.
+/// Each peer entry is {id, object, owned_by, nexus_node_id, loaded}: loaded is
+/// true when the model is in the peer's health all_models_loaded. Local
+/// entries are passed through as the local service listed them.
 [[nodiscard]] nlohmann::json merge_models(const nlohmann::json& local,
                                           const std::vector<MeshPortPeerModels>& peers);
 
@@ -272,12 +282,13 @@ public:
     /// selection: {target, peer_key_set}, tls: {state, domain, expires_at, error},
     /// urls: [{node_id, device_name, url, self}],
     /// devices: [{node_id, device_name, is_online, app: {name, version}, families,
-    /// catalog_status}], catalog}. tls.state is "off", "waiting", "activating" (the
+    /// catalog_status, models_count, loaded_count}], catalog}. tls.state is "off", "waiting", "activating" (the
     /// first certificate is installed; TLS starts when the open plain requests
     /// finish), "active", "unsupported_certificate" or "error". `devices` lists the
     /// Tier 3 devices that this device may connect to, each with what its
     /// /.nexus/catalog last answered (MeshPortPeerCatalog; empty strings and 0 until
-    /// it answers). `catalog` is MeshPortBackend::local_catalog's answer, or {}. The
+    /// it answers), and the number of models its last model probe listed and had
+    /// loaded (0 before a probe; no request is made for the status). `catalog` is MeshPortBackend::local_catalog's answer, or {}. The
     /// peer key is never included.
     [[nodiscard]] nlohmann::json status() const;
 

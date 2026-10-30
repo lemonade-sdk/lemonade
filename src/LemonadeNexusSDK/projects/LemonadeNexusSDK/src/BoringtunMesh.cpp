@@ -646,6 +646,7 @@ MeshTunnelStatus BoringtunMesh::mesh_status() const {
             mp.endpoint = peer.endpoint;
         }
         mp.last_handshake = static_cast<int64_t>(peer.last_handshake);
+        mp.last_rx       = static_cast<int64_t>(peer.last_rx);
         mp.rx_bytes      = peer.rx_bytes;
         mp.tx_bytes      = peer.tx_bytes;
         mp.keepalive     = peer.persistent_keepalive;

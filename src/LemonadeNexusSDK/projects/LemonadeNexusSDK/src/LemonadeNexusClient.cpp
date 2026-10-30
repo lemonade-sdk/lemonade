@@ -4,6 +4,7 @@
 
 #include <LemonadeNexus/Api/TreeRouteGate.hpp>
 #include <LemonadeNexus/Auth/AccountDeletionProof.hpp>
+#include <LemonadeNexus/Tree/DeviceLabel.hpp>
 
 #include <httplib.h>
 #include <spdlog/spdlog.h>
@@ -85,6 +86,22 @@ constexpr int64_t kMeshBreakerCooldownMs  = 8000;
 // (TokenLinkAuthProvider): the same text for an unknown, expired, or spent
 // invite, so a join treats it as "unknown here" and asks another member.
 constexpr std::string_view kInviteUnknownError = "invalid or expired link token";
+// Pacing of a join's invite hops (see join_network). A refusal of a fresh
+// invite as unknown usually means the mint, seconds old, has not replicated
+// to that member yet, so the next member asked at once very likely lacks it
+// too. Each refusal also counts as a wrong code on the refusing server
+// (nexus::auth::kLinkCodeMaxFailuresPerSource: 5 per source address per 10
+// minutes, after which that address is refused for 10 minutes even with a
+// valid code; kLinkCodeMaxFailuresPerServer: 100 per server). Hop n waits
+// n times this delay first: 1.5 s before the second attempt, 3 s before the
+// third.
+constexpr std::chrono::milliseconds kInviteHopDelay{1500};
+// Joins with the invite that one join_network() sends at most: the first and
+// two hops, whatever the size of the membership, so a join spends at most
+// one wrong code on each of three members.
+constexpr int kInviteJoinMaxAttempts = 3;
+// The start of the tree's device-name refusal (tree::rules::device_name_refusal).
+constexpr std::string_view kDeviceNameRefusal = "device name '";
 // Private requests that get no answer at the connect or handshake level for
 // this long, while the session server stays a verified member whose public
 // API answers, start a forced session move (see note_private_path_unanswered).
@@ -133,6 +150,8 @@ struct LemonadeNexusClient::Impl {
     std::string  node_id;
     std::string  link_token;           // single-use device link token for the next join
     bool         inference_node{false};  // join as Tier 3 (inference) instead of Tier 4
+    std::string  device_name;          // endpoint name for the next join ("" = server default)
+    bool         omit_device_name_once{false};  // the name was refused; join under the default
     std::vector<std::pair<uint16_t, std::string>> exposed_services;  // vport -> target
     std::string  server_seip_fqdn;     // e.g. "<id>.<region>.seip.lemonade-nexus.io" — public API after join
     std::string  server_private_fqdn;  // e.g. "private.<id>.<region>.seip.lemonade-nexus.io"
@@ -209,10 +228,13 @@ struct LemonadeNexusClient::Impl {
     // The highest next epoch a departure notice named that started a move,
     // so one notice starts one move.
     uint64_t    move_hint_epoch{0};
-    // While a move runs: the member whose server a challenge must not go
-    // to, the departing session server, when it is still verified. Guarded
+    // Members whose servers a challenge must not go to: while a move runs,
+    // the departing session server when it is still verified, and during a
+    // join, each member that refused the join's invite as unknown. Guarded
     // by transport_mtx.
-    std::string avoid_node;
+    std::set<std::string> avoid_nodes;
+    // The wait before a join's first invite hop (set_invite_hop_delay).
+    std::atomic<int64_t> invite_hop_delay_ms{kInviteHopDelay.count()};
 
     // The application's session-move callback. notify_session_moved() calls
     // it under this lock, so set_session_moved_callback() returns only when
@@ -391,7 +413,7 @@ struct LemonadeNexusClient::Impl {
         const bool answers_challenge =
             path == "/api/auth" || path.starts_with("/api/auth/") || path == "/api/join";
         std::string pin;
-        std::string avoid;
+        std::set<std::string> avoid;
         {
             std::lock_guard lock(transport_mtx);
             if (is_challenge) {
@@ -402,7 +424,7 @@ struct LemonadeNexusClient::Impl {
             } else {
                 pin = session_node;
             }
-            avoid = avoid_node;
+            avoid = avoid_nodes;
         }
         const auto attempt = [&](const ServerEndpoint& ep) -> std::optional<HttpReply> {
             const auto url = base_url(ep);
@@ -1250,9 +1272,30 @@ bool LemonadeNexusClient::set_link_token(const std::string& token) {
     return true;
 }
 
+void LemonadeNexusClient::set_invite_hop_delay(std::chrono::milliseconds first_hop) {
+    impl_->invite_hop_delay_ms.store(std::max<int64_t>(first_hop.count(), 0));
+}
+
 void LemonadeNexusClient::set_inference_node(bool inference) {
     std::lock_guard lock(impl_->mutex);
     impl_->inference_node = inference;
+}
+
+bool LemonadeNexusClient::set_device_name(const std::string& name) {
+    // Peers drop a listed peer whose hostname carries one of these characters
+    // (fetch_mesh_peers), so such a name would hide the device.
+    constexpr std::string_view kRefused = ";|&$`(){}<>'\"\\";
+    const bool usable =
+        name.empty() ||
+        (name.size() <= 64 && !nexus::tree::device_label(name).empty() &&
+         std::none_of(name.begin(), name.end(), [&](unsigned char c) {
+             return c < 0x20 || c == 0x7f || kRefused.find(static_cast<char>(c)) != std::string_view::npos;
+         }));
+    if (!usable) return false;
+    std::lock_guard lock(impl_->mutex);
+    impl_->device_name = name;
+    impl_->omit_device_name_once = false;
+    return true;
 }
 
 Result<nlohmann::json> LemonadeNexusClient::create_link_token(
@@ -2547,6 +2590,10 @@ Result<JoinResult> LemonadeNexusClient::join_network(const std::string& username
             join_body["link_token"] = impl_->link_token;
         }
         join_body["is_inference"] = impl_->inference_node;
+        // The server applies the name only when this join creates the node.
+        if (!std::exchange(impl_->omit_device_name_once, false) && !impl_->device_name.empty()) {
+            join_body["hostname"] = impl_->device_name;
+        }
     }
 
     // Include auth credentials so /api/join can authenticate inline. The
@@ -2604,18 +2651,26 @@ Result<JoinResult> LemonadeNexusClient::join_network(const std::string& username
     // minutes ago has no backbone peers yet, and a mint presented within the
     // replication delay has not arrived anywhere else. Such a refusal is not
     // final. The join is pinned to the member that issued its challenge, so
-    // ask each other verified member once, challenge and join, before the
-    // invite is reported invalid.
-    std::set<std::string> refused_invite;
-    std::string avoid_before;
+    // it hops: it waits for replication (kInviteHopDelay), then challenges
+    // and joins through a verified member that has not refused the invite in
+    // this join. It asks no member twice and makes at most
+    // kInviteJoinMaxAttempts attempts, because each refusal counts as a wrong
+    // code on that server. When no unasked member takes the challenge, the
+    // last refusal is the answer.
+    std::set<std::string> avoid_before;
     {
         std::lock_guard lock(impl_->transport_mtx);
-        avoid_before = impl_->avoid_node;
+        avoid_before = impl_->avoid_nodes;
     }
     const auto restore_avoid = [&] {
         std::lock_guard lock(impl_->transport_mtx);
-        impl_->avoid_node = avoid_before;
+        impl_->avoid_nodes = avoid_before;
     };
+    const std::chrono::milliseconds hop_delay{impl_->invite_hop_delay_ms.load()};
+    std::set<std::string> refused_invite;
+    std::optional<json> last_refusal;
+    int invite_attempts = 0;
+    bool hopping = false;
     for (;;) {
         const auto body = authenticated_join();
         std::string target;
@@ -2623,6 +2678,16 @@ Result<JoinResult> LemonadeNexusClient::join_network(const std::string& username
             std::lock_guard lock(impl_->transport_mtx);
             target = impl_->challenge_node;
         }
+        if (std::exchange(hopping, false) &&
+            (target.empty() || refused_invite.contains(target))) {
+            spdlog::info("[LemonadeNexusClient] no other verified Tier 1 server took the "
+                         "challenge: the invite stays refused");
+            resp = std::move(last_refusal);
+            status = 403;
+            result.http_status = status;
+            break;
+        }
+        if (join_body.contains("link_token")) ++invite_attempts;
         resp = impl_->http_post("/api/join", body, status);
         result.http_status = status;
         if (!resp) {
@@ -2633,11 +2698,25 @@ Result<JoinResult> LemonadeNexusClient::join_network(const std::string& username
         if (status == 403 && join_body.contains("link_token") && !target.empty() &&
             resp->value("error", std::string{}) == kInviteUnknownError) {
             refused_invite.insert(target);
-            if (refused_invite.size() < impl_->tier1.membership().servers.size()) {
-                spdlog::info("[LemonadeNexusClient] the invite is unknown to {}: asking "
-                             "another verified Tier 1 server", target.substr(0, 12));
+            std::set<std::string> avoid;
+            {
                 std::lock_guard lock(impl_->transport_mtx);
-                impl_->avoid_node = target;
+                impl_->avoid_nodes.insert(target);
+                avoid = impl_->avoid_nodes;
+            }
+            const auto servers = impl_->tier1.membership().servers;
+            const bool unasked_member = std::any_of(
+                servers.begin(), servers.end(),
+                [&avoid](const Tier1Server& s) { return !avoid.contains(s.node_id); });
+            if (unasked_member && invite_attempts < kInviteJoinMaxAttempts) {
+                const auto wait = hop_delay * invite_attempts;
+                spdlog::info("[LemonadeNexusClient] the invite is unknown to {}: asking another "
+                             "verified Tier 1 server in {} ms (attempt {} of {})",
+                             target.substr(0, 12), wait.count(), invite_attempts + 1,
+                             kInviteJoinMaxAttempts);
+                last_refusal = resp;
+                hopping = true;
+                std::this_thread::sleep_for(wait);
                 continue;
             }
         }
@@ -2655,6 +2734,33 @@ Result<JoinResult> LemonadeNexusClient::join_network(const std::string& username
         std::this_thread::sleep_for(std::chrono::seconds(1));
     }
     restore_avoid();
+
+    // The tree refuses a device name whose mesh-port label another device of
+    // the target group holds. The join itself is still wanted: join again
+    // under the server's default name and report a free name for a rename.
+    if (status == 409 && join_body.contains("hostname") &&
+        resp->value("error", std::string{}).starts_with(kDeviceNameRefusal)) {
+        const auto name = join_body["hostname"].get<std::string>();
+        std::string invite;
+        {
+            std::lock_guard lock(impl_->mutex);
+            invite = impl_->link_token;
+            impl_->omit_device_name_once = true;
+        }
+        spdlog::info("[LemonadeNexusClient] device name '{}' is taken in the target group; "
+                     "joining under the server's default name", name);
+        std::string suggestion;
+        if (!invite.empty()) {
+            // Checking does not spend the invite.
+            if (const auto check = check_device_name(name, {}, invite)) {
+                suggestion = check.value.suggestion;
+            }
+        }
+        auto joined = join_network(username, password);
+        joined.value.device_name_refused = true;
+        joined.value.device_name_suggestion = suggestion;
+        return joined;
+    }
 
     if (status != 200) {
         result.error = resp->value("error", resp->value("error_message", "join failed"));
@@ -3177,12 +3283,12 @@ void LemonadeNexusClient::run_session_move(const std::string& reason, uint64_t h
             impl_->session_token.clear();
             impl_->session_node.clear();
         }
-        if (!forced) impl_->avoid_node = event.from_node_id;
+        if (!forced) impl_->avoid_nodes = {event.from_node_id};
     }
     const auto joined = join_network({}, {});
     {
         std::lock_guard lock(impl_->transport_mtx);
-        impl_->avoid_node.clear();
+        impl_->avoid_nodes.clear();
         event.to_node_id = impl_->session_node;
     }
     event.to_host = impl_->host_of(event.to_node_id);

@@ -544,6 +544,7 @@ std::vector<BoringtunPeer> UserspaceDataplane::snapshot_peers() const {
         auto st = wireguard_stats(peer->tunn);
         if (st.time_since_last_handshake >= 0)
             snapshot.last_handshake = now - static_cast<uint64_t>(st.time_since_last_handshake);
+        snapshot.last_rx = peer->last_rx.load(std::memory_order_relaxed);
         snapshot.rx_bytes = st.rx_bytes;
         snapshot.tx_bytes = st.tx_bytes;
         out.push_back(std::move(snapshot));
@@ -706,14 +707,19 @@ void UserspaceDataplane::handle_datagram(std::span<const uint8_t> pkt,
         case WRITE_TO_TUNNEL_IPV4:
             // Authenticated transport data — roaming endpoint update.
             peer->endpoint.store(from_packed, std::memory_order_relaxed);
+            peer->last_rx.store(static_cast<uint64_t>(std::time(nullptr)),
+                                std::memory_order_relaxed);
             route_decrypted({scratch_a.data(), r.size}, peer, scratch_b);
             drain_followups(peer, from_packed, scratch_a, scratch_b);
             break;
 
         case WIREGUARD_DONE:
             // For transport packets this means an authenticated keepalive.
-            if (*type == wire::MsgType::TransportData)
+            if (*type == wire::MsgType::TransportData) {
                 peer->endpoint.store(from_packed, std::memory_order_relaxed);
+                peer->last_rx.store(static_cast<uint64_t>(std::time(nullptr)),
+                                    std::memory_order_relaxed);
+            }
             break;
 
         case WRITE_TO_TUNNEL_IPV6:  // IPv4-only mesh — drop explicitly

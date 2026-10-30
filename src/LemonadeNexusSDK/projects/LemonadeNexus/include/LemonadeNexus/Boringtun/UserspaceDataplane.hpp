@@ -206,6 +206,10 @@ private:
         /// client not yet heard from). Atomic so the hot path never takes
         /// the table lock to roam.
         std::atomic<uint64_t> endpoint{0};
+        /// Unix seconds of the last authenticated transport packet from the
+        /// peer, data or keepalive; 0 = none yet. The liveness signal:
+        /// keepalives do not renew the handshake.
+        std::atomic<uint64_t> last_rx{0};
         uint16_t         keepalive{25};
 
         // Identity-keyed routing-layer session: not in the IpRouter; decrypted

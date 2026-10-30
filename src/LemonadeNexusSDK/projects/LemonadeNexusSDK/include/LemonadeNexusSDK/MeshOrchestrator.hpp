@@ -9,7 +9,9 @@
 #include <condition_variable>
 #include <functional>
 #include <memory>
+#include <map>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 #include <vector>
@@ -19,6 +21,37 @@ namespace lnsdk {
 // Forward declarations — avoid including full headers
 class LemonadeNexusClient;
 class BoringtunMesh;
+
+/// Whether a peer's newest liveness signal is fresh at `now_unix` (Unix
+/// seconds), or nullopt when the peer has no signal yet. Pure.
+///
+/// The rule: an authenticated packet from the peer (last_rx, keepalives
+/// included) within three keepalive intervals plus one monitor tick is
+/// fresh. Before the first packet, a live session (last_handshake within
+/// 200 s: BoringTun's REJECT_AFTER_TIME of 180 s, one retry, and jitter) is
+/// fresh. The server's last_seen within 15 s plus one peer refresh interval
+/// is fresh before the first packet, and also for a relayed peer
+/// (relay_endpoint set): a relay can delay its packets while the server
+/// still hears from it.
+[[nodiscard]] std::optional<bool> peer_signal_fresh(const MeshPeer& peer, int64_t now_unix,
+                                                    uint32_t peer_refresh_interval_sec);
+
+/// Monitor passes in a row that must find an online peer's signal stale
+/// before the peer reads offline. One late packet or peer refresh does not
+/// flip it.
+inline constexpr uint32_t kPeerOfflinePasses = 2;
+
+/// A peer's online state between monitor passes.
+struct PeerLiveness {
+    bool     online{false};
+    uint32_t stale_passes{0};  ///< Stale passes in a row while still online
+};
+
+/// The online state after one monitor pass that found the peer's signal
+/// `fresh` or stale. A fresh signal makes the peer online at once. A stale
+/// signal makes it offline on the kPeerOfflinePasses-th stale pass in a row.
+/// Pure.
+[[nodiscard]] PeerLiveness next_peer_liveness(PeerLiveness previous, bool fresh);
 
 /// Background orchestrator for P2P mesh networking over the boringtun dataplane.
 ///
@@ -123,6 +156,7 @@ private:
     mutable std::mutex       mutex_;
     std::condition_variable  cv_;          // for waking the loop early
     std::vector<MeshPeer>    known_peers_;
+    std::map<std::string, uint32_t> stale_passes_;  // mesh key -> PeerLiveness::stale_passes
     MeshTunnelStatus         last_status_;
     StateCallback            callback_;
     std::string              our_endpoint_; // reflexive endpoint we publish ("" until learned)

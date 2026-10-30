@@ -511,7 +511,7 @@ void Tier1Directory::mark_stale() {
 std::optional<HttpReply> Tier1Directory::send(const Tier1Attempt& attempt,
                                               const std::string& pin_node,
                                               Tier1Server* answered, std::string& error,
-                                              const std::string& avoid_node) {
+                                              const std::set<std::string>& avoid_nodes) {
     std::vector<Tier1Server> servers;
     std::string preferred;
     {
@@ -535,7 +535,7 @@ std::optional<HttpReply> Tier1Directory::send(const Tier1Attempt& attempt,
     std::string last;
     for (const auto& server : servers) {
         if (!pin_node.empty() && server.node_id != pin_node) continue;
-        if (pin_node.empty() && !avoid_node.empty() && server.node_id == avoid_node) continue;
+        if (pin_node.empty() && avoid_nodes.contains(server.node_id)) continue;
         tried = true;
         auto reply = attempt(ServerEndpoint{server.host, server.port, true});
         if (!reply) {

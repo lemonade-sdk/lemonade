@@ -47,6 +47,26 @@ bool RelayFallback::relay_needed(bool has_direct, int64_t last_handshake, int64_
     return known_for >= timing.direct_grace;
 }
 
+RelayFallback::PairedAction RelayFallback::paired_action(int64_t relay_seen, int64_t handshake,
+                                                         int64_t now_unix,
+                                                         std::chrono::milliseconds paired_for,
+                                                         bool direct_answered,
+                                                         const Timing& timing) {
+    if (direct_answered && handshake > 0 && now_unix - handshake <= timing.handshake_fresh_sec) {
+        return PairedAction::PromoteDirect;
+    }
+    if (relay_seen <= 0) {
+        return paired_for > timing.handshake_grace ? PairedAction::AbandonUnproven
+                                                   : PairedAction::Wait;
+    }
+    const auto grace_sec =
+        std::chrono::duration_cast<std::chrono::seconds>(timing.handshake_grace).count();
+    if (now_unix - relay_seen > timing.handshake_fresh_sec + grace_sec) {
+        return PairedAction::AbandonStale;
+    }
+    return PairedAction::Working;
+}
+
 std::map<std::string, std::string> RelayFallback::relayed_peers() const {
     std::lock_guard lock(relayed_mtx_);
     return relayed_;
@@ -163,11 +183,13 @@ void RelayFallback::maintain(const std::vector<MeshPeer>& peers, bool prefer_dir
     }
 
     std::map<std::string, int64_t> handshakes;
+    std::map<std::string, int64_t> last_rx;
     // Peers with a relay path whose traffic now comes from another address
     // (mesh_status reports it as a direct endpoint).
     std::set<std::string> moved_off_relay;
     for (const auto& p : mesh_.mesh_status().peers) {
         handshakes[p.mesh_pubkey] = p.last_handshake;
+        last_rx[p.mesh_pubkey] = p.last_rx;
         if (!p.endpoint.empty() && p.relay_endpoint.empty()) moved_off_relay.insert(p.mesh_pubkey);
     }
 
@@ -211,31 +233,57 @@ void RelayFallback::maintain(const std::vector<MeshPeer>& peers, bool prefer_dir
                             state.applied = true;
                             state.paired_at = now;
                             state.paired_unix = now_unix;
+                            state.relay_seen = 0;
                             std::lock_guard lock(relayed_mtx_);
                             relayed_[pubkey] = relay_endpoint;
                         } else {
                             abandon(pubkey, state, false);
                         }
                     } else {
-                        // The relay must carry a handshake soon after pairing
-                        // and keep it fresh.
-                        const bool since_pair = handshake >= state.paired_unix;
-                        const bool fresh =
-                            since_pair && now_unix - handshake <= timing_.handshake_fresh_sec;
-                        if (prefer_direct && fresh && !peer.endpoint.empty() &&
-                            moved_off_relay.contains(pubkey)) {
-                            // A punched direct path answered with an
-                            // authenticated handshake: it replaces the relay.
-                            promote_direct(pubkey, state, peer.endpoint);
-                        } else if (!since_pair && now - state.paired_at > timing_.handshake_grace) {
-                            spdlog::warn("[RelayFallback] no handshake with peer {} through relay",
-                                         short_key(pubkey));
-                            abandon(pubkey, state, true);
-                        } else if (since_pair &&
-                                   now_unix - handshake > timing_.handshake_fresh_sec) {
-                            abandon(pubkey, state, false);
-                        } else if (since_pair) {
-                            state.failures = 0;
+                        // The relay must carry traffic soon after pairing and
+                        // keep carrying it. A handshake or an authenticated
+                        // packet (keepalives included) since pairing proves
+                        // it: a session that predates the pairing renews no
+                        // handshake through the new relay for up to two
+                        // minutes, and an idle session reads no handshake at
+                        // all while it renegotiates after REJECT_AFTER_TIME.
+                        // Treating either as a dead relay re-allocated a
+                        // working relay and blamed it, so the two sides chose
+                        // different relays and kept re-allocating.
+                        const bool moved = moved_off_relay.contains(pubkey);
+                        const auto rx = last_rx.find(pubkey);
+                        for (const int64_t seen :
+                             {handshake, rx == last_rx.end() ? int64_t{0} : rx->second}) {
+                            if (!moved && seen > 0 && seen >= state.paired_unix &&
+                                seen > state.relay_seen) {
+                                state.relay_seen = seen;
+                            }
+                        }
+                        const int64_t since_pair =
+                            handshake > 0 && handshake >= state.paired_unix ? handshake : 0;
+                        switch (paired_action(
+                            state.relay_seen, since_pair, now_unix,
+                            std::chrono::duration_cast<std::chrono::milliseconds>(
+                                now - state.paired_at),
+                            prefer_direct && !peer.endpoint.empty() && moved, timing_)) {
+                            case PairedAction::PromoteDirect:
+                                // A punched direct path answered with an
+                                // authenticated handshake: it replaces the relay.
+                                promote_direct(pubkey, state, peer.endpoint);
+                                break;
+                            case PairedAction::AbandonUnproven:
+                                spdlog::warn("[RelayFallback] no traffic with peer {} through relay",
+                                             short_key(pubkey));
+                                abandon(pubkey, state, true);
+                                break;
+                            case PairedAction::AbandonStale:
+                                abandon(pubkey, state, false);
+                                break;
+                            case PairedAction::Working:
+                                state.failures = 0;
+                                break;
+                            case PairedAction::Wait:
+                                break;
                         }
                     }
                     break;

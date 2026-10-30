@@ -2,6 +2,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <chrono>
 #include <condition_variable>
 #include <deque>
 #include <random>
@@ -122,9 +123,13 @@ std::pair<std::string, std::string> multipart_body(const httplib::Request& req) 
     return {"multipart/form-data; boundary=" + boundary, body};
 }
 
-void proxy_request(const std::shared_ptr<MeshPortProxies>& proxies, const std::string& host, uint16_t port,
-                   const httplib::Request& req, const std::string& target, httplib::Headers headers,
-                   const std::string& body, httplib::Response& res) {
+namespace {
+
+/// Sends one upstream request on a worker thread and returns once the
+/// response headers arrived or the attempt ended without them.
+std::shared_ptr<MeshProxyPipe> start_pipe(const std::shared_ptr<MeshPortProxies>& proxies, const std::string& host,
+                                          uint16_t port, const httplib::Request& req, const std::string& target,
+                                          const httplib::Headers& headers, const std::string& body) {
     auto pipe = std::make_shared<MeshProxyPipe>();
     pipe->owner = proxies;
     pipe->client = std::make_unique<httplib::Client>(host, port);
@@ -137,7 +142,7 @@ void proxy_request(const std::shared_ptr<MeshPortProxies>& proxies, const std::s
     httplib::Request upstream;
     upstream.method = req.method;
     upstream.path = target;
-    upstream.headers = std::move(headers);
+    upstream.headers = headers;
     upstream.body = body;
     MeshProxyPipe* raw = pipe.get();
     upstream.response_handler = [raw](const httplib::Response& reply) {
@@ -157,7 +162,7 @@ void proxy_request(const std::shared_ptr<MeshPortProxies>& proxies, const std::s
         raw->changed.notify_all();
         return true;
     };
-    // The worker holds a raw pointer: every path below joins it before the pipe is freed.
+    // The worker holds a raw pointer: every path joins it before the pipe is freed.
     raw->worker = std::thread([raw, upstream = std::move(upstream)] {
         auto result = raw->client->send(upstream);
         (void)result;
@@ -166,9 +171,36 @@ void proxy_request(const std::shared_ptr<MeshPortProxies>& proxies, const std::s
         raw->changed.notify_all();
     });
 
-    {
-        std::unique_lock lock(pipe->mutex);
-        pipe->changed.wait(lock, [&] { return pipe->headers || pipe->finished || pipe->cancelled; });
+    std::unique_lock lock(pipe->mutex);
+    pipe->changed.wait(lock, [&] { return pipe->headers || pipe->finished || pipe->cancelled; });
+    return pipe;
+}
+
+bool pipe_answered(MeshProxyPipe& pipe) {
+    std::lock_guard lock(pipe.mutex);
+    return pipe.headers && !pipe.cancelled;
+}
+
+}  // namespace
+
+void proxy_request(const std::shared_ptr<MeshPortProxies>& proxies, const std::string& host, uint16_t port,
+                   const httplib::Request& req, const std::string& target, httplib::Headers headers,
+                   const std::string& body, httplib::Response& res, const std::function<uint16_t()>& reopen) {
+    const auto started = std::chrono::steady_clock::now();
+    auto pipe = start_pipe(proxies, host, port, req, target, headers, body);
+    if (reopen && !pipe_answered(*pipe) && std::chrono::steady_clock::now() - started < kDeadBridgeWindow) {
+        bool cancelled = false;
+        {
+            std::lock_guard lock(pipe->mutex);
+            cancelled = pipe->cancelled;
+        }
+        pipe->cancel();
+        pipe->join();
+        if (!cancelled) {
+            if (const uint16_t fresh = reopen(); fresh != 0) {
+                pipe = start_pipe(proxies, host, fresh, req, target, headers, body);
+            }
+        }
     }
     res.set_header("Cache-Control", "no-store");
     bool ready = false;

@@ -357,7 +357,10 @@ ln_error_t ln_join_group(ln_client_t* client,
 /* High-level operations                                               */
 /* ------------------------------------------------------------------ */
 
-/** Authenticate + create node + allocate IP. Returns JSON via out_json. */
+/** Authenticate + create node + allocate IP. Returns JSON via out_json:
+ *  {success, node_id, tunnel_ip, private_subnet, mesh_pubkey, error (on
+ *  failure), device_name_refused and device_name_suggestion (when the name
+ *  from ln_set_device_name was taken; see there)}. */
 ln_error_t ln_join_network(ln_client_t* client,
                             const char* username,
                             const char* password,
@@ -425,7 +428,8 @@ ln_error_t ln_mesh_disable(ln_client_t* client);
 
 /** Get mesh tunnel status as JSON.
  *  Returns: {is_up, tunnel_ip, peer_count, online_count,
- *  total_rx_bytes, total_tx_bytes, peers: [...], needs_rejoin}.
+ *  total_rx_bytes, total_tx_bytes, peers: [...], needs_rejoin}. Each peer
+ *  has the fields ln_mesh_peers documents.
  *  needs_rejoin is true when the Tier 1 server that issued the session left
  *  the verified membership and the SDK could not move the session by itself
  *  (no identity set, or the silent join failed; see
@@ -464,8 +468,11 @@ ln_error_t ln_set_session_moved_callback(ln_client_t* client,
 
 /** Get current mesh peers as JSON array.
  *  Each peer: {node_id, hostname, mesh_pubkey, tunnel_ip, private_subnet,
- *  endpoint, relay_endpoint, is_online, last_handshake, rx_bytes, tx_bytes,
- *  latency_ms, keepalive, last_seen, mgmt_pubkey, peer_permissions}.
+ *  endpoint, relay_endpoint, is_online, last_handshake, last_rx, rx_bytes,
+ *  tx_bytes, latency_ms, keepalive, last_seen, mgmt_pubkey, peer_permissions}.
+ *  last_handshake, last_rx and last_seen are Unix seconds (0 = none):
+ *  last_rx is the last authenticated packet from the peer (keepalives
+ *  included), last_seen the server's last contact with it.
  *  peer_permissions lists what the peer's key holds on this device and its
  *  ancestor groups ("admin", "svc:<family>", ...), as the server reports it;
  *  the service ingress (ln_mesh_service_set_catalog) enforces them.
@@ -743,6 +750,20 @@ ln_error_t ln_set_link_token(ln_client_t* client, const char* token);
  *  default). Applies to the next ln_join_network; the server records it when it
  *  creates this device's endpoint. */
 ln_error_t ln_set_inference_node(ln_client_t* client, int inference);
+
+/** Set the device name for the next ln_join_network that creates this
+ *  device's node (a device that already joined keeps its stored name; rename
+ *  it with ln_update_node). NULL or "" clears it, and the server then names
+ *  the device "endpoint-<8 hex digits>". The username argument of
+ *  ln_join_network is not a device name. When the name folds to a mesh-port
+ *  label that another device of the target group holds, the join still
+ *  succeeds under the server's default name, and its JSON carries
+ *  device_name_refused: true and device_name_suggestion (a free name, or ""
+ *  when unknown) for a rename. Returns LN_ERR_NULL_ARG when client is NULL,
+ *  and LN_ERR_REJECTED, with nothing stored, for a name longer than 64 bytes,
+ *  with a control character or one of ;|&$`(){}<>'"\, or without a letter or
+ *  digit. */
+ln_error_t ln_set_device_name(ln_client_t* client, const char* name);
 
 /** Mint a device link token for adding another device to this account's group.
  *  Same as ln_invite_create(client, NULL, NULL, ttl_sec, out_json).
@@ -1198,7 +1219,7 @@ ln_error_t ln_mesh_port_set_selection(ln_client_t* client, const char* target,
  *   "unsupported_certificate" | "error"), domain, expires_at, error},
  *   urls: [{node_id, device_name, url, self}],
  *   devices: [{node_id, device_name, is_online, app: {name, version},
- *              families: [...], catalog_status}],
+ *              families: [...], catalog_status, models_count, loaded_count}],
  *   catalog: {...}}.
  *  "activating" means the first certificate is installed and the port switches
  *  to TLS as soon as the open plain HTTP requests finish; a running stream is
@@ -1209,7 +1230,12 @@ ln_error_t ln_mesh_port_set_selection(ln_client_t* client, const char* target,
  *  GET /.nexus/catalog last answered: the app name and version and the family
  *  names of its service catalog, and catalog_status (the HTTP status of that
  *  probe; 0 when the device has not answered yet, 404 when its SDK has no
- *  catalog). A device that reports no catalog shows empty strings. `catalog`
+ *  catalog). A device that reports no catalog shows empty strings.
+ *  models_count and loaded_count are the models its last model probe listed
+ *  (/api/v1/models) and reported loaded (/api/v1/health all_models_loaded);
+ *  both are 0 before the first probe. The `auto` model listing marks each
+ *  "<device>/<model>" entry with "loaded": true or false from the same
+ *  probe. `catalog`
  *  is the catalog this client registered for mesh port 13305
  *  (ln_mesh_service_set_catalog), or {}. The peer key is never included.
  *  Caller must ln_free(*out_json). Returns LN_ERR_NULL_ARG for a NULL
