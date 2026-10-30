@@ -307,6 +307,7 @@ public:
 private:
     Gpu gpu_;
     std::unique_ptr<Amica> amica_;
+    amica::interface_ptr<amica_device> device_;
     amica::interface_ptr<amica_pso_cache> pso_cache_;
     std::map<std::string, std::unique_ptr<Resources>> resources_;
     std::vector<ComPtr<ID3D12Resource>> external_weights_;

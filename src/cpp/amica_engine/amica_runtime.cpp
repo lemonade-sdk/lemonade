@@ -499,7 +499,9 @@ Runtime::Runtime(const std::string& adapter, const std::string& arch) : gpu_(ada
     log("GPU: " + gpu_.adapter_name() + " (" + (gpu_.gfx_arch().empty() ? "arch auto" : gpu_.gfx_arch()) +
         (gpu_.uma() ? ", unified memory)" : ", discrete)"));
     amica_ = std::make_unique<Amica>();
-    amica_->check(amica_->execution->create_pso_cache(gpu_.device(), &pso_cache_), "create_pso_cache");
+    const amica_device_desc device_desc{AMICA_RUNTIME_DX, gpu_.device(), nullptr};
+    amica_->check(amica_->execution->create_device(&device_desc, &device_), "create_device");
+    amica_->check(device_->create_pso_cache(&pso_cache_), "create_pso_cache");
 }
 
 Resources& Runtime::open_resources(const std::string& path) {
@@ -690,7 +692,7 @@ void Runtime::initialize_graphs(const std::vector<Graph*>& graphs) {
         }
         gpu_.begin_list();
         amica::graph_init_desc init;
-        init.device = gpu_.device();
+        init.device = device_.get();
         init.cmd_list = gpu_.list();
         init.graph = graph->graph.get();
         init.persistent_va = graph->persistent ? graph->persistent->GetGPUVirtualAddress() : 0;
@@ -725,7 +727,7 @@ void Runtime::encode(Graph& graph) {
 }
 
 bool Runtime::device_removed() {
-    return amica_->execution->get_device_removed_reason(gpu_.device()) == AMICA_ERROR_DEVICE_REMOVED;
+    return device_->get_device_removed_reason() == AMICA_ERROR_DEVICE_REMOVED;
 }
 
 }  // namespace amica_engine
