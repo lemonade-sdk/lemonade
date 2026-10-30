@@ -476,8 +476,16 @@ ln_error_t ln_set_session_moved_callback(ln_client_t* client,
 
 /** Get current mesh peers as JSON array.
  *  Each peer: {node_id, hostname, mesh_pubkey, tunnel_ip, private_subnet,
- *  endpoint, relay_endpoint, is_online, last_handshake, last_rx, rx_bytes,
- *  tx_bytes, latency_ms, keepalive, last_seen, mgmt_pubkey, peer_permissions}.
+ *  endpoint, local_endpoints, relay_endpoint, path, is_online,
+ *  last_handshake, last_rx, rx_bytes, tx_bytes, latency_ms, keepalive,
+ *  last_seen, mgmt_pubkey, peer_permissions}.
+ *  local_endpoints are the peer's LAN endpoints ("a.b.c.d:port") that the
+ *  SDK probes because the peer is on this device's network (the same public
+ *  address, or a LAN endpoint inside one of this device's subnets); empty
+ *  otherwise. path is the route the peer's traffic takes now: "lan" (one of
+ *  local_endpoints), "direct" (another direct address, normally the punched
+ *  public endpoint), "relay", or "" (no working path yet, or the path went
+ *  silent).
  *  last_handshake, last_rx and last_seen are Unix seconds (0 = none):
  *  last_rx is the last authenticated packet from the peer (keepalives
  *  included), last_seen the server's last contact with it.
@@ -1232,7 +1240,7 @@ ln_error_t ln_mesh_port_set_selection(ln_client_t* client, const char* target,
  *   tls: {state ("off" | "waiting" | "activating" | "active" |
  *   "unsupported_certificate" | "error"), domain, expires_at, error},
  *   urls: [{node_id, device_name, url, self}],
- *   devices: [{node_id, device_name, is_online, app: {name, version},
+ *   devices: [{node_id, device_name, is_online, path, app: {name, version},
  *              families: [...], catalog_status, models_count, loaded_count}],
  *   catalog: {...}}.
  *  "activating" means the first certificate is installed and the port switches
@@ -1240,7 +1248,9 @@ ln_error_t ln_mesh_port_set_selection(ln_client_t* client, const char* target,
  *  never cut. `urls` lists this device and each online Tier 3 device that this
  *  device may connect to. Before TLS is active, only "http://127.0.0.1:<port>"
  *  is listed.
- *  `devices` lists the Tier 3 devices that can be selected, each with what its
+ *  `devices` lists the Tier 3 devices that can be selected, each with its mesh
+ *  path ("lan", "direct", "relay", or "" without a working path; see
+ *  ln_mesh_peers) and what its
  *  GET /.nexus/catalog last answered: the app name and version and the family
  *  names of its service catalog, and catalog_status (the HTTP status of that
  *  probe; 0 when the device has not answered yet, 404 when its SDK has no

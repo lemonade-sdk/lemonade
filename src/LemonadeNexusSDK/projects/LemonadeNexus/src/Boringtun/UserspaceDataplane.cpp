@@ -508,18 +508,26 @@ bool UserspaceDataplane::update_endpoint(const std::string& pubkey_b64,
 
 bool UserspaceDataplane::probe_endpoint(const std::string& pubkey_b64,
                                         const std::string& endpoint) {
-    if (!running_) return false;
-    auto parsed = parse_endpoint(endpoint);
-    if (!parsed) return false;
+    return probe_endpoints(pubkey_b64, {endpoint}) == 1;
+}
+
+std::size_t UserspaceDataplane::probe_endpoints(const std::string& pubkey_b64,
+                                                const std::vector<std::string>& endpoints) {
+    if (!running_) return 0;
+    std::vector<uint64_t> targets;
+    for (const auto& endpoint : endpoints) {
+        if (auto parsed = parse_endpoint(endpoint)) targets.push_back(*parsed);
+    }
+    if (targets.empty()) return 0;
     PeerPtr peer = peer_by_pubkey(pubkey_b64);
-    if (!peer) return false;
+    if (!peer) return 0;
 
     std::vector<uint8_t> buf(wire::kMaxOverhead + 64);
     auto r = wireguard_force_handshake(peer->tunn, buf.data(),
                                        static_cast<uint32_t>(buf.size()));
-    if (r.op != WRITE_TO_NETWORK || r.size == 0) return false;
-    send_udp(buf.data(), r.size, *parsed);
-    return true;
+    if (r.op != WRITE_TO_NETWORK || r.size == 0) return 0;
+    for (const auto target : targets) send_udp(buf.data(), r.size, target);
+    return targets.size();
 }
 
 std::vector<BoringtunPeer> UserspaceDataplane::snapshot_peers() const {

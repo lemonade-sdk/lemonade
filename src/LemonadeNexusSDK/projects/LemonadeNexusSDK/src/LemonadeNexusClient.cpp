@@ -1,4 +1,5 @@
 #include <LemonadeNexusSDK/LemonadeNexusClient.hpp>
+#include <LemonadeNexusSDK/LanPaths.hpp>
 #include <LemonadeNexusSDK/LatencyMonitor.hpp>
 #include <LemonadeNexusSDK/MeshOrchestrator.hpp>
 
@@ -3340,6 +3341,18 @@ Result<std::vector<MeshPeer>> LemonadeNexusClient::fetch_mesh_peers(const std::s
                 mp.tunnel_ip      = p.value("tunnel_ip", "");
                 mp.private_subnet = p.value("private_subnet", "");
                 mp.endpoint       = p.value("endpoint", "");
+                // local_endpoints: the peer's LAN endpoints (servers with
+                // LAN-direct paths). Only strings count, at most
+                // kMaxLocalEndpoints. The orchestrator drops every entry
+                // that is not a dotted private address (lan_endpoint_usable)
+                // before any use.
+                if (const auto lan = p.find("local_endpoints");
+                    lan != p.end() && lan->is_array()) {
+                    for (const auto& entry : *lan) {
+                        if (mp.local_endpoints.size() >= kMaxLocalEndpoints) break;
+                        if (entry.is_string()) mp.local_endpoints.push_back(entry.get<std::string>());
+                    }
+                }
                 mp.relay_endpoint = p.value("relay_endpoint", "");
                 mp.is_online      = p.value("is_online", false);
                 mp.mgmt_pubkey    = p.value("mgmt_pubkey", "");
@@ -3396,11 +3409,13 @@ Result<std::vector<MeshPeer>> LemonadeNexusClient::fetch_mesh_peers(const std::s
     }
 }
 
-Result<std::string> LemonadeNexusClient::mesh_heartbeat(const std::string& nid,
-                                                        const std::string& endpoint) {
+Result<std::string> LemonadeNexusClient::mesh_heartbeat(
+    const std::string& nid, const std::string& endpoint,
+    const std::optional<std::vector<std::string>>& local_endpoints) {
     json body;
     body["node_id"]  = nid;
     body["endpoint"] = endpoint;
+    if (local_endpoints) body["local_endpoints"] = *local_endpoints;
 
     int status = 0;
     auto resp = impl_->private_http_post("/api/mesh/heartbeat", body, status);

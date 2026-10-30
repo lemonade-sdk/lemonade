@@ -19,8 +19,14 @@
 /// backoff. A relay that refused, never answered, or went silent is skipped
 /// for a cooldown period, so both sides move to the next relay.
 ///
+/// A peer on this device's network (MeshPeer::local_endpoints not empty)
+/// gets no relay before its LAN probes had kLanAnswerWindow to answer,
+/// counted from when this device first lists or renews the peer, also when a
+/// renewal skips the direct grace period. A peer without LAN endpoints does
+/// not wait for that window.
+///
 /// With `prefer_direct`, HolePuncher keeps probing a relayed peer's listed
-/// endpoint. When the peer answers there with an authenticated handshake, the
+/// endpoint and LAN endpoints. When the peer answers there with an authenticated handshake, the
 /// dataplane moves the peer to that address, and the next pass closes the
 /// relay channel without counting a failure. A direct handshake that arrives
 /// before the relay path is in use closes the channel request the same way.
@@ -71,6 +77,12 @@ struct RelayCandidate {
 /// completes well within it.
 inline constexpr std::chrono::milliseconds kDirectAnswerWindow{3000};
 
+/// How long the LAN endpoints of a peer on this device's network have to
+/// answer before the peer may be paired with a relay
+/// (RelayFallback::Timing::lan_grace). A LAN handshake takes milliseconds;
+/// the window covers a few lost probes and a busy device.
+inline constexpr std::chrono::milliseconds kLanAnswerWindow{1500};
+
 class RelayFallback {
 public:
     /// Requests a relay ticket for this device's session, naming `relay_id`,
@@ -84,6 +96,10 @@ public:
         /// peer falls back to a relay, counted from when this device first
         /// lists the peer or renews it.
         std::chrono::milliseconds direct_grace{kDirectAnswerWindow};
+        /// How long a peer with LAN endpoints may go without a handshake
+        /// before it may get a relay, counted from when this device first
+        /// lists the peer or renews it (with or without skip_grace).
+        std::chrono::milliseconds lan_grace{kLanAnswerWindow};
         /// How long a paired relay may go without carrying traffic (a
         /// handshake or an authenticated packet) before it is abandoned and
         /// blamed. A relay that carried traffic is abandoned only after
@@ -176,9 +192,14 @@ public:
     /// @param known_for       time since the peer's direct grace period
     ///                        started: this device first listed the peer,
     ///                        or renewed it
+    /// @param has_lan         the peer has LAN endpoints to probe
+    /// @param lan_known_for   time since this device first listed the peer
+    ///                        or last renewed it (the LAN window's start)
     [[nodiscard]] static bool relay_needed(bool has_direct, int64_t last_handshake,
                                            int64_t now_unix, std::chrono::milliseconds known_for,
-                                           bool prefer_direct, const Timing& timing);
+                                           bool prefer_direct, const Timing& timing,
+                                           bool has_lan = false,
+                                           std::chrono::milliseconds lan_known_for = {});
 
     /// What a maintenance pass does with a paired relay channel.
     enum class PairedAction {
@@ -199,9 +220,9 @@ public:
     /// @param handshake        Unix seconds of a handshake since pairing that
     ///                         the dataplane reports now, 0 if none
     /// @param paired_for       time since the channel paired
-    /// @param direct_answered  prefer_direct is set, the server lists a direct
-    ///                         endpoint, and the dataplane moved the peer to
-    ///                         another address than the relay
+    /// @param direct_answered  prefer_direct is set, the peer has a direct or
+    ///                         LAN endpoint, and the dataplane moved the peer
+    ///                         to another address than the relay
     [[nodiscard]] static PairedAction paired_action(int64_t relay_seen, int64_t handshake,
                                                     int64_t now_unix,
                                                     std::chrono::milliseconds paired_for,
@@ -215,6 +236,7 @@ private:
         std::string                   relay_id;
         Clock::time_point             direct_since{};  ///< Start of the direct grace period
         Clock::time_point             eager_until{};   ///< End of the eager period
+        Clock::time_point             lan_since{};     ///< Start of the LAN window
         Clock::time_point             next_attempt{};
         Clock::time_point             paired_at{};
         int64_t                       opened_unix{0};   ///< Unix seconds the channel opened

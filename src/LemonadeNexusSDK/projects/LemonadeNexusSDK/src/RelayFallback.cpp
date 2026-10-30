@@ -40,9 +40,11 @@ RelayFallback::~RelayFallback() { stop(); }
 
 bool RelayFallback::relay_needed(bool has_direct, int64_t last_handshake, int64_t now_unix,
                                  std::chrono::milliseconds known_for, bool prefer_direct,
-                                 const Timing& timing) {
+                                 const Timing& timing, bool has_lan,
+                                 std::chrono::milliseconds lan_known_for) {
     if (!prefer_direct) return true;
     if (last_handshake > 0 && now_unix - last_handshake < timing.handshake_fresh_sec) return false;
+    if (has_lan && lan_known_for < timing.lan_grace) return false;
     if (!has_direct) return true;
     return known_for >= timing.direct_grace;
 }
@@ -148,6 +150,7 @@ void RelayFallback::renew(const std::vector<std::string>& pubkeys, bool skip_gra
         state.stale_before = std::max(state.stale_before, now_unix);
         state.direct_since = skip_grace ? now - timing_.direct_grace : now;
         state.eager_until = now + timing_.eager_period;
+        state.lan_since = now;
         // A retry delay earned while the peer was away (a relay request it
         // never joined) says nothing about its new path.
         state.next_attempt = {};
@@ -265,6 +268,7 @@ std::chrono::steady_clock::time_point RelayFallback::maintain(const std::vector<
             state.listed = true;
             state.direct_since = now;
             state.eager_until = now + timing_.eager_period;
+            state.lan_since = now;
         }
         const auto found = handshakes.find(pubkey);
         // The dataplane reports a handshake as now minus whole seconds
@@ -352,7 +356,9 @@ std::chrono::steady_clock::time_point RelayFallback::maintain(const std::vector<
                             state.relay_seen, since_pair, now_unix,
                             std::chrono::duration_cast<std::chrono::milliseconds>(
                                 now - state.paired_at),
-                            prefer_direct && !peer.endpoint.empty() && moved, timing_)) {
+                            prefer_direct &&
+                                (!peer.endpoint.empty() || !peer.local_endpoints.empty()) && moved,
+                            timing_)) {
                             case PairedAction::PromoteDirect:
                                 // A punched direct path answered with an
                                 // authenticated handshake: it replaces the relay.
@@ -398,13 +404,23 @@ std::chrono::steady_clock::time_point RelayFallback::maintain(const std::vector<
         const int64_t usable_handshake = handshake > state.stale_before ? handshake : 0;
         const auto known_for =
             std::chrono::duration_cast<std::chrono::milliseconds>(now - state.direct_since);
+        const bool has_lan = !peer.local_endpoints.empty();
+        const auto lan_known_for =
+            std::chrono::duration_cast<std::chrono::milliseconds>(now - state.lan_since);
         if (!relay_needed(!peer.endpoint.empty(), usable_handshake, now_unix, known_for,
-                          prefer_direct, timing_)) {
-            // Come back when the grace period ends, unless a working path
-            // makes the relay unnecessary anyway.
+                          prefer_direct, timing_, has_lan, lan_known_for)) {
+            // Come back when the grace period or the LAN window ends, unless
+            // a working path makes the relay unnecessary anyway.
             const bool working = prefer_direct && usable_handshake > 0 &&
                                  now_unix - usable_handshake < timing_.handshake_fresh_sec;
-            if (!working) next_due = std::min(next_due, state.direct_since + timing_.direct_grace);
+            if (!working) {
+                auto ends = state.direct_since + timing_.direct_grace;
+                if (has_lan && lan_known_for < timing_.lan_grace) {
+                    ends = peer.endpoint.empty() ? state.lan_since + timing_.lan_grace
+                                                 : std::max(ends, state.lan_since + timing_.lan_grace);
+                }
+                next_due = std::min(next_due, ends);
+            }
             continue;
         }
         if (now < state.next_attempt) {

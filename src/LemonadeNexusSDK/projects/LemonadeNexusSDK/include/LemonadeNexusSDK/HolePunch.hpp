@@ -10,19 +10,25 @@
 ///
 /// HolePuncher then sends probes: BoringTun handshake initiations from the
 /// dataplane socket to the peer's listed endpoint (BoringtunMesh::probe_peer).
+/// For a peer on this device's network, each probe goes to the peer's LAN
+/// endpoints first (MeshPeer::local_endpoints, see LanPaths.hpp) and to its
+/// listed endpoint in the same moment: one initiation, sent to every
+/// address, so a router that does not hairpin UDP still lets the two
+/// devices meet on the LAN.
 /// A probe opens this side's NAT mapping toward the peer. When both sides
 /// probe, the second probe to arrive passes the other NAT and the handshake
 /// completes. A probe changes no state: only a valid handshake answer moves
 /// the peer to the punched address (authenticated roaming in the dataplane).
 ///
-/// Schedule per peer:
-///   - Direct: the peer has a listed endpoint, no relay path, and no fresh
+/// Schedule per peer (a probe target is a LAN endpoint or the listed
+/// endpoint):
+///   - Direct: the peer has a probe target, no relay path, and no fresh
 ///     handshake. A burst of probes, then a few probes at each pair slot.
 ///   - Upgrade: the peer goes through a relay and prefer_direct is set. A few
 ///     probes at each pair slot. A punched path replaces the relay
 ///     (RelayFallback closes the relay channel). A peer that moves onto a
 ///     relay during its Direct burst finishes that burst first.
-///   - Idle: a fresh handshake on a direct path, no listed endpoint, or a
+///   - Idle: a fresh handshake on a direct path, no probe target, or a
 ///     relayed peer without prefer_direct.
 /// renew() and burst_now() start a new burst at the next pass, outside the
 /// slot schedule: the mesh orchestrator calls them when a peer's endpoint
@@ -100,8 +106,9 @@ public:
         int64_t handshake_fresh_sec{180};
     };
 
-    /// Most probes sent in one pass. Together with the minimum pass gap this
-    /// limits the probe rate.
+    /// Most peers probed in one pass. A probe to one peer goes to at most
+    /// kMaxLocalEndpoints + 1 addresses. Together with the minimum pass gap
+    /// this limits the probe rate.
     static constexpr std::size_t kMaxProbesPerPass = 16;
     /// The earliest next pass that maintain() reports.
     static constexpr std::chrono::milliseconds kMinPassGap{250};
@@ -115,7 +122,8 @@ public:
     HolePuncher& operator=(const HolePuncher&) = delete;
 
     /// One pass over the authorized peer list. `peers` must hold only
-    /// endpoints that passed peer_endpoint_usable. `relayed` maps the mesh
+    /// endpoints that passed peer_endpoint_usable, and only LAN endpoints
+    /// that lan_probe_targets chose. `relayed` maps the mesh
     /// public keys of relayed peers to their relay (RelayFallback::
     /// relayed_peers). Returns the steady-clock time of the next due probe,
     /// from kMinPassGap to kMaxPassGap ahead.
@@ -139,11 +147,16 @@ public:
     /// probed (Direct or Upgrade), instead of waiting for its next slot.
     void burst_now();
 
-    /// Probes sent since construction. Thread-safe.
+    /// Probe datagrams sent since construction; a probe to several
+    /// addresses counts once per address. Thread-safe.
     [[nodiscard]] uint64_t probes_sent() const { return probes_sent_.load(); }
 
+    /// The probe targets of a peer: its LAN endpoints, then its listed
+    /// endpoint, without empty or repeated entries. Pure.
+    [[nodiscard]] static std::vector<std::string> probe_targets(const MeshPeer& peer);
+
     /// The schedule a peer needs now. Pure.
-    /// @param has_endpoint    the server lists a usable direct endpoint
+    /// @param has_endpoint    the peer has a probe target (probe_targets)
     /// @param relayed         the peer's traffic goes through a relay
     /// @param last_handshake  Unix seconds of the last handshake, 0 if none
     /// @param now_unix        Unix seconds now
@@ -167,7 +180,7 @@ private:
     using Clock = std::chrono::steady_clock;
 
     struct PeerState {
-        std::string       target;
+        std::vector<std::string> targets;  ///< probe_targets()
         Mode              mode{Mode::Idle};
         uint32_t          burst_left{0};
         Clock::time_point next{};

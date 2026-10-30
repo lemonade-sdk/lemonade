@@ -46,6 +46,9 @@ struct MeshPortMember {
     /// "ip:port" of the relay the mesh reaches the device through; empty on a
     /// direct path. A change closes the device's egress bridge.
     std::string relay_endpoint;
+    /// The mesh path to the device (MeshPeer::path): "lan", "direct",
+    /// "relay", or "" (this device, or no working path).
+    std::string path;
 };
 
 /// What a device's SDK answers at GET /.nexus/catalog: the app that registered
@@ -281,7 +284,7 @@ public:
     /// Status JSON: {running, port, scheme, local_domain, local_service, error,
     /// selection: {target, peer_key_set}, tls: {state, domain, expires_at, error},
     /// urls: [{node_id, device_name, url, self}],
-    /// devices: [{node_id, device_name, is_online, app: {name, version}, families,
+    /// devices: [{node_id, device_name, is_online, path, app: {name, version}, families,
     /// catalog_status, models_count, loaded_count}], catalog}. tls.state is "off", "waiting", "activating" (the
     /// first certificate is installed; TLS starts when the open plain requests
     /// finish), "active", "unsupported_certificate" or "error". `devices` lists the

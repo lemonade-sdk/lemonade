@@ -518,6 +518,7 @@ MeshPortBackend make_mesh_port_backend(LemonadeNexusClient& client) {
                 member.is_online = is_self || peer.is_online;
                 member.latency_ms = peer.latency_ms > 0 ? static_cast<double>(peer.latency_ms) : 0.0;
                 member.relay_endpoint = peer.relay_endpoint;
+                member.path = peer.path;
                 break;
             }
             members.push_back(std::move(member));
@@ -1094,6 +1095,7 @@ nlohmann::json MeshPort::status() const {
             loaded_count = mesh_port::loaded_model_names(cached->second.models).size();
         }
         devices.push_back({{"node_id", member.node_id}, {"device_name", member.device_name}, {"is_online", member.is_online},
+            {"path", member.path},
             {"app", catalog_json(catalog)}, {"families", catalog.families}, {"catalog_status", catalog.status},
             {"models_count", models_count}, {"loaded_count", loaded_count}});
     }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <LemonadeNexusSDK/HolePunch.hpp>
+#include <LemonadeNexusSDK/LanPaths.hpp>
 #include <LemonadeNexusSDK/RelayFallback.hpp>
 #include <LemonadeNexusSDK/Types.hpp>
 
@@ -35,6 +36,21 @@ class BoringtunMesh;
 /// still hears from it.
 [[nodiscard]] std::optional<bool> peer_signal_fresh(const MeshPeer& peer, int64_t now_unix,
                                                     uint32_t peer_refresh_interval_sec);
+
+/// The path a peer's traffic takes now (MeshPeer::path). Pure.
+/// @param dataplane_endpoint  the address the dataplane sends to now
+/// @param relay_endpoint      the relay the dataplane sends through ("" none)
+/// @param fresh               peer_signal_fresh found the signal fresh
+/// "relay" when the peer goes through a relay. Otherwise "" while the signal
+/// is not fresh or no handshake or packet ever came; "lan" when the
+/// dataplane sends to one of peer.local_endpoints; "direct" for any other
+/// address; "" without one.
+[[nodiscard]] std::string peer_path(const MeshPeer& peer, const std::string& dataplane_endpoint,
+                                    const std::string& relay_endpoint, bool fresh);
+
+/// Whether a peer lost its LAN path between two monitor passes: the earlier
+/// pass found "lan" and the later one found no working path (""). Pure.
+[[nodiscard]] bool lan_path_lost(const std::string& previous_path, const std::string& path);
 
 /// Monitor passes in a row that must find an online peer's signal stale
 /// before the peer reads offline. One late packet or peer refresh does not
@@ -83,6 +99,11 @@ inline constexpr std::chrono::milliseconds kResumeGap{2 * kMonitorInterval};
 ///      stun_refresh_interval_sec (0 turns it off)
 ///   4. Reports that endpoint via heartbeat (POST /api/mesh/heartbeat). An
 ///      empty endpoint (none learned yet) leaves the stored endpoint as is.
+///      The heartbeat also reports this device's LAN endpoints
+///      (select_local_endpoints over list_interface_addresses, with the
+///      dataplane port), read again every kLanRefreshInterval and in every
+///      pass that an event below starts; a changed list goes out in a
+///      heartbeat at once.
 ///   5. Punches direct paths to peers at their listed endpoints (HolePuncher)
 ///   6. Monitors peer connectivity and fires state callbacks
 ///   7. Moves peers without a direct path onto a relay (RelayFallback): the
@@ -109,6 +130,19 @@ inline constexpr std::chrono::milliseconds kResumeGap{2 * kMonitorInterval};
 /// A relay pairs when a direct endpoint gives no handshake within
 /// kDirectAnswerWindow; the punch goes on, and a direct path replaces the
 /// relay when it answers.
+///
+/// LAN-direct paths: a peer refresh keeps a peer's listed LAN endpoints only
+/// when they pass lan_endpoint_usable and the peer is on this device's
+/// network (lan_probe_targets: the same public address, or a LAN endpoint
+/// inside one of this device's subnets). Such a peer is probed at its LAN
+/// endpoints together with its listed endpoint, and gets no relay before
+/// kLanAnswerWindow passed. A new LAN endpoint list renews the peer like a
+/// new listed endpoint. Each monitor pass records the peer's path
+/// (peer_path). A peer whose LAN path stops answering (no authenticated
+/// packet within the liveness window of peer_signal_fresh) is renewed at
+/// that pass: it gets a new punch burst, and a relay after the LAN window
+/// when no path answers. A relayed peer keeps getting upgrade probes at its
+/// LAN endpoints, so the LAN path returns when it answers again.
 ///
 /// Peer endpoints come only from the verified server's peer list. Listed
 /// endpoints that fail peer_endpoint_usable are dropped before any use. A
@@ -157,6 +191,17 @@ public:
     /// before start(). An empty function restores the system clock.
     void set_wall_clock(WallClock clock);
 
+    /// The source of this host's interface addresses.
+    using LocalAddressSource = std::function<std::vector<InterfaceAddress>()>;
+
+    /// Replace the interface list the LAN endpoints come from (tests use
+    /// fixed addresses). Call before start(). An empty function restores
+    /// list_interface_addresses().
+    void set_local_address_source(LocalAddressSource source);
+
+    /// The LAN endpoints this device reports now (thread-safe snapshot).
+    [[nodiscard]] std::vector<std::string> local_endpoints() const;
+
 private:
     /// Main orchestration loop (runs on background thread).
     void run_loop();
@@ -173,6 +218,10 @@ private:
     /// Learn our reflexive address from the session server's STUN service.
     /// Returns true when the address changed.
     bool do_stun_refresh();
+
+    /// Read this host's LAN addresses again and choose the LAN endpoints to
+    /// report. Returns true when the reported list changed.
+    bool do_lan_refresh();
 
     /// Run one hole-punch pass. Returns when the next probe is due.
     std::chrono::steady_clock::time_point do_punch();
@@ -197,6 +246,10 @@ private:
     /// Interval between certificate checks. The check reads local files only.
     static constexpr std::chrono::seconds kCertCheckInterval{300};
 
+    /// Interval between reads of the host's LAN addresses outside the
+    /// passes that read them at once. The read is local and cheap.
+    static constexpr std::chrono::seconds kLanRefreshInterval{60};
+
     /// Total wait for one STUN query, including its resends.
     static constexpr std::chrono::milliseconds kStunTimeout{1500};
 
@@ -215,6 +268,9 @@ private:
     MeshTunnelStatus         last_status_;
     StateCallback            callback_;
     std::string              our_endpoint_; // reflexive endpoint we publish ("" until learned)
+    std::vector<std::string> our_local_endpoints_;  // LAN endpoints we report
+    std::vector<InterfaceAddress> own_lan_;         // our usable LAN interfaces
+    LocalAddressSource       local_address_source_; // empty: list_interface_addresses
     bool                     refresh_requested_{false};  // set by refresh_now() and do_heartbeat()
     WallClock                wall_clock_;                // empty: the system clock
     std::string              peers_revision_;            // last heartbeat answer's; loop thread only

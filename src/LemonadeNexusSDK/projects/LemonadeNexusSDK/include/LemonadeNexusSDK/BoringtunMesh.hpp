@@ -90,6 +90,11 @@ public:
     /// Empty when inactive.
     [[nodiscard]] std::string server_endpoint() const;
 
+    /// The mesh's own address plane: the server peer's allowed IPs the
+    /// dataplane started with (for example "10.64.0.0/10"). Empty when
+    /// inactive.
+    [[nodiscard]] std::vector<std::string> tunnel_plane() const;
+
     /// Learn this device's reflexive address: send a STUN Binding request
     /// from the dataplane's own UDP socket to `stun_endpoint` ("a.b.c.d:port")
     /// and wait for the matching response. Because the request leaves from
@@ -111,6 +116,12 @@ public:
     /// is unknown or is the server, or the endpoint does not parse.
     /// Thread-safe.
     bool probe_peer(const std::string& pubkey, const std::string& endpoint);
+
+    /// probe_peer toward several endpoints with one handshake initiation,
+    /// sent to each in order (UserspaceDataplane::probe_endpoints). Returns
+    /// the number of endpoints it went to; 0 when inactive, the peer is
+    /// unknown or is the server, or no endpoint parses. Thread-safe.
+    std::size_t probe_peer(const std::string& pubkey, const std::vector<std::string>& endpoints);
 
     /// Send a fresh handshake initiation to every peer, the server peer
     /// included, at the address the dataplane sends to now (a relayed peer:

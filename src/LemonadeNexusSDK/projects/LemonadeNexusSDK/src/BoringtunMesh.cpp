@@ -333,6 +333,10 @@ std::string BoringtunMesh::server_endpoint() const {
     return impl_->active.load() ? impl_->started_cfg.server_endpoint : std::string{};
 }
 
+std::vector<std::string> BoringtunMesh::tunnel_plane() const {
+    return impl_->active.load() ? impl_->started_cfg.allowed_ips : std::vector<std::string>{};
+}
+
 std::optional<std::string> BoringtunMesh::query_reflexive(const std::string& stun_endpoint,
                                                           std::chrono::milliseconds timeout,
                                                           uint32_t attempts) {
@@ -378,6 +382,12 @@ std::optional<std::string> BoringtunMesh::query_reflexive(const std::string& stu
 bool BoringtunMesh::probe_peer(const std::string& pubkey, const std::string& endpoint) {
     if (!impl_->active.load() || pubkey.empty() || pubkey == impl_->server_pubkey) return false;
     return impl_->dp.probe_endpoint(pubkey, endpoint);
+}
+
+std::size_t BoringtunMesh::probe_peer(const std::string& pubkey,
+                                      const std::vector<std::string>& endpoints) {
+    if (!impl_->active.load() || pubkey.empty() || pubkey == impl_->server_pubkey) return 0;
+    return impl_->dp.probe_endpoints(pubkey, endpoints);
 }
 
 std::size_t BoringtunMesh::rehandshake_all() {

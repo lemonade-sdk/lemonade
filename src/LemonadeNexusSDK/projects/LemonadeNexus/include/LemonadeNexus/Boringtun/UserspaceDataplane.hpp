@@ -144,6 +144,17 @@ public:
     /// endpoint does not parse. Thread-safe.
     [[nodiscard]] bool probe_endpoint(const std::string& pubkey_b64,
                                       const std::string& endpoint);
+
+    /// probe_endpoint toward several addresses at once: one handshake
+    /// initiation, sent to each endpoint that parses, in order. A peer's
+    /// noise state keeps only its two newest initiations, so separate
+    /// probes to several addresses would leave the earlier ones unanswerable.
+    /// The responder accepts the first copy that reaches it and refuses the
+    /// others as replays. Returns the number of addresses the initiation went
+    /// to: 0 when the dataplane is stopped, the peer is unknown, or no
+    /// endpoint parses. Thread-safe.
+    [[nodiscard]] std::size_t probe_endpoints(const std::string& pubkey_b64,
+                                              const std::vector<std::string>& endpoints);
     [[nodiscard]] std::vector<BoringtunPeer> snapshot_peers() const;
     [[nodiscard]] size_t peer_count() const;
 

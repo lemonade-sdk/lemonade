@@ -118,6 +118,20 @@ HolePuncher::HolePuncher(BoringtunMesh& mesh) : HolePuncher(mesh, Timing{}) {}
 
 HolePuncher::HolePuncher(BoringtunMesh& mesh, Timing timing) : mesh_(mesh), timing_(timing) {}
 
+std::vector<std::string> HolePuncher::probe_targets(const MeshPeer& peer) {
+    std::vector<std::string> out;
+    for (const auto& endpoint : peer.local_endpoints) {
+        if (!endpoint.empty() && std::find(out.begin(), out.end(), endpoint) == out.end()) {
+            out.push_back(endpoint);
+        }
+    }
+    if (!peer.endpoint.empty() &&
+        std::find(out.begin(), out.end(), peer.endpoint) == out.end()) {
+        out.push_back(peer.endpoint);
+    }
+    return out;
+}
+
 HolePuncher::Mode HolePuncher::punch_mode(bool has_endpoint, bool relayed, int64_t last_handshake,
                                           int64_t now_unix, bool prefer_direct,
                                           const Timing& timing) {
@@ -215,7 +229,8 @@ HolePuncher::Clock::time_point HolePuncher::maintain(
                 handshake = 0;
             }
         }
-        const Mode mode = punch_mode(!peer.endpoint.empty(), relayed.contains(pubkey), handshake,
+        auto targets = probe_targets(peer);
+        const Mode mode = punch_mode(!targets.empty(), relayed.contains(pubkey), handshake,
                                      now_unix, prefer_direct, timing_);
         if (mode == Mode::Idle) {
             peers_.erase(pubkey);
@@ -225,10 +240,10 @@ HolePuncher::Clock::time_point HolePuncher::maintain(
 
         auto& state = peers_[pubkey];
         const bool renewed = burst_next_.erase(pubkey) > 0;
-        if (renewed || state.target != peer.endpoint || state.mode != mode) {
-            const bool onto_relay = !renewed && state.target == peer.endpoint &&
+        if (renewed || state.targets != targets || state.mode != mode) {
+            const bool onto_relay = !renewed && state.targets == targets &&
                                     state.mode == Mode::Direct && mode == Mode::Upgrade;
-            state.target = peer.endpoint;
+            state.targets = std::move(targets);
             state.mode = mode;
             if (onto_relay) {
                 // The relay paired while the direct schedule ran: keep it, so
@@ -252,10 +267,11 @@ HolePuncher::Clock::time_point HolePuncher::maintain(
                 continue;
             }
             ++probes;
-            if (mesh_.probe_peer(pubkey, state.target)) {
-                ++probes_sent_;
-                spdlog::debug("[HolePuncher] probe to peer {} at {} ({})", short_key(pubkey),
-                              state.target, mode == Mode::Direct ? "direct" : "upgrade");
+            if (const auto sent = mesh_.probe_peer(pubkey, state.targets); sent > 0) {
+                probes_sent_ += sent;
+                spdlog::debug("[HolePuncher] probe to peer {} at {} address(es), first {} ({})",
+                              short_key(pubkey), sent, state.targets.front(),
+                              mode == Mode::Direct ? "direct" : "upgrade");
             }
             if (state.burst_left > 0) --state.burst_left;
             if (state.burst_left > 0) {

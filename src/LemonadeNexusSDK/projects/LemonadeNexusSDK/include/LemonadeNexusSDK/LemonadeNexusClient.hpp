@@ -468,13 +468,19 @@ public:
     [[nodiscard]] Result<std::vector<MeshPeer>> fetch_mesh_peers(const std::string& node_id);
 
     /// Send a heartbeat to the server reporting our current endpoint (empty:
-    /// keep the stored one). On success, `value` is the server's
+    /// keep the stored one). With `local_endpoints`, the heartbeat also
+    /// reports this device's LAN endpoints ("a.b.c.d:port", private
+    /// addresses, at most kMaxLocalEndpoints; see LanPaths.hpp); an empty
+    /// list removes the ones reported before, and nullopt leaves them as they
+    /// are. The server lists them only to peers that already list this node.
+    /// On success, `value` is the server's
     /// `peers_revision`: an opaque string that changes when this node's peer
     /// list changes (see POST /api/mesh/heartbeat). It is empty when the
     /// server sends none (older servers) or sends a malformed one. Compare
     /// it only for equality; it carries no peer data.
-    [[nodiscard]] Result<std::string> mesh_heartbeat(const std::string& node_id,
-                                                     const std::string& endpoint);
+    [[nodiscard]] Result<std::string> mesh_heartbeat(
+        const std::string& node_id, const std::string& endpoint,
+        const std::optional<std::vector<std::string>>& local_endpoints = std::nullopt);
 
     // -----------------------------------------------------------------
     // Session state
