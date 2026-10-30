@@ -1817,10 +1817,10 @@ int main(int argc, char* argv[]) {
             "Custom arguments to pass directly to the launched agent process")
             ->type_name("ARGS")
             ->default_val(config.agent_args);
+        lemon::RecipeOptions::add_cli_options(cmd, config.recipe_options);
     };
 
     add_common_launch_options(*launch_cmd);
-    lemon::RecipeOptions::add_cli_options(*launch_cmd, config.recipe_options);
     hide_all_options_except_help(*launch_cmd);
 
     CLI::Option* codex_provider_opt = nullptr;

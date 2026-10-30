@@ -685,6 +685,10 @@ lemonade launch [AGENT] [--model MODEL_NAME] [options]
 | `--directory DIR` | Remote recipes directory used only if you choose recipe import at prompt | No |
 | `--recipe-file FILE` | Remote recipe JSON filename used only if you choose recipe import at prompt | No |
 | `--agent-args ARGS` | Custom arguments to pass directly to the launched agent process | `""` |
+| `--ctx-size SIZE` | Override context size for this launch (`-1` requests automatic sizing) | No |
+| `--llamacpp BACKEND` | Override the llama.cpp backend for this launch | No |
+
+Other recipe-specific load flags are also accepted; see `lemonade launch AGENT --help`.
 
 Codex-only option:
 
@@ -707,7 +711,7 @@ Pi-only options:
 - `--api-key` is propagated to the launched agent process.
 - For `codex`, launch now injects a Lemonade model provider by default so host/port settings are honored.
 - `--provider` is accepted only by `lemonade launch codex` and is passed directly to Codex as `model_provider`; provider resolution/errors are handled by Codex.
-- To customize recipe options (e.g. context size) for the launched model, configure them ahead of time with `lemonade load <model> ... --save-options`, or with `lemonade config set`.
+- Customize recipe options for one launch with flags such as `--ctx-size` and `--llamacpp`. To persist model settings, use `lemonade load <model> ... --save-options`; shared defaults can be changed with `lemonade config set`.
 - `--agent-args` is parsed and appended to the launched agent command.
 - Supported agents: `claude`, `codex`, `opencode`, `pi`, `junie`
 - `opencode` uses an auto-managed config file at `~/.config/opencode/opencode.json`.
@@ -718,6 +722,9 @@ Pi-only options:
 **Examples:**
 
 ```bash
+# Launch directly with a per-launch context override
+lemonade launch claude --model Qwen3.5-0.8B-GGUF --ctx-size 8192
+
 # Launch an agent with default model settings
 lemonade launch claude --model Qwen3.5-0.8B-GGUF
 

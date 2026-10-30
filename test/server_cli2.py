@@ -2989,9 +2989,9 @@ class CLIHelpDocsConsistencyTests(unittest.TestCase):
         self.assertEqual(claude_result.returncode, 0)
         claude_help = claude_result.stdout + claude_result.stderr
         self.assertNotIn("--provider", claude_help)
-        self.assertNotIn("--ctx-size", claude_help)
+        self.assertIn("--ctx-size", claude_help)
         self.assertNotIn("LEMONADE_CTX_SIZE", claude_help)
-        self.assertNotIn("--llamacpp", claude_help)
+        self.assertIn("--llamacpp", claude_help)
 
         opencode_result = run_cli_command(
             ["launch", "opencode", "--help"], timeout=TIMEOUT_DEFAULT
@@ -2999,7 +2999,7 @@ class CLIHelpDocsConsistencyTests(unittest.TestCase):
         self.assertEqual(opencode_result.returncode, 0)
         opencode_help = opencode_result.stdout + opencode_result.stderr
         self.assertNotIn("--provider", opencode_help)
-        self.assertNotIn("--ctx-size", opencode_help)
+        self.assertIn("--ctx-size", opencode_help)
         self.assertNotIn("LEMONADE_CTX_SIZE", opencode_help)
 
         codex_result = run_cli_command(
@@ -3009,7 +3009,7 @@ class CLIHelpDocsConsistencyTests(unittest.TestCase):
         codex_help = codex_result.stdout + codex_result.stderr
         self.assertIn("Use model provider name for Codex", codex_help)
         self.assertIn("--provider", codex_help)
-        self.assertNotIn("--ctx-size", codex_help)
+        self.assertIn("--ctx-size", codex_help)
         self.assertNotIn("LEMONADE_CTX_SIZE", codex_help)
 
         docs_path = os.path.join(
@@ -3036,8 +3036,8 @@ class CLIHelpDocsConsistencyTests(unittest.TestCase):
         launch_section = docs_text.split("## Options for launch", 1)[1].split(
             "## Options for scan", 1
         )[0]
-        self.assertNotIn("--ctx-size", launch_section)
-        self.assertNotIn("--llamacpp", launch_section)
+        self.assertIn("--ctx-size", launch_section)
+        self.assertIn("--llamacpp", launch_section)
 
 
 class CLIUrlSchemeTests(unittest.TestCase):
