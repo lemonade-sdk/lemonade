@@ -583,7 +583,9 @@ def main() -> int:
         / "guide"
         / "configuration"
         / "README.md": {
-            "sections": {"config-example": render_config_example(json.loads(defaults_text))},
+            "sections": {
+                "config-example": render_config_example(json.loads(defaults_text))
+            },
         },
         REPO_ROOT
         / "docs"

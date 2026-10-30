@@ -19,6 +19,7 @@ const RECIPE_PRIORITY = [
   'thinksound',
   'trellis',
   'vllm',
+  'vllm-omni',
   'whispercpp'
 ];
 
@@ -29,6 +30,7 @@ const RECIPE_DISPLAY_NAMES = {
   'sd-cpp': 'stable-diffusion.cpp',
   flm: 'FastFlowLM NPU',
   'ryzenai-llm': 'Ryzen AI SW NPU',
+  'vllm-omni': 'vLLM-Omni ROCm (experimental)',
   vllm: 'vLLM ROCm',
   thenoise: 'thenoise',
   ds4: 'DwarfStar4',
