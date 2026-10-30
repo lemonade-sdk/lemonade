@@ -99,6 +99,7 @@ window, estimate ~4 bytes per token.
 |------|---------|
 | `semantic_similarity` | Cosine similarity of the input against labelled `reference_phrases`, via an embedding model. |
 | `classifier` | A `{label: score}` classifier — an encoder model via the `onnxruntime` backend (`/v1/classify`), or any model as an LLM-as-classifier via chat. |
+| `zero_shot` | Scores the input against the `labels` **you** declare, sent with each request. Supports one kind of zero-shot model: an LFM2 prompt router that reads the labels and the text together in a single pass, on the `onnxruntime` backend. No LLM fallback. |
 | `llm` | An LLM picks exactly one of the declared `labels` for the request (with a rationale); the chosen label scores `1.0`, the rest `0`. You supply the `model` and a `prompt` describing when to choose each label. |
 
 A classifier condition is a band test: `{ "classifier": "<id>", "label": "<name>",
@@ -159,6 +160,20 @@ and every entry's `model` must be one of `components`:
 - `classifier` uses the model's `{label: score}` output; declare its `labels`
   (an onnxruntime encoder serves `/v1/classify`, else it runs as an
   LLM-as-classifier via chat).
+- `zero_shot` sends your `labels` to the model on every request: the model has
+  no per-label head to read them off, so the label list is an input to the graph.
+  Lemonade ships
+  [`LFM2.5-Encoder-350M-Prompt-Router-ONNX`](https://huggingface.co/lemonade-sdk/LFM2.5-Encoder-350M-Prompt-Router-ONNX)
+  for it. Its model must carry the `zero-shot` label, and a `classifier`'s
+  model must not: each kind of model refuses the other's request, so
+  registration refuses either mismatch.
+
+  Every classifier's `labels` are checked at registration: unique, not blank,
+  and free of control characters because a label the backend would reject
+  turns every request into an `on_error` fallback. **How many** labels a
+  zero-shot model accepts, and how long each may be, is not checked here: both
+  derive from that model's token window and are tunable per model, so the model
+  enforces them and names the numbers in its error.
 - `llm` shows the request to an LLM and asks it to choose one of `labels` (the
   chosen label scores `1.0`). Because it produces a plain label, it's a
   **composable signal** — combine it with any other condition, as in
@@ -181,6 +196,75 @@ and every entry's `model` must be one of `components`:
 > and replaces rules entirely (it's shorthand for a single `llm` classifier whose
 > labels are the candidate models); a `type: "llm"` classifier only produces a
 > label that rules combine with any other condition.
+
+### Truncated input (`on_truncation`)
+
+The two model-backed types, `classifier` and `zero_shot`, read a token window.
+When the input overflows it, the backend cuts the text (never the labels) and
+reports the cut, and each type loses a different part:
+
+| Type | The cut keeps | What disappears |
+|---|---|---|
+| `zero_shot` | the head and the tail, with `\n...\n` between | the middle |
+| `classifier` | the head, plus the final separator | **the end** |
+
+A score computed from cut text is still a *success*, so `on_error` never sees
+it. `on_truncation` decides what the cut means:
+
+| Value | Behaviour |
+|---|---|
+| `score` (default) | Use the scores anyway. Fine for topic routing. |
+| `fail` | Treat the cut as an evaluation failure, so `on_error` applies. |
+
+`fail` also needs a backend that reports its cuts. ort-server does from 0.4.0.
+An older ort-server cuts without saying so, and lemond warns when it loads one.
+Against it, every evaluation under `fail` counts as a failure, so `on_error`
+applies. `score` is unaffected.
+
+`LFM2.5-Encoder-350M-Prompt-Router-ONNX` has a default 2,048-token window, so a text
+longer than about 8,000 characters is cut. To raise it, pass
+`--onnxruntime-args "--max-length 4096"`; memory grows with the square of the
+window.
+
+The other types never read a token window and refuse the option. A `classifier`
+backed by a chat LLM refuses it too: a chat model reports no cut, so `fail`
+could never fire.
+
+For a privacy rule, where a missed entity is a leak rather than a wrong model,
+pair `fail` with `on_error: match_true`. That forces the condition true and
+**fires the rule**, which protects the request only when all three hold:
+
+1. The rule routes to a **local** model. A rule that fires into a cloud model
+   sends the whole uncut prompt there.
+2. The engine reaches the rule **before** any cloud rule. Rules are read in
+   order and the first match wins, so a cloud rule placed above this one takes
+   the request first and the guard never runs.
+3. The personal data is in the **routing input**. The classifier reads only the
+   last user message, so data in an earlier turn is never scored.
+
+The example shows how the two settings combine, not a PII detector to deploy.
+`LFM2.5-Encoder-350M-Prompt-Router-ONNX` is a prompt router: it has not been
+validated for PII, and its scores depend on how the labels are worded. For a
+real privacy rule, use a classifier trained and evaluated for PII; the same
+`on_truncation` and `on_error` settings apply to it.
+
+```json
+"classifiers": [
+  { "id": "pii", "type": "zero_shot", "model": "LFM2.5-Encoder-350M-Prompt-Router-ONNX",
+    "labels": ["contains personal identifiable information", "general question"],
+    "on_truncation": "fail", "on_error": "match_true" },
+  { "id": "topic", "type": "zero_shot", "model": "LFM2.5-Encoder-350M-Prompt-Router-ONNX",
+    "labels": ["code", "general"] }
+],
+"rules": [
+  { "id": "pii-to-local",
+    "match": { "classifier": "pii", "label": "contains personal identifiable information", "min_score": 0.5 },
+    "route_to": "LocalLLM" },
+  { "id": "code-to-cloud",
+    "match": { "classifier": "topic", "label": "code" },
+    "route_to": "CloudLLM" }
+]
+```
 
 ## Registering and invoking
 
@@ -240,6 +324,18 @@ also carries an **`x_lemonade_route`** object:
 `route_to` is the candidate that actually answered. For streaming responses the
 same object is attached to the first SSE event as `x_lemonade_route`.
 
+A failing **`classifier`** or **`zero_shot`** condition adds an **`error`** string
+to its own trace entry, naming the reason the backend gave. Without it a failed
+condition and one that simply scored below its threshold both read as
+`"result": false`, and `on_error` hides which of the two happened.
+
+A **`classifier`** or **`zero_shot`** entry also carries **`truncated`**:
+`true` when the backend cut the input text to fit its token window before
+scoring, `false` when it scored the whole input. A `zero_shot` model never cuts
+its labels, a label pooled from half its tokens would score something the model
+only partly read. The key is absent when the backend does not report cuts
+(ort-server before 0.4.0, or a chat LLM), so its absence means "unknown".
+
 ## Cloud candidates
 
 A candidate may be a cloud model — the router derives the route category from the
@@ -266,6 +362,10 @@ The `classifier` condition runs a real encoder classifier: a model of type
 directly; any other model backing a `classifier` is used as an LLM-as-classifier
 via chat. The classifier's model must be able to serve one of those paths, and
 that capability is checked when the collection is registered.
+
+The `zero_shot` condition runs the same backend, but only
+`ModelType::CLASSIFICATION` satisfies it, a chat model cannot score a label
+list it is handed at request time, so there is no fallback to substitute.
 
 ## LLM-as-router (`routing.router`)
 

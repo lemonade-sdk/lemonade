@@ -116,10 +116,13 @@ inline void compare_trace_entry(const nlohmann::json& expected, const nlohmann::
     compare_field(expected, produced, "score", path, score_tolerance, out);
     compare_field(expected, produced, "label", path, std::nullopt, out);
     compare_field(expected, produced, "rationale", path, std::nullopt, out);
+    compare_field(expected, produced, "error", path, std::nullopt, out);
+    compare_field(expected, produced, "truncated", path, std::nullopt, out);
 
     report_missing_fields(expected, produced, {"condition", "result"}, path, out);
-    report_unexpected_fields(expected, produced,
-                             {"condition", "result", "score", "label", "rationale"}, path, out);
+    report_unexpected_fields(
+        expected, produced,
+        {"condition", "result", "score", "label", "rationale", "error", "truncated"}, path, out);
 }
 
 inline void compare_trace(const nlohmann::json& expected, const nlohmann::json& produced,

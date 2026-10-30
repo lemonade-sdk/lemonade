@@ -124,6 +124,7 @@
   },
   "thenoise": {
     "backend": "auto",
+    "cuda_bin": "builtin",
     "lora_dir": "",
     "rocm_bin": "builtin",
     "upscaler_dir": ""
