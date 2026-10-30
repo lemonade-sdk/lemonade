@@ -22,6 +22,7 @@ set(COMMON_SOURCES
     recipe_import.cpp
     hf_pull.cpp
     tui_launch.cpp
+    tui_launch_model.cpp
     bench.cpp
     bench_output.cpp
     bench_comparison.cpp

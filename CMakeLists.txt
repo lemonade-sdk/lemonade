@@ -4088,6 +4088,17 @@ if(BUILD_TESTING AND EXISTS "${_LAUNCH_COMMAND_TEST_SRC}")
     add_cpp_ci_test(LaunchCommandTest CI ON COMMAND test_launch_command)
 endif()
 
+if(BUILD_TESTING)
+    find_package(Threads REQUIRED)
+    add_executable(test_tui_launch
+        test/cpp/test_tui_launch.cpp
+        src/cpp/cli/tui_launch_model.cpp
+    )
+    target_include_directories(test_tui_launch PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include)
+    target_link_libraries(test_tui_launch PRIVATE nlohmann_json::nlohmann_json Threads::Threads)
+    add_cpp_ci_test(TuiLaunchTest CI ON COMMAND test_tui_launch)
+endif()
+
 # What `lemonade launch pi` writes into pi's agent directory. The CLI sources
 # are compiled in directly because the CLI is not a library.
 set(_PI_PROFILE_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_pi_profile.cpp")
