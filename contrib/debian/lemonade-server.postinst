@@ -52,8 +52,12 @@ if [ "$1" = "configure" ]; then
 	# Own the state + config tree, but skip the HuggingFace model cache: it can
 	# be tens of GB and is already owned by the service that downloaded it, so
 	# recursing into it would make every upgrade's chown walk the whole cache.
-	find /var/lib/lemonade -path /var/lib/lemonade/.cache/huggingface -prune -o \
-		-exec chown lemonade:lemonade {} + 2>/dev/null || true
+	# Skip rootless Podman's storage too: its layers hold files owned by
+	# subordinate IDs and absolute symlinks into the host's filesystem, so the
+	# walk must not touch them and chown must not follow links (-h).
+	find /var/lib/lemonade \( -path /var/lib/lemonade/.cache/huggingface \
+		-o -path /var/lib/lemonade/.local/share/containers \) -prune -o \
+		-exec chown -h lemonade:lemonade {} + 2>/dev/null || true
 	chmod 0750 /var/lib/lemonade
 
 	# Create the FHS cache directory for the service (owned by the service user).

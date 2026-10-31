@@ -327,7 +327,15 @@ export function customLoadOptions(model: ModelInfo): Record<string, unknown> | u
   const opts: Record<string, unknown> = { save_options: false };
   if (isPlainObject((model as any).recipe_options)) Object.assign(opts, (model as any).recipe_options);
   const type = String((model as any).type || '').trim();
-  if (type !== 'omni' && (model as any).max_context_window) opts.ctx_size = (model as any).max_context_window;
+  // A saved ctx_size (including the -1 "auto" sentinel) outranks the max-window default.
+  // Only integer values count — anything else would fail the load route's
+  // integer validation, so it falls back to the default.
+  const savedCtx = (model as any).recipe_options?.ctx_size;
+  const hasSavedCtx = typeof savedCtx === 'number' && Number.isInteger(savedCtx)
+    && (savedCtx > 0 || savedCtx === -1);
+  if (type !== 'omni' && (model as any).max_context_window && !hasSavedCtx) {
+    opts.ctx_size = (model as any).max_context_window;
+  }
   return opts;
 }
 
