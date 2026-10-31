@@ -506,6 +506,13 @@ DISTINCT_ARGUMENTS = {
             ],
         ),
         (
+            "Classify scores the input against these labels; register stores them as model tags",
+            [
+                "routes/lemonade/inference/classify.cpp:kLabels",
+                "routes/lemonade/models/register.cpp:kLabels",
+            ],
+        ),
+        (
             "Register takes only user.* names; load takes any registered model",
             [
                 "routes/lemonade/load/load.cpp:kModelName",
