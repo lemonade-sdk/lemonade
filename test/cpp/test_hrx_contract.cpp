@@ -1,9 +1,13 @@
 // Proves HRX keeps its narrow install, custom-argument, and process-launch
-// contract. These checks call the same helpers as HrxServer::load(), without
+// contract. These checks resolve runtime options and call the launch helpers without
 // starting the backend or duplicating descriptor-derived data tables.
 
+#include "lemon/backends/backend_ops.h"
 #include "lemon/backends/hrx/hrx.h"
 #include "lemon/backends/hrx/hrx_server.h"
+#include "lemon/model_manager.h"
+#include "lemon/recipe_options.h"
+#include "lemon/utils/custom_args.h"
 
 #include <cstdio>
 #include <exception>
@@ -111,6 +115,42 @@ void check_admission_contract() {
     check("HRX rejects an equals-form managed argument", equals_flag_rejected);
 }
 
+void check_mtp_contract() {
+    lemon::ModelInfo info;
+    info.labels = {"chat", "mtp"};
+    lemon::RecipeOptions options("llamacpp-hrx", lemon::json::object());
+    hrx::ops()->resolve_runtime_options(info, options);
+    const auto args = hrx::build_server_argv(
+        "/models/qualified.gguf", 4096, 14123, options.get_option("hrx_args"));
+    check("MTP capability automatically reaches the HRX launch command",
+          lemon::utils::custom_args_has_flag(args, "--spec-type"));
+    check("MTP selects draft-mtp without overriding backend draft defaults",
+          options.get_option("hrx_args") == "--spec-type draft-mtp");
+    hrx::ops()->resolve_runtime_options(info, options);
+    check("Repeated resolution does not duplicate MTP arguments",
+          options.get_option("hrx_args") == "--spec-type draft-mtp");
+
+    for (const std::string custom : {"--spec-type none", "--spec-type=none",
+                                    "--spec-type draft-mtp --spec-draft-n-max 4"}) {
+        lemon::RecipeOptions overridden("llamacpp-hrx", {{"hrx_args", custom}});
+        hrx::ops()->resolve_runtime_options(info, overridden);
+        check("Explicit speculative arguments win: " + custom,
+              overridden.get_option("hrx_args") == custom);
+    }
+
+    lemon::RecipeOptions disabled("llamacpp-hrx", {{"merge_args", false},
+                                                  {"hrx_args", "--threads 7"}});
+    hrx::ops()->resolve_runtime_options(info, disabled);
+    check("merge_args=false disables automatic MTP defaults",
+          disabled.get_option("hrx_args") == "--threads 7");
+
+    info.labels = {"chat"};
+    lemon::RecipeOptions ordinary("llamacpp-hrx", {{"hrx_args", "--threads 7"}});
+    hrx::ops()->resolve_runtime_options(info, ordinary);
+    check("Non-MTP models retain their original arguments",
+          ordinary.get_option("hrx_args") == "--threads 7");
+}
+
 void check_installer_contract() {
 #if defined(__linux__) && (defined(__x86_64__) || defined(__amd64__))
     const auto params = HrxServer::get_install_params("hrx", kReleaseVersion);
@@ -139,6 +179,7 @@ int main() {
     try {
         check_launch_contract();
         check_admission_contract();
+        check_mtp_contract();
         check_installer_contract();
     } catch (const std::exception& error) {
         check(std::string("unexpected exception: ") + error.what(), false);

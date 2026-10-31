@@ -47,8 +47,8 @@
         }
       },
       "ROCm/ggml-staging-automation": {
-        "hrx-b99": {
-          "llama-hrx-b99-bin-manylinux-hrx-x64.tar.gz": "sha256:02c88d96d39c607aefbb982e8b4f630785ec43c4416583834912ceaa63fd7624"
+        "hrx-b129": {
+          "llama-hrx-b129-bin-manylinux-hrx-x64.tar.gz": "sha256:309e124c2c532980c5541cc2857f187a2a3f5cc82b781d01c05ebb498b524058"
         }
       }
     }
@@ -62,7 +62,7 @@
     "cpu": "b11846"
   },
   "llamacpp-hrx": {
-    "hrx": "hrx-b99"
+    "hrx": "hrx-b129"
   },
   "whispercpp": {
     "cpu": "v1.8.4",
