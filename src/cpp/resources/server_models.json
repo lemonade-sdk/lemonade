@@ -3124,5 +3124,20 @@
         ],
         "size": 21.7,
         "uploaded_by": "plunderstruck"
+    },
+    "Qwen3.8-Flash-Next-Halogen": {
+        "checkpoint": "peonist-ai/halogen-qwen3.8-flash-next:qwen38-flash-next-v2.hgn",
+        "recipe": "halogen",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling",
+            "vision"
+        ],
+        "size": 118.81,
+        "min_resident_gb": 33.0,
+        "halogen_lookup_table": "qwen38-flash-next-ngram.hgn",
+        "halogen_vision_tower": "qwen38-flash-next-vision.hgn"
     }
 }

@@ -225,6 +225,14 @@ public:
         (void)default_install_command;
         return std::nullopt;
     }
+
+    // An extra host requirement of `backend`, as the failure and its fix, or
+    // nullopt when met. Default: none.
+    virtual std::optional<utils::SetupFailure> check_container_host(
+        const std::string& backend) const {
+        (void)backend;
+        return std::nullopt;
+    }
 };
 
 // Shared default ops instance for backends that override nothing.

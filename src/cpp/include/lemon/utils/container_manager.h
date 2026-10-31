@@ -141,12 +141,12 @@ public:
     // describes, matched on ID, then each word of ID_LIKE.
     static std::string podman_install_command(const std::string& os_release);
     static bool allowed_image(const std::string& image);
-    // A read-only mount that puts `host_path` at `destination`, its source
-    // resolved through symlinks, because a Hugging Face cache's links point into
-    // a blobs/ folder the container would not see. Throws when `host_path` does
-    // not exist.
-    static ContainerMount model_mount(const std::string& host_path,
-                                      const std::string& destination);
+    // Read-only mounts that put `host_path` at `destination`, each source
+    // resolved through symlinks. A directory becomes one mount per file inside
+    // it, because a Hugging Face cache's links point into a blobs/ folder the
+    // container would not see. Throws when `host_path` does not exist.
+    static std::vector<ContainerMount> model_mounts(const std::string& host_path,
+                                                    const std::string& destination);
 
 private:
     CommandResult invoke(const std::vector<std::string>& args, int timeout_seconds,

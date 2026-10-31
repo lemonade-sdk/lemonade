@@ -306,6 +306,9 @@ bool needs_gfx1151_cwsr_fix();
 // backend may not support.
 std::string hip_visible_device(const std::string& recipe, const std::string& backend);
 
+// The KFD properties file of the first GPU of `arch`, or "" when none is present.
+std::string kfd_gpu_properties(const std::string& arch);
+
 // FLM status (derived from system-info cache)
 struct FlmStatus {
     std::string state;     // "unsupported","installable","update_required","action_required","installed","update_available"

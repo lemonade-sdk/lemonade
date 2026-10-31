@@ -3,8 +3,11 @@
 // checks every container backend's descriptor and pin.
 
 #include "lemon/backends/backend_descriptor_registry.h"
+#include "lemon/backends/backend_ops.h"
+#include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backends/ds4/ds4.h"
+#include "lemon/backends/halogen/halogen_server.h"
 #include "lemon/utils/container_manager.h"
 
 #include <cstdio>
@@ -451,26 +454,37 @@ void test_helpers() {
 
 #ifndef _WIN32
 // A Hugging Face cache, where each snapshot file links into blobs/.
-void test_model_mount() {
+void test_model_mounts() {
     namespace fs = std::filesystem;
     const fs::path repo = fs::temp_directory_path() / "lemonade-test-model-mounts";
     fs::remove_all(repo);
     const fs::path blobs = repo / "blobs";
     const fs::path snapshot = repo / "snapshots" / "abc";
     fs::create_directories(blobs);
-    fs::create_directories(snapshot);
-    std::ofstream(blobs / "b1") << "b1";
-    fs::create_symlink("../../blobs/b1", snapshot / "model.gguf");
+    fs::create_directories(snapshot / "tokenizer" / "extra");
+    for (const char* blob : {"b1", "b2", "b3"}) std::ofstream(blobs / blob) << blob;
+    fs::create_symlink("../../blobs/b1", snapshot / "model.hgn");
+    fs::create_symlink("../../../blobs/b2", snapshot / "tokenizer" / "vocab.json");
+    fs::create_symlink("../../../../blobs/b3", snapshot / "tokenizer" / "extra" / "merges.txt");
+    const std::string real_blobs = fs::canonical(blobs).string();
 
-    const auto mount = ContainerManager::model_mount((snapshot / "model.gguf").string(),
-                                                     "/mnt/models/model.gguf");
+    const auto file = ContainerManager::model_mounts((snapshot / "model.hgn").string(),
+                                                     "/mnt/models/model.hgn");
     check("a linked file mounts its blob",
-          mount.source == fs::canonical(blobs / "b1").string() &&
-              mount.destination == "/mnt/models/model.gguf");
+          file.size() == 1 && file[0].source == real_blobs + "/b1" &&
+              file[0].destination == "/mnt/models/model.hgn");
+
+    const auto dir = ContainerManager::model_mounts((snapshot / "tokenizer").string(),
+                                                    "/mnt/models/tokenizer");
+    check("a directory mounts each file inside it, at the same relative path",
+          dir.size() == 2 && dir[0].source == real_blobs + "/b3" &&
+              dir[0].destination == "/mnt/models/tokenizer/extra/merges.txt" &&
+              dir[1].source == real_blobs + "/b2" &&
+              dir[1].destination == "/mnt/models/tokenizer/vocab.json");
 
     bool threw = false;
     try {
-        ContainerManager::model_mount((repo / "missing").string(), "/mnt/models/missing");
+        ContainerManager::model_mounts((repo / "missing").string(), "/mnt/models/missing");
     } catch (const std::exception&) {
         threw = true;
     }
@@ -478,6 +492,43 @@ void test_model_mount() {
     fs::remove_all(repo);
 }
 #endif
+
+void test_halogen_kernel_check() {
+    // A Strix Halo on Linux 7.0: SVM set, cwsr_size = 16384 + 40 * 479232.
+    const std::string node = "gfx_target_version 110501\ncapability 671326848\n"
+                             "simd_count 80\nctl_stack_size 16384\ncwsr_size 19185664\n";
+    check("Halogen passes a kernel with SVM and the gfx1151 fixes",
+          !lemon::backends::halogen::check_kfd_node(node));
+    const auto no_svm = lemon::backends::halogen::check_kfd_node(
+        "capability 537109120\nsimd_count 80\nctl_stack_size 16384\ncwsr_size 19185664\n");
+    check("Halogen refuses a kernel built without SVM",
+          no_svm && no_svm->steps == std::vector<std::string>(
+                        {"Install Linux 6.18.4 or newer, built with CONFIG_HSA_AMD_SVM"}));
+    const auto old_cwsr = lemon::backends::halogen::check_kfd_node(
+        "capability 671326848\nsimd_count 80\nctl_stack_size 16384\ncwsr_size 19169280\n");
+    check("Halogen refuses a kernel whose CWSR size predates the gfx1151 fixes",
+          old_cwsr && old_cwsr->steps ==
+                          std::vector<std::string>({"Install Linux 6.18.4 or newer"}));
+    // The repository as of 2026-10-30, which also carries the w4b, ht43 and mtp checkpoints.
+    const auto bundle = lemon::backends::ops_for("halogen")->select_checkpoint_files(
+        "qwen38-flash-next-v2.hgn",
+        {".gitattributes", "README.md", "halogen.jpg", "qwen38-flash-next-ht43.hgn",
+         "qwen38-flash-next-mtp.hgn", "qwen38-flash-next-ngram.hgn",
+         "qwen38-flash-next-v2.hgn", "qwen38-flash-next-vision.hgn",
+         "qwen38-flash-next-w4b.hgn", "qwen38-flash-next-w4b.overlay-speed.hgn",
+         "qwen38-flash-next-w4b.overlay.hgn", "tokenizer/tokenizer.json",
+         "tokenizer/vocab.json"});
+    check("a Halogen download is the checkpoint, the lookup table, the vision tower and the "
+          "tokenizer",
+          bundle && std::set<std::string>(bundle->begin(), bundle->end()) ==
+                        std::set<std::string>{"qwen38-flash-next-ngram.hgn",
+                                              "qwen38-flash-next-v2.hgn",
+                                              "qwen38-flash-next-vision.hgn",
+                                              "tokenizer/tokenizer.json", "tokenizer/vocab.json"});
+    check("Halogen refuses a kernel too old to report the CWSR sizes",
+          lemon::backends::halogen::check_kfd_node("capability 671326848\nsimd_count 80\n")
+              .has_value());
+}
 
 void test_ds4_memory_plan() {
     using lemon::backends::ds4::memory_plan;
@@ -529,8 +580,10 @@ int main() {
     test_install_commands();
     test_helpers();
 #ifndef _WIN32
-    test_model_mount();
+    test_model_mounts();
 #endif
+
+    test_halogen_kernel_check();
     test_ds4_memory_plan();
     test_descriptors_and_pins();
 
