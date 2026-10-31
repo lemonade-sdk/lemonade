@@ -5064,7 +5064,7 @@
       "count": 12
     }
   },
-  "6f2203df5109cc116e095c130c71bd797efe0a1b6f6e6dade2533b175faa4ee8": {
+  "7c72ef78be69b3fcc1a338609b6a783efb64b5e6392dd7bdc1f857714dd6de71": {
     "route": "ollama.delete",
     "format": "Empty",
     "request": {
@@ -6815,7 +6815,7 @@
       }
     }
   },
-  "0422fd16fc19c6c26111988fd738013d77fffe573894b8c68a74ececa340a717": {
+  "037bcdd4ca774bd63a9437b7772d391f44138ca66271e91e6e474644bc89c23c": {
     "route": "ollama.pull",
     "format": "Json",
     "request": {
@@ -9129,7 +9129,7 @@
       }
     }
   },
-  "4b819dd527b5006e711a2a6799f3db06e85837cd13e45eca466e7e27d5a4a0e8": {
+  "aaa1e31e65df5eebb056bcefa0ebb8308705e51ab7e462482db7725c53d951b4": {
     "route": "openai.images_edits",
     "format": "Json",
     "request": {
@@ -9152,17 +9152,50 @@
       "status": 200,
       "content_type": "application/json",
       "body": {
-        "created": 1791943169,
+        "created": 1792950540,
         "data": [
           {
-            "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAIAAAB7GkOtAAAFR3RFWHRwYXJhbWV0ZXJzAEFkZCBhIHJl... (689,496 characters)"
+            "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAIAAAB7GkOtAAADS3RFWHRwYXJhbWV0ZXJzAEFkZCBhIHJl... (711,360 characters)",
+            "generation_info": {
+              "clip_skip": 0,
+              "height": 512,
+              "kind": "image",
+              "models": {
+                "diffusion_model": "flux-2-klein-4b.safetensors",
+                "llm": "qwen_3_4b.safetensors",
+                "vae": "flux2-vae.safetensors"
+              },
+              "negative_prompt": "",
+              "prompt": "Add a red barn and mountains in the background, photorealistic ",
+              "sample_params": {
+                "eta": 0.0,
+                "guidance": {
+                  "distilled_guidance": 3.5,
+                  "txt_cfg": 1.0
+                },
+                "sample_method": "euler",
+                "sample_steps": 4,
+                "scheduler": "flux2"
+              },
+              "schema": "sdcpp.generation/v1",
+              "seed": "42",
+              "vae_tiling_params": {
+                "enabled": true,
+                "rel_size_h": 0.0,
+                "rel_size_w": 0.0,
+                "target_overlap": 0.5,
+                "tile_size_h": 0,
+                "tile_size_w": 0
+              },
+              "width": 512
+            }
           }
         ],
         "output_format": "png"
       }
     }
   },
-  "b7092ae0f861ec80e1acab13c2f15087dd79440967a2439a22fac249439209e8": {
+  "55d04e00de7270232056354af0fddb0d35e97eb14929b1b57715d1e8e2fd4e57": {
     "route": "openai.images_generations",
     "format": "Json",
     "request": {
@@ -9183,17 +9216,48 @@
       "status": 200,
       "content_type": "application/json",
       "body": {
-        "created": 1791943145,
+        "created": 1792950499,
         "data": [
           {
-            "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAIAAAB7GkOtAAAEgnRFWHRwYXJhbWV0ZXJzAEEgc2VyZW5l... (886,104 characters)"
+            "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAIAAAB7GkOtAAACvnRFWHRwYXJhbWV0ZXJzAEEgc2VyZW5l... (885,244 characters)",
+            "generation_info": {
+              "clip_skip": 2,
+              "height": 512,
+              "kind": "image",
+              "models": {
+                "model": "sd_turbo.safetensors"
+              },
+              "negative_prompt": "",
+              "prompt": "A serene mountain landscape at sunset ",
+              "sample_params": {
+                "eta": 1.0,
+                "guidance": {
+                  "distilled_guidance": 3.5,
+                  "txt_cfg": 1.0
+                },
+                "sample_method": "euler_a",
+                "sample_steps": 4,
+                "scheduler": "discrete"
+              },
+              "schema": "sdcpp.generation/v1",
+              "seed": "42",
+              "vae_tiling_params": {
+                "enabled": true,
+                "rel_size_h": 0.0,
+                "rel_size_w": 0.0,
+                "target_overlap": 0.5,
+                "tile_size_h": 0,
+                "tile_size_w": 0
+              },
+              "width": 512
+            }
           }
         ],
         "output_format": "png"
       }
     }
   },
-  "45c3d966efc0a2387b2292a5b97e586acfa9a96da9ce7aa24301b5ab9da9603c": {
+  "5d50122bb958336829e37150e757ae2cf1edc13d0e3586e55ab26a73a8469e96": {
     "route": "openai.images_upscale",
     "format": "Json",
     "request": {
@@ -9211,16 +9275,16 @@
       "status": 200,
       "content_type": "application/json",
       "body": {
-        "created": 1791943191,
+        "created": 1792950564,
         "data": [
           {
-            "b64_json": "iVBORw0KGgoAAAANSUhEUgAABAAAAAQACAIAAADwf7zUAAADZHRFWHRwYXJhbWV0ZXJzAApTdGVwczog... (1,818,596 characters)"
+            "b64_json": "iVBORw0KGgoAAAANSUhEUgAABAAAAAQACAIAAADwf7zUAAAAWXRFWHRwYXJhbWV0ZXJzAHsia2luZCI6... (1,817,156 characters)"
           }
         ]
       }
     }
   },
-  "ae8882d22202091a0c23830fe3e158bb3d937ef1a6893494c2576df9e0978a93": {
+  "d52c3ceee4a3817566ce84a7c4ca919969938a1b95a70e8487018921468d7ff4": {
     "route": "openai.images_variations",
     "format": "Json",
     "request": {
@@ -9242,10 +9306,43 @@
       "status": 200,
       "content_type": "application/json",
       "body": {
-        "created": 1791943188,
+        "created": 1792950556,
         "data": [
           {
-            "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAIAAAB7GkOtAAAE3XRFWHRwYXJhbWV0ZXJzAHZhcmlhdGlv... (204,076 characters)"
+            "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAIAAAB7GkOtAAAC4XRFWHRwYXJhbWV0ZXJzAHZhcmlhdGlv... (255,828 characters)",
+            "generation_info": {
+              "clip_skip": 0,
+              "height": 512,
+              "kind": "image",
+              "models": {
+                "diffusion_model": "flux-2-klein-4b.safetensors",
+                "llm": "qwen_3_4b.safetensors",
+                "vae": "flux2-vae.safetensors"
+              },
+              "negative_prompt": "",
+              "prompt": "variation ",
+              "sample_params": {
+                "eta": 0.0,
+                "guidance": {
+                  "distilled_guidance": 3.5,
+                  "txt_cfg": 1.0
+                },
+                "sample_method": "euler",
+                "sample_steps": 4,
+                "scheduler": "flux2"
+              },
+              "schema": "sdcpp.generation/v1",
+              "seed": "42",
+              "vae_tiling_params": {
+                "enabled": true,
+                "rel_size_h": 0.0,
+                "rel_size_w": 0.0,
+                "target_overlap": 0.5,
+                "tile_size_h": 0,
+                "tile_size_w": 0
+              },
+              "width": 512
+            }
           }
         ],
         "output_format": "png"

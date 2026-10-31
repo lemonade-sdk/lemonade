@@ -1205,10 +1205,36 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 ```json
 {
-  "created": 1791943145,
+  "created": 1792950499,
   "data": [
     {
-      "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAIAAAB7GkOtAAAEgnRFWHRwYXJhbWV0ZXJzAEEgc2VyZW5l... (886,104 characters)"
+      "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAIAAAB7GkOtAAACvnRFWHRwYXJhbWV0ZXJzAEEgc2VyZW5l... (885,244 characters)",
+      "generation_info": {
+        "clip_skip": 2,
+        "height": 512,
+        "kind": "image",
+        "models": {"model": "sd_turbo.safetensors"},
+        "negative_prompt": "",
+        "prompt": "A serene mountain landscape at sunset ",
+        "sample_params": {
+          "eta": 1.0,
+          "guidance": {"distilled_guidance": 3.5, "txt_cfg": 1.0},
+          "sample_method": "euler_a",
+          "sample_steps": 4,
+          "scheduler": "discrete"
+        },
+        "schema": "sdcpp.generation/v1",
+        "seed": "42",
+        "vae_tiling_params": {
+          "enabled": true,
+          "rel_size_h": 0.0,
+          "rel_size_w": 0.0,
+          "target_overlap": 0.5,
+          "tile_size_h": 0,
+          "tile_size_w": 0
+        },
+        "width": 512
+      }
     }
   ],
   "output_format": "png"
@@ -1220,6 +1246,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 - `created` - Unix timestamp of when the image was generated.
 - `data` - The generated images, one entry per image.
   - `b64_json` - Base64-encoded PNG.
+  - `generation_info` - Optional generation parameters and model metadata reported by the image backend.
 - `output_format` - File format of the images, such as `png`, when the backend reports it.
 
 ### Errors
@@ -1316,10 +1343,40 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 ```json
 {
-  "created": 1791943169,
+  "created": 1792950540,
   "data": [
     {
-      "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAIAAAB7GkOtAAAFR3RFWHRwYXJhbWV0ZXJzAEFkZCBhIHJl... (689,496 characters)"
+      "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAIAAAB7GkOtAAADS3RFWHRwYXJhbWV0ZXJzAEFkZCBhIHJl... (711,360 characters)",
+      "generation_info": {
+        "clip_skip": 0,
+        "height": 512,
+        "kind": "image",
+        "models": {
+          "diffusion_model": "flux-2-klein-4b.safetensors",
+          "llm": "qwen_3_4b.safetensors",
+          "vae": "flux2-vae.safetensors"
+        },
+        "negative_prompt": "",
+        "prompt": "Add a red barn and mountains in the background, photorealistic ",
+        "sample_params": {
+          "eta": 0.0,
+          "guidance": {"distilled_guidance": 3.5, "txt_cfg": 1.0},
+          "sample_method": "euler",
+          "sample_steps": 4,
+          "scheduler": "flux2"
+        },
+        "schema": "sdcpp.generation/v1",
+        "seed": "42",
+        "vae_tiling_params": {
+          "enabled": true,
+          "rel_size_h": 0.0,
+          "rel_size_w": 0.0,
+          "target_overlap": 0.5,
+          "tile_size_h": 0,
+          "tile_size_w": 0
+        },
+        "width": 512
+      }
     }
   ],
   "output_format": "png"
@@ -1331,6 +1388,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 - `created` - Unix timestamp of when the image was generated.
 - `data` - The generated images, one entry per image.
   - `b64_json` - Base64-encoded PNG.
+  - `generation_info` - Optional generation parameters and model metadata reported by the image backend.
 - `output_format` - File format of the images, such as `png`, when the backend reports it.
 
 ### Errors
@@ -1418,10 +1476,40 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 ```json
 {
-  "created": 1791943188,
+  "created": 1792950556,
   "data": [
     {
-      "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAIAAAB7GkOtAAAE3XRFWHRwYXJhbWV0ZXJzAHZhcmlhdGlv... (204,076 characters)"
+      "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAIAAAB7GkOtAAAC4XRFWHRwYXJhbWV0ZXJzAHZhcmlhdGlv... (255,828 characters)",
+      "generation_info": {
+        "clip_skip": 0,
+        "height": 512,
+        "kind": "image",
+        "models": {
+          "diffusion_model": "flux-2-klein-4b.safetensors",
+          "llm": "qwen_3_4b.safetensors",
+          "vae": "flux2-vae.safetensors"
+        },
+        "negative_prompt": "",
+        "prompt": "variation ",
+        "sample_params": {
+          "eta": 0.0,
+          "guidance": {"distilled_guidance": 3.5, "txt_cfg": 1.0},
+          "sample_method": "euler",
+          "sample_steps": 4,
+          "scheduler": "flux2"
+        },
+        "schema": "sdcpp.generation/v1",
+        "seed": "42",
+        "vae_tiling_params": {
+          "enabled": true,
+          "rel_size_h": 0.0,
+          "rel_size_w": 0.0,
+          "target_overlap": 0.5,
+          "tile_size_h": 0,
+          "tile_size_w": 0
+        },
+        "width": 512
+      }
     }
   ],
   "output_format": "png"
@@ -1433,6 +1521,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 - `created` - Unix timestamp of when the image was generated.
 - `data` - The generated images, one entry per image.
   - `b64_json` - Base64-encoded PNG.
+  - `generation_info` - Optional generation parameters and model metadata reported by the image backend.
 - `output_format` - File format of the images, such as `png`, when the backend reports it.
 
 ### Errors
@@ -1501,10 +1590,10 @@ To upscale an image from [`POST /v1/images/generations`](#post-v1imagesgeneratio
 
 ```json
 {
-  "created": 1791943191,
+  "created": 1792950564,
   "data": [
     {
-      "b64_json": "iVBORw0KGgoAAAANSUhEUgAABAAAAAQACAIAAADwf7zUAAADZHRFWHRwYXJhbWV0ZXJzAApTdGVwczog... (1,818,596 characters)"
+      "b64_json": "iVBORw0KGgoAAAANSUhEUgAABAAAAAQACAIAAADwf7zUAAAAWXRFWHRwYXJhbWV0ZXJzAHsia2luZCI6... (1,817,156 characters)"
     }
   ]
 }

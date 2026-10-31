@@ -12,6 +12,7 @@ namespace lemon {
 
 // The OpenAI image object that every images route returns.
 nlohmann::ordered_json image_response_schema();
+nlohmann::ordered_json image_generation_response_schema();
 
 // Image route clients expect any JSON error, wherever it was raised, as invalid JSON,
 // and any other failure as a 500 typed fallback_type.
