@@ -155,7 +155,7 @@ public:
 
     // A model's bytes appeared or went away; collections routing through it follow.
     void patch_download(const ModelArtifactStore& artifacts, const std::string& model_name,
-                        bool downloaded);
+                        bool downloaded, const ModelInfo* downloaded_info = nullptr);
 
     // Gone rather than misplaced: a registration leaves the set, a built-in stays.
     void patch_removed(const std::string& model_name);

@@ -31,15 +31,28 @@ inline const std::set<std::string>& reserved_custom_arg_flags() {
 // session. The free floor and tensor cache cap here kept 25 GB free under a
 // long prompt at full prefill speed. Auto-tune reads the same plan to keep the
 // context out of that floor.
+//
+// A pool that holds the whole model plus that 24 GiB, such as a 128 GB Strix
+// Halo with a 115 GiB GTT window, runs it resident instead: streaming there
+// decoded at 2.4 tok/s against 13.5 resident, and DSpark needs residency.
 struct MemoryPlan {
+    bool resident = false;
     int expert_cache_gb = 0;  // --ssd-streaming-cache-experts
     int model_cache_gb = 0;   // DS4_ROCM_STREAM_MODEL_CACHE_GB
-    int free_reserve_gb = 0;  // DS4_ROCM_STREAM_FREE_RESERVE_GB
+    int free_reserve_gb = 0;  // DS4_ROCM_STREAM_FREE_RESERVE_GB, or what residency leaves free
 };
 
-inline MemoryPlan memory_plan(double pool_gb) {
+inline constexpr int kResidentFreeReserveGb = 24;
+
+// `weights_gb` is the model's GGUF plus any DSpark support file it loads.
+inline MemoryPlan memory_plan(double pool_gb, double weights_gb) {
     MemoryPlan plan;
     if (pool_gb <= 0.0) return plan;
+    if (weights_gb > 0.0 && pool_gb >= weights_gb + kResidentFreeReserveGb) {
+        plan.resident = true;
+        plan.free_reserve_gb = kResidentFreeReserveGb;
+        return plan;
+    }
     plan.expert_cache_gb = static_cast<int>(pool_gb * 0.4);
     plan.model_cache_gb = static_cast<int>(pool_gb * 0.2);
     plan.free_reserve_gb = static_cast<int>(pool_gb * 0.6);

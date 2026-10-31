@@ -83,6 +83,7 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
     "backend": "auto",
     "cpu_args": "",
     "cpu_bin": "builtin",
+    "cuda_args": "",
     "cuda_bin": "builtin",
     "prefer_system": true,
     "rocm_args": "",
@@ -168,6 +169,7 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
   },
   "thenoise": {
     "backend": "auto",
+    "cuda_bin": "builtin",
     "lora_dir": "",
     "rocm_bin": "builtin",
     "upscaler_dir": ""
@@ -196,7 +198,9 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
     "cpu_args": "",
     "cpu_bin": "builtin",
     "npu_args": "",
-    "npu_bin": "builtin"
+    "npu_bin": "builtin",
+    "rocm_args": "",
+    "vulkan_args": ""
   }
 }
 ```

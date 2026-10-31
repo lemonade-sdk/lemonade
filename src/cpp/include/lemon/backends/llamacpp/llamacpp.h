@@ -58,7 +58,7 @@ inline const BackendDescriptor descriptor = {
     /*version_policy*/  VersionPolicy::Exact,
     /*self_manages_downloads*/ false,
     /*takes_args*/      true,
-    /*arg_variants*/    {"rocm", "vulkan", "cpu"},
+    /*arg_variants*/    {"rocm", "vulkan", "cuda", "cpu"},
     /*bin_variants*/    {"rocm", "vulkan", "cuda", "cpu"},
     /*config_extra*/    {{"prefer_system", true}},
     /*streams_model_from_storage*/ false,

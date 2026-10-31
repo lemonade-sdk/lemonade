@@ -72,10 +72,11 @@
       "properties": {
         "id": { "type": "string" },
         "type": {
-          "description": "v1: semantic_similarity, classifier, llm. Reserved vLLM-SR presets ship post-v1 as thin presets over `classifier`.",
+          "description": "v1: semantic_similarity, classifier, zero_shot, llm. Reserved vLLM-SR presets ship post-v1 as thin presets over `classifier`.",
           "enum": [
             "semantic_similarity",
             "classifier",
+            "zero_shot",
             "llm",
             "pii_detection",
             "prompt_safety",
@@ -88,9 +89,10 @@
         "model": { "type": "string" },
         "prompt": { "type": "string" },
         "labels": {
-          "description": "classifier output labels; dangling condition `label` refs are rejected.",
+          "description": "classifier output labels; dangling condition `label` refs are rejected. Entries are unique, not blank, and free of control characters, matching what POST /v1/classify enforces on a request's `labels`. How many a zero_shot model accepts is its token window's call, not a schema limit.",
           "type": "array",
-          "items": { "type": "string", "minLength": 1 }
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "pattern": "^[^\\u0000-\\u001F\\u007F]*[^\\u0000-\\u0020\\u007F][^\\u0000-\\u001F\\u007F]*$" }
         },
         "default_label": {
           "description": "Used when a condition omits `label`.",
@@ -110,6 +112,11 @@
           "description": "Behavior when the classifier fails to evaluate. match_true = fail-closed authoring. Frozen v1 default when omitted: match_false (fail-open).",
           "enum": ["match_true", "match_false"],
           "default": "match_false"
+        },
+        "on_truncation": {
+          "description": "Behavior when the backend cut the input text to fit its token window. Accepted on the model-backed types, classifier and zero_shot; both read a token window they can overflow and both report the cut. What the cut discards differs: zero_shot keeps the head and the tail of the text, a fixed-label classifier keeps the head and drops the end. Scoring cut text succeeds, so on_error alone cannot reach that case. fail turns the cut into an evaluation failure, so on_error then applies — pair it with on_error: match_true for a rule whose miss would be a leak rather than a wrong model. Frozen v1 default when omitted: score (use the scores anyway).",
+          "enum": ["score", "fail"],
+          "default": "score"
         }
       },
       "additionalProperties": false,
@@ -118,9 +125,16 @@
           "then": { "required": ["model", "reference_phrases"], "not": { "required": ["labels"] } } },
         { "if":   { "required": ["type"], "properties": { "type": { "const": "classifier" } } },
           "then": { "required": ["model"] } },
+        { "if":   { "required": ["type"], "properties": { "type": { "const": "zero_shot" } } },
+          "then": { "required": ["model", "labels"],
+                    "properties": { "labels": { "minItems": 1 } },
+                    "not": { "anyOf": [{ "required": ["prompt"] },
+                                       { "required": ["reference_phrases"] }] } } },
         { "if":   { "required": ["type"], "properties": { "type": { "const": "llm" } } },
           "then": { "required": ["model", "prompt", "labels"],
-                    "properties": { "labels": { "minItems": 1 } } } }
+                    "properties": { "labels": { "minItems": 1 } } } },
+        { "if":   { "required": ["on_truncation"] },
+          "then": { "properties": { "type": { "enum": ["classifier", "zero_shot"] } } } }
       ]
     },
     "rule": {
