@@ -2259,4 +2259,68 @@ test.describe('Lemonade UI — Feature Parity', () => {
     }
   });
 
+  for (const { backend, gpuKey, devices, families, combined } of [
+    { backend: 'cuda', gpuKey: 'nvidia_gpu', devices: ['cuda0', 'cuda1'], families: ['sm_120', 'sm_120'], combined: true },
+    { backend: 'cuda', gpuKey: 'nvidia_gpu', devices: ['cuda0', 'cuda1'], families: ['sm_120', 'sm_89'], combined: false },
+    { backend: 'cuda', gpuKey: 'nvidia_gpu', devices: ['cuda0', 'cuda1'], families: ['sm_120', ''], combined: false },
+    { backend: 'rocm-stable', gpuKey: 'amd_gpu', devices: ['rocm0', 'rocm1'], families: ['gfx1151', 'gfx1151'], combined: true },
+  ]) {
+    test(`25h — Device selector supports ${backend} GPUs (${families.join(',')})`, async ({ page }) => {
+      const modelName = `multi-gpu-${backend}`;
+      const multiDevice = devices.join(',');
+      let loadRequestBody: Record<string, unknown> | null = null;
+
+      await page.route('**/api/v1/health**', route => route.fulfill({
+        json: { status: 'ok', version: 'test', all_models_loaded: [] },
+      }));
+      await page.route('**/api/v1/system-info**', route => route.fulfill({
+        json: {
+          recipes: {
+            llamacpp: llamacppRecipe({
+              cpu: { state: 'installed', version: 'test' },
+              [backend]: { state: 'installed', version: 'test' },
+            }),
+          },
+          devices: {
+            cpu: { available: true },
+            [gpuKey]: families.map(family => ({ available: true, ...(family ? { family } : {}) })),
+          },
+        },
+      }));
+      await page.route('**/api/v1/load', route => {
+        loadRequestBody = route.request().postDataJSON() as Record<string, unknown>;
+        return route.fulfill({ json: { status: 'ok' } });
+      });
+      const optionsState = new Map<string, Record<string, unknown>>();
+      await page.route('**/api/v1/models**', async route => {
+        if (await fulfillModelOptionsRoute(route, optionsState)) return;
+        return route.fulfill({
+          json: {
+            data: [{
+              id: modelName, name: modelName, labels: ['chat'], recipe: 'llamacpp',
+              downloaded: true, max_context_window: 65536,
+            }],
+          },
+        });
+      });
+
+      await page.goto('/');
+      await page.locator('.titlebar__nav').getByText('Models').click();
+      await page.locator('.model-list-panel__list .workspace-list-row').filter({ hasText: modelName }).click();
+      await page.locator('#detail-tab-config').click();
+      const panel = page.locator('#detail-panel-config');
+      await expect(panel.getByRole('button', { name: 'Save', exact: true })).toBeEnabled();
+      await panel.locator('[id$="llamacpp_backend"]').selectOption(backend);
+      const deviceSelector = panel.locator('[id$="llamacpp_device"]');
+      await expect(deviceSelector.locator('option')).toHaveText([
+        'auto', ...devices, ...(combined ? [multiDevice] : []),
+      ]);
+      const selectedDevice = combined ? multiDevice : devices[0];
+      await deviceSelector.selectOption(selectedDevice);
+      await page.getByRole('button', { name: `Load ${modelName}` }).click();
+      await expect.poll(() => loadRequestBody?.llamacpp_backend).toBe(backend);
+      await expect.poll(() => loadRequestBody?.llamacpp_device).toBe(selectedDevice);
+    });
+  }
+
 });
