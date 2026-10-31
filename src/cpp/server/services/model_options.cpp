@@ -1,10 +1,13 @@
 #include "lemon/server/model_options.h"
 
+#include <algorithm>
+#include <limits>
 #include <optional>
 
 #include <lemon/utils/aixlog.hpp>
 
 #include "lemon/auto_tune.h"
+#include "lemon/backends/llamacpp/llamacpp_systemone.h"
 #include "lemon/model_manager.h"
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
@@ -89,8 +92,15 @@ void respond_with_model_options(ServerContext& ctx, const std::string& id,
 
         const int64_t auto_ctx = resolve_auto_ctx_size(effective, info);
         const json effective_ctx = effective.get_option("ctx_size");
-        const int64_t resolved_ctx = auto_ctx != -2 ? auto_ctx
+        int64_t resolved_ctx = auto_ctx != -2 ? auto_ctx
             : (effective_ctx.is_number() ? effective_ctx.get<int64_t>() : -1);
+        // LlamaCppServer::load caps it there; the Router cannot, because the
+        // stored options must keep matching later requests or every load reloads.
+        if (is_encoder_decision_model(info)) {
+            resolved_ctx = backends::llamacpp::encoder_decision_ctx_size(
+                static_cast<int>(std::min<int64_t>(resolved_ctx, std::numeric_limits<int>::max())),
+                info.max_context_window);
+        }
 
         json response = {
             {"model_name", model_id},

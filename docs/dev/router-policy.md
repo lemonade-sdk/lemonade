@@ -99,7 +99,8 @@ window, estimate ~4 bytes per token.
 |------|---------|
 | `semantic_similarity` | Cosine similarity of the input against labelled `reference_phrases`, via an embedding model. |
 | `classifier` | A `{label: score}` classifier — an encoder model via the `onnxruntime` backend (`/v1/classify`), or any model as an LLM-as-classifier via chat. |
-| `zero_shot` | Scores the input against the `labels` **you** declare, sent with each request. Supports one kind of zero-shot model: an LFM2 prompt router that reads the labels and the text together in a single pass, on the `onnxruntime` backend. No LLM fallback. |
+| `zero_shot` | Scores the input against the `labels` **you** declare, sent with each request. Supports two kinds of zero-shot model: an LFM2 prompt router that reads the labels and the text together in a single pass, on the `onnxruntime` backend, and a llama.cpp decision model (`systemone` label). No LLM fallback. |
+| `systemone` | One typed question (`choice`, `noul`, or `score`) with your own instructions, answered by a llama.cpp decision model through `/v1/systemone`. Its labels are the question's options. |
 | `llm` | An LLM picks exactly one of the declared `labels` for the request (with a rationale); the chosen label scores `1.0`, the rest `0`. You supply the `model` and a `prompt` describing when to choose each label. |
 
 A classifier condition is a band test: `{ "classifier": "<id>", "label": "<name>",
@@ -164,8 +165,8 @@ and every entry's `model` must be one of `components`:
   no per-label head to read them off, so the label list is an input to the graph.
   Lemonade ships
   [`LFM2.5-Encoder-350M-Prompt-Router-ONNX`](https://huggingface.co/lemonade-sdk/LFM2.5-Encoder-350M-Prompt-Router-ONNX)
-  for it. Its model must carry the `zero-shot` label, and a `classifier`'s
-  model must not: each kind of model refuses the other's request, so
+  for it. Its model must carry the `zero-shot` label or be a llama.cpp decision
+  model, and a `classifier`'s model must be neither: each kind of model refuses the other's request, so
   registration refuses either mismatch.
 
   Every classifier's `labels` are checked at registration: unique, not blank,
@@ -174,6 +175,10 @@ and every entry's `model` must be one of `components`:
   zero-shot model accepts, and how long each may be, is not checked here: both
   derive from that model's token window and are tunable per model, so the model
   enforces them and names the numbers in its error.
+- `systemone`: the `model` must be a llama.cpp decision model (labels
+  `classification` and `systemone`), checked when the policy is registered. An
+  ONNX classifier is refused, and so is a downloaded GGUF whose decision type the
+  bundled llama.cpp cannot load.
 - `llm` shows the request to an LLM and asks it to choose one of `labels` (the
   chosen label scores `1.0`). Because it produces a plain label, it's a
   **composable signal** — combine it with any other condition, as in
@@ -219,12 +224,20 @@ it. `on_truncation` decides what the cut means:
 `fail` also needs a backend that reports its cuts. ort-server does from 0.4.0.
 An older ort-server cuts without saying so, and lemond warns when it loads one.
 Against it, every evaluation under `fail` counts as a failure, so `on_error`
-applies. `score` is unaffected.
+applies. `score` is unaffected. Most llama.cpp decision models, Laya and
+Julia-1 among them, refuse a text that is too long, so they report `false`.
+`lfm2-d1-omni`, and `h2o-lightning` for a text over 32,000 bytes, can cut it
+without saying so, so they report nothing and `fail` fails closed.
 
 `LFM2.5-Encoder-350M-Prompt-Router-ONNX` has a default 2,048-token window, so a text
 longer than about 8,000 characters is cut. To raise it, pass
 `--onnxruntime-args "--max-length 4096"`; memory grows with the square of the
 window.
+
+An encoder decision model (Laya, Julia-1, the `vllm-d3` models) reads at most
+8,192 tokens per input by default, whatever its context size, and refuses a
+longer one. To raise it, pass `--llamacpp-args "-b 32768 -ub 32768"`; memory and
+time grow with the square of that size.
 
 The other types never read a token window and refuse the option. A `classifier`
 backed by a chat LLM refuses it too: a chat model reports no cut, so `fail`
@@ -333,7 +346,8 @@ A **`classifier`** or **`zero_shot`** entry also carries **`truncated`**:
 `true` when the backend cut the input text to fit its token window before
 scoring, `false` when it scored the whole input. A `zero_shot` model never cuts
 its labels, a label pooled from half its tokens would score something the model
-only partly read. The key is absent when the backend does not report cuts
+only partly read: ort-server and a `laya` decision model refuse a label too long
+to read whole. The key is absent when the backend does not report cuts
 (ort-server before 0.4.0, or a chat LLM), so its absence means "unknown".
 
 ## Cloud candidates
@@ -366,6 +380,12 @@ that capability is checked when the collection is registered.
 The `zero_shot` condition runs the same backend, but only
 `ModelType::CLASSIFICATION` satisfies it, a chat model cannot score a label
 list it is handed at request time, so there is no fallback to substitute.
+
+The `systemone` condition calls `/v1/systemone` on a llama.cpp decision model,
+which deploys as `ModelType::CLASSIFICATION`. llama-server builds the prompt from
+the template in the GGUF. Lemonade sends the question as the policy wrote it,
+except that a `criteria` array becomes an object with the options in the same
+order.
 
 ## LLM-as-router (`routing.router`)
 

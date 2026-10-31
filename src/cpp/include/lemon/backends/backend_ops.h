@@ -142,6 +142,10 @@ public:
     // Whether a model's local artifacts are present. Default: the artifact
     // store's checkpoint-completeness check.
     virtual bool is_downloaded(const ModelInfo& info, const BackendOpsContext& ctx) const;
+    virtual std::string validate_load(const ModelInfo& info) const {
+        (void)info;
+        return "";
+    }
 
     virtual DownloadPolicy plan_download(const ModelInfo& info,
                                          const BackendOpsContext& ctx) const;

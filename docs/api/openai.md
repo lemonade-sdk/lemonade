@@ -414,6 +414,7 @@ Sent in place of the rest of the stream when the backend fails after the stream 
 | `400` | `missing_argument` | A required argument is missing |
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | `model` is not an LLM, which is checked after it loads |
+| `400` | `model_load_refused` | The backend refuses the requested model as it is registered, before it starts anything, such as a decision model whose GGUF type the bundled llama.cpp does not support |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
@@ -628,6 +629,7 @@ Sent in place of the rest of the stream when the backend fails after the stream 
 | `400` | `missing_argument` | A required argument is missing |
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | `model` is not an LLM, which is checked after it loads |
+| `400` | `model_load_refused` | The backend refuses the requested model as it is registered, before it starts anything, such as a decision model whose GGUF type the bundled llama.cpp does not support |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
@@ -721,6 +723,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `400` | `missing_argument` | A required argument is missing |
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | `model`'s backend cannot embed, such as a text-to-speech model |
+| `400` | `model_load_refused` | The backend refuses the requested model as it is registered, before it starts anything, such as a decision model whose GGUF type the bundled llama.cpp does not support |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
@@ -917,6 +920,7 @@ Sent in place of the rest of the stream when the backend fails after the stream 
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | The request does not stream and `model` is a FastFlowLM or cloud model, which has no Responses API |
 | `400` | `model_not_applicable` | The request does not stream and `model` is not an LLM |
+| `400` | `model_load_refused` | The backend refuses the requested model as it is registered, before it starts anything, such as a decision model whose GGUF type the bundled llama.cpp does not support |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
@@ -1013,6 +1017,7 @@ On FastFlowLM, which reports no segment timestamps, `verbose_json` has no `segme
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | `model` cannot transcribe, which is found after it loads; the error's `type` is `unsupported_operation` |
 | `400` |  | `response_format` is `srt` or `vtt` and `model` is a FastFlowLM model, which reports no segment timestamps |
+| `400` | `model_load_refused` | The backend refuses the requested model as it is registered, before it starts anything, such as a decision model whose GGUF type the bundled llama.cpp does not support |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
@@ -1230,6 +1235,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `400` | `missing_argument` | A required argument is missing |
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | The backend's reply does not parse, or a request field not listed above has the wrong JSON type |
+| `400` | `model_load_refused` | The backend refuses the requested model as it is registered, before it starts anything, such as a decision model whose GGUF type the bundled llama.cpp does not support |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
@@ -1342,6 +1348,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | The form has files under both `image` and `image[]` |
 | `400` |  | The backend's reply does not parse, or a request field not listed above has the wrong JSON type |
+| `400` | `model_load_refused` | The backend refuses the requested model as it is registered, before it starts anything, such as a decision model whose GGUF type the bundled llama.cpp does not support |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
@@ -1443,6 +1450,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `400` | `missing_argument` | A required argument is missing |
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | The backend's reply does not parse, or a request field not listed above has the wrong JSON type |
+| `400` | `model_load_refused` | The backend refuses the requested model as it is registered, before it starts anything, such as a decision model whose GGUF type the bundled llama.cpp does not support |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
@@ -1635,6 +1643,7 @@ Accepted `response_format` values depend on the backend: `kokoro-v1` encodes `mp
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` | `model_not_applicable` | `model` is not a text-to-speech model, which is checked before it loads |
 | `400` |  | `response_format` is not a format `model`'s backend produces, or, when streaming, one it streams |
+| `400` | `model_load_refused` | The backend refuses the requested model as it is registered, before it starts anything, such as a decision model whose GGUF type the bundled llama.cpp does not support |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
@@ -1789,9 +1798,10 @@ so on.
 Two label sets describe a model that cannot exist, and are refused rather than
 repaired:
 
-- **A mode the recipe's backend does not serve.** `/classify` is served only by
-  `onnxruntime`, so `labels: ["classification"]` on a `llamacpp` model is an
-  error; register it as the chat model it is.
+- **A mode the recipe's backend does not serve.** `/classify` is served by
+  `onnxruntime`, and by `llamacpp` only for a model that also has the
+  `systemone` label. `labels: ["classification"]` on a `llamacpp` model without
+  `systemone` is an error; register it as the chat model it is.
 - **Two different modes.** `labels: ["chat", "embeddings"]` on a `llamacpp` model
   is an error even though llama.cpp serves both: the subprocess is launched for
   one mode, so the second would name an endpoint it was never configured to

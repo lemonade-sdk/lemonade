@@ -23,6 +23,7 @@ namespace ErrorType {
     constexpr const char* SLOTS_PINNED = "slots_pinned_error";
     constexpr const char* ROUTER_RESIDENCY_CONFLICT = "router_residency_conflict";
     constexpr const char* CONFIGURATION_ERROR = "configuration_error";
+    constexpr const char* MODEL_LOAD_REFUSED = "model_load_refused";
 }
 
 // Base exception class for all Lemon errors
@@ -76,6 +77,14 @@ public:
                   "' cannot coexist with resident model '" + resident_model +
                   "' because " + constraint + ".",
               ErrorType::ROUTER_RESIDENCY_CONFLICT) {}
+};
+
+// The backend refuses the model as it is registered, before starting anything.
+// ModelLoader::model_error() recognizes the message by its prefix.
+class ModelLoadRefusedException : public LemonException {
+public:
+    explicit ModelLoadRefusedException(const std::string& reason)
+        : LemonException("Model load refused: " + reason, ErrorType::MODEL_LOAD_REFUSED) {}
 };
 
 // The machine is misconfigured for what was asked.

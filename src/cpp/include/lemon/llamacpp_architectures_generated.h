@@ -11,7 +11,7 @@ namespace lemon {
 
 inline bool llamacpp_architecture_is_supported_by_all_backends(
     std::string_view architecture) {
-    static constexpr std::array<std::string_view, 162> architectures = {{
+    static constexpr std::array<std::string_view, 162> names = {{
     "afmoe",
     "apertus",
     "arcee",
@@ -175,7 +175,27 @@ inline bool llamacpp_architecture_is_supported_by_all_backends(
     "wavtokenizer-dec",
     "xverse",
     }};
-    return std::binary_search(architectures.begin(), architectures.end(), architecture);
+    return std::binary_search(names.begin(), names.end(), architecture);
+}
+
+inline bool llamacpp_decision_type_is_supported_by_all_backends(
+    std::string_view decision_type) {
+    static constexpr std::array<std::string_view, 13> names = {{
+    "clef",
+    "granite-switch",
+    "h2o-lightning",
+    "kev",
+    "laya",
+    "lev",
+    "lfm2-d1",
+    "lfm2-d1-omni",
+    "nimble",
+    "openjev",
+    "pplx-decider",
+    "vllm-d3",
+    "vllm-decision2",
+    }};
+    return std::binary_search(names.begin(), names.end(), decision_type);
 }
 
 }  // namespace lemon

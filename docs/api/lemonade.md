@@ -52,7 +52,7 @@ Some Lemonade endpoints live on other pages: the per-model [`/v1/models/{id}/fil
 ## `POST /v1/classify`
 <sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
 
-Runs an encoder text classifier, such as a PII, prompt-safety or domain classifier, on a string and returns a score for each label. It serves `onnxruntime` sequence classifiers (one label set), token classifiers (aggregated span labels) and zero-shot models (labels sent with each request). It provides the classification that the router's `classifier` and `zero_shot` conditions use.
+Runs an encoder text classifier, such as a PII, prompt-safety or domain classifier, on a string and returns a score for each label. It serves `onnxruntime` sequence classifiers (one label set), token classifiers (aggregated span labels) and zero-shot models (labels sent with each request), and llama.cpp decision models, which are zero-shot. It provides the classification that the router's `classifier` and `zero_shot` conditions use.
 
 Requires `LEMONADE_API_KEY` when it is set.
 
@@ -60,7 +60,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
-| `model` | No | The classifier model. Optional when exactly one classification model is loaded; that model is used. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `model` | No | The classification model. Optional when exactly one classification model is loaded; that model is used. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `input` or `text` | Yes | Text to classify. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `top_k` | No | Return only the highest-scoring `k` labels. Defaults to every label. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `labels` | No | The labels to score `input` against. Required by a zero-shot model, and refused by every other model. The entries are unique, not blank, and carry no control character. How many are accepted, and how long each may be, is the model's token window to decide. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
@@ -120,7 +120,7 @@ Some upstream models declare only generic `LABEL_<n>` label names; their model c
 - `model` - The model that classified the input, including one chosen because it was the only one loaded.
 - `labels` - Each label's score, keyed by label name.
   - The label's score, in `[0, 1]`.
-- `truncated` - `true` when the model cut the input text to fit its token window before scoring, `false` when it scored the whole input. Labels are never cut, so the scores still cover every label sent. Absent when the backend does not report cuts (ort-server before 0.4.0), so absence means unknown.
+- `truncated` - `true` when the model cut the input text to fit its token window before scoring, `false` when it scored the whole input. Labels are never cut, so the scores still cover every label sent. Absent when the backend does not report cuts (ort-server before 0.4.0, or a llama.cpp decision model of type `lfm2-d1-omni`, or `h2o-lightning` with a long text), so absence means unknown.
 
 ### Errors
 
@@ -130,7 +130,9 @@ Some upstream models declare only generic `LABEL_<n>` label names; their model c
 | `400` | `missing_argument` | A required argument is missing |
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | `model` is omitted and not exactly one classification model is loaded |
-| `400` |  | The backend rejects the request, for example because `model` is not a classification model, which is found only after it loads, or because `labels` is sent to a fixed-label model or left out for a zero-shot one |
+| `400` |  | `model` lacks the `classification` label, checked before it loads |
+| `400` |  | The backend rejects the request, for example `labels` sent to a fixed-label model or left out for a zero-shot one |
+| `400` | `model_load_refused` | The backend refuses the requested model as it is registered, before it starts anything, such as a decision model whose GGUF type the bundled llama.cpp does not support |
 | `404` |  | The model is unloaded while the request waits for it |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
@@ -1241,6 +1243,7 @@ A collection, which has no checkpoint of its own.
 | `400` | `invalid_json` | The body is not a JSON object |
 | `400` | `missing_argument` | A required argument is missing |
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
+| `400` | `model_load_refused` | The backend refuses the requested model as it is registered, before it starts anything, such as a decision model whose GGUF type the bundled llama.cpp does not support |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
@@ -1422,6 +1425,7 @@ Format the `lyrics` value the way the ACE-Step authors recommend:
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` | `model_not_applicable` | `model` is not an audio-generation model |
 | `400` |  | `response_format` is not a format `model`'s backend produces, or, when streaming, one it streams |
+| `400` | `model_load_refused` | The backend refuses the requested model as it is registered, before it starts anything, such as a decision model whose GGUF type the bundled llama.cpp does not support |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
@@ -1493,6 +1497,7 @@ Errors carry a JSON `error` object.
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | `image` is not base64 data, or is a `data:` URL without a base64 payload |
 | `400` |  | `image` is not a PNG, JPEG, BMP or GIF |
+| `400` | `model_load_refused` | The backend refuses the requested model as it is registered, before it starts anything, such as a decision model whose GGUF type the bundled llama.cpp does not support |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |

@@ -6,6 +6,7 @@ This page documents Lemonade's llama.cpp-specific compatibility surface. Lemonad
 | Method | Endpoint | Description | Modality |
 |--------|----------|-------------|----------|
 | `POST` | [`/v1/rerank`](#post-v1rerank) | Score documents against a query | query + documents -> relevance-scored documents |
+| `POST` | [`/v1/systemone`](#post-v1systemone) | Answer typed questions about content with a decision model | state + questions -> one answer per question |
 | `GET` | [`/v1/slots`](#get-v1slots) | Read each slot's processing state | slots state |
 | `POST` | [`/v1/slots/{id}?action=save`](#post-v1slotsid) | Save the prompt cache of the specified slot to a file | prompt cache |
 | `POST` | [`/v1/slots/{id}?action=restore`](#post-v1slotsid) | Restore the prompt cache of the specified slot from a file | prompt cache |
@@ -96,6 +97,7 @@ Also served at `/v1/reranking` and `/v1/reranker`. Requires `LEMONADE_API_KEY` w
 | `400` | `missing_argument` | A required argument is missing |
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | `model` is not a llama.cpp model |
+| `400` | `model_load_refused` | The backend refuses the requested model as it is registered, before it starts anything, such as a decision model whose GGUF type the bundled llama.cpp does not support |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
@@ -104,6 +106,143 @@ Also served at `/v1/reranking` and `/v1/reranker`. Requires `LEMONADE_API_KEY` w
 | `500` |  | The request fails unexpectedly |
 | `500` | `model_load_error` | Loading the requested model fails for another reason, such as a failed download or a backend that does not start |
 <!-- END GENERATED: llamacpp.rerank -->
+
+<!-- BEGIN GENERATED: llamacpp.systemone -->
+## `POST /v1/systemone`
+<sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
+
+Asks a llama.cpp decision model typed questions about one piece of content and returns one answer per question, without generating tokens. lemond forwards the request to `llama-server` unchanged, including the order of each question's options, and `llama-server` builds the prompt from the template in the GGUF. Only `llamacpp` models labelled `classification` and `systemone`, such as `Laya-GGUF`, serve this endpoint.
+
+Requires `LEMONADE_API_KEY` when it is set.
+
+### Parameters
+
+| Parameter | Required | Description | Status |
+|-----------|----------|-------------|--------|
+| `model` | No | The classification model. Optional when exactly one classification model is loaded; that model is used. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `state` | Yes | The content to judge. A value that is not a string reaches the model as JSON text. `null` asks about the images only; `llama-server` refuses it for decision types that need text. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `questions` | Yes | Maps each question id to a question, which the model answers independently of the others. A question has a `type` (`choice`, `score` or `noul`), `instructions`, and `criteria`: for `choice`, an object that maps each option to a description or `null`; for `score`, an array of 2 to 10 levels, lowest first; for `noul`, optional `true` and `false` descriptions. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `images` | No | Data URLs of images to judge with the state. The model must load with an `mmproj` file, and `llama-server` decides which decision types read images. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
+| `ctx_size` | No | Lemonade extension: context size to load the model with, when this request loads it. Ignored when the model is already loaded. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+
+### Answer Quality
+
+Answers depend on the model, on the wording of each question, and on the order of a `choice` question's options. Test a question with the model that serves it before a router policy relies on its scores.
+
+### Images
+
+Register the model with its projector file, for example on `/v1/pull`: `{"model_name": "user.my-decider", "checkpoint": "<repo>:<variant>", "mmproj": "<mmproj file>.gguf", "recipe": "llamacpp", "labels": ["classification", "systemone"]}`. Then send `images` as data URLs (`data:image/png;base64,...`), with or without a `state`.
+
+### Example
+
+=== "PowerShell"
+
+    ```powershell
+    Invoke-WebRequest `
+      -Uri "http://localhost:13305/v1/systemone" `
+      -Method POST `
+      -Headers @{ "Content-Type" = "application/json" } `
+      -Body '{
+          "model": "Laya-GGUF",
+          "state": "Customer message: I was charged twice for my order last week and nobody has replied.",
+          "questions": {
+            "route": {
+              "type": "choice",
+              "instructions": "Which team should handle this?",
+              "criteria": {"billing": null, "shipping": null, "technical": null}
+            },
+            "angry": {"type": "noul", "instructions": "Is the customer angry?"},
+            "urgency": {
+              "type": "score",
+              "instructions": "How urgent is this?",
+              "criteria": ["can wait", "this week", "today", "right now"]
+            }
+          }
+        }'
+    ```
+
+=== "Bash"
+
+    ```bash
+    curl http://localhost:13305/v1/systemone \
+      -H "Content-Type: application/json" \
+      -d '{
+          "model": "Laya-GGUF",
+          "state": "Customer message: I was charged twice for my order last week and nobody has replied.",
+          "questions": {
+            "route": {
+              "type": "choice",
+              "instructions": "Which team should handle this?",
+              "criteria": {"billing": null, "shipping": null, "technical": null}
+            },
+            "angry": {"type": "noul", "instructions": "Is the customer angry?"},
+            "urgency": {
+              "type": "score",
+              "instructions": "How urgent is this?",
+              "criteria": ["can wait", "this week", "today", "right now"]
+            }
+          }
+        }'
+    ```
+
+**Response:** `200 OK`
+
+```json
+{
+  "model": "Laya-GGUF",
+  "answers": {
+    "route": {
+      "type": "choice",
+      "choice": "billing",
+      "probabilities": {"billing": 0.9914327368198715, ... 2 more},
+      "confidence": 0.9871491052298071
+    },
+    ... 2 more
+  },
+  "usage": {"input_tokens": 136, "output_tokens": 0}
+}
+```
+
+### Response format
+
+- `model` - The model that answered.
+- `answers` - One answer for each question, keyed by question id.
+  - One question's answer. Its fields depend on the question's `type`.
+    - `type` - The question's type.
+    - `choice` - `choice` questions: the most likely option.
+    - `score` - `score` questions: the expected level index, from `0` to the number of levels minus one.
+    - `legend` - `score` questions: each level's text, keyed by level index.
+      - The level's text.
+    - `probabilities` - `choice` and `score` questions: the probability of each option, keyed by option for `choice` and by level index for `score`. The probabilities sum to `1`.
+      - The probability, in `[0, 1]`.
+    - `confidence` - `choice` and `score` questions: how clearly the model prefers its answer; `0` when every option is equally likely.
+    - `noul` - `noul` questions: the probability that the answer is `true`.
+- `usage` - Tokens processed.
+  - `input_tokens` - Prompt tokens across all questions.
+  - `output_tokens` - Always `0`, because the model generates no tokens.
+
+### Errors
+
+| Status | Code | When |
+|--------|------|------|
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `missing_argument` | A required argument is missing |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
+| `400` |  | `model` is omitted and not exactly one classification model is loaded |
+| `400` |  | `model` lacks the `classification` or `systemone` label, or its backend does not answer SystemOne questions; checked before it loads |
+| `400` |  | `llama-server` rejects a question, such as a `score` question with one level; the backend's status replaces this one |
+| `400` | `context_length_exceeded` | `state` and a question do not fit in the model's context |
+| `400` | `model_load_refused` | The backend refuses the requested model as it is registered, before it starts anything, such as a decision model whose GGUF type the bundled llama.cpp does not support |
+| `404` |  | The model is unloaded while the request waits for it |
+| `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
+| `404` | `model_not_found` | The requested model is not in the registry |
+| `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
+| `409` | `slots_pinned_error` | Every loaded model of the requested model's type is pinned, so none can be unloaded to make room |
+| `500` |  | The backend reports an error; the backend's own status replaces this one when it sends one |
+| `500` |  | The request fails unexpectedly |
+| `500` | `model_load_error` | Loading the requested model fails for another reason, such as a failed download or a backend that does not start |
+| `501` |  | `images` is sent to a model that reads no images, or that loaded without `mmproj` |
+<!-- END GENERATED: llamacpp.systemone -->
 
 <!-- BEGIN GENERATED: llamacpp.slots -->
 ## `GET /v1/slots`

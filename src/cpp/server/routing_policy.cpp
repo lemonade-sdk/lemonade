@@ -374,6 +374,18 @@ private:
     mutable std::atomic<long long> last_truncation_log_s_{0};
 };
 
+// A backend that ignores the request's labels answers with its own head's label
+// set. Accepting that would score every declared label 0.0, a confident miss
+// that skips on_error instead of triggering it.
+bool scores_exactly_declared(const Score& score, const std::vector<std::string>& labels) {
+    const std::set<std::string> declared(labels.begin(), labels.end());
+    if (score.labels.size() != declared.size()) return false;
+    for (const auto& entry : score.labels) {
+        if (!declared.count(entry.first)) return false;
+    }
+    return true;
+}
+
 class ZeroShotClassifier final : public Classifier {
 public:
     ZeroShotClassifier(std::string id, std::string type, std::string model, OnError on_error,
@@ -416,13 +428,15 @@ public:
                                    last_failure_log_s_);
             score = failed_score("unknown exception");
         }
-        if (score.ok && !scores_declared_labels(score)) {
+        if (score.ok && !scores_exactly_declared(score, labels())) {
             static constexpr const char* kMismatch =
                 "the backend scored a different label set than the request sent, so it "
                 "ignored the per-request labels";
             log_classifier_failure(type(), id(), model_name_, kMismatch, failures_,
                                    last_failure_log_s_);
+            const std::optional<bool> cut = score.truncated;
             score = failed_score(kMismatch);
+            score.truncated = cut;
         }
         apply_on_truncation(score, on_truncation_, type(), id(),
                             model_name_, truncated_scores_, last_truncation_log_s_);
@@ -435,18 +449,102 @@ private:
     mutable std::atomic<long long> last_failure_log_s_{0};
     mutable std::atomic<unsigned long long> truncated_scores_{0};
     mutable std::atomic<long long> last_truncation_log_s_{0};
+};
 
-    // A backend that ignores the request's labels answers with its own head's
-    // label set. Accepting that would score every declared label 0.0, a
-    // confident miss that skips on_error instead of triggering it.
-    bool scores_declared_labels(const Score& score) const {
-        const std::set<std::string> declared(labels().begin(), labels().end());
-        if (score.labels.size() != declared.size()) return false;
-        for (const auto& entry : score.labels) {
-            if (!declared.count(entry.first)) return false;
+// One SystemOne question (choice / noul / score) asked of a llama.cpp decision
+// model. The declared labels are the question's options: a choice's criteria
+// keys, "true"/"false" for noul, a score's level descriptions.
+class SystemOneClassifier final : public Classifier {
+public:
+    SystemOneClassifier(std::string id, std::string type, std::string model, OnError on_error,
+                        std::vector<std::string> labels,
+                        std::optional<std::string> default_label,
+                        nlohmann::ordered_json question)
+        : Classifier(std::move(id), std::move(type), on_error, std::move(model),
+                     std::move(labels), std::move(default_label)),
+          question_(std::move(question)) {
+        if (model_name_.empty()) {
+            throw std::invalid_argument("systemone classifier requires model");
         }
-        return true;
     }
+
+    Score evaluate(const ClassifierContext& ctx) const override {
+        if (!ctx.services.run_systemone) {
+            return failed_score("no SystemOne service is configured");
+        }
+
+        Score score;
+        try {
+            const json answer =
+                ctx.services.run_systemone(model_name_, ctx.request.input, question_);
+            score.labels = answer_scores(answer);
+            score.ok = true;
+        } catch (const RouterResidencyConflictException&) {
+            throw;
+        } catch (const std::exception& e) {
+            log_classifier_failure(type(), id(), model_name_, e.what(), failures_,
+                                   last_failure_log_s_);
+            return failed_score(e.what());
+        } catch (...) {
+            log_classifier_failure(type(), id(), model_name_, "unknown exception", failures_,
+                                   last_failure_log_s_);
+            return failed_score("unknown exception");
+        }
+        if (!scores_exactly_declared(score, labels())) {
+            static constexpr const char* kMismatch =
+                "the answer covers a different option set than the question asked";
+            log_classifier_failure(type(), id(), model_name_, kMismatch, failures_,
+                                   last_failure_log_s_);
+            return failed_score(kMismatch);
+        }
+        return score;
+    }
+
+private:
+    mutable std::atomic<unsigned long long> failures_{0};
+    mutable std::atomic<long long> last_failure_log_s_{0};
+
+    static double probability(const json& value) {
+        if (!value.is_number()) {
+            throw std::runtime_error("systemone answer holds a non-numeric probability");
+        }
+        const double p = value.get<double>();
+        if (!std::isfinite(p) || p < 0.0 || p > 1.0) {
+            throw std::runtime_error("systemone answer probability is outside [0, 1]");
+        }
+        return p;
+    }
+
+    std::map<std::string, double> answer_scores(const json& answer) const {
+        const std::string type = question_.at("type").get<std::string>();
+        std::map<std::string, double> scores;
+        if (type == "noul") {
+            const double p = probability(answer.at("noul"));
+            scores["true"] = p;
+            scores["false"] = 1.0 - p;
+            return scores;
+        }
+        const json& probabilities = answer.at("probabilities");
+        if (!probabilities.is_object()) {
+            throw std::runtime_error("systemone answer has no probabilities object");
+        }
+        for (const auto& [key, value] : probabilities.items()) {
+            if (type == "score") {
+                // Levels come back by index; the labels are their descriptions.
+                if (key.empty() || key.find_first_not_of("0123456789") != std::string::npos) {
+                    throw std::runtime_error("systemone answer key '" + key +
+                                             "' is not a level index");
+                }
+                const size_t level = static_cast<size_t>(std::stoul(key));
+                scores[labels().at(level)] = probability(value);
+            } else {
+                scores[key] = probability(value);
+            }
+        }
+        return scores;
+    }
+
+    nlohmann::ordered_json question_;
 };
 
 // The `llm` router / L0(a) on-ramp. Runs a small chat model with the author's
@@ -773,6 +871,132 @@ std::vector<std::string> parse_labels(const json& config, const std::string& id)
         }
     }
     return labels;
+}
+
+struct SystemOneQuestion {
+    std::vector<std::string> labels;
+    nlohmann::ordered_json question;
+};
+
+// Validates the TypeSafe question shape at registration, so a malformed question
+// fails once instead of sending every request to on_error.
+SystemOneQuestion parse_systemone_question(const json& config, const std::string& id) {
+    auto invalid = [&id](const std::string& message) {
+        return std::invalid_argument("systemone classifier '" + id + "' " + message);
+    };
+    auto blank = [](const std::string& s) {
+        return s.find_first_not_of(" \t\r\n") == std::string::npos;
+    };
+    auto check_description = [&invalid](const std::string& option, const json& description) {
+        if (!description.is_null() && !description.is_string() && !description.is_object() &&
+            !description.is_array()) {
+            throw invalid("option '" + option +
+                          "' description must be text, an object, an array or null");
+        }
+    };
+
+    if (!config.contains("question") || !config["question"].is_object()) {
+        throw invalid("requires a question object");
+    }
+    const json& question = config["question"];
+    for (const auto& [key, value] : question.items()) {
+        (void)value;
+        if (key != "type" && key != "instructions" && key != "criteria") {
+            throw invalid("question has unknown key '" + key + "'");
+        }
+    }
+    const json instructions = question.contains("instructions") ? question["instructions"] : json();
+    const bool text_instructions =
+        instructions.is_string() && !blank(instructions.get<std::string>());
+    const bool structured_instructions =
+        (instructions.is_object() || instructions.is_array()) && !instructions.empty();
+    if (!text_instructions && !structured_instructions) {
+        throw invalid("question instructions must be non-blank text, or a non-empty object or "
+                      "array");
+    }
+    const std::string type = question.value("type", "");
+    const json criteria = question.contains("criteria") ? question["criteria"] : json();
+
+    std::vector<std::string> labels;
+    nlohmann::ordered_json wire = {
+        {"type", type},
+        {"instructions", nlohmann::ordered_json(question["instructions"])},
+    };
+    if (type == "choice") {
+        nlohmann::ordered_json options = nlohmann::ordered_json::object();
+        auto add_option = [&](const std::string& option, const json& description) {
+            if (blank(option)) {
+                throw invalid("choice options must not be empty");
+            }
+            if (options.contains(option)) {
+                throw invalid("choice option '" + option + "' is listed twice");
+            }
+            check_description(option, description);
+            options[option] = nlohmann::ordered_json(description);
+            labels.push_back(option);
+        };
+        if (criteria.is_object() && !criteria.empty()) {
+            for (const auto& [option, description] : criteria.items()) {
+                add_option(option, description);
+            }
+        } else if (criteria.is_array() && !criteria.empty()) {
+            for (const auto& entry : criteria) {
+                if (entry.is_string()) {
+                    add_option(entry.get<std::string>(), nullptr);
+                } else if (entry.is_object() && entry.size() == 1) {
+                    add_option(entry.begin().key(), entry.begin().value());
+                } else {
+                    throw invalid("choice criteria array entries must be an option name or a "
+                                  "one-key object {option: description}");
+                }
+            }
+        } else {
+            throw invalid("choice question requires criteria: a non-empty object, or a "
+                          "non-empty array that keeps the option order");
+        }
+        if (labels.size() < 2) {
+            throw invalid("choice question needs at least 2 options; one option always scores 1.0");
+        }
+        wire["criteria"] = std::move(options);
+    } else if (type == "noul") {
+        if (!criteria.is_null()) {
+            if (!criteria.is_object()) {
+                throw invalid("noul criteria must be an object");
+            }
+            for (const auto& [key, description] : criteria.items()) {
+                if (key != "true" && key != "false") {
+                    throw invalid("noul criteria accepts only 'true' and 'false'");
+                }
+                check_description(key, description);
+            }
+        }
+        labels = {"true", "false"};
+        if (!criteria.is_null()) {
+            wire["criteria"] = nlohmann::ordered_json(criteria);
+        }
+    } else if (type == "score") {
+        if (!criteria.is_array() || criteria.size() < 2 || criteria.size() > 10) {
+            throw invalid("score question requires 2 to 10 criteria levels");
+        }
+        std::set<std::string> seen;
+        for (const auto& level : criteria) {
+            if (!level.is_string() || blank(level.get<std::string>())) {
+                throw invalid("score levels must be non-empty strings; they become the labels");
+            }
+            if (!seen.insert(level.get<std::string>()).second) {
+                throw invalid("score levels must be distinct");
+            }
+            labels.push_back(level.get<std::string>());
+        }
+        wire["criteria"] = nlohmann::ordered_json(criteria);
+    } else {
+        throw invalid("question type must be one of: choice, noul, score");
+    }
+    const std::string reason = validate_label_list(labels);
+    if (!reason.empty()) {
+        throw invalid(reason);
+    }
+    return {std::move(labels), std::move(wire)};
 }
 
 std::optional<std::string> parse_default_label(const json& config,
@@ -1333,6 +1557,11 @@ ClassifierPtr make_classifier(const json& config, bool expose_request_features) 
 
     OnError on_error = parse_on_error(config.value("on_error", "match_false"));
 
+    if (type != "systemone" && config.contains("question")) {
+        throw std::invalid_argument("classifier '" + id + "' does not accept question; "
+                                    "only the systemone type asks one");
+    }
+
     if (config.contains("on_truncation") && type != "zero_shot" && type != "classifier") {
         throw std::invalid_argument(
             "classifier '" + id + "' of type '" + type +
@@ -1365,6 +1594,23 @@ ClassifierPtr make_classifier(const json& config, bool expose_request_features) 
         return std::make_shared<ZeroShotClassifier>(
             id, type, config.value("model", ""), on_error,
             std::move(labels), std::move(default_label), on_truncation);
+    }
+
+    if (type == "systemone") {
+        for (const char* key : {"prompt", "labels", "reference_phrases"}) {
+            if (config.contains(key)) {
+                throw std::invalid_argument(
+                    "systemone classifier '" + id + "' does not accept " + key +
+                    "; its labels are the options of its question");
+            }
+        }
+        SystemOneQuestion question = parse_systemone_question(config, id);
+        std::optional<std::string> default_label =
+            parse_default_label(config, question.labels, id);
+        return std::make_shared<SystemOneClassifier>(
+            id, type, config.value("model", ""), on_error,
+            std::move(question.labels), std::move(default_label),
+            std::move(question.question));
     }
 
     if (type == "semantic_similarity") {

@@ -45,6 +45,12 @@ class GgufWriter {
         put(value);
     }
 
+    void boolean(const std::string& key, bool value) {
+        put_string(key);
+        put<uint32_t>(7);  // BOOL
+        put<uint8_t>(value ? 1 : 0);
+    }
+
     void float_array(const std::string& key, size_t count) {
         put_string(key);
         put<uint32_t>(9);  // ARRAY
@@ -128,6 +134,48 @@ int main() {
     check(alone.context_length == 2048, "context length read after a hint-free vocabulary");
     check(!alone.caps.vision, "vocabulary entries do not name the vision capability");
     check(!alone.caps.tool_calling, "vocabulary entries do not name the tool-calling capability");
+
+    // GGUF does not fix the key order: SystemOne keys written before
+    // general.architecture still count.
+    GgufWriter decision;
+    decision.header(4);
+    decision.boolean("modern-bert.attention.causal", false);
+    decision.string("modern-bert.decision.type", "laya");
+    decision.int32("modern-bert.decision.max_head_tokens", 192);
+    decision.string("general.architecture", "modern-bert");
+    decision.write(path);
+
+    lemon::GgufMetadata early;
+    check(lemon::read_gguf_metadata(early, path.string()), "reads decision keys before the architecture");
+    check(!early.causal_attention, "attention.causal before the architecture is read");
+    check(early.decision_type == "laya", "decision.type before the architecture is read");
+    check(early.decision_max_head_tokens == 192, "decision.max_head_tokens before the architecture is read");
+
+    GgufWriter foreign;
+    foreign.header(3);
+    foreign.string("clip.decision.type", "laya");
+    foreign.boolean("clip.attention.causal", false);
+    foreign.string("general.architecture", "llama");
+    foreign.write(path);
+
+    lemon::GgufMetadata other;
+    check(lemon::read_gguf_metadata(other, path.string()), "reads decision keys of another prefix");
+    check(other.decision_type.empty() && other.causal_attention,
+          "decision keys of another prefix are ignored");
+
+    GgufWriter mixed;
+    mixed.header(5);
+    mixed.boolean("qwen35.attention.causal", false);
+    mixed.string("qwen35.decision.type", "vllm-d3");
+    mixed.boolean("other.attention.causal", true);
+    mixed.string("other.decision.type", "laya");
+    mixed.string("general.architecture", "qwen35");
+    mixed.write(path);
+
+    lemon::GgufMetadata both;
+    check(lemon::read_gguf_metadata(both, path.string()), "reads decision keys of two prefixes");
+    check(!both.causal_attention && both.decision_type == "vllm-d3",
+          "a later key of another prefix does not replace the architecture's key");
 
     std::filesystem::remove_all(dir);
     std::cout << (failures == 0 ? "PASSED: all checks passed\n" : "FAILED: some checks failed\n");

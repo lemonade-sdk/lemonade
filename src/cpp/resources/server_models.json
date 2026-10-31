@@ -2945,6 +2945,24 @@
         ],
         "size": 0.27
     },
+    "Julia-1-GGUF": {
+        "checkpoint": "ggml-org/Julia-1-GGUF:Q8_0",
+        "recipe": "llamacpp",
+        "labels": [
+            "classification",
+            "systemone"
+        ],
+        "size": 0.17
+    },
+    "Laya-GGUF": {
+        "checkpoint": "ggml-org/Laya-GGUF:Q8_0",
+        "recipe": "llamacpp",
+        "labels": [
+            "classification",
+            "systemone"
+        ],
+        "size": 0.45
+    },
     "LFM2.5-Encoder-350M-Prompt-Router-ONNX": {
         "checkpoint": "lemonade-sdk/LFM2.5-Encoder-350M-Prompt-Router-ONNX",
         "recipe": "onnxruntime",

@@ -4903,6 +4903,90 @@
       }
     }
   },
+  "af2ea29a04067b551bf32d4d57adfe3e7b2c0b400212d34b4f047956e1371747": {
+    "route": "llamacpp.systemone",
+    "format": "Json",
+    "request": {
+      "method": "POST",
+      "path": "/v1/systemone",
+      "query": {},
+      "json": {
+        "model": "Laya-GGUF",
+        "state": "Customer message: I was charged twice for my order last week and nobody has replied.",
+        "questions": {
+          "route": {
+            "type": "choice",
+            "instructions": "Which team should handle this?",
+            "criteria": {
+              "billing": null,
+              "shipping": null,
+              "technical": null
+            }
+          },
+          "angry": {
+            "type": "noul",
+            "instructions": "Is the customer angry?"
+          },
+          "urgency": {
+            "type": "score",
+            "instructions": "How urgent is this?",
+            "criteria": [
+              "can wait",
+              "this week",
+              "today",
+              "right now"
+            ]
+          }
+        }
+      },
+      "form": {},
+      "files": {}
+    },
+    "response": {
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "model": "Laya-GGUF",
+        "answers": {
+          "route": {
+            "type": "choice",
+            "choice": "billing",
+            "probabilities": {
+              "billing": 0.9914327368198715,
+              "shipping": 0.0058968890569228395,
+              "technical": 0.0026703741232054364
+            },
+            "confidence": 0.9871491052298071
+          },
+          "angry": {
+            "type": "noul",
+            "noul": 0.7880857763496107
+          },
+          "urgency": {
+            "type": "score",
+            "score": 1.8974064521547507,
+            "legend": {
+              "0": "can wait",
+              "1": "this week",
+              "2": "today",
+              "3": "right now"
+            },
+            "probabilities": {
+              "0": 0.03941832754688493,
+              "1": 0.4667585212872725,
+              "2": 0.050821522630049645,
+              "3": 0.44300162853579295
+            },
+            "confidence": 0.02375689275147952
+          }
+        },
+        "usage": {
+          "input_tokens": 136,
+          "output_tokens": 0
+        }
+      }
+    }
+  },
   "ba34c1bf09fcf973b91919d7a902fbd3e1ed11861d1d1a0325dc285fc03916db": {
     "route": "llamacpp.tokenize",
     "format": "Json",

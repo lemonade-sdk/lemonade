@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <utility>
 #include <vector>
 #include <nlohmann/json.hpp>
 #include "lemon/model_types.h"
@@ -117,6 +118,11 @@ struct BackendDescriptor {
     // fully resident (ds4 --ssd-streaming); changes how it is size-filtered (see
     // filter_for_host in model_manager.cpp).
     bool streams_model_from_storage = false;
+
+    // {mode, capability}: a mode from supported_modes this backend serves only
+    // for models that also carry the capability label, and the only mode such a
+    // model may deploy in. Registration refuses the mode without the label.
+    std::vector<std::pair<std::string, std::string>> mode_capability_requirements;
 
     // The config.json section name for this backend, falling back to the recipe.
     std::string effective_config_section() const {

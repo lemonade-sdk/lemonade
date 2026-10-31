@@ -99,7 +99,7 @@ CompositionResult ModelComposition::run() {
     std::map<std::string, std::string> pre_filter_aliases;
     if (needs_routing_snapshots) {
         for (const auto& [name, info] : all_models) {
-            pre_filter_facts[name] = routing_model_facts(info.type, info.labels);
+            pre_filter_facts[name] = routing_model_facts(info.type, info.labels, info.recipe);
         }
         pre_filter_aliases = compute_model_alias_maps(all_models).public_model_aliases;
     }
@@ -168,7 +168,7 @@ CompositionResult ModelComposition::run() {
         [&composed](const std::string& name) -> std::optional<RoutingModelFacts> {
             auto it = composed.find(name);
             if (it == composed.end()) return std::nullopt;
-            return routing_model_facts(it->second.type, it->second.labels);
+            return routing_model_facts(it->second.type, it->second.labels, it->second.recipe);
         },
         [&pre_filter_facts, &unavailable_components](
             const std::string& name) -> std::optional<RoutingModelFacts> {

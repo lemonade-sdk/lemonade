@@ -3,27 +3,28 @@
 
 #include "lemon/classification_labels.h"
 #include "lemon/model_types.h"
+#include "lemon/models/model_info.h"
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/model_loader.h"
+#include "lemon/server/shared_args.h"
 
 namespace lemon {
 namespace {
 
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
+using classification::kModel;
 
 const RouteError kNoSoleClassifier{
     400, "", "`model` is omitted and not exactly one classification model is loaded"};
+const RouteError kNotClassifier{
+    400, "", "`model` lacks the `classification` label, checked before it loads"};
 const RouteError kBackendRejected{
     400, "",
-    "The backend rejects the request, for example because `model` is not a classification "
-    "model, which is found only after it loads, or because `labels` is sent to a fixed-label "
-    "model or left out for a zero-shot one"};
+    "The backend rejects the request, for example `labels` sent to a fixed-label model or left "
+    "out for a zero-shot one"};
 
-const RouteArg kModel{"model", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-                      "The classifier model. Optional when exactly one classification model is loaded; that "
-                      "model is used."};
 const RouteArg kInput{"input", ArgIn::JsonBody, {{"type", "string"}, {"pattern", "\\S"}}, true, Support::Available,
                       "Text to classify.", {"text"}};
 const RouteArg kTopK{"top_k", ArgIn::JsonBody, {{"type", "integer"}, {"minimum", 1}, {"maximum", 1000000}}, false, Support::Available,
@@ -50,8 +51,9 @@ public:
             "Runs an encoder text classifier, such as a PII, prompt-safety or domain classifier, on "
             "a string and returns a score for each label. It serves `onnxruntime` sequence "
             "classifiers (one label set), token classifiers (aggregated span labels) and zero-shot "
-            "models (labels sent with each request). It provides the classification that the "
-            "router's `classifier` and `zero_shot` conditions use.";
+            "models (labels sent with each request), and llama.cpp decision models, which are "
+            "zero-shot. It provides the classification that the router's `classifier` and "
+            "`zero_shot` conditions use.";
         s.notes = {
             "A malformed request, such as one with a blank `input`, a non-positive `top_k`, or a "
             "`labels` entry that is blank, repeated or holds a control character, is rejected "
@@ -92,7 +94,7 @@ public:
                 },
                 "truncated": {
                     "type": "boolean",
-                    "description": "`true` when the model cut the input text to fit its token window before scoring, `false` when it scored the whole input. Labels are never cut, so the scores still cover every label sent. Absent when the backend does not report cuts (ort-server before 0.4.0), so absence means unknown."
+                    "description": "`true` when the model cut the input text to fit its token window before scoring, `false` when it scored the whole input. Labels are never cut, so the scores still cover every label sent. Absent when the backend does not report cuts (ort-server before 0.4.0, or a llama.cpp decision model of type `lfm2-d1-omni`, or `h2o-lightning` with a long text), so absence means unknown."
                 }
             }
         })");
@@ -106,7 +108,7 @@ public:
         })");
         s.examples = {example};
         s.errors = join_errors({{kBodyNotJson, kArgMissing, kArgInvalid,
-                                 kNoSoleClassifier,
+                                 kNoSoleClassifier, kNotClassifier,
                                  kBackendRejected, kModelUnloaded, kBackendError,
                                  kMalformedBackendResponse, kUnexpectedException},
                                 ModelLoader::errors()});
@@ -155,6 +157,16 @@ protected:
             }
             req.body[kModel.name] = req.model;
             req.model_already_loaded = true;
+        }
+
+        // Refused before the load: loading a chat model would take an LLM slot (and
+        // evict a loaded chat model) only to fail.
+        if (const auto info = ctx_.router->try_get_model_info(req.model);
+            info && info->type != ModelType::CLASSIFICATION) {
+            write_openai_error(res, kNotClassifier,
+                "model '" + req.model + "' is not a classification model "
+                "(it has no 'classification' label)");
+            return false;
         }
         return true;
     }

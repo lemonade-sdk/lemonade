@@ -46,7 +46,7 @@ inline const BackendDescriptor descriptor = {
           {"gfx942", {/*os*/ {"linux"}, /*channels*/ {}}}}},
         {"cpu", BackendTier::Core, BackendFormat::Native, {"windows", "linux"}, {{"cpu", {"x86_64", "arm64"}}}, "x86_64 CPU; ARM64 CPU (Linux)"},
     },
-    /*supported_modes*/ {"chat", "embeddings", "reranking"},
+    /*supported_modes*/ {"chat", "embeddings", "reranking", "classification"},
     /*required_checkpoints*/ {"main"},
     /*default_capabilities*/ {},
     /*web_display_name*/ "llama.cpp GPU",
@@ -59,6 +59,9 @@ inline const BackendDescriptor descriptor = {
     /*arg_variants*/    {"rocm", "vulkan", "cuda", "cpu"},
     /*bin_variants*/    {"rocm", "vulkan", "cuda", "cpu"},
     /*config_extra*/    {{"prefer_system", true}},
+    /*streams_model_from_storage*/ false,
+    // see ISystemOneServer
+    /*mode_capability_requirements*/ {{"classification", "systemone"}},
 };
 
 }  // namespace llamacpp

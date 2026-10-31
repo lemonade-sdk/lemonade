@@ -4,12 +4,15 @@
 
 #include "lemon/wrapped_server.h"
 #include "lemon/backends/backend_utils.h"
+#include <optional>
 #include <string>
 
 namespace lemon {
 namespace backends {
 
-class LlamaCppServer : public WrappedServer, public IEmbeddingsServer, public IRerankingServer, public ISlotsServer, public ITokenizerServer {
+class LlamaCppServer : public WrappedServer, public IEmbeddingsServer, public IRerankingServer,
+                       public IClassificationServer, public ISystemOneServer,
+                       public ISlotsServer, public ITokenizerServer {
 public:
     static InstallParams get_install_params(const std::string& backend, const std::string& version);
 
@@ -41,6 +44,12 @@ public:
     // IRerankingServer implementation
     json reranking(const json& request) override;
 
+    // IClassificationServer implementation: zero-shot labels, answered through
+    // /v1/systemone. Only a model labelled `systemone` serves it.
+    json classify(const json& request) override;
+
+    nlohmann::ordered_json systemone(const nlohmann::ordered_json& request) override;
+
     // ISlotsServer implementation
     json get_slots() override;
     json slots_action(int slot_id, const std::string& action, const json& request_body) override;
@@ -53,6 +62,17 @@ private:
     // in the OpenAI `model` field. Rewrite it to the client-facing model id so
     // responses don't leak absolute filesystem paths (and usernames).
     json normalize_response_model(json response, const json& request) const;
+
+    json unsupported_decision_request(const std::string& operation) const;
+    nlohmann::ordered_json forward_systemone(const nlohmann::ordered_json& body);
+    // The error to return instead of classifying when a `laya` model would cut
+    // these labels or they cannot be counted; empty when they are read whole.
+    std::optional<json> laya_label_error(const json& labels);
+
+    bool decision_model_ = false;
+    std::string decision_type_;
+    int64_t decision_max_head_tokens_ = 0;
+    int encoder_max_input_tokens_ = 0;
 };
 
 namespace llamacpp {

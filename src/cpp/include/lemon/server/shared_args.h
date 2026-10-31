@@ -87,4 +87,8 @@ extern const RouteArg kSteps;
 extern const RouteArg kSeed;
 } // namespace inference
 
+namespace classification {
+extern const RouteArg kModel;
+} // namespace classification
+
 } // namespace lemon

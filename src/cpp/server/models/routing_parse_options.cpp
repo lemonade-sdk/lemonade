@@ -1,14 +1,24 @@
 #include <lemon/models/routing_parse_options.h>
 
+#include <lemon/backends/backend_descriptor_registry.h>
+
 #include <optional>
 
 namespace lemon {
 namespace models {
 
-RoutingModelFacts routing_model_facts(ModelType type, const std::vector<std::string>& labels) {
+// `systemone` is a capability label, legal on any recipe, so the label alone
+// does not make an ONNX classifier answer /v1/systemone.
+RoutingModelFacts routing_model_facts(ModelType type, const std::vector<std::string>& labels,
+                                      const std::string& recipe) {
     RoutingModelFacts facts;
     facts.type = type;
-    facts.serves_zero_shot = type == ModelType::CLASSIFICATION && has_label(labels, "zero-shot");
+    facts.serves_systemone = type == ModelType::CLASSIFICATION &&
+                             has_label(labels, "systemone") &&
+                             backends::recipe_gates_mode_on(recipe, "systemone");
+    // A decision model turns per-request labels into one choice question.
+    facts.serves_zero_shot = facts.serves_systemone ||
+                             (type == ModelType::CLASSIFICATION && has_label(labels, "zero-shot"));
     return facts;
 }
 
@@ -37,6 +47,14 @@ RoutingPolicyParseOptions make_routing_parse_options(RoutingResolutionTiers tier
     options.serves_zero_shot = [lookup](const std::string& name) {
         const std::optional<RoutingModelFacts> facts = lookup(name);
         return facts && facts->serves_zero_shot;
+    };
+    options.serves_systemone = [lookup](const std::string& name) {
+        const std::optional<RoutingModelFacts> facts = lookup(name);
+        return facts && facts->serves_systemone;
+    };
+    options.load_refusal = [lookup](const std::string& name) -> std::string {
+        const std::optional<RoutingModelFacts> facts = lookup(name);
+        return facts ? facts->load_refusal : "";
     };
     return options;
 }
