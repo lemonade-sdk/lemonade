@@ -118,6 +118,7 @@ static bool is_dflash_draft_checkpoint(std::string checkpoint) {
 }
 
 static std::string resolve_llamacpp_runtime_args(const ModelInfo& model_info,
+                                                 const std::string& backend,
                                                  const std::string& custom_args,
                                                  bool merge_args) {
     if (!merge_args) return custom_args;
@@ -144,6 +145,13 @@ static std::string resolve_llamacpp_runtime_args(const ModelInfo& model_info,
     // full ctx_size to every slot instead of dividing it. Pinning the count keeps
     // ctx_size the context a request actually gets.
     defaults.push_back({"--parallel 1", "--parallel", {"-np"}});
+
+    // llama-server's 512-token ubatch costs the Vulkan performance fork about a
+    // fifth of its prefill; its author measures, and recommends, 2048.
+    if (backend == "nathanw") {
+        defaults.push_back({"-b 2048", "-b", {"--batch-size"}});
+        defaults.push_back({"-ub 2048", "-ub", {"--ubatch-size"}});
+    }
 
     return append_runtime_arg_defaults(custom_args, defaults);
 }
@@ -802,9 +810,12 @@ public:
         const json custom_args_value = options.get_option("llamacpp_args");
         const std::string custom_args =
             custom_args_value.is_string() ? custom_args_value.get<std::string>() : "";
+        const json backend_value = options.get_option("llamacpp_backend");
+        const std::string backend =
+            backend_value.is_string() ? backend_value.get<std::string>() : "";
         options.set_option(
             "llamacpp_args",
-            resolve_llamacpp_runtime_args(info, custom_args, merge_args));
+            resolve_llamacpp_runtime_args(info, backend, custom_args, merge_args));
     }
 
     void populate_metadata(ModelInfo& info, const BackendOpsContext&) const override {
