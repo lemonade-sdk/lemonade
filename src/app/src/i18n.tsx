@@ -486,6 +486,7 @@ const ZH_CN: Record<string, string> = {
   'Clear': '清除',
   'Retry': '重试',
   'Setup guide': '设置指南',
+  'Setup required': '需要设置',
   'Install': '安装',
   'Update': '更新',
   'Uninstall': '卸载',

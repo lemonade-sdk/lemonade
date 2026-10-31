@@ -28,13 +28,13 @@ RestartSec=5s
 KillSignal=SIGINT
 AmbientCapabilities=CAP_SYS_RESOURCE
 
-# Security hardening
+# Security hardening. Rootless Podman creates user namespaces and runs the
+# setuid newuidmap/newgidmap helpers, so NoNewPrivileges and RestrictNamespaces
+# stay off.
 PrivateTmp=yes
-NoNewPrivileges=yes
 ProtectSystem=full
 ProtectHome=yes
 RestrictRealtime=yes
-RestrictNamespaces=yes
 LockPersonality=yes
 
 [Install]

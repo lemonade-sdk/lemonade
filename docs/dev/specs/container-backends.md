@@ -18,7 +18,7 @@ This spec describes how we will add new container backends to Lemonade.
 A **container backend** is a Lemonade backend whose executable is a digest-pinned OCI image instead of a downloaded binary.
 
 - Install, load, unload, `/system-info`, benchmarking and the backend manager work unchanged.
-- The one new host requirement is a container tool on Linux: Podman first, then Docker, each verified by a socket probe. Users will be guided to install Podman if needed.
+- The one new host requirement is a container tool on Linux: Podman first, then Docker, verified by `podman info` and `docker info`. Users will be guided to install Podman if needed.
 
 ## Design Philosophy
 
@@ -51,7 +51,7 @@ Tier and format are set per backend. Examples:
 - `vllm:rocm`: experimental, python
 - `halogen:rocm`: guest, container
 
-Lemonade's GUI and CLI will display a disclaimer the first time the user attempts to install a guest backend. Models specific to a guest backend should not be displayed in `/v1/models?show_all=true` until the backend has been installed.
+Models specific to a guest backend should not be displayed in `/v1/models?show_all=true` until the backend has been installed.
 
 > Note: tier replaces the descriptor's `experimental` boolean. `/system-info` keeps each recipe's `experimental` field, `true` when its `default_backend` has the `experimental` or `guest` tier.
 
@@ -159,7 +159,7 @@ For example, the `llamacpp` entry holds a native pin and a container pin side by
 
 - picks the container tool (see [Tool Choice and Install Commands](#tool-choice-and-install-commands))
 - builds the `podman run` or `docker run` command in one function, which holds every Podman and Docker difference § (see [Command Contract](#command-contract))
-- runs, stops, inspects and sweeps containers by name and label †; the sweep runs at startup and includes stopped containers
+- runs, stops and inspects containers by name and label †
 - checks prerequisites before a load and gives each failure its fix (see [Setup Assistant](#setup-assistant))
 - pulls and removes images for install and uninstall
 
@@ -178,7 +178,7 @@ These options are the same for Podman and Docker:
 | `--rm`, `--init`, `--cap-drop=all`, `--security-opt=no-new-privileges` | Same for every container † | Fixed |
 | `--pull=never` | Same for every container | Fixed |
 | seccomp | The tool's default profile: the command passes no `seccomp` option † | Fixed |
-| `--name` | `lemonade-<recipe>-<backend>-<model>` | The loaded model |
+| `--name` | `lemonade-<recipe>-<backend>-<model>`, where each part keeps letters, digits, `.` and `-`, doubles `_`, and writes any other character as `_` plus its two hex digits (`user.foo/bar` becomes `user.foo_2fbar`) | The loaded model |
 | `--label` | `ai.lemonade`, `ai.lemonade.recipe`, `.backend`, `.model`, `.port` † | The loaded model |
 | `--network` | A private `--internal` network named after the container | Fixed |
 | `-v` | `<host path>:/mnt/models/<name>:ro,z`, one per model file the command names †. A directory the command names, such as Halogen's tokenizer directory, gets one mount per file inside it at the same relative path, such as `/mnt/models/tokenizer/vocab.json` ‡. Each host path is resolved through symlinks first, so files in a Hugging Face cache, which link into the cache's `blobs/` folder, mount as the files themselves. `z` gives the files a shared SELinux label that every container can read, so the same model can be mounted by several containers, whether Lemonade started them or not. It does nothing on hosts without SELinux | The model's files |
@@ -188,14 +188,16 @@ These options are the same for Podman and Docker:
 | `--env` | Any other variables the engine needs, such as `ROCBLAS_USE_HIPBLASLT=1` or Halogen's `HALOGEN_CTX` | `ServerCommand.env`, set by the `WrappedServer` subclass |
 | `--cap-add` | One per capability, only when `ContainerPolicy` sets `cap_add` ‡ | `ContainerPolicy.cap_add` |
 
-When the container tool is Podman, `lemond` connects to the server at `127.0.0.1:<port>`, and the command adds:
+Only rootless Podman can publish a port from an `--internal` network.
+
+When the container tool is rootless Podman, `lemond` connects to the server at `127.0.0.1:<port>`, and the command adds:
 
 | Option | Value | Comes from |
 | --- | --- | --- |
 | `--group-add` | `keep-groups` ‡, which carries the account's own `video` and `render` membership into the container | `ContainerPolicy.devices` (see [`containers` Descriptor Field](#containers-descriptor-field)) |
 | `-p` | `127.0.0.1:<port>:<port>` | A free port `lemond` picks |
 
-When the container tool is Docker, `lemond` connects to the server at the container's address on its private network, and the command adds:
+When the container tool is Docker or rootful Podman, `lemond` connects to the server at the container's address on its private network, and the command adds:
 
 | Option | Value | Comes from |
 | --- | --- | --- |
@@ -261,10 +263,10 @@ Container backends are hidden on Windows and macOS.
 
 ### Setup Assistant
 
-The setup assistant tells the user which setup step is missing and how to fix it. While one of its checks fails, the container backend's state is `action_required`, with two fields:
+The setup assistant tells the user every setup step that is missing and how to fix it, at once. While any of its checks fails, the container backend's state is `action_required`, and it reports:
 
-- `message`: the check's "Fails when" text.
-- `action`: the commands that fix it.
+- `message`: each failed check's "Fails when" text, one per line.
+- `action`: the commands that fix them, one step per line.
 
 `/system-info` reports both fields. The Backend Manager panel in the desktop and web apps shows `message`, with a help button that copies `action`, and `lemonade backends` prints both. Checks rerun on each `/system-info` request, so the backend changes to `installable` as soon as a fix takes effect.
 
@@ -304,20 +306,24 @@ Containers are started by:
 | Container tool | Containers started by |
 | --- | --- |
 | Podman | Podman, as the account that runs `lemond`: rootless by default, or rootful when `CONTAINER_HOST` points at root's Podman socket |
-| Docker | The Docker daemon, through `/var/run/docker.sock` |
+| Docker | The Docker daemon that `docker` connects to (`DOCKER_HOST` or the active Docker context) |
 
 When the container tool is Podman, the checks are:
 
 | Check | Fails when | `action` |
 | --- | --- | --- |
 | Podman installed | `podman` is not on `PATH` | The install command for the host's `ID` |
-| Device nodes accessible | The user's account is not in both `video` and `render` | 1. `sudo usermod -aG video,render $USER`<br>2. Log out and back in |
+| Device nodes accessible | Podman is rootless and the user's account cannot read and write `/dev/kfd` and every `/dev/dri/renderD*` node | 1. `sudo usermod -aG video,render $USER`<br>2. Log out and back in |
+| Podman answers | `podman info` fails | Run `podman info` and fix the error it prints |
+| Network reachable | Podman is rootful and its network backend is CNI, which gives an internal network no gateway for `lemond` to reach the container by | Unset `CONTAINER_HOST` to use rootless Podman |
 
 When the container tool is Docker, the checks are:
 
 | Check | Fails when | `action` |
 | --- | --- | --- |
-| Docker reachable | The Docker daemon refuses the user's account | 1. `sudo usermod -aG docker $USER`<br>2. Log out and back in |
+| Docker reachable | `docker info` fails | 1. `sudo usermod -aG docker $USER`<br>2. Log out and back in |
+| Not Docker Desktop | `docker info` reports `Docker Desktop`, whose containers run in a VM without the host GPU | The Podman install command for the host's `ID` |
+| Not rootless Docker | `docker info` lists `name=rootless`, which can neither publish a port from an `--internal` network nor expose the container's address to `lemond` | The Podman install command for the host's `ID` |
 
 ### `lemond` as a System Service
 
@@ -343,28 +349,33 @@ Containers are started by:
 | Container tool | Containers started by |
 | --- | --- |
 | Podman | `lemond.service` itself, rootless, as the `lemonade` account |
-| Docker | The Docker daemon, through `/var/run/docker.sock` |
+| Docker | The Docker daemon that `docker` connects to (`DOCKER_HOST` or the active Docker context) |
 
 When the container tool is Podman, the checks are:
 
 | Check | Fails when | `action` |
 | --- | --- | --- |
 | Podman installed | `podman` is not on `PATH` | The install command for the host's `ID` |
-| Device nodes accessible | `lemonade` is not in both `video` and `render` | 1. `sudo usermod -aG video,render lemonade`<br>2. `sudo systemctl restart lemond` |
-| Subordinate IDs allocated | `getsubids lemonade` or `getsubids -g lemonade` prints no range | Ask the host's administrator to allocate 65,536 subordinate UIDs and GIDs to `lemonade`, then `sudo systemctl restart lemond` |
+| Podman answers | `podman info` fails | Run `podman info` and fix the error it prints |
+| Device nodes accessible | `lemonade` cannot read and write `/dev/kfd` and every `/dev/dri/renderD*` node | 1. `sudo usermod -aG video,render lemonade`<br>2. `sudo systemctl restart lemond` |
+| Subordinate IDs allocated | Podman is rootless and `getsubids lemonade` or `getsubids -g lemonade` prints no range | Ask the host's administrator to allocate 65,536 subordinate UIDs and GIDs to `lemonade`, then `sudo systemctl restart lemond` |
+| Network reachable | Podman is rootful and its network backend is CNI | 1. Remove `CONTAINER_HOST` from `/etc/default/lemond` to use rootless Podman<br>2. `sudo systemctl restart lemond` |
 
 When the container tool is Docker, the checks are:
 
 | Check | Fails when | `action` |
 | --- | --- | --- |
-| Docker reachable | The Docker daemon refuses `lemonade` | 1. `sudo usermod -aG docker lemonade`<br>2. `sudo systemctl restart lemond` |
+| Docker reachable | `docker info` fails | 1. `sudo usermod -aG docker lemonade`<br>2. `sudo systemctl restart lemond` |
+| Not Docker Desktop | `docker info` reports `Docker Desktop` | The Podman install command for the host's `ID` |
+| Not rootless Docker | `docker info` lists `name=rootless` | The Podman install command for the host's `ID` |
 
 #### `lemond.service` and rootless Podman
 
 `lemond` runs `podman` as a child process, the same way it runs every native backend. The unit is configured to give rootless Podman what it needs:
 
 - It lets `lemond` create user namespaces and run the setuid `newuidmap`/`newgidmap` helpers that rootless Podman relies on, by running without `NoNewPrivileges` and `RestrictNamespaces`. The unit keeps `LockPersonality`, `RestrictRealtime`, `ProtectSystem`, `ProtectHome` and `PrivateTmp`: systemd applies them while it still runs as root, before it switches to the `lemonade` account, so they leave the no-new-privileges flag unset and the account's user namespace unchanged.
-- It points `XDG_RUNTIME_DIR` at the unit's existing `RuntimeDirectory` (`Environment=XDG_RUNTIME_DIR=%t/lemonade`), giving Podman a runtime directory without a login session.
+- It leaves `XDG_RUNTIME_DIR` unset, so Podman keeps its runtime state in its own fallback under the service's private `/tmp` (`/tmp/storage-run-<uid>`, or `/tmp/containers-user-<uid>` before Podman 5). The AppArmor profile that Ubuntu and Debian give `pasta` lets it write only under `/tmp`, `/run/user/<uid>` and home directories under `/home`, and `ProtectHome` hides `/run/user`. A `tmpfiles.d` entry keeps age-based cleanup of `/tmp` out of the service's private `/tmp`.
+- `podman` run as `lemonade` from a shell sees the host's `/tmp`, not the service's, and Podman 5 then resets the state of the containers `lemond` is running. To inspect them, the guide gives a `systemd-run` command that joins the service's `/tmp` with `JoinsNamespaceOf=lemond.service`.
 
 Rootless Podman also needs the `lemonade` account to own a subordinate UID/GID range: a block of host IDs that the container's own users map onto. `useradd` allocates one only for regular accounts, and the packages create `lemonade` as a system account (`useradd -r`), so each package's install script allocates the range right after its `useradd`:
 
@@ -372,7 +383,7 @@ Rootless Podman also needs the `lemonade` account to own a subordinate UID/GID r
 - Otherwise it reads both files, takes the highest end (start plus count) of every range in them, with a minimum of 100000, and allocates the 65,536 IDs from there to whichever file lacks a `lemonade` entry, with `usermod --add-subuids <start>-<start+65535> lemonade` and `usermod --add-subgids <start>-<start+65535> lemonade`. The range sits past every account's existing block, and `useradd` allocates later accounts past it in turn.
 - When `/etc/nsswitch.conf` has a `subid:` line, the host gets subordinate IDs from a central directory such as FreeIPA or SSSD, and the script leaves the allocation to the host's administrator. The setup assistant's "Subordinate IDs allocated" check reports a missing range.
 
-`lemond` starts, stops and sweeps the containers as children in its own cgroup, so stopping `lemond.service` tears down its containers with it.
+`lemond` starts and stops the containers as children in its own cgroup, so stopping `lemond.service` tears down its containers with it.
 
 ### SELinux Check
 
@@ -415,7 +426,7 @@ The workflow changes only the digest in each pin. A maintainer sets the tag by h
 | Devices | Whole `/dev/dri` and `/dev/kfd`, never individual render nodes; `check_rocm_amd()` picks the AMD GPU from the KFD topology by largest VRAM and exports `HIP_VISIBLE_DEVICES` | The same whole device nodes, from the profile; `HIP_VISIBLE_DEVICES` is a text field the user fills in, with no detection at all | **Same as both** § for the device nodes. **More robust than both** for GPU choice: `lemond` picks the GPU whose `gfx_target_version` matches `SystemInfo::get_rocm_arch()` †, where Ramalama picks the GPU with the most VRAM, and AI Cockpit uses whatever the user types. |
 | Pull policy | Explicit `--pull` on every run, default `newer`; Docker gets a pre-pull | Tags, never digests, in all 27 toolbox records; Halogen follows `:latest` and re-pulls with `--pull=always` before every launch | **Stricter than both:** `--pull=never` with digest pins, so every load runs the exact image that passed validation, and install is the only step that downloads. Ramalama pulls newer images by default, and AI Cockpit re-pulls Halogen's `:latest` before every launch. |
 | Readiness | TCP connect to `127.0.0.1:<port>`, then `wait_for_healthy` polls `/health` and requires the model alias in `/models`; container logs attached on timeout | None. The server runs in the foreground and the operator reads its output | **Looser than Ramalama** by one check: Lemonade polls the ready endpoint in `ServerCommand` (`/health`, or `/v1/models` for DS4, which has no `/health`) and skips Ramalama's check that `/models` lists the model, because one readiness path for native and container backends outweighs it. **Stricter than AI Cockpit**, which checks nothing. |
-| Stop and sweep | `stop -t=0`, then `rm`; `containers()` lists by label | `rm -f <fixed name>` before the run and again after it; no sweep, since nothing is meant to outlive the foreground process | **More robust than both:** Lemonade stops by name and sweeps by label †, and gives the engine 10 seconds to exit cleanly before SIGKILL, where Ramalama kills it at once. AI Cockpit sweeps nothing. |
+| Stop and sweep | `stop -t=0`, then `rm`; `containers()` lists by label | `rm -f <fixed name>` before the run and again after it; no sweep, since nothing is meant to outlive the foreground process | **More robust than both:** Lemonade stops by name † and gives the engine 10 seconds to exit cleanly before SIGKILL, where Ramalama kills it at once. |
 | Dry run | `--dryrun` / `--dry-run`: "show container runtime command without executing it" | Not a flag but the only path: every launch prints the exact command and waits for confirmation, with `--api-key` and `HF_TOKEN` redacted | **Same as both:** every load logs the full command, which shows the same information. Confirming a launch before it runs is left to clients, because `lemond` is a server. |
 | Docker vs Podman | One `run` builder with per-tool branches (`keep-groups`, `--add-host host.docker.internal=host-gateway`, `ps` format instead of `--noheading`) | Per-tool helpers around one builder: `upgrade_groups_for_podman`, `adapt_nvidia_runtime_args` turning `--runtime` into `--gpus all`, per-node `--device` for Docker's RDMA | **Same as both** §: one function builds the run command and holds every Podman and Docker difference. |
 | Network | No `--network` unless asked; Docker gets `--add-host host.docker.internal=host-gateway`; `--network=none` is used only for builds | `--network=none` for Halogen and for R9V's extraction step, nothing for the rest. The Halogen API is reached by a host listener that pipes each accepted socket through `podman/docker exec -i` to container loopback | **Stricter than Ramalama**, which gives each container full network access: each Lemonade container gets its own `--internal` network with no route out. **Same as AI Cockpit** in effect: in both, only the local machine reaches the API and the engine cannot reach the internet. Lemonade connects over HTTP, as it does to every backend, where AI Cockpit relays each connection through `exec`. |

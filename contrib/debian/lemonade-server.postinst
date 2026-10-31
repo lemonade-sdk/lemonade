@@ -24,9 +24,24 @@ if [ "$1" = "configure" ]; then
 		usermod -a -G systemd-journal lemonade
 	fi
 
-	# Add lemonade user to render group for GPU access
-	if getent group render > /dev/null; then
-		usermod -a -G render lemonade
+	# Add lemonade user to video and render groups for GPU access
+	for gpu_group in video render; do
+		if getent group "$gpu_group" > /dev/null; then
+			usermod -a -G "$gpu_group" lemonade
+		fi
+	done
+
+	# Rootless Podman maps the container's users onto a subordinate ID range,
+	# which useradd allocates only for regular accounts. The range starts past
+	# every range already allocated. A subid: line in nsswitch.conf means a
+	# central directory allocates ranges, so that is left to its administrator.
+	if ! grep -qs '^subid:' /etc/nsswitch.conf; then
+		touch /etc/subuid /etc/subgid
+		subid_start=$(cat /etc/subuid /etc/subgid |
+			awk -F: 'BEGIN { m = 100000 } NF >= 3 { e = $2 + $3; if (e > m) m = e } END { print m }')
+		subid_range="$subid_start-$((subid_start + 65535))"
+		grep -qs '^lemonade:' /etc/subuid || usermod --add-subuids "$subid_range" lemonade || true
+		grep -qs '^lemonade:' /etc/subgid || usermod --add-subgids "$subid_range" lemonade || true
 	fi
 
 	# Create /var/lib/lemonade (writable state + config for lemonade user).
@@ -37,8 +52,12 @@ if [ "$1" = "configure" ]; then
 	# Own the state + config tree, but skip the HuggingFace model cache: it can
 	# be tens of GB and is already owned by the service that downloaded it, so
 	# recursing into it would make every upgrade's chown walk the whole cache.
-	find /var/lib/lemonade -path /var/lib/lemonade/.cache/huggingface -prune -o \
-		-exec chown lemonade:lemonade {} + 2>/dev/null || true
+	# Skip rootless Podman's storage too: its layers hold files owned by
+	# subordinate IDs and absolute symlinks into the host's filesystem, so the
+	# walk must not touch them and chown must not follow links (-h).
+	find /var/lib/lemonade \( -path /var/lib/lemonade/.cache/huggingface \
+		-o -path /var/lib/lemonade/.local/share/containers \) -prune -o \
+		-exec chown -h lemonade:lemonade {} + 2>/dev/null || true
 	chmod 0750 /var/lib/lemonade
 
 	# Create the FHS cache directory for the service (owned by the service user).
