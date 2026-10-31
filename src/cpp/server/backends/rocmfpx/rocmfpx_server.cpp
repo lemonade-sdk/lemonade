@@ -88,6 +88,10 @@ std::vector<std::string> build_server_argv(const std::string& gguf_path,
         defaults.push_back({"--spec-type draft-mtp", "--spec-type"});
     }
     defaults.push_back({"--parallel 1", "--parallel", {"-np"}});
+    // At 2048 rather than llama-server's 512, Qwen3.6-35B-A3B prefills 28%
+    // faster at 4k and 32k; the dense 27B is unchanged.
+    defaults.push_back({"-b 2048", "-b", {"--batch-size"}});
+    defaults.push_back({"-ub 2048", "-ub", {"--ubatch-size"}});
     const std::vector<std::string> custom_args =
         utils::parse_custom_args(utils::append_runtime_arg_defaults(rocmfpx_args, defaults));
     argv.insert(argv.end(), custom_args.begin(), custom_args.end());
