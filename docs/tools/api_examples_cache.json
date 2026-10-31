@@ -989,7 +989,7 @@
       "bytes": 884780
     }
   },
-  "d882ab2725e2de9614b742d512074747aa05bceeabb9b5c771e9ed81b287541b": {
+  "5edf6f16fedcea8f06a94123596c9ced6f9d8089ee82d526eb70024df6a63895": {
     "route": "lemonade.classify",
     "format": "Json",
     "request": {
@@ -997,8 +997,8 @@
       "path": "/v1/classify",
       "query": {},
       "json": {
-        "input": "Please verify your account at http://secure-login.example now.",
-        "model": "Phishing-Email-Detection-ONNX"
+        "model": "Phishing-Email-Detection-ONNX",
+        "input": "Please verify your account at http://secure-login.example now."
       },
       "form": {},
       "files": {}
@@ -1014,7 +1014,8 @@
           "LABEL_3": 2.331440818181818e-08
         },
         "model": "Phishing-Email-Detection-ONNX",
-        "object": "classification"
+        "object": "classification",
+        "truncated": false
       }
     }
   },

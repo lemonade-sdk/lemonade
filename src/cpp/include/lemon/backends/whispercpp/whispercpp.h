@@ -46,7 +46,7 @@ inline const BackendDescriptor descriptor = {
     /*version_policy*/  VersionPolicy::Exact,
     /*self_manages_downloads*/ false,
     /*takes_args*/      true,
-    /*arg_variants*/    {"cpu", "npu"},
+    /*arg_variants*/    {"cpu", "npu", "vulkan", "rocm"},
     /*bin_variants*/    {"cpu", "npu"},
     /*config_extra*/    nlohmann::json::object(),
 };
