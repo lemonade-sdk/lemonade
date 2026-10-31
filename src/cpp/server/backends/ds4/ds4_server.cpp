@@ -43,6 +43,24 @@ double file_gib(const std::string& path) {
     return ec ? 0.0 : static_cast<double>(bytes) / (1024.0 * 1024.0 * 1024.0);
 }
 
+// ds4-server takes reasoning_effort and chat_template_kwargs, which Lemonade
+// sets beside the `/no_think` prefix it adds for templates that ignore them.
+// DeepSeek reads the prefix as part of the user's message: with it, the
+// resident Vision model answered a tool request with "Let me try again" and ran
+// out of tokens before closing the call.
+json without_no_think_prefix(json request) {
+    static const std::string kPrefix = "/no_think\n";
+    if (!request.contains("messages") || !request["messages"].is_array()) return request;
+    for (auto& message : request["messages"]) {
+        if (message.is_object() && message.value("role", "") == "user" &&
+            message.contains("content") && message["content"].is_string()) {
+            const std::string content = message["content"].get<std::string>();
+            if (content.rfind(kPrefix, 0) == 0) message["content"] = content.substr(kPrefix.size());
+        }
+    }
+    return request;
+}
+
 // The weights ds4 holds resident: the model and, when it has one, its DSpark
 // support file.
 double weights_gib(const ModelInfo& info) {
@@ -179,7 +197,21 @@ void Ds4Server::load(const std::string& model_name, const ModelInfo& model_info,
 }
 
 json Ds4Server::chat_completion(const json& request) {
-    return forward_request("/v1/chat/completions", request);
+    return forward_request("/v1/chat/completions", without_no_think_prefix(request));
+}
+
+void Ds4Server::forward_streaming_request(const std::string& endpoint,
+                                          const std::string& request_body,
+                                          httplib::DataSink& sink, bool sse,
+                                          long timeout_seconds,
+                                          TelemetryCallback telemetry_callback) {
+    std::string body = request_body;
+    if (endpoint.find("chat/completions") != std::string::npos) {
+        const json parsed = json::parse(request_body, nullptr, false);
+        if (!parsed.is_discarded()) body = without_no_think_prefix(parsed).dump();
+    }
+    WrappedServer::forward_streaming_request(endpoint, body, sink, sse, timeout_seconds,
+                                             std::move(telemetry_callback));
 }
 
 json Ds4Server::completion(const json& request) {
