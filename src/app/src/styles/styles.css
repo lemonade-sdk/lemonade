@@ -2539,6 +2539,16 @@ input[type="checkbox"]:disabled {
   transition: width 0.3s var(--ease-out);
 }
 
+.row__progress-bar--model-load {
+  height: 5px;
+  border-radius: var(--radius-pill);
+}
+
+.row__progress-bar--model-load .row__progress-fill {
+  border-radius: var(--radius-pill);
+  transition: width 80ms linear;
+}
+
 [data-theme="light"] .row__progress-fill {
   background: #FCD846;
 }
@@ -3634,6 +3644,10 @@ optgroup {
 .cell__badge--warn {
   background: var(--warn-soft);
   color: var(--warn);
+}
+
+[data-theme="light"] .cell__badge--warn {
+  color: #784600;
 }
 
 .cell__badge--off {

@@ -1525,6 +1525,63 @@ class LemonadeAPI {
     return result;
   }
 
+  private async _modelLoadRequestBody(
+    modelName: string,
+    recipeOptions?: Record<string, unknown>,
+    modelInfo?: ModelInfo | null,
+  ): Promise<Record<string, unknown>> {
+    const target = modelName.trim().toLowerCase();
+    const cachedModelInfo = modelInfo || this.allModels.find(model => modelInfoKey(model).toLowerCase() === target) || null;
+    const { recipeOptionsForModel } = await import(
+      /* webpackChunkName: "model-configuration" */ './modelConfiguration'
+    );
+    const stagedOptions = recipeOptionsForModel(modelName, cachedModelInfo, recipeOptions as RecipeOptions | undefined, this._systemInfoData);
+    return {
+      model_name: modelName,
+      ...(stagedOptions || {}),
+      ...recipeOptions,
+      save_options: false,
+    };
+  }
+
+  // GUI-owned load jobs are cancellable without interrupting another client's /load.
+  async createModelLoadJob(
+    modelName: string,
+    models: Array<{ name: string; recipeOptions?: Record<string, unknown>; info?: ModelInfo | null }>,
+    onRecovering?: () => void,
+  ): Promise<{ id: string }> {
+    const steps: Array<{ id: string; op: 'load'; params: Record<string, unknown> }> = [];
+    for (const target of models) {
+      await this._assertModelNotDownloading(target.name);
+      const params = await this._modelLoadRequestBody(target.name, target.recipeOptions, target.info);
+      delete params.model_name;
+      steps.push({ id: `load_${steps.length}`, op: 'load', params: { ...params, model: target.name } });
+    }
+    // A lost POST response must not cause a second, competing load job.
+    const jobName = `Load ${modelName} [gui:${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}]`;
+    try {
+      return await this.createJob(jobName, steps);
+    } catch (error) {
+      const status = (error as { status?: number }).status;
+      if (typeof status === 'number' && status < 500) throw error;
+      onRecovering?.();
+      let confirmedMissing = 0;
+      let retries = 0;
+      while (confirmedMissing < 3) {
+        try {
+          const job = (await this.listJobs()).find(item => item.name === jobName);
+          if (job) return { id: job.id };
+          confirmedMissing++;
+        } catch {
+          // Do not assume the job is absent while the server is unreachable.
+        }
+        if (confirmedMissing >= 3) break;
+        await new Promise<void>(resolve => setTimeout(resolve, Math.min(5000, 500 * 2 ** Math.min(retries++, 4))));
+      }
+      throw error;
+    }
+  }
+
   async loadModel(modelName: string, recipeOptions?: Record<string, unknown>, modelInfo?: ModelInfo | null): Promise<unknown> {
     await this._assertModelNotDownloading(modelName);
     const target = modelName.trim().toLowerCase();
@@ -1535,18 +1592,7 @@ class LemonadeAPI {
       // never write a possibly stale cached definition back to /models/register here.
       return { model_name: modelName, status: 'ready', mode: 'router', virtual: true };
     }
-    const { recipeOptionsForModel } = await import(
-      /* webpackChunkName: "model-configuration" */ './modelConfiguration'
-    );
-    const stagedOptions = recipeOptionsForModel(modelName, cachedModelInfo, recipeOptions as RecipeOptions | undefined, this._systemInfoData);
-    // A load carries whatever the panel currently shows, saved or not, so it must
-    // not write those options back as the model's stored defaults.
-    const body: Record<string, unknown> = {
-      model_name: modelName,
-      ...(stagedOptions || {}),
-      ...recipeOptions,
-      save_options: false,
-    };
+    const body = await this._modelLoadRequestBody(modelName, recipeOptions, cachedModelInfo);
     let stopDownloadWatch: (() => void) | undefined;
     try {
       const { downloadStore } = await import(

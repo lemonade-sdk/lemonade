@@ -9,6 +9,7 @@ import MarkdownIt from 'markdown-it';
 import DOMPurify from 'dompurify';
 import type { ModelInfo, LoadedModel, ModelFileInfo, HFModelResult, ModelRegistryProvider, PullVariantsResult, CloudProviderRow, ModelOptions } from '../api';
 import api, { friendlyErrorMessage } from '../api';
+import { estimatedModelLoadPercent } from './ChatReadinessProgress';
 import { copyTextToClipboard } from '../clipboard';
 import {
   recipeBackendOptionName,
@@ -2458,6 +2459,8 @@ export interface ModelDetailPanelProps {
   models?: ModelInfo[];
   loadedModel: LoadedModel | null;
   loadingModel: string | null;
+  loadJob?: GuiLoadProgress | null;
+  onCancelLoad: (name: string) => void;
   pulling: Record<string, number>;
   loadError: { modelName: string; message: string } | null;
   /** Load a model, optionally with load settings that override the stored ones. */
@@ -2508,6 +2511,54 @@ export interface ModelDetailPanelProps {
   onCancelHfPull?: (hfId: string) => void;
 }
 
+type GuiLoadProgress = {
+  modelName: string;
+  completed: number;
+  total: number;
+  cancelling: boolean;
+  activeStep: number | null;
+  stepStartedAt: number | null;
+  modelSizeGiB?: number;
+};
+
+// Identical estimate to the Chat readiness meter, without a moving stripe.
+const ModelLoadMeter: React.FC<{ name: string; progress: GuiLoadProgress }> = ({ name, progress }) => {
+  const { t } = useI18n();
+  const [elapsedMs, setElapsedMs] = useState(0);
+  useEffect(() => {
+    if (progress.stepStartedAt === null) {
+      setElapsedMs(0);
+      return;
+    }
+    const start = progress.stepStartedAt;
+    const tick = () => setElapsedMs(Math.max(0, Date.now() - start));
+    tick();
+    const timer = window.setInterval(tick, 150);
+    return () => window.clearInterval(timer);
+  }, [progress.stepStartedAt]);
+
+  const estimate = progress.stepStartedAt === null
+    ? null : estimatedModelLoadPercent(progress.modelSizeGiB, elapsedMs);
+  const fraction = progress.total > 0
+    ? Math.min(99, (100 * progress.completed + (estimate ?? 0)) / progress.total)
+    : 0;
+  const label = progress.cancelling ? t('Cancelling…')
+    : progress.total > 1 ? `${t('Loading…')} ${progress.completed}/${progress.total}` : t('Loading…');
+  const displayLabel = estimate === null && progress.stepStartedAt !== null && !progress.cancelling
+    ? `${label} (${Math.floor(elapsedMs / 1000)}s)` : label;
+
+  return (
+    <div className="row__progress" role="progressbar" aria-label={`Loading ${name}`}
+      aria-valuemin={0} aria-valuemax={100}
+      aria-valuetext={progress.cancelling ? `Cancelling ${name}` : displayLabel}>
+      <div className="row__progress-bar row__progress-bar--model-load">
+        <div className="row__progress-fill" style={{ width: `${fraction}%` }} />
+      </div>
+      <span className="row__progress-text">{displayLabel}</span>
+    </div>
+  );
+};
+
 type DetailTab = 'settings' | 'readme' | 'config' | 'files';
 
 const TABS: Array<{ id: DetailTab; label: string }> = [
@@ -2528,6 +2579,8 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
   models = [],
   loadedModel,
   loadingModel,
+  loadJob,
+  onCancelLoad,
   pulling,
   loadError,
   onLoad,
@@ -2656,6 +2709,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
     : '';
   const isLoaded = !!loadedModel;
   const isLoadingThis = loadingModel === name;
+  const activeLoad = loadJob?.modelName === name ? loadJob : null;
   const isPulling = pulling[name] !== undefined;
   const pullPct = pulling[name] ?? 0;
   const isDownloaded = Boolean((model as any).downloaded) && !isPulling;
@@ -2716,6 +2770,14 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
           </div>
           <WorkspaceActionButton appearance="secondary" icon="x" onClick={() => onCancelPull(name)} aria-label={`Cancel download of ${name}`}>
             {t('Cancel')}
+          </WorkspaceActionButton>
+        </>
+      ) : activeLoad ? (
+        <>
+          <ModelLoadMeter name={name} progress={activeLoad} />
+          <WorkspaceActionButton appearance="secondary" icon="x" disabled={activeLoad.cancelling}
+            onClick={() => onCancelLoad(name)} aria-label={`Cancel load of ${name}`}>
+            {activeLoad.cancelling ? t('Cancelling…') : t('Cancel')}
           </WorkspaceActionButton>
         </>
       ) : isLoaded ? (
