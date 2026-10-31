@@ -135,7 +135,7 @@ public:
     std::size_t count_cloud_models(const std::string& provider) const;
 
     // Invalidate the models cache (e.g. after backend install/uninstall)
-    void invalidate_models_cache();
+    void invalidate_models_cache(bool reset_pull_sources = false);
 
     // The two change signals; see models/change_notifier.h. Fires only when a routing
     // policy could have changed.
