@@ -37,6 +37,18 @@ double igpu_pool_gb() {
     return 0.0;
 }
 
+double file_gib(const std::string& path) {
+    std::error_code ec;
+    const auto bytes = path.empty() ? 0 : fs::file_size(utils::path_from_utf8(path), ec);
+    return ec ? 0.0 : static_cast<double>(bytes) / (1024.0 * 1024.0 * 1024.0);
+}
+
+// The weights ds4 holds resident: the model and, when it has one, its DSpark
+// support file.
+double weights_gib(const ModelInfo& info) {
+    return file_gib(info.resolved_path("main")) + file_gib(info.resolved_path("draft"));
+}
+
 }  // namespace
 
 Ds4Server::Ds4Server(const std::string& log_level, ModelManager* model_manager,
@@ -88,28 +100,31 @@ void Ds4Server::load(const std::string& model_name, const ModelInfo& model_info,
         args.push_back(std::to_string(ctx_size));
     }
 
-    // ds4-server defaults to full residency, which maps the entire model into
-    // the ROCm arena. The smallest ds4 model is 87 GB, and the only supported
-    // device (gfx1151) tops out around a 64 GB VRAM carveout with a smaller
-    // usable arena, so full residency always OOMs mid-load. Stream experts
-    // from disk instead; a user-supplied later flag
-    // (e.g. --ssd-streaming-cache-experts) still wins since ds4-server parses
-    // left-to-right.
-    args.push_back("--ssd-streaming");
-
     // A long prompt's default 4096-token prefill graph faults the GPU in a
     // quantize kernel and takes the server with it; chunked, it completes.
     args.push_back("--prefill-chunk");
     args.push_back("2048");
-    const ds4::MemoryPlan plan = ds4::memory_plan(igpu_pool_gb());
-    // ds4 grows into the memory free above its reserve, and with less than its
-    // working set there it stalls without ever serving. Failing here instead
-    // lets the router evict the other models and retry at once.
-    if (model_info.min_resident_gb > 0.0 && plan.free_reserve_gb > 0) {
+    const std::string draft_path = model_info.resolved_path("draft");
+    const ds4::MemoryPlan plan = ds4::memory_plan(igpu_pool_gb(), weights_gib(model_info));
+    if (plan.resident) {
+        if (!draft_path.empty()) {
+            args.insert(args.end(), {"--dspark", "--mtp-model", draft_path});
+        }
+    } else {
+        // A user-supplied later flag (e.g. --ssd-streaming-cache-experts) still
+        // wins since ds4-server parses left-to-right. DSpark needs residency.
+        args.push_back("--ssd-streaming");
+    }
+    // A streaming ds4 grows into the memory free above its reserve, and with
+    // less than its working set there it stalls without ever serving; a
+    // resident one fails mid-load. Failing here instead lets the router evict
+    // the other models and retry at once.
+    const double working_set_gb = plan.resident ? weights_gib(model_info) : model_info.min_resident_gb;
+    if (working_set_gb > 0.0 && plan.free_reserve_gb > 0) {
         bool memory_known = false;
         const double free_gb = get_available_memory_gb(
             DEVICE_GPU, gpu_memory_vendor_for_target(backend, ""), "", nullptr, &memory_known);
-        const double needed_gb = plan.free_reserve_gb + model_info.min_resident_gb;
+        const double needed_gb = plan.free_reserve_gb + working_set_gb;
         if (memory_known && free_gb < needed_gb) {
             std::ostringstream message;
             message << std::fixed << std::setprecision(1) << "ds4 needs " << needed_gb
@@ -140,10 +155,13 @@ void Ds4Server::load(const std::string& model_name, const ModelInfo& model_info,
     command.program = ds4::descriptor.binary;
     command.args = std::move(args);
     command.model_files = {gguf_path};
+    if (plan.resident && !draft_path.empty()) {
+        command.model_files.push_back(draft_path);
+    }
     if (plan.model_cache_gb > 0) {
         command.env.push_back({"DS4_ROCM_STREAM_MODEL_CACHE_GB", std::to_string(plan.model_cache_gb)});
     }
-    if (plan.free_reserve_gb > 0) {
+    if (!plan.resident && plan.free_reserve_gb > 0) {
         command.env.push_back(
             {"DS4_ROCM_STREAM_FREE_RESERVE_GB", std::to_string(plan.free_reserve_gb)});
     }
@@ -201,13 +219,15 @@ public:
         info.gguf = std::move(meta);
     }
 
-    // ds4 grows its caches until free memory reaches its reserve (see
-    // memory_plan), so the context comes out of what is free above that floor,
-    // after the working set the model needs to run at speed.
+    // The context comes out of what is free above memory_plan's reserve, after
+    // the resident weights or, when streaming, the working set the model needs
+    // to run at speed.
     std::optional<double> auto_context_kv_budget_gib(const ModelInfo& info,
                                                      double available_gib) const override {
-        if (info.min_resident_gb <= 0.0) return std::nullopt;
-        return available_gib - memory_plan(igpu_pool_gb()).free_reserve_gb - info.min_resident_gb;
+        const MemoryPlan plan = memory_plan(igpu_pool_gb(), weights_gib(info));
+        const double working_set_gb = plan.resident ? weights_gib(info) : info.min_resident_gb;
+        if (working_set_gb <= 0.0) return std::nullopt;
+        return available_gib - plan.free_reserve_gb - working_set_gb;
     }
 };
 

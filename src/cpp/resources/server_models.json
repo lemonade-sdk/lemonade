@@ -2946,7 +2946,10 @@
         "size": 0.27
     },
     "DeepSeek-V4-Flash-IQ2XXS-DS4": {
-        "checkpoint": "antirez/deepseek-v4-gguf:DeepSeek-V4-Flash-IQ2XXS-w2Q2K-AProjQ8-SExpQ8-OutQ8-chat-v2-imatrix-0731.gguf",
+        "checkpoints": {
+            "main": "antirez/deepseek-v4-gguf:DeepSeek-V4-Flash-IQ2XXS-w2Q2K-AProjQ8-SExpQ8-OutQ8-chat-v2-imatrix-0731.gguf",
+            "draft": "antirez/deepseek-v4-gguf:DeepSeek-V4-Flash-DSpark-support-0731.gguf"
+        },
         "recipe": "ds4",
         "suggested": true,
         "labels": [
@@ -2954,7 +2957,7 @@
             "reasoning",
             "tool-calling"
         ],
-        "size": 86.7,
+        "size": 92.7,
         "min_resident_gb": 16.0
     },
     "DeepSeek-V4-Flash-Hybrid-Q2Q4-DS4": {
@@ -2991,7 +2994,10 @@
         "min_resident_gb": 16.0
     },
     "DeepSeek-V4-Flash-Vision-IQ2XXS-DS4": {
-        "checkpoint": "antirez/deepseek-v4-gguf:DeepSeek-V4-Flash-Vision-Exp-IQ2XXS-w2Q2K-AProjQ8-SExpQ8-OutQ8.gguf",
+        "checkpoints": {
+            "main": "antirez/deepseek-v4-gguf:DeepSeek-V4-Flash-Vision-Exp-IQ2XXS-w2Q2K-AProjQ8-SExpQ8-OutQ8.gguf",
+            "draft": "antirez/deepseek-v4-gguf:DeepSeek-V4-Flash-Vision-Exp-DSpark-support.gguf"
+        },
         "recipe": "ds4",
         "suggested": true,
         "labels": [
@@ -3000,7 +3006,7 @@
             "tool-calling",
             "vision"
         ],
-        "size": 86.7,
+        "size": 92.7,
         "min_resident_gb": 16.0
     },
     "DeepSeek-V4-Flash-Vision-Hybrid-Q2Q4-DS4": {
