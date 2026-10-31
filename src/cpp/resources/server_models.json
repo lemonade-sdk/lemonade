@@ -3074,5 +3074,55 @@
         ],
         "size": 365.7,
         "min_resident_gb": 16.0
+    },
+    "Qwen3.8-27B-ROCmFP4-STRIX-MTP": {
+        "checkpoints": {
+            "main": "kingjones777/Qwen3.8-27B-ROCmFP4-STRIX-MTP-GGUF:Qwen3.8-27B-Q4_0_ROCMFP4_STRIX.gguf",
+            "draft": "kingjones777/Qwen3.8-27B-ROCmFP4-STRIX-MTP-GGUF:mtp-Qwen3.8-27B-Q4_0.gguf",
+            "mmproj": "kingjones777/Qwen3.8-27B-ROCmFP4-STRIX-MTP-GGUF:mmproj-Qwen3.8-27B-BF16.gguf"
+        },
+        "recipe": "rocmfpx",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling",
+            "vision",
+            "mtp"
+        ],
+        "size": 17.4,
+        "uploaded_by": "kingjones777"
+    },
+    "Gemma-4-26B-A4B-it-ROCmFP4": {
+        "checkpoints": {
+            "main": "kingjones777/Gemma-4-26B-A4B-it-ROCmFP4-GGUF:gemma-4-26B-A4B-it-Q4_0_ROCMFP4_FAST_COHERENT.gguf",
+            "mmproj": "kingjones777/Gemma-4-26B-A4B-it-ROCmFP4-GGUF:mmproj-BF16.gguf"
+        },
+        "recipe": "rocmfpx",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "tool-calling",
+            "vision"
+        ],
+        "size": 14.9,
+        "uploaded_by": "kingjones777"
+    },
+    "Qwen3.6-35B-A3B-ROCmFP4-MTP": {
+        "checkpoints": {
+            "main": "plunderstruck/Qwen3.6-35B-A3B-MTP-ROCmFP4-GGUF:Qwen3.6-35B-A3B-MTP-ROCmFP4-STRIX-embF16-headQ6.gguf",
+            "mmproj": "plunderstruck/Qwen3.6-35B-A3B-MTP-ROCmFP4-GGUF:mmproj-F32.gguf"
+        },
+        "recipe": "rocmfpx",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling",
+            "vision",
+            "mtp"
+        ],
+        "size": 21.7,
+        "uploaded_by": "plunderstruck"
     }
 }
