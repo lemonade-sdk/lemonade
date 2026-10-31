@@ -1169,6 +1169,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   // Real disk usage for the storage meter (null until/unless lemond exposes it).
   const [storageInfo, setStorageInfo] = useState<import('../api').StorageInfo | null>(null);
   const customJsonInputRef = useRef<HTMLInputElement>(null);
+  const latestCustomImportRef = useRef(0);
   const externalModelDeleteNoticeTimerRef = useRef<number | null>(null);
 
   const [serverDefaultCtxSize, setServerDefaultCtxSize] = useState<number>(DEFAULT_CONTEXT_SIZE);
@@ -2200,6 +2201,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
 
   const handleImportCustomModels = async (file: File | null | undefined) => {
     if (!file) return;
+    const importRequestId = ++latestCustomImportRef.current;
     setCustomError(null);
     try {
       if (!api.isConnected) throw new Error('Connect to the Lemonade server before importing custom models.');
@@ -2223,8 +2225,9 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
           errors.push(`${record.name}: ${err instanceof Error ? err.message : String(err)}`);
         }
       }
+      if (importRequestId !== latestCustomImportRef.current) return;
       let importedModelName: string | null = null;
-      if (lastImportedModelName) {
+      if (lastImportedModelName && !errors.length) {
         const targetName = customModelNameKey(lastImportedModelName);
         try {
           const catalog = await api.models(true);
@@ -2235,11 +2238,13 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
           console.warn('Could not refresh model list after import:', err);
         }
       }
+      if (importRequestId !== latestCustomImportRef.current) return;
       const skipped = parsed.skipped + (records.length - imported);
       const notice = `Imported ${imported} custom model${imported === 1 ? '' : 's'}${skipped ? `, skipped ${skipped}` : ''}.`;
-      setCustomJsonNotice(errors.length && lastImportedModelName
-        ? `${notice} ${errors.slice(0, 3).join(' ')}` : notice);
-      if (importedModelName) {
+      setCustomJsonNotice(notice);
+      if (errors.length) {
+        setCustomError(errors.join('\n'));
+      } else if (importedModelName) {
         closeCustomForm();
         setPrimaryFilter('all');
         setTaskFilters(new Set());
@@ -2251,14 +2256,16 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
         setMobileDetailOpen(true);
       } else if (lastImportedModelName) {
         setCustomError(t('Import succeeded, but the model is not visible yet. Refresh the model list.'));
-      } else if (errors.length) {
-        setCustomError(errors.slice(0, 3).join(' '));
       }
       window.setTimeout(() => setCustomJsonNotice(null), 3200);
     } catch (err) {
-      setCustomError(`Could not import JSON: ${err instanceof Error ? err.message : String(err)}`);
+      if (importRequestId === latestCustomImportRef.current) {
+        setCustomError(`Could not import JSON: ${err instanceof Error ? err.message : String(err)}`);
+      }
     } finally {
-      if (customJsonInputRef.current) customJsonInputRef.current.value = '';
+      if (importRequestId === latestCustomImportRef.current && customJsonInputRef.current) {
+        customJsonInputRef.current.value = '';
+      }
     }
   };
 

@@ -5246,7 +5246,7 @@ optgroup {
 .custom-model-form__grid .textarea { min-height: 192px; font-family: var(--font-mono); font-size: var(--text-xs); line-height: var(--leading-relaxed); }
 .custom-model-form__wide, .custom-model-form__error, .custom-model-form__actions, .custom-model-form__hint, .custom-model-form__prompt-actions { grid-column: 1 / -1; }
 .custom-model-form__hint { padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); color: var(--text-secondary); background: var(--surface-2); border: 1px solid var(--border-subtle); font-size: var(--text-sm); }
-.custom-model-form__error { padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); color: var(--danger); background: var(--danger-soft); border: 1px solid color-mix(in srgb, var(--danger) 28%, transparent); font-size: var(--text-sm); }
+.custom-model-form__error { padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); color: var(--danger); background: var(--danger-soft); border: 1px solid color-mix(in srgb, var(--danger) 28%, transparent); font-size: var(--text-sm); white-space: pre-line; overflow-wrap: anywhere; }
 .custom-model-form__textarea-field { grid-template-rows: auto minmax(192px, auto) minmax(16px, auto); }
 .custom-model-form__prompt-actions span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 

@@ -146,3 +146,23 @@ test('import keeps editor open if the catalog has not updated (#4018)', async ({
   await expect(editor).toBeVisible();
   await expect(editor.locator('.custom-model-form__error')).toContainText('Import succeeded, but the model is not visible yet.');
 });
+
+test('partial JSON import keeps the editor open and reports every rejected entry (#4018)', async ({ page }) => {
+  const { registeredNames } = await openModelsWithCustomDefinitions(page);
+  await page.getByRole('button', { name: 'Open custom models' }).click();
+  const editor = page.locator('.custom-model-editor');
+  await editor.locator('input[type="file"]').setInputFiles({
+    name: 'mixed-models.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify({ models: [
+      { name: 'BrokenFirst', recipe: 'llamacpp', type: 'chat' },
+      { name: 'ValidMiddle', checkpoint: 'valid.gguf', recipe: 'llamacpp', type: 'chat' },
+      { name: 'BrokenLast', recipe: 'llamacpp', type: 'chat' },
+    ] })),
+  });
+  await expect(editor).toBeVisible();
+  const errors = editor.locator('.custom-model-form__error');
+  await expect(errors).toContainText('Entry 1:');
+  await expect(errors).toContainText('Entry 3:');
+  expect(registeredNames).toEqual(['user.ValidMiddle']);
+});
