@@ -487,11 +487,11 @@ void test_ds4_memory_plan() {
           !small_pool.resident && small_pool.expert_cache_gb == 24 &&
               small_pool.model_cache_gb == 12 && small_pool.free_reserve_gb == 37);
     const auto large_pool = memory_plan(115.0, 86.4);
-    check("ds4 runs resident on a 115 GiB pool and leaves 24 GiB free",
+    check("ds4 runs resident on a 115 GiB pool and leaves 16 GiB free",
           large_pool.resident && large_pool.expert_cache_gb == 0 &&
-              large_pool.free_reserve_gb == 24);
-    check("ds4 streams a model that would leave less than 24 GiB free",
-          !memory_plan(115.0, 97.0).resident);
+              large_pool.free_reserve_gb == 16);
+    check("ds4 streams a model that would leave less than 16 GiB free",
+          !memory_plan(115.0, 100.0).resident);
 }
 
 void test_descriptors_and_pins() {
