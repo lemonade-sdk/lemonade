@@ -356,7 +356,10 @@ export function modelCapabilityTags(model: ModelInfo): CapabilityTag[] {
   const labelSet = new Set(labels);
   const found = new Set<CapabilityTag>();
   for (const tag of CAPABILITY_TAG_ORDER) {
-    if (tag === 'omni') continue;
+    if (tag === 'omni') {
+      if (labelSet.has('omni')) found.add('omni');
+      continue;
+    }
     if (CAPABILITY_TAG_ALIASES[tag].some(alias => labelSet.has(alias))) found.add(tag);
   }
   const base = BASE_CAPABILITY_TAG[identityFromModelInfo(model)];

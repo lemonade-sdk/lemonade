@@ -218,7 +218,9 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
         await api.deleteModel(download.modelName);
       } else {
         const [recipe, backend] = download.modelName.split(':');
-        if (recipe && backend) await api.uninstallBackend(recipe, backend);
+        if (recipe && backend && !(recipe === 'vllm' && backend === 'omni-rocm')) {
+          await api.uninstallBackend(recipe, backend);
+        }
       }
     } finally {
       await removeDownload(download);

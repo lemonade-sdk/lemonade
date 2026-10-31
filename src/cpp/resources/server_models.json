@@ -2798,6 +2798,61 @@
         ],
         "size": 0.067
     },
+    "Qwen2.5-Omni-7B-vLLM": {
+        "checkpoint": "Qwen/Qwen2.5-Omni-7B",
+        "recipe": "vllm",
+        "runtime": "vllm-omni",
+        "omni_deploy_config": "qwen2_5_omni_1gpu.yaml",
+        "omni_trust_remote_code": true,
+        "suggested": true,
+        "labels": [
+            "chat",
+            "vision",
+            "chat-transcription",
+            "omni"
+        ]
+    },
+    "Qwen2.5-Omni-3B-vLLM": {
+        "checkpoint": "Qwen/Qwen2.5-Omni-3B",
+        "recipe": "vllm",
+        "runtime": "vllm-omni",
+        "omni_deploy_config": "qwen2_5_omni_1gpu.yaml",
+        "omni_trust_remote_code": true,
+        "suggested": true,
+        "labels": [
+            "chat",
+            "vision",
+            "chat-transcription",
+            "omni"
+        ]
+    },
+    "Qwen3-TTS-1.7B-VoiceDesign-vLLM": {
+        "checkpoint": "Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign",
+        "recipe": "vllm",
+        "runtime": "vllm-omni",
+        "omni_preserve_stage_context": true,
+        "omni_tts_task_type": "VoiceDesign",
+        "omni_deploy_config": "qwen3_tts.yaml",
+        "omni_trust_remote_code": true,
+        "omni_enforce_eager": true,
+        "suggested": true,
+        "labels": [
+            "tts",
+            "omni"
+        ]
+    },
+    "Fish-Speech-S2-Pro-vLLM": {
+        "checkpoint": "fishaudio/s2-pro",
+        "recipe": "vllm",
+        "runtime": "vllm-omni",
+        "omni_preserve_stage_context": true,
+        "omni_default_voice": "default",
+        "suggested": true,
+        "labels": [
+            "tts",
+            "omni"
+        ]
+    },
     "Qwen3.5-0.8B-FP16-vLLM": {
         "checkpoint": "Qwen/Qwen3.5-0.8B",
         "recipe": "vllm",

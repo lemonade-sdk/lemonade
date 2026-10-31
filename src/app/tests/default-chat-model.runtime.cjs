@@ -113,7 +113,8 @@ assert.match(chatSource,
 assert.match(chatSource,
   /const detailParts = \[[\s\S]*?option\.defaultLabel,[\s\S]*?\]\.filter\(Boolean\);[\s\S]*?meta=\{detailParts\}/,
   'those detail parts must reach the picker row as its meta line');
-assert.match(chatSource, /ariaLabel=.*option\.defaultLabel/,
+assert.match(chatSource,
+  /ariaLabel=\{`\$\{option\.name\},[\s\S]*?option\.defaultLabel/,
   'default roles must remain accessible in picker rows');
 assert.doesNotMatch(chatSource, /Bonsai-8B-gguf|Qwen3\.5-4B-GGUF/,
   'default model names must remain isolated in the replaceable configuration module');

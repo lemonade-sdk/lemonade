@@ -368,6 +368,8 @@ function backendState(info: unknown): string {
 
 function backendIsSelectable(recipe: string, backend: string, info: unknown): boolean {
   if (!backend || backendState(info) === 'unsupported') return false;
+  // omni-rocm is a distribution of vLLM, not another model accelerator.
+  if (recipe === 'vllm' && backend === 'omni-rocm') return false;
   // llama.cpp has no NPU backend; FLM/RyzenAI own the NPU paths.
   if (recipe === 'llamacpp' && backend.toLowerCase().includes('npu')) return false;
   return true;
@@ -382,17 +384,20 @@ function backendOptionsForKey(key: keyof RecipeOptions, current: string | undefi
   const fromServer = Object.entries(backendMapForRecipe(info, recipe) || {})
     .filter(([backend, backendInfo]) => backendIsSelectable(recipe, backend, backendInfo) && backendMatchesDetectedHardware(backend, info))
     .map(([backend]) => backend);
-  const normalizedCurrent = optionalDisplayValue(current);
+  const rawCurrent = optionalDisplayValue(current);
+  const normalizedCurrent = recipe === 'vllm' && rawCurrent === 'omni-rocm' ? 'rocm' : rawCurrent;
   const base = fromServer.length ? ['auto', ...fromServer] : [normalizedCurrent || 'auto'];
   const options = normalizedCurrent && !base.includes(normalizedCurrent) ? [normalizedCurrent, ...base] : base;
   return Array.from(new Set(options.filter(Boolean)));
 }
 
 function activeBackendValue(key: keyof RecipeOptions, baseValue: unknown, model: ModelInfo, info: SystemInfoLike): string {
-  const fromModel = optionalDisplayValue(baseValue);
-  if (fromModel) return fromModel;
   const recipe = activeRecipeForModel(model);
-  return recipeDefaultBackend(info, recipe) || 'auto';
+  const fromModel = optionalDisplayValue(baseValue);
+  const resolved = fromModel || recipeDefaultBackend(info, recipe) || 'auto';
+  // A stored legacy omni-rocm value remains valid server-side, but the UI
+  // exposes one logical ROCm backend for both installed runtime variants.
+  return recipe === 'vllm' && resolved === 'omni-rocm' ? 'rocm' : resolved;
 }
 
 function availableDeviceCounts(info: SystemInfoLike): { nvidia: number; amd: number; metal: boolean; npu: boolean; cpu: boolean } {
@@ -1746,13 +1751,15 @@ const ModelConfigurationTab: React.FC<{
     if (recipeOptionIsBackend(systemInfo, activeRecipe, String(key))) {
       const activeBackend = activeBackendValue(key, baseValue, model, info);
       const options = backendOptionsForKey(key, draftValue || undefined, model, info).filter(opt => opt !== activeBackend);
+      const displayedDraft = activeRecipe === 'vllm'
+        && (draftValue === 'omni-rocm' || draftValue === activeBackend) ? '' : draftValue;
       return (
         <label key={String(key)} className="detail-tuning__field detail-configuration__field" htmlFor={fieldId}>
           <span>{label}</span>
           <select
             id={fieldId}
             className="select detail-configuration__select"
-            value={draftValue}
+            value={displayedDraft}
             onChange={e => setRecipeDraft(prev => ({ ...prev, [String(key)]: e.target.value }))}
           >
             <option value="">{activeBackend}</option>

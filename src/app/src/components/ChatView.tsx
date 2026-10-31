@@ -453,16 +453,19 @@ function mcpToolNamesForServers(servers: McpServerToolOption[], serverIds: strin
     .flatMap(server => server.toolOptions.map(tool => tool.runtimeName));
 }
 
-function modelModeBadge(capability: ModelCapability, recipe?: string | null): string {
-  return capabilityBadge(identityFor(capability, recipe));
+function modelModeBadge(capability: ModelCapability, recipe?: string | null, nativeOmni = false): string {
+  return nativeOmni && modelStructure(recipe) !== 'single'
+    ? 'omni' : capabilityBadge(identityFor(capability, recipe));
 }
 
 const ModelModeIcons: React.FC<{
   capability: ModelCapability;
   recipe?: string | null;
   audioInput?: boolean;
+  nativeOmni?: boolean;
   size?: number;
-}> = ({ capability, recipe, audioInput = false, size = 14 }) => {
+}> = ({ capability, recipe, audioInput = false, nativeOmni = false, size = 14 }) => {
+  if (nativeOmni && modelStructure(recipe) !== 'single') return <CapabilityIcon capability="omni" size={size} aria-hidden="true" />;
   const identity = identityFor(capability, recipe);
   if (identity !== capability) {
     return <CapabilityIcon capability={identity} size={size} aria-hidden="true" />;
@@ -482,7 +485,8 @@ function modelModeLabel(capability: ModelCapability, audioInput = false): string
     : capabilityLabel(capability);
 }
 
-function modelModeDisplayLabel(capability: ModelCapability, audioInput = false, recipe?: string | null): string {
+function modelModeDisplayLabel(capability: ModelCapability, audioInput = false, recipe?: string | null, nativeOmni = false): string {
+  if (nativeOmni && modelStructure(recipe) !== 'single') return 'Omni';
   const identity = identityFor(capability, recipe);
   return identity === capability ? modelModeLabel(capability, audioInput) : capabilityLabel(identity);
 }
@@ -1272,6 +1276,8 @@ const ChatView: React.FC<ChatViewProps> = ({
     && !isCollectionModel(currentEffectiveSettingsModelInfo);
   // A collection deploys as chat; its Omni surface comes from the recipe.
   const currentIsOmniCollection = snapshotIdentity(currentModelSnapshot) === 'omni';
+  const currentIsNativeOmni = !currentIsOmniCollection && [currentKnownModelInfo, currentLoadedModel]
+    .some(model => (model?.labels || []).some(label => label.toLowerCase() === 'omni'));
 
   useEffect(() => {
     if (!currentLoadedModel || currentCapability !== 'chat') return;
@@ -1546,6 +1552,7 @@ const ChatView: React.FC<ChatViewProps> = ({
     /** Already on this machine. Decides whether the row offers load or fetch. */
     downloaded: boolean;
     audioInput: boolean;
+    nativeOmni: boolean;
     info?: ModelInfo;
     detail: string;
     defaultTier?: 'tiny' | 'quality';
@@ -1576,6 +1583,9 @@ const ChatView: React.FC<ChatViewProps> = ({
       loaded: true,
       downloaded: true,
       audioInput: audioInputForLoaded(model),
+      nativeOmni: (model.labels || []).some(label => label.toLowerCase() === 'omni')
+        || Boolean(findModelInfoByName(knownModelInfos, model.model_name)?.labels?.includes('omni')),
+      info: findModelInfoByName(knownModelInfos, model.model_name) || undefined,
       detail: model.device ? t('Loaded · {device}', { device: model.device }) : t('Loaded'),
     }));
 
@@ -1591,6 +1601,7 @@ const ChatView: React.FC<ChatViewProps> = ({
         loaded: false,
         downloaded: true,
         audioInput: modelSupportsChatAudioInput(info, null),
+        nativeOmni: Boolean(info.labels?.includes('omni')),
         info,
         detail: isRouterModelInfo(info)
           ? t('Router · routes when you send')
@@ -1605,6 +1616,7 @@ const ChatView: React.FC<ChatViewProps> = ({
       loaded: false,
       downloaded: false,
       audioInput: false,
+      nativeOmni: false,
       info: findModelInfoByName(knownModelInfos, model.name) || lemonadeDefaultModelInfo(model),
       detail: model.description,
       deferredUntilSend: true,
@@ -1612,13 +1624,15 @@ const ChatView: React.FC<ChatViewProps> = ({
 
     const q = modelPickerQuery.trim().toLowerCase();
     const filtered = q
-      ? options.filter(option => `${option.name} ${option.defaultLabel || ''} ${modelModeDisplayLabel(option.capability, option.audioInput, option.recipe)} ${option.detail}`.toLowerCase().includes(q))
+      ? options.filter(option => `${option.name} ${option.defaultLabel || ''} ${modelModeDisplayLabel(option.capability, option.audioInput, option.recipe, option.nativeOmni)} ${option.detail}`.toLowerCase().includes(q))
       : options;
     return filtered.slice(0, 80);
   }, [audioInputForLoaded, capabilityForLoaded, downloadItems, knownModelInfos, modelPickerQuery, selectableModels]);
 
   const modeSupportsChatCompletions = currentCapability === 'chat';
-  const modeSupportsMcp = modeSupportsChatCompletions;
+  // Native vLLM-Omni does not enable an automatic tool parser. An enabled
+  // MCP profile must not silently attach tools and cause HTTP 400 on chat.
+  const modeSupportsMcp = modeSupportsChatCompletions && !currentIsNativeOmni;
   const canUseAudioInput = currentIsOmniCollection || currentCapability === 'audio' || (currentCapability === 'chat' && supportsChatAudioInput);
 
   const persistMcpEnabled = useCallback((next: boolean) => {
@@ -3958,12 +3972,12 @@ ${finalText}`
                   aria-expanded={modelPickerOpen}
                 >
                   {currentLoadedModel ? (
-                    <span className={`composer__model-mode composer__model-mode--${modelModeBadge(currentCapability, currentRecipe)}`}>
-                      <ModelModeIcons capability={currentCapability} recipe={currentRecipe} audioInput={supportsChatAudioInput} size={14} />
-                      <span>{modelModeDisplayLabel(currentCapability, supportsChatAudioInput, currentRecipe)}</span>
+                    <span className={`composer__model-mode composer__model-mode--${modelModeBadge(currentCapability, currentRecipe, currentIsNativeOmni)}`}>
+                      <ModelModeIcons capability={currentCapability} recipe={currentRecipe} audioInput={supportsChatAudioInput} nativeOmni={currentIsNativeOmni} size={14} />
+                      <span>{modelModeDisplayLabel(currentCapability, supportsChatAudioInput, currentRecipe, currentIsNativeOmni)}</span>
                     </span>
                   ) : (
-                    <ModelModeIcons capability={currentCapability} recipe={currentRecipe} audioInput={supportsChatAudioInput} size={14} />
+                    <ModelModeIcons capability={currentCapability} recipe={currentRecipe} audioInput={supportsChatAudioInput} nativeOmni={currentIsNativeOmni} size={14} />
                   )}
                   <span className="composer__model-button-name">{currentModel}</span>
                   {selectableModels.length > 0 && (
@@ -4039,7 +4053,7 @@ ${finalText}`
                           selected={option.name === currentModel}
                           disabled={busy}
                           tabIndex={option.name === currentModel ? 0 : -1}
-                          ariaLabel={`${option.name}, ${modelModeDisplayLabel(option.capability, option.audioInput, option.recipe)}, ${option.detail}${option.defaultLabel ? `, ${option.defaultLabel}` : ''}`}
+                          ariaLabel={`${option.name}, ${modelModeDisplayLabel(option.capability, option.audioInput, option.recipe, option.nativeOmni)}, ${option.detail}${option.defaultLabel ? `, ${option.defaultLabel}` : ''}`}
                           onClick={() => handleModelPickerSelect(option)}
                           // Each row offers the one thing left to do to it. Eject
                           // latches because a loaded model is holding memory and
@@ -4887,8 +4901,10 @@ const EmptyState: React.FC<EmptyStateProps> = ({
               const modelInfo = findModelInfoByName(modelInfos, model.model_name);
               const capability = modelInfo ? capabilityFromModelInfo(modelInfo) : capabilityFromLoaded(model);
               const audioInput = modelSupportsChatAudioInput(modelInfo, model);
-              const modeLabel = modelModeDisplayLabel(capability, audioInput, model.recipe);
-              const taskColor = capabilityColor(isRouterRecipe(model.recipe) ? 'router' : capability);
+              const nativeOmni = (model.labels || []).some(label => label.toLowerCase() === 'omni')
+                || Boolean(modelInfo?.labels?.includes('omni'));
+              const modeLabel = modelModeDisplayLabel(capability, audioInput, model.recipe, nativeOmni);
+              const taskColor = capabilityColor(identityFor(capability, model.recipe));
               const selectable = canSelectInComposer(model) || isComposerSelectableCapability(capability);
               const isActive = currentModel === model.model_name;
               const isUnloading = unloadingModel === model.model_name;
@@ -4911,7 +4927,7 @@ const EmptyState: React.FC<EmptyStateProps> = ({
                     style={taskColor ? ({ '--loaded-task-color': taskColor } as React.CSSProperties) : undefined}
                   >
                     <span className="loaded-overview__task-icon" aria-hidden="true">
-                      <ModelModeIcons capability={capability} recipe={model.recipe} audioInput={audioInput} size={40} />
+                      <ModelModeIcons capability={capability} recipe={model.recipe} audioInput={audioInput} nativeOmni={nativeOmni} size={40} />
                     </span>
                   </div>
 

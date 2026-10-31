@@ -55,6 +55,37 @@ assert.match(source, /requestId === systemInfoRequestRef\.current/);
 // Regression: never tell the user to remove a binary based on a stale snapshot.
 assert.doesNotMatch(source, /existing binary may need to be removed manually/);
 
+// vLLM is one card with two selectable, mutually exclusive installs.
+assert.match(source, /installedVllmVariant\(sysInfo\)/);
+assert.match(source, /setRequestedVllmVariant\(selectedBackend === 'rocm' \? 'omni-rocm' : 'rocm'\)/);
+assert.match(source, /handleInstall\(recipe, selectedBackend\)/);
+assert.match(source, /handleUninstall\(recipe, isVllmRocm \? 'rocm' : backend\)/);
+assert.match(source, /Switch to Omni version/);
+assert.match(source, /Switch to normal version/);
+assert.match(source, /function compactVllmVersion/);
+assert.match(source, /compactVllmVersion\(version\)/);
+assert.doesNotMatch(source, /t\('Omni enabled'\)/);
+
+const cppBackend = fs.readFileSync(path.resolve(__dirname, '../../cpp/server/backends/vllm/vllm_server.cpp'), 'utf8');
+const cppInstaller = fs.readFileSync(path.resolve(__dirname, '../../cpp/server/backend_manager.cpp'), 'utf8');
+const cppUninstall = fs.readFileSync(path.resolve(__dirname, '../../cpp/server/routes/lemonade/backends/uninstall.cpp'), 'utf8');
+const pinInfo = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../../cpp/resources/backend_versions.json'), 'utf8'));
+const catalog = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../../cpp/resources/server_models.json'), 'utf8'));
+assert.match(cppBackend, /vllm_backend == "rocm" && omni_installed/);
+assert.doesNotMatch(cppBackend, /install_backend\(vllm::spec\(\)->recipe, "rocm"\)/);
+assert.match(cppInstaller, /vllm:rocm-variant/);
+assert.match(cppInstaller, /backend_committed = true;[\s\S]*?fs::remove_all\(previous_dir, cleanup_ec\)/);
+assert.match(cppUninstall, /Uninstalling vllm:rocm removes either physical variant/);
+assert.match(pinInfo.vllm.rocm, /^vllm0\.25\.2\.dev0.*rocm7\.15\.0/);
+assert.match(pinInfo.vllm['omni-rocm'], /^vllm-omni0\.25\.0rc1-rocm7\.15\.0/);
+for (const name of ['Qwen2.5-Omni-7B-vLLM', 'Qwen2.5-Omni-3B-vLLM',
+  'Qwen3-TTS-1.7B-VoiceDesign-vLLM',
+  'Fish-Speech-S2-Pro-vLLM']) {
+  assert.equal(catalog[name].suggested, true, `${name} must be shown in Models`);
+}
+assert.equal(catalog['Voxtral-4B-TTS-2603-vLLM'], undefined,
+  'Unqualified Voxtral TTS must not be advertised on gfx1151');
+
 function declarationText(name, kind) {
   const sourceFile = ts.createSourceFile(filename, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   let match;
@@ -66,6 +97,27 @@ function declarationText(name, kind) {
   visit(sourceFile);
   assert.ok(match, `${kind} ${name} not found`);
   return match;
+}
+
+function runVllmVariantSelectionChecks() {
+  const functions = [
+    declarationText('backendIsInstalled', 'function'),
+    declarationText('installedVllmVariant', 'function'),
+    'module.exports = { installedVllmVariant };',
+  ].join('\n\n');
+  const compiled = ts.transpileModule(functions, {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
+  });
+  const module = { exports: {} };
+  vm.runInNewContext(compiled.outputText, { module, exports: module.exports });
+  const choose = module.exports.installedVllmVariant;
+  const info = backends => ({ recipes: { vllm: { backends } } });
+  assert.equal(choose(null), null);
+  assert.equal(choose(info({ rocm: { state: 'installable' } })), null);
+  assert.equal(choose(info({ rocm: { state: 'installed' } })), 'rocm');
+  assert.equal(choose(info({ 'omni-rocm': { state: 'installed' } })), 'omni-rocm');
+  assert.equal(choose(info({ rocm: { state: 'installed' },
+    'omni-rocm': { state: 'update_available' } })), 'omni-rocm');
 }
 
 function buildRuntimeHelpers(downloadStore) {
@@ -137,6 +189,7 @@ function backendItem(status, running) {
 }
 
 async function runBehaviorChecks() {
+  runVllmVariantSelectionChecks();
   {
     const store = createDownloadStore([backendItem('downloading', true)]);
     const { waitForBackendDownloadTerminal } = buildRuntimeHelpers(store);

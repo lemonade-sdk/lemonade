@@ -7,6 +7,7 @@
 #include <lemon/utils/aixlog.hpp>
 #include <lemon/utils/json_utils.h>
 
+#include <algorithm>
 #include <set>
 #include <stdexcept>
 
@@ -31,6 +32,11 @@ std::set<std::string> normalized_definition_labels(const nlohmann::json& model_d
 
     if (illegal != nullptr) {
         *illegal = backends::illegal_deployment_labels(labels, recipe);
+        if (illegal->empty() && recipe == "vllm" &&
+            std::find(labels.begin(), labels.end(), "tts") != labels.end() &&
+            model_data.value("runtime", std::string()) != "vllm-omni") {
+            *illegal = "vLLM TTS requires runtime: vllm-omni";
+        }
     }
     backends::ensure_deployment_label(labels, recipe);
     return std::set<std::string>(labels.begin(), labels.end());
@@ -203,6 +209,13 @@ std::optional<ModelInfo> parse_registry_row(const std::string& key, const json& 
 
     parse_image_defaults(info, row);
     parse_extras(info, row);
+    if (info.recipe == "vllm" &&
+        std::find(info.labels.begin(), info.labels.end(), "tts") != info.labels.end() &&
+        info.extra<std::string>("runtime", "") != "vllm-omni") {
+        LOG(ERROR, "ModelManager") << "Skipping " << info.model_name
+            << ": vLLM TTS requires runtime: vllm-omni" << std::endl;
+        return std::nullopt;
+    }
 
     if (rules.recipe_options) {
         const json authored = row_recipe_options(row);
