@@ -102,9 +102,11 @@ static bool is_llamacpp_cuda_backend(const std::string& backend) {
     return backend == "cuda";
 }
 
-// llamacpp:nathanw is a Vulkan build of llama.cpp, so it takes Vulkan devices.
+// The container backends are Vulkan (nathanw) and ROCm (halobox) builds of llama.cpp.
 static std::string device_api(const std::string& backend) {
-    return backend == "nathanw" ? "vulkan" : backend;
+    if (backend == "nathanw") return "vulkan";
+    if (backend == "halobox") return "rocm";
+    return backend;
 }
 
 static bool is_dflash_draft_checkpoint(std::string checkpoint) {
@@ -146,9 +148,9 @@ static std::string resolve_llamacpp_runtime_args(const ModelInfo& model_info,
     // ctx_size the context a request actually gets.
     defaults.push_back({"--parallel 1", "--parallel", {"-np"}});
 
-    // llama-server's 512-token ubatch costs the Vulkan performance fork about a
-    // fifth of its prefill; its author measures, and recommends, 2048.
-    if (backend == "nathanw") {
+    // llama-server's 512-token ubatch costs the Strix Halo forks a fifth or more
+    // of their prefill; nathanw's author measures, and recommends, 2048.
+    if (backend == "nathanw" || backend == "halobox") {
         defaults.push_back({"-b 2048", "-b", {"--batch-size"}});
         defaults.push_back({"-ub 2048", "-ub", {"--ubatch-size"}});
     }

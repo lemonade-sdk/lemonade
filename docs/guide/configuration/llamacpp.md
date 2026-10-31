@@ -74,6 +74,14 @@ Lemonade uses [llama.cpp](https://github.com/ggerganov/llama.cpp) as its primary
 - **Installation**: `lemonade backends install llamacpp:nathanw` pulls the `vulkan-radv-performance` build of [kyuz0/amd-strix-halo-toolboxes](https://hub.docker.com/r/kyuz0/amd-strix-halo-toolboxes), pinned by digest. Podman or Docker is required; see [Container Backends](container-backends.md)
 - **Enable**: `lemonade config set llamacpp.backend=nathanw`, or `--llamacpp nathanw` for one load
 
+### halobox
+- **Platform**: Linux only
+- **Hardware**: AMD Strix Halo (gfx1151)
+- **Use Case**: [halo-box/strix-llama.cpp](https://github.com/halo-box/strix-llama.cpp), the Strix Halo community fork of llama.cpp, on ROCm with ordinary GGUF models
+- **Tier and format**: guest, container
+- **Installation**: `lemonade backends install llamacpp:halobox` pulls the `rocm-10.0-strix-llama` build of [kyuz0/amd-strix-halo-toolboxes](https://hub.docker.com/r/kyuz0/amd-strix-halo-toolboxes), pinned by digest. Podman or Docker is required; see [Container Backends](container-backends.md)
+- **Enable**: `lemonade config set llamacpp.backend=halobox`, or `--llamacpp halobox` for one load
+
 ## ROCm Channel Configuration
 
 The ROCm backend supports three channels to balance stability, performance, and access to latest features:
