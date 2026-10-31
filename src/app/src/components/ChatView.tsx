@@ -1507,6 +1507,7 @@ const ChatView: React.FC<ChatViewProps> = ({
     /** Already on this machine. Decides whether the row offers load or fetch. */
     downloaded: boolean;
     audioInput: boolean;
+    nativeOmni: boolean;
     info?: ModelInfo;
     detail: string;
     defaultTier?: 'tiny' | 'quality';
@@ -1537,6 +1538,8 @@ const ChatView: React.FC<ChatViewProps> = ({
       loaded: true,
       downloaded: true,
       audioInput: audioInputForLoaded(model),
+      nativeOmni: (model.labels || []).some(label => label.toLowerCase() === 'omni')
+        || Boolean(findModelInfoByName(knownModelInfos, model.model_name)?.labels?.includes('omni')),
       info: findModelInfoByName(knownModelInfos, model.model_name) || undefined,
       detail: model.device ? t('Loaded · {device}', { device: model.device }) : t('Loaded'),
     }));
@@ -1553,6 +1556,7 @@ const ChatView: React.FC<ChatViewProps> = ({
         loaded: false,
         downloaded: true,
         audioInput: modelSupportsChatAudioInput(info, null),
+        nativeOmni: Boolean(info.labels?.includes('omni')),
         info,
         detail: isRouterModelInfo(info)
           ? t('Router · routes when you send')
@@ -1567,6 +1571,7 @@ const ChatView: React.FC<ChatViewProps> = ({
       loaded: false,
       downloaded: false,
       audioInput: false,
+      nativeOmni: false,
       info: findModelInfoByName(knownModelInfos, model.name) || lemonadeDefaultModelInfo(model),
       detail: model.description,
       deferredUntilSend: true,
@@ -1574,8 +1579,7 @@ const ChatView: React.FC<ChatViewProps> = ({
 
     const q = modelPickerQuery.trim().toLowerCase();
     const filtered = q
-      ? options.filter(option => `${option.name} ${option.defaultLabel || ''} ${modelModeDisplayLabel(option.capability, option.audioInput, option.recipe,
-          Boolean(option.info?.labels?.includes('omni')))} ${option.detail}`.toLowerCase().includes(q))
+      ? options.filter(option => `${option.name} ${option.defaultLabel || ''} ${modelModeDisplayLabel(option.capability, option.audioInput, option.recipe, option.nativeOmni)} ${option.detail}`.toLowerCase().includes(q))
       : options;
     return filtered.slice(0, 80);
   }, [audioInputForLoaded, capabilityForLoaded, downloadItems, knownModelInfos, modelPickerQuery, selectableModels]);
@@ -3903,17 +3907,16 @@ ${finalText}`
                         <WorkspaceListRow
                           key={option.name}
                           rowId={option.name}
-                          capability={capability}
+                          capability={option.nativeOmni ? 'omni' : capability}
                           title={option.name}
                           meta={detailParts}
-                          glyphs={option.audioInput && option.capability === 'chat' ? ['audio'] : undefined}
+                          glyphs={!option.nativeOmni && option.audioInput && option.capability === 'chat' ? ['audio'] : undefined}
                           status={busy ? 'busy' : option.loaded ? 'live' : undefined}
                           statusText={isLoading ? 'Loading…' : isUnloading ? 'Ejecting…' : undefined}
                           selected={option.name === currentModel}
                           disabled={busy}
                           tabIndex={option.name === currentModel ? 0 : -1}
-                          ariaLabel={`${option.name}, ${modelModeDisplayLabel(option.capability, option.audioInput, option.recipe,
-          Boolean(option.info?.labels?.includes('omni')))}, ${option.detail}${option.defaultLabel ? `, ${option.defaultLabel}` : ''}`}
+                          ariaLabel={`${option.name}, ${modelModeDisplayLabel(option.capability, option.audioInput, option.recipe, option.nativeOmni)}, ${option.detail}${option.defaultLabel ? `, ${option.defaultLabel}` : ''}`}
                           onClick={() => handleModelPickerSelect(option)}
                           // Each row offers the one thing left to do to it. Eject
                           // latches because a loaded model is holding memory and
@@ -4741,9 +4744,10 @@ const EmptyState: React.FC<EmptyStateProps> = ({
               const modelInfo = findModelInfoByName(modelInfos, model.model_name);
               const capability = modelInfo ? capabilityFromModelInfo(modelInfo) : capabilityFromLoaded(model);
               const audioInput = modelSupportsChatAudioInput(modelInfo, model);
-              const modeLabel = modelModeDisplayLabel(capability, audioInput, model.recipe,
-                 Boolean(modelInfo?.labels?.includes('omni')));
-              const taskColor = capabilityColor(isRouterRecipe(model.recipe) ? 'router' : capability);
+              const nativeOmni = (model.labels || []).some(label => label.toLowerCase() === 'omni')
+                || Boolean(modelInfo?.labels?.includes('omni'));
+              const modeLabel = modelModeDisplayLabel(capability, audioInput, model.recipe, nativeOmni);
+              const taskColor = capabilityColor(nativeOmni ? 'omni' : isRouterRecipe(model.recipe) ? 'router' : capability);
               const selectable = canSelectInComposer(model) || isComposerSelectableCapability(capability);
               const isActive = currentModel === model.model_name;
               const isUnloading = unloadingModel === model.model_name;
@@ -4766,7 +4770,7 @@ const EmptyState: React.FC<EmptyStateProps> = ({
                     style={taskColor ? ({ '--loaded-task-color': taskColor } as React.CSSProperties) : undefined}
                   >
                     <span className="loaded-overview__task-icon" aria-hidden="true">
-                      <ModelModeIcons capability={capability} recipe={model.recipe} audioInput={audioInput} size={40} />
+                      <ModelModeIcons capability={capability} recipe={model.recipe} audioInput={audioInput} nativeOmni={nativeOmni} size={40} />
                     </span>
                   </div>
 

@@ -15,6 +15,7 @@
 #include <lemon/utils/aixlog.hpp>
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
@@ -299,7 +300,25 @@ InstallParams VLLMServer::get_install_params(const std::string& backend, const s
             throw std::runtime_error("vLLM Omni extension is currently published only for gfx1151");
         }
 #ifdef __linux__
-        const std::string tag = version + "-" + arch;
+        // The GitHub 'latest' tag belongs to the whole repo and can be a
+        // plain vLLM release. Never install it as if it carried the Omni launcher.
+        if (version.rfind("vllm-omni", 0) != 0) {
+            throw std::runtime_error(
+                "Invalid vLLM Omni release '" + version +
+                "': pin an explicit vllm-omni* tag (latest is not Omni-specific)");
+        }
+        static const std::regex arch_suffix_re("-(gfx[0-9a-fA-FxX]+)$");
+        std::smatch arch_match;
+        std::string tag;
+        if (std::regex_search(version, arch_match, arch_suffix_re)) {
+            if (arch_match[1].str() != arch) {
+                throw std::runtime_error("vLLM Omni release '" + version +
+                    "' targets a different GPU architecture (expected " + arch + ")");
+            }
+            tag = version;
+        } else {
+            tag = version + "-" + arch;
+        }
         params.version_override = tag;
         params.filename = tag + "-x64.tar.gz";
 #else
@@ -381,14 +400,20 @@ void VLLMServer::load(const std::string& model_name,
     omni_tts_task_type_ = model_info.extra<std::string>("omni_tts_task_type", "");
 
     RuntimeConfig::validate_backend_choice("vllm", vllm_backend);
-    if (omni_runtime_ && vllm_backend != "rocm") {
-        throw std::runtime_error("vLLM Omni is currently supported only with ROCm on gfx1151");
+    if (omni_runtime_ && vllm_backend != "rocm" && vllm_backend != "omni-rocm") {
+        throw std::runtime_error("vLLM Omni requires the ROCm backend on gfx1151");
     }
-    const std::string runtime_backend = omni_runtime_ ? "omni-rocm" : vllm_backend;
-    if (omni_runtime_) {
-        // The parent stays a complete, uninstallable vLLM backend even when
-        // auto-loading Omni on a machine without a prior vLLM install.
-        backend_manager_->install_backend(vllm::spec()->recipe, vllm_backend);
+    // Refuse unsupported hardware before the parent can download a large archive.
+    if ((omni_runtime_ || vllm_backend == "omni-rocm") &&
+        SystemInfo::rocm_asset_family(SystemInfo::get_rocm_arch()) != "gfx1151") {
+        throw std::runtime_error("vLLM Omni is currently supported only on gfx1151");
+    }
+    // The complete Omni archive also includes the regular vllm-server binary,
+    // so a user-selectable omni-rocm flavor remains valid for ordinary vLLM.
+    const std::string runtime_backend =
+        (omni_runtime_ || vllm_backend == "omni-rocm") ? "omni-rocm" : vllm_backend;
+    if (runtime_backend == "omni-rocm") {
+        backend_manager_->install_backend(vllm::spec()->recipe, "rocm");
     }
     backend_manager_->install_backend(vllm::spec()->recipe, runtime_backend);
 
@@ -459,8 +484,15 @@ void VLLMServer::load(const std::string& model_name,
                 throw std::runtime_error("Invalid vLLM Omni deploy config filename");
             }
             fs::path deploy_path;
+            if (config_name == "qwen2_5_omni_1gpu.yaml") {
+                deploy_path = path_from_utf8(utils::get_resource_path(
+                    "resources/omni_deploy/qwen2_5_omni_1gpu.yaml"));
+                if (!fs::is_regular_file(deploy_path)) {
+                    throw std::runtime_error("Missing Lemonade single-GPU Omni deploy resource");
+                }
+            }
             const fs::path lib_root = normal_launcher.parent_path().parent_path() / "lib";
-            if (fs::exists(lib_root)) {
+            if (deploy_path.empty() && fs::exists(lib_root)) {
                 for (const auto& entry : fs::directory_iterator(lib_root)) {
                     const fs::path candidate = entry.path() / "site-packages" /
                                                "vllm_omni" / "deploy" / config_name;
@@ -476,10 +508,49 @@ void VLLMServer::load(const std::string& model_name,
             omni_args.push_back("--deploy-config");
             omni_args.push_back(path_to_utf8(deploy_path));
         }
+        if (config_name == "qwen3_tts.yaml" ||
+            config_name == "qwen2_5_omni_1gpu.yaml") {
+            // Stages share one UMA GPU. Budget the *sum* of stage reservations,
+            // including shared-memory pressure from other processes.
+            uint64_t free_bytes = 0, total_bytes = 0;
+            const std::string arch = SystemInfo::get_rocm_arch();
+            const bool measured = SystemInfo::get_rocm_device_memory(
+                arch, free_bytes, total_bytes) && total_bytes > 0 && free_bytes <= total_bytes;
+            const double base_budget = config_name == "qwen3_tts.yaml" ? 0.55 : 0.75;
+            double budget = base_budget;
+            if (measured) {
+                const double available = static_cast<double>(free_bytes) /
+                                         static_cast<double>(total_bytes) - 0.10;
+                if (available < 0.25) {
+                    throw std::runtime_error("Not enough free gfx1151 memory for vLLM Omni stages");
+                }
+                budget = std::min(base_budget, available);
+            }
+            // Keep the ratio between the single-GPU Qwen2.5 stages. On Qwen3
+            // TTS, split the budget between the talker and the codec stage.
+            const std::vector<double> portions = config_name == "qwen3_tts.yaml"
+                ? std::vector<double>{0.5, 0.5}
+                : std::vector<double>{0.55, 0.28, 0.17};
+            json overrides = json::object();
+            for (size_t stage = 0; stage < portions.size(); ++stage) {
+                const double share = std::floor(budget * portions[stage] * 100.0) / 100.0;
+                overrides[std::to_string(stage)] = {
+                    {"gpu_memory_utilization", share},
+                };
+                // Codec/DiT stages do not own autoregressive KV caches.
+                if (stage < (config_name == "qwen3_tts.yaml" ? 1U : 2U)) {
+                    overrides[std::to_string(stage)]["kv_cache_memory_bytes"] =
+                        stage == 0 ? kKvCacheCapBytes : kKvCacheCapBytes / 2;
+                }
+            }
+            omni_args.push_back("--stage-overrides");
+            omni_args.push_back(overrides.dump());
+        }
         if (!vllm_args.empty()) {
             static const std::set<std::string> reserved = {
                 "--host", "--port", "--model", "--served-model-name",
-                "--max-model-len", "--deploy-config", "--omni", "--api-key"};
+                "--max-model-len", "--deploy-config", "--stage-overrides",
+                "--omni", "--api-key"};
             const std::string error = validate_custom_args(vllm_args, reserved);
             if (!error.empty()) {
                 throw std::invalid_argument("Invalid Omni launch arguments: " + error);
@@ -488,7 +559,7 @@ void VLLMServer::load(const std::string& model_name,
             omni_args.insert(omni_args.end(), extra.begin(), extra.end());
         }
         std::vector<std::pair<std::string, std::string>> env_vars;
-        configure_vllm_rocm_env(vllm_backend, env_vars, rocm_shim_dir_);
+        configure_vllm_rocm_env("rocm", env_vars, rocm_shim_dir_);
         env_vars.push_back({"FLASH_ATTENTION_TRITON_AMD_ENABLE", "TRUE"});
         env_vars.push_back({"PYTHONNOUSERSITE", "1"});
         ServerCommand command;
@@ -517,7 +588,7 @@ void VLLMServer::load(const std::string& model_name,
 
     port_ = choose_port();
 
-    std::string executable = BackendUtils::get_backend_binary_path(*vllm::spec(), vllm_backend);
+    std::string executable = BackendUtils::get_backend_binary_path(*vllm::spec(), runtime_backend);
 
     std::vector<std::string> args;
     args.push_back("--model");
@@ -625,7 +696,7 @@ void VLLMServer::load(const std::string& model_name,
 
     std::vector<std::pair<std::string, std::string>> env_vars;
 
-    configure_vllm_rocm_env(vllm_backend, env_vars, rocm_shim_dir_);
+    configure_vllm_rocm_env("rocm", env_vars, rocm_shim_dir_);
 
     // Enable ROCm flash attention (the launcher script handles LD_LIBRARY_PATH).
     env_vars.push_back({"FLASH_ATTENTION_TRITON_AMD_ENABLE", "TRUE"});

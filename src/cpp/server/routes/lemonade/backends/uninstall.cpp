@@ -19,6 +19,8 @@ using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
 const RouteError kMissingProvider{400, "", "A cloud uninstall has no `provider`, or an empty one"};
+const RouteError kManagedOmni{400, "managed_backend",
+    "The vLLM Omni extension is uninstalled together with vllm:rocm"};
 
 const RouteArg kProvider{"provider", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
                          "The installed cloud provider to remove."};
@@ -94,7 +96,7 @@ public:
         })");
         s.examples = {local_example, cloud_example};
         s.errors = {kBodyNotJson, kArgMissing, kArgInvalid, kMissingProvider,
-                    kProviderNotInstalled, kMissingRecipe, kUnexpectedException};
+                    kProviderNotInstalled, kMissingRecipe, kManagedOmni, kUnexpectedException};
         s.request_format = RequestFormat::Json;
         return s;
     }
@@ -138,6 +140,10 @@ public:
             const std::string recipe = req.value(backend_routes::kRecipe, "");
             const std::string backend = req.value(backend_routes::kBackend, "");
             if (!require_local_recipe(recipe, res)) {
+                return;
+            }
+            if (recipe == "vllm" && backend == "omni-rocm") {
+                write_openai_error(res, kManagedOmni, "The vLLM Omni extension is uninstalled together with vllm:rocm");
                 return;
             }
 

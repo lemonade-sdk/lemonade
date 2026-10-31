@@ -989,7 +989,6 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
     const updates: { recipe: string; backend: string }[] = [];
     for (const [recipe, recipeInfo] of Object.entries(sysInfo.recipes)) {
       for (const [backend, bInfo] of Object.entries(recipeInfo.backends)) {
-        if (recipe === 'vllm' && backend === 'omni-rocm') continue;
         if (bInfo.state === 'update_required' || bInfo.state === 'update_available') updates.push({ recipe, backend });
       }
     }
@@ -1064,9 +1063,8 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
   const updatesAvailable = useMemo(() => {
     if (!sysInfo?.recipes) return 0;
     let count = 0;
-    for (const [recipe, recipeInfo] of Object.entries(sysInfo.recipes)) {
-      for (const [backend, bInfo] of Object.entries(recipeInfo.backends)) {
-        if (recipe === 'vllm' && backend === 'omni-rocm') continue;
+    for (const recipeInfo of Object.values(sysInfo.recipes)) {
+      for (const bInfo of Object.values(recipeInfo.backends)) {
         if (bInfo.state === 'update_required' || bInfo.state === 'update_available') count++;
       }
     }
@@ -1087,7 +1085,9 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
           || backendInfo.state === 'update_available'
         ) counts.installed++;
         if (backendInfo.state === 'installable') counts.available++;
-        if (backendInfo.state === 'update_required' || backendInfo.state === 'update_available') counts.updates++;
+        if (backendInfo.state === 'update_required' || backendInfo.state === 'update_available'
+          || (recipe === 'vllm' && backend === 'rocm' &&
+            ['update_required', 'update_available'].includes(recipeInfo.backends['omni-rocm']?.state || ''))) counts.updates++;
         if (isExperimentalBackend(recipe, recipeInfo, backendInfo)) counts.experimental++;
       }
     }
@@ -1102,7 +1102,9 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
         || entry.info.state === 'update_available';
     }
     if (viewFilter === 'available') return entry.info.state === 'installable';
-    if (viewFilter === 'updates') return entry.info.state === 'update_required' || entry.info.state === 'update_available';
+    if (viewFilter === 'updates') return entry.info.state === 'update_required' || entry.info.state === 'update_available'
+      || (entry.recipe === 'vllm' && entry.backend === 'rocm' &&
+        ['update_required', 'update_available'].includes(sysInfo?.recipes?.vllm?.backends?.['omni-rocm']?.state || ''));
     const recipeInfo = sysInfo?.recipes?.[entry.recipe];
     return recipeInfo ? isExperimentalBackend(entry.recipe, recipeInfo, entry.info) : Boolean(entry.info.experimental);
   }, [sysInfo, viewFilter]);
@@ -1156,11 +1158,17 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
               || omniInfo.state === 'update_required');
             const parentInstalled = info.state === 'installed'
               || info.state === 'update_available' || info.state === 'update_required';
-            const omniBusy = installing === 'vllm:omni-rocm';
-            const isInstalling = installing === cellKey || Boolean(omniInfo && omniBusy);
+            const omniDownload = omniInfo ? downloadItems.find(download =>
+              backendDownloadMatches(download, 'vllm', 'omni-rocm') &&
+              (isDownloadActive(download) || download.status === 'paused')) : undefined;
+            const omniBusy = installing === 'vllm:omni-rocm' || Boolean(omniDownload && isDownloadActive(omniDownload));
+            const isInstalling = installing === cellKey || omniBusy || downloadItems.some(download =>
+              backendDownloadMatches(download, recipe, backend) && isDownloadActive(download));
             const backendDownload = downloadItems.find(download =>
-              backendDownloadMatches(download, recipe, backend)
-              || (omniInfo && omniBusy && backendDownloadMatches(download, 'vllm', 'omni-rocm')));
+              backendDownloadMatches(download, recipe, backend) &&
+              (isDownloadActive(download) || download.status === 'paused'))
+              || omniDownload
+              || downloadItems.find(download => backendDownloadMatches(download, recipe, backend));
             const showBackendProgress = Boolean(backendDownload && (isDownloadActive(backendDownload) || backendDownload.status === 'paused'));
             const tuning = backendTunings[cellKey] || null;
             const name = `${engineName} · ${backend}`;

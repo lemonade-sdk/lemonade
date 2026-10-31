@@ -2798,6 +2798,34 @@
         ],
         "size": 0.067
     },
+    "Qwen2.5-Omni-7B-vLLM": {
+        "checkpoint": "Qwen/Qwen2.5-Omni-7B",
+        "recipe": "vllm",
+        "runtime": "vllm-omni",
+        "omni_deploy_config": "qwen2_5_omni_1gpu.yaml",
+        "omni_trust_remote_code": true,
+        "suggested": false,
+        "labels": [
+            "chat",
+            "vision",
+            "chat-transcription",
+            "omni"
+        ]
+    },
+    "Qwen2.5-Omni-3B-vLLM": {
+        "checkpoint": "Qwen/Qwen2.5-Omni-3B",
+        "recipe": "vllm",
+        "runtime": "vllm-omni",
+        "omni_deploy_config": "qwen2_5_omni_1gpu.yaml",
+        "omni_trust_remote_code": true,
+        "suggested": false,
+        "labels": [
+            "chat",
+            "vision",
+            "chat-transcription",
+            "omni"
+        ]
+    },
     "Voxtral-4B-TTS-2603-vLLM": {
         "checkpoint": "mistralai/Voxtral-4B-TTS-2603",
         "recipe": "vllm",
