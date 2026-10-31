@@ -7,6 +7,7 @@ const RECIPE_PRIORITY = [
   'acestep',
   'ds4',
   'flm',
+  'gufo',
   'halogen',
   'llamacpp-hrx',
   'kokoro',
