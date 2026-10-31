@@ -28,8 +28,7 @@ inline const std::set<std::string>& reserved_custom_arg_flags() {
 
 // Gufo is an inference engine with model-specific gfx1151 kernels. It reads
 // ordinary GGUFs but runs only the few models it was written for, so they get
-// their own recipe rather than a llamacpp backend. It runs from Donato
-// Capitella's Strix Halo toolboxes image.
+// their own recipe rather than a llamacpp backend.
 inline const BackendDescriptor descriptor = {
     /*recipe*/          "gufo",
     /*display_name*/    "Gufo",
