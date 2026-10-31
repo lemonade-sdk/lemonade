@@ -14,13 +14,6 @@ namespace ds4 {
 // and proxying, rebinding the host exposes the backend, swapping the model
 // desynchronises the router, and the backend-selection flags would run the
 // child on a different device than the one Lemonade is tracking.
-// True if ds4-rocm publishes a build for `os`. SystemInfo::backend_supports_arch
-// validates the device constraints and arch gates but not the support row's
-// supported_os, and the direct backend-install endpoint does not go through
-// model filtering, so an unsupported OS would otherwise resolve an asset that
-// does not exist.
-inline bool publishes_for_os(const std::string& os);
-
 inline const std::set<std::string>& reserved_custom_arg_flags() {
     static const std::set<std::string> flags = {
         "-m", "--model",
@@ -31,11 +24,45 @@ inline const std::set<std::string>& reserved_custom_arg_flags() {
     return flags;
 }
 
+// On an APU the GPU pool is the desktop's memory too. Left alone, ds4-server
+// grows its caches until its own free check reads 16 GiB, but that check misses
+// its model tensor cache and streaming buffers, so on a 62 GiB Strix Halo the
+// pool really fell to 15 GB free and the compositor died with the login
+// session. The free floor and tensor cache cap here kept 25 GB free under a
+// long prompt at full prefill speed. Auto-tune reads the same plan to keep the
+// context out of that floor.
+//
+// A pool that holds the model plus ds4's own 16 GiB floor, such as a 128 GB
+// Strix Halo's 115 GiB GTT window, runs it resident instead (13.5 tok/s against
+// 2.4 streamed; DSpark needs residency). A resident model allocates its context
+// up front, so it never grows into the floor.
+struct MemoryPlan {
+    bool resident = false;
+    int expert_cache_gb = 0;  // --ssd-streaming-cache-experts
+    int model_cache_gb = 0;   // DS4_ROCM_STREAM_MODEL_CACHE_GB
+    int free_reserve_gb = 0;  // DS4_ROCM_STREAM_FREE_RESERVE_GB, or what residency leaves free
+};
+
+inline constexpr int kResidentFreeReserveGb = 16;
+
+// `weights_gb` is the model's GGUF plus any DSpark support file it loads.
+inline MemoryPlan memory_plan(double pool_gb, double weights_gb) {
+    MemoryPlan plan;
+    if (pool_gb <= 0.0) return plan;
+    if (weights_gb > 0.0 && pool_gb >= weights_gb + kResidentFreeReserveGb) {
+        plan.resident = true;
+        plan.free_reserve_gb = kResidentFreeReserveGb;
+        return plan;
+    }
+    plan.expert_cache_gb = static_cast<int>(pool_gb * 0.4);
+    plan.model_cache_gb = static_cast<int>(pool_gb * 0.2);
+    plan.free_reserve_gb = static_cast<int>(pool_gb * 0.6);
+    return plan;
+}
+
 // The ds4 backend descriptor (plain data). DS4 (DwarfStar) is antirez's
 // self-contained DeepSeek V4 inference engine with an OpenAI-compatible HTTP
-// server (ds4-server). Upstream publishes no binaries, releases or tags, so
-// builds come from lemonade-sdk/ds4-rocm, which compiles a pinned upstream
-// commit and bundles the ROCm runtime alongside it.
+// server (ds4-server). It runs from Donato Capitella's Strix Halo DS4 image.
 inline const BackendDescriptor descriptor = {
     /*recipe*/          "ds4",
     /*display_name*/    "DwarfStar4",
@@ -51,7 +78,7 @@ inline const BackendDescriptor descriptor = {
          "Custom arguments to pass to ds4-server", "DS4 Options"},
     },
     /*support*/ {
-        {"rocm", BackendTier::Guest, BackendFormat::Native, {"linux"}, {{"amd_gpu", {"gfx1151"}}}, "Prebuilt ds4 for AMD Strix Halo"},
+        {"rocm", BackendTier::Guest, BackendFormat::Container, {"linux"}, {{"amd_gpu", {"gfx1151"}}}, "Prebuilt ds4 for AMD Strix Halo"},
     },
     /*supported_modes*/ {"chat"},
     /*required_checkpoints*/ {"main"},
@@ -67,16 +94,14 @@ inline const BackendDescriptor descriptor = {
     /*bin_variants*/    {},
     /*config_extra*/    nlohmann::json::object(),
     /*streams_model_from_storage*/ true,
+    /*containers*/ {
+        {"rocm", {
+            /*image*/   "docker.io/kyuz0/strix-halo-ds4-toolbox",
+            /*devices*/ {"/dev/dri", "/dev/kfd"},
+            /*cap_add*/ {"SYS_PTRACE"},
+        }},
+    },
 };
-
-inline bool publishes_for_os(const std::string& os) {
-    for (const auto& row : descriptor.support) {
-        if (row.backend == "rocm") {
-            return row.supported_os.count(os) > 0;
-        }
-    }
-    return false;
-}
 
 }  // namespace ds4
 }  // namespace backends

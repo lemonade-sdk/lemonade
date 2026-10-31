@@ -14,7 +14,6 @@ namespace backends {
 // other LLM backends.
 class Ds4Server : public WrappedServer {
 public:
-    static InstallParams get_install_params(const std::string& backend, const std::string& version);
     Ds4Server(const std::string& log_level, ModelManager* model_manager,
               BackendManager* backend_manager);
 
@@ -24,6 +23,10 @@ public:
     json chat_completion(const json& request) override;
     json completion(const json& request) override;
     json responses(const json& request) override;
+    void forward_streaming_request(const std::string& endpoint, const std::string& request_body,
+                                   httplib::DataSink& sink, bool sse = true,
+                                   long timeout_seconds = 0,
+                                   TelemetryCallback telemetry_callback = nullptr) override;
 };
 
 namespace ds4 {

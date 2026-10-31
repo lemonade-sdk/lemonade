@@ -1597,7 +1597,8 @@ json SystemInfo::build_recipes_info(const json& devices) {
 
         if (supported && container_backend) {
             if (!container_setup) container_setup = backends::container_setup_failure();
-            mark_container_setup(backend, *container_setup);
+            mark_container_setup(backend, backends::container_setup_failure(
+                                              def.recipe, def.backend, *container_setup));
         }
 
         set_backend_status(def, backend, kCurrentOsUnsupportedPriority);
@@ -1769,7 +1770,8 @@ bool SystemInfo::refresh_container_setup(json& recipes) {
                 continue;
             }
             if (!container_setup) container_setup = backends::container_setup_failure();
-            if (!mark_container_setup(status, *container_setup) && state == "action_required") {
+            const auto failure = backends::container_setup_failure(recipe, backend, *container_setup);
+            if (!mark_container_setup(status, failure) && state == "action_required") {
                 cleared = true;
             }
         }
@@ -2111,6 +2113,13 @@ bool needs_gfx1151_cwsr_fix() {
     }
 
     return false;
+}
+
+std::string hip_visible_device(const std::string& recipe, const std::string& backend) {
+    return system_info_detail::hip_visible_device(
+        "/sys/class/kfd/kfd/topology/nodes", [&](const std::string& arch) {
+            return SystemInfo::backend_supports_arch(recipe, backend, arch);
+        });
 }
 
 // Identify NPU architecture by checking for known hardware

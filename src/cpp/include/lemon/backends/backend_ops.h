@@ -73,6 +73,17 @@ public:
         (void)ctx;
     }
 
+    // Auto-tune sizes ctx_size from the memory a model's weights leave free,
+    // which is wrong for a backend that streams weights and sizes its own
+    // caches. Such a backend returns the GiB of `available_gib` its context may
+    // use. Default: nullopt, the weights decide.
+    virtual std::optional<double> auto_context_kv_budget_gib(const ModelInfo& info,
+                                                             double available_gib) const {
+        (void)info;
+        (void)available_gib;
+        return std::nullopt;
+    }
+
     // Add automatic overridable options before exposing/passing to a backend.
     // Managed arguments (model paths/ports) do not belong here. Default: none.
     virtual void resolve_runtime_options(const ModelInfo& info, RecipeOptions& options) const {
@@ -221,6 +232,12 @@ const BackendOps* default_backend_ops();
 
 // nullopt when the host is ready to run container backends.
 std::optional<utils::SetupReport> container_setup_failure();
+
+// `host`, the report container_setup_failure() returned, plus the checks
+// `recipe:backend` needs on top of it.
+std::optional<utils::SetupReport> container_setup_failure(
+    const std::string& recipe, const std::string& backend,
+    const std::optional<utils::SetupReport>& host);
 
 } // namespace backends
 } // namespace lemon

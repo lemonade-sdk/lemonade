@@ -4,6 +4,7 @@
 
 #include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/backends/ds4/ds4.h"
 #include "lemon/utils/container_manager.h"
 
 #include <cstdio>
@@ -411,6 +412,27 @@ void test_helpers() {
               ContainerManager::container_name("llamacpp", "nathanw", "user.foo_2fbar") ==
                   "lemonade-llamacpp-nathanw-user.foo__2fbar");
 
+    FakeHost ubuntu;
+    check("a host without SELinux passes the SELinux check",
+          !ContainerManager(ubuntu.host()).check_selinux());
+    FakeHost fedora;
+    fedora.files["/sys/fs/selinux/enforce"] = "1";
+    fedora.files["/sys/fs/selinux/booleans/container_use_devices"] = "0 0";
+    const auto selinux = ContainerManager(fedora.host()).check_selinux();
+    check("enforcing SELinux without container_use_devices fails with its fix",
+          selinux &&
+              selinux->message ==
+                  "SELinux is enforcing and the container_use_devices boolean is off" &&
+              selinux->steps ==
+                  std::vector<std::string>({"sudo setsebool -P container_use_devices 1"}));
+    fedora.files["/sys/fs/selinux/booleans/container_use_devices"] = "1 1";
+    check("the SELinux check passes once container_use_devices is on",
+          !ContainerManager(fedora.host()).check_selinux());
+    fedora.files["/sys/fs/selinux/booleans/container_use_devices"] = "0 0";
+    fedora.files["/sys/fs/selinux/enforce"] = "0";
+    check("permissive SELinux passes the SELinux check",
+          !ContainerManager(fedora.host()).check_selinux());
+
     check("other publishers are refused",
           !ContainerManager::allowed_image("docker.io/library/ubuntu") &&
               !ContainerManager::allowed_image("docker.io/kyuz0x/image") &&
@@ -457,6 +479,21 @@ void test_model_mount() {
 }
 #endif
 
+void test_ds4_memory_plan() {
+    using lemon::backends::ds4::memory_plan;
+    // The IQ2XXS model (80.8 GiB) with its DSpark support file (5.6 GiB).
+    const auto small_pool = memory_plan(62.0, 86.4);
+    check("ds4 streams on a 62 GiB pool with the expert, model and free budgets it was tuned for",
+          !small_pool.resident && small_pool.expert_cache_gb == 24 &&
+              small_pool.model_cache_gb == 12 && small_pool.free_reserve_gb == 37);
+    const auto large_pool = memory_plan(115.0, 86.4);
+    check("ds4 runs resident on a 115 GiB pool and leaves 16 GiB free",
+          large_pool.resident && large_pool.expert_cache_gb == 0 &&
+              large_pool.free_reserve_gb == 16);
+    check("ds4 streams a model that would leave less than 16 GiB free",
+          !memory_plan(115.0, 100.0).resident);
+}
+
 void test_descriptors_and_pins() {
     std::ifstream in(BACKEND_VERSIONS_JSON_PATH);
     const nlohmann::json versions = nlohmann::json::parse(in);
@@ -494,6 +531,7 @@ int main() {
 #ifndef _WIN32
     test_model_mount();
 #endif
+    test_ds4_memory_plan();
     test_descriptors_and_pins();
 
     if (failures == 0) {
