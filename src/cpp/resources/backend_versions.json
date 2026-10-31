@@ -81,6 +81,9 @@
   "halogen": {
     "rocm": "latest@sha256:f4ee69cafd334f5fed1173e998550dea00505e0df2bb3cb90b60d7a7aa1332f4"
   },
+  "gufo": {
+    "rocm": "rocm-10.0-gufo@sha256:67aa0b040993fedfd4e300242c5cb48f8add5874454a7486993668e74185e7a9"
+  },
   "ds4": {
     "rocm": "rocm-10.0@sha256:31b4e7e3584684768ee060e3dfeb62c1d716219da468090f3483977fdf6dfb47"
   },

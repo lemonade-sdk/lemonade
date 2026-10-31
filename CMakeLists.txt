@@ -235,6 +235,7 @@ set(LEMON_BACKENDS
     "ds4|ds4"
     "rocmfpx|rocmfpx"
     "halogen|halogen"
+    "gufo|gufo"
     "cloud|cloud"
     "thinksound|thinksound"
     "acestep|acestep"

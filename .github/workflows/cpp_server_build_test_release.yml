@@ -1468,6 +1468,7 @@ jobs:
           - {recipe: llamacpp, backend: halobox}
           - {recipe: rocmfpx, backend: rocm}
           - {recipe: halogen, backend: rocm}
+          - {recipe: gufo, backend: rocm}
     env:
       LEMONADE_CI_MODE: "True"
       HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}

@@ -28,6 +28,9 @@
     "prefer_system": false
   },
   "global_timeout": 600,
+  "gufo": {
+    "args": ""
+  },
   "host": "localhost",
   "hrx": {
     "args": "",

@@ -3139,5 +3139,54 @@
         "min_resident_gb": 33.0,
         "halogen_lookup_table": "qwen38-flash-next-ngram.hgn",
         "halogen_vision_tower": "qwen38-flash-next-vision.hgn"
+    },
+    "Qwen3.8-27B-Gufo": {
+        "checkpoints": {
+            "main": "unsloth/Qwen3.8-27B-GGUF:Qwen3.8-27B-UD-Q4_K_XL.gguf",
+            "draft": "z-lab/Qwen3.8-27B-DFlash2-GGUF:Qwen3.8-27B-DFlash2-Q4_K_M.gguf",
+            "mmproj": "unsloth/Qwen3.8-27B-GGUF:mmproj-BF16.gguf"
+        },
+        "recipe": "gufo",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling",
+            "vision"
+        ],
+        "size": 19.6,
+        "gufo_speculative": "dflash2"
+    },
+    "Qwen3.8-Flash-Next-Gufo": {
+        "checkpoints": {
+            "main": "unsloth/Qwen3.8-Flash-Next-GGUF:UD-Q4_K_XL",
+            "draft": "unsloth/Qwen3.8-Flash-Next-GGUF:MTP/mtp-Qwen3.8-Flash-Next-shared-Q8_0.gguf",
+            "mmproj": "unsloth/Qwen3.8-Flash-Next-GGUF:mmproj-BF16.gguf"
+        },
+        "recipe": "gufo",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling",
+            "vision"
+        ],
+        "size": 115.0,
+        "gufo_speculative": "mtp"
+    },
+    "DeepSeek-V4-Flash-IQ2XXS-Gufo": {
+        "checkpoints": {
+            "main": "antirez/deepseek-v4-gguf:DeepSeek-V4-Flash-IQ2XXS-w2Q2K-AProjQ8-SExpQ8-OutQ8-chat-v2-imatrix-0731.gguf",
+            "draft": "antirez/deepseek-v4-gguf:DeepSeek-V4-Flash-DSpark-support-0731.gguf"
+        },
+        "recipe": "gufo",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling"
+        ],
+        "size": 92.7,
+        "gufo_speculative": "dspark"
     }
 }

@@ -7,6 +7,7 @@
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backends/ds4/ds4.h"
+#include "lemon/backends/gufo/gufo_server.h"
 #include "lemon/backends/halogen/halogen_server.h"
 #include "lemon/utils/container_manager.h"
 
@@ -16,6 +17,7 @@
 #include <map>
 #include <nlohmann/json.hpp>
 #include <set>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -530,6 +532,39 @@ void test_halogen_kernel_check() {
               .has_value());
 }
 
+void test_gufo_argv() {
+    const std::string argv = join(lemon::backends::gufo::build_server_argv(
+        "Qwen3.8-27B-Gufo", "/mnt/models/target.gguf", "/mnt/models/mmproj-BF16.gguf",
+        "/mnt/models/draft.gguf", "dflash2", 8192, 8001, "--think off"));
+    check("gufo serves the target under Lemonade's model name, with its projector and its "
+          "DFlash2 draft",
+          argv == "serve llm --model /mnt/models/target.gguf --served-model-name "
+                  "Qwen3.8-27B-Gufo --context 8192 --host 0.0.0.0 --port 8001 --mmproj "
+                  "/mnt/models/mmproj-BF16.gguf --speculative dflash2 --dflash-model "
+                  "/mnt/models/draft.gguf --think off");
+    check("gufo passes an MTP draft through --mtp-model and a DSpark draft through --dspark-model",
+          join(lemon::backends::gufo::build_server_argv("m", "t.gguf", "", "d.gguf", "mtp", 0,
+                                                        1, ""))
+                      .find("--speculative mtp --mtp-model d.gguf") != std::string::npos &&
+              join(lemon::backends::gufo::build_server_argv("m", "t.gguf", "", "d.gguf",
+                                                            "dspark", 0, 1, ""))
+                      .find("--speculative dspark --dspark-model d.gguf") != std::string::npos);
+    bool threw = false;
+    try {
+        lemon::backends::gufo::build_server_argv("m", "t.gguf", "", "d.gguf", "", 0, 1, "");
+    } catch (const std::invalid_argument&) {
+        threw = true;
+    }
+    check("gufo refuses a draft whose speculative mode is not named", threw);
+    threw = false;
+    try {
+        lemon::backends::gufo::build_server_argv("m", "t.gguf", "", "", "", 0, 1, "--port 9");
+    } catch (const std::invalid_argument&) {
+        threw = true;
+    }
+    check("gufo_args cannot move the port", threw);
+}
+
 void test_ds4_memory_plan() {
     using lemon::backends::ds4::memory_plan;
     // The IQ2XXS model (80.8 GiB) with its DSpark support file (5.6 GiB).
@@ -584,6 +619,7 @@ int main() {
 #endif
 
     test_halogen_kernel_check();
+    test_gufo_argv();
     test_ds4_memory_plan();
     test_descriptors_and_pins();
 
