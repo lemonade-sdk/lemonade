@@ -940,6 +940,28 @@ void check_access_rules(const std::function<void(bool, const char*)>& check) {
     check(members[1].at("can_remove") && !members[2].at("can_remove") && !members[0].at("can_remove"), "Removal follows delete_node on the device");
     check(members[1].at("access_known") && !members[2].at("access_known"), "Device access is known only with edit_node on the device");
 
+    // Devices outside the group's children come from ln_list_network_devices: a member
+    // that joined from its own network and a server of a network this identity joined.
+    const json network = json::array({
+        {{"node_id", "server"}, {"device_name", "Server"}, {"is_self", true}, {"group_role", "home"}},
+        {{"node_id", "workstation"}, {"device_name", "Workstation"}, {"can_connect", true}, {"group_role", "home"}},
+        {{"node_id", "friend"}, {"device_name", "Friend"}, {"tunnel_ip", "10.9.0.5/32"}, {"mgmt_pubkey", "ed25519:ZnJpZW5k"},
+         {"member", true}, {"can_connect", true}, {"group_role", "home"}, {"group_id", "customer-admin"}},
+        {{"node_id", "other-server"}, {"device_name", "Other"}, {"is_inference", true}, {"can_connect", true},
+         {"group_role", "member"}, {"group_id", "customer-other"}}});
+    const json friend_peers = json::array({{{"node_id", "friend"}, {"is_online", true}}});
+    const auto merged = access::merge_members(group, children, friend_peers, admin_key, "server", json::array(), network);
+    check(merged.size() == 5, "Network devices outside the children are added once");
+    check(!merged[1].at("member") && merged[1].at("can_connect") && merged[1].at("group_role") == "home",
+          "A child carries the network list's connect flag");
+    check(merged[3].at("node_id") == "friend" && merged[3].at("member") && merged[3].at("is_online") &&
+              !merged[3].at("can_remove") && merged[3].at("tier") == 4,
+          "A member from another network is listed, online state merged, never removable here");
+    check(merged[4].at("node_id") == "other-server" && merged[4].at("group_role") == "member" &&
+              merged[4].at("group_id") == "customer-other" && merged[4].at("tier") == 3,
+          "A server of a joined network is listed with its group");
+    check(access::relay_target(merged, "server", "friend").first == 409, "A client device is never a relay target");
+
     const auto workstation = access::device_access(members, "workstation", "server");
     check(workstation.at("can_manage") && workstation.at("access_known"), "Admin manages visible device access");
     check(workstation.at("members").size() == 1 && workstation.at("members")[0].at("node_id") == "laptop", "Access rows exclude the device and this device");

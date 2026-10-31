@@ -585,17 +585,58 @@ json tree_entry(const json& node, const std::string& self_key, bool ancestor_adm
 }
 
 json merge_members(const json& group, const json& children, const json& peers,
-                   const std::string& self_key, const std::string& self_node_id, const json& mesh_peers) {
+                   const std::string& self_key, const std::string& self_node_id, const json& mesh_peers,
+                   const json& network) {
     const auto group_acl = group.value("assignments", json::array());
     // The federation returns a node's full assignment list only to callers with edit_node on it.
     const bool group_acl_known = grants(permissions_for(group_acl, self_key), "edit_node");
     const auto creator = text(group, "mgmt_pubkey");
+    const auto network_entry = [&](const std::string& id) {
+        if (network.is_array()) {
+            for (const auto& device : network) {
+                if (device.is_object() && text(device, "node_id") == id) return device;
+            }
+        }
+        return json::object();
+    };
+    const auto peer_entry = [&](const std::string& id) {
+        if (peers.is_array()) {
+            for (const auto& candidate : peers) {
+                if (candidate.is_object() && text(candidate, "node_id") == id) return candidate;
+            }
+        }
+        return json::object();
+    };
+    const auto connection_type = [&](const std::string& id, bool self, const json& peer) {
+        std::string type = self ? "local" : "unknown";
+        // Discovery endpoints are candidates; only the dataplane knows the active path.
+        if (!self && flag(peer, "is_online") && mesh_peers.is_array()) {
+            for (const auto& connection : mesh_peers) {
+                if (!connection.is_object() || text(connection, "node_id") != id || !flag(connection, "is_online")) continue;
+                if (connection.value("last_rx", int64_t{0}) > 0 || connection.value("last_handshake", int64_t{0}) > 0) {
+                    if (connection.contains("path")) {
+                        const auto path = text(connection, "path");
+                        if (path == "relay") type = "relay";
+                        else if (path == "lan" || path == "direct") type = "p2p";
+                    } else if (!text(connection, "relay_endpoint").empty()) type = "relay";
+                    else if (!text(connection, "endpoint").empty()) type = "p2p";
+                }
+                break;
+            }
+        }
+        return type;
+    };
+    const auto latency = [](const json& peer) {
+        return peer.contains("latency_ms") && peer["latency_ms"].is_number() ? peer["latency_ms"].get<double>() : 0.0;
+    };
     json members = json::array();
     if (!children.is_array()) return members;
+    std::set<std::string> listed;
     for (const auto& child : children) {
         if (!child.is_object() || text(child, "type") != "endpoint") continue;
         const auto id = text(child, "id");
         if (id.empty()) continue;
+        listed.insert(id);
         const auto key = text(child, "mgmt_pubkey");
         const bool self = id == self_node_id;
         const bool permissions_known = group_acl_known || self;
@@ -613,28 +654,8 @@ json merge_members(const json& group, const json& children, const json& peers,
             }
         }
         const bool is_inference = flag(child, "is_inference");
-        json peer = json::object();
-        if (peers.is_array()) {
-            for (const auto& candidate : peers) {
-                if (candidate.is_object() && text(candidate, "node_id") == id) { peer = candidate; break; }
-            }
-        }
-        std::string connection_type = self ? "local" : "unknown";
-        // Discovery endpoints are candidates; only the dataplane knows the active path.
-        if (!self && flag(peer, "is_online") && mesh_peers.is_array()) {
-            for (const auto& connection : mesh_peers) {
-                if (!connection.is_object() || text(connection, "node_id") != id || !flag(connection, "is_online")) continue;
-                if (connection.value("last_rx", int64_t{0}) > 0 || connection.value("last_handshake", int64_t{0}) > 0) {
-                    if (connection.contains("path")) {
-                        const auto path = text(connection, "path");
-                        if (path == "relay") connection_type = "relay";
-                        else if (path == "lan" || path == "direct") connection_type = "p2p";
-                    } else if (!text(connection, "relay_endpoint").empty()) connection_type = "relay";
-                    else if (!text(connection, "endpoint").empty()) connection_type = "p2p";
-                }
-                break;
-            }
-        }
+        const auto peer = peer_entry(id);
+        const auto listed_device = network_entry(id);
         members.push_back({{"node_id", id}, {"device_name", text(child, "hostname")},
             {"tunnel_ip", text(child, "tunnel_ip")}, {"management_pubkey", key},
             {"permissions", ordered(permissions)}, {"permissions_known", permissions_known},
@@ -643,8 +664,36 @@ json merge_members(const json& group, const json& children, const json& peers,
             {"access", access}, {"access_known", access_known},
             {"can_remove", !self && grants(own_device, "delete_node")},
             {"is_online", self || flag(peer, "is_online")},
-            {"connection_type", connection_type},
-            {"latency_ms", peer.contains("latency_ms") && peer["latency_ms"].is_number() ? peer["latency_ms"].get<double>() : 0.0}});
+            {"connection_type", connection_type(id, self, peer)},
+            {"latency_ms", latency(peer)},
+            {"member", false}, {"group_role", "home"},
+            {"can_connect", self || flag(listed_device, "can_connect")}});
+    }
+    // Devices outside this group's children: members that joined it from their own
+    // networks, and the devices of networks this identity joined. Their permissions and
+    // device access belong to other groups, so they are not reported here.
+    if (network.is_array()) {
+        for (const auto& device : network) {
+            if (!device.is_object()) continue;
+            const auto id = text(device, "node_id");
+            if (id.empty() || id == self_node_id || !listed.insert(id).second) continue;
+            const bool is_inference = flag(device, "is_inference");
+            const auto peer = peer_entry(id);
+            const auto role = text(device, "group_role");
+            members.push_back({{"node_id", id}, {"device_name", text(device, "device_name")},
+                {"tunnel_ip", text(device, "tunnel_ip")}, {"management_pubkey", text(device, "mgmt_pubkey")},
+                {"permissions", json::array()}, {"permissions_known", false},
+                {"is_admin", flag(device, "admin")}, {"is_owner", false},
+                {"is_inference", is_inference}, {"tier", is_inference ? 3 : 4},
+                {"access", json::array()}, {"access_known", false},
+                {"can_remove", false},
+                {"is_online", flag(peer, "is_online")},
+                {"connection_type", connection_type(id, false, peer)},
+                {"latency_ms", latency(peer)},
+                {"member", flag(device, "member")}, {"group_role", role.empty() ? "home" : role},
+                {"group_id", text(device, "group_id")},
+                {"can_connect", flag(device, "can_connect")}});
+        }
     }
     return members;
 }
@@ -1082,6 +1131,9 @@ struct NexusManager::Session {
     std::string error;
     bool error_retryable{false};  // `error` is a failure to reach the federation, not a refusal
     json devices = json::array();
+    // The last join's invite outcome for a device that already had a node
+    // ({status, group_id, error}), or null.
+    json join_membership = nullptr;
     std::chrono::system_clock::time_point last_poll{std::chrono::system_clock::now()};
     const nlohmann::ordered_json catalog;  // mesh route catalog for vport 13305, or null
     std::string catalog_error;             // the SDK refused the catalog at the last join
@@ -1500,8 +1552,16 @@ struct NexusManager::Session {
         const auto group = private_call("GET", "/api/tree/node/" + group_id);
         const auto children = group_children();
         const auto peers = sdk_call([&](auto out) { return ln_mesh_peers(client.get(), out); });
+        // Children leave out devices that joined this group from their own networks and
+        // the devices of networks this identity joined; the SDK lists both.
+        json network = json::array();
+        try {
+            network = sdk_call([&](auto out) { return ln_list_network_devices(client.get(), out); });
+        } catch (const std::exception& e) {
+            LOG(WARNING, "Nexus") << "Cannot list the network devices: " << e.what() << std::endl;
+        }
         auto next = nexus_access::merge_members(group, children, peers, pubkey, node_id,
-            mesh_status().value("peers", json::array()));
+            mesh_status().value("peers", json::array()), network);
         for (auto it = egress_ips.begin(); it != egress_ips.end();) {
             const auto present = std::find_if(next.begin(), next.end(), [&](const json& device) {
                 auto ip = device.value("tunnel_ip", "");
@@ -1543,6 +1603,7 @@ struct NexusManager::Session {
             {"catalog_error", catalog_error}, {"identity_source", nexus_access::identity_source_name(source)},
             {"needs_user_key", !identity}, {"public_key", pubkey}};
         if (source == IdentitySource::User) result["identity_store"] = identity_store;
+        if (!join_membership.is_null()) result["join_membership"] = join_membership;
         return result;
     }
     // Receiver side of the SDK hand-off: the request names an ephemeral key that opens
@@ -1649,6 +1710,9 @@ struct NexusManager::Session {
         ln_set_link_token(client.get(), "");
         node_id = joined_result.at("node_id").get<std::string>();
         tunnel_ip = joined_result.at("tunnel_ip").get<std::string>();
+        // A code used by a device that already has a node does not move it: the device
+        // stays in its own network and the code makes it a member of the code's group.
+        join_membership = joined_result.value("membership", json(nullptr));
         if (ln_mesh_enable(client.get()) != LN_OK || ln_mesh_expose_service(client.get(), 13305,
                 ("tcp:127.0.0.1:" + std::to_string(ingress_port)).c_str()) != LN_OK) {
             lock();
