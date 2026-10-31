@@ -9,12 +9,14 @@ async function openModelsWithCustomDefinitions(page: Page, options: {
     { id: 'PlannerModel', name: 'PlannerModel', labels: ['chat'], recipe: 'llamacpp', downloaded: true },
     { id: 'user.Standalone', name: 'user.Standalone', display_name: 'Standalone', custom: true,
       labels: ['chat', 'custom'], recipe: 'llamacpp', checkpoint: 'standalone.gguf', downloaded: true },
+    { id: 'user.CustomPlanner', name: 'user.CustomPlanner', display_name: 'Custom Planner', custom: true,
+      labels: ['chat', 'custom'], recipe: 'llamacpp', checkpoint: 'planner.gguf', downloaded: true },
     { id: 'user.SavedCollection', name: 'user.SavedCollection', display_name: 'Saved Collection', custom: true,
       labels: ['omni', 'custom'], recipe: 'collection.omni', type: 'omni', downloaded: true,
-      components: ['PlannerModel'], component_roles: { llm: 'PlannerModel' } },
+      components: ['CustomPlanner', 'PlannerModel'], component_roles: { llm: 'CustomPlanner' } },
     { id: 'user.OtherCollection', name: 'user.OtherCollection', display_name: 'Other Collection', custom: true,
       labels: ['omni', 'custom'], recipe: 'collection.omni', type: 'omni', downloaded: true,
-      components: ['PlannerModel'], component_roles: { llm: 'PlannerModel' } },
+      components: ['user.CustomPlanner'], component_roles: { llm: 'user.CustomPlanner' } },
   ];
   if (options.includeEmptyCollection) {
     models.push({ id: 'user.EmptyCollection', name: 'user.EmptyCollection', custom: true,
@@ -71,13 +73,13 @@ test('Export all separates ordinary custom models and Omni collections (#4017)',
   await expect(editor).toBeVisible();
   const exportModels = editor.getByRole('button', { name: 'Export all custom models' });
   await expect(exportModels).toBeVisible();
-  expect(await exportedModelNames(page, exportModels)).toEqual(['user.Standalone']);
+  expect(await exportedModelNames(page, exportModels)).toEqual(['user.Standalone', 'user.CustomPlanner']);
 
   await editor.getByRole('button', { name: 'Omni Collection' }).click();
   const exportCollections = editor.getByRole('button', { name: 'Export all custom collections' });
   await expect(exportCollections).toBeVisible();
   expect((await exportedModelNames(page, exportCollections)).sort()).toEqual([
-    'user.SavedCollection', 'user.OtherCollection',
+    'user.CustomPlanner', 'user.SavedCollection', 'user.OtherCollection',
   ].sort());
   const search = page.getByRole('searchbox', { name: 'Search models' });
   await search.fill('no-matching-imported-model');
@@ -113,7 +115,7 @@ test('saved Omni collection exports only itself and its editor scrolls (#4017)',
   const exportOne = editor.getByRole('button', { name: 'Export this collection' });
   await expect(exportOne).toBeVisible();
   await expect(editor.getByRole('button', { name: /Export all custom/ })).toHaveCount(0);
-  expect(await exportedModelNames(page, exportOne)).toEqual(['user.SavedCollection']);
+  expect(await exportedModelNames(page, exportOne)).toEqual(['user.CustomPlanner', 'user.SavedCollection']);
 
   for (const viewport of [{ width: 1280, height: 540 }, { width: 700, height: 540 }]) {
     await page.setViewportSize(viewport);
@@ -129,7 +131,7 @@ test('ordinary export ignores incomplete Omni collections (#4017)', async ({ pag
   await openModelsWithCustomDefinitions(page, { includeEmptyCollection: true });
   await page.getByRole('button', { name: 'Open custom models' }).click();
   const exportModels = page.locator('.custom-model-editor').getByRole('button', { name: 'Export all custom models' });
-  expect(await exportedModelNames(page, exportModels)).toEqual(['user.Standalone']);
+  expect(await exportedModelNames(page, exportModels)).toEqual(['user.Standalone', 'user.CustomPlanner']);
 });
 
 test('import keeps editor open if the catalog has not updated (#4018)', async ({ page }) => {

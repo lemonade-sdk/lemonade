@@ -2175,8 +2175,18 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
         : exportCollections ? 'No custom collections to export.' : 'No custom models to export.'));
       return;
     }
-    const payload = exportCustomModelsPayload(modelsToExport);
-    if (!Array.isArray(payload.models) || payload.models.length !== modelsToExport.length) {
+    const referencedComponents = new Set(modelsToExport.flatMap(collection =>
+      getCollectionComponents(collection).map(customModelNameKey)));
+    const modelsForExport = exportCollections
+      ? [
+          ...customServerModels.filter(model =>
+            !isCollectionRecipe(String((model as any).recipe || ''))
+            && referencedComponents.has(customModelNameKey(modelName(model)))),
+          ...modelsToExport,
+        ]
+      : modelsToExport;
+    const payload = exportCustomModelsPayload(modelsForExport);
+    if (!Array.isArray(payload.models) || payload.models.length !== modelsForExport.length) {
       setCustomError(t('Could not export all requested model definitions.'));
       return;
     }
