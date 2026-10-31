@@ -1449,7 +1449,7 @@ jobs:
   # Container backends run on Devlab Dispatch's ephemeral Strix Halo Linux
   # runners, which have the memory and scratch disk for DS4 and Halogen models.
   test-container-backends:
-    name: Test container backend - ${{ matrix.name }}
+    name: Test container backend - ${{ matrix.recipe }}:${{ matrix.backend }}
     runs-on: [self-hosted, Linux, devlab-dispatch, strix-halo]
     needs: build-lemonade-deb
     if: >-
@@ -1463,65 +1463,32 @@ jobs:
       fail-fast: ${{ github.event_name == 'merge_group' }}
       matrix:
         include:
-          - name: ds4
-            install: "ds4:rocm"
-            script: server_llm.py
-            extra_args: "--wrapped-server ds4 --backend rocm"
-          - name: llamacpp-nathanw
-            install: "llamacpp:nathanw"
-            script: server_llm.py
-            extra_args: "--wrapped-server llamacpp --backend nathanw"
-          - name: rocmfpx
-            install: "rocmfpx:rocm"
-            script: server_llm.py
-            extra_args: "--wrapped-server rocmfpx --backend rocm"
-          - name: halogen
-            install: "halogen:rocm"
-            script: server_llm.py
-            extra_args: "--wrapped-server halogen --backend rocm"
+          - {recipe: ds4, backend: rocm}
+          - {recipe: llamacpp, backend: nathanw}
+          - {recipe: rocmfpx, backend: rocm}
+          - {recipe: halogen, backend: rocm}
     env:
       LEMONADE_CI_MODE: "True"
       HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
       PYTHONIOENCODING: utf-8
       GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
-      LEMONADE_VERSION: ${{ needs.build-lemonade-deb.outputs.version }}
     # No HF_HOME override: the runners set it to a cache on their scratch disk
     # that outlives the job, so a model is downloaded once per machine.
     steps:
       - uses: actions/checkout@v5
 
-      - name: Print the Docker version
-        run: docker --version
-
-      - name: Install Lemonade (.deb)
-        uses: ./.github/actions/install-lemonade-deb
+      - name: Test the container backend
+        uses: ./.github/actions/test-container-backend
         with:
-          version: ${{ env.LEMONADE_VERSION }}
-          port: auto
-
-      - name: Setup Python and virtual environment
-        uses: ./.github/actions/setup-venv
-        with:
-          venv-name: '.venv'
-          python-version: '3.10'
-          requirements-file: 'test/requirements.txt'
-
-      - name: Install the container backend
-        run: |
-          set -e
-          lemonade backends
-          lemonade backends install ${{ matrix.install }}
-
-      - name: Run tests
-        run: |
-          set -e
-          .venv/bin/python test/${{ matrix.script }} ${{ matrix.extra_args }} --cli-binary lemonade
+          recipe: ${{ matrix.recipe }}
+          backend: ${{ matrix.backend }}
+          version: ${{ needs.build-lemonade-deb.outputs.version }}
 
       - name: Capture and upload server logs
         if: always()
         uses: ./.github/actions/capture-server-logs
         with:
-          artifact-name: server-logs-container-${{ matrix.name }}
+          artifact-name: server-logs-container-${{ matrix.recipe }}-${{ matrix.backend }}
 
       - name: Cleanup
         if: always()
