@@ -297,6 +297,20 @@ public:
     /// Get the members (assignments) of a group node.
     [[nodiscard]] Result<std::vector<GroupMember>> get_group_members(const std::string& node_id);
 
+    /// The devices of group `group_id` this identity may see
+    /// (GET /api/tree/devices/{id}): the devices placed in it, and the devices
+    /// of identities that joined it with an invite from their own networks.
+    /// A member device is listed to the group's administrators and editors,
+    /// to devices that may connect to it, and to its own identity. A server
+    /// without the route (404) answers from the group's children instead,
+    /// with member, can_connect, and admin left false.
+    [[nodiscard]] Result<std::vector<NetworkDevice>> get_group_devices(const std::string& group_id);
+
+    /// Every device of this identity's networks: get_group_devices for each
+    /// group of list_memberships, home groups first. A device listed under
+    /// several groups appears once, with the first group's entry.
+    [[nodiscard]] Result<std::vector<NetworkDevice>> list_network_devices();
+
     /// Join an existing group: create endpoint child under parent_node_id + allocate tunnel IP.
     [[nodiscard]] Result<GroupJoinResult> join_group(const std::string& parent_node_id);
 

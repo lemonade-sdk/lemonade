@@ -64,30 +64,6 @@ bool reachable_peer(const MeshPortMember& member, std::string_view self_node_id)
     return member.node_id != self_node_id && member.is_inference && member.is_online && member.can_connect;
 }
 
-/// The federation accepts either base64 spelling of a key, with or without the
-/// "ed25519:" prefix.
-bool same_key(const std::string& a, const std::string& b) {
-    const auto canonical = [](std::string key) {
-        if (key.rfind("ed25519:", 0) == 0) key.erase(0, 8);
-        std::replace(key.begin(), key.end(), '-', '+');
-        std::replace(key.begin(), key.end(), '_', '/');
-        while (!key.empty() && key.back() == '=') key.pop_back();
-        return key;
-    };
-    const auto left = canonical(a);
-    return !left.empty() && left == canonical(b);
-}
-
-bool grants_connect(const std::vector<Assignment>& assignments, const std::string& self_key) {
-    for (const auto& entry : assignments) {
-        if (!same_key(entry.management_pubkey, self_key)) continue;
-        for (const auto& permission : entry.permissions) {
-            if (permission == "connect_private" || permission == "connect_shared" || permission == "admin") return true;
-        }
-    }
-    return false;
-}
-
 bool is_models_path(const std::string& path) {
     return path == "/api/v1/models" || path == "/api/v0/models" || path == "/v1/models" || path == "/v0/models";
 }
@@ -496,25 +472,24 @@ MeshPortBackend make_mesh_port_backend(LemonadeNexusClient& client) {
     backend.load_members = [&client]() -> std::optional<std::vector<MeshPortMember>> {
         const auto self = client.node_id();
         if (self.empty()) return std::nullopt;
-        const auto own = client.get_tree_node(self);
-        if (!own.ok || own.value.parent_id.empty()) return std::nullopt;
-        const auto children = client.get_children(own.value.parent_id);
-        if (!children.ok) return std::nullopt;
+        // Every network of this identity: its own group, the devices that
+        // joined it from their own networks, and the groups it joined.
+        const auto devices = client.list_network_devices();
+        if (!devices.ok) return std::nullopt;
         const auto peers = client.get_mesh_peers();
-        const auto self_key = client.identity().pubkey_string();
         std::vector<MeshPortMember> members;
-        for (const auto& child : children.value) {
-            if (child.type != NodeType::Endpoint || child.id.empty()) continue;
+        for (const auto& device : devices.value) {
+            if (device.node_id.empty()) continue;
             MeshPortMember member;
-            member.node_id = child.id;
-            member.device_name = child.hostname;
-            member.tunnel_ip = child.tunnel_ip;
-            member.is_inference = child.is_inference;
-            const bool is_self = child.id == self;
-            member.can_connect = is_self || grants_connect(child.assignments, self_key);
+            member.node_id = device.node_id;
+            member.device_name = device.device_name;
+            member.tunnel_ip = device.tunnel_ip;
+            member.is_inference = device.is_inference;
+            const bool is_self = device.node_id == self;
+            member.can_connect = is_self || device.can_connect;
             member.is_online = is_self;
             for (const auto& peer : peers) {
-                if (peer.node_id != child.id) continue;
+                if (peer.node_id != device.node_id) continue;
                 member.is_online = is_self || peer.is_online;
                 member.latency_ms = peer.latency_ms > 0 ? static_cast<double>(peer.latency_ms) : 0.0;
                 member.relay_endpoint = peer.relay_endpoint;

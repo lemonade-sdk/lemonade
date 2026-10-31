@@ -887,6 +887,41 @@ ln_error_t ln_remove_group_member(ln_client_t* client,
     return result.ok ? LN_OK : LN_ERR_REJECTED;
 }
 
+/// The JSON object for one device of a device list.
+static json network_device_json(const lnsdk::NetworkDevice& d) {
+    json j = {{"node_id", d.node_id},           {"device_name", d.device_name},
+              {"tunnel_ip", d.tunnel_ip},       {"mgmt_pubkey", d.mgmt_pubkey},
+              {"parent_id", d.parent_id},       {"group_id", d.group_id},
+              {"is_inference", d.is_inference}, {"member", d.member},
+              {"is_self", d.is_self},           {"can_connect", d.can_connect},
+              {"admin", d.admin}};
+    if (!d.group_role.empty()) j["group_role"] = d.group_role;
+    return j;
+}
+
+/// The out_json and return code for a device list.
+static ln_error_t device_list_result(const lnsdk::Result<std::vector<lnsdk::NetworkDevice>>& result,
+                                     char** out_json) {
+    if (!result.ok) {
+        *out_json = strdup_json(json{{"error", result.error}});
+        return ln_map_error(result.http_status);
+    }
+    json arr = json::array();
+    for (const auto& d : result.value) arr.push_back(network_device_json(d));
+    *out_json = strdup_json(arr);
+    return LN_OK;
+}
+
+ln_error_t ln_get_group_devices(ln_client_t* client, const char* group_id, char** out_json) {
+    if (!client || !group_id || !out_json) return LN_ERR_NULL_ARG;
+    return device_list_result(client->client.get_group_devices(group_id), out_json);
+}
+
+ln_error_t ln_list_network_devices(ln_client_t* client, char** out_json) {
+    if (!client || !out_json) return LN_ERR_NULL_ARG;
+    return device_list_result(client->client.list_network_devices(), out_json);
+}
+
 ln_error_t ln_get_group_members(ln_client_t* client,
                                  const char* node_id,
                                  char** out_json) {
@@ -947,6 +982,12 @@ ln_error_t ln_join_network(ln_client_t* client,
     if (result.value.device_name_refused) {
         j["device_name_refused"]    = true;
         j["device_name_suggestion"] = result.value.device_name_suggestion;
+    }
+    if (!result.value.membership.status.empty()) {
+        json m = {{"status", result.value.membership.status},
+                  {"group_id", result.value.membership.group_id}};
+        if (!result.value.membership.error.empty()) m["error"] = result.value.membership.error;
+        j["membership"] = std::move(m);
     }
     if (!result.ok) j["error"] = result.error;
 

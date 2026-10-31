@@ -151,12 +151,12 @@ void RelayChannel::Impl::on_relay_datagram(std::span<const uint8_t> datagram,
         case relay::RelayMsgType::Error: {
             const uint8_t code = payload.empty() ? 0 : payload[0];
             if (current == State::Allocating && header->session_id == relay::SessionId{}) {
-                spdlog::warn("[RelayChannel] relay {} refused the allocation (code {})",
-                             to_string(relay_addr), code);
+                spdlog::warn("[RelayChannel] relay {} refused the allocation ({})",
+                             to_string(relay_addr), relay::relay_error_code_name(code));
                 fail(Failure::Refused);
             } else if (ours) {
-                spdlog::info("[RelayChannel] relay {} ended the session (code {})",
-                             to_string(relay_addr), code);
+                spdlog::info("[RelayChannel] relay {} ended the session ({})",
+                             to_string(relay_addr), relay::relay_error_code_name(code));
                 fail(Failure::SessionLost);
             }
             break;

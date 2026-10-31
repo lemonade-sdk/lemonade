@@ -343,6 +343,28 @@ ln_error_t ln_remove_group_member(ln_client_t* client,
                                    const char* pubkey,
                                    char** out_json);
 
+/** The devices of group `group_id` that this identity may see
+ *  (GET /api/tree/devices/{id}). out_json is a JSON array of
+ *  {node_id, device_name, tunnel_ip, mgmt_pubkey, parent_id, group_id,
+ *   is_inference, member, is_self, can_connect, admin}:
+ *  - member: the device joined group_id from its own network with an invite
+ *    and is placed in parent_id, outside group_id;
+ *  - can_connect: this device may connect to it (the mesh peer-list rule);
+ *  - admin: its identity administers group_id.
+ *  Online state is not part of the list; read it from ln_mesh_peers. A server
+ *  without the route answers from the group's children (member, can_connect,
+ *  and admin false). On failure out_json is {"error": "..."} and the code
+ *  follows the HTTP status (LN_ERR_AUTH, LN_ERR_NOT_FOUND, LN_ERR_CONNECT,
+ *  LN_ERR_REJECTED). Release out_json with ln_free. */
+ln_error_t ln_get_group_devices(ln_client_t* client, const char* group_id, char** out_json);
+
+/** Every device of this identity's networks: ln_get_group_devices for each
+ *  group of ln_list_memberships, home groups first, each device once. Each
+ *  entry adds group_role: "home" (this identity's own network) or "member"
+ *  (a network it joined with an invite). Same errors and release rule as
+ *  ln_get_group_devices. */
+ln_error_t ln_list_network_devices(ln_client_t* client, char** out_json);
+
 /** Get members (assignments) of a group node. Returns JSON array via out_json. */
 ln_error_t ln_get_group_members(ln_client_t* client,
                                  const char* node_id,
@@ -360,7 +382,12 @@ ln_error_t ln_join_group(ln_client_t* client,
 /** Authenticate + create node + allocate IP. Returns JSON via out_json:
  *  {success, node_id, tunnel_ip, private_subnet, mesh_pubkey, error (on
  *  failure), device_name_refused and device_name_suggestion (when the name
- *  from ln_set_device_name was taken; see there)}. */
+ *  from ln_set_device_name was taken; see there), membership}.
+ *  membership is present when an invite set with ln_set_link_token met a
+ *  device that already has a node: the device stays in its own network and
+ *  the invite makes its identity a member of the invite's group instead.
+ *  It is {status: "member" | "pending" | "refused", group_id, error (when
+ *  refused)}. The join itself succeeds either way. */
 ln_error_t ln_join_network(ln_client_t* client,
                             const char* username,
                             const char* password,

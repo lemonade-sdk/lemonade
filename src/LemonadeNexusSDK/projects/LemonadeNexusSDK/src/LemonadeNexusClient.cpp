@@ -2359,7 +2359,10 @@ Result<IssuedCertBundle> LemonadeNexusClient::issue_certificate(const json& fiel
     body["client_pubkey"] = local_identity.pubkey_string();
 
     int status = 0;
-    auto resp = impl_->http_post("/api/certs/issue", body, status);
+    // Private-only route: the server registers /api/certs/issue on the private
+    // router, so the public socket answers 404 and the request must go over
+    // the mesh dataplane like every other private API call.
+    auto resp = impl_->private_http_post("/api/certs/issue", body, status);
     result.http_status = status;
 
     if (!resp) {
@@ -2799,6 +2802,14 @@ Result<JoinResult> LemonadeNexusClient::join_network(const std::string& username
     result.value.node_id        = node_id;
     result.value.tunnel_ip      = tunnel_ip;
     result.value.mesh_pubkey    = mesh_pubkey;
+    if (const auto m = resp->find("membership"); m != resp->end() && m->is_object()) {
+        result.value.membership.status   = m->value("status", std::string{});
+        result.value.membership.group_id = m->value("node_id", std::string{});
+        result.value.membership.error    = m->value("error", std::string{});
+        spdlog::info("[LemonadeNexusClient] this device already has a node: the invite made "
+                     "its identity a member of {} ({}); the device stays in its network",
+                     result.value.membership.group_id, result.value.membership.status);
+    }
 
     {
         std::lock_guard lock(impl_->mutex);
@@ -3001,6 +3012,133 @@ Result<std::vector<GroupMember>> LemonadeNexusClient::get_group_members(const st
         member.management_pubkey = a.management_pubkey;
         member.permissions       = a.permissions;
         result.value.push_back(std::move(member));
+    }
+    result.ok = true;
+    return result;
+}
+
+Result<std::vector<NetworkDevice>> LemonadeNexusClient::get_group_devices(
+    const std::string& group_id) {
+    Result<std::vector<NetworkDevice>> result;
+    int status = 0;
+    const auto resp = impl_->private_http_get("/api/tree/devices/" + group_id, status);
+    result.http_status = status;
+    if (status == 404 && !(resp && resp->contains("error"))) {
+        // A server from before the route: the placed devices only, with the
+        // connect check the mesh port made before (an entry for this key).
+        const auto self = node_id();
+        // The federation accepts either base64 spelling of a key, with or
+        // without the "ed25519:" prefix.
+        const auto bare = [](std::string key) {
+            if (key.rfind("ed25519:", 0) == 0) key.erase(0, 8);
+            std::replace(key.begin(), key.end(), '-', '+');
+            std::replace(key.begin(), key.end(), '_', '/');
+            while (!key.empty() && key.back() == '=') key.pop_back();
+            return key;
+        };
+        std::string self_key;
+        {
+            std::lock_guard lock(impl_->mutex);
+            if (impl_->identity.is_valid()) self_key = impl_->identity.pubkey_string();
+        }
+        const auto grants_connect = [&](const TreeNode& node) {
+            for (const auto& entry : node.assignments) {
+                if (self_key.empty() || bare(entry.management_pubkey) != bare(self_key)) continue;
+                for (const auto& p : entry.permissions) {
+                    if (p == "connect_private" || p == "connect_shared" || p == "admin") return true;
+                }
+            }
+            return false;
+        };
+        auto children = get_children(group_id);
+        if (!children.ok) {
+            result.error = children.error;
+            result.http_status = children.http_status;
+            return result;
+        }
+        for (const auto& child : children.value) {
+            if (child.type != NodeType::Endpoint) continue;
+            NetworkDevice d;
+            d.node_id = child.id;
+            d.device_name = child.hostname;
+            d.tunnel_ip = child.tunnel_ip;
+            d.mgmt_pubkey = child.mgmt_pubkey;
+            d.parent_id = child.parent_id;
+            d.group_id = group_id;
+            d.is_inference = child.is_inference;
+            d.is_self = child.id == self;
+            d.can_connect = !d.is_self && grants_connect(child);
+            result.value.push_back(std::move(d));
+        }
+        result.ok = true;
+        return result;
+    }
+    if (!resp || status != 200) {
+        result.error = resp ? resp->value("error", std::string{"device list refused"})
+                            : std::string{"device list request failed"};
+        return result;
+    }
+    const auto list = resp->find("devices");
+    if (list == resp->end() || !list->is_array()) {
+        result.error = "malformed device list";
+        return result;
+    }
+    for (const auto& entry : *list) {
+        if (!entry.is_object()) continue;
+        NetworkDevice d;
+        d.node_id = entry.value("node_id", std::string{});
+        if (d.node_id.empty()) continue;
+        d.device_name = entry.value("device_name", std::string{});
+        d.tunnel_ip = entry.value("tunnel_ip", std::string{});
+        d.mgmt_pubkey = entry.value("mgmt_pubkey", std::string{});
+        d.parent_id = entry.value("parent_id", std::string{});
+        d.group_id = entry.value("group_id", group_id);
+        d.is_inference = entry.value("is_inference", false);
+        d.member = entry.value("member", false);
+        d.is_self = entry.value("is_self", false);
+        d.can_connect = entry.value("can_connect", false);
+        d.admin = entry.value("admin", false);
+        result.value.push_back(std::move(d));
+    }
+    result.ok = true;
+    return result;
+}
+
+Result<std::vector<NetworkDevice>> LemonadeNexusClient::list_network_devices() {
+    Result<std::vector<NetworkDevice>> result;
+    const auto memberships = list_memberships();
+    result.http_status = memberships.http_status;
+    if (!memberships.ok) {
+        result.error = memberships.error;
+        return result;
+    }
+    const auto list = memberships.value.find("memberships");
+    if (list == memberships.value.end() || !list->is_array()) {
+        result.error = "malformed membership list";
+        return result;
+    }
+    std::vector<std::pair<std::string, std::string>> groups;  // (id, role), home first
+    for (const auto* role : {"home", "member"}) {
+        for (const auto& m : *list) {
+            if (m.is_object() && m.value("role", std::string{}) == role) {
+                groups.emplace_back(m.value("node_id", std::string{}), role);
+            }
+        }
+    }
+    std::set<std::string> seen;
+    for (const auto& [group, role] : groups) {
+        if (group.empty()) continue;
+        auto devices = get_group_devices(group);
+        if (!devices.ok) {
+            result.error = devices.error;
+            result.http_status = devices.http_status;
+            return result;
+        }
+        for (auto& d : devices.value) {
+            if (!seen.insert(d.node_id).second) continue;
+            d.group_role = role;
+            result.value.push_back(std::move(d));
+        }
     }
     result.ok = true;
     return result;

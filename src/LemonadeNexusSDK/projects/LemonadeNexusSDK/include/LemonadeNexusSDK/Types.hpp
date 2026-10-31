@@ -300,6 +300,15 @@ struct JoinResult {
     bool        device_name_refused{false};
     /// A free name for a rename after a refused device name ("" when unknown).
     std::string device_name_suggestion;
+    /// An invite this join carried for a device that already had a node. The
+    /// device stays in its own network; the invite makes its identity a member
+    /// of the invite's group instead. Empty status when the join carried no
+    /// invite, or placed a new device with it.
+    struct Membership {
+        std::string status;    ///< "member", "pending", or "refused"
+        std::string group_id;  ///< the invite's group
+        std::string error;     ///< the server's reason when refused
+    } membership;
 };
 
 // ---------------------------------------------------------------------------
@@ -319,6 +328,27 @@ struct PasskeyCredential {
 struct GroupMember {
     std::string              management_pubkey; // "ed25519:base64..."
     std::vector<std::string> permissions;       // ["read","write","add_child",...]
+};
+
+/// One device of a group, as GET /api/tree/devices/{group} lists it.
+struct NetworkDevice {
+    std::string node_id;
+    std::string device_name;
+    std::string tunnel_ip;     ///< "10.x.y.z/32"
+    std::string mgmt_pubkey;   ///< "ed25519:base64..."
+    std::string parent_id;     ///< the group the device is placed in
+    std::string group_id;      ///< the group this entry was listed for
+    /// How this identity belongs to group_id: "home" (its own network) or
+    /// "member" (a network it joined with an invite). Set by
+    /// list_network_devices; empty from get_group_devices.
+    std::string group_role;
+    bool is_inference{false};  ///< a Lemonade inference server
+    /// The device joined group_id from its own network through an invite;
+    /// it is placed in parent_id, outside group_id.
+    bool member{false};
+    bool is_self{false};       ///< this device
+    bool can_connect{false};   ///< this device may connect to it (the peer-list rule)
+    bool admin{false};         ///< its identity administers group_id
 };
 
 struct GroupJoinResult {

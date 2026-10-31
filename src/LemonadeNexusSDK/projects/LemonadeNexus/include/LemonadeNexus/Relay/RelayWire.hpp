@@ -83,6 +83,10 @@ enum class RelayErrorCode : uint8_t {
     BindFailed       = 9,  ///< The bind token was invalid or already used.
 };
 
+/// The log name of a relay error code: the enumerator name, or "Unknown"
+/// when the wire carries a value this build does not define.
+[[nodiscard]] std::string_view relay_error_code_name(uint8_t code);
+
 /// The session state an Allocated reply reports.
 enum class RelayAllocationState : uint8_t {
     Waiting = 1,  ///< This side is bound; the other side has not joined yet.

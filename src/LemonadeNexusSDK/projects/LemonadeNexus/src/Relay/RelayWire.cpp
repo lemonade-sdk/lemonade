@@ -12,6 +12,21 @@
 
 namespace nexus::relay {
 
+std::string_view relay_error_code_name(uint8_t code) {
+    switch (static_cast<RelayErrorCode>(code)) {
+        case RelayErrorCode::TicketRefused: return "TicketRefused";
+        case RelayErrorCode::TicketReplayed: return "TicketReplayed";
+        case RelayErrorCode::Malformed: return "Malformed";
+        case RelayErrorCode::RendezvousBusy: return "RendezvousBusy";
+        case RelayErrorCode::ProofMismatch: return "ProofMismatch";
+        case RelayErrorCode::CapacityExceeded: return "CapacityExceeded";
+        case RelayErrorCode::RateLimited: return "RateLimited";
+        case RelayErrorCode::SessionUnknown: return "SessionUnknown";
+        case RelayErrorCode::BindFailed: return "BindFailed";
+    }
+    return "Unknown";
+}
+
 namespace {
 
 void put_u16(uint8_t* out, uint16_t value) {

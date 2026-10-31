@@ -338,21 +338,55 @@ Result<Tier1Membership> Tier1Directory::refresh_verified(
     }
 
     // 1. The authority chain, from the pinned key.
-    std::string chain_error;
+    // A single source may hold only part of the chain: a non-Tier-1 replica
+    // serves its gossiped store, which can be empty or behind the current
+    // epoch. "Nothing more here" from one source is not a verdict - the next
+    // source may hold the missing base or the next handoff. The sweep stops on
+    // a chain that reaches the epoch floor, so a healthy first source still
+    // costs one request; a source that refused the page or never answered is
+    // never a verdict, even when an earlier walk already meets the floor.
+    // Each source's outcome is recorded so the failure message shows who was
+    // asked and what they offered.
+    std::string chain_error;  // last refusal reason (a hostile or malformed page)
+    std::vector<std::string> source_notes;
     for (const auto& source : sources) {
-        const auto walk = state_->walk_from(source, chain_error);
-        if (walk == Walk::Done || walk == Walk::Advanced) break;
+        std::string source_error;
+        const auto walk = state_->walk_from(source, source_error);
+        const auto epoch = state_->walker->epoch().underlying();
+        if (walk == Walk::Refused) chain_error = source_error;
+        std::string state;
+        if (walk == Walk::Refused) {
+            state = "refused";
+        } else if (walk == Walk::Unreachable) {
+            state = "unreachable";
+        } else if (walk == Walk::Advanced) {
+            state = "advanced to epoch " + std::to_string(epoch);
+        } else {
+            state = "nothing new from epoch " + std::to_string(epoch);
+        }
+        source_notes.push_back(source.host + ":" + std::to_string(source.port) + " " + state);
+        const auto settled = walk == Walk::Done || walk == Walk::Advanced;
+        if (settled && state_->walker->authority() && epoch >= min_epoch) break;
     }
+    const auto tried_detail = [&source_notes] {
+        std::string detail;
+        for (std::size_t i = 0; i < source_notes.size() && i < 8; ++i) {
+            detail += i == 0 ? "; tried: " : "; ";
+            detail += source_notes[i];
+        }
+        if (source_notes.size() > 8) detail += "; more";
+        return detail;
+    };
     const auto& authority = state_->walker->authority();
     if (!authority) {
         return chain_error.empty()
-                   ? fail("no server returned a verifiable authority chain", 0)
-                   : fail(chain_error, 403);
+                   ? fail("no server returned a verifiable authority chain" + tried_detail(), 0)
+                   : fail(chain_error + tried_detail(), 403);
     }
-    if (state_->walker->epoch().underlying() < min_epoch) {
-        return fail("the verified membership is stale: epoch " +
-                    std::to_string(state_->walker->epoch().underlying()) +
-                    " is older than the lowest accepted epoch " + std::to_string(min_epoch),
+    if (const auto epoch = state_->walker->epoch().underlying(); epoch < min_epoch) {
+        return fail("the verified membership is stale: epoch " + std::to_string(epoch) +
+                        " is older than the lowest accepted epoch " + std::to_string(min_epoch) +
+                        tried_detail(),
                     403);
     }
 
