@@ -3771,6 +3771,16 @@ if(BUILD_TESTING AND EXISTS "${_GPU_ENV_TEST_SRC}")
     add_cpp_ci_test(BackendUtilsGpuEnvTest CI ON COMMAND test_backend_utils_gpu_env)
 endif()
 
+set(_LLAMACPP_ROCM_DEVICE_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_llamacpp_rocm_device.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_LLAMACPP_ROCM_DEVICE_TEST_SRC}")
+    add_executable(test_llamacpp_rocm_device test/cpp/test_llamacpp_rocm_device.cpp)
+    target_link_libraries(test_llamacpp_rocm_device PRIVATE lemonade-server-core)
+    add_dependencies(test_llamacpp_rocm_device copy_resources)
+    add_cpp_ci_test(LlamaCppRocmDeviceTest CI ON COMMAND test_llamacpp_rocm_device)
+endif()
+
 set(_LLAMACPP_SYSTEM_BACKEND_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_llamacpp_system_backend.cpp"
 )
@@ -3784,6 +3794,20 @@ if(BUILD_TESTING AND CMAKE_SYSTEM_NAME STREQUAL "Linux" AND EXISTS "${_LLAMACPP_
     target_link_libraries(test_llamacpp_system_backend PRIVATE lemonade-server-core)
     add_dependencies(test_llamacpp_system_backend copy_resources)
     add_cpp_ci_test(LlamaCppSystemBackendTest CI ON COMMAND test_llamacpp_system_backend)
+endif()
+
+set(_ROCM_VISIBILITY_OVERRIDE_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_rocm_visibility_override.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_ROCM_VISIBILITY_OVERRIDE_TEST_SRC}")
+    add_executable(test_rocm_visibility_override
+        test/cpp/test_rocm_visibility_override.cpp
+    )
+    target_include_directories(test_rocm_visibility_override PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+    )
+    target_link_libraries(test_rocm_visibility_override PRIVATE nlohmann_json::nlohmann_json)
+    add_cpp_ci_test(RocmVisibilityOverrideTest CI ON COMMAND test_rocm_visibility_override)
 endif()
 
 set(_DLL_VERSION_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_backend_utils_dll_version.cpp")
@@ -3849,7 +3873,8 @@ set(_VLLM_CDNA_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_vllm_cdna_gat
 if(BUILD_TESTING AND EXISTS "${_VLLM_CDNA_TEST_SRC}")
     add_executable(test_vllm_cdna_gating test/cpp/test_vllm_cdna_gating.cpp)
     target_link_libraries(test_vllm_cdna_gating PRIVATE lemonade-server-core)
-    add_cpp_ci_test(VllmCdnaGatingTest CI OFF COMMAND test_vllm_cdna_gating)
+    add_dependencies(test_vllm_cdna_gating copy_resources)
+    add_cpp_ci_test(VllmCdnaGatingTest CI ON COMMAND test_vllm_cdna_gating)
 endif()
 
 # ds4 install params: upstream ds4 ships no binaries, so assets come from

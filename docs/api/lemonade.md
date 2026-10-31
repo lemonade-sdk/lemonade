@@ -2527,6 +2527,7 @@ Lemonade does not check that the asset exists; fetch `url`, or its split-archive
   "recipe": "whispercpp",
   "backend": "rocm",
   "arch": "gfx1201",
+  "resolved_arch": "gfx1201",
   "repo": "lemonade-sdk/whisper.cpp-rocm",
   "version": "v1.8.4",
   "filename": "whisper-v1.8.4-linux-rocm-gfx120X.tar.gz",
@@ -2541,6 +2542,7 @@ Lemonade does not check that the asset exists; fetch `url`, or its split-archive
 - `recipe` - The requested recipe.
 - `backend` - The requested backend.
 - `arch` - The requested `arch`, or `""` when it was omitted.
+- `resolved_arch` - The ROCm architecture used to resolve the asset, or `""` when the backend is non-ROCm or no ROCm architecture could be resolved.
 - `repo` - GitHub repository of the release.
 - `version` - Release version: the pin in `backend_versions.json` unless runtime version policy overrides it.
 - `filename` - Release asset name.

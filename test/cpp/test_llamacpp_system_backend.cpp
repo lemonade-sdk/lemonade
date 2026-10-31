@@ -206,7 +206,7 @@ void check_system_state(const json& recipes,
 int main() {
 #ifndef __linux__
     std::cout << "llamacpp system backend resolver is Linux-only; skipped." << std::endl;
-    return 0;
+    return failures == 0 ? 0 : 1;
 #else
     TempDir temp;
     const fs::path system_bin = temp.path() / "system-bin";

@@ -18,6 +18,7 @@
 #include "lemon/auto_tune.h"
 #include "lemon/backend_manager.h"
 #include "lemon/runtime_config.h"
+#include "lemon/rocm_arch_override.h"
 #include "lemon/utils/custom_args.h"
 #include "lemon/utils/recipe_arg_resolver.h"
 #include "lemon/utils/process_manager.h"
@@ -95,6 +96,10 @@ static std::string resolve_llamacpp_backend(const std::string& backend) {
 
 static bool is_llamacpp_rocm_backend(const std::string& backend) {
     return backend == "rocm-stable" || backend == "rocm-nightly";
+}
+
+static const char* existing_rocm_visible_devices_env_name() {
+    return lemon::existing_rocm_visibility_override_env_name();
 }
 
 static bool is_llamacpp_cuda_backend(const std::string& backend) {
@@ -282,6 +287,43 @@ void LlamaCppServer::load(const std::string& model_name,
     std::string llamacpp_backend = resolve_llamacpp_backend(llamacpp_backend_option);
     std::string llamacpp_args = options.get_option("llamacpp_args");
 
+    if (!llamacpp_device.empty()) {
+        BackendUtils::validate_device_backend_match(llamacpp_backend, llamacpp_device);
+    }
+    RocmArchOverrideGuard rocm_arch_override(
+        is_llamacpp_rocm_backend(llamacpp_backend) ? llamacpp_device : "");
+
+    std::string llamacpp_device_arg = llamacpp_device;
+#ifdef __linux__
+    std::string rocm_visible_devices;
+#endif
+    if (is_llamacpp_rocm_backend(llamacpp_backend) && !llamacpp_device.empty()) {
+        const char* existing_visible_devices_env =
+            existing_rocm_visible_devices_env_name();
+        if (!existing_visible_devices_env) {
+#ifdef __linux__
+            rocm_visible_devices =
+                SystemInfo::get_rocm_visible_devices_for_device(llamacpp_device);
+            if (!rocm_visible_devices.empty()) {
+                llamacpp_device_arg =
+                    SystemInfo::remap_rocm_device_selection(llamacpp_device);
+                if (llamacpp_device_arg.empty()) {
+                    rocm_visible_devices.clear();
+                    llamacpp_device_arg = llamacpp_device;
+                }
+            }
+#endif
+        } else {
+            LOG(INFO, "LlamaCpp")
+                << "Respecting existing " << existing_visible_devices_env << "="
+                << (std::getenv(existing_visible_devices_env)
+                        ? std::getenv(existing_visible_devices_env)
+                        : "")
+                << " for " << llamacpp_device << " (llama-server sees it as "
+                << llamacpp_device_arg << ")" << std::endl;
+        }
+    }
+
     RuntimeConfig::validate_backend_choice("llamacpp", llamacpp_backend_option);
 
     LOG(INFO, "LlamaCpp") << "Using LlamaCpp Backend: " << llamacpp_backend << std::endl;
@@ -292,7 +334,8 @@ void LlamaCppServer::load(const std::string& model_name,
     device_type_ = use_gpu ? DEVICE_GPU : DEVICE_CPU;
 
     // Install llama-server if needed (use per-model backend)
-    backend_manager_->install_backend(llamacpp::spec()->recipe, llamacpp_backend);
+    backend_manager_->install_backend(llamacpp::spec()->recipe, llamacpp_backend,
+                                      false, nullptr, llamacpp_device);
 
     // Use pre-resolved GGUF path. Skipped for hf_load models because llama-server
     // sources the weights itself via -hf; those models may not have local files.
@@ -339,9 +382,8 @@ void LlamaCppServer::load(const std::string& model_name,
     }
     push_arg(args, reserved_flags, "--ctx-size", std::to_string(ctx_size), std::vector<std::string>{"-c"});
 
-    if (!llamacpp_device.empty()) {
-        BackendUtils::validate_device_backend_match(llamacpp_backend, llamacpp_device);
-        push_arg(args, reserved_flags, "--device", llamacpp_device);
+    if (!llamacpp_device_arg.empty()) {
+        push_arg(args, reserved_flags, "--device", llamacpp_device_arg);
     }
     push_reserved(reserved_flags, "--device", std::vector<std::string>{"-dev"});
 
@@ -415,6 +457,15 @@ void LlamaCppServer::load(const std::string& model_name,
 
     // For ROCm on Linux, set LD_LIBRARY_PATH to include the ROCm library directory
     std::vector<std::pair<std::string, std::string>> env_vars;
+#ifdef __linux__
+    if (!rocm_visible_devices.empty()) {
+        env_vars.push_back({"ROCR_VISIBLE_DEVICES", rocm_visible_devices});
+        LOG(INFO, "LlamaCpp")
+            << "Pinning " << llamacpp_device << " with ROCR_VISIBLE_DEVICES="
+            << rocm_visible_devices << " (llama-server sees it as " << llamacpp_device_arg
+            << ")" << std::endl;
+    }
+#endif
 #ifndef _WIN32
     if (is_llamacpp_rocm_backend(llamacpp_backend)) {
         // Get the directory containing the executable (where ROCm .so files are)
