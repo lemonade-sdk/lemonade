@@ -426,7 +426,8 @@ function mcpToolNamesForServers(servers: McpServerToolOption[], serverIds: strin
 }
 
 function modelModeBadge(capability: ModelCapability, recipe?: string | null, nativeOmni = false): string {
-  return nativeOmni ? 'omni' : capabilityBadge(identityFor(capability, recipe));
+  return nativeOmni && modelStructure(recipe) !== 'single'
+    ? 'omni' : capabilityBadge(identityFor(capability, recipe));
 }
 
 const ModelModeIcons: React.FC<{
@@ -436,7 +437,7 @@ const ModelModeIcons: React.FC<{
   nativeOmni?: boolean;
   size?: number;
 }> = ({ capability, recipe, audioInput = false, nativeOmni = false, size = 14 }) => {
-  if (nativeOmni) return <CapabilityIcon capability="omni" size={size} aria-hidden="true" />;
+  if (nativeOmni && modelStructure(recipe) !== 'single') return <CapabilityIcon capability="omni" size={size} aria-hidden="true" />;
   const identity = identityFor(capability, recipe);
   if (identity !== capability) {
     return <CapabilityIcon capability={identity} size={size} aria-hidden="true" />;
@@ -457,7 +458,7 @@ function modelModeLabel(capability: ModelCapability, audioInput = false): string
 }
 
 function modelModeDisplayLabel(capability: ModelCapability, audioInput = false, recipe?: string | null, nativeOmni = false): string {
-  if (nativeOmni) return 'Omni';
+  if (nativeOmni && modelStructure(recipe) !== 'single') return 'Omni';
   const identity = identityFor(capability, recipe);
   return identity === capability ? modelModeLabel(capability, audioInput) : capabilityLabel(identity);
 }
@@ -1585,7 +1586,9 @@ const ChatView: React.FC<ChatViewProps> = ({
   }, [audioInputForLoaded, capabilityForLoaded, downloadItems, knownModelInfos, modelPickerQuery, selectableModels]);
 
   const modeSupportsChatCompletions = currentCapability === 'chat';
-  const modeSupportsMcp = modeSupportsChatCompletions;
+  // Native vLLM-Omni does not enable an automatic tool parser. An enabled
+  // MCP profile must not silently attach tools and cause HTTP 400 on chat.
+  const modeSupportsMcp = modeSupportsChatCompletions && !currentIsNativeOmni;
   const canUseAudioInput = currentIsOmniCollection || currentCapability === 'audio' || (currentCapability === 'chat' && supportsChatAudioInput);
 
   const persistMcpEnabled = useCallback((next: boolean) => {
@@ -3907,10 +3910,10 @@ ${finalText}`
                         <WorkspaceListRow
                           key={option.name}
                           rowId={option.name}
-                          capability={option.nativeOmni ? 'omni' : capability}
+                          capability={capability}
                           title={option.name}
                           meta={detailParts}
-                          glyphs={!option.nativeOmni && option.audioInput && option.capability === 'chat' ? ['audio'] : undefined}
+                          glyphs={option.audioInput && option.capability === 'chat' ? ['audio'] : undefined}
                           status={busy ? 'busy' : option.loaded ? 'live' : undefined}
                           statusText={isLoading ? 'Loading…' : isUnloading ? 'Ejecting…' : undefined}
                           selected={option.name === currentModel}
@@ -4747,7 +4750,7 @@ const EmptyState: React.FC<EmptyStateProps> = ({
               const nativeOmni = (model.labels || []).some(label => label.toLowerCase() === 'omni')
                 || Boolean(modelInfo?.labels?.includes('omni'));
               const modeLabel = modelModeDisplayLabel(capability, audioInput, model.recipe, nativeOmni);
-              const taskColor = capabilityColor(nativeOmni ? 'omni' : isRouterRecipe(model.recipe) ? 'router' : capability);
+              const taskColor = capabilityColor(identityFor(capability, model.recipe));
               const selectable = canSelectInComposer(model) || isComposerSelectableCapability(capability);
               const isActive = currentModel === model.model_name;
               const isUnloading = unloadingModel === model.model_name;

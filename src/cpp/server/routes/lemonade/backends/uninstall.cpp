@@ -157,7 +157,10 @@ public:
                     if (model.contains("recipe_options") && model["recipe_options"].contains(backend_option_key)) {
                         model_backend = model["recipe_options"].value(backend_option_key, "");
                     }
-                    if (!model_backend.empty() && model_backend != backend) {
+                    // Uninstalling vllm:rocm removes either physical variant,
+                    // including models loaded with auto or omni-rocm selected.
+                    if (!model_backend.empty() && model_backend != backend &&
+                        !(recipe == "vllm" && backend == "rocm")) {
                         continue;
                     }
                     std::string model_name = model.value("model_name", "");

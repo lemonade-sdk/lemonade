@@ -4,6 +4,7 @@
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backends/hf_cache_util.h"
 #include "lemon/backends/vllm/vllm_arg_resolver.h"
+#include "lemon/backends/vllm/omni_uma_memory.h"
 #include "lemon/model_manager.h"
 #include <lemon/models/registry_types.h>
 #include "lemon/runtime_config.h"
@@ -408,13 +409,14 @@ void VLLMServer::load(const std::string& model_name,
         SystemInfo::rocm_asset_family(SystemInfo::get_rocm_arch()) != "gfx1151") {
         throw std::runtime_error("vLLM Omni is currently supported only on gfx1151");
     }
-    // The complete Omni archive also includes the regular vllm-server binary,
-    // so a user-selectable omni-rocm flavor remains valid for ordinary vLLM.
+    // Omni bundles also contain the normal vllm-server. Prefer an installed
+    // Omni bundle for regular models; an Omni model always requires that bundle.
+    const bool omni_installed = !BackendUtils::find_executable_in_install_dir(
+        BackendUtils::get_install_directory(vllm::spec()->recipe, "omni-rocm"),
+        vllm::spec()->binary).empty();
     const std::string runtime_backend =
-        (omni_runtime_ || vllm_backend == "omni-rocm") ? "omni-rocm" : vllm_backend;
-    if (runtime_backend == "omni-rocm") {
-        backend_manager_->install_backend(vllm::spec()->recipe, "rocm");
-    }
+        (omni_runtime_ || vllm_backend == "omni-rocm" ||
+         (vllm_backend == "rocm" && omni_installed)) ? "omni-rocm" : vllm_backend;
     backend_manager_->install_backend(vllm::spec()->recipe, runtime_backend);
 
     std::string model_id = model_info.checkpoint();
@@ -464,7 +466,10 @@ void VLLMServer::load(const std::string& model_name,
             "serve", model_target, "--omni", "--host", "127.0.0.1",
             "--port", std::to_string(port_), "--served-model-name", model_name,
         };
-        if (ctx_size > 0) {
+        // Multi-stage TTS deploys define different sequence limits per stage.
+        // A global --max-model-len from the generic 32k auto-context setting
+        // can override their codec/generator limits and break startup.
+        if (ctx_size > 0 && !model_info.extra<bool>("omni_preserve_stage_context", false)) {
             omni_args.push_back("--max-model-len");
             omni_args.push_back(std::to_string(ctx_size));
         }
@@ -508,48 +513,45 @@ void VLLMServer::load(const std::string& model_name,
             omni_args.push_back("--deploy-config");
             omni_args.push_back(path_to_utf8(deploy_path));
         }
-        if (config_name == "qwen3_tts.yaml" ||
-            config_name == "qwen2_5_omni_1gpu.yaml") {
-            // Stages share one UMA GPU. Budget the *sum* of stage reservations,
-            // including shared-memory pressure from other processes.
-            uint64_t free_bytes = 0, total_bytes = 0;
-            const std::string arch = SystemInfo::get_rocm_arch();
-            const bool measured = SystemInfo::get_rocm_device_memory(
-                arch, free_bytes, total_bytes) && total_bytes > 0 && free_bytes <= total_bytes;
-            const double base_budget = config_name == "qwen3_tts.yaml" ? 0.55 : 0.75;
-            double budget = base_budget;
-            if (measured) {
-                const double available = static_cast<double>(free_bytes) /
-                                         static_cast<double>(total_bytes) - 0.10;
-                if (available < 0.25) {
-                    throw std::runtime_error("Not enough free gfx1151 memory for vLLM Omni stages");
-                }
-                budget = std::min(base_budget, available);
-            }
-            // Keep the ratio between the single-GPU Qwen2.5 stages. On Qwen3
-            // TTS, split the budget between the talker and the codec stage.
-            const std::vector<double> portions = config_name == "qwen3_tts.yaml"
-                ? std::vector<double>{0.5, 0.5}
-                : std::vector<double>{0.55, 0.28, 0.17};
-            json overrides = json::object();
-            for (size_t stage = 0; stage < portions.size(); ++stage) {
-                const double share = std::floor(budget * portions[stage] * 100.0) / 100.0;
-                overrides[std::to_string(stage)] = {
-                    {"gpu_memory_utilization", share},
-                };
-                // Codec/DiT stages do not own autoregressive KV caches.
-                if (stage < (config_name == "qwen3_tts.yaml" ? 1U : 2U)) {
-                    overrides[std::to_string(stage)]["kv_cache_memory_bytes"] =
-                        stage == 0 ? kKvCacheCapBytes : kKvCacheCapBytes / 2;
-                }
-            }
-            omni_args.push_back("--stage-overrides");
-            omni_args.push_back(overrides.dump());
+        // Integrated gfx1151 uses system RAM. The VRAM sysfs "used" reading
+        // can disagree with HIP's UMA pool, so never gate Omni on its free ratio.
+        // The bundled deploy YAMLs otherwise reserve most of a 128 GiB machine.
+        const OmniUmaBudget memory = detect_omni_uma_budget();
+        std::vector<double> portions;
+        if (config_name == "qwen2_5_omni_1gpu.yaml") {
+            portions = {0.55, 0.28, 0.17};
+        } else if (config_name == "qwen3_tts.yaml") {
+            portions = {0.65, 0.35};
+        } else if (model_id == "mistralai/Voxtral-4B-TTS-2603") {
+            portions = {0.85, 0.15};
+        } else if (model_id == "fishaudio/s2-pro") {
+            portions = {0.85, 0.15};
+        } else {
+            throw std::runtime_error(
+                "Unknown gfx1151 Omni pipeline: an explicit stage memory profile is required");
         }
+        json overrides = json::object();
+        for (size_t stage = 0; stage < portions.size(); ++stage) {
+            // Truncate so the sum of reservations cannot exceed the host cap.
+            const double share = std::floor(memory.gpu_fraction * portions[stage] * 10000.0) / 10000.0;
+            overrides[std::to_string(stage)] = {
+                {"gpu_memory_utilization", share},
+                {"max_num_seqs", portions.size() == 3 ? 1 : 2},
+            };
+            // Do not set kv_cache_memory_bytes: vLLM explicitly warns that an
+            // explicit KV-cache allocation bypasses gpu_memory_utilization.
+        }
+        LOG(INFO, "vLLM") << "gfx1151 Omni UMA budget "
+                          << (memory.max_gpu_bytes >> 20) << " MiB (host available "
+                          << (memory.available_ram >> 20) << " MiB, "
+                          << portions.size() << " stages)" << std::endl;
+        omni_args.push_back("--stage-overrides");
+        omni_args.push_back(overrides.dump());
         if (!vllm_args.empty()) {
             static const std::set<std::string> reserved = {
                 "--host", "--port", "--model", "--served-model-name",
                 "--max-model-len", "--deploy-config", "--stage-overrides",
+                "--gpu-memory-utilization", "--kv-cache-memory-bytes",
                 "--omni", "--api-key"};
             const std::string error = validate_custom_args(vllm_args, reserved);
             if (!error.empty()) {
@@ -569,7 +571,9 @@ void VLLMServer::load(const std::string& model_name,
         command.port = port_;
         command.ready_endpoint = "/v1/models";
         try {
-            start_server(std::make_unique<NativeProcess>(ProcessOutput{is_debug(), true}),
+            // Surface the actual Omni stage failure, not only the wrapper's
+            // generic "process exited with code 1" message.
+            start_server(std::make_unique<NativeProcess>(ProcessOutput{true, true}),
                          command, 1800);
         } catch (...) {
             cleanup_vllm_rocm_shim_dir(rocm_shim_dir_);

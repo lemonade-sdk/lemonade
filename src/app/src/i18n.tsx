@@ -508,6 +508,8 @@ const ZH_CN: Record<string, string> = {
   'Upgrade to Omni': '升级到 Omni',
   'Update Omni': '更新 Omni',
   'Omni enabled': 'Omni 已启用',
+  'Switch to Omni version': '切换到 Omni 版本',
+  'Switch to normal version': '切换到普通版本',
   '{count} backend updates available': '有 {count} 个后端更新可用',
   '{action} backend arguments for {engine} ({backend})': '{engine}（{backend}）的{action}后端参数',
   'Installing…': '正在安装…',

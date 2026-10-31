@@ -140,7 +140,35 @@ export function modelBackendReadiness(
     };
   }
 
-  const configuredBackend = configuredBackendForModel(model, recipe, recipeInfo, systemInfo);
+  const omniModel = recipe === 'vllm' && (
+    normalizedBackend((model as any).runtime) === 'vllm-omni'
+    || (Array.isArray((model as any).labels)
+      && (model as any).labels.some((label: unknown) => normalizedBackend(label) === 'omni'))
+  );
+  if (recipe === 'vllm') {
+    const allowed = omniModel ? ['omni-rocm'] : ['omni-rocm', 'rocm'];
+    const available = allowed.find(name =>
+      normalizedBackend(asRecord(backends[name])?.state) === 'installed');
+    if (available) {
+      return {
+        tone: 'ready', backend: available, state: 'installed',
+        label: `vLLM (${available}) is installed; model is ready.`,
+      };
+    }
+    const pendingUpdate = allowed.find(name => {
+      const state = normalizedBackend(asRecord(backends[name])?.state);
+      return state === 'update_available' || state === 'update_required';
+    });
+    if (pendingUpdate) {
+      const state = normalizedBackend(asRecord(backends[pendingUpdate])?.state);
+      return {
+        tone: 'attention', backend: pendingUpdate, state,
+        label: `vLLM (${pendingUpdate}) ${state === 'update_required' ? 'requires an update' : 'has an update available'}.`,
+      };
+    }
+  }
+  const configuredBackend = omniModel ? 'omni-rocm'
+    : configuredBackendForModel(model, recipe, recipeInfo, systemInfo);
   let backend = configuredBackend;
   let backendInfo: Record<string, any> | null = null;
 

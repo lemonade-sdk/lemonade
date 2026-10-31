@@ -508,6 +508,13 @@ function cleanString(value: unknown): string {
   return s && s.toLowerCase() !== 'unknown' ? s : '';
 }
 
+function compactVllmVersion(raw: string): string {
+  const version = raw.match(/^vllm(?:-omni)?(\d+\.\d+\.\d+(?:(?:\.dev|rc)\d+)?)/);
+  if (!version) return raw.length > 40 ? `${raw.slice(0, 37)}…` : raw;
+  const rocm = raw.match(/-rocm(\d+\.\d+(?:\.\d+)?)/);
+  return `${version[1]}${rocm ? ` · ROCm ${rocm[1]}` : ''}`;
+}
+
 function lemonadeVersion(info: SystemInfoData | null): string {
   return cleanString(info?.lemonade_version)
     || cleanString(info?.version)
@@ -563,9 +570,21 @@ function devicesForBackend(recipe: string, backend: string, info: BackendInfo): 
 
 function canShowUninstall(info: BackendInfo): boolean {
   if (info.can_uninstall === false) return false;
-  return info.state === 'installed'
-    || info.state === 'update_required'
-    || info.state === 'update_available';
+  return backendIsInstalled(info);
+}
+
+type VllmVariant = 'rocm' | 'omni-rocm';
+
+function backendIsInstalled(info?: BackendInfo): boolean {
+  return info?.state === 'installed' || info?.state === 'update_required'
+    || info?.state === 'update_available';
+}
+
+function installedVllmVariant(info: SystemInfoData | null): VllmVariant | null {
+  const backends = info?.recipes?.vllm?.backends;
+  if (backendIsInstalled(backends?.['omni-rocm'])) return 'omni-rocm';
+  if (backendIsInstalled(backends?.rocm)) return 'rocm';
+  return null;
 }
 
 function releaseLink(info: BackendInfo): string {
@@ -726,6 +745,17 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
   const [sysInfo, setSysInfo] = useState<SystemInfoData | null>(() =>
     api.systemInfoData as unknown as SystemInfoData | null
   );
+  const [requestedVllmVariant, setRequestedVllmVariant] = useState<VllmVariant | null>(null);
+  const installedVariant = installedVllmVariant(sysInfo);
+  const vllmVariant = requestedVllmVariant ?? installedVariant ?? 'rocm';
+  const previousInstalledVariantRef = useRef(installedVariant);
+  useEffect(() => {
+    if (previousInstalledVariantRef.current !== installedVariant) {
+      previousInstalledVariantRef.current = installedVariant;
+      // Automatic Omni installs (from loading an Omni model) update the toggle.
+      if (installedVariant) setRequestedVllmVariant(installedVariant);
+    }
+  }, [installedVariant]);
   const [loading, setLoading] = useState(() => !api.systemInfoData);
   const [error, setError] = useState<string | null>(null);
   const [showTech, setShowTech] = useState(false);
@@ -989,14 +1019,16 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
     const updates: { recipe: string; backend: string }[] = [];
     for (const [recipe, recipeInfo] of Object.entries(sysInfo.recipes)) {
       for (const [backend, bInfo] of Object.entries(recipeInfo.backends)) {
-        if (bInfo.state === 'update_required' || bInfo.state === 'update_available') updates.push({ recipe, backend });
+        if (recipe === 'vllm' && backend === 'omni-rocm') continue;
+        const target = recipe === 'vllm' && backend === 'rocm' ? vllmVariant : backend;
+        const info = recipeInfo.backends[target] || bInfo;
+        if (info.state === 'update_required' || info.state === 'update_available') {
+          updates.push({ recipe, backend: target });
+        }
       }
     }
-    if (updates.length === 0) return;
-    for (const { recipe, backend } of updates) {
-      await handleInstall(recipe, backend, true);
-    }
-  }, [sysInfo, handleInstall]);
+    for (const { recipe, backend } of updates) await handleInstall(recipe, backend, true);
+  }, [sysInfo, handleInstall, vllmVariant]);
 
   const handleAction = useCallback((url: string) => {
     window.open(url, '_blank', 'noopener,noreferrer');
@@ -1041,9 +1073,11 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
       const cap = recipeCapability(sysInfo, recipe) as CapabilityCol;
       for (const [backend, backendInfo] of Object.entries(recipeInfo.backends)) {
         if (recipe === 'vllm' && backend === 'omni-rocm') continue;
+        const selected = recipe === 'vllm' && backend === 'rocm'
+          ? recipeInfo.backends[vllmVariant] || backendInfo : backendInfo;
         const effectiveInfo: BackendInfo = {
-          ...backendInfo,
-          experimental: isExperimentalBackend(recipe, recipeInfo, backendInfo),
+          ...selected,
+          experimental: isExperimentalBackend(recipe, recipeInfo, selected),
         };
         // Match GUI2: unsupported backends are not useful actions/statuses for
         // the current system and are hidden unless explicitly requested (#2568).
@@ -1056,20 +1090,23 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
       }
     }
     return cells;
-  }, [showUnsupported, sysInfo]);
+  }, [showUnsupported, sysInfo, vllmVariant]);
 
   const backendCatalog = useMemo(() => buildBackendCatalog(matrixCells), [matrixCells]);
 
   const updatesAvailable = useMemo(() => {
     if (!sysInfo?.recipes) return 0;
     let count = 0;
-    for (const recipeInfo of Object.values(sysInfo.recipes)) {
-      for (const bInfo of Object.values(recipeInfo.backends)) {
-        if (bInfo.state === 'update_required' || bInfo.state === 'update_available') count++;
+    for (const [recipe, recipeInfo] of Object.entries(sysInfo.recipes)) {
+      for (const [backend, bInfo] of Object.entries(recipeInfo.backends)) {
+        if (recipe === 'vllm' && backend === 'omni-rocm') continue;
+        const selected = recipe === 'vllm' && backend === 'rocm'
+          ? recipeInfo.backends[vllmVariant] || bInfo : bInfo;
+        if (selected.state === 'update_required' || selected.state === 'update_available') count++;
       }
     }
     return count;
-  }, [sysInfo]);
+  }, [sysInfo, vllmVariant]);
 
   const backendStateCounts = useMemo(() => {
     const counts = { all: 0, installed: 0, available: 0, updates: 0, experimental: 0 };
@@ -1077,34 +1114,28 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
     for (const [recipe, recipeInfo] of Object.entries(sysInfo.recipes)) {
       for (const [backend, backendInfo] of Object.entries(recipeInfo.backends)) {
         if (recipe === 'vllm' && backend === 'omni-rocm') continue;
-        if (backendInfo.state === 'unsupported' && !showUnsupported) continue;
+        const selected = recipe === 'vllm' && backend === 'rocm'
+          ? recipeInfo.backends[vllmVariant] || backendInfo : backendInfo;
+        if (selected.state === 'unsupported' && !showUnsupported) continue;
         counts.all++;
-        if (
-          backendInfo.state === 'installed'
-          || backendInfo.state === 'update_required'
-          || backendInfo.state === 'update_available'
-        ) counts.installed++;
-        if (backendInfo.state === 'installable') counts.available++;
-        if (backendInfo.state === 'update_required' || backendInfo.state === 'update_available'
-          || (recipe === 'vllm' && backend === 'rocm' &&
-            ['update_required', 'update_available'].includes(recipeInfo.backends['omni-rocm']?.state || ''))) counts.updates++;
-        if (isExperimentalBackend(recipe, recipeInfo, backendInfo)) counts.experimental++;
+        if (backendIsInstalled(selected) || (recipe === 'vllm' && backend === 'rocm' &&
+          installedVllmVariant(sysInfo) !== null)) counts.installed++;
+        if (selected.state === 'installable') counts.available++;
+        if (selected.state === 'update_required' || selected.state === 'update_available') counts.updates++;
+        if (isExperimentalBackend(recipe, recipeInfo, selected)) counts.experimental++;
       }
     }
     return counts;
-  }, [showUnsupported, sysInfo]);
+  }, [showUnsupported, sysInfo, vllmVariant]);
 
   const backendMatchesView = useCallback((entry: CellEntry) => {
     if (viewFilter === 'all') return true;
     if (viewFilter === 'installed') {
-      return entry.info.state === 'installed'
-        || entry.info.state === 'update_required'
-        || entry.info.state === 'update_available';
+      return backendIsInstalled(entry.info) || (entry.recipe === 'vllm' && entry.backend === 'rocm' &&
+        installedVllmVariant(sysInfo) !== null);
     }
     if (viewFilter === 'available') return entry.info.state === 'installable';
-    if (viewFilter === 'updates') return entry.info.state === 'update_required' || entry.info.state === 'update_available'
-      || (entry.recipe === 'vllm' && entry.backend === 'rocm' &&
-        ['update_required', 'update_available'].includes(sysInfo?.recipes?.vllm?.backends?.['omni-rocm']?.state || ''));
+    if (viewFilter === 'updates') return entry.info.state === 'update_required' || entry.info.state === 'update_available';
     const recipeInfo = sysInfo?.recipes?.[entry.recipe];
     return recipeInfo ? isExperimentalBackend(entry.recipe, recipeInfo, entry.info) : Boolean(entry.info.experimental);
   }, [sysInfo, viewFilter]);
@@ -1147,31 +1178,27 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
           {variants.map(({ backend, info }) => {
             const badge = stateBadge(info.state);
             const cellKey = backendKey(recipe, backend);
+            const isVllmRocm = recipe === 'vllm' && backend === 'rocm';
+            const selectedBackend = isVllmRocm ? vllmVariant : backend;
+            const otherBackend = isVllmRocm ? (selectedBackend === 'rocm' ? 'omni-rocm' : 'rocm') : null;
+            const omniInfo = isVllmRocm ? sysInfo?.recipes?.vllm?.backends?.['omni-rocm'] : undefined;
+            const canSwitch = isVllmRocm && omniInfo && omniInfo.state !== 'unsupported';
             const canEditArgs = backendArgsTarget(runtimeConfig, cellKey) !== null;
-            const omniInfo = recipe === 'vllm' && backend === 'rocm'
-              ? sysInfo?.recipes?.vllm?.backends?.['omni-rocm'] : undefined;
-            const omniInstalled = omniInfo && (
-              omniInfo.state === 'installed' || omniInfo.state === 'update_available'
-              || omniInfo.state === 'update_required');
-            const omniCanInstall = omniInfo && (
-              omniInfo.state === 'installable' || omniInfo.state === 'update_available'
-              || omniInfo.state === 'update_required');
-            const parentInstalled = info.state === 'installed'
-              || info.state === 'update_available' || info.state === 'update_required';
-            const omniDownload = omniInfo ? downloadItems.find(download =>
-              backendDownloadMatches(download, 'vllm', 'omni-rocm') &&
-              (isDownloadActive(download) || download.status === 'paused')) : undefined;
-            const omniBusy = installing === 'vllm:omni-rocm' || Boolean(omniDownload && isDownloadActive(omniDownload));
-            const isInstalling = installing === cellKey || omniBusy || downloadItems.some(download =>
-              backendDownloadMatches(download, recipe, backend) && isDownloadActive(download));
+            const isInstalling = installing === backendKey(recipe, selectedBackend)
+              || Boolean(otherBackend && installing === backendKey(recipe, otherBackend))
+              || downloadItems.some(download =>
+                (backendDownloadMatches(download, recipe, selectedBackend)
+                  || Boolean(otherBackend && backendDownloadMatches(download, recipe, otherBackend)))
+                && (isDownloadActive(download) || download.status === 'paused'));
             const backendDownload = downloadItems.find(download =>
-              backendDownloadMatches(download, recipe, backend) &&
+              backendDownloadMatches(download, recipe, selectedBackend) &&
               (isDownloadActive(download) || download.status === 'paused'))
-              || omniDownload
-              || downloadItems.find(download => backendDownloadMatches(download, recipe, backend));
+              || (otherBackend ? downloadItems.find(download =>
+                backendDownloadMatches(download, recipe, otherBackend) && isDownloadActive(download)) : undefined)
+              || downloadItems.find(download => backendDownloadMatches(download, recipe, selectedBackend));
             const showBackendProgress = Boolean(backendDownload && (isDownloadActive(backendDownload) || backendDownload.status === 'paused'));
             const tuning = backendTunings[cellKey] || null;
-            const name = `${engineName} · ${backend}`;
+            const name = `${engineName} · ${selectedBackend}`;
             const version = cleanString(info.version);
             const isUpdate =
               info.state === 'update_required' || info.state === 'update_available';
@@ -1180,13 +1207,15 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
             const installedReleaseUrl = isUpdate
               ? releaseLinkForVersion(targetReleaseUrl, version)
               : targetReleaseUrl;
-            const variantLabel = BACKEND_LABELS[backend] || backend;
+            const variantLabel = isVllmRocm && selectedBackend === 'omni-rocm'
+              ? 'ROCm · Omni' : BACKEND_LABELS[backend] || backend;
 
             return (
               <div
                 className={`backend-card__variant${info.state === 'unsupported' ? ' backend-card__variant--unsupported' : ''}`}
                 key={cellKey}
                 data-cell={cellKey}
+                data-vllm-variant={isVllmRocm ? selectedBackend : undefined}
               >
                 <div className="backend-card__variant-head">
                   <h4 className="backend-card__variant-name">
@@ -1209,11 +1238,13 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
                       rel="noopener noreferrer"
                       title={`Open installed ${engineName} ${version} release page`}
                     >
-                      {version}
+                      {recipe === 'vllm' ? compactVllmVersion(version) : version}
                       <Icon name="external-link" size={11} aria-hidden="true" />
                     </a>
                   ) : (
-                    <span className="backend-card__version">{version}</span>
+                    <span className="backend-card__version" title={version}>
+                      {recipe === 'vllm' ? compactVllmVersion(version) : version}
+                    </span>
                   ))}
                   {isUpdate && targetReleaseUrl && targetVersion && targetVersion !== version && (
                     <a
@@ -1224,7 +1255,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
                       title={`Open ${engineName} ${targetVersion} update release page`}
                     >
                       <Icon name="chevron-right" size={11} aria-hidden="true" />
-                      {targetVersion}
+                      {recipe === 'vllm' ? compactVllmVersion(targetVersion) : targetVersion}
                       <Icon name="external-link" size={11} aria-hidden="true" />
                     </a>
                   )}
@@ -1246,7 +1277,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
                         className="cell__swap"
                         aria-label={`Install ${name}`}
                         disabled={isInstalling}
-                        onClick={() => handleInstall(recipe, backend)}
+                        onClick={() => handleInstall(recipe, selectedBackend)}
                       >
                         {isInstalling ? t('Installing…') : t('Install')}
                       </WorkspaceActionButton>
@@ -1259,7 +1290,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
                         className="cell__swap"
                         aria-label={`Update ${name}`}
                         disabled={isInstalling}
-                        onClick={() => handleInstall(recipe, backend, true)}
+                        onClick={() => handleInstall(recipe, selectedBackend, true)}
                       >
                         {isInstalling ? t('Updating…') : t('Update')}
                       </WorkspaceActionButton>
@@ -1276,31 +1307,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
                         {t('Setup guide')}
                       </WorkspaceActionButton>
                     )}
-                    {parentInstalled && omniCanInstall && !omniInstalled && !omniBusy && (
-                      <WorkspaceActionButton
-                        size="small"
-                        appearance="secondary"
-                        icon="download"
-                        aria-label={t('Upgrade to Omni')}
-                        disabled={isInstalling}
-                        onClick={() => void handleInstall('vllm', 'omni-rocm')}
-                      >
-                        {t('Upgrade to Omni')}
-                      </WorkspaceActionButton>
-                    )}
-                    {parentInstalled && omniInstalled && omniInfo && (
-                      omniInfo.state === 'update_available'
-                      || omniInfo.state === 'update_required' ? (
-                        <WorkspaceActionButton
-                          size="small" appearance="secondary" icon="rotate-ccw"
-                          disabled={isInstalling}
-                          onClick={() => void handleInstall('vllm', 'omni-rocm', true)}
-                        >
-                          {t('Update Omni')}
-                        </WorkspaceActionButton>
-                      ) : <span className="cell__badge cell__badge--ok">{t('Omni enabled')}</span>
-                    )}
-                    {canShowUninstall(info) && (
+                    {(isVllmRocm ? backendIsInstalled(info) : canShowUninstall(info)) && (
                       <WorkspaceActionButton
                         size="small"
                         appearance="danger"
@@ -1308,7 +1315,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
                         className="cell__swap cell__swap--danger"
                         aria-label={`Uninstall ${name}`}
                         disabled={isInstalling}
-                        onClick={() => handleUninstall(recipe, backend)}
+                        onClick={() => handleUninstall(recipe, isVllmRocm ? 'rocm' : backend)}
                       >
                         {isInstalling ? t('Working…') : t('Uninstall')}
                       </WorkspaceActionButton>
@@ -1333,6 +1340,19 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
                   </div>
                 </div>
 
+                {canSwitch && (
+                  <div className="backend-card__variant-switch">
+                    <WorkspaceActionButton
+                      size="small"
+                      appearance="secondary"
+                      disabled={isInstalling}
+                      onClick={() => setRequestedVllmVariant(selectedBackend === 'rocm' ? 'omni-rocm' : 'rocm')}
+                    >
+                      {t(selectedBackend === 'rocm' ? 'Switch to Omni version' : 'Switch to normal version')}
+                    </WorkspaceActionButton>
+                  </div>
+                )}
+
                 {showBackendProgress && backendDownload && (
                   <div className="cell__download-progress" aria-label={`${backendProgressPercent(backendDownload).toFixed(0)}%`}>
                     <div className="cell__download-progress-track">
@@ -1352,7 +1372,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
         </div>
       </article>
     );
-  }, [backendTunings, downloadItems, handleAction, handleInstall, handleUninstall, installing, runtimeConfig, showLogos, showTech, sysInfo]);
+  }, [backendTunings, downloadItems, handleAction, handleInstall, handleUninstall, installing, runtimeConfig, showLogos, showTech, sysInfo, vllmVariant]);
 
 
   const isUpdatesView = viewFilter === 'updates';

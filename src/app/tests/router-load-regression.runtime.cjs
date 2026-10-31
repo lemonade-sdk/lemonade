@@ -163,7 +163,10 @@ try {
   assert.match(manager, /const preflight = preflightRouter\(routerInfo, fresh\.data/, 'Router save must preflight dependencies against fresh server registry data');
 
   assert.match(chat, /if \(isRouterRecipe\(currentRecipe\)\) return true;/, 'router chat must accept images so has_images rules are reachable');
-  assert.match(chat, /const modeSupportsMcp = modeSupportsChatCompletions;/, 'router chat must retain MCP/Lemonade tool support');
+  assert.match(chat, /const modeSupportsMcp = modeSupportsChatCompletions && !currentIsNativeOmni;/,
+  'router chat must retain MCP/Lemonade tools; only native Omni disables unsupported tool calls');
+  assert.match(chat, /const currentIsNativeOmni = !currentIsOmniCollection/,
+  'Omni-collection routing must remain separate from native Omni inference');
   assert.match(chat, /streaming\.send\(convoId, requestModelName, chatMessages, toolRuntime, thinkingMode\)/, 'selected tools must reach router chat requests through the current streaming signature');
 
   const tools = fs.readFileSync(path.join(root, 'src/tools/lemonadeTools.ts'), 'utf8');

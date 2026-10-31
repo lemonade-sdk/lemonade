@@ -2804,7 +2804,7 @@
         "runtime": "vllm-omni",
         "omni_deploy_config": "qwen2_5_omni_1gpu.yaml",
         "omni_trust_remote_code": true,
-        "suggested": false,
+        "suggested": true,
         "labels": [
             "chat",
             "vision",
@@ -2818,7 +2818,7 @@
         "runtime": "vllm-omni",
         "omni_deploy_config": "qwen2_5_omni_1gpu.yaml",
         "omni_trust_remote_code": true,
-        "suggested": false,
+        "suggested": true,
         "labels": [
             "chat",
             "vision",
@@ -2826,27 +2826,16 @@
             "omni"
         ]
     },
-    "Voxtral-4B-TTS-2603-vLLM": {
-        "checkpoint": "mistralai/Voxtral-4B-TTS-2603",
-        "recipe": "vllm",
-        "runtime": "vllm-omni",
-        "omni_default_voice": "casual_female",
-        "omni_trust_remote_code": true,
-        "suggested": false,
-        "labels": [
-            "tts",
-            "omni"
-        ]
-    },
     "Qwen3-TTS-1.7B-VoiceDesign-vLLM": {
         "checkpoint": "Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign",
         "recipe": "vllm",
         "runtime": "vllm-omni",
+        "omni_preserve_stage_context": true,
         "omni_tts_task_type": "VoiceDesign",
         "omni_deploy_config": "qwen3_tts.yaml",
         "omni_trust_remote_code": true,
         "omni_enforce_eager": true,
-        "suggested": false,
+        "suggested": true,
         "labels": [
             "tts",
             "omni"
@@ -2856,8 +2845,9 @@
         "checkpoint": "fishaudio/s2-pro",
         "recipe": "vllm",
         "runtime": "vllm-omni",
+        "omni_preserve_stage_context": true,
         "omni_default_voice": "default",
-        "suggested": false,
+        "suggested": true,
         "labels": [
             "tts",
             "omni"
