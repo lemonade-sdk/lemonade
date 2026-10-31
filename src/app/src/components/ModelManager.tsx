@@ -5,7 +5,7 @@ import { capabilityFromModelInfo, modelCapabilityTags, modelSupportsChatImageInp
 import { Icon } from './Icon';
 import { storageKey } from '../storage';
 import { CUSTOM_CAPABILITIES, CustomModelCapability, generatedLabelsFor, buildCustomModelRecord, CustomOmniToolDefinition, customLoadOptions, customModelToModelInfo, customRegistrationOptions, exportCustomModelsPayload, parseCustomModelsImport, type CustomOmniToolTargetType } from '../features/customModels/customModelStore';
-import { getCollectionComponents, isCollectionModel, isCollectionFullyDownloaded, withVirtualLoadedCollections } from '../features/collections/collectionModels';
+import { getCollectionComponents, isCollectionModel, isCollectionRecipe, isCollectionFullyDownloaded, withVirtualLoadedCollections } from '../features/collections/collectionModels';
 import {
   detectHuggingFaceBackend,
   isCompatibleHuggingFaceRecipe,
@@ -2129,8 +2129,30 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     const customServerModels = visibleServerModels.filter(model =>
       modelIsCustom(model) && String((model as any).recipe || '').toLowerCase() !== ROUTER_RECIPE
     );
-    exportJsonFile('lemonade-custom-models', exportCustomModelsPayload(customServerModels));
-    setCustomJsonNotice(t('Exported custom model JSON.'));
+    const exportCollections = !!editingCustomModelName
+      || (customDraft.capability === 'omni' && customDraft.omniSource === 'collection');
+    const modelsInCategory = customServerModels.filter(model => isCollectionRecipe(String((model as any).recipe || '')) === exportCollections);
+    const savedCollection = editingCustomModelName
+      ? modelsInCategory.find(model => customModelNameKey(modelName(model)) === customModelNameKey(editingCustomModelName))
+      : null;
+    const modelsToExport = editingCustomModelName
+      ? (savedCollection ? [savedCollection] : [])
+      : modelsInCategory;
+    if (!modelsToExport.length) {
+      setCustomError(t(editingCustomModelName ? 'Saved collection no longer found.'
+        : exportCollections ? 'No custom collections to export.' : 'No custom models to export.'));
+      return;
+    }
+    const payload = exportCustomModelsPayload(modelsToExport);
+    if (!Array.isArray(payload.models) || payload.models.length !== modelsToExport.length) {
+      setCustomError(t('Could not export all requested model definitions.'));
+      return;
+    }
+    const exportName = savedCollection ? `lemonade-${modelName(savedCollection)}`
+      : exportCollections ? 'lemonade-omni-collections' : 'lemonade-custom-models';
+    exportJsonFile(exportName, payload);
+    setCustomError(null);
+    setCustomJsonNotice(t(exportCollections ? 'Exported collection JSON.' : 'Exported custom model JSON.'));
     window.setTimeout(() => setCustomJsonNotice(null), 2200);
   };
 
@@ -2144,21 +2166,52 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       const records = parsed.drafts.map(draft => buildCustomModelRecord(draft));
       records.sort((a, b) => Number(Boolean(a.components?.length)) - Number(Boolean(b.components?.length)));
 
+      if (!records.length) throw new Error(parsed.errors.join(' ') || 'No custom model definitions found in JSON.');
       let imported = 0;
+      let lastImportedModelName: string | null = null;
       const errors = [...parsed.errors];
       for (const record of records) {
         try {
           const info = customModelToModelInfo(record);
-          await api.registerModelDefinition(record.name, customRegistrationOptions(info));
+          const registration = await api.registerModelDefinition(record.name, customRegistrationOptions(info));
+          lastImportedModelName = typeof registration.model_name === 'string' && registration.model_name.trim()
+            ? registration.model_name.trim() : record.name;
           imported += 1;
         } catch (err) {
           errors.push(`${record.name}: ${err instanceof Error ? err.message : String(err)}`);
         }
       }
-      await refresh();
+      let importedModelName: string | null = null;
+      if (lastImportedModelName) {
+        const targetName = customModelNameKey(lastImportedModelName);
+        try {
+          const catalog = await api.models(true);
+          const match = catalog.data.find(model =>
+            modelIsCustom(model) && customModelNameKey(modelName(model)) === targetName);
+          if (match) importedModelName = modelName(match);
+        } catch (err) {
+          console.warn('Could not refresh model list after import:', err);
+        }
+      }
       const skipped = parsed.skipped + (records.length - imported);
-      setCustomJsonNotice(`Imported ${imported} custom model${imported === 1 ? '' : 's'}${skipped ? `, skipped ${skipped}` : ''}.`);
-      if (errors.length) setCustomError(errors.slice(0, 3).join(' '));
+      const notice = `Imported ${imported} custom model${imported === 1 ? '' : 's'}${skipped ? `, skipped ${skipped}` : ''}.`;
+      setCustomJsonNotice(errors.length && lastImportedModelName
+        ? `${notice} ${errors.slice(0, 3).join(' ')}` : notice);
+      if (importedModelName) {
+        closeCustomForm();
+        setPrimaryFilter('all');
+        setTaskFilters(new Set());
+        setBackendFilters(new Set());
+        setTagFilters(new Set());
+        setSearchQuery('');
+        setSelectedDetailModelId(importedModelName);
+        setSelectedRemoteModel(null);
+        setMobileDetailOpen(true);
+      } else if (lastImportedModelName) {
+        setCustomError(t('Import succeeded, but the model is not visible yet. Refresh the model list.'));
+      } else if (errors.length) {
+        setCustomError(errors.slice(0, 3).join(' '));
+      }
       window.setTimeout(() => setCustomJsonNotice(null), 3200);
     } catch (err) {
       setCustomError(`Could not import JSON: ${err instanceof Error ? err.message : String(err)}`);
@@ -2942,7 +2995,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
           </Suspense>
         </div>
       ) : showCustomEditor ? (
-        <div className="manager__detail-form-panel">
+        <div className="manager__detail-form-panel manager__detail-form-panel--custom">
           <WorkspaceDetailPanel
             className="custom-model-editor custom-model-form"
             ariaLabel={customFormTitle}
@@ -2966,7 +3019,17 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
                 </WorkspaceActionButton>
                 <WorkspaceActionButton appearance="secondary" icon="x" onClick={closeCustomForm}>{t('Close')}</WorkspaceActionButton>
                 <span className="workspace-action-group__spacer" />
-                <WorkspaceActionButton appearance="quiet" icon="file" onClick={handleExportCustomModels}>{t('Export')}</WorkspaceActionButton>
+                <WorkspaceActionButton
+                  appearance="quiet"
+                  icon="file"
+                  onClick={handleExportCustomModels}
+                  aria-label={editingCustomModelName ? t('Export this collection')
+                    : t(isCustomOmniCollectionDraft ? 'Export all custom collections' : 'Export all custom models')}
+                  title={editingCustomModelName ? t('Export this collection')
+                    : t(isCustomOmniCollectionDraft ? 'Export all custom collections' : 'Export all custom models')}
+                >
+                  {editingCustomModelName ? t('Export') : t('Export all')}
+                </WorkspaceActionButton>
                 <WorkspaceActionButton appearance="quiet" icon="file-up" onClick={() => customJsonInputRef.current?.click()}>{t('Import')}</WorkspaceActionButton>
               </WorkspaceActionGroup>
             )}
