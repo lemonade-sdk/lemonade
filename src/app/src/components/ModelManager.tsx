@@ -5,7 +5,7 @@ import { capabilityFromModelInfo, modelCapabilityTags, modelSupportsChatImageInp
 import { Icon } from './Icon';
 import { storageKey } from '../storage';
 import { CUSTOM_CAPABILITIES, CustomModelCapability, generatedLabelsFor, buildCustomModelRecord, CustomOmniToolDefinition, customLoadOptions, customModelToModelInfo, customRegistrationOptions, exportCustomModelsPayload, parseCustomModelsImport, type CustomOmniToolTargetType } from '../features/customModels/customModelStore';
-import { getCollectionComponents, isCollectionModel, isCollectionFullyDownloaded, withVirtualLoadedCollections } from '../features/collections/collectionModels';
+import { getCollectionComponents, isCollectionModel, isCollectionRecipe, isCollectionFullyDownloaded, withVirtualLoadedCollections } from '../features/collections/collectionModels';
 import {
   detectHuggingFaceBackend,
   isCompatibleHuggingFaceRecipe,
@@ -2131,7 +2131,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     );
     const exportCollections = !!editingCustomModelName
       || (customDraft.capability === 'omni' && customDraft.omniSource === 'collection');
-    const modelsInCategory = customServerModels.filter(model => isCollectionModel(model) === exportCollections);
+    const modelsInCategory = customServerModels.filter(model => isCollectionRecipe(String((model as any).recipe || '')) === exportCollections);
     const savedCollection = editingCustomModelName
       ? modelsInCategory.find(model => customModelNameKey(modelName(model)) === customModelNameKey(editingCustomModelName))
       : null;
@@ -2181,21 +2181,34 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
           errors.push(`${record.name}: ${err instanceof Error ? err.message : String(err)}`);
         }
       }
-      await refresh();
+      let importedModelName: string | null = null;
+      if (lastImportedModelName) {
+        const targetName = customModelNameKey(lastImportedModelName);
+        try {
+          const catalog = await api.models(true);
+          const match = catalog.data.find(model =>
+            modelIsCustom(model) && customModelNameKey(modelName(model)) === targetName);
+          if (match) importedModelName = modelName(match);
+        } catch (err) {
+          console.warn('Could not refresh model list after import:', err);
+        }
+      }
       const skipped = parsed.skipped + (records.length - imported);
       const notice = `Imported ${imported} custom model${imported === 1 ? '' : 's'}${skipped ? `, skipped ${skipped}` : ''}.`;
       setCustomJsonNotice(errors.length && lastImportedModelName
         ? `${notice} ${errors.slice(0, 3).join(' ')}` : notice);
-      if (lastImportedModelName) {
+      if (importedModelName) {
         closeCustomForm();
         setPrimaryFilter('all');
         setTaskFilters(new Set());
         setBackendFilters(new Set());
         setTagFilters(new Set());
         setSearchQuery('');
-        setSelectedDetailModelId(lastImportedModelName);
+        setSelectedDetailModelId(importedModelName);
         setSelectedRemoteModel(null);
         setMobileDetailOpen(true);
+      } else if (lastImportedModelName) {
+        setCustomError(t('Import succeeded, but the model is not visible yet. Refresh the model list.'));
       } else if (errors.length) {
         setCustomError(errors.slice(0, 3).join(' '));
       }
