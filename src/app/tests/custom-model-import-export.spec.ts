@@ -1,7 +1,10 @@
 import { readFile } from 'node:fs/promises';
 import { test, expect, type Page } from '@playwright/test';
 
-async function openModelsWithCustomDefinitions(page: Page) {
+async function openModelsWithCustomDefinitions(page: Page, options: {
+  omitRegisteredFromCatalog?: boolean;
+  includeEmptyCollection?: boolean;
+} = {}) {
   const models: Array<Record<string, unknown>> = [
     { id: 'PlannerModel', name: 'PlannerModel', labels: ['chat'], recipe: 'llamacpp', downloaded: true },
     { id: 'user.Standalone', name: 'user.Standalone', display_name: 'Standalone', custom: true,
@@ -13,6 +16,10 @@ async function openModelsWithCustomDefinitions(page: Page) {
       labels: ['omni', 'custom'], recipe: 'collection.omni', type: 'omni', downloaded: true,
       components: ['PlannerModel'], component_roles: { llm: 'PlannerModel' } },
   ];
+  if (options.includeEmptyCollection) {
+    models.push({ id: 'user.EmptyCollection', name: 'user.EmptyCollection', custom: true,
+      labels: ['omni', 'custom'], type: 'omni', recipe: 'collection.omni', components: [] });
+  }
   const registeredNames: string[] = [];
   await page.route('**/api/v1/health**', route => route.fulfill({
     json: { status: 'ok', version: 'test', all_models_loaded: [] },
@@ -25,17 +32,20 @@ async function openModelsWithCustomDefinitions(page: Page) {
     const body = route.request().postDataJSON() as Record<string, unknown>;
     const name = String(body.model_name);
     registeredNames.push(name);
-    models.push({
-      id: name,
-      name,
-      display_name: String(body.display_name || name),
-      custom: true,
-      labels: ['chat', 'custom'],
-      recipe: String(body.recipe || 'llamacpp'),
-      checkpoint: String(body.checkpoint || ''),
-      downloaded: true,
-    });
-    await route.fulfill({ json: { model_name: name } });
+    const publicName = name.replace(/^user\./, '');
+    if (!options.omitRegisteredFromCatalog) {
+      models.push({
+        id: publicName,
+        name: publicName,
+        display_name: String(body.display_name || publicName),
+        custom: true,
+        labels: ['chat', 'custom'],
+        recipe: String(body.recipe || 'llamacpp'),
+        checkpoint: String(body.checkpoint || ''),
+        downloaded: true,
+      });
+    }
+    await route.fulfill({ json: { model_name: publicName, canonical_model_name: name } });
   });
 
   await page.goto('/');
@@ -69,6 +79,8 @@ test('Export all separates ordinary custom models and Omni collections (#4017)',
   expect((await exportedModelNames(page, exportCollections)).sort()).toEqual([
     'user.SavedCollection', 'user.OtherCollection',
   ].sort());
+  const search = page.getByRole('searchbox', { name: 'Search models' });
+  await search.fill('no-matching-imported-model');
   await editor.locator('input[type="file"]').setInputFiles({
     name: 'custom-models.json',
     mimeType: 'application/json',
@@ -80,8 +92,10 @@ test('Export all separates ordinary custom models and Omni collections (#4017)',
     })),
   });
   await expect(editor).toHaveCount(0);
+  await expect(search).toHaveValue('');
   await expect(page.locator('.model-detail-panel')).toContainText('Imported Beta');
   await expect(page.locator('.model-list-panel__list')).toContainText('Imported Alpha');
+  await expect(page.locator('.model-list-panel__list')).toContainText('Imported Beta');
   expect(registeredNames).toEqual(['user.ImportedAlpha', 'user.ImportedBeta']);
 });
 
@@ -109,4 +123,24 @@ test('saved Omni collection exports only itself and its editor scrolls (#4017)',
     await scroller.evaluate(el => { el.scrollTop = 0; el.scrollTop = el.scrollHeight; });
     await expect.poll(() => scroller.evaluate(el => el.scrollTop)).toBeGreaterThan(0);
   }
+});
+
+test('ordinary export ignores incomplete Omni collections (#4017)', async ({ page }) => {
+  await openModelsWithCustomDefinitions(page, { includeEmptyCollection: true });
+  await page.getByRole('button', { name: 'Open custom models' }).click();
+  const exportModels = page.locator('.custom-model-editor').getByRole('button', { name: 'Export all custom models' });
+  expect(await exportedModelNames(page, exportModels)).toEqual(['user.Standalone']);
+});
+
+test('import keeps editor open if the catalog has not updated (#4018)', async ({ page }) => {
+  await openModelsWithCustomDefinitions(page, { omitRegisteredFromCatalog: true });
+  await page.getByRole('button', { name: 'Open custom models' }).click();
+  const editor = page.locator('.custom-model-editor');
+  await editor.locator('input[type="file"]').setInputFiles({
+    name: 'one-model.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify({ name: 'UnlistedModel', checkpoint: 'unlisted.gguf', recipe: 'llamacpp', type: 'chat' })),
+  });
+  await expect(editor).toBeVisible();
+  await expect(editor.locator('.custom-model-form__error')).toContainText('Import succeeded, but the model is not visible yet.');
 });

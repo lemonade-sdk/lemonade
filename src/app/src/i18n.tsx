@@ -1377,6 +1377,7 @@ const ZH_CN: Record<string, string> = {
   'No custom models to export.': '没有可导出的自定义模型。',
   'No custom collections to export.': '没有可导出的自定义集合。',
   'Could not export all requested model definitions.': '无法导出所有请求的模型定义。',
+  'Import succeeded, but the model is not visible yet. Refresh the model list.': '模型已导入，但暂未显示。请刷新模型列表。',
   'No compatible recipe/backend is available for this capability on the connected Lemonade server.': '已连接的 Lemonade 服务器上没有适用于此能力的兼容配方／后端。',
   'Please select a model': '请选择一个模型',
 };
