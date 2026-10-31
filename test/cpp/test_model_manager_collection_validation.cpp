@@ -175,6 +175,41 @@ static void test_inline_capability_matches_registration(ModelManager& manager) {
     check("label-less llamacpp still defaults to LLM (valid classifier)", !err.has_value());
 }
 
+// A zero-shot model and a fixed-label one share CLASSIFICATION, but each refuses
+// the other's /classify body, so only the `zero-shot` label tells them apart.
+static void test_zero_shot_label_selects_classifier_type(ModelManager& manager) {
+    auto onnx_def = [](const char* name, json labels) {
+        return json{{"model_name", name}, {"recipe", "onnxruntime"},
+                    {"checkpoint", std::string("example/") + name}, {"labels", labels}};
+    };
+    const json zero_shot_def = onnx_def("zs", {"classification", "zero-shot"});
+    const json fixed_def = onnx_def("fixed", {"classification"});
+
+    check("inline zero-shot model accepted as zero_shot",
+          !manager.validate_collection_request(
+              "user.RouterKit", router_with_classifier("zero_shot", zero_shot_def)).has_value());
+    check("inline zero-shot model rejected as classifier",
+          error_contains(manager.validate_collection_request(
+                             "user.RouterKit", router_with_classifier("classifier", zero_shot_def)),
+                         "use type 'zero_shot'"));
+    check("inline fixed-label model rejected as zero_shot",
+          error_contains(manager.validate_collection_request(
+                             "user.RouterKit", router_with_classifier("zero_shot", fixed_def)),
+                         "is not a zero-shot model"));
+
+    manager.register_user_model(
+        "user.ZsRegistered",
+        json{{"model_name", "user.ZsRegistered"}, {"recipe", "onnxruntime"},
+             {"checkpoint", "example/zs-registered"},
+             {"labels", {"classification", "zero-shot"}}});
+    // The inline definition omits the label: a registered model keeps its own.
+    json registered = router_with_classifier(
+        "classifier", onnx_def("user.ZsRegistered", {"classification"}));
+    check("registered zero-shot model rejected as classifier",
+          error_contains(manager.validate_collection_request("user.RouterKit", registered),
+                         "use type 'zero_shot'"));
+}
+
 // A chat-indicator label (reasoning/vision/…) must not promote a non-chat
 // backend to LLM. The backend's deployment capability wins, at both the model
 // type (which drives runtime routing) and collection.router validation.
@@ -488,6 +523,7 @@ int main() {
     test_accepts_valid_router_policy(manager);
     test_rejects_bad_routing(manager);
     test_inline_capability_matches_registration(manager);
+    test_zero_shot_label_selects_classifier_type(manager);
     test_backend_capability_over_chat_indicator(manager);
     test_filtered_classifier_component_does_not_drop_policy(manager);
     test_filtered_classifier_bare_name_resolves_through_alias(manager);
