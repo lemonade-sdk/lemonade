@@ -8,7 +8,9 @@
 
 using lemon::backends::llamacpp::build_systemone_classify_request;
 using lemon::backends::llamacpp::decision_model_load_refusal;
+using lemon::backends::llamacpp::decision_text_truncated;
 using lemon::backends::llamacpp::encoder_decision_ctx_size;
+using lemon::backends::llamacpp::laya_label_overflow;
 using lemon::backends::llamacpp::map_encoder_overflow_error;
 using lemon::backends::llamacpp::plan_single_batch;
 using lemon::backends::llamacpp::SingleBatchPlan;
@@ -76,34 +78,71 @@ int main() {
 
     const json response =
         answer_with({{"coding", 0.0002}, {"pii", 0.0096}, {"cooking", 0.9888}});
-    const json all = systemone_classify_response(response, labels, 0);
+    const json all = systemone_classify_response(response, labels, 0, false);
     expect(all["labels"].size() == 3, "every label is returned without top_k");
     expect(all["labels"]["cooking"] == 0.9888, "the probabilities are returned unchanged");
     expect(all.contains("truncated") && all["truncated"] == false,
-           "the answer reports that llama-server did not cut the input");
+           "the answer reports a text that was not cut");
+    expect(!systemone_classify_response(response, labels, 0, std::nullopt).contains("truncated"),
+           "the answer leaves truncated out when the cut is unknown");
 
-    const json top = systemone_classify_response(response, labels, 1);
+    const json top = systemone_classify_response(response, labels, 1, false);
     expect(top["labels"].size() == 1 && top["labels"].contains("cooking"),
            "top_k keeps the highest scores");
 
     expect(throws<std::runtime_error>([&] {
-               systemone_classify_response(answer_with({{"coding", 0.5}, {"pii", 0.5}}), labels, 0);
+               systemone_classify_response(answer_with({{"coding", 0.5}, {"pii", 0.5}}), labels,
+                                           0, false);
            }),
            "an answer without one of the labels is refused");
     expect(throws<std::runtime_error>([&] {
                systemone_classify_response(
-                   answer_with({{"coding", 0.2}, {"pii", 0.2}, {"other", 0.6}}), labels, 0);
+                   answer_with({{"coding", 0.2}, {"pii", 0.2}, {"other", 0.6}}), labels, 0,
+                   false);
            }),
            "an answer with a label that was not asked is refused");
     expect(throws<std::runtime_error>([&] {
                systemone_classify_response(
-                   answer_with({{"coding", 2.0}, {"pii", 0.0}, {"cooking", 0.0}}), labels, 0);
+                   answer_with({{"coding", 2.0}, {"pii", 0.0}, {"cooking", 0.0}}), labels, 0,
+                   false);
            }),
            "a probability outside [0, 1] is refused");
     expect(throws<std::runtime_error>([&] {
-               systemone_classify_response(json{{"answers", json::object()}}, labels, 0);
+               systemone_classify_response(json{{"answers", json::object()}}, labels, 0, false);
            }),
            "a response without the answer is refused");
+
+    const std::string long_text(40000, 'a');
+    expect(decision_text_truncated("laya", long_text) == false,
+           "laya refuses a long text instead of cutting it");
+    expect(decision_text_truncated("lev", "short") == false, "lev does not cut the text");
+    expect(decision_text_truncated("h2o-lightning", "short") == false,
+           "h2o-lightning keeps a text under its state limit");
+    expect(!decision_text_truncated("h2o-lightning", long_text).has_value(),
+           "h2o-lightning may cut a long text");
+    expect(!decision_text_truncated("lfm2-d1-omni", "short").has_value(),
+           "lfm2-d1-omni may cut any text");
+    expect(!decision_text_truncated("", "short").has_value(),
+           "an unknown decision type is not trusted");
+
+    const std::vector<std::string> three = {"coding", "pii", "cooking"};
+    expect(laya_label_overflow(three, {2, 2, 2}, 192).empty(), "short labels fit");
+    expect(laya_label_overflow({"a", "b"}, {48, 2}, 192).empty(),
+           "a 48-token label is read whole");
+    const std::string per_label = laya_label_overflow({"a", "b"}, {49, 2}, 192);
+    expect(per_label.find("49 tokens") != std::string::npos &&
+               per_label.find("48 tokens") != std::string::npos,
+           "a 49-token label is refused, naming both numbers");
+    const std::string head = laya_label_overflow({"a", "b", "c", "d"}, {45, 45, 45, 45}, 192);
+    expect(head.find("184 tokens") != std::string::npos && head.find("176") != std::string::npos,
+           "labels that overflow max_head_tokens are refused, naming both numbers");
+    expect(laya_label_overflow({"a", "b", "c", "d"}, {43, 43, 43, 43}, 192).empty(),
+           "labels that fill the head exactly are read whole");
+    expect(laya_label_overflow(std::vector<std::string>(45, "x"), std::vector<size_t>(45, 3), 192)
+               .empty(),
+           "an over-full head whose options are already at the 4-token floor is not cut");
+    expect(laya_label_overflow(three, {2, 2, 2}, 0).empty(),
+           "an unknown max_head_tokens skips the check");
 
     expect(encoder_decision_ctx_size(190000, 8192) == 8192,
            "a context above the trained window is capped to it");

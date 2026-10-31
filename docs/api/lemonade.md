@@ -120,7 +120,7 @@ Some upstream models declare only generic `LABEL_<n>` label names; their model c
 - `model` - The model that classified the input, including one chosen because it was the only one loaded.
 - `labels` - Each label's score, keyed by label name.
   - The label's score, in `[0, 1]`.
-- `truncated` - `true` when the model cut the input text to fit its token window before scoring, `false` when it scored the whole input. Labels are never cut, so the scores still cover every label sent. Absent when the backend does not report cuts (ort-server before 0.4.0), so absence means unknown.
+- `truncated` - `true` when the model cut the input text to fit its token window before scoring, `false` when it scored the whole input. Labels are never cut, so the scores still cover every label sent. Absent when the backend does not report cuts (ort-server before 0.4.0, or a llama.cpp decision model of type `lfm2-d1-omni`, or `h2o-lightning` with a long text), so absence means unknown.
 
 ### Errors
 

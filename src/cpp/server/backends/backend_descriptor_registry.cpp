@@ -38,6 +38,15 @@ const std::vector<std::string>& supported_modes_for(const std::string& recipe) {
     return d != nullptr ? d->supported_modes : kNone;
 }
 
+bool recipe_gates_mode_on(const std::string& recipe, const std::string& label) {
+    const BackendDescriptor* d = descriptor_for(recipe);
+    if (d == nullptr) return false;
+    for (const auto& requirement : d->mode_capability_requirements) {
+        if (requirement.second == label) return true;
+    }
+    return false;
+}
+
 const std::string& default_mode_for(const std::string& recipe) {
     static const std::string kChat = "chat";
     const std::vector<std::string>& modes = supported_modes_for(recipe);

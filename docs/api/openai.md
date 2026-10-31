@@ -1789,9 +1789,10 @@ so on.
 Two label sets describe a model that cannot exist, and are refused rather than
 repaired:
 
-- **A mode the recipe's backend does not serve.** `/classify` is served only by
-  `onnxruntime`, so `labels: ["classification"]` on a `llamacpp` model is an
-  error; register it as the chat model it is.
+- **A mode the recipe's backend does not serve.** `/classify` is served by
+  `onnxruntime`, and by `llamacpp` only for a model that also has the
+  `systemone` label. `labels: ["classification"]` on a `llamacpp` model without
+  `systemone` is an error; register it as the chat model it is.
 - **Two different modes.** `labels: ["chat", "embeddings"]` on a `llamacpp` model
   is an error even though llama.cpp serves both: the subprocess is launched for
   one mode, so the second would name an endpoint it was never configured to

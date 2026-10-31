@@ -434,7 +434,9 @@ public:
                 "ignored the per-request labels";
             log_classifier_failure(type(), id(), model_name_, kMismatch, failures_,
                                    last_failure_log_s_);
+            const std::optional<bool> cut = score.truncated;
             score = failed_score(kMismatch);
+            score.truncated = cut;
         }
         apply_on_truncation(score, on_truncation_, type(), id(),
                             model_name_, truncated_scores_, last_truncation_log_s_);
@@ -529,6 +531,10 @@ private:
         for (const auto& [key, value] : probabilities.items()) {
             if (type == "score") {
                 // Levels come back by index; the labels are their descriptions.
+                if (key.empty() || key.find_first_not_of("0123456789") != std::string::npos) {
+                    throw std::runtime_error("systemone answer key '" + key +
+                                             "' is not a level index");
+                }
                 const size_t level = static_cast<size_t>(std::stoul(key));
                 scores[labels().at(level)] = probability(value);
             } else {
@@ -881,6 +887,13 @@ SystemOneQuestion parse_systemone_question(const json& config, const std::string
     auto blank = [](const std::string& s) {
         return s.find_first_not_of(" \t\r\n") == std::string::npos;
     };
+    auto check_description = [&invalid](const std::string& option, const json& description) {
+        if (!description.is_null() && !description.is_string() && !description.is_object() &&
+            !description.is_array()) {
+            throw invalid("option '" + option +
+                          "' description must be text, an object, an array or null");
+        }
+    };
 
     if (!config.contains("question") || !config["question"].is_object()) {
         throw invalid("requires a question object");
@@ -892,8 +905,14 @@ SystemOneQuestion parse_systemone_question(const json& config, const std::string
             throw invalid("question has unknown key '" + key + "'");
         }
     }
-    if (!question.contains("instructions") || question["instructions"].is_null()) {
-        throw invalid("question requires instructions");
+    const json instructions = question.contains("instructions") ? question["instructions"] : json();
+    const bool text_instructions =
+        instructions.is_string() && !blank(instructions.get<std::string>());
+    const bool structured_instructions =
+        (instructions.is_object() || instructions.is_array()) && !instructions.empty();
+    if (!text_instructions && !structured_instructions) {
+        throw invalid("question instructions must be non-blank text, or a non-empty object or "
+                      "array");
     }
     const std::string type = question.value("type", "");
     const json criteria = question.contains("criteria") ? question["criteria"] : json();
@@ -912,6 +931,7 @@ SystemOneQuestion parse_systemone_question(const json& config, const std::string
             if (options.contains(option)) {
                 throw invalid("choice option '" + option + "' is listed twice");
             }
+            check_description(option, description);
             options[option] = nlohmann::ordered_json(description);
             labels.push_back(option);
         };
@@ -934,6 +954,9 @@ SystemOneQuestion parse_systemone_question(const json& config, const std::string
             throw invalid("choice question requires criteria: a non-empty object, or a "
                           "non-empty array that keeps the option order");
         }
+        if (labels.size() < 2) {
+            throw invalid("choice question needs at least 2 options; one option always scores 1.0");
+        }
         wire["criteria"] = std::move(options);
     } else if (type == "noul") {
         if (!criteria.is_null()) {
@@ -941,10 +964,10 @@ SystemOneQuestion parse_systemone_question(const json& config, const std::string
                 throw invalid("noul criteria must be an object");
             }
             for (const auto& [key, description] : criteria.items()) {
-                (void)description;
                 if (key != "true" && key != "false") {
                     throw invalid("noul criteria accepts only 'true' and 'false'");
                 }
+                check_description(key, description);
             }
         }
         labels = {"true", "false"};

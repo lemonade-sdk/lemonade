@@ -325,6 +325,8 @@ void LlamaCppServer::load(const std::string& model_name,
     bool supports_embeddings = (model_info.type == ModelType::EMBEDDING);
     bool supports_reranking = (model_info.type == ModelType::RERANKING);
     decision_model_ = has_label(model_info.labels, "systemone");
+    decision_type_ = model_info.gguf.decision_type;
+    decision_max_head_tokens_ = model_info.gguf.decision_max_head_tokens;
     if (decision_model_ && model_info.gguf.architecture.empty()) {
         LOG(WARNING, "LlamaCpp") << "Could not read the GGUF header of decision model '"
                                  << model_info.model_name << "', so if it is an encoder it "
@@ -696,6 +698,11 @@ json LlamaCppServer::classify(const json& request) {
     } catch (const std::invalid_argument& e) {
         return invalid_classify_request(e.what());
     }
+    // ort-server refuses a label it would cut; laya cuts it silently, so refuse it here.
+    const std::string refusal = laya_label_refusal(request["labels"]);
+    if (!refusal.empty()) {
+        return invalid_classify_request(refusal);
+    }
 
     const json response = forward_systemone(body);
     if (response.contains("error")) {
@@ -705,10 +712,43 @@ json LlamaCppServer::classify(const json& request) {
                           ? request["top_k"].get<int>()
                           : 0;
     try {
-        return llamacpp::systemone_classify_response(response, request["labels"], top_k);
+        return llamacpp::systemone_classify_response(
+            response, request["labels"], top_k,
+            llamacpp::decision_text_truncated(decision_type_, text.get<std::string>()));
     } catch (const std::exception& e) {
         return ErrorResponse::create(e.what(), ErrorType::BACKEND_ERROR);
     }
+}
+
+std::string LlamaCppServer::laya_label_refusal(const json& labels) {
+    if (decision_type_ != "laya" || decision_max_head_tokens_ <= 0) {
+        return "";
+    }
+    std::vector<std::string> texts;
+    std::vector<size_t> byte_bounds;
+    for (const auto& label : labels) {
+        texts.push_back(label.get<std::string>());
+        byte_bounds.push_back(1 + texts.back().size());
+    }
+    // A byte-level BPE never has more tokens than bytes, so short labels need
+    // no /tokenize round trip.
+    if (llamacpp::laya_label_overflow(texts, byte_bounds, decision_max_head_tokens_).empty()) {
+        return "";
+    }
+    std::vector<size_t> tokens;
+    try {
+        for (const auto& text : texts) {
+            const json counted = tokenize(json{{"content", " " + text}});
+            if (!counted.contains("tokens") || !counted["tokens"].is_array()) {
+                return "";
+            }
+            tokens.push_back(counted["tokens"].size());
+        }
+    } catch (const std::exception& e) {
+        LOG(WARNING, "LlamaCpp") << "Could not count label tokens: " << e.what() << std::endl;
+        return "";
+    }
+    return llamacpp::laya_label_overflow(texts, tokens, decision_max_head_tokens_);
 }
 
 nlohmann::ordered_json LlamaCppServer::systemone(const nlohmann::ordered_json& request) {

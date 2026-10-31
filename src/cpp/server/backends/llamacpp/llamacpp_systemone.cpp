@@ -19,6 +19,13 @@ constexpr const char* QUESTION_ID = "label";
 // Decision models need a question; zero-shot labels come without one.
 constexpr const char* CLASSIFY_INSTRUCTIONS = "Which category does this text belong to?";
 
+// llama.cpp server-decision.cpp: h2o-lightning keeps this many tokens of a
+// state; laya keeps this many tokens of each option, and leaves this many
+// tokens of its head to the question.
+constexpr size_t H2O_MAX_STATE_TOKENS = 32000;
+constexpr size_t LAYA_MAX_OPTION_TOKENS = 48;
+constexpr size_t LAYA_QUESTION_RESERVE = 16;
+
 struct BatchFlag {
     bool present = false;
     std::optional<int> value;
@@ -84,9 +91,52 @@ nlohmann::ordered_json build_systemone_classify_request(const std::string& text,
     };
 }
 
+std::optional<bool> decision_text_truncated(const std::string& decision_type,
+                                            const std::string& text) {
+    if (decision_type == "h2o-lightning") {
+        // A byte-level BPE never has more tokens than bytes.
+        if (text.size() <= H2O_MAX_STATE_TOKENS) return false;
+        return std::nullopt;
+    }
+    if (decision_type.empty() || decision_type == "lfm2-d1-omni") return std::nullopt;
+    return false;
+}
+
+std::string laya_label_overflow(const std::vector<std::string>& labels,
+                                const std::vector<size_t>& label_tokens,
+                                int64_t max_head_tokens) {
+    if (labels.empty() || labels.size() != label_tokens.size() || max_head_tokens <= 0) {
+        return "";
+    }
+    const size_t max_head = static_cast<size_t>(max_head_tokens);
+    // Each option is its marker token plus the label's tokens.
+    size_t total = 0;
+    for (size_t i = 0; i < labels.size(); ++i) {
+        if (label_tokens[i] > LAYA_MAX_OPTION_TOKENS) {
+            return "label '" + labels[i] + "' is " + std::to_string(label_tokens[i]) +
+                   " tokens long; this decision model reads at most " +
+                   std::to_string(LAYA_MAX_OPTION_TOKENS) + " tokens of each label";
+        }
+        total += 1 + label_tokens[i];
+    }
+    if (total + LAYA_QUESTION_RESERVE <= max_head) return "";
+    const size_t room = max_head - std::min(max_head, LAYA_QUESTION_RESERVE);
+    const size_t per_option = std::max<size_t>(4, room / labels.size());
+    for (size_t i = 0; i < labels.size(); ++i) {
+        if (1 + label_tokens[i] > per_option) {
+            return "the labels take " + std::to_string(total) +
+                   " tokens with one marker token each; this decision model reads at most " +
+                   std::to_string(room) + " (max_head_tokens " + std::to_string(max_head) +
+                   " minus " + std::to_string(LAYA_QUESTION_RESERVE) + ")";
+        }
+    }
+    return "";
+}
+
 nlohmann::json systemone_classify_response(const nlohmann::json& response,
                                            const nlohmann::json& labels,
-                                           int top_k) {
+                                           int top_k,
+                                           std::optional<bool> truncated) {
     const auto unexpected = std::runtime_error(
         "decision model response did not score the requested labels");
     if (!response.is_object() || !response.contains("answers") ||
@@ -125,9 +175,9 @@ nlohmann::json systemone_classify_response(const nlohmann::json& response,
 
     nlohmann::json scores = nlohmann::json::object();
     for (const auto& [label, probability] : ranked) scores[label] = probability;
-    // llama-server refuses an input longer than its context instead of cutting
-    // it, so the answer always covers the whole input.
-    return nlohmann::json{{"labels", std::move(scores)}, {"truncated", false}};
+    nlohmann::json out = {{"labels", std::move(scores)}};
+    if (truncated.has_value()) out["truncated"] = *truncated;
+    return out;
 }
 
 int encoder_decision_ctx_size(int requested, int64_t trained_window) {

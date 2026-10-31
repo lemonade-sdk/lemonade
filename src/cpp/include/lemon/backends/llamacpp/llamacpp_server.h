@@ -64,8 +64,12 @@ private:
 
     json unsupported_decision_request(const std::string& operation) const;
     nlohmann::ordered_json forward_systemone(const nlohmann::ordered_json& body);
+    // Why a `laya` model would cut these classify labels, or "".
+    std::string laya_label_refusal(const json& labels);
 
     bool decision_model_ = false;
+    std::string decision_type_;
+    int64_t decision_max_head_tokens_ = 0;
     int encoder_max_input_tokens_ = 0;
 };
 

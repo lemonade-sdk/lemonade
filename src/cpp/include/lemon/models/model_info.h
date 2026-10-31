@@ -53,6 +53,7 @@ struct GgufMetadata {
     int64_t full_attention_interval = 0; // every Nth layer does full attention (Qwen SSM)
     bool causal_attention = true;    // "<arch>.attention.causal"; false for encoders
     std::string decision_type;       // "<arch>.decision.type"; set only on SystemOne decision models
+    int64_t decision_max_head_tokens = 0; // "<arch>.decision.max_head_tokens": question + options (laya)
     GgufCapabilities caps;
 
     // ── Raw per-layer arrays (stored as read from GGUF) ───────────────

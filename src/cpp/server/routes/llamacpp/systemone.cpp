@@ -1,3 +1,4 @@
+#include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/model_manager.h"
 #include "lemon/model_types.h"
 #include "lemon/router.h"
@@ -15,7 +16,9 @@ using classification::kModel;
 const RouteError kNoSoleClassifier{
     400, "", "`model` is omitted and not exactly one classification model is loaded"};
 const RouteError kNotDecisionModel{
-    400, "", "`model` lacks the `classification` or `systemone` label, checked before it loads"};
+    400, "",
+    "`model` lacks the `classification` or `systemone` label, or its backend does not answer "
+    "SystemOne questions; checked before it loads"};
 const RouteError kQuestionsRejected{
     400, "",
     "`llama-server` rejects a question, such as a `score` question with one level; the backend's "
@@ -25,9 +28,12 @@ const RouteError kContextExceeded{
 const RouteError kNoImageInput{
     501, "", "`images` is sent to a model that reads no images, or that loaded without `mmproj`"};
 
-const RouteArg kState{"state", ArgIn::JsonBody, {{"type", json::array({"string", "object", "array"})}},
+const RouteArg kState{"state", ArgIn::JsonBody,
+                      {{"type", json::array({"string", "object", "array", "null"})}},
                       true, Support::Available,
-                      "The content to judge. A value that is not a string reaches the model as JSON text."};
+                      "The content to judge. A value that is not a string reaches the model as JSON text. "
+                      "`null` asks about the images only, on the decision types that allow it (for "
+                      "example `vllm-d3`); the others refuse it."};
 const RouteArg kQuestions{"questions", ArgIn::JsonBody, {{"type", "object"}}, true, Support::Available,
                           "Maps each question id to a question, which the model answers independently of the "
                           "others. A question has a `type` (`choice`, `score` or `noul`), `instructions`, and "
@@ -160,10 +166,12 @@ protected:
         // the user's chat model, only to fail.
         if (ctx_.model_manager->model_exists(req.model)) {
             const ModelInfo info = ctx_.model_manager->get_model_info(req.model);
-            if (!has_label(info.labels, "systemone") || info.type != ModelType::CLASSIFICATION) {
+            if (!has_label(info.labels, "systemone") || info.type != ModelType::CLASSIFICATION ||
+                !backends::recipe_gates_mode_on(info.recipe, "systemone")) {
                 write_openai_error(res, kNotDecisionModel,
                     "model '" + req.model + "' is not a SystemOne decision model (it needs "
-                    "the 'classification' and 'systemone' labels)");
+                    "the 'classification' and 'systemone' labels on a backend that answers "
+                    "/v1/systemone, such as llamacpp)");
                 return false;
             }
         }

@@ -28,6 +28,9 @@ constexpr int64_t AUTO_CTX_FALLBACK = 4096;
 // No modern model supports less than this, and it prevents runaway allocation.
 constexpr int64_t AUTO_CTX_UNKNOWN_MAX = 32768;
 
+// See encoder_decision_ctx_size; vllm-d3 trains at 262144, Laya and Julia-1 at 8192.
+constexpr int64_t ENCODER_DECISION_AUTO_CTX_MAX = 8192;
+
 /// Estimate KV cache bytes-per-token from model size when GGUF metadata is unavailable.
 /// Assumes F16 KV cache, 16 KV heads, 128 head-dim across all model sizes.
 /// 16 KV heads is a conservative upper bound (most models use 2–8 with GQA).
@@ -338,7 +341,7 @@ inline int64_t compute_auto_context_size(const ModelInfo& model_info,
 }
 
 /// An encoder SystemOne decision model has no KV cache to grow, so its context
-/// is its trained window. Causal decision models (openjev, lev, kev) keep a KV
+/// follows its trained window, not free memory. Causal decision models (openjev, lev, kev) keep a KV
 /// cache and declare windows up to 262144 tokens, so they size their context
 /// like any LLM.
 inline bool is_encoder_decision_model(const ModelInfo& model_info) {
@@ -360,7 +363,7 @@ inline int64_t resolve_auto_ctx_size(const RecipeOptions& effective_options,
     }
 
     if (is_encoder_decision_model(model_info)) {
-        return model_info.max_context_window;
+        return std::min<int64_t>(model_info.max_context_window, ENCODER_DECISION_AUTO_CTX_MAX);
     }
 
     bool is_embedding = (model_info.type == ModelType::EMBEDDING);

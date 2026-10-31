@@ -8,19 +8,14 @@ namespace lemon {
 namespace models {
 
 // `systemone` is a capability label, legal on any recipe, so the label alone
-// does not make an ONNX classifier answer /v1/systemone. The recipe must gate a
-// mode on it, as llamacpp gates `classification`.
+// does not make an ONNX classifier answer /v1/systemone.
 RoutingModelFacts routing_model_facts(ModelType type, const std::vector<std::string>& labels,
                                       const std::string& recipe) {
     RoutingModelFacts facts;
     facts.type = type;
-    if (type == ModelType::CLASSIFICATION && has_label(labels, "systemone")) {
-        if (const BackendDescriptor* descriptor = backends::descriptor_for(recipe)) {
-            for (const auto& requirement : descriptor->mode_capability_requirements) {
-                if (requirement.second == "systemone") facts.serves_systemone = true;
-            }
-        }
-    }
+    facts.serves_systemone = type == ModelType::CLASSIFICATION &&
+                             has_label(labels, "systemone") &&
+                             backends::recipe_gates_mode_on(recipe, "systemone");
     // A decision model turns per-request labels into one choice question.
     facts.serves_zero_shot = facts.serves_systemone ||
                              (type == ModelType::CLASSIFICATION && has_label(labels, "zero-shot"));

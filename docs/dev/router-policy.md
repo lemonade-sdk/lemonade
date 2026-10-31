@@ -223,8 +223,10 @@ it. `on_truncation` decides what the cut means:
 `fail` also needs a backend that reports its cuts. ort-server does from 0.4.0.
 An older ort-server cuts without saying so, and lemond warns when it loads one.
 Against it, every evaluation under `fail` counts as a failure, so `on_error`
-applies. `score` is unaffected. A llama.cpp decision model never cuts: it
-refuses an input that is too long, so `on_error` applies.
+applies. `score` is unaffected. Most llama.cpp decision models, Laya and
+Julia-1 among them, refuse a text that is too long, so they report `false`.
+`lfm2-d1-omni`, and `h2o-lightning` for a text over 32,000 bytes, can cut it
+without saying so, so they report nothing and `fail` fails closed.
 
 `LFM2.5-Encoder-350M-Prompt-Router-ONNX` has a default 2,048-token window, so a text
 longer than about 8,000 characters is cut. To raise it, pass
@@ -338,7 +340,8 @@ A **`classifier`** or **`zero_shot`** entry also carries **`truncated`**:
 `true` when the backend cut the input text to fit its token window before
 scoring, `false` when it scored the whole input. A `zero_shot` model never cuts
 its labels, a label pooled from half its tokens would score something the model
-only partly read. The key is absent when the backend does not report cuts
+only partly read: ort-server and a `laya` decision model refuse a label too long
+to read whole. The key is absent when the backend does not report cuts
 (ort-server before 0.4.0, or a chat LLM), so its absence means "unknown".
 
 ## Cloud candidates

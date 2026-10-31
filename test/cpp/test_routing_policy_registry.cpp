@@ -303,6 +303,11 @@ static void test_systemone_classifier_rejects_mismatched_answer() {
                       {"criteria", json::array({"low", "high"})}}}});
     check("systemone score fails on a level index out of range",
           !evaluate_systemone(level, {{"probabilities", {{"0", 0.5}, {"5", 0.5}}}}).ok);
+    for (const char* key : {"0extra", " 0", "+0"}) {
+        const std::string name = std::string("systemone score fails on the level key '") + key + "'";
+        check(name.c_str(),
+              !evaluate_systemone(level, {{"probabilities", {{key, 0.5}, {"1", 0.5}}}}).ok);
+    }
 
     lemon::ClassifierServices no_services;
     auto route = make_route_context();
@@ -357,6 +362,32 @@ static void test_make_systemone_classifier_rejections() {
                 {"criteria", json::array({json{{"a", nullptr}, {"b", nullptr}}})}}));
     check("systemone rejects a choice array entry that is not an option",
           make({{"type", "choice"}, {"instructions", "?"}, {"criteria", json::array({"a", 3})}}));
+    check("systemone rejects a one-option choice",
+          make({{"type", "choice"}, {"instructions", "?"}, {"criteria", {{"a", nullptr}}}}));
+    for (const json& bad : {json(""), json("   "), json(42), json(true), json::object(),
+                            json::array()}) {
+        const std::string name = "systemone rejects instructions " + bad.dump();
+        check(name.c_str(), make({{"type", "noul"}, {"instructions", bad}}));
+    }
+    check("systemone rejects a numeric choice description",
+          make({{"type", "choice"}, {"instructions", "?"},
+                {"criteria", {{"a", 3}, {"b", nullptr}}}}));
+    check("systemone rejects a boolean noul description",
+          make({{"type", "noul"}, {"instructions", "?"}, {"criteria", {{"true", false}}}}));
+
+    auto accepts = [](json question) {
+        return !throws_invalid_arg([question] {
+            lemon::make_classifier(json{{"id", "x"}, {"type", "systemone"}, {"model", "m"},
+                                        {"question", question}});
+        });
+    };
+    check("systemone accepts object instructions",
+          accepts({{"type", "noul"}, {"instructions", {{"task", "Is it urgent?"}}}}));
+    check("systemone accepts array instructions",
+          accepts({{"type", "noul"}, {"instructions", json::array({"Is it urgent?"})}}));
+    check("systemone accepts null and object choice descriptions",
+          accepts({{"type", "choice"}, {"instructions", "?"},
+                   {"criteria", {{"a", nullptr}, {"b", {{"means", "b"}}}}}}));
 
     for (const char* type : {"classifier", "zero_shot", "llm"}) {
         json config = {{"id", "x"}, {"type", type}, {"model", "m"},
@@ -393,6 +424,15 @@ static void test_zero_shot_classifier_reports_truncation() {
           evaluate_with(false).truncated == false);
     check("zero_shot reports nothing when the backend does not say",
           !evaluate_with(std::nullopt).truncated.has_value());
+
+    lemon::testing::FakeClassifierServices fake;
+    fake.set_zero_shot_scores("m", {{"LABEL_0", 0.9}}, true);
+    auto services = fake.make();
+    EvalContext ctx = make_eval_context(route, services);
+    const auto mismatch = classifier->evaluate(lemon::ClassifierContext{ctx.request, ctx.services});
+    check("zero_shot keeps the cut flag when the label set does not match",
+          !mismatch.ok && mismatch.truncated == true &&
+              mismatch.error.find("different label set") != std::string::npos);
 }
 
 // on_truncation=fail is the only way a rule reaches a cut input, because a score

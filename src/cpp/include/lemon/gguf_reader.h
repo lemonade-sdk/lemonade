@@ -207,6 +207,15 @@ inline bool read_gguf_metadata(GgufMetadata& out, const std::string& path) {
 
     int64_t pending_context_length = 0;
 
+    // SystemOne keys can come before general.architecture, so each is matched by
+    // suffix and kept only if its prefix turns out to be the architecture.
+    std::string causal_arch;
+    bool causal = true;
+    std::string decision_type_arch;
+    std::string decision_type;
+    std::string max_head_arch;
+    int64_t max_head_tokens = 0;
+
     for (uint64_t i = 0; i < kv_count; ++i) {
         std::string key;
         uint32_t type = 0;
@@ -218,6 +227,43 @@ inline bool read_gguf_metadata(GgufMetadata& out, const std::string& path) {
                 out.context_length = pending_context_length;
             }
             continue;
+        }
+
+        auto arch_before = [&key](const std::string& suffix) {
+            if (key.size() <= suffix.size() ||
+                key.compare(key.size() - suffix.size(), suffix.size(), suffix) != 0) {
+                return std::string();
+            }
+            return key.substr(0, key.size() - suffix.size());
+        };
+        if (type == 7) {
+            std::string arch = arch_before(".attention.causal");
+            if (!arch.empty()) {
+                uint8_t value = 1;
+                if (!read_gguf_le(in, value)) return false;
+                causal_arch = std::move(arch);
+                causal = value != 0;
+                continue;
+            }
+        }
+        if (type == 8) {
+            std::string arch = arch_before(".decision.type");
+            if (!arch.empty()) {
+                if (!read_gguf_string(in, decision_type)) return false;
+                decision_type_arch = std::move(arch);
+                continue;
+            }
+        }
+        {
+            std::string arch = arch_before(".decision.max_head_tokens");
+            if (!arch.empty()) {
+                if (read_gguf_integer_value(in, type, max_head_tokens)) {
+                    max_head_arch = std::move(arch);
+                } else if (!in) {
+                    return false;
+                }
+                continue;
+            }
         }
 
         // Context length
@@ -289,16 +335,6 @@ inline bool read_gguf_metadata(GgufMetadata& out, const std::string& path) {
                 int64_t value = 0;
                 if (read_gguf_integer_value(in, type, value) && value > 0)
                     out.full_attention_interval = value;
-                continue;
-            }
-            if (key == out.architecture + ".attention.causal" && type == 7) {
-                uint8_t value = 1;
-                if (!read_gguf_le(in, value)) return false;
-                out.causal_attention = (value != 0);
-                continue;
-            }
-            if (key == out.architecture + ".decision.type" && type == 8) {
-                if (!read_gguf_string(in, out.decision_type)) return false;
                 continue;
             }
         }
@@ -382,6 +418,13 @@ inline bool read_gguf_metadata(GgufMetadata& out, const std::string& path) {
 
     if (out.context_length == 0 && pending_context_length > 0) {
         out.context_length = pending_context_length;
+    }
+    if (!out.architecture.empty()) {
+        if (causal_arch == out.architecture) out.causal_attention = causal;
+        if (decision_type_arch == out.architecture) out.decision_type = decision_type;
+        if (max_head_arch == out.architecture && max_head_tokens > 0) {
+            out.decision_max_head_tokens = max_head_tokens;
+        }
     }
 
     // ── Derive scalar convenience fields from raw arrays ──────────────

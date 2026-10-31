@@ -116,6 +116,33 @@ class SystemOneTests(ServerTestBase):
             "Classify on a chat model",
         )
 
+    def test_005_systemone_label_on_onnx_error(self):
+        """A `systemone` label on a backend that cannot answer is refused before a load."""
+        name = "user.OnnxLabelledSystemOne"
+        response = requests.post(
+            f"{self.base_url}/models/register",
+            json={
+                "model_name": name,
+                "recipe": "onnxruntime",
+                "checkpoint": "example/not-a-decision-model-ONNX",
+                "labels": ["classification", "systemone"],
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text[:1000])
+        try:
+            self._assert_rejected(
+                "systemone",
+                self._payload(model=name),
+                "ONNX model labelled systemone",
+            )
+        finally:
+            requests.post(
+                f"{self.base_url}/delete",
+                json={"model_name": name},
+                timeout=TIMEOUT_DEFAULT,
+            )
+
     def test_500_typed_answers(self):
         """One request answers a choice, a noul and a score question."""
         self._ensure_model_pulled()
@@ -186,6 +213,7 @@ class SystemOneTests(ServerTestBase):
         self.assertEqual(set(scores), set(labels))
         self.assertAlmostEqual(sum(scores.values()), 1.0, places=3)
         self.assertEqual(max(scores, key=scores.get), "cooking")
+        self.assertIs(response.json().get("truncated"), False)
         print(f"[OK] classify with labels: {scores}")
 
     def test_503_classify_without_labels_error(self):
@@ -289,6 +317,30 @@ class SystemOneTests(ServerTestBase):
             response.json()["error"].get("code"), "context_length_exceeded"
         )
         print(f"[OK] too-long state: {response.json()['error']['message']}")
+
+    def test_508_null_state_reaches_model(self):
+        """`state: null` passes lemond; a laya model then refuses it itself."""
+        self._ensure_model_pulled()
+        response = self._post("systemone", self._payload(state=None))
+        self.assertEqual(response.status_code, 400, response.text[:1000])
+        message = response.json()["error"]["message"]
+        self.assertNotIn("Missing required argument", message)
+        self.assertIn('"state" must be provided', message)
+        print(f"[OK] null state reached the model: {message}")
+
+    def test_509_classify_label_cut_error(self):
+        """/v1/classify refuses a label that a laya model would cut."""
+        self._ensure_model_pulled()
+        long_label = "a request about " + " ".join(["refund"] * 80)
+        self._assert_rejected(
+            "classify",
+            {
+                "model": get_test_model("systemone"),
+                "input": "I was charged twice.",
+                "labels": [long_label, "other"],
+            },
+            "Classify with a label longer than the model reads",
+        )
 
     def test_506_option_order_reaches_model(self):
         """The options reach the model in the client's order, which it scores by."""

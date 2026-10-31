@@ -119,7 +119,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
 | `model` | No | The classification model. Optional when exactly one classification model is loaded; that model is used. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `state` | Yes | The content to judge. A value that is not a string reaches the model as JSON text. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `state` | Yes | The content to judge. A value that is not a string reaches the model as JSON text. `null` asks about the images only, on the decision types that allow it (for example `vllm-d3`); the others refuse it. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `questions` | Yes | Maps each question id to a question, which the model answers independently of the others. A question has a `type` (`choice`, `score` or `noul`), `instructions`, and `criteria`: for `choice`, an object that maps each option to a description or `null`; for `score`, an array of 2 to 10 levels, lowest first; for `noul`, optional `true` and `false` descriptions. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `images` | No | Data URLs of images to judge with the state. Only decision models of the `openjev` type that load with an `mmproj` file read them. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `ctx_size` | No | Lemonade extension: context size to load the model with, when this request loads it. Ignored when the model is already loaded. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
@@ -224,7 +224,7 @@ Answers depend on the model, on the wording of each question, and on the order o
 | `400` | `missing_argument` | A required argument is missing |
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | `model` is omitted and not exactly one classification model is loaded |
-| `400` |  | `model` lacks the `classification` or `systemone` label, checked before it loads |
+| `400` |  | `model` lacks the `classification` or `systemone` label, or its backend does not answer SystemOne questions; checked before it loads |
 | `400` |  | `llama-server` rejects a question, such as a `score` question with one level; the backend's status replaces this one |
 | `400` | `context_length_exceeded` | `state` and a question do not fit in the model's context |
 | `404` |  | The model is unloaded while the request waits for it |

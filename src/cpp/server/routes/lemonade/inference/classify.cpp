@@ -94,7 +94,7 @@ public:
                 },
                 "truncated": {
                     "type": "boolean",
-                    "description": "`true` when the model cut the input text to fit its token window before scoring, `false` when it scored the whole input. Labels are never cut, so the scores still cover every label sent. Absent when the backend does not report cuts (ort-server before 0.4.0), so absence means unknown."
+                    "description": "`true` when the model cut the input text to fit its token window before scoring, `false` when it scored the whole input. Labels are never cut, so the scores still cover every label sent. Absent when the backend does not report cuts (ort-server before 0.4.0, or a llama.cpp decision model of type `lfm2-d1-omni`, or `h2o-lightning` with a long text), so absence means unknown."
                 }
             }
         })");
