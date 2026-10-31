@@ -92,6 +92,7 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 
 | Option | CLI flag | Type | Default | Description |
 |--------|----------|------|---------|-------------|
+| `acestep_device` | `--acestep-device` | DEVICES | "" | GPU to use (ROCm0, ROCm1, CUDA0, CUDA1); auto selects automatically |
 | `acestep_backend` | `--acestep` | BACKEND | "" | ACE-Step backend to use |
 
 #### `ds4` — DwarfStar4
@@ -140,6 +141,7 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 
 | Option | CLI flag | Type | Default | Description |
 |--------|----------|------|---------|-------------|
+| `openmoss_device` | `--openmoss-device` | DEVICES | "" | GPU to use (CUDA0, CUDA1); auto selects automatically |
 | `openmoss_backend` | `--openmoss` | BACKEND | "" | OpenMOSS TTS backend to use |
 
 #### `sd-cpp` — StableDiffusion.cpp
@@ -147,6 +149,7 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 | Option | CLI flag | Type | Default | Description |
 |--------|----------|------|---------|-------------|
 | `sd-cpp_backend` | `--sdcpp` | BACKEND | "" | SD.cpp backend to use |
+| `sd-cpp_device` | `--sdcpp-device` | DEVICES | "" | GPU to use (ROCm0, CUDA0, CUDA1, Vulkan0, ...); empty selects automatically |
 | `sdcpp_args` | `--sdcpp-args` | ARGS | "" | Custom arguments to pass to sd-server (must not conflict with managed args) |
 | `steps` | — | SIZE | 20 | Number of diffusion steps |
 | `cfg_scale` | — | SIZE | 7.0 | Classifier-free guidance scale |
@@ -160,6 +163,7 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 | Option | CLI flag | Type | Default | Description |
 |--------|----------|------|---------|-------------|
 | `thenoise_backend` | `--thenoise` | BACKEND | "" | TheNoise backend to use |
+| `thenoise_device` | `--thenoise-device` | DEVICES | "" | GPU to use (ROCm0, CUDA0, CUDA1, ...); empty selects automatically |
 | `steps` | — | SIZE | 20 | Number of denoising steps |
 | `cfg_scale` | — | SIZE | 7.0 | CFG scale (<= 1.0 disables CFG) |
 | `width` | — | SIZE | 512 | Output image width |
@@ -175,12 +179,14 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 
 | Option | CLI flag | Type | Default | Description |
 |--------|----------|------|---------|-------------|
+| `thinksound_device` | `--thinksound-device` | DEVICES | "" | GPU to use (ROCm0, ROCm1, CUDA0, CUDA1); auto selects automatically |
 | `thinksound_backend` | `--thinksound` | BACKEND | "" | ThinkSound backend to use |
 
 #### `trellis` — TRELLIS.2
 
 | Option | CLI flag | Type | Default | Description |
 |--------|----------|------|---------|-------------|
+| `trellis_device` | `--trellis-device` | DEVICES | "" | GPU to use (ROCm0, ROCm1, CUDA0, CUDA1); auto selects automatically |
 | `trellis_backend` | `--trellis` | BACKEND | "" | Trellis backend to use |
 | `trellis_args` | `--trellis-args` | ARGS | "" | Custom arguments to pass to trellis-server |
 

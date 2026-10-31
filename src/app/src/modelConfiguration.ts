@@ -12,6 +12,8 @@ export interface RecipeOptions {
   llamacpp_backend?: string;
   llamacpp_device?: string;
   llamacpp_args?: string;
+  thenoise_backend?: string;
+  thenoise_device?: string;
   steps?: number;
   cfg_scale?: number;
   width?: number;
@@ -19,15 +21,20 @@ export interface RecipeOptions {
   sampling_method?: string;
   flow_shift?: number;
   'sd-cpp_backend'?: string;
+  'sd-cpp_device'?: string;
   sdcpp_args?: string;
   whispercpp_backend?: string;
   whispercpp_args?: string;
   moonshine_backend?: string;
   moonshine_args?: string;
   acestep_backend?: string;
+  acestep_device?: string;
   thinksound_backend?: string;
+  thinksound_device?: string;
   openmoss_backend?: string;
+  openmoss_device?: string;
   trellis_backend?: string;
+  trellis_device?: string;
   vllm_backend?: string;
   vllm_args?: string;
   flm_args?: string;
@@ -548,11 +555,22 @@ export function modelDefaultRecipeOptions(model: ModelInfo | null | undefined, f
     out['sd-cpp_backend'] = readStringFromModelOrRecipe(model, [
       ['recipe_options', 'sd-cpp_backend'], ['options', 'sd-cpp_backend'], ['sd-cpp_backend'],
     ]) ?? backend;
+    out['sd-cpp_device'] = readStringFromModelOrRecipe(model, [
+      ['recipe_options', 'sd-cpp_device'], ['options', 'sd-cpp_device'], ['sd-cpp_device'],
+    ]);
     out.sampling_method = readStringFromModelOrRecipe(model, [['recipe_options', 'sampling_method'], ['sample_params', 'sampling_method'], ['sampling_method']]);
     out.flow_shift = readNumberFromModelOrRecipe(model, [['recipe_options', 'flow_shift'], ['sample_params', 'flow_shift'], ['flow_shift']]);
     out.sdcpp_args = readStringFromModelOrRecipe(model, [['recipe_options', 'sdcpp_args'], ['options', 'sdcpp_args'], ['sdcpp_args'], ['args']]);
   }
 
+  if (recipe === 'thenoise') {
+    out.thenoise_backend = readStringFromModelOrRecipe(model, [
+      ['recipe_options', 'thenoise_backend'], ['options', 'thenoise_backend'], ['thenoise_backend'],
+    ]) ?? backend;
+    out.thenoise_device = readStringFromModelOrRecipe(model, [
+      ['recipe_options', 'thenoise_device'], ['options', 'thenoise_device'], ['thenoise_device'],
+    ]);
+  }
   if (recipe === 'moonshine') {
     out.moonshine_backend = readStringFromModelOrRecipe(model, [
       ['recipe_options', 'moonshine_backend'], ['options', 'moonshine_backend'], ['moonshine_backend'],
@@ -572,15 +590,19 @@ export function modelDefaultRecipeOptions(model: ModelInfo | null | undefined, f
 
   if (recipe === 'acestep' || recipe === 'thinksound') {
     if (recipe === 'acestep') out.acestep_backend = readStringFromModelOrRecipe(model, [['recipe_options', 'acestep_backend'], ['options', 'acestep_backend'], ['acestep_backend']]) ?? backend;
+    if (recipe === 'acestep') out.acestep_device = readStringFromModelOrRecipe(model, [['recipe_options', 'acestep_device'], ['options', 'acestep_device'], ['acestep_device']]);
     if (recipe === 'thinksound') out.thinksound_backend = readStringFromModelOrRecipe(model, [['recipe_options', 'thinksound_backend'], ['options', 'thinksound_backend'], ['thinksound_backend']]) ?? backend;
+    if (recipe === 'thinksound') out.thinksound_device = readStringFromModelOrRecipe(model, [['recipe_options', 'thinksound_device'], ['options', 'thinksound_device'], ['thinksound_device']]);
   }
 
   if (recipe === 'trellis') {
     out.trellis_backend = readStringFromModelOrRecipe(model, [['recipe_options', 'trellis_backend'], ['options', 'trellis_backend'], ['trellis_backend']]) ?? backend;
+    out.trellis_device = readStringFromModelOrRecipe(model, [['recipe_options', 'trellis_device'], ['options', 'trellis_device'], ['trellis_device']]);
   }
 
   if (capability === 'tts' || recipe === 'kokoro' || recipe === 'openmoss') {
     if (recipe === 'openmoss') out.openmoss_backend = readStringFromModelOrRecipe(model, [['recipe_options', 'openmoss_backend'], ['options', 'openmoss_backend'], ['openmoss_backend']]) ?? backend;
+    if (recipe === 'openmoss') out.openmoss_device = readStringFromModelOrRecipe(model, [['recipe_options', 'openmoss_device'], ['options', 'openmoss_device'], ['openmoss_device']]);
     out.voice = readStringFromModelOrRecipe(model, [['recipe_options', 'voice'], ['sample_params', 'voice'], ['default_voice'], ['voice']]);
     out.speed = readNumberFromModelOrRecipe(model, [['recipe_options', 'speed'], ['sample_params', 'speed'], ['default_speed'], ['speed']]);
   }
@@ -684,16 +706,16 @@ export function recipeOptionsForCapability(
   if (!options || Object.keys(options).length === 0) return {};
   switch (capability) {
     case 'image':
-      return pickRecipeOptions(options, ['sd-cpp_backend', 'steps', 'cfg_scale', 'width', 'height', 'sampling_method', 'flow_shift', 'sdcpp_args', 'merge_args']);
+      return pickRecipeOptions(options, ['sd-cpp_backend', 'sd-cpp_device', 'thenoise_backend', 'thenoise_device', 'steps', 'cfg_scale', 'width', 'height', 'sampling_method', 'flow_shift', 'sdcpp_args', 'merge_args']);
     case 'audio':
     case 'transcription':
       return pickRecipeOptions(options, ['whispercpp_backend', 'whispercpp_args', 'moonshine_backend', 'moonshine_args', 'merge_args']);
     case 'audio-generation':
-      return pickRecipeOptions(options, ['acestep_backend', 'thinksound_backend', 'merge_args']);
+      return pickRecipeOptions(options, ['acestep_backend', 'acestep_device', 'thinksound_backend', 'thinksound_device', 'merge_args']);
     case 'tts':
-      return pickRecipeOptions(options, ['openmoss_backend', 'voice', 'speed', 'merge_args']);
+      return pickRecipeOptions(options, ['openmoss_backend', 'openmoss_device', 'voice', 'speed', 'merge_args']);
     case 'model3d':
-      return pickRecipeOptions(options, ['trellis_backend', 'merge_args']);
+      return pickRecipeOptions(options, ['trellis_backend', 'trellis_device', 'merge_args']);
     case 'embedding':
     case 'reranking':
     case 'chat':

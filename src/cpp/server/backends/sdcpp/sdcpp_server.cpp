@@ -193,6 +193,7 @@ void SDServer::load(const std::string& model_name,
     }
     std::string resolved_backend = resolve_sdcpp_backend(backend);
     std::string sdcpp_args = options.get_option("sdcpp_args");
+    const std::string selected_device = options.get_option("sd-cpp_device");
 
     RuntimeConfig::validate_backend_choice("sdcpp", backend);
 
@@ -260,6 +261,13 @@ void SDServer::load(const std::string& model_name,
         args.push_back("--vae-tiling");
         args.push_back("--diffusion-fa");
     }
+    // sd.cpp names ggml devices with CUDA0/Vulkan0/etc. Vulkan selection is
+    // passed natively; CUDA and ROCm use a per-process visibility mask below.
+    if (resolved_backend == "vulkan" && !selected_device.empty() && selected_device != "auto") {
+        const int index = BackendUtils::parse_gpu_device_index(selected_device, "vulkan");
+        args.push_back("--backend");
+        args.push_back("vulkan" + std::to_string(index));
+    }
     std::set<std::string> reserved_flags = {
         "-m",
         "--model",
@@ -269,6 +277,11 @@ void SDServer::load(const std::string& model_name,
         "-v",
         "--listen-port"
     };
+    // Keep existing custom --backend support when the GUI device is automatic.
+    // An explicit selection must not be overridden by sdcpp_args.
+    if (!selected_device.empty() && selected_device != "auto") {
+        reserved_flags.insert("--backend");
+    }
 
     if (!sdcpp_args.empty()) {
         std::string validation_error = validate_custom_args(sdcpp_args, reserved_flags);
@@ -354,8 +367,16 @@ void SDServer::load(const std::string& model_name,
     }
 #endif
 
-    if (is_cuda_backend(resolved_backend)) {
-        BackendUtils::apply_cuda_env_vars(env_vars, "SDServer");
+    if (is_cuda_backend(resolved_backend) || is_rocm_backend(resolved_backend)) {
+        BackendUtils::apply_accelerator_device_env_vars(env_vars, "SDServer",
+                                                        resolved_backend, selected_device,
+                                                        is_cuda_backend(resolved_backend) ? SystemInfo::get_cuda_arch() : "");
+    } else if (!selected_device.empty() && selected_device != "auto" &&
+               resolved_backend != "vulkan" &&
+               !(resolved_backend == "metal" && selected_device == "metal") &&
+               !(resolved_backend == "cpu" && selected_device == "cpu")) {
+        throw std::invalid_argument("Device '" + selected_device +
+                                    "' is incompatible with sd.cpp backend '" + backend + "'");
     }
 
     std::string process_exe_path = exe_path;

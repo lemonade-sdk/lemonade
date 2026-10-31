@@ -25,6 +25,8 @@ inline const BackendDescriptor descriptor = {
     /*options*/ {
         {"sd-cpp_backend", "--sdcpp", "", "BACKEND",
          "SD.cpp backend to use", "Stable Diffusion Options"},
+        {"sd-cpp_device", "--sdcpp-device", "", "DEVICES",
+         "GPU to use (ROCm0, CUDA0, CUDA1, Vulkan0, ...); empty selects automatically", "Stable Diffusion Options"},
         {"sdcpp_args", "--sdcpp-args", "", "ARGS",
          "Custom arguments to pass to sd-server (must not conflict with managed args)", "Stable Diffusion Options"},
         // Image generation defaults (recipe-level only, not CLI flags).

@@ -72,6 +72,7 @@ void ThinkSoundServer::load(const std::string& model_name,
         backend = supported.backends[0];
     }
     RuntimeConfig::validate_backend_choice("thinksound", backend);
+    const std::string selected_device = options.get_option("thinksound_device");
     const std::string exe_path = resolve_binary_path(backend);
 
     port_ = choose_port();
@@ -112,12 +113,18 @@ void ThinkSoundServer::load(const std::string& model_name,
                 BackendUtils::get_therock_lib_paths(arch));
         }
         prepend_loader_path(dirs);
+        BackendUtils::apply_accelerator_device_env_vars(env_vars, "thinksound-server", backend, selected_device);
     } else if (backend == "cuda") {
         prepend_loader_path("");
-        BackendUtils::apply_cuda_env_vars(env_vars, "thinksound-server");
+        BackendUtils::apply_accelerator_device_env_vars(env_vars, "thinksound-server", backend, selected_device);
     }
 
     LOG(INFO, "thinksound-server") << "Starting " << exe_path << " on port " << port_ << std::endl;
+    if (backend != "cuda" && backend != "rocm" && backend != "rocm-stable" &&
+        !selected_device.empty() && selected_device != "auto") {
+        throw std::invalid_argument("Device " + selected_device + " is unsupported with thinksound backend " + backend);
+    }
+
     ServerCommand command;
     command.program = exe_path;
     command.args = std::move(args);

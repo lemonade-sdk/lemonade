@@ -110,6 +110,7 @@ void TheNoiseServer::load(const std::string& model_name,
     const std::string backend = resolve_thenoise_backend(options.get_option("thenoise_backend"));
 
     RuntimeConfig::validate_backend_choice("thenoise", backend);
+    const std::string selected_device = options.get_option("thenoise_device");
 
     device_type_ = DEVICE_GPU;
 
@@ -176,6 +177,7 @@ void TheNoiseServer::load(const std::string& model_name,
     launch_bundled_python(exe_path, args, env_vars);
     LOG(DEBUG, "TheNoise") << "Launching bundled interpreter: " << exe_path << std::endl;
 #endif
+    BackendUtils::apply_accelerator_device_env_vars(env_vars, "TheNoise", backend, selected_device);
 
     ServerCommand command;
     command.program = exe_path;
@@ -438,8 +440,13 @@ std::string TheNoiseServer::upscale_via_cli(
     const std::string& upscale_model_path) {
 
     std::string configured_backend;
-    if (auto* cfg = RuntimeConfig::global()) {
-        configured_backend = cfg->backend_string("thenoise", "backend");
+    if (recipe_options_.has_option("thenoise_backend")) {
+        configured_backend = recipe_options_.get_option("thenoise_backend").get<std::string>();
+    }
+    if (configured_backend.empty()) {
+        if (auto* cfg = RuntimeConfig::global()) {
+            configured_backend = cfg->backend_string("thenoise", "backend");
+        }
     }
     const std::string backend = resolve_thenoise_backend(configured_backend);
     RuntimeConfig::validate_backend_choice("thenoise", backend);
@@ -513,6 +520,9 @@ std::string TheNoiseServer::upscale_via_cli(
 #ifdef _WIN32
     launch_bundled_python(exe_path, args, env_vars);
 #endif
+    const std::string selected_device = recipe_options_.has_option("thenoise_device")
+        ? recipe_options_.get_option("thenoise_device").get<std::string>() : "";
+    BackendUtils::apply_accelerator_device_env_vars(env_vars, "TheNoise", backend, selected_device);
     auto proc = ProcessManager::start_process(
         exe_path, args, "", true, false, env_vars);
 

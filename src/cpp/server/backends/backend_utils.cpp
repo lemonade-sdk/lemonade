@@ -2462,6 +2462,123 @@ namespace lemon::backends {
 #endif
     }
 
+    int BackendUtils::parse_gpu_device_index(const std::string& selection,
+                                              const std::string& prefix) {
+        std::string normalized = selection;
+        std::transform(normalized.begin(), normalized.end(), normalized.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        if (normalized.size() <= prefix.size() || normalized.compare(0, prefix.size(), prefix) != 0 ||
+            !std::all_of(normalized.begin() + prefix.size(), normalized.end(),
+                         [](unsigned char c) { return std::isdigit(c) != 0; })) {
+            throw std::invalid_argument("Invalid GPU selection '" + selection +
+                                        "' (expected " + prefix + "0, " + prefix + "1, ...)");
+        }
+        try {
+            return std::stoi(normalized.substr(prefix.size()));
+        } catch (const std::exception&) {
+            throw std::invalid_argument("GPU index out of range: " + selection);
+        }
+    }
+
+    std::string BackendUtils::cuda_visible_device_for_selection(
+            const std::string& selection,
+            const std::vector<std::pair<int, std::string>>& detected_gpus) {
+        const int index = parse_gpu_device_index(selection, "cuda");
+        for (const auto& gpu : detected_gpus) {
+            if (gpu.first != index) continue;
+            // A sole CUDA GPU can always be addressed as 0. Avoid UUID filtering
+            // here: some RTX 50 drivers reject single-GPU UUID masks.
+            if (detected_gpus.size() == 1 && index == 0) return "0";
+            if (!gpu.second.empty()) return gpu.second;
+            throw std::invalid_argument("Cannot safely select " + selection +
+                ": NVIDIA GPU UUID unavailable");
+        }
+        throw std::invalid_argument("Selected GPU " + selection + " is not available");
+    }
+
+    void BackendUtils::validate_cuda_device_arch_for_selection(
+            const std::string& selection,
+            const std::string& required_arch,
+            const std::vector<std::pair<int, std::string>>& detected_archs) {
+        if (required_arch.empty()) return;
+        const int index = parse_gpu_device_index(selection, "cuda");
+        for (const auto& gpu : detected_archs) {
+            if (gpu.first != index) continue;
+            if (gpu.second == required_arch) return;
+            throw std::invalid_argument("Selected GPU " + selection + " (" +
+                (gpu.second.empty() ? "unknown architecture" : gpu.second) +
+                ") does not match the installed sd.cpp CUDA asset architecture " + required_arch);
+        }
+        throw std::invalid_argument("Selected GPU " + selection + " is not available");
+    }
+
+    std::string BackendUtils::rocm_visible_device_for_selection(
+            const std::string& selection, int available_gpu_count) {
+        const int index = parse_gpu_device_index(selection, "rocm");
+        if (index >= available_gpu_count) {
+            throw std::invalid_argument("Selected GPU " + selection + " is not available");
+        }
+        return std::to_string(index);
+    }
+
+    void BackendUtils::apply_accelerator_device_env_vars(
+            std::vector<std::pair<std::string, std::string>>& env_vars,
+            const std::string& log_tag,
+            const std::string& backend,
+            const std::string& selection,
+            const std::string& required_cuda_arch) {
+        const bool automatic = selection.empty() || selection == "auto";
+        if (backend == "cuda") {
+            if (automatic) {
+                apply_cuda_env_vars(env_vars, log_tag);
+                return;
+            }
+
+            const json system_info = SystemInfoCache::get_system_info_with_cache();
+            std::vector<std::pair<int, std::string>> gpus;
+            std::vector<std::pair<int, std::string>> gpu_archs;
+            if (system_info.contains("devices") && system_info["devices"].contains("nvidia_gpu") &&
+                system_info["devices"]["nvidia_gpu"].is_array()) {
+                int ordinal = 0;
+                for (const auto& gpu : system_info["devices"]["nvidia_gpu"]) {
+                    if (gpu.value("available", false)) {
+                        const int index = gpu.value("index", ordinal);
+                        gpus.emplace_back(index, gpu.value("uuid", ""));
+                        gpu_archs.emplace_back(index, gpu.value("family", ""));
+                    }
+                    ++ordinal;
+                }
+            }
+            validate_cuda_device_arch_for_selection(selection, required_cuda_arch, gpu_archs);
+            const std::string visible = cuda_visible_device_for_selection(selection, gpus);
+            env_vars.emplace_back("CUDA_VISIBLE_DEVICES", visible);
+            LOG(INFO, log_tag) << "Selecting " << selection
+                               << " via CUDA_VISIBLE_DEVICES=" << visible << std::endl;
+            apply_cuda_env_vars(env_vars, log_tag, /*skip_visible_devices=*/true);
+            return;
+        }
+        if (backend == "rocm" || backend == "rocm-stable") {
+            if (!automatic) {
+                const json system_info = SystemInfoCache::get_system_info_with_cache();
+                int available_count = 0;
+                if (system_info.contains("devices") && system_info["devices"].contains("amd_gpu") &&
+                    system_info["devices"]["amd_gpu"].is_array()) {
+                    for (const auto& gpu : system_info["devices"]["amd_gpu"]) {
+                        if (gpu.value("available", false)) ++available_count;
+                    }
+                }
+                const std::string index = rocm_visible_device_for_selection(selection, available_count);
+                env_vars.emplace_back("HIP_VISIBLE_DEVICES", index);
+                LOG(INFO, log_tag) << "Selecting ROCm device " << index << std::endl;
+            }
+            return;
+        }
+        if (!automatic) {
+            throw std::invalid_argument("GPU selection '" + selection +
+                                        "' is not supported by backend '" + backend + "'");
+        }
+    }
+
     void BackendUtils::validate_device_backend_match(
             const std::string& backend,
             const std::string& target_device) {

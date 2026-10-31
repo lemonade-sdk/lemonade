@@ -317,6 +317,12 @@ const TUNING_FIELD_HINTS: Partial<Record<keyof RecipeOptions, string>> = {
   trellis_backend: 'TRELLIS accelerator backend for 3D reconstruction.',
   'sd-cpp_backend': 'Stable Diffusion accelerator backend for this image model. Switching back restores the last draft args for that backend in this browser session.',
   llamacpp_device: 'Optional device selector for the selected backend.',
+  thenoise_device: 'Select the GPU for TheNoise; CUDA device numbers refer to the NVIDIA GPU list.',
+  'sd-cpp_device': 'Select the GPU for sd.cpp. CUDA selection uses GPU UUIDs to avoid index mismatches.',
+  acestep_device: 'Choose the ROCm or CUDA GPU for ACE-Step; auto uses the backend default.',
+  trellis_device: 'Choose the ROCm or CUDA GPU for TRELLIS; auto uses the backend default.',
+  thinksound_device: 'Choose the ROCm or CUDA GPU for ThinkSound; auto uses the backend default.',
+  openmoss_device: 'Choose the ROCm or CUDA GPU for OpenMOSS; auto uses the backend default.',
   llamacpp_args: 'CLI-style flags for llama-server, applied on Load/Reload. E.g. --gpu-layers 35 --threads 8 --batch-size 512. See llama-server --help for all options.',
   sdcpp_args: 'Raw backend args for this image model only.',
   whispercpp_args: 'Raw backend args for this transcription model only.',
@@ -428,29 +434,61 @@ function indexed(prefix: string, count: number, fallbackCount = 1): string[] {
 
 function deviceOptionsForKey(key: keyof RecipeOptions, current: string | undefined, selectedBackend: string, model: ModelInfo, info: SystemInfoLike): string[] {
   const recipe = activeRecipeForModel(model);
-  const backend = selectedBackend.toLowerCase();
+  const selected = selectedBackend.toLowerCase();
+  const singleGpuRecipe = ['thenoise', 'sd-cpp', 'acestep', 'trellis', 'thinksound', 'openmoss'].includes(recipe);
+  const backend = (selected === 'auto' || !selected) && singleGpuRecipe
+    ? (recipeDefaultBackend(info, recipe) || selected)
+    : selected;
   const devices = availableDeviceCounts(info);
+  const nvidiaList = (info as any)?.devices?.nvidia_gpu;
+  const detectedCudaOptions: string[] = Array.isArray(nvidiaList)
+    ? nvidiaList.flatMap((gpu: any, ordinal: number) => gpu?.available === false ? []
+      : [`cuda${Number.isInteger(gpu?.index) && gpu.index >= 0 ? gpu.index : ordinal}`])
+    : [];
+  const cudaOptions = detectedCudaOptions.length ? detectedCudaOptions : indexed('cuda', devices.nvidia, 1);
   let base: string[] = [];
 
   if (!backend || backend === 'auto') {
     base = ['cpu'];
-    if (devices.nvidia > 0) base.push(...indexed('cuda', devices.nvidia, 0));
+    if (devices.nvidia > 0) base.push(...cudaOptions);
     if (devices.amd > 0) base.push(...indexed('vulkan', devices.amd, 0));
     if (devices.metal) base.push('metal');
     if (devices.npu && recipe !== 'llamacpp') base.push('npu0');
   } else if (backend.includes('cpu')) base = ['cpu'];
-  else if (backend.includes('cuda')) base = indexed('cuda', devices.nvidia, 1);
+  else if (backend.includes('cuda')) base = cudaOptions;
   else if (backend.includes('vulkan')) base = indexed('vulkan', devices.amd + devices.nvidia, 1);
   else if (backend.includes('opencl')) base = indexed('opencl', devices.amd + devices.nvidia, 1);
-  else if (backend.includes('rocm')) base = indexed('rocm', devices.amd, 1);
+  else if (backend.includes('rocm')) {
+    const amdGpus = (info as any)?.devices?.amd_gpu;
+    const count = Array.isArray(amdGpus) ? amdGpus.filter((gpu: any) => gpu?.available !== false).length : devices.amd;
+    base = indexed('rocm', count, 1);
+  }
   else if (backend.includes('metal') && devices.metal) base = ['metal'];
   else if (backend.includes('npu') && devices.npu && recipe !== 'llamacpp') base = ['npu0'];
 
+  // An explicit 'auto' clears inherited per-model GPU selections.
+  if (singleGpuRecipe) {
+    base.unshift('auto');
+    // These servers support CUDA/ROCm visibility masks, not native Vulkan device selection.
+    if (!['thenoise', 'sd-cpp'].includes(recipe)) {
+      base = base.filter(device => device === 'auto' || /^cuda\d+$/i.test(device) || /^rocm\d+$/i.test(device));
+    }
+  }
   const normalizedCurrent = optionalDisplayValue(current);
   const options = normalizedCurrent && !base.includes(normalizedCurrent) ? [normalizedCurrent, ...base] : base;
   return Array.from(new Set(options.filter(Boolean)));
 }
 
+function deviceOptionLabel(option: string, info: SystemInfoLike): string {
+  const match = /^cuda(\d+)$/i.exec(option);
+  if (!match) return option;
+  const gpus = (info as any)?.devices?.nvidia_gpu;
+  if (!Array.isArray(gpus)) return option;
+  const index = Number(match[1]);
+  const gpu = gpus.find((value: any, ordinal: number) => value?.available !== false
+    && (Number.isInteger(value?.index) ? value.index : ordinal) === index);
+  return gpu?.name ? `${option.toUpperCase()} (${gpu.name})` : option;
+}
 
 /** Regex: only attempt HF README fetch when the derived value looks like `owner/repo`. */
 const HF_REPO_RE = /^[\w.-]+\/[\w.-]+$/;
@@ -1591,6 +1629,9 @@ const ModelConfigurationTab: React.FC<{
   const selectorKeys = recipeKeys.filter(key =>
     recipeOptionIsBackend(systemInfo, activeRecipe, String(key))
     || recipeOptionIsDevice(systemInfo, activeRecipe, String(key))
+  ).sort((a, b) =>
+    Number(recipeOptionIsDevice(systemInfo, activeRecipe, String(a)))
+    - Number(recipeOptionIsDevice(systemInfo, activeRecipe, String(b)))
   );
   const argsKeys = recipeKeys.filter(key => recipeOptionIsArgs(systemInfo, activeRecipe, String(key)));
   const otherRecipeKeys = recipeKeys.filter(key => !selectorKeys.includes(key) && !argsKeys.includes(key));
@@ -1752,8 +1793,24 @@ const ModelConfigurationTab: React.FC<{
           <select
             id={fieldId}
             className="select detail-configuration__select"
+            title={hint || undefined}
+            aria-description={hint || undefined}
             value={draftValue}
-            onChange={e => setRecipeDraft(prev => ({ ...prev, [String(key)]: e.target.value }))}
+            onChange={e => setRecipeDraft(prev => {
+              const next = { ...prev, [String(key)]: e.target.value };
+              if (['thenoise', 'sd-cpp', 'acestep', 'trellis', 'thinksound', 'openmoss'].includes(activeRecipe)) {
+                const defaultBackend = activeBackend.toLowerCase() === 'auto'
+                  ? recipeDefaultBackend(info, activeRecipe).toLowerCase()
+                  : activeBackend.toLowerCase();
+                const effectiveBackend = (value: string) =>
+                  value && value.toLowerCase() !== 'auto' ? value.toLowerCase() : defaultBackend;
+                if (effectiveBackend(prev[String(key)] || '') !== effectiveBackend(e.target.value)) {
+                  const deviceKey = activeRecipe === 'sd-cpp' ? 'sd-cpp_device' : `${activeRecipe}_device`;
+                  next[deviceKey] = 'auto';
+                }
+              }
+              return next;
+            })}
           >
             <option value="">{activeBackend}</option>
             {options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
@@ -1775,11 +1832,13 @@ const ModelConfigurationTab: React.FC<{
           <select
             id={fieldId}
             className="select detail-configuration__select"
+            title={hint || undefined}
+            aria-description={hint || undefined}
             value={draftValue}
             onChange={e => setRecipeDraft(prev => ({ ...prev, [String(key)]: e.target.value }))}
           >
-            <option value="">{activeDevice}</option>
-            {options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+            <option value="">{deviceOptionLabel(activeDevice, info)}</option>
+            {options.map(opt => <option key={opt} value={opt}>{deviceOptionLabel(opt, info)}</option>)}
           </select>
         </label>
       );
