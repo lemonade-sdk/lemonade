@@ -1170,6 +1170,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   const [storageInfo, setStorageInfo] = useState<import('../api').StorageInfo | null>(null);
   const customJsonInputRef = useRef<HTMLInputElement>(null);
   const latestCustomImportRef = useRef(0);
+  const customImportingRef = useRef(false);
+  const [customImporting, setCustomImporting] = useState(false);
   const externalModelDeleteNoticeTimerRef = useRef<number | null>(null);
 
   const [serverDefaultCtxSize, setServerDefaultCtxSize] = useState<number>(DEFAULT_CONTEXT_SIZE);
@@ -2028,6 +2030,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   };
 
   const openCustomForm = (mode: CustomFormMode = 'model') => {
+    latestCustomImportRef.current += 1;
     setShowRouterEditor(false);
     setRouterEditorModel(null);
     setEditingCustomModelName(null);
@@ -2039,6 +2042,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   };
 
   const openCustomCollectionEditor = (model: ModelInfo) => {
+    latestCustomImportRef.current += 1;
     setShowRouterEditor(false);
     setRouterEditorModel(null);
     const name = modelName(model);
@@ -2052,6 +2056,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   };
 
   const closeCustomForm = () => {
+    latestCustomImportRef.current += 1;
     setShowCustomForm(false);
     setEditingCustomModelName(null);
     setCustomError(null);
@@ -2164,6 +2169,10 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     );
     const exportCollections = !!editingCustomModelName
       || (customDraft.capability === 'omni' && customDraft.omniSource === 'collection');
+    if (exportCollections && !fullModelStateReady) {
+      setCustomError(t('Loading model catalog…'));
+      return;
+    }
     const modelsInCategory = customServerModels.filter(model => isCollectionRecipe(String((model as any).recipe || '')) === exportCollections);
     const savedCollection = editingCustomModelName
       ? modelsInCategory.find(model => customModelNameKey(modelName(model)) === customModelNameKey(editingCustomModelName))
@@ -2200,7 +2209,9 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   };
 
   const handleImportCustomModels = async (file: File | null | undefined) => {
-    if (!file) return;
+    if (!file || customImportingRef.current) return;
+    customImportingRef.current = true;
+    setCustomImporting(true);
     const importRequestId = ++latestCustomImportRef.current;
     setCustomError(null);
     try {
@@ -2215,6 +2226,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       let lastImportedModelName: string | null = null;
       const errors = [...parsed.errors];
       for (const record of records) {
+        if (importRequestId !== latestCustomImportRef.current) return;
         try {
           const info = customModelToModelInfo(record);
           const registration = await api.registerModelDefinition(record.name, customRegistrationOptions(info));
@@ -2263,9 +2275,9 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
         setCustomError(`Could not import JSON: ${err instanceof Error ? err.message : String(err)}`);
       }
     } finally {
-      if (importRequestId === latestCustomImportRef.current && customJsonInputRef.current) {
-        customJsonInputRef.current.value = '';
-      }
+      customImportingRef.current = false;
+      setCustomImporting(false);
+      if (customJsonInputRef.current) customJsonInputRef.current.value = '';
     }
   };
 
@@ -2295,6 +2307,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
 
   const handleSaveCustomModel = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (customImportingRef.current) return;
     setCustomError(null);
     try {
       if (!customDraft.displayName.trim()) {
@@ -3059,7 +3072,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
                   icon="check"
                   type="submit"
                   form="custom-model-editor-form"
-                  disabled={customRecipeOptions.length === 0}
+                  disabled={customRecipeOptions.length === 0 || customImporting}
                 >
                   {t('Save')}
                 </WorkspaceActionButton>
@@ -3076,7 +3089,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
                 >
                   {editingCustomModelName ? t('Export') : t('Export all')}
                 </WorkspaceActionButton>
-                <WorkspaceActionButton appearance="quiet" icon="file-up" onClick={() => customJsonInputRef.current?.click()}>{t('Import')}</WorkspaceActionButton>
+                <WorkspaceActionButton appearance="quiet" icon="file-up" disabled={customImporting} onClick={() => customJsonInputRef.current?.click()}>{t('Import')}</WorkspaceActionButton>
               </WorkspaceActionGroup>
             )}
           >
@@ -3357,6 +3370,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
             className="hidden-file-input"
             type="file"
             accept="application/json,.json"
+            disabled={customImporting}
             onChange={e => { void handleImportCustomModels(e.target.files?.[0]); }}
           />
           </WorkspaceDetailPanel>

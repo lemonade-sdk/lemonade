@@ -166,3 +166,33 @@ test('partial JSON import keeps the editor open and reports every rejected entry
   await expect(errors).toContainText('Entry 3:');
   expect(registeredNames).toEqual(['user.ValidMiddle']);
 });
+
+test('pending JSON import does not close a newly opened editor (#4018)', async ({ page }) => {
+  const { registeredNames } = await openModelsWithCustomDefinitions(page);
+  let releaseRegistration!: () => void;
+  const pending = new Promise<void>(resolve => { releaseRegistration = resolve; });
+  let notifyStarted!: () => void;
+  const started = new Promise<void>(resolve => { notifyStarted = resolve; });
+  await page.route('**/api/v1/models/register', async route => {
+    notifyStarted();
+    await pending;
+    await route.fallback();
+  });
+
+  await page.getByRole('button', { name: 'Open custom models' }).click();
+  const editor = page.locator('.custom-model-editor');
+  await editor.locator('input[type="file"]').setInputFiles({
+    name: 'delayed-model.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify({ name: 'DelayedModel', checkpoint: 'delayed.gguf', recipe: 'llamacpp', type: 'chat' })),
+  });
+  await started;
+  await expect(editor.getByRole('button', { name: 'Import' })).toBeDisabled();
+  await expect(editor.locator('input[type="file"]')).toBeDisabled();
+  await editor.getByRole('button', { name: 'Close' }).click();
+  await page.getByRole('button', { name: 'Open custom models' }).click();
+  releaseRegistration();
+  await expect.poll(() => registeredNames).toEqual(['user.DelayedModel']);
+  await expect(editor.getByRole('button', { name: 'Import' })).toBeEnabled();
+  await expect(editor).toBeVisible();
+});
