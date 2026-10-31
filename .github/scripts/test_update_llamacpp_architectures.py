@@ -65,6 +65,26 @@ class ArchitectureSourceTests(unittest.TestCase):
         self.assertIn('"qwen35moe"', header)
         self.assertNotIn('"llama",', header)
 
+    def test_decision_types_are_the_common_denominator(self):
+        arch = '{ LLM_ARCH_QWEN35, "qwen35" },'
+        laya = '{ COMMON_DECISION_TYPE_LAYA, "laya" },'
+        both = laya + '\n{ COMMON_DECISION_TYPE_VLLM_D3, "vllm-d3" },'
+
+        def decision_part(header):
+            return header.partition("llamacpp_decision_type_is_supported")[2]
+
+        def upstream(ref):
+            return arch + "\n" + (laya if ref == "b11819" else both)
+
+        header = self.run_generator(upstream, lambda ref: arch + "\n" + both)
+        self.assertIn('"laya"', decision_part(header))
+        self.assertNotIn('"vllm-d3"', decision_part(header))
+
+        header = self.run_generator(lambda ref: arch, lambda ref: arch)
+        self.assertIn(
+            "std::array<std::string_view, 0> names = {};", decision_part(header)
+        )
+
     def test_missing_rocm_release_fails_closed(self):
         upstream_calls = []
 

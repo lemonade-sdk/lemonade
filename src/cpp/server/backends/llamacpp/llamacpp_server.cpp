@@ -432,17 +432,18 @@ void LlamaCppServer::load(const std::string& model_name,
         const llamacpp::SingleBatchPlan batch =
             llamacpp::plan_single_batch(ctx_size, parse_custom_args(llamacpp_args));
         if (batch.add_batch_size) {
-            push_arg(args, reserved_flags, "-b", std::to_string(ctx_size),
+            push_arg(args, reserved_flags, "-b", std::to_string(batch.batch_size),
                      std::vector<std::string>{"--batch-size"});
         }
         if (batch.add_ubatch_size) {
-            push_arg(args, reserved_flags, "-ub", std::to_string(ctx_size),
+            push_arg(args, reserved_flags, "-ub", std::to_string(batch.batch_size),
                      std::vector<std::string>{"--ubatch-size"});
         }
         if (batch.max_input_tokens < ctx_size) {
-            LOG(WARNING, "LlamaCpp") << "llamacpp_args limit this encoder decision model to "
-                                     << batch.max_input_tokens << " tokens per input"
-                                     << std::endl;
+            LOG(INFO, "LlamaCpp") << "Encoder decision model reads up to "
+                                  << batch.max_input_tokens << " tokens per input (context "
+                                  << ctx_size << "); raise it with -b and -ub in llamacpp_args"
+                                  << std::endl;
         } else {
             LOG(INFO, "LlamaCpp") << "Encoder decision model, batch sizes cover the context ("
                                   << ctx_size << " tokens)" << std::endl;

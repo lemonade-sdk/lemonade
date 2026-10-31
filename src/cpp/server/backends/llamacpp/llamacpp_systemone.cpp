@@ -1,4 +1,5 @@
 #include "lemon/backends/llamacpp/llamacpp_systemone.h"
+#include "lemon/llamacpp_architectures_generated.h"
 
 #include <algorithm>
 #include <cmath>
@@ -25,6 +26,10 @@ constexpr const char* CLASSIFY_INSTRUCTIONS = "Which category does this text bel
 constexpr size_t H2O_MAX_STATE_TOKENS = 32000;
 constexpr size_t LAYA_MAX_OPTION_TOKENS = 48;
 constexpr size_t LAYA_QUESTION_RESERVE = 16;
+
+// An encoder reads each input in one physical batch, whose memory and time grow
+// with the square of its size, so a large context alone must not set it.
+constexpr int ENCODER_DEFAULT_BATCH = 8192;
 
 struct BatchFlag {
     bool present = false;
@@ -201,9 +206,12 @@ SingleBatchPlan plan_single_batch(int ctx_size, const std::vector<std::string>& 
     SingleBatchPlan plan;
     plan.add_batch_size = !batch.present;
     plan.add_ubatch_size = !ubatch.present;
+    // A size the user gave one flag also sizes the flag lemond adds.
+    const std::optional<int> asked = batch.value ? batch.value : ubatch.value;
+    plan.batch_size = std::min(ctx_size, asked.value_or(ENCODER_DEFAULT_BATCH));
     // llama.cpp caps -ub at -b, and an encoder's embedding mode caps -b at -ub.
-    plan.max_input_tokens = std::min(
-        {ctx_size, batch.value.value_or(ctx_size), ubatch.value.value_or(ctx_size)});
+    plan.max_input_tokens = std::min({ctx_size, batch.value.value_or(plan.batch_size),
+                                      ubatch.value.value_or(plan.batch_size)});
     return plan;
 }
 
@@ -242,13 +250,23 @@ std::string decision_model_load_refusal(const std::string& model_name, bool hf_l
     }
     // An unread header cannot be checked here; a GGUF without a decision head
     // then gets a 501 from llama-server on /v1/systemone.
-    if (gguf_architecture.empty() || !gguf_decision_type.empty()) {
+    if (gguf_architecture.empty()) {
         return "";
     }
-    return "model '" + model_name + "' is labelled 'systemone', but its GGUF has no "
-           "decision head ('" + gguf_architecture + ".decision.type'), so llama-server "
-           "cannot answer /v1/systemone for it. Register it without the 'classification' "
-           "and 'systemone' labels.";
+    if (gguf_decision_type.empty()) {
+        return "model '" + model_name + "' is labelled 'systemone', but its GGUF has no "
+               "decision head ('" + gguf_architecture + ".decision.type'), so llama-server "
+               "cannot answer /v1/systemone for it. Register it without the 'classification' "
+               "and 'systemone' labels.";
+    }
+    // Refused here, before the Router evicts every model to retry a load that
+    // cannot succeed.
+    if (!llamacpp_decision_type_is_supported_by_all_backends(gguf_decision_type)) {
+        return "model '" + model_name + "' has decision type '" + gguf_decision_type +
+               "', which the llama.cpp that lemond runs does not support, so llama-server "
+               "cannot load it. Use a GGUF made for upstream llama.cpp.";
+    }
+    return "";
 }
 
 }  // namespace llamacpp

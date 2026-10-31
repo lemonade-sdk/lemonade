@@ -176,8 +176,25 @@ int main() {
     expect(plan_is(plan({"-b", "abc"}), false, true, 8192),
            "an unreadable value still counts as set");
 
-    expect(decision_model_load_refusal("Laya", false, "laya", "choice").empty(),
+    const SingleBatchPlan wide = plan_single_batch(262144, {});
+    expect(wide.batch_size == 8192 && wide.max_input_tokens == 8192,
+           "a large context alone keeps the batch at 8192");
+    const SingleBatchPlan raised = plan_single_batch(262144, {"-b", "32768", "-ub", "32768"});
+    expect(raised.max_input_tokens == 32768, "-b and -ub raise the batch");
+    const SingleBatchPlan one = plan_single_batch(262144, {"-ub", "32768"});
+    expect(one.add_batch_size && one.batch_size == 32768 && one.max_input_tokens == 32768,
+           "raising one flag sizes the one lemond adds");
+    expect(plan_single_batch(4096, {}).batch_size == 4096,
+           "a context below 8192 keeps the batch at the context");
+
+    expect(decision_model_load_refusal("Laya", false, "modern-bert", "laya").empty(),
            "a decision GGUF loads");
+    expect(decision_model_load_refusal("D3", false, "qwen35", "vllm-d3").empty(),
+           "a vllm-d3 GGUF loads");
+    const std::string fork = decision_model_load_refusal("Kai", false, "qwen3", "decision2");
+    expect(fork.find("'decision2'") != std::string::npos &&
+               fork.find("does not support") != std::string::npos,
+           "a decision type the pinned llama.cpp does not know is refused, naming it");
     expect(decision_model_load_refusal("LayaHF", true, "", "").find("hf_load") !=
                std::string::npos,
            "hf_load is refused, because lemond cannot read the GGUF header");

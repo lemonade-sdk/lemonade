@@ -40,16 +40,17 @@ nlohmann::json systemone_classify_response(const nlohmann::json& response,
                                            int top_k,
                                            std::optional<bool> truncated);
 
-// An encoder decision model gets one physical batch as large as its context,
-// and llama-server sizes the compute buffer for that batch even though it caps
-// the slot at the trained window.
+// llama-server caps an encoder decision model's slot at its trained window, so
+// a larger context buys nothing.
 int encoder_decision_ctx_size(int requested, int64_t trained_window);
 
-// Which of -b and -ub lemond adds at ctx_size, given the flags in `user_args`,
-// and the longest input llama-server then accepts.
+// Which of -b and -ub lemond adds, and at what size, given the flags in
+// `user_args`; and the longest input then accepted. Without flags the batch
+// stops at 8192 tokens; -b / -ub raise it.
 struct SingleBatchPlan {
     bool add_batch_size = false;
     bool add_ubatch_size = false;
+    int batch_size = 0;
     int max_input_tokens = 0;
 };
 
@@ -57,7 +58,8 @@ SingleBatchPlan plan_single_batch(int ctx_size, const std::vector<std::string>& 
 
 nlohmann::json map_encoder_overflow_error(nlohmann::json response, int max_input_tokens);
 
-// Why a model labelled `systemone` must not load, or "" when it may. An empty
+// Why a model labelled `systemone` must not load, or "" when it may: hf_load, no
+// decision head, or a decision type the pinned llama.cpp does not know. An empty
 // `gguf_architecture` means lemond could not read the GGUF header.
 std::string decision_model_load_refusal(const std::string& model_name, bool hf_load,
                                         const std::string& gguf_architecture,

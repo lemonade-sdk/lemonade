@@ -233,6 +233,11 @@ longer than about 8,000 characters is cut. To raise it, pass
 `--onnxruntime-args "--max-length 4096"`; memory grows with the square of the
 window.
 
+An encoder decision model (Laya, Julia-1, the `vllm-d3` models) reads at most
+8,192 tokens per input by default, whatever its context size, and refuses a
+longer one. To raise it, pass `--llamacpp-args "-b 32768 -ub 32768"`; memory and
+time grow with the square of that size.
+
 The other types never read a token window and refuse the option. A `classifier`
 backed by a chat LLM refuses it too: a chat model reports no cut, so `fail`
 could never fire.
