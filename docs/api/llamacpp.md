@@ -119,14 +119,18 @@ Requires `LEMONADE_API_KEY` when it is set.
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
 | `model` | No | The classification model. Optional when exactly one classification model is loaded; that model is used. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `state` | Yes | The content to judge. A value that is not a string reaches the model as JSON text. `null` asks about the images only, on the decision types that allow it (for example `vllm-d3`); the others refuse it. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `state` | Yes | The content to judge. A value that is not a string reaches the model as JSON text. `null` asks about the images only; `llama-server` refuses it for decision types that need text. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `questions` | Yes | Maps each question id to a question, which the model answers independently of the others. A question has a `type` (`choice`, `score` or `noul`), `instructions`, and `criteria`: for `choice`, an object that maps each option to a description or `null`; for `score`, an array of 2 to 10 levels, lowest first; for `noul`, optional `true` and `false` descriptions. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `images` | No | Data URLs of images to judge with the state. Only decision models of the `openjev` type that load with an `mmproj` file read them. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
+| `images` | No | Data URLs of images to judge with the state. The model must load with an `mmproj` file, and `llama-server` decides which decision types read images. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `ctx_size` | No | Lemonade extension: context size to load the model with, when this request loads it. Ignored when the model is already loaded. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 ### Answer Quality
 
 Answers depend on the model, on the wording of each question, and on the order of a `choice` question's options. Test a question with the model that serves it before a router policy relies on its scores.
+
+### Images
+
+Register the model with its projector file, for example on `/v1/pull`: `{"model_name": "user.my-decider", "checkpoint": "<repo>:<variant>", "mmproj": "<mmproj file>.gguf", "recipe": "llamacpp", "labels": ["classification", "systemone"]}`. Then send `images` as data URLs (`data:image/png;base64,...`), with or without a `state`.
 
 ### Example
 

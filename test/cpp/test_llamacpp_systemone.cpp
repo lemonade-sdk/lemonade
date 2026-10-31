@@ -123,7 +123,9 @@ int main() {
     expect(!decision_text_truncated("lfm2-d1-omni", "short").has_value(),
            "lfm2-d1-omni may cut any text");
     expect(!decision_text_truncated("", "short").has_value(),
-           "an unknown decision type is not trusted");
+           "an unread decision type is not trusted");
+    expect(!decision_text_truncated("acme-router", "short").has_value(),
+           "a decision type lemond does not know is not trusted");
 
     const std::vector<std::string> three = {"coding", "pii", "cooking"};
     expect(laya_label_overflow(three, {2, 2, 2}, 192).empty(), "short labels fit");

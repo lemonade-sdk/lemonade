@@ -2,8 +2,8 @@
 #include <vector>
 
 #include "lemon/classification_labels.h"
-#include "lemon/model_manager.h"
 #include "lemon/model_types.h"
+#include "lemon/models/model_info.h"
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/model_loader.h"
@@ -161,8 +161,8 @@ protected:
 
         // Refused before the load: loading a chat model would take an LLM slot (and
         // evict a loaded chat model) only to fail.
-        if (ctx_.model_manager->model_exists(req.model) &&
-            ctx_.model_manager->get_model_info(req.model).type != ModelType::CLASSIFICATION) {
+        if (const auto info = ctx_.router->try_get_model_info(req.model);
+            info && info->type != ModelType::CLASSIFICATION) {
             write_openai_error(res, kNotClassifier,
                 "model '" + req.model + "' is not a classification model "
                 "(it has no 'classification' label)");

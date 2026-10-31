@@ -4,6 +4,7 @@
 
 #include "lemon/wrapped_server.h"
 #include "lemon/backends/backend_utils.h"
+#include <optional>
 #include <string>
 
 namespace lemon {
@@ -64,8 +65,9 @@ private:
 
     json unsupported_decision_request(const std::string& operation) const;
     nlohmann::ordered_json forward_systemone(const nlohmann::ordered_json& body);
-    // Why a `laya` model would cut these classify labels, or "".
-    std::string laya_label_refusal(const json& labels);
+    // The error to return instead of classifying when a `laya` model would cut
+    // these labels or they cannot be counted; empty when they are read whole.
+    std::optional<json> laya_label_error(const json& labels);
 
     bool decision_model_ = false;
     std::string decision_type_;

@@ -992,6 +992,10 @@ SystemOneQuestion parse_systemone_question(const json& config, const std::string
     } else {
         throw invalid("question type must be one of: choice, noul, score");
     }
+    const std::string reason = validate_label_list(labels);
+    if (!reason.empty()) {
+        throw invalid(reason);
+    }
     return {std::move(labels), std::move(wire)};
 }
 

@@ -321,7 +321,10 @@ static lemon::ClassifierServices systemone_services(
             if (loaded) *loaded = true;
         },
         [](const json&) { return json::object(); },
-        [type](const std::string&) { return type; },
+        // Like Router::get_model_type on a cold start: LLM until the model loads.
+        [type, loaded](const std::string&) {
+            return (loaded == nullptr || *loaded) ? type : lemon::ModelType::LLM;
+        },
         std::move(systemone));
 }
 

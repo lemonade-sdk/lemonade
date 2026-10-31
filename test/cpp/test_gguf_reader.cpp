@@ -163,6 +163,20 @@ int main() {
     check(other.decision_type.empty() && other.causal_attention,
           "decision keys of another prefix are ignored");
 
+    GgufWriter mixed;
+    mixed.header(5);
+    mixed.boolean("qwen35.attention.causal", false);
+    mixed.string("qwen35.decision.type", "vllm-d3");
+    mixed.boolean("other.attention.causal", true);
+    mixed.string("other.decision.type", "laya");
+    mixed.string("general.architecture", "qwen35");
+    mixed.write(path);
+
+    lemon::GgufMetadata both;
+    check(lemon::read_gguf_metadata(both, path.string()), "reads decision keys of two prefixes");
+    check(!both.causal_attention && both.decision_type == "vllm-d3",
+          "a later key of another prefix does not replace the architecture's key");
+
     std::filesystem::remove_all(dir);
     std::cout << (failures == 0 ? "PASSED: all checks passed\n" : "FAILED: some checks failed\n");
     return failures == 0 ? 0 : 1;

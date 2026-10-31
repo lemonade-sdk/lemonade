@@ -362,6 +362,12 @@ static void test_make_systemone_classifier_rejections() {
                 {"criteria", json::array({json{{"a", nullptr}, {"b", nullptr}}})}}));
     check("systemone rejects a choice array entry that is not an option",
           make({{"type", "choice"}, {"instructions", "?"}, {"criteria", json::array({"a", 3})}}));
+    check("systemone rejects a choice option with a control character",
+          make({{"type", "choice"}, {"instructions", "?"},
+                {"criteria", json::array({"billing\nteam", "shipping"})}}));
+    check("systemone rejects a score level with a control character",
+          make({{"type", "score"}, {"instructions", "?"},
+                {"criteria", json::array({"low\tlevel", "high"})}}));
     check("systemone rejects a one-option choice",
           make({{"type", "choice"}, {"instructions", "?"}, {"criteria", {{"a", nullptr}}}}));
     for (const json& bad : {json(""), json("   "), json(42), json(true), json::object(),

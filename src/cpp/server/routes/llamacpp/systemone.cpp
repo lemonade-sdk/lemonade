@@ -1,6 +1,6 @@
 #include "lemon/backends/backend_descriptor_registry.h"
-#include "lemon/model_manager.h"
 #include "lemon/model_types.h"
+#include "lemon/models/model_info.h"
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/model_loader.h"
@@ -32,8 +32,8 @@ const RouteArg kState{"state", ArgIn::JsonBody,
                       {{"type", json::array({"string", "object", "array", "null"})}},
                       true, Support::Available,
                       "The content to judge. A value that is not a string reaches the model as JSON text. "
-                      "`null` asks about the images only, on the decision types that allow it (for "
-                      "example `vllm-d3`); the others refuse it."};
+                      "`null` asks about the images only; `llama-server` refuses it for decision types "
+                      "that need text."};
 const RouteArg kQuestions{"questions", ArgIn::JsonBody, {{"type", "object"}}, true, Support::Available,
                           "Maps each question id to a question, which the model answers independently of the "
                           "others. A question has a `type` (`choice`, `score` or `noul`), `instructions`, and "
@@ -42,8 +42,8 @@ const RouteArg kQuestions{"questions", ArgIn::JsonBody, {{"type", "object"}}, tr
                           "`true` and `false` descriptions."};
 const RouteArg kImages{"images", ArgIn::JsonBody, {{"type", "array"}, {"items", {{"type", "string"}}}}, false,
                        Support::Partial,
-                       "Data URLs of images to judge with the state. Only decision models of the `openjev` "
-                       "type that load with an `mmproj` file read them.",
+                       "Data URLs of images to judge with the state. The model must load with an `mmproj` "
+                       "file, and `llama-server` decides which decision types read images.",
                        {}, true};
 
 class SystemOneRoute : public ModelRoute {
@@ -69,6 +69,12 @@ public:
             "Answers depend on the model, on the wording of each question, and on the order of a "
             "`choice` question's options. Test a question with the model that serves it before a "
             "router policy relies on its scores.",
+            "### Images\n\n"
+            "Register the model with its projector file, for example on `/v1/pull`: "
+            "`{\"model_name\": \"user.my-decider\", \"checkpoint\": \"<repo>:<variant>\", "
+            "\"mmproj\": \"<mmproj file>.gguf\", \"recipe\": \"llamacpp\", "
+            "\"labels\": [\"classification\", \"systemone\"]}`. Then send `images` as data URLs "
+            "(`data:image/png;base64,...`), with or without a `state`.",
         };
         s.args = {kModel, kState, kQuestions, kImages, model_loading::kCtxSize};
 
@@ -164,10 +170,9 @@ protected:
 
         // Refused before the load: a chat model would take an LLM slot, and evict
         // the user's chat model, only to fail.
-        if (ctx_.model_manager->model_exists(req.model)) {
-            const ModelInfo info = ctx_.model_manager->get_model_info(req.model);
-            if (!has_label(info.labels, "systemone") || info.type != ModelType::CLASSIFICATION ||
-                !backends::recipe_gates_mode_on(info.recipe, "systemone")) {
+        if (const auto info = ctx_.router->try_get_model_info(req.model)) {
+            if (!has_label(info->labels, "systemone") || info->type != ModelType::CLASSIFICATION ||
+                !backends::recipe_gates_mode_on(info->recipe, "systemone")) {
                 write_openai_error(res, kNotDecisionModel,
                     "model '" + req.model + "' is not a SystemOne decision model (it needs "
                     "the 'classification' and 'systemone' labels on a backend that answers "

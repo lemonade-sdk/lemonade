@@ -699,9 +699,8 @@ json LlamaCppServer::classify(const json& request) {
         return invalid_classify_request(e.what());
     }
     // ort-server refuses a label it would cut; laya cuts it silently, so refuse it here.
-    const std::string refusal = laya_label_refusal(request["labels"]);
-    if (!refusal.empty()) {
-        return invalid_classify_request(refusal);
+    if (const auto error = laya_label_error(request["labels"])) {
+        return *error;
     }
 
     const json response = forward_systemone(body);
@@ -720,9 +719,9 @@ json LlamaCppServer::classify(const json& request) {
     }
 }
 
-std::string LlamaCppServer::laya_label_refusal(const json& labels) {
+std::optional<json> LlamaCppServer::laya_label_error(const json& labels) {
     if (decision_type_ != "laya" || decision_max_head_tokens_ <= 0) {
-        return "";
+        return std::nullopt;
     }
     std::vector<std::string> texts;
     std::vector<size_t> byte_bounds;
@@ -733,22 +732,29 @@ std::string LlamaCppServer::laya_label_refusal(const json& labels) {
     // A byte-level BPE never has more tokens than bytes, so short labels need
     // no /tokenize round trip.
     if (llamacpp::laya_label_overflow(texts, byte_bounds, decision_max_head_tokens_).empty()) {
-        return "";
+        return std::nullopt;
     }
+    const std::string uncounted =
+        "could not count the label tokens, so lemond cannot check that the model reads each "
+        "label whole";
     std::vector<size_t> tokens;
     try {
         for (const auto& text : texts) {
             const json counted = tokenize(json{{"content", " " + text}});
             if (!counted.contains("tokens") || !counted["tokens"].is_array()) {
-                return "";
+                return ErrorResponse::create(uncounted, ErrorType::BACKEND_ERROR);
             }
             tokens.push_back(counted["tokens"].size());
         }
     } catch (const std::exception& e) {
-        LOG(WARNING, "LlamaCpp") << "Could not count label tokens: " << e.what() << std::endl;
-        return "";
+        return ErrorResponse::create(uncounted + ": " + e.what(), ErrorType::BACKEND_ERROR);
     }
-    return llamacpp::laya_label_overflow(texts, tokens, decision_max_head_tokens_);
+    const std::string refusal =
+        llamacpp::laya_label_overflow(texts, tokens, decision_max_head_tokens_);
+    if (!refusal.empty()) {
+        return invalid_classify_request(refusal);
+    }
+    return std::nullopt;
 }
 
 nlohmann::ordered_json LlamaCppServer::systemone(const nlohmann::ordered_json& request) {

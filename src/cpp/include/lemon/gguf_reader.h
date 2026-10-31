@@ -13,6 +13,7 @@
 #include <cstring>
 #include <fstream>
 #include <ios>
+#include <map>
 #include <string>
 #include <vector>
 #include <lemon/gguf_capabilities.h>
@@ -208,13 +209,10 @@ inline bool read_gguf_metadata(GgufMetadata& out, const std::string& path) {
     int64_t pending_context_length = 0;
 
     // SystemOne keys can come before general.architecture, so each is matched by
-    // suffix and kept only if its prefix turns out to be the architecture.
-    std::string causal_arch;
-    bool causal = true;
-    std::string decision_type_arch;
-    std::string decision_type;
-    std::string max_head_arch;
-    int64_t max_head_tokens = 0;
+    // suffix, kept per prefix, and used only if that prefix is the architecture.
+    std::map<std::string, bool> causal_by_arch;
+    std::map<std::string, std::string> decision_type_by_arch;
+    std::map<std::string, int64_t> max_head_by_arch;
 
     for (uint64_t i = 0; i < kv_count; ++i) {
         std::string key;
@@ -241,24 +239,25 @@ inline bool read_gguf_metadata(GgufMetadata& out, const std::string& path) {
             if (!arch.empty()) {
                 uint8_t value = 1;
                 if (!read_gguf_le(in, value)) return false;
-                causal_arch = std::move(arch);
-                causal = value != 0;
+                causal_by_arch[std::move(arch)] = value != 0;
                 continue;
             }
         }
         if (type == 8) {
             std::string arch = arch_before(".decision.type");
             if (!arch.empty()) {
-                if (!read_gguf_string(in, decision_type)) return false;
-                decision_type_arch = std::move(arch);
+                std::string value;
+                if (!read_gguf_string(in, value)) return false;
+                decision_type_by_arch[std::move(arch)] = std::move(value);
                 continue;
             }
         }
         {
             std::string arch = arch_before(".decision.max_head_tokens");
             if (!arch.empty()) {
-                if (read_gguf_integer_value(in, type, max_head_tokens)) {
-                    max_head_arch = std::move(arch);
+                int64_t value = 0;
+                if (read_gguf_integer_value(in, type, value)) {
+                    max_head_by_arch[std::move(arch)] = value;
                 } else if (!in) {
                     return false;
                 }
@@ -419,12 +418,16 @@ inline bool read_gguf_metadata(GgufMetadata& out, const std::string& path) {
     if (out.context_length == 0 && pending_context_length > 0) {
         out.context_length = pending_context_length;
     }
-    if (!out.architecture.empty()) {
-        if (causal_arch == out.architecture) out.causal_attention = causal;
-        if (decision_type_arch == out.architecture) out.decision_type = decision_type;
-        if (max_head_arch == out.architecture && max_head_tokens > 0) {
-            out.decision_max_head_tokens = max_head_tokens;
-        }
+    if (const auto it = causal_by_arch.find(out.architecture); it != causal_by_arch.end()) {
+        out.causal_attention = it->second;
+    }
+    if (const auto it = decision_type_by_arch.find(out.architecture);
+        it != decision_type_by_arch.end()) {
+        out.decision_type = it->second;
+    }
+    if (const auto it = max_head_by_arch.find(out.architecture);
+        it != max_head_by_arch.end() && it->second > 0) {
+        out.decision_max_head_tokens = it->second;
     }
 
     // ── Derive scalar convenience fields from raw arrays ──────────────

@@ -377,7 +377,9 @@ list it is handed at request time, so there is no fallback to substitute.
 
 The `systemone` condition calls `/v1/systemone` on a llama.cpp decision model,
 which deploys as `ModelType::CLASSIFICATION`. llama-server builds the prompt from
-the template in the GGUF; Lemonade forwards the question unchanged.
+the template in the GGUF. Lemonade sends the question as the policy wrote it,
+except that a `criteria` array becomes an object with the options in the same
+order.
 
 ## LLM-as-router (`routing.router`)
 

@@ -93,13 +93,18 @@ nlohmann::ordered_json build_systemone_classify_request(const std::string& text,
 
 std::optional<bool> decision_text_truncated(const std::string& decision_type,
                                             const std::string& text) {
+    // server-decision.cpp has no cut step for these types: they refuse a text
+    // that does not fit. A type missing here may cut, so it reports nothing.
+    static const std::set<std::string> refuse_long_text = {
+        "laya", "openjev", "lev", "kev", "nimble", "clef", "pplx-decider",
+        "vllm-decision2", "vllm-d3", "lfm2-d1", "granite-switch"};
     if (decision_type == "h2o-lightning") {
         // A byte-level BPE never has more tokens than bytes.
         if (text.size() <= H2O_MAX_STATE_TOKENS) return false;
         return std::nullopt;
     }
-    if (decision_type.empty() || decision_type == "lfm2-d1-omni") return std::nullopt;
-    return false;
+    if (refuse_long_text.count(decision_type) > 0) return false;
+    return std::nullopt;
 }
 
 std::string laya_label_overflow(const std::vector<std::string>& labels,
