@@ -1088,16 +1088,17 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   });
   // Errors are keyed by model so overlapping operations keep each other's
   // messages, and each auto-clear timer removes only the entry it created.
-  const [loadErrors, setLoadErrors] = useState<Readonly<Record<string, { message: string }>>>({});
+  const [loadErrors, setLoadErrors] = useState<ReadonlyMap<string, { message: string }>>(() => new Map());
   const clearModelError = (name: string, entry?: { message: string }) => setLoadErrors(prev => {
-    if (!(name in prev) || (entry && prev[name] !== entry)) return prev;
-    const next = { ...prev };
-    delete next[name];
+    const current = prev.get(name);
+    if (!current || (entry && current !== entry)) return prev;
+    const next = new Map(prev);
+    next.delete(name);
     return next;
   });
   const showModelError = (name: string, message: string, autoClearMs: number | null = 6000) => {
     const entry = { message };
-    setLoadErrors(prev => ({ ...prev, [name]: entry }));
+    setLoadErrors(prev => new Map(prev).set(name, entry));
     if (autoClearMs !== null) window.setTimeout(() => clearModelError(name, entry), autoClearMs);
   };
   // Loads can overlap and finish out of order; only the most recently requested

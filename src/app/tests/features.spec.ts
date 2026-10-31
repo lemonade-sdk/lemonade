@@ -2449,6 +2449,12 @@ test.describe('Lemonade UI — Feature Parity', () => {
 
     releases[firstName]();
     await expect.poll(() => [...state.loaded].sort()).toEqual([firstName, latestName].sort());
+    // The load handler clears its busy mark only after the point where it would
+    // select the model, so an enabled Unload proves that step has already run.
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    await rows.filter({ hasText: firstName }).click();
+    await expect(page.getByRole('button', { name: `Unload ${firstName}` })).toBeEnabled();
+    await page.locator('.titlebar__nav').getByText('Chat').click();
     await expect(page.getByRole('button', { name: new RegExp(`^Chat ${latestName}\\b`) })).toBeVisible();
     await expect(page.getByRole('button', { name: new RegExp(`^Chat ${firstName}\\b`) })).toHaveCount(0);
   });
