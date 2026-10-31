@@ -328,6 +328,20 @@ static void test_classifier_capability_validation() {
         };
         check("systemone accepts a model that serves /v1/systemone",
               parses_ok(systemone_doc(), decision));
+
+        RoutingPolicyParseOptions loadable = decision;
+        loadable.load_refusal = [](const std::string&) { return std::string(); };
+        check("systemone accepts a decision model its backend would load",
+              parses_ok(systemone_doc(), loadable));
+
+        RoutingPolicyParseOptions refused = decision;
+        refused.load_refusal = [](const std::string& name) {
+            return name == "pii-detector-small" ? std::string("decision type 'decision2'")
+                                                : std::string();
+        };
+        check("systemone rejects a decision model its backend refuses to load",
+              throws_with_options(systemone_doc(), refused,
+                                  "cannot be loaded: decision type 'decision2'"));
     }
     {
         auto doc_of = [&](const char* type) {

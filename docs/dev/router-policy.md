@@ -177,7 +177,8 @@ and every entry's `model` must be one of `components`:
   enforces them and names the numbers in its error.
 - `systemone`: the `model` must be a llama.cpp decision model (labels
   `classification` and `systemone`), checked when the policy is registered. An
-  ONNX classifier is refused.
+  ONNX classifier is refused, and so is a downloaded GGUF whose decision type the
+  bundled llama.cpp cannot load.
 - `llm` shows the request to an LLM and asks it to choose one of `labels` (the
   chosen label scores `1.0`). Because it produces a plain label, it's a
   **composable signal** — combine it with any other condition, as in

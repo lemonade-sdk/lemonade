@@ -52,6 +52,10 @@ RoutingPolicyParseOptions make_routing_parse_options(RoutingResolutionTiers tier
         const std::optional<RoutingModelFacts> facts = lookup(name);
         return facts && facts->serves_systemone;
     };
+    options.load_refusal = [lookup](const std::string& name) -> std::string {
+        const std::optional<RoutingModelFacts> facts = lookup(name);
+        return facts ? facts->load_refusal : "";
+    };
     return options;
 }
 

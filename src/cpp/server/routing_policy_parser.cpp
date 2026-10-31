@@ -495,6 +495,13 @@ json parse_classifier_configs(const json& routing,
                     "(needs the 'systemone' label on a backend that answers /v1/systemone, "
                     "such as llamacpp)");
             }
+            if (options.load_refusal) {
+                const std::string refusal = options.load_refusal(resolved_model);
+                if (!refusal.empty()) {
+                    throw std::invalid_argument(path + ".model '" + original +
+                                                "' cannot be loaded: " + refusal);
+                }
+            }
 
             item["model"] = std::move(resolved_model);
         }

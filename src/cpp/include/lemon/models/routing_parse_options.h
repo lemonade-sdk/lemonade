@@ -16,6 +16,9 @@ struct RoutingModelFacts {
     ModelType type = ModelType::LLM;
     bool serves_zero_shot = false;
     bool serves_systemone = false;
+    // Set only when a policy is registered: a stored policy that fails to parse
+    // loses all its routing, so build_cache() leaves the refusal to each request.
+    std::string load_refusal;
 };
 
 RoutingModelFacts routing_model_facts(ModelType type, const std::vector<std::string>& labels,

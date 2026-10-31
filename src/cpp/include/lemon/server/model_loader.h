@@ -46,6 +46,7 @@ public:
     static const RouteError kModelNotFound;
     static const RouteError kRouterResidencyConflict;
     static const RouteError kSlotsPinned;
+    static const RouteError kModelLoadRefused;
     static const RouteError kModelLoadError;
     static std::vector<RouteError> errors();
     static const RouteError& load_error(const std::string& error_code);

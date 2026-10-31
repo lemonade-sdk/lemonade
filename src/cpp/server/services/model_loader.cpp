@@ -189,6 +189,17 @@ json ModelLoader::model_error(const std::string& requested_model,
         return error_response;
     }
 
+    if (exception_msg.rfind("Model load refused:", 0) == 0) {
+        error_response["error"] = {
+            {"message", exception_msg},
+            {"type", "model_load_refused"},
+            {"param", "model"},
+            {"code", "model_load_refused"},
+            {"requested_model", requested_model}
+        };
+        return error_response;
+    }
+
     if (exception_msg.find("are pinned") != std::string::npos) {
         error_response["error"] = {
             {"message", exception_msg},
@@ -224,6 +235,10 @@ const RouteError ModelLoader::kSlotsPinned{
     409, "slots_pinned_error",
     "Every loaded model of the requested model's type is pinned, so none can be unloaded to make "
     "room"};
+const RouteError ModelLoader::kModelLoadRefused{
+    400, "model_load_refused",
+    "The backend refuses the requested model as it is registered, before it starts anything, "
+    "such as a decision model whose GGUF type the bundled llama.cpp does not support"};
 const RouteError ModelLoader::kModelLoadError{
     500, "model_load_error",
     "Loading the requested model fails for another reason, such as a failed download or a backend "
@@ -231,12 +246,12 @@ const RouteError ModelLoader::kModelLoadError{
 
 std::vector<RouteError> ModelLoader::errors() {
     return {kModelNotSupported, kModelNotFound, kRouterResidencyConflict, kSlotsPinned,
-            kModelLoadError};
+            kModelLoadRefused, kModelLoadError};
 }
 
 const RouteError& ModelLoader::load_error(const std::string& error_code) {
     for (const RouteError* error : {&kModelNotSupported, &kRouterResidencyConflict,
-                                    &kSlotsPinned, &kModelLoadError}) {
+                                    &kSlotsPinned, &kModelLoadRefused, &kModelLoadError}) {
         if (error->code == error_code) {
             return *error;
         }

@@ -1,5 +1,6 @@
 #include "lemon/models/ingest_collections.h"
 
+#include "lemon/backends/backend_registry.h"
 #include "lemon/canonical_id.h"
 #include "lemon/models/artifact_store.h"
 #include "lemon/models/store.h"
@@ -383,7 +384,11 @@ std::optional<std::string> IngestCollections::validate(
             [this](const std::string& name) -> std::optional<RoutingModelFacts> {
                 try {
                     const ModelInfo row = require_row(deps_, name);
-                    return routing_model_facts(row.type, row.labels, row.recipe);
+                    RoutingModelFacts facts = routing_model_facts(row.type, row.labels, row.recipe);
+                    if (const auto* ops = backends::ops_for(row.recipe)) {
+                        facts.load_refusal = ops->validate_load(row);
+                    }
+                    return facts;
                 } catch (...) {
                     return std::nullopt;
                 }

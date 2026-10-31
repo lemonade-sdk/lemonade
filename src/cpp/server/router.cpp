@@ -858,7 +858,7 @@ void Router::load_model(const std::string& model_name,
     if (const auto* ops = backends::ops_for(model_info.recipe)) {
         const std::string refusal = ops->validate_load(model_info);
         if (!refusal.empty()) {
-            throw std::invalid_argument(refusal);
+            throw ModelLoadRefusedException(refusal);
         }
     }
 
