@@ -32,9 +32,11 @@ inline const std::set<std::string>& reserved_custom_arg_flags() {
 // long prompt at full prefill speed. Auto-tune reads the same plan to keep the
 // context out of that floor.
 //
-// A pool that holds the whole model plus that 24 GiB, such as a 128 GB Strix
-// Halo with a 115 GiB GTT window, runs it resident instead: streaming there
-// decoded at 2.4 tok/s against 13.5 resident, and DSpark needs residency.
+// A pool that holds the whole model plus ds4's own 16 GiB floor, such as a 128
+// GB Strix Halo with a 115 GiB GTT window, runs it resident instead: streaming
+// there decoded at 2.4 tok/s against 13.5 resident, and DSpark needs
+// residency. A resident model allocates its context up front instead of
+// growing into the floor, and the load is refused unless the floor is free.
 struct MemoryPlan {
     bool resident = false;
     int expert_cache_gb = 0;  // --ssd-streaming-cache-experts
@@ -42,7 +44,7 @@ struct MemoryPlan {
     int free_reserve_gb = 0;  // DS4_ROCM_STREAM_FREE_RESERVE_GB, or what residency leaves free
 };
 
-inline constexpr int kResidentFreeReserveGb = 24;
+inline constexpr int kResidentFreeReserveGb = 16;
 
 // `weights_gb` is the model's GGUF plus any DSpark support file it loads.
 inline MemoryPlan memory_plan(double pool_gb, double weights_gb) {
