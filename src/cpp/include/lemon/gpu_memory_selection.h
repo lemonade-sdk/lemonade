@@ -101,9 +101,8 @@ inline GpuMemoryPool select_gpu_memory_pool(GpuMemoryVendor vendor,
                 : -1.0;
         }
         const double total_gb = gpu.vram_gb + (unified ? gpu.virtual_gb : 0.0);
-        // An iGPU's pool is its GTT window (half of RAM by default on Linux), not
-        // the RAM it shares, so physical RAM is left for the caller to measure.
-        return GpuMemoryPool{total_gb, used_gb, label, vendor, unified};
+        // AMD VRAM + GTT is a GPU allocation limit, not total physical RAM.
+        return GpuMemoryPool{total_gb, used_gb, label, vendor, unified, 0.0};
     };
     auto most_constrained = [](const std::vector<GpuMemoryPool>& pools) {
         GpuMemoryPool result;

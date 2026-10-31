@@ -47,10 +47,21 @@ struct GgufMetadata {
     int64_t block_count = 0;
     int64_t embedding_length = 0;
     int64_t head_count_kv = 0;       // total across all blocks (derived)
+    int64_t head_count = 0;          // attention heads (for llama.cpp's default K/V dimensions)
     int64_t key_length = 0;
-    int64_t key_length_swa = 0;      // SWA-reduced key length (Gemma4, etc.)
+    int64_t value_length = 0;
+    int64_t sliding_window = 0;
+    int64_t key_length_swa = 0;      // optional SWA-specific K dimension
+    int64_t value_length_swa = 0;    // optional SWA-specific V dimension
     int64_t swa_layer_count = 0;     // layers with sliding-window attention (derived)
-    int64_t full_attention_interval = 0; // every Nth layer does full attention (Qwen SSM)
+    int64_t full_attention_interval = 0; // hybrid recurrent state is not ordinary KV
+    int64_t shared_kv_layers = 0;    // Gemma 4 virtual/reusing KV layers
+    // A malformed explicitly provided pattern must not be replaced by defaults.
+    bool sliding_window_pattern_present = false;
+    bool sliding_window_pattern_valid = true;
+    bool bounded_swa_metadata_valid = true; // malformed explicit SWA/KV fields disable optimization
+    bool sliding_window_pattern_scalar_present = false;
+    int64_t sliding_window_pattern_period = 0;
     GgufCapabilities caps;
 
     // ── Raw per-layer arrays (stored as read from GGUF) ───────────────

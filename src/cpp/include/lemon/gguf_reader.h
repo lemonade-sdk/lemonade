@@ -273,16 +273,60 @@ inline bool read_gguf_metadata(GgufMetadata& out, const std::string& path) {
                 }
                 continue;
             }
+            if (key == out.architecture + ".attention.sliding_window") {
+                int64_t value = 0;
+                if (read_gguf_integer_value(in, type, value) && value > 0)
+                    out.sliding_window = value;
+                else
+                    out.bounded_swa_metadata_valid = false;
+                continue;
+            }
+            if (key == out.architecture + ".attention.head_count") {
+                int64_t value = 0;
+                if (read_gguf_integer_value(in, type, value) && value > 0)
+                    out.head_count = value;
+                else
+                    out.bounded_swa_metadata_valid = false;
+                continue;
+            }
+            if (key == out.architecture + ".attention.shared_kv_layers") {
+                int64_t value = 0;
+                if (read_gguf_integer_value(in, type, value) && value >= 0)
+                    out.shared_kv_layers = value;
+                else
+                    out.bounded_swa_metadata_valid = false;
+                continue;
+            }
             if (key == out.architecture + ".attention.key_length") {
                 int64_t value = 0;
                 if (read_gguf_integer_value(in, type, value) && value > 0)
                     out.key_length = value;
+                else
+                    out.bounded_swa_metadata_valid = false;
+                continue;
+            }
+            if (key == out.architecture + ".attention.value_length") {
+                int64_t value = 0;
+                if (read_gguf_integer_value(in, type, value) && value > 0)
+                    out.value_length = value;
+                else
+                    out.bounded_swa_metadata_valid = false;
                 continue;
             }
             if (key == out.architecture + ".attention.key_length_swa") {
                 int64_t value = 0;
                 if (read_gguf_integer_value(in, type, value) && value > 0)
                     out.key_length_swa = value;
+                else
+                    out.bounded_swa_metadata_valid = false;
+                continue;
+            }
+            if (key == out.architecture + ".attention.value_length_swa") {
+                int64_t value = 0;
+                if (read_gguf_integer_value(in, type, value) && value > 0)
+                    out.value_length_swa = value;
+                else
+                    out.bounded_swa_metadata_valid = false;
                 continue;
             }
             if (key == out.architecture + ".full_attention_interval") {
@@ -293,27 +337,50 @@ inline bool read_gguf_metadata(GgufMetadata& out, const std::string& path) {
             }
         }
 
-        // sliding_window_pattern: bool array, one entry per layer.
-        // Store raw values so downstream code can correlate with per-layer
-        // head counts and key lengths.  Match by suffix so we don't need the
-        // architecture prefix (key shape: arch.attention.sliding_window_pattern).
-        if (key.size() > std::strlen(".sliding_window_pattern")
-             && gguf_reader_detail::ends_with_ignore_case(key, ".sliding_window_pattern") && type == 9) {
+        if (key.size() > std::strlen(".sliding_window_pattern") &&
+            gguf_reader_detail::ends_with_ignore_case(key, ".sliding_window_pattern")) {
+            if (out.sliding_window_pattern_present) {
+                // Duplicate definitions are contradictory, even if both parse.
+                out.sliding_window_pattern_valid = false;
+            }
+            out.sliding_window_pattern_present = true;
+            if (type != 9) {
+                int64_t period = -1;
+                if (read_gguf_integer_value(in, type, period) && period >= 0 &&
+                    period <= INT32_MAX) {
+                    out.sliding_window_pattern_scalar_present = true;
+                    out.sliding_window_pattern_period = period;
+                } else {
+                    out.sliding_window_pattern_valid = false;
+                }
+                continue;
+            }
             uint32_t elem_type = 0;
             uint64_t count = 0;
-            if (read_gguf_le(in, elem_type) && read_gguf_le(in, count)) {
-                if (elem_type == 7) {  // BOOL
-                    out.sliding_window_pattern.resize(static_cast<size_t>(count));
-                    for (uint64_t j = 0; j < count; ++j) {
-                        uint8_t v = 0;
-                        if (read_gguf_le(in, v))
-                            out.sliding_window_pattern[j] = (v != 0);
-                    }
-                } else if (elem_type != 9) {
-                    uint64_t elem_size = gguf_scalar_size(elem_type);
-                    if (elem_size > 0)
-                        skip_gguf_bytes(in, count * elem_size);
-                }
+            if (!read_gguf_le(in, elem_type) || !read_gguf_le(in, count) || count > 8192)
+                return false;
+            const bool numeric = elem_type == 7 || elem_type == 0 || elem_type == 1 ||
+                elem_type == 2 || elem_type == 3 || elem_type == 4 || elem_type == 5 ||
+                elem_type == 10 || elem_type == 11;
+            if (!numeric) {
+                out.sliding_window_pattern_valid = false;
+                if (elem_type == 8) {
+                    if (!skip_gguf_string_array(in, count)) return false;
+                } else if (gguf_scalar_size(elem_type) > 0) {
+                    if (!skip_gguf_bytes(in, count * gguf_scalar_size(elem_type))) return false;
+                } else return false;
+                continue;
+            }
+            out.sliding_window_pattern.reserve(static_cast<size_t>(count));
+            for (uint64_t j = 0; j < count; ++j) {
+                int64_t v = -1;
+                if (elem_type == 7) {
+                    uint8_t raw = 0;
+                    if (!read_gguf_le(in, raw)) return false;
+                    v = raw;
+                } else if (!read_gguf_integer_value(in, elem_type, v)) return false;
+                if (v != 0 && v != 1) out.sliding_window_pattern_valid = false;
+                out.sliding_window_pattern.push_back(v == 1);
             }
             continue;
         }
@@ -484,5 +551,7 @@ inline double compute_weighted_kv_cache_bytes_per_token(const GgufMetadata& gguf
          * 2.0  // K+V
          * factor;
 }
+
+
 
 } // namespace lemon
