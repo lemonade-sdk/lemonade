@@ -1078,8 +1078,32 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   const loadedModels = serverModelState.health?.all_models_loaded ?? EMPTY_LOADED_MODELS;
   const connectionStatus = serverModelState.status;
   const modelsLoading = serverModelState.refreshing && !fullModelStateReady && fastLocalModels.length === 0;
-  const [loadingModel, setLoadingModel] = useState<string | null>(null);
-  const [loadError, setLoadError] = useState<{ modelName: string; message: string } | null>(null);
+  const [busyModels, setBusyModels] = useState<ReadonlySet<string>>(() => new Set());
+  const markBusy = (name: string) => setBusyModels(prev => new Set(prev).add(name));
+  const clearBusy = (name: string) => setBusyModels(prev => {
+    if (!prev.has(name)) return prev;
+    const next = new Set(prev);
+    next.delete(name);
+    return next;
+  });
+  // Errors are keyed by model so overlapping operations keep each other's
+  // messages, and each auto-clear timer removes only the entry it created.
+  const [loadErrors, setLoadErrors] = useState<ReadonlyMap<string, { message: string }>>(() => new Map());
+  const clearModelError = (name: string, entry?: { message: string }) => setLoadErrors(prev => {
+    const current = prev.get(name);
+    if (!current || (entry && current !== entry)) return prev;
+    const next = new Map(prev);
+    next.delete(name);
+    return next;
+  });
+  const showModelError = (name: string, message: string, autoClearMs: number | null = 6000) => {
+    const entry = { message };
+    setLoadErrors(prev => new Map(prev).set(name, entry));
+    if (autoClearMs !== null) window.setTimeout(() => clearModelError(name, entry), autoClearMs);
+  };
+  // Loads can overlap and finish out of order; only the most recently requested
+  // one may move the user to Chat.
+  const latestLoadRequestRef = useRef<string | null>(null);
   const [pulling, setPulling] = useState<Record<string, number>>({});  // model -> percent
   const [modelSync, setModelSync] = useState<ModelSyncSnapshot>(() => modelSyncStore.snapshot());
   const [downloadItems, setDownloadItems] = useState<DownloadListItem[]>(() => downloadStore.snapshot());
@@ -1653,40 +1677,46 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   };
 
   const handleLoad = async (model: ModelInfo, overrideOptions?: Record<string, unknown>) => {
-    if (loadingModel) return;
     const name = modelName(model);
+    if (busyModels.has(name)) return;
     if (activeDownloadForModel(downloadStore.snapshot(), name)) {
-      setLoadError({ modelName: name, message: `${name} is still downloading. Wait for the download to finish before loading it.` });
-      window.setTimeout(() => setLoadError(prev => prev?.modelName === name ? null : prev), 6000);
+      showModelError(name, `${name} is still downloading. Wait for the download to finish before loading it.`);
       return;
     }
-    setLoadError(null);
-    setLoadingModel(name);
+    clearModelError(name);
+    markBusy(name);
+    latestLoadRequestRef.current = name;
     try {
       await loadModelRuntime(model, new Set<string>(), overrideOptions);
       await refresh();
-      onModelSelect(name);
+      if (latestLoadRequestRef.current === name) onModelSelect(name);
     } catch (err) {
       console.error('Load failed:', err);
-      const message = friendlyErrorMessage(err);
-      setLoadError({ modelName: name, message });
-      window.setTimeout(() => setLoadError(prev => prev?.modelName === name ? null : prev), 6000);
+      showModelError(name, friendlyErrorMessage(err));
     }
-    setLoadingModel(null);
+    clearBusy(name);
   };
 
   const handleUnload = async (model: LoadedModel) => {
-    setLoadingModel(model.model_name);
+    const name = model.model_name;
+    if (busyModels.has(name)) return;
+    clearModelError(name);
+    markBusy(name);
     const virtualComponents = Array.isArray(model.recipe_options?.components) && model.recipe_options?.virtual_collection === true
       ? model.recipe_options.components.filter((component): component is string => typeof component === 'string')
       : [];
-    if (virtualComponents.length > 0) {
-      await Promise.allSettled(virtualComponents.map(component => api.unloadModel(component)));
-    } else {
-      await api.unloadModel(model.model_name);
+    try {
+      if (virtualComponents.length > 0) {
+        await Promise.allSettled(virtualComponents.map(component => api.unloadModel(component)));
+      } else {
+        await api.unloadModel(name);
+      }
+    } catch (err) {
+      console.error('Unload failed:', err);
+      showModelError(name, friendlyErrorMessage(err));
     }
     await refresh();
-    setLoadingModel(null);
+    clearBusy(name);
   };
 
   // #2356 (simplified): a load-time template change needs a real reload. The
@@ -1699,9 +1729,15 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     model: LoadedModel,
     recipeOptions?: Record<string, unknown>,
   ) => {
-    const info = allModels.find(m => modelName(m) === model.model_name) ?? null;
-    await api.reloadModel(model.model_name, recipeOptions, info);
-    await refresh();
+    const name = model.model_name;
+    const info = allModels.find(m => modelName(m) === name) ?? null;
+    markBusy(name);
+    try {
+      await api.reloadModel(name, recipeOptions, info);
+    } finally {
+      await refresh();
+      clearBusy(name);
+    }
   };
 
   const handleDeleteRouterDefinition = async (name: string): Promise<void> => {
@@ -1744,6 +1780,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
 
   const handleDelete = async (model: ModelInfo) => {
     const name = modelName(model);
+    if (busyModels.has(name)) return;
     if (isExtraModelsDirModel(model)) {
       showExternalModelDeleteNotice(model);
       return;
@@ -1769,14 +1806,14 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       return;
     }
     if (!confirm(`Delete "${model.display_name || name}"? This removes the downloaded files. If the model is loaded, it will be unloaded first.`)) return;
-    setLoadingModel(name);
+    markBusy(name);
     try {
       await api.deleteModel(name);
       await refresh();
     } catch (err: any) {
       console.error('Delete failed:', err);
     }
-    setLoadingModel(null);
+    clearBusy(name);
   };
 
   const handlePull = async (model: ModelInfo) => {
@@ -1799,10 +1836,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
         refresh();
       },
       onError: (err) => {
-        const message = friendlyErrorMessage(err);
         downloadStore.wake(name, 'model');
-        setLoadError({ modelName: name, message });
-        window.setTimeout(() => setLoadError(prev => prev?.modelName === name ? null : prev), 6000);
+        showModelError(name, friendlyErrorMessage(err));
         delete pullAbortRef.current[name];
         setPulling(p => { const next = { ...p }; delete next[name]; return next; });
       },
@@ -1837,6 +1872,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     pullAbortRef.current[name] = ac;
     setPulling(p => ({ ...p, [name]: 0 }));
     downloadStore.wake(name, 'model');
+    latestLoadRequestRef.current = name;
 
     const callbacks: PullCallbacks = {
       onProgress: (data) => {
@@ -1846,26 +1882,24 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       onComplete: async (data) => {
         downloadStore.wake(name, 'model');
         delete pullAbortRef.current[name];
+        // Mark busy in the same tick the pull entry clears, so no Load click can
+        // land in between and start a second load of this model.
+        markBusy(name);
         setPulling(p => { const next = { ...p }; delete next[name]; return next; });
         await refresh();
-        setLoadingModel(name);
         try {
           await loadModelRuntime(model, new Set<string>(), overrideOptions);
           await refresh();
-          onModelSelect(name);
+          if (latestLoadRequestRef.current === name) onModelSelect(name);
         } catch (err) {
           console.error('Load after pull failed:', err);
-          const message = friendlyErrorMessage(err);
-          setLoadError({ modelName: name, message });
-          window.setTimeout(() => setLoadError(prev => prev?.modelName === name ? null : prev), 6000);
+          showModelError(name, friendlyErrorMessage(err));
         }
-        setLoadingModel(null);
+        clearBusy(name);
       },
       onError: (err) => {
-        const message = friendlyErrorMessage(err);
         downloadStore.wake(name, 'model');
-        setLoadError({ modelName: name, message });
-        window.setTimeout(() => setLoadError(prev => prev?.modelName === name ? null : prev), 6000);
+        showModelError(name, friendlyErrorMessage(err));
         delete pullAbortRef.current[name];
         setPulling(p => { const next = { ...p }; delete next[name]; return next; });
       },
@@ -1921,10 +1955,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
         refresh();
       },
       onError: (err) => {
-        const message = friendlyErrorMessage(err);
         downloadStore.wake(targetModelName, 'model');
-        setLoadError({ modelName: targetModelName, message });
-        window.setTimeout(() => setLoadError(prev => prev?.modelName === targetModelName ? null : prev), 6000);
+        showModelError(targetModelName, friendlyErrorMessage(err));
         console.error(`${PROVIDER_META[provider].label} pull failed:`, err);
         delete pullRemoteAbortRef.current[key];
         setPullingRemote(p => { const next = { ...p }; delete next[key]; return next; });
@@ -2170,18 +2202,15 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   const togglePinnedModel = async (name: string) => {
     const loaded = loadedModels.find(model => model.model_name.toLowerCase() === name.toLowerCase());
     if (!loaded) {
-      setLoadError({
-        modelName: name,
-        message: `Cannot change pin state for ${name}: the model is no longer loaded.`,
-      });
+      showModelError(name, `Cannot change pin state for ${name}: the model is no longer loaded.`, null);
       return;
     }
 
     try {
-      setLoadError(null);
+      clearModelError(name);
       await api.setModelPinned(name, loaded.pinned !== true);
     } catch (error) {
-      setLoadError({ modelName: name, message: friendlyErrorMessage(error) });
+      showModelError(name, friendlyErrorMessage(error), null);
     }
   };
 
@@ -3272,9 +3301,9 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
           loadedModel={selectedDetailModelId
             ? (displayLoadedModels.find(m => m.model_name === selectedDetailModelId) ?? null)
             : null}
-          loadingModel={loadingModel}
+          busyModels={busyModels}
           pulling={effectivePulling}
-          loadError={loadError}
+          loadErrors={loadErrors}
           onLoad={handleLoad}
           onUnload={handleUnload}
           onReloadModel={handleReloadModel}
