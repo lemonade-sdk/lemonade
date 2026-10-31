@@ -1104,7 +1104,7 @@ The two shipped implementations, and what each owns:
 
 | Implementation | Schemes | Mechanics |
 | --- | --- | --- |
-| `HttpFileTransfer` | `http`, `https` | `max_retries = 10`, `initial_retry_delay_ms = 2000`, `max_retry_delay_ms = 120000`, `resume_partial = true`, `low_speed_limit = 1000` bytes per second, `low_speed_time` from `utils::HttpClient::get_default_timeout()`, `connect_timeout = 60`. Takes an `utils::HttpSecurityPolicy` (default `ExternalHttpsOnly`) that a test replaces with a loopback-trusting one; production never does |
+| `HttpFileTransfer` | `http`, `https` | `max_retries = 10`, `initial_retry_delay_ms = 2000`, `max_retry_delay_ms = 120000`, `resume_partial = true`, `low_speed_limit = 1000` bytes per second, `low_speed_time = 600` seconds (download-specific), `connect_timeout = 60`. Takes an `utils::HttpSecurityPolicy` (default `ExternalHttpsOnly`) that a test replaces with a loopback-trusting one; production never does |
 | `LocalCopyFileTransfer` | `file` | a staged copy into `.partial` then a rename; the source is opened read-only and never moved, truncated or deleted; no retries, because a short read is a disk error and a retry would hide it |
 
 Rules:

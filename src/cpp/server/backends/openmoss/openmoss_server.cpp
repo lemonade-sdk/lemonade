@@ -362,7 +362,7 @@ void OpenMossServer::audio_speech(const json& request, httplib::DataSink& sink) 
 
 
         forward_streaming_request(
-            "/v1/audio/speech", forwarded.dump(), sink, /*sse=*/false, /*timeout_seconds=*/600);
+            "/v1/audio/speech", forwarded.dump(), sink, /*sse=*/false);
     };
 
     if (needs_voice_design) {
@@ -390,7 +390,7 @@ void OpenMossServer::audio_generations(const json& request, httplib::DataSink& s
     if (!body.contains("cfg_scale") && request.contains("cfg")) {
         body["cfg_scale"] = request["cfg"];
     }
-    forward_streaming_request("/sfx", body.dump(), sink, /*sse=*/false, /*timeout_seconds=*/900);
+    forward_streaming_request("/sfx", body.dump(), sink, /*sse=*/false);
 }
 
 }  // namespace backends
