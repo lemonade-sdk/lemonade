@@ -342,7 +342,7 @@ What the package does:
 | --- | --- | --- |
 | Adds `lemonade` to `video` and `render` with `usermod` | `lemonade-server.postinst` | `postinst-rpm` |
 | Allocates `lemonade` a subordinate UID/GID range (see [`lemond.service` and rootless Podman](#lemondservice-and-rootless-podman)) | `lemonade-server.postinst` | `postinst-rpm` |
-| Pulls in Podman by default | `debian/control` declares `Recommends: podman` | `CPackRPM.cmake` sets `CPACK_RPM_PACKAGE_RECOMMENDS` to `podman` |
+| Pulls in Podman unless Docker is installed | `debian/control` declares `Recommends: podman \| docker.io \| docker-ce` | `CPackRPM.cmake` declares `Recommends: (podman or docker or docker-ce)` |
 
 Containers are started by:
 

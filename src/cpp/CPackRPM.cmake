@@ -11,7 +11,9 @@ set(CPACK_RPM_PACKAGE_URL "https://github.com/lemonade-sdk/lemonade")
 # Adjust for target distro if needed.
 # libgomp is required at runtime by OpenMP-linked backends (e.g. llama-server).
 set(CPACK_RPM_PACKAGE_REQUIRES "libcurl, openssl, zlib, libgomp")
-set(CPACK_RPM_PACKAGE_RECOMMENDS "podman")
+# CPack before CMake 4.1 drops CPACK_RPM_PACKAGE_RECOMMENDS, so the tag goes
+# into the spec preamble directly.
+set(CPACK_RPM_SPEC_MORE_DEFINE "Recommends: (podman or docker or docker-ce)")
 
 # Architecture and file name
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)$")
