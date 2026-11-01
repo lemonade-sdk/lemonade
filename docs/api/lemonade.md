@@ -2527,7 +2527,6 @@ Lemonade does not check that the asset exists; fetch `url`, or its split-archive
   "recipe": "whispercpp",
   "backend": "rocm",
   "arch": "gfx1201",
-  "resolved_arch": "gfx1201",
   "repo": "lemonade-sdk/whisper.cpp-rocm",
   "version": "v1.8.4",
   "filename": "whisper-v1.8.4-linux-rocm-gfx120X.tar.gz",
@@ -2541,13 +2540,12 @@ Lemonade does not check that the asset exists; fetch `url`, or its split-archive
 
 - `recipe` - The requested recipe.
 - `backend` - The requested backend.
-- `arch` - The requested `arch`, or `""` when it was omitted.
-- `resolved_arch` - The ROCm architecture used to resolve the asset, or `""` when the backend is non-ROCm or no ROCm architecture could be resolved.
+- `arch` - The effective ROCm architecture used to resolve the asset, or `""` for a non-ROCm backend or when no ROCm architecture could be resolved. The optional request `arch` overrides this value.
 - `repo` - GitHub repository of the release.
 - `version` - Release version: the pin in `backend_versions.json` unless runtime version policy overrides it.
 - `filename` - Release asset name.
 - `url` - Download URL built from `repo`, `version` and `filename`.
-- `supported` - Whether Lemonade's recipe/backend support matrix accepts the architecture. An unsupported `arch` still resolves, with `false`; without `arch`, a successful answer is always `true`.
+- `supported` - Whether Lemonade's recipe/backend support matrix accepts the optional request `arch`. An unsupported request still resolves, with `false`; without an override, a successful answer is always `true`.
 - `supports_split_archive` - Whether the recipe supports assets published as multiple archive parts. When `true`, the real download path can consult a `.partcount` manifest.
 
 ### Errors
