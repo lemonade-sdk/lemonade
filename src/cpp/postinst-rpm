@@ -12,11 +12,7 @@ fi
 mkdir -p /opt/var/lib/lemonade
 chown lemonade:lemonade /opt/var/lib/lemonade > /dev/null 2>&1 || true
 
-for gpu_group in video render; do
-    if getent group "$gpu_group" > /dev/null 2>&1; then
-        usermod -a -G "$gpu_group" lemonade > /dev/null 2>&1 || true
-    fi
-done
+usermod -a -G render lemonade > /dev/null 2>&1 || true
 
 # Rootless Podman maps the container's users onto a subordinate ID range,
 # which useradd allocates only for regular accounts. The range starts past

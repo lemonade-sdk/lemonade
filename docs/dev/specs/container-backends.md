@@ -194,14 +194,14 @@ When the container tool is rootless Podman, `lemond` connects to the server at `
 
 | Option | Value | Comes from |
 | --- | --- | --- |
-| `--group-add` | `keep-groups` ‡, which carries the account's own `video` and `render` membership into the container | `ContainerPolicy.devices` (see [`containers` Descriptor Field](#containers-descriptor-field)) |
+| `--group-add` | `keep-groups` ‡, which carries the account's own `render` membership into the container | `ContainerPolicy.devices` (see [`containers` Descriptor Field](#containers-descriptor-field)) |
 | `-p` | `127.0.0.1:<port>:<port>` | A free port `lemond` picks |
 
 When the container tool is Docker or rootful Podman, `lemond` connects to the server at the container's address on its private network, and the command adds:
 
 | Option | Value | Comes from |
 | --- | --- | --- |
-| `--group-add` | The host's `video` and `render` group IDs, resolved at launch ‡ | `ContainerPolicy.devices` (see [`containers` Descriptor Field](#containers-descriptor-field)) |
+| `--group-add` | The host's `render` group ID, resolved at launch ‡ | `ContainerPolicy.devices` (see [`containers` Descriptor Field](#containers-descriptor-field)) |
 
 ### Image
 
@@ -295,7 +295,7 @@ What the user does:
 
 - **With Podman:**
   1. Installs Podman.
-  2. Adds their account to `video` and `render`, if it is not in both.
+  2. Adds their account to `render`, if it is not already a member.
   3. Logs out and back in.
 - **With Docker:**
   1. Adds their account to the `docker` group.
@@ -313,7 +313,7 @@ When the container tool is Podman, the checks are:
 | Check | Fails when | `action` |
 | --- | --- | --- |
 | Podman installed | `podman` is not on `PATH` | The install command for the host's `ID` |
-| Device nodes accessible | Podman is rootless and the user's account cannot read and write `/dev/kfd` and every `/dev/dri/renderD*` node | 1. `sudo usermod -aG video,render $USER`<br>2. Log out and back in |
+| Device nodes accessible | Podman is rootless and the user's account cannot read and write `/dev/kfd` and every `/dev/dri/renderD*` node | 1. `sudo usermod -aG render $USER`<br>2. Log out and back in |
 | Podman answers | `podman info` fails | Run `podman info` and fix the error it prints |
 | Network reachable | Podman is rootful and its network backend is CNI, which gives an internal network no gateway for `lemond` to reach the container by | Unset `CONTAINER_HOST` to use rootless Podman |
 
@@ -340,7 +340,7 @@ What the package does:
 
 | Action | Debian (`.deb`/PPA) | Fedora (`.rpm`) |
 | --- | --- | --- |
-| Adds `lemonade` to `video` and `render` with `usermod` | `lemonade-server.postinst` | `postinst-rpm` |
+| Adds `lemonade` to `render` with `usermod` | `lemonade-server.postinst` | `postinst-rpm` |
 | Allocates `lemonade` a subordinate UID/GID range (see [`lemond.service` and rootless Podman](#lemondservice-and-rootless-podman)) | `lemonade-server.postinst` | `postinst-rpm` |
 | Pulls in Podman unless Docker is installed | `debian/control` declares `Recommends: podman \| docker.io \| docker-ce` | `CPackRPM.cmake` declares `Recommends: (podman or docker or docker-ce)` |
 
@@ -357,7 +357,7 @@ When the container tool is Podman, the checks are:
 | --- | --- | --- |
 | Podman installed | `podman` is not on `PATH` | The install command for the host's `ID` |
 | Podman answers | `podman info` fails | Run `podman info` and fix the error it prints |
-| Device nodes accessible | `lemonade` cannot read and write `/dev/kfd` and every `/dev/dri/renderD*` node | 1. `sudo usermod -aG video,render lemonade`<br>2. `sudo systemctl restart lemond` |
+| Device nodes accessible | `lemonade` cannot read and write `/dev/kfd` and every `/dev/dri/renderD*` node | 1. `sudo usermod -aG render lemonade`<br>2. `sudo systemctl restart lemond` |
 | Subordinate IDs allocated | Podman is rootless and `getsubids lemonade` or `getsubids -g lemonade` prints no range | Ask the host's administrator to allocate 65,536 subordinate UIDs and GIDs to `lemonade`, then `sudo systemctl restart lemond` |
 | Network reachable | Podman is rootful and its network backend is CNI | 1. Remove `CONTAINER_HOST` from `/etc/default/lemond` to use rootless Podman<br>2. `sudo systemctl restart lemond` |
 
@@ -420,7 +420,7 @@ The workflow changes only the digest in each pin. A maintainer sets the tag by h
 | SELinux | `--security-opt=label=disable` unless `--selinux`, which relabels mounts with `z` | `label=disable` plus `--userns=keep-id` on Podman for every backend except Halogen | **Same as Ramalama's `--selinux` mode** †: SELinux stays on, and each model mount is relabeled with `z`, the shared label, so several containers can read the same Hugging Face cache files and the user's own programs still can. **Stricter than AI Cockpit** for every backend but Halogen, where both keep SELinux on. |
 | Seccomp | Never passed; podman or docker's default profile applies | `seccomp=unconfined` in every GPU runtime profile, `halogen-strix-halo` included | **Same as Ramalama** †: the tool's default profile. **Stricter than AI Cockpit**, which turns the filter off. DS4 and Halogen both load and answer under the default on `gfx1151`. |
 | Device access | No such concept; one code path per accelerator family | `runtime_profiles` in `toolboxes.json`: `amd-rocm`, `amd-rocm-hipblaslt`, `amd-rocm-keep-groups`, `vulkan`, `intel-level-zero`, `nvidia-gb10`, `halogen-strix-halo` | **Same as AI Cockpit** ‡: each `ContainerPolicy` grants the devices and permissions AI Cockpit's profile grants that engine, including what its DS4 runner adds inline, except `--ipc=host` for DS4 and Halogen and `--ulimit memlock=-1:-1` for Halogen, which they run without. Ramalama has no per-engine equivalent. |
-| Groups | `--group-add keep-groups` on Podman only when `--keep-groups` is passed; no group flags otherwise | `--group-add video --group-add render` in every GPU profile, rewritten to `--group-add keep-groups` on Podman by `upgrade_groups_for_podman()` | **Same as AI Cockpit** ‡ on Podman: `keep-groups`. **More robust than AI Cockpit** on Docker: Lemonade passes the host's numeric `video` and `render` group IDs, which always match the device nodes, where a group name resolves in the image's `/etc/group` and may be missing or numbered differently. |
+| Groups | `--group-add keep-groups` on Podman only when `--keep-groups` is passed; no group flags otherwise | `--group-add video --group-add render` in every GPU profile, rewritten to `--group-add keep-groups` on Podman by `upgrade_groups_for_podman()` | **Same as AI Cockpit** ‡ on Podman: `keep-groups`. **More robust than AI Cockpit** on Docker: Lemonade passes the host's numeric `render` group ID, which always matches the device nodes, where a group name resolves in the image's `/etc/group` and may be missing or numbered differently. |
 | Model mount | `--mount=type=bind,src=<blob>,destination=<MNT_DIR>/<file>,ro` with `MNT_DIR = "/mnt/models"`, one per file the model needs | The whole models directory as `-v <dir>:/models:ro` for llama.cpp, DS4, vLLM and R9V; per file for Halogen only | **Same as Ramalama** †: one read-only mount per file under `/mnt/models`, resolved through symlinks the way Ramalama mounts the blob, written as `-v` because Docker's `--mount` cannot relabel. **Same as AI Cockpit** ‡ for a directory such as Halogen's tokenizer: one mount per file inside it. **Stricter than AI Cockpit** for llama.cpp and DS4, where the whole models directory is mounted and every model in it is readable. |
 | Port | `-p <host><port>:<port>`, where `host` comes from `--host` and defaults to `::`, so the published address is every interface | `-p 127.0.0.1:<port>:<port>` while the host field stays at localhost, `-p <port>:<port>` once it is set to `0.0.0.0`; Halogen publishes nothing | **Stricter than both:** always `127.0.0.1:<port>:<port>`, so only the local machine reaches the API. Ramalama publishes on every interface by default, and AI Cockpit does once the user sets the host field to `0.0.0.0`. |
 | Devices | Whole `/dev/dri` and `/dev/kfd`, never individual render nodes; `check_rocm_amd()` picks the AMD GPU from the KFD topology by largest VRAM and exports `HIP_VISIBLE_DEVICES` | The same whole device nodes, from the profile; `HIP_VISIBLE_DEVICES` is a text field the user fills in, with no detection at all | **Same as both** § for the device nodes. **More robust than both** for GPU choice: `lemond` picks the GPU whose `gfx_target_version` matches `SystemInfo::get_rocm_arch()` †, where Ramalama picks the GPU with the most VRAM, and AI Cockpit uses whatever the user types. |

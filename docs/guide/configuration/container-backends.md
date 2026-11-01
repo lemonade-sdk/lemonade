@@ -23,7 +23,7 @@ When `lemond` runs under your own account, from a shell, a `systemctl --user` un
 **With Podman:**
 
 1. Install Podman, for example with `sudo apt install podman`, `sudo dnf install podman` or `sudo pacman -S podman`.
-2. Add your account to `video` and `render`: `sudo usermod -aG video,render $USER`.
+2. Add your account to `render`: `sudo usermod -aG render $USER`.
 3. Log out and back in.
 
 **With Docker:**
@@ -33,7 +33,7 @@ When `lemond` runs under your own account, from a shell, a `systemctl --user` un
 
 Docker Desktop and rootless Docker can't run container backends. With either one, install Podman instead.
 
-When `lemond` runs as `lemond.service`, installed by the `.deb`, PPA or `.rpm` package, it runs under the `lemonade` account. The package pulls in Podman unless Docker is already installed, adds `lemonade` to `video` and `render`, and allocates its subordinate UID and GID range, so rootless Podman needs no further setup.
+When `lemond` runs as `lemond.service`, installed by the `.deb`, PPA or `.rpm` package, it runs under the `lemonade` account. The package pulls in Podman unless Docker is already installed, adds `lemonade` to `render`, and allocates its subordinate UID and GID range, so rootless Podman needs no further setup.
 
 **`lemond.service` with rootful Podman:** give `lemonade` its own root Podman socket, leaving root's `podman.socket` as it is. Rootful Podman needs the netavark network backend, Podman's default; on Podman 4's older CNI backend, `lemond` cannot reach its containers. Switching root's Podman to netavark (`network_backend = "netavark"` in `/etc/containers/containers.conf`) needs `podman system reset`, which deletes all of root's containers and images.
 
