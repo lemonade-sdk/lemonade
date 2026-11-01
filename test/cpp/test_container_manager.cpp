@@ -103,10 +103,11 @@ struct FakeHost {
 // The spec's Complete Example: Qwen3-4B-GGUF on llamacpp:nathanw.
 ContainerRunSpec example_spec() {
     ContainerRunSpec spec;
-    spec.name = "lemonade-llamacpp-nathanw-Qwen3-4B-GGUF";
+    spec.name = "lemonade-13305-llamacpp-nathanw-Qwen3-4B-GGUF";
     spec.recipe = "llamacpp";
     spec.backend = "nathanw";
     spec.model = "Qwen3-4B-GGUF";
+    spec.instance = 13305;
     spec.port = 8001;
     spec.network = spec.name;
     spec.devices = {"/dev/dri"};
@@ -119,14 +120,15 @@ ContainerRunSpec example_spec() {
 
 void test_run_command() {
     const std::string common =
-        " run --rm --init --name lemonade-llamacpp-nathanw-Qwen3-4B-GGUF"
+        " run --rm --init --name lemonade-13305-llamacpp-nathanw-Qwen3-4B-GGUF"
         " --label ai.lemonade"
+        " --label ai.lemonade.instance=13305"
         " --label ai.lemonade.recipe=llamacpp"
         " --label ai.lemonade.backend=nathanw"
         " --label ai.lemonade.model=Qwen3-4B-GGUF"
         " --label ai.lemonade.port=8001"
         " --cap-drop=all --security-opt=no-new-privileges"
-        " --pull=never --network=lemonade-llamacpp-nathanw-Qwen3-4B-GGUF"
+        " --pull=never --network=lemonade-13305-llamacpp-nathanw-Qwen3-4B-GGUF"
         " --device /dev/dri";
     const std::string mount_and_home =
         " -v /home/alice/model.gguf:/mnt/models/Qwen3-4B-Q4_K_M.gguf:ro,z"
@@ -403,13 +405,16 @@ void test_install_commands() {
 
 void test_helpers() {
     check("characters a container name rejects are escaped as _ plus hex",
-          ContainerManager::container_name("llamacpp", "nathanw", "user.My Model:Q4/x") ==
-              "lemonade-llamacpp-nathanw-user.My_20Model_3aQ4_2fx");
+          ContainerManager::container_name(13305, "llamacpp", "nathanw", "user.My Model:Q4/x") ==
+              "lemonade-13305-llamacpp-nathanw-user.My_20Model_3aQ4_2fx");
     check("names that differ only in rejected characters keep distinct containers",
-          ContainerManager::container_name("llamacpp", "nathanw", "user.foo/bar") !=
-                  ContainerManager::container_name("llamacpp", "nathanw", "user.foo-bar") &&
-              ContainerManager::container_name("llamacpp", "nathanw", "user.foo_2fbar") ==
-                  "lemonade-llamacpp-nathanw-user.foo__2fbar");
+          ContainerManager::container_name(13305, "llamacpp", "nathanw", "user.foo/bar") !=
+                  ContainerManager::container_name(13305, "llamacpp", "nathanw", "user.foo-bar") &&
+              ContainerManager::container_name(13305, "llamacpp", "nathanw", "user.foo_2fbar") ==
+                  "lemonade-13305-llamacpp-nathanw-user.foo__2fbar");
+    check("two lemond instances loading the same model get distinct containers",
+          ContainerManager::container_name(13305, "llamacpp", "nathanw", "Qwen3-4B-GGUF") !=
+              ContainerManager::container_name(13306, "llamacpp", "nathanw", "Qwen3-4B-GGUF"));
 
     check("other publishers are refused",
           !ContainerManager::allowed_image("docker.io/library/ubuntu") &&

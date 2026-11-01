@@ -76,7 +76,7 @@ Install pulls the image, so loading a model starts from the image already on dis
 
 ## How Containers Run
 
-Each loaded model gets its own container, named `lemonade-<recipe>-<backend>-<model>` and labeled `ai.lemonade`, so `podman ps --filter label=ai.lemonade` lists them. Every load logs its full `podman run` or `docker run` command. Each container:
+Each loaded model gets its own container, named `lemonade-<port>-<recipe>-<backend>-<model>`, where `<port>` is the port Lemonade listens on, and labeled `ai.lemonade`, so `podman ps --filter label=ai.lemonade` lists them. Every load logs its full `podman run` or `docker run` command. Each container:
 
 - mounts only the model's files, read-only, under `/mnt/models`, with the shared SELinux label so other containers and programs can still read them
 - opens only the GPU device nodes its backend needs

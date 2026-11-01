@@ -178,8 +178,8 @@ These options are the same for Podman and Docker:
 | `--rm`, `--init`, `--cap-drop=all`, `--security-opt=no-new-privileges` | Same for every container † | Fixed |
 | `--pull=never` | Same for every container | Fixed |
 | seccomp | The tool's default profile: the command passes no `seccomp` option † | Fixed |
-| `--name` | `lemonade-<recipe>-<backend>-<model>`, where each part keeps letters, digits, `.` and `-`, doubles `_`, and writes any other character as `_` plus its two hex digits (`user.foo/bar` becomes `user.foo_2fbar`) | The loaded model |
-| `--label` | `ai.lemonade`, `ai.lemonade.recipe`, `.backend`, `.model`, `.port` † | The loaded model |
+| `--name` | `lemonade-<instance>-<recipe>-<backend>-<model>`, where `<instance>` is the port `lemond` listens on, so two `lemond` instances that share a container daemon never remove each other's containers, and each other part keeps letters, digits, `.` and `-`, doubles `_`, and writes any other character as `_` plus its two hex digits (`user.foo/bar` becomes `user.foo_2fbar`) | The loaded model |
+| `--label` | `ai.lemonade`, `ai.lemonade.instance`, `ai.lemonade.recipe`, `.backend`, `.model`, `.port` † | The loaded model and the `lemond` port |
 | `--network` | A private `--internal` network named after the container | Fixed |
 | `-v` | `<host path>:/mnt/models/<name>:ro,z`, one per model file the command names †. A directory the command names, such as Halogen's tokenizer directory, gets one mount per file inside it at the same relative path, such as `/mnt/models/tokenizer/vocab.json` ‡. Each host path is resolved through symlinks first, so files in a Hugging Face cache, which link into the cache's `blobs/` folder, mount as the files themselves. `z` gives the files a shared SELinux label that every container can read, so the same model can be mounted by several containers, whether Lemonade started them or not. It does nothing on hosts without SELinux | The model's files |
 | `--device` | One per node, such as `/dev/dri` § | `ContainerPolicy.devices` (see [`containers` Descriptor Field](#containers-descriptor-field)) |
@@ -216,18 +216,19 @@ The program is the server the container runs, with its arguments, such as `llama
 
 ### Complete Example
 
-Suppose `lemond` runs under the user's own account on a native host with rootless Podman, and loads the model `Qwen3-4B-GGUF` on `llamacpp:nathanw` with `ctx_size` set to 8192. `ContainerProcess` runs two commands. The first creates the container's private network, and the second starts the server:
+Suppose `lemond` listens on port 13305 under the user's own account on a native host with rootless Podman, and loads the model `Qwen3-4B-GGUF` on `llamacpp:nathanw` with `ctx_size` set to 8192. `ContainerProcess` runs two commands. The first creates the container's private network, and the second starts the server:
 
 ```
 podman network create --internal \
   --label ai.lemonade \
-  lemonade-llamacpp-nathanw-Qwen3-4B-GGUF
+  lemonade-13305-llamacpp-nathanw-Qwen3-4B-GGUF
 
 podman run \
   --rm \
   --init \
-  --name lemonade-llamacpp-nathanw-Qwen3-4B-GGUF \
+  --name lemonade-13305-llamacpp-nathanw-Qwen3-4B-GGUF \
   --label ai.lemonade \
+  --label ai.lemonade.instance=13305 \
   --label ai.lemonade.recipe=llamacpp \
   --label ai.lemonade.backend=nathanw \
   --label ai.lemonade.model=Qwen3-4B-GGUF \
@@ -235,7 +236,7 @@ podman run \
   --cap-drop=all \
   --security-opt=no-new-privileges \
   --pull=never \
-  --network=lemonade-llamacpp-nathanw-Qwen3-4B-GGUF \
+  --network=lemonade-13305-llamacpp-nathanw-Qwen3-4B-GGUF \
   --device /dev/dri \
   --group-add keep-groups \
   -v /home/alice/.cache/huggingface/hub/models--unsloth--Qwen3-4B-GGUF/snapshots/a1b2c3d4e5f67890a1b2c3d4e5f67890a1b2c3d4/Qwen3-4B-Q4_K_M.gguf:/mnt/models/Qwen3-4B-Q4_K_M.gguf:ro,z \
@@ -380,7 +381,7 @@ Rootless Podman also needs the `lemonade` account to own a subordinate UID/GID r
 
 - When `/etc/subuid` and `/etc/subgid` both already have a `lemonade` entry, the script leaves them as they are, so upgrades and reinstalls keep the existing range.
 - Otherwise it reads both files, takes the highest end (start plus count) of every range in them, with a minimum of 100000, and allocates the 65,536 IDs from there to whichever file lacks a `lemonade` entry, with `usermod --add-subuids <start>-<start+65535> lemonade` and `usermod --add-subgids <start>-<start+65535> lemonade`. The range sits past every account's existing block, and `useradd` allocates later accounts past it in turn.
-- When `/etc/nsswitch.conf` has a `subid:` line, the host gets subordinate IDs from a central directory such as FreeIPA or SSSD, and the script leaves the allocation to the host's administrator. The setup assistant's "Subordinate IDs allocated" check reports a missing range.
+- When `/etc/nsswitch.conf` has a `subid:` line naming a source other than `files`, the host gets subordinate IDs from a central directory such as FreeIPA or SSSD, and the script leaves the allocation to the host's administrator. The setup assistant's "Subordinate IDs allocated" check reports a missing range.
 
 `lemond` starts and stops the containers as children in its own cgroup, so stopping `lemond.service` tears down its containers with it.
 

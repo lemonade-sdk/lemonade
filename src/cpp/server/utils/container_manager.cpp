@@ -363,6 +363,7 @@ std::vector<std::string> ContainerManager::run_command(const ContainerRunSpec& s
     std::vector<std::string> argv = {
         tool_name(*chosen), "run", "--rm", "--init", "--name", spec.name,
         "--label", kLabel,
+        "--label", std::string(kLabel) + ".instance=" + std::to_string(spec.instance),
         "--label", std::string(kLabel) + ".recipe=" + spec.recipe,
         "--label", std::string(kLabel) + ".backend=" + spec.backend,
         "--label", std::string(kLabel) + ".model=" + spec.model,
@@ -580,10 +581,11 @@ std::string ContainerManager::address(const std::string& name) const {
     return result.exit_code == 0 ? trim(result.output) : "";
 }
 
-std::string ContainerManager::container_name(const std::string& recipe,
+std::string ContainerManager::container_name(int instance, const std::string& recipe,
                                              const std::string& backend,
                                              const std::string& model) {
-    return "lemonade-" + name_token(recipe) + "-" + name_token(backend) + "-" + name_token(model);
+    return "lemonade-" + std::to_string(instance) + "-" + name_token(recipe) + "-" +
+           name_token(backend) + "-" + name_token(model);
 }
 
 std::string ContainerManager::podman_install_command(const std::string& os_release) {

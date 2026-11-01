@@ -29,6 +29,7 @@ struct ContainerRunSpec {
     std::string recipe;
     std::string backend;
     std::string model;
+    int instance = 0;
     int port = 0;
     std::string network;
     std::vector<std::string> devices;
@@ -130,10 +131,12 @@ public:
     // The container's address on its network, or "" while it has none.
     std::string address(const std::string& name) const;
 
-    // lemonade-<recipe>-<backend>-<model>, reduced to the characters a
-    // container name accepts.
-    static std::string container_name(const std::string& recipe, const std::string& backend,
-                                      const std::string& model);
+    // lemonade-<instance>-<recipe>-<backend>-<model>, reduced to the
+    // characters a container name accepts. `instance` is the port the owning
+    // lemond listens on, so two lemond instances sharing a container daemon
+    // never claim each other's containers.
+    static std::string container_name(int instance, const std::string& recipe,
+                                      const std::string& backend, const std::string& model);
     // The command that installs Podman on the distribution `os_release`
     // describes, matched on ID, then each word of ID_LIKE.
     static std::string podman_install_command(const std::string& os_release);
