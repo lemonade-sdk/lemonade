@@ -273,6 +273,7 @@ CAPABILITIES = {
                 "classify_labels": True,
                 "state_over_window_error": True,
                 "laya_decision_type": True,
+                "reports_truncation": True,
             },
             "test_models": {
                 "systemone": "Julia-1-GGUF",
@@ -290,6 +291,7 @@ CAPABILITIES = {
                 "classify_labels": True,
                 "state_over_window_error": False,
                 "laya_decision_type": False,
+                "reports_truncation": False,
             },
             "test_models": {
                 "systemone": "d3-lite-FLM",

@@ -19,7 +19,7 @@ from utils.server_base import (
     run_server_tests,
     pull_model_with_retry,
 )
-from utils.capabilities import get_test_model, skip_if_unsupported
+from utils.capabilities import get_test_model, skip_if_unsupported, supports
 from utils.test_models import PORT, TIMEOUT_DEFAULT
 
 TIMEOUT_DECISION = 600
@@ -214,7 +214,10 @@ class SystemOneTests(ServerTestBase):
         self.assertEqual(set(scores), set(labels))
         self.assertAlmostEqual(sum(scores.values()), 1.0, places=3)
         self.assertEqual(max(scores, key=scores.get), "cooking")
-        self.assertIs(response.json().get("truncated"), False)
+        if supports("reports_truncation"):
+            self.assertIs(response.json().get("truncated"), False)
+        else:
+            self.assertNotIn("truncated", response.json())
         print(f"[OK] classify with labels: {scores}")
 
     def test_503_classify_without_labels_error(self):
