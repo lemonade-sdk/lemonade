@@ -41,7 +41,11 @@ def schema():
     old_bytes = subprocess.check_output(
         ["git", "show", BASE + ":" + SCHEMA], cwd=REPO, timeout=30
     )
-    current_bytes = (REPO / SCHEMA).read_bytes()
+    current_bytes = subprocess.check_output(
+        ["git", "show", "b6b586059b71864370ae2c092bc0f9eb97970e1f:" + SCHEMA],
+        cwd=REPO,
+        timeout=30,
+    )
     expected = first.apply(json.loads(old_bytes), RECORDS)
     assert first.serialized(expected) == first.serialized(
         json.loads(current_bytes)

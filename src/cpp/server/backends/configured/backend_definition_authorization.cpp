@@ -615,6 +615,12 @@ nlohmann::json container_execution_owner(const nlohmann::json& declaration) {
         result["model_contract"] = declaration.at("model_contract");
         result["slot_policy"] = declaration.at("metadata").at("slot_policy");
     }
+    nlohmann::json transforms = nlohmann::json::array();
+    for (const auto& operation : declaration.at("operations")) {
+        if (operation.contains("request") && operation.at("request").contains("content_transform"))
+            transforms.push_back({{"id", operation.at("id")}, {"transform", operation.at("request").at("content_transform")}});
+    }
+    if (!transforms.empty()) result["content_transforms"] = std::move(transforms);
     return result;
 }
 

@@ -1,5 +1,6 @@
 #include "../../system_info_utils.h"
 #include "backend_definition_runner_internal.h"
+#include "lemon/auto_tune.h"
 #include "lemon/backends/configured/container_execution.h"
 #include "lemon/system_info.h"
 #include "lemon/utils/path_utils.h"
@@ -166,6 +167,27 @@ std::vector<ContainerGpuNode> EffectLaunchServices::container_gpu_nodes() const 
 #else
     throw std::runtime_error("Container GPU selection requires Linux");
 #endif
+}
+
+IntegratedMemoryPool EffectLaunchServices::integrated_memory_pool() const {
+    try {
+        const auto gpu = create_system_info()->get_amd_igpu_device();
+        if (gpu.available) return {true, gpu.vram_gb, gpu.virtual_gb};
+    } catch (...) {}
+    return {false, 0.0, 0.0};
+}
+
+FreeMemoryFact EffectLaunchServices::free_gpu_memory() const {
+    bool known = false;
+    const auto gib = get_available_memory_gb(DEVICE_GPU, gpu_memory_vendor_for_target("rocm", ""), "", nullptr, &known);
+    return {known, gib};
+}
+
+std::optional<ArtifactByteFact> EffectLaunchServices::artifact_bytes(const std::string& path) const {
+    std::error_code error;
+    const auto bytes = std::filesystem::file_size(utils::path_from_utf8(path), error);
+    if (error) return ArtifactByteFact{false, 0};
+    return ArtifactByteFact{true, bytes};
 }
 
 std::string EffectLaunchServices::container_gpu_properties(unsigned node) const {

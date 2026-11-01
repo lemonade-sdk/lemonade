@@ -1,4 +1,5 @@
 #include "backend_definition_runner_internal.h"
+#include "ds4_contract_internal.h"
 #include "halogen_model_contract_internal.h"
 #include "lemon/backends/backend_option_contract.h"
 #include "lemon/utils/aixlog.hpp"
@@ -122,9 +123,10 @@ TransportRequest DefinitionRunner::map_request(BackendOperation operation, Opera
     const auto chain = slots(SlotOwnerKind::Operation, op.id, "request");
     for (const auto index : chain) body = invoke<typed::RequestTransform>(frame, index, SlotOwnerKind::Operation, op.id, "request", cancel,
         [&](auto target, auto&) { return target(std::move(body)); });
+    if (op.content_transform == execution::ContentTransform::Ds4NoThinkV1) body = ds4_without_no_think_prefix(std::move(body));
     runtime::check_cancelled(cancel);
     TransportRequest result{op.kind, op.method, op.codec, op.path, std::move(body), {}, static_cast<long>(op.timeout_seconds)};
-    if (original_body && op.identity && op.remove.empty() && op.set.empty() && chain.empty()) result.original_body = std::string(*original_body);
+    if (original_body && op.identity && op.remove.empty() && op.set.empty() && chain.empty() && op.content_transform == execution::ContentTransform::None) result.original_body = std::string(*original_body);
     return result;
 }
 TransportRequest DefinitionRunner::map_stream(const std::string& path, ModelType model_type, const ExecutionSession& session,
@@ -541,6 +543,8 @@ PreparedExecution DefinitionRunner::prepare_load(const LoadContext& context, con
                 if (required && (path.empty() || (artifact.records.value("check", "exists") != "nonempty" && !services.exists(path))))
                     throw std::runtime_error(evaluate(artifact.missing_error, frame).value().get<std::string>());
             }
+            if (execution_case && execution_case->memory_plan == execution::MemoryPlanPolicy::Ds4RocmV1)
+                values["memory"] = ds4_memory_plan(context.model_info, services);
         } else if (phase == "custom_args") {
             if (launch.custom_args_slot) {
                 const auto& value = options.at(program_.bindings.at(*launch.custom_args_slot).public_name);

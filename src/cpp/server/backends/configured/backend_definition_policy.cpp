@@ -408,6 +408,16 @@ std::optional<TypedReferenceMetadata> typed_data_reference(const std::string& pa
     if (release && selected("install_context", "llamacpp.install_context.v1"))
         for (const auto* field : {"therock_version", "rocm_asset_family", "cuda_architecture"})
             if (path == std::string("/install/") + field) return result(Type::String, Phase::InstallAsset);
+    if (path.rfind("/memory/", 0) == 0 && doc.at("launch").contains("execution")) {
+        const auto& cases = doc.at("launch").at("execution").at("cases");
+        if (std::any_of(cases.begin(), cases.end(), [](const auto& item) { return item.value("memory_plan", "") == "ds4_rocm_v1"; })) {
+            if (path == "/memory/resident" || path == "/memory/integrated_available" || path == "/memory/free_known" || path == "/memory/main_bytes_known" || path == "/memory/draft_bytes_known") return result(Type::Boolean, Phase::Prepare);
+            for (const auto* name : {"pool_gib", "igpu_vram_gib", "igpu_virtual_gib", "weights_gib", "working_set_gib", "free_gib"})
+                if (path == std::string("/memory/") + name) return result(Type::Number, Phase::Prepare);
+            for (const auto* name : {"main_bytes", "draft_bytes", "expert_cache_gb", "model_cache_gb", "free_reserve_gb"})
+                if (path == std::string("/memory/") + name) return result(Type::Integer, Phase::Prepare);
+        }
+    }
     if (path == "/model/labels/mtp" || path == "/model/labels/dflash") return result(Type::Boolean, Phase::Input);
     if (path == "/model/speculative_mode") return result(Type::String, Phase::Input);
     if (selected("launch", "llamacpp.prepare.v1")) {

@@ -16,6 +16,7 @@ import gufo_definition_transition as gufo
 import container_prerequisite_transition as prerequisites
 import container_device_validation_transition as devices
 import container_halogen_transition as halogen
+import container_ds4_transition as ds4
 from backend_v2_4e_audit import census
 
 REPO = first.REPO
@@ -353,6 +354,12 @@ def main():
         base, evidence, old_ids, halogen_schema, expected_snapshot, 9
     )
     halogen.check(args, halogen_previous, expected, halogen_previous_ids, ids)
+    ds4_previous, ds4_previous_ids = expected, ids
+    _, _, ds4_schema = ds4.schema()
+    expected, ids = prerequisites.derive(
+        base, evidence, old_ids, ds4_schema, expected_snapshot, 10
+    )
+    ds4.check(args, ds4_previous, expected, ds4_previous_ids, ids)
     old_evidence = json.loads((args.out / "historical-evidence.json").read_bytes())
     expected_evidence = copy.deepcopy(old_evidence)
     for k in ("admission", "execution", "catalog", "catalog_v2"):

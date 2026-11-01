@@ -116,6 +116,8 @@ struct EnvironmentAssignment {
 };
 
 enum class DeviceValidationBackend { Selected, Rocm, Vulkan };
+enum class MemoryPlanPolicy { None, Ds4RocmV1 };
+enum class ContentTransform { None, Ds4NoThinkV1 };
 
 struct ExecutionCase {
     std::string id;
@@ -124,6 +126,7 @@ struct ExecutionCase {
     std::string container;
     Json program;
     DeviceValidationBackend device_validation_backend = DeviceValidationBackend::Selected;
+    MemoryPlanPolicy memory_plan = MemoryPlanPolicy::None;
 };
 
 struct MountProgram {
@@ -165,6 +168,7 @@ struct OperationProgram {
     std::string codec;
     std::uint64_t timeout_seconds = 0;
     bool identity = false;
+    ContentTransform content_transform = ContentTransform::None;
     bool omit_missing = false;
     std::vector<std::string> remove;
     std::map<std::string, std::string> set;

@@ -66,6 +66,10 @@ void phase_reference(const std::string& reference, const std::string& at, const 
     } else if (root == "/model" || root == "/platform" || root == "/options") available = 0;
     else if (root == "/request") available = order.size() + 2;
     else if (root == "/artifacts") available = after("artifacts");
+    else if (root == "/memory") {
+        require(v2::typed_data_reference(reference, doc).has_value(), "invalid_reference", at);
+        available = after("artifacts");
+    }
     else if (root == "/install") available = rank(rank("install") <= order.size() ? "install" : "program");
     else if (root == "/launch") {
         require(reference.size() > 8, "unsupported_execution_feature", at);
@@ -115,6 +119,7 @@ Expression compile(const Json& value, const std::string& pointer, Program& progr
         } else {
             valid_pointer(text, pointer);
             phase_reference(text, pointer, program);
+            require(text.rfind("/memory/", 0) != 0 || !result.default_value, "invalid_memory_default", pointer);
             const bool produced = text.rfind("/launch/hook/", 0) == 0;
             if (produced) {
                 const auto fact = model_fact(text, program);
@@ -125,7 +130,7 @@ Expression compile(const Json& value, const std::string& pointer, Program& progr
                 require(!result.default_value || type_matches(*result.default_value, type), "invalid_type", pointer);
                 result.type = type;
             }
-            if (!produced && (text == "/model/speculative_mode" || text.rfind("/model/labels", 0) == 0 || text.rfind("/platform/", 0) == 0 || text.rfind("/install/", 0) == 0 ||
+            if (!produced && (text.rfind("/memory/", 0) == 0 || text == "/model/speculative_mode" || text.rfind("/model/labels", 0) == 0 || text.rfind("/platform/", 0) == 0 || text.rfind("/install/", 0) == 0 ||
                 text.rfind("/artifacts/", 0) == 0 || text.rfind("/launch/", 0) == 0 || text.rfind("/runtime/", 0) == 0)) {
                 budget.work(text.size(), v2::checked_sum(program.bindings.size(), program.normalized["launch"]["ports"].size()));
                 budget.keep(v2::checked_product(v2::checked_sum(text.size(), 128), 4));

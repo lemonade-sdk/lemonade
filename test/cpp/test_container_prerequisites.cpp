@@ -61,7 +61,7 @@ struct HostExclusivityTestAccess {
 }
 
 namespace {
-struct HostServices final : LaunchServices {
+struct HostServices : LaunchServices {
     std::string properties = "capability 134217728\nctl_stack_size 1024\nsimd_count 5\ncwsr_size 959488\n";
     mutable std::vector<unsigned> property_nodes;
     std::string container_gpu_properties(unsigned node) const override { property_nodes.push_back(node); return properties; }
@@ -224,6 +224,8 @@ void router_contract(const std::shared_ptr<const ConfiguredBackendEntry>& backen
 }
 }
 
+#include "c6b_ds4_contract.h"
+
 int main() {
     std::setvbuf(stdout, nullptr, _IONBF, 0);
     try {
@@ -245,6 +247,7 @@ int main() {
         check(backend->descriptor.slot_policy == SlotPolicy::ExclusiveHost &&
             std::string(slot_policy_to_string(backend->descriptor.slot_policy)) == "exclusive_host", "ExclusiveHostSchemaAndDescriptor");
         halogen_facts(fixture, backend, scratch);
+        ds4_contract(scratch);
         router_contract(backend, scratch);
         RuntimeConfig::set_global(nullptr);
     } catch (const std::exception& error) { std::printf("Prerequisite exception: %s\n", error.what()); check(false, "ContainerPrerequisitePipeline"); }

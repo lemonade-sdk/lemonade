@@ -89,6 +89,17 @@ void compile_programs(Program& program, Budget& budget) {
         budget.keep(sizeof(ExecutionCase) + 256);
         program.launch.execution_cases.push_back({item["id"], item["backends"].get<std::vector<std::string>>(),
             item["kind"], item.value("container", ""), item["program"]});
+        if (item.contains("memory_plan")) {
+            require(item["memory_plan"] == "ds4_rocm_v1" && item["backends"] == Json::array({"rocm"}), "invalid_memory_plan", "/launch/execution/cases");
+            const auto& order = launch.at("prepare_order");
+            require(std::count(order.begin(), order.end(), "backend") == 1 && std::count(order.begin(), order.end(), "artifacts") == 1 &&
+                std::find(order.begin(), order.end(), "backend") < std::find(order.begin(), order.end(), "artifacts"),
+                "invalid_memory_plan", "/launch/prepare_order");
+            const auto& artifacts = doc.at("artifacts");
+            require(std::count_if(artifacts.begin(), artifacts.end(), [](const auto& value) { return value.at("role") == "main"; }) == 1 &&
+                std::count_if(artifacts.begin(), artifacts.end(), [](const auto& value) { return value.at("role") == "draft"; }) == 1, "invalid_memory_plan", "/artifacts");
+            program.launch.execution_cases.back().memory_plan = MemoryPlanPolicy::Ds4RocmV1;
+        }
         if (item.contains("device_validation")) {
             require(std::any_of(program.hooks.begin(), program.hooks.end(), [](const auto& hook) {
                 return hook.contract == typed::Contract::Backend && hook.slot.owner_kind == SlotOwnerKind::Root &&
@@ -304,6 +315,10 @@ void compile_programs(Program& program, Budget& budget) {
         op.codec = transport.value("response_codec", transport.value("stream_codec", ""));
         op.timeout_seconds = transport["timeout"] == "global" ? 0 : transport["timeout"].get<std::uint64_t>();
         const auto& request = record["request"];
+        if (request.contains("content_transform")) {
+            require(request["content_transform"] == "ds4_no_think_v1" && operation == BackendOperation::ChatCompletion, "invalid_content_transform", p + "/request/content_transform");
+            op.content_transform = ContentTransform::Ds4NoThinkV1;
+        }
         op.identity = request["base"] == "identity";
         op.omit_missing = request["omit_missing"];
         op.remove = request["remove"].get<std::vector<std::string>>();

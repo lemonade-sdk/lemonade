@@ -96,10 +96,8 @@ next unit's work. No engine was migrated by these contracts.
 C6b closes Halogen's host-exclusivity, bundle, context and host-fact
 prerequisites as described below. Its engine migration remains a separate unit.
 
-DS4 remains blocked on integrated-GPU pool, weight-byte and free-memory inputs,
-its derived residency/cache plan and the explicit user-message `/no_think\n`
-rewrite for buffered and streaming requests. No content rewrite or corresponding
-mutation qualification is claimed. The earlier native-versus-later-OCI source
+C6b also closes DS4's memory-fact, residency/cache and content-rewrite
+prerequisites as described below. The earlier native-versus-later-OCI source
 provenance distinction in C5 still applies.
 
 ## C6b: Halogen model and host contract
@@ -173,3 +171,75 @@ All earlier stages retain their original disclosures and exact comparators;
 the C6 device stage now reads its schema bytes from its immutable commit.
 Halogen's prerequisite is closed by these contracts. Its production definition,
 reviewed dormant owner/grants/pin and migration parity campaign remain separate.
+
+## C6b: DS4 memory and content contracts
+
+The earlier `cb-3-container-ds4` source is still native. These prerequisites
+implement the later OCI source at `8f8b905a1cf68b60a4d7fdc66a15d846b0cebc78`;
+they do not relabel the earlier pin or migrate either implementation.
+`test/fixtures/backend-v2/c6b.ds4.json` retains both revision identities, exact
+quotations and independent expected memory plans and request bodies.
+
+A container execution case can select exactly `memory_plan: "ds4_rocm_v1"`.
+It requires the ROCm selector, a single backend phase before its single
+artifact phase, and explicit main/draft artifact roles. Native cases cannot attach it. The compiler retains a typed
+`MemoryPlanPolicy`; the runner reads facts after artifact validation, before
+mounting or emitting argv/environment. The execution owner seals the record.
+No definition can supply a host path or executable for collecting these facts.
+
+The narrow services supply integrated-GPU availability, VRAM and virtual-window
+GiB, main/draft byte-size facts, and known/unknown free GPU memory. Missing
+service facts reject; memory references cannot specify defaults. An absent
+draft has an explicit zero-byte size. An observed stat failure is represented
+by a present `ArtifactByteFact{false, 0}`, retaining the source's zero-byte
+result; an unavailable fact is `nullopt` and rejects. The session exposes this
+status, raw pool/byte facts, free-memory facts when queried, and the derived
+plan through a closed `/memory/` reference table. Invalid numeric facts reject.
+
+The pool is zero without an available integrated GPU; otherwise it is the
+larger of VRAM and the virtual window. Weights are main bytes / 2^30 plus draft
+bytes / 2^30. Positive weights are resident when the positive pool is at least
+weights + 16 GiB. Residency leaves a 16 GiB reserve and disables the streaming
+caches. Otherwise a positive pool yields integer-truncated expert cache 40%,
+model cache 20%, and free reserve 60%. A nonpositive pool leaves all three zero.
+The working set is weights when resident, or `min_resident_gb` when streaming.
+Only a positive working set and reserve query free GPU memory. Known free
+memory below their sum preserves the source's one-decimal refusal message;
+explicit unknown memory preserves the source's no-refusal behavior. The
+fixture checks the equality threshold, draft bytes changing residency, both
+pool inputs, streaming, no pool, zero weights, unknown memory, and exact
+low-memory refusal. It compares complete resulting argv, environment and
+conditional draft mounts, including DSpark and all three cache settings.
+
+`request.content_transform: "ds4_no_think_v1"` compiles to a typed content
+transform on buffered or streaming chat-completion operations. It has no
+parameters and accepts no arbitrary prefix, role or message-selection code.
+The source's exact selection rule is **all** object messages whose `role` is
+exactly `user` and whose `content` is a string. Remove exactly one leading
+`/no_think\n`; preserve later copies, leading whitespace, other roles,
+non-string content and multipart content. This is not limited to the last
+user message. A non-string role retains the source's conversion exception.
+The source streaming wrapper selects endpoints containing `chat/completions`;
+the fixture binds the canonical chat operation and preserves completion and
+responses bodies. Existing bounded operation admission remains in force.
+
+With `bound_passthrough`, malformed streaming JSON preserves the original bytes.
+Valid streaming chat JSON is rewritten and reserialized even when no content
+changes, matching the source. Buffered and streaming bodies traverse the
+actual transport and an ephemeral loopback HTTP echo, so both wire bodies are
+observable independently. Tests cover multiple historical user messages,
+repeated/bare prefixes, an empty result, role case, multipart content, valid
+primitive/non-message JSON, malformed JSON and the role-conversion exception.
+The sealed container owner additionally records selected content transforms;
+old owners have exactly their prior semantics when no transform is selected.
+
+This is its own stage, `c6b.ds4.catalog-transition.json`: runner policy 9 to 10,
+two exact schema additions (`ExecutionCase` container `memory_plan` and
+`Request.content_transform`), 133 full snapshot records and schema identity
+`sha256:59c258591be9f262c9bf771e2ef7419883f06b0bc3f2399d22e76426789fd439`.
+The Halogen stage now reads its schema from its immutable local commit, keeping
+its original comparator and disclosure exact. No earlier disclosure changes.
+Both remaining C5 prerequisites are closed. Halogen and DS4 still require their
+production definitions/owners/pins and separate migration parity campaigns;
+real container, registry, device, model, cancellation and packaging qualification
+remain outside these CPU prerequisites.

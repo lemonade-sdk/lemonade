@@ -3,10 +3,12 @@
 #include "lemon/backends/backend_effects.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backends/configured/backend_definition.h"
+#include "lemon/backends/configured/container_memory.h"
 #include "lemon/backends/container_policy.h"
 #include "lemon/model_manager.h"
 #include "lemon/utils/container_manager.h"
 
+#include <cstdint>
 #include <map>
 
 namespace lemon::backends {
@@ -42,6 +44,9 @@ struct ContainerGpuNode {
 class LaunchServices {
 public:
     virtual ~LaunchServices() = default;
+    virtual IntegratedMemoryPool integrated_memory_pool() const { throw std::logic_error("Integrated memory pool is unavailable"); }
+    virtual FreeMemoryFact free_gpu_memory() const { throw std::logic_error("Free GPU memory is unavailable"); }
+    virtual std::optional<ArtifactByteFact> artifact_bytes(const std::string&) const { return {}; }
     virtual std::string container_image(const ContainerPolicy&) const { throw std::logic_error("Container pin service is unavailable"); }
     virtual void install_container_image(const std::string&) { throw std::logic_error("OCI installation service is unavailable"); }
     virtual std::string container_gpu_properties(unsigned) const { throw std::logic_error("Container GPU properties are unavailable"); }
@@ -68,6 +73,9 @@ public:
         : effects_(std::move(effects)), posix_executable_loader_path_(posix_executable_loader_path) {}
     std::string container_image(const ContainerPolicy& policy) const override { return effects_.container_image(policy); }
     void install_container_image(const std::string& image) override { effects_.install_container_image(image); }
+    IntegratedMemoryPool integrated_memory_pool() const override;
+    FreeMemoryFact free_gpu_memory() const override;
+    std::optional<ArtifactByteFact> artifact_bytes(const std::string& path) const override;
     std::vector<ContainerGpuNode> container_gpu_nodes() const override;
     std::string container_gpu_properties(unsigned node) const override;
     bool container_supports_arch(const std::string& recipe, const std::string& backend, const std::string& arch) const override;

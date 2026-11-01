@@ -16,6 +16,111 @@ SUITE = "test_container_prerequisites"
 def rules():
     return [
         (
+            "ds4-memory-phase-order-ignored",
+            CONFIGURED / "backend_execution_program.cpp",
+            'std::find(order.begin(), order.end(), "backend") < std::find(order.begin(), order.end(), "artifacts")',
+            "true",
+            "Ds4ClosedContract:memory-before-backend",
+        ),
+        (
+            "ds4-missing-memory-defaulted",
+            RUNNER,
+            '#include "ds4_contract_internal.h"',
+            None,
+            [
+                "Ds4MissingMemoryFactRejected:main",
+                "Ds4MissingMemoryFactRejected:free-known",
+            ],
+            "ds4_contract_internal.h",
+            'if (!value) throw std::runtime_error(std::string("Missing DS4 memory fact: ") + name);',
+            "if (!value) return T{};",
+        ),
+        (
+            "ds4-memory-pool-ignored",
+            RUNNER,
+            '#include "ds4_contract_internal.h"',
+            None,
+            "Ds4SourceMemoryPlan:resident-at-threshold",
+            "ds4_contract_internal.h",
+            "const auto pool = available ? (std::max)(vram, window) : 0.0;",
+            "const auto pool = available ? vram : 0.0;",
+        ),
+        (
+            "ds4-draft-weight-ignored",
+            RUNNER,
+            '#include "ds4_contract_internal.h"',
+            None,
+            "Ds4SourceMemoryPlan:draft-counts-for-residency",
+            "ds4_contract_internal.h",
+            'const auto support = draft.empty() ? ArtifactByteFact{true, 0} : ds4_memory_fact(services.artifact_bytes(draft), "draft_bytes");',
+            "const auto support = ArtifactByteFact{true, 0};",
+        ),
+        (
+            "ds4-residency-forced-streaming",
+            RUNNER,
+            '#include "ds4_contract_internal.h"',
+            None,
+            "Ds4SourceMemoryPlan:resident-at-threshold",
+            "ds4_contract_internal.h",
+            "const bool resident = pool > 0.0 && weights > 0.0 && pool >= weights + 16;",
+            "const bool resident = false;",
+        ),
+        (
+            "ds4-buffered-rewrite-dropped",
+            RUNNER,
+            "if (op.content_transform == execution::ContentTransform::Ds4NoThinkV1) body = ds4_without_no_think_prefix(std::move(body));",
+            "if (op.content_transform == execution::ContentTransform::Ds4NoThinkV1 && delivery == OperationDelivery::Streaming) body = ds4_without_no_think_prefix(std::move(body));",
+            "Ds4BufferedRewriteWireBodyAllUserMessages",
+        ),
+        (
+            "ds4-streaming-rewrite-dropped",
+            RUNNER,
+            "if (op.content_transform == execution::ContentTransform::Ds4NoThinkV1) body = ds4_without_no_think_prefix(std::move(body));",
+            "if (op.content_transform == execution::ContentTransform::Ds4NoThinkV1 && delivery == OperationDelivery::Buffered) body = ds4_without_no_think_prefix(std::move(body));",
+            "Ds4StreamingRewriteWireBodyAllUserMessages",
+        ),
+        (
+            "ds4-malformed-json-passthrough-broken",
+            RUNNER,
+            "if (passthrough && parsed.is_discarded()) return",
+            "if (passthrough && parsed.is_discarded() && op.content_transform == execution::ContentTransform::None) return",
+            "Ds4MalformedJsonStreamingPassthrough:{",
+        ),
+        (
+            "ds4-last-message-only",
+            RUNNER,
+            '#include "ds4_contract_internal.h"',
+            None,
+            "Ds4BufferedRewriteWireBodyAllUserMessages",
+            "ds4_contract_internal.h",
+            'for (auto& message : request["messages"]) {',
+            'for (auto& message : request["messages"]) { if (&message != &request["messages"].back()) continue;',
+        ),
+        (
+            "ds4-other-roles-rewritten",
+            RUNNER,
+            '#include "ds4_contract_internal.h"',
+            None,
+            "Ds4BufferedRewriteWireBodyAllUserMessages",
+            "ds4_contract_internal.h",
+            'message.value("role", "") == "user"',
+            "true",
+        ),
+        (
+            "ds4-content-owner-unsealed",
+            CONFIGURED / "backend_definition_authorization.cpp",
+            '    if (!transforms.empty()) result["content_transforms"] = std::move(transforms);',
+            "",
+            "Ds4ContentTransformIsSealed",
+        ),
+        (
+            "ds4-memory-owner-unsealed",
+            CONFIGURED / "backend_definition_authorization.cpp",
+            '{"execution", launch.at("execution")}',
+            '{"execution", [&] { auto value = launch.at("execution"); for (auto& item : value["cases"]) item.erase("memory_plan"); return value; }()}',
+            "Ds4MemoryPlanIsSealed",
+        ),
+        (
             "halogen-management-defaults-lost",
             RUNNER,
             'std::string DefinitionRunner::validate_file(const std::string& path) const {\n    if (halogen_contract()) return "";',
@@ -144,19 +249,27 @@ def main():
         if not resources.exists():
             resources.symlink_to(args.build / "resources", target_is_directory=True)
         if header_change:
-            header = CONFIGURED / "halogen_model_contract_internal.h"
+            if len(header_change) == 3:
+                header_name, a, b = header_change
+            else:
+                header_name, (a, b) = "halogen_model_contract_internal.h", header_change
+            header = CONFIGURED / header_name
             header_text = header.read_text()
-            a, b = header_change
             assert header_text.count(a) == 1
             (work / header.name).write_text(header_text.replace(a, b))
             new = '#include "' + str(work / header.name) + '"'
         mutant, obj, binary = work / source.name, work / "mutant.o", work / SUITE
         mutant.write_text(content.replace(old, new))
+        candidates = [r for r in database if Path(r["file"]) == source]
         row = next(
-            r
-            for r in database
-            if Path(r["file"]) == source and "lemonade-server-core.dir" in r["command"]
+            (r for r in candidates if "lemonade-server-core.dir" in r["command"]), None
         )
+        if row is None:
+            row = next((r for r in candidates if SUITE + ".dir" in r["command"]), None)
+        if row is None:
+            row = next(
+                r for r in candidates if "lemonade-binding-test.dir" in r["command"]
+            )
         command = shlex.split(row["command"])
         old_object = command[command.index("-o") + 1]
         command = [
@@ -175,9 +288,10 @@ def main():
             name + ": link failure is not a kill"
         )
         code = run(name + ".run", [binary], REPO)
-        assert (
-            code == 1
-            and "FAIL " + assertion in (args.out / (name + ".run.log")).read_text()
+        assertions = assertion if isinstance(assertion, list) else [assertion]
+        assert code == 1 and all(
+            "FAIL " + label in (args.out / (name + ".run.log")).read_text()
+            for label in assertions
         ), (name, code, assertion)
         assert source.read_bytes() == original, "ProductionSourceUntouched"
         results.append(dict(rule=name, assertion=assertion, exit=code, caught=True))

@@ -1387,6 +1387,11 @@
           "items": {
             "$ref": "#/$defs/Hook"
           }
+        },
+        "content_transform": {
+          "enum": [
+            "ds4_no_think_v1"
+          ]
         }
       },
       "required": [
@@ -2554,6 +2559,11 @@
                 "backend"
               ],
               "additionalProperties": false
+            },
+            "memory_plan": {
+              "enum": [
+                "ds4_rocm_v1"
+              ]
             }
           },
           "required": [
