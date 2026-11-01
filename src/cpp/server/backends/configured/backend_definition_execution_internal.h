@@ -112,6 +112,7 @@ struct ArtifactProgram {
 struct EnvironmentAssignment {
     std::string name;
     std::string expression;
+    std::optional<std::string> condition;
 };
 
 enum class DeviceValidationBackend { Selected, Rocm, Vulkan };
@@ -206,7 +207,10 @@ struct SymbolicHook {
     std::vector<std::size_t> dependencies;
 };
 
+enum class ModelContract { None, HalogenHgnV1 };
+
 struct Program {
+    ModelContract model_contract = ModelContract::None;
     std::vector<SymbolicHook> hooks;
     Json normalized;
     std::vector<OptionBinding> bindings;

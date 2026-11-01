@@ -27,6 +27,7 @@ private:
     void finalize();
     std::shared_ptr<const accounting::CatalogLedger> ledger_;
     friend struct CatalogExecutionBuilder;
+    friend struct ContainerPrerequisiteTestAccess;
     std::shared_ptr<const FrozenBuiltinCatalog> builtins_;
     std::shared_ptr<const AdmittedCatalog> admitted_;
     std::shared_ptr<BackendCatalogData> data_;

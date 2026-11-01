@@ -12,6 +12,7 @@ public:
     std::string resolve_version(const std::string& backend, const std::string& version) const override;
     InstallCheck check_install(const std::string& backend, bool found) const override;
     void populate_metadata(ModelInfo& info, const BackendOpsContext&) const override;
+    std::optional<std::vector<std::string>> select_checkpoint_files(const std::string& variant, const std::vector<std::string>& files) const override;
     std::string validate_registration_checkpoint(const std::string& checkpoint) const override;
     std::string validate_checkpoint_file(const std::string& path) const override;
     std::string find_imported_checkpoint(const std::string& path) const override;

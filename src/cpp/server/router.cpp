@@ -653,6 +653,26 @@ void Router::evict_all_npu_servers() {
     }
 }
 
+void Router::enforce_host_exclusivity_locked(SlotPolicy incoming, const std::string& model, ResidencyClass residency) {
+    if (incoming == SlotPolicy::Unmetered) return;
+    std::vector<WrappedServer*> displaced;
+    for (const auto& server : loaded_servers_) {
+        if (!server->is_backend_alive()) continue;
+        const auto policy = server->effective_slot_policy(server->get_recipe_options());
+        if (policy == SlotPolicy::Unmetered ||
+            (incoming != SlotPolicy::ExclusiveHost && policy != SlotPolicy::ExclusiveHost)) continue;
+        if (server->is_busy() || should_reject_residency_displacement(residency, server->get_residency_class()))
+            throw RouterResidencyConflictException(model, server->get_model_name(), "backend requires exclusive host access");
+        displaced.push_back(server.get());
+    }
+    for (auto* server : displaced) {
+        evict_server(server, EVICTION_TIMEOUT);
+        if (std::any_of(loaded_servers_.begin(), loaded_servers_.end(),
+            [server](const auto& item) { return item.get() == server; }))
+            throw std::runtime_error("Host-exclusive admission could not evict resident model");
+    }
+}
+
 void Router::evict_server(WrappedServer* server, int timeout_seconds) {
     if (!server) return;
 
@@ -954,6 +974,8 @@ void Router::load_model(const std::string& model_name,
         ModelType model_type = model_info.type;
         DeviceType device_type = model_info.device;
 
+        enforce_host_exclusivity_locked(slot_policy_for_recipe(model_info.recipe), canonical_model_name, requested_residency_class);
+
         // NPU EXCLUSIVITY CHECK — driven by the backend's slot policy (descriptor).
         //   ExclusiveNpu (ryzenai-llm, whisper-on-npu): lock the entire NPU,
         //                evicting ALL NPU servers first.
@@ -1030,6 +1052,7 @@ void Router::load_model(const std::string& model_name,
             }
             case SlotPolicy::Standard:
             case SlotPolicy::Unmetered:
+            case SlotPolicy::ExclusiveHost:
                 break;
         }
 

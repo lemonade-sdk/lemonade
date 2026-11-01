@@ -28,7 +28,8 @@ enum class SlotPolicy {
     Standard,      // counts toward the LRU slots, no device exclusivity (llamacpp, sd-cpp)
     ExclusiveNpu,  // evict ALL npu servers before loading (ryzenai-llm, whispercpp-npu)
     CoexistByType, // one per model type, evicts exclusive-npu peers (flm)
-    Unmetered      // never counts toward slots, never auto-evicted (cloud)
+    Unmetered,     // never counts toward slots, never auto-evicted (cloud)
+    ExclusiveHost
 };
 
 // How an installed backend version is compared against the expected pin.
@@ -43,6 +44,7 @@ inline const char* slot_policy_to_string(SlotPolicy p) {
         case SlotPolicy::ExclusiveNpu:  return "exclusive_npu";
         case SlotPolicy::CoexistByType: return "coexist_by_type";
         case SlotPolicy::Unmetered:     return "unmetered";
+        case SlotPolicy::ExclusiveHost: return "exclusive_host";
     }
     return "standard";
 }

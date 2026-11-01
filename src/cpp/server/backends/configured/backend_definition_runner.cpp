@@ -1,4 +1,5 @@
 #include "backend_definition_runner_internal.h"
+#include "halogen_model_contract_internal.h"
 #include "lemon/backends/backend_option_contract.h"
 #include "lemon/utils/aixlog.hpp"
 #include "lemon/utils/custom_args.h"
@@ -184,6 +185,10 @@ void DefinitionRunner::defaults(runtime::Frame& frame, const std::string& stage)
     frame.data.values["options"] = frame.data.options;
 }
 void DefinitionRunner::resolve_runtime_options(const ModelInfo& model, RecipeOptions& options) const {
+    if (halogen_contract()) {
+        const auto value = options.get_option("ctx_size");
+        if (!value.is_number_integer() || value.get<int>() <= 0) options.set_option("ctx_size", 262144);
+    }
     const bool runtime_hook = !slots(SlotOwnerKind::Root, "runtime_options", "runtime_options").empty();
     const bool runtime_default = std::any_of(program_.launch.defaults.begin(), program_.launch.defaults.end(),
         [](const auto& item) { return item.stage == "runtime_options"; });
@@ -364,6 +369,7 @@ BackendOps::InstallCheck DefinitionRunner::check_install(const std::string& back
 }
 
 void DefinitionRunner::populate_metadata(ModelInfo& model) const {
+    if (halogen_contract()) { model.max_context_window = 262144; return; }
     if (program_.artifacts.empty()) return;
     const auto path = model.resolved_path("main");
     const auto file = utils::path_from_utf8(path);
@@ -385,10 +391,12 @@ void DefinitionRunner::populate_metadata(ModelInfo& model) const {
     }
 }
 std::string DefinitionRunner::validate_registration(const std::string& checkpoint) const {
+    if (halogen_contract()) return "";
     if (program_.artifacts.empty()) return "";
     return artifact("main", [&](const auto& target, auto&) { return target.validate_registration(checkpoint); });
 }
 std::string DefinitionRunner::validate_file(const std::string& path) const {
+    if (halogen_contract()) return "";
     if (program_.artifacts.empty()) return "";
     return artifact("main", [&](const auto& target, auto& guard) {
         const bool directory = std::filesystem::is_directory(utils::path_from_utf8(path));
@@ -410,6 +418,7 @@ std::string DefinitionRunner::resolve_artifact(const CheckpointResolveContext& c
     });
 }
 std::string DefinitionRunner::find_imported(const std::string& path) const {
+    if (halogen_contract()) return "";
     if (program_.artifacts.empty()) return "";
     return artifact("main", [&](const auto& target, auto& guard) {
         runtime::ArtifactServices reads(guard, path, true);
@@ -427,6 +436,7 @@ PreparedExecution DefinitionRunner::prepare_load(const LoadContext& context, con
     auto& options = frame.data.options;
     options = context.options.to_json();
     if (!options.contains("ctx_size")) options["ctx_size"] = context.options.get_option("ctx_size");
+    if (halogen_contract() && (!options["ctx_size"].is_number_integer() || options["ctx_size"].get<int>() <= 0)) options["ctx_size"] = 262144;
     for (const auto& binding : program_.bindings) {
         if (context.options.has_explicit_option(binding.public_name)) frame.explicit_options.insert(binding.public_name);
         const auto value = context.options.has_explicit_option(binding.public_name) ? context.options.get_explicit_option(binding.public_name) :
@@ -500,6 +510,7 @@ PreparedExecution DefinitionRunner::prepare_load(const LoadContext& context, con
                 if (execution_case->kind == "container") {
                     if (host.os != "linux") throw std::runtime_error("Container backends run on Linux");
                     plan.container = container_run_spec(program_, *execution_case, context.model_name);
+                    if (halogen_contract()) check_halogen_host(*plan.container, services);
                     const auto& policy = container_policy(program_, *execution_case);
                     plan.container->image = services.container_image(policy);
                     if (!valid_container_image(policy.repository, plan.container->image))
@@ -522,8 +533,9 @@ PreparedExecution DefinitionRunner::prepare_load(const LoadContext& context, con
                     {"use_mmproj", facts.use_mmproj}, {"mmproj_on_cpu", facts.mmproj_on_cpu}, {"use_draft_checkpoint", facts.use_draft_checkpoint}, {"context_size", facts.context_size}, {"speculative_mode", facts.speculative_mode}};
             }
         } else if (phase == "artifacts") {
+            const auto bundle = halogen_contract() ? halogen_bundle(context.model_name, context.model_info, services) : std::map<std::string, std::string>{};
             for (const auto& artifact : program_.artifacts) {
-                const auto path = context.model_info.resolved_path(artifact.role);
+                const auto path = bundle.count(artifact.role) ? bundle.at(artifact.role) : context.model_info.resolved_path(artifact.role);
                 values["artifacts"][artifact.name] = path;
                 const bool required = evaluate(artifact.required_when, frame).value_or(true).get<bool>();
                 if (required && (path.empty() || (artifact.records.value("check", "exists") != "nonempty" && !services.exists(path))))
@@ -644,6 +656,7 @@ PreparedExecution DefinitionRunner::prepare_load(const LoadContext& context, con
             });
     }
     for (const auto& assignment : launch.environment_set) {
+        if (assignment.condition && !evaluate(*assignment.condition, frame).value().get<bool>()) continue;
         const auto value = evaluate(assignment.expression, frame).value().get<std::string>();
         auto found = std::find_if(plan.command.env.begin(), plan.command.env.end(), [&](const auto& item) { return item.first == assignment.name; });
         if (found == plan.command.env.end()) plan.command.env.emplace_back(assignment.name, value);

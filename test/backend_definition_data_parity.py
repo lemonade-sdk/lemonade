@@ -174,9 +174,16 @@ def compile_views(args):
         "    bool streams_model_from_storage = false;",
         "    bool streams_model_from_storage = false;\n    std::map<std::string, ContainerPolicy> containers;",
     )
-    assert (
-        REPO / header
-    ).read_text() == extended, "ExactAdditiveContainerDescriptorField"
+    container_stage = baseline("42ab4c00f49d01e5c0aae14cda44c0c43bb1753f", header)
+    assert container_stage == extended, "ExactAdditiveContainerDescriptorField"
+    extended = extended.replace(
+        "    Unmetered      // never counts toward slots, never auto-evicted (cloud)",
+        "    Unmetered,     // never counts toward slots, never auto-evicted (cloud)\n    ExclusiveHost",
+    ).replace(
+        '        case SlotPolicy::Unmetered:     return "unmetered";',
+        '        case SlotPolicy::Unmetered:     return "unmetered";\n        case SlotPolicy::ExclusiveHost: return "exclusive_host";',
+    )
+    assert (REPO / header).read_text() == extended, "ExactAdditiveHostSlotPolicy"
     protected.remove(header)
     subprocess.run(
         ["git", "diff", "--exit-code", args.baseline_commit, "--", *protected],

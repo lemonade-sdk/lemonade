@@ -44,6 +44,7 @@ public:
     virtual ~LaunchServices() = default;
     virtual std::string container_image(const ContainerPolicy&) const { throw std::logic_error("Container pin service is unavailable"); }
     virtual void install_container_image(const std::string&) { throw std::logic_error("OCI installation service is unavailable"); }
+    virtual std::string container_gpu_properties(unsigned) const { throw std::logic_error("Container GPU properties are unavailable"); }
     virtual std::vector<ContainerGpuNode> container_gpu_nodes() const { throw std::logic_error("Container GPU topology is unavailable"); }
     virtual bool container_supports_arch(const std::string&, const std::string&, const std::string&) const { throw std::logic_error("Container GPU support is unavailable"); }
     virtual bool exists(const std::string& path) const = 0;
@@ -68,6 +69,7 @@ public:
     std::string container_image(const ContainerPolicy& policy) const override { return effects_.container_image(policy); }
     void install_container_image(const std::string& image) override { effects_.install_container_image(image); }
     std::vector<ContainerGpuNode> container_gpu_nodes() const override;
+    std::string container_gpu_properties(unsigned node) const override;
     bool container_supports_arch(const std::string& recipe, const std::string& backend, const std::string& arch) const override;
     bool exists(const std::string& path) const override { return effects_.exists(path); }
     std::vector<std::string> supported_backends(const std::string& recipe) const override { return effects_.supported_backends(recipe); }

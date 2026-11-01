@@ -168,6 +168,22 @@ std::vector<ContainerGpuNode> EffectLaunchServices::container_gpu_nodes() const 
 #endif
 }
 
+std::string EffectLaunchServices::container_gpu_properties(unsigned node) const {
+#ifdef __linux__
+    const auto path = std::filesystem::path("/sys/class/kfd/kfd/topology/nodes") / std::to_string(node) / "properties";
+    std::ifstream input(path);
+    if (!input) throw std::runtime_error("Cannot read container GPU properties");
+    std::string text(65537, '\0');
+    input.read(text.data(), static_cast<std::streamsize>(text.size()));
+    if (input.bad() || input.gcount() > 65536) throw std::runtime_error("Container GPU properties exceed limit");
+    text.resize(static_cast<std::size_t>(input.gcount()));
+    return text;
+#else
+    (void)node;
+    throw std::runtime_error("Container GPU properties require Linux");
+#endif
+}
+
 bool EffectLaunchServices::container_supports_arch(const std::string& recipe, const std::string& backend, const std::string& arch) const {
     return SystemInfo::backend_supports_arch(recipe, backend, arch);
 }

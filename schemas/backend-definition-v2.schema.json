@@ -529,7 +529,8 @@
             "standard",
             "exclusive_npu",
             "coexist_by_type",
-            "unmetered"
+            "unmetered",
+            "exclusive_host"
           ]
         },
         "selectable_backend": {
@@ -1646,7 +1647,8 @@
         "hooks": {},
         "unsupported_messages": {},
         "rationale": {},
-        "containers": {}
+        "containers": {},
+        "model_contract": {}
       },
       "required": [],
       "additionalProperties": false
@@ -2002,6 +2004,9 @@
         },
         "value": {
           "$ref": "#/$defs/Expression"
+        },
+        "when": {
+          "$ref": "#/$defs/Expression"
         }
       },
       "required": [
@@ -2272,6 +2277,11 @@
           "additionalProperties": {
             "$ref": "#/$defs/ContainerPolicy"
           }
+        },
+        "model_contract": {
+          "enum": [
+            "halogen_hgn_v1"
+          ]
         }
       },
       "required": [

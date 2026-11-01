@@ -603,7 +603,7 @@ nlohmann::json container_execution_owner(const nlohmann::json& declaration) {
     auto environment = launch.at("environment");
     if (!environment.contains("set")) environment["set"] = nlohmann::json::array();
     if (!environment.contains("order")) environment["order"] = "preset_first";
-    return {{"kind", declaration.at("kind")}, {"recipe", declaration.at("recipe")},
+    nlohmann::json result = {{"kind", declaration.at("kind")}, {"recipe", declaration.at("recipe")},
         {"containers", declaration.value("containers", nlohmann::json::object())},
         {"install", install}, {"artifacts", artifacts},
         {"backend", launch.at("backend")}, {"execution", launch.at("execution")},
@@ -611,6 +611,11 @@ nlohmann::json container_execution_owner(const nlohmann::json& declaration) {
         {"environment", environment}, {"working_directory", launch.at("working_directory")},
         {"protected_environment", {"HOME", "LD_PRELOAD", "LD_LIBRARY_PATH", "PATH", "HIP_VISIBLE_DEVICES", "ROCR_VISIBLE_DEVICES", "CUDA_VISIBLE_DEVICES"}},
         {"confinement", "lemonade-isolated-v1"}};
+    if (declaration.contains("model_contract")) {
+        result["model_contract"] = declaration.at("model_contract");
+        result["slot_policy"] = declaration.at("metadata").at("slot_policy");
+    }
+    return result;
 }
 
 bool AuthorityInspection::permits_execution(const AuthorizedDefinition& token, const nlohmann::json& declaration) {

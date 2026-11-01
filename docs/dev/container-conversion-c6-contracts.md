@@ -93,13 +93,83 @@ The C5 expressibility blockers are closed for ROCm FPX, Halo Box and Nathanw.
 Their production migrations, grants, pins and parity qualification remain the
 next unit's work. No engine was migrated by these contracts.
 
-Halogen remains blocked: `exclusive_host` is still absent from both the schema
-and Router scheduling, and HGN bundle selection, native-context resolution
-before Router memory admission, model extras, SVM and CWSR host checks have not
-been implemented. There is no accepted-but-unenforced exclusivity policy.
+C6b closes Halogen's host-exclusivity, bundle, context and host-fact
+prerequisites as described below. Its engine migration remains a separate unit.
 
 DS4 remains blocked on integrated-GPU pool, weight-byte and free-memory inputs,
 its derived residency/cache plan and the explicit user-message `/no_think\n`
 rewrite for buffered and streaming requests. No content rewrite or corresponding
 mutation qualification is claimed. The earlier native-versus-later-OCI source
 provenance distinction in C5 still applies.
+
+## C6b: Halogen model and host contract
+
+`SlotPolicy::ExclusiveHost` is represented by `exclusive_host` in v2 metadata.
+`Router::load_model()` calls `enforce_host_exclusivity_locked()` while holding
+its load mutex and before memory admission or constructing a backend. Local
+admission evicts resident host-exclusive models; host-exclusive admission
+evicts every other local model. Unmetered cloud models remain. A busy resident
+or a cross-residency displacement refuses admission. Eviction is bounded and
+admission fails if the displaced server remains. `is_loading_` continues
+serializing startup even while `load_model()` releases its mutex for launch.
+
+The closed declaration value `model_contract: "halogen_hgn_v1"` compiles to
+`ModelContract::HalogenHgnV1`. It requires a container definition, an exclusive
+host slot and the four explicit roles `main`, `halogen_lookup_table`,
+`halogen_tokenizer`, and `halogen_vision_tower`. The execution owner seals both
+the contract and its slot policy. Existing owners have exactly their previous
+semantics when the new property is absent. This adds no callback, arbitrary
+extra lookup, arbitrary host read, shell command, or production grant.
+
+Model management retains the base validation/import defaults and normal active-
+snapshot path resolution without requiring a GGUF artifact hook.
+
+The contract implements the stack's case-sensitive `.hgn` selector: preserve
+repository order and include the selected main variant, every `-ngram.hgn` and
+`-vision.hgn` sidecar, and every `tokenizer/` descendant. A missing main variant
+throws; other formats return the default-selector sentinel. Metadata reports
+262144 context tokens. `ConfiguredV2BackendOps::resolve_runtime_options()`
+normalizes noninteger or nonpositive context to 262144. The existing
+`Router::resolve_effective_options()` calls that operation before
+`resolve_auto_ctx_size()` and before any backend launch. The fixture passes a
+model far larger than host memory through this Router path and proves that
+its native context bypasses automatic memory sizing; moving normalization to
+launch fails `HalogenContextBeforeRouterMemoryAdmission`.
+
+Bundle roles resolve from the main checkpoint's snapshot and exactly two named
+extras: `halogen_lookup_table` (required), `halogen_vision_tower` (optional).
+`tokenizer` is fixed. Missing files preserve the stack's errors. Absolute or
+escaping extra paths reject before mounting; existing confined mount validation
+still applies. The fixture compares complete resulting entrypoint, argv,
+environment, mounts, `/health`, and the 1800-second startup floor for vision and
+text-only bundles. `EnvironmentSet.when` is an optional boolean expression;
+it expresses the absent vision variable without supplying an empty value.
+
+The selected supported `gfx1151` KFD node supplies at most 65536 bytes of
+properties through a narrow node-ID service. The SVM bit is `0x08000000`.
+CWSR requires all three properties and exactly
+`ctl_stack_size + (simd_count / 2) * 479232`, using integer division. Failure
+IDs, messages and repair steps match stack `cbbeeb5270b19e06cfd9c150233655776392bd38`,
+`halogen_server.cpp:110-125`. Empty properties retain the source's no-extra-check
+behavior; unavailable services and oversized reads throw. GPU topology and
+container confinement still apply. CPU fixtures provide every host fact and
+never launch a container runtime.
+
+`test/fixtures/backend-v2/c6b.halogen.json` retains exact stack quotations and
+independent expected selections and failures. `ContainerPrerequisiteTest`
+executes the contract and full Router busy/concurrent admission refusals.
+Named compiled mutations cover unenforced exclusivity, one-way exclusivity,
+context resolved only at launch, ignored bundle selection, ignored extras,
+ignored SVM/CWSR checks, missing metadata and management defaults, and ignored
+conditional environment assignment.
+
+This is a new identity stage, `c6b.halogen.catalog-transition.json`, with runner
+service policy 8 to 9. Its four exact schema records add the closed declaration
+property, its merge-envelope position, conditional environment assignment,
+and the `exclusive_host` metadata enum member. The stage contains 133 complete
+snapshot records. The schema identity is
+`sha256:df03a45692d8c53dbc44a0891ffbb25fff249a83c6ed4aa01c9f15545882d251`.
+All earlier stages retain their original disclosures and exact comparators;
+the C6 device stage now reads its schema bytes from its immutable commit.
+Halogen's prerequisite is closed by these contracts. Its production definition,
+reviewed dormant owner/grants/pin and migration parity campaign remain separate.

@@ -35,7 +35,7 @@ BackendDescriptor descriptor_from_declaration(const nlohmann::json& declaration,
     const auto device = metadata.value("default_device", "gpu");
     descriptor.default_device = enum_value<DeviceType>(device, {{"cpu", DEVICE_CPU}, {"gpu", DEVICE_GPU}, {"npu", DEVICE_NPU}, {"none", DEVICE_NONE}});
     const auto policy = metadata.value("slot_policy", "standard");
-    descriptor.slot_policy = enum_value<SlotPolicy>(policy, {{"standard", SlotPolicy::Standard}, {"exclusive_npu", SlotPolicy::ExclusiveNpu}, {"coexist_by_type", SlotPolicy::CoexistByType}, {"unmetered", SlotPolicy::Unmetered}});
+    descriptor.slot_policy = enum_value<SlotPolicy>(policy, {{"standard", SlotPolicy::Standard}, {"exclusive_npu", SlotPolicy::ExclusiveNpu}, {"coexist_by_type", SlotPolicy::CoexistByType}, {"unmetered", SlotPolicy::Unmetered}, {"exclusive_host", SlotPolicy::ExclusiveHost}});
     descriptor.selectable_backend = metadata.value("selectable_backend", false);
     descriptor.uses_ctx_size = metadata.value("uses_ctx_size", false);
     descriptor.dynamic_models = metadata.value("dynamic_models", false);

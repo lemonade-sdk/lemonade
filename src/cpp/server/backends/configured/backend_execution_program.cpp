@@ -56,6 +56,24 @@ bool prefix(const std::string& left, const std::string& right) { return left == 
 void compile_programs(Program& program, Budget& budget) {
     const auto& doc = program.normalized;
     const auto& launch = doc["launch"];
+    if (doc.contains("model_contract")) {
+        require(doc.at("model_contract") == "halogen_hgn_v1" && doc.at("kind") == "container" &&
+            doc.at("metadata").value("slot_policy", "standard") == "exclusive_host", "invalid_model_contract", "/model_contract");
+        require(launch.at("backend") == Json{{"fixed", "rocm"}} && launch.contains("execution") &&
+            launch.at("execution").at("cases").size() == 1 &&
+            launch.at("execution").at("cases")[0].at("kind") == "container" &&
+            launch.at("execution").at("cases")[0].at("backends") == Json::array({"rocm"}),
+            "invalid_model_contract", "/launch/execution");
+        const auto& phases = launch.at("prepare_order");
+        require(std::count(phases.begin(), phases.end(), "backend") == 1 && std::count(phases.begin(), phases.end(), "artifacts") == 1,
+            "invalid_model_contract", "/launch/prepare_order");
+        program.model_contract = ModelContract::HalogenHgnV1;
+        std::set<std::string> roles;
+        require(doc.contains("artifacts") && doc.at("artifacts").size() == 4, "invalid_model_contract", "/artifacts");
+        for (const auto& artifact : doc.at("artifacts").items()) roles.insert(artifact.value().at("role"));
+        require(roles == std::set<std::string>{"main", "halogen_lookup_table", "halogen_tokenizer", "halogen_vision_tower"},
+            "invalid_model_contract", "/artifacts");
+    }
     budget.copy(launch);
     budget.copy(launch);
     budget.copy(doc["install"]);
@@ -93,7 +111,15 @@ void compile_programs(Program& program, Budget& budget) {
     for (std::size_t i = 0; i < launch["environment"]["set"].size(); ++i) {
         const auto& name = launch["environment"]["set"][i]["name"].get_ref<const std::string&>();
         budget.keep(name.size() + 192);
-        program.launch.environment_set.push_back({name, "/launch/environment/set/" + std::to_string(i) + "/value"});
+        if (launch["environment"]["set"][i].contains("when")) {
+            const auto& condition = program.expressions.at("/launch/environment/set/" + std::to_string(i) + "/when");
+            require(condition.kind == Expression::Kind::Literal ? condition.literal.is_boolean() : condition.type == "boolean" ||
+                condition.kind == Expression::Kind::Not || condition.kind == Expression::Kind::Eq ||
+                condition.kind == Expression::Kind::All || condition.kind == Expression::Kind::Any ||
+                condition.kind == Expression::Kind::Gt || condition.kind == Expression::Kind::Present, "invalid_type", "/launch/environment/set");
+        }
+        program.launch.environment_set.push_back({name, "/launch/environment/set/" + std::to_string(i) + "/value",
+            launch["environment"]["set"][i].contains("when") ? std::optional<std::string>("/launch/environment/set/" + std::to_string(i) + "/when") : std::nullopt});
     }
     if (launch["backend"].contains("option")) program.launch.backend_slot = slot(program, launch["backend"]["option"], "/launch/backend/option");
     if (launch.contains("custom_args")) program.launch.custom_args_slot = slot(program, launch["custom_args"]["option"], "/launch/custom_args/option");

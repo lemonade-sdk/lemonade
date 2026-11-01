@@ -15,6 +15,7 @@ import backend_v2_4e3b_transition as first
 import gufo_definition_transition as gufo
 import container_prerequisite_transition as prerequisites
 import container_device_validation_transition as devices
+import container_halogen_transition as halogen
 from backend_v2_4e_audit import census
 
 REPO = first.REPO
@@ -346,6 +347,12 @@ def main():
         base, evidence, old_ids, device_schema, expected_snapshot, 8
     )
     devices.check(args, device_previous, expected, device_previous_ids, ids)
+    halogen_previous, halogen_previous_ids = expected, ids
+    _, _, halogen_schema = halogen.schema()
+    expected, ids = prerequisites.derive(
+        base, evidence, old_ids, halogen_schema, expected_snapshot, 9
+    )
+    halogen.check(args, halogen_previous, expected, halogen_previous_ids, ids)
     old_evidence = json.loads((args.out / "historical-evidence.json").read_bytes())
     expected_evidence = copy.deepcopy(old_evidence)
     for k in ("admission", "execution", "catalog", "catalog_v2"):
@@ -517,7 +524,7 @@ def main():
         SimpleNamespace(
             build=args.build,
             baseline=baseline,
-            expected_count=156,
+            expected_count=157,
             no_additions=False,
             out=args.out,
         )
@@ -525,7 +532,7 @@ def main():
     print(
         "C2 exact schema transition:",
         len(changes),
-        "snapshot records; whole-snapshot cmp and four zero-byte residual projections; 156 tests",
+        "snapshot records; whole-snapshot cmp and four zero-byte residual projections; 157 tests",
     )
 
 

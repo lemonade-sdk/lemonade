@@ -51,6 +51,8 @@ public:
     std::string resolve_version(const std::string& backend, const std::string& file_version, runtime::ProbeSources sources = runtime::probe_sources(), PlatformInfo platform = native_platform()) const;
     BackendOps::InstallCheck check_install(const std::string& backend, bool found, runtime::ProbeSources sources = runtime::probe_sources(), PlatformInfo platform = native_platform()) const;
     void populate_metadata(ModelInfo& model) const;
+    bool halogen_contract() const { return program_.model_contract == execution::ModelContract::HalogenHgnV1; }
+    std::optional<std::vector<std::string>> select_checkpoint_files(const std::string& variant, const std::vector<std::string>& files) const;
     std::string validate_registration(const std::string& checkpoint) const;
     std::string validate_file(const std::string& path) const;
     std::string resolve_artifact(const CheckpointResolveContext& context) const;
