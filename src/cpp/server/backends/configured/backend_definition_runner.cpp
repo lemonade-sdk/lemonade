@@ -444,7 +444,8 @@ PreparedExecution DefinitionRunner::prepare_load(const LoadContext& context, con
         LOG(INFO, category.c_str()) << "Loading model: " << context.model_name << std::endl;
         LOG(DEBUG, category.c_str()) << "Per-model settings: " << context.options.to_log_string() << std::endl;
     }
-    values = {{"options", options}, {"model", {{"name", context.model_name}, {"checkpoint", context.model_info.checkpoint()}}},
+    const auto speculative_mode = context.model_info.extra<std::string>("gufo_speculative", "");
+    values = {{"options", options}, {"model", {{"name", context.model_name}, {"checkpoint", context.model_info.checkpoint()}, {"speculative_mode", speculative_mode}}},
         {"platform", {{"os", host.os}, {"machine_arch", host.machine_arch}, {"rocm_arch", host.rocm_arch}}},
         {"artifacts", json::object()}, {"launch", {{"ports", json::object()}, {"log_level", context.log_level}}}};
     frame.facts = {typed::Fact::BackendOptions, typed::Fact::Platform, typed::Fact::VersionInputs,
@@ -509,9 +510,9 @@ PreparedExecution DefinitionRunner::prepare_load(const LoadContext& context, con
                 const auto facts = invoke<typed::PrepareHook>(frame, index, SlotOwnerKind::Root, "launch", "launch", cancel,
                     [&](auto target, auto&) { return target({context.model_info.type, context.model_info.extra<bool>("hf_load", false), use_gpu, context_size,
                         context.model_info.resolved_path("main"), context.model_info.resolved_path("mmproj"), context.model_info.resolved_path("draft"),
-                        context.model_info.checkpoint("draft"), context.model_info.labels}); });
+                        context.model_info.checkpoint("draft"), context.model_info.labels, speculative_mode}); });
                 values["launch"]["hook"] = {{"hf_load", facts.hf_load}, {"embedding", facts.embedding}, {"reranking", facts.reranking},
-                    {"use_mmproj", facts.use_mmproj}, {"mmproj_on_cpu", facts.mmproj_on_cpu}, {"use_draft_checkpoint", facts.use_draft_checkpoint}, {"context_size", facts.context_size}};
+                    {"use_mmproj", facts.use_mmproj}, {"mmproj_on_cpu", facts.mmproj_on_cpu}, {"use_draft_checkpoint", facts.use_draft_checkpoint}, {"context_size", facts.context_size}, {"speculative_mode", facts.speculative_mode}};
             }
         } else if (phase == "artifacts") {
             for (const auto& artifact : program_.artifacts) {
@@ -574,6 +575,11 @@ PreparedExecution DefinitionRunner::prepare_load(const LoadContext& context, con
         }
         if (context.phase_prepared) context.phase_prepared(phase, values);
     }
+    if (records.contains("checks")) for (std::size_t i = 0; i < records["checks"].size(); ++i) {
+        const auto pointer = "/launch/checks/" + std::to_string(i);
+        if (!evaluate(pointer + "/require", frame).value().get<bool>())
+            throw std::invalid_argument(evaluate(pointer + "/error", frame).value().get<std::string>());
+    }
     if (plan.container) materialize_container_mounts(program_, frame, plan, [&](const auto& expression) { return evaluate(expression, frame); });
     for (const auto index : slots(SlotOwnerKind::Root, "backend", "backend")) {
         invoke<typed::BackendSelectionOps>(frame, index, SlotOwnerKind::Root, "backend", "backend", cancel,
@@ -623,7 +629,7 @@ PreparedExecution DefinitionRunner::prepare_load(const LoadContext& context, con
                     [](const auto& item) { return item.id == "device"; });
                 const auto device = device_binding == program_.bindings.end() ? std::string() : options.at(device_binding->public_name).template get<std::string>();
                 auto plan = target({runtime::typed_platform(host.os), backend, device,
-                    values["launch"]["executable_directory"].get<std::string>(), service.capability()}, service);
+                    values["launch"].value("executable_directory", std::string()), service.capability()}, service);
                 return runtime::StagingConsumer::execute(service.seal(std::move(plan)));
             });
     }
@@ -644,6 +650,13 @@ PreparedExecution DefinitionRunner::prepare_load(const LoadContext& context, con
                 name == "HIP_VISIBLE_DEVICES" || name == "ROCR_VISIBLE_DEVICES" || name == "CUDA_VISIBLE_DEVICES")
                 throw std::invalid_argument("Protected container environment");
         }
+        const auto rewrite = [&](std::string& value) {
+            const auto found = plan.container_path_rewrites.find(value);
+            if (found != plan.container_path_rewrites.end()) value = found->second;
+        };
+        for (auto& value : plan.command.args) rewrite(value);
+        for (auto& item : plan.command.env) rewrite(item.second);
+        supply_container_gpu(*plan.container, plan.command.env, services);
         services.install_container_image(plan.container->image);
     }
     plan.watchdog_enabled = records["watchdog"]["policy"] == "standard";

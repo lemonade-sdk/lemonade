@@ -88,6 +88,7 @@ ModelFacts prepare(const PrepareInput& input) {
     result.embedding = input.model_type == ModelType::EMBEDDING;
     result.reranking = input.model_type == ModelType::RERANKING;
     result.context_size = input.context_size;
+    result.speculative_mode = input.speculative_mode;
     result.use_mmproj = !input.hf_load && !input.mmproj_path.empty();
     result.mmproj_on_cpu = result.use_mmproj && !input.use_gpu;
     result.use_draft_checkpoint = !input.draft_path.empty() &&

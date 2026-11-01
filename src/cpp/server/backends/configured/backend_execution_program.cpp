@@ -76,7 +76,7 @@ void compile_programs(Program& program, Budget& budget) {
         const auto& item = launch["mounts"][i];
         budget.copy(item);
         budget.keep(sizeof(MountProgram) + 256);
-        program.launch.mounts.push_back({item["id"], item["artifact"], item["expand"], item["destination"],
+        program.launch.mounts.push_back({item["id"], item["artifact"], item["expand"], item["destination"], item.value("layout", "artifact_id"),
             item.contains("when") ? std::optional<std::string>("/launch/mounts/" + std::to_string(i) + "/when") : std::nullopt});
     }
     if (launch["backend"].contains("fixed")) program.launch.fixed_backend = launch["backend"]["fixed"];

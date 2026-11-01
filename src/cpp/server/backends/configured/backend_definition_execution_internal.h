@@ -127,6 +127,7 @@ struct MountProgram {
     std::string artifact;
     std::string expand;
     std::string destination;
+    std::string layout;
     std::optional<std::string> condition;
 };
 

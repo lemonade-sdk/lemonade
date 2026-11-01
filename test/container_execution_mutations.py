@@ -1,4 +1,4 @@
-"""Compile C3 rule mutations and require their named failing CPU assertions."""
+"""Compile container execution rule mutations and require their named failing CPU assertions."""
 
 import argparse
 import concurrent.futures
@@ -174,7 +174,7 @@ def rules():
     add(
         "mount-rewrite-removed",
         "container_execution.cpp",
-        '        frame.data.values["artifacts"][mount.artifact] = target;',
+        '        plan.container_path_rewrites.emplace(path, target);\n        frame.data.values["artifacts"][mount.artifact] = target;',
         "",
         "InventoryMountAndWholeValueRewrite",
     )
@@ -292,6 +292,164 @@ def rules():
         "",
         "MaterializedDestinationTraversalRejected",
     )
+    for name, file, old, new, assertion in (
+        (
+            "authored-hip",
+            "backend_definition_runner.cpp",
+            'name == "HIP_VISIBLE_DEVICES" || ',
+            "",
+            "AuthoredHIPCannotInfluenceSelection",
+        ),
+        (
+            "hook-hip",
+            "backend_definition_runner.cpp",
+            'name == "HIP_VISIBLE_DEVICES" || ',
+            "",
+            "HookHIPCannotInfluenceSelection",
+        ),
+        (
+            "unsupported-gpu",
+            "container_execution.cpp",
+            "if (!services.container_supports_arch(spec.recipe, spec.backend, nodes[ordinal].architecture)) continue;",
+            "if (false) continue;",
+            "TrustedSelectionSkipsUnsupportedGPU",
+        ),
+        (
+            "omitted-selection",
+            "backend_definition_runner.cpp",
+            "        supply_container_gpu(*plan.container, plan.command.env, services);",
+            "",
+            "GufoExactTrustedEnvironment",
+        ),
+        (
+            "missing-gpu-fallback",
+            "container_execution.cpp",
+            '    throw std::runtime_error("No supported container GPU");',
+            '    environment.emplace_back("HIP_VISIBLE_DEVICES", "0");',
+            "InvalidOrUnsupportedTopologyFailsClosed",
+        ),
+        (
+            "topology-bound",
+            "container_execution.cpp",
+            "nodes.size() > 256",
+            "false",
+            "InvalidOrUnsupportedTopologyFailsClosed",
+        ),
+        (
+            "topology-duplicate",
+            "container_execution.cpp",
+            "(i && nodes[i - 1].node == node.node)",
+            "false",
+            "InvalidOrUnsupportedTopologyFailsClosed",
+        ),
+        (
+            "cpu-node-ordinal",
+            "container_execution.cpp",
+            "if (!architecture.empty()) result.push_back",
+            "result.push_back",
+            "KFDNumericOrderSkipsCPUAndDecodesArchitecture",
+        ),
+        (
+            "wrong-mount-destination",
+            "container_execution.cpp",
+            'auto target = base + "/" + filename;',
+            'auto target = base + "/wrong/" + filename;',
+            "GufoExactNumberedMountDestinations",
+        ),
+        (
+            "collision-disabled",
+            "container_execution.cpp",
+            "for (unsigned number = 2; named_destinations.count(target); ++number)",
+            "for (unsigned number = 2; false; ++number)",
+            "GufoExactNumberedMountDestinations",
+        ),
+        (
+            "collision-start",
+            "container_execution.cpp",
+            "for (unsigned number = 2; named_destinations.count(target); ++number)",
+            "for (unsigned number = 3; named_destinations.count(target); ++number)",
+            "GufoExactNumberedMountDestinations",
+        ),
+        (
+            "named-path-dedup",
+            "container_execution.cpp",
+            'mount.layout == "basename_numbered" && plan.container_path_rewrites.count(path)',
+            "false",
+            "NumberedLayoutDeduplicatesNamedPaths",
+        ),
+        (
+            "argv-rewrite",
+            "backend_definition_runner.cpp",
+            "        for (auto& value : plan.command.args) rewrite(value);",
+            "",
+            "WholeValueArgvAndEnvironmentRewrite",
+        ),
+        (
+            "environment-rewrite",
+            "backend_definition_runner.cpp",
+            "        for (auto& item : plan.command.env) rewrite(item.second);",
+            "",
+            "WholeValueArgvAndEnvironmentRewrite",
+        ),
+        (
+            "invalid-speculative-mode",
+            "backend_definition_runner.cpp",
+            'if (!evaluate(pointer + "/require", frame).value().get<bool>())',
+            "if (false)",
+            "InvalidDraftSpeculativeModeRejected",
+        ),
+        (
+            "prepare-speculative-field",
+            "src/cpp/server/backends/configured/typed/llamacpp_hooks.cpp",
+            "    result.speculative_mode = input.speculative_mode;",
+            "",
+            "PrepareHookReturnsTypedSpeculativeMode",
+        ),
+    ):
+        add("c4a-" + name, file, old, new, assertion)
+    for name, old, new, assertion in (
+        ("kfd-record-bound", "++lines > 1024", "false", "KFDPropertyRecordsBounded"),
+        ("kfd-node-bound", "++count > 256", "false", "KFDNodeCountBounded"),
+        (
+            "kfd-node-id",
+            'name.empty() || name.size() > 8 || name.find_first_not_of("0123456789") != std::string::npos',
+            "false",
+            "KFDNodeIdentifierIsNumeric",
+        ),
+        (
+            "unknown-layout",
+            'mount.layout != "artifact_id" && mount.layout != "basename_numbered"',
+            "false",
+            "UnknownMountLayoutFailsClosed",
+        ),
+    ):
+        add("c4a-" + name, "container_execution.cpp", old, new, assertion)
+    result.append(
+        (
+            "c4a-kfd-byte-bound",
+            "container_execution.cpp",
+            [
+                ("std::filesystem::file_size(properties) > 65536", "false"),
+                ("file.gcount() > 65536", "false"),
+            ],
+            "KFDPropertyBytesBounded",
+            "test_container_execution",
+        )
+    )
+    add(
+        "c4a-kfd-grant-required",
+        "container_execution.cpp",
+        'std::find(spec.devices.begin(), spec.devices.end(), "/dev/kfd") == spec.devices.end()',
+        "false",
+        "NoKFDGrantHasNoSelectorCapability",
+    )
+    add(
+        "c4a-unused-mode",
+        "backend_definition_runner.cpp",
+        '    const auto speculative_mode = context.model_info.extra<std::string>("gufo_speculative", "");',
+        '    const auto speculative_mode = context.model_info.extra<std::string>("gufo_speculative", "");\n    if (speculative_mode.size() > 64) throw std::invalid_argument("Overstrict speculative validation");',
+        "UnusedSpeculativeStringMatchesStack",
+    )
     return result
 
 
@@ -348,10 +506,17 @@ def main():
             suite + ".dir"
             if filename == "backend_definition_authorization.cpp"
             else (
-                "lemonade-binding-test.dir"
-                if filename
-                in ("backend_definition_binding.cpp", "backend_execution_program.cpp")
-                else "lemonade-server-core.dir"
+                "lemonade-typed-hook-test.dir"
+                if filename.endswith("/typed/llamacpp_hooks.cpp")
+                else (
+                    "lemonade-binding-test.dir"
+                    if filename
+                    in (
+                        "backend_definition_binding.cpp",
+                        "backend_execution_program.cpp",
+                    )
+                    else "lemonade-server-core.dir"
+                )
             )
         )
         row = next(
@@ -415,7 +580,9 @@ def main():
         hashlib.sha256(p.read_bytes()).hexdigest() == digest
         for p, digest in hashes.items()
     )
-    print(f"{len(results)}/{len(results)} compiled C3 mutations caught")
+    print(
+        f"{len(results)}/{len(results)} compiled container execution mutations caught"
+    )
 
 
 if __name__ == "__main__":

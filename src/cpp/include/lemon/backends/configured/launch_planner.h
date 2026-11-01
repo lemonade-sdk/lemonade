@@ -7,6 +7,8 @@
 #include "lemon/model_manager.h"
 #include "lemon/utils/container_manager.h"
 
+#include <map>
+
 namespace lemon::backends {
 
 struct LoadContext {
@@ -31,12 +33,19 @@ struct LaunchPlan {
     long readiness_timeout_seconds;
     bool watchdog_enabled;
     std::optional<utils::ContainerRunSpec> container;
+    std::map<std::string, std::string> container_path_rewrites;
+};
+struct ContainerGpuNode {
+    unsigned node;
+    std::string architecture;
 };
 class LaunchServices {
 public:
     virtual ~LaunchServices() = default;
     virtual std::string container_image(const ContainerPolicy&) const { throw std::logic_error("Container pin service is unavailable"); }
     virtual void install_container_image(const std::string&) { throw std::logic_error("OCI installation service is unavailable"); }
+    virtual std::vector<ContainerGpuNode> container_gpu_nodes() const { throw std::logic_error("Container GPU topology is unavailable"); }
+    virtual bool container_supports_arch(const std::string&, const std::string&, const std::string&) const { throw std::logic_error("Container GPU support is unavailable"); }
     virtual bool exists(const std::string& path) const = 0;
     virtual std::vector<std::string> supported_backends(const std::string& recipe) const = 0;
     virtual void validate_backend(const std::string& recipe, const std::string& backend) const = 0;
@@ -58,6 +67,8 @@ public:
         : effects_(std::move(effects)), posix_executable_loader_path_(posix_executable_loader_path) {}
     std::string container_image(const ContainerPolicy& policy) const override { return effects_.container_image(policy); }
     void install_container_image(const std::string& image) override { effects_.install_container_image(image); }
+    std::vector<ContainerGpuNode> container_gpu_nodes() const override;
+    bool container_supports_arch(const std::string& recipe, const std::string& backend, const std::string& arch) const override;
     bool exists(const std::string& path) const override { return effects_.exists(path); }
     std::vector<std::string> supported_backends(const std::string& recipe) const override { return effects_.supported_backends(recipe); }
     void validate_backend(const std::string& recipe, const std::string& backend) const override { effects_.validate_backend(recipe, backend); }

@@ -15,7 +15,7 @@ bool type_matches(const Json& value, const std::string& type) {
 
 std::pair<std::size_t, std::size_t> model_fact(const std::string& reference, const Program& program) {
     static const std::vector<std::string> fields = {"hf_load", "embedding", "reranking", "use_mmproj",
-        "mmproj_on_cpu", "use_draft_checkpoint", "context_size"};
+        "mmproj_on_cpu", "use_draft_checkpoint", "context_size", "speculative_mode"};
     require(reference.rfind("/launch/hook/", 0) == 0, "unsupported_execution_feature", "");
     const auto found = std::find(fields.begin(), fields.end(), reference.substr(13));
     require(found != fields.end(), "unsupported_execution_feature", "");
@@ -120,12 +120,12 @@ Expression compile(const Json& value, const std::string& pointer, Program& progr
                 const auto fact = model_fact(text, program);
                 result.producer = fact.first;
                 result.fact_field = fact.second;
-                const auto type = fact.second == 6 ? "integer" : "boolean";
+                const auto type = fact.second == 7 ? "string" : fact.second == 6 ? "integer" : "boolean";
                 require(result.type.empty() || result.type == type, "invalid_type", pointer);
                 require(!result.default_value || type_matches(*result.default_value, type), "invalid_type", pointer);
                 result.type = type;
             }
-            if (!produced && (text.rfind("/platform/", 0) == 0 || text.rfind("/install/", 0) == 0 ||
+            if (!produced && (text == "/model/speculative_mode" || text.rfind("/platform/", 0) == 0 || text.rfind("/install/", 0) == 0 ||
                 text.rfind("/artifacts/", 0) == 0 || text.rfind("/launch/", 0) == 0 || text.rfind("/runtime/", 0) == 0)) {
                 budget.work(text.size(), v2::checked_sum(program.bindings.size(), program.normalized["launch"]["ports"].size()));
                 budget.keep(v2::checked_product(v2::checked_sum(text.size(), 128), 4));

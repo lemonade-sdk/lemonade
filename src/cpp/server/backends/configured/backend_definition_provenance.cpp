@@ -173,7 +173,7 @@ CompositionDiagnostics relationships(const Json& doc, const LayerState& state, B
         if (related) add_related(result.entries.back(), location(effective_node(state.root, *related, budget.limits)->origin));
         return &result.entries.back();
     };
-    for (const auto* path : {"/metadata/options", "/metadata/support", "/install/cases", "/install/native/cases", "/launch/execution/cases", "/launch/mounts", "/launch/argv", "/launch/custom_args/defaults", "/operations", "/launch/ports", "/launch/environment/set"}) {
+    for (const auto* path : {"/metadata/options", "/metadata/support", "/install/cases", "/install/native/cases", "/launch/execution/cases", "/launch/mounts", "/launch/checks", "/launch/argv", "/launch/custom_args/defaults", "/operations", "/launch/ports", "/launch/environment/set"}) {
         const auto pointer = Json::json_pointer(path);
         if (!doc.contains(pointer)) continue;
         const auto field = *record_field(path) == RecordKey::Field::Id ? "id" : "name";

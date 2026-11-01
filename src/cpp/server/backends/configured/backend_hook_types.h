@@ -68,6 +68,7 @@ struct PrepareInput {
     std::string draft_path;
     std::string draft_checkpoint;
     std::vector<std::string> labels;
+    std::string speculative_mode;
 };
 struct ModelFacts {
     bool hf_load = false;
@@ -77,6 +78,7 @@ struct ModelFacts {
     bool mmproj_on_cpu = false;
     bool use_draft_checkpoint = false;
     std::uint64_t context_size = 0;
+    std::string speculative_mode;
 };
 
 enum class ParentKey { Path, LlamaDevice, MetalNoResidency, Home, LibraryPath, CudaVisibleDevices, PrimeRenderOffload };

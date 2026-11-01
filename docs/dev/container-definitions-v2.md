@@ -172,3 +172,62 @@ packaging and real engine/network/device/cancellation qualification. Existing
 `llamacpp@1` sources, `LocalExecutableV1` and external forks remain local-only;
 container-capable `llamacpp@2` is outside this unit. CPU fake checks establish no
 real container, model or GPU behavior.
+
+## Container format gaps (C4a)
+
+Granting `/dev/kfd` also requires the platform's GPU-selection capability. The
+runner obtains at most 256 typed KFD GPU nodes from `LaunchServices`, sorts their
+numeric node identifiers, and chooses the HIP ordinal of the first architecture
+accepted by `SystemInfo::backend_supports_arch(recipe, backend, arch)`. CPU nodes
+are excluded before ordinal assignment. Production reads only the fixed Linux KFD
+topology location; each properties file is bounded to 64 KiB and 1,024 records.
+Missing, malformed, duplicate or oversized topology, unavailable support facts,
+and no supported GPU reject before OCI installation. Without `/dev/kfd`, no
+selection capability is queried. Hooks receive neither the topology nor the
+support service.
+
+Authored and hook environments still cannot write `HIP_VISIBLE_DEVICES` (or any
+other protected variable). The runner checks their combined assignments before
+inserting the selected ordinal. There is no JSON selector, ordinal, environment
+exception or hook grant for this capability. The selected recipe/backend and KFD
+grant remain covered by the loader-owned execution authority. No production
+container grant is introduced here.
+
+A mount may specify `layout: "artifact_id"` or `layout: "basename_numbered"`.
+Omitting the field retains C3's `artifact_id` behavior:
+`/mnt/models/<id>/<basename>`. The numbered layout starts at
+`/mnt/models/<basename>` and assigns colliding names in mount-record order to
+`/mnt/models/2/<basename>`, then `3`, and so on. Repeated named source paths share
+the first destination. Both layouts retain the closed `/mnt/models` root,
+authorized artifact inventory, expansion checks and read-only mounts. The
+materialiser owns path construction, updates artifact references, and records
+whole-value substitutions applied to final argv and environment values. It does
+not replace substrings inside larger values.
+
+`/model/speculative_mode` is a string fact read from the model's `gufo_speculative`
+extra, preserving the stack wrapper's existing key and absent/null/non-string
+fallback to the empty string. Validation belongs to the definition so an unused
+mode stays ignored when there is no draft. Typed prepare inputs/results also carry `speculative_mode`; the existing prepare hook
+passes it through, exposed as `/launch/hook/speculative_mode`. These fields grant
+no arbitrary model-extra access or process effects.
+
+`launch.checks` contains at most 32 keyed records with `id`, `require` and `error`.
+The runner evaluates these bounded expressions after preparation and before
+container mount materialisation or OCI installation; a false `require` throws the
+string-valued `error`. A definition can allow any mode when there is no draft,
+require `dflash2`, `mtp` or `dspark` when there is one, and select the corresponding
+`--dflash-model`, `--mtp-model` or `--dspark-model` flag with ordinary conditional
+argv records. The test-only `gufo-format.container.json` demonstrates this,
+including the stack's exact invalid-mode message. It is outside the production
+resource glob and does not migrate or activate Gufo.
+
+[`container-format.schema-transition.json`](../../test/fixtures/backend-v2/container-format.schema-transition.json)
+adds a separate C3-to-C4a stage with exactly two schema edits. The C2 disclosure
+and historical 171/141/151 stages remain frozen. The gate validates and replays
+each schema stage, derives each stage's complete snapshot and identities, then
+compares the final expected snapshot with the live catalog. C4a changes schema,
+admission, execution, catalog and ETag identities again; raw C3-to-C4a legacy
+snapshot equality is not claimed. Seven v1 sources, both v2 builtin sources and
+both policies remain byte-identical. The `cpp-ci` name set stays at 156: existing
+`ContainerExecutionTest` and `LlamaCppV2ProductionSwitchTest` provide the new
+runtime and disclosure coverage, with no new registration.

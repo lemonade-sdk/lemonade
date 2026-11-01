@@ -18,6 +18,10 @@ REPO = first.REPO
 BASE = "1648503d3cf0c93b51219b8141cbf881feff5ec8"
 MANIFEST = REPO / "test/fixtures/backend-v2/container.schema-transition.json"
 SCHEMA = "schemas/backend-definition-v2.schema.json"
+FORMAT_BASE = "39118f9b1a68eba8279f86e10ce4f5d68598954e"
+FORMAT_MANIFEST = (
+    REPO / "test/fixtures/backend-v2/container-format.schema-transition.json"
+)
 serialized, sha, schema_id, identity = (
     first.serialized,
     first.sha,
@@ -202,7 +206,9 @@ def expected_snapshot(base, evidence, old_ids, new_schema):
 
 def validate_schema(manifest):
     old = json.loads(git(SCHEMA))
-    actual_bytes = (REPO / SCHEMA).read_bytes()
+    actual_bytes = subprocess.check_output(
+        ["git", "show", FORMAT_BASE + ":" + SCHEMA], cwd=REPO, timeout=30
+    )
     actual = json.loads(actual_bytes)
     assert set(manifest) == {
         "schema_version",
@@ -238,6 +244,47 @@ def validate_schema(manifest):
     return actual
 
 
+def validate_format_schema(manifest):
+    old_bytes = subprocess.check_output(
+        ["git", "show", FORMAT_BASE + ":" + SCHEMA], cwd=REPO, timeout=30
+    )
+    old = json.loads(old_bytes)
+    actual_bytes = (REPO / SCHEMA).read_bytes()
+    actual = json.loads(actual_bytes)
+    assert set(manifest) == {
+        "schema_version",
+        "stage",
+        "base_commit",
+        "old_sha256",
+        "new_sha256",
+        "old_schema_id",
+        "new_schema_id",
+        "changes",
+    }, "ExactFormatTransitionFields"
+    assert (
+        serialized(manifest["schema_version"]) == "1"
+        and manifest["stage"] == "container-format-gaps"
+        and manifest["base_commit"] == FORMAT_BASE
+    ), "ExactFormatTransitionProvenance"
+    assert manifest["old_sha256"] == sha(old_bytes) and manifest[
+        "old_schema_id"
+    ] == schema_id(old), "PinnedC3SchemaIdentity"
+    assert manifest["new_sha256"] == sha(actual_bytes) and manifest[
+        "new_schema_id"
+    ] == schema_id(actual), "DisclosedFormatSchemaIdentity"
+    records = manifest["changes"]
+    assert len({r["path"] for r in records}) == len(
+        records
+    ), "UniqueFormatSchemaRecords"
+    assert serialized(first.diff(old, actual)) == serialized(
+        records
+    ), "ExactFormatSchemaChanges"
+    assert serialized(first.apply(old, records)) == serialized(
+        actual
+    ), "WholeFormatSchemaReplay"
+    return actual
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("gate", choices=["run", "check"])
@@ -265,7 +312,20 @@ def main():
     actual, evidence = values[1:3]
     base, old_ids = historical(args, evidence)
     schema = validate_schema(json.loads(MANIFEST.read_bytes()))
+    previous_expected, previous_ids = expected_snapshot(base, evidence, old_ids, schema)
+    schema = validate_format_schema(json.loads(FORMAT_MANIFEST.read_bytes()))
     expected, ids = expected_snapshot(base, evidence, old_ids, schema)
+    (args.out / "format-snapshot-transition.json").write_text(
+        serialized(
+            dict(
+                previous_identities=previous_ids,
+                identities=ids,
+                changes=first.diff(previous_expected, expected),
+            ),
+            True,
+        )
+        + "\n"
+    )
     old_evidence = json.loads((args.out / "historical-evidence.json").read_bytes())
     expected_evidence = copy.deepcopy(old_evidence)
     for k in ("admission", "execution", "catalog", "catalog_v2"):
@@ -301,9 +361,12 @@ def main():
     }.items():
         assert serialized(select(expected)) == serialized(select(actual)), name
         (args.out / (name + ".diff")).write_bytes(b"")
-    changes = first.diff(base, expected)
+    changes = first.diff(base, previous_expected)
+    (args.out / "c2-expected-snapshot.json").write_text(
+        serialized(previous_expected, True) + "\n"
+    )
     (args.out / "snapshot-transition.json").write_text(
-        serialized(dict(identities=ids, changes=changes), True) + "\n"
+        serialized(dict(identities=previous_ids, changes=changes), True) + "\n"
     )
     mutant = json.loads(MANIFEST.read_bytes())
     mutant["new_schema_id"] = "sha256:" + "0" * 64
@@ -372,6 +435,47 @@ def main():
     )
     (args.out / "container-transition-mutations.json").write_text(
         serialized(mutation_results, True) + "\n"
+    )
+    format_mutations = []
+    for name, assertion, mutate in (
+        (
+            "identity",
+            "DisclosedFormatSchemaIdentity",
+            lambda m: m.update(new_schema_id="sha256:" + "0" * 64),
+        ),
+        (
+            "duplicate",
+            "UniqueFormatSchemaRecords",
+            lambda m: m["changes"].append(m["changes"][0]),
+        ),
+        ("missing", "ExactFormatSchemaChanges", lambda m: m["changes"].pop()),
+        (
+            "foreign",
+            "ExactFormatSchemaChanges",
+            lambda m: m["changes"].append(dict(op="add", path="/foreign", new=True)),
+        ),
+        (
+            "typed-version",
+            "ExactFormatTransitionProvenance",
+            lambda m: m.update(schema_version=True),
+        ),
+    ):
+        changed = json.loads(FORMAT_MANIFEST.read_bytes())
+        mutate(changed)
+        try:
+            validate_format_schema(changed)
+        except AssertionError as error:
+            assert str(error) == assertion, (name, str(error))
+        else:
+            raise AssertionError("UncaughtFormatDisclosureMutation:" + name)
+        format_mutations.append(dict(rule=name, assertion=assertion, caught=True))
+    (args.out / "format-transition-mutations.json").write_text(
+        serialized(format_mutations, True) + "\n"
+    )
+    print(
+        "C4a exact schema transition:",
+        len(first.diff(previous_expected, expected)),
+        "snapshot records",
     )
     names = json.loads(
         (REPO / "test/fixtures/backend-v2/hrx.cpp-ci-names.json").read_bytes()

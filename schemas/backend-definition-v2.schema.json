@@ -1268,6 +1268,30 @@
             "source"
           ],
           "additionalProperties": false
+        },
+        "checks": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/Identifier"
+              },
+              "require": {
+                "$ref": "#/$defs/Expression"
+              },
+              "error": {
+                "$ref": "#/$defs/Expression"
+              }
+            },
+            "required": [
+              "id",
+              "require",
+              "error"
+            ],
+            "additionalProperties": false
+          }
         }
       },
       "required": [
@@ -2539,6 +2563,12 @@
         },
         "when": {
           "$ref": "#/$defs/Expression"
+        },
+        "layout": {
+          "enum": [
+            "artifact_id",
+            "basename_numbered"
+          ]
         }
       },
       "required": [

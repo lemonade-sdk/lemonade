@@ -1,10 +1,15 @@
+#include "../../system_info_utils.h"
 #include "backend_definition_runner_internal.h"
 #include "lemon/backends/configured/container_execution.h"
+#include "lemon/system_info.h"
 #include "lemon/utils/path_utils.h"
 
 #include <algorithm>
 #include <filesystem>
+#include <fstream>
+#include <map>
 #include <set>
+#include <sstream>
 
 namespace lemon::backends {
 
@@ -82,6 +87,7 @@ utils::ContainerRunSpec container_run_spec(const execution::Program& program, co
 void materialize_container_mounts(const execution::Program& program, runtime::Frame& frame, LaunchPlan& plan,
     const std::function<std::optional<json>(const std::string&)>& evaluate) {
     std::set<std::string> destinations;
+    std::set<std::string> named_destinations;
     for (const auto& mount : program.launch.mounts) {
         if (mount.condition && !evaluate(*mount.condition).value_or(true).get<bool>()) continue;
         const auto artifact = std::find_if(program.artifacts.begin(), program.artifacts.end(),
@@ -89,15 +95,101 @@ void materialize_container_mounts(const execution::Program& program, runtime::Fr
         if (artifact == program.artifacts.end() || !frame.data.values.at("artifacts").contains(mount.artifact))
             throw std::invalid_argument("Mount source is outside the artifact inventory");
         const auto path = frame.data.values.at("artifacts").at(mount.artifact).get<std::string>();
-        const auto target = mount.destination + "/" + mount.id + "/" + utils::path_to_utf8(utils::path_from_utf8(path).filename());
+        if (mount.destination != "/mnt/models" || (mount.layout != "artifact_id" && mount.layout != "basename_numbered"))
+            throw std::invalid_argument("Unsupported container mount layout");
+        if (mount.layout == "basename_numbered" && plan.container_path_rewrites.count(path)) {
+            frame.data.values["artifacts"][mount.artifact] = plan.container_path_rewrites.at(path);
+            continue;
+        }
+        auto named = utils::path_from_utf8(path);
+        if (!named.has_filename()) named = named.parent_path();
+        const auto filename = utils::path_to_utf8(named.filename());
+        const auto base = mount.destination + (mount.layout == "artifact_id" ? "/" + mount.id : "");
+        auto target = base + "/" + filename;
+        if (mount.layout == "basename_numbered") {
+            for (unsigned number = 2; named_destinations.count(target); ++number) {
+                if (number > 4096) throw std::invalid_argument("Container mount collision limit exceeded");
+                target = base + "/" + std::to_string(number) + "/" + filename;
+            }
+        }
+        named_destinations.insert(target);
         auto mounts = runtime::ArtifactServices::container_mounts(path, mount.expand, target);
         if (mounts.empty()) throw std::invalid_argument("Empty container artifact mount");
         for (auto& item : mounts) {
             if (!destinations.insert(item.destination).second) throw std::invalid_argument("Duplicate container mount destination");
             plan.container->mounts.push_back(std::move(item));
         }
+        plan.container_path_rewrites.emplace(path, target);
         frame.data.values["artifacts"][mount.artifact] = target;
     }
+}
+
+std::vector<ContainerGpuNode> read_container_gpu_nodes(const std::filesystem::path& root) {
+    std::vector<ContainerGpuNode> result;
+    unsigned count = 0;
+    for (const auto& entry : std::filesystem::directory_iterator(root)) {
+        if (++count > 256) throw std::runtime_error("Container GPU topology exceeds node limit");
+        const auto name = entry.path().filename().string();
+        if (name.empty() || name.size() > 8 || name.find_first_not_of("0123456789") != std::string::npos)
+            throw std::runtime_error("Invalid KFD node identifier");
+        const auto properties = entry.path() / "properties";
+        if (std::filesystem::file_size(properties) > 65536) throw std::runtime_error("KFD properties exceed limit");
+        std::ifstream file(properties);
+        if (!file) throw std::runtime_error("Cannot read KFD properties");
+        std::string text(65537, '\0');
+        file.read(text.data(), static_cast<std::streamsize>(text.size()));
+        if (file.bad() || file.gcount() > 65536) throw std::runtime_error("KFD properties exceed read limit");
+        text.resize(static_cast<std::size_t>(file.gcount()));
+        std::istringstream input(text);
+        std::string key, value, architecture;
+        unsigned lines = 0;
+        bool found = false;
+        while (input >> key >> value) {
+            if (++lines > 1024) throw std::runtime_error("KFD properties exceed record limit");
+            if (key != "gfx_target_version") continue;
+            if (found) throw std::runtime_error("Duplicate KFD architecture");
+            found = true;
+            if (value == "0") continue;
+            architecture = system_info_detail::gfx_target_version_to_arch(value);
+            if (architecture.empty()) throw std::runtime_error("Invalid KFD architecture");
+        }
+        if (!found || input.bad()) throw std::runtime_error("Missing KFD architecture");
+        if (!architecture.empty()) result.push_back({static_cast<unsigned>(std::stoul(name)), architecture});
+    }
+    std::sort(result.begin(), result.end(), [](const auto& a, const auto& b) { return a.node < b.node; });
+    return result;
+}
+
+std::vector<ContainerGpuNode> EffectLaunchServices::container_gpu_nodes() const {
+#ifdef __linux__
+    return read_container_gpu_nodes("/sys/class/kfd/kfd/topology/nodes");
+#else
+    throw std::runtime_error("Container GPU selection requires Linux");
+#endif
+}
+
+bool EffectLaunchServices::container_supports_arch(const std::string& recipe, const std::string& backend, const std::string& arch) const {
+    return SystemInfo::backend_supports_arch(recipe, backend, arch);
+}
+
+void supply_container_gpu(const utils::ContainerRunSpec& spec,
+    std::vector<std::pair<std::string, std::string>>& environment, const LaunchServices& services) {
+    if (std::find(spec.devices.begin(), spec.devices.end(), "/dev/kfd") == spec.devices.end()) return;
+    auto nodes = services.container_gpu_nodes();
+    if (nodes.empty() || nodes.size() > 256) throw std::runtime_error("Container requires a bounded GPU topology");
+    std::sort(nodes.begin(), nodes.end(), [](const auto& a, const auto& b) { return a.node < b.node; });
+    for (std::size_t i = 0; i < nodes.size(); ++i) {
+        const auto& node = nodes[i];
+        if ((i && nodes[i - 1].node == node.node) || node.architecture.size() < 4 || node.architecture.size() > 16 ||
+            node.architecture.rfind("gfx", 0) != 0 || node.architecture.find_first_not_of("0123456789abcdef", 3) != std::string::npos)
+            throw std::runtime_error("Invalid container GPU topology");
+    }
+    for (std::size_t ordinal = 0; ordinal < nodes.size(); ++ordinal) {
+        if (!services.container_supports_arch(spec.recipe, spec.backend, nodes[ordinal].architecture)) continue;
+        environment.emplace_back("HIP_VISIBLE_DEVICES", std::to_string(ordinal));
+        return;
+    }
+    throw std::runtime_error("No supported container GPU");
 }
 
 }

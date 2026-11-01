@@ -28,6 +28,10 @@ bool valid_container_image(const std::string& repository, const std::string& ima
 void materialize_container_mounts(const execution::Program& program, runtime::Frame& frame, LaunchPlan& plan,
     const std::function<std::optional<json>(const std::string&)>& evaluate);
 
+std::vector<ContainerGpuNode> read_container_gpu_nodes(const std::filesystem::path& root);
+void supply_container_gpu(const utils::ContainerRunSpec& spec,
+    std::vector<std::pair<std::string, std::string>>& environment, const LaunchServices& services);
+
 class DefinitionRunner final {
 public:
     explicit DefinitionRunner(std::shared_ptr<const ExecutableDefinition> executable);

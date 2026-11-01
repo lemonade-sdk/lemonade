@@ -11,7 +11,9 @@
 #include <atomic>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <thread>
+#include <variant>
 
 using namespace binding_fixture;
 using namespace lemon;
@@ -117,7 +119,14 @@ public:
     BackendManager& manager;
     std::string image_override;
     bool install = true;
+    unsigned installations = 0;
     std::string system_os = "linux";
+    std::vector<ContainerGpuNode> gpu_nodes{{2, "gfx1151"}, {1, "gfx1100"}};
+    mutable unsigned gpu_queries = 0;
+    std::vector<ContainerGpuNode> container_gpu_nodes() const override { ++gpu_queries; return gpu_nodes; }
+    bool container_supports_arch(const std::string& recipe, const std::string& backend, const std::string& arch) const override {
+        return recipe == "gufo" && backend == "rocm" && arch == "gfx1151";
+    }
     explicit Services(BackendManager& manager) : manager(manager) {}
     bool exists(const std::string& path) const override { return fs::exists(path); }
     std::vector<std::string> supported_backends(const std::string&) const override { return {}; }
@@ -131,9 +140,10 @@ public:
     int find_free_port(int) override { return port; }
     std::vector<std::pair<std::string, std::string>> environment(const std::string&, const std::string&, const std::string&, const std::string&) const override { return {}; }
     PlatformInfo platform() const override { return {system_os, "x86_64", "gfx1151"}; }
+    std::string rocm_channel() const override { return "stable"; }
     long default_timeout_seconds() const override { return 2; }
     std::string container_image(const ContainerPolicy& policy) const override { return image_override.empty() ? utils::container_image(policy.repository, manager.container_pin(policy)) : image_override; }
-    void install_container_image(const std::string& identity) override { if (install) manager.install_container_image(identity); }
+    void install_container_image(const std::string& identity) override { ++installations; if (install) manager.install_container_image(identity); }
 };
 
 void authority_and_plans(const Fixture& fixture, const fs::path& scratch) {
@@ -266,6 +276,240 @@ void inventory(const fs::path& scratch) {
     rejects([&] { runtime::ArtifactServices::container_mounts((root / "directory").string(), "directory_files", "/outside/tree"); }, "MaterializedMountDestinationConfined");
 }
 
+
+Fixture format_fixture(Json doc = Json::parse(read_bytes("gufo-format.container.json"))) {
+    auto declaration = doc.at("merge");
+    declaration["recipe"] = doc.at("recipe");
+    const auto semantics = container_execution_owner(declaration);
+    const BuiltinContainerExecutionOwner owner{{"gufo", 1}, semantics,
+        v2::identity("lemonade.backend-container-owner.v1\n", semantics)};
+    const auto result = admit({}, builtins(false, &doc, false, &owner));
+    if (!result.catalog) { diagnostics(result.diagnostics); throw std::logic_error("Format fixture admission failed"); }
+    const auto token = result.catalog->builtin_v2_definition({DefinitionNamespace::Builtin, "gufo", 1});
+    const auto compiled = compile_execution_definition(token);
+    if (!compiled.definition) { diagnostics(compiled.diagnostics); throw std::logic_error("Format fixture compilation failed"); }
+    return {result.catalog, token, compiled.definition};
+}
+
+void gpu_selection(const fs::path& scratch) {
+    FakeHost host;
+    BackendManager manager(std::make_shared<utils::ContainerManager>(host.host()));
+    Services services(manager);
+    utils::ContainerRunSpec spec; spec.recipe = "gufo"; spec.backend = "rocm"; spec.devices = {"/dev/kfd"};
+    std::vector<std::pair<std::string, std::string>> environment;
+    supply_container_gpu(spec, environment, services);
+    check(environment == std::vector<std::pair<std::string, std::string>>{{"HIP_VISIBLE_DEVICES", "1"}}, "TrustedSelectionSkipsUnsupportedGPU");
+    services.gpu_nodes = {{5, "gfx1151"}, {2, "gfx1151"}, {1, "gfx1100"}};
+    environment.clear(); supply_container_gpu(spec, environment, services);
+    check(environment == std::vector<std::pair<std::string, std::string>>{{"HIP_VISIBLE_DEVICES", "1"}}, "TrustedSelectionUsesFirstSupportedHIPOrdinal");
+    std::vector<ContainerGpuNode> oversized;
+    for (unsigned i = 0; i < 257; ++i) oversized.push_back({i, "gfx1151"});
+    for (const auto& nodes : std::vector<std::vector<ContainerGpuNode>>{{}, {{0, "gfx1100"}}, {{0, "gfx1151"}, {0, "gfx1151"}}, {{0, "foreign"}}, oversized}) {
+        services.gpu_nodes = nodes;
+        rejects([&] { supply_container_gpu(spec, environment, services); }, "InvalidOrUnsupportedTopologyFailsClosed");
+    }
+    spec.devices.clear(); services.gpu_queries = 0; environment.clear();
+    bool no_grant = true;
+    try { supply_container_gpu(spec, environment, services); } catch (const std::exception&) { no_grant = false; }
+    check(no_grant && services.gpu_queries == 0 && environment.empty(), "NoKFDGrantHasNoSelectorCapability");
+    const auto root = scratch / "kfd";
+    for (const auto& node : std::vector<std::pair<unsigned, std::string>>{{0, "0"}, {10, "110501"}, {2, "110000"}}) {
+        fs::create_directories(root / std::to_string(node.first));
+        std::ofstream(root / std::to_string(node.first) / "properties") << "cpu_cores_count 0\ngfx_target_version " << node.second << '\n';
+    }
+    const auto nodes = read_container_gpu_nodes(root);
+    check(nodes.size() == 2 && nodes[0].node == 2 && nodes[0].architecture == "gfx1100" &&
+        nodes[1].node == 10 && nodes[1].architecture == "gfx1151", "KFDNumericOrderSkipsCPUAndDecodesArchitecture");
+    std::ofstream(root / "10" / "properties") << "gfx_target_version invalid\n";
+    rejects([&] { read_container_gpu_nodes(root); }, "UnreadableOrInvalidKFDFailsClosed");
+    std::ofstream(root / "10" / "properties") << "gfx_target_version 110501\nother " << std::string(66000, 'x');
+    rejects([&] { read_container_gpu_nodes(root); }, "KFDPropertyBytesBounded");
+    {
+        std::ofstream properties(root / "10" / "properties");
+        properties << "gfx_target_version 110501\n";
+        for (unsigned i = 0; i < 1024; ++i) properties << "other 1\n";
+    }
+    rejects([&] { read_container_gpu_nodes(root); }, "KFDPropertyRecordsBounded");
+    fs::remove_all(root);
+    for (unsigned i = 0; i < 257; ++i) {
+        fs::create_directories(root / std::to_string(i));
+        std::ofstream(root / std::to_string(i) / "properties") << "gfx_target_version 110501\n";
+    }
+    rejects([&] { read_container_gpu_nodes(root); }, "KFDNodeCountBounded");
+    fs::remove_all(root);
+    fs::create_directories(root / "1x");
+    std::ofstream(root / "1x" / "properties") << "gfx_target_version 110501\n";
+    rejects([&] { read_container_gpu_nodes(root); }, "KFDNodeIdentifierIsNumeric");
+    fs::remove_all(root);
+}
+
+typed::BackendSelection fixed_container_backend(const typed::BackendSelectionInput& input, typed::BackendSelectionServices&) {
+    return {input.backend, true};
+}
+typed::DeviceCheck fixed_container_device(const typed::DeviceValidationInput&, typed::BackendSelectionServices&) { return {true, ""}; }
+void use_fixed_container_backend(const ExecutableDefinition& definition) {
+    for (auto& hook : const_cast<std::vector<bd::BoundHook>&>(bd::Inspection::hooks(definition)))
+        if (std::holds_alternative<typed::BackendSelectionOps>(hook.target))
+            hook.target = typed::BackendSelectionOps{fixed_container_backend, fixed_container_device};
+}
+typed::EnvironmentPlan malicious_hip_environment(const typed::EnvironmentInput&, typed::EnvironmentServices&) {
+    return {{{"HIP_VISIBLE_DEVICES", "0"}}, {}};
+}
+
+void format_parity(const fs::path& scratch) {
+    const auto fixture = format_fixture();
+    const auto bound = bind(fixture);
+    if (!bound.definition) { diagnostics(bound.diagnostics); check(false, "FormatFixtureBinds"); return; }
+    auto entry = ConfiguredBackendEntry::make(bound.definition);
+    FakeHost host;
+    auto manager = std::make_shared<utils::ContainerManager>(host.host());
+    BackendManager backend_manager(manager);
+    BackendManagerTestAccess::pins(backend_manager, versions);
+    Services services(backend_manager); services.install = false;
+    services.image_override = "docker.io/kyuz0/amd-strix-halo-toolboxes@sha256:" + std::string(64, 'a');
+    ModelInfo model; model.recipe = "gufo"; model.model_name = "format-fixture";
+    for (const auto& role : {"main", "mmproj", "draft"}) {
+        const auto file = scratch / "format-inventory" / role / "checkpoint.bin";
+        fs::create_directories(file.parent_path()); std::ofstream(file) << "CPU fixture only";
+        model.resolved_paths[role] = file.string();
+    }
+    RecipeOptions options;
+    Json transcripts = Json::array();
+    for (const auto& mode : std::vector<std::pair<std::string, std::string>>{{"dflash2", "--dflash-model"}, {"mtp", "--mtp-model"}, {"dspark", "--dspark-model"}}) {
+        model.extras["gufo_speculative"] = mode.first;
+        std::optional<PreparedExecution> prepared;
+        try { prepared = DefinitionRunner(bound.definition).prepare_load({"format-fixture", model, options, "error"}, entry->spec, services); }
+        catch (const std::exception& error) {
+            std::printf("Parity plan error: %s\n", error.what());
+            check(false, "GufoExactNumberedMountDestinations");
+            return;
+        }
+        const auto& plan = prepared->plan;
+        const std::vector<std::string> expected{"serve", "llm", "--model", "/mnt/models/checkpoint.bin", "--served-model-name", "format-fixture",
+            "--context", "4096", "--host", "0.0.0.0", "--port", "1", "--mmproj", "/mnt/models/2/checkpoint.bin",
+            "--speculative", mode.first, mode.second, "/mnt/models/3/checkpoint.bin"};
+        check(plan.command.args == expected, "GufoExactArgv:" + mode.first);
+        check(plan.command.env == std::vector<std::pair<std::string, std::string>>{{"HIP_VISIBLE_DEVICES", "1"}}, "GufoExactTrustedEnvironment");
+        Json mounts = Json::array();
+        const auto& actual = plan.container->mounts;
+        bool exact = actual.size() == 3;
+        unsigned index = 0;
+        for (const auto& role : {"main", "mmproj", "draft"}) {
+            const auto destination = std::string("/mnt/models/") + (index ? std::to_string(index + 1) + "/" : "") + "checkpoint.bin";
+            if (index < actual.size()) {
+                exact &= actual[index].source == fs::canonical(model.resolved_paths.at(role)).string() && actual[index].destination == destination;
+                mounts.push_back({{"source", actual[index].source}, {"destination", actual[index].destination}});
+            }
+            ++index;
+        }
+        check(exact, "GufoExactNumberedMountDestinations");
+        ClientState client;
+        ContainerProcess process({}, *plan.container, manager, std::make_unique<FakeClient>(client));
+        const auto address = process.start(plan.command);
+        const auto& argv = client.invocation.args;
+        check(client.starts == 1 && address == "127.0.0.1" &&
+            std::equal(expected.begin(), expected.end(), argv.end() - static_cast<std::ptrdiff_t>(expected.size())) &&
+            std::find(argv.begin(), argv.end(), "HIP_VISIBLE_DEVICES=1") != argv.end(), "GufoParityReachesFakeHost");
+        std::vector<std::string> expected_runtime{"run", "--rm", "--init", "--name", "lemonade-gufo-rocm-format-fixture",
+            "--label", "ai.lemonade", "--label", "ai.lemonade.recipe=gufo", "--label", "ai.lemonade.backend=rocm",
+            "--label", "ai.lemonade.model=format-fixture", "--label", "ai.lemonade.port=1", "--cap-drop=all",
+            "--security-opt=no-new-privileges", "--pull=never", "--network=lemonade-gufo-rocm-format-fixture",
+            "--device", "/dev/dri", "--device", "/dev/kfd", "--group-add", "keep-groups",
+            "-v", fs::canonical(model.resolved_paths.at("main")).string() + ":/mnt/models/checkpoint.bin:ro,z",
+            "-v", fs::canonical(model.resolved_paths.at("mmproj")).string() + ":/mnt/models/2/checkpoint.bin:ro,z",
+            "-v", fs::canonical(model.resolved_paths.at("draft")).string() + ":/mnt/models/3/checkpoint.bin:ro,z",
+            "--env", "HOME=/tmp", "--env", "HIP_VISIBLE_DEVICES=1", "-p", "127.0.0.1:1:1", services.image_override, "gufo"};
+        expected_runtime.insert(expected_runtime.end(), expected.begin(), expected.end());
+        check(client.invocation.program == "podman" && argv == expected_runtime, "GufoExactFakeHostInvocation");
+        process.stop();
+        transcripts.push_back({{"mode", mode.first}, {"argv", plan.command.args}, {"environment", plan.command.env}, {"mounts", mounts}, {"runtime_argv", argv}});
+    }
+    std::ofstream(scratch / "format-transcript.json") << transcripts.dump(2) << '\n';
+    for (const auto& mode : std::vector<std::string>{"", "invalid", "DFLASH2", std::string(65, 'a')}) {
+        model.extras["gufo_speculative"] = mode;
+        bool rejected = false;
+        try { DefinitionRunner(bound.definition).prepare_load({"format-fixture", model, options, "error"}, entry->spec, services); }
+        catch (const std::invalid_argument& error) { rejected = std::string(error.what()) == std::string("gufo: a draft model needs gufo_speculative set to dflash2, mtp or dspark, not '") + mode + "'"; }
+        check(rejected, "InvalidDraftSpeculativeModeRejected");
+    }
+    model.resolved_paths["draft"] = ""; model.extras["gufo_speculative"] = "ignored-without-draft";
+    const auto no_draft = DefinitionRunner(bound.definition).prepare_load({"format-fixture", model, options, "error"}, entry->spec, services);
+    check(std::find(no_draft.plan.command.args.begin(), no_draft.plan.command.args.end(), "--speculative") == no_draft.plan.command.args.end(), "SpeculativeModeIgnoredWithoutDraft");
+    for (const auto& unused : std::vector<std::string>{std::string(65, 'a'), std::string("a\0b", 3)}) {
+        model.extras["gufo_speculative"] = unused;
+        bool ignored = false;
+        try { ignored = DefinitionRunner(bound.definition).prepare_load({"format-fixture", model, options, "error"}, entry->spec, services).plan.command.args == no_draft.plan.command.args; }
+        catch (const std::exception&) {}
+        check(ignored, "UnusedSpeculativeStringMatchesStack");
+    }
+    model.extras["gufo_speculative"] = "";
+    const auto installations = services.installations;
+    services.gpu_nodes = {{0, "gfx1100"}};
+    rejects([&] { DefinitionRunner(bound.definition).prepare_load({"format-fixture", model, options, "error"}, entry->spec, services); }, "UnsupportedSelectionFailsBeforeInstallation");
+    check(services.installations == installations, "UnsupportedSelectionHasNoInstallEffects");
+    services.gpu_nodes = {{2, "gfx1151"}, {1, "gfx1100"}};
+    auto authored = Json::parse(read_bytes("gufo-format.container.json"));
+    authored["merge"]["launch"]["environment"]["set"] = Json::array({{{"name", "HIP_VISIBLE_DEVICES"}, {"value", "0"}}});
+    const auto authored_bound = bind(format_fixture(authored));
+    if (!authored_bound.definition) { diagnostics(authored_bound.diagnostics); check(false, "AuthoredHIPFixtureBinds"); }
+    else {
+        const auto authored_entry = ConfiguredBackendEntry::make(authored_bound.definition);
+        rejects([&] { DefinitionRunner(authored_bound.definition).prepare_load({"format-fixture", model, options, "error"}, authored_entry->spec, services); }, "AuthoredHIPCannotInfluenceSelection");
+    }
+    auto hook_doc = Json::parse(read_bytes("gufo-format.container.json"));
+    hook_doc["merge"]["hooks"]["backend"] = {{"id", "llamacpp.backend.v1"}, {"params", Json::object()}};
+    hook_doc["merge"]["hooks"]["environment"] = {{"id", "llamacpp.environment.v1"}, {"params", Json::object()}};
+    const auto hook_fixture = format_fixture(hook_doc);
+    const auto hook_bound = bind(hook_fixture);
+    if (hook_bound.definition) use_fixed_container_backend(*hook_bound.definition);
+    if (hook_bound.definition) for (auto& hook : const_cast<std::vector<bd::BoundHook>&>(bd::Inspection::hooks(*hook_bound.definition)))
+        if (std::holds_alternative<typed::EnvironmentHook>(hook.target)) hook.target = typed::EnvironmentHook{malicious_hip_environment};
+    if (!hook_bound.definition) { diagnostics(hook_bound.diagnostics); check(false, "HIPHookFixtureBinds"); }
+    else {
+        const auto hook_entry = ConfiguredBackendEntry::make(hook_bound.definition);
+        bool rejected = false;
+        try { DefinitionRunner(hook_bound.definition).prepare_load({"format-fixture", model, options, "error"}, hook_entry->spec, services); }
+        catch (const std::invalid_argument& error) { rejected = std::string(error.what()) == "Protected container environment"; }
+        check(rejected, "HookHIPCannotInfluenceSelection");
+    }
+    auto rewrite_doc = Json::parse(read_bytes("gufo-format.container.json"));
+    rewrite_doc["merge"]["launch"]["argv"].push_back({{"id", "whole-value"}, {"args", Json::array({{{"ref", "/model/checkpoint"}}})}});
+    rewrite_doc["merge"]["launch"]["environment"]["set"] = Json::array({{{"name", "MODEL_FILE"}, {"value", {{"ref", "/model/checkpoint"}}}}});
+    model.checkpoints["main"] = model.resolved_paths.at("main");
+    const auto rewrite_bound = bind(format_fixture(rewrite_doc));
+    const auto rewrite_entry = ConfiguredBackendEntry::make(rewrite_bound.definition);
+    const auto rewritten = DefinitionRunner(rewrite_bound.definition).prepare_load({"format-fixture", model, options, "error"}, rewrite_entry->spec, services);
+    check(rewritten.plan.command.args.back() == "/mnt/models/checkpoint.bin" && rewritten.plan.command.env.front() ==
+        std::pair<std::string, std::string>{"MODEL_FILE", "/mnt/models/checkpoint.bin"}, "WholeValueArgvAndEnvironmentRewrite");
+    auto hook_fact_doc = Json::parse(read_bytes("gufo-format.container.json"));
+    hook_fact_doc["merge"]["hooks"]["backend"] = {{"id", "llamacpp.backend.v1"}, {"params", Json::object()}};
+    hook_fact_doc["merge"]["hooks"]["launch"] = {{"id", "llamacpp.prepare.v1"}, {"params", Json::object()}};
+    hook_fact_doc["merge"]["launch"]["prepare_order"] = {"backend", "hook", "artifacts", "program", "ports"};
+    hook_fact_doc["merge"]["launch"]["argv"][7]["value"] = {{"ref", "/launch/hook/speculative_mode"}, {"type", "string"}};
+    model.extras["gufo_speculative"] = "mtp";
+    const auto fact_bound = bind(format_fixture(hook_fact_doc));
+    use_fixed_container_backend(*fact_bound.definition);
+    const auto fact_entry = ConfiguredBackendEntry::make(fact_bound.definition);
+    binding_fixture::allow_entries = true;
+    const auto fact_result = DefinitionRunner(fact_bound.definition).prepare_load({"format-fixture", model, options, "error"}, fact_entry->spec, services);
+    binding_fixture::allow_entries = false;
+    check(fact_result.session->frame.values["launch"]["hook"]["speculative_mode"] == "mtp", "PrepareHookReturnsTypedSpeculativeMode");
+    auto forged = Json::parse(read_bytes("gufo-format.container.json"));
+    forged["merge"]["containers"]["rocm"]["gpu_ordinal"] = 0;
+    check(!admit({forged}, empty_builtins()).catalog, "JSONCannotProvideGPUOrdinal");
+    auto ir = ex::Inspection::program(*fixture.compiled);
+    auto frame = runtime::Frame(*bound.definition);
+    frame.data.values = {{"artifacts", {{"main", model.resolved_paths.at("main")}, {"mmproj", model.resolved_paths.at("main")}, {"draft", ""}}}};
+    LaunchPlan dedup; dedup.container = utils::ContainerRunSpec{};
+    materialize_container_mounts(ir, frame, dedup, [](const auto& p) { return std::optional<Json>{p.find("/2/") == std::string::npos}; });
+    check(dedup.container->mounts.size() == 1 && frame.data.values["artifacts"]["mmproj"] == "/mnt/models/checkpoint.bin", "NumberedLayoutDeduplicatesNamedPaths");
+    ir.launch.mounts.resize(1);
+    ir.launch.mounts.front().layout = "unknown";
+    frame.data.values["artifacts"]["main"] = model.resolved_paths.at("main");
+    LaunchPlan unknown; unknown.container = utils::ContainerRunSpec{};
+    rejects([&] { materialize_container_mounts(ir, frame, unknown, [](const auto&) { return std::optional<Json>{true}; }); }, "UnknownMountLayoutFailsClosed");
+}
+
 void milestone(const Fixture& fixture, const fs::path& scratch) {
     const auto bound = bind(fixture);
     if (!bound.definition) { check(false, "ContainerDefinitionActuallyExecutes"); return; }
@@ -396,6 +640,8 @@ int main() {
         const auto fixture = authorized();
 #ifdef __linux__
         inventory(scratch);
+        gpu_selection(scratch);
+        format_parity(scratch);
 #endif
         authority_and_plans(fixture, scratch);
 #ifdef __linux__
