@@ -66,7 +66,7 @@ struct FakeHost {
         h.gpu_devices_accessible = [this]() { return gpu_access; };
         h.account = [this]() { return account; };
         h.group_id = [](const std::string& group) {
-            return group == "video" ? std::string("44") : std::string("990");
+            return group == "render" ? std::string("990") : std::string();
         };
         h.env = [this](const std::string& name) {
             const auto it = env.find(name);
@@ -104,7 +104,7 @@ struct FakeHost {
 // The spec's Complete Example: Qwen3-4B-GGUF on llamacpp:nathanw.
 ContainerRunSpec example_spec() {
     ContainerRunSpec spec;
-    spec.name = "lemonade-llamacpp-nathanw-Qwen3-4B-GGUF";
+    spec.name = "lemonade-13305-llamacpp-nathanw-Qwen3-4B-GGUF";
     spec.recipe = "llamacpp";
     spec.backend = "nathanw";
     spec.model = "Qwen3-4B-GGUF";
@@ -120,14 +120,14 @@ ContainerRunSpec example_spec() {
 
 void test_run_command() {
     const std::string common =
-        " run --rm --init --name lemonade-llamacpp-nathanw-Qwen3-4B-GGUF"
+        " run --rm --init --name lemonade-13305-llamacpp-nathanw-Qwen3-4B-GGUF"
         " --label ai.lemonade"
         " --label ai.lemonade.recipe=llamacpp"
         " --label ai.lemonade.backend=nathanw"
         " --label ai.lemonade.model=Qwen3-4B-GGUF"
         " --label ai.lemonade.port=8001"
         " --cap-drop=all --security-opt=no-new-privileges"
-        " --pull=never --network=lemonade-llamacpp-nathanw-Qwen3-4B-GGUF"
+        " --pull=never --network=lemonade-13305-llamacpp-nathanw-Qwen3-4B-GGUF"
         " --device /dev/dri";
     const std::string mount_and_home =
         " -v /home/alice/model.gguf:/mnt/models/Qwen3-4B-Q4_K_M.gguf:ro,z"
@@ -147,8 +147,8 @@ void test_run_command() {
     FakeHost docker;
     docker.tools = {"docker"};
     const std::string docker_command = join(ContainerManager(docker.host()).run_command(example_spec()));
-    check("docker run adds the host's video and render IDs and publishes no port",
-          docker_command == "docker" + common + " --group-add 44 --group-add 990" +
+    check("docker run adds the host's render ID and publishes no port",
+          docker_command == "docker" + common + " --group-add 990" +
                                 mount_and_home + image_and_program);
 
     FakeHost rootful;
@@ -158,7 +158,7 @@ void test_run_command() {
     check("rootful podman run takes Docker's group IDs and publishes no port",
           !rootful_manager.rootless_podman() &&
               join(rootful_manager.run_command(example_spec())) ==
-                  "podman" + common + " --group-add 44 --group-add 990" + mount_and_home +
+                  "podman" + common + " --group-add 990" + mount_and_home +
                       image_and_program);
 
     ContainerRunSpec policy = example_spec();
@@ -193,13 +193,13 @@ void test_tool_choice_and_setup() {
     check("the host checks run no command", none.commands == 0);
     check("the steps are numbered, logging out last",
           fresh.action() ==
-              "1. sudo apt install podman\n2. sudo usermod -aG video,render $USER\n"
+              "1. sudo apt install podman\n2. sudo usermod -aG render $USER\n"
               "3. Log out and back in");
     check("error text lists the problems, then the steps",
           fresh.text() ==
               "\n  - podman is not on PATH\n  - Account cannot open the GPU devices\n"
               "To fix it:\n  1. sudo apt install podman\n"
-              "  2. sudo usermod -aG video,render $USER\n  3. Log out and back in");
+              "  2. sudo usermod -aG render $USER\n  3. Log out and back in");
 
     FakeHost both;
     both.tools = {"podman", "docker"};
@@ -207,7 +207,7 @@ void test_tool_choice_and_setup() {
     check("Podman needs the account to open the GPU devices",
           groups.ids() == std::vector<std::string>({"device_groups"}) &&
               groups.message() == "Account cannot open the GPU devices" &&
-              groups.action() == "1. sudo usermod -aG video,render $USER\n"
+              groups.action() == "1. sudo usermod -aG render $USER\n"
                                  "2. Log out and back in");
     both.gpu_access = true;
     check("Podman passes once the account can open the GPU devices", ContainerManager(both.host()).check_host().empty());
@@ -272,7 +272,7 @@ void test_tool_choice_and_setup() {
     both_relogins.failures.push_back(refused.failures.front());
     check("logging out and back in is listed once, last",
           both_relogins.action() ==
-              "1. sudo usermod -aG video,render $USER\n2. sudo usermod -aG docker $USER\n"
+              "1. sudo usermod -aG render $USER\n2. sudo usermod -aG docker $USER\n"
               "3. Log out and back in");
 }
 
@@ -286,7 +286,7 @@ void test_system_service_setup() {
     const lemon::utils::SetupReport groups{ContainerManager(podman.host()).check_host()};
     check("the service's group fix names lemonade and restarts lemond",
           groups.ids() == std::vector<std::string>({"device_groups"}) &&
-              groups.action() == "1. sudo usermod -aG video,render lemonade\n"
+              groups.action() == "1. sudo usermod -aG render lemonade\n"
                                  "2. sudo systemctl restart lemond");
     check("check_host runs no commands",
           podman.commands == 0);
@@ -404,13 +404,16 @@ void test_install_commands() {
 
 void test_helpers() {
     check("characters a container name rejects are escaped as _ plus hex",
-          ContainerManager::container_name("llamacpp", "nathanw", "user.My Model:Q4/x") ==
-              "lemonade-llamacpp-nathanw-user.My_20Model_3aQ4_2fx");
+          ContainerManager::container_name(13305, "llamacpp", "nathanw", "user.My Model:Q4/x") ==
+              "lemonade-13305-llamacpp-nathanw-user.My_20Model_3aQ4_2fx");
     check("names that differ only in rejected characters keep distinct containers",
-          ContainerManager::container_name("llamacpp", "nathanw", "user.foo/bar") !=
-                  ContainerManager::container_name("llamacpp", "nathanw", "user.foo-bar") &&
-              ContainerManager::container_name("llamacpp", "nathanw", "user.foo_2fbar") ==
-                  "lemonade-llamacpp-nathanw-user.foo__2fbar");
+          ContainerManager::container_name(13305, "llamacpp", "nathanw", "user.foo/bar") !=
+                  ContainerManager::container_name(13305, "llamacpp", "nathanw", "user.foo-bar") &&
+              ContainerManager::container_name(13305, "llamacpp", "nathanw", "user.foo_2fbar") ==
+                  "lemonade-13305-llamacpp-nathanw-user.foo__2fbar");
+    check("two lemond instances loading the same model get distinct containers",
+          ContainerManager::container_name(13305, "llamacpp", "nathanw", "Qwen3-4B-GGUF") !=
+              ContainerManager::container_name(13306, "llamacpp", "nathanw", "Qwen3-4B-GGUF"));
 
     FakeHost ubuntu;
     check("a host without SELinux passes the SELinux check",

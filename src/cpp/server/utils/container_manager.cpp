@@ -74,7 +74,7 @@ std::optional<gid_t> lookup_group(const std::string& group) {
 }
 
 // Desktop distros often grant the logged-in account device access through
-// ACLs rather than video/render membership, so this tests access itself.
+// ACLs rather than render membership, so this tests access itself.
 bool account_opens_gpu_devices() {
     std::vector<fs::path> nodes = {"/dev/kfd"};
     std::error_code ec;
@@ -257,7 +257,7 @@ std::vector<SetupFailure> ContainerManager::check_host() const {
     }
     if (expect_rootless() && !host_.gpu_devices_accessible()) {
         failures.push_back({"device_groups", "Account cannot open the GPU devices",
-                            {"sudo usermod -aG video,render " + member}, apply});
+                            {"sudo usermod -aG render " + member}, apply});
     }
     return failures;
 }
@@ -397,9 +397,8 @@ std::vector<std::string> ContainerManager::run_command(const ContainerRunSpec& s
         } else {
             // Docker resolves a group name in the image's /etc/group, where it
             // may be missing or numbered differently from the device nodes.
-            for (const char* group : {"video", "render"}) {
-                const std::string gid = host_.group_id(group);
-                if (gid.empty()) continue;
+            const std::string gid = host_.group_id("render");
+            if (!gid.empty()) {
                 argv.push_back("--group-add");
                 argv.push_back(gid);
             }
@@ -594,10 +593,11 @@ std::string ContainerManager::address(const std::string& name) const {
     return result.exit_code == 0 ? trim(result.output) : "";
 }
 
-std::string ContainerManager::container_name(const std::string& recipe,
+std::string ContainerManager::container_name(int instance, const std::string& recipe,
                                              const std::string& backend,
                                              const std::string& model) {
-    return "lemonade-" + name_token(recipe) + "-" + name_token(backend) + "-" + name_token(model);
+    return "lemonade-" + std::to_string(instance) + "-" + name_token(recipe) + "-" +
+           name_token(backend) + "-" + name_token(model);
 }
 
 std::string ContainerManager::podman_install_command(const std::string& os_release) {

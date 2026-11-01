@@ -9,6 +9,7 @@
 #include <thread>
 
 #include "lemon/backends/backend_ops.h"
+#include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
 #include "lemon/utils/container_manager.h"
 
@@ -117,7 +118,9 @@ std::string ContainerProcess::start(const ServerCommand& command) {
         throw std::runtime_error(recipe_ + ":" + backend_ + " names the image " + policy_.image +
                                  ", which is not one Lemonade runs container backends from");
     }
-    name_ = ContainerManager::container_name(recipe_, backend_, model_);
+    const RuntimeConfig* config = RuntimeConfig::global();
+    const int instance = config ? config->port() : 0;
+    name_ = ContainerManager::container_name(instance, recipe_, backend_, model_);
     manager.remove_container(name_);
 
     utils::ContainerRunSpec spec;
