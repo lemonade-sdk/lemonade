@@ -1,6 +1,5 @@
 #include "lemon/backends/ds4/ds4_server.h"
 #include "lemon/backends/ds4/ds4.h"
-#include "lemon/auto_tune.h"
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_utils.h"
@@ -12,9 +11,7 @@
 #include <lemon/utils/aixlog.hpp>
 #include <algorithm>
 #include <filesystem>
-#include <iomanip>
 #include <set>
-#include <sstream>
 
 namespace fs = std::filesystem;
 using namespace lemon::utils;
@@ -132,23 +129,6 @@ void Ds4Server::load(const std::string& model_name, const ModelInfo& model_info,
         // A user-supplied later flag (e.g. --ssd-streaming-cache-experts) still
         // wins since ds4-server parses left-to-right. DSpark needs residency.
         args.push_back("--ssd-streaming");
-    }
-    // A streaming ds4 grows into the memory free above its reserve, and with
-    // less than its working set there it stalls without ever serving; a
-    // resident one fails mid-load. Failing here instead lets the router evict
-    // the other models and retry at once.
-    const double working_set_gb = plan.resident ? weights_gib(model_info) : model_info.min_resident_gb;
-    if (working_set_gb > 0.0 && plan.free_reserve_gb > 0) {
-        bool memory_known = false;
-        const double free_gb = get_available_memory_gb(
-            DEVICE_GPU, gpu_memory_vendor_for_target(backend, ""), "", nullptr, &memory_known);
-        const double needed_gb = plan.free_reserve_gb + working_set_gb;
-        if (memory_known && free_gb < needed_gb) {
-            std::ostringstream message;
-            message << std::fixed << std::setprecision(1) << "ds4 needs " << needed_gb
-                    << " GiB of free GPU memory to start, and " << free_gb << " GiB is free";
-            throw std::runtime_error(message.str());
-        }
     }
     if (plan.expert_cache_gb > 0) {
         args.push_back("--ssd-streaming-cache-experts");
