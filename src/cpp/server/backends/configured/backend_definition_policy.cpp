@@ -408,6 +408,7 @@ std::optional<TypedReferenceMetadata> typed_data_reference(const std::string& pa
     if (release && selected("install_context", "llamacpp.install_context.v1"))
         for (const auto* field : {"therock_version", "rocm_asset_family", "cuda_architecture"})
             if (path == std::string("/install/") + field) return result(Type::String, Phase::InstallAsset);
+    if (path == "/model/labels/mtp" || path == "/model/labels/dflash") return result(Type::Boolean, Phase::Input);
     if (path == "/model/speculative_mode") return result(Type::String, Phase::Input);
     if (selected("launch", "llamacpp.prepare.v1")) {
         if (path == "/launch/hook/speculative_mode") return result(Type::String, Phase::Prepare);

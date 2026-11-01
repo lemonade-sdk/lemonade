@@ -1,4 +1,5 @@
 #include "backend_runtime_fixture.h"
+#include "c6_raw_label_contract.h"
 
 #include <future>
 
@@ -6,6 +7,7 @@ using namespace runtime_fixture;
 
 int main() {
     try {
+    raw_label_contract();
     Upstream upstream;
     ServerFixture fixture(upstream.port);
     auto& server = *fixture.server;

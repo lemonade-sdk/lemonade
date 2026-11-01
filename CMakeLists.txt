@@ -4257,8 +4257,8 @@ if(BUILD_TESTING)
     add_cpp_ci_test(LlamaCppV2ProductionSwitchTest CI ON
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/container_definition_transition.py run
             --build "${CMAKE_CURRENT_BINARY_DIR}"
-            --out "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/artifacts/container-v2/c4b/transition"
-            --scratch "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/container-v2/c4b/transition"
+            --out "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/artifacts/container-v2/c6/transition"
+            --scratch "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/container-v2/c6/transition"
         DEPENDS test_llamacpp_v2_production_switch llamacpp-frozen-control-build)
 endif()
 
@@ -4279,8 +4279,8 @@ if(BUILD_TESTING)
     add_cpp_ci_test(LlamaCppExternalForkTest CI ON
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/llamacpp_external_fork.py
             --build ${CMAKE_CURRENT_BINARY_DIR}
-            --out "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/artifacts/backend-v2-4h"
-            --scratch "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/backend-v2-4h"
+            --out "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/artifacts/container-v2/c6/fork"
+            --scratch "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/container-v2/c6/fork"
         DEPENDS test_llamacpp_external_fork test_external_fake_engine lemond)
 endif()
 
@@ -4288,8 +4288,8 @@ if(BUILD_TESTING)
     add_cpp_ci_test(LlamaCppProductionForkTest CI ON
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/llamacpp_production_fork.py
             --build "${CMAKE_CURRENT_BINARY_DIR}"
-            --out "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/artifacts/backend-v2-4h/production"
-            --scratch "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/backend-v2-4h/production"
+            --out "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/artifacts/container-v2/c6/fork/production"
+            --scratch "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/container-v2/c6/fork/production"
         DEPENDS lemond lemonade test_external_fake_engine)
 endif()
 
@@ -4331,7 +4331,7 @@ if(BUILD_TESTING)
     target_compile_definitions(test_container_execution PRIVATE
         LEMON_BACKEND_EXPORT_TESTING LEMONADE_BINDING_TEST LEMONADE_TYPED_HOOK_TEST
         LEMON_TEST_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures"
-        LEMON_CONTAINER_EXECUTION_SCRATCH="${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/container-v2/c4b/execution")
+        LEMON_CONTAINER_EXECUTION_SCRATCH="${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/container-v2/c6/execution")
     target_include_directories(test_container_execution PRIVATE
         src/cpp/server/backends src/cpp/server/backends/configured)
     target_link_libraries(test_container_execution PRIVATE

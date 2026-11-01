@@ -125,7 +125,7 @@ Expression compile(const Json& value, const std::string& pointer, Program& progr
                 require(!result.default_value || type_matches(*result.default_value, type), "invalid_type", pointer);
                 result.type = type;
             }
-            if (!produced && (text == "/model/speculative_mode" || text.rfind("/platform/", 0) == 0 || text.rfind("/install/", 0) == 0 ||
+            if (!produced && (text == "/model/speculative_mode" || text.rfind("/model/labels", 0) == 0 || text.rfind("/platform/", 0) == 0 || text.rfind("/install/", 0) == 0 ||
                 text.rfind("/artifacts/", 0) == 0 || text.rfind("/launch/", 0) == 0 || text.rfind("/runtime/", 0) == 0)) {
                 budget.work(text.size(), v2::checked_sum(program.bindings.size(), program.normalized["launch"]["ports"].size()));
                 budget.keep(v2::checked_product(v2::checked_sum(text.size(), 128), 4));

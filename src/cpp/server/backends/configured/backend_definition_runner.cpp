@@ -26,6 +26,12 @@ bool valid_spec_aliases(const ExecutableDefinition& executable, const BackendSpe
         (key.space == DefinitionNamespace::Builtin && key.id == "llamacpp" && key.contract == 1 && spec.recipe == "llamacpp");
 }
 std::string scalar(const json& value) { return value.is_string() ? value.get<std::string>() : value.dump(); }
+json raw_label_facts(const ModelInfo& model) {
+    const auto has = [&](const std::string& label) {
+        return std::find(model.labels.begin(), model.labels.end(), label) != model.labels.end();
+    };
+    return {{"mtp", has("mtp")}, {"dflash", has("dflash")}};
+}
 void remove_pointer(json& body, const std::string& path) {
     const json::json_pointer pointer(path);
     if (!body.contains(pointer)) return;
@@ -193,6 +199,7 @@ void DefinitionRunner::resolve_runtime_options(const ModelInfo& model, RecipeOpt
         } else if (!frame.data.options.contains(binding.public_name)) frame.data.options[binding.public_name] = binding.contract.at("default_value");
     }
     frame.data.values["options"] = frame.data.options;
+    frame.data.values["model"]["labels"] = raw_label_facts(model);
     frame.facts = {typed::Fact::ModelLabels, typed::Fact::DraftCheckpoint};
     for (const auto index : slots(SlotOwnerKind::Root, "runtime_options", "runtime_options")) {
         const auto facts = invoke<typed::RuntimeOptionsHook>(frame, index, SlotOwnerKind::Root, "runtime_options", "runtime_options", {},
@@ -445,7 +452,7 @@ PreparedExecution DefinitionRunner::prepare_load(const LoadContext& context, con
         LOG(DEBUG, category.c_str()) << "Per-model settings: " << context.options.to_log_string() << std::endl;
     }
     const auto speculative_mode = context.model_info.extra<std::string>("gufo_speculative", "");
-    values = {{"options", options}, {"model", {{"name", context.model_name}, {"checkpoint", context.model_info.checkpoint()}, {"speculative_mode", speculative_mode}}},
+    values = {{"options", options}, {"model", {{"name", context.model_name}, {"checkpoint", context.model_info.checkpoint()}, {"speculative_mode", speculative_mode}, {"labels", raw_label_facts(context.model_info)}}},
         {"platform", {{"os", host.os}, {"machine_arch", host.machine_arch}, {"rocm_arch", host.rocm_arch}}},
         {"artifacts", json::object()}, {"launch", {{"ports", json::object()}, {"log_level", context.log_level}}}};
     frame.facts = {typed::Fact::BackendOptions, typed::Fact::Platform, typed::Fact::VersionInputs,

@@ -13,6 +13,7 @@ from types import SimpleNamespace
 
 import backend_v2_4e3b_transition as first
 import gufo_definition_transition as gufo
+import container_prerequisite_transition as prerequisites
 from backend_v2_4e_audit import census
 
 REPO = first.REPO
@@ -103,7 +104,7 @@ print("Unchanged historical stages replay:", 171, 141, len(records))
     return json.loads((args.out / "historical-snapshot.json").read_bytes()), pinned
 
 
-def expected_snapshot(base, evidence, old_ids, new_schema):
+def expected_snapshot(base, evidence, old_ids, new_schema, runner_service_policy=6):
     expected = copy.deepcopy(base)
     manifest = copy.deepcopy(base["v2"]["schema2"]["body"]["admission_manifest"])
     manifest["schema_id"] = schema_id(new_schema)
@@ -155,7 +156,7 @@ def expected_snapshot(base, evidence, old_ids, new_schema):
             export=schema,
             arms=evidence["arms"],
             executions=executions,
-            runner_service_policy=6,
+            runner_service_policy=runner_service_policy,
         )
     )
     catalog_v2 = schema_id(
@@ -250,7 +251,9 @@ def validate_format_schema(manifest):
         ["git", "show", FORMAT_BASE + ":" + SCHEMA], cwd=REPO, timeout=30
     )
     old = json.loads(old_bytes)
-    actual_bytes = (REPO / SCHEMA).read_bytes()
+    actual_bytes = subprocess.check_output(
+        ["git", "show", prerequisites.BASE + ":" + SCHEMA], cwd=REPO, timeout=30
+    )
     actual = json.loads(actual_bytes)
     assert set(manifest) == {
         "schema_version",
@@ -331,6 +334,11 @@ def main():
     expected, ids = gufo.derive(base, evidence, old_ids, schema, expected_snapshot)
     gufo_previous_ids = dict(format_ids, builtin_context=old_ids["builtin_context"])
     gufo.check(args, format_expected, expected, gufo_previous_ids, ids)
+    raw_previous, raw_previous_ids = expected, ids
+    expected, ids = prerequisites.derive(
+        base, evidence, old_ids, schema, expected_snapshot, 7
+    )
+    prerequisites.check(args, raw_previous, expected, raw_previous_ids, ids)
     old_evidence = json.loads((args.out / "historical-evidence.json").read_bytes())
     expected_evidence = copy.deepcopy(old_evidence)
     for k in ("admission", "execution", "catalog", "catalog_v2"):
