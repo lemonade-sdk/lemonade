@@ -648,6 +648,9 @@ DefinitionAuthorizationResult DefinitionAuthorizer::authorize_impl(const Definit
             return result;
         }
         result.resolved = true;
+        const auto& declaration = resolved.definition->declaration;
+        require(builtin || (declaration.at("kind") == "local" && !declaration.contains("containers") &&
+            !declaration.at("launch").contains("execution")), "container_execution_unavailable", {leaf, "/launch/execution"});
         std::size_t retained = resolved.definition->metrics.retained_logical_bytes;
         Budget budget{limits, resolved.definition->metrics, shared_retained ? *shared_retained : retained};
         std::vector<DefinitionKey> chain;

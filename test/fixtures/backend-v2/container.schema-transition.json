@@ -1,0 +1,649 @@
+{
+  "base_commit": "1648503d3cf0c93b51219b8141cbf881feff5ec8",
+  "changes": [
+    {
+      "new": {
+        "additionalProperties": false,
+        "properties": {
+          "backend": {
+            "$ref": "#/$defs/Identifier"
+          },
+          "recipe": {
+            "$ref": "#/$defs/Identifier"
+          },
+          "source": {
+            "const": "backend_versions"
+          }
+        },
+        "required": [
+          "source",
+          "recipe",
+          "backend"
+        ],
+        "type": "object"
+      },
+      "op": "add",
+      "path": "/$defs/ContainerPin"
+    },
+    {
+      "new": {
+        "additionalProperties": false,
+        "properties": {
+          "cap_add": {
+            "items": {
+              "enum": [
+                "SYS_PTRACE"
+              ]
+            },
+            "maxItems": 1,
+            "minItems": 0,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "devices": {
+            "items": {
+              "enum": [
+                "/dev/dri",
+                "/dev/kfd"
+              ]
+            },
+            "maxItems": 2,
+            "minItems": 0,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "network": {
+            "const": "private_internal"
+          },
+          "pin": {
+            "$ref": "#/$defs/ContainerPin"
+          },
+          "policy": {
+            "const": "lemonade-isolated-v1"
+          },
+          "repository": {
+            "maxLength": 256,
+            "minLength": 1,
+            "pattern": "^(docker.io/kyuz0|ghcr.io/peonist-ai)/[a-z0-9]+([._-][a-z0-9]+)*(/[a-z0-9]+([._-][a-z0-9]+)*)*$",
+            "type": "string"
+          },
+          "stop_grace_seconds": {
+            "const": 10,
+            "type": "integer"
+          },
+          "teardown": {
+            "const": "stop_remove_reap"
+          }
+        },
+        "required": [
+          "repository",
+          "pin",
+          "devices",
+          "cap_add",
+          "policy",
+          "network",
+          "teardown",
+          "stop_grace_seconds"
+        ],
+        "type": "object"
+      },
+      "op": "add",
+      "path": "/$defs/ContainerPolicy"
+    },
+    {
+      "new": [
+        {
+          "properties": {
+            "kind": {
+              "const": "local"
+            }
+          }
+        },
+        {
+          "properties": {
+            "install": {
+              "properties": {
+                "strategy": {
+                  "const": "oci"
+                }
+              }
+            },
+            "kind": {
+              "const": "container"
+            },
+            "launch": {
+              "properties": {
+                "execution": {
+                  "properties": {
+                    "cases": {
+                      "items": {
+                        "properties": {
+                          "kind": {
+                            "const": "container"
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "program": {
+                  "const": null
+                }
+              },
+              "required": [
+                "execution",
+                "mounts",
+                "address"
+              ]
+            }
+          }
+        }
+      ],
+      "op": "add",
+      "path": "/$defs/Declaration/oneOf"
+    },
+    {
+      "new": {
+        "additionalProperties": {
+          "$ref": "#/$defs/ContainerPolicy"
+        },
+        "type": "object"
+      },
+      "op": "add",
+      "path": "/$defs/Declaration/properties/containers"
+    },
+    {
+      "old": "local",
+      "op": "remove",
+      "path": "/$defs/Declaration/properties/kind/const"
+    },
+    {
+      "new": [
+        "local",
+        "container"
+      ],
+      "op": "add",
+      "path": "/$defs/Declaration/properties/kind/enum"
+    },
+    {
+      "new": {
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "backends": {
+                "items": {
+                  "$ref": "#/$defs/Identifier"
+                },
+                "maxItems": 32,
+                "minItems": 1,
+                "type": "array",
+                "uniqueItems": true
+              },
+              "id": {
+                "$ref": "#/$defs/Identifier"
+              },
+              "kind": {
+                "const": "native"
+              },
+              "program": {
+                "$ref": "#/$defs/NativeProgram"
+              }
+            },
+            "required": [
+              "id",
+              "backends",
+              "kind",
+              "program"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "backends": {
+                "items": {
+                  "$ref": "#/$defs/Identifier"
+                },
+                "maxItems": 32,
+                "minItems": 1,
+                "type": "array",
+                "uniqueItems": true
+              },
+              "container": {
+                "$ref": "#/$defs/Identifier"
+              },
+              "id": {
+                "$ref": "#/$defs/Identifier"
+              },
+              "kind": {
+                "const": "container"
+              },
+              "program": {
+                "$ref": "#/$defs/ImageProgram"
+              }
+            },
+            "required": [
+              "id",
+              "backends",
+              "kind",
+              "container",
+              "program"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "op": "add",
+      "path": "/$defs/ExecutionCase"
+    },
+    {
+      "new": {
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "maxLength": 128,
+                "minLength": 1,
+                "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*$",
+                "type": "string"
+              },
+              "source": {
+                "const": "image_command"
+              }
+            },
+            "required": [
+              "source",
+              "name"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "source": {
+                "const": "image_entrypoint"
+              }
+            },
+            "required": [
+              "source"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "op": "add",
+      "path": "/$defs/ImageProgram"
+    },
+    {
+      "new": {
+        "$ref": "#/$defs/NativeInstall"
+      },
+      "op": "add",
+      "path": "/$defs/Install/properties/native"
+    },
+    {
+      "new": [
+        "github_release",
+        "external_only",
+        "none",
+        "hook",
+        "oci",
+        "by_execution"
+      ],
+      "old": [
+        "github_release",
+        "external_only",
+        "none",
+        "hook"
+      ],
+      "op": "replace",
+      "path": "/$defs/Install/properties/strategy/enum"
+    },
+    {
+      "new": {
+        "additionalProperties": false,
+        "properties": {
+          "source": {
+            "const": "process_start"
+          }
+        },
+        "required": [
+          "source"
+        ],
+        "type": "object"
+      },
+      "op": "add",
+      "path": "/$defs/Launch/properties/address"
+    },
+    {
+      "new": {
+        "additionalProperties": false,
+        "properties": {
+          "cases": {
+            "items": {
+              "$ref": "#/$defs/ExecutionCase"
+            },
+            "maxItems": 32,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "cases"
+        ],
+        "type": "object"
+      },
+      "op": "add",
+      "path": "/$defs/Launch/properties/execution"
+    },
+    {
+      "new": {
+        "items": {
+          "$ref": "#/$defs/Mount"
+        },
+        "maxItems": 64,
+        "type": "array"
+      },
+      "op": "add",
+      "path": "/$defs/Launch/properties/mounts"
+    },
+    {
+      "new": "#/$defs/NativeProgram",
+      "op": "add",
+      "path": "/$defs/Launch/properties/program/$ref"
+    },
+    {
+      "old": false,
+      "op": "remove",
+      "path": "/$defs/Launch/properties/program/additionalProperties"
+    },
+    {
+      "old": {
+        "install_policy": {
+          "enum": [
+            "always"
+          ]
+        },
+        "missing_error": {
+          "$ref": "#/$defs/Expression"
+        },
+        "source": {
+          "enum": [
+            "managed",
+            "external_or_managed"
+          ]
+        }
+      },
+      "op": "remove",
+      "path": "/$defs/Launch/properties/program/properties"
+    },
+    {
+      "old": [
+        "source",
+        "install_policy"
+      ],
+      "op": "remove",
+      "path": "/$defs/Launch/properties/program/required"
+    },
+    {
+      "old": "object",
+      "op": "remove",
+      "path": "/$defs/Launch/properties/program/type"
+    },
+    {
+      "new": [
+        {
+          "minimum": 1,
+          "type": "integer"
+        },
+        {
+          "enum": [
+            "global"
+          ]
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "floor_seconds": {
+              "maximum": 86400,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "source": {
+              "const": "global"
+            }
+          },
+          "required": [
+            "source",
+            "floor_seconds"
+          ],
+          "type": "object"
+        }
+      ],
+      "old": [
+        {
+          "minimum": 1,
+          "type": "integer"
+        },
+        {
+          "enum": [
+            "global"
+          ]
+        }
+      ],
+      "op": "replace",
+      "path": "/$defs/Launch/properties/readiness/properties/timeout/anyOf"
+    },
+    {
+      "new": [
+        "prepare_order",
+        "backend",
+        "ports",
+        "argv",
+        "environment",
+        "working_directory",
+        "output",
+        "readiness",
+        "watchdog"
+      ],
+      "old": [
+        "prepare_order",
+        "backend",
+        "program",
+        "ports",
+        "argv",
+        "environment",
+        "working_directory",
+        "output",
+        "readiness",
+        "watchdog"
+      ],
+      "op": "replace",
+      "path": "/$defs/Launch/required"
+    },
+    {
+      "new": {},
+      "op": "add",
+      "path": "/$defs/MergePayload/properties/containers"
+    },
+    {
+      "new": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact": {
+            "$ref": "#/$defs/Identifier"
+          },
+          "destination": {
+            "const": "/mnt/models"
+          },
+          "expand": {
+            "enum": [
+              "file",
+              "gguf_shards",
+              "directory_files"
+            ]
+          },
+          "id": {
+            "$ref": "#/$defs/Identifier"
+          },
+          "when": {
+            "$ref": "#/$defs/Expression"
+          }
+        },
+        "required": [
+          "id",
+          "artifact",
+          "expand",
+          "destination"
+        ],
+        "type": "object"
+      },
+      "op": "add",
+      "path": "/$defs/Mount"
+    },
+    {
+      "new": {
+        "additionalProperties": false,
+        "properties": {
+          "asset_backend": {
+            "enum": [
+              "identity",
+              "collapse_rocm_prefix"
+            ]
+          },
+          "backend_fallback": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "cases": {
+            "items": {
+              "$ref": "#/$defs/InstallCase"
+            },
+            "type": "array"
+          },
+          "default_versions": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "errors": {
+            "additionalProperties": false,
+            "properties": {
+              "arch": {
+                "$ref": "#/$defs/Expression"
+              },
+              "backend": {
+                "$ref": "#/$defs/Expression"
+              },
+              "machine_arch": {
+                "$ref": "#/$defs/Expression"
+              },
+              "missing_arch": {
+                "$ref": "#/$defs/Expression"
+              },
+              "no_case": {
+                "$ref": "#/$defs/Expression"
+              },
+              "os": {
+                "$ref": "#/$defs/Expression"
+              }
+            },
+            "required": [],
+            "type": "object"
+          },
+          "fact_timing": {
+            "enum": [
+              "selected_case",
+              "before_platform"
+            ]
+          },
+          "install_recipe": {
+            "type": "string"
+          },
+          "pin_recipe": {
+            "type": "string"
+          },
+          "repository_facts": {
+            "items": {
+              "enum": [
+                "therock_version",
+                "rocm_asset_family",
+                "cuda_architecture"
+              ]
+            },
+            "maxItems": 3,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "repository_result": {
+            "enum": [
+              "repository_only",
+              "full_params"
+            ]
+          },
+          "strategy": {
+            "enum": [
+              "github_release",
+              "external_only",
+              "none"
+            ]
+          },
+          "supports_split_archive": {
+            "type": "boolean"
+          },
+          "unmanaged_backends": {
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": "array",
+            "uniqueItems": true
+          }
+        },
+        "required": [
+          "strategy"
+        ],
+        "type": "object"
+      },
+      "op": "add",
+      "path": "/$defs/NativeInstall"
+    },
+    {
+      "new": {
+        "additionalProperties": false,
+        "properties": {
+          "install_policy": {
+            "enum": [
+              "always"
+            ]
+          },
+          "missing_error": {
+            "$ref": "#/$defs/Expression"
+          },
+          "source": {
+            "enum": [
+              "managed",
+              "external_or_managed"
+            ]
+          }
+        },
+        "required": [
+          "source",
+          "install_policy"
+        ],
+        "type": "object"
+      },
+      "op": "add",
+      "path": "/$defs/NativeProgram"
+    }
+  ],
+  "new_schema_id": "sha256:896f682718713c76eb6962a5f0d78ac80e190fda9511b2652e8b757cc92dae67",
+  "new_sha256": "0d439f0294a918f18c0bc572a60f34609539e2999f8cd209327da011418efa31",
+  "old_schema_id": "sha256:83f59730bad3f3ce9332f45eaf57d540e833c65a30844a704623e1bfa16b3dd4",
+  "old_sha256": "fdfca02f2c95323ca1d996756795d04ec1092a30f882dd94ffb38bd2b34039ae",
+  "schema_version": 1,
+  "stage": "container-data-only"
+}

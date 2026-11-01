@@ -387,10 +387,13 @@ bool same_target(const DefinitionTarget& a, const DefinitionTarget& b) {
 }
 
 std::optional<TypedReferenceMetadata> typed_data_reference(const std::string& path, const Json& doc) {
+    const auto& installation = doc.at("install");
+    const bool release = installation.at("strategy") == "github_release" ||
+        (installation.at("strategy") == "by_execution" && installation.at("native").at("strategy") == "github_release");
     const auto result = [&](Type type, Phase phase) -> std::optional<TypedReferenceMetadata> { return TypedReferenceMetadata{type, phase}; };
     if (path == "/platform/os" || path == "/platform/arch" || path == "/platform/machine_arch") return result(Type::String, Phase::Input);
-    if (doc.at("install").at("strategy") == "github_release" && (path == "/install/backend" || path == "/install/requested_version" || path == "/install/pinned_version")) return result(Type::String, Phase::InstallRepository);
-    if (doc.at("install").at("strategy") == "github_release" && (path == "/install/version" || path == "/install/resolved_version")) return result(Type::String, Phase::InstallAsset);
+    if (release && (path == "/install/backend" || path == "/install/requested_version" || path == "/install/pinned_version")) return result(Type::String, Phase::InstallRepository);
+    if (release && (path == "/install/version" || path == "/install/resolved_version")) return result(Type::String, Phase::InstallAsset);
     if (path.rfind("/artifacts/", 0) == 0 && doc.contains("artifacts") && doc.at("artifacts").contains(path.substr(11))) return result(Type::String, Phase::Artifacts);
     if (path == "/launch/backend" || path == "/launch/log_level" || path == "/launch/executable" || path == "/launch/program" || path == "/launch/executable_directory") return result(Type::String, Phase::Launch);
     if (path.rfind("/launch/ports/", 0) == 0) for (const auto& port : doc.at("launch").at("ports"))
@@ -402,7 +405,7 @@ std::optional<TypedReferenceMetadata> typed_data_reference(const std::string& pa
     const auto selected = [&](const std::string& stage, const std::string& id) {
         return doc.contains("hooks") && doc.at("hooks").contains(stage) && doc.at("hooks").at(stage).at("id") == id;
     };
-    if (doc.at("install").at("strategy") == "github_release" && selected("install_context", "llamacpp.install_context.v1"))
+    if (release && selected("install_context", "llamacpp.install_context.v1"))
         for (const auto* field : {"therock_version", "rocm_asset_family", "cuda_architecture"})
             if (path == std::string("/install/") + field) return result(Type::String, Phase::InstallAsset);
     if (selected("launch", "llamacpp.prepare.v1")) {

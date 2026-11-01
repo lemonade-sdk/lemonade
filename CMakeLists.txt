@@ -4246,11 +4246,10 @@ if(BUILD_TESTING)
     target_link_libraries(test_llamacpp_v2_production_switch PRIVATE
         lemonade-binding-test lemonade-typed-hook-test lemonade-server-core lemonade-test-isolation)
     add_cpp_ci_test(LlamaCppV2ProductionSwitchTest CI ON
-        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/backend_v2_4h_transition.py run
-            --expected-count 154
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/container_definition_transition.py run
             --build "${CMAKE_CURRENT_BINARY_DIR}"
-            --out "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/artifacts/backend-v2-4h/transition"
-            --scratch "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/backend-v2-4h/transition"
+            --out "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/artifacts/container-v2/c2/transition"
+            --scratch "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/container-v2/c2/transition"
         DEPENDS test_llamacpp_v2_production_switch llamacpp-frozen-control-build)
 endif()
 
@@ -4291,4 +4290,21 @@ if(BUILD_TESTING)
     add_cpp_ci_test(ContainerManagerTest CI ON COMMAND test_container_manager
         DEPENDS test_container_manager)
     set_tests_properties(ContainerManagerTest PROPERTIES TIMEOUT 60)
+endif()
+
+if(BUILD_TESTING)
+    add_executable(test_container_definition_v2
+        test/cpp/test_container_definition_v2.cpp
+        src/cpp/server/backends/configured/backend_definition_authorization.cpp
+        src/cpp/server/backends/configured/backend_definition_exports.cpp)
+    target_compile_definitions(test_container_definition_v2 PRIVATE
+        LEMON_BACKEND_EXPORT_TESTING LEMONADE_BINDING_TEST LEMONADE_TYPED_HOOK_TEST
+        LEMON_TEST_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures")
+    target_include_directories(test_container_definition_v2 PRIVATE
+        src/cpp/server/backends src/cpp/server/backends/configured)
+    target_link_libraries(test_container_definition_v2 PRIVATE
+        lemonade-binding-test lemonade-typed-hook-test lemonade-server-core)
+    add_cpp_ci_test(ContainerDefinitionV2Test CI ON COMMAND test_container_definition_v2
+        DEPENDS test_container_definition_v2)
+    set_tests_properties(ContainerDefinitionV2Test PROPERTIES TIMEOUT 60)
 endif()

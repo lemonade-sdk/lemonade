@@ -164,6 +164,20 @@ def compile_views(args):
             ["git", "show", f"{args.baseline_commit}:{hrx}"], cwd=REPO
         ), "HistoricalHrxSourcePreservedForDescriptorBaseline"
         protected.remove(hrx)
+    header = "src/cpp/include/lemon/backends/backend_descriptor.h"
+    previous = baseline(args.baseline_commit, header)
+    extended = previous.replace(
+        "#include <string>",
+        '#include "lemon/backends/container_policy.h"\n\n#include <map>\n#include <string>',
+    )
+    extended = extended.replace(
+        "    bool streams_model_from_storage = false;",
+        "    bool streams_model_from_storage = false;\n    std::map<std::string, ContainerPolicy> containers;",
+    )
+    assert (
+        REPO / header
+    ).read_text() == extended, "ExactAdditiveContainerDescriptorField"
+    protected.remove(header)
     subprocess.run(
         ["git", "diff", "--exit-code", args.baseline_commit, "--", *protected],
         cwd=REPO,
@@ -181,6 +195,17 @@ def compile_views(args):
     test = (REPO / "test/cpp/test_backend_definition_descriptor.cpp").read_text()
     start = test.index("Json dump(")
     dumper = test[start : test.index("\nJson read(", start)]
+    dumper = dumper.replace(
+        "    return {",
+        r"""    Json containers = Json::object();
+#ifdef LEMON_DUMP_ABI
+    for (const auto& [backend, policy] : d.containers) containers[backend] = {
+        {"repository", policy.repository}, {"pin", {{"source", policy.pin.source}, {"recipe", policy.pin.recipe}, {"backend", policy.pin.backend}}},
+        {"devices", policy.devices}, {"cap_add", policy.cap_add}, {"policy", policy.policy}, {"network", policy.network},
+        {"teardown", policy.teardown}, {"stop_grace_seconds", policy.stop_grace_seconds}};
+#endif
+    return {{"containers", containers},""",
+    )
     source = (
         '#include "backend_definition_exports_internal.h"\n'
         '#include "backend_descriptors_generated.h"\n'
@@ -212,6 +237,13 @@ int main(int argc, char** argv) {
         output["mapper"].push_back(actual);
     }
 #ifdef LEMON_DUMP_ABI
+    const auto envelope = Json::parse(std::ifstream(LEMON_CONTAINER_FIXTURE));
+    const DefinitionKey container_key{DefinitionNamespace::External, "gufo", 0};
+    const auto bytes = envelope.dump();
+    const auto snapshot = make_v2_source_snapshot({{container_key, bytes, ""}});
+    const auto resolved = DefinitionResolver(snapshot.snapshot).resolve(container_key);
+    if (!resolved.definition) return 3;
+    output["container"] = dump(descriptor_from_declaration(resolved.definition->declaration, DefinitionNamespace::External, DescriptorPlatform::native())).at("containers");
     output["registry"] = {{"exports", installed_builtin_exports().exports().size()},
         {"digest", installed_builtin_exports().digest()}, {"abis", v2::hook_abi_json(installed_hook_abis())},
         {"abi_digest", installed_hook_abi_digest()}};
@@ -273,7 +305,16 @@ int main(int argc, char** argv) {
                 *includes,
                 *flags[view],
                 "-I" + str(REPO / CONFIGURED),
-                *(["-DLEMON_DUMP_ABI"] if side == "after" else []),
+                *(
+                    [
+                        "-DLEMON_DUMP_ABI",
+                        '-DLEMON_CONTAINER_FIXTURE="'
+                        + str(REPO / "test/fixtures/backend-v2/gufo.container.json")
+                        + '"',
+                    ]
+                    if side == "after"
+                    else []
+                ),
                 str(args.out / "driver.cpp"),
                 str(mapper),
                 str(REPO / "src/cpp/server/backends/backend_option_contract.cpp"),
@@ -306,6 +347,13 @@ def run_views(args):
             )
             (args.out / f"{side}-{view}.json").write_text(process.stdout)
             results[side] = json.loads(process.stdout)
+        container = results["after"].pop("container")
+        assert (
+            container
+            == json.loads(
+                (REPO / "test/fixtures/backend-v2/gufo.container.json").read_bytes()
+            )["merge"]["containers"]
+        ), ("EveryNewContainerDescriptorFieldExact:" + view)
         current_registry = results["after"].pop("registry")
         if registry is None:
             registry = current_registry

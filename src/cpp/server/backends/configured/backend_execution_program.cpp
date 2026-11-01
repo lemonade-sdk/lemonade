@@ -64,8 +64,21 @@ void compile_programs(Program& program, Budget& budget) {
     program.install.records = doc["install"];
     program.install.strategy = doc["install"]["strategy"];
     program.launch.prepare_order = launch["prepare_order"].get<std::vector<std::string>>();
-    program.launch.program_source = launch["program"]["source"];
-    program.launch.install_policy = launch["program"]["install_policy"];
+    program.launch.program_source = launch.contains("execution") ? "execution_cases" : launch["program"]["source"].get<std::string>();
+    program.launch.install_policy = launch.contains("execution") ? "" : launch["program"]["install_policy"].get<std::string>();
+    if (launch.contains("execution")) for (const auto& item : launch["execution"]["cases"]) {
+        budget.copy(item);
+        budget.keep(sizeof(ExecutionCase) + 256);
+        program.launch.execution_cases.push_back({item["id"], item["backends"].get<std::vector<std::string>>(),
+            item["kind"], item.value("container", ""), item["program"]});
+    }
+    if (launch.contains("mounts")) for (std::size_t i = 0; i < launch["mounts"].size(); ++i) {
+        const auto& item = launch["mounts"][i];
+        budget.copy(item);
+        budget.keep(sizeof(MountProgram) + 256);
+        program.launch.mounts.push_back({item["id"], item["artifact"], item["expand"], item["destination"],
+            item.contains("when") ? std::optional<std::string>("/launch/mounts/" + std::to_string(i) + "/when") : std::nullopt});
+    }
     if (launch["backend"].contains("fixed")) program.launch.fixed_backend = launch["backend"]["fixed"];
     program.launch.environment_preset = launch["environment"]["preset"];
     program.launch.environment_order = launch["environment"]["order"];

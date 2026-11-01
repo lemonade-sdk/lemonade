@@ -89,6 +89,8 @@ void LaunchPlanner::require_platform(const BackendDefinition& definition, const 
 ResolvedLaunchInputs LaunchPlanner::prepare(const BackendDefinition& definition, const BackendSpec& spec,
                                            const LoadContext& context, LaunchServices& services) const {
     const auto& launch = definition.records.at("launch");
+    if (definition.records.value("kind", "local") != "local" || definition.records.contains("containers") || launch.contains("execution"))
+        throw std::runtime_error("Container execution is unavailable in C2");
     const auto& metadata = definition.records.at("metadata");
     ResolvedLaunchInputs inputs;
     auto& values = inputs.values;
@@ -220,6 +222,8 @@ ResolvedLaunchInputs LaunchPlanner::prepare(const BackendDefinition& definition,
 
 LaunchPlan LaunchPlanner::plan(const BackendDefinition& definition, const ResolvedLaunchInputs& inputs) const {
     const auto& launch = definition.records.at("launch");
+    if (definition.records.value("kind", "local") != "local" || definition.records.contains("containers") || launch.contains("execution"))
+        throw std::runtime_error("Container execution is unavailable in C2");
     LaunchPlan plan;
     plan.command.program = inputs.executable;
     plan.command.env = inputs.environment;

@@ -121,7 +121,7 @@ struct Preflight : nlohmann::json_sax<Json> {
             if (!keys.count(frame.key)) return fail("unknown_key", true);
         }
         if (stack.size() == 2 && stack[0].key == "merge") {
-            static const std::set<std::string> fields = {"artifacts", "hooks", "install", "kind", "launch", "metadata", "operations", "rationale", "unsupported_messages"};
+            static const std::set<std::string> fields = {"artifacts", "containers", "hooks", "install", "kind", "launch", "metadata", "operations", "rationale", "unsupported_messages"};
             if (!fields.count(frame.key)) return fail("unknown_key", true);
         }
         if (frame.parent) {

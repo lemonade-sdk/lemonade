@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <regex>
 #include <set>
 #include <tuple>
 
@@ -34,7 +35,7 @@ CompositionDiagnostics check_schema_keywords(const nlohmann::json& schema) {
             if (!supported.count(key)) {
                 if (result.entries.size() < 100) result.entries.push_back({"unsupported_schema_keyword", "", pointer, "Unsupported schema keyword", {}, {}, {}});
                 else result.truncated = true;
-            } else if (key == "pattern" && value != "^[a-z][a-z0-9._-]*$" && value != "^sha256:[a-f0-9]{64}$" && value != "^[a-fA-F0-9]{64}$" && value != "^(?:/(?:[^~/]|~[01])*)+$") {
+            } else if (key == "pattern" && value != "^[a-z][a-z0-9._-]*$" && value != "^sha256:[a-f0-9]{64}$" && value != "^[a-fA-F0-9]{64}$" && value != "^(?:/(?:[^~/]|~[01])*)+$" && value != "^[a-zA-Z0-9][a-zA-Z0-9._-]*$" && value != "^(docker.io/kyuz0|ghcr.io/peonist-ai)/[a-z0-9]+([._-][a-z0-9]+)*(/[a-z0-9]+([._-][a-z0-9]+)*)*$") {
                 result.entries.push_back({"unsupported_schema_pattern", "", pointer, "Unsupported schema pattern", {}, {}, {}});
             } else if (key == "properties" || key == "$defs") {
                 for (const auto& [name, child] : value.items()) self(self, child, pointer + "/" + pointer_token(name));
@@ -66,6 +67,8 @@ bool matches_pattern(const std::string& text, const std::string& pattern) {
         for (std::size_t i = 1; i < text.size(); ++i) if (text[i] == '~' && (++i == text.size() || (text[i] != '0' && text[i] != '1'))) return false;
         return true;
     }
+    if (pattern == "^[a-zA-Z0-9][a-zA-Z0-9._-]*$" || pattern == "^(docker.io/kyuz0|ghcr.io/peonist-ai)/[a-z0-9]+([._-][a-z0-9]+)*(/[a-z0-9]+([._-][a-z0-9]+)*)*$")
+        return text.size() <= 256 && std::regex_match(text, std::regex(pattern));
     throw std::logic_error("Unsupported v2 schema pattern");
 }
 

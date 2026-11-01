@@ -114,7 +114,25 @@ struct EnvironmentAssignment {
     std::string expression;
 };
 
+struct ExecutionCase {
+    std::string id;
+    std::vector<std::string> backends;
+    std::string kind;
+    std::string container;
+    Json program;
+};
+
+struct MountProgram {
+    std::string id;
+    std::string artifact;
+    std::string expand;
+    std::string destination;
+    std::optional<std::string> condition;
+};
+
 struct LaunchProgram {
+    std::vector<ExecutionCase> execution_cases;
+    std::vector<MountProgram> mounts;
     std::vector<std::string> prepare_order;
     std::vector<Port> ports;
     std::string program_source;

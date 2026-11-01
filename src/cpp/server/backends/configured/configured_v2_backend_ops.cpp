@@ -72,7 +72,13 @@ json descriptor_fields(const BackendDescriptor& d) {
             {"format", static_cast<int>(row.format)}, {"supported_os", row.supported_os}, {"devices", row.devices},
             {"device_summary", row.device_summary}, {"arch_gates", gates}});
     }
+    json containers = json::object();
+    for (const auto& [backend, policy] : d.containers) containers[backend] = {
+        {"repository", policy.repository}, {"pin", {{"source", policy.pin.source}, {"recipe", policy.pin.recipe}, {"backend", policy.pin.backend}}},
+        {"devices", policy.devices}, {"cap_add", policy.cap_add}, {"policy", policy.policy}, {"network", policy.network},
+        {"teardown", policy.teardown}, {"stop_grace_seconds", policy.stop_grace_seconds}};
     return {
+        {"containers", containers},
         {"recipe", d.recipe},
         {"display_name", d.display_name},
         {"binary", d.binary},

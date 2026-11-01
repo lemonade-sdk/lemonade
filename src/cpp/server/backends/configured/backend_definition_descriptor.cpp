@@ -54,6 +54,14 @@ BackendDescriptor descriptor_from_declaration(const nlohmann::json& declaration,
         for (const auto& [arch, gate] : gates.items()) support.arch_gates.emplace(arch, ArchInstallGate{gate["os"].get<std::set<std::string>>(), gate["channels"].get<std::set<std::string>>()});
         descriptor.support.push_back(std::move(support));
     }
+    const auto containers = declaration.value("containers", nlohmann::json::object());
+    for (const auto& [backend, record] : containers.items()) {
+        const auto& pin = record.at("pin");
+        descriptor.containers.emplace(backend, ContainerPolicy{record.at("repository"),
+            {pin.at("source"), pin.at("recipe"), pin.at("backend")}, record.at("devices").get<std::vector<std::string>>(),
+            record.at("cap_add").get<std::vector<std::string>>(), record.at("policy"), record.at("network"),
+            record.at("teardown"), record.at("stop_grace_seconds")});
+    }
     descriptor.supported_modes = metadata.value("supported_modes", std::vector<std::string>{"chat"});
     descriptor.required_checkpoints = metadata.value("required_checkpoints", std::vector<std::string>{"main"});
     descriptor.default_capabilities = metadata.value("default_capabilities", std::vector<std::string>{});

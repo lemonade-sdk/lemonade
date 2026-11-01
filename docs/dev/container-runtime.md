@@ -57,7 +57,8 @@ network, and stop/reap the attached client. Cleanup attempts continue after an
 individual host exception and failures are logged. Normal cleanup does not
 establish crash cleanup after lemond or the runtime client is killed.
 
-The next translation unit starts with the closed v2 schema and `kind: "container"`.
+[C2](container-definitions-v2.md) adds the closed v2 container records as data.
+Execution binding rejects container-capable declarations before a process exists.
 Subsequent units must attach versioned sources, descriptor projection,
 pin/installation ownership, admitted execution authority and compiled
 execution/mount plans before connecting a production factory. Existing v1 definitions and local execution semantics remain

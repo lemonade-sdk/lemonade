@@ -37,6 +37,9 @@ void remove_pointer(json& body, const std::string& path) {
 
 DefinitionRunner::DefinitionRunner(std::shared_ptr<const ExecutableDefinition> executable)
     : executable_(std::move(executable)), program_(retained_program(executable_)) {
+    if (program_.normalized.value("kind", "local") != "local" || program_.normalized.contains("containers") ||
+        program_.normalized.at("launch").contains("execution"))
+        throw std::runtime_error("Container execution is unavailable in C2");
     if (program_.launch.environment_preset != "inherit" && program_.launch.environment_preset != "hook")
         throw std::invalid_argument("Configured v2 launch service is unavailable");
     for (const auto& artifact : program_.artifacts) if (artifact.records.value("absolute_checkpoint_fallback", false))

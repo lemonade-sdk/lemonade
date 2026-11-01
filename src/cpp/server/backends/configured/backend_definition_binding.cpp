@@ -120,7 +120,7 @@ public:
         const auto fail = [&](const std::string& code, const std::string& pointer) {
             result.definition.reset();
             if (!budget.limits.diagnostics) { result.diagnostics.truncated = true; return; }
-            result.diagnostics.entries.push_back({code, "", pointer, "Execution binding failed", {}, {}, {}});
+            result.diagnostics.entries.push_back({code, "", pointer, code == "container_execution_unavailable" ? "Container execution is unavailable in C2" : "Execution binding failed", {}, {}, {}});
         };
         try {
             execution::require(admitted && compiled, "invalid_binding_input", "");
@@ -134,6 +134,8 @@ public:
             execution::require(CatalogAdmissionBuilder::contains_token(*admitted, compiled->authorized()), "token_not_admitted", "");
             const auto& token = compiled->authorized();
             const auto& program = execution::Inspection::program(*compiled);
+            execution::require(!program.normalized.contains("containers") && !program.normalized["launch"].contains("execution") &&
+                program.normalized["kind"] == "local", "container_execution_unavailable", "/launch/execution");
             budget.work(compiled->metrics().expression_nodes);
             binding::precharge(program, token, budget);
             execution::require(program.hooks.size() == AuthorityInspection::grant_count(token), "sealed_slot_mismatch", "");

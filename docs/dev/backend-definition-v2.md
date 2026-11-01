@@ -64,7 +64,7 @@ sources can participate in the v2 graph. The data-only resolver owns snapshots, 
 source admission.
 
 `merge` is a partial object restricted to these payload members: `kind`,
-`metadata`, `install`, `artifacts`, `launch`, `operations`, `hooks`,
+`metadata`, `install`, `artifacts`, `containers`, `launch`, `operations`, `hooks`,
 `unsupported_messages`, and `rationale`. Nested fragments may be incomplete;
 complete validation occurs after composition. Neither `merge` nor edits may
 change `schema_version`, `id`, `recipe`, or composition-control fields.
@@ -96,6 +96,9 @@ remain data. Operator-looking values do not perform edits. Null never means dele
 | `/metadata/options` | `id` |
 | `/metadata/support` | `id` |
 | `/install/cases` | `id` |
+| `/install/native/cases` | `id` |
+| `/launch/execution/cases` | `id` |
+| `/launch/mounts` | `id` |
 | `/launch/argv` | `id` |
 | `/launch/custom_args/defaults` | `id` |
 | `/operations` | `id` |
@@ -1115,3 +1118,14 @@ production-process fork test hashes both Lemonade binaries before and after
 adding `backends.d` declarations and retains a protected-hook negative control.
 The subprocess is a fake engine with a synthetic artifact; this establishes no
 real inference, model correctness, accelerator performance or native portability.
+
+## Container data (C2)
+
+V2 additionally admits `kind: "container"`, closed image/pin and confinement
+policies, explicit execution cases, artifact mount records and process-returned
+addresses. Container-capable definitions resolve and compile under fixed test-only
+builtin policy; external authorization and builtin execution binding fail closed
+with `container_execution_unavailable`. Existing v1 records, builtin
+sources and builtin execution policies are unchanged. See
+[Container declarations in v2](container-definitions-v2.md) for the complete
+record domains, 59-line worked fixture and exact schema-identity transition.

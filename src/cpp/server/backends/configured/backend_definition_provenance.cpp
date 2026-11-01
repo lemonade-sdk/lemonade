@@ -173,7 +173,7 @@ CompositionDiagnostics relationships(const Json& doc, const LayerState& state, B
         if (related) add_related(result.entries.back(), location(effective_node(state.root, *related, budget.limits)->origin));
         return &result.entries.back();
     };
-    for (const auto* path : {"/metadata/options", "/metadata/support", "/install/cases", "/launch/argv", "/launch/custom_args/defaults", "/operations", "/launch/ports", "/launch/environment/set"}) {
+    for (const auto* path : {"/metadata/options", "/metadata/support", "/install/cases", "/install/native/cases", "/launch/execution/cases", "/launch/mounts", "/launch/argv", "/launch/custom_args/defaults", "/operations", "/launch/ports", "/launch/environment/set"}) {
         const auto pointer = Json::json_pointer(path);
         if (!doc.contains(pointer)) continue;
         const auto field = *record_field(path) == RecordKey::Field::Id ? "id" : "name";
@@ -244,6 +244,80 @@ CompositionDiagnostics relationships(const Json& doc, const LayerState& state, B
     walk(walk, doc, schema_document()["$defs"]["Declaration"], "");
     for (const auto* path : {"/launch/backend/option", "/launch/custom_args/option"}) if (doc.contains(Json::json_pointer(path))) option_reference(doc.at(Json::json_pointer(path)), path);
     const auto& launch = doc["launch"];
+    const auto& installation = doc["install"];
+    const auto strategy = installation["strategy"];
+    if (strategy == "oci" && installation.size() != 1) error("invalid_container_install", "/install");
+    if (strategy == "by_execution" && (installation.size() != 2 || !installation.contains("native")))
+        error("invalid_container_install", "/install");
+    if (strategy != "by_execution" && installation.contains("native")) error("invalid_container_install", "/install/native");
+    const bool execution = launch.contains("execution");
+    const bool container = doc.at("kind") == "container";
+    const auto policies = doc.value("containers", Json::object());
+    if (!container && execution == launch.contains("program")) error("invalid_execution_case", "/launch/execution");
+    if (!execution && (container || doc.contains("containers") || launch.contains("mounts") || launch.contains("address")))
+        error("invalid_execution_case", "/launch/execution");
+    if (!execution) for (std::size_t i = 0; i < doc["metadata"].value("support", Json::array()).size(); ++i) {
+        budget.work(0, 1);
+        if (doc["metadata"]["support"][i]["format"] == "container")
+            error("invalid_execution_support", "/metadata/support/" + std::to_string(i));
+    }
+    if (execution) {
+        if (policies.empty() || policies.size() > 32) error("invalid_container_policy", "/containers");
+        std::map<std::string, std::string> selected;
+        std::set<std::string> used;
+        bool native = false;
+        for (const auto& [name, policy] : policies.items()) {
+            budget.work(name.size(), 1);
+            if ((name.empty() || name[0] < 'a' || name[0] > 'z' || name.size() > 128 || !std::all_of(name.begin(), name.end(), [](char c) { return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '.' || c == '_' || c == '-'; }))) error("invalid_container_policy", "/containers/" + pointer_token(name));
+        }
+        const auto& cases = launch["execution"]["cases"];
+        for (std::size_t i = 0; i < cases.size(); ++i) {
+            const auto& item = cases[i];
+            const auto path = "/launch/execution/cases/" + std::to_string(i);
+            native |= item["kind"] == "native";
+            for (const auto& backend : item["backends"]) {
+                budget.work(backend.get_ref<const std::string&>().size(), 1);
+                budget.keep(backend.get_ref<const std::string&>().size() + path.size() + 128);
+                if (!selected.emplace(backend.get<std::string>(), item["kind"].get<std::string>()).second)
+                    error("execution_selector_overlap", path + "/backends");
+            }
+            if (item["kind"] == "container") {
+                const auto name = item["container"].get<std::string>();
+                budget.keep(name.size() + 64);
+                used.insert(name);
+                if (!policies.contains(name)) error("invalid_reference", path + "/container");
+                else for (const auto& backend : item["backends"]) if (backend != name)
+                    error("invalid_reference", path + "/backends");
+            }
+        }
+        for (const auto& [name, policy] : policies.items()) if (!used.count(name))
+            error("unused_container_policy", "/containers/" + pointer_token(name));
+        for (std::size_t i = 0; i < doc["metadata"].value("support", Json::array()).size(); ++i) {
+            const auto& row = doc["metadata"]["support"][i];
+            const auto backend = row["backend"].get<std::string>();
+            budget.work(backend.size(), 1);
+            if (!selected.count(backend) || ((row["format"] == "container") != (selected[backend] == "container")))
+                error("invalid_execution_support", "/metadata/support/" + std::to_string(i));
+        }
+        const auto strategy = doc["install"]["strategy"];
+        if (!container && strategy != (native ? "by_execution" : "oci"))
+            error("invalid_container_install", "/install");
+        if (!launch.contains("address") || !launch.contains("mounts") || launch["environment"]["preset"] != "inherit" ||
+            launch["working_directory"] != "inherit") error("invalid_container_policy", "/launch");
+        const auto artifacts = doc.value("artifacts", Json::object());
+        if (launch.contains("mounts")) for (std::size_t i = 0; i < launch["mounts"].size(); ++i) {
+            const auto& mount = launch["mounts"][i];
+            budget.work(0, 1);
+            if (!artifacts.contains(mount["artifact"].get<std::string>()))
+                error("invalid_mount_artifact", "/launch/mounts/" + std::to_string(i) + "/artifact");
+        }
+        const auto& timeout = launch["readiness"]["timeout"];
+        if ((!timeout.is_object() && timeout != "global" && (timeout < 1 || timeout > 86400)) ||
+            launch["readiness"]["path"].get_ref<const std::string&>().empty() ||
+            launch["readiness"]["path"].get_ref<const std::string&>()[0] != '/')
+            error("invalid_container_readiness", "/launch/readiness");
+    } else if (doc["install"]["strategy"] == "oci" || doc["install"]["strategy"] == "by_execution" || launch["readiness"]["timeout"].is_object())
+        error("invalid_container_policy", "/install");
     const auto& order = launch["prepare_order"];
     const auto position = [&](const std::string& name) { return std::find(order.begin(), order.end(), name); };
     const auto& hooks = doc.contains("hooks") ? doc["hooks"] : Json::object();
@@ -251,7 +325,7 @@ CompositionDiagnostics relationships(const Json& doc, const LayerState& state, B
     if (position("backend") == order.end() || position("artifacts") == order.end() || position("program") == order.end() || position("ports") == order.end() ||
         position("backend") >= position("program") ||
         (install ? position("backend") >= position("install") || position("install") >= position("program") || position("install") >= position("ports") : (doc["install"]["strategy"] != "external_only" && position("program") >= position("ports")))) error("invalid_relationship", "/launch/prepare_order");
-    if (install && (launch["program"]["source"] != "managed" || doc["install"]["strategy"] != "github_release")) error("invalid_relationship", "/launch/prepare_order", "/install");
+    if (install && !execution && (launch["program"]["source"] != "managed" || doc["install"]["strategy"] != "github_release")) error("invalid_relationship", "/launch/prepare_order", "/install");
     if ((position("hook") != order.end()) != hooks.contains("launch")) error("invalid_relationship", "/launch/prepare_order", "/hooks");
     if (position("custom_args") != order.end() && !launch.contains("custom_args")) error("invalid_relationship", "/launch/prepare_order");
     if (launch["environment"]["preset"] == "hook" && !hooks.contains("environment")) error("invalid_relationship", "/launch/environment/preset", "/hooks");
