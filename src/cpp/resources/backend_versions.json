@@ -203,5 +203,8 @@
     "vulkan": "v0.3.0",
     "cuda": "v0.3.0"
   },
-  "clear_bin_if_lemonade_below": "9.4.0"
+  "clear_bin_if_lemonade_below": "9.4.0",
+  "gufo": {
+    "rocm": "rocm-10.0-gufo@sha256:67aa0b040993fedfd4e300242c5cb48f8add5874454a7486993668e74185e7a9"
+  }
 }

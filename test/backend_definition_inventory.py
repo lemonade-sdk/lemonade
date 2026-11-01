@@ -21,7 +21,8 @@ V1_NAMES = frozenset(
 def production_inventory(root=REPO):
     sources = root / "src/cpp/resources/backends"
     names = {path.stem for path in sources.glob("*.json")}
-    mixed = names == V1_NAMES | {"llamacpp"}
+    dormant = "gufo" in names
+    mixed = names == V1_NAMES | {"llamacpp"} | ({"gufo"} if dormant else set())
     assert names == V1_NAMES or mixed, "ExactMixedDefinitionSources"
     promoted_hrx = (
         json.loads((sources / "hrx.json").read_bytes())["schema_version"] == 2
@@ -47,4 +48,10 @@ def production_inventory(root=REPO):
         assert (
             value["schema_version"] == 2 and value["id"] == "llamacpp"
         ), "SoleAdditionalSourceIsV2Llama"
+    if dormant:
+        value = json.loads((sources / "gufo.json").read_bytes())
+        assert (
+            value["schema_version"] == 2 and value["id"] == value["recipe"] == "gufo"
+        ), "ExactDormantGufoSource"
+        assert value["merge"]["kind"] == "container", "DormantGufoIsContainerData"
     return names

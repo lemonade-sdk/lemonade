@@ -218,6 +218,13 @@ int main(int argc, char** argv) {
     for (const auto& file : std::filesystem::directory_iterator(LEMON_PRODUCTION_DEFINITIONS)) {
         if (file.path().extension() != ".json") continue;
         const auto source = read(file.path());
+        if (source.at("id") == "gufo") {
+            const auto& dormant = builtin_resolved_source({DefinitionNamespace::Builtin, "gufo", 1}).declaration;
+            const auto mapped = descriptor_from_declaration(dormant, DefinitionNamespace::Builtin, DescriptorPlatform::native());
+            check(mapped.recipe == "gufo" && mapped.containers.size() == 1 && std::none_of(descriptors.begin(), descriptors.end(), [](const auto* d) { return d->recipe == "gufo"; }),
+                "InactiveGufoDescriptorDataHasNoProductionRegistration");
+            continue;
+        }
         const auto declaration = source.at("schema_version") == 2 ?
             builtin_resolved_source({DefinitionNamespace::Builtin, "llamacpp", 1}).declaration : source;
         const auto recipe = declaration["recipe"].get<std::string>();

@@ -1,5 +1,6 @@
 #include "backend_definition_binding_fixture.h"
 #include "backend_definition_runner_internal.h"
+#include "gufo_parity_capabilities.h"
 #include "lemon/backend_manager.h"
 #include "lemon/backends/configured/backend_spec_utils.h"
 #include "lemon/backends/configured/configured_server.h"
@@ -629,6 +630,8 @@ void milestone(const Fixture& fixture, const fs::path& scratch) {
 }
 }
 
+#include "gufo_production_parity.h"
+
 int main() {
     std::setvbuf(stdout, nullptr, _IONBF, 0);
     try {
@@ -646,6 +649,7 @@ int main() {
         authority_and_plans(fixture, scratch);
 #ifdef __linux__
         milestone(fixture, scratch);
+        production_gufo_parity(scratch);
 #endif
         RuntimeConfig::set_global(nullptr);
     } catch (const std::exception& error) { std::printf("Container execution error: %s\n", error.what()); check(false, "ContainerExecutionPipeline"); }

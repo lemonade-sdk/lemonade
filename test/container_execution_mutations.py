@@ -450,6 +450,14 @@ def rules():
         '    const auto speculative_mode = context.model_info.extra<std::string>("gufo_speculative", "");\n    if (speculative_mode.size() > 64) throw std::invalid_argument("Overstrict speculative validation");',
         "UnusedSpeculativeStringMatchesStack",
     )
+    add(
+        "c4b-inactive-router-fallback",
+        "src/cpp/server/router.cpp",
+        '    if (backends::builtin_source_declares_recipe(model_info.recipe))\n        throw std::runtime_error("Builtin backend recipe is inactive: " + model_info.recipe);',
+        "",
+        "InactiveGufoCannotFallBackToLlama",
+        "test_llamacpp_v2_production_switch",
+    )
     return result
 
 
@@ -480,7 +488,11 @@ def main():
     )
     database = json.loads((args.build / "compile_commands.json").read_bytes())
     links = {}
-    for suite in ("test_container_execution", "test_container_definition_v2"):
+    for suite in (
+        "test_container_execution",
+        "test_container_definition_v2",
+        "test_llamacpp_v2_production_switch",
+    ):
         commands = subprocess.check_output(
             ["ninja", "-t", "commands", suite], cwd=args.build, text=True
         ).splitlines()
@@ -502,6 +514,9 @@ def main():
         source = REPO / filename if "/" in filename else CONFIGURED / filename
         work = args.scratch / name
         work.mkdir(exist_ok=True)
+        resources = work / "resources"
+        if not resources.exists():
+            resources.symlink_to(args.build / "resources", target_is_directory=True)
         selector = (
             suite + ".dir"
             if filename == "backend_definition_authorization.cpp"

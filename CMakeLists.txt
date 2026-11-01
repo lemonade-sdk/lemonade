@@ -3906,7 +3906,15 @@ if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_backend_d
     add_cpp_ci_test(BackendDefinitionV2ContractTest CI ON COMMAND test_backend_definition_v2_contract)
 
     add_executable(test_backend_definition_v1_compat test/cpp/test_backend_definition_v1_compat.cpp)
-    target_include_directories(test_backend_definition_v1_compat PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/test/include)
+    set(_v1_replay_sources)
+    foreach(_stem ds4 hrx kokoro llamacpp moonshine onnxruntime ryzenai thinksound trellis)
+        list(APPEND _v1_replay_sources "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/${_stem}.json")
+    endforeach()
+    lemon_backend_definition_resource_index(LEMON_DEFINITION_RESOURCE_INDEX
+        ${LEMON_BACKEND_DEFINITION_SCHEMA} ${_v1_replay_sources})
+    configure_file(test/cpp/backend_definition_resource_files.h.in
+        "${CMAKE_CURRENT_BINARY_DIR}/test/v1-compat/backend_definition_resource_files.h" @ONLY)
+    target_include_directories(test_backend_definition_v1_compat PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/test/v1-compat)
     target_compile_definitions(test_backend_definition_v1_compat PRIVATE
         LEMON_TEST_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures")
     target_link_libraries(test_backend_definition_v1_compat PRIVATE lemonade-server-core)
@@ -4249,8 +4257,8 @@ if(BUILD_TESTING)
     add_cpp_ci_test(LlamaCppV2ProductionSwitchTest CI ON
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/container_definition_transition.py run
             --build "${CMAKE_CURRENT_BINARY_DIR}"
-            --out "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/artifacts/container-v2/c4a/transition"
-            --scratch "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/container-v2/c4a/transition"
+            --out "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/artifacts/container-v2/c4b/transition"
+            --scratch "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/container-v2/c4b/transition"
         DEPENDS test_llamacpp_v2_production_switch llamacpp-frozen-control-build)
 endif()
 
@@ -4311,6 +4319,11 @@ if(BUILD_TESTING)
 endif()
 
 if(BUILD_TESTING)
+    lemon_backend_registration_seed(_gufo_parity_includes _gufo_parity_seed _gufo_parity_capability
+        gufo "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/gufo.json")
+    string(REPLACE "&lemon::backends::gufo::descriptor" "nullptr" _gufo_parity_capability "${_gufo_parity_capability}")
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/include/gufo_parity_capabilities.h"
+        "#pragma once\n#include \"lemon/backends/backend_descriptor.h\"\n#include \"lemon/server_capabilities.h\"\nnamespace lemon::backends {\nstruct GufoParityCapability { const BackendDescriptor* descriptor; uint32_t mask; };\ninline const GufoParityCapability k_gufo_parity_capabilities[] = {\n${_gufo_parity_capability}};\n}\n")
     add_executable(test_container_execution
         test/cpp/test_container_execution.cpp
         src/cpp/server/backends/configured/backend_definition_authorization.cpp
@@ -4318,7 +4331,7 @@ if(BUILD_TESTING)
     target_compile_definitions(test_container_execution PRIVATE
         LEMON_BACKEND_EXPORT_TESTING LEMONADE_BINDING_TEST LEMONADE_TYPED_HOOK_TEST
         LEMON_TEST_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures"
-        LEMON_CONTAINER_EXECUTION_SCRATCH="${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/container-v2/c4a/execution")
+        LEMON_CONTAINER_EXECUTION_SCRATCH="${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/container-v2/c4b/execution")
     target_include_directories(test_container_execution PRIVATE
         src/cpp/server/backends src/cpp/server/backends/configured)
     target_link_libraries(test_container_execution PRIVATE

@@ -2,7 +2,11 @@
 
 V2 resolves, authorizes, compiles and executes reviewed builtin container leaves.
 Execution requires a loader-owned sealed execution owner independently of all hook
-grants. No production container grant is installed. External container definitions
+grants. Gufo now has a production definition and a fixed dormant execution grant;
+its leaf remains inactive with no executable registration. See
+[`container-conversion.md`](container-conversion.md) for the source derivation,
+unvalidated stack pin, inventory, parity fixture and remaining activation gates.
+External container definitions
 and container inheritance remain unavailable, including descendants that remove
 every hook. Ungranted builtins can still be admitted and compiled as inert data;
 binding, runner construction and the legacy planner retain independent rejection
@@ -88,7 +92,9 @@ cases, mounts and a process address. It cannot contain a top-level managed progr
 or a native execution case. A `local` declaration may describe mixed native and
 container cases with `by_execution`. A top-level program and execution cases are
 mutually exclusive. Container support rows require matching explicit cases. No
-implicit native fallback is introduced. Container launch environment and working
+implicit native fallback is introduced. A declared builtin recipe without an
+active registration rejects at the router before its historical unknown-recipe
+llama fallback. Container launch environment and working
 directory use `inherit`, avoiding native loader-path and staging behavior.
 
 ## Pin and mount ownership
@@ -166,7 +172,7 @@ policies, seven v1 sources, both v2 sources, schemas and historical disclosures
 remain unchanged in C3. No additional production schema/catalog identity change
 is intended.
 
-Before an engine ships as production JSON it still needs an audited builtin
+Before a production JSON leaf is activated it still needs an audited builtin
 execution grant, its pin and model/recipe inventory, protocol/argv parity,
 packaging and real engine/network/device/cancellation qualification. Existing
 `llamacpp@1` sources, `LocalExecutableV1` and external forks remain local-only;

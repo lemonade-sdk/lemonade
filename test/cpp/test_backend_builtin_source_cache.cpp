@@ -119,15 +119,15 @@ int run_test(int argc, char** argv) {
         check(rejected, "ResolvedCacheRejectsUnknownExactKey");
     }
     check(catalog_publication().state() == CatalogPublication::State::Empty, "DataOnlyAccessKeepsPublicationEmpty");
-    check(k_backend_definition_v1_source_count == 7 && k_backend_definition_v2_source_count == 3 &&
-        k_backend_definition_source_count == 10 &&
+    check(k_backend_definition_v1_source_count == 7 && k_backend_definition_v2_source_count == 4 &&
+        k_backend_definition_source_count == 11 &&
         k_backend_definition_v1_source_bytes + k_backend_definition_v2_source_bytes == k_backend_definition_source_bytes,
         "SourceInventoryIsExactPartition");
 #ifndef LEMON_SOURCE_CACHE_DATA_ONLY
     const auto frozen = freeze_builtin_catalog();
     const auto snapshot_catalog = make_catalog_source_snapshot(frozen, {});
     const auto admission = snapshot_catalog.snapshot ? admit_catalog(snapshot_catalog.snapshot) : CatalogAdmissionResult{};
-    check(admission.catalog && admission.catalog->metrics().definitions == 10 &&
+    check(admission.catalog && admission.catalog->metrics().definitions == 11 &&
         admission.catalog->metrics().source_bytes == k_backend_definition_source_bytes, "BuiltinSourceChargedExactlyOnce");
     const auto built = build_backend_catalog(frozen, {});
     check(bool(built.catalog), "BuiltinCandidateFinalizes");

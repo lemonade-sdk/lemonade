@@ -12,6 +12,7 @@ import tempfile
 from types import SimpleNamespace
 
 import backend_v2_4e3b_transition as first
+import gufo_definition_transition as gufo
 from backend_v2_4e_audit import census
 
 REPO = first.REPO
@@ -326,6 +327,10 @@ def main():
         )
         + "\n"
     )
+    format_expected, format_ids = expected, ids
+    expected, ids = gufo.derive(base, evidence, old_ids, schema, expected_snapshot)
+    gufo_previous_ids = dict(format_ids, builtin_context=old_ids["builtin_context"])
+    gufo.check(args, format_expected, expected, gufo_previous_ids, ids)
     old_evidence = json.loads((args.out / "historical-evidence.json").read_bytes())
     expected_evidence = copy.deepcopy(old_evidence)
     for k in ("admission", "execution", "catalog", "catalog_v2"):
@@ -474,7 +479,7 @@ def main():
     )
     print(
         "C4a exact schema transition:",
-        len(first.diff(previous_expected, expected)),
+        len(first.diff(previous_expected, format_expected)),
         "snapshot records",
     )
     names = json.loads(

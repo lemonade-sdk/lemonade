@@ -29,14 +29,26 @@ public:
         }
         throw std::logic_error("Unknown embedded builtin resolved source: " + key.id);
     }
+    bool declares_recipe(std::string_view recipe) const {
+        for (const auto& definition : definitions_)
+            if (definition->declaration.at("recipe").get<std::string>() == recipe) return true;
+        return false;
+    }
 private:
     std::vector<std::shared_ptr<const ResolvedDefinition>> definitions_;
 };
+const ResolvedSources& resolved_sources() {
+    static const ResolvedSources sources;
+    return sources;
+}
 }
 
 const ResolvedDefinition& builtin_resolved_source(const DefinitionKey& key) {
-    static const ResolvedSources sources;
-    return sources.get(key);
+    return resolved_sources().get(key);
+}
+
+bool builtin_source_declares_recipe(std::string_view recipe) {
+    return resolved_sources().declares_recipe(recipe);
 }
 
 }

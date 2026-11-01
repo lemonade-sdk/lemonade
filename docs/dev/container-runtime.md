@@ -2,8 +2,10 @@
 
 The shared container runtime can execute reviewed builtin v2 container leaves
 through `ConfiguredServer`. Execution requires a sealed loader-owned grant;
-there is no production container grant or embedded production container JSON in
-C3. Native plans continue to select `NativeProcess`. CPU tests inject a fake
+Gufo has a production JSON resource and a reviewed dormant grant, with no active
+leaf policy or executable registration. See `container-conversion.md` for its
+unvalidated stack pin and remaining activation gates. The executable catalog has
+no active container leaf. Native plans continue to select `NativeProcess`. CPU tests inject a fake
 container host and fake attached client and never execute Podman or Docker.
 
 `utils::ContainerManager` selects Podman before Docker, checks the host, emits

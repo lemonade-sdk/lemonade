@@ -55,11 +55,11 @@ int main() {
     std::set<std::string> source_ids, policy_ids, authorized_ids;
     for (const auto& source : embedded_v2_sources()) source_ids.insert(source.key.id);
     for (const auto& policy : embedded_v2_policies().leaves) policy_ids.insert(policy.key.id);
-    check(source_ids == std::set<std::string>{"hrx", "llamacpp"} && policy_ids == source_ids,
+    check(source_ids == std::set<std::string>{"gufo", "hrx", "llamacpp"} && policy_ids == std::set<std::string>{"hrx", "llamacpp"},
         "ProductionBuiltinV2TableExactlyHrxAndLlama");
     const auto production = BuiltinCatalogLoader::freeze_embedded();
     if (production.snapshot) for (const auto& key : BuiltinCatalogLoader::builtin_leaves(*production.snapshot)) authorized_ids.insert(key.id);
-    check(production.snapshot && authorized_ids == source_ids, "ProductionMintsOnlyReviewedHrxAndLlamaLeaves");
+    check(production.snapshot && authorized_ids == policy_ids, "ProductionMintsOnlyReviewedHrxAndLlamaLeaves");
     const auto& parent = embedded_v2_policies().leaves.at(0);
     const auto& hrx = embedded_v2_policies().leaves.at(1);
     check(parent.key.id == "llamacpp" && hrx.key.id == "hrx" && hrx.key.contract == 1 &&

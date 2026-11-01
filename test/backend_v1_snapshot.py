@@ -52,8 +52,25 @@ def capture(lemond, cli, source_root=REPO):
                 for row in schema["recipes"]
                 if row["definition_id"] is not None
             }
-            assert set(result["definitions"]) == production_inventory(
-                source_root
+            inventory = production_inventory(source_root)
+            expected_inactive = {"gufo"} if "gufo" in inventory else set()
+            assert (
+                set(result["definitions"]) == inventory - expected_inactive
+            ), "ExactMixedDefinitionSet"
+            inactive = {}
+            for name in sorted(inventory - set(result["definitions"])):
+                path = source_root / "src/cpp/resources/backends" / (name + ".json")
+                value = json.loads(path.read_bytes())
+                inactive[name] = dict(
+                    recipe=value["recipe"],
+                    kind=value["merge"]["kind"],
+                    source_sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
+                )
+            if inactive:
+                result["inactive_definitions"] = inactive
+            assert (
+                not set(result["definitions"]) & set(inactive)
+                and set(result["definitions"]) | set(inactive) == inventory
             ), "ExactMixedDefinitionSet"
             result["filtered"] = {
                 row["recipe"]: api("/v1/backends/schema?recipe=" + quote(row["recipe"]))

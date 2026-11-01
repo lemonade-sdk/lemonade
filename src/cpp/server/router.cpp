@@ -3,6 +3,7 @@
 #include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/cloud/cloud_server.h"
+#include "lemon/backends/configured/backend_builtin_sources.h"
 #include "lemon/backends/fastflowlm/fastflowlm_server.h"
 #include "lemon/backends/whispercpp/whispercpp_server.h"
 #include "lemon/backends/sdcpp/sdcpp_server.h"
@@ -732,6 +733,9 @@ std::unique_ptr<WrappedServer> Router::create_backend_server(const ModelInfo& mo
                              << "' via registry" << std::endl;
         return new_server;
     }
+
+    if (backends::builtin_source_declares_recipe(model_info.recipe))
+        throw std::runtime_error("Builtin backend recipe is inactive: " + model_info.recipe);
 
     // Unknown recipe: fall back to llamacpp, preserving the historical default.
     LOG(DEBUG, "Router") << "No registered backend for recipe '" << model_info.recipe
