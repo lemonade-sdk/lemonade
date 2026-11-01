@@ -2529,6 +2529,21 @@
             },
             "program": {
               "$ref": "#/$defs/ImageProgram"
+            },
+            "device_validation": {
+              "type": "object",
+              "properties": {
+                "backend": {
+                  "enum": [
+                    "rocm",
+                    "vulkan"
+                  ]
+                }
+              },
+              "required": [
+                "backend"
+              ],
+              "additionalProperties": false
             }
           },
           "required": [

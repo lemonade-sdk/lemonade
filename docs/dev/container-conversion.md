@@ -125,7 +125,10 @@ legacy snapshots are not equal.
 ## Remaining engines: planning estimates
 
 The [C5 source preflight](container-conversion-c5-preflight.md) found concrete
-prerequisites for all five remaining engines. No C5 leaf was staged. The estimates
+prerequisites for all five remaining engines. No C5 leaf was staged. The
+[C6 prerequisite contracts](container-conversion-c6-contracts.md) subsequently
+close raw-label facts and device-validation API mapping; Halogen and DS4 remain
+blocked on the prerequisites listed there. The estimates
 below assume those prerequisites are resolved; they are not a finding that the
 current format can express every engine.
 

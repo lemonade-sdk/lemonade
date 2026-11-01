@@ -591,11 +591,14 @@ PreparedExecution DefinitionRunner::prepare_load(const LoadContext& context, con
     for (const auto index : slots(SlotOwnerKind::Root, "backend", "backend")) {
         invoke<typed::BackendSelectionOps>(frame, index, SlotOwnerKind::Root, "backend", "backend", cancel,
             [&](const auto& target, auto& guard) {
-                runtime::SelectionServices selection(guard, {backend});
+                const auto validation_api = execution_case ? execution_case->device_validation_backend : execution::DeviceValidationBackend::Selected;
+                const auto validation_backend = validation_api == execution::DeviceValidationBackend::Rocm ? "rocm" :
+                    validation_api == execution::DeviceValidationBackend::Vulkan ? "vulkan" : backend;
+                runtime::SelectionServices selection(guard, {validation_backend});
                 const auto binding = std::find_if(program_.bindings.begin(), program_.bindings.end(),
                     [](const auto& item) { return item.id == "device"; });
                 const auto device = binding == program_.bindings.end() ? std::string() : options.at(binding->public_name).template get<std::string>();
-                const auto checked = target.validate_device({backend, device}, selection);
+                const auto checked = target.validate_device({validation_backend, device}, selection);
                 if (!checked.supported) throw std::invalid_argument(checked.error);
                 return true;
             });

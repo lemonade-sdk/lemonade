@@ -1,0 +1,319 @@
+{
+  "source": [
+    {
+      "revision": "23e953915c96d2b2a039a0b3ffdfae46f97301d5",
+      "file": "src/cpp/server/backends/llamacpp/llamacpp_server.cpp",
+      "lines": "105-110,368",
+      "quotes": [
+        "if (backend == \"nathanw\") return \"vulkan\";",
+        "if (backend == \"halobox\") return \"rocm\";",
+        "BackendUtils::validate_device_backend_match(device_api(llamacpp_backend),"
+      ]
+    },
+    {
+      "revision": "d491c946fed2ab079f7387cf02a0eaabb51afce4",
+      "file": "src/cpp/server/backends/llamacpp/llamacpp_server.cpp",
+      "lines": "105-108,366",
+      "quotes": [
+        "backend == \"nathanw\" ? \"vulkan\" : backend"
+      ]
+    }
+  ],
+  "definition": {
+    "schema_version": 2,
+    "id": "gufo",
+    "recipe": "gufo",
+    "merge": {
+      "kind": "container",
+      "metadata": {
+        "display_name": "Gufo",
+        "server_name": "gufo",
+        "binary": "gufo",
+        "support": [
+          {
+            "id": "halobox",
+            "backend": "halobox",
+            "tier": "experimental",
+            "format": "container",
+            "supported_os": [
+              "linux"
+            ],
+            "devices": {
+              "gpu": [
+                "gfx1151"
+              ]
+            },
+            "device_summary": "Strix Halo"
+          },
+          {
+            "id": "nathanw",
+            "backend": "nathanw",
+            "tier": "experimental",
+            "format": "container",
+            "supported_os": [
+              "linux"
+            ],
+            "devices": {
+              "gpu": [
+                "gfx1151"
+              ]
+            },
+            "device_summary": "Strix Halo"
+          }
+        ],
+        "supported_modes": [
+          "chat"
+        ],
+        "options": [
+          {
+            "id": "engine",
+            "name": "fixture_engine",
+            "value_type": "string",
+            "default_value": "halobox"
+          },
+          {
+            "id": "device",
+            "name": "fixture_device",
+            "value_type": "string",
+            "default_value": ""
+          }
+        ]
+      },
+      "containers": {
+        "halobox": {
+          "repository": "ghcr.io/peonist-ai/gufo",
+          "pin": {
+            "source": "backend_versions",
+            "recipe": "gufo",
+            "backend": "halobox"
+          },
+          "devices": [
+            "/dev/dri",
+            "/dev/kfd"
+          ],
+          "cap_add": [],
+          "policy": "lemonade-isolated-v1",
+          "network": "private_internal",
+          "teardown": "stop_remove_reap",
+          "stop_grace_seconds": 10
+        },
+        "nathanw": {
+          "repository": "ghcr.io/peonist-ai/gufo",
+          "pin": {
+            "source": "backend_versions",
+            "recipe": "gufo",
+            "backend": "nathanw"
+          },
+          "devices": [
+            "/dev/dri"
+          ],
+          "cap_add": [],
+          "policy": "lemonade-isolated-v1",
+          "network": "private_internal",
+          "teardown": "stop_remove_reap",
+          "stop_grace_seconds": 10
+        }
+      },
+      "install": {
+        "strategy": "oci"
+      },
+      "artifacts": {
+        "main": {
+          "role": "main",
+          "strategy": "resolved_path",
+          "missing_error": "GGUF checkpoint is required"
+        }
+      },
+      "launch": {
+        "prepare_order": [
+          "backend",
+          "artifacts",
+          "program",
+          "ports"
+        ],
+        "backend": {
+          "option": "engine",
+          "fallback": "first_supported",
+          "on_empty": {
+            "operation": "fixture",
+            "target": "container"
+          }
+        },
+        "execution": {
+          "cases": [
+            {
+              "id": "halobox",
+              "backends": [
+                "halobox"
+              ],
+              "kind": "container",
+              "container": "halobox",
+              "program": {
+                "source": "image_command",
+                "name": "halobox-fixture"
+              },
+              "device_validation": {
+                "backend": "rocm"
+              }
+            },
+            {
+              "id": "nathanw",
+              "backends": [
+                "nathanw"
+              ],
+              "kind": "container",
+              "container": "nathanw",
+              "program": {
+                "source": "image_command",
+                "name": "nathanw-fixture"
+              },
+              "device_validation": {
+                "backend": "vulkan"
+              }
+            }
+          ]
+        },
+        "mounts": [
+          {
+            "id": "main",
+            "artifact": "main",
+            "expand": "gguf_shards",
+            "destination": "/mnt/models"
+          }
+        ],
+        "address": {
+          "source": "process_start"
+        },
+        "ports": [
+          {
+            "name": "http",
+            "reject_zero": true,
+            "error": "No HTTP port available"
+          }
+        ],
+        "argv": [
+          {
+            "id": "serve",
+            "args": [
+              "serve",
+              "llm"
+            ]
+          },
+          {
+            "id": "model",
+            "flag": "--model",
+            "value": {
+              "ref": "/artifacts/main"
+            }
+          },
+          {
+            "id": "name",
+            "flag": "--served-model-name",
+            "value": {
+              "ref": "/model/name"
+            }
+          },
+          {
+            "id": "host",
+            "flag": "--host",
+            "value": "0.0.0.0"
+          },
+          {
+            "id": "port",
+            "flag": "--port",
+            "value": {
+              "string": {
+                "ref": "/launch/ports/http"
+              }
+            }
+          }
+        ],
+        "environment": {
+          "preset": "inherit"
+        },
+        "working_directory": "inherit",
+        "output": {
+          "inherit_levels": [
+            "info",
+            "debug",
+            "trace"
+          ],
+          "filter": false
+        },
+        "readiness": {
+          "port": "http",
+          "path": "/ready",
+          "timeout": "global"
+        },
+        "watchdog": {
+          "policy": "standard",
+          "port": "http",
+          "path": "/ready"
+        }
+      },
+      "operations": [
+        {
+          "id": "chat.buffered",
+          "operation": "chat_completion",
+          "delivery": "buffered",
+          "model_modes": [
+            "chat"
+          ],
+          "transport": {
+            "kind": "http_json",
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "port": "http",
+            "timeout": "global"
+          },
+          "request": {
+            "base": "identity"
+          }
+        },
+        {
+          "id": "chat.streaming",
+          "operation": "chat_completion",
+          "delivery": "streaming",
+          "model_modes": [
+            "chat"
+          ],
+          "transport": {
+            "kind": "http_sse",
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "port": "http",
+            "timeout": "global"
+          },
+          "request": {
+            "base": "identity"
+          }
+        }
+      ],
+      "hooks": {
+        "backend": {
+          "id": "llamacpp.backend.v1",
+          "params": {}
+        }
+      }
+    }
+  },
+  "owner_digest": "sha256:74e5423e522253d9445d800603f0e94be760f7e2e447e2e1c2327b78f92dcac7",
+  "cases": [
+    {
+      "selector": "halobox",
+      "api": "rocm",
+      "device": "ROCm0",
+      "wrong": "Vulkan0",
+      "program": "halobox-fixture",
+      "image": "ghcr.io/peonist-ai/gufo@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "selector": "nathanw",
+      "api": "vulkan",
+      "device": "Vulkan0",
+      "wrong": "ROCm0",
+      "program": "nathanw-fixture",
+      "image": "ghcr.io/peonist-ai/gufo@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+  ]
+}

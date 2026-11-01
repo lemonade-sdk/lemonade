@@ -71,6 +71,14 @@ void compile_programs(Program& program, Budget& budget) {
         budget.keep(sizeof(ExecutionCase) + 256);
         program.launch.execution_cases.push_back({item["id"], item["backends"].get<std::vector<std::string>>(),
             item["kind"], item.value("container", ""), item["program"]});
+        if (item.contains("device_validation")) {
+            require(std::any_of(program.hooks.begin(), program.hooks.end(), [](const auto& hook) {
+                return hook.contract == typed::Contract::Backend && hook.slot.owner_kind == SlotOwnerKind::Root &&
+                    hook.slot.owner_id == "backend";
+            }), "missing_device_validation_hook", "/launch/execution/cases");
+            program.launch.execution_cases.back().device_validation_backend = item["device_validation"]["backend"] == "rocm" ?
+                DeviceValidationBackend::Rocm : DeviceValidationBackend::Vulkan;
+        }
     }
     if (launch.contains("mounts")) for (std::size_t i = 0; i < launch["mounts"].size(); ++i) {
         const auto& item = launch["mounts"][i];

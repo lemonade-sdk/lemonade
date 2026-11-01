@@ -119,6 +119,11 @@ int main() {
             {{"id", "cpu-release"}, {"backend", {"cpu"}}, {"repo", "example/native"}, {"filename", {{"concat", {"engine-", {{"ref", "/install/version"}}}}}}}
         })}};
         compiled_and_blocked(mixed, "MixedRelease");
+        negative("DeviceValidationUnknownApiRejected", [](auto& m) { m["launch"]["execution"]["cases"][0]["device_validation"] = {{"backend", "auto"}}; });
+        negative("DeviceValidationExpressionRejected", [](auto& m) { m["launch"]["execution"]["cases"][0]["device_validation"] = {{"backend", {{"ref", "/options/device"}}}}; });
+        negative("DeviceValidationUnknownFieldRejected", [](auto& m) { m["launch"]["execution"]["cases"][0]["device_validation"] = {{"backend", "rocm"}, {"skip", true}}; });
+        negative("DeviceValidationMissingBackendRejected", [](auto& m) { m["launch"]["execution"]["cases"][0]["device_validation"] = Json::object(); });
+        negative("DeviceValidationBooleanRejected", [](auto& m) { m["launch"]["execution"]["cases"][0]["device_validation"] = false; });
         structural_negative("ExecutionRecordBoundRejected", [](auto& d) { auto c = d["launch"]["execution"]["cases"][0]; d["launch"]["execution"]["cases"] = Json::array(); for (int i = 0; i < 33; ++i) d["launch"]["execution"]["cases"].push_back(c); });
         structural_negative("MountRecordBoundRejected", [](auto& d) { auto c = d["launch"]["mounts"][0]; d["launch"]["mounts"] = Json::array(); for (int i = 0; i < 65; ++i) d["launch"]["mounts"].push_back(c); });
         structural_negative("BackendSelectorBoundRejected", [](auto& d) { auto& backends = d["launch"]["execution"]["cases"][0]["backends"]; backends = Json::array(); for (int i = 0; i < 33; ++i) backends.push_back("backend" + std::to_string(i)); });

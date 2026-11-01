@@ -122,17 +122,18 @@ public:
     bool install = true;
     unsigned installations = 0;
     std::string system_os = "linux";
+    std::string allowed_backend = "rocm";
     std::vector<ContainerGpuNode> gpu_nodes{{2, "gfx1151"}, {1, "gfx1100"}};
     mutable unsigned gpu_queries = 0;
     std::vector<ContainerGpuNode> container_gpu_nodes() const override { ++gpu_queries; return gpu_nodes; }
     bool container_supports_arch(const std::string& recipe, const std::string& backend, const std::string& arch) const override {
-        return recipe == "gufo" && backend == "rocm" && arch == "gfx1151";
+        return recipe == "gufo" && backend == allowed_backend && arch == "gfx1151";
     }
     explicit Services(BackendManager& manager) : manager(manager) {}
     bool exists(const std::string& path) const override { return fs::exists(path); }
     std::vector<std::string> supported_backends(const std::string&) const override { return {}; }
     void validate_backend(const std::string&, const std::string& backend) const override {
-        if (backend != "rocm") throw std::invalid_argument("Wrong backend");
+        if (backend != allowed_backend) throw std::invalid_argument("Wrong backend");
     }
     std::string external_binary(const BackendSpec&, const std::string&) const override { throw std::logic_error("External program forbidden"); }
     void install_backend(const std::string&, const std::string&) override { throw std::logic_error("Managed install forbidden"); }
@@ -630,6 +631,7 @@ void milestone(const Fixture& fixture, const fs::path& scratch) {
 }
 }
 
+#include "c6_device_validation_contract.h"
 #include "gufo_production_parity.h"
 
 int main() {
@@ -642,6 +644,7 @@ int main() {
         utils::HttpClient::set_default_timeout(2);
         const auto fixture = authorized();
 #ifdef __linux__
+        device_validation_contract(scratch);
         inventory(scratch);
         gpu_selection(scratch);
         format_parity(scratch);

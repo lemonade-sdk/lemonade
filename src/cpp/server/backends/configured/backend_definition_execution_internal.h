@@ -114,12 +114,15 @@ struct EnvironmentAssignment {
     std::string expression;
 };
 
+enum class DeviceValidationBackend { Selected, Rocm, Vulkan };
+
 struct ExecutionCase {
     std::string id;
     std::vector<std::string> backends;
     std::string kind;
     std::string container;
     Json program;
+    DeviceValidationBackend device_validation_backend = DeviceValidationBackend::Selected;
 };
 
 struct MountProgram {

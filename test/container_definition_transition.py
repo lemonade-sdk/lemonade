@@ -14,6 +14,7 @@ from types import SimpleNamespace
 import backend_v2_4e3b_transition as first
 import gufo_definition_transition as gufo
 import container_prerequisite_transition as prerequisites
+import container_device_validation_transition as devices
 from backend_v2_4e_audit import census
 
 REPO = first.REPO
@@ -339,6 +340,12 @@ def main():
         base, evidence, old_ids, schema, expected_snapshot, 7
     )
     prerequisites.check(args, raw_previous, expected, raw_previous_ids, ids)
+    device_previous, device_previous_ids = expected, ids
+    _, _, device_schema = devices.schema()
+    expected, ids = prerequisites.derive(
+        base, evidence, old_ids, device_schema, expected_snapshot, 8
+    )
+    devices.check(args, device_previous, expected, device_previous_ids, ids)
     old_evidence = json.loads((args.out / "historical-evidence.json").read_bytes())
     expected_evidence = copy.deepcopy(old_evidence)
     for k in ("admission", "execution", "catalog", "catalog_v2"):

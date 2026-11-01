@@ -36,6 +36,22 @@ def rules():
             '{"dflash", false}',
             "RawLabelFacts:dflash",
         ),
+        (
+            "device-validation-api-ignored",
+            "backend_definition_runner.cpp",
+            'const auto validation_backend = validation_api == execution::DeviceValidationBackend::Rocm ? "rocm" :\n                    validation_api == execution::DeviceValidationBackend::Vulkan ? "vulkan" : backend;',
+            "const auto validation_backend = backend;",
+            ["MappedDeviceAccepted:halobox", "MappedDeviceAccepted:nathanw"],
+            "test_container_execution",
+        ),
+        (
+            "device-validation-rejection-ignored",
+            "backend_definition_runner.cpp",
+            "if (!checked.supported) throw std::invalid_argument(checked.error);",
+            "if (false) throw std::invalid_argument(checked.error);",
+            ["MappedWrongDeviceRejected:halobox", "MappedWrongDeviceRejected:nathanw"],
+            "test_container_execution",
+        ),
     ]
 
 
@@ -66,24 +82,32 @@ def main():
                 timeout=185,
             )
 
-    assert (
-        run("control", [args.build / SUITE], REPO).returncode == 0
-    ), "C6ControlMustPass"
-    commands = subprocess.check_output(
-        ["ninja", "-t", "commands", SUITE], cwd=args.build, text=True, timeout=30
-    ).splitlines()
-    link = shlex.split(commands[-1].removeprefix(": && ").removesuffix(" && :"))
-    link = [x for x in link if not x.startswith("-Wl,--dependency-file=")]
+    links = {}
+    for suite in (SUITE, "test_container_execution"):
+        assert (
+            run(suite + ".control", [args.build / suite], REPO).returncode == 0
+        ), "C6ControlMustPass"
+        commands = subprocess.check_output(
+            ["ninja", "-t", "commands", suite], cwd=args.build, text=True, timeout=30
+        ).splitlines()
+        link = shlex.split(commands[-1].removeprefix(": && ").removesuffix(" && :"))
+        links[suite] = [x for x in link if not x.startswith("-Wl,--dependency-file=")]
     database = json.loads((args.build / "compile_commands.json").read_bytes())
     results = []
-    for name, filename, old, new, assertion in rules():
+    for name, filename, old, new, assertion, *target in rules():
+        suite = target[0] if target else SUITE
+        link = links[suite]
+        assertions = assertion if isinstance(assertion, list) else [assertion]
         source = CONFIGURED / filename
         original = source.read_bytes()
         text = original.decode()
         assert text.count(old) == 1, (name, text.count(old))
         work = args.scratch / name
         work.mkdir(exist_ok=True)
-        mutant, obj, binary = work / filename, work / "mutant.o", work / SUITE
+        resources = work / "resources"
+        if not resources.exists():
+            resources.symlink_to(args.build / "resources", target_is_directory=True)
+        mutant, obj, binary = work / filename, work / "mutant.o", work / suite
         mutant.write_text(text.replace(old, new))
         row = next(
             r
@@ -109,9 +133,9 @@ def main():
             name + ": link failure is not a kill"
         )
         result = run(name + ".run", [binary], REPO)
-        assert (
-            result.returncode == 1
-            and "FAIL " + assertion in (args.out / (name + ".run.log")).read_text()
+        assert result.returncode == 1 and all(
+            "FAIL " + label in (args.out / (name + ".run.log")).read_text()
+            for label in assertions
         ), (name, result.returncode, assertion)
         assert (
             hashlib.sha256(source.read_bytes()).digest()
@@ -127,7 +151,7 @@ def main():
             )
         )
         (args.out / "results.json").write_text(json.dumps(results, indent=2) + "\n")
-        print(name + ": caught by " + assertion, flush=True)
+        print(name + ": caught by " + ", ".join(assertions), flush=True)
     print(f"{len(results)}/{len(results)} C6 compiled mutations caught")
 
 
