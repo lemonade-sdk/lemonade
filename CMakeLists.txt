@@ -1043,6 +1043,8 @@ set(SOURCES_CORE
     src/cpp/server/backend_operation.cpp
     src/cpp/server/wrapped_server.cpp
     src/cpp/server/server_process.cpp
+    src/cpp/server/container_process.cpp
+    src/cpp/server/utils/container_manager.cpp
     src/cpp/server/streaming_proxy.cpp
     src/cpp/server/system_info.cpp
     src/cpp/server/recipe_options.cpp
@@ -4245,6 +4247,7 @@ if(BUILD_TESTING)
         lemonade-binding-test lemonade-typed-hook-test lemonade-server-core lemonade-test-isolation)
     add_cpp_ci_test(LlamaCppV2ProductionSwitchTest CI ON
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/backend_v2_4h_transition.py run
+            --expected-count 154
             --build "${CMAKE_CURRENT_BINARY_DIR}"
             --out "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/artifacts/backend-v2-4h/transition"
             --scratch "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/backend-v2-4h/transition"
@@ -4280,4 +4283,12 @@ if(BUILD_TESTING)
             --out "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/artifacts/backend-v2-4h/production"
             --scratch "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/backend-v2-4h/production"
         DEPENDS lemond lemonade test_external_fake_engine)
+endif()
+
+if(BUILD_TESTING)
+    add_executable(test_container_manager test/cpp/test_container_manager.cpp)
+    target_link_libraries(test_container_manager PRIVATE lemonade-server-core)
+    add_cpp_ci_test(ContainerManagerTest CI ON COMMAND test_container_manager
+        DEPENDS test_container_manager)
+    set_tests_properties(ContainerManagerTest PROPERTIES TIMEOUT 60)
 endif()

@@ -478,7 +478,7 @@ def census_mutations(args):
                     SimpleNamespace(
                         build=args.build,
                         baseline=args.out / "base-cpp-ci.json",
-                        expected_count=153,
+                        expected_count=args.expected_count,
                         no_additions=False,
                         out=None,
                     )
@@ -494,6 +494,7 @@ def census_mutations(args):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("gate", choices=["capture", "check", "run", "mutations"])
+    parser.add_argument("--expected-count", type=int, choices=[153, 154], default=153)
     parser.add_argument("--build", type=Path, default=REPO / "build")
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument(
@@ -549,7 +550,7 @@ def main():
         SimpleNamespace(
             build=args.build,
             baseline=baseline,
-            expected_count=153,
+            expected_count=args.expected_count,
             no_additions=False,
             out=args.out,
         )
