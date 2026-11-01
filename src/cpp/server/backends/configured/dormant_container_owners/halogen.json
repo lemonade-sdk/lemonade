@@ -1,0 +1,318 @@
+{
+  "id": "halogen",
+  "digest": "sha256:b77ec6ac0140c8a63c7a42fd044dff9d2004b9b75055c904e95b9a62c6c25029",
+  "semantics": {
+    "kind": "container",
+    "recipe": "halogen",
+    "containers": {
+      "rocm": {
+        "repository": "ghcr.io/peonist-ai/halogen-flash-server",
+        "pin": {
+          "source": "backend_versions",
+          "recipe": "halogen",
+          "backend": "rocm"
+        },
+        "devices": [
+          "/dev/dri",
+          "/dev/kfd"
+        ],
+        "cap_add": [],
+        "policy": "lemonade-isolated-v1",
+        "network": "private_internal",
+        "teardown": "stop_remove_reap",
+        "stop_grace_seconds": 10
+      }
+    },
+    "install": {
+      "strategy": "oci",
+      "cases": []
+    },
+    "artifacts": {
+      "main": {
+        "role": "main",
+        "strategy": "resolved_path",
+        "missing_error": "Missing main",
+        "required_when": true
+      },
+      "table": {
+        "role": "halogen_lookup_table",
+        "strategy": "resolved_path",
+        "missing_error": "Missing halogen_lookup_table",
+        "required_when": true
+      },
+      "tokenizer": {
+        "role": "halogen_tokenizer",
+        "strategy": "resolved_path",
+        "missing_error": "Missing halogen_tokenizer",
+        "required_when": true
+      },
+      "vision": {
+        "role": "halogen_vision_tower",
+        "strategy": "resolved_path",
+        "missing_error": "Missing halogen_vision_tower",
+        "required_when": false
+      }
+    },
+    "backend": {
+      "fixed": "rocm"
+    },
+    "execution": {
+      "cases": [
+        {
+          "id": "rocm-container",
+          "backends": [
+            "rocm"
+          ],
+          "kind": "container",
+          "container": "rocm",
+          "program": {
+            "source": "image_entrypoint"
+          }
+        }
+      ]
+    },
+    "mounts": [
+      {
+        "id": "main",
+        "artifact": "main",
+        "expand": "file",
+        "destination": "/mnt/models",
+        "layout": "basename_numbered"
+      },
+      {
+        "id": "table",
+        "artifact": "table",
+        "expand": "file",
+        "destination": "/mnt/models",
+        "layout": "basename_numbered"
+      },
+      {
+        "id": "tokenizer",
+        "artifact": "tokenizer",
+        "expand": "directory_files",
+        "destination": "/mnt/models",
+        "layout": "basename_numbered"
+      },
+      {
+        "id": "vision",
+        "artifact": "vision",
+        "expand": "file",
+        "destination": "/mnt/models",
+        "layout": "basename_numbered",
+        "when": {
+          "not": {
+            "eq": [
+              {
+                "ref": "/artifacts/vision"
+              },
+              ""
+            ]
+          }
+        }
+      }
+    ],
+    "address": {
+      "source": "process_start"
+    },
+    "environment": {
+      "preset": "inherit",
+      "set": [
+        {
+          "name": "HALOGEN_CHECKPOINT",
+          "value": {
+            "ref": "/artifacts/main"
+          }
+        },
+        {
+          "name": "HALOGEN_NGRAM_TABLE",
+          "value": {
+            "ref": "/artifacts/table"
+          }
+        },
+        {
+          "name": "HALOGEN_TOKENIZER",
+          "value": {
+            "ref": "/artifacts/tokenizer"
+          }
+        },
+        {
+          "name": "HALOGEN_VISION_TOWER",
+          "value": {
+            "ref": "/artifacts/vision"
+          },
+          "when": {
+            "not": {
+              "eq": [
+                {
+                  "ref": "/artifacts/vision"
+                },
+                ""
+              ]
+            }
+          }
+        },
+        {
+          "name": "HALOGEN_API_PORT",
+          "value": {
+            "string": {
+              "ref": "/launch/ports/http"
+            }
+          }
+        },
+        {
+          "name": "HALOGEN_CTX",
+          "value": {
+            "string": {
+              "ref": "/options/ctx_size"
+            }
+          }
+        }
+      ],
+      "order": "preset_first"
+    },
+    "working_directory": "inherit",
+    "protected_environment": [
+      "HOME",
+      "LD_PRELOAD",
+      "LD_LIBRARY_PATH",
+      "PATH",
+      "HIP_VISIBLE_DEVICES",
+      "ROCR_VISIBLE_DEVICES",
+      "CUDA_VISIBLE_DEVICES"
+    ],
+    "confinement": "lemonade-isolated-v1",
+    "model_contract": "halogen_hgn_v1",
+    "slot_policy": "exclusive_host",
+    "diagnostics": {
+      "records": [
+        {
+          "id": "starting",
+          "phase": "starting",
+          "level": "info",
+          "category": "Halogen",
+          "format": "Starting {model:string} on port {port:integer}",
+          "when": "always"
+        }
+      ],
+      "prepare_order": [
+        "backend",
+        "install",
+        "artifacts",
+        "program",
+        "ports"
+      ],
+      "category": "Halogen",
+      "load_log_policy": "none",
+      "options": [],
+      "custom_args": null,
+      "ports": [
+        {
+          "name": "http",
+          "reject_zero": true,
+          "error": "No HTTP port available"
+        }
+      ],
+      "readiness": {
+        "port": "http",
+        "path": "/health",
+        "timeout": {
+          "source": "global",
+          "floor_seconds": 1800
+        }
+      }
+    },
+    "direct_stream": {
+      "policy": "builtin_container_legacy",
+      "operations": [
+        {
+          "id": "chat.buffered",
+          "operation": "chat_completion",
+          "delivery": "buffered",
+          "model_modes": [
+            "chat"
+          ],
+          "transport": {
+            "kind": "http_json",
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "port": "http",
+            "timeout": "global",
+            "response_codec": "json.v1"
+          },
+          "request": {
+            "base": "identity",
+            "remove": [],
+            "set": {},
+            "omit_missing": false
+          }
+        },
+        {
+          "id": "chat.streaming",
+          "operation": "chat_completion",
+          "delivery": "streaming",
+          "model_modes": [
+            "chat"
+          ],
+          "transport": {
+            "kind": "http_sse",
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "port": "http",
+            "timeout": "global",
+            "stream_codec": "openai_sse.v1"
+          },
+          "request": {
+            "base": "identity",
+            "remove": [],
+            "set": {},
+            "omit_missing": false
+          }
+        },
+        {
+          "id": "completion.streaming",
+          "operation": "completion",
+          "delivery": "streaming",
+          "model_modes": [
+            "*"
+          ],
+          "transport": {
+            "kind": "http_sse",
+            "method": "POST",
+            "path": "/v1/completions",
+            "port": "http",
+            "timeout": "global",
+            "stream_codec": "openai_sse.v1"
+          },
+          "request": {
+            "base": "identity",
+            "remove": [],
+            "set": {},
+            "omit_missing": false
+          }
+        },
+        {
+          "id": "responses.streaming",
+          "operation": "responses",
+          "delivery": "streaming",
+          "model_modes": [
+            "*"
+          ],
+          "transport": {
+            "kind": "http_sse",
+            "method": "POST",
+            "path": "/v1/responses",
+            "port": "http",
+            "timeout": "global",
+            "stream_codec": "openai_sse.v1"
+          },
+          "request": {
+            "base": "identity",
+            "remove": [],
+            "set": {},
+            "omit_missing": false
+          }
+        }
+      ]
+    }
+  }
+}
