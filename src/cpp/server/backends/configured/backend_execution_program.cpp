@@ -209,6 +209,17 @@ void compile_programs(Program& program, Budget& budget) {
     }
     if (doc.contains("artifacts")) for (const auto& [name, artifact] : doc["artifacts"].items()) {
         const auto p = "/artifacts/" + v2::pointer_token(name);
+        if (artifact.contains("checkpoint_consumer")) {
+            require(program.model_contract == ModelContract::Ds4RocmV1 &&
+                artifact.at("checkpoint_consumer") == "builtin_container_absolute_v1" &&
+                artifact.at("role") == "main" && artifact.at("strategy") == "resolved_path" &&
+                artifact.value("absolute_checkpoint_fallback", false) && artifact.value("check", "exists") == "exists" &&
+                artifact.at("required_when") == true,
+                "invalid_checkpoint_consumer", p);
+            require(std::any_of(launch.at("mounts").begin(), launch.at("mounts").end(), [&](const auto& mount) {
+                return mount.at("artifact") == name && mount.at("expand") == "file" && mount.value("when", Json(true)) == true;
+            }), "invalid_checkpoint_consumer", "/launch/mounts");
+        }
         budget.copy(artifact);
         budget.keep(sizeof(ArtifactProgram) + name.size() + p.size() * 2 + 64);
         program.artifacts.push_back({name, artifact["role"], p + "/required_when", p + "/missing_error", artifact});

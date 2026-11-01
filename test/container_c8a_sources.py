@@ -9,6 +9,7 @@ import subprocess
 from container_c8a_control import BASE
 
 REPO = Path(__file__).resolve().parents[1]
+PRE_INSTALL_COMMIT = "08e8b929415a56a1954b31fc34db2884aed2d9bf"
 
 
 def git(revision, path):
@@ -49,6 +50,14 @@ def check(out):
                 diff_bytes=0,
             )
         )
+    for path in (
+        "test/fixtures/backend-v2/c8a.pre-install-refusal.catalog-transition.json",
+        "test/fixtures/backend-v2/c8a.halobox.json",
+        "test/fixtures/backend-v2/c8a.nathanw.json",
+        "test/cpp/c8a_contracts.h",
+    ):
+        data = (REPO / path).read_bytes()
+        assert data == git(PRE_INSTALL_COMMIT, path), "C8aFirstContractBytes:" + path
     quotations = []
     for path in sorted((REPO / "test/fixtures/backend-v2").glob("c8a.*.json")):
         fixture = json.loads(path.read_bytes())

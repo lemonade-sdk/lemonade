@@ -28,6 +28,17 @@ STAGES = [
             }
         ],
     ),
+    (
+        "absolute-checkpoint-consumer",
+        16,
+        [
+            {
+                "op": "add",
+                "path": "/$defs/Artifact/properties/checkpoint_consumer",
+                "new": {"enum": ["builtin_container_absolute_v1"]},
+            }
+        ],
+    ),
 ]
 
 
@@ -175,7 +186,7 @@ def run(args):
     for name in ("legacy", "schema", "digests", "etags"):
         (args.out / (name + ".diff")).write_bytes(b"")
     baseline, current = map(census, (args.base_build, args.build))
-    additions = {"ContainerC8aPreInstallTest"}
+    additions = {"ContainerC8aPreInstallTest", "ContainerC8aCheckpointTest"}
     assert (
         len(baseline) == 163 and current == baseline | additions
     ), "C8aExactCensusNoDrops"

@@ -281,12 +281,13 @@ void blocked_engine(const std::string& name) {
     check(error != expected_error, "C8SourceRefusalErrorDiffers:" + name);
     std::ofstream(scratch / "blocker.json") << Json{{"observed_error", error}, {"source_expected_error", expected_error}, {"events", services.events}}.dump(2) << '\n';
 }
-#include "c8a_contracts.h"
+#include "c8a_checkpoint.h"
 }
 
 int main(int argc, char** argv) {
     std::setvbuf(stdout, nullptr, _IONBF, 0); allow_entries = true;
     try {
+        if (argc == 2 && std::string(argv[1]) == "--checkpoint") { c8a_checkpoint(); return finish(); }
         if (argc == 2 && std::string(argv[1]) == "--pre-install") { c8a_pre_install(); return finish(); }
         if (argc == 3 && std::string(argv[1]) == "--blocked") { blocked_engine(argv[2]); return finish(); }
         if (argc != 2) throw std::invalid_argument("Expected a production container identity");

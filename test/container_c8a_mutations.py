@@ -42,12 +42,83 @@ def rules():
     ]
 
 
+def checkpoint_rules():
+    return [
+        (
+            "source-checkpoint-error",
+            "backend_definition_runner.cpp",
+            "throw std::runtime_error(evaluate(artifact.missing_error, frame).value().get<std::string>());",
+            'throw std::runtime_error(artifact.records.contains("checkpoint_consumer") ? "mutated" : evaluate(artifact.missing_error, frame).value().get<std::string>());',
+            "C8aCheckpointStillFailsWithoutExistingAbsolute",
+        ),
+        (
+            "checkpoint-native-domain",
+            "backend_execution_program.cpp",
+            "require(program.model_contract == ModelContract::Ds4RocmV1 &&",
+            "require(true &&",
+            "C8aCheckpointRequiresContainerModelContract",
+        ),
+        (
+            "available-resolved-fallback",
+            "backend_definition_runner.cpp",
+            'if (artifact.records.contains("checkpoint_consumer") && (path.empty() || !services.exists(path))) {',
+            'if (artifact.records.contains("checkpoint_consumer")) {',
+            "C8aAvailableResolvedAlwaysWins",
+        ),
+        (
+            "relative-checkpoint",
+            "backend_definition_runner.cpp",
+            "!checkpoint.empty() && std::filesystem::path(checkpoint).is_absolute() && services.exists(checkpoint)",
+            "!checkpoint.empty() && services.exists(checkpoint)",
+            "C8aCheckpointStillFailsWithoutExistingAbsolute",
+        ),
+        (
+            "fallback-inventory-bypass",
+            "backend_definition_runner.cpp",
+            "if (plan.container) materialize_container_mounts(program_, frame, plan,",
+            'if (plan.container && !program_.normalized.at("artifacts").at("main").contains("checkpoint_consumer")) materialize_container_mounts(program_, frame, plan,',
+            "C8aFallbackCannotBypassArtifactInventory",
+        ),
+        (
+            "external-checkpoint-gate",
+            "backend_definition_execution.cpp",
+            'if (artifact.value().contains("checkpoint_consumer"))\n                    execution::require(source.key.space == DefinitionNamespace::Builtin && container_capable(staging.normalized) &&\n                        AuthorityInspection::permits_execution(*authorized, staging.normalized),',
+            'if (artifact.value().contains("checkpoint_consumer"))\n                    execution::require(true,',
+            "C8aExternalCheckpointCapabilityGate",
+        ),
+        (
+            "checkpoint-consumer-unsealed",
+            "backend_definition_authorization.cpp",
+            'artifacts[name].erase("hook");',
+            'artifacts[name].erase("hook"); artifacts[name].erase("checkpoint_consumer");',
+            "C8aCheckpointConsumerSealed",
+        ),
+        (
+            "checkpoint-optional-main",
+            "backend_execution_program.cpp",
+            'artifact.at("required_when") == true,',
+            "true,",
+            "C8aCheckpointClosedShape:required_when",
+        ),
+        (
+            "checkpoint-no-inventory-mount",
+            "backend_execution_program.cpp",
+            'return mount.at("artifact") == name && mount.at("expand") == "file" && mount.value("when", Json(true)) == true;',
+            'return mount.at("artifact") == name;',
+            "C8aCheckpointRequiresInventoryMount",
+        ),
+    ]
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--build", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--scratch", type=Path, required=True)
     parser.add_argument("--rule", action="append")
+    parser.add_argument(
+        "--contract", choices=("pre-install", "checkpoint"), default="pre-install"
+    )
     args = parser.parse_args()
     args.build, args.out, args.scratch = (
         p.resolve() for p in (args.build, args.out, args.scratch)
@@ -74,7 +145,7 @@ def main():
     for suite in (SUITE,):
         assert (
             run(
-                suite + ".control", [args.build / suite, "--pre-install"], REPO
+                suite + ".control", [args.build / suite, "--" + args.contract], REPO
             ).returncode
             == 0
         ), "C8aControlMustPass"
@@ -85,7 +156,9 @@ def main():
         links[suite] = [x for x in link if not x.startswith("-Wl,--dependency-file=")]
     database = json.loads((args.build / "compile_commands.json").read_bytes())
     results = []
-    for name, filename, old, new, assertion, *header in rules():
+    for name, filename, old, new, assertion, *header in (
+        rules() if args.contract == "pre-install" else checkpoint_rules()
+    ):
         if args.rule and name not in args.rule:
             continue
         suite = SUITE
@@ -161,7 +234,7 @@ def main():
         assert run(name + ".link", command, args.build).returncode == 0, (
             name + ": link failure is not a kill"
         )
-        result = run(name + ".run", [binary, "--pre-install"], REPO)
+        result = run(name + ".run", [binary, "--" + args.contract], REPO)
         assert result.returncode == 1 and all(
             "FAIL " + label in (args.out / (name + ".run.log")).read_text()
             for label in assertions

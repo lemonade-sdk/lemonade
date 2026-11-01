@@ -246,6 +246,11 @@ public:
                     staging.normalized.value("model_contract", "") == "halogen_hgn_v1" &&
                     AuthorityInspection::permits_execution(*authorized, staging.normalized),
                     "unsupported_execution_feature", "/launch/builtin_load_log");
+            if (staging.normalized.contains("artifacts")) for (const auto& artifact : staging.normalized.at("artifacts").items())
+                if (artifact.value().contains("checkpoint_consumer"))
+                    execution::require(source.key.space == DefinitionNamespace::Builtin && container_capable(staging.normalized) &&
+                        AuthorityInspection::permits_execution(*authorized, staging.normalized),
+                        "unsupported_execution_feature", "/artifacts/checkpoint_consumer");
             execution::compile_hooks(*authorized, staging, budget);
             execution::compile_expressions(staging, budget);
             execution::compile_programs(staging, budget);

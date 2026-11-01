@@ -50,7 +50,8 @@ DefinitionRunner::DefinitionRunner(std::shared_ptr<const ExecutableDefinition> e
         throw std::runtime_error("Container execution is unavailable in C2");
     if (program_.launch.environment_preset != "inherit" && program_.launch.environment_preset != "hook")
         throw std::invalid_argument("Configured v2 launch service is unavailable");
-    for (const auto& artifact : program_.artifacts) if (artifact.records.value("absolute_checkpoint_fallback", false))
+    for (const auto& artifact : program_.artifacts) if (artifact.records.value("absolute_checkpoint_fallback", false) &&
+        !artifact.records.contains("checkpoint_consumer"))
         throw std::invalid_argument("Configured v2 artifact consumer is unavailable");
     operation_bindings();
 }
@@ -551,7 +552,10 @@ PreparedExecution DefinitionRunner::prepare_load(const LoadContext& context, con
     bool use_gpu = false;
     bool external_program = false;
     bool container_installed = false;
-    const auto install_container = [&] { services.install_container_image(plan.container->image); };
+    const auto install_container = [&] {
+        services.install_container_image(plan.container->image);
+        container_installed = true;
+    };
     const execution::ExecutionCase* execution_case = nullptr;
     std::string program_source = launch.program_source;
     std::string install_policy = launch.install_policy;
@@ -621,7 +625,12 @@ PreparedExecution DefinitionRunner::prepare_load(const LoadContext& context, con
         } else if (phase == "artifacts") {
             const auto bundle = halogen_contract() ? halogen_bundle(context.model_name, context.model_info, services) : std::map<std::string, std::string>{};
             for (const auto& artifact : program_.artifacts) {
-                const auto path = bundle.count(artifact.role) ? bundle.at(artifact.role) : context.model_info.resolved_path(artifact.role);
+                auto path = bundle.count(artifact.role) ? bundle.at(artifact.role) : context.model_info.resolved_path(artifact.role);
+                if (artifact.records.contains("checkpoint_consumer") && (path.empty() || !services.exists(path))) {
+                    const auto checkpoint = context.model_info.checkpoint(artifact.role);
+                    if (!checkpoint.empty() && std::filesystem::path(checkpoint).is_absolute() && services.exists(checkpoint))
+                        path = checkpoint;
+                }
                 values["artifacts"][artifact.name] = path;
                 const bool required = evaluate(artifact.required_when, frame).value_or(true).get<bool>();
                 if (required && (path.empty() || (artifact.records.value("check", "exists") != "nonempty" && !services.exists(path))))
@@ -639,11 +648,9 @@ PreparedExecution DefinitionRunner::prepare_load(const LoadContext& context, con
         } else if (phase == "install") {
             if (plan.container && records.contains("diagnostics")) {
                 install_container();
-                container_installed = true;
             }
             if (plan.container && !container_installed && records.contains("pre_install_refusal")) {
                 install_container();
-                container_installed = true;
             }
             if (plan.container) continue;
             if (program_.install.strategy == "external_only") throw std::logic_error("External-only backend cannot be downloaded");

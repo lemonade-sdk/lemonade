@@ -864,6 +864,11 @@
         },
         "required_when": {
           "$ref": "#/$defs/Expression"
+        },
+        "checkpoint_consumer": {
+          "enum": [
+            "builtin_container_absolute_v1"
+          ]
         }
       },
       "required": [

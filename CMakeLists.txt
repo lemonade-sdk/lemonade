@@ -4453,3 +4453,9 @@ if(BUILD_TESTING)
         DEPENDS test_container_production)
     set_tests_properties(ContainerC8aPreInstallTest PROPERTIES TIMEOUT 60)
 endif()
+
+if(BUILD_TESTING)
+    add_cpp_ci_test(ContainerC8aCheckpointTest CI ON COMMAND test_container_production --checkpoint
+        DEPENDS test_container_production)
+    set_tests_properties(ContainerC8aCheckpointTest PROPERTIES TIMEOUT 60)
+endif()
