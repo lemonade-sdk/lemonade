@@ -1235,6 +1235,9 @@
             "builtin_container_legacy"
           ]
         },
+        "builtin_load_log": {
+          "enum": ["halogen_starting_v1"]
+        },
         "execution": {
           "type": "object",
           "properties": {

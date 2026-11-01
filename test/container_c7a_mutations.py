@@ -25,8 +25,8 @@ def rules():
         (
             "ungranted-stream",
             "backend_definition_execution.cpp",
-            "AuthorityInspection::permits_execution(*authorized, staging.normalized),",
-            "true,",
+            'if (staging.normalized["launch"].value("direct_stream_policy", "strict") == "builtin_container_legacy")\n                execution::require(source.key.space == DefinitionNamespace::Builtin && container_capable(staging.normalized) &&\n                    AuthorityInspection::permits_execution(*authorized, staging.normalized),',
+            'if (staging.normalized["launch"].value("direct_stream_policy", "strict") == "builtin_container_legacy")\n                execution::require(source.key.space == DefinitionNamespace::Builtin && container_capable(staging.normalized) &&\n                    true,',
             "C7aUngrantedIdentityCannotStream",
         ),
         (
@@ -49,6 +49,41 @@ def rules():
             'policy == "llamacpp_legacy" || policy == "builtin_container_legacy"',
             'policy == "llamacpp_legacy"',
             "C7aPipeline",
+        ),
+        (
+            "load-log-lost-on-start-failure",
+            "configured_server.cpp",
+            "        if (log && log->starting) log->starting(category, prepared.session->frame.values, plan.command);",
+            "",
+            "C7aStartingBeforeProcessFailureExactOrder",
+        ),
+        (
+            "load-log-wrong-phase",
+            "configured_server.cpp",
+            "        const auto prepared = entry_->runner_->prepare_load",
+            '        if (log && log->starting) log->starting(category, json{{"model", {{"name", name}}}}, ServerCommand{});\n        const auto prepared = entry_->runner_->prepare_load',
+            "C7aNoStartingBeforeArtifactAdmission",
+        ),
+        (
+            "load-log-binding-missing",
+            "configured_v2_backend_ops.cpp",
+            "launch_compatibility({{}, false, runner_->builtin_load_log()})",
+            "launch_compatibility({})",
+            "C7aV2BuiltinLoadLogBound",
+        ),
+        (
+            "load-log-owner-unsealed",
+            "backend_definition_authorization.cpp",
+            'if (launch.contains("builtin_load_log"))',
+            "if (false)",
+            "C7aLoadLogBindingSealed",
+        ),
+        (
+            "external-load-log-escape",
+            "backend_definition_execution.cpp",
+            'execution::require(source.key.space == DefinitionNamespace::Builtin && container_capable(staging.normalized) &&\n                    staging.normalized.value("model_contract", "") == "halogen_hgn_v1" &&\n                    AuthorityInspection::permits_execution(*authorized, staging.normalized),',
+            "execution::require(true,",
+            "C7aExternalLoadLogRejected",
         ),
     ]
 

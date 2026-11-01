@@ -97,10 +97,14 @@ void ConfiguredServer::load(const std::string& name, const ModelInfo& model, con
         auto cancel = current_request_cancel_context();
         const auto outer = cancel.should_cancel;
         cancel.should_cancel = [this, outer] { return load_cancelled() || (outer && outer()); };
-        const auto prepared = entry_->runner_->prepare_load({name, model, options, log_level_, {}, {},
+        const auto& log = entry_->launch_compatibility.load_log;
+        const auto category = entry_->records().at("metadata").at("log_category").get<std::string>();
+        const auto prepared = entry_->runner_->prepare_load({name, model, options, log_level_, {},
+            log && log->prepared ? std::function<void(const std::string&, const json&)>([&](const auto& phase, const auto& values) { log->prepared(category, phase, values); }) : nullptr,
             [this](DeviceType device) { device_type_ = device; }}, entry_->spec, *services_.launch, cancel);
         const auto& plan = prepared.plan;
         configure_backend_watchdog({plan.command.ready_endpoint, plan.watchdog_enabled, true});
+        if (log && log->starting) log->starting(category, prepared.session->frame.values, plan.command);
         std::unique_ptr<ServerProcess> process;
         if (plan.container) {
             ContainerProcessServices effects;

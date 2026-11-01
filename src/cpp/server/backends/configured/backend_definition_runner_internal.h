@@ -4,6 +4,7 @@
 #include "backend_runtime_services_internal.h"
 #include "lemon/backends/backend_ops.h"
 #include "lemon/backends/configured/backend_transport.h"
+#include "lemon/backends/configured/configured_backend_entry.h"
 
 #include <algorithm>
 
@@ -51,6 +52,7 @@ public:
     std::string resolve_version(const std::string& backend, const std::string& file_version, runtime::ProbeSources sources = runtime::probe_sources(), PlatformInfo platform = native_platform()) const;
     BackendOps::InstallCheck check_install(const std::string& backend, bool found, runtime::ProbeSources sources = runtime::probe_sources(), PlatformInfo platform = native_platform()) const;
     void populate_metadata(ModelInfo& model) const;
+    std::optional<BuiltinLoadLog> builtin_load_log() const;
     bool halogen_contract() const { return program_.model_contract == execution::ModelContract::HalogenHgnV1; }
     std::optional<std::vector<std::string>> select_checkpoint_files(const std::string& variant, const std::vector<std::string>& files) const;
     std::string validate_registration(const std::string& checkpoint) const;

@@ -54,6 +54,17 @@ DefinitionRunner::DefinitionRunner(std::shared_ptr<const ExecutableDefinition> e
     operation_bindings();
 }
 const json& DefinitionRunner::declaration() const { return program_.normalized; }
+std::optional<BuiltinLoadLog> DefinitionRunner::builtin_load_log() const {
+    if (!program_.launch.records.contains("builtin_load_log")) return std::nullopt;
+    if (program_.launch.records.at("builtin_load_log") != "halogen_starting_v1" || !halogen_contract() ||
+        !AuthorityInspection::permits_execution(executable_->compiled().authorized(), declaration()))
+        throw std::logic_error("Unavailable builtin load-log binding");
+    BuiltinLoadLog log;
+    log.starting = [](const std::string& category, const json& values, const ServerCommand& command) {
+        LOG(INFO, category.c_str()) << "Starting " << values.at("model").at("name").get<std::string>() << " on port " << command.port << std::endl;
+    };
+    return log;
+}
 std::vector<OperationBinding> DefinitionRunner::operation_bindings() const {
     std::vector<OperationBinding> result;
     const auto& readiness = program_.launch.records.at("readiness");

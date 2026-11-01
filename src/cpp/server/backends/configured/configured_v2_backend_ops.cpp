@@ -128,6 +128,7 @@ ConfiguredBackendEntry::ConfiguredBackendEntry(std::shared_ptr<const ExecutableD
           executable_definition->compiled().authorized().definition().key.id == "llamacpp" &&
           executable_definition->compiled().authorized().definition().key.contract == 1 && descriptor.recipe == "llamacpp"),
       compatibility(TrustedCompatibility::None),
+      launch_compatibility({{}, false, runner_->builtin_load_log()}),
       factory([state = v2_factory_state_](const BackendContext& context) -> std::unique_ptr<WrappedServer> {
           auto owner = state->owner.lock();
           if (!owner) throw std::logic_error("Configured factory entry has expired");

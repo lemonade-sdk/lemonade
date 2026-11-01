@@ -18,6 +18,7 @@ import container_device_validation_transition as devices
 import container_halogen_transition as halogen
 import container_ds4_transition as ds4
 import container_c7a_stream_transition as c7a_stream
+import container_c7a_log_transition as c7a_log
 from backend_v2_4e_audit import census
 
 REPO = first.REPO
@@ -367,6 +368,12 @@ def main():
         base, evidence, old_ids, c7a_schema, expected_snapshot, 11
     )
     c7a_stream.check(args, c7a_previous, expected, c7a_previous_ids, ids)
+    c7a_previous, c7a_previous_ids = expected, ids
+    _, _, c7a_schema = c7a_log.schema()
+    expected, ids = prerequisites.derive(
+        base, evidence, old_ids, c7a_schema, expected_snapshot, 12
+    )
+    c7a_log.check(args, c7a_previous, expected, c7a_previous_ids, ids)
     old_evidence = json.loads((args.out / "historical-evidence.json").read_bytes())
     expected_evidence = copy.deepcopy(old_evidence)
     for k in ("admission", "execution", "catalog", "catalog_v2"):

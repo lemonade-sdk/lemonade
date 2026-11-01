@@ -621,6 +621,10 @@ nlohmann::json container_execution_owner(const nlohmann::json& declaration) {
             transforms.push_back({{"id", operation.at("id")}, {"transform", operation.at("request").at("content_transform")}});
     }
     if (!transforms.empty()) result["content_transforms"] = std::move(transforms);
+    if (launch.contains("builtin_load_log"))
+        result["builtin_load_log"] = {{"binding", launch.at("builtin_load_log")},
+            {"model_contract", declaration.value("model_contract", "")},
+            {"category", declaration.at("metadata").value("log_category", declaration.at("metadata").at("server_name"))}};
     if (launch.value("direct_stream_policy", "strict") == "builtin_container_legacy") {
         auto operations = declaration.at("operations");
         for (auto& operation : operations) {

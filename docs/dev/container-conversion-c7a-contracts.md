@@ -47,3 +47,32 @@ grant, unrequested forwarding, missing policy seal, and lost legacy forwarding.
 Compilation failures, hangs and crashes do not count as kills. Evidence lives in
 `.synagent/artifacts/container-v2/c7a/`, scratch in
 `.synagent/scratch/container-v2/c7a/`.
+
+## V2 builtin load-log binding
+
+`launch.builtin_load_log: "halogen_starting_v1"` is a closed binding to
+`BuiltinLoadLog::starting`. It requires a builtin container execution owner and
+`model_contract: "halogen_hgn_v1"`; its selection, model contract and log category
+are sealed. External local definitions and ungranted builtin containers cannot
+compile it. It accepts no arbitrary text, phase, expression, callback or hook ID.
+The v2 factory now derives its optional compatibility binding from the sealed
+runner; callers cannot attach a callback to that factory.
+
+`ConfiguredServer::load` invokes the bound starting callback after successful
+preparation and before constructing/starting the process. Thus an artifact,
+port or image-installation failure emits no starting line, while a later process
+creation/start failure retains it. The exact source line is `Starting <model>
+on port <port>` at INFO in category Halogen, without a generic loading/options
+line. Existing v1 logging and v2 `loading_and_options` remain unchanged.
+
+`test/fixtures/backend-v2/c7a.log.json` retains the C6b HGN fixture and the exact
+`cbbeeb5270b19e06cfd9c150233655776392bd38` Halogen command/log/start source
+quotation. `c7a_load_log.h` runs the actual v2 factory and `ConfiguredServer`
+path with fake launch services and an intentionally failing fake process
+factory, comparing the entire ordered event sequence. No runtime is invoked.
+
+The new `c7a-builtin-load-log` stage discloses runner/service policy **11 -> 12**,
+one schema binding addition and **133** snapshot records. The prior streaming
+stage now reads its pinned committed schema; its manifest is unchanged. Named
+compiled mutations cover missing binding, early line, line lost on failure,
+missing owner seal and external binding access.
