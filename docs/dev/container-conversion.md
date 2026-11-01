@@ -124,6 +124,11 @@ legacy snapshots are not equal.
 
 ## Remaining engines: planning estimates
 
+The [C5 source preflight](container-conversion-c5-preflight.md) found concrete
+prerequisites for all five remaining engines. No C5 leaf was staged. The estimates
+below assume those prerequisites are resolved; they are not a finding that the
+current format can express every engine.
+
 These estimates cover source derivation, definition/grant/inventory, CPU parity,
 mutations and identity disclosure, assuming the current format is sufficient.
 They exclude registry access, real inference/hardware and packaging validation.
