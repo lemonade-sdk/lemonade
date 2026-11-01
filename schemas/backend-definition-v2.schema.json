@@ -2289,7 +2289,8 @@
         },
         "model_contract": {
           "enum": [
-            "halogen_hgn_v1"
+            "halogen_hgn_v1",
+            "ds4_rocm_v1"
           ]
         }
       },

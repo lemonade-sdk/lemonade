@@ -1,5 +1,7 @@
 #include "backend_definition_binding_fixture.h"
 #include "backend_definition_runner_internal.h"
+#include "configured_v2_backend_ops_internal.h"
+#include "lemon/auto_tune.h"
 #include "lemon/backends/configured/configured_backend_entry.h"
 #include "lemon/backends/configured/configured_server.h"
 #include "lemon/backends/llamacpp/llamacpp_request.h"
@@ -109,11 +111,11 @@ void stream_contract() {
 }
 }
 
-#include "c7a_load_log.h"
+#include "c7a_context_budget.h"
 
 int main() {
     std::setvbuf(stdout, nullptr, _IONBF, 0);
-    try { allow_entries = true; stream_contract(); load_log_contract(); }
+    try { allow_entries = true; stream_contract(); load_log_contract(); context_budget_contract(); }
     catch (const std::exception& error) { std::printf("C7a exception: %s\n", error.what()); check(false, "C7aPipeline"); }
     return finish();
 }

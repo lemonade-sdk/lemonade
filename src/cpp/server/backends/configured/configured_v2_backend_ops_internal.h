@@ -6,7 +6,9 @@ namespace lemon::backends {
 
 class ConfiguredV2BackendOps final : public BackendOps {
 public:
-    explicit ConfiguredV2BackendOps(std::shared_ptr<const DefinitionRunner> runner) : runner_(std::move(runner)) {}
+    explicit ConfiguredV2BackendOps(std::shared_ptr<const DefinitionRunner> runner, std::shared_ptr<const LaunchServices> memory_services = {})
+        : runner_(std::move(runner)), memory_services_(std::move(memory_services)) {}
+    std::optional<double> auto_context_kv_budget_gib(const ModelInfo& model, double available_gib) const override;
     void resolve_runtime_options(const ModelInfo& model, RecipeOptions& options) const override;
     InstallParams install_params(const InstallContext& context) const;
     std::string resolve_version(const std::string& backend, const std::string& version) const override;
@@ -21,6 +23,7 @@ public:
     void download_model(const ModelInfo&, bool, DownloadProgressCallback, const BackendOpsContext&) const override;
 private:
     const std::shared_ptr<const DefinitionRunner> runner_;
+    const std::shared_ptr<const LaunchServices> memory_services_;
 };
 
 }

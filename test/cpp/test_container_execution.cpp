@@ -643,16 +643,23 @@ int main() {
         RuntimeConfig::set_global(&config);
         utils::HttpClient::set_default_timeout(2);
         const auto fixture = authorized();
+        const auto run_phase = [](const auto& phase) {
+            try { phase(); }
+            catch (const std::exception& error) {
+                std::printf("Container execution phase error: %s\n", error.what());
+                check(false, "ContainerExecutionPipeline");
+            }
+        };
 #ifdef __linux__
-        device_validation_contract(scratch);
-        inventory(scratch);
-        gpu_selection(scratch);
-        format_parity(scratch);
+        run_phase([&] { device_validation_contract(scratch); });
+        run_phase([&] { inventory(scratch); });
+        run_phase([&] { gpu_selection(scratch); });
+        run_phase([&] { format_parity(scratch); });
 #endif
-        authority_and_plans(fixture, scratch);
+        run_phase([&] { authority_and_plans(fixture, scratch); });
 #ifdef __linux__
-        milestone(fixture, scratch);
-        production_gufo_parity(scratch);
+        run_phase([&] { milestone(fixture, scratch); });
+        run_phase([&] { production_gufo_parity(scratch); });
 #endif
         RuntimeConfig::set_global(nullptr);
     } catch (const std::exception& error) { std::printf("Container execution error: %s\n", error.what()); check(false, "ContainerExecutionPipeline"); }

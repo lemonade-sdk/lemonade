@@ -154,6 +154,12 @@ const json& ConfiguredBackendEntry::records() const {
 void ConfiguredV2BackendOps::resolve_runtime_options(const ModelInfo& model, RecipeOptions& options) const {
     runner_->resolve_runtime_options(model, options);
 }
+std::optional<double> ConfiguredV2BackendOps::auto_context_kv_budget_gib(const ModelInfo& model, double available_gib) const {
+    if (!runner_->ds4_contract()) return std::nullopt;
+    if (memory_services_) return runner_->auto_context_kv_budget_gib(model, available_gib, *memory_services_);
+    const EffectLaunchServices services(production_backend_effects(nullptr, {}));
+    return runner_->auto_context_kv_budget_gib(model, available_gib, services);
+}
 InstallParams ConfiguredV2BackendOps::install_params(const InstallContext& context) const {
     return runner_->install_params(context);
 }

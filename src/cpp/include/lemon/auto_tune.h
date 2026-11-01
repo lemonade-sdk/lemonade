@@ -8,6 +8,8 @@
 #include <optional>
 #include <system_error>
 #include <lemon/auto_context_budget.h>
+#include <lemon/backends/backend_ops.h>
+#include <lemon/backends/backend_registry.h>
 #include <lemon/gpu_memory_selection.h>
 #include <lemon/model_manager.h>
 #include <lemon/system_info.h>
@@ -196,7 +198,8 @@ inline double get_available_memory_gb(DeviceType device_type,
 inline int64_t compute_auto_context_size(const ModelInfo& model_info,
                                           double available_memory_gb,
                                           bool is_embedding = false,
-                                          bool unified_gpu = false) {
+                                          bool unified_gpu = false,
+                                          const backends::BackendOps* backend_ops = nullptr) {
     if (available_memory_gb <= 0) {
         LOG(DEBUG, "AutoTune") << "compute_auto_context_size: " << model_info.model_name
                                << " — not enough memory, returning " << AUTO_CTX_FALLBACK  << " ";
@@ -271,7 +274,9 @@ inline int64_t compute_auto_context_size(const ModelInfo& model_info,
     const double model_weight_gb = auto_context_total_weights_gib(
         model_info.size, file_gib(model_info.resolved_path()),
         file_gib(mmproj_path), file_gib(draft_path));
-    if (model_weight_gb <= 0.0) return AUTO_CTX_FALLBACK;
+    const auto* ops = backend_ops ? backend_ops : backends::ops_for(model_info.recipe);
+    const auto kv_budget = ops ? ops->auto_context_kv_budget_gib(model_info, available_memory_gb) : std::nullopt;
+    if (model_weight_gb <= 0.0 && !kv_budget) return AUTO_CTX_FALLBACK;
 
     const bool uses_mtp = std::find(model_info.labels.begin(), model_info.labels.end(),
                                     "mtp") != model_info.labels.end();
@@ -292,7 +297,7 @@ inline int64_t compute_auto_context_size(const ModelInfo& model_info,
     const auto budget = estimate_auto_context_budget(
         available_memory_gb, model_weight_gb,
         kv_bytes_per_token, (model_info.device & DEVICE_GPU) != 0,
-        speculative, unified_gpu);
+        speculative, unified_gpu, kv_budget);
     const int64_t max_ctx_from_memory = budget.max_tokens;
     if (max_ctx_from_memory <= 0) {
         LOG(DEBUG, "AutoTune") << "compute_auto_context_size: " << model_info.model_name

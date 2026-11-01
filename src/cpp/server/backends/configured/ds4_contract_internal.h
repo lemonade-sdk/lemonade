@@ -15,7 +15,7 @@ template<class T> T ds4_memory_fact(const std::optional<T>& value, const char* n
     return *value;
 }
 
-inline json ds4_memory_plan(const ModelInfo& model, const LaunchServices& services) {
+inline json ds4_memory_plan(const ModelInfo& model, const LaunchServices& services, bool check_free_memory = true) {
     const auto pool_fact = services.integrated_memory_pool();
     const bool available = ds4_memory_fact(pool_fact.available, "integrated_available");
     const auto vram = ds4_memory_fact(pool_fact.vram_gib, "vram_gib");
@@ -39,7 +39,7 @@ inline json ds4_memory_plan(const ModelInfo& model, const LaunchServices& servic
         {"main_bytes", main.bytes}, {"draft_bytes", support.bytes}, {"pool_gib", pool}, {"weights_gib", weights}, {"working_set_gib", working_set},
         {"main_bytes_known", main.known}, {"draft_bytes_known", support.known},
         {"resident", resident}, {"expert_cache_gb", expert_cache}, {"model_cache_gb", model_cache}, {"free_reserve_gb", reserve}};
-    if (working_set > 0.0 && reserve > 0) {
+    if (check_free_memory && working_set > 0.0 && reserve > 0) {
         const auto free_fact = services.free_gpu_memory();
         const bool known = ds4_memory_fact(free_fact.known, "free_known");
         const auto free = ds4_memory_fact(free_fact.gib, "free_gib");

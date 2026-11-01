@@ -381,6 +381,29 @@ BackendOps::InstallCheck DefinitionRunner::check_install(const std::string& back
     return {result.installed, result.error};
 }
 
+std::optional<double> DefinitionRunner::auto_context_kv_budget_gib(const ModelInfo& model, double available_gib, const LaunchServices& services) const {
+    if (!ds4_contract()) return std::nullopt;
+    if (!AuthorityInspection::permits_execution(executable_->compiled().authorized(), declaration()))
+        throw std::logic_error("Unavailable automatic-context binding");
+    if (!std::isfinite(available_gib) || available_gib < 0.0 || available_gib > (std::numeric_limits<int>::max)())
+        throw std::invalid_argument("Invalid automatic-context available memory");
+    const auto facts = ds4_memory_plan(model, services, false);
+    const auto working_set = facts.at("working_set_gib").get<double>();
+    if (working_set <= 0.0) return std::nullopt;
+    return available_gib - facts.at("free_reserve_gb").get<int>() - working_set;
+}
+
+void DefinitionRunner::apply_artifact_metadata(ModelInfo& model, const typed::ArtifactMetadata& result) const {
+    if (!ds4_contract()) model.labels = result.labels;
+    if (result.header) {
+        const auto& header = *result.header;
+        model.max_context_window = header.context_length;
+        model.gguf = {header.architecture, header.context_length, header.block_count, header.embedding_length,
+            header.head_count_kv, header.key_length, header.key_length_swa, header.swa_layer_count, header.full_attention_interval,
+            header.capabilities, header.head_count_kv_per_layer, header.sliding_window_pattern, header.head_count_kv_scalar};
+    }
+}
+
 void DefinitionRunner::populate_metadata(ModelInfo& model) const {
     if (halogen_contract()) { model.max_context_window = 262144; return; }
     if (program_.artifacts.empty()) return;
@@ -394,14 +417,7 @@ void DefinitionRunner::populate_metadata(ModelInfo& model) const {
         runtime::ArtifactServices reads(guard, path, false);
         return target.metadata({reads.root(), utils::path_to_utf8(utils::path_from_utf8(path).filename()), model.type, model.labels}, reads);
     });
-    model.labels = result.labels;
-    if (result.header) {
-        const auto& header = *result.header;
-        model.max_context_window = header.context_length;
-        model.gguf = {header.architecture, header.context_length, header.block_count, header.embedding_length,
-            header.head_count_kv, header.key_length, header.key_length_swa, header.swa_layer_count, header.full_attention_interval,
-            header.capabilities, header.head_count_kv_per_layer, header.sliding_window_pattern, header.head_count_kv_scalar};
-    }
+    apply_artifact_metadata(model, result);
 }
 std::string DefinitionRunner::validate_registration(const std::string& checkpoint) const {
     if (halogen_contract()) return "";

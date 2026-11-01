@@ -42,6 +42,10 @@ class BackendOps {
 public:
     virtual ~BackendOps() = default;
 
+    virtual std::optional<double> auto_context_kv_budget_gib(const ModelInfo&, double) const {
+        return std::nullopt;
+    }
+
     // Populate model-specific metadata (context window, capability labels, …)
     // for a downloaded model. Default: nothing.
     virtual void populate_metadata(ModelInfo& info, const BackendOpsContext& ctx) const {

@@ -1,7 +1,7 @@
 #pragma once
 
 namespace {
-struct LogServices final : LaunchServices {
+struct LogServices : LaunchServices {
     std::vector<std::string>& events;
     bool fail_install = false, fail_port = false;
     explicit LogServices(std::vector<std::string>& value) : events(value) {}

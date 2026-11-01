@@ -225,6 +225,10 @@ public:
                     AuthorityInspection::permits_execution(*authorized, staging.normalized),
                     "unsupported_execution_feature", "/launch/direct_stream_policy");
             execution::bind_options(staging, budget);
+            if (staging.normalized.value("model_contract", "") == "ds4_rocm_v1")
+                execution::require(source.key.space == DefinitionNamespace::Builtin && container_capable(staging.normalized) &&
+                    AuthorityInspection::permits_execution(*authorized, staging.normalized),
+                    "unsupported_execution_feature", "/model_contract");
             if (staging.normalized["launch"].contains("builtin_load_log"))
                 execution::require(source.key.space == DefinitionNamespace::Builtin && container_capable(staging.normalized) &&
                     staging.normalized.value("model_contract", "") == "halogen_hgn_v1" &&

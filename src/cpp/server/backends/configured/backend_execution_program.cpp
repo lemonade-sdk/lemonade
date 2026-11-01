@@ -56,7 +56,7 @@ bool prefix(const std::string& left, const std::string& right) { return left == 
 void compile_programs(Program& program, Budget& budget) {
     const auto& doc = program.normalized;
     const auto& launch = doc["launch"];
-    if (doc.contains("model_contract")) {
+    if (doc.value("model_contract", "") == "halogen_hgn_v1") {
         require(doc.at("model_contract") == "halogen_hgn_v1" && doc.at("kind") == "container" &&
             doc.at("metadata").value("slot_policy", "standard") == "exclusive_host", "invalid_model_contract", "/model_contract");
         require(launch.at("backend") == Json{{"fixed", "rocm"}} && launch.contains("execution") &&
@@ -73,6 +73,19 @@ void compile_programs(Program& program, Budget& budget) {
         for (const auto& artifact : doc.at("artifacts").items()) roles.insert(artifact.value().at("role"));
         require(roles == std::set<std::string>{"main", "halogen_lookup_table", "halogen_tokenizer", "halogen_vision_tower"},
             "invalid_model_contract", "/artifacts");
+    }
+    else if (doc.contains("model_contract")) {
+        require(doc.at("model_contract") == "ds4_rocm_v1" && doc.at("kind") == "container" &&
+            launch.at("backend") == Json{{"fixed", "rocm"}} && launch.contains("execution") &&
+            launch.at("execution").at("cases").size() == 1 &&
+            launch.at("execution").at("cases")[0].at("kind") == "container" &&
+            launch.at("execution").at("cases")[0].at("backends") == Json::array({"rocm"}) &&
+            launch.at("execution").at("cases")[0].value("memory_plan", "") == "ds4_rocm_v1",
+            "invalid_model_contract", "/model_contract");
+        require(doc.at("artifacts").at("main").at("role") == "main" &&
+            doc.at("artifacts").at("main").at("hook").at("id") == "llamacpp.artifacts.v1",
+            "invalid_model_contract", "/artifacts/main");
+        program.model_contract = ModelContract::Ds4RocmV1;
     }
     budget.copy(launch);
     budget.copy(launch);

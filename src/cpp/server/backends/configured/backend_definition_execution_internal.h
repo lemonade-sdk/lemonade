@@ -211,7 +211,7 @@ struct SymbolicHook {
     std::vector<std::size_t> dependencies;
 };
 
-enum class ModelContract { None, HalogenHgnV1 };
+enum class ModelContract { None, HalogenHgnV1, Ds4RocmV1 };
 
 struct Program {
     ModelContract model_contract = ModelContract::None;
