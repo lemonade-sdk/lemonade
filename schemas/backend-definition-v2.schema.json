@@ -1231,7 +1231,8 @@
           "enum": [
             "strict",
             "llamacpp_legacy",
-            "bound_passthrough"
+            "bound_passthrough",
+            "builtin_container_legacy"
           ]
         },
         "execution": {

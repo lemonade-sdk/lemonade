@@ -17,6 +17,7 @@ import container_prerequisite_transition as prerequisites
 import container_device_validation_transition as devices
 import container_halogen_transition as halogen
 import container_ds4_transition as ds4
+import container_c7a_stream_transition as c7a_stream
 from backend_v2_4e_audit import census
 
 REPO = first.REPO
@@ -360,6 +361,12 @@ def main():
         base, evidence, old_ids, ds4_schema, expected_snapshot, 10
     )
     ds4.check(args, ds4_previous, expected, ds4_previous_ids, ids)
+    c7a_previous, c7a_previous_ids = expected, ids
+    _, _, c7a_schema = c7a_stream.schema()
+    expected, ids = prerequisites.derive(
+        base, evidence, old_ids, c7a_schema, expected_snapshot, 11
+    )
+    c7a_stream.check(args, c7a_previous, expected, c7a_previous_ids, ids)
     old_evidence = json.loads((args.out / "historical-evidence.json").read_bytes())
     expected_evidence = copy.deepcopy(old_evidence)
     for k in ("admission", "execution", "catalog", "catalog_v2"):
@@ -531,7 +538,7 @@ def main():
         SimpleNamespace(
             build=args.build,
             baseline=baseline,
-            expected_count=157,
+            expected_count=158,
             no_additions=False,
             out=args.out,
         )
@@ -539,7 +546,7 @@ def main():
     print(
         "C2 exact schema transition:",
         len(changes),
-        "snapshot records; whole-snapshot cmp and four zero-byte residual projections; 157 tests",
+        "snapshot records; whole-snapshot cmp and four zero-byte residual projections; 158 tests",
     )
 
 

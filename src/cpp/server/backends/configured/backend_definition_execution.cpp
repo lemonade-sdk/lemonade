@@ -220,6 +220,10 @@ public:
             if (staging.normalized["launch"].value("direct_stream_policy", "strict") == "llamacpp_legacy")
                 execution::require(source.key.space == DefinitionNamespace::Builtin && source.key.id == "llamacpp" &&
                     staging.normalized["recipe"] == "llamacpp", "unsupported_execution_feature", "/launch/direct_stream_policy");
+            if (staging.normalized["launch"].value("direct_stream_policy", "strict") == "builtin_container_legacy")
+                execution::require(source.key.space == DefinitionNamespace::Builtin && container_capable(staging.normalized) &&
+                    AuthorityInspection::permits_execution(*authorized, staging.normalized),
+                    "unsupported_execution_feature", "/launch/direct_stream_policy");
             execution::bind_options(staging, budget);
             execution::compile_hooks(*authorized, staging, budget);
             execution::compile_expressions(staging, budget);

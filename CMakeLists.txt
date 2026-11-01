@@ -4257,8 +4257,8 @@ if(BUILD_TESTING)
     add_cpp_ci_test(LlamaCppV2ProductionSwitchTest CI ON
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/container_definition_transition.py run
             --build "${CMAKE_CURRENT_BINARY_DIR}"
-            --out "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/artifacts/container-v2/c6b/transition"
-            --scratch "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/container-v2/c6b/transition"
+            --out "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/artifacts/container-v2/c7a/transition"
+            --scratch "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/container-v2/c7a/transition"
         DEPENDS test_llamacpp_v2_production_switch llamacpp-frozen-control-build)
 endif()
 
@@ -4357,4 +4357,22 @@ if(BUILD_TESTING)
     add_cpp_ci_test(ContainerPrerequisiteTest CI ON COMMAND test_container_prerequisites
         DEPENDS test_container_prerequisites)
     set_tests_properties(ContainerPrerequisiteTest PROPERTIES TIMEOUT 60)
+endif()
+
+if(BUILD_TESTING)
+    add_executable(test_container_c7a
+        test/cpp/test_container_c7a.cpp
+        src/cpp/server/backends/configured/backend_definition_authorization.cpp
+        src/cpp/server/backends/configured/backend_definition_exports.cpp)
+    target_compile_definitions(test_container_c7a PRIVATE
+        LEMON_BACKEND_EXPORT_TESTING LEMONADE_BINDING_TEST LEMONADE_TYPED_HOOK_TEST
+        LEMON_TEST_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures"
+        LEMON_C7A_SCRATCH="${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/container-v2/c7a/fixtures")
+    target_include_directories(test_container_c7a PRIVATE
+        src/cpp/server/backends src/cpp/server/backends/configured)
+    target_link_libraries(test_container_c7a PRIVATE
+        lemonade-binding-test lemonade-typed-hook-test lemonade-server-core)
+    add_cpp_ci_test(ContainerC7aTest CI ON COMMAND test_container_c7a
+        DEPENDS test_container_c7a)
+    set_tests_properties(ContainerC7aTest PROPERTIES TIMEOUT 60)
 endif()

@@ -134,7 +134,7 @@ TransportRequest DefinitionRunner::map_stream(const std::string& path, ModelType
     runtime::check_cancelled(cancel);
     if (session.executable.get() != executable_.get()) throw std::logic_error("Foreign execution session");
     const auto policy = program_.launch.records.value("direct_stream_policy", "strict");
-    const bool legacy = policy == "llamacpp_legacy";
+    const bool legacy = policy == "llamacpp_legacy" || policy == "builtin_container_legacy";
     const bool passthrough = legacy || policy == "bound_passthrough";
     BackendOperation operation = BackendOperation::Count;
     if (path == "/v1/chat/completions") operation = BackendOperation::ChatCompletion;

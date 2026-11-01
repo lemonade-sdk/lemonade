@@ -621,6 +621,21 @@ nlohmann::json container_execution_owner(const nlohmann::json& declaration) {
             transforms.push_back({{"id", operation.at("id")}, {"transform", operation.at("request").at("content_transform")}});
     }
     if (!transforms.empty()) result["content_transforms"] = std::move(transforms);
+    if (launch.value("direct_stream_policy", "strict") == "builtin_container_legacy") {
+        auto operations = declaration.at("operations");
+        for (auto& operation : operations) {
+            auto& request = operation.at("request");
+            if (!request.contains("remove")) request["remove"] = nlohmann::json::array();
+            if (!request.contains("set")) request["set"] = nlohmann::json::object();
+            if (!request.contains("omit_missing")) request["omit_missing"] = false;
+            if (operation.contains("transport")) {
+                auto& transport = operation.at("transport");
+                if (transport.at("kind") == "http_json" && !transport.contains("response_codec")) transport["response_codec"] = "json.v1";
+                if (transport.at("kind") == "http_sse" && !transport.contains("stream_codec")) transport["stream_codec"] = "openai_sse.v1";
+            }
+        }
+        result["direct_stream"] = {{"policy", "builtin_container_legacy"}, {"operations", operations}};
+    }
     return result;
 }
 
