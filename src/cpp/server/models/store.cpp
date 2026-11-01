@@ -382,7 +382,8 @@ void ModelStore::patch_removed(const std::string& model_name) {
 
 
 void ModelStore::patch_download(const ModelArtifactStore& artifacts,
-                              const std::string& model_name, bool downloaded) {
+                              const std::string& model_name, bool downloaded,
+                              const ModelInfo* downloaded_info) {
     // Everything here is filesystem work, so it runs against the published view on
     // a private copy and only the rows it changed are committed.
     auto view = this->read();
@@ -392,6 +393,13 @@ void ModelStore::patch_download(const ModelArtifactStore& artifacts,
     const ModelInfo* found = view->find(model_name);
     if (!found) {
         LOG(WARNING, "ModelStore") << "'" << model_name << "' not found in cache" << std::endl;
+        return;
+    }
+
+    // Self-managed downloads can use a request-only source.
+    const bool check_source = downloaded_info != nullptr &&
+        artifacts.download_policy(*downloaded_info) == backends::DownloadPolicy::Repository;
+    if (check_source && found->registry_source != downloaded_info->registry_source) {
         return;
     }
 
@@ -419,6 +427,10 @@ void ModelStore::patch_download(const ModelArtifactStore& artifacts,
     }
     bool component_in_set = false;
     if (auto it = store_write.draft().find(model_name); it != store_write.draft().end()) {
+        // The source can change while paths are resolved outside the writer lock.
+        if (check_source && it->second.registry_source != downloaded_info->registry_source) {
+            return;
+        }
         // Options are patched into the live row without invalidating, so a save that
         // landed while this read the disk keeps its answer.
         patched.recipe_options = it->second.recipe_options;

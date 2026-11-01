@@ -3,10 +3,13 @@
 // says. Every repository read goes through the config seam, so nothing here reaches
 // a real host.
 
+#include <lemon/backends/hf_cache_util.h>
 #include <lemon/model_manager.h>
 #include <lemon/models/store_snapshot.h>
 #include <lemon/models/artifact_layout.h>
 #include <lemon/models/fetchable_repository.h>
+#include <lemon/registry_files.h>
+#include <lemon/utils/path_utils.h>
 
 #include "support/test_state_isolation.h"
 
@@ -88,15 +91,24 @@ class ScriptedRepository : public FetchableRepository {
 
     ArtifactKind kind() const override { return ArtifactKind::Registry; }
     std::string resolve() const override { return present().path; }
-    // The scripted host keeps its bytes in the staged tree: an honest answer
-    // for the status reads, while acquisition stays scripted for the pull.
     Presence present() const override {
-        if (script_.find(ref_.repo_id) == script_.end()) return Presence{};
-        std::string flat = ref_.repo_id;
-        for (auto& c : flat) {
-            if (c == '/') c = '-';
+        const auto it = script_.find(ref_.repo_id);
+        if (it == script_.end()) return Presence{};
+        const fs::path snapshot = lemon::backends::hf_cache::active_snapshot_path(
+            fs::path(lemon::utils::get_hf_cache_dir()) / cache_dir_name(ref_.repo_id));
+        if (snapshot.empty()) return Presence{};
+        std::vector<std::string> selected{ref_.variant};
+        if (ref_.checkpoint_type.empty() || ref_.checkpoint_type == "main") {
+            std::vector<std::string> available;
+            for (const auto& file : it->second.files) available.push_back(file.path);
+            selected = lemon::registry_files::select_main_repo_files(
+                ref_.repo_id, recipe(), ref_.variant, available);
         }
-        return Presence{true, stage_root_ + "/" + flat + "/" + ref_.variant, ""};
+        if (selected.empty()) return Presence{};
+        for (const auto& name : selected) {
+            if (!fs::exists(snapshot / name)) return Presence{};
+        }
+        return Presence{true, (snapshot / selected.front()).string(), ""};
     }
     Acquisition acquisition() const override { return Acquisition{}; }
     Deletion deletion() const override { return Deletion{Deletion::Kind::CacheDir, ""}; }
@@ -134,11 +146,7 @@ class ScriptedRepository : public FetchableRepository {
     void commit(const lemon::models::LocalRef&, const Revision&) override {}
 
     std::string cache_dir_name(const std::string& repo_id) const override {
-        std::string flat = repo_id;
-        for (auto& c : flat) {
-            if (c == '/') c = '-';
-        }
-        return "models--" + flat;
+        return lemon::registry_repo_cache_dir_name(repo_id, id());
     }
 
   private:
@@ -206,11 +214,8 @@ std::string read_file(const fs::path& path) {
 }
 
 fs::path repo_cache(const ModelManager& mm, const std::string& repo_id) {
-    std::string flat = repo_id;
-    for (auto& c : flat) {
-        if (c == '/') c = '-';
-    }
-    return fs::path(mm.get_hf_cache_dir()) / ("models--" + flat);
+    return fs::path(mm.get_hf_cache_dir()) /
+        lemon::registry_repo_cache_dir_name(repo_id, RegistryId("huggingface"));
 }
 
 void reset_trace(Fixture& fx) { fx.trace = Trace{}; }
@@ -278,7 +283,7 @@ void test_a_pull_lands_exactly_the_selected_files() {
               main_status->registry.str() == "huggingface",
           "main is present, required, on the registry it came from");
     check(main_status != nullptr && fs::path(main_status->path).filename() == "model.gguf" &&
-              main_status->path.rfind(fx.stage.string(), 0) == 0,
+              fs::equivalent(main_status->path, main_snapshot / "model.gguf"),
           "main's path is where its source says the bytes are");
     check(side_status != nullptr && side_status->present &&
               fs::path(side_status->path).filename() == "side.bin",
@@ -295,6 +300,68 @@ void test_a_pull_lands_exactly_the_selected_files() {
     std::vector<std::string> got = fx.trace.urls;
     std::sort(got.begin(), got.end());
     check(want == got, "the pull resolves exactly the selected URLs");
+}
+
+void test_a_suggested_pull_uses_the_default_source() {
+    Fixture fx = make_fixture();
+    const auto builtin = nlohmann::json::parse(read_file(lemon::utils::path_from_utf8(
+        lemon::utils::get_resource_path("resources/server_models.json"))));
+    std::string model_name;
+    std::string checkpoint;
+    for (const auto& [name, row] : builtin.items()) {
+        if (row.value("suggested", false) && row.value("recipe", "") == "llamacpp" &&
+            !row.contains("source") && !row.contains("registry_source") &&
+            row.contains("checkpoint") && !row.contains("checkpoints") &&
+            !row.contains("mmproj")) {
+            model_name = name;
+            checkpoint = row.at("checkpoint").get<std::string>();
+            break;
+        }
+    }
+    if (model_name.empty()) {
+        throw std::runtime_error("No unpinned Suggested single-checkpoint llamacpp model");
+    }
+    const std::string repo = lemon::models::repo_id_from_checkpoint(checkpoint);
+    const std::string variant = lemon::models::variant_from_checkpoint(checkpoint);
+    const std::string filename = variant.find(".gguf") != std::string::npos
+        ? variant : "model-" + variant + ".gguf";
+    std::string flat = repo;
+    std::replace(flat.begin(), flat.end(), '/', '-');
+    stage(fx.stage / flat / filename, staged_gguf("suggested"));
+    fx.script[repo] = ScriptedRepo{"snap-suggested-1", {file(filename)}};
+
+    bool used_default_source = true;
+    ModelManagerConfig config;
+    config.default_model_source = [] { return std::string("modelscope"); };
+    config.repository_for = [&](const ArtifactRef& ref) {
+        if (ref.repo_id == repo) {
+            used_default_source = used_default_source &&
+                ref.registry.value_or(RegistryId("huggingface")) == RegistryId("modelscope");
+        }
+        return std::make_unique<ScriptedRepository>(ref, fx.script, fx.stage.string(),
+                                                    &fx.trace);
+    };
+    ModelManager mm(config);
+
+    mm.download_model(model_name, nlohmann::json::object());
+
+    check(!fx.trace.urls.empty() && used_default_source,
+          "a name-only Suggested pull downloads from the configured default source");
+    const fs::path cache = fs::path(mm.get_hf_cache_dir()) /
+        lemon::registry_repo_cache_dir_name(repo, RegistryId("modelscope"));
+    const fs::path acquired = cache / "snapshots" / "snap-suggested-1" / filename;
+    const auto provenance = nlohmann::json::parse(read_file(cache / ".lemonade_registry.json"), nullptr, false);
+    check(fs::is_regular_file(acquired) && read_file(acquired) == staged_gguf("suggested") &&
+          provenance.is_object() && provenance.value("source", "") == "modelscope" &&
+          mm.is_model_downloaded(model_name) &&
+          mm.get_downloaded_models().count(model_name) == 1 &&
+          fs::equivalent(mm.get_model_info(model_name).resolved_path(), acquired),
+          "the default-source pull is visible at its acquired cache path");
+    mm.invalidate_models_cache();
+    check(fs::is_regular_file(acquired) && mm.is_model_downloaded(model_name) &&
+          mm.get_downloaded_models().count(model_name) == 1 &&
+          fs::equivalent(mm.get_model_info(model_name).resolved_path(), acquired),
+          "the acquired default-source model remains visible after a rebuild");
 }
 
 void test_a_second_pull_reselects_but_refetches_nothing() {
@@ -415,6 +482,7 @@ void test_search_is_a_source_answer() {
 int main() {
     lemon::test::state_dir();
     test_a_pull_lands_exactly_the_selected_files();
+    test_a_suggested_pull_uses_the_default_source();
     test_a_second_pull_reselects_but_refetches_nothing();
     test_a_missing_aux_checkpoint_is_refused_in_words();
     test_a_malformed_aux_checkpoint_never_reaches_the_wire();
