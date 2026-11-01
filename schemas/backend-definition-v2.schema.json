@@ -872,6 +872,79 @@
       ],
       "additionalProperties": false
     },
+    "Diagnostic": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Identifier",
+          "maxLength": 64
+        },
+        "phase": {
+          "enum": [
+            "loading",
+            "backend",
+            "artifacts",
+            "arguments",
+            "custom_args",
+            "starting",
+            "success",
+            "failure"
+          ]
+        },
+        "level": {
+          "enum": [
+            "debug",
+            "info",
+            "warning",
+            "error"
+          ]
+        },
+        "category": {
+          "enum": [
+            "RocmFpx",
+            "LlamaCpp",
+            "Halogen",
+            "DS4"
+          ]
+        },
+        "format": {
+          "enum": [
+            "Loading model: {model:string}",
+            "Per-model settings: {settings:options}",
+            "Using LlamaCpp Backend: {backend:string}",
+            "Using GGUF: {main:path}",
+            "Using backend: {backend:string}\n[LlamaCpp] Use GPU: {gpu:boolean}",
+            "Skipping mmproj argument since GPU mode is not enabled",
+            "Model supports embeddings, adding --embeddings flag",
+            "Model supports reranking, adding --reranking flag",
+            "Adding custom arguments: {custom:string}",
+            "Starting llama-server...",
+            "Starting {model:string} on port {port:integer}",
+            "Starting ds4-server ({image:string}) for {main:path} on port {port:integer}",
+            "Model loaded on port {loaded_port:integer}"
+          ],
+          "maxLength": 256
+        },
+        "when": {
+          "enum": [
+            "always",
+            "main_present",
+            "custom_present",
+            "embedding",
+            "reranking",
+            "mmproj_cpu"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "phase",
+        "level",
+        "category",
+        "format"
+      ],
+      "additionalProperties": false
+    },
     "Launch": {
       "type": "object",
       "properties": {
@@ -1235,6 +1308,11 @@
             "builtin_container_legacy"
           ]
         },
+        "diagnostics": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {"$ref": "#/$defs/Diagnostic"}
+        },
         "builtin_load_log": {
           "enum": ["halogen_starting_v1"]
         },
@@ -1391,6 +1469,9 @@
           "items": {
             "$ref": "#/$defs/Hook"
           }
+        },
+        "rewrite_domain": {
+          "enum": ["canonical_path", "chat_completions_substring"]
         },
         "content_transform": {
           "enum": [

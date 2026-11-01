@@ -4257,8 +4257,8 @@ if(BUILD_TESTING)
     add_cpp_ci_test(LlamaCppV2ProductionSwitchTest CI ON
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/container_definition_transition.py run
             --build "${CMAKE_CURRENT_BINARY_DIR}"
-            --out "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/artifacts/container-v2/c7a/transition"
-            --scratch "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/container-v2/c7a/transition"
+            --out "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/artifacts/container-v2/c7b/transition"
+            --scratch "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/container-v2/c7b/transition"
         DEPENDS test_llamacpp_v2_production_switch llamacpp-frozen-control-build)
 endif()
 
@@ -4367,7 +4367,8 @@ if(BUILD_TESTING)
     target_compile_definitions(test_container_c7a PRIVATE
         LEMON_BACKEND_EXPORT_TESTING LEMONADE_BINDING_TEST LEMONADE_TYPED_HOOK_TEST
         LEMON_TEST_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures"
-        LEMON_C7A_SCRATCH="${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/container-v2/c7a/fixtures")
+        LEMON_C7A_SCRATCH="${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/container-v2/c7b/replay/c7a"
+        LEMON_C7B_SCRATCH="${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/container-v2/c7b/fixtures")
     target_include_directories(test_container_c7a PRIVATE
         src/cpp/server/backends src/cpp/server/backends/configured)
     target_link_libraries(test_container_c7a PRIVATE

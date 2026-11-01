@@ -225,6 +225,14 @@ public:
                     AuthorityInspection::permits_execution(*authorized, staging.normalized),
                     "unsupported_execution_feature", "/launch/direct_stream_policy");
             execution::bind_options(staging, budget);
+            if (staging.normalized["launch"].contains("diagnostics"))
+                execution::require(source.key.space == DefinitionNamespace::Builtin && container_capable(staging.normalized) &&
+                    AuthorityInspection::permits_execution(*authorized, staging.normalized),
+                    "unsupported_execution_feature", "/launch/diagnostics");
+            for (const auto& operation : staging.normalized.at("operations")) if (operation.at("request").contains("rewrite_domain"))
+                execution::require(source.key.space == DefinitionNamespace::Builtin && container_capable(staging.normalized) &&
+                    AuthorityInspection::permits_execution(*authorized, staging.normalized),
+                    "unsupported_execution_feature", "/operations/request/rewrite_domain");
             if (staging.normalized.value("model_contract", "") == "ds4_rocm_v1")
                 execution::require(source.key.space == DefinitionNamespace::Builtin && container_capable(staging.normalized) &&
                     AuthorityInspection::permits_execution(*authorized, staging.normalized),

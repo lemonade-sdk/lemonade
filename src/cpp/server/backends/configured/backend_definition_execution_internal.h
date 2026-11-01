@@ -118,6 +118,7 @@ struct EnvironmentAssignment {
 enum class DeviceValidationBackend { Selected, Rocm, Vulkan };
 enum class MemoryPlanPolicy { None, Ds4RocmV1 };
 enum class ContentTransform { None, Ds4NoThinkV1 };
+enum class RewriteDomain { CanonicalPath, ChatCompletionsSubstring };
 
 struct ExecutionCase {
     std::string id;
@@ -139,6 +140,7 @@ struct MountProgram {
 };
 
 struct LaunchProgram {
+    std::vector<Json> diagnostics;
     std::vector<ExecutionCase> execution_cases;
     std::vector<MountProgram> mounts;
     std::vector<std::string> prepare_order;
@@ -169,6 +171,7 @@ struct OperationProgram {
     std::uint64_t timeout_seconds = 0;
     bool identity = false;
     ContentTransform content_transform = ContentTransform::None;
+    RewriteDomain rewrite_domain = RewriteDomain::CanonicalPath;
     bool omit_missing = false;
     std::vector<std::string> remove;
     std::map<std::string, std::string> set;

@@ -619,8 +619,26 @@ nlohmann::json container_execution_owner(const nlohmann::json& declaration) {
     for (const auto& operation : declaration.at("operations")) {
         if (operation.contains("request") && operation.at("request").contains("content_transform"))
             transforms.push_back({{"id", operation.at("id")}, {"transform", operation.at("request").at("content_transform")}});
+        if (operation.at("request").contains("rewrite_domain"))
+            transforms.push_back({{"id", operation.at("id")}, {"rewrite_domain", operation.at("request").at("rewrite_domain")}});
     }
     if (!transforms.empty()) result["content_transforms"] = std::move(transforms);
+    if (launch.contains("diagnostics")) {
+        auto custom = launch.value("custom_args", nlohmann::json());
+        if (custom.is_object()) {
+            if (!custom.contains("defaults")) custom["defaults"] = nlohmann::json::array();
+            for (auto& record : custom["defaults"]) {
+                if (!record.contains("when")) record["when"] = true;
+                if (!record.contains("aliases")) record["aliases"] = nlohmann::json::array();
+            }
+        }
+        result["diagnostics"] = {{"records", launch.at("diagnostics")}, {"prepare_order", launch.at("prepare_order")},
+            {"category", declaration.at("metadata").value("log_category", declaration.at("metadata").at("server_name"))},
+            {"load_log_policy", launch.value("load_log_policy", "none")},
+            {"options", declaration.at("metadata").value("options", nlohmann::json::array())},
+            {"custom_args", custom},
+            {"ports", launch.at("ports")}, {"readiness", launch.at("readiness")}};
+    }
     if (launch.contains("builtin_load_log"))
         result["builtin_load_log"] = {{"binding", launch.at("builtin_load_log")},
             {"model_contract", declaration.value("model_contract", "")},

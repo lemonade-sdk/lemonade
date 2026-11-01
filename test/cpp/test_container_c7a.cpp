@@ -1,5 +1,6 @@
 #include "backend_definition_binding_fixture.h"
 #include "backend_definition_runner_internal.h"
+#include "backend_diagnostics_internal.h"
 #include "configured_v2_backend_ops_internal.h"
 #include "lemon/auto_tune.h"
 #include "lemon/backends/configured/configured_backend_entry.h"
@@ -7,8 +8,10 @@
 #include "lemon/backends/llamacpp/llamacpp_request.h"
 #include "lemon/utils/json_utils.h"
 
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <sstream>
 #include <thread>
 
 using namespace binding_fixture;
@@ -112,10 +115,11 @@ void stream_contract() {
 }
 
 #include "c7a_context_budget.h"
+#include "c7b_diagnostics.h"
 
 int main() {
     std::setvbuf(stdout, nullptr, _IONBF, 0);
-    try { allow_entries = true; stream_contract(); load_log_contract(); context_budget_contract(); }
+    try { allow_entries = true; stream_contract(); load_log_contract(); context_budget_contract(); c7b_contract(); }
     catch (const std::exception& error) { std::printf("C7a exception: %s\n", error.what()); check(false, "C7aPipeline"); }
     return finish();
 }

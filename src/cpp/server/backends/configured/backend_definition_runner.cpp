@@ -1,4 +1,5 @@
 #include "backend_definition_runner_internal.h"
+#include "backend_diagnostics_internal.h"
 #include "ds4_contract_internal.h"
 #include "halogen_model_contract_internal.h"
 #include "lemon/backends/backend_option_contract.h"
@@ -55,15 +56,47 @@ DefinitionRunner::DefinitionRunner(std::shared_ptr<const ExecutableDefinition> e
 }
 const json& DefinitionRunner::declaration() const { return program_.normalized; }
 std::optional<BuiltinLoadLog> DefinitionRunner::builtin_load_log() const {
-    if (!program_.launch.records.contains("builtin_load_log")) return std::nullopt;
-    if (program_.launch.records.at("builtin_load_log") != "halogen_starting_v1" || !halogen_contract() ||
-        !AuthorityInspection::permits_execution(executable_->compiled().authorized(), declaration()))
+    if (program_.launch.diagnostics.empty()) return std::nullopt;
+    if (!AuthorityInspection::permits_execution(executable_->compiled().authorized(), declaration()))
         throw std::logic_error("Unavailable builtin load-log binding");
     BuiltinLoadLog log;
-    log.starting = [](const std::string& category, const json& values, const ServerCommand& command) {
-        LOG(INFO, category.c_str()) << "Starting " << values.at("model").at("name").get<std::string>() << " on port " << command.port << std::endl;
-    };
+    for (const auto& record : program_.launch.diagnostics) {
+        const auto phase = record.at("phase").get<std::string>();
+        auto callback = [this, phase](const std::string&, const json& values, const ServerCommand& command) { emit_diagnostics(phase, values, command); };
+        if (phase == "starting") log.starting = callback;
+        if (phase == "success") log.success = callback;
+        if (phase == "failure") log.failure = callback;
+    }
     return log;
+}
+void DefinitionRunner::emit_diagnostics(const std::string& phase, const json& values, const ServerCommand& command) const {
+    for (const auto& record : program_.launch.diagnostics) {
+        if (record.at("phase") != phase) continue;
+        const auto condition = record.at("when").get<std::string>();
+        const auto facts = values.value("diagnostic_facts", json::object());
+        if (condition != "always" && !facts.at(condition).get<bool>()) continue;
+        std::string line;
+        for (const auto& [part, fact] : execution::diagnostic_parts(record.at("format"))) {
+            std::string text = part;
+            if (fact) {
+                const auto name = part.substr(0, part.find(':'));
+                if (part == "port:integer" || part == "loaded_port:integer") text = std::to_string(command.port);
+                else if (part == "model:string") text = values.at("model").at("name").get<std::string>();
+                else if (part == "gpu:boolean") text = facts.at(name).get<bool>() ? "true" : "false";
+                else text = facts.at(name).get<std::string>();
+                if (text.size() > 16384) throw std::invalid_argument("Diagnostic fact exceeds byte budget");
+            }
+            if (line.size() + text.size() > 32768) throw std::invalid_argument("Diagnostic line exceeds byte budget");
+            line += text;
+        }
+        const auto category = record.at("category").get<std::string>();
+        const auto level = record.at("level").get<std::string>();
+        if (level == "info") LOG(INFO, category.c_str()) << line << std::endl;
+        else if (level == "debug") LOG(DEBUG, category.c_str()) << line << std::endl;
+        else if (level == "warning") LOG(WARNING, category.c_str()) << line << std::endl;
+        else if (level == "error") LOG(ERROR, category.c_str()) << line << std::endl;
+        else throw std::logic_error("Invalid diagnostic severity");
+    }
 }
 std::vector<OperationBinding> DefinitionRunner::operation_bindings() const {
     std::vector<OperationBinding> result;
@@ -151,18 +184,29 @@ TransportRequest DefinitionRunner::map_stream(const std::string& path, ModelType
     if (path == "/v1/chat/completions") operation = BackendOperation::ChatCompletion;
     if (path == "/v1/completions") operation = BackendOperation::Completion;
     if (path == "/v1/responses") operation = BackendOperation::Responses;
+    bool rewritten_path = false;
+    if (operation == BackendOperation::Count && policy == "builtin_container_legacy" && endpoint(path)) {
+        for (const auto& op : program_.operations) if (op.description.operation == BackendOperation::ChatCompletion &&
+            op.description.delivery == OperationDelivery::Streaming &&
+            (op.description.model_types & operation_model_type_mask(model_type)) &&
+            op.rewrite_domain == execution::RewriteDomain::ChatCompletionsSubstring && path.find("chat/completions") != std::string::npos) {
+            operation = BackendOperation::ChatCompletion;
+            rewritten_path = true;
+        }
+    }
     if (operation == BackendOperation::Count) {
         if (!legacy || !endpoint(path)) throw std::invalid_argument("Streaming operation adapter is not bound");
         return {"http_sse", "POST", "openai_sse.v1", path, {}, body, timeout, sse};
     }
     const auto& op = cell(operation, OperationDelivery::Streaming, model_type);
     const auto parsed = json::parse(body, nullptr, false);
-    if (passthrough && parsed.is_discarded()) return {op.kind, op.method, op.codec, op.path, {}, body,
+    if (passthrough && parsed.is_discarded()) return {op.kind, op.method, op.codec, rewritten_path ? path : op.path, {}, body,
         op.timeout_seconds ? static_cast<long>(op.timeout_seconds) : timeout, sse};
     auto mapped = map_request(operation, OperationDelivery::Streaming, model_type, session,
         parsed.is_discarded() ? json::object() : parsed, body, cancel);
     if (parsed.is_discarded() && !mapped.original_body) throw std::invalid_argument("Invalid JSON for mapped streaming operation");
     if (!mapped.timeout_seconds) mapped.timeout_seconds = timeout;
+    if (rewritten_path) mapped.path = path;
     if (passthrough) mapped.sse = sse;
     return mapped;
 }
@@ -497,9 +541,17 @@ PreparedExecution DefinitionRunner::prepare_load(const LoadContext& context, con
     frame.facts = {typed::Fact::BackendOptions, typed::Fact::Platform, typed::Fact::VersionInputs,
         typed::Fact::ModelLabels, typed::Fact::DraftCheckpoint, typed::Fact::ModelArtifacts, typed::Fact::ContextSize};
     LaunchPlan plan;
+    if (!launch.diagnostics.empty()) {
+        values["diagnostic_facts"] = {{"settings", context.options.to_log_string()},
+            {"embedding", context.model_info.type == ModelType::EMBEDDING},
+            {"reranking", context.model_info.type == ModelType::RERANKING}};
+        emit_diagnostics("loading", values);
+    }
     std::string backend;
     bool use_gpu = false;
     bool external_program = false;
+    bool container_installed = false;
+    const auto install_container = [&] { services.install_container_image(plan.container->image); };
     const execution::ExecutionCase* execution_case = nullptr;
     std::string program_source = launch.program_source;
     std::string install_policy = launch.install_policy;
@@ -532,6 +584,10 @@ PreparedExecution DefinitionRunner::prepare_load(const LoadContext& context, con
                 frame.facts.insert(typed::Fact::SelectedBackend);
             }
             values["launch"]["backend"] = backend;
+            if (!launch.diagnostics.empty()) {
+                values["diagnostic_facts"]["backend"] = backend;
+                values["diagnostic_facts"]["gpu"] = use_gpu;
+            }
             if (!launch.execution_cases.empty()) {
                 execution_case = &selected_execution_case(program_, backend);
                 program_source = execution_case->program.at("source");
@@ -544,6 +600,7 @@ PreparedExecution DefinitionRunner::prepare_load(const LoadContext& context, con
                     plan.container->image = services.container_image(policy);
                     if (!valid_container_image(policy.repository, plan.container->image))
                         throw std::invalid_argument("Container launch requires the authorized digest-only image");
+                    if (!launch.diagnostics.empty()) values["diagnostic_facts"]["image"] = plan.container->image;
                 }
             }
             if (records.value("device_assignment", "select_backend") == "select_backend" && context.device_selected)
@@ -580,6 +637,10 @@ PreparedExecution DefinitionRunner::prepare_load(const LoadContext& context, con
                 if (!error.empty()) throw std::invalid_argument(records["custom_args"]["error_prefix"].get<std::string>() + error);
             }
         } else if (phase == "install") {
+            if (plan.container && records.contains("diagnostics")) {
+                install_container();
+                container_installed = true;
+            }
             if (plan.container) continue;
             if (program_.install.strategy == "external_only") throw std::logic_error("External-only backend cannot be downloaded");
             if (install_policy == "always" || services.external_binary(spec, backend).empty()) services.install_backend(spec.effective_public_recipe(), backend);
@@ -623,6 +684,15 @@ PreparedExecution DefinitionRunner::prepare_load(const LoadContext& context, con
                 values["launch"]["ports"][port.name] = number;
             }
         }
+        if (!launch.diagnostics.empty() && (phase == "backend" || phase == "artifacts")) {
+            if (phase == "artifacts") {
+                const auto main = context.model_info.resolved_path("main");
+                const auto artifact = std::find_if(program_.artifacts.begin(), program_.artifacts.end(), [](const auto& item) { return item.role == "main"; });
+                values["diagnostic_facts"]["main"] = artifact == program_.artifacts.end() ? main : values["artifacts"].at(artifact->name).get<std::string>();
+                values["diagnostic_facts"]["main_present"] = !values["diagnostic_facts"]["main"].get<std::string>().empty();
+            }
+            emit_diagnostics(phase, values);
+        }
         if (context.phase_prepared) context.phase_prepared(phase, values);
     }
     if (records.contains("checks")) for (std::size_t i = 0; i < records["checks"].size(); ++i) {
@@ -663,8 +733,17 @@ PreparedExecution DefinitionRunner::prepare_load(const LoadContext& context, con
         if (arg.flag) plan.command.args.push_back(*arg.flag);
         for (const auto& expression : arg.values) plan.command.args.push_back(scalar(evaluate(expression, frame).value()));
     }
+    if (!launch.diagnostics.empty()) {
+        values["diagnostic_facts"]["mmproj_cpu"] = !use_gpu && !context.model_info.resolved_path("mmproj").empty() && !context.model_info.extra<bool>("hf_load", false);
+        emit_diagnostics("arguments", values);
+    }
     const auto error = utils::validate_custom_args(custom, reserved);
     if (!error.empty()) throw std::invalid_argument(records.contains("custom_args") ? records["custom_args"]["error_prefix"].get<std::string>() + error : error);
+    if (!launch.diagnostics.empty()) {
+        values["diagnostic_facts"]["custom"] = custom;
+        values["diagnostic_facts"]["custom_present"] = !custom.empty();
+        emit_diagnostics("custom_args", values);
+    }
     const auto tokens = utils::parse_custom_args(custom);
     plan.command.args.insert(plan.command.args.end(), tokens.begin(), tokens.end());
     for (const auto index : slots(SlotOwnerKind::Root, "environment", "environment")) {
@@ -711,7 +790,7 @@ PreparedExecution DefinitionRunner::prepare_load(const LoadContext& context, con
         for (auto& value : plan.command.args) rewrite(value);
         for (auto& item : plan.command.env) rewrite(item.second);
         supply_container_gpu(*plan.container, plan.command.env, services);
-        services.install_container_image(plan.container->image);
+        if (!container_installed) install_container();
     }
     plan.watchdog_enabled = records["watchdog"]["policy"] == "standard";
     if (launch.working_directory.at(host.os) == "executable_directory") plan.working_directory = utils::path_to_utf8(utils::path_from_utf8(plan.command.program).parent_path());

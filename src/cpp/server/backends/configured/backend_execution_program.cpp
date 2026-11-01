@@ -1,4 +1,5 @@
 #include "backend_definition_execution_internal.h"
+#include "backend_diagnostics_internal.h"
 #include "lemon/backends/backend_option_contract.h"
 
 #include <algorithm>
@@ -92,6 +93,7 @@ void compile_programs(Program& program, Budget& budget) {
     budget.copy(doc["install"]);
     budget.copy(doc["install"]);
     program.launch.records = launch;
+    compile_diagnostics(program, budget);
     program.install.records = doc["install"]["strategy"] == "by_execution" ? doc["install"]["native"] : doc["install"];
     program.install.strategy = program.install.records.at("strategy");
     program.launch.prepare_order = launch["prepare_order"].get<std::vector<std::string>>();
@@ -328,6 +330,18 @@ void compile_programs(Program& program, Budget& budget) {
         op.codec = transport.value("response_codec", transport.value("stream_codec", ""));
         op.timeout_seconds = transport["timeout"] == "global" ? 0 : transport["timeout"].get<std::uint64_t>();
         const auto& request = record["request"];
+        if (request.contains("rewrite_domain")) {
+            require(request["rewrite_domain"] == "canonical_path" || request["rewrite_domain"] == "chat_completions_substring",
+                "invalid_rewrite_domain", p + "/request/rewrite_domain");
+            require(operation == BackendOperation::ChatCompletion && request.value("content_transform", "") == "ds4_no_think_v1",
+                "invalid_rewrite_domain", p + "/request/rewrite_domain");
+            if (request["rewrite_domain"] == "chat_completions_substring") {
+                require(launch.value("direct_stream_policy", "strict") == "builtin_container_legacy" && request["base"] == "identity" &&
+                    request["remove"].empty() && request["set"].empty() && request.value("hooks", Json::array()).empty(),
+                    "invalid_rewrite_domain", p + "/request/rewrite_domain");
+                op.rewrite_domain = RewriteDomain::ChatCompletionsSubstring;
+            }
+        }
         if (request.contains("content_transform")) {
             require(request["content_transform"] == "ds4_no_think_v1" && operation == BackendOperation::ChatCompletion, "invalid_content_transform", p + "/request/content_transform");
             op.content_transform = ContentTransform::Ds4NoThinkV1;

@@ -106,13 +106,19 @@ void ConfiguredServer::load(const std::string& name, const ModelInfo& model, con
         configure_backend_watchdog({plan.command.ready_endpoint, plan.watchdog_enabled, true});
         if (log && log->starting) log->starting(category, prepared.session->frame.values, plan.command);
         std::unique_ptr<ServerProcess> process;
-        if (plan.container) {
-            ContainerProcessServices effects;
-            effects.cancelled = cancel.should_cancel;
-            process = std::make_unique<ContainerProcess>(plan.output, *plan.container, services_.containers,
-                services_.make_container_client ? services_.make_container_client(plan.output) : nullptr, std::move(effects));
-        } else process = services_.make_process(plan.output, plan.working_directory);
-        start_server(std::move(process), plan.command, plan.readiness_timeout_seconds);
+        try {
+            if (plan.container) {
+                ContainerProcessServices effects;
+                effects.cancelled = cancel.should_cancel;
+                process = std::make_unique<ContainerProcess>(plan.output, *plan.container, services_.containers,
+                    services_.make_container_client ? services_.make_container_client(plan.output) : nullptr, std::move(effects));
+            } else process = services_.make_process(plan.output, plan.working_directory);
+            start_server(std::move(process), plan.command, plan.readiness_timeout_seconds);
+        } catch (...) {
+            if (log && log->failure) log->failure(category, prepared.session->frame.values, plan.command);
+            throw;
+        }
+        if (log && log->success) log->success(category, prepared.session->frame.values, plan.command);
         std::atomic_store(&session_, prepared.session);
         return;
     }

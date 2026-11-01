@@ -20,6 +20,7 @@ import container_ds4_transition as ds4
 import container_c7a_stream_transition as c7a_stream
 import container_c7a_log_transition as c7a_log
 import container_c7a_budget_transition as c7a_budget
+import container_c7b_transition as c7b
 from backend_v2_4e_audit import census
 
 REPO = first.REPO
@@ -381,6 +382,12 @@ def main():
         base, evidence, old_ids, c7a_schema, expected_snapshot, 13
     )
     c7a_budget.check(args, c7a_previous, expected, c7a_previous_ids, ids)
+    c7b_previous, c7b_previous_ids = expected, ids
+    _, _, c7b_schema = c7b.schema()
+    expected, ids = prerequisites.derive(
+        base, evidence, old_ids, c7b_schema, expected_snapshot, 14
+    )
+    c7b.check(args, c7b_previous, expected, c7b_previous_ids, ids)
     old_evidence = json.loads((args.out / "historical-evidence.json").read_bytes())
     expected_evidence = copy.deepcopy(old_evidence)
     for k in ("admission", "execution", "catalog", "catalog_v2"):

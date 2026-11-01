@@ -63,6 +63,7 @@ public:
     std::string resolve_artifact(const CheckpointResolveContext& context) const;
     std::string find_imported(const std::string& path) const;
 private:
+    void emit_diagnostics(const std::string& phase, const json& values, const ServerCommand& command = {}) const;
     const execution::OperationProgram& cell(BackendOperation operation, OperationDelivery delivery, ModelType model_type) const;
     runtime::Frame request_frame(const ExecutionSession& session, const json& request) const;
     std::vector<std::size_t> slots(SlotOwnerKind kind, const std::string& owner, const std::string& stage) const;

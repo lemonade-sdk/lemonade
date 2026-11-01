@@ -200,7 +200,7 @@ void merge_removals(LayerState& state, const NodePtr& old, const Json& overlay, 
 }
 
 std::optional<RecordKey::Field> record_field(std::string_view path) {
-    for (const auto* registered : {"/metadata/options", "/metadata/support", "/install/cases", "/install/native/cases", "/launch/execution/cases", "/launch/mounts", "/launch/checks", "/launch/argv", "/launch/custom_args/defaults", "/operations"}) if (path == registered) return RecordKey::Field::Id;
+    for (const auto* registered : {"/metadata/options", "/metadata/support", "/install/cases", "/install/native/cases", "/launch/execution/cases", "/launch/mounts", "/launch/checks", "/launch/argv", "/launch/custom_args/defaults", "/launch/diagnostics", "/operations"}) if (path == registered) return RecordKey::Field::Id;
     if (path == "/launch/ports" || path == "/launch/environment/set") return RecordKey::Field::Name;
     return {};
 }
