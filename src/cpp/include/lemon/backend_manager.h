@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <mutex>
 #include <string>
 #include <functional>
@@ -11,9 +12,15 @@ namespace lemon {
 
 using json = nlohmann::json;
 
+struct ContainerPolicy;
+namespace utils { class ContainerManager; }
+
 class BackendManager {
 public:
-    BackendManager();
+    explicit BackendManager(std::shared_ptr<utils::ContainerManager> containers = {});
+    std::string container_pin(const ContainerPolicy& policy) const;
+    void install_container_image(const std::string& image, bool force = false, DownloadProgressCallback progress = nullptr);
+    bool has_container_image(const std::string& image) const;
 
     // Core operations
     void install_backend(const std::string& recipe, const std::string& backend,
@@ -72,6 +79,8 @@ public:
 private:
     // Cached backend_versions.json (loaded once at construction)
     json backend_versions_;
+    std::shared_ptr<utils::ContainerManager> containers_;
+    friend struct BackendManagerTestAccess;
 
     // Cached "latest" GitHub release tags, keyed by repo (e.g. "ggml-org/llama.cpp").
     // Populated lazily on first resolution; never invalidated within a process.

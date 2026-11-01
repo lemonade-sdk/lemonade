@@ -1,6 +1,7 @@
 #include "backend_definition_runner_internal.h"
 #include "lemon/backends/configured/backend_hook_registry.h"
 #include "lemon/backends/configured/configured_server.h"
+#include "lemon/container_process.h"
 #include "lemon/error_types.h"
 #include "lemon/utils/aixlog.hpp"
 
@@ -100,7 +101,14 @@ void ConfiguredServer::load(const std::string& name, const ModelInfo& model, con
             [this](DeviceType device) { device_type_ = device; }}, entry_->spec, *services_.launch, cancel);
         const auto& plan = prepared.plan;
         configure_backend_watchdog({plan.command.ready_endpoint, plan.watchdog_enabled, true});
-        start_server(services_.make_process(plan.output, plan.working_directory), plan.command, plan.readiness_timeout_seconds);
+        std::unique_ptr<ServerProcess> process;
+        if (plan.container) {
+            ContainerProcessServices effects;
+            effects.cancelled = cancel.should_cancel;
+            process = std::make_unique<ContainerProcess>(plan.output, *plan.container, services_.containers,
+                services_.make_container_client ? services_.make_container_client(plan.output) : nullptr, std::move(effects));
+        } else process = services_.make_process(plan.output, plan.working_directory);
+        start_server(std::move(process), plan.command, plan.readiness_timeout_seconds);
         std::atomic_store(&session_, prepared.session);
         return;
     }

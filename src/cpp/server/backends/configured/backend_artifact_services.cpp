@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <limits>
 #include <map>
+#include <regex>
 
 #ifdef _WIN32
 #ifndef NOMINMAX
@@ -194,48 +195,51 @@ struct ArtifactServices::Inventory {
     std::vector<Entry> entries;
     bool directory;
     typed::ArtifactRootInfo info;
+    Inventory(const std::string& approved_path, bool directory, const std::function<void(std::size_t)>& check) {
+        check(1);
+        if (approved_path.empty() || approved_path.find('\0') != std::string::npos) throw std::invalid_argument("Invalid approved artifact input");
+        const auto root = fs::weakly_canonical(utils::path_from_utf8(approved_path));
+        info = {utils::path_to_utf8(root), fs::exists(root), fs::exists(root / "snapshots"), false};
+        this->directory = directory;
+        entries.push_back({handle_identity(), root, root, "", false, directory || !info.exists ? nullptr : std::make_unique<ReadFile>(root)});
+        if (!directory || !info.exists) return;
+        if (!fs::is_directory(root)) throw std::invalid_argument("Artifact root is not a directory");
+        std::string active;
+        const auto ref = root / "refs" / "main";
+        if (fs::is_directory(fs::symlink_status(root / "refs")) && fs::is_regular_file(fs::symlink_status(ref))) {
+            ReadFile file(ref);
+            active = file.prefix(256);
+            while (!active.empty() && (active.back() == '\n' || active.back() == '\r')) active.pop_back();
+            if (active.empty() || active == "." || active == ".." || active.find_first_of("/\\:") != std::string::npos || active.find('\0') != std::string::npos)
+                throw std::invalid_argument("Invalid approved HF snapshot ref");
+        }
+        info.active_snapshot = !active.empty() && fs::exists(root / "snapshots" / active);
+        fs::recursive_directory_iterator iterator(root), end;
+        std::size_t visited = 0;
+        for (; iterator != end; ++iterator) {
+            check(1);
+            if (++visited > 2048 || iterator.depth() > 16) throw std::length_error("Artifact inventory entry/depth limit exceeded");
+            const auto path = iterator->path();
+            const auto status = iterator->symlink_status();
+            if (fs::is_directory(status)) continue;
+            if (!fs::is_regular_file(status) && !fs::is_symlink(status)) throw std::invalid_argument("Nonregular artifact inventory entry");
+            const auto relative = path.lexically_relative(root).generic_string();
+            if (relative.size() > 4096) throw std::length_error("Artifact inventory path limit exceeded");
+            check(relative.size());
+            const auto target = fs::canonical(path);
+            if (!within(target, root)) throw std::logic_error("Artifact link outside approved inventory");
+            if (fs::is_symlink(status) && (relative.rfind("snapshots/", 0) != 0 || target.parent_path() != root / "blobs"))
+                throw std::logic_error("Artifact link is not an approved HF snapshot/blob relationship");
+            if (!fs::is_regular_file(target)) throw std::invalid_argument("Artifact link is not a regular file");
+            entries.push_back({handle_identity(), path, target, relative,
+                !active.empty() && relative.rfind("snapshots/" + active + "/", 0) == 0, std::make_unique<ReadFile>(target)});
+        }
+    }
 };
 ArtifactServices::ArtifactServices(InvocationGuard& guard, const std::string& approved_path, bool directory)
-    : guard_(guard), lifetime_(guard.lifetime()), inventory_(std::make_unique<Inventory>()) {
-    check();
-    if (approved_path.empty() || approved_path.find('\0') != std::string::npos) throw std::invalid_argument("Invalid approved artifact input");
-    const auto root = fs::weakly_canonical(utils::path_from_utf8(approved_path));
-    inventory_->info = {utils::path_to_utf8(root), fs::exists(root), fs::exists(root / "snapshots"), false};
-    inventory_->directory = directory;
-    inventory_->entries.push_back({handle_identity(), root, root, "", false, directory || !inventory_->info.exists ? nullptr : std::make_unique<ReadFile>(root)});
-    if (!directory || !inventory_->info.exists) return;
-    if (!fs::is_directory(root)) throw std::invalid_argument("Artifact root is not a directory");
-    std::string active;
-    const auto ref = root / "refs" / "main";
-    if (fs::is_directory(fs::symlink_status(root / "refs")) && fs::is_regular_file(fs::symlink_status(ref))) {
-        ReadFile file(ref);
-        active = file.prefix(256);
-        while (!active.empty() && (active.back() == '\n' || active.back() == '\r')) active.pop_back();
-        if (active.empty() || active == "." || active == ".." || active.find_first_of("/\\:") != std::string::npos || active.find('\0') != std::string::npos)
-            throw std::invalid_argument("Invalid approved HF snapshot ref");
-    }
-    inventory_->info.active_snapshot = !active.empty() && fs::exists(root / "snapshots" / active);
-    fs::recursive_directory_iterator iterator(root), end;
-    std::size_t visited = 0;
-    for (; iterator != end; ++iterator) {
-        check();
-        if (++visited > 2048 || iterator.depth() > 16) throw std::length_error("Artifact inventory entry/depth limit exceeded");
-        const auto path = iterator->path();
-        const auto status = iterator->symlink_status();
-        if (fs::is_directory(status)) continue;
-        if (!fs::is_regular_file(status) && !fs::is_symlink(status)) throw std::invalid_argument("Nonregular artifact inventory entry");
-        const auto relative = path.lexically_relative(root).generic_string();
-        if (relative.size() > 4096) throw std::length_error("Artifact inventory path limit exceeded");
-        check(relative.size());
-        const auto target = fs::canonical(path);
-        if (!within(target, root)) throw std::logic_error("Artifact link outside approved inventory");
-        if (fs::is_symlink(status) && (relative.rfind("snapshots/", 0) != 0 || target.parent_path() != root / "blobs"))
-            throw std::logic_error("Artifact link is not an approved HF snapshot/blob relationship");
-        if (!fs::is_regular_file(target)) throw std::invalid_argument("Artifact link is not a regular file");
-        inventory_->entries.push_back({handle_identity(), path, target, relative,
-            !active.empty() && relative.rfind("snapshots/" + active + "/", 0) == 0, std::make_unique<ReadFile>(target)});
-    }
-}
+    : guard_(guard), lifetime_(guard.lifetime()), inventory_(std::make_unique<Inventory>(approved_path, directory,
+        [this](std::size_t bytes) { check(bytes); })) {}
+
 ArtifactServices::~ArtifactServices() = default;
 void ArtifactServices::check(std::size_t bytes) {
     if (!invocation_active(lifetime_)) throw std::logic_error("Expired artifact invocation");
@@ -296,4 +300,68 @@ std::string ArtifactServices::approved_result(const std::string& path) {
     }
     throw std::logic_error("Returned artifact path outside approved handle inventory");
 }
+std::set<std::string> ArtifactServices::gguf_shards(const std::string& selected, const std::vector<std::string>& files) {
+    const std::regex syntax("(.+)-([0-9]{5})-of-([0-9]{5})\\.gguf");
+    std::smatch main;
+    if (!std::regex_match(selected, main, syntax)) return {selected};
+    const auto count = std::stoul(main[3]);
+    std::set<std::string> shards;
+    for (const auto& file : files) {
+        std::smatch match;
+        if (!std::regex_match(file, match, syntax) || match[1] != main[1] || match[3] != main[3]) continue;
+        const auto index = std::stoul(match[2]);
+        if (!index || index > count || !shards.insert(file).second) throw std::invalid_argument("Invalid GGUF shard inventory");
+    }
+    if (shards.size() != count || !shards.count(selected)) throw std::invalid_argument("Incomplete GGUF shard inventory");
+    return shards;
+}
+
+std::vector<utils::ContainerMount> ArtifactServices::container_mounts(const std::string& approved_path,
+    const std::string& expansion, const std::string& destination) {
+    const bool directory = expansion == "directory_files";
+    const auto target = fs::path(destination);
+    if (approved_path.empty() || (expansion != "file" && expansion != "gguf_shards" && !directory) ||
+        !target.is_absolute() || target.lexically_normal() != target || destination.rfind("/mnt/models/", 0) != 0)
+        throw std::invalid_argument("Invalid container artifact mount");
+    const auto requested = fs::absolute(utils::path_from_utf8(approved_path)).lexically_normal();
+    const auto named = directory ? fs::canonical(requested) : fs::canonical(requested.parent_path()) / requested.filename();
+    if (directory != fs::is_directory(named)) throw std::invalid_argument("Invalid container artifact kind");
+    if (!directory && (expansion == "file" || !std::regex_match(named.filename().string(), std::regex("(.+)-[0-9]{5}-of-[0-9]{5}\\.gguf")))) {
+        Inventory file_inventory(approved_path, false, [](std::size_t) {});
+        if (!file_inventory.entries.front().file) throw std::invalid_argument("Missing approved artifact file");
+        return {{utils::path_to_utf8(file_inventory.entries.front().target), destination}};
+    }
+    auto root = directory ? named : named.parent_path();
+    for (auto parent = root; !parent.empty() && parent != parent.root_path(); parent = parent.parent_path()) {
+        if (parent.filename() == "snapshots") { root = parent.parent_path(); break; }
+    }
+    Inventory inventory(utils::path_to_utf8(root), true, [](std::size_t) {});
+    const auto canonical = fs::canonical(named);
+    const auto found = std::find_if(inventory.entries.begin(), inventory.entries.end(), [&](const auto& entry) { return entry.path == named; });
+    if (!directory && (found == inventory.entries.end() || found->target != canonical))
+        throw std::logic_error("Mount source is outside the artifact inventory");
+    std::vector<std::string> files;
+    for (const auto& entry : inventory.entries) if (entry.file && entry.path.parent_path() == named.parent_path()) files.push_back(entry.path.filename().string());
+    const auto shards = expansion == "gguf_shards" ? gguf_shards(named.filename().string(), files) : std::set<std::string>{};
+    std::vector<utils::ContainerMount> mounts;
+    for (const auto& entry : inventory.entries) {
+        if (!entry.file) continue;
+        bool selected = entry.path == named;
+        fs::path target(destination);
+        if (directory) {
+            const auto relative = entry.path.lexically_relative(named);
+            selected = !relative.empty() && !relative.is_absolute() && *relative.begin() != "..";
+            target /= relative;
+        } else if (!shards.empty()) {
+            selected = entry.path.parent_path() == named.parent_path() && shards.count(entry.path.filename().string());
+            target = target.parent_path() / entry.path.filename();
+        }
+        if (!selected) continue;
+        if (fs::canonical(entry.path) != entry.target) throw std::logic_error("Artifact inventory changed");
+        mounts.push_back({utils::path_to_utf8(entry.target), target.generic_string()});
+    }
+    std::sort(mounts.begin(), mounts.end(), [](const auto& a, const auto& b) { return a.destination < b.destination; });
+    return mounts;
+}
+
 }

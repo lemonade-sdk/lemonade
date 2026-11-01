@@ -11,6 +11,8 @@ struct ExecutionSession;
 struct ConfiguredServerServices {
     std::shared_ptr<LaunchServices> launch;
     std::function<std::unique_ptr<ServerProcess>(ProcessOutput, const std::string&)> make_process;
+    std::shared_ptr<utils::ContainerManager> containers;
+    std::function<std::unique_ptr<ServerProcess>(ProcessOutput)> make_container_client;
 };
 class ConfiguredServer final : public WrappedServer, public IEmbeddingsServer, public IRerankingServer,
                                public IClassificationServer, public ITranscriptionServer, public IStreamingTranscriptionServer,

@@ -174,6 +174,9 @@ public:
     std::vector<typed::ArtifactEntry> entries(typed::ArtifactHandle root) override;
     typed::ArtifactRootInfo root_info(typed::ArtifactHandle root) override;
     std::string approved_result(const std::string& path);
+    static std::set<std::string> gguf_shards(const std::string& selected, const std::vector<std::string>& files);
+    static std::vector<utils::ContainerMount> container_mounts(const std::string& approved_path,
+        const std::string& expansion, const std::string& destination);
 private:
     struct Inventory;
     InvocationGuard& guard_;

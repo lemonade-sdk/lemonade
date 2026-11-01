@@ -1,13 +1,12 @@
-# Container declarations in v2 (C2)
+# Container declarations and execution in v2
 
-V2 can resolve, structurally validate and project container declarations as data.
-A fixed test-only builtin policy demonstrates catalog admission and compilation;
-no production container grant is installed. External containers fail authorization,
-including hook-free ones. C2 cannot bind builtin container data to an executable
-definition. Binding returns
-`container_execution_unavailable` at `/launch/execution`, with the diagnostic
-`Container execution is unavailable in C2`. The existing native process factory
-is unchanged. V1 does not gain any container fields.
+V2 resolves, authorizes, compiles and executes reviewed builtin container leaves.
+Execution requires a loader-owned sealed execution owner independently of all hook
+grants. No production container grant is installed. External container definitions
+and container inheritance remain unavailable, including descendants that remove
+every hook. Ungranted builtins can still be admitted and compiled as inert data;
+binding, runner construction and the legacy planner retain independent rejection
+boundaries. V1 does not gain container fields.
 
 The complete worked definition is
 [`gufo.container.json`](../../test/fixtures/backend-v2/gufo.container.json).
@@ -94,18 +93,24 @@ directory use `inherit`, avoiding native loader-path and staging behavior.
 
 ## Pin and mount ownership
 
-A definition names a version-file key, not an image version. C3 must read the
+A definition names a version-file key, not an image version. The runner reads the
 effective configured `backend_versions.json` value and validate C1's
 `<tag>@sha256:<64 lowercase hex>` syntax, including administrative overrides.
 C1's `container_image` produces `repository@sha256:...` for installation and
-launch; the tag remains update-channel metadata. There is no digest resolver,
-mutable tag default or image installation in C2.
+launch; the tag remains update-channel metadata. There is no digest resolver or mutable tag default. Missing version-file keys,
+path overrides, bare tags and malformed digests reject before installation. The
+OCI installation path inspects or pulls only the effective digest identity and
+honors offline and executable-fetch restrictions. It never selects a managed
+binary or substitutes a host executable.
 
 Mounts name the existing artifact inventory. No host path, volume syntax,
 writable mode, arbitrary destination or recursive host traversal is accepted.
-C3 must resolve handles, preserve approved HF symlink relationships, expand shards
-and directory files, reject escaped sources and collisions, and rewrite whole
-artifact-valued arguments to final container paths before constructing a run spec.
+The existing artifact inventory resolves symlinks, preserves approved HF
+snapshot/blob relationships and opens regular file handles. Container mounts use
+that inventory to expand complete numbered shard sets or sorted directory files,
+reject escaped sources and collisions, and rewrite artifact values to final
+container paths before evaluating argument expressions. No arbitrary host-string
+substring replacement occurs.
 The confinement policy fixes read-only `:ro,z` access, capability drop,
 no-new-privileges, default seccomp and labelled internal networking in trusted code.
 
@@ -113,10 +118,22 @@ no-new-privileges, default seccomp and labelled internal networking in trusted c
 source, devices, capabilities, network and teardown. The compiled program keeps
 explicit execution cases and mount records alongside its immutable normalized
 declaration. Compilation grants no execution authority. External authorization rejects container
-records independently of hook selection. Binding also rejects the whole
-container-capable definition, including a mixed declaration whose selected backend
-could otherwise be native. The runner and legacy planner reject these records
-before any launch service or process is selected.
+records independently of hook selection and checks each inherited layer. For
+reviewed builtin leaves, authorization retains the execution owner separately from
+hook grants and commits its digest into the authority identity. Binding and runner
+construction recheck its sealed semantics. The owner covers process kind, backend
+selectors, repositories and pin sources, entrypoint mode, devices, capabilities,
+artifact sources and mount destinations, environment, address/network, confinement
+and teardown. Hook removal never erases this owner.
+
+The runner selects exactly one case for the chosen backend before installation or
+program lookup. Missing or ambiguous cases and container cases without their
+matching policies reject. Container plans hold `ContainerRunSpec`; native plans
+retain the existing process path. `ConfiguredServer` always constructs
+`ContainerProcess` for a container plan. Its optional fake-client seam supplies
+only the attached engine client, never a substitute process kind. The legacy
+planner remains unavailable to all container records because it carries no sealed
+execution owner.
 
 ## Schema transition and remaining execution work
 
@@ -140,10 +157,18 @@ where needed, a reviewed loader-owned execution grant and a parity fixture. It
 should need no new wrapper, process implementation or updater parser. C2 does not
 make those grant and installation steps optional.
 
-C3 must seal the complete execution owner independently of hook presence, reject
-ungranted external containers and unexported inheritance, retain `llamacpp@1`,
-resolve pins and artifact mounts, select exactly one authorized case, and attach a
-discriminated plan to `ContainerProcess`. Address discovery remains in that process;
-readiness/watchdog consume its validated result. Runtime installation, device
-selection, environment protection and cancellation still require attachment and
-qualification. CPU fake checks establish no real container, model or GPU behavior.
+`test_container_execution` supplies a fixed test-only Gufo execution grant, the
+fixture's version-file pin and a fake `ContainerHost`. It proves catalog admission,
+compilation, binding, OCI installation, inventory mounts, loopback readiness,
+request forwarding and stop/remove/reap through `ConfiguredServer` and
+`ContainerProcess`, without executing Podman or Docker. The production builtin
+policies, seven v1 sources, both v2 sources, schemas and historical disclosures
+remain unchanged in C3. No additional production schema/catalog identity change
+is intended.
+
+Before an engine ships as production JSON it still needs an audited builtin
+execution grant, its pin and model/recipe inventory, protocol/argv parity,
+packaging and real engine/network/device/cancellation qualification. Existing
+`llamacpp@1` sources, `LocalExecutableV1` and external forks remain local-only;
+container-capable `llamacpp@2` is outside this unit. CPU fake checks establish no
+real container, model or GPU behavior.

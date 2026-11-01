@@ -58,9 +58,16 @@ std::vector<LogicalHookSlot> verify_surviving_grants(const ResolvedDefinition& d
 
 namespace lemon::backends {
 
+struct BuiltinContainerExecutionOwner {
+    BuiltinExportKey key;
+    nlohmann::json semantics;
+    std::string digest;
+};
+
 struct BuiltinExecutionPolicies {
     std::vector<BuiltinExportContract> leaves;
     std::string digest;
+    std::vector<BuiltinContainerExecutionOwner> execution_owners;
 };
 
 const std::vector<DefinitionSourceView>& embedded_v2_sources();

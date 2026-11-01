@@ -17,10 +17,20 @@ struct SealedHookGrant {
     std::string mutation_policy_digest;
 };
 
+bool container_capable(const nlohmann::json& declaration);
+nlohmann::json container_execution_owner(const nlohmann::json& declaration);
+
+struct SealedExecutionOwner {
+    DefinitionKey leaf;
+    nlohmann::json semantics;
+    std::string digest;
+};
+
 struct AuthorityInspection {
 #ifdef LEMON_BACKEND_EXPORT_TESTING
     static std::shared_ptr<const AuthorizedDefinition> test_without_grants(const AuthorizedDefinition& token);
 #endif
+    static bool permits_execution(const AuthorizedDefinition& token, const nlohmann::json& declaration);
     static std::size_t policy_count(const AuthorizedDefinition& token) noexcept;
     static std::size_t grant_count(const AuthorizedDefinition& token) noexcept;
     static const SealedHookGrant& grant(const AuthorizedDefinition& token, std::size_t ordinal);

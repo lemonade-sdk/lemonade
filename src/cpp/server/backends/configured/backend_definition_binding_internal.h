@@ -28,6 +28,10 @@ struct Inspection {
 private:
     friend class ::lemon::backends::DefinitionRunner;
 #endif
+#ifdef LEMONADE_BINDING_TEST
+    static std::shared_ptr<const ExecutableDefinition> test_compiled(const ExecutableDefinition& executable,
+        std::shared_ptr<const CompiledDefinition> compiled);
+#endif
     static const std::vector<BoundHook>& hooks(const ExecutableDefinition& definition);
     static const AdmittedCatalog& admitted(const ExecutableDefinition& definition);
 };

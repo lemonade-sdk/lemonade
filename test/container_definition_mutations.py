@@ -157,7 +157,7 @@ def mutations(schema):
             "execution-binding",
             "backend_definition_binding.cpp",
             (
-                '!program.normalized.contains("containers") && !program.normalized["launch"].contains("execution") &&\n                program.normalized["kind"] == "local"',
+                "AuthorityInspection::permits_execution(token, program.normalized)",
                 "true",
             ),
             "ContainerCannotReachNativeProcess",
@@ -454,6 +454,11 @@ def main():
                 else text.count(old) == 1
             ), name
             text = text.replace(old, new)
+        if name == "external-container-authority":
+            text = text.replace(
+                '!container_capable(definition.declaration), "container_execution_unavailable"',
+                'true, "container_execution_unavailable"',
+            )
         if name == "repository-length":
             text = text.replace("text.size() <= 256", "text.size() <= 512")
         mutant, obj, binary = (

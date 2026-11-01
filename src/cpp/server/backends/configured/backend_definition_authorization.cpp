@@ -382,6 +382,7 @@ struct ResolvedAuthority::Impl {
     std::uint32_t authorization_revision = 2;
     bool builtin = false;
     std::vector<GrantIdentity> grants;
+    std::optional<SealedExecutionOwner> execution_owner;
 };
 
 FrozenDefinitionSnapshotResult BuiltinCatalogLoader::freeze_sources(const std::vector<DefinitionSourceView>& sources,
@@ -559,6 +560,7 @@ std::string CatalogAdmissionBuilder::authority_identity(const AuthorizedDefiniti
     Json value = {{"revision", authority.authorization_revision},
         {"registry", authority.registry_digest}, {"definition", authority.resolved->definition_hash},
         {"dependencies", authority.resolved->dependency_digest}, {"grants", grants}};
+    if (authority.execution_owner) value["execution_owner"] = authority.execution_owner->digest;
     if (authority.builtin) {
         value["builtin_policy"] = authority.contract->policy_digest;
         value["builtin_registry"] = authority.snapshot->impl_->builtin_policies->digest;
@@ -581,6 +583,45 @@ std::shared_ptr<const AuthorizedDefinition> AuthorityInspection::test_without_gr
     return clone;
 }
 #endif
+
+bool container_capable(const nlohmann::json& declaration) {
+    return declaration.value("kind", "local") != "local" || declaration.contains("containers") ||
+        declaration.at("launch").contains("execution");
+}
+
+nlohmann::json container_execution_owner(const nlohmann::json& declaration) {
+    const auto& launch = declaration.at("launch");
+    nlohmann::json artifacts = nlohmann::json::object();
+    const auto artifact_records = declaration.value("artifacts", nlohmann::json::object());
+    for (const auto& [name, artifact] : artifact_records.items()) {
+        artifacts[name] = artifact;
+        artifacts[name].erase("hook");
+        if (!artifacts[name].contains("required_when")) artifacts[name]["required_when"] = true;
+    }
+    auto install = declaration.at("install");
+    if (!install.contains("cases")) install["cases"] = nlohmann::json::array();
+    auto environment = launch.at("environment");
+    if (!environment.contains("set")) environment["set"] = nlohmann::json::array();
+    if (!environment.contains("order")) environment["order"] = "preset_first";
+    return {{"kind", declaration.at("kind")}, {"recipe", declaration.at("recipe")},
+        {"containers", declaration.value("containers", nlohmann::json::object())},
+        {"install", install}, {"artifacts", artifacts},
+        {"backend", launch.at("backend")}, {"execution", launch.at("execution")},
+        {"mounts", launch.at("mounts")}, {"address", launch.at("address")},
+        {"environment", environment}, {"working_directory", launch.at("working_directory")},
+        {"protected_environment", {"HOME", "LD_PRELOAD", "LD_LIBRARY_PATH", "PATH", "HIP_VISIBLE_DEVICES", "ROCR_VISIBLE_DEVICES", "CUDA_VISIBLE_DEVICES"}},
+        {"confinement", "lemonade-isolated-v1"}};
+}
+
+bool AuthorityInspection::permits_execution(const AuthorizedDefinition& token, const nlohmann::json& declaration) {
+    const auto& authority = *token.authority().impl_;
+    const auto& owner = authority.execution_owner;
+    if (!container_capable(declaration)) return !owner;
+    return authority.builtin && owner && token.definition().key.space == DefinitionNamespace::Builtin &&
+        v2::key_string(owner->leaf) == v2::key_string(token.definition().key) &&
+        owner->semantics == container_execution_owner(declaration) &&
+        owner->digest == v2::identity("lemonade.backend-container-owner.v1\n", owner->semantics);
+}
 
 std::size_t AuthorityInspection::policy_count(const AuthorizedDefinition& token) noexcept {
     const auto* contract = token.authority().impl_->contract;
@@ -673,6 +714,15 @@ DefinitionAuthorizationResult DefinitionAuthorizer::authorize_impl(const Definit
             authority->authorization_revision = 3;
             authority->base = resolved.definition;
             authority->contract = &*found;
+            for (const auto& owner : frozen.builtin_policies->execution_owners) if (owner.key.id == leaf.id && owner.key.contract == leaf.contract) {
+                require(!authority->execution_owner && container_capable(declaration) &&
+                    owner.semantics == container_execution_owner(declaration) &&
+                    owner.digest == identity("lemonade.backend-container-owner.v1\n", owner.semantics),
+                    "sealed_execution_owner_mismatch", {leaf, "/launch/execution"});
+                const auto metrics = measure(owner.semantics, budget);
+                budget.keep(checked_sum(metrics.bytes, checked_product(metrics.nodes, sizeof(Json))));
+                authority->execution_owner = SealedExecutionOwner{leaf, owner.semantics, owner.digest};
+            }
             for (const auto& policy : found->slots) {
                 slot_key(policy.slot, budget);
                 budget.keep(checked_sum(sizeof(ResolvedAuthority::Impl::GrantIdentity), checked_sum(leaf.id.size(), 512)));
@@ -687,6 +737,7 @@ DefinitionAuthorizationResult DefinitionAuthorizer::authorize_impl(const Definit
             require(layer.definition != nullptr, "invalid_authority_graph", {key, ""});
             budget.keep(sizeof(ResolvedAuthority::Impl));
             const auto& definition = *layer.definition;
+            require(!container_capable(definition.declaration), "container_execution_unavailable", {key, "/launch/execution"});
             const auto& record = frozen.sources->sources.at(key_string(key));
             if (key.space == DefinitionNamespace::Builtin) {
                 if (index + 1 < chain.size() && chain[index + 1].space == DefinitionNamespace::Builtin) {

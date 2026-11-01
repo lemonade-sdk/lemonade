@@ -134,8 +134,7 @@ public:
             execution::require(CatalogAdmissionBuilder::contains_token(*admitted, compiled->authorized()), "token_not_admitted", "");
             const auto& token = compiled->authorized();
             const auto& program = execution::Inspection::program(*compiled);
-            execution::require(!program.normalized.contains("containers") && !program.normalized["launch"].contains("execution") &&
-                program.normalized["kind"] == "local", "container_execution_unavailable", "/launch/execution");
+            execution::require(AuthorityInspection::permits_execution(token, program.normalized), "container_execution_unavailable", "/launch/execution");
             budget.work(compiled->metrics().expression_nodes);
             binding::precharge(program, token, budget);
             execution::require(program.hooks.size() == AuthorityInspection::grant_count(token), "sealed_slot_mismatch", "");
@@ -172,6 +171,15 @@ public:
         return result;
     }
 };
+
+#ifdef LEMONADE_BINDING_TEST
+std::shared_ptr<const ExecutableDefinition> binding::Inspection::test_compiled(const ExecutableDefinition& executable,
+    std::shared_ptr<const CompiledDefinition> compiled) {
+    auto impl = std::make_shared<const ExecutableDefinition::Impl>(executable.impl_->admitted, std::move(compiled),
+        std::vector<binding::BoundHook>(executable.impl_->hooks), executable.impl_->execution_id, executable.impl_->metrics);
+    return std::shared_ptr<const ExecutableDefinition>(new ExecutableDefinition(std::move(impl)));
+}
+#endif
 
 ExecutableDefinition::ExecutableDefinition(std::shared_ptr<const Impl> impl) : impl_(std::move(impl)) {}
 const CompiledDefinition& ExecutableDefinition::compiled() const noexcept { return *impl_->compiled; }

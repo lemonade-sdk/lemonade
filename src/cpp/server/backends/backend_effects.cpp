@@ -3,6 +3,7 @@
 #include "lemon/backends/backend_utils.h"
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
+#include "lemon/utils/container_manager.h"
 #include "lemon/utils/process_manager.h"
 
 #include <cstdlib>
@@ -12,6 +13,14 @@ namespace lemon::backends {
 
 BackendEffects production_backend_effects(BackendManager* manager, std::function<int()> allocate_port) {
     BackendEffects effects;
+    effects.container_image = [manager](const ContainerPolicy& policy) {
+        if (!manager) throw std::logic_error("Container pin manager is unavailable");
+        return utils::container_image(policy.repository, manager->container_pin(policy));
+    };
+    effects.install_container_image = [manager](const std::string& image) {
+        if (!manager) throw std::logic_error("OCI installation manager is unavailable");
+        manager->install_container_image(image);
+    };
     effects.exists = [](const std::string& path) { return std::filesystem::exists(path); };
     effects.binary = {
         BackendUtils::find_external_backend_binary,

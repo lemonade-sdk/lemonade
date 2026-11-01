@@ -37,8 +37,7 @@ void remove_pointer(json& body, const std::string& path) {
 
 DefinitionRunner::DefinitionRunner(std::shared_ptr<const ExecutableDefinition> executable)
     : executable_(std::move(executable)), program_(retained_program(executable_)) {
-    if (program_.normalized.value("kind", "local") != "local" || program_.normalized.contains("containers") ||
-        program_.normalized.at("launch").contains("execution"))
+    if (!AuthorityInspection::permits_execution(executable_->compiled().authorized(), program_.normalized))
         throw std::runtime_error("Container execution is unavailable in C2");
     if (program_.launch.environment_preset != "inherit" && program_.launch.environment_preset != "hook")
         throw std::invalid_argument("Configured v2 launch service is unavailable");
@@ -50,7 +49,7 @@ const json& DefinitionRunner::declaration() const { return program_.normalized; 
 std::vector<OperationBinding> DefinitionRunner::operation_bindings() const {
     std::vector<OperationBinding> result;
     const auto& readiness = program_.launch.records.at("readiness");
-    if (!endpoint(readiness.at("path")) || (readiness["timeout"] != "global" &&
+    if (!endpoint(readiness.at("path")) || (readiness["timeout"] != "global" && !readiness["timeout"].is_object() &&
         readiness["timeout"].get<std::uint64_t>() > static_cast<std::uint64_t>(std::numeric_limits<long>::max())))
         throw std::invalid_argument("Unsupported readiness adapter");
     for (const auto& op : program_.operations) {
@@ -213,6 +212,8 @@ InstallParams DefinitionRunner::install_params(const InstallContext& context, ru
         !valid_spec_aliases(*executable_, context.spec) || context.definition || context.spec.definition || context.public_recipe != declaration()["recipe"] ||
         context.pin_recipe != context.public_recipe || context.spec.effective_public_recipe() != context.public_recipe || context.spec.effective_pin_recipe() != context.pin_recipe)
         throw std::logic_error("Install definition/spec ownership mismatch");
+    if (!program_.launch.execution_cases.empty() && selected_execution_case(program_, context.backend).kind == "container")
+        throw std::logic_error("OCI installation is owned by the container leaf");
     if (program_.install.strategy != "github_release") throw std::logic_error("Backend has no managed release installation");
     const auto& policy = program_.install.records;
     std::string backend = context.backend;
@@ -452,6 +453,9 @@ PreparedExecution DefinitionRunner::prepare_load(const LoadContext& context, con
     std::string backend;
     bool use_gpu = false;
     bool external_program = false;
+    const execution::ExecutionCase* execution_case = nullptr;
+    std::string program_source = launch.program_source;
+    std::string install_policy = launch.install_policy;
     for (const auto& phase : launch.prepare_order) {
         runtime::check_cancelled(cancel);
         if (phase == "backend") {
@@ -481,6 +485,19 @@ PreparedExecution DefinitionRunner::prepare_load(const LoadContext& context, con
                 frame.facts.insert(typed::Fact::SelectedBackend);
             }
             values["launch"]["backend"] = backend;
+            if (!launch.execution_cases.empty()) {
+                execution_case = &selected_execution_case(program_, backend);
+                program_source = execution_case->program.at("source");
+                install_policy = execution_case->program.value("install_policy", "");
+                if (execution_case->kind == "container") {
+                    if (host.os != "linux") throw std::runtime_error("Container backends run on Linux");
+                    plan.container = container_run_spec(program_, *execution_case, context.model_name);
+                    const auto& policy = container_policy(program_, *execution_case);
+                    plan.container->image = services.container_image(policy);
+                    if (!valid_container_image(policy.repository, plan.container->image))
+                        throw std::invalid_argument("Container launch requires the authorized digest-only image");
+                }
+            }
             if (records.value("device_assignment", "select_backend") == "select_backend" && context.device_selected)
                 context.device_selected(use_gpu ? DEVICE_GPU : DEVICE_CPU);
             if (context.backend_selected) context.backend_selected();
@@ -512,17 +529,25 @@ PreparedExecution DefinitionRunner::prepare_load(const LoadContext& context, con
                 if (!error.empty()) throw std::invalid_argument(records["custom_args"]["error_prefix"].get<std::string>() + error);
             }
         } else if (phase == "install") {
+            if (plan.container) continue;
             if (program_.install.strategy == "external_only") throw std::logic_error("External-only backend cannot be downloaded");
-            if (launch.install_policy == "always" || services.external_binary(spec, backend).empty()) services.install_backend(spec.effective_public_recipe(), backend);
+            if (install_policy == "always" || services.external_binary(spec, backend).empty()) services.install_backend(spec.effective_public_recipe(), backend);
         } else if (phase == "program") {
-            if (launch.program_source == "external_or_managed" || program_.install.strategy == "external_only")
+            if (plan.container) {
+                if (program_.normalized.at("install").at("strategy") != "oci" && program_.normalized.at("install").at("strategy") != "by_execution")
+                    throw std::logic_error("Container execution requires OCI installation");
+                plan.command.program = program_source == "image_command" ? execution_case->program.at("name").get<std::string>() : "";
+                frame.facts.insert(typed::Fact::ResolvedProgram);
+                continue;
+            }
+            if (program_source == "external_or_managed" || program_.install.strategy == "external_only")
                 plan.command.program = services.external_binary(spec, backend);
             external_program = !plan.command.program.empty();
             if (plan.command.program.empty()) {
                 if (program_.install.strategy == "external_only") throw std::runtime_error("External backend executable is required");
                 plan.command.program = services.managed_binary(spec, backend);
             }
-            if (plan.command.program.empty() || (launch.program_source != "managed" && !services.exists(plan.command.program)))
+            if (plan.command.program.empty() || (program_source != "managed" && !services.exists(plan.command.program)))
                 throw std::runtime_error("Configured backend executable is missing");
             values["launch"]["executable"] = plan.command.program;
             values["launch"]["executable_directory"] = utils::path_to_utf8(utils::path_from_utf8(plan.command.program).parent_path());
@@ -549,6 +574,7 @@ PreparedExecution DefinitionRunner::prepare_load(const LoadContext& context, con
         }
         if (context.phase_prepared) context.phase_prepared(phase, values);
     }
+    if (plan.container) materialize_container_mounts(program_, frame, plan, [&](const auto& expression) { return evaluate(expression, frame); });
     for (const auto index : slots(SlotOwnerKind::Root, "backend", "backend")) {
         invoke<typed::BackendSelectionOps>(frame, index, SlotOwnerKind::Root, "backend", "backend", cancel,
             [&](const auto& target, auto& guard) {
@@ -610,7 +636,16 @@ PreparedExecution DefinitionRunner::prepare_load(const LoadContext& context, con
     const auto& readiness = records["readiness"];
     plan.command.port = values["launch"]["ports"].at(readiness["port"].get<std::string>());
     plan.command.ready_endpoint = readiness["path"];
-    plan.readiness_timeout_seconds = readiness["timeout"] == "global" ? services.default_timeout_seconds() : readiness["timeout"].get<long>();
+    plan.readiness_timeout_seconds = readiness["timeout"] == "global" ? services.default_timeout_seconds() :
+        readiness["timeout"].is_object() ? std::max(services.default_timeout_seconds(), readiness["timeout"].at("floor_seconds").get<long>()) : readiness["timeout"].get<long>();
+    if (plan.container) {
+        for (const auto& [name, value] : plan.command.env) {
+            if (name == "HOME" || name == "PATH" || name == "LD_PRELOAD" || name == "LD_LIBRARY_PATH" ||
+                name == "HIP_VISIBLE_DEVICES" || name == "ROCR_VISIBLE_DEVICES" || name == "CUDA_VISIBLE_DEVICES")
+                throw std::invalid_argument("Protected container environment");
+        }
+        services.install_container_image(plan.container->image);
+    }
     plan.watchdog_enabled = records["watchdog"]["policy"] == "standard";
     if (launch.working_directory.at(host.os) == "executable_directory") plan.working_directory = utils::path_to_utf8(utils::path_from_utf8(plan.command.program).parent_path());
     const auto& levels = records["output"]["inherit_levels"];

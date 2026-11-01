@@ -4,8 +4,10 @@
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backends/configured/backend_catalog.h"
 #include "lemon/backends/configured/backend_spec_utils.h"
+#include "lemon/backends/configured/container_execution.h"
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
+#include "lemon/utils/container_manager.h"
 #include "lemon/utils/github_api.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/json_utils.h"
@@ -16,11 +18,11 @@
 #include <fstream>
 #include <functional>
 #include <iostream>
+#include <lemon/utils/aixlog.hpp>
 #include <map>
 #include <optional>
 #include <thread>
 #include <vector>
-#include <lemon/utils/aixlog.hpp>
 
 namespace fs = std::filesystem;
 
@@ -345,7 +347,8 @@ void install_therock_if_needed(const std::string& os, const json& backend_versio
 
 } // namespace
 
-BackendManager::BackendManager() {
+BackendManager::BackendManager(std::shared_ptr<utils::ContainerManager> containers)
+    : containers_(containers ? std::move(containers) : std::make_shared<utils::ContainerManager>()) {
     try {
         std::string config_path = utils::get_resource_path("resources/backend_versions.json");
         backend_versions_ = utils::JsonUtils::load_from_file(config_path);
@@ -353,6 +356,23 @@ BackendManager::BackendManager() {
         LOG(WARNING, "BackendManager") << "Could not load backend_versions.json: " << e.what() << std::endl;
         backend_versions_ = json::object();
     }
+}
+
+std::string BackendManager::container_pin(const ContainerPolicy& policy) const {
+    return backends::effective_container_pin(policy, backend_versions_,
+        backends::BackendUtils::get_bin_config_value(policy.pin.recipe, policy.pin.backend));
+}
+
+bool BackendManager::has_container_image(const std::string& image) const { return containers_->has_image(image); }
+
+void BackendManager::install_container_image(const std::string& image, bool force, DownloadProgressCallback progress) {
+    if (!force && containers_->has_image(image)) return;
+    if (auto* config = RuntimeConfig::global()) {
+        if (config->offline() || config->no_fetch_executables()) throw std::runtime_error("OCI image fetch is disabled");
+    }
+    const auto failures = containers_->check_host();
+    if (!failures.empty()) throw std::runtime_error(utils::SetupReport{failures}.text());
+    containers_->pull(image, progress);
 }
 
 // Global accessor — mirrors RuntimeConfig::global(). Set once from Server's
@@ -589,6 +609,10 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
         throw std::runtime_error("[BackendManager] Unknown recipe: " + recipe);
     }
 
+    if (const auto policy = backends::configured_container_policy(*spec, resolved_backend)) {
+        install_container_image(utils::container_image(policy->repository, container_pin(*policy)), force, std::move(progress_cb));
+        return;
+    }
     if (backends::configured_external_only(*spec)) throw std::runtime_error("External-only backend cannot be downloaded");
 
     const std::string existing_backend_binary =
@@ -852,6 +876,10 @@ void BackendManager::uninstall_backend(const std::string& recipe, const std::str
         throw std::runtime_error("[BackendManager] Unknown recipe: " + recipe);
     }
 
+    if (const auto policy = backends::configured_container_policy(*spec, resolved_backend)) {
+        containers_->remove_image(utils::container_image(policy->repository, container_pin(*policy)));
+        return;
+    }
     std::string install_dir = backends::BackendUtils::get_install_directory(spec->recipe, resolved_backend);
 
     if (fs::exists(install_dir)) {
@@ -878,7 +906,11 @@ void BackendManager::uninstall_backend(const std::string& recipe, const std::str
 
 std::string BackendManager::get_latest_version(const std::string& recipe, const std::string& backend) {
     try {
-        return get_version_from_config(recipe, normalize_backend_name(recipe, backend));
+        const auto selected = normalize_backend_name(recipe, backend);
+        if (const auto* spec = backends::try_get_spec_for_recipe(recipe)) {
+            if (const auto policy = backends::configured_container_policy(*spec, selected)) return container_pin(*policy);
+        }
+        return get_version_from_config(recipe, selected);
     } catch (...) {
         return "";
     }

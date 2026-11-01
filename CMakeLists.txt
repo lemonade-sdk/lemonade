@@ -1199,6 +1199,7 @@ set(LEMON_BACKEND_FACTORY_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/configured/backend_artifact_services.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/configured/configured_v2_backend_ops.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/configured/configured_server.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/configured/container_execution.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/configured/launch_planner.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/configured/configured_backend_ops.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/configured/configured_backend_entry.cpp
@@ -4248,8 +4249,8 @@ if(BUILD_TESTING)
     add_cpp_ci_test(LlamaCppV2ProductionSwitchTest CI ON
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/container_definition_transition.py run
             --build "${CMAKE_CURRENT_BINARY_DIR}"
-            --out "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/artifacts/container-v2/c2/transition"
-            --scratch "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/container-v2/c2/transition"
+            --out "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/artifacts/container-v2/c3/transition"
+            --scratch "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/container-v2/c3/transition"
         DEPENDS test_llamacpp_v2_production_switch llamacpp-frozen-control-build)
 endif()
 
@@ -4307,4 +4308,22 @@ if(BUILD_TESTING)
     add_cpp_ci_test(ContainerDefinitionV2Test CI ON COMMAND test_container_definition_v2
         DEPENDS test_container_definition_v2)
     set_tests_properties(ContainerDefinitionV2Test PROPERTIES TIMEOUT 60)
+endif()
+
+if(BUILD_TESTING)
+    add_executable(test_container_execution
+        test/cpp/test_container_execution.cpp
+        src/cpp/server/backends/configured/backend_definition_authorization.cpp
+        src/cpp/server/backends/configured/backend_definition_exports.cpp)
+    target_compile_definitions(test_container_execution PRIVATE
+        LEMON_BACKEND_EXPORT_TESTING LEMONADE_BINDING_TEST LEMONADE_TYPED_HOOK_TEST
+        LEMON_TEST_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures"
+        LEMON_CONTAINER_EXECUTION_SCRATCH="${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/container-v2/c3/execution")
+    target_include_directories(test_container_execution PRIVATE
+        src/cpp/server/backends src/cpp/server/backends/configured)
+    target_link_libraries(test_container_execution PRIVATE
+        lemonade-binding-test lemonade-typed-hook-test lemonade-server-core)
+    add_cpp_ci_test(ContainerExecutionTest CI ON COMMAND test_container_execution
+        DEPENDS test_container_execution)
+    set_tests_properties(ContainerExecutionTest PROPERTIES TIMEOUT 60)
 endif()

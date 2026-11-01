@@ -42,6 +42,34 @@ void compiled_and_blocked(const Json& value, const std::string& name) {
     check(ir.launch.program_source == "execution_cases" && !ir.launch.execution_cases.empty() &&
         ir.launch.execution_cases.front().program.at("source") == value["merge"]["launch"]["execution"]["cases"][0]["program"]["source"], name + "DiscriminatedProgram");
     check(ir.launch.mounts.size() == 1 && ir.launch.mounts[0].artifact == "main" && ir.launch.mounts[0].destination == "/mnt/models", name + "CompiledMountInventory");
+    if (value["merge"]["install"]["strategy"] == "by_execution") {
+        const auto& expected = value["merge"]["install"]["native"];
+        check(ir.install.strategy == expected["strategy"] && ir.install.records == expected &&
+            ir.install.cases.size() == expected.value("cases", Json::array()).size(), name + "NativeInstallProgramRetained");
+        if (!ir.install.cases.empty()) check(ir.install.cases[0].filename == "/install/native/cases/0/filename", name + "NativeInstallExpressionsRetained");
+    }
+    const auto native = fixture(true);
+    const auto native_bound = bind(native);
+    const auto untrusted = ex::Inspection::test_program(*native.compiled, ir);
+    const auto forged_bound = bd::Inspection::test_compiled(*native_bound.definition, untrusted);
+    bool runner_rejected = false;
+    try { DefinitionRunner runner(forged_bound); } catch (const std::exception& error) { runner_rejected = std::string(error.what()) == "Container execution is unavailable in C2"; }
+    check(runner_rejected, name + "UnauthorizedRunnerRejectsBeforeServices");
+    auto external_native = document(true);
+    external_native["merge"]["artifacts"]["main"]["strategy"] = "resolved_path";
+    external_native["merge"]["artifacts"]["main"].erase("hook");
+    const auto external_admission = admit({external_native}, empty_builtins());
+    check(external_admission.catalog != nullptr, name + "HookFreeExternalControlAdmitted");
+    if (!external_admission.catalog) { diagnostics(external_admission.diagnostics); return; }
+    const auto external_compiled = compile_execution_definition(external_admission.catalog->v2_definition(external_native.at("id")));
+    const auto external_bound = bind_execution_definition(external_admission.catalog, external_compiled.definition);
+    const auto external_ir = ex::Inspection::test_program(*external_compiled.definition, ir);
+    const auto external_binding = bind_execution_definition(external_admission.catalog, external_ir);
+    check(!external_binding.definition && has_code(external_binding.diagnostics, "container_execution_unavailable"), name + "HookFreeExternalBinderRejectsContainerIR");
+    const auto external_forged = bd::Inspection::test_compiled(*external_bound.definition, external_ir);
+    bool external_runner_rejected = false;
+    try { DefinitionRunner runner(external_forged); } catch (const std::exception& error) { external_runner_rejected = std::string(error.what()) == "Container execution is unavailable in C2"; }
+    check(external_runner_rejected, name + "HookFreeExternalRunnerRejectsContainerIR");
     const auto bound = bind_execution_definition(admission.catalog, compiled.definition);
     check(!bound.definition && has_code(bound.diagnostics, "container_execution_unavailable"), name + "CannotReachNativeProcess");
     const auto catalog = build_backend_catalog(parents, {});

@@ -1,8 +1,10 @@
 # Container runtime
 
-The container runtime is an inert Linux runtime library. No backend definition,
-resolver, catalog entry, installation path or production process factory selects
-it. `ConfiguredServer` continues to default to `NativeProcess`.
+The shared container runtime can execute reviewed builtin v2 container leaves
+through `ConfiguredServer`. Execution requires a sealed loader-owned grant;
+there is no production container grant or embedded production container JSON in
+C3. Native plans continue to select `NativeProcess`. CPU tests inject a fake
+container host and fake attached client and never execute Podman or Docker.
 
 `utils::ContainerManager` selects Podman before Docker, checks the host, emits
 container argv, manages pinned images and labelled internal networks, materializes
@@ -57,13 +59,12 @@ network, and stop/reap the attached client. Cleanup attempts continue after an
 individual host exception and failures are logged. Normal cleanup does not
 establish crash cleanup after lemond or the runtime client is killed.
 
-[C2](container-definitions-v2.md) adds the closed v2 container records as data.
-Execution binding rejects container-capable declarations before a process exists.
-Subsequent units must attach versioned sources, descriptor projection,
-pin/installation ownership, admitted execution authority and compiled
-execution/mount plans before connecting a production factory. Existing v1 definitions and local execution semantics remain
-unchanged. A fake process test demonstrates the current `make_process` seam;
-it grants no production container authority.
+[V2 container execution](container-definitions-v2.md) attaches effective pinned
+versions, leaf-owned OCI installation, sealed authority and explicit execution and
+mount plans. Process address discovery stays here; readiness, watchdog and
+forwarding consume the validated returned host. External containers and container
+inheritance remain unavailable. The fake end-to-end test demonstrates the full
+admitted definition path without granting production container authority.
 
 CPU checks use `test_container_manager`; `test/container_runtime_mutations.py`
 compiles each rule mutation in a separate persistent scratch directory and

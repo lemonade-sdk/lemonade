@@ -61,8 +61,8 @@ void compile_programs(Program& program, Budget& budget) {
     budget.copy(doc["install"]);
     budget.copy(doc["install"]);
     program.launch.records = launch;
-    program.install.records = doc["install"];
-    program.install.strategy = doc["install"]["strategy"];
+    program.install.records = doc["install"]["strategy"] == "by_execution" ? doc["install"]["native"] : doc["install"];
+    program.install.strategy = program.install.records.at("strategy");
     program.launch.prepare_order = launch["prepare_order"].get<std::vector<std::string>>();
     program.launch.program_source = launch.contains("execution") ? "execution_cases" : launch["program"]["source"].get<std::string>();
     program.launch.install_policy = launch.contains("execution") ? "" : launch["program"]["install_policy"].get<std::string>();
@@ -160,11 +160,12 @@ void compile_programs(Program& program, Budget& budget) {
         require(!artifact.contains("files_error") || artifact.contains("files_from"), "invalid_artifact", p);
     }
     require(doc["install"]["strategy"] != "hook", "unsupported_execution_feature", "/install/strategy");
-    const auto& cases = doc["install"]["cases"];
+    static const Json no_cases = Json::array();
+    const auto& cases = program.install.records.contains("cases") ? program.install.records.at("cases") : no_cases;
     for (std::size_t i = 0; i < cases.size(); ++i) {
         budget.copy(cases[i]);
         budget.keep(sizeof(InstallCase) + 256);
-        const auto path = "/install/cases/" + std::to_string(i);
+        const auto path = std::string(doc["install"]["strategy"] == "by_execution" ? "/install/native/cases/" : "/install/cases/") + std::to_string(i);
         InstallCase compiled;
         compiled.id = cases[i]["id"];
         compiled.repo = cases[i]["repo"];

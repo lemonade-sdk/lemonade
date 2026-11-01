@@ -1,6 +1,7 @@
 #pragma once
 
 #include "lemon/backends/backend_load_helpers.h"
+#include "lemon/backends/container_policy.h"
 #include "lemon/server_process.h"
 
 #include <functional>
@@ -14,6 +15,8 @@ namespace lemon::backends {
 
 struct BackendEffects {
     BackendBinaryServices binary;
+    std::function<std::string(const ContainerPolicy&)> container_image;
+    std::function<void(const std::string&)> install_container_image;
     std::function<bool(const std::string&)> exists;
     std::function<std::vector<std::string>(const std::string&)> supported_backends;
     std::function<void(const std::string&, const std::string&)> validate_backend;

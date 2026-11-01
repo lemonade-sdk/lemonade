@@ -35,7 +35,7 @@ inline Json document(bool hrx = false) {
     }
     return value;
 }
-inline std::shared_ptr<const FrozenBuiltinCatalog> builtins(bool hrx = false, const Json* replacement = nullptr, bool exported = false) {
+inline std::shared_ptr<const FrozenBuiltinCatalog> builtins(bool hrx = false, const Json* replacement = nullptr, bool exported = false, const BuiltinContainerExecutionOwner* execution_owner = nullptr) {
     const auto doc = replacement ? *replacement : document(hrx);
     const auto name = doc.at("id").get<std::string>();
     const DefinitionKey key{DefinitionNamespace::Builtin, name, 1};
@@ -70,6 +70,7 @@ inline std::shared_ptr<const FrozenBuiltinCatalog> builtins(bool hrx = false, co
     }
     repin(policy);
     BuiltinExecutionPolicies policies{{policy}, v2::export_registry_digest({policy}, installed_hook_abis())};
+    if (execution_owner) policies.execution_owners.push_back(*execution_owner);
     const auto frozen = exported ? BuiltinCatalogLoader::test_freeze(sources,
         BuiltinCatalogLoader::test_exports({policy}, snapshot.snapshot, installed_hook_abis(), policies.digest)) :
         BuiltinCatalogLoader::test_freeze_builtins(sources, policies);

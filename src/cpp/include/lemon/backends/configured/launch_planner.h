@@ -3,7 +3,9 @@
 #include "lemon/backends/backend_effects.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backends/configured/backend_definition.h"
+#include "lemon/backends/container_policy.h"
 #include "lemon/model_manager.h"
+#include "lemon/utils/container_manager.h"
 
 namespace lemon::backends {
 
@@ -28,10 +30,13 @@ struct LaunchPlan {
     std::string working_directory;
     long readiness_timeout_seconds;
     bool watchdog_enabled;
+    std::optional<utils::ContainerRunSpec> container;
 };
 class LaunchServices {
 public:
     virtual ~LaunchServices() = default;
+    virtual std::string container_image(const ContainerPolicy&) const { throw std::logic_error("Container pin service is unavailable"); }
+    virtual void install_container_image(const std::string&) { throw std::logic_error("OCI installation service is unavailable"); }
     virtual bool exists(const std::string& path) const = 0;
     virtual std::vector<std::string> supported_backends(const std::string& recipe) const = 0;
     virtual void validate_backend(const std::string& recipe, const std::string& backend) const = 0;
@@ -51,6 +56,8 @@ class EffectLaunchServices : public LaunchServices {
 public:
     explicit EffectLaunchServices(BackendEffects effects, bool posix_executable_loader_path = false)
         : effects_(std::move(effects)), posix_executable_loader_path_(posix_executable_loader_path) {}
+    std::string container_image(const ContainerPolicy& policy) const override { return effects_.container_image(policy); }
+    void install_container_image(const std::string& image) override { effects_.install_container_image(image); }
     bool exists(const std::string& path) const override { return effects_.exists(path); }
     std::vector<std::string> supported_backends(const std::string& recipe) const override { return effects_.supported_backends(recipe); }
     void validate_backend(const std::string& recipe, const std::string& backend) const override { effects_.validate_backend(recipe, backend); }

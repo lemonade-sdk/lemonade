@@ -393,7 +393,7 @@ def main():
         SimpleNamespace(
             build=args.build,
             baseline=baseline,
-            expected_count=155,
+            expected_count=156,
             no_additions=False,
             out=args.out,
         )
@@ -401,7 +401,7 @@ def main():
     print(
         "C2 exact schema transition:",
         len(changes),
-        "snapshot records; whole-snapshot cmp and four zero-byte residual projections; 155 tests",
+        "snapshot records; whole-snapshot cmp and four zero-byte residual projections; 156 tests",
     )
 
 

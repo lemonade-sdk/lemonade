@@ -21,6 +21,13 @@ struct PreparedExecution {
     std::shared_ptr<const ExecutionSession> session;
 };
 
+const execution::ExecutionCase& selected_execution_case(const execution::Program& program, const std::string& backend);
+ContainerPolicy container_policy(const execution::Program& program, const execution::ExecutionCase& selected);
+utils::ContainerRunSpec container_run_spec(const execution::Program& program, const execution::ExecutionCase& selected, const std::string& model);
+bool valid_container_image(const std::string& repository, const std::string& image);
+void materialize_container_mounts(const execution::Program& program, runtime::Frame& frame, LaunchPlan& plan,
+    const std::function<std::optional<json>(const std::string&)>& evaluate);
+
 class DefinitionRunner final {
 public:
     explicit DefinitionRunner(std::shared_ptr<const ExecutableDefinition> executable);

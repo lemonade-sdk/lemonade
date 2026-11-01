@@ -1,11 +1,12 @@
-#include "lemon/backends/configured/backend_catalog.h"
+#include "lemon/backends/backend_registry.h"  // spec_for() — descriptor->install spec, no server includes
 #include "lemon/backends/backend_utils.h"
+#include "lemon/backends/configured/backend_catalog.h"
+#include "lemon/backends/configured/container_execution.h"
 #include "lemon/backends/install_staging.h"
 #include "lemon/error_types.h"
+#include "lemon/model_manager.h"  // For DownloadProgress, DownloadProgressCallback
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
-#include "lemon/backends/backend_registry.h"  // spec_for() — descriptor->install spec, no server includes
-#include "lemon/model_manager.h"  // For DownloadProgress, DownloadProgressCallback
 
 #include "lemon/utils/archive_platform.h"
 #include "lemon/utils/github_api.h"
@@ -394,6 +395,7 @@ namespace lemon::backends {
     }
 
     std::string BackendUtils::get_backend_binary_path(const BackendSpec& spec, const std::string& backend) {
+        if (configured_container_policy(spec, backend)) throw std::logic_error("OCI container has no host executable");
         if (backend == "system") {
             // Check if binary exists in PATH
             std::string path = LLAMA_EFFECT(utils::find_executable_in_path(spec.binary), llamacpp::oracle::effects().path_executable(spec.binary));
@@ -435,6 +437,7 @@ namespace lemon::backends {
     }
 
     std::string BackendUtils::get_installed_version_file(const BackendSpec& spec, const std::string& backend) {
+        if (configured_container_policy(spec, backend)) return "";
         if (backend == "system") {
             return "";
         }
