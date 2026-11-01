@@ -21,7 +21,7 @@ const RouteError kNotDecisionModel{
     "SystemOne questions; checked before it loads"};
 const RouteError kQuestionsRejected{
     400, "",
-    "`llama-server` rejects a question, such as a `score` question with one level; the backend's "
+    "The backend rejects a question, such as a `score` question with one level; the backend's "
     "status replaces this one"};
 const RouteError kContextExceeded{
     400, "context_length_exceeded", "`state` and a question do not fit in the model's context"};
@@ -32,7 +32,7 @@ const RouteArg kState{"state", ArgIn::JsonBody,
                       {{"type", json::array({"string", "object", "array", "null"})}},
                       true, Support::Available,
                       "The content to judge. A value that is not a string reaches the model as JSON text. "
-                      "`null` asks about the images only; `llama-server` refuses it for decision types "
+                      "`null` asks about the images only; the backend refuses it for decision types "
                       "that need text."};
 const RouteArg kQuestions{"questions", ArgIn::JsonBody, {{"type", "object"}}, true, Support::Available,
                           "Maps each question id to a question, which the model answers independently of the "
@@ -42,8 +42,9 @@ const RouteArg kQuestions{"questions", ArgIn::JsonBody, {{"type", "object"}}, tr
                           "`true` and `false` descriptions."};
 const RouteArg kImages{"images", ArgIn::JsonBody, {{"type", "array"}, {"items", {{"type", "string"}}}}, false,
                        Support::Partial,
-                       "Data URLs of images to judge with the state. The model must load with an `mmproj` "
-                       "file, and `llama-server` decides which decision types read images.",
+                       "Data URLs of images to judge with the state. A `llamacpp` model must load with an "
+                       "`mmproj` file, and `llama-server` decides which decision types read images. FLM's "
+                       "d3 models read images without one.",
                        {}, true};
 
 class SystemOneRoute : public ModelRoute {
@@ -59,11 +60,12 @@ public:
         s.modality = "state + questions -> one answer per question";
         s.experimental = true;
         s.description =
-            "Asks a llama.cpp decision model typed questions about one piece of content and returns "
-            "one answer per question, without generating tokens. lemond forwards the request to "
-            "`llama-server` unchanged, including the order of each question's options, and "
-            "`llama-server` builds the prompt from the template in the GGUF. Only `llamacpp` models "
-            "labelled `classification` and `systemone`, such as `Laya-GGUF`, serve this endpoint.";
+            "Asks a decision model typed questions about one piece of content and returns one answer "
+            "per question, without generating tokens. lemond forwards the request to the backend "
+            "unchanged, including the order of each question's options: `llama-server` builds the "
+            "prompt from the template in the GGUF, and FastFlowLM serves its d3 models on the NPU "
+            "with `flm serve --decision`. Only `llamacpp` and `flm` models labelled `classification` "
+            "and `systemone`, such as `Laya-GGUF` or `d3-lite-FLM`, serve this endpoint.";
         s.notes = {
             "### Answer Quality\n\n"
             "Answers depend on the model, on the wording of each question, and on the order of a "
@@ -176,7 +178,7 @@ protected:
                 write_openai_error(res, kNotDecisionModel,
                     "model '" + req.model + "' is not a SystemOne decision model (it needs "
                     "the 'classification' and 'systemone' labels on a backend that answers "
-                    "/v1/systemone, such as llamacpp)");
+                    "/v1/systemone, such as llamacpp or flm)");
                 return false;
             }
         }

@@ -31,7 +31,7 @@ inline const BackendDescriptor descriptor = {
     /*support*/ {
         {"npu", BackendTier::Core, BackendFormat::Native, {"windows", "linux"}, {{"amd_npu", {"XDNA2"}}}, "XDNA2 NPU"},
     },
-    /*supported_modes*/ {"chat", "embeddings", "transcription"},
+    /*supported_modes*/ {"chat", "embeddings", "transcription", "classification"},
     /*required_checkpoints*/ {"main"},
     /*default_capabilities*/ {},
     /*web_display_name*/ "FastFlowLM NPU",
@@ -44,6 +44,9 @@ inline const BackendDescriptor descriptor = {
     /*arg_variants*/    {},
     /*bin_variants*/    {},
     /*config_extra*/    {{"prefer_system", false}},
+    /*streams_model_from_storage*/ false,
+    // see ISystemOneServer
+    /*mode_capability_requirements*/ {{"classification", "systemone"}},
 };
 
 }  // namespace fastflowlm

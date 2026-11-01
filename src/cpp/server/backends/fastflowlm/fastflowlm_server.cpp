@@ -5,6 +5,7 @@
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/backends/systemone_classify.h"
 #include "lemon/audio_types.h"
 #include "lemon/model_manager.h"
 #include "lemon/system_info.h"
@@ -17,6 +18,7 @@
 #include <filesystem>
 #include <cstdlib>
 #include <optional>
+#include <stdexcept>
 #include <thread>
 #include <chrono>
 #include <fstream>
@@ -197,6 +199,13 @@ void FastFlowLMServer::load(const std::string& model_name,
             "--port", std::to_string(port_),
             "--host", "127.0.0.1"
         };
+    } else if (model_type_ == ModelType::CLASSIFICATION) {
+        args = {
+            "serve",
+            "--decision", model_info.checkpoint(),
+            "--port", std::to_string(port_),
+            "--host", "127.0.0.1"
+        };
     } else {
         args = {
             "serve",
@@ -222,7 +231,8 @@ void FastFlowLMServer::load(const std::string& model_name,
     command.args = std::move(args);
     command.port = port_;
     // FLM has no /health route.
-    command.ready_endpoint = "/api/tags";
+    command.ready_endpoint = model_type_ == ModelType::CLASSIFICATION ? "/v1/systemone/models"
+                                                                      : "/api/tags";
     try {
         // 5 minutes: large models can take time to load
         start_server(std::make_unique<NativeProcess>(ProcessOutput{is_debug(), true}), command, 300);
@@ -237,7 +247,7 @@ void FastFlowLMServer::load(const std::string& model_name,
 }
 
 json FastFlowLMServer::chat_completion(const json& request) {
-    if (model_type_ == ModelType::TRANSCRIPTION || model_type_ == ModelType::EMBEDDING) {
+    if (!serves_text()) {
         return ErrorResponse::from_exception(
             UnsupportedOperationException("Chat completion", "FLM " + model_type_to_string(model_type_) + " model")
         );
@@ -252,7 +262,7 @@ json FastFlowLMServer::chat_completion(const json& request) {
 }
 
 json FastFlowLMServer::completion(const json& request) {
-    if (model_type_ == ModelType::TRANSCRIPTION || model_type_ == ModelType::EMBEDDING) {
+    if (!serves_text()) {
         return ErrorResponse::from_exception(
             UnsupportedOperationException("Text completion", "FLM " + model_type_to_string(model_type_) + " model")
         );
@@ -267,7 +277,7 @@ json FastFlowLMServer::completion(const json& request) {
 }
 
 json FastFlowLMServer::embeddings(const json& request) {
-    if (model_type_ == ModelType::TRANSCRIPTION) {
+    if (model_type_ == ModelType::TRANSCRIPTION || model_type_ == ModelType::CLASSIFICATION) {
         return ErrorResponse::from_exception(
             UnsupportedOperationException("Embeddings", "FLM " + model_type_to_string(model_type_) + " model")
         );
@@ -350,6 +360,65 @@ json FastFlowLMServer::audio_transcriptions(const json& request) {
     }
 }
 
+json FastFlowLMServer::classify(const json& request) {
+    if (model_type_ != ModelType::CLASSIFICATION) {
+        return unsupported_decision_request("Classification");
+    }
+    const json text = request.contains("text") ? request["text"] : request.value("input", json());
+    if (!text.is_string()) {
+        return systemone::invalid_classify_request(
+            "Missing 'input' (or 'text') string in classify request");
+    }
+    if (!request.contains("labels") || request["labels"].is_null()) {
+        return systemone::invalid_classify_request(
+            "this model scores a label list supplied per request; include a \"labels\" "
+            "array in the request body");
+    }
+
+    nlohmann::ordered_json body;
+    try {
+        body = systemone::build_classify_request(text.get<std::string>(), request["labels"]);
+    } catch (const std::invalid_argument& e) {
+        return systemone::invalid_classify_request(e.what());
+    }
+
+    const json response = forward_ordered_request("/v1/systemone", body);
+    if (response.contains("error")) {
+        return response;
+    }
+    const int top_k = request.contains("top_k") && request["top_k"].is_number_integer()
+                          ? request["top_k"].get<int>()
+                          : 0;
+    try {
+        // FLM does not say whether it cut the text, so `truncated` stays unknown.
+        return systemone::classify_response(response, request["labels"], top_k, std::nullopt);
+    } catch (const std::exception& e) {
+        return ErrorResponse::create(e.what(), ErrorType::BACKEND_ERROR);
+    }
+}
+
+nlohmann::ordered_json FastFlowLMServer::systemone(const nlohmann::ordered_json& request) {
+    if (model_type_ != ModelType::CLASSIFICATION) {
+        return unsupported_decision_request("SystemOne");
+    }
+    // FLM ignores the request's `model` and answers with its own model id.
+    nlohmann::ordered_json response = forward_ordered_request("/v1/systemone", request);
+    if (response.is_object() && response.contains("model")) {
+        response["model"] = request.value("model", get_model_name());
+    }
+    return response;
+}
+
+bool FastFlowLMServer::serves_text() const {
+    return model_type_ != ModelType::TRANSCRIPTION && model_type_ != ModelType::EMBEDDING &&
+           model_type_ != ModelType::CLASSIFICATION;
+}
+
+json FastFlowLMServer::unsupported_decision_request(const std::string& operation) const {
+    return ErrorResponse::from_exception(UnsupportedOperationException(
+        operation, "FLM model '" + get_model_name() + "', which is not a d3 decision model"));
+}
+
 json FastFlowLMServer::responses(const json& request) {
     return ErrorResponse::from_exception(
         UnsupportedOperationException("Responses API", "flm")
@@ -362,7 +431,7 @@ void FastFlowLMServer::forward_streaming_request(const std::string& endpoint,
                                                   bool sse,
                                                   long timeout_seconds,
                                                   TelemetryCallback telemetry_callback) {
-    if (model_type_ == ModelType::TRANSCRIPTION || model_type_ == ModelType::EMBEDDING) {
+    if (!serves_text()) {
         std::string error_msg = "data: {\"error\":{\"message\":\"Streaming not supported for FLM "
             + model_type_to_string(model_type_) + " model\",\"type\":\"unsupported_operation\"}}\n\n";
         sink.write(error_msg.c_str(), error_msg.size());

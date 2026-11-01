@@ -11,13 +11,6 @@ namespace lemon {
 namespace backends {
 namespace llamacpp {
 
-// /v1/classify with `labels` -> a /v1/systemone body that asks one `choice`
-// question whose options are those labels, in their order. Throws
-// std::invalid_argument unless `labels` is a non-empty array of distinct,
-// non-blank strings.
-nlohmann::ordered_json build_systemone_classify_request(const std::string& text,
-                                                        const nlohmann::json& labels);
-
 // What /v1/classify can say about a cut of `text` by a model of this decision
 // type: false when llama-server keeps it whole or refuses it, empty when it may
 // cut without saying so (lfm2-d1-omni, a long text on h2o-lightning, an
@@ -30,15 +23,6 @@ std::optional<bool> decision_text_truncated(const std::string& decision_type,
 std::string laya_label_overflow(const std::vector<std::string>& labels,
                                 const std::vector<size_t>& label_tokens,
                                 int64_t max_head_tokens);
-
-// The /v1/systemone response to that body -> the /v1/classify shape
-// {"labels": {label: probability}, "truncated": ...}, keeping the `top_k`
-// highest when top_k > 0; `truncated` is left out when it has no value. Throws
-// std::runtime_error unless the answer scores exactly the given labels.
-nlohmann::json systemone_classify_response(const nlohmann::json& response,
-                                           const nlohmann::json& labels,
-                                           int top_k,
-                                           std::optional<bool> truncated);
 
 // llama-server caps an encoder decision model's slot at its trained window, so
 // a larger context buys nothing.

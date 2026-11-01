@@ -51,8 +51,8 @@ public:
             "Runs an encoder text classifier, such as a PII, prompt-safety or domain classifier, on "
             "a string and returns a score for each label. It serves `onnxruntime` sequence "
             "classifiers (one label set), token classifiers (aggregated span labels) and zero-shot "
-            "models (labels sent with each request), and llama.cpp decision models, which are "
-            "zero-shot. It provides the classification that the router's `classifier` and "
+            "models (labels sent with each request), and llama.cpp and FastFlowLM decision models, "
+            "which are zero-shot. It provides the classification that the router's `classifier` and "
             "`zero_shot` conditions use.";
         s.notes = {
             "A malformed request, such as one with a blank `input`, a non-positive `top_k`, or a "
@@ -94,7 +94,7 @@ public:
                 },
                 "truncated": {
                     "type": "boolean",
-                    "description": "`true` when the model cut the input text to fit its token window before scoring, `false` when it scored the whole input. Labels are never cut, so the scores still cover every label sent. Absent when the backend does not report cuts (ort-server before 0.4.0, or a llama.cpp decision model of type `lfm2-d1-omni`, or `h2o-lightning` with a long text), so absence means unknown."
+                    "description": "`true` when the model cut the input text to fit its token window before scoring, `false` when it scored the whole input. Labels are never cut, so the scores still cover every label sent. Absent when the backend does not report cuts (ort-server before 0.4.0, a llama.cpp decision model of type `lfm2-d1-omni`, or `h2o-lightning` with a long text, or a FastFlowLM d3 model), so absence means unknown."
                 }
             }
         })");

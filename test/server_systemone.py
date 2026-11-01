@@ -3,10 +3,11 @@ SystemOne decision-model tests for Lemonade Server.
 
 Tests POST /v1/systemone, the /v1/classify zero-shot path, and the router's
 `systemone` and `zero_shot` classifier types against a llama.cpp decision model
-(llama-server b11361 or later).
+(llama-server b11361 or later) or a FastFlowLM d3 model (FLM 1.0.11 or later).
 
 Usage:
     python server_systemone.py --wrapped-server llamacpp --backend cpu
+    python server_systemone.py --wrapped-server flm --backend npu
 
 The negative tests run first and never pull the model.
 """
@@ -18,7 +19,7 @@ from utils.server_base import (
     run_server_tests,
     pull_model_with_retry,
 )
-from utils.capabilities import get_test_model
+from utils.capabilities import get_test_model, skip_if_unsupported
 from utils.test_models import PORT, TIMEOUT_DEFAULT
 
 TIMEOUT_DECISION = 600
@@ -308,6 +309,7 @@ class SystemOneTests(ServerTestBase):
                 timeout=TIMEOUT_DEFAULT,
             )
 
+    @skip_if_unsupported("state_over_window_error")
     def test_505_state_longer_than_window(self):
         """A state beyond the context window is a client error, not a 500."""
         self._ensure_model_pulled()
@@ -318,6 +320,7 @@ class SystemOneTests(ServerTestBase):
         )
         print(f"[OK] too-long state: {response.json()['error']['message']}")
 
+    @skip_if_unsupported("laya_decision_type")
     def test_508_null_state_reaches_model(self):
         """`state: null` passes lemond; a laya model then refuses it itself."""
         self._ensure_model_pulled()
@@ -328,6 +331,7 @@ class SystemOneTests(ServerTestBase):
         self.assertIn('"state" must be provided', message)
         print(f"[OK] null state reached the model: {message}")
 
+    @skip_if_unsupported("laya_decision_type")
     def test_509_classify_label_cut_error(self):
         """/v1/classify refuses a label that a laya model would cut."""
         self._ensure_model_pulled()

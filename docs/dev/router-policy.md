@@ -228,6 +228,8 @@ applies. `score` is unaffected. Most llama.cpp decision models, Laya and
 Julia-1 among them, refuse a text that is too long, so they report `false`.
 `lfm2-d1-omni`, and `h2o-lightning` for a text over 32,000 bytes, can cut it
 without saying so, so they report nothing and `fail` fails closed.
+FastFlowLM's d3 models do not say whether they cut a text, so they also report
+nothing.
 
 `LFM2.5-Encoder-350M-Prompt-Router-ONNX` has a default 2,048-token window, so a text
 longer than about 8,000 characters is cut. To raise it, pass

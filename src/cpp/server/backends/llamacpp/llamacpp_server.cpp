@@ -7,6 +7,7 @@
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/backends/systemone_classify.h"
 #include "lemon/gguf_capabilities.h"
 #include "lemon/gguf_reader.h"
 #include "lemon/model_manager.h"
@@ -100,14 +101,6 @@ static bool is_llamacpp_rocm_backend(const std::string& backend) {
 
 static bool is_llamacpp_cuda_backend(const std::string& backend) {
     return backend == "cuda";
-}
-
-static json invalid_classify_request(const std::string& message) {
-    return json{{"error", {
-        {"message", message},
-        {"type", "invalid_request_error"},
-        {"status_code", 400},
-    }}};
 }
 
 static bool is_dflash_draft_checkpoint(std::string checkpoint) {
@@ -684,20 +677,19 @@ json LlamaCppServer::classify(const json& request) {
     }
     const json text = request.contains("text") ? request["text"] : request.value("input", json());
     if (!text.is_string()) {
-        return invalid_classify_request("Missing 'input' (or 'text') string in classify request");
+        return systemone::invalid_classify_request("Missing 'input' (or 'text') string in classify request");
     }
     if (!request.contains("labels") || request["labels"].is_null()) {
-        return invalid_classify_request(
+        return systemone::invalid_classify_request(
             "this model scores a label list supplied per request; include a \"labels\" "
             "array in the request body");
     }
 
     nlohmann::ordered_json body;
     try {
-        body = llamacpp::build_systemone_classify_request(text.get<std::string>(),
-                                                          request["labels"]);
+        body = systemone::build_classify_request(text.get<std::string>(), request["labels"]);
     } catch (const std::invalid_argument& e) {
-        return invalid_classify_request(e.what());
+        return systemone::invalid_classify_request(e.what());
     }
     // ort-server refuses a label it would cut; laya cuts it silently, so refuse it here.
     if (const auto error = laya_label_error(request["labels"])) {
@@ -712,7 +704,7 @@ json LlamaCppServer::classify(const json& request) {
                           ? request["top_k"].get<int>()
                           : 0;
     try {
-        return llamacpp::systemone_classify_response(
+        return systemone::classify_response(
             response, request["labels"], top_k,
             llamacpp::decision_text_truncated(decision_type_, text.get<std::string>()));
     } catch (const std::exception& e) {
@@ -753,7 +745,7 @@ std::optional<json> LlamaCppServer::laya_label_error(const json& labels) {
     const std::string refusal =
         llamacpp::laya_label_overflow(texts, tokens, decision_max_head_tokens_);
     if (!refusal.empty()) {
-        return invalid_classify_request(refusal);
+        return systemone::invalid_classify_request(refusal);
     }
     return std::nullopt;
 }

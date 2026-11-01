@@ -1,4 +1,5 @@
 #include "lemon/backends/llamacpp/llamacpp_systemone.h"
+#include "lemon/backends/systemone_classify.h"
 
 #include <cstdlib>
 #include <iostream>
@@ -6,7 +7,6 @@
 #include <string>
 #include <vector>
 
-using lemon::backends::llamacpp::build_systemone_classify_request;
 using lemon::backends::llamacpp::decision_model_load_refusal;
 using lemon::backends::llamacpp::decision_text_truncated;
 using lemon::backends::llamacpp::encoder_decision_ctx_size;
@@ -14,7 +14,8 @@ using lemon::backends::llamacpp::laya_label_overflow;
 using lemon::backends::llamacpp::map_encoder_overflow_error;
 using lemon::backends::llamacpp::plan_single_batch;
 using lemon::backends::llamacpp::SingleBatchPlan;
-using lemon::backends::llamacpp::systemone_classify_response;
+using lemon::backends::systemone::build_classify_request;
+using lemon::backends::systemone::classify_response;
 using nlohmann::json;
 
 namespace {
@@ -49,7 +50,7 @@ json answer_with(json probabilities) {
 int main() {
     const json labels = json::array({"coding", "pii", "cooking"});
 
-    const nlohmann::ordered_json body = build_systemone_classify_request("bake a cheesecake", labels);
+    const nlohmann::ordered_json body = build_classify_request("bake a cheesecake", labels);
     expect(body["state"] == "bake a cheesecake", "the input text is the state");
     expect(body["questions"].size() == 1, "the body asks exactly one question");
     const nlohmann::ordered_json& question = body["questions"]["label"];
@@ -60,55 +61,55 @@ int main() {
            "each label is an option without a description, in the order of the labels");
 
     expect(throws<std::invalid_argument>([] {
-               build_systemone_classify_request("x", json::array());
+               build_classify_request("x", json::array());
            }),
            "an empty label list is refused");
     expect(throws<std::invalid_argument>([] {
-               build_systemone_classify_request("x", json::array({"a", 7}));
+               build_classify_request("x", json::array({"a", 7}));
            }),
            "a non-string label is refused");
     expect(throws<std::invalid_argument>([] {
-               build_systemone_classify_request("x", json::array({"a", "  "}));
+               build_classify_request("x", json::array({"a", "  "}));
            }),
            "a blank label is refused");
     expect(throws<std::invalid_argument>([] {
-               build_systemone_classify_request("x", json::array({"a", "a"}));
+               build_classify_request("x", json::array({"a", "a"}));
            }),
            "a duplicate label is refused");
 
     const json response =
         answer_with({{"coding", 0.0002}, {"pii", 0.0096}, {"cooking", 0.9888}});
-    const json all = systemone_classify_response(response, labels, 0, false);
+    const json all = classify_response(response, labels, 0, false);
     expect(all["labels"].size() == 3, "every label is returned without top_k");
     expect(all["labels"]["cooking"] == 0.9888, "the probabilities are returned unchanged");
     expect(all.contains("truncated") && all["truncated"] == false,
            "the answer reports a text that was not cut");
-    expect(!systemone_classify_response(response, labels, 0, std::nullopt).contains("truncated"),
+    expect(!classify_response(response, labels, 0, std::nullopt).contains("truncated"),
            "the answer leaves truncated out when the cut is unknown");
 
-    const json top = systemone_classify_response(response, labels, 1, false);
+    const json top = classify_response(response, labels, 1, false);
     expect(top["labels"].size() == 1 && top["labels"].contains("cooking"),
            "top_k keeps the highest scores");
 
     expect(throws<std::runtime_error>([&] {
-               systemone_classify_response(answer_with({{"coding", 0.5}, {"pii", 0.5}}), labels,
-                                           0, false);
+               classify_response(answer_with({{"coding", 0.5}, {"pii", 0.5}}), labels, 0,
+                                 false);
            }),
            "an answer without one of the labels is refused");
     expect(throws<std::runtime_error>([&] {
-               systemone_classify_response(
+               classify_response(
                    answer_with({{"coding", 0.2}, {"pii", 0.2}, {"other", 0.6}}), labels, 0,
                    false);
            }),
            "an answer with a label that was not asked is refused");
     expect(throws<std::runtime_error>([&] {
-               systemone_classify_response(
+               classify_response(
                    answer_with({{"coding", 2.0}, {"pii", 0.0}, {"cooking", 0.0}}), labels, 0,
                    false);
            }),
            "a probability outside [0, 1] is refused");
     expect(throws<std::runtime_error>([&] {
-               systemone_classify_response(json{{"answers", json::object()}}, labels, 0, false);
+               classify_response(json{{"answers", json::object()}}, labels, 0, false);
            }),
            "a response without the answer is refused");
 
