@@ -28,6 +28,12 @@ nlohmann::json classify_response(const nlohmann::json& response,
                                  int top_k,
                                  std::optional<bool> truncated);
 
+// A /v1/systemone response in which FLM refused every question because it did
+// not fit the model's window (`"error": "max_length_exceeded"` inside a 200
+// answer) -> the 400 context_length_exceeded body that llama.cpp gives for the
+// same case. std::nullopt when at least one question was answered.
+std::optional<nlohmann::json> context_length_refusal(const nlohmann::json& response);
+
 }  // namespace systemone
 }  // namespace backends
 }  // namespace lemon

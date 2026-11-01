@@ -106,6 +106,30 @@ nlohmann::json classify_response(const nlohmann::json& response,
     return out;
 }
 
+std::optional<nlohmann::json> context_length_refusal(const nlohmann::json& response) {
+    if (!response.is_object() || !response.contains("answers") ||
+        !response["answers"].is_object() || response["answers"].empty()) {
+        return std::nullopt;
+    }
+    std::string message;
+    for (const auto& answer : response["answers"]) {
+        if (!answer.is_object() || !answer.contains("error") ||
+            answer["error"] != "max_length_exceeded") {
+            return std::nullopt;
+        }
+        if (message.empty() && answer.contains("message") && answer["message"].is_string()) {
+            message = answer["message"].get<std::string>();
+        }
+    }
+    return nlohmann::json{{"error", {
+        {"message", message.empty() ? "the text is longer than this decision model accepts"
+                                    : message},
+        {"type", "invalid_request_error"},
+        {"code", "context_length_exceeded"},
+        {"status_code", 400},
+    }}};
+}
+
 }  // namespace systemone
 }  // namespace backends
 }  // namespace lemon

@@ -231,7 +231,7 @@ Register the model with its projector file, for example on `/v1/pull`: `{"model_
 | `400` |  | `model` is omitted and not exactly one classification model is loaded |
 | `400` |  | `model` lacks the `classification` or `systemone` label, or its backend does not answer SystemOne questions; checked before it loads |
 | `400` |  | The backend rejects a question, such as a `score` question with one level; the backend's status replaces this one |
-| `400` | `context_length_exceeded` | `state` and a question do not fit in the model's context |
+| `400` | `context_length_exceeded` | `state` and a question do not fit in the model's context. FastFlowLM refuses only the questions that do not fit: while another question fits, the status is 200 and each refused answer carries `"error": "max_length_exceeded"` |
 | `400` | `model_load_refused` | The backend refuses the requested model as it is registered, before it starts anything, such as a decision model whose GGUF type the bundled llama.cpp does not support |
 | `404` |  | The model is unloaded while the request waits for it |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |

@@ -19,7 +19,7 @@ from utils.server_base import (
     run_server_tests,
     pull_model_with_retry,
 )
-from utils.capabilities import get_test_model, skip_if_unsupported, supports
+from utils.capabilities import get_test_model, skip_if_unsupported
 from utils.test_models import PORT, TIMEOUT_DEFAULT
 
 TIMEOUT_DECISION = 600
@@ -48,7 +48,9 @@ PARAGRAPH = (
 # Long enough to overflow llama-server's default physical batch (512 tokens),
 # short of the 8192-token window the model was trained with.
 LONG_STATE = PARAGRAPH * 100
-TOO_LONG_STATE = PARAGRAPH * 400
+# About 37,000 tokens: over the 8192-token window of Julia-1 and the
+# 32,768-token window of the d3 models.
+TOO_LONG_STATE = PARAGRAPH * 1600
 
 
 class SystemOneTests(ServerTestBase):
@@ -214,10 +216,7 @@ class SystemOneTests(ServerTestBase):
         self.assertEqual(set(scores), set(labels))
         self.assertAlmostEqual(sum(scores.values()), 1.0, places=3)
         self.assertEqual(max(scores, key=scores.get), "cooking")
-        if supports("reports_truncation"):
-            self.assertIs(response.json().get("truncated"), False)
-        else:
-            self.assertNotIn("truncated", response.json())
+        self.assertIs(response.json().get("truncated"), False)
         print(f"[OK] classify with labels: {scores}")
 
     def test_503_classify_without_labels_error(self):
@@ -312,7 +311,6 @@ class SystemOneTests(ServerTestBase):
                 timeout=TIMEOUT_DEFAULT,
             )
 
-    @skip_if_unsupported("state_over_window_error")
     def test_505_state_longer_than_window(self):
         """A state beyond the context window is a client error, not a 500."""
         self._ensure_model_pulled()
@@ -322,6 +320,31 @@ class SystemOneTests(ServerTestBase):
             response.json()["error"].get("code"), "context_length_exceeded"
         )
         print(f"[OK] too-long state: {response.json()['error']['message']}")
+
+    def test_510_classify_text_longer_than_window(self):
+        """/v1/classify refuses a text beyond the context window with a 400."""
+        self._ensure_model_pulled()
+        response = self._post(
+            "classify",
+            {
+                "model": get_test_model("systemone"),
+                "input": TOO_LONG_STATE,
+                "labels": ["finance", "cooking"],
+            },
+        )
+        self.assertEqual(response.status_code, 400, response.text[:1000])
+        self.assertEqual(
+            response.json()["error"].get("code"), "context_length_exceeded"
+        )
+        print(f"[OK] too-long classify text: {response.json()['error']['message']}")
+
+    def test_511_ctx_size_is_not_forwarded(self):
+        """`ctx_size` only sizes the load; the backend never sees it."""
+        self._ensure_model_pulled()
+        response = self._post("systemone", self._payload(ctx_size=8192))
+        self.assertEqual(response.status_code, 200, response.text[:1000])
+        self.assertEqual(set(response.json()["answers"]), set(QUESTIONS))
+        print("[OK] ctx_size accepted")
 
     @skip_if_unsupported("laya_decision_type")
     def test_508_null_state_reaches_model(self):

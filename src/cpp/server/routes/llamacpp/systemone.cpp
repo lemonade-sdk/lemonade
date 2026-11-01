@@ -24,7 +24,10 @@ const RouteError kQuestionsRejected{
     "The backend rejects a question, such as a `score` question with one level; the backend's "
     "status replaces this one"};
 const RouteError kContextExceeded{
-    400, "context_length_exceeded", "`state` and a question do not fit in the model's context"};
+    400, "context_length_exceeded",
+    "`state` and a question do not fit in the model's context. FastFlowLM refuses only the "
+    "questions that do not fit: while another question fits, the status is 200 and each "
+    "refused answer carries `\"error\": \"max_length_exceeded\"`"};
 const RouteError kNoImageInput{
     501, "", "`images` is sent to a model that reads no images, or that loaded without `mmproj`"};
 
@@ -190,6 +193,9 @@ protected:
         // changes the model's scores.
         ordered_json body = ordered_json::parse(req.http.body);
         body[kModel.name] = req.model;
+        // ctx_size only sizes the load, which is done by now; FLM answers 422 to a
+        // field it does not know.
+        body.erase(model_loading::kCtxSize.name);
         const ordered_json response = ctx_.router->systemone(body);
         if (response.contains("error")) {
             set_error_response(json(response), res, kBackendError);

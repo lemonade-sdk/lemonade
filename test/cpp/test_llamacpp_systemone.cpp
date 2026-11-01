@@ -16,6 +16,7 @@ using lemon::backends::llamacpp::plan_single_batch;
 using lemon::backends::llamacpp::SingleBatchPlan;
 using lemon::backends::systemone::build_classify_request;
 using lemon::backends::systemone::classify_response;
+using lemon::backends::systemone::context_length_refusal;
 using nlohmann::json;
 
 namespace {
@@ -222,6 +223,29 @@ int main() {
     const json other = {{"error", {{"message", "Compute error."}, {"status_code", 500}}}};
     expect(map_encoder_overflow_error(other, 8192) == other, "other errors are left alone");
     expect(map_encoder_overflow_error(response, 8192) == response, "answers are left alone");
+
+    // FLM 1.0.11 refuses a question that does not fit inside a 200 answer.
+    const json refused_answer = {
+        {"type", "choice"},
+        {"error", "max_length_exceeded"},
+        {"message", "the question prompt has 36892 tokens, over the maximum context length of "
+                    "32768 tokens; nothing was truncated"},
+    };
+    const json refused = {{"model", "d3-lite"}, {"answers", {{"label", refused_answer}}}};
+    const auto refusal = context_length_refusal(refused);
+    expect(refusal.has_value() && (*refusal)["error"]["status_code"] == 400 &&
+               (*refusal)["error"]["code"] == "context_length_exceeded",
+           "a refused question is a 400 context_length_exceeded");
+    expect(refusal.has_value() &&
+               (*refusal)["error"]["message"].get<std::string>().find("36892 tokens") !=
+                   std::string::npos,
+           "the refusal keeps the backend's message");
+    json partial = refused;
+    partial["answers"]["fits"] = {{"type", "noul"}, {"noul", 0.99}};
+    expect(!context_length_refusal(partial).has_value(),
+           "a response with one answered question is kept");
+    expect(!context_length_refusal(response).has_value(), "a scored answer is not a refusal");
+    expect(!context_length_refusal(overflow).has_value(), "an error response is not a refusal");
 
     if (failures != 0) {
         std::cerr << failures << " check(s) failed" << std::endl;
