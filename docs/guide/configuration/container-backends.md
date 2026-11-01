@@ -18,7 +18,7 @@ Rootful Podman and Docker give that account root-equivalent control of the host'
 
 ## Setup
 
-When `lemond` runs under your own account, from a shell, a `systemctl --user` unit, or an app that embeds it, its containers sit beside your own in `podman ps`, and it uses whatever `CONTAINER_HOST` your environment sets.
+When `lemond` runs under your own account, from a shell, a `systemctl --user` unit, or an app that embeds it, its containers sit beside your own in `podman ps`, and it uses whatever `CONTAINER_HOST` your environment sets. The `systemctl --user` unit sets it to your `podman.socket`, so Podman's API service starts the containers outside the unit's sandbox. If the unit is ever killed outright, as with `systemctl --user kill -s KILL lemond`, a container can keep running; loading the same model replaces it, or `podman rm -f` removes it.
 
 **With Podman:**
 

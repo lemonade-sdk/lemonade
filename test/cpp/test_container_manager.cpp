@@ -143,6 +143,18 @@ void test_run_command() {
           podman_command == "podman" + common + " --group-add keep-groups" + mount_and_home +
                                 " -p 127.0.0.1:8001:8001" + image_and_program);
 
+    FakeHost user_socket;
+    user_socket.tools = {"podman"};
+    user_socket.env = {{"CONTAINER_HOST", "unix:///run/user/1000/podman/podman.sock"},
+                       {"XDG_RUNTIME_DIR", "/run/user/1000"}};
+    const std::string user_socket_command =
+        join(ContainerManager(user_socket.host()).run_command(example_spec()));
+    check("podman run through the account's podman.socket keeps groups by annotation",
+          user_socket_command == "podman" + common +
+                                     " --annotation run.oci.keep_original_groups=1" +
+                                     mount_and_home + " -p 127.0.0.1:8001:8001" +
+                                     image_and_program);
+
     FakeHost docker;
     docker.tools = {"docker"};
     const std::string docker_command = join(ContainerManager(docker.host()).run_command(example_spec()));
@@ -216,6 +228,14 @@ void test_tool_choice_and_setup() {
     remote.env["CONTAINER_HOST"] = "unix:///run/podman/podman.sock";
     check("before podman info runs, Podman behind CONTAINER_HOST needs neither group",
           ContainerManager(remote.host()).check_host().empty() && remote.commands == 0);
+    FakeHost own_socket;
+    own_socket.tools = {"podman"};
+    own_socket.env = {{"CONTAINER_HOST", "unix:///run/user/1000/podman/podman.sock"},
+                      {"XDG_RUNTIME_DIR", "/run/user/1000"}};
+    check("before podman info runs, the account's own podman.socket needs the GPU devices",
+          lemon::utils::SetupReport{ContainerManager(own_socket.host()).check_host()}.ids() ==
+                  std::vector<std::string>({"device_groups"}) &&
+              own_socket.commands == 0);
     FakeHost as_root;
     as_root.tools = {"podman"};
     as_root.root = true;
@@ -244,6 +264,24 @@ void test_tool_choice_and_setup() {
           silent && silent->id == "podman_info" && silent->message == "`podman info` fails" &&
               lemon::utils::SetupReport{{*silent}}.action() ==
                   "Run `podman info` and fix the error it prints");
+
+    FakeHost no_socket = broken;
+    no_socket.env = {{"CONTAINER_HOST", "unix:///run/user/1000/podman/podman.sock"},
+                     {"XDG_RUNTIME_DIR", "/run/user/1000"}};
+    const auto unreachable = ContainerManager(no_socket.host()).check_podman();
+    check("an unreachable podman.socket of the account's own asks to start it",
+          unreachable && unreachable->id == "podman_info" &&
+              lemon::utils::SetupReport{{*unreachable}}.action() ==
+                  "systemctl --user enable --now podman.socket");
+
+    FakeHost elsewhere = broken;
+    elsewhere.env = {{"CONTAINER_HOST", "unix:///run/podman-lemonade.sock"}};
+    const auto remote_info = ContainerManager(elsewhere.host()).check_podman();
+    check("a failing Podman behind another CONTAINER_HOST names it",
+          remote_info && remote_info->id == "podman_info" &&
+              lemon::utils::SetupReport{{*remote_info}}.action() ==
+                  "Run `podman info` with CONTAINER_HOST=unix:///run/podman-lemonade.sock and fix "
+                  "the error it prints");
 
     FakeHost docker;
     docker.tools = {"docker"};

@@ -194,7 +194,7 @@ When the container tool is rootless Podman, `lemond` connects to the server at `
 
 | Option | Value | Comes from |
 | --- | --- | --- |
-| `--group-add` | `keep-groups` ‡, which carries the account's own `render` membership into the container | `ContainerPolicy.devices` (see [`containers` Descriptor Field](#containers-descriptor-field)) |
+| `--group-add` | `keep-groups` ‡, which carries the account's own `render` membership into the container. Through the account's `podman.socket`, whose API rejects `keep-groups`, `lemond` passes `--annotation run.oci.keep_original_groups=1`, the crun annotation `keep-groups` stands for, instead | `ContainerPolicy.devices` (see [`containers` Descriptor Field](#containers-descriptor-field)) |
 | `-p` | `127.0.0.1:<port>:<port>` | A free port `lemond` picks |
 
 When the container tool is Docker or rootful Podman, `lemond` connects to the server at the container's address on its private network, and the command adds:
@@ -287,7 +287,7 @@ Lemonade uses Podman when it is installed, and Docker otherwise §. When neither
 
 The user starts `lemond` as their own account, through any of:
 
-- a `systemctl --user` unit, `lemond-user.service`, which runs with the user's own rights, as a shell does. Rootless Podman needs the setuid `newuidmap`/`newgidmap` helpers and the user's full subordinate ID range, and in a user manager each of systemd's sandboxing options takes one away: the seccomp-based ones (`NoNewPrivileges`, `RestrictNamespaces`, `LockPersonality`, `RestrictRealtime`) set the no-new-privileges flag, and the mount-based ones (`PrivateTmp`, `ProtectSystem`) confine the service to a user namespace that maps only the user's own UID.
+- a `systemctl --user` unit, `lemond-user.service`, which keeps systemd's sandboxing options and sets `CONTAINER_HOST` to the user's `podman.socket`. In a user manager those options take away what rootless Podman needs: the seccomp-based ones (`NoNewPrivileges`, `RestrictNamespaces`, `LockPersonality`, `RestrictRealtime`) set the no-new-privileges flag, which stops the setuid `newuidmap`/`newgidmap` helpers, and the mount-based ones (`PrivateTmp`, `ProtectSystem`) confine the service to a user namespace that maps only the user's own UID, not their subordinate range. So `podman` in the unit only sends requests to Podman's API service, which systemd starts from the socket outside the unit, and that service creates the containers. It resolves mount paths in the host's view, so model files must be outside the unit's private `/tmp`; the default Hugging Face cache, under the home directory, is. The containers belong to Podman's API service, not the unit: stopping the unit still stops them through `lemond`'s own shutdown, and when `lemond` alone dies, its `podman run` client gets SIGTERM and forwards it to the container, but when the whole unit is killed with SIGKILL, client included, a container keeps running until `lemond` loads the same model again.
 - a shell, including a `lemond` built from source and run from its build directory
 - an app that embeds `lemond`
 

@@ -220,7 +220,16 @@ bool ContainerManager::expect_rootless() const {
         std::lock_guard<std::mutex> lock(podman_mode_mutex_);
         if (podman_rootless_) return *podman_rootless_;
     }
-    return host_.env("CONTAINER_HOST").empty() && !host_.is_root();
+    if (host_.env("CONTAINER_HOST").empty()) return !host_.is_root();
+    return own_podman_socket();
+}
+
+bool ContainerManager::own_podman_socket() const {
+    // A socket in the account's own runtime directory is its podman.socket,
+    // which runs rootless Podman outside lemond's sandbox.
+    const std::string runtime_dir = host_.env("XDG_RUNTIME_DIR");
+    return !runtime_dir.empty() &&
+           host_.env("CONTAINER_HOST").rfind("unix://" + runtime_dir + "/", 0) == 0;
 }
 
 std::vector<SetupFailure> ContainerManager::check_host() const {
@@ -283,8 +292,17 @@ std::optional<SetupFailure> ContainerManager::check_podman() const {
     }
     const std::optional<bool> rootless = podman_info_rootless();
     if (!rootless) {
-        return SetupFailure{"podman_info", "`podman info` fails",
-                            {"Run `podman info` and fix the error it prints"}, ""};
+        // A shell's `podman info` reaches local Podman, not the CONTAINER_HOST
+        // lemond was given.
+        const std::string container_host = host_.env("CONTAINER_HOST");
+        std::string step = "Run `podman info` and fix the error it prints";
+        if (own_podman_socket()) {
+            step = "systemctl --user enable --now podman.socket";
+        } else if (!container_host.empty()) {
+            step = "Run `podman info` with CONTAINER_HOST=" + container_host +
+                   " and fix the error it prints";
+        }
+        return SetupFailure{"podman_info", "`podman info` fails", {step}, ""};
     }
     // Podman 4's CNI backend gives an internal network no gateway on the host,
     // so rootful lemond cannot reach the container's address (see run_command).
@@ -378,9 +396,13 @@ std::vector<std::string> ContainerManager::run_command(const ContainerRunSpec& s
         argv.push_back(device);
     }
     if (!spec.devices.empty()) {
-        if (rootless) {
+        if (rootless && host_.env("CONTAINER_HOST").empty()) {
             argv.push_back("--group-add");
             argv.push_back("keep-groups");
+        } else if (rootless) {
+            // The Podman API rejects keep-groups; this is the crun annotation it sets.
+            argv.push_back("--annotation");
+            argv.push_back("run.oci.keep_original_groups=1");
         } else {
             // Docker resolves a group name in the image's /etc/group, where it
             // may be missing or numbered differently from the device nodes.

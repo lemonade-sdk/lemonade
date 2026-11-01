@@ -155,8 +155,10 @@ private:
     // since setup checks run on every /system-info request.
     std::optional<bool> podman_info_rootless() const;
     // `podman info`'s answer once it has given one. Before that, rootless
-    // unless CONTAINER_HOST points Podman elsewhere or lemond runs as root.
+    // unless lemond runs as root or CONTAINER_HOST points Podman somewhere
+    // other than the account's own podman.socket.
     bool expect_rootless() const;
+    bool own_podman_socket() const;
 
     ContainerHost host_;
     mutable std::mutex podman_mode_mutex_;
