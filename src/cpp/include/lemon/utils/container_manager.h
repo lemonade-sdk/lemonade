@@ -29,7 +29,6 @@ struct ContainerRunSpec {
     std::string recipe;
     std::string backend;
     std::string model;
-    int instance = 0;
     int port = 0;
     std::string network;
     std::vector<std::string> devices;

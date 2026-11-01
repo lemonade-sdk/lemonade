@@ -107,7 +107,6 @@ ContainerRunSpec example_spec() {
     spec.recipe = "llamacpp";
     spec.backend = "nathanw";
     spec.model = "Qwen3-4B-GGUF";
-    spec.instance = 13305;
     spec.port = 8001;
     spec.network = spec.name;
     spec.devices = {"/dev/dri"};
@@ -122,7 +121,6 @@ void test_run_command() {
     const std::string common =
         " run --rm --init --name lemonade-13305-llamacpp-nathanw-Qwen3-4B-GGUF"
         " --label ai.lemonade"
-        " --label ai.lemonade.instance=13305"
         " --label ai.lemonade.recipe=llamacpp"
         " --label ai.lemonade.backend=nathanw"
         " --label ai.lemonade.model=Qwen3-4B-GGUF"

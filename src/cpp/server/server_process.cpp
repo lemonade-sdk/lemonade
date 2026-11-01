@@ -122,7 +122,6 @@ std::string ContainerProcess::start(const ServerCommand& command) {
 
     utils::ContainerRunSpec spec;
     spec.name = name_;
-    spec.instance = instance;
     spec.recipe = recipe_;
     spec.backend = backend_;
     spec.model = model_;

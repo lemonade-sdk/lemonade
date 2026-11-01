@@ -363,7 +363,6 @@ std::vector<std::string> ContainerManager::run_command(const ContainerRunSpec& s
     std::vector<std::string> argv = {
         tool_name(*chosen), "run", "--rm", "--init", "--name", spec.name,
         "--label", kLabel,
-        "--label", std::string(kLabel) + ".instance=" + std::to_string(spec.instance),
         "--label", std::string(kLabel) + ".recipe=" + spec.recipe,
         "--label", std::string(kLabel) + ".backend=" + spec.backend,
         "--label", std::string(kLabel) + ".model=" + spec.model,

@@ -178,8 +178,8 @@ These options are the same for Podman and Docker:
 | `--rm`, `--init`, `--cap-drop=all`, `--security-opt=no-new-privileges` | Same for every container † | Fixed |
 | `--pull=never` | Same for every container | Fixed |
 | seccomp | The tool's default profile: the command passes no `seccomp` option † | Fixed |
-| `--name` | `lemonade-<instance>-<recipe>-<backend>-<model>`, where `<instance>` is the port `lemond` listens on, so two `lemond` instances that share a container daemon never remove each other's containers, and each other part keeps letters, digits, `.` and `-`, doubles `_`, and writes any other character as `_` plus its two hex digits (`user.foo/bar` becomes `user.foo_2fbar`) | The loaded model |
-| `--label` | `ai.lemonade`, `ai.lemonade.instance`, `ai.lemonade.recipe`, `.backend`, `.model`, `.port` † | The loaded model and the `lemond` port |
+| `--name` | `lemonade-<port>-<recipe>-<backend>-<model>`. `<port>` is the port `lemond` listens on, so `lemond` instances sharing a container daemon never remove each other's containers. The other parts keep letters, digits, `.` and `-`, double `_`, and write any other character as `_` plus its two hex digits (`user.foo/bar` becomes `user.foo_2fbar`) | The loaded model and the `lemond` port |
+| `--label` | `ai.lemonade`, `ai.lemonade.recipe`, `.backend`, `.model`, `.port` † | The loaded model |
 | `--network` | A private `--internal` network named after the container | Fixed |
 | `-v` | `<host path>:/mnt/models/<name>:ro,z`, one per model file the command names †. A directory the command names, such as Halogen's tokenizer directory, gets one mount per file inside it at the same relative path, such as `/mnt/models/tokenizer/vocab.json` ‡. Each host path is resolved through symlinks first, so files in a Hugging Face cache, which link into the cache's `blobs/` folder, mount as the files themselves. `z` gives the files a shared SELinux label that every container can read, so the same model can be mounted by several containers, whether Lemonade started them or not. It does nothing on hosts without SELinux | The model's files |
 | `--device` | One per node, such as `/dev/dri` § | `ContainerPolicy.devices` (see [`containers` Descriptor Field](#containers-descriptor-field)) |
@@ -228,7 +228,6 @@ podman run \
   --init \
   --name lemonade-13305-llamacpp-nathanw-Qwen3-4B-GGUF \
   --label ai.lemonade \
-  --label ai.lemonade.instance=13305 \
   --label ai.lemonade.recipe=llamacpp \
   --label ai.lemonade.backend=nathanw \
   --label ai.lemonade.model=Qwen3-4B-GGUF \

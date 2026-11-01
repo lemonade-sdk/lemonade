@@ -198,9 +198,8 @@ void install_container_backend(const std::string& recipe, const std::string& bac
     manager.pull(image, progress_cb);
 
     // Replace whatever the install directory held, such as an earlier pin or a
-    // binary release of the same backend. The new marker is staged first and
-    // the previous image is dropped last, so a failed write leaves the
-    // working install in place.
+    // binary release of the same backend. The previous image goes last so a
+    // failed write leaves the working install in place.
     const std::string previous_image =
         backends::BackendUtils::get_installed_backend_image(recipe, backend);
     const fs::path install_dir = version_file.parent_path();
@@ -208,26 +207,19 @@ void install_container_backend(const std::string& recipe, const std::string& bac
         install_dir.parent_path() / ("." + install_dir.filename().string() + ".staging");
     std::error_code ec;
     fs::remove_all(staging_dir, ec);
-    fs::create_directories(staging_dir, ec);
-    if (ec) {
-        throw std::runtime_error("Failed to create " + staging_dir.string() + ": " + ec.message());
-    }
-    {
-        std::ofstream staged(staging_dir / version_file.filename());
+    std::ofstream staged;
+    if (fs::create_directories(staging_dir, ec); !ec) {
+        staged.open(staging_dir / version_file.filename());
         staged << pin << "\n";
         staged.close();
-        if (!staged) {
-            fs::remove_all(staging_dir, ec);
-            throw std::runtime_error("Failed to write the version marker in " +
-                                     staging_dir.string());
-        }
+    }
+    if (ec || !staged) {
+        throw std::runtime_error("Failed to write the version marker in " + staging_dir.string());
     }
     fs::remove_all(install_dir, ec);
     if (!ec) fs::rename(staging_dir, install_dir, ec);
     if (ec) {
-        const std::string reason = ec.message();
-        fs::remove_all(staging_dir, ec);
-        throw std::runtime_error("Failed to replace " + install_dir.string() + ": " + reason);
+        throw std::runtime_error("Failed to replace " + install_dir.string() + ": " + ec.message());
     }
     if (!previous_image.empty() && previous_image != image) {
         manager.remove_image(previous_image);
