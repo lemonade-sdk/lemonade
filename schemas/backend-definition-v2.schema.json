@@ -1311,10 +1311,14 @@
         "diagnostics": {
           "type": "array",
           "maxItems": 32,
-          "items": {"$ref": "#/$defs/Diagnostic"}
+          "items": {
+            "$ref": "#/$defs/Diagnostic"
+          }
         },
         "builtin_load_log": {
-          "enum": ["halogen_starting_v1"]
+          "enum": [
+            "halogen_starting_v1"
+          ]
         },
         "execution": {
           "type": "object",
@@ -1375,6 +1379,11 @@
             ],
             "additionalProperties": false
           }
+        },
+        "pre_install_refusal": {
+          "enum": [
+            "container_hf_load_v1"
+          ]
         }
       },
       "required": [
@@ -1471,7 +1480,10 @@
           }
         },
         "rewrite_domain": {
-          "enum": ["canonical_path", "chat_completions_substring"]
+          "enum": [
+            "canonical_path",
+            "chat_completions_substring"
+          ]
         },
         "content_transform": {
           "enum": [

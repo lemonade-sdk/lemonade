@@ -641,6 +641,10 @@ PreparedExecution DefinitionRunner::prepare_load(const LoadContext& context, con
                 install_container();
                 container_installed = true;
             }
+            if (plan.container && !container_installed && records.contains("pre_install_refusal")) {
+                install_container();
+                container_installed = true;
+            }
             if (plan.container) continue;
             if (program_.install.strategy == "external_only") throw std::logic_error("External-only backend cannot be downloaded");
             if (install_policy == "always" || services.external_binary(spec, backend).empty()) services.install_backend(spec.effective_public_recipe(), backend);
@@ -693,6 +697,9 @@ PreparedExecution DefinitionRunner::prepare_load(const LoadContext& context, con
             }
             emit_diagnostics(phase, values);
         }
+        if (phase == "backend" && plan.container && records.contains("pre_install_refusal") && context.model_info.extra<bool>("hf_load", false))
+            throw std::runtime_error("Model '" + context.model_name + "' has llama-server download its own weights, which llamacpp:" +
+                backend + " cannot do from its container's private network. Load it on a llamacpp backend that runs on the host.");
         if (context.phase_prepared) context.phase_prepared(phase, values);
     }
     if (records.contains("checks")) for (std::size_t i = 0; i < records["checks"].size(); ++i) {

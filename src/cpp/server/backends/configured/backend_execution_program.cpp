@@ -88,6 +88,13 @@ void compile_programs(Program& program, Budget& budget) {
             "invalid_model_contract", "/artifacts/main");
         program.model_contract = ModelContract::Ds4RocmV1;
     }
+    if (launch.contains("pre_install_refusal")) {
+        const auto& phases = launch.at("prepare_order");
+        require(launch.at("pre_install_refusal") == "container_hf_load_v1" &&
+            std::count(phases.begin(), phases.end(), "backend") == 1 && phases.front() == "backend" &&
+            std::count(phases.begin(), phases.end(), "install") == 1,
+            "invalid_pre_install_refusal", "/launch/pre_install_refusal");
+    }
     budget.copy(launch);
     budget.copy(launch);
     budget.copy(doc["install"]);

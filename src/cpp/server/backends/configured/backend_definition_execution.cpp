@@ -224,6 +224,10 @@ public:
                 execution::require(source.key.space == DefinitionNamespace::Builtin && container_capable(staging.normalized) &&
                     AuthorityInspection::permits_execution(*authorized, staging.normalized),
                     "unsupported_execution_feature", "/launch/direct_stream_policy");
+            if (staging.normalized["launch"].contains("pre_install_refusal"))
+                execution::require(source.key.space == DefinitionNamespace::Builtin && container_capable(staging.normalized) &&
+                    AuthorityInspection::permits_execution(*authorized, staging.normalized),
+                    "unsupported_execution_feature", "/launch/pre_install_refusal");
             execution::bind_options(staging, budget);
             if (staging.normalized["launch"].contains("diagnostics"))
                 execution::require(source.key.space == DefinitionNamespace::Builtin && container_capable(staging.normalized) &&

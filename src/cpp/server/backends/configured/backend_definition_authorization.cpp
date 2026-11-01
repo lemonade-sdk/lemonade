@@ -639,6 +639,8 @@ nlohmann::json container_execution_owner(const nlohmann::json& declaration) {
             {"custom_args", custom},
             {"ports", launch.at("ports")}, {"readiness", launch.at("readiness")}};
     }
+    if (launch.contains("pre_install_refusal"))
+        result["pre_install_refusal"] = {{"policy", launch.at("pre_install_refusal")}, {"prepare_order", launch.at("prepare_order")}};
     if (launch.contains("builtin_load_log"))
         result["builtin_load_log"] = {{"binding", launch.at("builtin_load_log")},
             {"model_contract", declaration.value("model_contract", "")},

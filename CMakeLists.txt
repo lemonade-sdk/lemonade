@@ -4263,13 +4263,17 @@ if(BUILD_TESTING)
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/container_production_control.py
             --root "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/container-v2/c8/base-control"
             --dependencies "${CMAKE_CURRENT_BINARY_DIR}/_deps")
+    add_custom_target(container-c8a-control-build
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/container_c8a_control.py
+            --root "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/container-v2/c8a/base-control"
+            --dependencies "${CMAKE_CURRENT_BINARY_DIR}/_deps")
     add_cpp_ci_test(LlamaCppV2ProductionSwitchTest CI ON
-        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/container_production_transition.py
-            --base-build "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/container-v2/c8/base-control/build"
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/container_c8a_transition.py
+            --base-build "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/container-v2/c8a/base-control/build"
             --build "${CMAKE_CURRENT_BINARY_DIR}"
-            --out "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/artifacts/container-v2/c8/transition"
-            --scratch "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/container-v2/c8/transition"
-        DEPENDS test_llamacpp_v2_production_switch llamacpp-frozen-control-build container-production-control-build)
+            --out "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/artifacts/container-v2/c8a/transition"
+            --scratch "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/container-v2/c8a/transition"
+        DEPENDS test_llamacpp_v2_production_switch llamacpp-frozen-control-build container-production-control-build container-c8a-control-build)
 endif()
 
 if(BUILD_TESTING)
@@ -4289,8 +4293,8 @@ if(BUILD_TESTING)
     add_cpp_ci_test(LlamaCppExternalForkTest CI ON
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/llamacpp_external_fork.py
             --build ${CMAKE_CURRENT_BINARY_DIR}
-            --out "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/artifacts/container-v2/c8/replay/c6b/fork"
-            --scratch "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/container-v2/c8/replay/c6b/fork"
+            --out "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/artifacts/container-v2/c8a/replay/c6b/fork"
+            --scratch "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/container-v2/c8a/replay/c6b/fork"
         DEPENDS test_llamacpp_external_fork test_external_fake_engine lemond)
 endif()
 
@@ -4298,8 +4302,8 @@ if(BUILD_TESTING)
     add_cpp_ci_test(LlamaCppProductionForkTest CI ON
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/llamacpp_production_fork.py
             --build "${CMAKE_CURRENT_BINARY_DIR}"
-            --out "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/artifacts/container-v2/c8/replay/c6b/fork/production"
-            --scratch "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/container-v2/c8/replay/c6b/fork/production"
+            --out "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/artifacts/container-v2/c8a/replay/c6b/fork/production"
+            --scratch "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/container-v2/c8a/replay/c6b/fork/production"
         DEPENDS lemond lemonade test_external_fake_engine)
 endif()
 
@@ -4341,7 +4345,7 @@ if(BUILD_TESTING)
     target_compile_definitions(test_container_execution PRIVATE
         LEMON_BACKEND_EXPORT_TESTING LEMONADE_BINDING_TEST LEMONADE_TYPED_HOOK_TEST
         LEMON_TEST_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures"
-        LEMON_CONTAINER_EXECUTION_SCRATCH="${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/container-v2/c8/replay/c6b/execution")
+        LEMON_CONTAINER_EXECUTION_SCRATCH="${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/container-v2/c8a/replay/c6b/execution")
     target_include_directories(test_container_execution PRIVATE
         src/cpp/server/backends src/cpp/server/backends/configured)
     target_link_libraries(test_container_execution PRIVATE
@@ -4359,7 +4363,7 @@ if(BUILD_TESTING)
     target_compile_definitions(test_container_prerequisites PRIVATE
         LEMON_BACKEND_EXPORT_TESTING LEMONADE_BINDING_TEST LEMONADE_TYPED_HOOK_TEST
         LEMON_TEST_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures"
-        LEMON_PREREQUISITE_SCRATCH="${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/container-v2/c8/replay/c6b/prerequisites")
+        LEMON_PREREQUISITE_SCRATCH="${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/container-v2/c8a/replay/c6b/prerequisites")
     target_include_directories(test_container_prerequisites PRIVATE
         src/cpp/server/backends src/cpp/server/backends/configured)
     target_link_libraries(test_container_prerequisites PRIVATE
@@ -4377,8 +4381,8 @@ if(BUILD_TESTING)
     target_compile_definitions(test_container_c7a PRIVATE
         LEMON_BACKEND_EXPORT_TESTING LEMONADE_BINDING_TEST LEMONADE_TYPED_HOOK_TEST
         LEMON_TEST_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures"
-        LEMON_C7A_SCRATCH="${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/container-v2/c8/replay/c7a"
-        LEMON_C7B_SCRATCH="${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/container-v2/c8/replay/c7b")
+        LEMON_C7A_SCRATCH="${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/container-v2/c8a/replay/c7a"
+        LEMON_C7B_SCRATCH="${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/container-v2/c8a/replay/c7b")
     target_include_directories(test_container_c7a PRIVATE
         src/cpp/server/backends src/cpp/server/backends/configured)
     target_link_libraries(test_container_c7a PRIVATE
@@ -4411,7 +4415,7 @@ if(BUILD_TESTING)
     target_compile_definitions(test_container_production PRIVATE
         LEMON_BACKEND_EXPORT_TESTING LEMONADE_BINDING_TEST LEMONADE_TYPED_HOOK_TEST
         LEMON_TEST_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures"
-        LEMON_C8_SCRATCH="${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/container-v2/c8/parity")
+        LEMON_C8_SCRATCH="${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/container-v2/c8a/replay/production")
     target_include_directories(test_container_production PRIVATE
         src/cpp/server/backends src/cpp/server/backends/configured)
     target_link_libraries(test_container_production PRIVATE
@@ -4440,4 +4444,12 @@ if(BUILD_TESTING)
             test_backend_definition_binding_boundary test_backend_catalog_execution test_llamacpp_external_fork)
         target_compile_definitions(${_target} PRIVATE LEMON_C8_SOURCE_COUNT=${LEMON_C8_SOURCE_COUNT})
     endforeach()
+endif()
+
+if(BUILD_TESTING)
+    target_compile_definitions(test_container_production PRIVATE
+        LEMON_C8A_SCRATCH="${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/container-v2/c8a/contracts")
+    add_cpp_ci_test(ContainerC8aPreInstallTest CI ON COMMAND test_container_production --pre-install
+        DEPENDS test_container_production)
+    set_tests_properties(ContainerC8aPreInstallTest PROPERTIES TIMEOUT 60)
 endif()
