@@ -227,6 +227,7 @@ public:
     json reranking(const json& request);
     json classify(const json& request);
     nlohmann::ordered_json systemone(const nlohmann::ordered_json& request);
+    nlohmann::ordered_json decisions(const nlohmann::ordered_json& request);
     json get_slots();
     json slots_action(int slot_id, const std::string& action, const json& request_body);
     json tokenize(const json& request);
@@ -411,6 +412,10 @@ private:
 
     template<typename Func>
     auto execute_inference(const json& request, Func&& inference_func) -> decltype(inference_func(nullptr));
+
+    nlohmann::ordered_json decision_inference(
+        const nlohmann::ordered_json& request, const std::string& operation,
+        const std::function<nlohmann::ordered_json(WrappedServer*)>& call);
 
     template<typename Func>
     void execute_streaming(const std::string& request_body, httplib::DataSink& sink, Func&& streaming_func, std::shared_ptr<telemetry::InferenceSpan> span = nullptr);

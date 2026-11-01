@@ -9,6 +9,7 @@ This page documents Lemonade's implementation of the [OpenAI API](https://develo
 | `POST` | [`/v1/completions`](#post-v1completions) | Continue a text prompt | prompt -> completion |
 | `POST` | [`/v1/embeddings`](#post-v1embeddings) | Embed text as vectors | text -> vector representations |
 | `POST` | [`/v1/responses`](#post-v1responses) | Generate a response in OpenAI's Responses format | prompt/messages -> event |
+| `POST` | [`/v1/decisions`](#post-v1decisions) | Answer OpenAI Decisions questions with a decision model | input + questions -> one answer per question |
 | `POST` | [`/v1/audio/transcriptions`](#post-v1audiotranscriptions) | Transcribe an audio file to text | audio file -> text |
 | `POST` | [`/v1/images/generations`](#post-v1imagesgenerations) | Generate an image from a text prompt | prompt -> image |
 | `POST` | [`/v1/images/edits`](#post-v1imagesedits) | Edit images as a prompt describes | image + prompt -> edited image |
@@ -929,6 +930,158 @@ Sent in place of the rest of the stream when the backend fails after the stream 
 | `500` |  | The request fails unexpectedly |
 | `500` | `model_load_error` | Loading the requested model fails for another reason, such as a failed download or a backend that does not start |
 <!-- END GENERATED: openai.responses -->
+
+<!-- BEGIN GENERATED: openai.decisions -->
+## `POST /v1/decisions`
+<sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
+
+Implements the OpenAI Decisions API with a llama.cpp decision model. lemond turns the request into one `/v1/systemone` request, keeping the order of the questions and of each question's options, and turns the answers back. Only `llamacpp` models labelled `classification` and `systemone`, such as `Laya-GGUF`, serve this endpoint.
+
+Requires `LEMONADE_API_KEY` when it is set.
+
+### Parameters
+
+| Parameter | Required | Description | Status |
+|-----------|----------|-------------|--------|
+| `model` | Yes | The model to run; loaded on first use. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `input` | Yes | The content to judge: a string, or an array of `user` messages whose `content` is a string or a list of `input_text`, `input_image` and `input_json` parts. Images must be data URLs. Other roles and tool items are refused. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
+| `questions` | Yes | 1 to 400 questions, answered in this order. Each has a `type` (`predicate`, `choice` or `score`), `instructions`, and an optional `name` that its answer repeats. A `choice` has 2 to 255 `choices` (`{value, description}`, where `value` is a string or a boolean); a `score` has 2 to 10 `levels` (`{label, description}`), lowest first. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `prompt_cache_key` | No | Accepted for OpenAI compatibility and ignored. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
+| `prompt_cache_options` | No | Accepted for OpenAI compatibility and ignored. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
+| `safety_identifier` | No | Accepted for OpenAI compatibility and ignored. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
+| `ctx_size` | No | Lemonade extension: context size to load the model with, when this request loads it. Ignored when the model is already loaded. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+
+### Translation
+
+A `predicate` is asked as a `noul` question. A `choice` option is keyed by its `value`, so a boolean is the text `true` or `false`, and a string with the same text is refused. A `score` level with a `description` reads `label: description`. The answers never have the type `refusal`. `confidence` is the decision model's own, not OpenAI's, and the cache counts in `usage` are always `0`.
+
+### Example
+
+=== "PowerShell"
+
+    ```powershell
+    Invoke-WebRequest `
+      -Uri "http://localhost:13305/v1/decisions" `
+      -Method POST `
+      -Headers @{ "Content-Type" = "application/json" } `
+      -Body '{
+          "model": "Laya-GGUF",
+          "input": "Customer message: I was charged twice for my order last week and nobody has replied.",
+          "questions": [
+            {"type": "predicate", "name": "angry", "instructions": "Is the customer angry?"},
+            {
+              "type": "choice",
+              "name": "team",
+              "instructions": "Which team should handle this?",
+              "choices": [{"value": "billing"}, {"value": "shipping"}, {"value": "technical"}]
+            },
+            {
+              "type": "score",
+              "name": "urgency",
+              "instructions": "How urgent is this?",
+              "levels": [
+                {"label": "can wait"},
+                {"label": "this week"},
+                {"label": "today"},
+                {"label": "right now"}
+              ]
+            }
+          ]
+        }'
+    ```
+
+=== "Bash"
+
+    ```bash
+    curl http://localhost:13305/v1/decisions \
+      -H "Content-Type: application/json" \
+      -d '{
+          "model": "Laya-GGUF",
+          "input": "Customer message: I was charged twice for my order last week and nobody has replied.",
+          "questions": [
+            {"type": "predicate", "name": "angry", "instructions": "Is the customer angry?"},
+            {
+              "type": "choice",
+              "name": "team",
+              "instructions": "Which team should handle this?",
+              "choices": [{"value": "billing"}, {"value": "shipping"}, {"value": "technical"}]
+            },
+            {
+              "type": "score",
+              "name": "urgency",
+              "instructions": "How urgent is this?",
+              "levels": [
+                {"label": "can wait"},
+                {"label": "this week"},
+                {"label": "today"},
+                {"label": "right now"}
+              ]
+            }
+          ]
+        }'
+    ```
+
+**Response:** `200 OK`
+
+```json
+{
+  "model": "Laya-GGUF",
+  "answers": [
+    {"type": "predicate", "name": "angry", "probability": 0.7880857763496107},
+    ... 2 more
+  ],
+  "usage": {
+    "input_tokens": 136,
+    "input_tokens_details": {"cached_tokens": 0, "cache_write_tokens": 0},
+    "output_tokens": 0,
+    "output_tokens_details": {"reasoning_tokens": 0},
+    "total_tokens": 136
+  }
+}
+```
+
+### Response format
+
+- `model` - The model that answered.
+- `answers` - One answer for each question, in question order.
+  - `type` - The question's type.
+  - `name` - The question's `name`, or `null` when it has none.
+  - `probability` - `predicate` answers: the probability that the statement is true.
+  - `choice` - `choice` answers: the most likely `value`.
+  - `score` - `score` answers: the expected level index, from `0` to the number of levels minus one.
+  - `probabilities` - `choice` and `score` answers: one entry per option or level, in request order.
+    - `value` - The choice `value`, or the level index.
+    - `label` - `score` answers: the level's `label`.
+    - `probability` - The probability, in `[0, 1]`.
+  - `confidence` - `choice` and `score` answers: how clearly the model prefers its answer.
+- `usage` - Tokens processed, in OpenAI's shape.
+  - `input_tokens` - Prompt tokens across all questions.
+  - `input_tokens_details` - `cached_tokens` and `cache_write_tokens`, always `0`.
+  - `output_tokens` - Always `0`, because the model generates no tokens.
+  - `output_tokens_details` - `reasoning_tokens`, always `0`.
+  - `total_tokens` - The same as `input_tokens`.
+
+### Errors
+
+| Status | Code | When |
+|--------|------|------|
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `missing_argument` | A required argument is missing |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
+| `400` |  | `model` lacks the `classification` or `systemone` label, or its backend does not answer SystemOne questions; checked before it loads |
+| `400` |  | `input` or a question has something `/v1/systemone` cannot carry, such as an image URL, a developer message or an image in `instructions`, or a `laya` model would cut an option |
+| `400` | `context_length_exceeded` | `input` and a question do not fit in the model's context |
+| `400` | `model_load_refused` | The backend refuses the requested model as it is registered, before it starts anything, such as a decision model whose GGUF type the bundled llama.cpp does not support |
+| `404` |  | The model is unloaded while the request waits for it |
+| `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
+| `404` | `model_not_found` | The requested model is not in the registry |
+| `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
+| `409` | `slots_pinned_error` | Every loaded model of the requested model's type is pinned, so none can be unloaded to make room |
+| `500` |  | The backend reports an error; the backend's own status replaces this one when it sends one |
+| `500` |  | The request fails unexpectedly |
+| `500` | `model_load_error` | Loading the requested model fails for another reason, such as a failed download or a backend that does not start |
+| `501` |  | `input` has an image for a model that reads no images, or that loaded without `mmproj` |
+<!-- END GENERATED: openai.decisions -->
 
 <!-- BEGIN GENERATED: openai.audio_transcriptions -->
 ## `POST /v1/audio/transcriptions`

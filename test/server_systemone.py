@@ -1,9 +1,9 @@
 """
 SystemOne decision-model tests for Lemonade Server.
 
-Tests POST /v1/systemone, the /v1/classify zero-shot path, and the router's
-`systemone` and `zero_shot` classifier types against a llama.cpp decision model
-(llama-server b11361 or later).
+Tests POST /v1/systemone, POST /v1/decisions, the /v1/classify zero-shot path,
+and the router's `systemone` and `zero_shot` classifier types against a
+llama.cpp decision model (llama-server b11361 or later).
 
 Usage:
     python server_systemone.py --wrapped-server llamacpp --backend cpu
@@ -40,6 +40,35 @@ QUESTIONS = {
         "criteria": ["can wait", "this week", "today", "right now"],
     },
 }
+DECISION_QUESTIONS = [
+    {"type": "predicate", "name": "angry", "instructions": "Is the customer angry?"},
+    {
+        "type": "choice",
+        "name": "route",
+        "instructions": "Which team should handle this?",
+        "choices": [
+            {"value": "billing"},
+            {"value": "shipping"},
+            {"value": "technical"},
+        ],
+    },
+    {
+        "type": "choice",
+        "name": "refund",
+        "instructions": "Does the customer want a refund?",
+        "choices": [{"value": True}, {"value": False}],
+    },
+    {
+        "type": "score",
+        "instructions": "How urgent is this?",
+        "levels": [
+            {"label": "can wait"},
+            {"label": "this week"},
+            {"label": "today"},
+            {"label": "right now"},
+        ],
+    },
+]
 PARAGRAPH = (
     "The quarterly report shows revenue growth across all regions, driven by "
     "strong demand for cloud services and improved margins in hardware. "
@@ -142,6 +171,18 @@ class SystemOneTests(ServerTestBase):
                 json={"model_name": name},
                 timeout=TIMEOUT_DEFAULT,
             )
+
+    def test_006_decisions_chat_model_error(self):
+        """/v1/decisions refuses a chat model before loading it into an LLM slot."""
+        self._assert_rejected(
+            "decisions",
+            {
+                "model": get_test_model("llm"),
+                "input": STATE,
+                "questions": DECISION_QUESTIONS,
+            },
+            "Decisions on a chat model",
+        )
 
     def test_500_typed_answers(self):
         """One request answers a choice, a noul and a score question."""
@@ -448,6 +489,138 @@ class SystemOneTests(ServerTestBase):
                 json={"model_name": collection},
                 timeout=TIMEOUT_DEFAULT,
             )
+
+    def _decisions(self, **overrides):
+        payload = {
+            "model": get_test_model("systemone"),
+            "input": STATE,
+            "questions": DECISION_QUESTIONS,
+        }
+        payload.update(overrides)
+        return self._post("decisions", payload)
+
+    def test_510_decisions_typed_answers(self):
+        """/v1/decisions answers in question order, with typed choice values."""
+        self._ensure_model_pulled()
+        response = self._decisions()
+        self.assertEqual(response.status_code, 200, response.text[:1000])
+        body = response.json()
+        self.assertEqual(body["model"], get_test_model("systemone"))
+        answers = body["answers"]
+        self.assertEqual(
+            [(a["type"], a["name"]) for a in answers],
+            [
+                ("predicate", "angry"),
+                ("choice", "route"),
+                ("choice", "refund"),
+                ("score", None),
+            ],
+        )
+        self.assertTrue(0.0 <= answers[0]["probability"] <= 1.0)
+        for answer, values in [
+            (answers[1], ["billing", "shipping", "technical"]),
+            (answers[2], [True, False]),
+        ]:
+            self.assertEqual([p["value"] for p in answer["probabilities"]], values)
+            self.assertIn(answer["choice"], values)
+            self.assertAlmostEqual(
+                sum(p["probability"] for p in answer["probabilities"]), 1.0, places=3
+            )
+        score = answers[3]
+        self.assertTrue(0.0 <= score["score"] <= 3.0)
+        self.assertEqual(
+            [(p["value"], p["label"]) for p in score["probabilities"]],
+            [(0, "can wait"), (1, "this week"), (2, "today"), (3, "right now")],
+        )
+        usage = body["usage"]
+        self.assertGreater(usage["input_tokens"], 0)
+        self.assertEqual(usage["total_tokens"], usage["input_tokens"])
+        self.assertEqual(usage["output_tokens"], 0)
+        print(f"[OK] decisions: {answers}")
+
+    def test_511_decisions_match_systemone(self):
+        """A decision scores the same as the /v1/systemone question it becomes."""
+        self._ensure_model_pulled()
+        decided = self._decisions()
+        self.assertEqual(decided.status_code, 200, decided.text[:1000])
+        direct = self._post(
+            "systemone",
+            self._payload(
+                questions={
+                    "angry": {"type": "noul", "instructions": "Is the customer angry?"},
+                    "route": QUESTIONS["route"],
+                }
+            ),
+        )
+        self.assertEqual(direct.status_code, 200, direct.text[:1000])
+        answers = decided.json()["answers"]
+        expected = direct.json()["answers"]
+        self.assertAlmostEqual(
+            answers[0]["probability"], expected["angry"]["noul"], places=6
+        )
+        for entry in answers[1]["probabilities"]:
+            self.assertAlmostEqual(
+                entry["probability"],
+                expected["route"]["probabilities"][entry["value"]],
+                places=6,
+            )
+        print("[OK] decisions match /v1/systemone")
+
+    def test_512_decisions_untranslatable_error(self):
+        """Input that /v1/systemone cannot carry is a 400."""
+        self._ensure_model_pulled()
+        for context, overrides in [
+            (
+                "developer message",
+                {"input": [{"role": "developer", "content": "Be strict."}]},
+            ),
+            (
+                "image URL",
+                {
+                    "input": [
+                        {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "input_image",
+                                    "image_url": "https://example.com/a.png",
+                                }
+                            ],
+                        }
+                    ]
+                },
+            ),
+            (
+                "string and boolean with the same text",
+                {
+                    "questions": [
+                        {
+                            "type": "choice",
+                            "instructions": "Refund?",
+                            "choices": [{"value": True}, {"value": "true"}],
+                        }
+                    ]
+                },
+            ),
+        ]:
+            response = self._decisions(**overrides)
+            self.assertEqual(response.status_code, 400, f"{context}: {response.text}")
+            print(f"[OK] {context}: {response.json()['error']['message']}")
+
+    def test_513_decisions_openai_sdk(self):
+        """The OpenAI SDK parses the /v1/decisions response."""
+        self._ensure_model_pulled()
+        client = self.get_openai_client()
+        if not hasattr(client, "decisions"):
+            self.skipTest("the OpenAI SDK predates client.decisions (3.26.0)")
+        decision = client.decisions.create(
+            model=get_test_model("systemone"),
+            input=[{"role": "user", "content": STATE}],
+            questions=DECISION_QUESTIONS,
+        )
+        self.assertEqual([a.type for a in decision.answers][0], "predicate")
+        self.assertIs(type(decision.answers[2].choice), bool)
+        print(f"[OK] OpenAI SDK: {[a.type for a in decision.answers]}")
 
 
 if __name__ == "__main__":

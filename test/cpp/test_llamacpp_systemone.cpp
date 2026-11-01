@@ -7,6 +7,9 @@
 #include <vector>
 
 using lemon::backends::llamacpp::build_systemone_classify_request;
+using lemon::backends::llamacpp::build_systemone_decisions_request;
+using lemon::backends::llamacpp::laya_option_texts;
+using lemon::backends::llamacpp::systemone_decisions_response;
 using lemon::backends::llamacpp::decision_model_load_refusal;
 using lemon::backends::llamacpp::decision_text_truncated;
 using lemon::backends::llamacpp::encoder_decision_ctx_size;
@@ -221,6 +224,124 @@ int main() {
     const json other = {{"error", {{"message", "Compute error."}, {"status_code", 500}}}};
     expect(map_encoder_overflow_error(other, 8192) == other, "other errors are left alone");
     expect(map_encoder_overflow_error(response, 8192) == response, "answers are left alone");
+
+    {
+        using ordered = nlohmann::ordered_json;
+        const ordered decisions = ordered::parse(R"({
+            "model": "Laya-GGUF",
+            "input": "I was charged twice.",
+            "questions": [
+                {"type": "predicate", "name": "angry", "instructions": "Is the customer angry?"},
+                {"type": "choice", "name": "team", "instructions": "Which team?",
+                 "choices": [{"value": "shipping"}, {"value": "billing", "description": "payments"},
+                             {"value": false}]},
+                {"type": "score", "instructions": [{"type": "input_text", "text": "How urgent?"}],
+                 "levels": [{"label": "low"}, {"label": "high", "description": "today"}]}
+            ]
+        })");
+        const ordered body = build_systemone_decisions_request(decisions);
+        expect(body["state"] == "I was charged twice.", "a string input is the state");
+        expect(!body.contains("images"), "no images key without images");
+        expect(body["questions"].dump() ==
+                   R"({"q0":{"type":"noul","instructions":"Is the customer angry?"},)"
+                   R"("q1":{"type":"choice","instructions":"Which team?","criteria":)"
+                   R"({"shipping":null,"billing":"payments","false":null}},)"
+                   R"("q2":{"type":"score","instructions":"How urgent?","criteria":)"
+                   R"(["low","high: today"]}})",
+               "predicate, choice and score map to noul, choice and score, in order");
+
+        const auto texts = laya_option_texts(body);
+        expect(texts.size() == 2 &&
+                   texts[0] == std::vector<std::string>{"shipping", "billing: payments", "false"} &&
+                   texts[1] == std::vector<std::string>{"level 0: low", "level 1: high: today"},
+               "laya option texts follow the laya template");
+
+        ordered messages = decisions;
+        messages["input"] = ordered::parse(R"([
+            {"role": "user", "content": "first"},
+            {"type": "message", "role": "user", "content": [
+                {"type": "input_text", "text": "second"},
+                {"type": "input_image", "image_url": "data:image/png;base64,AAAA"},
+                {"type": "input_text", "text": "third"}]}
+        ])");
+        const ordered message_body = build_systemone_decisions_request(messages);
+        expect(message_body["state"] == "first\n\nsecond\nthird",
+               "parts join with a new line and messages with a blank line");
+        expect(message_body["images"] == ordered::array({"data:image/png;base64,AAAA"}),
+               "a data-URL image goes to images");
+
+        ordered json_input = decisions;
+        json_input["input"] = ordered::parse(
+            R"([{"role": "user", "content": [{"type": "input_json", "data": {"b": 1, "a": 2}}]}])");
+        expect(build_systemone_decisions_request(json_input)["state"].dump() == R"({"b":1,"a":2})",
+               "one input_json part stays JSON, in its key order");
+
+        ordered image_only = decisions;
+        image_only["input"] = ordered::parse(
+            R"([{"role": "user", "content": [{"type": "input_image", "image_url": "data:x"}]}])");
+        expect(build_systemone_decisions_request(image_only)["state"].is_null(),
+               "an image-only input has a null state");
+
+        auto refused = [&](const char* path, const ordered& value, const std::string& message) {
+            ordered bad = decisions;
+            bad[nlohmann::ordered_json::json_pointer(path)] = value;
+            expect(throws<std::invalid_argument>([&] { build_systemone_decisions_request(bad); }),
+                   message);
+        };
+        refused("/input", ordered::parse(R"([{"role": "developer", "content": "x"}])"),
+                "a developer message is refused");
+        refused("/input", ordered::parse(
+                    R"([{"role": "user", "content": [{"type": "input_image", "image_url": "https://x/y.png"}]}])"),
+                "an image URL that is not a data URL is refused");
+        refused("/questions", ordered::array(), "an empty question list is refused");
+        refused("/questions/0/type", "maybe", "an unknown question type is refused");
+        refused("/questions/0/criteria", ordered::object(), "a /v1/systemone field is refused");
+        refused("/questions/2/name", "angry", "a repeated question name is refused");
+        refused("/questions/1/choices", ordered::parse(R"([{"value": "only"}])"),
+                "a choice with one option is refused");
+        refused("/questions/1/choices/0/value", "false",
+                "a string and a boolean with the same text are refused");
+        refused("/questions/2/levels", ordered::parse(R"([{"label": "one"}])"),
+                "a score with one level is refused");
+        refused("/questions/0/instructions",
+                ordered::parse(R"([{"type": "input_image", "image_url": "data:x"}])"),
+                "an image in question instructions is refused");
+
+        const ordered systemone_answer = ordered::parse(R"({
+            "model": "Laya-GGUF",
+            "answers": {
+                "q0": {"type": "noul", "noul": 0.8},
+                "q1": {"type": "choice", "choice": "false", "confidence": 0.5,
+                       "probabilities": {"shipping": 0.1, "billing": 0.2, "false": 0.7}},
+                "q2": {"type": "score", "score": 0.75, "confidence": 0.4,
+                       "legend": {"0": "low", "1": "high: today"},
+                       "probabilities": {"0": 0.25, "1": 0.75}}
+            },
+            "usage": {"input_tokens": 90, "output_tokens": 0}
+        })");
+        const ordered result = systemone_decisions_response(systemone_answer, decisions, "Laya-GGUF");
+        expect(result["answers"][0].dump() ==
+                   R"({"type":"predicate","name":"angry","probability":0.8})",
+               "a noul answers the predicate");
+        expect(result["answers"][1]["choice"] == false &&
+                   result["answers"][1]["probabilities"].dump() ==
+                       R"([{"value":"shipping","probability":0.1},{"value":"billing","probability":0.2},)"
+                       R"({"value":false,"probability":0.7}])",
+               "choice values keep their type and the request order");
+        expect(result["answers"][2]["name"].is_null() && result["answers"][2]["score"] == 0.75 &&
+                   result["answers"][2]["probabilities"][1].dump() ==
+                       R"({"value":1,"label":"high","probability":0.75})",
+               "a score answer lists each level by index and label");
+        expect(result["usage"].dump() ==
+                   R"({"input_tokens":90,"input_tokens_details":{"cached_tokens":0,"cache_write_tokens":0},)"
+                   R"("output_tokens":0,"output_tokens_details":{"reasoning_tokens":0},"total_tokens":90})",
+               "usage has OpenAI's shape");
+        ordered missing = systemone_answer;
+        missing["answers"].erase("q2");
+        expect(throws<std::runtime_error>(
+                   [&] { systemone_decisions_response(missing, decisions, "Laya-GGUF"); }),
+               "a missing answer is refused");
+    }
 
     if (failures != 0) {
         std::cerr << failures << " check(s) failed" << std::endl;

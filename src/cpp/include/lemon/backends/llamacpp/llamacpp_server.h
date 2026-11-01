@@ -6,13 +6,14 @@
 #include "lemon/backends/backend_utils.h"
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace lemon {
 namespace backends {
 
 class LlamaCppServer : public WrappedServer, public IEmbeddingsServer, public IRerankingServer,
                        public IClassificationServer, public ISystemOneServer,
-                       public ISlotsServer, public ITokenizerServer {
+                       public IDecisionsServer, public ISlotsServer, public ITokenizerServer {
 public:
     static InstallParams get_install_params(const std::string& backend, const std::string& version);
 
@@ -50,6 +51,9 @@ public:
 
     nlohmann::ordered_json systemone(const nlohmann::ordered_json& request) override;
 
+    // IDecisionsServer implementation, translated to and from /v1/systemone.
+    nlohmann::ordered_json decisions(const nlohmann::ordered_json& request) override;
+
     // ISlotsServer implementation
     json get_slots() override;
     json slots_action(int slot_id, const std::string& action, const json& request_body) override;
@@ -65,9 +69,9 @@ private:
 
     json unsupported_decision_request(const std::string& operation) const;
     nlohmann::ordered_json forward_systemone(const nlohmann::ordered_json& body);
-    // The error to return instead of classifying when a `laya` model would cut
-    // these labels or they cannot be counted; empty when they are read whole.
-    std::optional<json> laya_label_error(const json& labels);
+    // The error to return instead of asking when a `laya` model would cut these
+    // option texts or they cannot be counted; empty when they are read whole.
+    std::optional<json> laya_label_error(const std::vector<std::string>& texts);
 
     bool decision_model_ = false;
     std::string decision_type_;

@@ -92,6 +92,14 @@ public:
     virtual nlohmann::ordered_json systemone(const nlohmann::ordered_json& request) = 0;
 };
 
+// OpenAI Decisions API: an input plus typed questions (predicate, choice, score)
+// -> one answer per question, in question order.
+class IDecisionsServer : public virtual ICapability {
+public:
+    virtual ~IDecisionsServer() = default;
+    virtual nlohmann::ordered_json decisions(const nlohmann::ordered_json& request) = 0;
+};
+
 class IImageServer : public virtual ICapability {
 public:
     virtual ~IImageServer() = default;

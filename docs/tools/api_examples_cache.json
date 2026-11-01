@@ -7632,6 +7632,137 @@
       }
     }
   },
+  "fcf5a9b2131966487597f6764b48f2cf1ec9637a997892a2efda4959dd45ac71": {
+    "route": "openai.decisions",
+    "format": "Json",
+    "request": {
+      "method": "POST",
+      "path": "/v1/decisions",
+      "query": {},
+      "json": {
+        "model": "Laya-GGUF",
+        "input": "Customer message: I was charged twice for my order last week and nobody has replied.",
+        "questions": [
+          {
+            "type": "predicate",
+            "name": "angry",
+            "instructions": "Is the customer angry?"
+          },
+          {
+            "type": "choice",
+            "name": "team",
+            "instructions": "Which team should handle this?",
+            "choices": [
+              {
+                "value": "billing"
+              },
+              {
+                "value": "shipping"
+              },
+              {
+                "value": "technical"
+              }
+            ]
+          },
+          {
+            "type": "score",
+            "name": "urgency",
+            "instructions": "How urgent is this?",
+            "levels": [
+              {
+                "label": "can wait"
+              },
+              {
+                "label": "this week"
+              },
+              {
+                "label": "today"
+              },
+              {
+                "label": "right now"
+              }
+            ]
+          }
+        ]
+      },
+      "form": {},
+      "files": {}
+    },
+    "response": {
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "model": "Laya-GGUF",
+        "answers": [
+          {
+            "type": "predicate",
+            "name": "angry",
+            "probability": 0.7880857763496107
+          },
+          {
+            "type": "choice",
+            "name": "team",
+            "choice": "billing",
+            "probabilities": [
+              {
+                "value": "billing",
+                "probability": 0.9914327368198715
+              },
+              {
+                "value": "shipping",
+                "probability": 0.0058968890569228395
+              },
+              {
+                "value": "technical",
+                "probability": 0.0026703741232054364
+              }
+            ],
+            "confidence": 0.9871491052298071
+          },
+          {
+            "type": "score",
+            "name": "urgency",
+            "score": 1.8974064521547507,
+            "probabilities": [
+              {
+                "value": 0,
+                "label": "can wait",
+                "probability": 0.03941832754688493
+              },
+              {
+                "value": 1,
+                "label": "this week",
+                "probability": 0.4667585212872725
+              },
+              {
+                "value": 2,
+                "label": "today",
+                "probability": 0.050821522630049645
+              },
+              {
+                "value": 3,
+                "label": "right now",
+                "probability": 0.44300162853579295
+              }
+            ],
+            "confidence": 0.02375689275147952
+          }
+        ],
+        "usage": {
+          "input_tokens": 136,
+          "input_tokens_details": {
+            "cached_tokens": 0,
+            "cache_write_tokens": 0
+          },
+          "output_tokens": 0,
+          "output_tokens_details": {
+            "reasoning_tokens": 0
+          },
+          "total_tokens": 136
+        }
+      }
+    }
+  },
   "5487afd0739a3bc9c226df65a5419a6a25d7cfb47744b36d10463f014e012bb1": {
     "route": "openai.embeddings",
     "format": "Json",

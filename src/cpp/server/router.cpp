@@ -2156,9 +2156,35 @@ json Router::classify(const json& request) {
 }
 
 nlohmann::ordered_json Router::systemone(const nlohmann::ordered_json& request) {
+    return decision_inference(request, "systemone", [&](WrappedServer* server) -> nlohmann::ordered_json {
+        auto systemone_server = dynamic_cast<ISystemOneServer*>(server);
+        if (!systemone_server) {
+            return ErrorResponse::from_exception(
+                UnsupportedOperationException("SystemOne", device_type_to_string(server->get_device_type()))
+            );
+        }
+        return systemone_server->systemone(request);
+    });
+}
+
+nlohmann::ordered_json Router::decisions(const nlohmann::ordered_json& request) {
+    return decision_inference(request, "decisions", [&](WrappedServer* server) -> nlohmann::ordered_json {
+        auto decisions_server = dynamic_cast<IDecisionsServer*>(server);
+        if (!decisions_server) {
+            return ErrorResponse::from_exception(
+                UnsupportedOperationException("Decisions", device_type_to_string(server->get_device_type()))
+            );
+        }
+        return decisions_server->decisions(request);
+    });
+}
+
+nlohmann::ordered_json Router::decision_inference(
+        const nlohmann::ordered_json& request, const std::string& operation,
+        const std::function<nlohmann::ordered_json(WrappedServer*)>& call) {
     const json routing_request(request);
     std::string requested_model = routing_request.value("model", "");
-    std::shared_ptr<telemetry::InferenceSpan> span = telemetry::TelemetryTracker::start_span("CLASSIFIER", "systemone", requested_model, routing_request);
+    std::shared_ptr<telemetry::InferenceSpan> span = telemetry::TelemetryTracker::start_span("CLASSIFIER", operation, requested_model, routing_request);
 
     try {
         nlohmann::ordered_json response = execute_inference(
@@ -2170,13 +2196,7 @@ nlohmann::ordered_json Router::systemone(const nlohmann::ordered_json& request) 
                 span->set_attribute("classifier.checkpoint", identity.checkpoint);
                 span->set_attribute("classifier.recipe", identity.recipe);
             }
-            auto systemone_server = dynamic_cast<ISystemOneServer*>(server);
-            if (!systemone_server) {
-                return ErrorResponse::from_exception(
-                    UnsupportedOperationException("SystemOne", device_type_to_string(server->get_device_type()))
-                );
-            }
-            return systemone_server->systemone(request);
+            return call(server);
         });
 
         if (span) {

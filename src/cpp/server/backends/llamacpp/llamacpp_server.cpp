@@ -102,7 +102,7 @@ static bool is_llamacpp_cuda_backend(const std::string& backend) {
     return backend == "cuda";
 }
 
-static json invalid_classify_request(const std::string& message) {
+static json invalid_decision_request(const std::string& message) {
     return json{{"error", {
         {"message", message},
         {"type", "invalid_request_error"},
@@ -684,10 +684,10 @@ json LlamaCppServer::classify(const json& request) {
     }
     const json text = request.contains("text") ? request["text"] : request.value("input", json());
     if (!text.is_string()) {
-        return invalid_classify_request("Missing 'input' (or 'text') string in classify request");
+        return invalid_decision_request("Missing 'input' (or 'text') string in classify request");
     }
     if (!request.contains("labels") || request["labels"].is_null()) {
-        return invalid_classify_request(
+        return invalid_decision_request(
             "this model scores a label list supplied per request; include a \"labels\" "
             "array in the request body");
     }
@@ -697,10 +697,10 @@ json LlamaCppServer::classify(const json& request) {
         body = llamacpp::build_systemone_classify_request(text.get<std::string>(),
                                                           request["labels"]);
     } catch (const std::invalid_argument& e) {
-        return invalid_classify_request(e.what());
+        return invalid_decision_request(e.what());
     }
     // ort-server refuses a label it would cut; laya cuts it silently, so refuse it here.
-    if (const auto error = laya_label_error(request["labels"])) {
+    if (const auto error = laya_label_error(request["labels"].get<std::vector<std::string>>())) {
         return *error;
     }
 
@@ -720,15 +720,13 @@ json LlamaCppServer::classify(const json& request) {
     }
 }
 
-std::optional<json> LlamaCppServer::laya_label_error(const json& labels) {
+std::optional<json> LlamaCppServer::laya_label_error(const std::vector<std::string>& texts) {
     if (decision_type_ != "laya" || decision_max_head_tokens_ <= 0) {
         return std::nullopt;
     }
-    std::vector<std::string> texts;
     std::vector<size_t> byte_bounds;
-    for (const auto& label : labels) {
-        texts.push_back(label.get<std::string>());
-        byte_bounds.push_back(1 + texts.back().size());
+    for (const auto& text : texts) {
+        byte_bounds.push_back(1 + text.size());
     }
     // A byte-level BPE never has more tokens than bytes, so short labels need
     // no /tokenize round trip.
@@ -753,7 +751,7 @@ std::optional<json> LlamaCppServer::laya_label_error(const json& labels) {
     const std::string refusal =
         llamacpp::laya_label_overflow(texts, tokens, decision_max_head_tokens_);
     if (!refusal.empty()) {
-        return invalid_classify_request(refusal);
+        return invalid_decision_request(refusal);
     }
     return std::nullopt;
 }
@@ -768,6 +766,34 @@ nlohmann::ordered_json LlamaCppServer::systemone(const nlohmann::ordered_json& r
         response["model"] = request.value("model", get_model_name());
     }
     return response;
+}
+
+nlohmann::ordered_json LlamaCppServer::decisions(const nlohmann::ordered_json& request) {
+    if (!decision_model_) {
+        return unsupported_decision_request("Decisions");
+    }
+    nlohmann::ordered_json body;
+    try {
+        body = llamacpp::build_systemone_decisions_request(request);
+    } catch (const std::invalid_argument& e) {
+        return invalid_decision_request(e.what());
+    }
+    for (const auto& options : llamacpp::laya_option_texts(body)) {
+        if (const auto error = laya_label_error(options)) {
+            return *error;
+        }
+    }
+
+    const nlohmann::ordered_json response = forward_systemone(body);
+    if (response.contains("error")) {
+        return response;
+    }
+    try {
+        return llamacpp::systemone_decisions_response(
+            response, request, request.value("model", get_model_name()));
+    } catch (const std::exception& e) {
+        return ErrorResponse::create(e.what(), ErrorType::BACKEND_ERROR);
+    }
 }
 
 nlohmann::ordered_json LlamaCppServer::forward_systemone(const nlohmann::ordered_json& body) {

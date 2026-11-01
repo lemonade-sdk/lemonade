@@ -40,6 +40,24 @@ nlohmann::json systemone_classify_response(const nlohmann::json& response,
                                            int top_k,
                                            std::optional<bool> truncated);
 
+// /v1/decisions (OpenAI) -> a /v1/systemone body. The text of the user messages becomes
+// the state, data-URL images go to `images`, and question i gets the id "q<i>": a
+// predicate becomes a noul, and a score level with a description reads
+// "label: description". Throws std::invalid_argument for what /v1/systemone cannot
+// carry, such as an image URL, a developer message or an image in a question.
+nlohmann::ordered_json build_systemone_decisions_request(const nlohmann::ordered_json& request);
+
+// The text of each option of each question in that body, as a `laya` template renders
+// it, for laya_label_overflow. A noul's options are fixed, so it has none.
+std::vector<std::vector<std::string>> laya_option_texts(const nlohmann::ordered_json& body);
+
+// The /v1/systemone response to that body -> the /v1/decisions response: answers in
+// question order with typed choice values, and OpenAI's usage shape. Throws
+// std::runtime_error unless each answer covers exactly its question's options.
+nlohmann::ordered_json systemone_decisions_response(const nlohmann::ordered_json& response,
+                                                   const nlohmann::ordered_json& request,
+                                                   const std::string& model);
+
 // llama-server caps an encoder decision model's slot at its trained window, so
 // a larger context buys nothing.
 int encoder_decision_ctx_size(int requested, int64_t trained_window);
