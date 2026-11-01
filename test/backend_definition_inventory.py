@@ -16,13 +16,22 @@ V1_NAMES = frozenset(
         "trellis",
     }
 )
+DORMANT_CONTAINERS = {
+    "gufo": "gufo",
+    "rocmfpx": "rocmfpx",
+    "halobox": "llamacpp",
+    "nathanw": "llamacpp",
+    "halogen": "halogen",
+    "ds4_rocm": "ds4",
+}
 
 
 def production_inventory(root=REPO):
     sources = root / "src/cpp/resources/backends"
     names = {path.stem for path in sources.glob("*.json")}
+    dormant_names = names & DORMANT_CONTAINERS.keys()
     dormant = "gufo" in names
-    mixed = names == V1_NAMES | {"llamacpp"} | ({"gufo"} if dormant else set())
+    mixed = names == V1_NAMES | {"llamacpp"} | dormant_names
     assert names == V1_NAMES or mixed, "ExactMixedDefinitionSources"
     promoted_hrx = (
         json.loads((sources / "hrx.json").read_bytes())["schema_version"] == 2
@@ -54,4 +63,12 @@ def production_inventory(root=REPO):
             value["schema_version"] == 2 and value["id"] == value["recipe"] == "gufo"
         ), "ExactDormantGufoSource"
         assert value["merge"]["kind"] == "container", "DormantGufoIsContainerData"
+    for name in dormant_names:
+        value = json.loads((sources / f"{name}.json").read_bytes())
+        assert (
+            value["schema_version"] == 2
+            and value["id"] == name
+            and value["recipe"] == DORMANT_CONTAINERS[name]
+            and value["merge"]["kind"] == "container"
+        ), "ExactDormantContainerSource"
     return names

@@ -214,15 +214,17 @@ int main(int argc, char** argv) {
     check_candidate(candidate);
     Json all = Json::object();
     const auto descriptors = all_generated_descriptors();
-    std::size_t definitions = 0;
+    std::size_t definitions = 0, dormant_definitions = 0;
     for (const auto& file : std::filesystem::directory_iterator(LEMON_PRODUCTION_DEFINITIONS)) {
         if (file.path().extension() != ".json") continue;
         const auto source = read(file.path());
-        if (source.at("id") == "gufo") {
-            const auto& dormant = builtin_resolved_source({DefinitionNamespace::Builtin, "gufo", 1}).declaration;
+        const auto id = source.at("id").get<std::string>();
+        if (id == "gufo" || id == "rocmfpx" || id == "halogen") {
+            const auto& dormant = builtin_resolved_source({DefinitionNamespace::Builtin, id, 1}).declaration;
             const auto mapped = descriptor_from_declaration(dormant, DefinitionNamespace::Builtin, DescriptorPlatform::native());
-            check(mapped.recipe == "gufo" && mapped.containers.size() == 1 && std::none_of(descriptors.begin(), descriptors.end(), [](const auto* d) { return d->recipe == "gufo"; }),
-                "InactiveGufoDescriptorDataHasNoProductionRegistration");
+            check(mapped.recipe == id && mapped.containers.size() == 1 && std::none_of(descriptors.begin(), descriptors.end(), [&](const auto* d) { return d->recipe == id; }),
+                id == "gufo" ? "InactiveGufoDescriptorDataHasNoProductionRegistration" : "InactiveContainerDescriptorDataHasNoProductionRegistration:" + id);
+            ++dormant_definitions;
             continue;
         }
         const auto declaration = source.at("schema_version") == 2 ?
@@ -247,6 +249,7 @@ int main(int argc, char** argv) {
     check(std::string(k_fixture_source) == fixture_bytes,"synthetic embedded bytes match fixture exactly");
     check(Json::parse(k_fixture_source) == read(fixture_path),"synthetic embedded source matches fixture");
     check(definitions == 9,"all nine definitions exercised");
+    check(dormant_definitions == 1 + LEMON_C8_SOURCE_COUNT, "ExactDormantDefinitionInventoryExercised");
     check(fixture_descriptor_peer() == &v2_fixture::descriptor,"named inline descriptor address equal across translation units");
     auto declaration = fixture_resolved_definition().declaration;
     check(dump(v2_fixture::descriptor) == dump(descriptor_from_declaration(declaration,DefinitionNamespace::Builtin,DescriptorPlatform::native())),"generated v2 initializer uses pure resolver and mapper");

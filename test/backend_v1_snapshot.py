@@ -12,7 +12,7 @@ import tempfile
 from urllib.parse import quote
 
 from backend_catalog_http import Server, definition, prepare, request
-from backend_definition_inventory import production_inventory
+from backend_definition_inventory import DORMANT_CONTAINERS, production_inventory
 from backend_schema_cli import Fixture
 
 REPO = Path(__file__).resolve().parents[1]
@@ -53,7 +53,7 @@ def capture(lemond, cli, source_root=REPO):
                 if row["definition_id"] is not None
             }
             inventory = production_inventory(source_root)
-            expected_inactive = {"gufo"} if "gufo" in inventory else set()
+            expected_inactive = inventory & DORMANT_CONTAINERS.keys()
             assert (
                 set(result["definitions"]) == inventory - expected_inactive
             ), "ExactMixedDefinitionSet"

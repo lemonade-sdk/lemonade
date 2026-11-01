@@ -60,7 +60,7 @@ void finalization_controls() {
     check(bool(complete.catalog) && catalog_publication().state() == CatalogPublication::State::Empty,
         "ExternalCandidateHasZeroEffects:unpublished");
     if (!complete.catalog) return;
-    bool canonical = embedded_v2_policies().leaves.size() == 2 && embedded_v2_sources().size() == 3 &&
+    bool canonical = embedded_v2_policies().leaves.size() == 2 && embedded_v2_sources().size() == 3 + LEMON_C8_SOURCE_COUNT &&
         std::none_of(complete.catalog->registrations().begin(), complete.catalog->registrations().end(),
             [](const auto& row) { return row.descriptor->recipe == "gufo"; });
     for (const auto& seed : builtin_registration_seeds()) {

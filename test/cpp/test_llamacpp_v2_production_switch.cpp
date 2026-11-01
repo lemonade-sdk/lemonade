@@ -173,7 +173,7 @@ int main(int argc, char** argv) {
             "sha256:d644387f2d2838a76ace64304318e673244e8cd117e496ae4394dc0792e2b9fa", "BuiltinPolicyDoesNotAuthorizeExport");
         std::ifstream file(std::string(LEMON_PRODUCTION_DEFINITIONS) + "/llamacpp.json", std::ios::binary);
         const std::string production_bytes{std::istreambuf_iterator<char>(file), {}};
-        check(production_bytes == read_bytes("llamacpp.candidate.json") && embedded_v2_sources().size() == 3 &&
+        check(production_bytes == read_bytes("llamacpp.candidate.json") && embedded_v2_sources().size() == 3 + LEMON_C8_SOURCE_COUNT &&
             std::any_of(embedded_v2_sources().begin(), embedded_v2_sources().end(), [&](const auto& source) { return source.key.id == "llamacpp" && source.bytes == production_bytes; }), "ProductionBytesEqualImmutableQualifiedCandidate");
         const auto nested = installed_definition_admission_features();
         check(nested.at("acceptance_stage") == "execution_finalization" &&
@@ -182,7 +182,7 @@ int main(int argc, char** argv) {
         const auto frozen = freeze_builtin_catalog();
         const auto snapshot = make_catalog_source_snapshot(frozen, {});
         const auto admitted = admit_catalog(snapshot.snapshot);
-        check(admitted.catalog && admitted.catalog->metrics().definitions == 10, "ProductionSourcesSevenV1ThreeV2ChargedOnce");
+        check(admitted.catalog && admitted.catalog->metrics().definitions == 10 + LEMON_C8_SOURCE_COUNT, "ProductionSourcesSevenV1ThreeV2ChargedOnce");
         const auto complete = build_backend_catalog(frozen, {});
         check(complete.catalog && complete.stages.executable, "ProductionGraphFinalizesPrivately");
         if (!complete.catalog || !admitted.catalog) { diagnostics(complete.diagnostics); return finish(); }

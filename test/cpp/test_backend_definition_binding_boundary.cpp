@@ -1,4 +1,5 @@
 #include "backend_definition_binding_fixture.h"
+#include "container_source_inventory.h"
 
 #include <set>
 #include <type_traits>
@@ -53,8 +54,8 @@ int main() {
             "BoundObjectRetainsExactInputs");
         check(!bind_execution_definition({}, {}).definition && !bind_execution_definition(catalog.lock(), {}).definition &&
             !bind_execution_definition({}, compiled.lock()).definition, "NullInputsFailClosed");
-        check(embedded_v2_sources().size() == 3 &&
-            std::set<std::string>{embedded_v2_sources()[0].key.id, embedded_v2_sources()[1].key.id, embedded_v2_sources()[2].key.id} == std::set<std::string>{"gufo", "hrx", "llamacpp"} &&
+        check(embedded_v2_sources().size() == 3 + LEMON_C8_SOURCE_COUNT &&
+            current_container_source_ids() == expected_container_source_ids() &&
             embedded_v2_policies().leaves.size() == 2 &&
             std::set<std::string>{embedded_v2_policies().leaves[0].key.id, embedded_v2_policies().leaves[1].key.id} == std::set<std::string>{"hrx", "llamacpp"} && installed_builtin_exports().exports().size() == 1,
             "ProductionV2ExecutionTablesExactlyHrxAndLlamaAndExportsEmpty");

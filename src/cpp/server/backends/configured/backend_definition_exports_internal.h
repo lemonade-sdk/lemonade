@@ -75,6 +75,7 @@ BuiltinExportContract llamacpp_external_contract();
 const BuiltinExecutionPolicies& fixed_builtin_v2_policies();
 const BuiltinExecutionPolicies& embedded_v2_policies();
 const BuiltinContainerExecutionOwner& reviewed_gufo_execution_owner();
+const BuiltinContainerExecutionOwner& reviewed_container_execution_owner(const std::string& id);
 
 class BuiltinCatalogLoader {
 public:

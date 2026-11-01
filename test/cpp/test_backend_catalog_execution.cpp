@@ -1,6 +1,7 @@
 #include "backend_catalog_execution_fixture.h"
 #include "backend_catalog_publication_internal.h"
 #include "backend_runtime_fixture.h"
+#include "container_source_inventory.h"
 #include "lemon/backends/configured/backend_definition_descriptor.h"
 
 #include <set>
@@ -83,9 +84,8 @@ int main() {
     auto foreign = parent;
     foreign["merge"]["hooks"]["backend"] = {{"id", "llamacpp.backend"}};
     check(!build({foreign}).catalog, "ExternalDeclarationsCannotMintHookAuthority");
-    check(installed_builtin_exports().exports().size() == 1 && embedded_v2_sources().size() == 3 &&
-        std::set<std::string>{embedded_v2_sources()[0].key.id, embedded_v2_sources()[1].key.id, embedded_v2_sources()[2].key.id} ==
-            std::set<std::string>{"gufo", "hrx", "llamacpp"} && embedded_v2_policies().leaves.size() == 2,
+    check(installed_builtin_exports().exports().size() == 1 && embedded_v2_sources().size() == 3 + LEMON_C8_SOURCE_COUNT &&
+        current_container_source_ids() == expected_container_source_ids() && embedded_v2_policies().leaves.size() == 2,
             "ProductionV2HrxAndLlamaActiveGufoDormantAndSingleReviewedExport");
     const auto rich = good.catalog->export_schema("catalog-leaf", 2);
     check(rich["recipes"][0]["input_schema_version"] == 2 && rich["executable_definition_versions"] == Json::array({1, 2}), "ExecutableV2PublicProjectionUsesLeafVersion");

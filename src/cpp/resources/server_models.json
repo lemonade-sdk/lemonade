@@ -529,7 +529,7 @@
         "labels": [
             "chat"
         ],
-        "size": 9.3
+        "size": 9.30
     },
     "Llama-3.2-1B-Instruct-NPU": {
         "checkpoint": "amd/Llama-3.2-1B-Instruct-onnx-ryzenai-npu",
@@ -565,7 +565,7 @@
         "labels": [
             "chat"
         ],
-        "size": 9.3
+        "size": 9.30
     },
     "Mistral-7B-Instruct-v0.1-NPU": {
         "checkpoint": "amd/Mistral-7B-Instruct-v0.1-onnx-ryzenai-npu",
@@ -2937,5 +2937,55 @@
         ],
         "size": 92.7,
         "gufo_speculative": "dspark"
+    },
+    "Qwen3.8-27B-ROCmFP4-STRIX-MTP": {
+        "checkpoints": {
+            "main": "kingjones777/Qwen3.8-27B-ROCmFP4-STRIX-MTP-GGUF:Qwen3.8-27B-Q4_0_ROCMFP4_STRIX.gguf",
+            "draft": "kingjones777/Qwen3.8-27B-ROCmFP4-STRIX-MTP-GGUF:mtp-Qwen3.8-27B-Q4_0.gguf",
+            "mmproj": "kingjones777/Qwen3.8-27B-ROCmFP4-STRIX-MTP-GGUF:mmproj-Qwen3.8-27B-BF16.gguf"
+        },
+        "recipe": "rocmfpx",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling",
+            "vision",
+            "mtp"
+        ],
+        "size": 17.4,
+        "uploaded_by": "kingjones777"
+    },
+    "Gemma-4-26B-A4B-it-ROCmFP4": {
+        "checkpoints": {
+            "main": "kingjones777/Gemma-4-26B-A4B-it-ROCmFP4-GGUF:gemma-4-26B-A4B-it-Q4_0_ROCMFP4_FAST_COHERENT.gguf",
+            "mmproj": "kingjones777/Gemma-4-26B-A4B-it-ROCmFP4-GGUF:mmproj-BF16.gguf"
+        },
+        "recipe": "rocmfpx",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "tool-calling",
+            "vision"
+        ],
+        "size": 14.9,
+        "uploaded_by": "kingjones777"
+    },
+    "Qwen3.6-35B-A3B-ROCmFP4-MTP": {
+        "checkpoints": {
+            "main": "plunderstruck/Qwen3.6-35B-A3B-MTP-ROCmFP4-GGUF:Qwen3.6-35B-A3B-MTP-ROCmFP4-STRIX-embF16-headQ6.gguf",
+            "mmproj": "plunderstruck/Qwen3.6-35B-A3B-MTP-ROCmFP4-GGUF:mmproj-F32.gguf"
+        },
+        "recipe": "rocmfpx",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling",
+            "vision",
+            "mtp"
+        ],
+        "size": 21.7,
+        "uploaded_by": "plunderstruck"
     }
 }
