@@ -1,5 +1,5 @@
 {
-  "d2daa6ab93ea11e4048d5dd829634c9d5f324525b4df226936937c031cf3882c": {
+  "4ebb5534b3d2373210cbd91efde7b9279211be22154276e6acaa0282c77dd47b": {
     "route": "anthropic.messages",
     "format": "EventStream",
     "request": {
@@ -25,7 +25,7 @@
       "status": 200,
       "content_type": "text/event-stream",
       "head": [
-        "event: message_start\ndata: {\"message\":{\"content\":[],\"id\":\"chatcmpl-HlZvmVCRPegOaCJuDQXJCHhnyGJdviOd\",\"model\":\"Qwen3-0.6B-GGUF\",\"role\":\"assistant\",\"stop_reason\":null,\"stop_sequence\":null,\"type\":\"message\",\"usage\":{\"input_tokens\":0,\"output_tokens\":0}},\"type\":\"message_start\"}",
+        "event: message_start\ndata: {\"message\":{\"content\":[],\"id\":\"chatcmpl-celv5nn0GyuDcc40tcX4ow661Z5Vy3JK\",\"model\":\"Qwen3-0.6B-GGUF\",\"role\":\"assistant\",\"stop_reason\":null,\"stop_sequence\":null,\"type\":\"message\",\"usage\":{\"input_tokens\":0,\"output_tokens\":0}},\"type\":\"message_start\"}",
         "event: content_block_start\ndata: {\"content_block\":{\"text\":\"\",\"type\":\"text\"},\"index\":0,\"type\":\"content_block_start\"}",
         "event: content_block_delta\ndata: {\"delta\":{\"text\":\"The\",\"type\":\"text_delta\"},\"index\":0,\"type\":\"content_block_delta\"}"
       ],
@@ -36,7 +36,7 @@
       "count": 14
     }
   },
-  "31e8d682bef0ff7ebd80f0a70640e31b6eb3575c524fde14b0f81d405c1abab6": {
+  "7297136fed4268e4e87a6d69647a0350c806834818266c90a239b0fcb007b443": {
     "route": "anthropic.messages",
     "format": "Json",
     "request": {
@@ -67,7 +67,7 @@
             "type": "text"
           }
         ],
-        "id": "chatcmpl-NTkkVjKODSZhCjATJtoYx7UJrrvoMVuk",
+        "id": "chatcmpl-IaZJEWZX0HqPQzRu4EnCFEYilaeNJtGj",
         "model": "Qwen3-0.6B-GGUF",
         "role": "assistant",
         "stop_reason": "end_turn",
@@ -747,7 +747,7 @@
       }
     }
   },
-  "6f7b5ec41f8457d50c75c350deded543e97892c9524c41f846b0b9c9bc090d43": {
+  "59fe426b8e875df90e7438e9a11a60c7d27d29720f4f8e9bf570a2316bd5d107": {
     "route": "internal.pin",
     "format": "Json",
     "request": {
@@ -1208,7 +1208,7 @@
       "line_count": 4453
     }
   },
-  "7235f00f477f2c366be1ad1394de1516b8608fbe2f43624472849795f33049c1": {
+  "c591cb7be6a50fc548a71c579966deeeb88d134511bdaec45b9919ac41ff0350": {
     "route": "lemonade.downloads",
     "format": "Json",
     "request": {
@@ -1245,7 +1245,7 @@
       ]
     }
   },
-  "a538aa17d1954b7f3f0a4489418b3e25a7890057a220b56e517f3f880faa142e": {
+  "96b0c18dd397519971ffe11335a28fa5becc8b2d2d3bf9edafb0465192eaf935": {
     "route": "lemonade.downloads_control",
     "format": "Json",
     "request": {
@@ -1306,7 +1306,7 @@
       }
     }
   },
-  "b082c9a72e1802f61ba427e6c53595c443f0d2dfa088651c199270eac35a8812": {
+  "211f895900d5e064c20cc8d0f67c02e9f9aba586daab01e1585db8428154abaa": {
     "route": "lemonade.health",
     "format": "Json",
     "request": {
@@ -1330,7 +1330,7 @@
             "device": "gpu",
             "is_busy": false,
             "is_streaming": false,
-            "last_use": 872883217,
+            "last_use": 1617744746,
             "launch_command": [
               "~/.cache/lemonade\\bin\\llamacpp\\vulkan\\llama-server.exe",
               "-m",
@@ -1350,7 +1350,7 @@
             "loaded": true,
             "max_context_window": 2048,
             "model_name": "nomic-embed-text-v1-GGUF",
-            "pid": 15836,
+            "pid": 19548,
             "pinned": false,
             "recipe": "llamacpp",
             "recipe_options": {
@@ -1371,7 +1371,7 @@
             "device": "gpu",
             "is_busy": false,
             "is_streaming": false,
-            "last_use": 872892135,
+            "last_use": 1617752132,
             "launch_command": [
               "~/.cache/lemonade\\bin\\llamacpp\\vulkan\\llama-server.exe",
               "-m",
@@ -1400,7 +1400,7 @@
             "loaded": true,
             "max_context_window": 40960,
             "model_name": "Qwen3-0.6B-GGUF",
-            "pid": 16044,
+            "pid": 20520,
             "pinned": false,
             "recipe": "llamacpp",
             "recipe_options": {
@@ -1424,6 +1424,12 @@
           "tts": 1
         },
         "model_loaded": "Qwen3-0.6B-GGUF",
+        "model_sync": {
+          "completed_sync_id": 0,
+          "status": "idle",
+          "sync_id": 0
+        },
+        "models_generation": 4,
         "pinned_helper_models": {
           "classification": 0,
           "embedding": 0,
@@ -1447,7 +1453,7 @@
           "enabled": false
         },
         "update_check_done": true,
-        "version": "2026.45.0~1719.034d3f52",
+        "version": "2026.46.0~1753.17193fd7",
         "websocket_port": 9000
       }
     }
@@ -1835,7 +1841,7 @@
       }
     }
   },
-  "325cf720008a6bca35b593a38ec676fcf728422dd71af5d6a9767baae27acfc0": {
+  "1137a88239c3ef3bd1f83607e86de3a59f77ebb7e0c2035309a409908ea31b7e": {
     "route": "lemonade.load",
     "format": "Json",
     "request": {
@@ -1975,7 +1981,7 @@
       }
     }
   },
-  "3beb369a779a4947509556b570646d673dd2893049ca8d60a668f47c646f5cd3": {
+  "497971caabbdf27f466911ad89a27a043ea8d56a56f3a7501f970d2a5e62b568": {
     "route": "lemonade.pull",
     "format": "EventStream",
     "request": {
@@ -2055,7 +2061,7 @@
       }
     }
   },
-  "c957ff2d1ab774c5a685b0d9fae77a6887189e76a10ad1962ee4b2f6e86b12cc": {
+  "6992dcf148b90e6ab5768c0aa677b7795989c930cc1342381af1abe7dabde594": {
     "route": "lemonade.pull",
     "format": "Json",
     "request": {
@@ -2094,7 +2100,7 @@
       }
     }
   },
-  "99b0deefe3aca71293847ea3985cff397d02f006d84dc68bb792895f19d44099": {
+  "05000d7d06b5c1b521e4470a18a9ba6eb59fe354039b4834bcd6a6235c2e244c": {
     "route": "lemonade.pull",
     "format": "Json",
     "request": {
@@ -2653,7 +2659,7 @@
       }
     }
   },
-  "dd265b30fbe0e6bcf58056a9fd3164aae72ab3178ee02273681a4e0b8956edd3": {
+  "c2e36b285246147286cfba1cb2529d63bde72aef6e9b71f9ea5b6fb4e47837ca": {
     "route": "lemonade.stats",
     "format": "Json",
     "request": {
@@ -2676,15 +2682,15 @@
           "active_requests": 0,
           "estimated_tokens_per_second": 0.0
         },
-        "output_tokens": 327,
-        "output_tokens_total": 2104,
+        "output_tokens": 378,
+        "output_tokens_total": 1830,
         "prompt_tokens": 15,
         "prompt_tokens_total": 226,
         "request_count_total": 9,
         "routing_decisions_total": 0,
         "routing_switches_total": 0,
-        "time_to_first_token": 0.00445,
-        "tokens_per_second": 350.4584986185915
+        "time_to_first_token": 0.0032749999999999997,
+        "tokens_per_second": 343.3712498986736
       }
     }
   },
@@ -4664,7 +4670,7 @@
       }
     }
   },
-  "47fe787e21c619a941af2cb88a09adde35a8db3b84eaa5ea4035a84a729a1c9d": {
+  "9033b813eeb44a5696b41aeace61c6c56d5ffa97394a70c50e7c64e21b03a9c8": {
     "route": "lemonade.unload",
     "format": "Json",
     "request": {
@@ -4687,7 +4693,7 @@
       }
     }
   },
-  "1373ec28f2ad3e3c908a092931307c2f0d3a0d0b294ce1ba5a73cb57f9f444d7": {
+  "715f0ecd6cc803f9d4d00a7a180a437119c4c19386158d986424ddbbc7f5f174": {
     "route": "llamacpp.rerank",
     "format": "Json",
     "request": {
@@ -4733,7 +4739,7 @@
       }
     }
   },
-  "19f8e6cff7b785ce3d97f3f449d063ad8f72ec3c199c88e3fcc9c2740f3ecc76": {
+  "6d52b7ccee166f1111c004762ff7030e8ea3cfc86001a9591773d159f7cfc977": {
     "route": "llamacpp.slots",
     "format": "Json",
     "request": {
@@ -4750,10 +4756,10 @@
       "body": [
         {
           "id": 0,
-          "id_task": 276,
+          "id_task": 207,
           "is_processing": false,
           "n_ctx": 4096,
-          "n_prompt_tokens": 341,
+          "n_prompt_tokens": 392,
           "n_prompt_tokens_cache": 0,
           "n_prompt_tokens_processed": 0,
           "next_token": [
@@ -4823,7 +4829,7 @@
       ]
     }
   },
-  "770a7acdc8330b5fc0b11c472dcd5e4eec64735fa0d40e910060a15f7a6b4be7": {
+  "4cb7227e103d372207d111c2f3e66adc3610ed5a51b0a3d2c7b675bef23ea5ed": {
     "route": "llamacpp.slots_action",
     "format": "Json",
     "request": {
@@ -4845,7 +4851,7 @@
       }
     }
   },
-  "5d6516db4c357e6392d48361bc69faaef8db26139ec29276daee5ea30cd343cd": {
+  "e367b3120ce0088956a5053a6790e11f8df093a06544028feda3ef1298a0d6d2": {
     "route": "llamacpp.slots_action",
     "format": "Json",
     "request": {
@@ -4869,12 +4875,12 @@
         "n_read": 5277108,
         "n_restored": 46,
         "timings": {
-          "restore_ms": 1.161
+          "restore_ms": 1.132
         }
       }
     }
   },
-  "49467f5fdffc9dc5a0db122a406afe82b06f1add3b064c57aa145a2680720387": {
+  "992ad0e4cf6289fd427eba3a097ab47b9f0be99382edb9650724b948c6656184": {
     "route": "llamacpp.slots_action",
     "format": "Json",
     "request": {
@@ -4898,12 +4904,12 @@
         "n_saved": 46,
         "n_written": 5277108,
         "timings": {
-          "save_ms": 8.225
+          "save_ms": 10.677
         }
       }
     }
   },
-  "ba34c1bf09fcf973b91919d7a902fbd3e1ed11861d1d1a0325dc285fc03916db": {
+  "4d5bc82799dbe1479f46bb90b6d6c6ff2412bd9effb95a9cf719e6127c55bef9": {
     "route": "llamacpp.tokenize",
     "format": "Json",
     "request": {
@@ -4988,7 +4994,7 @@
       }
     }
   },
-  "9a1ce5f4cdc55181e5b30a20806893d4dc937bc983e7c91c806cfa5b19207bdb": {
+  "5dbe04e3dce6ded45b58b358655876045b6b4a917b4c9fce08f62b6ab659995d": {
     "route": "ollama.chat",
     "format": "Json",
     "request": {
@@ -5016,7 +5022,7 @@
         "done": true,
         "done_reason": "stop",
         "eval_count": 14,
-        "eval_duration": 37498000,
+        "eval_duration": 37946000,
         "load_duration": 0,
         "message": {
           "content": "The capital of France is **Paris**.",
@@ -5024,12 +5030,12 @@
         },
         "model": "Qwen3-0.6B-GGUF",
         "prompt_eval_count": 19,
-        "prompt_eval_duration": 16594000,
+        "prompt_eval_duration": 15401000,
         "total_duration": 0
       }
     }
   },
-  "c6baad89e4a54eca27477668370de5ff1aa21d67bddbe4aad5a27df51a9ea2a9": {
+  "dabea92062e839e46ac05e4d0a1ac8b57643fb51d0ca94d40fb0e86dc0b8717e": {
     "route": "ollama.chat",
     "format": "JsonLines",
     "request": {
@@ -5082,7 +5088,7 @@
       "content_type": ""
     }
   },
-  "1aeca573975ef9751320065048450b071f69d11a5b905bb6a73c6b70250e5001": {
+  "52454b78bddbdf52a5aaae4b8c059c20e63012c78ff3a2e4e86d9195355cee06": {
     "route": "ollama.embed",
     "format": "Json",
     "request": {
@@ -5879,7 +5885,7 @@
       }
     }
   },
-  "c938f943123a6d1d8253f8eb28f916005a32a1765897951900a810dabb7c6ef8": {
+  "6ae0d4d0bdffaba180526c8655389e4cd74f5ea89bccbf3f9709e49e3761d628": {
     "route": "ollama.embeddings",
     "format": "Json",
     "request": {
@@ -6671,7 +6677,7 @@
       }
     }
   },
-  "cea6b5b4fc71b486acd68a077b9cc8ecc79f646f81931469b0216fb6a5c1be9d": {
+  "ee7bd72fb477fc8f3068224dff85c7df86c7edca244d7c491b1dfb08837a7a59": {
     "route": "ollama.generate",
     "format": "Json",
     "request": {
@@ -6703,12 +6709,12 @@
         "model": "Qwen3-0.6B-GGUF",
         "prompt_eval_count": 5,
         "prompt_eval_duration": 0,
-        "response": " Paris, and the capital of the United States is Washington D.C.  What",
+        "response": " Paris, and the capital of Italy is Rome. If the length of the side",
         "total_duration": 0
       }
     }
   },
-  "08665bf7e56b2404f986c1c4e78b07bd61dd25d77e58ecdd463cdf9f1a7d5c76": {
+  "0a1520df5903d7a441276abaf45faed84907f49e77c1029207466c3482ff7fa3": {
     "route": "ollama.generate",
     "format": "JsonLines",
     "request": {
@@ -6741,7 +6747,7 @@
       "count": 18
     }
   },
-  "ec15bf2dad998a72bf058cb56b855e390c2f58ca8c54076dcf048ab0a4b714c4": {
+  "6f6625acf8a1079a43d201d85c00cc007a8fef89156a9e15ef7d5f56f0b337cc": {
     "route": "ollama.ps",
     "format": "Json",
     "request": {
@@ -6837,7 +6843,7 @@
       }
     }
   },
-  "1045edc916fef56c8a7a7f003b2c4ea5598576ce19c2c5cf2ac08eb3b6f77011": {
+  "7222f821dd8b105d147f9823ead83ea77eb2763f18436768bedc76cb008ac013": {
     "route": "ollama.pull",
     "format": "JsonLines",
     "request": {
@@ -6866,7 +6872,7 @@
       "count": 7
     }
   },
-  "1f2d3392ca557009aa25bdcc5bdd286e7f3684293e846c2f5aab33c9e75afa2c": {
+  "f86bcc82fe9adca695d73e8f295ef0633d2610bead2ddae825ac493837f42038": {
     "route": "ollama.show",
     "format": "Json",
     "request": {
@@ -7229,7 +7235,7 @@
       "line_count": 1
     }
   },
-  "06b8f557f15b4be5fae6fb205bc5dc86a2bdcfdbca3ee3b89a3bed411c519c6c": {
+  "e5e0caeeb7d2a8bf840c8d252b3b5d598762201893a0c97fd167fb04595b49c1": {
     "route": "openai.chat_completions",
     "format": "EventStream",
     "request": {
@@ -7253,15 +7259,15 @@
       "status": 200,
       "content_type": "text/event-stream",
       "head": [
-        "data: {\"choices\":[{\"finish_reason\":null,\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":null}}],\"created\":1792807169,\"id\":\"chatcmpl-qcgxaK06JWDivkB03OlhgUyXNjkUogTw\",\"model\":\"~\\\\.cache\\\\huggingface\\\\hub/models--unsloth--Qwen3-0.6B-GGUF\\\\snapshots\\\\50968a4468ef4233ed78cd7c3de230dd1d61a56b\\\\Qwen3-0.6B-Q4_0.gguf\",\"system_fingerprint\":\"b11846-1a24df163\",\"object\":\"chat.completion.chunk\"}",
-        "data: {\"choices\":[{\"finish_reason\":null,\"index\":0,\"delta\":{\"reasoning_content\":\"Okay\"}}],\"created\":1792807169,\"id\":\"chatcmpl-qcgxaK06JWDivkB03OlhgUyXNjkUogTw\",\"model\":\"~\\\\.cache\\\\huggingface\\\\hub/models--unsloth--Qwen3-0.6B-GGUF\\\\snapshots\\\\50968a4468ef4233ed78cd7c3de230dd1d61a56b\\\\Qwen3-0.6B-Q4_0.gguf\",\"system_fingerprint\":\"b11846-1a24df163\",\"object\":\"chat.completion.chunk\"}",
-        "data: {\"choices\":[{\"finish_reason\":null,\"index\":0,\"delta\":{\"reasoning_content\":\",\"}}],\"created\":1792807169,\"id\":\"chatcmpl-qcgxaK06JWDivkB03OlhgUyXNjkUogTw\",\"model\":\"~\\\\.cache\\\\huggingface\\\\hub/models--unsloth--Qwen3-0.6B-GGUF\\\\snapshots\\\\50968a4468ef4233ed78cd7c3de230dd1d61a56b\\\\Qwen3-0.6B-Q4_0.gguf\",\"system_fingerprint\":\"b11846-1a24df163\",\"object\":\"chat.completion.chunk\"}"
+        "data: {\"choices\":[{\"finish_reason\":null,\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":null}}],\"created\":1793551964,\"id\":\"chatcmpl-ubRtmSN1V2nmQwX21fO9wG1MrJGZvdNx\",\"model\":\"~\\\\.cache\\\\huggingface\\\\hub/models--unsloth--Qwen3-0.6B-GGUF\\\\snapshots\\\\50968a4468ef4233ed78cd7c3de230dd1d61a56b\\\\Qwen3-0.6B-Q4_0.gguf\",\"system_fingerprint\":\"b12032-dde879bc4\",\"object\":\"chat.completion.chunk\"}",
+        "data: {\"choices\":[{\"finish_reason\":null,\"index\":0,\"delta\":{\"reasoning_content\":\"Okay\"}}],\"created\":1793551964,\"id\":\"chatcmpl-ubRtmSN1V2nmQwX21fO9wG1MrJGZvdNx\",\"model\":\"~\\\\.cache\\\\huggingface\\\\hub/models--unsloth--Qwen3-0.6B-GGUF\\\\snapshots\\\\50968a4468ef4233ed78cd7c3de230dd1d61a56b\\\\Qwen3-0.6B-Q4_0.gguf\",\"system_fingerprint\":\"b12032-dde879bc4\",\"object\":\"chat.completion.chunk\"}",
+        "data: {\"choices\":[{\"finish_reason\":null,\"index\":0,\"delta\":{\"reasoning_content\":\",\"}}],\"created\":1793551964,\"id\":\"chatcmpl-ubRtmSN1V2nmQwX21fO9wG1MrJGZvdNx\",\"model\":\"~\\\\.cache\\\\huggingface\\\\hub/models--unsloth--Qwen3-0.6B-GGUF\\\\snapshots\\\\50968a4468ef4233ed78cd7c3de230dd1d61a56b\\\\Qwen3-0.6B-Q4_0.gguf\",\"system_fingerprint\":\"b12032-dde879bc4\",\"object\":\"chat.completion.chunk\"}"
       ],
       "tail": [
-        "data: {\"choices\":[{\"finish_reason\":\"stop\",\"index\":0,\"delta\":{}}],\"created\":1792807170,\"id\":\"chatcmpl-qcgxaK06JWDivkB03OlhgUyXNjkUogTw\",\"model\":\"~\\\\.cache\\\\huggingface\\\\hub/models--unsloth--Qwen3-0.6B-GGUF\\\\snapshots\\\\50968a4468ef4233ed78cd7c3de230dd1d61a56b\\\\Qwen3-0.6B-Q4_0.gguf\",\"system_fingerprint\":\"b11846-1a24df163\",\"object\":\"chat.completion.chunk\",\"timings\":{\"cache_n\":14,\"prompt_n\":1,\"prompt_ms\":4.407,\"prompt_per_token_ms\":4.407,\"prompt_per_second\":226.9117313365101,\"predicted_n\":400,\"predicted_ms\":1172.479,\"predicted_per_token_ms\":2.938543859649123,\"predicted_per_second\":340.304602470492}}",
+        "data: {\"choices\":[{\"finish_reason\":\"stop\",\"index\":0,\"delta\":{}}],\"created\":1793551964,\"id\":\"chatcmpl-ubRtmSN1V2nmQwX21fO9wG1MrJGZvdNx\",\"model\":\"~\\\\.cache\\\\huggingface\\\\hub/models--unsloth--Qwen3-0.6B-GGUF\\\\snapshots\\\\50968a4468ef4233ed78cd7c3de230dd1d61a56b\\\\Qwen3-0.6B-Q4_0.gguf\",\"system_fingerprint\":\"b12032-dde879bc4\",\"object\":\"chat.completion.chunk\",\"timings\":{\"cache_n\":14,\"prompt_n\":1,\"prompt_ms\":4.611,\"prompt_per_token_ms\":4.611,\"prompt_per_second\":216.87269572760792,\"predicted_n\":274,\"predicted_ms\":794.246,\"predicted_per_token_ms\":2.9093260073260074,\"predicted_per_second\":343.72222208232716}}",
         "data: [DONE]"
       ],
-      "count": 398
+      "count": 272
     }
   },
   "97e6314155061d1a9b3cce50e84da8d432fd2334adee1c732035504a07e5a8b3": {
@@ -7327,7 +7333,7 @@
       }
     }
   },
-  "cb2cd130c9aa01dd860b23d1d9a775d19af30136f7a37e733c6d89db6333cdd9": {
+  "8e723a58debc85adc0c2829da5fa910e0d85fc4fdf024093bfc563df261c2445": {
     "route": "openai.chat_completions",
     "format": "Json",
     "request": {
@@ -7356,40 +7362,40 @@
             "finish_reason": "stop",
             "index": 0,
             "message": {
-              "content": "The population of Paris, France, is approximately **2,200,000** as of the latest available data. This figure reflects a population estimate and may vary slightly depending on the source or time period. For the most recent year, as of 2023, the population of Paris was approximately 2,200,000.",
-              "reasoning_content": "Okay, so the user is asking about the population of Paris. Let me start by recal... (1,100 characters)",
+              "content": "The population of Paris is approximately **2.5 million** as of the latest available data. This number reflects the city's significant population size, making it one of the largest cities in France.",
+              "reasoning_content": "Okay, so I need to figure out the population of Paris. Let me think. I remember from school that Paris is a big city in France, right? I think it's called the \"City of Paris\" or something like that. But how do I get the actual number? Maybe I can recall from a textbook or a classmate's memory. Oh, right! I think the population is about 2 million. But wait, is that accurate? Let me check my memory. I think it's around 2.5 million. But where did I get that from? Oh, maybe from the French government's data or some official sources. Also, I recall that Paris has a lot of people, so the population should be more than 2 million. But maybe I'm mixing up some numbers. Let me think again. Yes, I think the population is around 2.5 million. So the answer is 2.5 million people. But I need to be sure. Let me think of other cities. Like, London has about 8 million, and Paris should be smaller. So yes, 2.5 million is correct.\n",
               "role": "assistant"
             }
           }
         ],
-        "created": 1792807169,
-        "id": "chatcmpl-gNDT8sExJxtiR4rOy3b11ADbUWEjLmPU",
+        "created": 1793551963,
+        "id": "chatcmpl-VYmA0biS1XYUmdUVJKErvtQj2qWSRlBt",
         "model": "Qwen3-0.6B-GGUF",
         "object": "chat.completion",
-        "system_fingerprint": "b11846-1a24df163",
+        "system_fingerprint": "b12032-dde879bc4",
         "timings": {
           "cache_n": 0,
-          "predicted_ms": 1077.037,
-          "predicted_n": 350,
-          "predicted_per_second": 324.03715007005326,
-          "predicted_per_token_ms": 3.0860659025787966,
-          "prompt_ms": 360.596,
+          "predicted_ms": 849.875,
+          "predicted_n": 277,
+          "predicted_per_second": 324.75364024121194,
+          "predicted_per_token_ms": 3.0792572463768115,
+          "prompt_ms": 378.329,
           "prompt_n": 15,
-          "prompt_per_second": 41.597799199103704,
-          "prompt_per_token_ms": 24.039733333333334
+          "prompt_per_second": 39.64803121093017,
+          "prompt_per_token_ms": 25.221933333333332
         },
         "usage": {
-          "completion_tokens": 350,
+          "completion_tokens": 277,
           "prompt_tokens": 15,
           "prompt_tokens_details": {
             "cached_tokens": 0
           },
-          "total_tokens": 365
+          "total_tokens": 292
         }
       }
     }
   },
-  "c34d79c74af2779a9248b958aa9d6b29ee72fa9390be245b9c62778667b5d30b": {
+  "7e65029a26c24b043ccfd1f712b90b3b0a0bb656888763679d6b52aad46a6e3d": {
     "route": "openai.chat_completions",
     "format": "Json",
     "request": {
@@ -7429,40 +7435,40 @@
             "finish_reason": "stop",
             "index": 0,
             "message": {
-              "content": "Based on the visual content, the image features:\n\n*   **A large red circle:** The central focus of the image is a solid red circle.\n*   **A gradient background:** The background is a smooth color transition. On the far left, it is a medium blue and purple gradient, while on the far right, it is a greyish-blue and green gradient.\n\nThe red circle stands out clearly against the colorful background. It appears to be a graphic design or a logo icon.",
-              "reasoning_content": "The user wants me to describe the image provided.\n\n1.  **Identify the main subje... (1,770 characters)",
+              "content": "Based on the visual evidence, the image shows a **red circle** positioned in the center.\n\n*   **The Circle:** It is a solid, deep maroon or red color.\n*   **The Background:** There is a gradient behind the circle, changing from a blue-green on the left side to a grey-blue on the right side.",
+              "reasoning_content": "The user wants me to identify what is visible in the provided image.\n\n**1. Analy... (1,482 characters)",
               "role": "assistant"
             }
           }
         ],
-        "created": 1792807182,
-        "id": "chatcmpl-0yaTud0tMDlybgWABZbPAWrbZSVX0Xjd",
+        "created": 1793551977,
+        "id": "chatcmpl-oIjhIJXFPpqqh0lLH4KJqrEMIhQ9rsjF",
         "model": "Qwen3.5-0.8B-GGUF",
         "object": "chat.completion",
-        "system_fingerprint": "b11846-1a24df163",
+        "system_fingerprint": "b12032-dde879bc4",
         "timings": {
           "cache_n": 0,
-          "predicted_ms": 2641.657,
-          "predicted_n": 522,
-          "predicted_per_second": 197.22469646892083,
-          "predicted_per_token_ms": 5.070358925143954,
-          "prompt_ms": 4811.837,
+          "predicted_ms": 2410.321,
+          "predicted_n": 447,
+          "predicted_per_second": 185.0375945776517,
+          "predicted_per_token_ms": 5.404307174887892,
+          "prompt_ms": 5281.544,
           "prompt_n": 82,
-          "prompt_per_second": 17.04130875588678,
-          "prompt_per_token_ms": 58.68093902439025
+          "prompt_per_second": 15.525762920842844,
+          "prompt_per_token_ms": 64.4090731707317
         },
         "usage": {
-          "completion_tokens": 522,
+          "completion_tokens": 447,
           "prompt_tokens": 82,
           "prompt_tokens_details": {
             "cached_tokens": 0
           },
-          "total_tokens": 604
+          "total_tokens": 529
         }
       }
     }
   },
-  "400d8f13f83340ee02ba8534d334aafadf7c5aaeea63e26ff6ee507bbc1c6014": {
+  "3d4eb28e1ea9f064a5605bed3e51e03bd75a766b0120717fbcd36661f6fa7b62": {
     "route": "openai.completions",
     "format": "EventStream",
     "request": {
@@ -7482,18 +7488,18 @@
       "status": 200,
       "content_type": "text/event-stream",
       "head": [
-        "data: {\"choices\":[{\"text\":\" And\",\"index\":0,\"logprobs\":null,\"finish_reason\":null}],\"created\":1792807185,\"model\":\"~\\\\.cache\\\\huggingface\\\\hub/models--unsloth--Qwen3-0.6B-GGUF\\\\snapshots\\\\50968a4468ef4233ed78cd7c3de230dd1d61a56b\\\\Qwen3-0.6B-Q4_0.gguf\",\"system_fingerprint\":\"b11846-1a24df163\",\"object\":\"text_completion\",\"id\":\"chatcmpl-zri3AcEH7W5VFZwd9UN1ZAEwF2eoKPFQ\"}",
-        "data: {\"choices\":[{\"text\":\" what\",\"index\":0,\"logprobs\":null,\"finish_reason\":null}],\"created\":1792807185,\"model\":\"~\\\\.cache\\\\huggingface\\\\hub/models--unsloth--Qwen3-0.6B-GGUF\\\\snapshots\\\\50968a4468ef4233ed78cd7c3de230dd1d61a56b\\\\Qwen3-0.6B-Q4_0.gguf\",\"system_fingerprint\":\"b11846-1a24df163\",\"object\":\"text_completion\",\"id\":\"chatcmpl-zri3AcEH7W5VFZwd9UN1ZAEwF2eoKPFQ\"}",
-        "data: {\"choices\":[{\"text\":\" is\",\"index\":0,\"logprobs\":null,\"finish_reason\":null}],\"created\":1792807185,\"model\":\"~\\\\.cache\\\\huggingface\\\\hub/models--unsloth--Qwen3-0.6B-GGUF\\\\snapshots\\\\50968a4468ef4233ed78cd7c3de230dd1d61a56b\\\\Qwen3-0.6B-Q4_0.gguf\",\"system_fingerprint\":\"b11846-1a24df163\",\"object\":\"text_completion\",\"id\":\"chatcmpl-zri3AcEH7W5VFZwd9UN1ZAEwF2eoKPFQ\"}"
+        "data: {\"choices\":[{\"text\":\" And\",\"index\":0,\"logprobs\":null,\"finish_reason\":null}],\"created\":1793551980,\"model\":\"~\\\\.cache\\\\huggingface\\\\hub/models--unsloth--Qwen3-0.6B-GGUF\\\\snapshots\\\\50968a4468ef4233ed78cd7c3de230dd1d61a56b\\\\Qwen3-0.6B-Q4_0.gguf\",\"system_fingerprint\":\"b12032-dde879bc4\",\"object\":\"text_completion\",\"id\":\"chatcmpl-LdcYhWsSi07K7s6fmJvI4pVErDFUQYtW\"}",
+        "data: {\"choices\":[{\"text\":\" what\",\"index\":0,\"logprobs\":null,\"finish_reason\":null}],\"created\":1793551980,\"model\":\"~\\\\.cache\\\\huggingface\\\\hub/models--unsloth--Qwen3-0.6B-GGUF\\\\snapshots\\\\50968a4468ef4233ed78cd7c3de230dd1d61a56b\\\\Qwen3-0.6B-Q4_0.gguf\",\"system_fingerprint\":\"b12032-dde879bc4\",\"object\":\"text_completion\",\"id\":\"chatcmpl-LdcYhWsSi07K7s6fmJvI4pVErDFUQYtW\"}",
+        "data: {\"choices\":[{\"text\":\" are\",\"index\":0,\"logprobs\":null,\"finish_reason\":null}],\"created\":1793551980,\"model\":\"~\\\\.cache\\\\huggingface\\\\hub/models--unsloth--Qwen3-0.6B-GGUF\\\\snapshots\\\\50968a4468ef4233ed78cd7c3de230dd1d61a56b\\\\Qwen3-0.6B-Q4_0.gguf\",\"system_fingerprint\":\"b12032-dde879bc4\",\"object\":\"text_completion\",\"id\":\"chatcmpl-LdcYhWsSi07K7s6fmJvI4pVErDFUQYtW\"}"
       ],
       "tail": [
-        "data: {\"choices\":[{\"text\":\"\",\"index\":0,\"logprobs\":null,\"finish_reason\":\"length\"}],\"created\":1792807185,\"model\":\"~\\\\.cache\\\\huggingface\\\\hub/models--unsloth--Qwen3-0.6B-GGUF\\\\snapshots\\\\50968a4468ef4233ed78cd7c3de230dd1d61a56b\\\\Qwen3-0.6B-Q4_0.gguf\",\"system_fingerprint\":\"b11846-1a24df163\",\"object\":\"text_completion\",\"usage\":{\"completion_tokens\":64,\"prompt_tokens\":7,\"total_tokens\":71,\"prompt_tokens_details\":{\"cached_tokens\":6}},\"id\":\"chatcmpl-zri3AcEH7W5VFZwd9UN1ZAEwF2eoKPFQ\",\"timings\":{\"cache_n\":6,\"prompt_n\":1,\"prompt_ms\":3.129,\"prompt_per_token_ms\":3.129,\"prompt_per_second\":319.59092361776925,\"predicted_n\":64,\"predicted_ms\":176.423,\"predicted_per_token_ms\":2.8003650793650796,\"predicted_per_second\":357.0962969680824}}",
+        "data: {\"choices\":[{\"text\":\"\",\"index\":0,\"logprobs\":null,\"finish_reason\":\"length\"}],\"created\":1793551980,\"model\":\"~\\\\.cache\\\\huggingface\\\\hub/models--unsloth--Qwen3-0.6B-GGUF\\\\snapshots\\\\50968a4468ef4233ed78cd7c3de230dd1d61a56b\\\\Qwen3-0.6B-Q4_0.gguf\",\"system_fingerprint\":\"b12032-dde879bc4\",\"object\":\"text_completion\",\"usage\":{\"completion_tokens\":64,\"prompt_tokens\":7,\"total_tokens\":71,\"prompt_tokens_details\":{\"cached_tokens\":6}},\"id\":\"chatcmpl-LdcYhWsSi07K7s6fmJvI4pVErDFUQYtW\",\"timings\":{\"cache_n\":6,\"prompt_n\":1,\"prompt_ms\":3.109,\"prompt_per_token_ms\":3.109,\"prompt_per_second\":321.646831778707,\"predicted_n\":64,\"predicted_ms\":176.433,\"predicted_per_token_ms\":2.8005238095238094,\"predicted_per_second\":357.07605720018364}}",
         "data: [DONE]"
       ],
       "count": 66
     }
   },
-  "4a02ec60aa0e274a862750bb9749bf152d23829169b44b282d0f87978c1c6a2f": {
+  "a0402f3936caab08e9e76db6f62ea4a4065ec55a9b2497ecef88100ec74341ed": {
     "route": "openai.completions",
     "format": "Json",
     "request": {
@@ -7518,24 +7524,24 @@
             "finish_reason": "length",
             "index": 0,
             "logprobs": null,
-            "text": " What is the population of Paris in 2022?\nAnswer:\n\nThe population of Paris in 2022 was approximately **16 million**. The population of Paris in 2022 was about 16 million.\n\n**Answer:** The population of Paris in 2022 was"
+            "text": " What is the population of Paris in 2023? What is the population of Paris in 2022? What is the population of Paris in 2021?\n\n**Options:**\nA. 19 million\nB. 20 million\nC. 21 million\n"
           }
         ],
-        "created": 1792807185,
-        "id": "chatcmpl-0oYtA00jtJ0cgg6P0zqYKYqJUZ8x6t8L",
+        "created": 1793551980,
+        "id": "chatcmpl-7DQepI5qEsoXcOSwO3BeJs92VAWu2awB",
         "model": "Qwen3-0.6B-GGUF",
         "object": "text_completion",
-        "system_fingerprint": "b11846-1a24df163",
+        "system_fingerprint": "b12032-dde879bc4",
         "timings": {
           "cache_n": 0,
-          "predicted_ms": 180.322,
+          "predicted_ms": 179.288,
           "predicted_n": 64,
-          "predicted_per_second": 349.3750069320438,
-          "predicted_per_token_ms": 2.8622539682539685,
-          "prompt_ms": 1476.666,
+          "predicted_per_second": 351.3899424389809,
+          "predicted_per_token_ms": 2.84584126984127,
+          "prompt_ms": 1512.65,
           "prompt_n": 7,
-          "prompt_per_second": 4.740408460681021,
-          "prompt_per_token_ms": 210.9522857142857
+          "prompt_per_second": 4.627640234026377,
+          "prompt_per_token_ms": 216.09285714285716
         },
         "usage": {
           "completion_tokens": 64,
@@ -7548,7 +7554,7 @@
       }
     }
   },
-  "5487afd0739a3bc9c226df65a5419a6a25d7cfb47744b36d10463f014e012bb1": {
+  "31ce4315abe19408007f5892c05a74bff3e13a85bf799b241f03753a95858d7d": {
     "route": "openai.embeddings",
     "format": "Json",
     "request": {
@@ -9862,7 +9868,7 @@
       }
     }
   },
-  "379f009338512dc16c11143bb18073f3ee813e7fb32b9b5fb28c4cf685b42dcd": {
+  "252d9faaa8b848e3377416a6baa697f32edcaba3844d15fb1f657670616d3089": {
     "route": "openai.responses",
     "format": "EventStream",
     "request": {
@@ -9881,18 +9887,18 @@
       "status": 200,
       "content_type": "text/event-stream",
       "head": [
-        "event: response.created\ndata: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_sEdqwsaCiN9lw0UMr5vdqMX8DG2HLcK8\",\"object\":\"response\",\"status\":\"in_progress\"}}",
-        "event: response.in_progress\ndata: {\"type\":\"response.in_progress\",\"response\":{\"id\":\"resp_sEdqwsaCiN9lw0UMr5vdqMX8DG2HLcK8\",\"object\":\"response\",\"status\":\"in_progress\"}}",
-        "event: response.output_item.added\ndata: {\"type\":\"response.output_item.added\",\"output_index\":0,\"item\":{\"content\":[],\"id\":\"msg_NSeiLWbMMIs3Tyy9rkAE53miBpCziSeM\",\"role\":\"assistant\",\"status\":\"in_progress\",\"type\":\"message\"}}"
+        "event: response.created\ndata: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_5eT2hb1T9Uqek30Bl0WB538Wr2EamlkQ\",\"object\":\"response\",\"status\":\"in_progress\"}}",
+        "event: response.in_progress\ndata: {\"type\":\"response.in_progress\",\"response\":{\"id\":\"resp_5eT2hb1T9Uqek30Bl0WB538Wr2EamlkQ\",\"object\":\"response\",\"status\":\"in_progress\"}}",
+        "event: response.output_item.added\ndata: {\"type\":\"response.output_item.added\",\"output_index\":0,\"item\":{\"content\":[],\"id\":\"msg_3ZtycYpOGX3zIcOA8NIWvXdnxMmGYBtI\",\"role\":\"assistant\",\"status\":\"in_progress\",\"type\":\"message\"}}"
       ],
       "tail": [
-        "event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_sEdqwsaCiN9lw0UMr5vdqMX8DG2HLcK8\",\"object\":\"response\",\"created_at\":1792807187,\"status\":\"completed\",\"model\":\"~\\\\.cache\\\\huggingface\\\\hub/models--unsloth--Llama-3.2-1B-Instruct-GGUF\\\\snapshots\\\\b69aef112e9f895e6f98d7ae0949f72ff09aa401\\\\Llama-3.2-1B-Instruct-UD-Q4_K_XL.gguf\",\"output\":[{\"type\":\"message\",\"status\":\"completed\",\"id\":\"msg_NSeiLWbMMIs3Tyy9rkAE53miBpCziSeM\",\"content\":[{\"type\":\"output_text\",\"annotations\":[],\"logprobs\":[],\"text\":\"As of my knowledge cutoff in 2023, the population of Paris is approximately 2.1 million people within the city limits, and around 12 million in the metropolitan area. However, please note that these numbers may have changed since my knowledge cutoff date.\"}],\"role\":\"assistant\"}],\"usage\":{\"input_tokens\":42,\"output_tokens\":54,\"total_tokens\":96,\"input_tokens_details\":{\"cached_tokens\":41}}},\"timings\":{\"cache_n\":41,\"prompt_n\":1,\"prompt_ms\":4.928,\"prompt_per_token_ms\":4.928,\"prompt_per_second\":202.92207792207793,\"predicted_n\":54,\"predicted_ms\":234.54,\"predicted_per_token_ms\":4.425283018867924,\"predicted_per_second\":225.97424746311927}}",
+        "event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_5eT2hb1T9Uqek30Bl0WB538Wr2EamlkQ\",\"object\":\"response\",\"created_at\":1793551983,\"status\":\"completed\",\"model\":\"~\\\\.cache\\\\huggingface\\\\hub/models--unsloth--Llama-3.2-1B-Instruct-GGUF\\\\snapshots\\\\b69aef112e9f895e6f98d7ae0949f72ff09aa401\\\\Llama-3.2-1B-Instruct-UD-Q4_K_XL.gguf\",\"output\":[{\"type\":\"message\",\"status\":\"completed\",\"id\":\"msg_3ZtycYpOGX3zIcOA8NIWvXdnxMmGYBtI\",\"content\":[{\"type\":\"output_text\",\"annotations\":[],\"logprobs\":[],\"text\":\"As of my knowledge cutoff in 2023, the population of Paris, France is approximately 2.1 million people within the city limits. However, the larger metropolitan area of Paris, including the surrounding suburbs and communes, has a population of around 12.2 million people.\"}],\"role\":\"assistant\"}],\"usage\":{\"input_tokens\":42,\"output_tokens\":59,\"total_tokens\":101,\"input_tokens_details\":{\"cached_tokens\":41}}},\"timings\":{\"cache_n\":41,\"prompt_n\":1,\"prompt_ms\":4.693,\"prompt_per_token_ms\":4.693,\"prompt_per_second\":213.0833155763904,\"predicted_n\":59,\"predicted_ms\":256.541,\"predicted_per_token_ms\":4.423120689655172,\"predicted_per_second\":226.08471940157713}}",
         "data: [DONE]"
       ],
-      "count": 62
+      "count": 67
     }
   },
-  "a0cfd0581cafe92d08f3b1931f17518d75d821dd53e39ada56e973e67c2441e6": {
+  "0d300cf9a61bf103d0c44571456d0fba7c5caa016079c90fe3d7c7a85d567289": {
     "route": "openai.responses",
     "format": "Json",
     "request": {
@@ -9911,9 +9917,9 @@
       "status": 200,
       "content_type": "application/json",
       "body": {
-        "completed_at": 1792807187,
-        "created_at": 1792807187,
-        "id": "resp_JVO4S4mP7iKKGMPqCMiRRUxtdMTukXsc",
+        "completed_at": 1793551983,
+        "created_at": 1793551983,
+        "id": "resp_nyst8rZqaCiyAi91D1xAgWqNaESurED1",
         "model": "Llama-3.2-1B-Instruct-GGUF",
         "object": "response",
         "output": [
@@ -9922,11 +9928,11 @@
               {
                 "annotations": [],
                 "logprobs": [],
-                "text": "As of my knowledge cutoff in December 2023, the population of Paris, the capital city of France, is approximately 2.1 million people within the city limits and around 12.2 million people in the metropolitan area.",
+                "text": "As of my knowledge cutoff in 2023, the population of Paris, the capital city of France, is approximately 2.1 million people within the city limits. However, the larger metropolitan area of Paris, which includes suburbs and surrounding regions, has a population of over 12 million people.",
                 "type": "output_text"
               }
             ],
-            "id": "msg_yrrn3oLfu5Ha0yvhJnyn4PGkmOFWtTn6",
+            "id": "msg_3Yo2U491EGyK6SdHIZBu2SnXKMfM66P7",
             "role": "assistant",
             "status": "completed",
             "type": "message"
@@ -9938,8 +9944,8 @@
           "input_tokens_details": {
             "cached_tokens": 0
           },
-          "output_tokens": 48,
-          "total_tokens": 90
+          "output_tokens": 61,
+          "total_tokens": 103
         }
       }
     }

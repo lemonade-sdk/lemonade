@@ -140,10 +140,10 @@ This endpoint does not take any parameters.
     "next_token": [
       {"has_next_token": false, "has_new_line": false, "n_remain": -1, "n_decoded": 0}
     ],
-    "id_task": 276,
+    "id_task": 207,
     "n_ctx": 4096,
     "is_processing": false,
-    "n_prompt_tokens": 341,
+    "n_prompt_tokens": 392,
     "n_prompt_tokens_cache": 0,
     "n_prompt_tokens_processed": 0,
     "params": {
@@ -281,7 +281,7 @@ Every action needs llama.cpp started with `--slot-save-path`. Set it for every l
   "filename": "my_conversation_cache.bin",
   "n_saved": 46,
   "n_written": 5277108,
-  "timings": {"save_ms": 8.225}
+  "timings": {"save_ms": 10.677}
 }
 ```
 
@@ -313,7 +313,7 @@ Every action needs llama.cpp started with `--slot-save-path`. Set it for every l
   "filename": "my_conversation_cache.bin",
   "n_restored": 46,
   "n_read": 5277108,
-  "timings": {"restore_ms": 1.161}
+  "timings": {"restore_ms": 1.132}
 }
 ```
 

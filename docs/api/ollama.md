@@ -92,8 +92,8 @@ A request with tools and streaming runs non-streaming on the backend and answers
   "eval_count": 14,
   "total_duration": 0,
   "load_duration": 0,
-  "prompt_eval_duration": 16594000,
-  "eval_duration": 37498000
+  "prompt_eval_duration": 15401000,
+  "eval_duration": 37946000
 }
 ```
 
@@ -253,7 +253,7 @@ Image generation never streams.
 {
   "model": "Qwen3-0.6B-GGUF",
   "created_at": "2024-01-01T00:00:00Z",
-  "response": " Paris, and the capital of the United States is Washington D.C.  What",
+  "response": " Paris, and the capital of Italy is Rome. If the length of the side",
   "done": true,
   "done_reason": "stop",
   "context": [],
