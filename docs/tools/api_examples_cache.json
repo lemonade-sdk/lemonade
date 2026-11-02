@@ -922,7 +922,7 @@
       }
     }
   },
-  "990ebf5dcf2c2bb07c838de48f4395c5b0ffab2ce8672b64dafa42c9afc8993c": {
+  "39039e20691972db87aa212fde223a7a1f556aeacdd6a5a4364445ad027bc073": {
     "route": "lemonade.3d_generations",
     "format": "Binary",
     "request": {
@@ -930,8 +930,8 @@
       "path": "/v1/3d/generations",
       "query": {},
       "json": {
-        "image": "@fixtures/image.png",
         "model": "TRELLIS-3D",
+        "image": "@fixtures/image.png",
         "resolution": 512,
         "seed": 42
       },
@@ -941,10 +941,10 @@
     "response": {
       "status": 200,
       "content_type": "model/gltf-binary",
-      "bytes": 4534160
+      "bytes": 4453452
     }
   },
-  "a292d73fcbb22dfdecb48de484e9a1a902c92f2b2a71a90e577f76d91bc101c6": {
+  "ef19a068886c2ac92937213d9d7bf0ff4a2695c112d5cf81d78e9217d1bc4784": {
     "route": "lemonade.audio_generations",
     "format": "Binary",
     "request": {
@@ -964,7 +964,7 @@
     "response": {
       "status": 200,
       "content_type": "audio/wav",
-      "bytes": 8640044
+      "bytes": 8593964
     }
   },
   "204810b5025ebac94883a81a51034a5258f47458789e607159848e8054dd6a1c": {
