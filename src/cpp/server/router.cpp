@@ -2115,54 +2115,40 @@ json Router::reranking(const json& request) {
 }
 
 json Router::classify(const json& request) {
-    std::string requested_model = request.value("model", "");
-    std::shared_ptr<telemetry::InferenceSpan> span = telemetry::TelemetryTracker::start_span("CLASSIFIER", "classify", requested_model, request);
-
-    try {
-        json response = execute_inference(request, [&](WrappedServer* server) {
-            ModelTelemetryIdentity identity = get_telemetry_identity(server);
-            if (span) {
-                span->set_attribute("classifier.backend", identity.recipe);
-                span->set_attribute("classifier.device_type", identity.device);
-                span->set_attribute("classifier.checkpoint", identity.checkpoint);
-                span->set_attribute("classifier.recipe", identity.recipe);
-            }
-            auto classification_server = dynamic_cast<IClassificationServer*>(server);
-            if (!classification_server) {
-                return ErrorResponse::from_exception(
-                    UnsupportedOperationException("Classification", device_type_to_string(server->get_device_type()))
-                );
-            }
-            return classification_server->classify(request);
-        });
-
-        if (span) {
-            if (response.contains("error")) {
-                std::string error_msg = "Request failed";
-                if (response["error"].contains("message") && response["error"]["message"].is_string()) {
-                    error_msg = response["error"]["message"].get<std::string>();
-                }
-                span->end_with_error(error_msg);
-            } else {
-                // Label scores classify user content; keep them out of telemetry.
-                span->end_with_success(nlohmann::json::object(), "");
-            }
+    return json(classifier_inference(
+        request, "classify", false, [&](WrappedServer* server) -> nlohmann::ordered_json {
+        auto classification_server = dynamic_cast<IClassificationServer*>(server);
+        if (!classification_server) {
+            return ErrorResponse::from_exception(
+                UnsupportedOperationException("Classification", device_type_to_string(server->get_device_type()))
+            );
         }
-        return response;
-    } catch (const std::exception& e) {
-        if (span) span->end_with_error(e.what());
-        throw;
-    }
+        return classification_server->classify(request);
+    }));
 }
 
 nlohmann::ordered_json Router::systemone(const nlohmann::ordered_json& request) {
-    const json routing_request(request);
-    std::string requested_model = routing_request.value("model", "");
-    std::shared_ptr<telemetry::InferenceSpan> span = telemetry::TelemetryTracker::start_span("CLASSIFIER", "systemone", requested_model, routing_request);
+    return classifier_inference(
+        json(request), "systemone", true, [&](WrappedServer* server) -> nlohmann::ordered_json {
+        auto systemone_server = dynamic_cast<ISystemOneServer*>(server);
+        if (!systemone_server) {
+            return ErrorResponse::from_exception(
+                UnsupportedOperationException("SystemOne", device_type_to_string(server->get_device_type()))
+            );
+        }
+        return systemone_server->systemone(request);
+    });
+}
+
+nlohmann::ordered_json Router::classifier_inference(
+        const json& request, const std::string& operation, bool report_usage,
+        const std::function<nlohmann::ordered_json(WrappedServer*)>& call) {
+    std::string requested_model = request.value("model", "");
+    std::shared_ptr<telemetry::InferenceSpan> span = telemetry::TelemetryTracker::start_span("CLASSIFIER", operation, requested_model, request);
 
     try {
         nlohmann::ordered_json response = execute_inference(
-            routing_request, [&](WrappedServer* server) -> nlohmann::ordered_json {
+            request, [&](WrappedServer* server) -> nlohmann::ordered_json {
             ModelTelemetryIdentity identity = get_telemetry_identity(server);
             if (span) {
                 span->set_attribute("classifier.backend", identity.recipe);
@@ -2170,13 +2156,7 @@ nlohmann::ordered_json Router::systemone(const nlohmann::ordered_json& request) 
                 span->set_attribute("classifier.checkpoint", identity.checkpoint);
                 span->set_attribute("classifier.recipe", identity.recipe);
             }
-            auto systemone_server = dynamic_cast<ISystemOneServer*>(server);
-            if (!systemone_server) {
-                return ErrorResponse::from_exception(
-                    UnsupportedOperationException("SystemOne", device_type_to_string(server->get_device_type()))
-                );
-            }
-            return systemone_server->systemone(request);
+            return call(server);
         });
 
         if (span) {
@@ -2187,8 +2167,9 @@ nlohmann::ordered_json Router::systemone(const nlohmann::ordered_json& request) 
                 }
                 span->end_with_error(error_msg);
             } else {
+                // Scores and answers judge user content; keep them out of telemetry.
                 nlohmann::json usage_payload = nlohmann::json::object();
-                if (response.contains("usage") && response["usage"].is_object() &&
+                if (report_usage && response.contains("usage") && response["usage"].is_object() &&
                     response["usage"].contains("input_tokens") &&
                     response["usage"]["input_tokens"].is_number_integer()) {
                     usage_payload["prompt_tokens"] = response["usage"]["input_tokens"].get<int>();

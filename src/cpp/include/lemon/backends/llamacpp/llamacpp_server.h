@@ -65,9 +65,12 @@ private:
 
     json unsupported_decision_request(const std::string& operation) const;
     nlohmann::ordered_json forward_systemone(const nlohmann::ordered_json& body);
-    // The error to return instead of classifying when a `laya` model would cut
-    // these labels or they cannot be counted; empty when they are read whole.
-    std::optional<json> laya_label_error(const json& labels);
+    // /v1/systemone for both systemone() and classify(): the `laya` cut check,
+    // then llama-server, then `truncated` on each answer.
+    nlohmann::ordered_json decide(const nlohmann::ordered_json& body);
+    // The error to return when a `laya` model would cut an option or a question
+    // of `body`, or they cannot be counted; empty when it reads them whole.
+    std::optional<json> laya_cut_error(const nlohmann::ordered_json& body);
 
     bool decision_model_ = false;
     std::string decision_type_;

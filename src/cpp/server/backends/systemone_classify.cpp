@@ -20,7 +20,7 @@ constexpr const char* CLASSIFY_INSTRUCTIONS = "Which category does this text bel
 
 }  // namespace
 
-nlohmann::json invalid_classify_request(const std::string& message) {
+nlohmann::json invalid_decision_request(const std::string& message) {
     return nlohmann::json{{"error", {
         {"message", message},
         {"type", "invalid_request_error"},
@@ -61,8 +61,7 @@ nlohmann::ordered_json build_classify_request(const std::string& text,
 
 nlohmann::json classify_response(const nlohmann::json& response,
                                  const nlohmann::json& labels,
-                                 int top_k,
-                                 std::optional<bool> truncated) {
+                                 int top_k) {
     const auto unexpected = std::runtime_error(
         "decision model response did not score the requested labels");
     if (!response.is_object() || !response.contains("answers") ||
@@ -102,8 +101,20 @@ nlohmann::json classify_response(const nlohmann::json& response,
     nlohmann::json scores = nlohmann::json::object();
     for (const auto& [label, probability] : ranked) scores[label] = probability;
     nlohmann::json out = {{"labels", std::move(scores)}};
-    if (truncated.has_value()) out["truncated"] = *truncated;
+    if (answer.contains("truncated") && answer["truncated"].is_boolean()) {
+        out["truncated"] = answer["truncated"];
+    }
     return out;
+}
+
+void set_answers_truncated(nlohmann::ordered_json& response, bool truncated) {
+    if (!response.is_object() || !response.contains("answers") ||
+        !response["answers"].is_object()) {
+        return;
+    }
+    for (auto& answer : response["answers"]) {
+        if (answer.is_object()) answer["truncated"] = truncated;
+    }
 }
 
 std::optional<nlohmann::json> context_length_refusal(const nlohmann::json& response) {

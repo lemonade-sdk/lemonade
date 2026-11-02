@@ -214,7 +214,7 @@ static void test_make_systemone_classifier() {
     const json choice_question = {
         {"type", "choice"},
         {"instructions", "Which team should handle this?"},
-        {"criteria", {{"billing", nullptr}, {"shipping", "where an order is"}}},
+        {"criteria", json::array({"billing", json{{"shipping", "where an order is"}}})},
     };
     auto choice = lemon::make_classifier(json{
         {"id", "team"}, {"type", "systemone"}, {"model", "decider"},
@@ -229,7 +229,9 @@ static void test_make_systemone_classifier() {
         {{"type", "choice"}, {"choice", "billing"},
          {"probabilities", {{"billing", 0.9}, {"shipping", 0.1}}}},
         &asked);
-    check("systemone sends its declared question", json(asked) == choice_question);
+    json sent = choice_question;
+    sent["criteria"] = {{"billing", nullptr}, {"shipping", "where an order is"}};
+    check("systemone sends its declared question", json(asked) == sent);
     check("systemone choice reports the option probabilities",
           score.ok && score.score_of("billing") == 0.9 && score.score_of("shipping") == 0.1);
 
@@ -287,7 +289,7 @@ static void test_systemone_classifier_rejects_mismatched_answer() {
     auto choice = lemon::make_classifier(json{
         {"id", "team"}, {"type", "systemone"}, {"model", "decider"},
         {"question", {{"type", "choice"}, {"instructions", "Which team?"},
-                      {"criteria", {{"billing", nullptr}, {"shipping", nullptr}}}}}});
+                      {"criteria", json::array({"billing", "shipping"})}}}});
     check("systemone fails on another option set",
           !evaluate_systemone(choice, {{"probabilities", {{"LABEL_0", 1.0}}}}).ok);
     check("systemone fails when an option is missing",
@@ -316,6 +318,33 @@ static void test_systemone_classifier_rejects_mismatched_answer() {
           !choice->evaluate(lemon::ClassifierContext{ctx.request, ctx.services}).ok);
 }
 
+// lemond adds `truncated` to each /v1/systemone answer, so a systemone guard can
+// fail closed on a cut input as a zero_shot one does.
+static void test_systemone_on_truncation() {
+    auto evaluate_with = [](const char* on_truncation, std::optional<bool> truncated) {
+        json cfg{{"id", "pii"}, {"type", "systemone"}, {"model", "decider"},
+                 {"question", {{"type", "noul"}, {"instructions", "Personal data?"}}}};
+        if (on_truncation != nullptr) cfg["on_truncation"] = on_truncation;
+        json answer = {{"type", "noul"}, {"noul", 0.2}};
+        if (truncated.has_value()) answer["truncated"] = *truncated;
+        return evaluate_systemone(lemon::make_classifier(cfg), answer);
+    };
+
+    const auto whole = evaluate_with("fail", false);
+    check("systemone carries truncated=false from the answer",
+          whole.ok && whole.truncated == false && whole.score_of("true") == 0.2);
+    const auto cut = evaluate_with("fail", true);
+    check("systemone on_truncation=fail turns a cut answer into a failure",
+          !cut.ok && cut.truncated == true);
+    check("systemone on_truncation=fail fails closed when the answer does not say",
+          !evaluate_with("fail", std::nullopt).ok);
+    const auto scored = evaluate_with(nullptr, true);
+    check("systemone on_truncation defaults to score",
+          scored.ok && scored.truncated == true && scored.score_of("true") == 0.2);
+    check("systemone without truncated reports nothing",
+          !evaluate_with(nullptr, std::nullopt).truncated.has_value());
+}
+
 static void test_make_systemone_classifier_rejections() {
     auto make = [](json question, json extra = json::object()) {
         json config = {{"id", "x"}, {"type", "systemone"}, {"model", "m"},
@@ -342,7 +371,18 @@ static void test_make_systemone_classifier_rejections() {
     check("systemone rejects an unknown question key",
           make({{"type", "noul"}, {"instructions", "?"}, {"options", json::array()}}));
     check("systemone rejects an empty choice",
-          make({{"type", "choice"}, {"instructions", "?"}, {"criteria", json::object()}}));
+          make({{"type", "choice"}, {"instructions", "?"}, {"criteria", json::array()}}));
+    check("systemone rejects an object-form choice, which would reach the model sorted", [] {
+        try {
+            lemon::make_classifier(json{
+                {"id", "x"}, {"type", "systemone"}, {"model", "m"},
+                {"question", {{"type", "choice"}, {"instructions", "?"},
+                              {"criteria", {{"shipping", nullptr}, {"billing", nullptr}}}}}});
+        } catch (const std::invalid_argument& e) {
+            return std::string(e.what()).find("must be an array") != std::string::npos;
+        }
+        return false;
+    }());
     check("systemone rejects a one-level score",
           make({{"type", "score"}, {"instructions", "?"}, {"criteria", json::array({"a"})}}));
     check("systemone rejects duplicate score levels",
@@ -369,7 +409,7 @@ static void test_make_systemone_classifier_rejections() {
           make({{"type", "score"}, {"instructions", "?"},
                 {"criteria", json::array({"low\tlevel", "high"})}}));
     check("systemone rejects a one-option choice",
-          make({{"type", "choice"}, {"instructions", "?"}, {"criteria", {{"a", nullptr}}}}));
+          make({{"type", "choice"}, {"instructions", "?"}, {"criteria", json::array({"a"})}}));
     for (const json& bad : {json(""), json("   "), json(42), json(true), json::object(),
                             json::array()}) {
         const std::string name = "systemone rejects instructions " + bad.dump();
@@ -377,7 +417,7 @@ static void test_make_systemone_classifier_rejections() {
     }
     check("systemone rejects a numeric choice description",
           make({{"type", "choice"}, {"instructions", "?"},
-                {"criteria", {{"a", 3}, {"b", nullptr}}}}));
+                {"criteria", json::array({json{{"a", 3}}, "b"})}}));
     check("systemone rejects a boolean noul description",
           make({{"type", "noul"}, {"instructions", "?"}, {"criteria", {{"true", false}}}}));
 
@@ -393,7 +433,8 @@ static void test_make_systemone_classifier_rejections() {
           accepts({{"type", "noul"}, {"instructions", json::array({"Is it urgent?"})}}));
     check("systemone accepts null and object choice descriptions",
           accepts({{"type", "choice"}, {"instructions", "?"},
-                   {"criteria", {{"a", nullptr}, {"b", {{"means", "b"}}}}}}));
+                   {"criteria", json::array({json{{"a", nullptr}},
+                                             json{{"b", {{"means", "b"}}}}})}}));
 
     for (const char* type : {"classifier", "zero_shot", "llm"}) {
         json config = {{"id", "x"}, {"type", type}, {"model", "m"},
@@ -508,6 +549,17 @@ static void test_on_truncation_rejections() {
                   {"id", "x"}, {"type", "classifier"}, {"model", "m"},
                   {"labels", json::array({"a"})}, {"on_truncation", "match_true"}});
           }));
+
+    check("on_truncation=fail is accepted on systemone", [] {
+        try {
+            lemon::make_classifier(json{
+                {"id", "x"}, {"type", "systemone"}, {"model", "m"}, {"on_truncation", "fail"},
+                {"question", {{"type", "noul"}, {"instructions", "Is it?"}}}});
+            return true;
+        } catch (const std::exception&) {
+            return false;
+        }
+    }());
 
     for (const char* type : {"llm", "semantic_similarity"}) {
         const std::string label = std::string("on_truncation is rejected on ") + type;
@@ -841,6 +893,7 @@ int main() {
     test_systemone_choice_array_keeps_option_order();
     test_systemone_classifier_rejects_mismatched_answer();
     test_make_systemone_classifier_rejections();
+    test_systemone_on_truncation();
     test_zero_shot_classifier_reports_truncation();
     test_zero_shot_on_truncation();
     test_on_truncation_rejections();

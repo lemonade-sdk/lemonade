@@ -14,16 +14,26 @@ namespace backends {
 namespace llamacpp {
 namespace {
 
-// llama.cpp server-decision.cpp: h2o-lightning keeps this many tokens of a
-// state; laya keeps this many tokens of each option, and leaves this many
-// tokens of its head to the question.
-constexpr size_t H2O_MAX_STATE_TOKENS = 32000;
-constexpr size_t LAYA_MAX_OPTION_TOKENS = 48;
-constexpr size_t LAYA_QUESTION_RESERVE = 16;
+// An encoder reads each input in one physical batch, whose memory grows faster
+// than its size, so a large context alone must not set it.
+constexpr int ENCODER_DEFAULT_BATCH = 4096;
 
-// An encoder reads each input in one physical batch, whose memory and time grow
-// with the square of its size, so a large context alone must not set it.
-constexpr int ENCODER_DEFAULT_BATCH = 8192;
+bool jinja_truthy(const nlohmann::ordered_json& value) {
+    if (value.is_null()) return false;
+    if (value.is_string() || value.is_object() || value.is_array()) return !value.empty();
+    if (value.is_boolean()) return value.get<bool>();
+    if (value.is_number()) return value.get<double>() != 0.0;
+    return true;
+}
+
+// As the template writes a value: a string as is, other JSON as JSON text.
+std::string template_text(const nlohmann::ordered_json& value) {
+    return value.is_string() ? value.get<std::string>() : value.dump();
+}
+
+std::string choice_option_text(const std::string& key, const nlohmann::ordered_json& description) {
+    return jinja_truthy(description) ? key + ": " + template_text(description) : key;
+}
 
 struct BatchFlag {
     bool present = false;
@@ -68,40 +78,113 @@ std::optional<bool> decision_text_truncated(const std::string& decision_type,
         "vllm-decision2", "vllm-d3", "lfm2-d1", "granite-switch"};
     if (decision_type == "h2o-lightning") {
         // A byte-level BPE never has more tokens than bytes.
-        if (text.size() <= H2O_MAX_STATE_TOKENS) return false;
+        if (text.size() <= LLAMACPP_DECISION_H2O_MAX_STATE_TOKENS) return false;
         return std::nullopt;
     }
     if (refuse_long_text.count(decision_type) > 0) return false;
     return std::nullopt;
 }
 
-std::string laya_label_overflow(const std::vector<std::string>& labels,
-                                const std::vector<size_t>& label_tokens,
-                                int64_t max_head_tokens) {
-    if (labels.empty() || labels.size() != label_tokens.size() || max_head_tokens <= 0) {
+void mark_answers_truncated(nlohmann::ordered_json& response, const std::string& decision_type,
+                            const nlohmann::ordered_json& body) {
+    if (!response.is_object() || !response.contains("answers") ||
+        !response["answers"].is_object()) {
+        return;
+    }
+    const nlohmann::ordered_json state = body.value("state", nlohmann::ordered_json());
+    const std::optional<bool> truncated =
+        decision_text_truncated(decision_type, state.is_null() ? "" : template_text(state));
+    if (!truncated.has_value()) return;
+    for (auto& [id, answer] : response["answers"].items()) {
+        (void)id;
+        if (answer.is_object()) answer["truncated"] = *truncated;
+    }
+}
+
+std::vector<LayaQuestionText> laya_question_texts(const nlohmann::ordered_json& body) {
+    std::vector<LayaQuestionText> texts;
+    if (!body.contains("questions") || !body["questions"].is_object()) return texts;
+    for (const auto& [id, question] : body["questions"].items()) {
+        if (!question.is_object()) continue;
+        const std::string type = question.value("type", "");
+        const nlohmann::ordered_json criteria =
+            question.value("criteria", nlohmann::ordered_json());
+        LayaQuestionText text;
+        text.id = id;
+        text.question =
+            type + " question: " + template_text(question.value("instructions", nlohmann::ordered_json("")));
+        if (type == "choice" && criteria.is_object()) {
+            for (const auto& [key, description] : criteria.items()) {
+                text.options.push_back(choice_option_text(key, description));
+            }
+        } else if (type == "choice" && criteria.is_array()) {
+            for (const auto& entry : criteria) {
+                if (entry.is_string()) {
+                    text.options.push_back(entry.get<std::string>());
+                } else if (entry.is_object() && entry.size() == 1) {
+                    text.options.push_back(choice_option_text(entry.begin().key(), entry.begin().value()));
+                }
+            }
+        } else if (type == "score" && criteria.is_array()) {
+            for (size_t i = 0; i < criteria.size(); ++i) {
+                text.options.push_back("level " + std::to_string(i) + ": " + template_text(criteria[i]));
+            }
+        } else if (type == "noul") {
+            for (const char* key : {"true", "false"}) {
+                const nlohmann::ordered_json description =
+                    criteria.is_object() ? criteria.value(key, nlohmann::ordered_json())
+                                         : nlohmann::ordered_json();
+                const std::string fallback = std::string(key) == "true"
+                                                 ? "yes, the statement holds"
+                                                 : "no, the statement does not hold";
+                text.options.push_back(std::string(key) + ": " +
+                                       (jinja_truthy(description) ? template_text(description)
+                                                                  : fallback));
+            }
+        } else {
+            continue;
+        }
+        texts.push_back(std::move(text));
+    }
+    return texts;
+}
+
+std::string laya_cut(const LayaQuestionText& text, const std::vector<size_t>& option_tokens,
+                     size_t question_tokens, int64_t max_head_tokens) {
+    const std::vector<std::string>& options = text.options;
+    if (options.empty() || options.size() != option_tokens.size() || max_head_tokens <= 0) {
         return "";
     }
     const size_t max_head = static_cast<size_t>(max_head_tokens);
-    // Each option is its marker token plus the label's tokens.
+    const size_t max_option = LLAMACPP_DECISION_LAYA_MAX_OPTION_TOKENS;
+    const size_t reserve = LLAMACPP_DECISION_LAYA_QUESTION_RESERVE;
+    // Each option is its marker token plus its text.
     size_t total = 0;
-    for (size_t i = 0; i < labels.size(); ++i) {
-        if (label_tokens[i] > LAYA_MAX_OPTION_TOKENS) {
-            return "label '" + labels[i] + "' is " + std::to_string(label_tokens[i]) +
+    for (size_t i = 0; i < options.size(); ++i) {
+        if (option_tokens[i] > max_option) {
+            return "option '" + options[i] + "' is " + std::to_string(option_tokens[i]) +
                    " tokens long; this decision model reads at most " +
-                   std::to_string(LAYA_MAX_OPTION_TOKENS) + " tokens of each label";
+                   std::to_string(max_option) + " tokens of each option";
         }
-        total += 1 + label_tokens[i];
+        total += 1 + option_tokens[i];
     }
-    if (total + LAYA_QUESTION_RESERVE <= max_head) return "";
-    const size_t room = max_head - std::min(max_head, LAYA_QUESTION_RESERVE);
-    const size_t per_option = std::max<size_t>(4, room / labels.size());
-    for (size_t i = 0; i < labels.size(); ++i) {
-        if (1 + label_tokens[i] > per_option) {
-            return "the labels take " + std::to_string(total) +
-                   " tokens with one marker token each; this decision model reads at most " +
-                   std::to_string(room) + " (max_head_tokens " + std::to_string(max_head) +
-                   " minus " + std::to_string(LAYA_QUESTION_RESERVE) + ")";
+    if (total + reserve > max_head) {
+        const size_t room = max_head - std::min(max_head, reserve);
+        const size_t per_option = std::max<size_t>(4, room / options.size());
+        for (size_t i = 0; i < options.size(); ++i) {
+            if (1 + option_tokens[i] > per_option) {
+                return "the options take " + std::to_string(total) +
+                       " tokens with one marker token each; this decision model reads at most " +
+                       std::to_string(room) + " (max_head_tokens " + std::to_string(max_head) +
+                       " minus " + std::to_string(reserve) + ")";
+            }
         }
+    }
+    const size_t question_room = std::max<size_t>(8, max_head - std::min(max_head, total));
+    if (question_tokens > question_room) {
+        return "the question is " + std::to_string(question_tokens) +
+               " tokens long; with these options this decision model reads at most " +
+               std::to_string(question_room) + " tokens of it";
     }
     return "";
 }

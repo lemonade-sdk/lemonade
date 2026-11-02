@@ -56,6 +56,9 @@ public:
 private:
     bool serves_text() const;
     json unsupported_decision_request(const std::string& operation) const;
+    // /v1/systemone for both systemone() and classify(): the window refusal as a
+    // 400, else `truncated` on each answer.
+    nlohmann::ordered_json decide(const nlohmann::ordered_json& body);
 
     // Get the path to the flm executable from the install directory
     std::string get_flm_path();

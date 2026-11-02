@@ -204,14 +204,15 @@ and every entry's `model` must be one of `components`:
 
 ### Truncated input (`on_truncation`)
 
-The two model-backed types, `classifier` and `zero_shot`, read a token window.
-When the input overflows it, the backend cuts the text (never the labels) and
-reports the cut, and each type loses a different part:
+The model-backed types, `classifier`, `zero_shot` and `systemone`, read a token
+window. When the input overflows it, the backend cuts the text (never the
+labels) and reports the cut, and each type loses a different part:
 
 | Type | The cut keeps | What disappears |
 |---|---|---|
-| `zero_shot` | the head and the tail, with `\n...\n` between | the middle |
+| `zero_shot` on ort-server | the head and the tail, with `\n...\n` between | the middle |
 | `classifier` | the head, plus the final separator | **the end** |
+| `systemone`, and `zero_shot` on a decision model | depends on the decision type, below | |
 
 A score computed from cut text is still a *success*, so `on_error` never sees
 it. `on_truncation` decides what the cut means:
@@ -236,9 +237,8 @@ longer than about 8,000 characters is cut. To raise it, pass
 window.
 
 An encoder decision model (Laya, Julia-1, the `vllm-d3` models) reads at most
-8,192 tokens per input by default, whatever its context size, and refuses a
-longer one. To raise it, pass `--llamacpp-args "-b 32768 -ub 32768"`; memory and
-time grow with the square of that size.
+4,096 tokens per input by default, whatever its context size, and refuses a
+longer one. To raise it, pass `--llamacpp-args "-b 8192 -ub 8192"`.
 
 The other types never read a token window and refuse the option. A `classifier`
 backed by a chat LLM refuses it too: a chat model reports no cut, so `fail`
@@ -338,18 +338,19 @@ also carries an **`x_lemonade_route`** object:
 `route_to` is the candidate that actually answered. For streaming responses the
 same object is attached to the first SSE event as `x_lemonade_route`.
 
-A failing **`classifier`** or **`zero_shot`** condition adds an **`error`** string
+A failing **`classifier`**, **`zero_shot`** or **`systemone`** condition adds an **`error`** string
 to its own trace entry, naming the reason the backend gave. Without it a failed
 condition and one that simply scored below its threshold both read as
 `"result": false`, and `on_error` hides which of the two happened.
 
-A **`classifier`** or **`zero_shot`** entry also carries **`truncated`**:
-`true` when the backend cut the input text to fit its token window before
-scoring, `false` when it scored the whole input. A `zero_shot` model never cuts
-its labels, a label pooled from half its tokens would score something the model
-only partly read: ort-server and a `laya` decision model refuse a label too long
-to read whole. The key is absent when the backend does not report cuts
-(ort-server before 0.4.0, or a chat LLM), so its absence means "unknown".
+A **`classifier`**, **`zero_shot`** or **`systemone`** entry also carries
+**`truncated`**: `true` when the backend cut the input text to fit its token
+window before scoring, `false` when it scored the whole input. A model never
+cuts its labels, a label pooled from half its tokens would score something the
+model only partly read: ort-server and a `laya` decision model refuse a label,
+an option or a question too long to read whole. The key is absent when the
+backend does not report cuts (ort-server before 0.4.0, or a chat LLM), so its
+absence means "unknown".
 
 ## Cloud candidates
 
@@ -384,9 +385,10 @@ list it is handed at request time, so there is no fallback to substitute.
 
 The `systemone` condition calls `/v1/systemone` on a llama.cpp decision model,
 which deploys as `ModelType::CLASSIFICATION`. llama-server builds the prompt from
-the template in the GGUF. Lemonade sends the question as the policy wrote it,
-except that a `criteria` array becomes an object with the options in the same
-order.
+the template in the GGUF. Lemonade sends the question as the policy wrote it.
+The option order changes the scores, and a stored policy sorts object keys, so
+a `choice` question's `criteria` must be an array:
+`["billing", {"shipping": "where an order is"}]`.
 
 ## LLM-as-router (`routing.router`)
 

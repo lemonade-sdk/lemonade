@@ -10,13 +10,17 @@
 using lemon::backends::llamacpp::decision_model_load_refusal;
 using lemon::backends::llamacpp::decision_text_truncated;
 using lemon::backends::llamacpp::encoder_decision_ctx_size;
-using lemon::backends::llamacpp::laya_label_overflow;
+using lemon::backends::llamacpp::laya_cut;
+using lemon::backends::llamacpp::laya_question_texts;
+using lemon::backends::llamacpp::LayaQuestionText;
 using lemon::backends::llamacpp::map_encoder_overflow_error;
+using lemon::backends::llamacpp::mark_answers_truncated;
 using lemon::backends::llamacpp::plan_single_batch;
 using lemon::backends::llamacpp::SingleBatchPlan;
 using lemon::backends::systemone::build_classify_request;
 using lemon::backends::systemone::classify_response;
 using lemon::backends::systemone::context_length_refusal;
+using lemon::backends::systemone::set_answers_truncated;
 using nlohmann::json;
 
 namespace {
@@ -44,6 +48,10 @@ bool throws(Fn fn) {
 
 json answer_with(json probabilities) {
     return json{{"answers", {{"label", {{"type", "choice"}, {"probabilities", probabilities}}}}}};
+}
+
+LayaQuestionText options_of(std::vector<std::string> options) {
+    return LayaQuestionText{"q", "choice question: ?", std::move(options)};
 }
 
 }  // namespace
@@ -80,39 +88,107 @@ int main() {
 
     const json response =
         answer_with({{"coding", 0.0002}, {"pii", 0.0096}, {"cooking", 0.9888}});
-    const json all = classify_response(response, labels, 0, false);
+    json reported = response;
+    reported["answers"]["label"]["truncated"] = false;
+    const json all = classify_response(reported, labels, 0);
     expect(all["labels"].size() == 3, "every label is returned without top_k");
     expect(all["labels"]["cooking"] == 0.9888, "the probabilities are returned unchanged");
     expect(all.contains("truncated") && all["truncated"] == false,
-           "the answer reports a text that was not cut");
-    expect(!classify_response(response, labels, 0, std::nullopt).contains("truncated"),
-           "the answer leaves truncated out when the cut is unknown");
+           "the answer's truncated reaches the classify response");
+    expect(!classify_response(response, labels, 0).contains("truncated"),
+           "an answer without truncated leaves it out");
 
-    const json top = classify_response(response, labels, 1, false);
+    const json top = classify_response(response, labels, 1);
     expect(top["labels"].size() == 1 && top["labels"].contains("cooking"),
            "top_k keeps the highest scores");
 
     expect(throws<std::runtime_error>([&] {
-               classify_response(answer_with({{"coding", 0.5}, {"pii", 0.5}}), labels, 0,
-                                 false);
+               classify_response(answer_with({{"coding", 0.5}, {"pii", 0.5}}), labels, 0);
            }),
            "an answer without one of the labels is refused");
     expect(throws<std::runtime_error>([&] {
                classify_response(
-                   answer_with({{"coding", 0.2}, {"pii", 0.2}, {"other", 0.6}}), labels, 0,
-                   false);
+                   answer_with({{"coding", 0.2}, {"pii", 0.2}, {"other", 0.6}}), labels, 0);
            }),
            "an answer with a label that was not asked is refused");
     expect(throws<std::runtime_error>([&] {
                classify_response(
-                   answer_with({{"coding", 2.0}, {"pii", 0.0}, {"cooking", 0.0}}), labels, 0,
-                   false);
+                   answer_with({{"coding", 2.0}, {"pii", 0.0}, {"cooking", 0.0}}), labels, 0);
            }),
            "a probability outside [0, 1] is refused");
     expect(throws<std::runtime_error>([&] {
-               classify_response(json{{"answers", json::object()}}, labels, 0, false);
+               classify_response(json{{"answers", json::object()}}, labels, 0);
            }),
            "a response without the answer is refused");
+
+    const nlohmann::ordered_json answers = nlohmann::ordered_json::parse(
+        R"({"answers": {"a": {"type": "noul", "noul": 0.9}, "b": {"type": "noul", "noul": 0.1}}})");
+    nlohmann::ordered_json marked = answers;
+    mark_answers_truncated(marked, "laya", nlohmann::ordered_json{{"state", "short"}});
+    expect(marked["answers"]["a"]["truncated"] == false &&
+               marked["answers"]["b"]["truncated"] == false,
+           "each answer of a model that refuses long text says it was not cut");
+    marked = answers;
+    mark_answers_truncated(marked, "lfm2-d1-omni", nlohmann::ordered_json{{"state", "short"}});
+    expect(marked == answers, "an answer that may have been cut gets no truncated key");
+    marked = answers;
+    mark_answers_truncated(marked, "h2o-lightning",
+                           nlohmann::ordered_json{{"state", std::string(40000, 'a')}});
+    expect(marked == answers, "a long h2o-lightning state gets no truncated key");
+    nlohmann::ordered_json refused = {{"error", {{"message", "no"}}}};
+    mark_answers_truncated(refused, "laya", nlohmann::ordered_json{{"state", "short"}});
+    expect(!refused.contains("answers"), "an error response is left alone");
+
+    const auto texts = laya_question_texts(nlohmann::ordered_json::parse(R"({
+        "state": "x",
+        "questions": {
+            "team": {"type": "choice", "instructions": "Which team?",
+                     "criteria": {"shipping": "where an order is", "billing": null}},
+            "list": {"type": "choice", "instructions": "Which?",
+                     "criteria": ["a", {"b": "the second"}]},
+            "urgency": {"type": "score", "instructions": "How urgent?", "criteria": ["low", "high"]},
+            "angry": {"type": "noul", "instructions": {"ask": "angry?"}},
+            "refund": {"type": "noul", "instructions": "Refund?", "criteria": {"true": "asks for money back"}}
+        }})"));
+    expect(texts.size() == 5, "every question gets its laya text");
+    expect(texts[0].question == "choice question: Which team?" &&
+               texts[0].options == std::vector<std::string>{"shipping: where an order is", "billing"},
+           "a choice option is 'key: description' or the key, in request order");
+    expect(texts[1].options == std::vector<std::string>{"a", "b: the second"},
+           "an array choice keeps its order");
+    expect(texts[2].options == std::vector<std::string>{"level 0: low", "level 1: high"},
+           "a score level is 'level i: text'");
+    expect(texts[3].question == R"(noul question: {"ask":"angry?"})" &&
+               texts[3].options == std::vector<std::string>{"true: yes, the statement holds",
+                                                            "false: no, the statement does not hold"},
+           "a noul without descriptions gets the template's yes and no texts");
+    expect(texts[4].options[0] == "true: asks for money back",
+           "a noul description replaces the template text");
+
+    const auto three = options_of({"coding", "pii", "cooking"});
+    expect(laya_cut(three, {2, 2, 2}, 4, 192).empty(), "short options fit");
+    expect(laya_cut(options_of({"a", "b"}), {48, 2}, 4, 192).empty(),
+           "a 48-token option is read whole");
+    const std::string per_option = laya_cut(options_of({"a", "b"}), {49, 2}, 4, 192);
+    expect(per_option.find("49 tokens") != std::string::npos &&
+               per_option.find("48 tokens") != std::string::npos,
+           "a 49-token option is refused, naming both numbers");
+    const auto four = options_of({"a", "b", "c", "d"});
+    const std::string head = laya_cut(four, {45, 45, 45, 45}, 4, 192);
+    expect(head.find("184 tokens") != std::string::npos && head.find("176") != std::string::npos,
+           "options that overflow max_head_tokens are refused, naming both numbers");
+    expect(laya_cut(four, {43, 43, 43, 43}, 16, 192).empty(),
+           "options that fill the head exactly are read whole");
+    expect(laya_cut(options_of(std::vector<std::string>(45, "x")), std::vector<size_t>(45, 3), 8,
+                    192).empty(),
+           "an over-full head whose options are already at the 4-token floor is not cut");
+    expect(laya_cut(options_of({"a", "b"}), {2, 2}, 186, 192).empty(),
+           "a question that fits the room the options leave is read whole");
+    const std::string question_cut = laya_cut(options_of({"a", "b"}), {2, 2}, 187, 192);
+    expect(question_cut.find("187 tokens") != std::string::npos &&
+               question_cut.find("186") != std::string::npos,
+           "a question longer than the room the options leave is refused, naming both numbers");
+    expect(laya_cut(three, {2, 2, 2}, 4, 0).empty(), "an unknown max_head_tokens skips the check");
 
     const std::string long_text(40000, 'a');
     expect(decision_text_truncated("laya", long_text) == false,
@@ -129,25 +205,6 @@ int main() {
     expect(!decision_text_truncated("acme-router", "short").has_value(),
            "a decision type lemond does not know is not trusted");
 
-    const std::vector<std::string> three = {"coding", "pii", "cooking"};
-    expect(laya_label_overflow(three, {2, 2, 2}, 192).empty(), "short labels fit");
-    expect(laya_label_overflow({"a", "b"}, {48, 2}, 192).empty(),
-           "a 48-token label is read whole");
-    const std::string per_label = laya_label_overflow({"a", "b"}, {49, 2}, 192);
-    expect(per_label.find("49 tokens") != std::string::npos &&
-               per_label.find("48 tokens") != std::string::npos,
-           "a 49-token label is refused, naming both numbers");
-    const std::string head = laya_label_overflow({"a", "b", "c", "d"}, {45, 45, 45, 45}, 192);
-    expect(head.find("184 tokens") != std::string::npos && head.find("176") != std::string::npos,
-           "labels that overflow max_head_tokens are refused, naming both numbers");
-    expect(laya_label_overflow({"a", "b", "c", "d"}, {43, 43, 43, 43}, 192).empty(),
-           "labels that fill the head exactly are read whole");
-    expect(laya_label_overflow(std::vector<std::string>(45, "x"), std::vector<size_t>(45, 3), 192)
-               .empty(),
-           "an over-full head whose options are already at the 4-token floor is not cut");
-    expect(laya_label_overflow(three, {2, 2, 2}, 0).empty(),
-           "an unknown max_head_tokens skips the check");
-
     expect(encoder_decision_ctx_size(190000, 8192) == 8192,
            "a context above the trained window is capped to it");
     expect(encoder_decision_ctx_size(2048, 8192) == 2048, "a smaller context is kept");
@@ -161,8 +218,8 @@ int main() {
         return p.add_batch_size == add_b && p.add_ubatch_size == add_ub &&
                p.max_input_tokens == limit;
     };
-    expect(plan_is(plan({}), true, true, 8192),
-           "without batch flags, -b and -ub are added at the context size");
+    expect(plan_is(plan({}), true, true, 4096),
+           "without batch flags, -b and -ub are added at 4096");
     expect(plan_is(plan({"-b", "8192"}), false, true, 8192),
            "-b alone still gets -ub at the context size");
     expect(plan_is(plan({"-ub", "8192"}), true, false, 8192),
@@ -175,19 +232,19 @@ int main() {
            "the long form with '=' counts as set");
     expect(plan_is(plan({"--ubatch-size", "16384"}), true, false, 8192),
            "a flag above the context does not raise the limit");
-    expect(plan_is(plan({"-b", "abc"}), false, true, 8192),
+    expect(plan_is(plan({"-b", "abc"}), false, true, 4096),
            "an unreadable value still counts as set");
 
     const SingleBatchPlan wide = plan_single_batch(262144, {});
-    expect(wide.batch_size == 8192 && wide.max_input_tokens == 8192,
-           "a large context alone keeps the batch at 8192");
+    expect(wide.batch_size == 4096 && wide.max_input_tokens == 4096,
+           "a large context alone keeps the batch at 4096");
     const SingleBatchPlan raised = plan_single_batch(262144, {"-b", "32768", "-ub", "32768"});
     expect(raised.max_input_tokens == 32768, "-b and -ub raise the batch");
     const SingleBatchPlan one = plan_single_batch(262144, {"-ub", "32768"});
     expect(one.add_batch_size && one.batch_size == 32768 && one.max_input_tokens == 32768,
            "raising one flag sizes the one lemond adds");
-    expect(plan_single_batch(4096, {}).batch_size == 4096,
-           "a context below 8192 keeps the batch at the context");
+    expect(plan_single_batch(2048, {}).batch_size == 2048,
+           "a context below 4096 keeps the batch at the context");
 
     expect(decision_model_load_refusal("Laya", false, "modern-bert", "laya").empty(),
            "a decision GGUF loads");
@@ -225,25 +282,30 @@ int main() {
     expect(map_encoder_overflow_error(response, 8192) == response, "answers are left alone");
 
     // FLM 1.0.11 refuses a question that does not fit inside a 200 answer.
-    const json refused_answer = {
+    const json flm_refused_answer = {
         {"type", "choice"},
         {"error", "max_length_exceeded"},
         {"message", "the question prompt has 36892 tokens, over the maximum context length of "
                     "32768 tokens; nothing was truncated"},
     };
-    const json refused = {{"model", "d3-lite"}, {"answers", {{"label", refused_answer}}}};
-    const auto refusal = context_length_refusal(refused);
-    expect(refusal.has_value() && (*refusal)["error"]["status_code"] == 400 &&
-               (*refusal)["error"]["code"] == "context_length_exceeded",
+    const json flm_refused = {{"model", "d3-lite"}, {"answers", {{"label", flm_refused_answer}}}};
+    const auto flm_refusal = context_length_refusal(flm_refused);
+    expect(flm_refusal.has_value() && (*flm_refusal)["error"]["status_code"] == 400 &&
+               (*flm_refusal)["error"]["code"] == "context_length_exceeded",
            "a refused question is a 400 context_length_exceeded");
-    expect(refusal.has_value() &&
-               (*refusal)["error"]["message"].get<std::string>().find("36892 tokens") !=
+    expect(flm_refusal.has_value() &&
+               (*flm_refusal)["error"]["message"].get<std::string>().find("36892 tokens") !=
                    std::string::npos,
            "the refusal keeps the backend's message");
-    json partial = refused;
-    partial["answers"]["fits"] = {{"type", "noul"}, {"noul", 0.99}};
-    expect(!context_length_refusal(partial).has_value(),
+    json flm_partial = flm_refused;
+    flm_partial["answers"]["fits"] = {{"type", "noul"}, {"noul", 0.99}};
+    expect(!context_length_refusal(flm_partial).has_value(),
            "a response with one answered question is kept");
+    auto flm_marked = nlohmann::ordered_json::parse(flm_partial.dump());
+    set_answers_truncated(flm_marked, false);
+    expect(flm_marked["answers"]["label"]["truncated"] == false &&
+               flm_marked["answers"]["fits"]["truncated"] == false,
+           "set_answers_truncated marks every answer");
     expect(!context_length_refusal(response).has_value(), "a scored answer is not a refusal");
     expect(!context_length_refusal(overflow).has_value(), "an error response is not a refusal");
 

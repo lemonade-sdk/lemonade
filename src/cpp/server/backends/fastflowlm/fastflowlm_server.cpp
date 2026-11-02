@@ -366,11 +366,11 @@ json FastFlowLMServer::classify(const json& request) {
     }
     const json text = request.contains("text") ? request["text"] : request.value("input", json());
     if (!text.is_string()) {
-        return systemone::invalid_classify_request(
+        return systemone::invalid_decision_request(
             "Missing 'input' (or 'text') string in classify request");
     }
     if (!request.contains("labels") || request["labels"].is_null()) {
-        return systemone::invalid_classify_request(
+        return systemone::invalid_decision_request(
             "this model scores a label list supplied per request; include a \"labels\" "
             "array in the request body");
     }
@@ -379,23 +379,18 @@ json FastFlowLMServer::classify(const json& request) {
     try {
         body = systemone::build_classify_request(text.get<std::string>(), request["labels"]);
     } catch (const std::invalid_argument& e) {
-        return systemone::invalid_classify_request(e.what());
+        return systemone::invalid_decision_request(e.what());
     }
 
-    const json response = forward_ordered_request("/v1/systemone", body);
+    const json response(decide(body));
     if (response.contains("error")) {
         return response;
-    }
-    if (const auto refusal = systemone::context_length_refusal(response)) {
-        return *refusal;
     }
     const int top_k = request.contains("top_k") && request["top_k"].is_number_integer()
                           ? request["top_k"].get<int>()
                           : 0;
     try {
-        // FLM refuses a text that does not fit instead of cutting it, so a text it
-        // scored was scored whole.
-        return systemone::classify_response(response, request["labels"], top_k, false);
+        return systemone::classify_response(response, request["labels"], top_k);
     } catch (const std::exception& e) {
         return ErrorResponse::create(e.what(), ErrorType::BACKEND_ERROR);
     }
@@ -406,13 +401,24 @@ nlohmann::ordered_json FastFlowLMServer::systemone(const nlohmann::ordered_json&
         return unsupported_decision_request("SystemOne");
     }
     // FLM ignores the request's `model` and answers with its own model id.
-    nlohmann::ordered_json response = forward_ordered_request("/v1/systemone", request);
-    if (const auto refusal = systemone::context_length_refusal(json(response))) {
-        return *refusal;
-    }
+    nlohmann::ordered_json response = decide(request);
     if (response.is_object() && response.contains("model")) {
         response["model"] = request.value("model", get_model_name());
     }
+    return response;
+}
+
+nlohmann::ordered_json FastFlowLMServer::decide(const nlohmann::ordered_json& body) {
+    nlohmann::ordered_json response = forward_ordered_request("/v1/systemone", body);
+    if (response.contains("error")) {
+        return response;
+    }
+    if (const auto refusal = systemone::context_length_refusal(json(response))) {
+        return nlohmann::ordered_json(*refusal);
+    }
+    // FLM refuses a question that does not fit instead of cutting it, so every
+    // answer it gives read the whole state.
+    systemone::set_answers_truncated(response, false);
     return response;
 }
 
