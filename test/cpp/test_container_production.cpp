@@ -51,8 +51,9 @@ struct Services final : LaunchServices {
     int port = 1;
     bool install_failure = false;
     double pool = 62;
+    double free_memory = 120;
     Json pins;
-    std::vector<std::string> events;
+    mutable std::vector<std::string> events;
     bool exists(const std::string& path) const override { return fs::exists(path); }
     std::vector<std::string> supported_backends(const std::string&) const override { return {}; }
     void validate_backend(const std::string&, const std::string&) const override {}
@@ -73,7 +74,7 @@ struct Services final : LaunchServices {
     std::string container_gpu_properties(unsigned) const override { return "capability 134217728\nctl_stack_size 1024\nsimd_count 5\ncwsr_size 959488\n"; }
     bool container_supports_arch(const std::string&, const std::string&, const std::string&) const override { return true; }
     IntegratedMemoryPool integrated_memory_pool() const override { return {true, 8.0, pool}; }
-    FreeMemoryFact free_gpu_memory() const override { return {true, 120.0}; }
+    FreeMemoryFact free_gpu_memory() const override { events.push_back("memory"); return {true, free_memory}; }
     std::optional<ArtifactByteFact> artifact_bytes(const std::string& path) const override {
         return ArtifactByteFact{true, (path.find("draft") == std::string::npos ? 60ULL : 4ULL) * 1073741824ULL};
     }
@@ -154,6 +155,7 @@ void parity(const std::string& id) {
     check(data.at("launch").at("diagnostics") == source.at("definition").at("merge").at("launch").at("diagnostics"), "C8ExactC7bDiagnosticRecords:" + id);
     if (expected.contains("c8a_fixture")) {
         check(data.at("artifacts") == frozen.at("artifacts"), "C9FrozenArtifacts:" + id);
+        check(data.at("launch").at("execution") == frozen.at("launch").at("execution"), "C9FrozenExecutionContract:" + id);
         check(data.at("launch").at("prepare_order") == frozen.at("launch").at("prepare_order") &&
             data.at("launch").value("pre_install_refusal", "") == frozen.at("launch").value("pre_install_refusal", ""), "C9FrozenPreInstallContract:" + id);
     }
@@ -177,7 +179,7 @@ void parity(const std::string& id) {
         embedded_v2_policies().leaves.size() == 2 && embedded_v2_policies().execution_owners.empty(), "C8InactiveProductionLeaf:" + id);
     const auto recipe = expected.at("recipe").get<std::string>();
     auto services = std::make_shared<Services>(); services->pins = load_json(root / "src/cpp/resources/backend_versions.json");
-    check(services->pins.at(recipe).at(expected.at("backend").get<std::string>()) == expected.at("pin") && !expected.at("registry_validated").get<bool>(), "C8ExactUnvalidatedStackPin:" + id);
+    check(services->pins.at(expected.value("pin_recipe", recipe)).at(expected.at("backend").get<std::string>()) == expected.at("pin") && !expected.at("registry_validated").get<bool>(), "C8ExactUnvalidatedStackPin:" + id);
     const auto registry = load_json(root / "src/cpp/resources/server_models.json");
     for (const auto& [name, row] : expected.at("models").items()) check(registry.at(name) == row, "C8ExactRegistry:" + id + ":" + name);
     const auto scratch = fs::path(LEMON_C8_SCRATCH) / id;
@@ -301,6 +303,7 @@ void blocked_engine(const std::string& name) {
     std::ofstream(scratch / "blocker.json") << Json{{"observed_error", error}, {"source_expected_error", expected_error}, {"events", services.events}}.dump(2) << '\n';
 }
 #include "c8a_checkpoint.h"
+#include "c9_ds4_contracts.h"
 #include "c9_container_contracts.h"
 }
 

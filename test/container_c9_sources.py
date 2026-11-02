@@ -7,6 +7,7 @@ from pathlib import Path
 import subprocess
 
 from container_c9_control import BASE
+from container_c9_schema import SCHEMA, schema_bytes
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -38,10 +39,18 @@ def check(out):
                 "cmake/CxxStringLiterals.cmake",
                 "cmake/BackendDefinitionResources.cmake",
                 "src/cpp/resources/defaults.json",
+                "src/cpp/resources/server_models.json",
             )
         ):
             continue
         data = (REPO / path).read_bytes()
+        if (
+            path == SCHEMA
+            and (REPO / "src/cpp/resources/backends/ds4_rocm.json").exists()
+        ):
+            assert data == schema_bytes(True), "C9ExactSingleMemoryPhaseSchemaAddition"
+            (out / "memory-phase.schema.json").write_bytes(data)
+            continue
         assert data == git(BASE, path), "C9ProtectedBytes:" + path
         protected.append(
             dict(
@@ -74,7 +83,7 @@ def check(out):
         assert pins[recipe][backend] == row["pin"], "C9ExactStackPin"
         assert (
             json.loads((REPO / "src/cpp/resources/backend_versions.json").read_bytes())[
-                recipe
+                row.get("pin_recipe", recipe)
             ][backend]
             == row["pin"]
         ), "C9StagedPin"
@@ -112,6 +121,28 @@ def check(out):
                 document["merge"]["artifacts"]["main"]
                 == fixture["definition"]["merge"]["artifacts"]["main"]
             ), "C9ExactC8aCheckpointConsumer"
+        if name == "ds4_rocm":
+            staged = json.loads((REPO / row["staged_inventory"]).read_bytes())
+            assert (
+                staged["active"] is False
+                and staged["models"] == row["source_models"]
+                and staged["support"] == document["merge"]["metadata"]["support"]
+                and staged["defaults"] == row["defaults"]
+            ), "C9ExactDormantDs4Inventory"
+            assert staged["pin"] == {
+                "recipe": row["pin_recipe"],
+                "backend": backend,
+                "value": row["pin"],
+                "registry_validated": False,
+            }, "C9ExactDormantDs4PinInventory"
+            assert (
+                json.loads(
+                    (REPO / "src/cpp/resources/backend_versions.json").read_bytes()
+                )["ds4"]["rocm"]
+                == json.loads(git(BASE, "src/cpp/resources/backend_versions.json"))[
+                    "ds4"
+                ]["rocm"]
+            ), "C9NativeDs4PinUnchanged"
         rows.append(
             {
                 k: row[k]

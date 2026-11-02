@@ -39,6 +39,15 @@ def rules(document):
             ]
         )
     else:
+        result.append(
+            (
+                "memory-phase",
+                "C9FrozenExecutionContract",
+                lambda d: d["merge"]["launch"]["execution"]["cases"][0].pop(
+                    "memory_phase"
+                ),
+            )
+        )
         result.extend(
             [
                 (

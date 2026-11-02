@@ -116,7 +116,7 @@ struct EnvironmentAssignment {
 };
 
 enum class DeviceValidationBackend { Selected, Rocm, Vulkan };
-enum class MemoryPlanPolicy { None, Ds4RocmV1 };
+enum class MemoryPlanPolicy { None, Ds4RocmV1, Ds4RocmAfterPortsV1 };
 enum class ContentTransform { None, Ds4NoThinkV1 };
 enum class RewriteDomain { CanonicalPath, ChatCompletionsSubstring };
 

@@ -82,6 +82,47 @@ def rules(engine):
                         None,
                     )
                 )
+    if engine == "ds4_rocm":
+        result.extend(
+            [
+                (
+                    "memory-before-install",
+                    CONFIGURED / "backend_execution_program.cpp",
+                    "program.launch.execution_cases.back().memory_plan = MemoryPlanPolicy::Ds4RocmAfterPortsV1;",
+                    "program.launch.execution_cases.back().memory_plan = MemoryPlanPolicy::Ds4RocmV1;",
+                    "C9Ds4InstallBeforeMemory:" + engine,
+                    [engine],
+                    None,
+                ),
+                (
+                    "memory-order-unchecked",
+                    CONFIGURED / "backend_execution_program.cpp",
+                    'require(launch.at("prepare_order") == Json::array({"backend", "artifacts", "install", "program", "ports"}),',
+                    "require(true,",
+                    "C9MemoryPhaseFixedOrder:" + engine,
+                    [engine],
+                    None,
+                ),
+                (
+                    "memory-domain-unchecked",
+                    CONFIGURED / "backend_execution_program.cpp",
+                    "program.model_contract == ModelContract::Ds4RocmV1,",
+                    "true,",
+                    "C9MemoryPhaseNeedsDs4Contract:" + engine,
+                    [engine],
+                    None,
+                ),
+                (
+                    "memory-install-needs-diagnostics",
+                    CONFIGURED / "backend_definition_runner.cpp",
+                    "execution_case->memory_plan == execution::MemoryPlanPolicy::Ds4RocmAfterPortsV1)\n                install_container();",
+                    'execution_case->memory_plan == execution::MemoryPlanPolicy::Ds4RocmAfterPortsV1 && records.contains("diagnostics"))\n                install_container();',
+                    "C9Ds4InstallIndependentOfDiagnostics:" + engine,
+                    [engine],
+                    None,
+                ),
+            ]
+        )
     result.append(
         (
             "generated-capability-mask",
@@ -177,7 +218,11 @@ def main():
         target = (
             "test_container_production.dir"
             if source.name == "test_container_production.cpp"
-            else "lemonade-server-core.dir"
+            else (
+                "lemonade-binding-test.dir"
+                if source.name == "backend_execution_program.cpp"
+                else "lemonade-server-core.dir"
+            )
         )
         row = next(
             r for r in database if Path(r["file"]) == source and target in r["command"]

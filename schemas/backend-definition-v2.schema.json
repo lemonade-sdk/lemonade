@@ -2667,6 +2667,11 @@
               "enum": [
                 "ds4_rocm_v1"
               ]
+            },
+            "memory_phase": {
+              "enum": [
+                "after_ports"
+              ]
             }
           },
           "required": [

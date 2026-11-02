@@ -3,6 +3,7 @@
 void c9_production_contracts(const std::string& id, const Json& doc, const Fixture& fixture,
     const std::shared_ptr<const ExecutableDefinition>& bound, Services& services, ModelInfo model, RecipeOptions options) {
     const bool llama = doc.at("recipe") == "llamacpp";
+    if (!llama) { c9_ds4_contracts(id, doc, fixture, bound, services, std::move(model), std::move(options)); return; }
     const auto& frozen = load_json(fs::path(LEMON_TEST_FIXTURES) / "backend-v2" / (id + ".production-parity.json"));
     const auto c8a = Json::parse(read_bytes(frozen.at("c8a_fixture")));
     if (llama) check(doc == c8a.at("definition"), "C9ExactC8aProductionDefinition:" + id);
@@ -40,6 +41,9 @@ void c9_production_contracts(const std::string& id, const Json& doc, const Fixtu
         for (const auto& mount : prepared.plan.container->mounts) destinations.push_back(mount.destination);
         check(destinations == std::vector<std::string>{"/mnt/models/checkpoint.fake", "/mnt/models/2/checkpoint.fake", "/mnt/models/3/checkpoint.fake"},
             "C9NumberedCollisionMounts:" + id + ":" + label);
+        const std::vector<std::pair<std::string, std::string>> environment = id == "halobox" ?
+            std::vector<std::pair<std::string, std::string>>{{"HIP_VISIBLE_DEVICES", "0"}} : std::vector<std::pair<std::string, std::string>>{};
+        check(prepared.plan.command.env == environment, "C9DeviceEnvironment:" + id);
         check(prepared.plan.output.filter_health_logs && prepared.plan.command.ready_endpoint == "/health" && prepared.plan.readiness_timeout_seconds == 2,
             "C9OutputAndReadiness:" + id);
     }

@@ -652,6 +652,9 @@ PreparedExecution DefinitionRunner::prepare_load(const LoadContext& context, con
             if (plan.container && !container_installed && records.contains("pre_install_refusal")) {
                 install_container();
             }
+            if (plan.container && !container_installed && execution_case &&
+                execution_case->memory_plan == execution::MemoryPlanPolicy::Ds4RocmAfterPortsV1)
+                install_container();
             if (plan.container) continue;
             if (program_.install.strategy == "external_only") throw std::logic_error("External-only backend cannot be downloaded");
             if (install_policy == "always" || services.external_binary(spec, backend).empty()) services.install_backend(spec.effective_public_recipe(), backend);
@@ -694,6 +697,8 @@ PreparedExecution DefinitionRunner::prepare_load(const LoadContext& context, con
                 if (number < 0 || (number == 0 && port.reject_zero) || number > 65535) throw std::runtime_error(port.error.empty() ? "Invalid configured port" : port.error);
                 values["launch"]["ports"][port.name] = number;
             }
+            if (execution_case && execution_case->memory_plan == execution::MemoryPlanPolicy::Ds4RocmAfterPortsV1)
+                values["memory"] = ds4_memory_plan(context.model_info, services);
         }
         if (!launch.diagnostics.empty() && (phase == "backend" || phase == "artifacts")) {
             if (phase == "artifacts") {

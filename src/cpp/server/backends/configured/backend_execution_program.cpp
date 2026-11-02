@@ -122,6 +122,14 @@ void compile_programs(Program& program, Budget& budget) {
                 std::count_if(artifacts.begin(), artifacts.end(), [](const auto& value) { return value.at("role") == "draft"; }) == 1, "invalid_memory_plan", "/artifacts");
             program.launch.execution_cases.back().memory_plan = MemoryPlanPolicy::Ds4RocmV1;
         }
+        if (item.contains("memory_phase")) {
+            require(item.at("memory_phase") == "after_ports" && item.value("memory_plan", "") == "ds4_rocm_v1" &&
+                program.model_contract == ModelContract::Ds4RocmV1,
+                "invalid_memory_phase", "/launch/execution/cases");
+            require(launch.at("prepare_order") == Json::array({"backend", "artifacts", "install", "program", "ports"}),
+                "invalid_memory_phase", "/launch/prepare_order");
+            program.launch.execution_cases.back().memory_plan = MemoryPlanPolicy::Ds4RocmAfterPortsV1;
+        }
         if (item.contains("device_validation")) {
             require(std::any_of(program.hooks.begin(), program.hooks.end(), [](const auto& hook) {
                 return hook.contract == typed::Contract::Backend && hook.slot.owner_kind == SlotOwnerKind::Root &&
