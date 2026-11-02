@@ -267,12 +267,8 @@ std::map<std::string, std::vector<std::string>> group_aux_checkpoint_variants(
 
 std::vector<std::string> select_main_repo_files(
     const std::string& repo_id,
-    const std::string& recipe,
     const std::string& variant,
     const std::vector<std::string>& repo_files) {
-    auto backend_files =
-        backends::ops_for(recipe)->select_checkpoint_files(variant, repo_files);
-
     std::vector<std::string> selected;
     if (!variant.empty()) {
         auto ends_with = [](const std::string& value, const std::string& suffix) {
@@ -301,8 +297,6 @@ std::vector<std::string> select_main_repo_files(
                                          ": " + variant);
             }
             selected.push_back(variant);
-        } else if (backend_files) {
-            selected = std::move(*backend_files);
         } else if (folder_of_non_gguf) {
             selected = std::move(folder_files);
         } else {
@@ -326,8 +320,6 @@ std::vector<std::string> select_main_repo_files(
                 selected.push_back(config_file);
             }
         }
-    } else if (backend_files) {
-        selected = std::move(*backend_files);
     } else {
         selected = repo_files;
     }
@@ -336,14 +328,13 @@ std::vector<std::string> select_main_repo_files(
 
 std::vector<std::string> select_main_repo_files_union(
     const std::string& repo_id,
-    const std::string& recipe,
     const std::string& variant,
     const std::vector<std::string>& repo_files_a,
     const std::vector<std::string>& repo_files_b) {
     std::vector<std::string> selected =
-        select_main_repo_files(repo_id, recipe, variant, repo_files_a);
+        select_main_repo_files(repo_id, variant, repo_files_a);
     std::unordered_set<std::string> seen(selected.begin(), selected.end());
-    for (auto& filename : select_main_repo_files(repo_id, recipe, variant, repo_files_b)) {
+    for (auto& filename : select_main_repo_files(repo_id, variant, repo_files_b)) {
         if (seen.insert(filename).second) {
             selected.push_back(std::move(filename));
         }
@@ -354,14 +345,13 @@ std::vector<std::string> select_main_repo_files_union(
 std::vector<std::string> merge_reuse_comparison_files(
     const std::vector<std::string>& base_files,
     const std::string& repo_id,
-    const std::string& recipe,
     const std::string& variant,
     const std::vector<std::string>& repo_files_a,
     const std::vector<std::string>& repo_files_b) {
     std::vector<std::string> merged = base_files;
     std::unordered_set<std::string> seen(merged.begin(), merged.end());
     for (auto& filename :
-         select_main_repo_files_union(repo_id, recipe, variant, repo_files_a, repo_files_b)) {
+         select_main_repo_files_union(repo_id, variant, repo_files_a, repo_files_b)) {
         if (seen.insert(filename).second) {
             merged.push_back(std::move(filename));
         }

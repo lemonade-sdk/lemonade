@@ -15,7 +15,6 @@ namespace registry_files {
 // the variant matches nothing.
 std::vector<std::string> select_main_repo_files(
     const std::string& repo_id,
-    const std::string& recipe,
     const std::string& variant,
     const std::vector<std::string>& repo_files);
 
@@ -23,7 +22,6 @@ std::vector<std::string> select_main_repo_files(
 // dropped from one side doesn't silently drop out of comparison too.
 std::vector<std::string> select_main_repo_files_union(
     const std::string& repo_id,
-    const std::string& recipe,
     const std::string& variant,
     const std::vector<std::string>& repo_files_a,
     const std::vector<std::string>& repo_files_b);
@@ -32,7 +30,6 @@ std::vector<std::string> select_main_repo_files_union(
 std::vector<std::string> merge_reuse_comparison_files(
     const std::vector<std::string>& base_files,
     const std::string& repo_id,
-    const std::string& recipe,
     const std::string& variant,
     const std::vector<std::string>& repo_files_a,
     const std::vector<std::string>& repo_files_b);
