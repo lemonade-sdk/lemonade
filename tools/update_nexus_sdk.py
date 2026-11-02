@@ -8,6 +8,7 @@ UPSTREAM.json records the pin, the profile and the patch series.
 Usage:
     python tools/update_nexus_sdk.py <commit-or-tag>   # re-vendor and re-pin
     python tools/update_nexus_sdk.py --check           # fail if the tree drifted
+                                                       # or LICENSE misses a crate
 
 --source takes a local Nexus clone instead of the upstream URL.
 """
@@ -16,6 +17,7 @@ import argparse
 import filecmp
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -140,6 +142,25 @@ def compare(expected, actual):
     return problems
 
 
+def unlisted_crates():
+    """List locked third-party Rust crates that LICENSE does not name.
+
+    The SDK links these crates into its library and Debian packages vendor
+    their source, so each needs a row in the LICENSE notices table.
+    """
+    notices = (REPO_ROOT / "LICENSE").read_text(encoding="utf-8")
+    missing = []
+    for lock in sorted((SDK_DIR / "crates").glob("*/Cargo.lock")):
+        for block in lock.read_text(encoding="utf-8").split("[[package]]")[1:]:
+            fields = dict(re.findall(r'^(\w+) = "([^"]*)"', block, re.MULTILINE))
+            if "source" not in fields:
+                continue  # The SDK's own crates.
+            row = f"| {fields['name']} | {fields['version']} |"
+            if row not in notices and row not in missing:
+                missing.append(row)
+    return missing
+
+
 def install(tree):
     for entry in SDK_DIR.iterdir():
         if entry.name in METADATA:
@@ -196,6 +217,13 @@ def main():
                 f"src/LemonadeNexusSDK matches Nexus {commit} plus "
                 f"{len(patches)} patch(es)."
             )
+            missing = unlisted_crates()
+            if missing:
+                print("LICENSE does not list these Rust crates of the SDK:")
+                for row in missing:
+                    print(f"  {row}")
+                print("Add them to the Lemonade Nexus SDK Rust crates table.")
+                return 1
             return 0
 
         previous = manifest.get("commit", "")
