@@ -850,6 +850,9 @@ MAINTAINER_TEMPLATE = r"""<!doctype html>
   .focus-card:hover { border-color:var(--link); }
   .focus-card a { color:var(--fg); font-size:13px; font-weight:500; }
   .focus-card a:hover { color:var(--link); text-decoration:underline; }
+  .focus-reviewer { font-size:11px; margin-top:5px; color:#56d364; }
+  .focus-reviewer strong { color:#56d364; }
+  .focus-reviewer.no-reviewer { color:#ffa657; }
   .score-badge { position:absolute; top:10px; right:10px; font-size:11px; font-weight:700; background:var(--panel); border:1px solid var(--border); border-radius:4px; padding:1px 6px; color:var(--muted); }
   .focus-meta { font-size:11px; color:var(--muted); margin-top:4px; display:flex; gap:8px; flex-wrap:wrap; }
 
@@ -996,6 +999,13 @@ MAINTAINER_TEMPLATE = r"""<!doctype html>
 </div>
 
 <div id="pr-list"></div>
+
+<div id="new-prs-panel" class="page-band">
+  <div class="chart-header" style="margin-bottom:10px;">
+    <h2>New PRs — needs reviewer <span id="new-prs-count" style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0;font-size:12px;"></span></h2>
+  </div>
+  <div id="new-prs-body"></div>
+</div>
 
 <details id="rfc-panel">
   <summary>RFC Tracker — <span id="rfc-panel-count">0</span> open RFCs</summary>
@@ -1268,6 +1278,44 @@ function renderPulse() {
     </details>`;
 }
 
+function renderNewPRs() {
+  const body = document.getElementById("new-prs-body");
+  const countEl = document.getElementById("new-prs-count");
+  if (!body) return;
+  const newPRs = DATA.filter(pr =>
+    !pr.is_draft &&
+    pr.days_old <= 14 &&
+    pr.community_tier !== "first-timer" &&
+    (!pr.review_requested || !pr.review_requested.length)
+  ).sort((a, b) => a.days_old - b.days_old);
+  countEl.textContent = newPRs.length
+    ? `${newPRs.length} PR${newPRs.length>1?"s":""} need a reviewer`
+    : "all covered";
+  if (!newPRs.length) {
+    body.innerHTML = `<div style="color:#56d364;font-size:12px;">All recent PRs have a reviewer assigned.</div>`;
+    return;
+  }
+  let html = `<div class="focus-cards">`;
+  for (const pr of newPRs) {
+    const sugg = (pr.suggested_reviewers||[]).slice(0,2);
+    const suggLine = sugg.length
+      ? `<div class="focus-reviewer">suggest: ${sugg.map(r=>`<strong>@${esc(r.login)}</strong><span title="${esc(r.why)}" style="cursor:help;color:var(--muted)"> ⓘ</span>`).join(", ")}</div>`
+      : `<div class="focus-reviewer no-reviewer">⚠ no suggestion — needs manual triage</div>`;
+    const wgChip = pr.wg
+      ? `<span class="chip wg${pr.wg_source==="predicted"?" predicted":""}" style="font-size:10px;">${esc(pr.wg)}</span> `
+      : "";
+    const ageBg = pr.days_old <= 2 ? "background:#0d4429;color:#56d364;" : "";
+    html += `<div class="focus-card" style="border-color:${sugg.length?"var(--border)":"#ffa657"}">
+      <span class="score-badge" style="${ageBg}">${pr.days_old}d old</span>
+      <div>${wgChip}<a href="${esc(pr.url)}" target="_blank" rel="noopener">#${pr.number} ${esc(pr.title.length>58?pr.title.slice(0,58)+"…":pr.title)}</a></div>
+      <div class="focus-meta"><span>by @${esc(pr.author)}</span><span style="color:var(--muted)">${esc(pr.community_tier||"")}</span></div>
+      ${suggLine}
+    </div>`;
+  }
+  html += `</div>`;
+  body.innerHTML = html;
+}
+
 function renderFocusPanel() {
   const body = document.getElementById("focus-body");
   const countEl = document.getElementById("focus-count");
@@ -1290,10 +1338,14 @@ function renderFocusPanel() {
       else if (pr.days_stale>=30) reasons.push(`${pr.days_stale}d stale`);
       if (!pr.assignees.length) reasons.push("unassigned");
       if (pr.community_tier==="first-timer") reasons.push("first-timer");
+      const revLine = pr.review_requested && pr.review_requested.length
+        ? `<div class="focus-reviewer">reviewer: ${pr.review_requested.slice(0,2).map(r=>`<strong>@${esc(r)}</strong>`).join(", ")}</div>`
+        : `<div class="focus-reviewer no-reviewer">⚠ no reviewer yet</div>`;
       html += `<div class="focus-card">
         <span class="score-badge">${pr.score}</span>
         <div><a href="${pr.url}" target="_blank" rel="noopener">#${pr.number} ${esc(pr.title.length>60?pr.title.slice(0,60)+"…":pr.title)}</a></div>
         <div class="focus-meta">${reasons.map(r=>`<span>${esc(r)}</span>`).join(" · ")}</div>
+        ${revLine}
       </div>`;
     }
     html += "</div></div>";
@@ -1606,6 +1658,7 @@ renderWGBreakdown();
 setTimeout(() => renderCumulativeChart(), 50);
 setTimeout(() => renderTrendChart(), 60);
 renderPulse();
+renderNewPRs();
 renderFocusPanel();
 renderRFCPanel();
 render();
