@@ -1,7 +1,7 @@
 #pragma once
 
 /// C header for BoringTun's FFI API (matches the Rust crate's exported symbols).
-/// Verified against boringtun 0.6.0 src/ffi/mod.rs — keep in sync if the crate
+/// Verified against boringtun 0.7.1 src/ffi/mod.rs — keep in sync if the crate
 /// version changes. Includes extra exports from crates/boringtun-ffi/src/lib.rs.
 /// See: https://github.com/cloudflare/boringtun
 

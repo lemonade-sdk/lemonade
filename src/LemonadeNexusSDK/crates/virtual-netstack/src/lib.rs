@@ -125,7 +125,7 @@ impl IngressCallback {
 
 fn ipv4_to_u32(addr: &smoltcp::wire::IpAddress) -> u32 {
     match addr {
-        smoltcp::wire::IpAddress::Ipv4(a) => u32::from_be_bytes(a.0),
+        smoltcp::wire::IpAddress::Ipv4(a) => u32::from(*a),
     }
 }
 

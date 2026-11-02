@@ -1,6 +1,8 @@
 // Re-export BoringTun's C FFI symbols so they end up in our static library.
 pub use boringtun::ffi::*;
 
+use base64::engine::general_purpose::STANDARD as BASE64;
+use base64::Engine as _;
 use boringtun::noise::handshake::parse_handshake_anon;
 use boringtun::noise::{Packet, Tunn};
 use boringtun::x25519::{PublicKey, StaticSecret};
@@ -12,7 +14,7 @@ unsafe fn decode_key_b64(s: *const c_char) -> Option<[u8; 32]> {
         return None;
     }
     let s = CStr::from_ptr(s).to_str().ok()?;
-    let bytes = base64::decode(s).ok()?;
+    let bytes = BASE64.decode(s).ok()?;
     bytes.try_into().ok()
 }
 
@@ -73,8 +75,8 @@ mod tests {
         let sk = StaticSecret::random_from_rng(rand_core::OsRng);
         let pk = PublicKey::from(&sk);
         (
-            CString::new(base64::encode(sk.to_bytes())).unwrap(),
-            CString::new(base64::encode(pk.as_bytes())).unwrap(),
+            CString::new(BASE64.encode(sk.to_bytes())).unwrap(),
+            CString::new(BASE64.encode(pk.as_bytes())).unwrap(),
         )
     }
 
@@ -109,7 +111,7 @@ mod tests {
             )
         };
         assert_eq!(rc, 0);
-        let expected = base64::decode(client_pk.to_str().unwrap()).unwrap();
+        let expected = BASE64.decode(client_pk.to_str().unwrap()).unwrap();
         assert_eq!(peer_pub.as_slice(), expected.as_slice());
 
         // Garbage input must be rejected.

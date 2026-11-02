@@ -8,9 +8,7 @@ edition = "2021"
 crate-type = ["staticlib", "rlib"]
 
 [dependencies]
-# smoltcp 0.11 / mio 1.0.x: last releases that build on rustc 1.75 (the
-# toolchain corrosion uses here). Bump together when the toolchain moves.
-smoltcp = { version = "=0.11.0", default-features = false, features = [
+smoltcp = { version = ">=0.12, <0.15", default-features = false, features = [
     "std",
     "medium-ip",
     "proto-ipv4",
@@ -25,5 +23,5 @@ smoltcp = { version = "=0.11.0", default-features = false, features = [
     "reassembly-buffer-count-16",
     "assembler-max-segment-count-32",
 ] }
-mio = { version = "=1.0.3", features = ["os-poll", "net", "os-ext"] }
+mio = { version = "1", features = ["os-poll", "net", "os-ext"] }
 log = "0.4"

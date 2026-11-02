@@ -16,7 +16,7 @@ use mio::event::Source;
 use mio::net::TcpListener;
 use mio::{Events, Interest, Poll, Token, Waker};
 
-use smoltcp::iface::{Config, Interface, SocketHandle, SocketSet};
+use smoltcp::iface::{Config, Interface, PollResult, SocketHandle, SocketSet};
 use smoltcp::socket::{tcp, udp};
 use smoltcp::time::Instant;
 use smoltcp::phy::ChecksumCapabilities;
@@ -374,7 +374,7 @@ impl Stack {
 
     /// Build one UDP datagram and emit it as IPv4 packets no larger than the
     /// MTU, fragmenting like a kernel UDP socket. Built here rather than by
-    /// the smoltcp socket because smoltcp 0.11 keeps a single fragmentation
+    /// the smoltcp socket because smoltcp keeps a single fragmentation
     /// buffer and overwrites it when a second oversized datagram is
     /// dispatched before the first finishes; emitting directly lets any
     /// number of datagrams of any size go out in series, with no send queue.
@@ -726,7 +726,10 @@ impl Stack {
             // Drive smoltcp and the bridges until no further immediate progress.
             for _ in 0..MAX_INNER_ITERS {
                 let now = self.now();
-                let polled_changed = self.iface.poll(now, &mut self.device, &mut self.sockets);
+                let polled_changed = matches!(
+                    self.iface.poll(now, &mut self.device, &mut self.sockets),
+                    PollResult::SocketStateChanged
+                );
                 self.manage_listeners();
                 let pumped = self.pump_conns();
                 let delivered = self.pump_udp();
