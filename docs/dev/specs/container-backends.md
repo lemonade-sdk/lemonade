@@ -314,7 +314,7 @@ When the container tool is Podman, the checks are:
 | --- | --- | --- |
 | Podman installed | `podman` is not on `PATH` | The install command for the host's `ID` |
 | Device nodes accessible | Podman is rootless and the user's account cannot read and write `/dev/kfd` and every `/dev/dri/renderD*` node | 1. `sudo usermod -aG render $USER`<br>2. Log out and back in |
-| Podman answers | `podman info` fails | Run `podman info` and fix the error it prints |
+| Podman answers | `podman info` fails | `systemctl --user enable --now podman.socket` when `CONTAINER_HOST` is the account's own `podman.socket`; otherwise run `podman info` (with that `CONTAINER_HOST`, if set) and fix the error it prints |
 | crun runtime | Podman is rootless and `podman info` reports an OCI runtime other than crun | The install command for crun for the host's `ID` |
 | Network reachable | Podman is rootful and its network backend is CNI, which gives an internal network no gateway for `lemond` to reach the container by | Unset `CONTAINER_HOST` to use rootless Podman |
 
@@ -360,7 +360,7 @@ When the container tool is Podman, the checks are:
 | Check | Fails when | `action` |
 | --- | --- | --- |
 | Podman installed | `podman` is not on `PATH` | The install command for the host's `ID` |
-| Podman answers | `podman info` fails | Run `podman info` and fix the error it prints |
+| Podman answers | `podman info` fails | `systemctl --user enable --now podman.socket` when `CONTAINER_HOST` is the account's own `podman.socket`; otherwise run `podman info` (with that `CONTAINER_HOST`, if set) and fix the error it prints |
 | crun runtime | Podman is rootless and `podman info` reports an OCI runtime other than crun | The install command for crun for the host's `ID` |
 | Device nodes accessible | `lemonade` cannot read and write `/dev/kfd` and every `/dev/dri/renderD*` node | 1. `sudo usermod -aG render lemonade`<br>2. `sudo systemctl restart lemond` |
 | Subordinate IDs allocated | Podman is rootless and `getsubids lemonade` or `getsubids -g lemonade` prints no range | Ask the host's administrator to allocate 65,536 subordinate UIDs and GIDs to `lemonade`, then `sudo systemctl restart lemond` |
