@@ -1578,7 +1578,7 @@ jobs:
           [ -e /dev/dri/renderD128 ] || sudo mknod -m 666 /dev/dri/renderD128 c 1 3
           case "${{ matrix.tool }}-${{ matrix.mode }}" in
             podman-rootless)
-              sudo usermod -aG video,render "$USER"
+              sudo usermod -aG render "$USER"
               ;;
             podman-rootful)
               sudo systemctl start podman.socket
