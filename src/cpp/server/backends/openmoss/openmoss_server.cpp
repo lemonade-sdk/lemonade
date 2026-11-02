@@ -397,24 +397,6 @@ void OpenMossServer::audio_generations(const json& request, httplib::DataSink& s
 
 namespace backends {
 
-namespace {
-class OpenMossOps : public BackendOps {
-public:
-    std::optional<std::vector<std::string>> select_checkpoint_files(
-        const std::string& main_variant, const std::vector<std::string>& repo_files) const override {
-        std::vector<std::string> want = {main_variant};
-        auto pos = main_variant.rfind(".gguf");
-        if (pos != std::string::npos) {
-            std::string extras = main_variant.substr(0, pos) + ".extras.gguf";
-            for (const auto& f : repo_files) {
-                if (f == extras) { want.push_back(extras); break; }
-            }
-        }
-        return want;
-    }
-};
-}  // namespace
-
 namespace openmoss {
 
 std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
@@ -422,7 +404,7 @@ std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
 }
 
 const BackendSpec* spec() { return make_spec<OpenMossServer>(descriptor); }
-const BackendOps* ops() { return single_ops<OpenMossOps>(); }
+const BackendOps* ops() { return default_backend_ops(); }
 
 }  // namespace openmoss
 }  // namespace backends

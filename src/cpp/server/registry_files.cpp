@@ -279,9 +279,20 @@ std::vector<std::string> select_main_repo_files(
             return value.size() >= suffix.size() &&
                    value.compare(value.size() - suffix.size(), suffix.size(), suffix) == 0;
         };
-        const bool direct_file = ends_with(variant, ".safetensors") ||
-                                 ends_with(variant, ".pth") ||
-                                 ends_with(variant, ".ckpt");
+        const bool direct_file =
+            ends_with(variant, ".safetensors") || ends_with(variant, ".pth") ||
+            ends_with(variant, ".ckpt") ||
+            std::find(repo_files.begin(), repo_files.end(), variant) != repo_files.end();
+
+        std::vector<std::string> folder_files;
+        const std::string folder_prefix = variant.back() == '/' ? variant : variant + "/";
+        for (const auto& file : repo_files) {
+            if (file.rfind(folder_prefix, 0) == 0) folder_files.push_back(file);
+        }
+        const bool folder_of_non_gguf =
+            !folder_files.empty() &&
+            std::none_of(folder_files.begin(), folder_files.end(),
+                         [&](const std::string& file) { return ends_with(file, ".gguf"); });
 
         if (direct_file) {
             if (std::find(repo_files.begin(), repo_files.end(), variant) ==
@@ -292,6 +303,8 @@ std::vector<std::string> select_main_repo_files(
             selected.push_back(variant);
         } else if (backend_files) {
             selected = std::move(*backend_files);
+        } else if (folder_of_non_gguf) {
+            selected = std::move(folder_files);
         } else {
             GGUFFiles gguf_files = identify_gguf_models(repo_id, variant, repo_files);
             std::unordered_set<std::string> added_files;
