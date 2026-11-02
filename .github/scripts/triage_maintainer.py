@@ -73,6 +73,9 @@ KEY_COMMUNITY = {
     "valiabhay",
 }
 
+# All named contributors from docs/dev/contribute.md#maintainers
+GUIDE_CONTRIBUTORS = ADMIN_MAINTAINERS | KEY_COMMUNITY
+
 CANONICAL_WGS = {
     "auto-tune": "Auto-Tune",
     "autotune": "Auto-Tune",
@@ -194,6 +197,14 @@ def load_wg_predictions(path):
 
 def fetch_prs(repo, top_contributors, wg_predictions):
     now = datetime.now(timezone.utc)
+    # pulls API gives requested_reviewers; issues API does not
+    raw_pulls = gh_api_pages(f"/repos/{repo}/pulls?state=open&per_page=100")
+    requested_reviewers = {
+        p["number"]: [
+            r["login"] for r in p.get("requested_reviewers", []) if r and r.get("login")
+        ]
+        for p in raw_pulls
+    }
     raw = gh_api_pages(f"/repos/{repo}/issues?state=open&per_page=100")
     prs = []
     for it in raw:
@@ -222,6 +233,7 @@ def fetch_prs(repo, top_contributors, wg_predictions):
                 "assignees": [
                     a["login"] for a in it.get("assignees", []) if a and a.get("login")
                 ],
+                "review_requested": requested_reviewers.get(it["number"], []),
                 "comments": it.get("comments", 0),
                 "created_at": it["created_at"],
                 "updated_at": it["updated_at"],
@@ -359,27 +371,68 @@ def fetch_activity(repo, days=30):
 
 
 def compute_priority_score(pr):
+    """Score PRs by near-term landing potential.
+
+    Priority: guide contributor + fresh + has reviewer = highest.
+    Old stale PRs score low regardless of author — they need triage separately.
+    """
     score = 0
     labels = set(pr["labels"])
+    tier = pr.get("community_tier")
+    author = pr.get("author", "")
+    days_stale = pr["days_stale"]
+    days_old = pr.get("days_old", 99)
+    is_guide = pr.get("is_maintainer") or author in GUIDE_CONTRIBUTORS
+
+    # Community-validated urgency
     if HOT_LABEL in labels:
         score += 1000
     elif WARM_LABEL in labels:
         score += 500
+
+    # Blocked or correctness issue
     if "rfc:required" in labels:
-        score += 300
+        score += 400
     if "bug" in labels:
+        score += 250
+
+    # Contributor trust from contribute.md guide
+    if is_guide:
+        score += 500
+        # Extra freshness boost: guide contributor + recently opened
+        if days_old <= 7:
+            score += 400  # very new from a trusted contributor
+        elif days_old <= 21:
+            score += 200
+        elif days_old <= 45:
+            score += 75
+    elif tier == "active":
         score += 200
-    if pr["days_stale"] >= 60:
-        score += 300
-    elif pr["days_stale"] >= 30:
+        if days_old <= 14:
+            score += 100
+    elif tier == "returning":
+        score += 50
+    elif tier == "first-timer":
+        score -= 100
+
+    # Staleness penalty — applies to everyone including guide contributors
+    if days_stale >= 45:
+        score -= 400
+    elif days_stale >= 30:
+        score -= 200
+    elif days_stale >= 14:
+        score -= 75
+    elif days_stale <= 3:
+        score += 100  # very fresh activity
+
+    # Reviewer assigned = close to landing
+    if pr.get("review_requested"):
         score += 150
-    elif pr["days_stale"] >= 14:
-        score += 75
-    if not pr["assignees"]:
-        score += 150
-    if pr.get("community_tier") == "first-timer":
-        score += 75
-    score += min(pr["comments"], 20) * 5
+    else:
+        score -= 50
+
+    score += min(pr["comments"], 15) * 5
+
     return score
 
 
@@ -480,13 +533,111 @@ def fetch_issue_trend(repo, days=90):
     return result
 
 
+def fetch_weekly_pulse(repo, wg_predictions):
+    """Return a quantitative summary of the past 7 days of activity."""
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(days=7)
+
+    def parse(s):
+        return datetime.fromisoformat(s.replace("Z", "+00:00"))
+
+    # Merged PRs last 7 days — walk backwards through closed PRs
+    merged_raw = []
+    page = 1
+    while True:
+        cmd = [
+            "gh",
+            "api",
+            f"repos/{repo}/pulls?state=closed&sort=updated&direction=desc&per_page=100&page={page}",
+        ]
+        try:
+            batch = json.loads(
+                subprocess.run(
+                    cmd, check=True, capture_output=True, encoding="utf-8"
+                ).stdout
+            )
+        except Exception:
+            break
+        if not batch:
+            break
+        merged_raw.extend(
+            p for p in batch if p.get("merged_at") and parse(p["merged_at"]) >= cutoff
+        )
+        oldest = min((parse(p["updated_at"]) for p in batch), default=now)
+        if oldest < cutoff:
+            break
+        page += 1
+
+    # Open issues and open PRs (single paginated call each)
+    issues_raw = gh_api_pages(
+        f"/repos/{repo}/issues?state=open&sort=created&direction=desc&per_page=100"
+    )
+    all_open_issues = [i for i in issues_raw if not i.get("pull_request")]
+    new_issues = [i for i in all_open_issues if parse(i["created_at"]) >= cutoff]
+    new_bugs = [
+        i for i in new_issues if any(l["name"] == "bug" for l in i.get("labels", []))
+    ]
+
+    open_prs_raw = gh_api_pages(
+        f"/repos/{repo}/pulls?state=open&sort=created&direction=desc&per_page=100"
+    )
+    new_prs = [p for p in open_prs_raw if parse(p["created_at"]) >= cutoff]
+
+    # WG breakdown of merged
+    from collections import Counter
+
+    wg_merged = Counter()
+    for p in merged_raw:
+        labels = [l["name"] for l in p.get("labels", [])]
+        wg, _, _ = resolve_wg(
+            labels, p.get("body") or "", wg_predictions.get(p["number"])
+        )
+        wg_merged[wg or "Unclassified"] += 1
+
+    top_contributors = [
+        {"login": login, "merged": count}
+        for login, count in Counter(
+            (p.get("user") or {}).get("login", "?") for p in merged_raw
+        ).most_common(5)
+    ]
+
+    return {
+        "generated_at": now.strftime("%Y-%m-%d %H:%M UTC"),
+        "window_days": 7,
+        "merged_count": len(merged_raw),
+        "merged": [
+            {
+                "number": p["number"],
+                "title": p["title"],
+                "url": p["html_url"],
+                "author": (p.get("user") or {}).get("login", "?"),
+                "merged_at": p["merged_at"],
+            }
+            for p in sorted(
+                merged_raw, key=lambda p: p["merged_at"] or "", reverse=True
+            )
+        ],
+        "new_prs_count": len(new_prs),
+        "open_prs_total": len(open_prs_raw),
+        "new_issues_count": len(new_issues),
+        "new_bugs_count": len(new_bugs),
+        "open_issues_total": len(all_open_issues),
+        "wg_merged": dict(wg_merged),
+        "top_contributors": top_contributors,
+    }
+
+
 def build_focus_data(prs):
     """Return {wg: [top3 community PRs by priority_score]} for the focus panel."""
     from collections import defaultdict
 
     by_wg = defaultdict(list)
     for pr in prs:
-        if pr.get("wg") and not pr.get("is_draft") and not pr.get("is_maintainer"):
+        if (
+            pr.get("wg")
+            and not pr.get("is_draft")
+            and pr.get("community_tier") != "first-timer"
+        ):
             by_wg[pr["wg"]].append(pr)
     focus = {}
     for wg, wg_prs in by_wg.items():
@@ -496,13 +647,17 @@ def build_focus_data(prs):
                 "number": p["number"],
                 "title": p["title"],
                 "url": p["url"],
+                "author": p["author"],
                 "score": p["priority_score"],
                 "days_stale": p["days_stale"],
+                "days_old": p.get("days_old", 0),
                 "wg": p["wg"],
                 "labels": p["labels"],
                 "assignees": p["assignees"],
                 "community_tier": p.get("community_tier"),
+                "is_maintainer": p.get("is_maintainer", False),
                 "rfc_status": p.get("rfc_status"),
+                "review_requested": p.get("review_requested", []),
             }
             for p in top
         ]
@@ -675,6 +830,21 @@ MAINTAINER_TEMPLATE = r"""<!doctype html>
   #focus-panel summary:hover { color:var(--fg); }
   .focus-wg-section { margin-top:14px; }
   .focus-wg-label { font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; color:var(--muted); margin-bottom:6px; }
+  #pulse-banner { border-bottom:1px solid var(--border); }
+  #pulse-banner summary::-webkit-details-marker { display:none; }
+  #pulse-banner[open] summary .pulse-toggle::after { content:" ▴"; }
+  #pulse-banner:not([open]) summary .pulse-toggle::after { content:" ▾"; }
+  .pulse-toggle { color:var(--muted);font-size:11px;margin-left:auto; }
+  .pulse-contrib { background:var(--panel-2);border:1px solid var(--border);border-radius:4px;padding:2px 8px;font-size:12px;color:var(--fg); }
+  .pulse-table { width:100%;border-collapse:collapse;font-size:12px;margin-top:8px; }
+  .pulse-table th { text-align:left;color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.5px;padding:4px 8px;border-bottom:1px solid var(--border); }
+  .pulse-table td { padding:5px 8px;border-bottom:1px solid var(--border);vertical-align:top; }
+  .pulse-table tr:last-child td { border-bottom:none; }
+  .pulse-section-label { font-size:11px;text-transform:uppercase;color:var(--muted);letter-spacing:.5px; }
+  .pulse-subsummary { cursor:pointer;font-size:12px;font-weight:600;color:var(--muted);padding:4px 0;list-style:none; }
+  .pulse-subsummary::-webkit-details-marker { display:none; }
+  .pulse-subsummary::before { content:'▸ '; }
+  details[open] > .pulse-subsummary::before { content:'▾ '; }
   .focus-cards { display:flex; gap:10px; flex-wrap:wrap; }
   .focus-card { background:var(--panel-2); border:1px solid var(--border); border-radius:6px; padding:10px 14px; flex:1; min-width:220px; max-width:360px; position:relative; }
   .focus-card:hover { border-color:var(--link); }
@@ -723,6 +893,11 @@ MAINTAINER_TEMPLATE = r"""<!doctype html>
     </div>
   </div>
 </header>
+
+<details id="pulse-banner" class="page-band" open>
+  <summary id="pulse-summary" style="cursor:pointer;list-style:none;display:flex;align-items:center;gap:16px;flex-wrap:wrap;"></summary>
+  <div id="pulse-detail" style="margin-top:14px;"></div>
+</details>
 
 <div id="activity-chart" class="page-band">
   <div class="chart-header">
@@ -838,6 +1013,7 @@ const ALL_WGS = __ALL_WGS__;
 const FOCUS_DATA = __FOCUS_DATA__;
 const RFC_DATA = __RFC_DATA__;
 const TREND_DATA = __TREND_DATA__;
+const PULSE = __PULSE_DATA__;
 
 // ── filter state ──
 const state = {
@@ -1019,6 +1195,77 @@ function render() {
   if(state.suggested) parts.push("has suggested reviewer");
   document.getElementById("result-breakdown").textContent =
     parts.length ? "Filters: " + parts.join(" · ") : "All open PRs";
+}
+
+function renderPulse() {
+  const summary = document.getElementById("pulse-summary");
+  const detail  = document.getElementById("pulse-detail");
+  if (!PULSE || !summary) return;
+  const p = PULSE;
+  const wgMerged = p.wg_merged || {};
+  const rfcActive = RFC_DATA.filter(r=>r.days_quiet<=14);
+  const rfcStale  = RFC_DATA.filter(r=>r.days_quiet>=30);
+  const rfcNeedReview = RFC_DATA.filter(r=>r.days_quiet<=14).slice().sort((a,b)=>b.comments-a.comments);
+  const rfcHotStale   = RFC_DATA.filter(r=>r.days_quiet>14).slice().sort((a,b)=>b.comments-a.comments).slice(0,5);
+
+  // Top WGs by merge count
+  const topWGs = Object.entries(wgMerged).sort((a,b)=>b[1]-a[1]).slice(0,3);
+  const wgSummary = topWGs.map(([wg,n])=>`<strong>${esc(wg)}</strong> (${n})`).join(", ");
+
+  // Top contributors
+  const topC = (p.top_contributors||[]).slice(0,4).map(c=>`@${esc(c.login)} (${c.merged})`).join(", ");
+
+  // Prose narrative
+  const wgLead = topWGs[0] ? `${topWGs[0][0]} led with ${topWGs[0][1]}` : "";
+  const rfcLine = rfcActive.length
+    ? `${rfcActive.length} RFC${rfcActive.length>1?"s":""} actively discussed`
+    : "no RFC activity";
+  const staleLine = rfcStale.length ? `${rfcStale.length} gone quiet 30d+` : "";
+
+  summary.innerHTML = `<span style="font-size:13px;font-weight:700;color:var(--fg);">Last week</span>
+    <span style="font-size:13px;color:var(--muted);margin-left:4px;">
+      <strong style="color:var(--fg)">${p.merged_count} PRs merged</strong> —
+      ${wgLead ? wgLead + ". " : ""}${topC ? "Top contributors: " + topC + "." : ""}
+      ${p.new_issues_count} new issue${p.new_issues_count!==1?"s":""}, ${p.new_bugs_count} bug${p.new_bugs_count!==1?"s":""}.
+      ${rfcLine}${staleLine ? "; " + staleLine : ""}.
+    </span>
+    <span class="pulse-toggle" style="margin-left:auto;"></span>`;
+
+  // Merged PRs sub-section (collapsed)
+  const mergedRows = (p.merged||[]).slice(0,20).map(m=>`
+    <tr>
+      <td><a href="${esc(m.url)}" target="_blank" rel="noopener">#${m.number}</a></td>
+      <td>${esc((m.title||"").slice(0,80))}</td>
+      <td style="color:var(--muted)">@${esc(m.author)}</td>
+      <td style="color:var(--muted)">${(m.merged_at||"").slice(0,10)}</td>
+    </tr>`).join("");
+
+  // RFC sub-section (collapsed)
+  const rfcRows = [...rfcActive.map(r=>[r,"#56d364","active"]),
+    ...rfcHotStale.map(r=>[r,r.days_quiet>=30?"#ff7b72":"#ffa657",`stale ${r.days_quiet}d`])]
+    .map(([r,color,status])=>`
+      <tr>
+        <td><a href="${esc(r.url)}" target="_blank" rel="noopener">#${r.number}</a></td>
+        <td>${esc((r.title||"").slice(0,72))}</td>
+        <td style="color:${color}">${status}</td>
+        <td>${r.comments}</td>
+      </tr>`).join("");
+
+  detail.innerHTML = `
+    <details style="margin-bottom:10px;">
+      <summary class="pulse-subsummary">${p.merged_count} merged PRs — by workgroup: ${wgSummary}</summary>
+      <table class="pulse-table" style="margin-top:8px;">
+        <thead><tr><th>#</th><th>Title</th><th>Author</th><th>Merged</th></tr></thead>
+        <tbody>${mergedRows}</tbody>
+      </table>
+    </details>
+    <details>
+      <summary class="pulse-subsummary">RFCs — ${rfcActive.length} active · ${rfcStale.length} stale · ${RFC_DATA.length} total</summary>
+      <table class="pulse-table" style="margin-top:8px;">
+        <thead><tr><th>#</th><th>Title</th><th>Status</th><th>Comments</th></tr></thead>
+        <tbody>${rfcRows}</tbody>
+      </table>
+    </details>`;
 }
 
 function renderFocusPanel() {
@@ -1358,6 +1605,7 @@ renderActivityChart();
 renderWGBreakdown();
 setTimeout(() => renderCumulativeChart(), 50);
 setTimeout(() => renderTrendChart(), 60);
+renderPulse();
 renderFocusPanel();
 renderRFCPanel();
 render();
@@ -1430,6 +1678,15 @@ def main():
         rfcs = fetch_rfcs(args.repo, prs)
         print(f"  found {len(rfcs)} open RFCs", file=sys.stderr)
 
+    print("Building weekly pulse…", file=sys.stderr)
+    pulse = fetch_weekly_pulse(args.repo, wg_predictions)
+    print(
+        f"  pulse: {pulse['merged_count']} merged, "
+        f"{pulse['new_prs_count']} new PRs, "
+        f"{pulse['new_issues_count']} new issues last 7d",
+        file=sys.stderr,
+    )
+
     wg_options = chr(10).join(
         f'      <option value="{wg}">{wg} (lead: {WG_LEADS[wg]})</option>'
         for wg in ACTIVE_WGS
@@ -1445,6 +1702,7 @@ def main():
         .replace("__FOCUS_DATA__", script_safe_json(focus))
         .replace("__RFC_DATA__", script_safe_json(rfcs))
         .replace("__TREND_DATA__", script_safe_json(trend))
+        .replace("__PULSE_DATA__", script_safe_json(pulse))
     )
 
     out = Path(args.output)

@@ -7,11 +7,23 @@ name: Triage dashboard
 # only meant to refresh at release boundaries, so the dashboard must never
 # touch it.
 #
+# Pipeline per run:
+#   1. auto_assign.py  — scores open PRs by diff history, writes reviewer
+#      suggestions to _site/suggestions.json (dry-run; nothing is posted).
+#   2. triage_maintainer.py — generates maintainer.html, consuming the
+#      suggestions file for the "Suggested reviewer" chip and filter, and
+#      fetching RFCs + weekly pulse data.
+#   3. triage_dashboard.py — generates index.html (community-facing view).
+#
 # One-time setup (admin):
 #   1. lemonade-sdk/lemonade-triage exists with Pages set to "Deploy from a
 #      branch", Branch = main / (root).
-#   2. Add a secret TRIAGE_DASHBOARD_TOKEN to THIS repo (fine-grained PAT or
-#      deploy token with contents:write on lemonade-sdk/lemonade-triage).
+#   2. Add TRIAGE_DASHBOARD_TOKEN (fine-grained PAT, contents:write on
+#      lemonade-sdk/lemonade-triage) to THIS repo's secrets.
+#   3. Optionally add TRIAGE_TOKEN (PAT with read:org + repo) to allow
+#      auto_assign.py to list collaborators. Falls back to GITHUB_TOKEN.
+#   4. Set repo variable AUTO_ASSIGN_APPLY=true to enable reviewer requests
+#      from the daily auto-label run (off by default).
 
 on:
   schedule:
@@ -22,6 +34,7 @@ on:
     paths:
       - ".github/scripts/triage_dashboard.py"
       - ".github/scripts/triage_maintainer.py"
+      - ".github/scripts/auto_assign.py"
       - ".github/scripts/test_triage_dashboard.py"
       - ".github/workflows/triage-dashboard.yml"
 
@@ -39,8 +52,14 @@ jobs:
       issues: read
       pull-requests: read
       discussions: read
+    env:
+      # Prefer TRIAGE_TOKEN for collaborator listing; fall back to default.
+      GH_TOKEN: ${{ secrets.TRIAGE_TOKEN || secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history required by auto_assign.py for file-level blame scoring.
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
@@ -49,17 +68,29 @@ jobs:
       - name: Run dashboard tests
         run: python .github/scripts/test_triage_dashboard.py
 
-      - name: Generate dashboard
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Score reviewer suggestions (dry-run)
+        # Writes _site/suggestions.json — not applied to GitHub, just fed to
+        # the maintainer dashboard so the "Suggested reviewer" chip is live.
         run: |
           mkdir -p _site
+          python .github/scripts/auto_assign.py \
+            --repo "${{ github.repository }}" \
+            --json _site/suggestions.json
+
+      - name: Generate maintainer dashboard
+        # Consumes suggestions.json, fetches RFCs, builds weekly pulse.
+        run: |
+          python .github/scripts/triage_maintainer.py \
+            --repo "${{ github.repository }}" \
+            --reviewer-suggestions _site/suggestions.json \
+            --include-rfcs \
+            --output _site/maintainer.html
+
+      - name: Generate community dashboard
+        run: |
           python .github/scripts/triage_dashboard.py \
             --repo "${{ github.repository }}" \
             --output _site/index.html
-          python .github/scripts/triage_maintainer.py \
-            --repo "${{ github.repository }}" \
-            --output _site/maintainer.html
 
       - name: Publish to triage dashboard repo
         env:
