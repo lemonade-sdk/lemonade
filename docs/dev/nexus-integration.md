@@ -82,21 +82,24 @@ its keystore, and the tray delivers it.
 
 ### Remote management
 
-Initial setup of a headless server uses the local desktop/controller or SSH
-port forwarding. Nexus setup on loopback requires no Lemonade API key. Enable,
-unlock and join the server locally before managing it over the mesh.
+Direct callers from RFC1918 networks (`10.0.0.0/8`, `172.16.0.0/12` and
+`192.168.0.0/16`) may set up and manage Nexus through the public listener
+without a Lemonade API key or prior mesh membership. This trusts the socket
+peer's LAN/VPN address, not forwarding headers, and includes identity,
+lifecycle, account deletion and relay operations. IPv4-mapped IPv6 addresses
+are recognized. Loopback setup and SSH forwarding remain available.
 
-Remote callers connect through their own authenticated Nexus mesh session.
+Other remote callers connect through their own authenticated Nexus mesh session.
 The SDK attributes each request to its sending peer. Nexus administration
 requires the caller's `admin` permission; group operations additionally check
 that caller's current assignments on the affected group. An API key or an
-RFC1918 address cannot substitute for this authorization. Identity handoff,
-account deletion, unlock, lifecycle and local selection operations remain local.
+RFC1918 address cannot substitute for mesh authorization. Mesh callers cannot
+perform identity handoff, account deletion, unlock, lifecycle or local selection.
 The GUI remote-account bootstrap flow is not extended by this policy.
 
 An unlocked device creates and cancels invites without another passkey check.
-The local operator or an authorized mesh administrator may request them. A
-locked device refuses invites.
+Local and private-network operators, or an authorized mesh administrator, may
+request them. A locked device refuses invites.
 
 Invites come from the federation. Eight-digit codes work when the deployed
 federation supports them; older versions return full `lnk_…` tokens, which the
@@ -484,7 +487,8 @@ Each listener applies its own rules:
 | Listener | Client | Nexus routes |
 | --- | --- | --- |
 | Public | Loopback | No API key required; `status`, `join/status` and the relay directly; every other route redirects with HTTP 307 to the management listener |
-| Public | Any remote client, including RFC1918 | HTTP 403, even with a valid API key or supplied identity headers |
+| Public | Direct RFC1918 client | All Nexus routes without an API key; socket peer address supplies the LAN/VPN trust boundary |
+| Public | Other remote client | HTTP 403, even with a valid API key or supplied identity headers |
 | Management (`127.0.0.1`, ephemeral port) | Local operator / SSH-forwarded connection | All Nexus routes without an API key |
 | Mesh ingress (`127.0.0.1`, ephemeral port) | SDK-attributed mesh administrator | Status, devices, members, group/tree administration, invitations and device checks; local identity/lifecycle/relay operations remain refused |
 
@@ -494,7 +498,7 @@ the redirect to the dedicated loopback management listener. For SSH setup,
 forward the controller port reported by local status; that port changes on
 restart. Authenticate the SSH session using the host's existing access policy.
 
-For remote access, the SDK verifies the sending mesh peer, strips client-supplied
+For mesh access, the SDK verifies the sending mesh peer, strips client-supplied
 `X-Nexus-*` headers and supplies its own attribution to the dedicated ingress
 listener. Lemonade requires an attributed identity, `connect_private` and the
 matching `svc:<family>` permission, or `admin`. Only this listener trusts those
@@ -507,13 +511,15 @@ permissions. Federation refusals still apply to the executing server.
 The mesh catalog includes Nexus routes under `management`. `/internal/*` is
 not mounted on the ingress listener. Direct public inference, MCP and internal
 endpoints keep their existing authentication. Mesh inference goes directly to
-the target peer: the remote Nexus relay remains refused to prevent forwarding
-under the entry server's identity. The local relay remains available.
+the target peer: mesh callers cannot use the Nexus relay to forward under the
+entry server's identity. Loopback and direct RFC1918 callers retain the relay.
 
-Remote status omits `controller_url`. `account`, identity handoff, passkey
-registration/unlock, joining/leaving groups, account deletion, local selection,
-and enable/disable remain local-controller operations. No remote pairing flow
-is introduced. Browser origin checks remain enforced on all listeners.
+Remote status omits `controller_url`; direct RFC1918 responses report
+`remote_management: true` even before mesh setup. `account`, identity handoff,
+passkey registration/unlock, joining/leaving groups, account deletion, local
+selection and enable/disable are available to local/private-network operators.
+No GUI remote pairing flow is introduced. Browser origin checks remain enforced
+on all listeners.
 
 A federation that cannot be reached is an outage, not a refusal. When a
 connection fails or times out, the federation answers 5xx, or no verified Tier 1

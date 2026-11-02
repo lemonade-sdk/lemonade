@@ -4,6 +4,7 @@
 #include "lemon/server/route_registry.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/json_utils.h"
+#include "lemon/utils/network_beacon.h"
 #include "lemon/utils/path_utils.h"
 #include "lemon/version.h"
 #include <lemon/utils/aixlog.hpp>
@@ -970,6 +971,7 @@ std::pair<int, std::string> route_access(NexusListener listener, const httplib::
     }
     if (listener == NexusListener::Management) return loopback ? std::make_pair(0, std::string()) : std::make_pair(403, std::string("Local network management only"));
     if (loopback) return {operation == "status" || operation == "join/status" || operation == "relay" ? 0 : 307, ""};
+    if (NetworkBeacon::isRFC1918(req.remote_addr, false)) return {0, ""};
     return {403, "Connect through the authenticated Nexus mesh. Initial setup requires the local controller or SSH forwarding."};
 }
 
@@ -2340,6 +2342,9 @@ void NexusManager::handle(const httplib::Request& req, httplib::Response& res,
     const auto reply = [&](int code, json body) {
         if (remote && body.is_object()) {
             body.erase("controller_url");
+            if (body.contains("remote_management") && NetworkBeacon::isRFC1918(req.remote_addr, false)) {
+                body["remote_management"] = true;
+            }
         }
         res.status = code;
         res.set_content(body.dump(), "application/json");
