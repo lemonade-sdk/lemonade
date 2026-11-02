@@ -50,6 +50,7 @@ struct FakeHost {
     int podman_info_exit = 0;
     std::string podman_rootless = "true";
     std::string network_backend = "netavark";
+    std::string oci_runtime = "crun";
     // What Podman prints on stderr, which reaches `output` only when captured.
     std::string stderr_noise =
         "time=\"2026-10-17T00:57:31Z\" level=warning msg=\"Falling back to --cgroup-manager=cgroupfs\"\n";
@@ -66,7 +67,7 @@ struct FakeHost {
         h.gpu_devices_accessible = [this]() { return gpu_access; };
         h.account = [this]() { return account; };
         h.group_id = [](const std::string& group) {
-            return group == "video" ? std::string("44") : std::string("990");
+            return group == "render" ? std::string("990") : std::string();
         };
         h.env = [this](const std::string& name) {
             const auto it = env.find(name);
@@ -83,7 +84,7 @@ struct FakeHost {
             lemon::utils::CommandResult result;
             if (argv.size() > 1 && argv[0] == "podman" && argv[1] == "info") {
                 result.exit_code = podman_info_exit;
-                result.output = podman_rootless + " " + network_backend + "\n";
+                result.output = podman_rootless + " " + network_backend + " " + oci_runtime + "\n";
             } else if (argv.size() > 1 && argv[1] == "network") {
                 result.exit_code = 0;
             } else if (argv.front() == "getsubids") {
@@ -104,7 +105,7 @@ struct FakeHost {
 // The spec's Complete Example: Qwen3-4B-GGUF on llamacpp:nathanw.
 ContainerRunSpec example_spec() {
     ContainerRunSpec spec;
-    spec.name = "lemonade-llamacpp-nathanw-Qwen3-4B-GGUF";
+    spec.name = "lemonade-13305-llamacpp-nathanw-Qwen3-4B-GGUF";
     spec.recipe = "llamacpp";
     spec.backend = "nathanw";
     spec.model = "Qwen3-4B-GGUF";
@@ -120,14 +121,14 @@ ContainerRunSpec example_spec() {
 
 void test_run_command() {
     const std::string common =
-        " run --rm --init --name lemonade-llamacpp-nathanw-Qwen3-4B-GGUF"
+        " run --rm --init --name lemonade-13305-llamacpp-nathanw-Qwen3-4B-GGUF"
         " --label ai.lemonade"
         " --label ai.lemonade.recipe=llamacpp"
         " --label ai.lemonade.backend=nathanw"
         " --label ai.lemonade.model=Qwen3-4B-GGUF"
         " --label ai.lemonade.port=8001"
         " --cap-drop=all --security-opt=no-new-privileges"
-        " --pull=never --network=lemonade-llamacpp-nathanw-Qwen3-4B-GGUF"
+        " --pull=never --network=lemonade-13305-llamacpp-nathanw-Qwen3-4B-GGUF"
         " --device /dev/dri";
     const std::string mount_and_home =
         " -v /home/alice/model.gguf:/mnt/models/Qwen3-4B-Q4_K_M.gguf:ro,z"
@@ -144,11 +145,23 @@ void test_run_command() {
           podman_command == "podman" + common + " --group-add keep-groups" + mount_and_home +
                                 " -p 127.0.0.1:8001:8001" + image_and_program);
 
+    FakeHost user_socket;
+    user_socket.tools = {"podman"};
+    user_socket.env = {{"CONTAINER_HOST", "unix:///run/user/1000/podman/podman.sock"},
+                       {"XDG_RUNTIME_DIR", "/run/user/1000"}};
+    const std::string user_socket_command =
+        join(ContainerManager(user_socket.host()).run_command(example_spec()));
+    check("podman run through the account's podman.socket keeps groups by annotation",
+          user_socket_command == "podman" + common +
+                                     " --annotation run.oci.keep_original_groups=1" +
+                                     mount_and_home + " -p 127.0.0.1:8001:8001" +
+                                     image_and_program);
+
     FakeHost docker;
     docker.tools = {"docker"};
     const std::string docker_command = join(ContainerManager(docker.host()).run_command(example_spec()));
-    check("docker run adds the host's video and render IDs and publishes no port",
-          docker_command == "docker" + common + " --group-add 44 --group-add 990" +
+    check("docker run adds the host's render ID and publishes no port",
+          docker_command == "docker" + common + " --group-add 990" +
                                 mount_and_home + image_and_program);
 
     FakeHost rootful;
@@ -158,7 +171,7 @@ void test_run_command() {
     check("rootful podman run takes Docker's group IDs and publishes no port",
           !rootful_manager.rootless_podman() &&
               join(rootful_manager.run_command(example_spec())) ==
-                  "podman" + common + " --group-add 44 --group-add 990" + mount_and_home +
+                  "podman" + common + " --group-add 990" + mount_and_home +
                       image_and_program);
 
     ContainerRunSpec policy = example_spec();
@@ -193,13 +206,13 @@ void test_tool_choice_and_setup() {
     check("the host checks run no command", none.commands == 0);
     check("the steps are numbered, logging out last",
           fresh.action() ==
-              "1. sudo apt install podman\n2. sudo usermod -aG video,render $USER\n"
+              "1. sudo apt install podman\n2. sudo usermod -aG render $USER\n"
               "3. Log out and back in");
     check("error text lists the problems, then the steps",
           fresh.text() ==
               "\n  - podman is not on PATH\n  - Account cannot open the GPU devices\n"
               "To fix it:\n  1. sudo apt install podman\n"
-              "  2. sudo usermod -aG video,render $USER\n  3. Log out and back in");
+              "  2. sudo usermod -aG render $USER\n  3. Log out and back in");
 
     FakeHost both;
     both.tools = {"podman", "docker"};
@@ -207,7 +220,7 @@ void test_tool_choice_and_setup() {
     check("Podman needs the account to open the GPU devices",
           groups.ids() == std::vector<std::string>({"device_groups"}) &&
               groups.message() == "Account cannot open the GPU devices" &&
-              groups.action() == "1. sudo usermod -aG video,render $USER\n"
+              groups.action() == "1. sudo usermod -aG render $USER\n"
                                  "2. Log out and back in");
     both.gpu_access = true;
     check("Podman passes once the account can open the GPU devices", ContainerManager(both.host()).check_host().empty());
@@ -217,6 +230,14 @@ void test_tool_choice_and_setup() {
     remote.env["CONTAINER_HOST"] = "unix:///run/podman/podman.sock";
     check("before podman info runs, Podman behind CONTAINER_HOST needs neither group",
           ContainerManager(remote.host()).check_host().empty() && remote.commands == 0);
+    FakeHost own_socket;
+    own_socket.tools = {"podman"};
+    own_socket.env = {{"CONTAINER_HOST", "unix:///run/user/1000/podman/podman.sock"},
+                      {"XDG_RUNTIME_DIR", "/run/user/1000"}};
+    check("before podman info runs, the account's own podman.socket needs the GPU devices",
+          lemon::utils::SetupReport{ContainerManager(own_socket.host()).check_host()}.ids() ==
+                  std::vector<std::string>({"device_groups"}) &&
+              own_socket.commands == 0);
     FakeHost as_root;
     as_root.tools = {"podman"};
     as_root.root = true;
@@ -246,6 +267,24 @@ void test_tool_choice_and_setup() {
               lemon::utils::SetupReport{{*silent}}.action() ==
                   "Run `podman info` and fix the error it prints");
 
+    FakeHost no_socket = broken;
+    no_socket.env = {{"CONTAINER_HOST", "unix:///run/user/1000/podman/podman.sock"},
+                     {"XDG_RUNTIME_DIR", "/run/user/1000"}};
+    const auto unreachable = ContainerManager(no_socket.host()).check_podman();
+    check("an unreachable podman.socket of the account's own asks to start it",
+          unreachable && unreachable->id == "podman_info" &&
+              lemon::utils::SetupReport{{*unreachable}}.action() ==
+                  "systemctl --user enable --now podman.socket");
+
+    FakeHost elsewhere = broken;
+    elsewhere.env = {{"CONTAINER_HOST", "unix:///run/podman-lemonade.sock"}};
+    const auto remote_info = ContainerManager(elsewhere.host()).check_podman();
+    check("a failing Podman behind another CONTAINER_HOST names it",
+          remote_info && remote_info->id == "podman_info" &&
+              lemon::utils::SetupReport{{*remote_info}}.action() ==
+                  "Run `podman info` with CONTAINER_HOST=unix:///run/podman-lemonade.sock and fix "
+                  "the error it prints");
+
     FakeHost docker;
     docker.tools = {"docker"};
     docker.docker_info_exit = 1;
@@ -272,7 +311,7 @@ void test_tool_choice_and_setup() {
     both_relogins.failures.push_back(refused.failures.front());
     check("logging out and back in is listed once, last",
           both_relogins.action() ==
-              "1. sudo usermod -aG video,render $USER\n2. sudo usermod -aG docker $USER\n"
+              "1. sudo usermod -aG render $USER\n2. sudo usermod -aG docker $USER\n"
               "3. Log out and back in");
 }
 
@@ -286,7 +325,7 @@ void test_system_service_setup() {
     const lemon::utils::SetupReport groups{ContainerManager(podman.host()).check_host()};
     check("the service's group fix names lemonade and restarts lemond",
           groups.ids() == std::vector<std::string>({"device_groups"}) &&
-              groups.action() == "1. sudo usermod -aG video,render lemonade\n"
+              groups.action() == "1. sudo usermod -aG render lemonade\n"
                                  "2. sudo systemctl restart lemond");
     check("check_host runs no commands",
           podman.commands == 0);
@@ -394,23 +433,69 @@ void test_rootful_cni() {
 }
 
 void test_install_commands() {
-    const auto command = ContainerManager::podman_install_command;
+    const auto podman = [](const std::string& os_release) {
+        return ContainerManager::install_command(os_release, "podman", "Podman");
+    };
     check("Rocky Linux matches fedora through ID_LIKE",
-          command("ID=\"rocky\"\nID_LIKE=\"rhel centos fedora\"\n") == "sudo dnf install podman");
-    check("Fedora matches on ID", command("ID=fedora\n") == "sudo dnf install podman");
+          podman("ID=\"rocky\"\nID_LIKE=\"rhel centos fedora\"\n") == "sudo dnf install podman");
+    check("Fedora matches on ID", podman("ID=fedora\n") == "sudo dnf install podman");
     check("an unknown distribution gets the generic step",
-          command("ID=gentoo\n") == "Install Podman with the host's package manager");
+          podman("ID=gentoo\n") == "Install Podman with the host's package manager");
+    check("crun installs through the same package manager",
+          ContainerManager::install_command("ID=ubuntu\nID_LIKE=debian\n", "crun", "crun") ==
+                  "sudo apt install crun" &&
+              ContainerManager::install_command("ID=gentoo\n", "crun", "crun") ==
+                  "Install crun with the host's package manager");
+}
+
+void test_oci_runtime() {
+    FakeHost runc;
+    runc.tools = {"podman"};
+    runc.gpu_access = true;
+    runc.oci_runtime = "runc";
+    const ContainerManager manager(runc.host());
+    const auto failure = manager.check_podman();
+    check("rootless Podman on runc asks for crun",
+          failure && failure->id == "oci_runtime" &&
+              failure->message ==
+                  "Rootless Podman runs containers with runc, which cannot give them the GPU" &&
+              lemon::utils::SetupReport{{*failure}}.action() == "sudo apt install crun");
+    runc.oci_runtime = "crun";
+    check("installing crun clears the failure without restarting lemond", !manager.check_podman());
+
+    FakeHost fedora = runc;
+    fedora.oci_runtime = "runc";
+    fedora.files["/etc/os-release"] = "ID=fedora\n";
+    const auto dnf = ContainerManager(fedora.host()).check_podman();
+    check("Fedora is told to install crun with dnf",
+          dnf && lemon::utils::SetupReport{{*dnf}}.action() == "sudo dnf install crun");
+
+    FakeHost rootful = runc;
+    rootful.oci_runtime = "runc";
+    rootful.podman_rootless = "false";
+    check("rootful Podman on runc passes, since it adds the render group by ID",
+          !ContainerManager(rootful.host()).check_podman());
+
+    FakeHost own_socket = runc;
+    own_socket.oci_runtime = "runc";
+    own_socket.env = {{"CONTAINER_HOST", "unix:///run/user/1000/podman/podman.sock"},
+                      {"XDG_RUNTIME_DIR", "/run/user/1000"}};
+    const auto api = ContainerManager(own_socket.host()).check_podman();
+    check("the account's podman.socket on runc asks for crun", api && api->id == "oci_runtime");
 }
 
 void test_helpers() {
     check("characters a container name rejects are escaped as _ plus hex",
-          ContainerManager::container_name("llamacpp", "nathanw", "user.My Model:Q4/x") ==
-              "lemonade-llamacpp-nathanw-user.My_20Model_3aQ4_2fx");
+          ContainerManager::container_name(13305, "llamacpp", "nathanw", "user.My Model:Q4/x") ==
+              "lemonade-13305-llamacpp-nathanw-user.My_20Model_3aQ4_2fx");
     check("names that differ only in rejected characters keep distinct containers",
-          ContainerManager::container_name("llamacpp", "nathanw", "user.foo/bar") !=
-                  ContainerManager::container_name("llamacpp", "nathanw", "user.foo-bar") &&
-              ContainerManager::container_name("llamacpp", "nathanw", "user.foo_2fbar") ==
-                  "lemonade-llamacpp-nathanw-user.foo__2fbar");
+          ContainerManager::container_name(13305, "llamacpp", "nathanw", "user.foo/bar") !=
+                  ContainerManager::container_name(13305, "llamacpp", "nathanw", "user.foo-bar") &&
+              ContainerManager::container_name(13305, "llamacpp", "nathanw", "user.foo_2fbar") ==
+                  "lemonade-13305-llamacpp-nathanw-user.foo__2fbar");
+    check("two lemond instances loading the same model get distinct containers",
+          ContainerManager::container_name(13305, "llamacpp", "nathanw", "Qwen3-4B-GGUF") !=
+              ContainerManager::container_name(13306, "llamacpp", "nathanw", "Qwen3-4B-GGUF"));
 
     FakeHost ubuntu;
     check("a host without SELinux passes the SELinux check",
@@ -527,6 +612,7 @@ int main() {
     test_rootful_service();
     test_rootful_cni();
     test_install_commands();
+    test_oci_runtime();
     test_helpers();
 #ifndef _WIN32
     test_model_mount();
