@@ -530,8 +530,12 @@ ln_error_t ln_set_mesh_event_callback(ln_client_t* client, ln_mesh_event_fn fn, 
 /** Get current mesh peers as JSON array.
  *  Each peer: {node_id, hostname, mesh_pubkey, tunnel_ip, private_subnet,
  *  endpoint, local_endpoints, relay_endpoint, path, is_online,
- *  last_handshake, last_rx, rx_bytes, tx_bytes, latency_ms, keepalive,
- *  last_seen, mgmt_pubkey, peer_permissions}.
+ *  server_online, last_handshake, last_rx, rx_bytes, tx_bytes, latency_ms,
+ *  keepalive, last_seen, mgmt_pubkey, peer_permissions}.
+ *  is_online says whether this device has a working path to the peer;
+ *  server_online is the server's online bit for it as of the last peer
+ *  refresh (the peer is connected to the network). A peer with
+ *  server_online and no working path is still connecting.
  *  local_endpoints are the peer's LAN endpoints ("a.b.c.d:port") that the
  *  SDK probes because the peer is on this device's network (the same public
  *  address, or a LAN endpoint inside one of this device's subnets); empty

@@ -432,13 +432,13 @@ std::vector<std::string> MeshOrchestrator::do_peer_refresh() {
             for (const auto& old : known_peers_) {
                 if (old.node_id != peer.node_id || old.mesh_pubkey != peer.mesh_pubkey) continue;
                 // The peer moved (a new reflexive address, another network,
-                // a rejoin), or it is offline here while the server saw it
-                // again: the old path may be gone, and the peer's side is
-                // probing toward this device now.
+                // a rejoin), or it is offline here while the server's online
+                // bit for it came back: the old path may be gone, and the
+                // peer's side is probing toward this device now.
                 const bool moved = !peer.endpoint.empty() && peer.endpoint != old.endpoint;
                 const bool lan_moved = !peer.local_endpoints.empty() &&
                                        peer.local_endpoints != old.local_endpoints;
-                const bool back = !old.is_online && peer.last_seen > old.last_seen;
+                const bool back = !old.is_online && peer.server_online && !old.server_online;
                 if (moved || lan_moved || back) {
                     renewed.push_back(peer.mesh_pubkey);
                     spdlog::info("[MeshOrchestrator] peer {} {}; probing it now", peer.node_id,
@@ -814,6 +814,7 @@ void MeshOrchestrator::do_monitor(bool count_stale) {
                 tp.node_id   = peer.node_id;
                 tp.hostname  = peer.hostname;
                 tp.is_online = peer.is_online;
+                tp.server_online = peer.server_online;
                 tp.path      = peer.path;
                 tp.local_endpoints = peer.local_endpoints;
                 break;
@@ -846,7 +847,8 @@ void MeshOrchestrator::do_monitor(bool count_stale) {
         std::vector<ReportedPeer> reported;
         reported.reserve(known_peers_.size());
         for (const auto& peer : known_peers_) {
-            reported.push_back({peer.node_id, peer.is_online, peer.path, peer.relay_endpoint});
+            reported.push_back({peer.node_id, peer.is_online, peer.server_online, peer.path,
+                                peer.relay_endpoint});
         }
         changed = ms.is_up != last_status_.is_up || reported != reported_peers_;
         reported_peers_ = std::move(reported);

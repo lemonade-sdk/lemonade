@@ -3520,7 +3520,8 @@ Result<std::vector<MeshPeer>> LemonadeNexusClient::fetch_mesh_peers(const std::s
                     }
                 }
                 mp.relay_endpoint = p.value("relay_endpoint", "");
-                mp.is_online      = p.value("is_online", false);
+                mp.server_online  = p.value("is_online", false);
+                mp.is_online      = mp.server_online;
                 mp.mgmt_pubkey    = p.value("mgmt_pubkey", "");
                 // peer_permissions: what the peer's key holds on this device.
                 // A permission is one token; anything else is dropped, so a

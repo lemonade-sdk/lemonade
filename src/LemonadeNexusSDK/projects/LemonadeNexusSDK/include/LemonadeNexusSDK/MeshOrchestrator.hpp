@@ -340,6 +340,7 @@ private:
     struct ReportedPeer {
         std::string node_id;
         bool        is_online{false};
+        bool        server_online{false};
         std::string path;
         std::string relay_endpoint;
         bool operator==(const ReportedPeer&) const = default;

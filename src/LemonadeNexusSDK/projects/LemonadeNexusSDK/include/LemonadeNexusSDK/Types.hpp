@@ -414,7 +414,14 @@ struct MeshPeer {
     /// (another address, normally the punched public endpoint), "relay", or
     /// "" (no working path yet, or the path went silent).
     std::string path;
+    /// Whether this device has a working path to the peer, as the mesh
+    /// orchestrator's liveness check found it.
     bool        is_online{false};
+    /// The server's online bit for the peer (its `is_online`), as of the
+    /// last peer refresh: the peer is connected to the network, whether or
+    /// not this device has a path to it yet. A peer that is online here
+    /// but has no working path is still connecting.
+    bool        server_online{false};
     int64_t     last_handshake{0};      ///< Unix timestamp
     /// Unix timestamp of the last authenticated packet from the peer,
     /// keepalives included (0 = none yet). Keepalives do not renew the
