@@ -1,0 +1,409 @@
+{
+  "schema_version": 2,
+  "id": "halobox",
+  "recipe": "llamacpp",
+  "merge": {
+    "kind": "container",
+    "metadata": {
+      "display_name": "Llama.cpp GPU",
+      "server_name": "llama-server",
+      "log_category": "LlamaCpp",
+      "log_level_policy": "passthrough",
+      "binary": "llama-server",
+      "config_section": "",
+      "default_device": "gpu",
+      "slot_policy": "standard",
+      "selectable_backend": true,
+      "uses_ctx_size": true,
+      "dynamic_models": false,
+      "options": [
+        {
+          "id": "backend",
+          "name": "llamacpp_backend",
+          "cli_flag": "--llamacpp",
+          "default_value": "",
+          "type_name": "BACKEND",
+          "value_type": "string",
+          "help": "LlamaCpp backend to use",
+          "group": "Llama.cpp Backend Options",
+          "unset_values": [null, -1, "", "auto"]
+        },
+        {
+          "id": "device",
+          "name": "llamacpp_device",
+          "cli_flag": "--llamacpp-device",
+          "default_value": "",
+          "type_name": "DEVICES",
+          "value_type": "string",
+          "help": "Comma-separated list of accelerator devices to use (e.g. Vulkan0)",
+          "group": "Llama.cpp Backend Options",
+          "unset_values": [null, -1, "", "auto"]
+        },
+        {
+          "id": "args",
+          "name": "llamacpp_args",
+          "cli_flag": "--llamacpp-args",
+          "default_value": "",
+          "type_name": "ARGS",
+          "value_type": "string",
+          "help": "Custom arguments to pass to llama-server",
+          "group": "Llama.cpp Backend Options",
+          "unset_values": [null, -1, "", "auto"]
+        }
+      ],
+      "support": [
+        {
+          "id": "halobox",
+          "backend": "halobox",
+          "tier": "guest",
+          "format": "container",
+          "supported_os": ["linux"],
+          "devices": {"amd_gpu": ["gfx1151"]},
+          "device_summary": "AMD Strix Halo (Halo Box ROCm fork)"
+        }
+      ],
+      "supported_modes": ["chat", "embeddings", "reranking"],
+      "required_checkpoints": ["main"],
+      "default_capabilities": [],
+      "web_display_name": "llama.cpp GPU",
+      "rocm_channels": [],
+      "exposes_prometheus_metrics": true,
+      "rocm_requires_cwsr_fix": true,
+      "version_policy": "exact",
+      "self_manages_downloads": false,
+      "takes_args": true,
+      "arg_variants": ["rocm", "vulkan", "cpu"],
+      "bin_variants": ["rocm", "vulkan", "cuda", "cpu"],
+      "config_extra": {"prefer_system": true},
+      "streams_model_from_storage": false
+    },
+    "install": {"strategy": "oci"},
+    "artifacts": {
+      "main": {
+        "role": "main",
+        "strategy": "resolved_path",
+        "hook": {"id": "llamacpp.artifacts.v1", "params": {}},
+        "check": "nonempty",
+        "required_when": {"not": {"ref": "/launch/hook/hf_load"}},
+        "missing_error": {"concat": ["GGUF file not found for checkpoint: ", {"ref": "/model/checkpoint"}]}
+      },
+      "mmproj": {
+        "role": "mmproj",
+        "strategy": "resolved_path",
+        "check": "nonempty",
+        "required_when": false,
+        "missing_error": "Optional mmproj path is unavailable",
+        "hook": {"id": "llamacpp.artifacts.v1", "params": {}}
+      },
+      "draft": {
+        "role": "draft",
+        "strategy": "resolved_path",
+        "check": "nonempty",
+        "required_when": false,
+        "missing_error": "Optional draft path is unavailable",
+        "hook": {"id": "llamacpp.artifacts.v1", "params": {}}
+      }
+    },
+    "launch": {
+      "prepare_order": ["backend", "install", "hook", "artifacts", "ports", "program"],
+      "backend": {"fixed": "halobox"},
+      "ports": [{"name": "http", "reject_zero": false, "error": ""}],
+      "context_floor": {"embedding": 8192},
+      "argv": [
+        {
+          "id": "model-hf",
+          "flag": "-hf",
+          "value": {"ref": "/model/checkpoint"},
+          "when": {"ref": "/launch/hook/hf_load"},
+          "aliases": ["--hf-repo", "-mr", "--hf-file", "-mf"],
+          "reserve": "when_active"
+        },
+        {
+          "id": "model-local",
+          "flag": "-m",
+          "value": {"ref": "/artifacts/main"},
+          "when": {"not": {"ref": "/launch/hook/hf_load"}},
+          "aliases": ["--model"],
+          "reserve": "when_active"
+        },
+        {"id": "ctx", "flag": "--ctx-size", "value": {"string": {"ref": "/launch/hook/context_size"}}, "aliases": ["-c"]},
+        {
+          "id": "device",
+          "flag": "--device",
+          "value": {"option": "device", "type": "string"},
+          "when": {"not": {"eq": [{"option": "device"}, ""]}},
+          "aliases": ["-dev"],
+          "reserve": "always"
+        },
+        {"id": "port", "flag": "--port", "value": {"string": {"ref": "/launch/ports/http"}}},
+        {"id": "host", "flag": "--host", "value": "0.0.0.0"},
+        {"id": "jinja", "flag": "--jinja", "aliases": ["--no-jinja"]},
+        {"id": "metrics", "flag": "--metrics"},
+        {"id": "debug", "args": ["-lv", "4"], "when": {"any": [{"eq": [{"ref": "/launch/log_level"}, "debug"]}, {"eq": [{"ref": "/launch/log_level"}, "trace"]}]}},
+        {
+          "id": "vision",
+          "flag": "--mmproj",
+          "value": {"ref": "/artifacts/mmproj"},
+          "when": {"ref": "/launch/hook/use_mmproj"},
+          "aliases": ["-mm", "-mmu", "--mmproj-url", "--no-mmproj", "--mmproj-auto", "--no-mmproj-auto"],
+          "reserve": "always"
+        },
+        {"id": "vision-cpu", "flag": "--no-mmproj-offload", "when": {"ref": "/launch/hook/mmproj_on_cpu"}, "reserve": "when_active"},
+        {
+          "id": "draft",
+          "flag": "--model-draft",
+          "value": {"ref": "/artifacts/draft"},
+          "when": {"ref": "/launch/hook/use_draft_checkpoint"},
+          "aliases": ["-md", "--spec-draft-model"],
+          "reserve": "always"
+        },
+        {"id": "embedding", "flag": "--embeddings", "when": {"ref": "/launch/hook/embedding"}, "aliases": ["--embedding"], "reserve": "always"},
+        {"id": "reranking", "flag": "--reranking", "when": {"ref": "/launch/hook/reranking"}, "aliases": ["--rerank"], "reserve": "always"}
+      ],
+      "custom_args": {
+        "option": "args",
+        "reserved": [],
+        "error_prefix": "Invalid custom llama-server arguments:\n",
+        "defaults": [
+          {
+            "id": "spec-dflash",
+            "args": "--spec-type draft-dflash",
+            "flag": "--spec-type",
+            "when": {"ref": "/runtime/dflash"},
+            "stage": "runtime_options",
+            "respect_merge_args": true
+          },
+          {
+            "id": "spec-mtp",
+            "args": "--spec-type draft-mtp",
+            "flag": "--spec-type",
+            "when": {"ref": "/runtime/mtp"},
+            "stage": "runtime_options",
+            "respect_merge_args": true
+          },
+          {"id": "parallel", "args": "--parallel 1", "flag": "--parallel", "aliases": ["-np"], "stage": "runtime_options", "respect_merge_args": true}
+        ],
+        "runtime_input": "string_or_empty"
+      },
+      "environment": {"preset": "inherit"},
+      "working_directory": "inherit",
+      "output": {"inherit_levels": ["info", "debug", "trace"], "filter": true},
+      "readiness": {"port": "http", "path": "/health", "timeout": "global"},
+      "watchdog": {"policy": "standard", "port": "http", "path": "/health"},
+      "direct_stream_policy": "builtin_container_legacy",
+      "checks": [
+        {
+          "id": "no-private-network-download",
+          "require": {"not": {"ref": "/launch/hook/hf_load"}},
+          "error": {
+            "concat": [
+              "Model '",
+              {"ref": "/model/name"},
+              "' has llama-server download its own weights, which llamacpp:halobox cannot do from its container's private network. Load it on a llamacpp backend that runs on the host."
+            ]
+          }
+        }
+      ],
+      "execution": {
+        "cases": [
+          {
+            "id": "halobox",
+            "backends": ["halobox"],
+            "kind": "container",
+            "container": "halobox",
+            "program": {"source": "image_command", "name": "llama-server"},
+            "device_validation": {"backend": "rocm"}
+          }
+        ]
+      },
+      "mounts": [
+        {"id": "main", "artifact": "main", "expand": "gguf_shards", "destination": "/mnt/models", "layout": "basename_numbered"},
+        {
+          "id": "mmproj",
+          "artifact": "mmproj",
+          "expand": "gguf_shards",
+          "destination": "/mnt/models",
+          "layout": "basename_numbered",
+          "when": {"ref": "/launch/hook/use_mmproj"}
+        },
+        {
+          "id": "draft",
+          "artifact": "draft",
+          "expand": "gguf_shards",
+          "destination": "/mnt/models",
+          "layout": "basename_numbered",
+          "when": {"ref": "/launch/hook/use_draft_checkpoint"}
+        }
+      ],
+      "address": {"source": "process_start"},
+      "diagnostics": [
+        {"id": "loading", "phase": "loading", "level": "info", "category": "LlamaCpp", "format": "Loading model: {model:string}", "when": "always"},
+        {"id": "settings", "phase": "loading", "level": "debug", "category": "LlamaCpp", "format": "Per-model settings: {settings:options}", "when": "always"},
+        {"id": "backend", "phase": "backend", "level": "info", "category": "LlamaCpp", "format": "Using LlamaCpp Backend: {backend:string}", "when": "always"},
+        {"id": "gguf", "phase": "artifacts", "level": "debug", "category": "LlamaCpp", "format": "Using GGUF: {main:path}", "when": "main_present"},
+        {
+          "id": "gpu",
+          "phase": "arguments",
+          "level": "debug",
+          "category": "LlamaCpp",
+          "format": "Using backend: {backend:string}\n[LlamaCpp] Use GPU: {gpu:boolean}",
+          "when": "always"
+        },
+        {
+          "id": "mmproj",
+          "phase": "arguments",
+          "level": "debug",
+          "category": "LlamaCpp",
+          "format": "Skipping mmproj argument since GPU mode is not enabled",
+          "when": "mmproj_cpu"
+        },
+        {
+          "id": "embedding",
+          "phase": "arguments",
+          "level": "info",
+          "category": "LlamaCpp",
+          "format": "Model supports embeddings, adding --embeddings flag",
+          "when": "embedding"
+        },
+        {
+          "id": "reranking",
+          "phase": "arguments",
+          "level": "info",
+          "category": "LlamaCpp",
+          "format": "Model supports reranking, adding --reranking flag",
+          "when": "reranking"
+        },
+        {
+          "id": "custom",
+          "phase": "custom_args",
+          "level": "debug",
+          "category": "LlamaCpp",
+          "format": "Adding custom arguments: {custom:string}",
+          "when": "custom_present"
+        },
+        {"id": "starting", "phase": "starting", "level": "info", "category": "LlamaCpp", "format": "Starting llama-server...", "when": "always"},
+        {"id": "loaded", "phase": "success", "level": "debug", "category": "LlamaCpp", "format": "Model loaded on port {loaded_port:integer}", "when": "always"}
+      ],
+      "load_log_policy": "none",
+      "pre_install_refusal": "container_hf_load_v1"
+    },
+    "operations": [
+      {
+        "id": "chat.buffered",
+        "operation": "chat_completion",
+        "delivery": "buffered",
+        "model_modes": ["*"],
+        "transport": {"kind": "http_json", "method": "POST", "path": "/v1/chat/completions", "port": "http", "timeout": "global", "response_codec": "json.v1"},
+        "request": {"base": "identity", "hooks": [{"id": "llamacpp.max_tokens_alias", "params": {}}, {"id": "llamacpp.tool_schema_limits", "params": {}}]},
+        "response": {"hooks": [{"id": "llamacpp.client_model", "params": {}}]}
+      },
+      {
+        "id": "completion.buffered",
+        "operation": "completion",
+        "delivery": "buffered",
+        "model_modes": ["*"],
+        "transport": {"kind": "http_json", "method": "POST", "path": "/v1/completions", "port": "http", "timeout": "global", "response_codec": "json.v1"},
+        "request": {"base": "identity", "hooks": [{"id": "llamacpp.max_tokens_alias", "params": {}}]},
+        "response": {"hooks": [{"id": "llamacpp.client_model", "params": {}}]}
+      },
+      {
+        "id": "responses.buffered",
+        "operation": "responses",
+        "delivery": "buffered",
+        "model_modes": ["*"],
+        "transport": {"kind": "http_json", "method": "POST", "path": "/v1/responses", "port": "http", "timeout": "global", "response_codec": "json.v1"},
+        "request": {"base": "identity", "hooks": [{"id": "llamacpp.tool_schema_limits", "params": {}}]},
+        "response": {"hooks": [{"id": "llamacpp.client_model", "params": {}}]}
+      },
+      {
+        "id": "chat.streaming",
+        "operation": "chat_completion",
+        "delivery": "streaming",
+        "model_modes": ["*"],
+        "transport": {"kind": "http_sse", "method": "POST", "path": "/v1/chat/completions", "port": "http", "timeout": "global", "stream_codec": "openai_sse.v1"},
+        "request": {"base": "identity", "hooks": [{"id": "llamacpp.max_tokens_alias", "params": {}}, {"id": "llamacpp.tool_schema_limits", "params": {}}]}
+      },
+      {
+        "id": "completion.streaming",
+        "operation": "completion",
+        "delivery": "streaming",
+        "model_modes": ["*"],
+        "transport": {"kind": "http_sse", "method": "POST", "path": "/v1/completions", "port": "http", "timeout": "global", "stream_codec": "openai_sse.v1"},
+        "request": {"base": "identity"}
+      },
+      {
+        "id": "responses.streaming",
+        "operation": "responses",
+        "delivery": "streaming",
+        "model_modes": ["*"],
+        "transport": {"kind": "http_sse", "method": "POST", "path": "/v1/responses", "port": "http", "timeout": "global", "stream_codec": "openai_sse.v1"},
+        "request": {"base": "identity", "hooks": [{"id": "llamacpp.tool_schema_limits", "params": {}}]}
+      },
+      {
+        "id": "embedding.buffered",
+        "operation": "embeddings",
+        "delivery": "buffered",
+        "model_modes": ["*"],
+        "transport": {"kind": "http_json", "method": "POST", "path": "/v1/embeddings", "port": "http", "timeout": "global", "response_codec": "json.v1"},
+        "request": {"base": "identity"}
+      },
+      {
+        "id": "reranking.buffered",
+        "operation": "reranking",
+        "delivery": "buffered",
+        "model_modes": ["*"],
+        "transport": {"kind": "http_json", "method": "POST", "path": "/v1/rerank", "port": "http", "timeout": "global", "response_codec": "json.v1"},
+        "request": {"base": "identity"}
+      },
+      {
+        "id": "slots.buffered",
+        "operation": "slots",
+        "delivery": "buffered",
+        "model_modes": ["*"],
+        "transport": {"kind": "http_json", "method": "GET", "path": "/slots", "port": "http", "timeout": "global", "response_codec": "json.v1"},
+        "request": {"base": "identity"}
+      },
+      {
+        "id": "slot-action.buffered",
+        "operation": "slot_action",
+        "delivery": "buffered",
+        "model_modes": ["*"],
+        "transport": {"kind": "http_json", "method": "POST", "path": "/slots/{slot_id}?action={action}", "port": "http", "timeout": "global", "response_codec": "json.v1"},
+        "request": {"base": "identity"}
+      },
+      {
+        "id": "tokenize.buffered",
+        "operation": "tokenize",
+        "delivery": "buffered",
+        "model_modes": ["*"],
+        "transport": {"kind": "http_json", "method": "POST", "path": "/tokenize", "port": "http", "timeout": "global", "response_codec": "json.v1"},
+        "request": {"base": "identity"}
+      }
+    ],
+    "hooks": {
+      "backend": {"id": "llamacpp.backend.v1", "params": {}},
+      "launch": {"id": "llamacpp.prepare.v1", "params": {}},
+      "runtime_options": {"id": "llamacpp.runtime_options.v1", "params": {}}
+    },
+    "rationale": [
+      {
+        "subject": "",
+        "text": "Inactive builtin leaf. The independently fixed dormant execution grant is not installed in active policies. Registry/image, real runtime and packaging qualification and a disclosed activation stage remain required.",
+        "source": "container-conversion C8",
+        "tests": ["ContainerProductionParityTest"]
+      }
+    ],
+    "containers": {
+      "halobox": {
+        "repository": "docker.io/kyuz0/amd-strix-halo-toolboxes",
+        "pin": {"source": "backend_versions", "recipe": "llamacpp", "backend": "halobox"},
+        "devices": ["/dev/dri", "/dev/kfd"],
+        "cap_add": [],
+        "policy": "lemonade-isolated-v1",
+        "network": "private_internal",
+        "teardown": "stop_remove_reap",
+        "stop_grace_seconds": 10
+      }
+    }
+  }
+}

@@ -1,5 +1,6 @@
 #include "backend_builtin_seeds_internal.h"
 #include "backend_catalog_publication_internal.h"
+#include "backend_container_selectors_internal.h"
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/configured/backend_catalog.h"
 #include "lemon/wrapped_server.h"
@@ -36,7 +37,7 @@ const std::vector<BackendRegistration>& builtin_registrations() {
 
 const BackendSpec* spec_for(const std::string& recipe) {
     for (const auto& reg : all_registrations()) {
-        if (reg.descriptor->recipe == recipe) {
+        if (reg.descriptor->recipe == recipe && reg.backend_selector.empty()) {
             return reg.spec;
         }
     }
@@ -45,25 +46,38 @@ const BackendSpec* spec_for(const std::string& recipe) {
 
 const BackendOps* ops_for(const std::string& recipe) {
     for (const auto& reg : all_registrations()) {
-        if (reg.descriptor->recipe == recipe) {
+        if (reg.descriptor->recipe == recipe && reg.backend_selector.empty()) {
             return reg.ops;
         }
     }
     return default_backend_ops();
 }
 
+const BackendRegistration* select_backend_registration(const std::vector<BackendRegistration>& registrations,
+    const std::string& recipe, const std::string& backend) {
+    const auto id = builtin_container_selector_id(recipe, backend);
+    if (!id.empty()) {
+        for (const auto& registration : registrations)
+            if (registration.descriptor->recipe == recipe && registration.backend_selector == backend)
+                return &registration;
+        throw std::runtime_error("Builtin backend selector is inactive: " + recipe + ":" + backend);
+    }
+    for (const auto& registration : registrations)
+        if (registration.descriptor->recipe == recipe && registration.backend_selector.empty()) return &registration;
+    return nullptr;
+}
+
 std::unique_ptr<WrappedServer> create_server(const std::string& recipe, const BackendContext& ctx) {
-    for (const auto& reg : all_registrations()) {
-        if (reg.descriptor->recipe == recipe) {
-            std::unique_ptr<WrappedServer> server = reg.create(ctx);
-            if (server) {
-                if (!server->operation_bindings()) {
-                    throw std::logic_error("Backend factory returned an instance without operation bindings");
-                }
-                server->set_descriptor(reg.descriptor);
+    if (const auto* selected = select_backend_registration(all_registrations(), recipe, ctx.backend_selector)) {
+        const auto& reg = *selected;
+        std::unique_ptr<WrappedServer> server = reg.create(ctx);
+        if (server) {
+            if (!server->operation_bindings()) {
+                throw std::logic_error("Backend factory returned an instance without operation bindings");
             }
-            return server;
+            server->set_descriptor(reg.descriptor);
         }
+        return server;
     }
     return nullptr;
 }

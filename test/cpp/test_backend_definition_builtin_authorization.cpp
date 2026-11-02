@@ -59,6 +59,15 @@ int main() {
 #if LEMON_C8_SOURCE_COUNT == 2
     expected_source_ids.insert("halogen");
 #endif
+#if LEMON_C9_SOURCE_COUNT >= 1
+    expected_source_ids.insert("halobox");
+#endif
+#if LEMON_C9_SOURCE_COUNT >= 2
+    expected_source_ids.insert("nathanw");
+#endif
+#if LEMON_C9_SOURCE_COUNT >= 3
+    expected_source_ids.insert("ds4_rocm");
+#endif
     check(source_ids == expected_source_ids && policy_ids == std::set<std::string>{"hrx", "llamacpp"},
         "ProductionBuiltinV2TableExactlyHrxAndLlama");
     const auto production = BuiltinCatalogLoader::freeze_embedded();

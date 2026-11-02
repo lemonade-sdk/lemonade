@@ -219,6 +219,17 @@ int main(int argc, char** argv) {
         if (file.path().extension() != ".json") continue;
         const auto source = read(file.path());
         const auto id = source.at("id").get<std::string>();
+        if (id == "halobox" || id == "nathanw" || id == "ds4_rocm") {
+            const auto& dormant = builtin_resolved_source({DefinitionNamespace::Builtin, id, 1}).declaration;
+            const auto mapped = descriptor_from_declaration(dormant, DefinitionNamespace::Builtin, DescriptorPlatform::native());
+            const std::string recipe = id == "ds4_rocm" ? "ds4" : "llamacpp";
+            const std::string backend = id == "ds4_rocm" ? "rocm" : id;
+            check(mapped.recipe == recipe && mapped.containers.size() == 1 && mapped.containers.count(backend) &&
+                std::none_of(descriptors.begin(), descriptors.end(), [&](const auto* d) { return d->recipe == recipe && d->containers.count(backend); }),
+                "InactiveSharedRecipeContainerDescriptor:" + id);
+            ++dormant_definitions;
+            continue;
+        }
         if (id == "gufo" || id == "rocmfpx" || id == "halogen") {
             const auto& dormant = builtin_resolved_source({DefinitionNamespace::Builtin, id, 1}).declaration;
             const auto mapped = descriptor_from_declaration(dormant, DefinitionNamespace::Builtin, DescriptorPlatform::native());
@@ -249,7 +260,7 @@ int main(int argc, char** argv) {
     check(std::string(k_fixture_source) == fixture_bytes,"synthetic embedded bytes match fixture exactly");
     check(Json::parse(k_fixture_source) == read(fixture_path),"synthetic embedded source matches fixture");
     check(definitions == 9,"all nine definitions exercised");
-    check(dormant_definitions == 1 + LEMON_C8_SOURCE_COUNT, "ExactDormantDefinitionInventoryExercised");
+    check(dormant_definitions == 1 + LEMON_C8_SOURCE_COUNT + LEMON_C9_SOURCE_COUNT, "ExactDormantDefinitionInventoryExercised");
     check(fixture_descriptor_peer() == &v2_fixture::descriptor,"named inline descriptor address equal across translation units");
     auto declaration = fixture_resolved_definition().declaration;
     check(dump(v2_fixture::descriptor) == dump(descriptor_from_declaration(declaration,DefinitionNamespace::Builtin,DescriptorPlatform::native())),"generated v2 initializer uses pure resolver and mapper");

@@ -1,3 +1,5 @@
+#include "backend_catalog_publication_internal.h"
+#include "backend_container_selectors_internal.h"
 #include "backend_definition_binding_fixture.h"
 #include "backend_definition_runner_internal.h"
 #include "configured_v2_backend_ops_internal.h"
@@ -6,6 +8,7 @@
 #include "lemon/backends/configured/configured_server.h"
 #include "lemon/backends/configured/container_execution.h"
 #include "lemon/backends/llamacpp/llamacpp_request.h"
+#include "lemon/router.h"
 #include "lemon/utils/json_utils.h"
 
 #include <cstdlib>
@@ -21,6 +24,14 @@ namespace fs = std::filesystem;
 namespace lemon::backends {
 struct ConfiguredServerTestAccess {
     static void effects(ConfiguredServer& server, ConfiguredServerServices services) { server.services_ = std::move(services); }
+};
+}
+
+namespace lemon {
+struct RoutingHelperTestHook {
+    static std::unique_ptr<WrappedServer> create_backend(Router& router, const ModelInfo& model, const RecipeOptions* options) {
+        return router.create_backend_server(model, options);
+    }
 };
 }
 
@@ -125,6 +136,8 @@ std::vector<std::string> expected_logs(const Json& source, const std::string& ma
     }
     return result;
 }
+void c9_production_contracts(const std::string& id, const Json& doc, const Fixture& fixture,
+    const std::shared_ptr<const ExecutableDefinition>& bound, Services& services, ModelInfo model, RecipeOptions options);
 void parity(const std::string& id) {
     const auto root = fs::path(LEMON_TEST_FIXTURES).parent_path().parent_path();
     const auto expected = load_json(root / "test/fixtures/backend-v2" / (id + ".production-parity.json"));
@@ -139,6 +152,11 @@ void parity(const std::string& id) {
     check(data.at("operations") == frozen.at("operations"), "C8FrozenRewriteAndProtocols:" + id);
     check(data.at("metadata") == expected.at("metadata"), "C8FrozenCapabilityAndMetadata:" + id);
     check(data.at("launch").at("diagnostics") == source.at("definition").at("merge").at("launch").at("diagnostics"), "C8ExactC7bDiagnosticRecords:" + id);
+    if (expected.contains("c8a_fixture")) {
+        check(data.at("artifacts") == frozen.at("artifacts"), "C9FrozenArtifacts:" + id);
+        check(data.at("launch").at("prepare_order") == frozen.at("launch").at("prepare_order") &&
+            data.at("launch").value("pre_install_refusal", "") == frozen.at("launch").value("pre_install_refusal", ""), "C9FrozenPreInstallContract:" + id);
+    }
     if (doc != expected.at("production_definition")) { check(false, "C8FrozenProductionDefinition:" + id); return; }
     const auto fixture = fixed_fixture(doc);
     const auto bound = bind(fixture);
@@ -243,6 +261,7 @@ void parity(const std::string& id) {
     check(refused && state.starts == 2, "C8InstallFailureCannotSpawn:" + id);
     const auto mask = container_production_capability(id);
     check(mask == expected.at("capability_mask").get<uint32_t>(), "C8GeneratedCapabilityMask:" + id);
+    if (expected.contains("c8a_fixture")) c9_production_contracts(id, doc, fixture, bound.definition, *services, model, options);
     std::ofstream(scratch / "parity-transcript.json") << Json{{"argv", prepared.plan.command.args}, {"mounts", mounts}, {"runtime_argv", state.invocation.args}}.dump(2) << '\n';
 }
 void blocked_engine(const std::string& name) {
@@ -282,11 +301,13 @@ void blocked_engine(const std::string& name) {
     std::ofstream(scratch / "blocker.json") << Json{{"observed_error", error}, {"source_expected_error", expected_error}, {"events", services.events}}.dump(2) << '\n';
 }
 #include "c8a_checkpoint.h"
+#include "c9_container_contracts.h"
 }
 
 int main(int argc, char** argv) {
     std::setvbuf(stdout, nullptr, _IONBF, 0); allow_entries = true;
     try {
+        if (argc == 3 && std::string(argv[1]) == "--selector") { c9_selector(argv[2]); return finish(); }
         if (argc == 2 && std::string(argv[1]) == "--checkpoint") { c8a_checkpoint(); return finish(); }
         if (argc == 2 && std::string(argv[1]) == "--pre-install") { c8a_pre_install(); return finish(); }
         if (argc == 3 && std::string(argv[1]) == "--blocked") { blocked_engine(argv[2]); return finish(); }

@@ -27,6 +27,7 @@ struct BackendContext {
     BackendManager* backend_manager = nullptr;
     CloudProviderRegistry* cloud_registry = nullptr;
     const ModelInfo* model_info = nullptr;  // for per-create setup (cloud provider, ryzenai model path)
+    std::string backend_selector;
 };
 
 using BackendCreateFn = std::function<std::unique_ptr<WrappedServer>(const BackendContext&)>;
@@ -57,6 +58,7 @@ struct BackendRegistration {
     const BackendSpec* spec;  // install/download spec, or nullptr (e.g. cloud has none)
     const BackendOps* ops;    // stateless model-management behavior (never null)
     const ConfiguredBackendEntry* configured_entry = nullptr;
+    std::string backend_selector;
 };
 
 // All registered (descriptor, create, spec, ops) entries, in LEMON_BACKENDS order.

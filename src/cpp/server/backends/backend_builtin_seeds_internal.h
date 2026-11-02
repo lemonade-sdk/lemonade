@@ -8,6 +8,7 @@ struct BuiltinRegistrationSeed {
     const BackendDescriptor* descriptor;
     std::string definition_id;
     BackendRegistration legacy;
+    std::string backend_selector;
 };
 
 const std::vector<BuiltinRegistrationSeed>& builtin_registration_seeds();

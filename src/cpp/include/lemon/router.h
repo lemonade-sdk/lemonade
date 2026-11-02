@@ -406,7 +406,7 @@ private:
     // EVICTING, but only if it has not been rescued by an in-flight request
     // (see WrappedServer::try_commit_eviction). Safe against request races.
     void evict_if_committed(const std::string& model_name);
-    std::unique_ptr<WrappedServer> create_backend_server(const ModelInfo& model_info);
+    std::unique_ptr<WrappedServer> create_backend_server(const ModelInfo& model_info, const RecipeOptions* options = nullptr);
     std::string resolve_model_name(const std::string& model_name) const;
     ModelTelemetryIdentity get_telemetry_identity(WrappedServer* server) const;
     void record_request_telemetry_for_model(const ModelTelemetryIdentity& identity,

@@ -736,7 +736,7 @@ void Router::simulate_vram_pressure(double pct) {
     }
 }
 
-std::unique_ptr<WrappedServer> Router::create_backend_server(const ModelInfo& model_info) {
+std::unique_ptr<WrappedServer> Router::create_backend_server(const ModelInfo& model_info, const RecipeOptions* options) {
     std::string log_level = config_->log_level();
 
     backends::BackendContext ctx;
@@ -745,6 +745,10 @@ std::unique_ptr<WrappedServer> Router::create_backend_server(const ModelInfo& mo
     ctx.backend_manager = backend_manager_;
     ctx.cloud_registry = cloud_registry_;
     ctx.model_info = &model_info;
+    if (model_info.recipe == "llamacpp" && options) {
+        const auto backend = options->get_option("llamacpp_backend");
+        if (backend.is_string()) ctx.backend_selector = backend.get<std::string>();
+    }
 
     // The backend registry binds each recipe to its create() (see LEMON_BACKENDS).
     std::unique_ptr<WrappedServer> new_server = backends::create_server(model_info.recipe, ctx);
@@ -1102,7 +1106,7 @@ void Router::load_model(const std::string& model_name,
         LOG(DEBUG, "Router") << "Effective settings: " << effective_options.to_log_string() << std::endl;
 
         // Create new backend server
-        std::unique_ptr<WrappedServer> new_server = create_backend_server(model_info);
+        std::unique_ptr<WrappedServer> new_server = create_backend_server(model_info, &effective_options);
 
         // Set model metadata
         new_server->set_model_metadata(canonical_model_name, model_info.checkpoint(), model_type, device_type, effective_options);
@@ -1227,7 +1231,7 @@ void Router::load_model(const std::string& model_name,
             is_loading_ = true;
 
             // Create new server for retry
-            std::unique_ptr<WrappedServer> retry_server = create_backend_server(model_info);
+            std::unique_ptr<WrappedServer> retry_server = create_backend_server(model_info, &effective_options);
             retry_server->set_model_metadata(canonical_model_name, model_info.checkpoint(), model_type, device_type, effective_options);
             retry_server->set_ctx_size_auto(ctx_size_auto);
             retry_server->set_residency_class(requested_residency_class);

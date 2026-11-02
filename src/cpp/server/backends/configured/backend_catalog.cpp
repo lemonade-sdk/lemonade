@@ -1,7 +1,9 @@
 #include "../backend_builtin_seeds_internal.h"
 #include "../backend_catalog_publication_internal.h"
+#include "../backend_container_selectors_internal.h"
 #include "backend_catalog_admission_internal.h"
 #include "backend_catalog_ledger_internal.h"
+#include "backend_definition_authorization_internal.h"
 #include "backend_definition_resources.h"
 #include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/configured/backend_catalog.h"
@@ -100,13 +102,17 @@ BackendCatalog::BackendCatalog(const std::vector<DefinitionSource>& sources) {
 void BackendCatalog::finalize() {
     data_ = std::make_shared<BackendCatalogData>();
     const auto& seeds = builtins_->seeds_ ? *builtins_->seeds_ : builtin_registration_seeds();
-    std::set<std::string> seed_recipes;
+    std::set<std::pair<std::string, std::string>> seed_recipes;
     for (const auto& seed : seeds) {
-        if (!seed.descriptor || !seed_recipes.insert(seed.descriptor->recipe).second ||
+        if (!seed.descriptor || !seed_recipes.emplace(seed.descriptor->recipe, seed.backend_selector).second ||
             (!seed.definition_id.empty() &&
                 (seed.legacy.create || seed.legacy.spec || seed.legacy.ops || seed.legacy.configured_entry)))
             throw std::logic_error("Duplicate or ambiguous builtin registration seed");
-        if (seed.definition_id.empty()) { registrations_.push_back(seed.legacy); continue; }
+        if (seed.definition_id.empty()) {
+            if (!seed.backend_selector.empty() || !seed.legacy.backend_selector.empty())
+                throw std::logic_error("Legacy registration cannot own a container selector");
+            registrations_.push_back(seed.legacy); continue;
+        }
         const auto found = std::find_if(entries_.begin(), entries_.end(), [&](const auto& entry) {
             if (!entry->executable_definition) return false;
             const auto& key = entry->executable_definition->compiled().authorized().definition().key;
@@ -115,8 +121,20 @@ void BackendCatalog::finalize() {
         if (found == entries_.end() || &(*found)->published_descriptor() != seed.descriptor)
             throw std::logic_error("Builtin seed has no finalized canonical entry");
         const auto& entry = *found;
-        registrations_.push_back({&entry->published_descriptor(), entry->factory, &entry->spec, entry->backend_ops(), entry.get()});
+        if (!seed.backend_selector.empty()) {
+            const auto& token = entry->executable_definition->compiled().authorized();
+            const auto& declaration = entry->records();
+            if (builtin_container_selector_id(entry->descriptor.recipe, seed.backend_selector) != seed.definition_id ||
+                !declaration.at("launch").at("backend").contains("fixed") ||
+                declaration.at("launch").at("backend").at("fixed") != seed.backend_selector ||
+                !AuthorityInspection::permits_execution(token, declaration))
+                throw std::logic_error("Invalid builtin container selector seed");
+        }
+        registrations_.push_back({&entry->published_descriptor(), entry->factory, &entry->spec, entry->backend_ops(), entry.get(), seed.backend_selector});
     }
+    for (const auto& registration : registrations_)
+        if (!registration.backend_selector.empty() && !seed_recipes.count({registration.descriptor->recipe, ""}))
+            throw std::logic_error("Builtin selector has no shared recipe registration");
     for (const auto& entry : entries_) {
         if (!entry->executable_definition || entry->executable_definition->compiled().authorized().definition().key.space != DefinitionNamespace::Builtin) continue;
         const auto found = std::find_if(registrations_.begin(), registrations_.end(), [&](const auto& row) { return row.configured_entry == entry.get(); });
@@ -130,6 +148,7 @@ void BackendCatalog::finalize() {
     schema_ = {{"schema_version", 1}, {"control_version", 1}, {"definition_schema_version", 1},
         {"feature_manifest_id", schema_digest(installed_definition_features().dump())}, {"recipes", json::array()}};
     for (const auto& registration : registrations_) {
+        if (!registration.backend_selector.empty()) continue;
         const auto* descriptor = registration.descriptor;
         data_->descriptors.push_back(descriptor);
         recipes.insert(descriptor->recipe);
@@ -197,7 +216,7 @@ void BackendCatalog::finalize() {
         registrations_.push_back({&entry->descriptor, entry->factory, &entry->spec, entry->backend_ops(), entry.get()});
     }
     json identity = {{"export", schema_}, {"arms", arms}};
-    if (!executions.empty()) { identity["executions"] = executions; identity["runner_service_policy"] = 16; }
+    if (!executions.empty()) { identity["executions"] = executions; identity["runner_service_policy"] = 17; }
     schema_["catalog_id"] = schema_digest(identity.dump());
 }
 

@@ -84,7 +84,7 @@ int main() {
     auto foreign = parent;
     foreign["merge"]["hooks"]["backend"] = {{"id", "llamacpp.backend"}};
     check(!build({foreign}).catalog, "ExternalDeclarationsCannotMintHookAuthority");
-    check(installed_builtin_exports().exports().size() == 1 && embedded_v2_sources().size() == 3 + LEMON_C8_SOURCE_COUNT &&
+    check(installed_builtin_exports().exports().size() == 1 && embedded_v2_sources().size() == 3 + LEMON_C8_SOURCE_COUNT + LEMON_C9_SOURCE_COUNT &&
         current_container_source_ids() == expected_container_source_ids() && embedded_v2_policies().leaves.size() == 2,
             "ProductionV2HrxAndLlamaActiveGufoDormantAndSingleReviewedExport");
     const auto rich = good.catalog->export_schema("catalog-leaf", 2);
