@@ -197,18 +197,27 @@ std::optional<bool> ContainerManager::podman_info_rootless() const {
         if (podman_rootless_) return podman_rootless_;
     }
     const CommandResult info = host_.run(
-        {"podman", "info", "--format", "{{.Host.Security.Rootless}} {{.Host.NetworkBackend}}"},
+        {"podman", "info", "--format",
+         "{{.Host.Security.Rootless}} {{.Host.NetworkBackend}} {{.Host.OCIRuntime.Name}}"},
         kCommandTimeoutSeconds, /*capture_stderr=*/false);
     if (info.exit_code != 0) return std::nullopt;
     std::istringstream fields(info.output);
     std::string rootless_field;
     std::string backend;
-    fields >> rootless_field >> backend;
+    std::string runtime;
+    fields >> rootless_field >> backend >> runtime;
     const bool rootless = rootless_field == "true";
     std::lock_guard<std::mutex> lock(podman_mode_mutex_);
-    podman_rootless_ = rootless;
     podman_network_backend_ = backend;
+    podman_oci_runtime_ = runtime;
+    // Asked again while rootless Podman lacks crun, so installing it takes
+    // effect without restarting lemond.
+    if (!needs_crun(rootless, runtime)) podman_rootless_ = rootless;
     return rootless;
+}
+
+bool ContainerManager::needs_crun(bool rootless, const std::string& runtime) {
+    return rootless && !runtime.empty() && runtime != "crun";
 }
 
 bool ContainerManager::rootless_podman() const {
@@ -242,7 +251,7 @@ std::vector<SetupFailure> ContainerManager::check_host() const {
         const CommandResult info = host_.run(
             {"docker", "info", "--format", "{{.OperatingSystem}}|{{json .SecurityOptions}}"},
             kDockerInfoTimeoutSeconds, /*capture_stderr=*/false);
-        const std::string install = podman_install_command(host_.read_file("/etc/os-release"));
+        const std::string install = install_command(host_.read_file("/etc/os-release"), "podman", "Podman");
         if (info.exit_code != 0) {
             failures.push_back({"docker_access", "The Docker daemon refuses the account",
                                 {"sudo usermod -aG docker " + member}, apply});
@@ -262,7 +271,7 @@ std::vector<SetupFailure> ContainerManager::check_host() const {
     // check applies as well.
     if (!chosen) {
         failures.push_back({"container_tool", "podman is not on PATH",
-                            {podman_install_command(host_.read_file("/etc/os-release"))}, ""});
+                            {install_command(host_.read_file("/etc/os-release"), "podman", "Podman")}, ""});
     }
     if (expect_rootless() && !host_.gpu_devices_accessible()) {
         failures.push_back({"device_groups", "Account cannot open the GPU devices",
@@ -303,6 +312,19 @@ std::optional<SetupFailure> ContainerManager::check_podman() const {
                    " and fix the error it prints";
         }
         return SetupFailure{"podman_info", "`podman info` fails", {step}, ""};
+    }
+    std::string runtime;
+    {
+        std::lock_guard<std::mutex> lock(podman_mode_mutex_);
+        runtime = podman_oci_runtime_;
+    }
+    // Rootless containers reach the GPU through the account's render group,
+    // which only crun keeps (keep-groups); runc resets supplementary groups.
+    if (needs_crun(*rootless, runtime)) {
+        return SetupFailure{
+            "oci_runtime",
+            "Rootless Podman runs containers with " + runtime + ", which cannot give them the GPU",
+            {install_command(host_.read_file("/etc/os-release"), "crun", "crun")}, ""};
     }
     // Podman 4's CNI backend gives an internal network no gateway on the host,
     // so rootful lemond cannot reach the container's address (see run_command).
@@ -609,7 +631,9 @@ std::string ContainerManager::container_name(int instance, const std::string& re
            name_token(backend) + "-" + name_token(model);
 }
 
-std::string ContainerManager::podman_install_command(const std::string& os_release) {
+std::string ContainerManager::install_command(const std::string& os_release,
+                                              const std::string& package,
+                                              const std::string& name) {
     std::string id;
     std::string id_like;
     for (const auto& line : lines_of(os_release)) {
@@ -631,11 +655,11 @@ std::string ContainerManager::podman_install_command(const std::string& os_relea
     for (std::string word; words >> word;) candidates.push_back(word);
 
     for (const auto& candidate : candidates) {
-        if (candidate == "debian") return "sudo apt install podman";
-        if (candidate == "fedora") return "sudo dnf install podman";
-        if (candidate == "arch") return "sudo pacman -S podman";
+        if (candidate == "debian") return "sudo apt install " + package;
+        if (candidate == "fedora") return "sudo dnf install " + package;
+        if (candidate == "arch") return "sudo pacman -S " + package;
     }
-    return "Install Podman with the host's package manager";
+    return "Install " + name + " with the host's package manager";
 }
 
 bool ContainerManager::allowed_image(const std::string& image) {

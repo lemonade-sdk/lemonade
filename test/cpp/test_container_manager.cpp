@@ -49,6 +49,7 @@ struct FakeHost {
     int podman_info_exit = 0;
     std::string podman_rootless = "true";
     std::string network_backend = "netavark";
+    std::string oci_runtime = "crun";
     // What Podman prints on stderr, which reaches `output` only when captured.
     std::string stderr_noise =
         "time=\"2026-10-17T00:57:31Z\" level=warning msg=\"Falling back to --cgroup-manager=cgroupfs\"\n";
@@ -82,7 +83,7 @@ struct FakeHost {
             lemon::utils::CommandResult result;
             if (argv.size() > 1 && argv[0] == "podman" && argv[1] == "info") {
                 result.exit_code = podman_info_exit;
-                result.output = podman_rootless + " " + network_backend + "\n";
+                result.output = podman_rootless + " " + network_backend + " " + oci_runtime + "\n";
             } else if (argv.size() > 1 && argv[1] == "network") {
                 result.exit_code = 0;
             } else if (argv.front() == "getsubids") {
@@ -431,12 +432,55 @@ void test_rootful_cni() {
 }
 
 void test_install_commands() {
-    const auto command = ContainerManager::podman_install_command;
+    const auto podman = [](const std::string& os_release) {
+        return ContainerManager::install_command(os_release, "podman", "Podman");
+    };
     check("Rocky Linux matches fedora through ID_LIKE",
-          command("ID=\"rocky\"\nID_LIKE=\"rhel centos fedora\"\n") == "sudo dnf install podman");
-    check("Fedora matches on ID", command("ID=fedora\n") == "sudo dnf install podman");
+          podman("ID=\"rocky\"\nID_LIKE=\"rhel centos fedora\"\n") == "sudo dnf install podman");
+    check("Fedora matches on ID", podman("ID=fedora\n") == "sudo dnf install podman");
     check("an unknown distribution gets the generic step",
-          command("ID=gentoo\n") == "Install Podman with the host's package manager");
+          podman("ID=gentoo\n") == "Install Podman with the host's package manager");
+    check("crun installs through the same package manager",
+          ContainerManager::install_command("ID=ubuntu\nID_LIKE=debian\n", "crun", "crun") ==
+                  "sudo apt install crun" &&
+              ContainerManager::install_command("ID=gentoo\n", "crun", "crun") ==
+                  "Install crun with the host's package manager");
+}
+
+void test_oci_runtime() {
+    FakeHost runc;
+    runc.tools = {"podman"};
+    runc.gpu_access = true;
+    runc.oci_runtime = "runc";
+    const ContainerManager manager(runc.host());
+    const auto failure = manager.check_podman();
+    check("rootless Podman on runc asks for crun",
+          failure && failure->id == "oci_runtime" &&
+              failure->message ==
+                  "Rootless Podman runs containers with runc, which cannot give them the GPU" &&
+              lemon::utils::SetupReport{{*failure}}.action() == "sudo apt install crun");
+    runc.oci_runtime = "crun";
+    check("installing crun clears the failure without restarting lemond", !manager.check_podman());
+
+    FakeHost fedora = runc;
+    fedora.oci_runtime = "runc";
+    fedora.files["/etc/os-release"] = "ID=fedora\n";
+    const auto dnf = ContainerManager(fedora.host()).check_podman();
+    check("Fedora is told to install crun with dnf",
+          dnf && lemon::utils::SetupReport{{*dnf}}.action() == "sudo dnf install crun");
+
+    FakeHost rootful = runc;
+    rootful.oci_runtime = "runc";
+    rootful.podman_rootless = "false";
+    check("rootful Podman on runc passes, since it adds the render group by ID",
+          !ContainerManager(rootful.host()).check_podman());
+
+    FakeHost own_socket = runc;
+    own_socket.oci_runtime = "runc";
+    own_socket.env = {{"CONTAINER_HOST", "unix:///run/user/1000/podman/podman.sock"},
+                      {"XDG_RUNTIME_DIR", "/run/user/1000"}};
+    const auto api = ContainerManager(own_socket.host()).check_podman();
+    check("the account's podman.socket on runc asks for crun", api && api->id == "oci_runtime");
 }
 
 void test_helpers() {
@@ -531,6 +575,7 @@ int main() {
     test_rootful_service();
     test_rootful_cni();
     test_install_commands();
+    test_oci_runtime();
     test_helpers();
 #ifndef _WIN32
     test_model_mount();

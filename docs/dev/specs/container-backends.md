@@ -315,7 +315,10 @@ When the container tool is Podman, the checks are:
 | Podman installed | `podman` is not on `PATH` | The install command for the host's `ID` |
 | Device nodes accessible | Podman is rootless and the user's account cannot read and write `/dev/kfd` and every `/dev/dri/renderD*` node | 1. `sudo usermod -aG render $USER`<br>2. Log out and back in |
 | Podman answers | `podman info` fails | Run `podman info` and fix the error it prints |
+| crun runtime | Podman is rootless and `podman info` reports an OCI runtime other than crun | The install command for crun for the host's `ID` |
 | Network reachable | Podman is rootful and its network backend is CNI, which gives an internal network no gateway for `lemond` to reach the container by | Unset `CONTAINER_HOST` to use rootless Podman |
+
+Rootless containers reach the GPU through the account's own `render` membership, which `--group-add keep-groups` carries into the container. Only crun supports `keep-groups`; runc always resets a container's supplementary groups, so under runc the device nodes are closed to the container and the engine silently falls back to the CPU. Podman installs crun by default, but on Debian and Ubuntu a host that had Docker first already has runc, which satisfies Podman's `crun | runc` dependency, so Podman runs with runc. The check therefore requires crun for rootless Podman, and the packages recommend it. Podman uses crun as soon as it is installed, so `lemond` asks `podman info` again until it reports crun instead of caching the first answer. Rootful Podman and Docker add the `render` group by its numeric ID and work with either runtime.
 
 When the container tool is Docker, the checks are:
 
@@ -343,6 +346,7 @@ What the package does:
 | Adds `lemonade` to `render` with `usermod` | `lemonade-server.postinst` | `postinst-rpm` |
 | Allocates `lemonade` a subordinate UID/GID range (see [`lemond.service` and rootless Podman](#lemondservice-and-rootless-podman)) | `lemonade-server.postinst` | `postinst-rpm` |
 | Pulls in Podman unless Docker is installed | `debian/control` declares `Recommends: podman \| docker.io \| docker-ce` | `CPackRPM.cmake` declares `Recommends: (podman or docker or docker-ce)` |
+| Pulls in crun, which rootless Podman needs for the GPU (see [`lemond` Started by the User](#lemond-started-by-the-user)) | `debian/control` declares `Recommends: crun` | `CPackRPM.cmake` declares `Recommends: crun` |
 
 Containers are started by:
 
@@ -357,6 +361,7 @@ When the container tool is Podman, the checks are:
 | --- | --- | --- |
 | Podman installed | `podman` is not on `PATH` | The install command for the host's `ID` |
 | Podman answers | `podman info` fails | Run `podman info` and fix the error it prints |
+| crun runtime | Podman is rootless and `podman info` reports an OCI runtime other than crun | The install command for crun for the host's `ID` |
 | Device nodes accessible | `lemonade` cannot read and write `/dev/kfd` and every `/dev/dri/renderD*` node | 1. `sudo usermod -aG render lemonade`<br>2. `sudo systemctl restart lemond` |
 | Subordinate IDs allocated | Podman is rootless and `getsubids lemonade` or `getsubids -g lemonade` prints no range | Ask the host's administrator to allocate 65,536 subordinate UIDs and GIDs to `lemonade`, then `sudo systemctl restart lemond` |
 | Network reachable | Podman is rootful and its network backend is CNI | 1. Remove `CONTAINER_HOST` from `/etc/default/lemond` to use rootless Podman<br>2. `sudo systemctl restart lemond` |
