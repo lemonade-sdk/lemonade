@@ -67,10 +67,10 @@ static const std::vector<std::string> VALID_LABELS = {
 };
 
 static const std::vector<std::string> SUPPORTED_AGENTS = {
+    "pi",
+    "opencode",
     "claude",
     "codex",
-    "opencode",
-    "pi",
     "junie"
 };
 

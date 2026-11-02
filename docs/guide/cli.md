@@ -680,7 +680,7 @@ lemonade launch [AGENT] [--model MODEL_NAME] [options]
 
 | Option/Argument | Description | Required |
 |-----------------|-------------|----------|
-| `AGENT` | Agent name to launch. Supported agents: `claude`, `codex`, `opencode`, `pi`, `junie`. If omitted, you will be prompted to select one. | No |
+| `AGENT` | Agent name to launch. Supported agents: `pi`, `opencode`, `claude`, `codex`, `junie`. If omitted, you will be prompted to select one. | No |
 | `--model MODEL_NAME` | Model name to launch with. If omitted, you will be prompted to select one. | No |
 | `--directory DIR` | Remote recipes directory used only if you choose recipe import at prompt | No |
 | `--recipe-file FILE` | Remote recipe JSON filename used only if you choose recipe import at prompt | No |
@@ -721,7 +721,7 @@ Pi-only options:
 - `--provider` is accepted only by `lemonade launch codex` and is passed directly to Codex as `model_provider`; provider resolution/errors are handled by Codex.
 - Customize recipe options for one launch with flags such as `--ctx-size` and `--llamacpp`, or edit them in the launcher. To persist model settings, use `lemonade load <model> ... --save-options`; shared defaults can be changed with `lemonade config set`.
 - `--agent-args` is parsed and appended to the launched agent command.
-- Supported agents: `claude`, `codex`, `opencode`, `pi`, `junie`
+- Supported agents: `pi`, `opencode`, `claude`, `codex`, `junie`
 - `opencode` uses an auto-managed config file at `~/.config/opencode/opencode.json`.
 - `pi` uses auto-managed config files at `~/.pi/agent/models.json` and `~/.pi/agent/settings.json` (honors `PI_CODING_AGENT_DIR`), plus `mcp.json` with `--mcp`. See [Pi](../integrations/pi.md).
 - `junie` uses an auto-managed custom model profile at `~/.junie/models/lemonade.json` (honors `JUNIE_HOME`) and is launched with `--model custom:lemonade`.
