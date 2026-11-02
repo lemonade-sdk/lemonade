@@ -75,6 +75,8 @@ struct ModelInfo {
     bool suggested = false;
     std::string source;  // Local origin: local_upload/local_path/extra_models_dir
     std::string registry_source;  // Remote registry: huggingface/modelscope; empty when unpinned
+    // A by-name source choice is valid only under the default that selected it.
+    std::string pull_source_default;
     bool downloaded = false;     // Whether model is downloaded and available
     bool update_available = false; // Whether a newer remote-registry version exists
     std::optional<bool> auto_update = std::nullopt; // Optional per-model auto-update override

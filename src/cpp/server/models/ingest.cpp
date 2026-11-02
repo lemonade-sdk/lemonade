@@ -683,6 +683,60 @@ void ModelIngest::pull(const std::string& model_name,
         return;
     }
 
+    const std::string download_source = requested_registry_source(model_data);
+    std::optional<ModelInfo> requested_info;
+    bool defer_default_source = false;
+    if (!register_only && model_registered) {
+        auto model_info = require_info(model_name);
+        if ((artifacts().download_policy(model_info) == backends::DownloadPolicy::Repository ||
+             (is_model_collection_recipe(model_info.recipe) && !model_info.checkpoint().empty())) &&
+            (!download_source.empty() || !do_not_upgrade || !model_info.downloaded ||
+             (!is_model_collection_recipe(model_info.recipe) && !artifacts().complete(model_info)))) {
+            const auto documents = deps_.registries->pin();
+            const auto entry = find_registry_row(documents, model_info.model_name);
+            if (entry && entry->document == RegistryDocument::Builtin) {
+                json authored = *documents.row(entry->document, entry->key);
+                apply_default_pull_source(authored, "");
+                ModelInfo original;
+                parse_model_source_fields(original, authored);
+                parse_checkpoints(original, authored);
+                if (original.source.empty() && original.registry_source.empty() &&
+                    original.checkpoints == model_info.checkpoints &&
+                    authored.value("recipe", "") == model_info.recipe) {
+                    const auto* runtime_config = RuntimeConfig::global();
+                    defer_default_source = download_source.empty() && !is_model_collection_recipe(model_info.recipe) &&
+                                           runtime_config && runtime_config->offline();
+                    const std::string default_source =
+                        remote_registry_source_name(download_source_for(ModelInfo{}));
+                    const std::string selected = download_source.empty() ? default_source : download_source;
+                    if (!defer_default_source && (model_info.registry_source != selected ||
+                        (download_source.empty() && !model_info.pull_source_default.empty()))) {
+                        {
+                            ModelStore::Write write(*deps_.store);
+                            if (auto it = write.draft().find(model_info.model_name);
+                                it != write.draft().end() && it->second.recipe == model_info.recipe &&
+                                it->second.checkpoints == model_info.checkpoints) {
+                                it->second.registry_source = selected;
+                                it->second.pull_source_default = download_source.empty() ? "" : default_source;
+                                write.invalidate_cache();
+                            }
+                        }
+                        model_info = require_info(model_name);
+                        if (model_info.registry_source != selected) {
+                            model_info.registry_source = selected;
+                            if (is_model_collection_recipe(model_info.recipe)) {
+                                model_info.components.clear();
+                                collections_->populate_from_cached_manifest(model_info);
+                            }
+                            artifacts().resolve_all(model_info);
+                        }
+                    }
+                    requested_info = std::move(model_info);
+                }
+            }
+        }
+    }
+
     // A collection has no backend of its own, so each member is fetched on its own.
     //
     // One persistence rule, uniform across entries: a registry row stores what was
@@ -705,7 +759,7 @@ void ModelIngest::pull(const std::string& model_name,
             );
         }
 
-        auto info = require_info(model_name);
+        auto info = requested_info ? *requested_info : require_info(model_name);
         std::vector<std::string> components = info.components;
 
         try {
@@ -786,6 +840,13 @@ void ModelIngest::pull(const std::string& model_name,
         // cached instead of staying wrong until a restart.
         if (!repo_id.empty()) {
             deps_.store->invalidate();
+            const auto current = require_info(model_name);
+            if (registry_source_of(current) != registry_source_of(info)) {
+                throw std::runtime_error("Model source changed during download; retry the pull");
+            }
+            if (!current.downloaded) {
+                throw std::runtime_error("Downloaded collection is unavailable; retry the pull");
+            }
         }
 
         // Emit a single completion event for the whole collection
@@ -826,9 +887,8 @@ void ModelIngest::pull(const std::string& model_name,
         register_user_model(model_name, registration_data);
     }
 
-    auto model_info = require_info(model_name);
+    auto model_info = requested_info ? *requested_info : require_info(model_name);
 
-    const std::string download_source = requested_registry_source(model_data);
     if (!download_source.empty() &&
         artifacts().download_policy(model_info) == backends::DownloadPolicy::SelfManaged) {
         model_info.registry_source = download_source;
@@ -857,8 +917,14 @@ void ModelIngest::pull(const std::string& model_name,
 
     // Check if offline mode
     if (auto* cfg = RuntimeConfig::global()) {
-        if (cfg->offline()) {
+        if (defer_default_source || cfg->offline()) {
             LOG(INFO, "ModelManager") << "Offline mode enabled, skipping download" << std::endl;
+            if (defer_default_source || (requested_info && download_source.empty())) {
+                const auto current = require_info(model_name);
+                if (!current.downloaded || !artifacts().complete(current)) {
+                    throw std::runtime_error("Offline mode interrupted model download; retry the pull when online");
+                }
+            }
             return;
         }
     }
@@ -911,14 +977,38 @@ void ModelIngest::fetch_model(const ModelInfo& info, bool do_not_upgrade,
     octx.fetch = this;
     octx.artifacts = deps_.artifacts;
     octx.cancel = cancel;
-    backends::ops_for(info.recipe)->download_model(info, do_not_upgrade, progress_callback, octx);
+    const bool repository_download =
+        artifacts().download_policy(info) == backends::DownloadPolicy::Repository;
+    DownloadProgress completion;
+    DownloadProgressCallback forward = progress_callback;
+    if (repository_download && progress_callback) {
+        // Acquired bytes are not complete until the current model can use them.
+        forward = [&](const DownloadProgress& progress) -> bool {
+            if (progress.complete) {
+                completion = progress;
+                return true;
+            }
+            return progress_callback(progress);
+        };
+    }
+    backends::ops_for(info.recipe)->download_model(info, do_not_upgrade, forward, octx);
 
     // Update cache after successful download
-    deps_.store->patch_download(*deps_.artifacts, info.model_name, true);
+    deps_.store->patch_download(*deps_.artifacts, info.model_name, true, &info);
+    if (repository_download) {
+        const auto current = require_info(info.model_name);
+        if (registry_source_of(current) != registry_source_of(info) ||
+            !current.downloaded || !artifacts().complete(current)) {
+            throw std::runtime_error("Downloaded model is unavailable under the current source; retry the pull");
+        }
+    }
 
     const std::string canonical_model_name = deps_.store->resolve_name(info.model_name);
     if (is_user_model_name(canonical_model_name)) {
         persist_size(canonical_model_name);
+    }
+    if (completion.complete && progress_callback) {
+        (void)progress_callback(completion);
     }
 }
 
