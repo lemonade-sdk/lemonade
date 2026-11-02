@@ -49,6 +49,11 @@ runs:
       shell: bash
       run: debian/vendor-rust-crates
 
+    - name: Vendor cpp-httplib
+      # The Nexus SDK needs a newer cpp-httplib than distributions ship.
+      shell: bash
+      run: debian/vendor-httplib
+
     - name: Build Debian package
       id: build
       shell: bash
