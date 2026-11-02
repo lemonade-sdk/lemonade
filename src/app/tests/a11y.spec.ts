@@ -760,6 +760,31 @@ test.describe('Accessibility — Backend Manager (#2343 #2344 #2351)', () => {
     expect(label!.toLowerCase()).toContain('cpu');
   });
 
+  for (const [state, label] of [
+    ['installed', 'Installed'],
+    ['update_required', 'Update required'],
+    ['update_available', 'Update available'],
+  ] as const) {
+    test(`Uninstall is hidden when can_uninstall is false (${state})`, async ({ page }) => {
+      const systemInfo = structuredClone(MOCK_SYSTEM_INFO);
+      systemInfo.recipes.llamacpp.backends.cpu.state = state;
+      systemInfo.recipes.llamacpp.backends.cpu.can_uninstall = false;
+      await page.route('**/api/v1/system-info**', route =>
+        route.fulfill({ json: systemInfo }),
+      );
+      await page.reload();
+      await navigateToView(page, 'Backends');
+
+      const row = page.locator('[data-cell="llamacpp:cpu"]');
+      await expect(row).toBeVisible();
+      await expect(row.locator('.cell__badge')).toHaveText(label);
+      await expect(row.locator('button.cell__swap--danger')).toHaveCount(0);
+      if (state !== 'installed') {
+        await expect(row.getByRole('button', { name: /^Update / })).toBeVisible();
+      }
+    });
+  }
+
   test('A56b — experimental backend marker is labelled and exposes the requested tooltip', async ({ page }) => {
     const marker = page.locator('[data-cell="llamacpp:vulkan"] .cell__experimental-icon');
     await expect(marker).toBeVisible();
