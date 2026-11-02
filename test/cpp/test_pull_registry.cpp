@@ -102,7 +102,7 @@ class ScriptedRepository : public FetchableRepository {
             std::vector<std::string> available;
             for (const auto& file : it->second.files) available.push_back(file.path);
             selected = lemon::registry_files::select_main_repo_files(
-                ref_.repo_id, recipe(), ref_.variant, available);
+                ref_.repo_id, ref_.variant, available);
         }
         if (selected.empty()) return Presence{};
         for (const auto& name : selected) {
