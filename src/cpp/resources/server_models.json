@@ -2460,7 +2460,14 @@
         "size": 0.354
     },
     "ThinkSound-SFX": {
-        "checkpoint": "ilintar/thinksound-gguf",
+        "checkpoints": {
+            "main": "ilintar/thinksound-gguf:dit-bf16.gguf",
+            "t5": "ilintar/thinksound-gguf:t5-bf16.gguf",
+            "metaclip_text": "ilintar/thinksound-gguf:metaclip-text-f32.gguf",
+            "vae": "ilintar/thinksound-gguf:vae-f32.gguf",
+            "t5_tokenizer": "ilintar/thinksound-gguf:t5-tokenizer.gguf",
+            "clip_tokenizer": "ilintar/thinksound-gguf:clip-tokenizer.gguf"
+        },
         "recipe": "thinksound",
         "suggested": true,
         "labels": [
@@ -2469,7 +2476,12 @@
         "size": 6.4
     },
     "ACE-Step-Music": {
-        "checkpoint": "Serveurperso/ACE-Step-1.5-GGUF:acestep-v15-xl-sft-Q8_0.gguf",
+        "checkpoints": {
+            "main": "Serveurperso/ACE-Step-1.5-GGUF:acestep-v15-xl-sft-Q8_0.gguf",
+            "lm": "Serveurperso/ACE-Step-1.5-GGUF:acestep-5Hz-lm-4B-Q8_0.gguf",
+            "text_encoder": "Serveurperso/ACE-Step-1.5-GGUF:Qwen3-Embedding-0.6B-BF16.gguf",
+            "vae": "Serveurperso/ACE-Step-1.5-GGUF:vae-BF16.gguf"
+        },
         "recipe": "acestep",
         "suggested": true,
         "labels": [
