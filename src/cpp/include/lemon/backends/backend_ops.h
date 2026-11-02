@@ -122,17 +122,6 @@ public:
         return "";
     }
 
-    // Select the repo-relative files to download for the main checkpoint
-    // `main_variant`, for backends whose artifact layout isn't a GGUF file.
-    // Return nullopt to use the default GGUF selection. (Direct single-file
-    // variants — .safetensors/.pth/.ckpt — are handled generically upstream.)
-    virtual std::optional<std::vector<std::string>> select_checkpoint_files(
-        const std::string& main_variant, const std::vector<std::string>& repo_files) const {
-        (void)main_variant;
-        (void)repo_files;
-        return std::nullopt;
-    }
-
     // Models supplied at runtime rather than from server_models.json (descriptor
     // dynamic_models = true). Default: none.
     virtual std::vector<ModelInfo> discover_models(const BackendOpsContext& ctx) const {

@@ -286,7 +286,7 @@ UpdateScanResult run_update_scan(const UpdateScanDeps& deps,
                                 }
                             }
                             selected = registry_files::select_main_repo_files_union(
-                                entry.repo_id, info.recipe,
+                                entry.repo_id,
                                 variant_from_checkpoint(info.checkpoint("main")),
                                 previous_it->second, latest_files);
                         }
