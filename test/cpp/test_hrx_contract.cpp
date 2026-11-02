@@ -6,11 +6,13 @@
 #include "lemon/backends/hrx/hrx.h"
 #include "lemon/backends/hrx/hrx_server.h"
 #include "lemon/model_manager.h"
+#include "lemon/models/json_catalog.h"
 #include "lemon/recipe_options.h"
 #include "lemon/utils/custom_args.h"
 
 #include <cstdio>
 #include <exception>
+#include <fstream>
 #include <functional>
 #include <set>
 #include <string>
@@ -22,7 +24,7 @@ namespace {
 namespace hrx = lemon::backends::hrx;
 using lemon::backends::HrxServer;
 
-constexpr const char* kReleaseVersion = "hrx-b99";
+constexpr const char* kReleaseVersion = "hrx-b129";
 
 int failures = 0;
 
@@ -115,6 +117,26 @@ void check_admission_contract() {
     check("HRX rejects an equals-form managed argument", equals_flag_rejected);
 }
 
+void check_catalog_mtp_contract() {
+    std::ifstream stream(HRX_TEST_CATALOG_PATH);
+    const auto catalog = lemon::json::parse(stream);
+    const std::string name = "Qwen3.5-35B-A3B-HRX";
+    const auto info = lemon::models::parse_registry_row(
+        name, catalog.at(name), lemon::models::RegistryRowRules{});
+    check("HRX MTP catalog entry parses", info.has_value());
+    if (!info) return;
+
+    check("HRX MTP catalog entry selects the HRX recipe",
+          info->recipe == "llamacpp-hrx");
+    check("HRX MTP catalog entry uses the dedicated MTP checkpoint",
+          info->checkpoint() ==
+              "unsloth/Qwen3.5-35B-A3B-MTP-GGUF:Qwen3.5-35B-A3B-UD-Q4_K_XL.gguf");
+    lemon::RecipeOptions options(info->recipe, lemon::json::object());
+    hrx::ops()->resolve_runtime_options(*info, options);
+    check("Catalog MTP capability enables draft-mtp",
+          options.get_option("hrx_args") == "--spec-type draft-mtp");
+}
+
 void check_mtp_contract() {
     lemon::ModelInfo info;
     info.labels = {"chat", "mtp"};
@@ -158,7 +180,7 @@ void check_installer_contract() {
           params.repo == "ROCm/ggml-staging-automation");
     check("HRX installer maps the version to the exact release asset",
           params.filename ==
-              "llama-hrx-b99-bin-manylinux-hrx-x64.tar.gz");
+              "llama-hrx-b129-bin-manylinux-hrx-x64.tar.gz");
 #else
     const bool unsupported_host_rejected = throws_exception([] {
         (void)HrxServer::get_install_params("hrx", kReleaseVersion);
@@ -179,6 +201,7 @@ int main() {
     try {
         check_launch_contract();
         check_admission_contract();
+        check_catalog_mtp_contract();
         check_mtp_contract();
         check_installer_contract();
     } catch (const std::exception& error) {

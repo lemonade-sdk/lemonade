@@ -967,7 +967,7 @@
         "size": 17.4
     },
     "Qwen3.5-35B-A3B-HRX": {
-        "checkpoint": "unsloth/Qwen3.5-35B-A3B-GGUF:Qwen3.5-35B-A3B-UD-Q4_K_XL.gguf",
+        "checkpoint": "unsloth/Qwen3.5-35B-A3B-MTP-GGUF:Qwen3.5-35B-A3B-UD-Q4_K_XL.gguf",
         "recipe": "llamacpp-hrx",
         "suggested": true,
         "labels": [
