@@ -181,8 +181,20 @@ public:
     /// is stopped.
     void refresh_now();
 
-    /// Set callback for mesh state changes.
+    /// Set the callback for mesh state changes. It runs on the loop thread after
+    /// a monitor pass in which the dataplane went up or down, or a peer's
+    /// is_online, path or relay_endpoint changed, or a peer was added or removed.
     void set_callback(StateCallback cb);
+
+    /// Callback for a possible change of the device list.
+    using DevicesCallback = std::function<void()>;
+
+    /// Set the callback for a possible change of the device list: the event
+    /// socket reported a new devices_revision or opened again, the loop
+    /// resumed after a suspension, or, from a session server without the
+    /// event socket, the peer list changed. It runs on the poll thread or the
+    /// loop thread, without the orchestrator's lock.
+    void set_devices_callback(DevicesCallback cb);
 
     /// The wall clock the loop reads to detect a suspension.
     using WallClock = std::function<std::chrono::system_clock::time_point()>;
@@ -201,6 +213,23 @@ public:
 
     /// The LAN endpoints this device reports now (thread-safe snapshot).
     [[nodiscard]] std::vector<std::string> local_endpoints() const;
+
+    /// Interval between verifications of the Tier 1 servers that relay
+    /// choice ranks. Tree calls also verify them, but a device that makes
+    /// none would otherwise keep its first answer.
+    static constexpr std::chrono::seconds kTier1Recheck{300};
+    /// The same while a verified member was not reachable at the last
+    /// verification. Both sides of a pair rank the servers they reached;
+    /// one missed member (a server restarting) puts the two sides on
+    /// different relays until it is verified again.
+    static constexpr std::chrono::seconds kTier1RecheckMissing{60};
+
+    /// True when relay choice must verify the Tier 1 servers again: none is
+    /// verified, kTier1Recheck passed since the last verification, or
+    /// kTier1RecheckMissing passed while fewer servers than members were
+    /// reachable. Pure.
+    [[nodiscard]] static bool tier1_recheck_due(std::size_t servers, std::size_t members,
+                                                std::chrono::steady_clock::duration since_check);
 
 private:
     /// Main orchestration loop (runs on background thread).
@@ -237,6 +266,9 @@ private:
     std::chrono::steady_clock::time_point do_relay_maintenance();
 
     /// The relays the client may use: verified Tier 1 servers and listed relays.
+    /// Verifies the Tier 1 servers again when kTier1Recheck has passed, or
+    /// kTier1RecheckMissing while a member was not reachable. Blocks on
+    /// network I/O. Loop thread only.
     std::vector<RelayCandidate> relay_candidates();
 
     /// Start a certificate renewal thread when a registered certificate is
@@ -264,11 +296,32 @@ private:
     static constexpr std::chrono::seconds kPeerWaitRetryMax{30};
     static constexpr std::chrono::seconds kPeerWaitUnsupported{300};
 
-    /// Hold one peer list long-poll open to the session server and request a
-    /// refresh pass as soon as the peers_revision changes. Runs on
-    /// poll_thread_ while the orchestrator runs; the heartbeat revision check
-    /// stays as the fallback.
+    /// How long a session server without the event socket (404) is served
+    /// by the long-poll before the socket is tried again: the session may
+    /// have moved, or the server been updated, meanwhile.
+    static constexpr std::chrono::seconds kEventsRetry{300};
+
+    /// Hold the event socket (LemonadeNexusClient::run_mesh_events) open to
+    /// the session server: a new peers_revision requests a refresh pass, and
+    /// a new devices_revision, or a socket that opens again, calls the
+    /// devices callback. A session server without the socket gets the peer
+    /// list long-poll instead. Runs on poll_thread_ while the orchestrator
+    /// runs; the heartbeat revision check stays as the fallback.
     void poll_loop();
+
+    /// One peer list long-poll (the fallback of poll_loop). Returns the pause
+    /// before the next one.
+    std::chrono::seconds long_poll_once(std::chrono::seconds& retry);
+
+    /// Records the revisions of an event socket message (or of a long-poll
+    /// answer, with `devices` empty) and acts on what changed. `opened` marks
+    /// the first message of a socket: the device list is read again then
+    /// whatever its revision, in case a change came while no socket was open.
+    void on_revisions(const std::string& peers, const std::optional<std::string>& devices,
+                      bool opened);
+
+    /// Calls the devices callback, without the lock.
+    void notify_devices();
 
     LemonadeNexusClient&     client_;
     BoringtunMesh&           mesh_;
@@ -283,10 +336,22 @@ private:
     std::vector<MeshPeer>    known_peers_;
     std::map<std::string, uint32_t> stale_passes_;  // mesh key -> PeerLiveness::stale_passes
     MeshTunnelStatus         last_status_;
+    /// The peer state the last callback reported (see set_callback).
+    struct ReportedPeer {
+        std::string node_id;
+        bool        is_online{false};
+        std::string path;
+        std::string relay_endpoint;
+        bool operator==(const ReportedPeer&) const = default;
+    };
+    std::vector<ReportedPeer> reported_peers_;
     StateCallback            callback_;
+    DevicesCallback          devices_callback_;
+    std::string              devices_revision_;          // last seen; guarded by mutex_
     std::string              our_endpoint_; // reflexive endpoint we publish ("" until learned)
     std::vector<std::string> our_local_endpoints_;  // LAN endpoints we report
     std::vector<InterfaceAddress> own_lan_;         // our usable LAN interfaces
+    std::chrono::steady_clock::time_point tier1_checked_{};  // loop thread only
     LocalAddressSource       local_address_source_; // empty: list_interface_addresses
     bool                     refresh_requested_{false};  // set by refresh_now() and do_heartbeat()
     WallClock                wall_clock_;                // empty: the system clock

@@ -45,7 +45,7 @@ std::optional<bool> peer_signal_fresh(const MeshPeer& peer, int64_t now_unix,
     // server's last_seen arrives only with the peer list, so it may be one
     // peer refresh old.
     constexpr int64_t kSessionLive    = 200;  // REJECT_AFTER_TIME 180 s, a retry, jitter
-    constexpr int64_t kHeartbeatStale = 15;   // 3 missed 5 s heartbeats
+    constexpr int64_t kHeartbeatStale = 15;   // 5 missed 3 s heartbeats, 3 at 5 s
     constexpr int64_t kMonitorTick    = 5;
     const auto last_seen = static_cast<int64_t>(peer.last_seen);
     const bool seen_recently =
@@ -118,6 +118,8 @@ void MeshOrchestrator::start(const MeshConfig& config) {
         config_ = config;
     }
 
+    // The join just verified the Tier 1 servers.
+    tier1_checked_ = std::chrono::steady_clock::now();
     running_ = true;
     client_.begin_mesh_peer_waits();
     thread_ = std::thread([this] { run_loop(); });
@@ -155,6 +157,8 @@ void MeshOrchestrator::stop() {
         known_peers_.clear();
         stale_passes_.clear();
         last_status_ = {};
+        reported_peers_.clear();
+        devices_revision_.clear();
         our_endpoint_.clear();
         our_local_endpoints_.clear();
         own_lan_.clear();
@@ -189,6 +193,11 @@ void MeshOrchestrator::refresh_now() {
 void MeshOrchestrator::set_callback(StateCallback cb) {
     std::lock_guard lock(mutex_);
     callback_ = std::move(cb);
+}
+
+void MeshOrchestrator::set_devices_callback(DevicesCallback cb) {
+    std::lock_guard lock(mutex_);
+    devices_callback_ = std::move(cb);
 }
 
 void MeshOrchestrator::set_wall_clock(WallClock clock) {
@@ -257,6 +266,8 @@ void MeshOrchestrator::run_loop() {
             spdlog::info("[MeshOrchestrator] resumed after a suspension: {} handshakes sent, "
                          "checking {} peer paths",
                          sent, all.size());
+            // A device list change may have come while the process slept.
+            notify_devices();
         }
         const bool urgent = refresh_requested || resumed;
 
@@ -497,50 +508,115 @@ void MeshOrchestrator::do_heartbeat() {
 
 void MeshOrchestrator::poll_loop() {
     auto retry = kPeerWaitRetryMin;
+    // Set while the session server has no event socket: until then the
+    // long-poll stands in for it.
+    std::optional<std::chrono::steady_clock::time_point> events_after;
     while (running_.load()) {
-        std::string revision;
-        {
-            std::unique_lock lock(mutex_);
-            // The first heartbeat answer gives the baseline revision.
-            cv_.wait_for(lock, std::chrono::seconds(2),
-                         [this] { return !running_.load() || !peers_revision_.empty(); });
+        const auto now = std::chrono::steady_clock::now();
+        auto pause = std::chrono::seconds{0};
+        if (!events_after || now >= *events_after) {
+            events_after.reset();
+            bool first = true;
+            const auto result = client_.run_mesh_events(
+                node_id_, [&](const LemonadeNexusClient::MeshRevisions& revisions) {
+                    retry = kPeerWaitRetryMin;
+                    on_revisions(revisions.peers, revisions.devices, std::exchange(first, false));
+                });
             if (!running_.load()) return;
-            revision = peers_revision_;
-        }
-        if (revision.empty()) continue;
-
-        const auto result = client_.wait_mesh_peers(node_id_, revision, kPeerWaitSec);
-        if (!running_.load()) return;
-        if (result) {
-            retry = kPeerWaitRetryMin;
-            bool changed = false;
-            {
-                std::lock_guard lock(mutex_);
-                if (result.value != peers_revision_) {
-                    peers_revision_ = result.value;
-                    refresh_requested_ = true;
-                    changed = true;
-                }
+            if (!result.ok && result.http_status == 404) {
+                spdlog::info("[MeshOrchestrator] the session server has no event socket; "
+                             "using the peer list long-poll");
+                events_after = now + kEventsRetry;
+                continue;
             }
-            if (changed) {
-                spdlog::debug("[MeshOrchestrator] peer list changed (long-poll); refreshing");
-                cv_.notify_all();
+            if (!result.error.empty()) {
+                spdlog::debug("[MeshOrchestrator] event socket ended: {}", result.error);
             }
-            continue;
-        }
-        auto pause = retry;
-        if (result.http_status == 429) {
-            pause = kPeerWaitRetryMax;
-        } else if (result.http_status == 200) {
-            pause = kPeerWaitUnsupported;  // the server does not hold waits
+            pause = retry;
+            if (!result.ok && result.http_status == 429) {
+                pause = kPeerWaitRetryMax;
+            } else if (first) {
+                // Never opened, or closed before its first message (a server
+                // at its socket cap closes with 1013).
+                retry = std::min(retry * 2, kPeerWaitRetryMax);
+            }
         } else {
-            retry = std::min(retry * 2, kPeerWaitRetryMax);
+            pause = long_poll_once(retry);
         }
-        spdlog::debug("[MeshOrchestrator] peer wait failed ({}); next in {} s", result.error,
-                      pause.count());
+        if (pause.count() == 0) continue;
         std::unique_lock lock(mutex_);
         cv_.wait_for(lock, pause, [this] { return !running_.load(); });
     }
+}
+
+std::chrono::seconds MeshOrchestrator::long_poll_once(std::chrono::seconds& retry) {
+    std::string revision;
+    {
+        std::unique_lock lock(mutex_);
+        // The first heartbeat answer gives the baseline revision.
+        cv_.wait_for(lock, std::chrono::seconds(2),
+                     [this] { return !running_.load() || !peers_revision_.empty(); });
+        if (!running_.load()) return std::chrono::seconds{0};
+        revision = peers_revision_;
+    }
+    if (revision.empty()) return std::chrono::seconds{0};
+
+    const auto result = client_.wait_mesh_peers(node_id_, revision, kPeerWaitSec);
+    if (!running_.load()) return std::chrono::seconds{0};
+    if (result) {
+        retry = kPeerWaitRetryMin;
+        on_revisions(result.value, std::nullopt, false);
+        return std::chrono::seconds{0};
+    }
+    auto pause = retry;
+    if (result.http_status == 429) {
+        pause = kPeerWaitRetryMax;
+    } else if (result.http_status == 200) {
+        pause = kPeerWaitUnsupported;  // the server does not hold waits
+    } else {
+        retry = std::min(retry * 2, kPeerWaitRetryMax);
+    }
+    spdlog::debug("[MeshOrchestrator] peer wait failed ({}); next in {} s", result.error,
+                  pause.count());
+    return pause;
+}
+
+void MeshOrchestrator::on_revisions(const std::string& peers,
+                                    const std::optional<std::string>& devices, bool opened) {
+    bool peers_changed = false;
+    bool devices_changed = opened;
+    {
+        std::lock_guard lock(mutex_);
+        if (peers != peers_revision_) {
+            peers_revision_ = peers;
+            refresh_requested_ = true;
+            peers_changed = true;
+        }
+        if (devices) {
+            if (*devices != devices_revision_) {
+                devices_revision_ = *devices;
+                devices_changed = true;
+            }
+        } else {
+            // A long-poll reports no device revision: a peer list change is
+            // the closest signal that the device list changed too.
+            devices_changed = devices_changed || peers_changed;
+        }
+    }
+    if (peers_changed) {
+        spdlog::debug("[MeshOrchestrator] peer list changed; refreshing");
+        cv_.notify_all();
+    }
+    if (devices_changed) notify_devices();
+}
+
+void MeshOrchestrator::notify_devices() {
+    DevicesCallback cb;
+    {
+        std::lock_guard lock(mutex_);
+        cb = devices_callback_;
+    }
+    if (cb) cb();
 }
 
 bool MeshOrchestrator::do_stun_refresh() {
@@ -615,10 +691,28 @@ std::chrono::steady_clock::time_point MeshOrchestrator::do_punch() {
     return hole_puncher_->maintain(peers, relay_fallback_->relayed_peers(), prefer_direct);
 }
 
+bool MeshOrchestrator::tier1_recheck_due(std::size_t servers, std::size_t members,
+                                         std::chrono::steady_clock::duration since_check) {
+    if (servers == 0) return true;
+    return since_check >= (servers < members ? kTier1RecheckMissing : kTier1Recheck);
+}
+
 std::vector<RelayCandidate> MeshOrchestrator::relay_candidates() {
     std::vector<RelayCandidate> out;
+    auto membership = client_.tier1_membership();
+    const auto now = std::chrono::steady_clock::now();
+    if (tier1_recheck_due(membership.servers.size(), membership.members.size(),
+                          now - tier1_checked_)) {
+        tier1_checked_ = now;
+        auto refreshed = client_.refresh_tier1();
+        if (refreshed.ok) {
+            membership = std::move(refreshed.value);
+        } else {
+            spdlog::debug("[MeshOrchestrator] Tier 1 verification failed: {}", refreshed.error);
+        }
+    }
     // Verified Tier 1 servers: their relay id is their node identity.
-    for (const auto& server : client_.tier1_membership().servers) {
+    for (const auto& server : membership.servers) {
         out.push_back({server.node_id, server.host, kRelayPort});
     }
     // Relays the session's server lists. Tier 2 relays appear here.
@@ -747,9 +841,15 @@ void MeshOrchestrator::do_monitor(bool count_stale) {
     bool changed = false;
     {
         std::lock_guard lock(mutex_);
-        changed = (ms.peer_count   != last_status_.peer_count ||
-                   ms.online_count != last_status_.online_count ||
-                   ms.is_up        != last_status_.is_up);
+        // Per peer, not by count: one peer coming online while another goes
+        // offline, or a move between relay and direct, is a change too.
+        std::vector<ReportedPeer> reported;
+        reported.reserve(known_peers_.size());
+        for (const auto& peer : known_peers_) {
+            reported.push_back({peer.node_id, peer.is_online, peer.path, peer.relay_endpoint});
+        }
+        changed = ms.is_up != last_status_.is_up || reported != reported_peers_;
+        reported_peers_ = std::move(reported);
         last_status_ = ms;
         cb = callback_;
     }

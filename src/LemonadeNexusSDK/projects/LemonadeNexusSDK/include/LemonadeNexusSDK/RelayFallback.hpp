@@ -248,6 +248,9 @@ private:
         /// before it went through a path that is gone.
         int64_t                       stale_before{0};
         uint32_t                      failures{0};
+        /// Relay of the last pairing that carried no traffic and was not
+        /// blamed; a second such pairing there blames it.
+        std::string                   unproven_relay;
         bool                          applied{false};
         bool                          listed{false};    ///< maintain() has seen the peer
     };

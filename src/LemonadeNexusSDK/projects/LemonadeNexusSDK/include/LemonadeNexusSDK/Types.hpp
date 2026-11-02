@@ -478,7 +478,10 @@ struct SessionMoveEvent {
 /// Configuration for the mesh orchestrator.
 struct MeshConfig {
     uint32_t peer_refresh_interval_sec{30};  ///< How often to poll for peer updates
-    uint32_t heartbeat_interval_sec{5};      ///< How often to send heartbeat
+    /// How often to send the heartbeat, in seconds. It keeps the private API
+    /// connection in use: below the server's 5 s keep-alive timeout, a
+    /// heartbeat never meets a connection the server is closing.
+    uint32_t heartbeat_interval_sec{3};
     /// How often to learn and publish the reflexive address (STUN query from
     /// the dataplane socket to the session server). 0 turns it off.
     uint32_t stun_refresh_interval_sec{60};

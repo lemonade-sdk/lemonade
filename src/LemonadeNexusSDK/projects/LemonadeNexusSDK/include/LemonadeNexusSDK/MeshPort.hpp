@@ -49,6 +49,17 @@ struct MeshPortMember {
     /// The mesh path to the device (MeshPeer::path): "lan", "direct",
     /// "relay", or "" (this device, or no working path).
     std::string path;
+
+    bool operator==(const MeshPortMember&) const = default;
+};
+
+/// The mesh state of one peer device, as the mesh orchestrator last found it.
+struct MeshPortPeerState {
+    std::string node_id;
+    bool        is_online{false};
+    double      latency_ms{0.0};  ///< 0 when unknown
+    std::string relay_endpoint;   ///< See MeshPortMember::relay_endpoint.
+    std::string path;             ///< See MeshPortMember::path.
 };
 
 /// What a device's SDK answers at GET /.nexus/catalog: the app that registered
@@ -178,6 +189,11 @@ struct MeshPortBackend {
     /// Reads the group devices. Called only on the mesh port's refresh thread, so it
     /// may make network calls. Returns nullopt when the list cannot be read.
     std::function<std::optional<std::vector<MeshPortMember>>()> load_members;
+    /// Reads the mesh state of each peer device. Must not make network calls:
+    /// MeshPort::peers_changed() uses it to update the devices between two
+    /// load_members() calls. A device without an entry is not reachable. May be
+    /// empty: the devices then change only with load_members().
+    std::function<std::vector<MeshPortPeerState>()> load_peer_states;
     /// This device's node ID, or "" before it joins.
     std::function<std::string()> self_node_id;
     /// Opens or reuses a loopback bridge to a mesh peer. Returns the 127.0.0.1 port,
@@ -240,8 +256,15 @@ enum class MeshPortStartResult {
 class MeshPort {
 public:
     struct Options {
-        /// Interval between member list refreshes.
-        std::chrono::milliseconds refresh_interval{std::chrono::seconds(10)};
+        /// Pause before the device list (MeshPortBackend::load_members) is read again
+        /// after a failed read. It doubles after each failure up to
+        /// members_retry_max. Otherwise the list is read only at start() and on
+        /// devices_changed(); peer state changes arrive through peers_changed().
+        std::chrono::milliseconds members_retry_min{std::chrono::seconds(2)};
+        std::chrono::milliseconds members_retry_max{std::chrono::seconds(60)};
+        /// How long an unanswered catalog probe is kept before the device is probed
+        /// again.
+        std::chrono::milliseconds unanswered_catalog_ttl{std::chrono::seconds(10)};
         /// How long cached model lists stay fresh for the auto router and the merged
         /// model listing. A peer is probed at most once per interval and per peer key.
         std::chrono::milliseconds models_ttl{std::chrono::seconds(5)};
@@ -323,12 +346,38 @@ public:
     /// to TLS when one is due, now on the calling thread.
     void refresh_now();
 
+    /// Reports that the device list may have changed. The refresh thread reads it
+    /// again (MeshPortBackend::load_members) and updates the devices. Returns at
+    /// once; safe to call from any thread.
+    void devices_changed();
+
+    /// Sets the function the refresh thread calls after the devices changed: one
+    /// was added or removed, or changed its name, address, online state, path or
+    /// relay. It runs on the refresh thread without the port's state locks, so it
+    /// may call status(); it must not call refresh_now(). Empty clears it; the
+    /// previous function is not running when this returns.
+    void set_change_callback(std::function<void()> callback);
+
+    /// Reports that the mesh state of a peer changed. The refresh thread then reads
+    /// MeshPortBackend::load_peer_states and updates only the devices whose online
+    /// state, path, relay or latency changed, without reading the device list again.
+    /// A device that became reachable has its catalog read again at once. Returns at
+    /// once; safe to call from any thread, a mesh state callback included.
+    void peers_changed();
+
 private:
     struct Tls;
     struct Listener;
 
     void refresh_loop();
-    void refresh_members();
+    /// refresh_now() without its lock. Returns false when the device list could
+    /// not be read.
+    bool refresh_all();
+    /// Returns false when the device list could not be read.
+    bool refresh_members();
+    void report_change();
+    void refresh_peer_states();
+    void forget_catalogs(const std::vector<std::string>& node_ids);
     void refresh_catalogs();
     void check_certificate();
     void activate_pending_tls();
@@ -390,6 +439,10 @@ private:
     std::condition_variable wake_;
     bool stopping_{false};
     bool refresh_requested_{false};
+    bool peers_changed_{false};    // apply the peer states only; see peers_changed()
+    bool devices_changed_{false};  // read the device list; see devices_changed()
+    std::mutex change_mutex_;      // held while change_callback_ runs
+    std::function<void()> change_callback_;
     std::thread refresh_thread_;
 
     struct CachedModels {

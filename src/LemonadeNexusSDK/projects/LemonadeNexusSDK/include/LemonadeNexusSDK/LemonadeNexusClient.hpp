@@ -447,7 +447,23 @@ public:
     /// Callback type for mesh state changes.
     using MeshStateCallback = std::function<void(const MeshTunnelStatus&)>;
 
-    /// Set a callback to be notified on mesh state changes.
+    /// Callback type for device list changes (set_mesh_devices_callback).
+    using MeshDevicesCallback = std::function<void()>;
+
+    /// Set the callback for a possible change of the device list
+    /// (list_network_devices): the event socket reported a new
+    /// devices_revision or opened again, the mesh resumed after a
+    /// suspension, or, from a server without the event socket, the peer list
+    /// changed. It runs on a mesh orchestrator thread. The C API sets it to
+    /// reload the mesh port's devices and to report a "devices" mesh event,
+    /// so a C API client must not replace it.
+    void set_mesh_devices_callback(MeshDevicesCallback cb);
+
+    /// Set a callback to be notified on mesh state changes: the dataplane went
+    /// up or down, or a peer was added or removed or changed its is_online,
+    /// path or relay_endpoint (MeshOrchestrator::set_callback). It runs on the
+    /// mesh orchestrator thread. The C API sets it to update the mesh port
+    /// (MeshPort::peers_changed), so a C API client must not replace it.
     void set_mesh_callback(MeshStateCallback cb);
 
     /// Callback type for session moves.
@@ -497,13 +513,35 @@ public:
                                                       const std::string& revision,
                                                       uint32_t timeout_sec);
 
-    /// End a wait_mesh_peers() call in flight by closing its connection, and
-    /// make waits fail at once until begin_mesh_peer_waits(). Thread-safe.
+    /// End a wait_mesh_peers() call or a run_mesh_events() socket in flight
+    /// by closing its connection, and make both fail at once until
+    /// begin_mesh_peer_waits(). Thread-safe.
     void cancel_mesh_peer_wait();
 
-    /// Allow wait_mesh_peers() again after cancel_mesh_peer_wait().
-    /// Thread-safe.
+    /// Allow wait_mesh_peers() and run_mesh_events() again after
+    /// cancel_mesh_peer_wait(). Thread-safe.
     void begin_mesh_peer_waits();
+
+    /// The revisions the private event socket reports (GET /api/events).
+    struct MeshRevisions {
+        std::string peers;    ///< peers_revision, as GET /api/mesh/peers answers it
+        std::string devices;  ///< devices_revision: changes with the device list
+    };
+
+    /// Holds the private event socket for `node_id` (this device's node) open
+    /// over the mesh and calls `on_revisions` on the calling thread with each
+    /// message: once when the socket opens and again on every change. The
+    /// socket uses the session and the TLS checks of the other private
+    /// calls. Returns when the socket closes, the mesh path stops answering
+    /// its pings (about 45 s), or cancel_mesh_peer_wait() runs; ok is true
+    /// when the socket opened. Before it opens, it fails with the server's
+    /// answer in http_status: 404 from a server without the event socket,
+    /// 401 or 403 for a refused session, 0 when no answer came. A malformed
+    /// message ends the socket with `error` set. Thread-safe with respect to
+    /// the other client calls; one socket at a time.
+    [[nodiscard]] Result<bool> run_mesh_events(
+        const std::string& node_id,
+        const std::function<void(const MeshRevisions&)>& on_revisions);
 
     /// Send a heartbeat to the server reporting our current endpoint (empty:
     /// keep the stored one). With `local_endpoints`, the heartbeat also

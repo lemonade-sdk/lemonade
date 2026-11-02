@@ -449,7 +449,9 @@ ln_error_t ln_mesh_enable(ln_client_t* client);
 
 /** Enable mesh networking with custom config (JSON string).
  *  Config JSON keys: peer_refresh_interval_sec, heartbeat_interval_sec,
- *  stun_refresh_interval_sec, prefer_direct, auto_connect.
+ *  stun_refresh_interval_sec, prefer_direct, auto_connect. A key that is
+ *  left out keeps the default of ln_mesh_enable (heartbeat_interval_sec 3,
+ *  peer_refresh_interval_sec 30).
  *  stun_refresh_interval_sec (default 60) sets how often the client learns
  *  its reflexive address from the server's STUN service and publishes it for
  *  hole punching; 0 turns this off. prefer_direct (default true) keeps
@@ -500,6 +502,30 @@ typedef void (*ln_session_moved_fn)(char* event_json, void* user);
 ln_error_t ln_set_session_moved_callback(ln_client_t* client,
                                          ln_session_moved_fn fn,
                                          void* user);
+
+/** Called when something the application shows about the mesh may have
+ *  changed, so it reads it again instead of polling. event_json is
+ *  {"event": name}:
+ *  - "peers": a mesh peer was added or removed, or changed its online state,
+ *    path or relay (ln_get_mesh_peers, ln_mesh_status).
+ *  - "devices": the device list may have changed (ln_list_network_devices).
+ *    The server's event socket reported a change or opened again, the mesh
+ *    resumed after a suspension, or, from a server without the event socket,
+ *    the peer list changed.
+ *  - "port": the mesh port's devices changed (ln_mesh_port_status).
+ *  An event names no device and carries no data; other names may be added.
+ *  event_json is allocated for this call: the callback owns it and releases
+ *  it with ln_free(), during the call or later from any thread. Runs on an
+ *  SDK background thread. The function must return normally (no longjmp, no
+ *  C++ exception) and must not call ln_set_mesh_event_callback or ln_destroy
+ *  for this client. */
+typedef void (*ln_mesh_event_fn)(char* event_json, void* user);
+
+/** Set the mesh event callback and its user pointer (fn NULL clears it).
+ *  When this returns, the previous callback is not running and is not called
+ *  again, so its user data may be released. No callback runs after
+ *  ln_destroy returns. Returns LN_ERR_NULL_ARG when client is NULL. */
+ln_error_t ln_set_mesh_event_callback(ln_client_t* client, ln_mesh_event_fn fn, void* user);
 
 /** Get current mesh peers as JSON array.
  *  Each peer: {node_id, hostname, mesh_pubkey, tunnel_ip, private_subnet,

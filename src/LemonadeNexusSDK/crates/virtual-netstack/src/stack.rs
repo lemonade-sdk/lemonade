@@ -3,7 +3,9 @@
 //! dedicated thread and a mio event loop. Virtual UDP ports deliver datagrams
 //! to an in-process callback instead of a socket bridge.
 
+use std::collections::hash_map::RandomState;
 use std::collections::HashMap;
+use std::hash::BuildHasher;
 use std::io;
 use std::rc::Rc;
 use std::sync::mpsc::{Receiver, TryRecvError};
@@ -141,6 +143,23 @@ pub struct Stack {
     pkt_rx: Receiver<Vec<u8>>,
 }
 
+/// A value that differs between stacks and between processes. It is a
+/// collision avoider, not a secret: RandomState's keys are random per process
+/// and advance with each instance.
+fn random_u64(salt: u64) -> u64 {
+    RandomState::new().hash_one(salt)
+}
+
+/// The first ephemeral port of a new stack: random in the dynamic range
+/// 49152-65535 (RFC 6056). A stack that replaces another one at the same
+/// tunnel address, as a reconnecting client does, must not reuse the old
+/// stack's 4-tuples: the server may still hold those connections open until
+/// its keep-alive ends, and a SYN on one of them is not a new connection.
+fn initial_ephemeral() -> u16 {
+    const FIRST: u64 = 49152;
+    (FIRST + random_u64(2) % (65536 - FIRST)) as u16
+}
+
 impl Stack {
     pub fn new(
         mtu: usize,
@@ -155,7 +174,10 @@ impl Stack {
             ));
         }
         let mut device = VirtDevice::new(mtu, output);
-        let config = Config::new(smoltcp::wire::HardwareAddress::Ip);
+        let mut config = Config::new(smoltcp::wire::HardwareAddress::Ip);
+        // smoltcp derives TCP initial sequence numbers from this seed; the
+        // default is 0, the same for every stack.
+        config.random_seed = random_u64(1);
         let now = Instant::from_millis(0);
         let iface = Interface::new(config, &mut device, now);
 
@@ -175,7 +197,7 @@ impl Stack {
                 udp: Vec::new(),
                 next_ip_ident: 1,
                 next_token: 1,
-                next_ephemeral: 49152,
+                next_ephemeral: initial_ephemeral(),
                 base: StdInstant::now(),
                 cmd_rx,
                 pkt_rx,
@@ -195,6 +217,7 @@ impl Stack {
     }
 
     fn alloc_ephemeral(&mut self) -> u16 {
+        // Sequential from a random start (RFC 6056, algorithm 1).
         let p = self.next_ephemeral;
         self.next_ephemeral = if self.next_ephemeral >= 65535 {
             49152
@@ -763,5 +786,20 @@ fn flush(bridge: &mut Bridge, pending: &mut Vec<u8>) -> bool {
         true
     } else {
         false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn each_stack_starts_its_ephemeral_ports_at_a_random_place_in_the_dynamic_range() {
+        let starts: Vec<u16> = (0..16).map(|_| initial_ephemeral()).collect();
+        assert!(starts.iter().all(|&p| p >= 49152));
+        assert!(
+            starts.iter().any(|&p| p != starts[0]),
+            "every stack starts at the same port: {starts:?}"
+        );
     }
 }

@@ -42,6 +42,11 @@ public:
         None,
         NoReply,      ///< The relay never answered the Allocate request.
         Refused,      ///< The relay refused the Allocate request.
+        /// The relay refused the Allocate request with RendezvousBusy: the
+        /// rendezvous is held by another endpoint, such as this device's own
+        /// earlier request from a socket or NAT mapping that is gone. The
+        /// hold ends within the relay's pending limit.
+        Busy,
         PeerAbsent,   ///< The peer did not join within the pending limit.
         RelaySilent,  ///< The relay stopped answering after allocation.
         SessionLost,  ///< The relay no longer knows the session.

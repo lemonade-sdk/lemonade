@@ -364,16 +364,28 @@ std::chrono::steady_clock::time_point RelayFallback::maintain(const std::vector<
                                 // authenticated handshake: it replaces the relay.
                                 promote_direct(pubkey, state, peer.endpoint);
                                 break;
-                            case PairedAction::AbandonUnproven:
-                                spdlog::warn("[RelayFallback] no traffic with peer {} through relay",
-                                             short_key(pubkey));
-                                abandon(pubkey, state, true);
+                            case PairedAction::AbandonUnproven: {
+                                // The relay may have paired us with a dead
+                                // request of the peer (a restarted or resumed
+                                // peer's old socket), which only this side
+                                // sees. Blaming the relay at once moved this
+                                // side to another relay while the peer kept
+                                // asking here. A relay that again carries
+                                // nothing is blamed.
+                                const bool again = state.unproven_relay == state.relay_id;
+                                spdlog::warn("[RelayFallback] no traffic with peer {} through "
+                                             "relay{}",
+                                             short_key(pubkey), again ? " again" : "");
+                                state.unproven_relay = again ? std::string{} : state.relay_id;
+                                abandon(pubkey, state, again);
                                 break;
+                            }
                             case PairedAction::AbandonStale:
                                 abandon(pubkey, state, false);
                                 break;
                             case PairedAction::Working:
                                 state.failures = 0;
+                                state.unproven_relay.clear();
                                 break;
                             case PairedAction::Wait:
                                 break;
@@ -388,6 +400,11 @@ std::chrono::steady_clock::time_point RelayFallback::maintain(const std::vector<
                     const bool absent =
                         why == RelayChannel::Failure::PeerAbsent ||
                         (why == RelayChannel::Failure::SessionLost && !state.applied);
+                    // Busy is not blamed: the relay holds the rendezvous for
+                    // a request that is gone, often this device's own from
+                    // before a restart or a suspension, until its pending
+                    // limit ends. The peer keeps choosing this relay, so a
+                    // cooldown here split the two sides between relays.
                     abandon(pubkey, state,
                             why == RelayChannel::Failure::NoReply ||
                                 why == RelayChannel::Failure::Refused ||

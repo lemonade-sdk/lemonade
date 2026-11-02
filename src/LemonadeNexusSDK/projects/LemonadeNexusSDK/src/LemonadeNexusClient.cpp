@@ -303,6 +303,9 @@ struct LemonadeNexusClient::Impl {
     std::shared_ptr<httplib::SSLClient> poll_cli;
     uint16_t                            poll_cli_port{0};
     bool                                poll_cancelled{false};
+    // The event socket (run_mesh_events), guarded by poll_mtx like the
+    // long-poll client so cancel_mesh_peer_wait() can close it.
+    std::shared_ptr<httplib::ws::WebSocketClient> events_ws;
 
     // Device and group loopback certificates kept current on disk. Declared
     // before mesh_orchestrator: the orchestrator's renewal thread uses it
@@ -312,6 +315,7 @@ struct LemonadeNexusClient::Impl {
     // Mesh P2P orchestrator
     std::unique_ptr<MeshOrchestrator> mesh_orchestrator;
     LemonadeNexusClient::MeshStateCallback mesh_callback;
+    LemonadeNexusClient::MeshDevicesCallback mesh_devices_callback;
 
     explicit Impl(const ServerConfig& cfg)
         : config{cfg},
@@ -947,7 +951,7 @@ struct LemonadeNexusClient::Impl {
                          server_private_fqdn);
             return std::nullopt;
         }
-        // The breaker throttles the periodic callers (heartbeat every 5s, peer
+        // The breaker throttles the periodic callers (heartbeat every 3 s, peer
         // refresh) so a down tunnel can't block them repeatedly. Callers acting
         // on a user request skip it: otherwise a failing heartbeat keeps the
         // breaker armed and starves every interactive call.
@@ -3023,7 +3027,9 @@ Result<std::vector<NetworkDevice>> LemonadeNexusClient::get_group_devices(
     int status = 0;
     const auto resp = impl_->private_http_get("/api/tree/devices/" + group_id, status);
     result.http_status = status;
-    if (status == 404 && !(resp && resp->contains("error"))) {
+    // An unknown route answers 404 without a JSON body, which the transport
+    // reports as {"error": "HTTP 404"}; the route's own 404s carry a message.
+    if (status == 404 && (!resp || resp->value("error", std::string{}) == "HTTP 404")) {
         // A server from before the route: the placed devices only, with the
         // connect check the mesh port made before (an entry for this key).
         const auto self = node_id();
@@ -3308,6 +3314,9 @@ void LemonadeNexusClient::enable_mesh(const MeshConfig& config) {
         if (impl_->mesh_callback) {
             impl_->mesh_orchestrator->set_callback(impl_->mesh_callback);
         }
+        if (impl_->mesh_devices_callback) {
+            impl_->mesh_orchestrator->set_devices_callback(impl_->mesh_devices_callback);
+        }
         impl_->mesh_enabled = true;
         impl_->mesh_config  = config;
     }
@@ -3352,6 +3361,14 @@ void LemonadeNexusClient::refresh_mesh_peers() {
     std::lock_guard lock(impl_->mutex);
     if (impl_->mesh_orchestrator) {
         impl_->mesh_orchestrator->refresh_now();
+    }
+}
+
+void LemonadeNexusClient::set_mesh_devices_callback(MeshDevicesCallback cb) {
+    std::lock_guard lock(impl_->mutex);
+    impl_->mesh_devices_callback = std::move(cb);
+    if (impl_->mesh_orchestrator) {
+        impl_->mesh_orchestrator->set_devices_callback(impl_->mesh_devices_callback);
     }
 }
 
@@ -3634,12 +3651,104 @@ Result<std::string> LemonadeNexusClient::wait_mesh_peers(const std::string& node
 
 void LemonadeNexusClient::cancel_mesh_peer_wait() {
     std::shared_ptr<httplib::SSLClient> cli;
+    std::shared_ptr<httplib::ws::WebSocketClient> ws;
     {
         std::lock_guard lock(impl_->poll_mtx);
         impl_->poll_cancelled = true;
         cli = impl_->poll_cli;
+        ws = impl_->events_ws;
     }
     if (cli) cli->stop();
+    if (ws) ws->close(httplib::ws::CloseStatus::GoingAway, "mesh stopping");
+}
+
+Result<bool> LemonadeNexusClient::run_mesh_events(
+    const std::string& node_id, const std::function<void(const MeshRevisions&)>& on_revisions) {
+    constexpr std::size_t kMaxRevision = 128;
+    constexpr std::size_t kMaxMessage = 4096;
+    // Pings every 15 s; two missed pongs end the socket, so a mesh path that
+    // went silent is noticed within about 45 s.
+    constexpr time_t kPingSec = 15;
+    constexpr int kMaxMissedPongs = 2;
+    const auto node_char = [](unsigned char c) { return std::isalnum(c) || c == '_' || c == '-'; };
+    if (node_id.empty() || !std::all_of(node_id.begin(), node_id.end(), node_char)) {
+        return {false, false, 0, "run_mesh_events needs a node id"};
+    }
+    if (const auto refusal = impl_->private_api_refusal(); !refusal.empty()) {
+        return {false, false, 0, refusal};
+    }
+    // The TLS handshake holds private_api_mtx like every private request: two
+    // handshakes through the netstack egress at once both fail, and the
+    // socket opens as the mesh starts, together with the first peer refresh.
+    // The open socket runs on its own connection without the lock.
+    std::unique_lock egress_lock(impl_->private_api_mtx);
+    if (!impl_->meshplane.is_active() || impl_->server_tunnel_ip.empty() ||
+        impl_->server_private_fqdn.empty()) {
+        return {false, false, 0, "the mesh is not up"};
+    }
+    const auto fqdn = impl_->server_private_fqdn;
+    const auto lp = impl_->meshplane.tcp_egress(impl_->server_tunnel_ip, impl_->private_port);
+    if (lp == 0) return {false, false, 0, "no egress to the session server"};
+
+    // The private FQDN lands on the loopback egress, as for the other private
+    // calls; SNI and certificate verification still use the FQDN.
+    auto ws = std::make_shared<httplib::ws::WebSocketClient>(
+        "wss://" + fqdn + ":" + std::to_string(lp) + "/api/events?node_id=" + node_id,
+        impl_->auth_headers());
+    if (!ws->is_valid()) return {false, false, 0, "the event socket URL is not valid"};
+    ws->set_hostname_addr_map({{fqdn, "127.0.0.1"}});
+    ws->set_connection_timeout(kMeshConnectTimeoutSec);
+    ws->set_websocket_ping_interval(kPingSec);
+    ws->set_websocket_max_missed_pongs(kMaxMissedPongs);
+    {
+        std::lock_guard lock(impl_->poll_mtx);
+        if (impl_->poll_cancelled) return {false, false, 0, "cancelled"};
+        impl_->events_ws = ws;
+    }
+    const auto release = [&] {
+        std::lock_guard lock(impl_->poll_mtx);
+        if (impl_->events_ws == ws) impl_->events_ws.reset();
+    };
+    const auto opened = ws->connect();
+    egress_lock.unlock();
+    if (!opened) {
+        release();
+        return {false, false, std::max(opened.status(), 0),
+                "event socket not opened: " + httplib::to_string(opened.error())};
+    }
+
+    std::string message;
+    std::string error;
+    while (ws->read(message) != httplib::ws::Fail) {
+        if (message.size() > kMaxMessage) {
+            error = "event message too large";
+            break;
+        }
+        const auto event = json::parse(message, nullptr, false);
+        if (!event.is_object()) {
+            error = "event message is not a JSON object";
+            break;
+        }
+        // Other events are for later versions of the server.
+        if (event.value("event", std::string{}) != "revisions") continue;
+        const auto revision = [&](const char* key) -> std::optional<std::string> {
+            const auto found = event.find(key);
+            if (found == event.end() || !found->is_string()) return std::nullopt;
+            const auto& text = found->get_ref<const std::string&>();
+            if (text.empty() || text.size() > kMaxRevision) return std::nullopt;
+            return text;
+        };
+        const auto peers = revision("peers_revision");
+        const auto devices = revision("devices_revision");
+        if (!peers || !devices) {
+            error = "event message without valid revisions";
+            break;
+        }
+        on_revisions({*peers, *devices});
+    }
+    ws->close();
+    release();
+    return {true, true, 101, error};
 }
 
 void LemonadeNexusClient::begin_mesh_peer_waits() {

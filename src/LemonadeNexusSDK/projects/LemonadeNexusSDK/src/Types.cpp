@@ -291,11 +291,12 @@ void to_json(json& j, const MeshConfig& c) {
 }
 
 void from_json(const json& j, MeshConfig& c) {
-    c.peer_refresh_interval_sec = j.value("peer_refresh_interval_sec", uint32_t{30});
-    c.heartbeat_interval_sec    = j.value("heartbeat_interval_sec", uint32_t{15});
-    c.stun_refresh_interval_sec = j.value("stun_refresh_interval_sec", uint32_t{60});
-    c.prefer_direct             = j.value("prefer_direct", true);
-    c.auto_connect              = j.value("auto_connect", true);
+    const MeshConfig d;
+    c.peer_refresh_interval_sec = j.value("peer_refresh_interval_sec", d.peer_refresh_interval_sec);
+    c.heartbeat_interval_sec    = j.value("heartbeat_interval_sec", d.heartbeat_interval_sec);
+    c.stun_refresh_interval_sec = j.value("stun_refresh_interval_sec", d.stun_refresh_interval_sec);
+    c.prefer_direct             = j.value("prefer_direct", d.prefer_direct);
+    c.auto_connect              = j.value("auto_connect", d.auto_connect);
 }
 
 } // namespace lnsdk
