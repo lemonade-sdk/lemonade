@@ -204,7 +204,7 @@ ordered_json system_info_schema() {
                                     "format": {"enum": ["native", "python", "container"], "description": "`native`, `python`, or `container`. See [Backend Tiers and Formats](#backend-tiers-and-formats)."},
                                     "release_url": {"type": "string", "description": "Where the backend's release asset downloads from."},
                                     "download_filename": {"type": "string", "description": "The release asset's filename."},
-                                    "can_uninstall": {"type": "boolean", "description": "Whether the backend can be uninstalled. Lemonade sets it only on a backend that does not run on this operating system, always to `true`, so a missing value also means `true`."}
+                                    "can_uninstall": {"type": "boolean", "description": "Whether Lemonade can uninstall this backend. If `false`, hide the uninstall button. Defaults to `true` when omitted."}
                                 }
                             }
                         }

@@ -2185,7 +2185,7 @@ The same backend can carry different labels on different operating systems. Each
         - `format` - `native`, `python`, or `container`. See [Backend Tiers and Formats](#backend-tiers-and-formats).
         - `release_url` - Where the backend's release asset downloads from.
         - `download_filename` - The release asset's filename.
-        - `can_uninstall` - Whether the backend can be uninstalled. Lemonade sets it only on a backend that does not run on this operating system, always to `true`, so a missing value also means `true`.
+        - `can_uninstall` - Whether Lemonade can uninstall this backend. If `false`, hide the uninstall button. Defaults to `true` when omitted.
 - `cloud` - Cloud providers installed on this server.
   - `providers` - One entry per installed provider.
     - `name` - Provider name used as the model-name prefix (e.g. `fireworks`).

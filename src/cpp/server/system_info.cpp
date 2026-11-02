@@ -12,6 +12,7 @@
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/backend_registry.h"
+#include "lemon/backends/fastflowlm/fastflowlm_models.h"
 #include "lemon/recipe_backend_def.h"
 #include <filesystem>
 #include <fstream>
@@ -1248,6 +1249,13 @@ json SystemInfo::build_recipes_info(const json& devices) {
 
         backend_status["tier"] = backend_tier_to_string(def.tier);
         backend_status["format"] = backend_format_to_string(def.format);
+        bool can_uninstall = backend_name != "system"
+            && !utils::looks_like_path(
+                BackendUtils::get_bin_config_value(recipe, backend_name));
+        if (recipe == "flm" && !backends::fastflowlm::find_flm_in_path().empty()) {
+            can_uninstall = false;
+        }
+        backend_status["can_uninstall"] = can_uninstall;
         recipes[recipe]["backends"][backend_name] = backend_status;
         backend_status_priority[key] = priority;
     };
@@ -1292,7 +1300,6 @@ json SystemInfo::build_recipes_info(const json& devices) {
                 {"state", "unsupported"},
                 {"message", message},
                 {"action", ""},
-                {"can_uninstall", true},
             };
 
             set_backend_status(def, backend, kOtherOsUnsupportedPriority);
