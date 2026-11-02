@@ -400,11 +400,11 @@ std::chrono::steady_clock::time_point RelayFallback::maintain(const std::vector<
                     const bool absent =
                         why == RelayChannel::Failure::PeerAbsent ||
                         (why == RelayChannel::Failure::SessionLost && !state.applied);
-                    // Busy is not blamed: the relay holds the rendezvous for
-                    // a request that is gone, often this device's own from
-                    // before a restart or a suspension, until its pending
-                    // limit ends. The peer keeps choosing this relay, so a
-                    // cooldown here split the two sides between relays.
+                    // Busy is not blamed: an older relay holds the rendezvous
+                    // for a request that is gone, often this device's own
+                    // from before a restart or a suspension, until its
+                    // pending limit ends. The peer keeps choosing this relay,
+                    // so a cooldown here split the two sides between relays.
                     abandon(pubkey, state,
                             why == RelayChannel::Failure::NoReply ||
                                 why == RelayChannel::Failure::Refused ||

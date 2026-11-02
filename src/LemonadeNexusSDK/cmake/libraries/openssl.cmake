@@ -14,7 +14,10 @@ cmake_minimum_required(VERSION 3.25.1)
 #                  LEMONADE_NEXUS_OPENSSL_VERSION_UBUNTU. release.yml installs
 #                  the package from the Ubuntu snapshot UBUNTU_SNAPSHOT, so the
 #                  package build is fixed too. Its libcrypto.a needs no zlib or
-#                  zstd.
+#                  zstd. Attestation measures only the fleet executables, so a
+#                  client SDK build (LEMONADE_NEXUS_SDK_ONLY) uses the system
+#                  OpenSSL 3 instead: the distribution keeps it patched, and
+#                  its configuration finds the host's CA certificates.
 #   macOS arm64,   A static OpenSSL archive that .github/workflows/deps-openssl.yml
 #   Windows x64,   builds from the official source tarball and publishes on the
 #   iOS, Android   release deps-openssl-<version> of this repository. CMake
@@ -74,9 +77,10 @@ if(TARGET OpenSSL::SSL AND TARGET OpenSSL::Crypto)
 endif()
 
 # ---------------------------------------------------------------------------
-# Linux: the pinned Ubuntu static libraries
+# Linux: the pinned Ubuntu static libraries, for the fleet executables
 # ---------------------------------------------------------------------------
-if(LEMONADE_NEXUS_STATIC_DEPS AND CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT LEMONADE_NEXUS_OPENSSL_ROOT)
+if(LEMONADE_NEXUS_STATIC_DEPS AND NOT LEMONADE_NEXUS_SDK_ONLY
+        AND CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT LEMONADE_NEXUS_OPENSSL_ROOT)
     set(OPENSSL_USE_STATIC_LIBS ON)
     find_package(OpenSSL ${LEMONADE_NEXUS_OPENSSL_VERSION_UBUNTU} EXACT QUIET)
     if(NOT OPENSSL_FOUND OR NOT OPENSSL_CRYPTO_LIBRARY MATCHES "\\.a$"
@@ -204,9 +208,10 @@ if(LEMONADE_NEXUS_OPENSSL_ROOT OR (_LN_OPENSSL_PLATFORM
 endif()
 
 # ---------------------------------------------------------------------------
-# Everything else: a system OpenSSL
+# Everything else: a system OpenSSL 3
 # ---------------------------------------------------------------------------
-if(LEMONADE_NEXUS_STATIC_DEPS)
+if(LEMONADE_NEXUS_STATIC_DEPS
+        AND NOT (LEMONADE_NEXUS_SDK_ONLY AND CMAKE_SYSTEM_NAME STREQUAL "Linux"))
     message(FATAL_ERROR
         "LEMONADE_NEXUS_STATIC_DEPS=ON, but there is no pinned OpenSSL for this platform "
         "(${CMAKE_SYSTEM_NAME} ${CMAKE_SYSTEM_PROCESSOR}, CMAKE_OSX_ARCHITECTURES "
@@ -214,5 +219,6 @@ if(LEMONADE_NEXUS_STATIC_DEPS)
         "and Windows x64. Configure with -DLEMONADE_NEXUS_STATIC_DEPS=OFF to use a system OpenSSL.")
 endif()
 
-find_package(OpenSSL REQUIRED)
+# cpp-httplib and the SDK's server discovery need OpenSSL 3.0 or newer.
+find_package(OpenSSL 3.0 REQUIRED)
 message(STATUS "Using system OpenSSL ${OPENSSL_VERSION}: ${OPENSSL_CRYPTO_LIBRARY}")
