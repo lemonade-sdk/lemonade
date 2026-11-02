@@ -1134,7 +1134,7 @@ set(LEMON_BACKEND_DEFINITION_SCHEMA ${CMAKE_CURRENT_SOURCE_DIR}/schemas/backend-
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/BackendDefinitionResources.cmake)
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/DormantContainerOwners.cmake)
 set(LEMON_C8_SOURCE_COUNT 2)
-set(LEMON_C9_SOURCE_COUNT 1)
+set(LEMON_C9_SOURCE_COUNT 2)
 lemon_backend_definition_resources(LEMON_DEFINITION_RESOURCES
     ${LEMON_BACKEND_DEFINITION_SCHEMA}
     ${LEMON_BACKEND_DEFINITION_FILES})

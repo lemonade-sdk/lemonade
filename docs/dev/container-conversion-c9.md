@@ -45,6 +45,28 @@ Halo Box CPU qualification: **167/167 cpp-ci**, 152 production parity checks,
 mutants. All eighteen historical stages and the new 99-record stage replay;
 complete expected/actual HTTP/CLI snapshots compare literally.
 
+## Nathanw
+
+`backends/nathanw.json` retains recipe `llamacpp` and selector `nathanw`.
+Its 409-line declaration equals `c8a.nathanw.json`; the device-validation API
+is Vulkan, its container device set is only `/dev/dri`, and its capability
+mask is 3. The independent fixed owner is
+`sha256:74e821a50d34a06411afbd29215da72dcba8b01ed81f070e603b3206db4c548e`.
+The copied, **unvalidated** pin comes from
+`d491c946fed2ab079f7387cf02a0eaabb51afce4:src/cpp/resources/backend_versions.json`,
+key `llamacpp.nathanw`:
+`vulkan-radv-performance@sha256:41018261e61b7e32fb38e4985ba569d0837804e727dcc62689c2fb1d73ec8f15`.
+The repository is `docker.io/kyuz0/amd-strix-halo-toolboxes`.
+
+The production parity fixture is `nathanw.production-parity.json`. As with
+Halo Box, the 99 source rows and 93 current integration rows belong to the
+shared llama recipe; no standalone recipe or duplicate registry inventory is
+created. The Nathanw stage discloses runner/service policy **17 -> 18** for
+its additional fixed selector. Halo Box's stage is retained unchanged. Nathanw passes 152 parity and twelve
+selector assertions, eleven data mutants and five compiled mutants. Its
+99-record stage and all prior stages replay with literal whole-snapshot comparison.
+The exact CI census is 169, retaining the 165 baseline registrations.
+
 ## Shared llama selector integration
 
 Builtin registration seeds and finalized registrations can carry a private
