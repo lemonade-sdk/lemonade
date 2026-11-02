@@ -210,8 +210,9 @@ labels) and reports the cut, and each type loses a different part:
 
 | Type | The cut keeps | What disappears |
 |---|---|---|
-| `zero_shot` | the head and the tail, with `\n...\n` between | the middle |
+| `zero_shot` on ort-server | the head and the tail, with `\n...\n` between | the middle |
 | `classifier` | the head, plus the final separator | **the end** |
+| `systemone`, and `zero_shot` on a decision model | depends on the decision type, below | |
 
 A score computed from cut text is still a *success*, so `on_error` never sees
 it. `on_truncation` decides what the cut means:
