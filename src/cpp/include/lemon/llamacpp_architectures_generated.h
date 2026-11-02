@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstddef>
 #include <string_view>
 
 namespace lemon {
@@ -197,5 +198,9 @@ inline bool llamacpp_decision_type_is_supported_by_all_backends(
     }};
     return std::binary_search(names.begin(), names.end(), decision_type);
 }
+
+inline constexpr size_t LLAMACPP_DECISION_H2O_MAX_STATE_TOKENS = 32000;
+inline constexpr size_t LLAMACPP_DECISION_LAYA_MAX_OPTION_TOKENS = 48;
+inline constexpr size_t LLAMACPP_DECISION_LAYA_QUESTION_RESERVE = 16;
 
 }  // namespace lemon

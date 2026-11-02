@@ -123,10 +123,14 @@
               ]
             },
             "criteria": {
-              "description": "choice: an object {option: description or null}, read by the model in sorted option order, or an array of option names and one-key {option: description} objects, read in array order; at least 2 options. A description is text, an object, an array or null. noul: optional {\"true\": ..., \"false\": ...}. score: an array of 2 to 10 level strings, lowest first."
+              "description": "choice: an array of option names and one-key {option: description} objects, read by the model in array order; at least 2 options. A description is text, an object, an array or null. noul: optional {\"true\": ..., \"false\": ...}. score: an array of 2 to 10 level strings, lowest first."
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "allOf": [
+            { "if":   { "required": ["type"], "properties": { "type": { "const": "choice" } } },
+              "then": { "properties": { "criteria": { "type": "array" } } } }
+          ]
         },
         "on_error": {
           "description": "Behavior when the classifier fails to evaluate. match_true = fail-closed authoring. Frozen v1 default when omitted: match_false (fail-open).",
@@ -134,7 +138,7 @@
           "default": "match_false"
         },
         "on_truncation": {
-          "description": "Behavior when the backend cut the input text to fit its token window. Accepted on the model-backed types, classifier and zero_shot; both read a token window they can overflow and both report the cut. What the cut discards differs: zero_shot keeps the head and the tail of the text, a fixed-label classifier keeps the head and drops the end. Scoring cut text succeeds, so on_error alone cannot reach that case. fail turns the cut into an evaluation failure, so on_error then applies — pair it with on_error: match_true for a rule whose miss would be a leak rather than a wrong model. Frozen v1 default when omitted: score (use the scores anyway).",
+          "description": "Behavior when the backend cut the input text to fit its token window. Accepted on the model-backed types, classifier, zero_shot and systemone; each reads a token window it can overflow and reports the cut, or says nothing when it cannot tell. What the cut discards differs: zero_shot keeps the head and the tail of the text, a fixed-label classifier keeps the head and drops the end. Scoring cut text succeeds, so on_error alone cannot reach that case. fail turns the cut into an evaluation failure, so on_error then applies — pair it with on_error: match_true for a rule whose miss would be a leak rather than a wrong model. Frozen v1 default when omitted: score (use the scores anyway).",
           "enum": ["score", "fail"],
           "default": "score"
         }
@@ -161,7 +165,7 @@
         { "if":   { "required": ["question"] },
           "then": { "properties": { "type": { "const": "systemone" } } } },
         { "if":   { "required": ["on_truncation"] },
-          "then": { "properties": { "type": { "enum": ["classifier", "zero_shot"] } } } }
+          "then": { "properties": { "type": { "enum": ["classifier", "zero_shot", "systemone"] } } } }
       ]
     },
     "rule": {

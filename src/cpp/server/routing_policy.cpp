@@ -459,10 +459,11 @@ public:
     SystemOneClassifier(std::string id, std::string type, std::string model, OnError on_error,
                         std::vector<std::string> labels,
                         std::optional<std::string> default_label,
-                        nlohmann::ordered_json question)
+                        nlohmann::ordered_json question, OnTruncation on_truncation)
         : Classifier(std::move(id), std::move(type), on_error, std::move(model),
                      std::move(labels), std::move(default_label)),
-          question_(std::move(question)) {
+          question_(std::move(question)),
+          on_truncation_(on_truncation) {
         if (model_name_.empty()) {
             throw std::invalid_argument("systemone classifier requires model");
         }
@@ -478,6 +479,9 @@ public:
             const json answer =
                 ctx.services.run_systemone(model_name_, ctx.request.input, question_);
             score.labels = answer_scores(answer);
+            if (answer.contains("truncated") && answer["truncated"].is_boolean()) {
+                score.truncated = answer["truncated"].get<bool>();
+            }
             score.ok = true;
         } catch (const RouterResidencyConflictException&) {
             throw;
@@ -495,14 +499,21 @@ public:
                 "the answer covers a different option set than the question asked";
             log_classifier_failure(type(), id(), model_name_, kMismatch, failures_,
                                    last_failure_log_s_);
-            return failed_score(kMismatch);
+            const std::optional<bool> cut = score.truncated;
+            score = failed_score(kMismatch);
+            score.truncated = cut;
+            return score;
         }
+        apply_on_truncation(score, on_truncation_, type(), id(),
+                            model_name_, truncated_scores_, last_truncation_log_s_);
         return score;
     }
 
 private:
     mutable std::atomic<unsigned long long> failures_{0};
     mutable std::atomic<long long> last_failure_log_s_{0};
+    mutable std::atomic<unsigned long long> truncated_scores_{0};
+    mutable std::atomic<long long> last_truncation_log_s_{0};
 
     static double probability(const json& value) {
         if (!value.is_number()) {
@@ -545,6 +556,7 @@ private:
     }
 
     nlohmann::ordered_json question_;
+    const OnTruncation on_truncation_;
 };
 
 // The `llm` router / L0(a) on-ramp. Runs a small chat model with the author's
@@ -935,11 +947,15 @@ SystemOneQuestion parse_systemone_question(const json& config, const std::string
             options[option] = nlohmann::ordered_json(description);
             labels.push_back(option);
         };
-        if (criteria.is_object() && !criteria.empty()) {
-            for (const auto& [option, description] : criteria.items()) {
-                add_option(option, description);
-            }
-        } else if (criteria.is_array() && !criteria.empty()) {
+        if (criteria.is_object()) {
+            // A stored policy sorts object keys, and the option order changes
+            // the scores, so only an array keeps what the author wrote.
+            throw invalid("choice criteria must be an array of option names and one-key "
+                          "{option: description} objects, such as [\"billing\", {\"shipping\": "
+                          "\"where an order is\"}]; an object would reach the model in "
+                          "alphabetical order");
+        }
+        if (criteria.is_array() && !criteria.empty()) {
             for (const auto& entry : criteria) {
                 if (entry.is_string()) {
                     add_option(entry.get<std::string>(), nullptr);
@@ -951,8 +967,8 @@ SystemOneQuestion parse_systemone_question(const json& config, const std::string
                 }
             }
         } else {
-            throw invalid("choice question requires criteria: a non-empty object, or a "
-                          "non-empty array that keeps the option order");
+            throw invalid("choice question requires criteria: a non-empty array of option "
+                          "names and one-key {option: description} objects");
         }
         if (labels.size() < 2) {
             throw invalid("choice question needs at least 2 options; one option always scores 1.0");
@@ -1562,11 +1578,12 @@ ClassifierPtr make_classifier(const json& config, bool expose_request_features) 
                                     "only the systemone type asks one");
     }
 
-    if (config.contains("on_truncation") && type != "zero_shot" && type != "classifier") {
+    if (config.contains("on_truncation") && type != "zero_shot" && type != "classifier" &&
+        type != "systemone") {
         throw std::invalid_argument(
             "classifier '" + id + "' of type '" + type +
             "' does not accept on_truncation; only the model-backed types "
-            "('classifier' and 'zero_shot') read a token window they can overflow");
+            "('classifier', 'zero_shot' and 'systemone') read a token window they can overflow");
     }
     const OnTruncation on_truncation =
         parse_on_truncation(config.value("on_truncation", "score"));
@@ -1610,7 +1627,7 @@ ClassifierPtr make_classifier(const json& config, bool expose_request_features) 
         return std::make_shared<SystemOneClassifier>(
             id, type, config.value("model", ""), on_error,
             std::move(question.labels), std::move(default_label),
-            std::move(question.question));
+            std::move(question.question), on_truncation);
     }
 
     if (type == "semantic_similarity") {

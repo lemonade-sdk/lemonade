@@ -125,6 +125,10 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `images` | No | Data URLs of images to judge with the state. The model must load with an `mmproj` file, and `llama-server` decides which decision types read images. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `ctx_size` | No | Lemonade extension: context size to load the model with, when this request loads it. Ignored when the model is already loaded. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
+### Cuts
+
+lemond adds `truncated` to each answer. A `laya` model (Laya, Julia-1) cuts a long option or a long question without saying so, so lemond refuses such a question with 400 instead.
+
 ### Answer Quality
 
 Answers depend on the model, on the wording of each question, and on the order of a `choice` question's options. Test a question with the model that serves it before a router policy relies on its scores.
@@ -217,6 +221,7 @@ Register the model with its projector file, for example on `/v1/pull`: `{"model_
       - The probability, in `[0, 1]`.
     - `confidence` - `choice` and `score` questions: how clearly the model prefers its answer; `0` when every option is equally likely.
     - `noul` - `noul` questions: the probability that the answer is `true`.
+    - `truncated` - Added by Lemonade. `false` when the decision type refuses a `state` that does not fit instead of cutting it. Absent when it can cut the `state` without saying so (`lfm2-d1-omni`; `h2o-lightning` with a `state` over 32,000 bytes), so absence means unknown.
 - `usage` - Tokens processed.
   - `input_tokens` - Prompt tokens across all questions.
   - `output_tokens` - Always `0`, because the model generates no tokens.
@@ -231,6 +236,7 @@ Register the model with its projector file, for example on `/v1/pull`: `{"model_
 | `400` |  | `model` is omitted and not exactly one classification model is loaded |
 | `400` |  | `model` lacks the `classification` or `systemone` label, or its backend does not answer SystemOne questions; checked before it loads |
 | `400` |  | `llama-server` rejects a question, such as a `score` question with one level; the backend's status replaces this one |
+| `400` |  | A `laya` model (Laya, Julia-1) would cut an option or the question; `llama-server` cuts them without saying so |
 | `400` | `context_length_exceeded` | `state` and a question do not fit in the model's context |
 | `400` | `model_load_refused` | The backend refuses the requested model as it is registered, before it starts anything, such as a decision model whose GGUF type the bundled llama.cpp does not support |
 | `404` |  | The model is unloaded while the request waits for it |

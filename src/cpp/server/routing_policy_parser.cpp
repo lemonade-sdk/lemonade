@@ -409,10 +409,10 @@ json parse_classifier_configs(const json& routing,
         }
 
         if (classifier.contains("on_truncation")) {
-            if (type != "zero_shot" && type != "classifier") {
+            if (type != "zero_shot" && type != "classifier" && type != "systemone") {
                 throw std::invalid_argument(
                     path + ".on_truncation is accepted on the model-backed types "
-                    "('classifier' and 'zero_shot'), not '" +
+                    "('classifier', 'zero_shot' and 'systemone'), not '" +
                     type + "', which reads no token window it can overflow");
             }
             const std::string on_truncation =

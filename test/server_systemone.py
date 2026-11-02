@@ -342,6 +342,61 @@ class SystemOneTests(ServerTestBase):
             "Classify with a label longer than the model reads",
         )
 
+    def test_510_answers_report_truncated(self):
+        """lemond adds truncated to each answer; a laya model never cuts the state."""
+        self._ensure_model_pulled()
+        response = self._post("systemone", self._payload())
+        self.assertEqual(response.status_code, 200, response.text[:1000])
+        for question_id, answer in response.json()["answers"].items():
+            self.assertIs(answer.get("truncated"), False, question_id)
+        print("[OK] every answer has truncated: false")
+
+    def test_511_systemone_question_cut_error(self):
+        """/v1/systemone refuses a question that a laya model would cut."""
+        self._ensure_model_pulled()
+        long_instructions = "Decide whether " + " ".join(["this"] * 400) + " is urgent."
+        self._assert_rejected(
+            "systemone",
+            self._payload(
+                questions={"q": {"type": "noul", "instructions": long_instructions}}
+            ),
+            "SystemOne question longer than the model reads",
+        )
+
+    def test_512_object_form_choice_policy_error(self):
+        """A policy choice must be an array, so the options keep their order."""
+        decider = get_test_model("systemone_router")
+        policy = {
+            "version": "1",
+            "model_name": "user.Test-Router-Object-Choice",
+            "recipe": "collection.router",
+            "components": [get_test_model("llm"), decider],
+            "routing": {
+                "candidates": [get_test_model("llm")],
+                "default_model": get_test_model("llm"),
+                "classifiers": [
+                    {
+                        "id": "team",
+                        "type": "systemone",
+                        "model": decider,
+                        "default_label": "billing",
+                        "question": {
+                            "type": "choice",
+                            "instructions": "Which team?",
+                            "criteria": {"shipping": None, "billing": None},
+                        },
+                    }
+                ],
+                "rules": [],
+            },
+        }
+        response = requests.post(
+            f"http://localhost:{PORT}/api/v1/pull", json=policy, timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(response.status_code, 400, response.text[:1000])
+        self.assertIn("must be an array", response.text)
+        print("[OK] object-form choice refused at registration")
+
     def test_506_option_order_reaches_model(self):
         """The options reach the model in the client's order, which it scores by."""
         self._ensure_model_pulled()

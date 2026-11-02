@@ -23,6 +23,10 @@ const RouteError kQuestionsRejected{
     400, "",
     "`llama-server` rejects a question, such as a `score` question with one level; the backend's "
     "status replaces this one"};
+const RouteError kOptionCut{
+    400, "",
+    "A `laya` model (Laya, Julia-1) would cut an option or the question; `llama-server` cuts them "
+    "without saying so"};
 const RouteError kContextExceeded{
     400, "context_length_exceeded", "`state` and a question do not fit in the model's context"};
 const RouteError kNoImageInput{
@@ -65,6 +69,10 @@ public:
             "`llama-server` builds the prompt from the template in the GGUF. Only `llamacpp` models "
             "labelled `classification` and `systemone`, such as `Laya-GGUF`, serve this endpoint.";
         s.notes = {
+            "### Cuts\n\n"
+            "lemond adds `truncated` to each answer. A `laya` model (Laya, Julia-1) cuts a long "
+            "option or a long question without saying so, so lemond refuses such a question "
+            "with 400 instead.",
             "### Answer Quality\n\n"
             "Answers depend on the model, on the wording of each question, and on the order of a "
             "`choice` question's options. Test a question with the model that serves it before a "
@@ -107,7 +115,8 @@ public:
                                 "additionalProperties": {"type": "number", "description": "The probability, in `[0, 1]`."}
                             },
                             "confidence": {"type": "number", "description": "`choice` and `score` questions: how clearly the model prefers its answer; `0` when every option is equally likely."},
-                            "noul": {"type": "number", "description": "`noul` questions: the probability that the answer is `true`."}
+                            "noul": {"type": "number", "description": "`noul` questions: the probability that the answer is `true`."},
+                            "truncated": {"type": "boolean", "description": "Added by Lemonade. `false` when the decision type refuses a `state` that does not fit instead of cutting it. Absent when it can cut the `state` without saying so (`lfm2-d1-omni`; `h2o-lightning` with a `state` over 32,000 bytes), so absence means unknown."}
                         }
                     }
                 },
@@ -138,7 +147,7 @@ public:
         })");
         s.examples = {example};
         s.errors = join_errors({{kBodyNotJson, kArgMissing, kArgInvalid, kNoSoleClassifier,
-                                 kNotDecisionModel, kQuestionsRejected, kContextExceeded,
+                                 kNotDecisionModel, kQuestionsRejected, kOptionCut, kContextExceeded,
                                  kNoImageInput, kModelUnloaded, kBackendError,
                                  kUnexpectedException},
                                 ModelLoader::errors()});

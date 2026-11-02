@@ -412,6 +412,12 @@ private:
     template<typename Func>
     auto execute_inference(const json& request, Func&& inference_func) -> decltype(inference_func(nullptr));
 
+    // One classifier call with its telemetry span. `report_usage` adds the
+    // prompt token count; label scores are never reported.
+    nlohmann::ordered_json classifier_inference(
+        const json& request, const std::string& operation, bool report_usage,
+        const std::function<nlohmann::ordered_json(WrappedServer*)>& call);
+
     template<typename Func>
     void execute_streaming(const std::string& request_body, httplib::DataSink& sink, Func&& streaming_func, std::shared_ptr<telemetry::InferenceSpan> span = nullptr);
 };
